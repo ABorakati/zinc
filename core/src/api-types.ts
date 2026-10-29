@@ -29,6 +29,26 @@
 //
 // GET    /api/search?q=&limit=&offset=         -> SearchResult  (FTS5 over metadata + full text)
 //
+// ---- Phase 3 additions ----
+// GET    /api/items?...&fields=a,b,c           ItemSummary.fields gets those Zotero data fields
+//        (any field from /api/schema, plus itemType, dateModified, accessDate, extra).
+//        sort also accepts: itemType | dateModified | publication | noteCount | attachmentCount
+//        | any Zotero data field name (sorted case-insensitively on the field's text).
+// GET    /api/schema                           -> ZoteroSchema (item types, fields, creator types, labels)
+// POST   /api/items                            {data: Partial<ZoteroItemData>} -> ItemDetail
+//        data.itemType required; data.parentItem set for child notes/attachments.
+// POST   /api/items/:key/related               {keys: string[]} -> ItemDetail  (adds dc:relation both ways)
+// DELETE /api/items/:key/related               {keys: string[]} -> ItemDetail
+// POST   /api/attachments/:key/reveal          -> {ok: true}  (shows the file in Explorer)
+// POST   /api/attachments/:key/open-external   -> {ok: true}  (opens the file in its default app)
+// POST   /api/open-url                         {url} -> {ok: true}  (http(s)/doi only, OS browser)
+//
+// Find Full Text (core/src/fulltext/api.ts, wraps the zotero-fulltext WASM core):
+// POST   /api/fulltext/find                    {keys: string[], openAccessOnly?: boolean} -> {jobId}
+// GET    /api/fulltext/jobs/:id                -> FullTextJob
+// GET    /api/fulltext/jobs/:id/events         -> text/event-stream of FullTextJob snapshots
+// POST   /api/fulltext/jobs/:id/cancel         -> {ok: true}
+//
 // Errors: non-2xx with {error: string}.
 
 export interface Collection {
@@ -50,6 +70,8 @@ export interface ItemSummary {
 	primaryAttachment: { key: string; contentType: string } | null;
 	attachmentCount: number;
 	noteCount: number;
+	// requested via ?fields=; values are the item's text for each field, null if empty
+	fields?: Record<string, string | null>;
 }
 
 export interface ItemList {
@@ -105,6 +127,45 @@ export interface ItemDetail {
 	children: ChildSummary[];
 	collections: string[];
 	tags: { tag: string; type: number }[];
+	// items linked through data.relations["dc:relation"] (Zotero's "Related")
+	related?: { key: string; itemType: string; title: string; creatorsSummary: string; year: number | null }[];
+}
+
+export interface ZoteroSchemaField {
+	field: string;
+	label: string;
+	baseField?: string; // e.g. publicationTitle for bookTitle
+}
+
+export interface ZoteroSchemaItemType {
+	itemType: string;
+	label: string;
+	fields: ZoteroSchemaField[]; // in Zotero's display order, excluding title-less internal fields
+	creatorTypes: { creatorType: string; label: string; primary: boolean }[];
+}
+
+export interface ZoteroSchema {
+	version: number;
+	itemTypes: ZoteroSchemaItemType[];
+	fieldLabels: Record<string, string>; // every field name -> English label
+}
+
+export type FullTextItemState =
+	| "queued" | "searching" | "downloading" | "attached" | "already-has-pdf"
+	| "needs-sign-in" | "not-found" | "failed" | "cancelled";
+
+export interface FullTextJob {
+	id: string;
+	done: boolean;
+	items: {
+		key: string; // top-level item key
+		title: string;
+		state: FullTextItemState;
+		source?: string; // e.g. "Unpaywall", "Europe PMC", "KCL OpenAthens"
+		message?: string;
+		attachmentKey?: string; // set when a PDF was attached
+		handoffUrl?: string; // link to open in the browser when it could not be fetched automatically
+	}[];
 }
 
 // The Zotero reader's annotation object, stored verbatim.

@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { ReaderAnnotation, ZoteroItemData } from "./api-types";
 import * as repo from "./db";
 import { HttpError } from "./db";
+import { handleFulltextApi } from "./fulltext/api";
 import { indexItem, search } from "./search";
 
 function json(body: unknown, status = 200): Response {
@@ -42,6 +43,7 @@ function methodNotAllowed(): never {
 export async function handleApi(req: Request, db: Database): Promise<Response | null> {
 	const url = new URL(req.url);
 	if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return null;
+	if (url.pathname.startsWith("/api/fulltext/")) return handleFulltextApi(req, db);
 	try {
 		let parts: string[];
 		try {
