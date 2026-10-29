@@ -9,5 +9,11 @@ vendor/
 spikes/*.log
 spikes/run.err
 spikes/electrobun-result.json
+# Screenshots show personal library contents
+spikes/*.png
 
 node_modules/
+dist/
+
+# Local library database (imported from Zotero)
+data/

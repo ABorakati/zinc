@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr" style="--sidebar-width: 240px; --split-view-size: 50%; --bottom-placeholder-height: 0px; --toolbar-placeholder-width: 0px">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Reader</title>
+	<link href="reader.css" rel="stylesheet">
+	<style>
+		#host-error { display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
+			padding: 24px; text-align: center; font: 14px system-ui, sans-serif; background: Canvas; color: CanvasText; z-index: 99999; }
+		#host-error.show { display: flex; }
+	</style>
+</head>
+<body class="sidebar-open">
+	<div id="reader-ui"></div>
+	<div id="split-view">
+		<div id="primary-view" class="primary-view"></div>
+		<div id="secondary-view" class="secondary-view"></div>
+	</div>
+	<div id="printContainer"></div>
+	<div id="host-error"></div>
+	<script src="reader.js"></script>
+	<script src="host.js"></script>
+</body>
+</html>
