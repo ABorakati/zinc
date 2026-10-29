@@ -49,6 +49,12 @@
 // GET    /api/fulltext/jobs/:id/events         -> text/event-stream of FullTextJob snapshots
 // POST   /api/fulltext/jobs/:id/cancel         -> {ok: true}
 //
+// Card view additions:
+// GET    /api/items?...&include=creators,tags  ItemSummary.creators / .tags filled for each item
+// GET    /api/tag-colors                       -> TagColor[]  (Zotero's coloured tags, in position order)
+// PUT    /api/tag-colors                       TagColor[] -> TagColor[]
+//        Starred items use the tag "Starred" (shown as a star, not a badge).
+//
 // References (core/src/references/api.ts; built-in "Zotero Reference" plugin features):
 // GET    /api/references/:itemKey              -> ReferenceList  (the item's bibliography, resolved;
 //        accepts an attachment key too and uses its parent). ?refresh=1 bypasses the cache.
@@ -80,6 +86,16 @@ export interface ItemSummary {
 	noteCount: number;
 	// requested via ?fields=; values are the item's text for each field, null if empty
 	fields?: Record<string, string | null>;
+	// requested via ?include=creators: every creator as "Family G" (or the single-field name)
+	creators?: string[];
+	// requested via ?include=tags
+	tags?: { tag: string; type: number }[];
+}
+
+export interface TagColor {
+	name: string;
+	color: string; // CSS hex, e.g. "#FF6666"
+	position: number; // 0-based; Zotero assigns number keys 1-9 to the first nine
 }
 
 export interface ItemList {

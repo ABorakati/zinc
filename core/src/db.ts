@@ -13,6 +13,7 @@ import type {
 	ItemList,
 	ItemSummary,
 	ReaderAnnotation,
+	TagColor,
 	ZoteroItemData,
 } from "./api-types";
 
@@ -274,6 +275,7 @@ export interface ListOptions {
 	unfiled?: boolean;
 	trash?: boolean;
 	fields?: string[];
+	include?: string[]; // "creators", "tags"
 }
 
 interface SummaryRow {
@@ -383,7 +385,101 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 		.all(...params, limit, offset) as SummaryRow[];
 	const items = summarize(db, rows);
 	if (fieldNames.length > 0) attachFields(db, items, fieldNames);
+	const inc = new Set(opts.include ?? []);
+	for (const x of inc) if (x !== "creators" && x !== "tags") throw new HttpError(400, `invalid include: ${x}`);
+	if (inc.has("creators")) attachCreators(db, items);
+	if (inc.has("tags")) attachTags(db, items);
 	return { total, items };
+}
+
+// "Amsalem, Eli" -> "Amsalem E"; single-field names stay as they are.
+export function formatCreatorInitials(c: { firstName?: string; lastName?: string; name?: string }): string {
+	if (c.name) return c.name.trim();
+	const last = (c.lastName ?? "").trim();
+	const initials = (c.firstName ?? "")
+		.split(/[\s\-.]+/)
+		.filter(Boolean)
+		.map((p) => Array.from(p)[0].toUpperCase())
+		.join("");
+	return [last, initials].filter(Boolean).join(" ");
+}
+
+function attachCreators(db: Database, items: ItemSummary[]): void {
+	if (items.length === 0) return;
+	const rows = db
+		.query("SELECT i.key, json_extract(i.data, '$.creators') AS c FROM json_each(?) j CROSS JOIN items i ON i.key = j.value")
+		.all(JSON.stringify(items.map((it) => it.key))) as { key: string; c: string | null }[];
+	const byKey = new Map(rows.map((r) => [r.key, r.c]));
+	for (const it of items) {
+		let list: { firstName?: string; lastName?: string; name?: string }[] = [];
+		const raw = byKey.get(it.key);
+		if (raw) {
+			try {
+				const p = JSON.parse(raw);
+				if (Array.isArray(p)) list = p;
+			} catch {
+				// malformed creators: treat as none
+			}
+		}
+		it.creators = list.map(formatCreatorInitials).filter(Boolean);
+	}
+}
+
+function attachTags(db: Database, items: ItemSummary[]): void {
+	if (items.length === 0) return;
+	const rows = db
+		.query(
+			"SELECT t.item_key, t.tag, t.type FROM json_each(?) j JOIN item_tags t ON t.item_key = j.value ORDER BY t.tag COLLATE NOCASE",
+		)
+		.all(JSON.stringify(items.map((it) => it.key))) as { item_key: string; tag: string; type: number }[];
+	const byKey = new Map<string, { tag: string; type: number }[]>();
+	for (const r of rows) {
+		let l = byKey.get(r.item_key);
+		if (!l) byKey.set(r.item_key, (l = []));
+		l.push({ tag: r.tag, type: r.type });
+	}
+	for (const it of items) it.tags = byKey.get(it.key) ?? [];
+}
+
+// ---------------------------------------------------------------- tag colours
+
+export function getTagColors(db: Database): TagColor[] {
+	const row = db.query("SELECT value FROM meta WHERE name = 'tagColors'").get() as { value: string } | null;
+	if (!row) return [];
+	try {
+		const p = JSON.parse(row.value);
+		return Array.isArray(p) ? (p as TagColor[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+// Validates and normalises (hex colours, unique names, positions renumbered 0..n-1).
+export function normalizeTagColors(input: unknown): TagColor[] {
+	if (!Array.isArray(input)) throw new HttpError(400, "body must be an array of {name, color}");
+	const seen = new Set<string>();
+	const out: TagColor[] = [];
+	for (const e of input) {
+		if (!e || typeof e !== "object") throw new HttpError(400, "invalid tag colour entry");
+		const { name, color } = e as { name?: unknown; color?: unknown };
+		if (typeof name !== "string" || !name.trim()) throw new HttpError(400, "tag colour name is required");
+		if (typeof color !== "string" || !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color)) {
+			throw new HttpError(400, `invalid colour for "${name}": expected hex like #FF6666`);
+		}
+		const n = name.trim();
+		if (seen.has(n)) throw new HttpError(400, `duplicate tag colour name: ${n}`);
+		seen.add(n);
+		out.push({ name: n, color, position: out.length });
+	}
+	return out;
+}
+
+export function setTagColors(db: Database, input: unknown): TagColor[] {
+	const colors = normalizeTagColors(input);
+	db.query("INSERT INTO meta(name, value) VALUES('tagColors', ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(
+		JSON.stringify(colors),
+	);
+	return colors;
 }
 
 // Fills ItemSummary.fields from items.data (field names are already whitelisted).

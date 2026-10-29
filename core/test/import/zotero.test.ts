@@ -44,6 +44,11 @@ function buildFixture() {
 	CREATE TABLE itemAttachments (itemID INTEGER PRIMARY KEY, parentItemID INT, linkMode INT, contentType TEXT, charsetID INT, path TEXT, storageModTime INT, storageHash TEXT);
 	CREATE TABLE itemAnnotations (itemID INTEGER PRIMARY KEY, parentItemID INT, type INT, authorName TEXT, text TEXT, comment TEXT, color TEXT, pageLabel TEXT, sortIndex TEXT, position TEXT);
 	CREATE TABLE deletedItems (itemID INTEGER PRIMARY KEY);
+	CREATE TABLE syncedSettings (setting TEXT, libraryID INT, value, version INT, synced INT);
+	INSERT INTO syncedSettings VALUES
+	 ('tagColors',1,'[{"name":"ml","color":"#FF6666"},{"name":"Starred","color":"#FFD400"},{"name":"ml","color":"#000000"}]',1,1),
+	 ('tagColors',2,'[{"name":"group","color":"#111111"}]',1,1),
+	 ('lastPageIndex_u_X',1,'3',1,1);
 
 	INSERT INTO libraries VALUES (1,'user'),(2,'group');
 	INSERT INTO itemTypesCombined VALUES (1,'annotation'),(3,'attachment'),(22,'journalArticle'),(28,'note'),(8,'bookSection');
@@ -235,6 +240,14 @@ describe("importZotero", () => {
 		});
 		expect((db.query("SELECT value FROM meta WHERE name='zotero_import_at'").get() as any).value).toMatch(/^\d{4}-/);
 		expect((db.query("SELECT COUNT(*) c FROM search").get() as any).c).toBe(0);
+	});
+
+	test("coloured tags imported from syncedSettings (user library only, deduped)", () => {
+		const v = (db.query("SELECT value FROM meta WHERE name='tagColors'").get() as any).value;
+		expect(JSON.parse(v)).toEqual([
+			{ name: "ml", color: "#FF6666", position: 0 },
+			{ name: "Starred", color: "#FFD400", position: 1 },
+		]);
 	});
 
 	test("refuses to overwrite without replace, replaces with it", async () => {

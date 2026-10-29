@@ -173,6 +173,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 					unfiled: p.get("unfiled") === "1",
 					trash: p.get("trash") === "1",
 					fields: p.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean),
+					include: p.get("include")?.split(",").map((f) => f.trim()).filter(Boolean),
 				}),
 			);
 		}
@@ -221,6 +222,12 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 	if (a === "tags" && n === 1) {
 		if (m !== "GET") return methodNotAllowed();
 		return json(repo.listTags(db));
+	}
+
+	if (a === "tag-colors" && n === 1) {
+		if (m === "GET") return json(repo.getTagColors(db));
+		if (m === "PUT") return json(repo.setTagColors(db, await readBody<unknown>(req)));
+		return methodNotAllowed();
 	}
 
 	if (a === "attachments" && n === 3) {

@@ -125,6 +125,33 @@ export function creatorsSummary(creators: Creator[]): string {
 	return `${names[0]} et al.`;
 }
 
+// Zotero's coloured tags: syncedSettings row 'tagColors' = JSON [{name, color}], position = index.
+// Accepts an open (snapshot) zotero.sqlite; returns [] if absent or malformed.
+export function readZoteroTagColors(src: Database, libraryID?: number): { name: string; color: string; position: number }[] {
+	let lib = libraryID;
+	try {
+		if (lib === undefined) {
+			const l = src.query("SELECT libraryID FROM libraries WHERE type = 'user' ORDER BY libraryID LIMIT 1").get() as Row | null;
+			lib = l?.libraryID ?? 1;
+		}
+		const libId: number = lib ?? 1;
+		const row = src.query("SELECT value FROM syncedSettings WHERE setting = 'tagColors' AND libraryID = ?").get(libId) as Row | null;
+		if (!row?.value) return [];
+		const parsed = JSON.parse(String(row.value));
+		if (!Array.isArray(parsed)) return [];
+		const out: { name: string; color: string; position: number }[] = [];
+		const seen = new Set<string>();
+		for (const e of parsed) {
+			if (!e || typeof e.name !== "string" || typeof e.color !== "string" || !e.name || seen.has(e.name)) continue;
+			seen.add(e.name);
+			out.push({ name: e.name, color: e.color, position: out.length });
+		}
+		return out;
+	} catch {
+		return []; // no syncedSettings table or bad JSON
+	}
+}
+
 function findBaseAttachmentPath(profilesDir: string): string | null {
 	if (!existsSync(profilesDir)) return null;
 	for (const d of readdirSync(profilesDir)) {
@@ -627,6 +654,10 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			counts.fulltext++;
 		}
 
+		const tagColors = readZoteroTagColors(src, libraryID);
+		if (tagColors.length > 0) {
+			out.prepare("INSERT OR REPLACE INTO meta (name, value) VALUES ('tagColors', ?)").run(JSON.stringify(tagColors));
+		}
 		out.prepare("INSERT OR REPLACE INTO meta (name, value) VALUES ('schema_version', '1')").run();
 		out.prepare("INSERT OR REPLACE INTO meta (name, value) VALUES ('zotero_import_at', ?)").run(nowIso);
 		out.exec("COMMIT");
