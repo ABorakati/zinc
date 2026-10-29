@@ -1,0 +1,13 @@
+# Upstream Zotero repos, cloned and built by spikes/build-*.sh
+vendor/
+
+# Hutch scratch
+.app.hutch-template.lock
+.cottontail-tmp/
+
+# Spike run output
+spikes/*.log
+spikes/run.err
+spikes/electrobun-result.json
+
+node_modules/
