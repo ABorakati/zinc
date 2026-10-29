@@ -6,6 +6,15 @@ import * as repo from "./db";
 import { HttpError } from "./db";
 import { handleFulltextApi } from "./fulltext/api";
 import { handleReferencesApi } from "./references/api";
+import { handleCiteApi } from "./cite/api";
+import { handleAddItemsApi } from "./additems/api";
+import { handleDuplicatesApi } from "./duplicates/api";
+import { handleIoApi } from "./io/api";
+import { handleSearchesApi } from "./searches/api";
+import { handleMaintenanceApi } from "./maintenance/api";
+
+// Feature route modules; each returns null for paths outside its prefix.
+const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi];
 import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
 import { indexItem, search } from "./search";
@@ -103,6 +112,10 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 	if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return null;
 	if (url.pathname.startsWith("/api/fulltext/")) return handleFulltextApi(req, db);
 	if (url.pathname.startsWith("/api/references/")) return handleReferencesApi(req, db);
+	for (const handle of FEATURE_HANDLERS) {
+		const res = await handle(req, db);
+		if (res) return res;
+	}
 	if (url.pathname.startsWith("/api/sync/")) return handleSyncApi(req, db);
 	try {
 		let parts: string[];

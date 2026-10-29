@@ -8,6 +8,38 @@ import { ItemPane } from "./ItemPane";
 import { FullTextProgress } from "./fulltext/Progress";
 import { findFullText } from "./lib/fulltext";
 import { SyncStatus } from "./sync/SyncStatus";
+import { appActions, overlays } from "./lib/registry";
+import "./features";
+import { Plus, Wrench } from "lucide-solid";
+import {
+	DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+
+/** Toolbar dropdown for registered app actions ("+" add menu or Tools). Hidden while empty. */
+const ActionMenu: Component<{ menu: "add" | "tools"; label: string }> = (p) => {
+	const list = () => appActions().filter((a) => a.menu === p.menu);
+	return (
+		<Show when={list().length}>
+			<DropdownMenu>
+				<Tooltip>
+					<TooltipTrigger as={DropdownMenuTrigger} class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-4" aria-label={p.label}>
+						{p.menu === "add" ? <Plus /> : <Wrench />}
+					</TooltipTrigger>
+					<TooltipContent>{p.label}</TooltipContent>
+				</Tooltip>
+				<DropdownMenuContent class="w-60">
+					<For each={list()}>{(a) => (
+						<DropdownMenuItem onSelect={() => a.run()}>
+							<Show when={a.icon}>{(I) => { const C = I(); return <C class="mr-2 size-4" />; }}</Show>
+							{a.label}
+							<Show when={a.shortcut}><DropdownMenuShortcut>{a.shortcut}</DropdownMenuShortcut></Show>
+						</DropdownMenuItem>
+					)}</For>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</Show>
+	);
+};
 import { ReferencesPanel } from "./references/ReferencesPanel";
 import { api } from "./api";
 import { store } from "./store";
@@ -71,6 +103,7 @@ const VIEW_MODES = [
 
 const Toolbar: Component = () => (
 	<div class="flex flex-none items-center gap-1.5 border-b px-2 py-1.5">
+		<ActionMenu menu="add" label="Add items" />
 		<div class="relative flex-1">
 			<Search class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
 			<Input
@@ -106,6 +139,7 @@ const Toolbar: Component = () => (
 				</Tooltip>
 			)}</For>
 		</div>
+		<ActionMenu menu="tools" label="Tools" />
 	</div>
 );
 
@@ -267,6 +301,7 @@ export const App: Component = () => {
 				</For>
 			</div>
 			<FullTextProgress />
+			<For each={overlays()}>{(o) => o.render()}</For>
 			<Toaster position="bottom-right" closeButton />
 		</div>
 	);

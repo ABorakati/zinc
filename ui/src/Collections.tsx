@@ -4,6 +4,7 @@ import { toast } from "solid-sonner";
 import { api, type Collection } from "./api";
 import { store } from "./store";
 import { fail } from "~/lib/actions";
+import { collectionActions, sidebarSections } from "~/lib/registry";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -177,6 +178,7 @@ export const CollectionsPane: Component = () => {
 					</Show>
 					{special("unfiled", "Unfiled", Inbox)}
 					{special("trash", "Trash", Trash2)}
+					<For each={sidebarSections()}>{(s) => s.render()}</For>
 				</ContextMenuTrigger>
 				<ContextMenuContent class="w-52" onCloseAutoFocus={(e: Event) => e.preventDefault()}>
 					<ContextMenuItem onSelect={() => { const c = ctx(); if (c) setCreating(c.key); }}>
@@ -185,6 +187,12 @@ export const CollectionsPane: Component = () => {
 					<ContextMenuItem onSelect={() => { const c = ctx(); if (c) setEditing(c.key); }}>
 						<Pencil class="mr-2 size-4" /> Rename
 					</ContextMenuItem>
+					<For each={collectionActions()}>{(a) => (
+						<ContextMenuItem onSelect={() => { const c = ctx(); if (c) a.run({ collectionKey: c.key, name: c.name }); }}>
+							<Show when={a.icon}>{(I) => { const C = I(); return <C class="mr-2 size-4" />; }}</Show>
+							{a.label}
+						</ContextMenuItem>
+					)}</For>
 					<ContextMenuSeparator />
 					<ContextMenuItem class="text-destructive focus:text-destructive" onSelect={() => askDelete(ctx())}>
 						<Trash2 class="mr-2 size-4" /> Delete…

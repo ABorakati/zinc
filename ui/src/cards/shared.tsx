@@ -6,6 +6,7 @@ import { store } from "../store";
 import type { createItemList } from "../itemlist";
 import { addItemsToCollection, copyDoi, trashItems } from "~/lib/actions";
 import { findFullText } from "~/lib/fulltext";
+import { ITEM_GROUPS, itemActions, type ItemActionContext } from "~/lib/registry";
 import {
 	ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger,
 } from "~/components/ui/context-menu";
@@ -93,6 +94,24 @@ const AddToCollection: Component<{ keys: string[] }> = (p) => {
 	);
 };
 
+/** Menu entries features registered (lib/registry.ts), grouped with a separator per group. */
+const RegisteredItemActions: Component<{ item: ItemSummary; keys: string[] }> = (p) => {
+	const ctx = (): ItemActionContext => ({ keys: p.keys.length ? p.keys : [p.item.key], item: p.item, view: store.view() as ItemActionContext["view"] });
+	const groups = () =>
+		ITEM_GROUPS.map((g) => itemActions().filter((a) => (a.group ?? "edit") === g && (a.visible?.(ctx()) ?? true))).filter((l) => l.length);
+	return (
+		<For each={groups()}>{(list) => (<>
+			<ContextMenuSeparator />
+			<For each={list}>{(a) => (
+				<ContextMenuItem onSelect={() => a.run(ctx())}>
+					<Show when={a.icon}>{(I) => { const C = I(); return <C class="mr-2 size-4" />; }}</Show>
+					{typeof a.label === "function" ? a.label(ctx()) : a.label}
+				</ContextMenuItem>
+			)}</For>
+		</>)}</For>
+	);
+};
+
 /** Body of the item context menu (inside a ContextMenuContent), shared by the table and the cards. */
 export const ItemMenuItems: Component<{ item: ItemSummary }> = (p) => {
 	const keys = () => [...store.selected()];
@@ -112,6 +131,7 @@ export const ItemMenuItems: Component<{ item: ItemSummary }> = (p) => {
 		<ContextMenuItem onSelect={() => copyDoi(p.item.key)}>
 			<Quote class="mr-2 size-4" /> Copy DOI
 		</ContextMenuItem>
+		<RegisteredItemActions item={p.item} keys={keys()} />
 		<ContextMenuSeparator />
 		<Show when={inTrash()} fallback={
 			<ContextMenuItem class="text-destructive focus:text-destructive" onSelect={() => trashItems(keys(), true)}>
