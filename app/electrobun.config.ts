@@ -11,6 +11,11 @@ export default {
 		bun: {
 			entrypoint: "src/bun/index.ts",
 		},
+		// Prebuilt by `bun --bun x vite build` (ui/) and reader-host/build.sh.
+		copy: {
+			"../ui/dist": "views/app",
+			"../reader-host/dist": "views/reader-host",
+		},
 		mac: {
 			bundleCEF: false,
 		},
