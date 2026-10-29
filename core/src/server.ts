@@ -6,6 +6,7 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { handleApi } from "./api";
 import { openDb } from "./db";
+import { handleMcp } from "./mcp/http";
 
 export interface Mount {
 	prefix: string;
@@ -101,6 +102,8 @@ export function startServer(opts: ServerOptions) {
 		port: opts.port ?? 23120,
 		hostname: opts.hostname ?? "127.0.0.1",
 		async fetch(req) {
+			const mcp = await handleMcp(req, db);
+			if (mcp) return mcp;
 			const api = await handleApi(req, db);
 			if (api) return api;
 			if (req.method !== "GET" && req.method !== "HEAD") return new Response("method not allowed", { status: 405 });
