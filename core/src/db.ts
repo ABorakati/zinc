@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 // Imported as text so bundlers (Electrobun) embed it instead of reading from disk.
 import schema from "../schema.sql" with { type: "text" };
+import syncSchema from "./sync/schema.sql" with { type: "text" };
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
 import type {
 	ChildSummary,
@@ -120,6 +121,7 @@ export function deriveColumns(data: ZoteroItemData): DerivedColumns {
 export function openDb(path: string): Database {
 	const db = new Database(path, { create: true });
 	db.exec(schema);
+	db.exec(syncSchema);
 	db.exec("PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456;");
 	for (const [name, expr] of [
 		["title", "title COLLATE NOCASE"],

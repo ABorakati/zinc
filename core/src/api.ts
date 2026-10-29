@@ -7,6 +7,7 @@ import { HttpError } from "./db";
 import { handleFulltextApi } from "./fulltext/api";
 import { handleReferencesApi } from "./references/api";
 import { getSchema } from "./schema-data";
+import { handleSyncApi } from "./sync/api";
 import { indexItem, search } from "./search";
 
 function json(body: unknown, status = 200): Response {
@@ -81,6 +82,11 @@ export function safeUrl(input: unknown): string {
 	return u.href;
 }
 
+/** Open an http(s)/doi URL in the user's browser (used by Find Full Text's "Open in browser"). */
+export function openUrlExternally(url: string): void {
+	opener.openUrl(safeUrl(url));
+}
+
 function attachmentFilePath(db: Database, key: string): string {
 	const att = repo.getAttachment(db, key);
 	if (!att) throw new HttpError(404, "attachment not found");
@@ -97,6 +103,7 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 	if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return null;
 	if (url.pathname.startsWith("/api/fulltext/")) return handleFulltextApi(req, db);
 	if (url.pathname.startsWith("/api/references/")) return handleReferencesApi(req, db);
+	if (url.pathname.startsWith("/api/sync/")) return handleSyncApi(req, db);
 	try {
 		let parts: string[];
 		try {

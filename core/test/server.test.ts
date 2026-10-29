@@ -36,6 +36,27 @@ beforeAll(() => {
 afterAll(() => srv.stop());
 
 describe("server", () => {
+	test("api rejects cross-site and non-loopback requests", async () => {
+		const post = (headers: Record<string, string>, body: string | undefined = JSON.stringify({ name: "x" })) =>
+			fetch(`${base}/api/collections`, { method: "POST", headers, body });
+		// Same-origin JSON (what the app's pages send) is allowed; clean up what it creates.
+		const allowed: Record<string, string>[] = [{ "Content-Type": "application/json", Origin: base }, { "Content-Type": "application/json" }];
+		for (const headers of allowed) {
+			const ok = await post(headers);
+			expect(ok.status).toBe(201);
+			const { key } = (await ok.json()) as { key: string };
+			const del = await fetch(`${base}/api/collections/${key}`, { method: "DELETE" });
+			expect(del.status).toBe(200);
+		}
+		// Another site's page, a form-style body, or a rebinding Host are refused.
+		expect((await post({ "Content-Type": "application/json", Origin: "https://evil.example" })).status).toBe(403);
+		expect((await post({ "Content-Type": "text/plain" })).status).toBe(403);
+		expect((await post({ "Content-Type": "application/x-www-form-urlencoded" }, "name=x")).status).toBe(403);
+		const rebound = await fetch(`${base}/api/collections`, { headers: { Host: "evil.example" } });
+		expect(rebound.status).toBe(403);
+		// Reads and bodiless actions from the app still work.
+		expect((await fetch(`${base}/api/collections`)).status).toBe(200);
+	});
 	test("api through server", async () => {
 		const r = await fetch(`${base}/api/collections`);
 		expect(r.status).toBe(200);

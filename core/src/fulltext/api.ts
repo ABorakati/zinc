@@ -3,6 +3,11 @@
 //   GET  /api/fulltext/jobs/:id            -> FullTextJob
 //   GET  /api/fulltext/jobs/:id/events     -> text/event-stream of FullTextJob snapshots (closes when done)
 //   POST /api/fulltext/jobs/:id/cancel     -> {ok: true}
+//   POST /api/fulltext/sign-in             -> FullTextSignInResult   (warm-up window of the configured institution)
+//   GET  /api/fulltext/sign-in/status      -> FullTextSignInStatus
+//   GET  /api/fulltext/institutions?q=     -> FullTextInstitutionHit[]
+//   GET  /api/fulltext/settings            -> FullTextSettingsView
+//   PUT  /api/fulltext/settings            FullTextSettingsPatch -> FullTextSettingsView
 // The engine is the zotero-fulltext WebAssembly core, hosted by ./host.ts and driven by ./service.ts.
 
 import type { Database } from "bun:sqlite";
@@ -42,6 +47,31 @@ export async function handleFulltextApi(req: Request, db: Database): Promise<Res
 			if (keys.length > MAX_KEYS) throw new HttpError(400, `at most ${MAX_KEYS} items per request`);
 			const jobId = await svc.start(Array.from(new Set(keys as string[])), body?.openAccessOnly === true);
 			return json({ jobId }, 202);
+		}
+		if (parts[0] === "sign-in") {
+			if (parts.length === 1) {
+				if (m !== "POST") throw new HttpError(405, "method not allowed");
+				return json(await svc.signIn());
+			}
+			if (parts.length === 2 && parts[1] === "status") {
+				if (m !== "GET") throw new HttpError(405, "method not allowed");
+				return json(await svc.signInStatus());
+			}
+		}
+		if (parts[0] === "institutions" && parts.length === 1) {
+			if (m !== "GET") throw new HttpError(405, "method not allowed");
+			return json(await svc.searchInstitutions(url.searchParams.get("q") ?? ""));
+		}
+		if (parts[0] === "settings" && parts.length === 1) {
+			if (m === "GET") return json(svc.settingsView());
+			if (m !== "PUT") throw new HttpError(405, "method not allowed");
+			let body: any;
+			try {
+				body = await req.json();
+			} catch {
+				throw new HttpError(400, "invalid JSON body");
+			}
+			return json(svc.updateSettings(body));
 		}
 		if (parts[0] === "jobs" && parts[1]) {
 			const id = parts[1];

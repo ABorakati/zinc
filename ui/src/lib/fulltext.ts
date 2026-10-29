@@ -3,6 +3,10 @@
 import { toast } from "solid-sonner";
 import { startJob } from "~/fulltext/jobs";
 
+export { openFullTextSettings } from "~/fulltext/Settings";
+/** Open the sign-in window of the institution chosen in the Find Full Text settings (menu entry: "Sign in to <institution>…"). */
+export { refreshSignInStatus, signInStatus, signInToInstitution } from "~/fulltext/signin";
+
 export function findFullText(keys: string[], opts: { openAccessOnly?: boolean } = {}): void {
 	if (keys.length === 0) return;
 	startJob(keys, opts.openAccessOnly === true).catch((e) => {

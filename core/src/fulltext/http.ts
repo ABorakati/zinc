@@ -59,10 +59,55 @@ interface Cookie {
 	path: string;
 	secure: boolean;
 	expires: number | null;
+	/** copied from the embedded browser's sign-in session (BrowserBridge.cookiesFor) and not set by an engine response since */
+	fromBridge?: boolean;
+}
+
+/** A cookie of the embedded browser (browser-bridge.ts BridgeCookie, the fields the jar reads). */
+export interface ForeignCookie {
+	name: string;
+	value: string;
+	domain: string; // leading "." = domain cookie
+	path: string;
+	secure: boolean;
+	expires?: number; // seconds since epoch; absent = session cookie
 }
 
 export class CookieJar {
 	private cookies: Cookie[] = [];
+
+	/**
+	 * Merge the embedded browser's cookies. Domain ".x.org" = domain cookie (x.org and subdomains), "x.org" = host-only;
+	 * path / secure / expiry are kept (expired ones dropped, secure ones are only sent over https by header()).
+	 * An existing cookie with the same name, domain and path is replaced when it came from the browser itself or when
+	 * `force` is set; one that an engine response set later wins (it is newer than the browser's copy).
+	 * Values are never logged. Returns how many cookies were added or replaced.
+	 */
+	merge(foreign: ForeignCookie[], force = false): number {
+		const now = Date.now();
+		let n = 0;
+		for (const f of foreign) {
+			if (!f || typeof f.name !== "string" || !f.name || typeof f.value !== "string" || typeof f.domain !== "string") continue;
+			const hostOnly = !f.domain.startsWith(".");
+			const domain = f.domain.replace(/^\./, "").toLowerCase();
+			if (!domain) continue;
+			const expires = typeof f.expires === "number" && Number.isFinite(f.expires) ? f.expires * 1000 : null;
+			if (expires !== null && expires <= now) continue;
+			const path = typeof f.path === "string" && f.path.startsWith("/") ? f.path : "/";
+			const c: Cookie = { name: f.name, value: f.value, domain, hostOnly, path, secure: !!f.secure, expires, fromBridge: true };
+			const i = this.cookies.findIndex((o) => o.name === c.name && o.domain === c.domain && o.path === c.path);
+			if (i >= 0) {
+				if (!force && !this.cookies[i].fromBridge) continue;
+				this.cookies[i] = c;
+			} else this.cookies.push(c);
+			n++;
+		}
+		return n;
+	}
+
+	size(): number {
+		return this.cookies.length;
+	}
 
 	store(url: string, setCookies: string[]): void {
 		const u = new URL(url);
@@ -144,6 +189,8 @@ export interface RequestCtx {
 	signal: AbortSignal;
 	sink: "memory" | "file";
 	path?: string;
+	/** Called before every hop (redirects included): cookies of the embedded browser to merge into the jar. */
+	cookieSource?: (url: string) => Promise<ForeignCookie[]>;
 }
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
@@ -180,7 +227,7 @@ export class HttpClient {
 		arm();
 		const t0 = performance.now();
 		try {
-			const res = await this.follow(req, ac.signal);
+			const res = await this.follow(req, ac.signal, ctx.cookieSource);
 			const status = res.status;
 			const headers = whitelist(res.headers);
 			const finalUrl = (res as any).__finalUrl as string;
@@ -214,7 +261,7 @@ export class HttpClient {
 	}
 
 	/** Follow redirects by hand so cookies set on every hop are kept. Returns the final Response with __finalUrl. */
-	private async follow(req: HttpReq, signal: AbortSignal): Promise<Response> {
+	private async follow(req: HttpReq, signal: AbortSignal, cookieSource?: RequestCtx["cookieSource"]): Promise<Response> {
 		let url = req.url;
 		let method = req.method.toUpperCase();
 		let body: string | undefined = req.body;
@@ -226,6 +273,13 @@ export class HttpClient {
 				if (v != null) headers[k] = String(v);
 			}
 			headers["User-Agent"] = req.ua === "plain" ? UA_PLAIN : UA_DEFAULT;
+			if (cookieSource) {
+				try {
+					this.jar.merge(await cookieSource(url));
+				} catch {
+					/* the embedded browser is gone: send what the jar has */
+				}
+			}
 			const cookie = this.jar.header(url);
 			if (cookie) headers.Cookie = cookie;
 			const res = await this.fetchFn(url, { method, headers, body: method === "GET" || method === "HEAD" ? undefined : body, redirect: "manual", signal });

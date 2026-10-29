@@ -13,7 +13,7 @@
 
 import { isAbsolute, join } from "node:path";
 import wasmPath from "../../vendor/fulltext-wasm/fulltext.wasm" with { type: "file" };
-import type { Inspection, InspectMeta, StepIn, StepOut } from "./proto";
+import type { Inspection, InspectMeta, LoginState, StepIn, StepOut } from "./proto";
 
 // Unbundled, the import is an absolute path; bundled (Electrobun), it is relative to the bundle's folder.
 const wasmFile = isAbsolute(wasmPath) ? wasmPath : join(import.meta.dir, wasmPath);
@@ -87,6 +87,13 @@ export class WasmInstance {
 	callMetaBody<T>(name: string, meta: unknown, body: Uint8Array): T {
 		const a = enc.encode(JSON.stringify(meta));
 		return this.run(() => this.callTwo<T>(name, a, body));
+	}
+
+	/** Two UTF-8 text buffers (fx_login_state: url, html). An empty string is passed as a null buffer of length 0. */
+	callTexts<T>(name: string, a: string, b: string): T {
+		const ba = enc.encode(a);
+		const bb = enc.encode(b);
+		return this.run(() => this.callTwo<T>(name, ba, bb));
 	}
 
 	reset(): void {
@@ -258,6 +265,37 @@ export class WasmHost {
 			}
 			if (e instanceof EngineError) return { expect: "failed", reason: `inspect_error:${e.code}` };
 			return { expect: "failed", reason: "inspect_error" };
+		}
+	}
+
+	/**
+	 * Sign-in window poll: fx_login_state(url, html) on the pure instance. Never throws: a trap or error envelope
+	 * yields {state: "pending"} (port of wasm-host.js loginState).
+	 */
+	loginState(args: { url: string; html?: string }): LoginState {
+		const pending: LoginState = { state: "pending" };
+		const pure = this.pure;
+		if (pure.poisoned) {
+			try {
+				pure.init();
+			} catch {
+				return pending;
+			}
+		}
+		try {
+			const out = pure.callTexts<LoginState>("fx_login_state", String(args?.url ?? ""), args?.html ? String(args.html) : "");
+			return out && typeof out.state === "string" ? out : pending;
+		} catch (e) {
+			if (e instanceof EngineTrap) {
+				this.pureTraps++;
+				if (e.panic) this.lastPanic = e.panic;
+				try {
+					pure.init();
+				} catch {
+					/* stays poisoned; the next call retries */
+				}
+			}
+			return pending;
 		}
 	}
 

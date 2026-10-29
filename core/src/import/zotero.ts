@@ -13,6 +13,18 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
+	ANNOTATION_TYPES,
+	type AttachmentInput,
+	buildItemData,
+	type Creator,
+	creatorsSummary,
+	dateForApi,
+	LINK_MODES,
+	parseYear,
+	PUBLICATION_FIELDS,
+	toIso,
+} from "../zotero-db/mapping";
+import {
 	buildFileIndex,
 	defaultSearchRoots,
 	type FileIndex,
@@ -65,65 +77,9 @@ export interface ImportReport {
 	durationMs: number;
 }
 
-const LINK_MODES = ["imported_file", "imported_url", "linked_file", "linked_url"];
-const ANNOTATION_TYPES: Record<number, string> = {
-	1: "highlight",
-	2: "note",
-	3: "image",
-	4: "ink",
-	5: "underline",
-	6: "text",
-};
-const PUBLICATION_FIELDS = [
-	"publicationTitle",
-	"bookTitle",
-	"proceedingsTitle",
-	"websiteTitle",
-	"blogTitle",
-	"forumTitle",
-	"encyclopediaTitle",
-	"dictionaryTitle",
-	"programTitle",
-	"university",
-	"publisher",
-];
-
-// "2026-05-27 21:24:45" (UTC) -> "2026-05-27T21:24:45Z"
-export function toIso(s: string | null | undefined): string {
-	if (!s) return new Date(0).toISOString().replace(".000", "");
-	return `${s.replace(" ", "T")}Z`;
-}
-
-// Zotero stores dates as "YYYY-MM-DD original text"; the API returns the original text.
-export function dateForApi(v: string): string {
-	const m = /^\d{4}-\d{2}-\d{2} ([\s\S]*)$/.exec(v);
-	return m ? m[1] : v;
-}
-
-export function parseYear(raw: string | undefined): number | null {
-	if (!raw) return null;
-	const sortable = /^(\d{4})-\d{2}-\d{2}/.exec(raw);
-	if (sortable && sortable[1] !== "0000") return Number(sortable[1]);
-	const m = /(?<!\d)(\d{4})(?!\d)/.exec(dateForApi(raw));
-	return m ? Number(m[1]) : null;
-}
-
-interface Creator {
-	creatorType: string;
-	firstName?: string;
-	lastName?: string;
-	name?: string;
-}
-
-export function creatorsSummary(creators: Creator[]): string {
-	let pool = creators.filter((c) => c.creatorType === "author");
-	if (pool.length === 0) pool = creators.slice(0, 1);
-	const names = pool.map((c) => c.lastName ?? c.name ?? "").filter((n) => n);
-	if (names.length === 0) return "";
-	if (names.length === 1) return names[0];
-	if (names.length === 2) return `${names[0]} and ${names[1]}`;
-	return `${names[0]} et al.`;
-}
+// Row -> Web API JSON mapping and date/summary helpers live in ../zotero-db/mapping (shared with the
+// live reader/writer); re-exported here for existing callers.
+export { creatorsSummary, dateForApi, parseYear, toIso };
 
 // Zotero's coloured tags: syncedSettings row 'tagColors' = JSON [{name, color}], position = index.
 // Accepts an open (snapshot) zotero.sqlite; returns [] if absent or malformed.
@@ -494,23 +450,11 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			}
 			const cl = creators.get(it.itemID) ?? [];
 			const tl = tags.get(it.itemID) ?? [];
-			const data: Record<string, unknown> = {
-				key: it.key,
-				version: it.version,
-				itemType: it.type,
-			};
-			if (parentKey) data.parentItem = parentKey;
 
 			let attRow: { linkMode: string; contentType: string | null; path: string | null; url: string | null } | null = null;
+			let attInput: AttachmentInput | undefined;
 			if (a) {
 				const linkMode = LINK_MODES[a.linkMode] ?? "imported_file";
-				data.linkMode = linkMode;
-				if (f.title !== undefined) data.title = f.title;
-				if (f.accessDate) data.accessDate = f.accessDate;
-				if (f.url) data.url = f.url;
-				if (f.note) data.note = f.note;
-				data.contentType = a.contentType ?? "";
-				data.charset = a.charsetID ? (charsets.get(a.charsetID) ?? "") : "";
 				const pf = parentID !== null ? fields.get(parentID) : undefined;
 				const r = resolveAttachment(
 					it.key,
@@ -519,10 +463,15 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 					{ title: pf?.title, author: parentID !== null ? creatorsSummary(creators.get(parentID) ?? []) : undefined },
 					a.storageHash,
 				);
-				if (r.filename && linkMode !== "linked_url") data.filename = r.filename;
-				if (a.storageHash) data.md5 = a.storageHash;
-				if (a.storageModTime) data.mtime = a.storageModTime;
-				if (linkMode === "linked_file" && a.path) data.path = a.path;
+				attInput = {
+					linkMode: a.linkMode,
+					contentType: a.contentType,
+					charset: a.charsetID ? (charsets.get(a.charsetID) ?? "") : "",
+					rawPath: a.path,
+					storageHash: a.storageHash,
+					storageModTime: a.storageModTime,
+					filename: r.filename,
+				};
 				if (r.missing) {
 					missing.total++;
 					if (linkMode === "linked_file") missing.linked_file++;
@@ -530,22 +479,22 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 				}
 				attRow = { linkMode, contentType: a.contentType ?? null, path: r.path, url: f.url ?? null };
 				attachmentsByLinkMode[linkMode] = (attachmentsByLinkMode[linkMode] ?? 0) + 1;
-			} else if (it.type === "note") {
-				data.note = n?.note ?? "";
-			} else {
-				for (const [k, v] of Object.entries(f)) data[k] = k === "date" ? dateForApi(v) : v;
-				if (cl.length) data.creators = cl;
-				else data.creators = [];
 			}
-			if (it.type === "attachment" && a) {
-				// attachment-specific fields already added; keep generic extras (e.g. extra)
-				if (f.extra) data.extra = f.extra;
-			}
-			data.tags = tl.map((t) => (t.type ? { tag: t.tag, type: t.type } : { tag: t.tag }));
-			if (!parentKey) data.collections = [...(itemCollections.get(it.itemID) ?? [])].sort();
-			data.relations = relations.get(it.itemID) ?? {};
-			data.dateAdded = it.dateAdded;
-			data.dateModified = it.dateModified;
+			const data = buildItemData({
+				key: it.key,
+				version: it.version,
+				type: it.type,
+				parentKey,
+				fields: f,
+				creators: cl,
+				tags: tl,
+				collections: itemCollections.get(it.itemID) ?? [],
+				relations: relations.get(it.itemID) ?? {},
+				dateAdded: it.dateAdded,
+				dateModified: it.dateModified,
+				noteText: n?.note ?? "",
+				attachment: attInput,
+			});
 
 			const title =
 				it.type === "note"

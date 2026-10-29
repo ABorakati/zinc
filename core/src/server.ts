@@ -94,6 +94,27 @@ export function serveStatic(pathname: string, mounts: Mount[]): Response | null 
 	return null;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * Guard for /api: the server only listens on loopback, but any web page in the user's browser can
+ * still send requests to it. Reject (403) requests whose Host isn't loopback (DNS rebinding), and
+ * state-changing requests that come from another origin or aren't JSON (cross-site request
+ * forgery: a cross-origin JSON request needs a CORS preflight, which this server never grants).
+ */
+export function apiRequestRejected(req: Request): string | null {
+	const url = new URL(req.url);
+	if (!url.pathname.startsWith("/api/") && url.pathname !== "/api") return null;
+	const host = (req.headers.get("host") ?? "").replace(/:\d+$/, "").toLowerCase();
+	if (host && !LOOPBACK_HOSTS.has(host)) return "bad host";
+	if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return null;
+	const origin = req.headers.get("origin");
+	if (origin && origin !== url.origin) return "cross-origin request";
+	const type = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+	if (type !== "application/json" && req.body !== null) return "content-type must be application/json";
+	return null;
+}
+
 export function startServer(opts: ServerOptions) {
 	const db: Database = openDb(opts.dbPath);
 	const mounts = [...(opts.mounts ?? [])].sort((a, b) => normPrefix(b.prefix).length - normPrefix(a.prefix).length);
@@ -104,6 +125,8 @@ export function startServer(opts: ServerOptions) {
 		async fetch(req) {
 			const mcp = await handleMcp(req, db);
 			if (mcp) return mcp;
+			const rejected = apiRequestRejected(req);
+			if (rejected) return Response.json({ error: `forbidden: ${rejected}` }, { status: 403 });
 			const api = await handleApi(req, db);
 			if (api) return api;
 			if (req.method !== "GET" && req.method !== "HEAD") return new Response("method not allowed", { status: 405 });

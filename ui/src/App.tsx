@@ -7,6 +7,7 @@ import { ItemTable, SearchResults } from "./ItemTable";
 import { ItemPane } from "./ItemPane";
 import { FullTextProgress } from "./fulltext/Progress";
 import { findFullText } from "./lib/fulltext";
+import { SyncStatus } from "./sync/SyncStatus";
 import { ReferencesPanel } from "./references/ReferencesPanel";
 import { api } from "./api";
 import { store } from "./store";
@@ -224,13 +225,14 @@ export const App: Component = () => {
 						</div>
 					)}
 				</For>
+				<div class="ml-auto flex flex-none items-center gap-1 pr-1">
 				<Show when={store.activeTab() !== "library"}>
 					<Tooltip>
 						<TooltipTrigger
 							as={Button}
 							variant="ghost"
 							size="sm"
-							class={cn("ml-auto h-8 gap-1 rounded-none px-3 text-xs", refsOpen() && "text-primary")}
+							class={cn("h-8 gap-1 rounded-none px-3 text-xs", refsOpen() && "text-primary")}
 							aria-pressed={refsOpen()}
 							onClick={() => setRefsOpen(!refsOpen())}
 						>
@@ -239,6 +241,9 @@ export const App: Component = () => {
 						<TooltipContent>Show or hide this paper's references</TooltipContent>
 					</Tooltip>
 				</Show>
+				{/* Zotero sync: refresh lists when changes arrive from Zotero. */}
+				<SyncStatus onChanged={() => { store.bumpItems(); store.bumpCollections(); store.bumpTags(); }} />
+				</div>
 			</div>
 			<div class="relative min-h-0 flex-1">
 				<div class="absolute inset-0" classList={{ hidden: store.activeTab() !== "library" }}>

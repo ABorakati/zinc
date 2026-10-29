@@ -48,6 +48,21 @@
 // GET    /api/fulltext/jobs/:id                -> FullTextJob
 // GET    /api/fulltext/jobs/:id/events         -> text/event-stream of FullTextJob snapshots
 // POST   /api/fulltext/jobs/:id/cancel         -> {ok: true}
+// POST   /api/fulltext/sign-in                 -> FullTextSignInResult
+//        Warm-up: opens the sign-in window of the CONFIGURED institution (settings below; OpenAthens redirector,
+//        else library proxy, else Shibboleth) so later Find Full Text runs reuse the session. Resolves when the user
+//        signed in, closed the window or it timed out. "unavailable" when the app has no embedded browser,
+//        "no_method" when the institution has no sign-in method set up.
+// GET    /api/fulltext/sign-in/status          -> FullTextSignInStatus
+//        signedIn = a sign-in reached a publisher page in the last 12 h, or the sign-in session holds cookies for
+//        the OpenAthens / proxy / IdP hosts.
+// GET    /api/fulltext/institutions?q=         -> FullTextInstitutionHit[]  (built-in presets filtered by q, then,
+//        for q of 3+ characters, matching identity providers of the SeamlessAccess / UK federation metadata,
+//        best effort). Choosing a hit means PUTting its fields into the settings' institution.
+// GET    /api/fulltext/settings                -> FullTextSettingsView
+// PUT    /api/fulltext/settings                FullTextSettingsPatch -> FullTextSettingsView
+//        Stored in fulltext-settings.json next to the library. No institution in the file = the engine default
+//        (King's College London). Takes effect for the next Find Full Text run.
 //
 // Card view additions:
 // GET    /api/items?...&include=creators,tags  ItemSummary.creators / .tags filled for each item
@@ -217,6 +232,67 @@ export interface FullTextJob {
 		attachmentKey?: string; // set when a PDF was attached
 		handoffUrl?: string; // link to open in the browser when it could not be fetched automatically
 	}[];
+}
+
+export type FullTextSignInMethod = "openathens" | "saml" | "ezproxy";
+
+/** The user's institution. Empty strings mean "not available at this institution". */
+export interface FullTextInstitution {
+	/** Preset id ("kcl", "ucl", ...), "other" = hand-entered details, "none" = open access only. */
+	id: string;
+	name: string;
+	realm: string;
+	openathensDomain: string; // e.g. "kcl.ac.uk"
+	shibbolethEntityId: string; // Shibboleth / UK federation IdP entityID
+	proxyPrefix: string; // library proxy login address, e.g. "https://login.kcl.idm.oclc.org/login?url="
+	/** Absent = automatic: a window when the app has an embedded browser, else a link for your own browser. */
+	loginMode?: "window" | "handoff";
+}
+
+export interface FullTextSettingsView {
+	institution: FullTextInstitution;
+	/** Sign-in methods the institution has set up. */
+	methods: FullTextSignInMethod[];
+	/** false = open access only. */
+	institutional: boolean;
+	unpaywallEmail: string;
+	concurrency: number;
+	/** The app provides an embedded browser (sign-in window available). */
+	embeddedBrowser: boolean;
+	/** true while no institution was chosen: the engine default is in use. */
+	isDefaultInstitution: boolean;
+}
+
+/** PUT body; every field optional. institution: null restores the engine default. */
+export interface FullTextSettingsPatch {
+	institution?: (Partial<FullTextInstitution> & { name?: string }) | null;
+	institutional?: boolean;
+	unpaywallEmail?: string;
+	concurrency?: number;
+}
+
+export interface FullTextInstitutionHit {
+	id?: string; // preset id; absent for a federation hit (use id "other")
+	name: string;
+	openathensDomain?: string;
+	shibbolethEntityId?: string;
+	proxyPrefix?: string;
+	methods: FullTextSignInMethod[];
+	source: "preset" | "federation";
+}
+
+export interface FullTextSignInResult {
+	result: "landed" | "pdf" | "closed_by_user" | "handoff" | "timeout" | "ca_blocked" | "unavailable" | "no_method";
+	institution: string; // display name
+	caError?: string; // Conditional Access code when result is ca_blocked
+}
+
+export interface FullTextSignInStatus {
+	available: boolean;
+	signedIn: boolean;
+	realm?: string;
+	institution?: string; // display name of the configured institution
+	methods?: FullTextSignInMethod[];
 }
 
 // The Zotero reader's annotation object, stored verbatim.

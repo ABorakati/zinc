@@ -1,8 +1,10 @@
 // Settings (JSON file next to the library DB) and the EngineConfig built from them.
-// Defaults mirror plugin/content/config.js of zotero-fulltext, with King's College London as the institution.
+// Defaults mirror plugin/content/config.js of zotero-fulltext. Its default institution (King's College London) is only
+// the default: settings.institution replaces it (see ./institutions.ts for the presets and the derivation).
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { type InstitutionSettings, resolveInstitution } from "./institutions";
 import type { EngineConfig } from "./proto";
 
 export const PROTOCOL = 1;
@@ -15,6 +17,8 @@ export interface FulltextSettings {
 	coreKey?: string;
 	/** false = never use institutional routes (open access only). Default true. */
 	institutional?: boolean;
+	/** The user's institution (name, OpenAthens domain, Shibboleth entityID, library proxy). Absent = the engine default. */
+	institution?: InstitutionSettings;
 	/** Items processed at once. Default 4. */
 	concurrency?: number;
 	/** Deep-merged over the generated EngineConfig (oa / inst / run / institution), for anything else. */
@@ -36,28 +40,14 @@ export function loadSettings(dataDir: string): FulltextSettings {
 	}
 }
 
-/** KCL's EZproxy host list (zotero-fulltext research/04 section 2.4). */
-const KCL_EZPROXY_HOSTS = [
-	"doi.org",
-	"dx.doi.org",
-	"www.bmj.com",
-	"www.webofscience.com",
-	"www.liebertpub.com",
-	"www.jneurosci.org",
-	"www.psychiatryonline.org",
-	"psychiatryonline.org",
-	"www.atsjournals.org",
-	"www.ajronline.org",
-	"www.jospt.org",
-	"www.jove.com",
-	"www.elgaronline.com",
-	"infoweb.newsbank.com",
-	"global.factiva.com",
-	"www.portal.euromonitor.com",
-	"institutions.newscientist.com",
-	"www.lrb.co.uk",
-	"libguides.kcl.ac.uk",
-];
+/** Atomic write (temp file + rename). Throws on I/O errors. */
+export function saveSettings(dataDir: string, settings: FulltextSettings): void {
+	const p = settingsPath(dataDir);
+	mkdirSync(dirname(p), { recursive: true });
+	const tmp = `${p}.tmp`;
+	writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`);
+	renameSync(tmp, p);
+}
 
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
 	const n = typeof v === "number" ? v : Number(v);
@@ -69,8 +59,14 @@ function merge(base: Record<string, unknown>, over: Record<string, unknown> | un
 	return over ? { ...base, ...over } : base;
 }
 
-export function buildEngineConfig(settings: FulltextSettings = {}): EngineConfig {
-	const institutional = settings.institutional !== false;
+export interface BuildOptions {
+	/** The desktop app registered an embedded browser: sign-in uses a window (unless the settings force a hand-off). */
+	embeddedBrowser?: boolean;
+}
+
+export function buildEngineConfig(settings: FulltextSettings = {}, opts: BuildOptions = {}): EngineConfig {
+	const resolved = resolveInstitution(settings.institution);
+	const institutional = settings.institutional !== false && resolved.enabled;
 	const oa = {
 		openalex: true,
 		openalex_key: settings.openalexKey ?? "",
@@ -90,12 +86,12 @@ export function buildEngineConfig(settings: FulltextSettings = {}): EngineConfig
 	const inst = {
 		enabled: institutional,
 		try_direct: true,
-		use_openathens: true,
-		use_saml: true,
-		use_ezproxy: true,
-		check_alma: true,
-		// No embedded sign-in browser in this host: the engine hands the user a link instead.
-		login_mode: "handoff",
+		use_openathens: resolved.methods.includes("openathens"),
+		use_saml: resolved.methods.includes("saml"),
+		use_ezproxy: resolved.methods.includes("ezproxy"),
+		check_alma: !!resolved.engine.alma,
+		// With an embedded browser (the desktop app) sign-in happens in a window; otherwise the engine hands the user a link.
+		login_mode: opts.embeddedBrowser && resolved.loginMode !== "handoff" ? "window" : "handoff",
 		auto_open_login: false,
 		login_timeout_sec: 300,
 		group_libraries: "never",
@@ -112,26 +108,12 @@ export function buildEngineConfig(settings: FulltextSettings = {}): EngineConfig
 		hedge: true,
 		pdf_max_mb: 100,
 	};
-	const institution = {
-		name: "King's College London",
-		openathens_domain: "kcl.ac.uk",
-		ezproxy: { login_host: "login.kcl.idm.oclc.org", suffix: "kcl.idm.oclc.org" },
-		ezproxy_hosts: KCL_EZPROXY_HOSTS,
-		alma: { base: "https://librarysearch.kcl.ac.uk", inst: "44KCL_INST" },
-		libkey_library_id: 286,
-		idp_hosts: ["login.microsoftonline.com", "login.live.com", "login.openathens.net", "kclidp.kcl.ac.uk"],
-		entra_tenant: "8370cf14-16f3-4c16-b83c-724071654356",
-		passthrough_hosts: ["journals.lww.com"],
-		warmup_url: "",
-		saml_entity_id: "https://kclidp.kcl.ac.uk/idp/shibboleth",
-		ezproxy_all_hosts: false,
-	};
 	const e = settings.engine;
 	return {
 		oa: merge(oa, e?.oa),
 		inst: merge(inst, e?.inst),
 		run: merge(run, e?.run),
-		institution: merge(institution, e?.institution),
+		institution: merge({ ...resolved.engine } as unknown as Record<string, unknown>, e?.institution),
 		endpoint_map: [],
 		trace: false,
 	};

@@ -122,7 +122,7 @@ export interface RunReport {
 export type Effect =
 	| { type: "http"; op: OpId; run: RunId; item: ItemId; route: "oa" | "inst"; barrier?: boolean; req: HttpReq; retain: "none" | "page" | "pdf"; inspect: any }
 	| { type: "browser_load"; op: OpId; run: RunId; item: ItemId; route: "oa" | "inst"; barrier?: boolean; req: any; inspect: any }
-	| { type: "login_window"; op: OpId; run: RunId; item: ItemId; req: { entry_url: string; realm: string; kind: string; [k: string]: unknown } }
+	| { type: "login_window"; op: OpId; run: RunId; item?: ItemId; req: LoginReq }
 	| { type: "login_update"; op: OpId; waiting: number }
 	| { type: "run_translators"; op: OpId; run: RunId; item: ItemId; page: BodyRef; url: string }
 	| { type: "zotero_oa"; op: OpId; run: RunId; item: ItemId; doi: string }
@@ -169,7 +169,37 @@ export interface InspectMeta {
 	};
 }
 
-export type Inspection = { expect: string; [k: string]: unknown };
+/** model.rs LoginState: what the sign-in window currently shows. */
+export interface LoginState {
+	state: "pending" | "challenge_shown" | "landed" | "refused";
+	code?: string | null;
+}
+
+export type LoginResult = "landed" | "pdf" | "closed_by_user" | "handoff" | "timeout" | "ca_blocked";
+
+/** proto.rs LoginReq (the fields the host reads). */
+export interface LoginReq {
+	kind: string; // "login" | "challenge"
+	realm: string;
+	entry_url: string;
+	item_title?: string;
+	waiting?: number;
+	timeout_ms?: number;
+	capture_pdf?: boolean;
+	[k: string]: unknown;
+}
+
+/** proto.rs LoginOk. */
+export interface LoginOk {
+	result: LoginResult;
+	final_url: string;
+	ca_error?: string;
+	pdf?: BodyRef;
+	page?: BodyRef;
+	inspect: Inspection;
+}
+
+export type Inspection ={ expect: string; [k: string]: unknown };
 
 export interface EngineConfig {
 	oa: Record<string, unknown>;

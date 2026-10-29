@@ -1,13 +1,17 @@
-import { BrowserWindow, Utils } from "electrobun/main";
+import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
+import { setBrowserBridge } from "../../../core/src/fulltext/browser-bridge";
+import { createSigninBridge } from "./signin";
 import { VIEWS_FOLDER } from "electrobun/main/paths";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { startServer } from "../../../core/src/server";
 import { configureExtractPool } from "../../../core/src/extract";
+import { startSyncService, stopSync } from "../../../core/src/sync";
+import { createZoteroBackends } from "../../../core/src/zotero-db";
 
 // The core service (database, API, static UI and reader) runs inside the main
 // process for now; Phase 2 moves it to a standalone background service.
-const PORT = 23120; // 23119 is Zotero's own port
+const PORT = Number(process.env.ZN_PORT) || 23120; // 23119 is Zotero's own port; ZN_PORT overrides (tests)
 
 // The UI and reader are copied into the app bundle (electrobun.config.ts `copy`).
 // ZN_ROOT points at the repo instead, to serve fresh builds during development.
@@ -30,7 +34,7 @@ if (!ROOT) {
 const REPO_DB = "C:/Users/abora/zotero-next/data/library.sqlite";
 const dbPath = process.env.ZN_DB ?? (existsSync(REPO_DB) ? REPO_DB : join(Utils.paths.userData, "library.sqlite"));
 
-startServer({
+const core = startServer({
 	dbPath,
 	port: PORT,
 	mounts: [
@@ -39,6 +43,23 @@ startServer({
 		{ prefix: "/note-host/", dir: noteDir },
 	],
 });
+
+// Two-way sync with the local Zotero library (reading is always on; writing is opt-in in the UI).
+if (process.env.ZN_SYNC !== "0") {
+	// Backends passed explicitly (a run-time lookup wouldn't survive bundling). Each write session
+	// backs up zotero.sqlite (~180 MB); keep only the last 2 because disk space is tight.
+	const zotero = createZoteroBackends(process.env.ZN_ZOTERO_DIR, { keepBackups: 2 });
+	void startSyncService(core.db, { dataDir: process.env.ZN_ZOTERO_DIR, ...zotero }).catch((e) => console.warn("[sync] not started:", e));
+	Electrobun.events.on("before-quit", () => void stopSync(core.db));
+}
+
+// Embedded sign-in browser for Find Full Text (institution sign-in window + hidden page loader).
+const signin = createSigninBridge();
+setBrowserBridge(signin);
+Electrobun.events.on("before-quit", () => signin.closeAll());
+if (process.env.ZN_SIGNIN_SELFTEST === "1") {
+	void import("./signin-selftest").then((m) => m.runSigninSelftest(signin));
+}
 
 new BrowserWindow({
 	title: "zotero-next",

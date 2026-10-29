@@ -24,7 +24,7 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const toastId = (id: string) => `fulltext-${id}`;
 const sources = new Map<string, () => void>(); // job id -> stop following
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const res = await fetch(`/api/fulltext${path}`, {
 		method,
 		headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,

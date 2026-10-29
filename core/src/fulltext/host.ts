@@ -7,16 +7,21 @@
 //   http           Bun fetch + cookie jar (http.ts); PDFs stream to a temp file, pages stay in memory
 //   save_pdf       move the PDF to <dataDir>/storage/<KEY>/ and insert the attachment rows (save.ts)
 //   persist        ledger / halts / caches -> <dataDir>/fulltext-state.json
-//   browser_load   unsupported (no embedded browser): the engine skips the browser tier
-//   login_window   answered with LoginResult "handoff": the item ends with a link for the user's own browser
+//   browser_load   the embedded browser of the desktop app (browser-bridge.ts); unsupported without one: the engine skips the tier
+//   login_window   the sign-in window of the desktop app, driven by login.ts (port of login-controller.js); without an
+//                  embedded browser it is answered with LoginResult "handoff": the item ends with a link for the user's browser
+//   login_update   forwarded to the open window ("N items waiting")
+//   http (route inst)  the cookies of the embedded browser's sign-in session are merged into the jar before every hop
 //   zotero_oa / run_translators   nothing found (Zotero-only services)
 //   confirm        yes
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { type BodyStore, stageBytes, stageFile } from "./bodies";
-import { type HttpClient, OpError } from "./http";
-import type { Command, CompletionMsg, Effect, ItemId, OpErr, OpId, Outcome, Persisted, ProgressRow, RunId, RunReport, StepOut } from "./proto";
+import { type BrowserBridge, getBrowserBridge } from "./browser-bridge";
+import { type ForeignCookie, type HttpClient, OpError } from "./http";
+import { LoginController } from "./login";
+import type { BodyRef, Command, CompletionMsg, Effect, ItemId, OpErr, OpId, Outcome, Persisted, ProgressRow, RunId, RunReport, StepOut } from "./proto";
 import type { WasmHost } from "./wasm";
 import { EngineError, EngineTrap } from "./wasm";
 
@@ -66,6 +71,14 @@ export interface RunnerDeps {
 	onRunFinished: (report: RunReport) => void;
 	onEngineFailure?: (err: unknown) => void;
 	onLog?: (level: string, msg: string) => void;
+	/** Sign-in controller shared with the service (default: one built over wasm/bodies/bridge). */
+	login?: LoginController;
+	/** The embedded browser (default: whatever the app registered with setBrowserBridge). Test seam. */
+	bridge?: () => BrowserBridge | null;
+	/** "Open in browser" of the sign-in window (default: none, the item ends with the hand-off link). */
+	openExternal?: (url: string) => void;
+	/** Display name of the configured institution (sign-in window banner). */
+	institutionName?: () => string;
 	/** test seam */
 	clock?: { mono: () => number; wall: () => number };
 }
@@ -114,11 +127,32 @@ export class Runner {
 	private quietWaiters: (() => void)[] = [];
 	private tasks = new Set<Promise<unknown>>();
 	steps = 0;
+	readonly login: LoginController;
 
 	constructor(
 		private deps: RunnerDeps,
 		private opts: { stallMs?: number } = {},
-	) {}
+	) {
+		this.login =
+			deps.login ??
+			new LoginController({
+				bridge: () => this.bridge(),
+				wasm: deps.wasm,
+				bodies: deps.bodies,
+				openExternal: deps.openExternal,
+				institutionName: deps.institutionName,
+				onLog: (level, msg) => this.log(level, msg),
+			});
+	}
+
+	private bridge(): BrowserBridge | null {
+		return this.deps.bridge ? this.deps.bridge() : getBrowserBridge();
+	}
+
+	private cookieSource(route: string): ((url: string) => Promise<ForeignCookie[]>) | undefined {
+		const b = route === "inst" ? this.bridge() : null;
+		return b ? (url) => b.cookiesFor(url) : undefined;
+	}
 
 	private mono(): number {
 		return this.deps.clock ? this.deps.clock.mono() : Math.floor(performance.now());
@@ -326,21 +360,23 @@ export class Runner {
 				this.startOp(eff, (rec) => this.doHttp(eff, rec));
 				break;
 			case "browser_load":
-				this.startOp(eff, async () => {
-					throw new OpError("unsupported", "no embedded browser in this host");
-				});
+				this.startOp(eff, (rec) => this.doBrowser(eff, rec));
 				break;
 			case "login_window":
-				this.startOp(eff, async () => ({
-					result: "handoff",
-					final_url: eff.req.entry_url,
-					inspect: { expect: "none" },
-				}));
+				// without an embedded browser the controller answers "handoff": the item ends with a link for the user's browser
+				this.startOp(eff, (rec) => this.login.open(eff.run, eff.req, rec.ac.signal));
 				break;
-			case "login_update":
-				this.pendingCompletions.push({ op: eff.op, ok: {} });
-				this.schedulePump();
+			case "login_update": {
+				// the op id is fresh (never the window's): tell the open window, then complete the op at once.
+				// If it IS a live window op, answering it would end the window.
+				const own = this.ops.get(eff.op);
+				if (!own || own.type !== "login_window") this.login.update(eff.waiting);
+				if (!own) {
+					this.pendingCompletions.push({ op: eff.op, ok: {} });
+					this.schedulePump();
+				}
 				break;
+			}
 			case "run_translators":
 				this.startOp(eff, async () => ({ found: null, ms: 0 }));
 				break;
@@ -423,7 +459,8 @@ export class Runner {
 			op: eff.op,
 			type: eff.type,
 			run: "run" in eff ? (eff as { run: RunId }).run : -1,
-			item: "item" in eff ? (eff as { item: ItemId }).item : null,
+			// one window serves every waiting item: cancelling the item that opened it must not close it
+			item: "item" in eff && eff.type !== "login_window" ? ((eff as { item?: ItemId }).item ?? null) : null,
 			ac: new AbortController(),
 			engineCancelled: false,
 			posted: false,
@@ -476,7 +513,80 @@ export class Runner {
 		return this.deps.wasm.inspect({ spec, resp }, bytes);
 	}
 
+	/**
+	 * The embedded browser's session cookies are mostly HttpOnly and cannot be read back (WebView2), so once a sign-in
+	 * worked, institutional page / PDF fetches go through the browser itself and are reported to the engine as the HTTP
+	 * answer it asked for. Before that (campus IP, an existing publisher session) and for API / probe / non-GET
+	 * requests the normal HTTP client is used.
+	 */
+	private viaBrowser(eff: Extract<Effect, { type: "http" }>): BrowserBridge | null {
+		if (eff.route !== "inst" || eff.req.method !== "get") return null;
+		const expect = eff.inspect?.expect;
+		if (expect !== "page" && expect !== "pdf") return null;
+		const bridge = this.bridge();
+		return bridge && this.login.signedIn() ? bridge : null;
+	}
+
+	private async httpViaBrowser(bridge: BrowserBridge, eff: Extract<Effect, { type: "http" }>, rec: OpRec): Promise<unknown> {
+		const { bodies } = this.deps;
+		const signal = rec.ac.signal;
+		const retain = eff.retain ?? "none";
+		const spec = eff.inspect;
+		const raw = await bridge.load(
+			{ url: eff.req.url, timeoutMs: eff.req.timeout_ms, capturePdf: true, userAgent: eff.req.ua === "plain" ? "plain" : undefined },
+			signal,
+		);
+		if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
+		const max = Number(eff.req.max_bytes) > 0 ? Number(eff.req.max_bytes) : 0;
+		let slot: { dir: string; path: string } | null = null;
+		let kept = false;
+		let body: BodyRef | null = null;
+		try {
+			let staged;
+			let len: number;
+			let headers: Record<string, string>;
+			if (raw.pdf) {
+				len = raw.pdf.bytes.length;
+				if (max && len > max) throw new OpError("too_large", `response exceeded ${max} bytes`);
+				slot = bodies.allocSlot();
+				writeFileSync(slot.path, raw.pdf.bytes);
+				staged = stageFile(slot.path, len);
+				headers = { "content-type": "application/pdf" };
+				if (retain !== "none") {
+					body = bodies.putFile({ path: slot.path, dir: slot.dir, len, run: eff.run });
+					kept = true;
+				}
+			} else {
+				const bytes = new TextEncoder().encode(typeof raw.pageHtml === "string" ? raw.pageHtml : "");
+				len = bytes.length;
+				staged = stageBytes(bytes, "page");
+				headers = { "content-type": "text/html; charset=utf-8" };
+				if (retain === "page") body = bodies.putMemory(bytes, eff.run);
+			}
+			const status = raw.status > 0 ? raw.status : 200;
+			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = { status, final_url: raw.finalUrl, headers, body_len: staged.body_len, truncated: staged.truncated };
+			if (staged.head_len != null) resp.head_len = staged.head_len;
+			const inspection = this.inspect(spec, resp, staged.bytes);
+			if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
+			return { status, final_url: raw.finalUrl, headers, bytes: len, ms: Math.max(0, Math.round(raw.ms) || 0), body, inspect: inspection };
+		} catch (e) {
+			if (body) bodies.release((body as BodyRef).handle);
+			throw e;
+		} finally {
+			if (slot && !kept) bodies.discardSlot(slot);
+		}
+	}
+
 	private async doHttp(eff: Extract<Effect, { type: "http" }>, rec: OpRec): Promise<unknown> {
+		const viaBrowser = this.viaBrowser(eff);
+		if (viaBrowser) {
+			try {
+				return await this.httpViaBrowser(viaBrowser, eff, rec);
+			} catch (e) {
+				if (rec.ac.signal.aborted || (e instanceof OpError && (e.kind === "cancelled" || e.kind === "too_large"))) throw e;
+				this.log("warn", `browser fetch failed, using plain HTTP: ${e instanceof Error ? e.message : e}`);
+			}
+		}
 		const { http, bodies } = this.deps;
 		const signal = rec.ac.signal;
 		const spec = eff.inspect;
@@ -487,9 +597,9 @@ export class Runner {
 		try {
 			if (wantFile) {
 				slot = bodies.allocSlot();
-				raw = await http.request(eff.req, { signal, sink: "file", path: slot.path });
+				raw = await http.request(eff.req, { signal, sink: "file", path: slot.path, cookieSource: this.cookieSource(eff.route) });
 			} else {
-				raw = await http.request(eff.req, { signal, sink: "memory" });
+				raw = await http.request(eff.req, { signal, sink: "memory", cookieSource: this.cookieSource(eff.route) });
 			}
 		} catch (e) {
 			bodies.discardSlot(slot);
@@ -530,6 +640,74 @@ export class Runner {
 			};
 		} finally {
 			if (slot && !kept) bodies.discardSlot(slot);
+		}
+	}
+
+	/** Effect::BrowserLoad on the app's hidden browser window (port of effects.js _doBrowser). */
+	private async doBrowser(eff: Extract<Effect, { type: "browser_load" }>, rec: OpRec): Promise<unknown> {
+		const bridge = this.bridge();
+		if (!bridge) throw new OpError("unsupported", "no embedded browser in this host");
+		const { bodies } = this.deps;
+		const signal = rec.ac.signal;
+		const req = eff.req ?? {};
+		const raw = await bridge.load(
+			{
+				url: String(req.url ?? ""),
+				timeoutMs: Number(req.timeout_ms) > 0 ? Number(req.timeout_ms) : 30000,
+				capturePdf: !!req.capture_pdf,
+				userAgent: req.ua === "plain" ? "plain" : undefined,
+			},
+			signal,
+		);
+		if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
+		let pdf: BodyRef | null = null;
+		let page: BodyRef | null = null;
+		let slot: { dir: string; path: string } | null = null;
+		let committed = false;
+		try {
+			let spec = eff.inspect;
+			let staged;
+			let headers: Record<string, string> = {};
+			if (raw.pdf) {
+				slot = bodies.allocSlot();
+				writeFileSync(slot.path, raw.pdf.bytes);
+				staged = stageFile(slot.path, raw.pdf.bytes.length);
+				pdf = bodies.putFile({ path: slot.path, dir: slot.dir, len: staged.body_len, run: eff.run });
+				spec = { expect: "pdf", requested: spec?.requested ?? {}, route: spec?.route ?? eff.route };
+				headers = { "content-type": "application/pdf" };
+			} else if (typeof raw.pageHtml === "string") {
+				const bytes = new TextEncoder().encode(raw.pageHtml);
+				staged = stageBytes(bytes, "page");
+				try {
+					page = bodies.putMemory(bytes, eff.run);
+				} catch (e) {
+					if (!(e instanceof OpError && e.kind === "too_large")) throw e;
+					this.log("warn", "page too large to keep for translators; inspecting the first part only");
+				}
+				headers = { "content-type": "text/html; charset=utf-8" };
+			} else {
+				staged = stageBytes(new Uint8Array(0), "page");
+			}
+			const status = raw.status > 0 ? raw.status : 200;
+			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = { status, final_url: raw.finalUrl, headers, body_len: staged.body_len, truncated: staged.truncated };
+			if (staged.head_len != null) resp.head_len = staged.head_len;
+			const inspection = this.inspect(spec, resp, staged.bytes);
+			if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
+			committed = true;
+			return {
+				final_url: raw.finalUrl,
+				status: raw.status > 0 ? raw.status : null,
+				ms: Math.max(0, Math.round(raw.ms) || 0),
+				pdf,
+				page,
+				url_trail: Array.isArray(raw.urlTrail) ? raw.urlTrail : [],
+				inspect: inspection,
+			};
+		} finally {
+			if (!committed) {
+				for (const b of [pdf, page]) if (b) bodies.release(b.handle);
+				if (slot && !pdf) bodies.discardSlot(slot);
+			}
 		}
 	}
 

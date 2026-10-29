@@ -4,11 +4,30 @@
 import type { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { FullTextItemState, FullTextJob } from "../api-types";
+import type {
+	FullTextInstitutionHit,
+	FullTextItemState,
+	FullTextJob,
+	FullTextSettingsPatch,
+	FullTextSettingsView,
+	FullTextSignInResult,
+	FullTextSignInStatus,
+} from "../api-types";
 import { HttpError } from "../db";
 import { extractFulltext } from "../extract";
 import { BodyStore } from "./bodies";
-import { buildEngineConfig, type FulltextSettings, loadSettings, PROTOCOL } from "./config";
+import { getBrowserBridge } from "./browser-bridge";
+import { buildEngineConfig, type FulltextSettings, loadSettings, PROTOCOL, saveSettings } from "./config";
+import {
+	type EngineInstitution,
+	normalizeInstitution,
+	parseFederationSearch,
+	resolveInstitution,
+	searchPresets,
+	sessionHosts,
+	warmupTarget,
+} from "./institutions";
+import { SIGNED_IN_MS } from "./login";
 import { PersistStore, Runner, type RunnerDeps } from "./host";
 import { type FetchFn, HttpClient } from "./http";
 import { snapshotItems } from "./items";
@@ -139,6 +158,7 @@ export class FulltextService {
 	/** engine item id -> library key, per run */
 	private keyOf = new Map<RunId, Map<ItemId, string>>();
 	private ezproxySuffix = "";
+	private signInAbort = new AbortController();
 
 	constructor(
 		private db: Database,
@@ -179,6 +199,11 @@ export class FulltextService {
 					},
 					req,
 				),
+			institutionName: () => resolveInstitution(this.settings().institution).name,
+			// Imported lazily: api.ts imports this module (via fulltext/api.ts).
+			openExternal: (url) => {
+				import("../api").then((m) => m.openUrlExternally(url)).catch((e) => console.warn("open in browser failed", e));
+			},
 			onProgress: (run, item, row) => this.onProgress(run, item, row),
 			onRunFinished: (report) => this.onRunFinished(report),
 		};
@@ -187,7 +212,7 @@ export class FulltextService {
 	}
 
 	private configure(): void {
-		const cfg = buildEngineConfig(this.settings());
+		const cfg = buildEngineConfig(this.settings(), { embeddedBrowser: getBrowserBridge() !== null });
 		const hash = JSON.stringify(cfg);
 		const ez = (cfg.institution as { ezproxy?: { suffix?: string } | null }).ezproxy;
 		this.ezproxySuffix = ez?.suffix ?? "";
@@ -220,7 +245,7 @@ export class FulltextService {
 
 	// ------------------------------------------------------------ jobs
 
-	async start(keys: string[], openAccessOnly = false): Promise<string> {
+	private async boot(): Promise<void> {
 		if (!this.ready) {
 			this.ready = this.init();
 			this.ready.catch(() => {
@@ -232,6 +257,10 @@ export class FulltextService {
 		} catch (e) {
 			throw new HttpError(500, `Find Full Text could not start: ${e instanceof Error ? e.message : e}`);
 		}
+	}
+
+	async start(keys: string[], openAccessOnly = false): Promise<string> {
+		await this.boot();
 		const runner = this.runner!;
 		if (runner.activeRuns() === 0) this.configure();
 		else if (runner.needsConfigure) this.configure();
@@ -276,6 +305,148 @@ export class FulltextService {
 		return job.id;
 	}
 
+	// ------------------------------------------------------------ settings, institutions, sign-in
+
+	settingsView(): FullTextSettingsView {
+		const st = this.settings();
+		const r = resolveInstitution(st.institution);
+		return {
+			institution: {
+				id: r.id,
+				name: r.name,
+				realm: r.realm,
+				openathensDomain: r.openathensDomain,
+				shibbolethEntityId: r.shibbolethEntityId,
+				proxyPrefix: r.proxyPrefix,
+				...(r.loginMode ? { loginMode: r.loginMode } : {}),
+			},
+			methods: r.methods,
+			institutional: st.institutional !== false && r.enabled,
+			unpaywallEmail: st.unpaywallEmail ?? "",
+			concurrency: typeof st.concurrency === "number" ? st.concurrency : 4,
+			embeddedBrowser: getBrowserBridge() !== null,
+			isDefaultInstitution: !st.institution,
+		};
+	}
+
+	/** Validate, merge and save the patch. Throws HttpError(400) for bad input. Applies to the next run. */
+	updateSettings(patch: FullTextSettingsPatch): FullTextSettingsView {
+		if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new HttpError(400, "settings must be an object");
+		const next: FulltextSettings = { ...this.settings() };
+		if (patch.institution !== undefined) {
+			if (patch.institution === null) delete next.institution;
+			else {
+				try {
+					next.institution = normalizeInstitution(patch.institution);
+				} catch (e) {
+					throw new HttpError(400, e instanceof Error ? e.message : "invalid institution");
+				}
+			}
+		}
+		if (patch.institutional !== undefined) {
+			if (typeof patch.institutional !== "boolean") throw new HttpError(400, "institutional must be a boolean");
+			next.institutional = patch.institutional;
+		}
+		if (patch.unpaywallEmail !== undefined) {
+			const e = typeof patch.unpaywallEmail === "string" ? patch.unpaywallEmail.trim() : null;
+			if (e === null || (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) || e.length > 254) throw new HttpError(400, "unpaywallEmail is not a valid email address");
+			next.unpaywallEmail = e;
+		}
+		if (patch.concurrency !== undefined) {
+			const n = Number(patch.concurrency);
+			if (!Number.isInteger(n) || n < 1 || n > 8) throw new HttpError(400, "concurrency must be a whole number from 1 to 8");
+			next.concurrency = n;
+		}
+		try {
+			saveSettings(this.dataDir, next);
+		} catch (e) {
+			throw new HttpError(500, `could not save the settings: ${e instanceof Error ? e.message : e}`);
+		}
+		if (this.opts.settings) this.opts.settings = next;
+		if (this.runner && this.runner.activeRuns() === 0) this.configure();
+		return this.settingsView();
+	}
+
+	/** Built-in institutions filtered by q, then (q of 3+ characters) identity providers of the federation metadata. */
+	async searchInstitutions(q: string): Promise<FullTextInstitutionHit[]> {
+		const query = (q ?? "").trim();
+		const hits: FullTextInstitutionHit[] = searchPresets(query).map((p) => ({
+			id: p.id,
+			name: p.name,
+			openathensDomain: p.openathensDomain,
+			shibbolethEntityId: p.shibbolethEntityId,
+			proxyPrefix: p.proxyPrefix,
+			methods: p.methods,
+			source: "preset",
+		}));
+		if (query.length < 3) return hits;
+		const known = new Set(hits.map((h) => h.shibbolethEntityId).filter(Boolean));
+		const ac = new AbortController();
+		const timer = setTimeout(() => ac.abort(), 3000);
+		try {
+			const f = this.opts.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init));
+			const res = await f(`https://md.seamlessaccess.org/entities/?q=${encodeURIComponent(query)}`, { signal: ac.signal, headers: { Accept: "application/json" } });
+			if (res.ok) {
+				for (const h of parseFederationSearch(await res.json())) {
+					if (known.has(h.shibbolethEntityId)) continue;
+					hits.push({ name: h.name, shibbolethEntityId: h.shibbolethEntityId, methods: ["saml"], source: "federation" });
+				}
+			}
+		} catch {
+			/* offline or blocked: the built-in list is enough */
+		} finally {
+			clearTimeout(timer);
+		}
+		return hits;
+	}
+
+	private institutionNow() {
+		const cfg = buildEngineConfig(this.settings(), { embeddedBrowser: true });
+		const r = resolveInstitution(this.settings().institution);
+		return { cfg, r, engine: cfg.institution as unknown as EngineInstitution };
+	}
+
+	/** Warm-up: the sign-in window of the configured institution. */
+	async signIn(): Promise<FullTextSignInResult> {
+		const { cfg, r, engine } = this.institutionNow();
+		const name = engine.name || r.name;
+		if (!getBrowserBridge()) return { result: "unavailable", institution: name };
+		const target = r.enabled ? warmupTarget(engine) : null;
+		if (!target) return { result: "no_method", institution: name };
+		await this.boot();
+		const seconds = Number((cfg.inst as { login_timeout_sec?: number }).login_timeout_sec);
+		const res = await this.runner!.login.warmUp(target.url, target.realm, seconds > 0 ? seconds * 1000 : 0, this.signInAbort.signal);
+		return { result: res.result, institution: name, ...(res.caError ? { caError: res.caError } : {}) };
+	}
+
+	async signInStatus(): Promise<FullTextSignInStatus> {
+		const bridge = getBrowserBridge();
+		const { r, engine } = this.institutionNow();
+		const out: FullTextSignInStatus = { available: !!bridge, signedIn: false, realm: r.realm, institution: r.name, methods: r.methods };
+		if (!bridge || !r.enabled) return out;
+		const at = this.runner?.login.signedInAt ?? 0;
+		if (at && Date.now() - at < SIGNED_IN_MS) {
+			out.signedIn = true;
+			return out;
+		}
+		const now = Date.now() / 1000;
+		for (const host of sessionHosts(engine)) {
+			try {
+				const cookies = await Promise.race([
+					bridge.cookiesFor(`https://${host}/`),
+					new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
+				]);
+				if (cookies.some((c) => c.expires === undefined || c.expires > now)) {
+					out.signedIn = true;
+					break;
+				}
+			} catch {
+				/* unreachable bridge: not signed in as far as we can tell */
+			}
+		}
+		return out;
+	}
+
 	getJob(id: string): FullTextJob | null {
 		const j = this.jobs.get(id);
 		return j ? this.snapshot(j) : null;
@@ -306,6 +477,7 @@ export class FulltextService {
 	}
 
 	async dispose(): Promise<void> {
+		this.signInAbort.abort("dispose");
 		await this.runner?.dispose();
 		this.bodies.releaseAll();
 	}
