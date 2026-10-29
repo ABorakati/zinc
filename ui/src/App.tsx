@@ -4,6 +4,7 @@ import { CollectionsPane } from "./Collections";
 import { TagList } from "./Tags";
 import { ItemTable, SearchResults } from "./ItemTable";
 import { ItemPane } from "./ItemPane";
+import { FullTextProgress } from "./fulltext/Progress";
 import { store } from "./store";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -118,8 +119,30 @@ export const App: Component = () => {
 			store.closeTab(store.activeTab());
 		}
 	};
-	onMount(() => window.addEventListener("keydown", onKey));
-	onCleanup(() => window.removeEventListener("keydown", onKey));
+	// The reader asks the shell to open links it doesn't handle (DOIs, references).
+	const onMessage = (e: MessageEvent) => {
+		if (e.origin !== location.origin || e.data?.type !== "open-link" || typeof e.data.url !== "string") return;
+		fetch("/api/open-url", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ url: e.data.url }),
+		}).catch(() => {});
+	};
+	onMount(() => {
+		window.addEventListener("keydown", onKey);
+		window.addEventListener("message", onMessage);
+	});
+	onCleanup(() => {
+		window.removeEventListener("keydown", onKey);
+		window.removeEventListener("message", onMessage);
+	});
+	// Reader pages are same-origin: let Ctrl+W close the tab while the reader has focus.
+	// (Key presses inside the reader's own nested view frames still don't reach here.)
+	const watchFrameKeys = (e: Event) => {
+		try {
+			(e.currentTarget as HTMLIFrameElement).contentWindow?.addEventListener("keydown", onKey);
+		} catch {}
+	};
 
 	const tabCls = (active: boolean) =>
 		cn(
@@ -169,11 +192,12 @@ export const App: Component = () => {
 				<For each={store.tabs()}>
 					{(t) => (
 						<div class="absolute inset-0" classList={{ hidden: store.activeTab() !== t.id }}>
-							<iframe class="size-full border-0 bg-background" src={`/reader-host/index.html?attachment=${encodeURIComponent(t.attachmentKey)}`} title={t.title} />
+							<iframe class="size-full border-0 bg-background" src={`/reader-host/index.html?attachment=${encodeURIComponent(t.attachmentKey)}`} title={t.title} onLoad={watchFrameKeys} />
 						</div>
 					)}
 				</For>
 			</div>
+			<FullTextProgress />
 			<Toaster position="bottom-right" closeButton />
 		</div>
 	);

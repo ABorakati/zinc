@@ -13,6 +13,7 @@ const PORT = 23120; // 23119 is Zotero's own port
 const ROOT = process.env.ZN_ROOT;
 const uiDir = ROOT ? `${ROOT}/ui/dist/` : join(VIEWS_FOLDER, "app") + "/";
 const readerDir = ROOT ? `${ROOT}/reader-host/dist/` : join(VIEWS_FOLDER, "reader-host") + "/";
+const noteDir = ROOT ? `${ROOT}/note-host/dist/` : join(VIEWS_FOLDER, "note-host") + "/";
 
 // Library database: ZN_DB, else the library imported into the repo, else the
 // app's own data folder (an empty library).
@@ -25,6 +26,7 @@ startServer({
 	mounts: [
 		{ prefix: "/app/", dir: uiDir },
 		{ prefix: "/reader-host/", dir: readerDir },
+		{ prefix: "/note-host/", dir: noteDir },
 	],
 });
 

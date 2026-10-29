@@ -114,6 +114,7 @@ describe("importZotero", () => {
 			targetDbPath: target,
 			schemaPath,
 			baseAttachmentPath: base,
+			searchRoots: [base], // never crawl the real home dir from tests
 		});
 		db = new Database(target, { readonly: true });
 	});
@@ -239,13 +240,14 @@ describe("importZotero", () => {
 	test("refuses to overwrite without replace, replaces with it", async () => {
 		db.close(true);
 		await expect(
-			importZotero({ zoteroDir: zdir, targetDbPath: target, schemaPath, baseAttachmentPath: base }),
+			importZotero({ zoteroDir: zdir, targetDbPath: target, schemaPath, baseAttachmentPath: base, searchRoots: false }),
 		).rejects.toThrow(/replace/);
 		const again = await importZotero({
 			zoteroDir: zdir,
 			targetDbPath: target,
 			schemaPath,
 			baseAttachmentPath: base,
+			searchRoots: [base],
 			replace: true,
 		});
 		expect(again.counts.items).toBe(6);

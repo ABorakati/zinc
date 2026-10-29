@@ -1,250 +1,51 @@
-import { createEffect, createResource, createSignal, For, on, Show, type Component } from "solid-js";
+// Zotero 7/8-style item pane: header + collapsible sections + a section icon strip on the right edge.
+// Implementation lives in ./itempane/.
+import {
+	createComputed, createEffect, createResource, createSignal, For, on, Show, type Component,
+} from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { ExternalLink, Plus, StickyNote, X } from "lucide-solid";
-import { api, type ChildSummary, type Creator, type ItemDetail, type ZoteroItemData } from "./api";
+import { createStore, reconcile } from "solid-js/store";
+import { AlignLeft, FileText, Info, Library, Link2, Paperclip, StickyNote, Tag, type LucideProps } from "lucide-solid";
+import { api, type ItemDetail, type ZoteroItemData } from "./api";
 import { store } from "./store";
 import { itemList } from "./ItemTable";
-import { sanitizeNote } from "./sanitize";
 import { fail } from "~/lib/actions";
-import { attachmentIcon, itemTypeIcon, itemTypeLabel } from "~/lib/icons";
 import { cn } from "~/lib/utils";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Input, Textarea } from "~/components/ui/input";
-import { Separator } from "~/components/ui/separator";
 import { Skeleton } from "~/components/ui/skeleton";
+import { ipApi } from "./itempane/api";
+import { creatorsSummary, PaneContext, setCollapsed, yearOf, type PaneCtx } from "./itempane/ctx";
+import { Header, AbstractSection } from "./itempane/Header";
+import { InfoSection } from "./itempane/Info";
+import { AttachmentsSection } from "./itempane/Attachments";
+import { NotesSection } from "./itempane/Notes";
+import { CollectionsSection } from "./itempane/Collections";
+import { TagsSection } from "./itempane/Tags";
+import { RelatedSection } from "./itempane/Related";
+import { MultiSelect } from "./itempane/Multi";
+import { reconcile as _r } from "solid-js/store";
+void _r;
 
-const yearOf = (d?: string) => {
-	const m = d?.match(/\b(\d{4})\b/);
-	return m ? +m[1] : null;
-};
+const SECTIONS: { id: string; title: string; icon: Component<LucideProps> }[] = [
+	{ id: "info", title: "Info", icon: Info },
+	{ id: "abstract", title: "Abstract", icon: AlignLeft },
+	{ id: "attachments", title: "Attachments", icon: Paperclip },
+	{ id: "notes", title: "Notes", icon: StickyNote },
+	{ id: "collections", title: "Libraries and Collections", icon: Library },
+	{ id: "tags", title: "Tags", icon: Tag },
+	{ id: "related", title: "Related", icon: Link2 },
+];
 
-const Note: Component<{ c: ChildSummary }> = (p) => {
-	const [d] = createResource(() => p.c.key, (k) => api.item(k));
-	return (
-		<div class="my-1 flex gap-2 rounded-md border bg-muted/50 px-2.5 py-1.5">
-			<StickyNote class="mt-0.5 size-3.5 flex-none text-muted-foreground" />
-			<div class="min-w-0 break-words [&_h1]:text-sm [&_h1]:font-semibold [&_h2]:font-semibold [&_p]:my-1 [&_a]:text-primary [&_a]:underline"
-				innerHTML={sanitizeNote(d()?.data.note ?? "")} />
-		</div>
-	);
-};
-
-const SectionTitle: Component<{ n?: number; children: string }> = (p) => (
-	<div class="mt-4 mb-1.5 flex items-center gap-2">
-		<span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{p.children}</span>
-		<Separator class="flex-1" />
+const empty = (t: string) => (
+	<div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground" data-testid="ip-empty">
+		<FileText class="size-10 opacity-40" strokeWidth={1.25} />
+		{t}
 	</div>
 );
 
-const Field: Component<{
-	label: string;
-	value: string;
-	multiline?: boolean;
-	onSave: (v: string) => void;
-	link?: string;
-}> = (p) => {
-	const commit = (e: FocusEvent & { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
-		if (e.currentTarget.value !== p.value) p.onSave(e.currentTarget.value);
-	};
-	return (
-		<div class="mb-1.5 grid grid-cols-[68px_1fr] items-start gap-2">
-			<label class="pt-1 text-right text-xs text-muted-foreground">{p.label}</label>
-			<div class="flex min-w-0 items-start gap-1">
-				<Show
-					when={p.multiline}
-					fallback={
-						<Input
-							value={p.value}
-							onBlur={commit}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") e.currentTarget.blur();
-								if (e.key === "Escape") {
-									e.currentTarget.value = p.value;
-									e.currentTarget.blur();
-								}
-							}}
-						/>
-					}
-				>
-					<Textarea class="resize-y" rows={p.label === "Abstract" ? 8 : 3} value={p.value} onBlur={commit} />
-				</Show>
-				<Show when={p.link && p.value}>
-					<a class="mt-1 text-muted-foreground hover:text-primary" href={p.link} target="_blank" rel="noopener noreferrer" title="Open">
-						<ExternalLink class="size-3.5" />
-					</a>
-				</Show>
-			</div>
-		</div>
-	);
-};
-
-const Detail: Component<{ d: ItemDetail; reload: () => void }> = (props) => {
-	const d = () => props.d.data;
-	const key = () => d().key;
-	const [newTag, setNewTag] = createSignal("");
-
-	async function save(data: Partial<ZoteroItemData>) {
-		try {
-			const res = await api.patchItem(key(), data);
-			itemList.patch(key(), {
-				title: res.data.title ?? "",
-				publication: res.data.publicationTitle ?? null,
-				year: yearOf(res.data.date),
-			});
-			props.reload();
-		} catch (e) {
-			fail("Could not save changes", e);
-		}
-	}
-	const saveCreators = (list: Creator[]) => save({ creators: list });
-	const setCreator = (i: number, patch: Partial<Creator>) =>
-		saveCreators((d().creators ?? []).map((c, j) => (j === i ? { ...c, ...patch } : c)));
-
-	async function addTag() {
-		const t = newTag().trim();
-		setNewTag("");
-		if (!t) return;
-		try {
-			await api.addTags(key(), [t]);
-			props.reload();
-			store.bumpTags();
-		} catch (e) {
-			fail("Could not add tag", e);
-		}
-	}
-	async function removeTag(t: string) {
-		try {
-			await api.removeTags(key(), [t]);
-			props.reload();
-			store.bumpTags();
-		} catch (e) {
-			fail("Could not remove tag", e);
-		}
-	}
-
-	return (
-		<div class="px-3 pt-2 pb-6">
-			<div class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-				<Dynamic component={itemTypeIcon(d().itemType)} class="size-3.5" />
-				{itemTypeLabel(d().itemType)}
-			</div>
-			<Field label="Title" value={d().title ?? ""} multiline onSave={(v) => save({ title: v })} />
-			<div class="mb-1.5 grid grid-cols-[68px_1fr] items-start gap-2">
-				<label class="pt-1 text-right text-xs text-muted-foreground">Creators</label>
-				<div class="flex min-w-0 flex-col gap-1">
-					<For each={d().creators ?? []}>
-						{(c, i) => (
-							<div class="flex items-center gap-1">
-								<span class="w-12 flex-none truncate text-[11px] text-muted-foreground">{c.creatorType}</span>
-								<Show
-									when={c.name === undefined}
-									fallback={
-										<Input
-											value={c.name ?? ""}
-											onBlur={(e) => e.currentTarget.value !== c.name && setCreator(i(), { name: e.currentTarget.value })}
-										/>
-									}
-								>
-									<Input
-										placeholder="Last"
-										value={c.lastName ?? ""}
-										onBlur={(e) => e.currentTarget.value !== (c.lastName ?? "") && setCreator(i(), { lastName: e.currentTarget.value })}
-									/>
-									<Input
-										placeholder="First"
-										value={c.firstName ?? ""}
-										onBlur={(e) => e.currentTarget.value !== (c.firstName ?? "") && setCreator(i(), { firstName: e.currentTarget.value })}
-									/>
-								</Show>
-								<Button variant="ghost" size="icon" class="size-6 flex-none text-muted-foreground" title="Remove creator"
-									onClick={() => saveCreators((d().creators ?? []).filter((_, j) => j !== i()))}>
-									<X />
-								</Button>
-							</div>
-						)}
-					</For>
-					<Button variant="link" size="sm" class="h-6 w-fit gap-1 px-0 text-xs"
-						onClick={() => saveCreators([...(d().creators ?? []), { creatorType: "author", lastName: "", firstName: "" }])}>
-						<Plus class="size-3" /> Add creator
-					</Button>
-				</div>
-			</div>
-			<Field label="Date" value={d().date ?? ""} onSave={(v) => save({ date: v })} />
-			<Field label="Publication" value={d().publicationTitle ?? ""} onSave={(v) => save({ publicationTitle: v })} />
-			<Field
-				label="DOI"
-				value={d().DOI ?? ""}
-				link={d().DOI ? "https://doi.org/" + encodeURI(d().DOI!) : undefined}
-				onSave={(v) => save({ DOI: v })}
-			/>
-			<Field
-				label="URL"
-				value={d().url ?? ""}
-				link={/^https?:\/\//i.test(d().url ?? "") ? d().url : undefined}
-				onSave={(v) => save({ url: v })}
-			/>
-			<Field label="Abstract" value={d().abstractNote ?? ""} multiline onSave={(v) => save({ abstractNote: v })} />
-
-			<SectionTitle>Tags</SectionTitle>
-			<div class="flex flex-wrap items-center gap-1">
-				<For each={props.d.tags}>
-					{(t) => (
-						<Badge round variant="secondary" class="gap-0.5 py-0 pr-0.5 pl-2 font-normal">
-							{t.tag}
-							<button class="rounded-full p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" title="Remove tag" onClick={() => removeTag(t.tag)}>
-								<X class="size-3" />
-							</button>
-						</Badge>
-					)}
-				</For>
-				<Input
-					class="h-6 w-28 rounded-full px-2.5 text-xs"
-					placeholder="Add tag…"
-					value={newTag()}
-					onInput={(e) => setNewTag(e.currentTarget.value)}
-					onKeyDown={(e) => e.key === "Enter" && addTag()}
-					onBlur={addTag}
-				/>
-			</div>
-
-			<Show when={props.d.children.length}>
-				<SectionTitle>Attachments &amp; notes</SectionTitle>
-				<For each={props.d.children}>
-					{(c) => (
-						<Show
-							when={c.itemType === "note"}
-							fallback={
-								<div
-									class={cn("flex items-center gap-2 rounded-md px-1.5 py-1", c.hasFile && "cursor-default hover:bg-accent")}
-									onClick={() =>
-										c.hasFile && /pdf|epub/i.test(c.contentType ?? "") && store.openAttachment(c.key, d().title || c.title)
-									}
-									onDblClick={() => c.hasFile && store.openAttachment(c.key, d().title || c.title)}
-								>
-									<Dynamic component={attachmentIcon(c.contentType, c.linkMode)} class="size-4 flex-none text-muted-foreground" />
-									<span class="flex-1 truncate">{c.title}</span>
-									<Show when={c.annotationCount}>
-										<Badge round variant="secondary" class="px-1.5 py-0 font-normal" title="Annotations">
-											{c.annotationCount}
-										</Badge>
-									</Show>
-								</div>
-							}
-						>
-							<Note c={c} />
-						</Show>
-					)}
-				</For>
-			</Show>
-		</div>
-	);
-};
-
 const DetailSkeleton: Component = () => (
 	<div class="space-y-3 px-3 pt-3">
-		<Skeleton class="h-3 w-24" />
-		<Skeleton class="h-16 w-full" />
+		<Skeleton class="h-5 w-3/4" />
+		<Skeleton class="h-3 w-1/3" />
 		<Skeleton class="h-6 w-full" />
 		<Skeleton class="h-6 w-full" />
 		<Skeleton class="h-6 w-2/3" />
@@ -252,20 +53,129 @@ const DetailSkeleton: Component = () => (
 	</div>
 );
 
-export const ItemPane: Component = () => {
-	const [d, { refetch }] = createResource(
-		() => store.activeKey(),
-		(k) => api.item(k),
+const Detail: Component<{ ctx: PaneCtx }> = (p) => {
+	let scroller!: HTMLDivElement;
+	const [active, setActive] = createSignal("info");
+
+	const spy = () => {
+		const top = scroller.scrollTop + 12;
+		let cur = SECTIONS[0].id;
+		for (const s of SECTIONS) {
+			const el = scroller.querySelector<HTMLElement>(`#ip-sec-${s.id}`);
+			if (el && el.offsetTop <= top) cur = s.id;
+		}
+		if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) cur = SECTIONS[SECTIONS.length - 1].id;
+		setActive(cur);
+	};
+	const goTo = (id: string) => {
+		setCollapsed(id, false);
+		queueMicrotask(() => {
+			const el = scroller.querySelector<HTMLElement>(`#ip-sec-${id}`);
+			if (el) scroller.scrollTo({ top: el.offsetTop, behavior: "smooth" });
+			setActive(id);
+		});
+	};
+
+	return (
+		<PaneContext.Provider value={p.ctx}>
+			<div class="flex h-full min-h-0 flex-col" data-testid="ip-detail" data-item={p.ctx.d.data.key}>
+				<Header />
+				<div class="flex min-h-0 flex-1">
+					<div ref={scroller} class="relative min-w-0 flex-1 overflow-y-auto" onScroll={spy}>
+						<InfoSection />
+						<AbstractSection />
+						<AttachmentsSection />
+						<NotesSection />
+						<CollectionsSection />
+						<TagsSection />
+						<RelatedSection />
+						<div class="h-48" />
+					</div>
+					<nav class="flex w-8 flex-none flex-col items-center gap-0.5 border-l bg-card py-1.5" aria-label="Item pane sections">
+						<For each={SECTIONS}>
+							{(s) => (
+								<button
+									type="button"
+									title={s.title}
+									aria-label={s.title}
+									data-nav={s.id}
+									onClick={() => goTo(s.id)}
+									class={cn(
+										"relative inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+										active() === s.id && "bg-accent text-foreground",
+									)}
+								>
+									<Show when={active() === s.id}>
+										<span class="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-primary" />
+									</Show>
+									<Dynamic component={s.icon} class="size-4" />
+								</button>
+							)}
+						</For>
+					</nav>
+				</div>
+			</div>
+		</PaneContext.Provider>
 	);
-	createEffect(on(() => d.error, (e) => { if (e) fail("Could not load item", e); }));
-	const empty = (t: string) => <div class="p-6 text-center text-muted-foreground">{t}</div>;
+};
+
+const SingleItem: Component = () => {
+	const [res, { refetch }] = createResource(() => store.activeKey(), (k) => api.item(k));
+	const [schema] = createResource(() => ipApi.schema());
+	const [d, setD] = createStore<ItemDetail>({ data: { key: "", itemType: "" }, children: [], collections: [], tags: [] });
+
+	createEffect(on(() => res.error, (e) => { if (e) fail("Could not load item", e); }));
+	// Sync server state into the store before anything renders from it.
+	createComputed(() => {
+		const r = res();
+		if (!r) return;
+		if (r.data.key === d.data.key) setD(reconcile(r, { merge: true }));
+		else setD(reconcile(r));
+	});
+
+	async function reload() {
+		await refetch();
+	}
+
+	// Saves run one at a time so a slow response can't clobber a later optimistic edit.
+	let chain: Promise<void> = Promise.resolve();
+	const save: PaneCtx["save"] = (patch) =>
+		(chain = chain.then(async () => {
+			const key = d.data.key;
+			const prev: Record<string, unknown> = {};
+			for (const k of Object.keys(patch)) prev[k] = JSON.parse(JSON.stringify(d.data[k] ?? null));
+			for (const [k, v] of Object.entries(patch)) setD("data", k, reconcile(v as never));
+			try {
+				const r = await api.patchItem(key, patch as Partial<ZoteroItemData>);
+				if (d.data.key === key) setD(reconcile(r, { merge: true }));
+				itemList.patch(key, {
+					title: r.data.title ?? "",
+					publication: r.data.publicationTitle ?? null,
+					year: yearOf(r.data.date),
+					itemType: r.data.itemType,
+					creatorsSummary: creatorsSummary(r.data.creators, "author"),
+				});
+			} catch (e) {
+				if (d.data.key === key) for (const [k, v] of Object.entries(prev)) setD("data", k, reconcile((v ?? undefined) as never));
+				fail("Could not save changes", e);
+			}
+		}));
+
+	const ctx: PaneCtx = { d, setD, save, reload, schema };
+	const ready = () => !!d.data.key && d.data.key === store.activeKey();
+	return (
+		<Show when={ready()} fallback={res.error ? empty("Could not load item") : <DetailSkeleton />}>
+			<Detail ctx={ctx} />
+		</Show>
+	);
+};
+
+export const ItemPane: Component = () => {
 	return (
 		<div class="h-full">
-			<Show when={store.selected().size <= 1} fallback={empty(`${store.selected().size} items selected`)}>
-				<Show when={store.activeKey()} fallback={empty("Select an item")}>
-					<Show when={d()} fallback={d.error ? empty("Could not load item") : <DetailSkeleton />}>
-						{(det) => <Detail d={det()} reload={() => refetch()} />}
-					</Show>
+			<Show when={store.selected().size <= 1} fallback={<MultiSelect />}>
+				<Show when={store.activeKey()} fallback={empty("Select an item to view its details")}>
+					<SingleItem />
 				</Show>
 			</Show>
 		</div>

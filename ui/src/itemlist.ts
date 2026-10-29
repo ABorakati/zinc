@@ -11,6 +11,7 @@ export function createItemList() {
 	let q: ItemQuery | null = null;
 	const [total, setTotal] = createSignal(0);
 	const [tick, setTick] = createSignal(0);
+	const [epoch, setEpoch] = createSignal(0); // bumped by reset(); lets the view re-request its visible pages
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
 
@@ -38,6 +39,7 @@ export function createItemList() {
 	/** Restart with a new query; keeps old rows visible until page 0 returns. */
 	function reset(query: ItemQuery) {
 		gen++;
+		setEpoch(gen);
 		q = query;
 		inflight.clear();
 		setLoading(true);
@@ -52,7 +54,7 @@ export function createItemList() {
 	onCleanup(() => gen++);
 
 	return {
-		total, loading, error,
+		total, loading, error, epoch,
 		get(i: number): ItemSummary | undefined { tick(); return cache.get(i); },
 		ensure, reset,
 		patch(key: string, p: Partial<ItemSummary>) {

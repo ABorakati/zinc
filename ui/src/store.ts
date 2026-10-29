@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createRoot, createResource } from "solid-js";
+import { createSignal, createMemo, createRoot, createResource, createEffect } from "solid-js";
 import { api, type ItemQuery, type ItemSummary } from "./api";
 
 export type View =
@@ -9,6 +9,15 @@ export type View =
 
 export const PAGE = 100;
 
+const SORT_KEY = "zn.sort.v1";
+function loadSort(): { key: string; dir: "asc" | "desc" } {
+	try {
+		const s = JSON.parse(localStorage.getItem(SORT_KEY) ?? "null");
+		if (s && typeof s.key === "string" && /^[A-Za-z][A-Za-z0-9]*$/.test(s.key) && (s.dir === "asc" || s.dir === "desc")) return { key: s.key, dir: s.dir };
+	} catch { /* ignore */ }
+	return { key: "dateAdded", dir: "desc" };
+}
+
 export interface Tab { id: string; title: string; attachmentKey: string }
 
 function createStore() {
@@ -16,7 +25,8 @@ function createStore() {
 	const [tag, setTag] = createSignal<string | null>(null);
 	const [filter, setFilter] = createSignal("");
 	const [fulltext, setFulltext] = createSignal(false);
-	const [sort, setSort] = createSignal<{ key: string; dir: "asc" | "desc" }>({ key: "dateAdded", dir: "desc" });
+	const [sort, setSort] = createSignal<{ key: string; dir: "asc" | "desc" }>(loadSort());
+	createEffect(() => { try { localStorage.setItem(SORT_KEY, JSON.stringify(sort())); } catch { /* ignore */ } });
 
 	const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set());
 	const [activeKey, setActiveKey] = createSignal<string | null>(null); // item shown in pane

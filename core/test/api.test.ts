@@ -138,6 +138,23 @@ describe("items", () => {
 		expect((await call(fx.db, "PATCH", "/api/items/BBBBBBB2", {})).status).toBe(400);
 		expect((await call(fx.db, "PATCH", "/api/items/NOPE0000", { data: {} })).status).toBe(404);
 	});
+	test("patch itemType converts fields and creators like Zotero", async () => {
+		// DDDDDDD4 is a journalArticle by Lee, Kim and Park.
+		await call(fx.db, "PATCH", "/api/items/DDDDDDD4", { data: { publicationTitle: "Proc. Genetics", volume: "12", issue: "3" } });
+		const d = await j(await call(fx.db, "PATCH", "/api/items/DDDDDDD4", { data: { itemType: "bookSection" } }));
+		expect(d.data.itemType).toBe("bookSection");
+		expect(d.data.bookTitle).toBe("Proc. Genetics"); // publicationTitle shares the base field
+		expect(d.data.publicationTitle).toBeUndefined();
+		expect(d.data.volume).toBe("12");
+		expect(d.data.issue).toBeUndefined(); // book sections have no issue
+		expect(d.data.creators.map((c: any) => c.creatorType)).toEqual(["author", "author", "author"]);
+		const l = await j(await call(fx.db, "GET", "/api/items?q=zebra%20genetics&fields=itemType"));
+		expect(l.items[0].itemType).toBe("bookSection");
+		const back = await j(await call(fx.db, "PATCH", "/api/items/DDDDDDD4", { data: { itemType: "journalArticle" } }));
+		expect(back.data.publicationTitle).toBe("Proc. Genetics");
+		expect((await call(fx.db, "PATCH", "/api/items/DDDDDDD4", { data: { itemType: "nonsense" } })).status).toBe(400);
+		expect((await call(fx.db, "PATCH", "/api/items/DDDDDDD4", { data: { itemType: "note" } })).status).toBe(400);
+	});
 	test("patch deleted moves to trash and restores", async () => {
 		const before = (await j(await call(fx.db, "GET", "/api/items"))).total;
 		let d = await j(await call(fx.db, "PATCH", "/api/items/BBBBBBB2", { data: { deleted: 1 } }));

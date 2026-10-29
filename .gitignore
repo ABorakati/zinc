@@ -17,3 +17,11 @@ dist/
 
 # Local library database (imported from Zotero)
 data/
+
+# Agent verification screenshots (mock data)
+ui/*.png
+note-host/*.png
+ui/src/references/*.png
+
+# Build logs
+*.log

@@ -11,7 +11,14 @@ import {
 	rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import {
+	buildFileIndex,
+	defaultSearchRoots,
+	type FileIndex,
+	resolveAttachmentFile,
+	zoteroRawPathFilename,
+} from "./resolve-files";
 
 export interface ImportProgress {
 	phase: string;
@@ -26,6 +33,11 @@ export interface ImportOptions {
 	schemaPath: string;
 	replace?: boolean; // replace an existing target DB
 	baseAttachmentPath?: string; // override; default read from the Zotero profile prefs.js
+	// Extra places to look for files missing from their canonical location (by filename / title).
+	// Default: base attachment path, <zoteroDir>/storage, ~/OneDrive/Documents, ~/Documents, ~/Downloads.
+	// `false` disables the fallback search.
+	searchRoots?: string[] | false;
+	fuzzyMatch?: boolean; // allow title-based matching (default true)
 	profilesDir?: string; // override %APPDATA%\Zotero\Zotero\Profiles
 	onProgress?: (p: ImportProgress) => void;
 }
@@ -46,6 +58,7 @@ export interface ImportReport {
 		fulltext: number;
 	};
 	missingFiles: { imported: number; linked_file: number; total: number };
+	recoveredFiles?: Record<string, number>; // attachments found outside their canonical location, by match kind
 	attachmentsByLinkMode: Record<string, number>;
 	skipped: Record<string, number>;
 	groupLibraries: { libraryID: number; items: number }[];
@@ -396,22 +409,41 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		const attachmentKeys: string[] = [];
 		const storageDirs = existsSync(storageDir) ? new Set(readdirSync(storageDir)) : new Set<string>();
 
-		const resolveAttachment = (key: string, linkMode: string, rawPath: string | null) => {
-			if (linkMode === "linked_url" || !rawPath) return { path: null as string | null, filename: undefined as string | undefined, missing: false };
-			let abs: string | null = null;
-			let filename: string | undefined;
-			if (rawPath.startsWith("storage:")) {
-				filename = rawPath.slice("storage:".length);
-				abs = join(storageDir, key, filename);
-			} else if (rawPath.startsWith("attachments:")) {
-				const rel = rawPath.slice("attachments:".length);
-				filename = basename(rel);
-				abs = baseAttach ? join(baseAttach, rel) : null;
-			} else {
-				filename = basename(rawPath);
-				abs = rawPath;
+		// Fallback search roots (built lazily, only if some attachment misses its canonical location).
+		let fileIndex: FileIndex | null = null;
+		const getIndex = (): FileIndex => {
+			if (!fileIndex) {
+				progress({ phase: "files", message: "indexing fallback file locations" });
+				// searchRoots: false disables the fallback search (empty index).
+				const roots =
+					opts.searchRoots === false ? [] : (opts.searchRoots ?? defaultSearchRoots({ zoteroDir, baseAttachmentPath: baseAttach }));
+				fileIndex = buildFileIndex(roots);
 			}
-			if (abs && existsSync(abs)) return { path: resolve(abs), filename, missing: false };
+			return fileIndex;
+		};
+		const recovered: Record<string, number> = {};
+		const resolveAttachment = (
+			key: string,
+			linkMode: string,
+			rawPath: string | null,
+			parent?: { title?: string; author?: string },
+			md5?: string | null,
+		) => {
+			if (linkMode === "linked_url" || !rawPath) return { path: null as string | null, filename: undefined as string | undefined, missing: false };
+			const filename = zoteroRawPathFilename(rawPath);
+			const m = resolveAttachmentFile(
+				{ key, rawPath, filename, md5, parentTitle: parent?.title, parentAuthor: parent?.author },
+				{
+					storageDir,
+					baseAttach,
+					index: opts.searchRoots === false ? undefined : getIndex,
+					fuzzy: opts.fuzzyMatch,
+				},
+			);
+			if (m) {
+				if (m.how !== "canonical") recovered[m.how] = (recovered[m.how] ?? 0) + 1;
+				return { path: m.path, filename, missing: false };
+			}
 			return { path: null, filename, missing: true };
 		};
 
@@ -452,7 +484,14 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 				if (f.note) data.note = f.note;
 				data.contentType = a.contentType ?? "";
 				data.charset = a.charsetID ? (charsets.get(a.charsetID) ?? "") : "";
-				const r = resolveAttachment(it.key, linkMode, a.path);
+				const pf = parentID !== null ? fields.get(parentID) : undefined;
+				const r = resolveAttachment(
+					it.key,
+					linkMode,
+					a.path,
+					{ title: pf?.title, author: parentID !== null ? creatorsSummary(creators.get(parentID) ?? []) : undefined },
+					a.storageHash,
+				);
 				if (r.filename && linkMode !== "linked_url") data.filename = r.filename;
 				if (a.storageHash) data.md5 = a.storageHash;
 				if (a.storageModTime) data.mtime = a.storageModTime;
@@ -601,6 +640,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			baseAttachmentPath: baseAttach,
 			counts,
 			missingFiles: missing,
+			recoveredFiles: recovered,
 			attachmentsByLinkMode,
 			skipped,
 			groupLibraries,

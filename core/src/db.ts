@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 // Imported as text so bundlers (Electrobun) embed it instead of reading from disk.
 import schema from "../schema.sql" with { type: "text" };
+import { canonicalField, convertItemType, hasItemType } from "./schema-data";
 import type {
 	ChildSummary,
 	Collection,
@@ -272,6 +273,7 @@ export interface ListOptions {
 	offset?: number;
 	unfiled?: boolean;
 	trash?: boolean;
+	fields?: string[];
 }
 
 interface SummaryRow {
@@ -290,6 +292,25 @@ const SORT_EXPR: Record<string, string> = {
 	year: "i.year",
 	dateAdded: "i.date_added",
 };
+
+// Sorts on plain columns or computed values with no partial index.
+const EXTRA_SORT_EXPR: Record<string, string> = {
+	itemType: "i.item_type COLLATE NOCASE",
+	dateModified: "i.date_modified",
+	publication: "i.publication COLLATE NOCASE",
+	noteCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'note' AND c.deleted = 0)",
+	attachmentCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'attachment' AND c.deleted = 0)",
+};
+
+// Returns the ORDER BY expression for a sort name, or null if it is not a known sort.
+// Field names are matched against the schema whitelist, so the interpolated JSON path is safe.
+function resolveSort(sort: string): { expr: string; nullsLast: boolean } | null {
+	if (SORT_EXPR[sort]) return { expr: SORT_EXPR[sort], nullsLast: false };
+	if (EXTRA_SORT_EXPR[sort]) return { expr: EXTRA_SORT_EXPR[sort], nullsLast: sort === "publication" };
+	const field = canonicalField(sort);
+	if (!field) return null;
+	return { expr: `NULLIF(json_extract(i.data, '$.${field}'), '') COLLATE NOCASE`, nullsLast: true };
+}
 
 function likeEscape(s: string): string {
 	return s.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -327,8 +348,14 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 		}
 	}
 	const whereSql = where.join(" AND ");
-	const sortExpr = SORT_EXPR[opts.sort ?? "dateAdded"];
-	if (!sortExpr) throw new HttpError(400, `invalid sort: ${opts.sort}`);
+	const sortSpec = resolveSort(opts.sort ?? "dateAdded");
+	if (!sortSpec) throw new HttpError(400, `invalid sort: ${opts.sort}`);
+	const sortExpr = sortSpec.nullsLast ? `(${sortSpec.expr} IS NULL), ${sortSpec.expr}` : sortSpec.expr;
+	const fieldNames = (opts.fields ?? []).map((f) => {
+		const c = canonicalField(f);
+		if (!c) throw new HttpError(400, `invalid field: ${f}`);
+		return c;
+	});
 	const dir = (opts.dir ?? "desc").toLowerCase();
 	if (dir !== "asc" && dir !== "desc") throw new HttpError(400, `invalid dir: ${opts.dir}`);
 	const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), 1000);
@@ -354,7 +381,28 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 			 ORDER BY ${sortExpr} ${dir}, i.key ${dir} LIMIT ? OFFSET ?`,
 		)
 		.all(...params, limit, offset) as SummaryRow[];
-	return { total, items: summarize(db, rows) };
+	const items = summarize(db, rows);
+	if (fieldNames.length > 0) attachFields(db, items, fieldNames);
+	return { total, items };
+}
+
+// Fills ItemSummary.fields from items.data (field names are already whitelisted).
+function attachFields(db: Database, items: ItemSummary[], fields: string[]): void {
+	if (items.length === 0) return;
+	const cols = fields.map((f, i) => `json_extract(i.data, '$.${f}') AS f${i}`).join(", ");
+	const rows = db
+		.query(`SELECT i.key, ${cols} FROM json_each(?) j CROSS JOIN items i ON i.key = j.value`)
+		.all(JSON.stringify(items.map((it) => it.key))) as Record<string, unknown>[];
+	const byKey = new Map(rows.map((r) => [r.key as string, r]));
+	for (const it of items) {
+		const r = byKey.get(it.key);
+		const out: Record<string, string | null> = {};
+		fields.forEach((f, i) => {
+			const v = r?.[`f${i}`];
+			out[f] = v === null || v === undefined || v === "" ? null : String(v);
+		});
+		it.fields = out;
+	}
 }
 
 const CONTENT_RANK = (ct: string | null): number => {
@@ -459,16 +507,186 @@ export function getItemDetail(db: Database, key: string): ItemDetail | null {
 		tag: string;
 		type: number;
 	}[];
-	return { data, children, collections, tags };
+	const detail: ItemDetail = { data, children, collections, tags };
+	const related = resolveRelated(db, data);
+	if (related.length > 0) detail.related = related;
+	return detail;
+}
+
+// ---------------------------------------------------------------- related items
+
+const RELATION = "dc:relation";
+
+function relationUris(data: ZoteroItemData): string[] {
+	const v = data.relations?.[RELATION];
+	return Array.isArray(v) ? v : typeof v === "string" ? [v] : [];
+}
+
+// Item key at the end of a Zotero item URI, whatever user/library it names.
+function uriKey(uri: string): string | null {
+	return /\/items\/([A-Z0-9]{8})$/.exec(uri)?.[1] ?? null;
+}
+
+function resolveRelated(db: Database, data: ZoteroItemData): NonNullable<ItemDetail["related"]> {
+	const keys = [...new Set(relationUris(data).map(uriKey).filter((k): k is string => !!k))];
+	if (keys.length === 0) return [];
+	const rows = db
+		.query(
+			`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year
+			 FROM json_each(?) j CROSS JOIN items i ON i.key = j.value WHERE i.deleted = 0`,
+		)
+		.all(JSON.stringify(keys)) as { key: string; item_type: string; title: string | null; creators_summary: string | null; year: number | null }[];
+	const byKey = new Map(rows.map((r) => [r.key, r]));
+	const out: NonNullable<ItemDetail["related"]> = [];
+	for (const k of keys) {
+		const r = byKey.get(k);
+		if (r) out.push({ key: r.key, itemType: r.item_type, title: r.title ?? "", creatorsSummary: r.creators_summary ?? "", year: r.year });
+	}
+	return out;
+}
+
+// Local library id used in relation URIs (http://zotero.org/users/local/<id>/items/<KEY>).
+function libraryKey(db: Database): string {
+	const row = db.query("SELECT value FROM meta WHERE name = 'library_key'").get() as { value: string } | null;
+	if (row) return row.value;
+	const key = generateKey();
+	db.query("INSERT INTO meta(name, value) VALUES('library_key', ?)").run(key);
+	return key;
+}
+
+function setRelations(db: Database, key: string, uris: string[]): void {
+	const row = db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string };
+	const data = JSON.parse(row.data) as ZoteroItemData;
+	const relations = { ...(data.relations ?? {}) };
+	if (uris.length === 0) delete relations[RELATION];
+	else relations[RELATION] = uris.length === 1 ? uris[0] : uris;
+	data.relations = relations;
+	const now = nowIso();
+	data.dateModified = now;
+	db.query("UPDATE items SET data = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), now, key);
+}
+
+function changeRelated(db: Database, key: string, others: string[], add: boolean): ItemDetail {
+	if (!itemExists(db, key)) throw new HttpError(404, "item not found");
+	for (const k of others) {
+		if (k === key) throw new HttpError(400, "an item cannot be related to itself");
+		if (add && !itemExists(db, k)) throw new HttpError(404, `item not found: ${k}`);
+	}
+	db.transaction(() => {
+		const lib = libraryKey(db);
+		const apply = (from: string, to: string) => {
+			const row = db.query("SELECT data FROM items WHERE key = ?").get(from) as { data: string } | null;
+			if (!row) return;
+			const uris = relationUris(JSON.parse(row.data) as ZoteroItemData);
+			const has = uris.some((u) => uriKey(u) === to);
+			if (add && !has) setRelations(db, from, [...uris, `http://zotero.org/users/local/${lib}/items/${to}`]);
+			else if (!add && has) setRelations(db, from, uris.filter((u) => uriKey(u) !== to));
+		};
+		for (const k of others) {
+			apply(key, k);
+			apply(k, key);
+		}
+	})();
+	return getItemDetail(db, key)!;
+}
+
+export function addRelated(db: Database, key: string, others: string[]): ItemDetail {
+	return changeRelated(db, key, others, true);
+}
+
+export function removeRelated(db: Database, key: string, others: string[]): ItemDetail {
+	return changeRelated(db, key, others, false);
+}
+
+// ---------------------------------------------------------------- create item
+
+export function createItem(db: Database, input: Partial<ZoteroItemData>): ItemDetail {
+	if (!input || typeof input !== "object" || Array.isArray(input)) throw new HttpError(400, "data must be an object");
+	const itemType = input.itemType;
+	if (typeof itemType !== "string" || !itemType) throw new HttpError(400, "data.itemType is required");
+	if (!hasItemType(itemType)) throw new HttpError(400, `unknown itemType: ${itemType}`);
+	const parent = input.parentItem ?? null;
+	if (parent !== null && typeof parent !== "string") throw new HttpError(400, "parentItem must be a string");
+	if (parent) {
+		const p = db.query("SELECT parent_key FROM items WHERE key = ?").get(parent) as { parent_key: string | null } | null;
+		if (!p) throw new HttpError(404, "parent item not found");
+		if (p.parent_key) throw new HttpError(400, "parent item must be a top-level item");
+		if (itemType !== "note" && itemType !== "attachment") throw new HttpError(400, "only notes and attachments can have a parent");
+	} else if (input.parentItem !== undefined && input.parentItem !== null && input.parentItem !== "") {
+		throw new HttpError(400, "invalid parentItem");
+	}
+	const {
+		key: _k,
+		dateAdded: _a,
+		dateModified: _m,
+		deleted: _d,
+		version: _v,
+		tags: tagsIn,
+		collections: collsIn,
+		parentItem: _p,
+		...rest
+	} = input as Record<string, unknown> & Partial<ZoteroItemData>;
+	if (tagsIn !== undefined && !Array.isArray(tagsIn)) throw new HttpError(400, "tags must be an array");
+	if (collsIn !== undefined && (!Array.isArray(collsIn) || collsIn.some((c) => typeof c !== "string"))) {
+		throw new HttpError(400, "collections must be an array of strings");
+	}
+	const collections = parent ? [] : [...new Set((collsIn ?? []) as string[])];
+	for (const c of collections) if (!collectionExists(db, c)) throw new HttpError(404, `collection not found: ${c}`);
+	const tags: { tag: string; type?: number }[] = [];
+	const seen = new Set<string>();
+	for (const t of (tagsIn ?? []) as { tag?: unknown; type?: number }[]) {
+		const tag = String(typeof t === "string" ? t : (t?.tag ?? "")).trim();
+		if (!tag || seen.has(tag)) continue;
+		seen.add(tag);
+		tags.push(typeof t === "object" && t?.type ? { tag, type: t.type } : { tag });
+	}
+
+	let key = generateKey();
+	while (itemExists(db, key)) key = generateKey();
+	const now = nowIso();
+	const data: ZoteroItemData = { key, ...(rest as object), itemType, dateAdded: now, dateModified: now } as ZoteroItemData;
+	if (parent) data.parentItem = parent;
+	data.tags = tags;
+	data.collections = collections;
+	if (typeof data.relations !== "object" || data.relations === null) data.relations = {};
+	if (itemType === "attachment" && !data.linkMode) data.linkMode = "linked_url";
+	const cols = deriveColumns(data);
+	db.transaction(() => {
+		db.query(
+			`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted)
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		).run(key, itemType, parent || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
+		for (const t of tags) db.query("INSERT INTO item_tags(item_key, tag, type) VALUES(?, ?, ?)").run(key, t.tag, t.type ?? 0);
+		for (const c of collections) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, key);
+		if (itemType === "attachment") {
+			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, NULL, ?)").run(
+				key,
+				String(data.linkMode),
+				typeof data.contentType === "string" ? data.contentType : null,
+				typeof data.url === "string" ? data.url : null,
+			);
+		}
+	})();
+	return getItemDetail(db, key)!;
 }
 
 export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemData>): ItemDetail {
 	if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new HttpError(400, "data must be an object");
 	const row = db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string } | null;
 	if (!row) throw new HttpError(404, "item not found");
+	let data = JSON.parse(row.data) as ZoteroItemData;
+	const { key: _k, itemType, dateAdded: _a, ...rest } = patch;
+	// Changing the item type remaps fields and creator types first (Zotero's rules);
+	// any other fields in the same patch then apply to the new type.
+	if (itemType !== undefined && itemType !== data.itemType) {
+		if (typeof itemType !== "string" || !hasItemType(itemType)) throw new HttpError(400, `unknown item type: ${String(itemType)}`);
+		try {
+			data = convertItemType(data, itemType).data;
+		} catch (e) {
+			throw new HttpError(400, (e as Error).message);
+		}
+	}
 	db.transaction(() => {
-		const data = JSON.parse(row.data) as ZoteroItemData;
-		const { key: _k, itemType: _t, dateAdded: _a, ...rest } = patch;
 		Object.assign(data, rest);
 		const now = nowIso();
 		data.dateModified = now;
@@ -502,8 +720,8 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 			else delete data.deleted;
 		}
 		db.query(
-			"UPDATE items SET data = ?, title = ?, creators_summary = ?, year = ?, publication = ?, date_modified = ?, deleted = ? WHERE key = ?",
-		).run(JSON.stringify(data), cols.title, cols.creators_summary, cols.year, cols.publication, now, data.deleted ? 1 : 0, key);
+			"UPDATE items SET data = ?, item_type = ?, title = ?, creators_summary = ?, year = ?, publication = ?, date_modified = ?, deleted = ? WHERE key = ?",
+		).run(JSON.stringify(data), data.itemType, cols.title, cols.creators_summary, cols.year, cols.publication, now, data.deleted ? 1 : 0, key);
 	})();
 	return getItemDetail(db, key)!;
 }

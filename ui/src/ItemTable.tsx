@@ -1,33 +1,146 @@
-import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { ArrowDown, ArrowUp, BookOpen, FolderInput, FolderSearch, Quote, RotateCcw, Trash2 } from "lucide-solid";
+import { ArrowDown, ArrowUp, BookOpen, FileSearch, FolderInput, FolderSearch, Paperclip, Quote, RotateCcw, StickyNote, Trash2 } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { createItemList } from "./itemlist";
 import { store } from "./store";
 import { api, type ItemSummary, type SearchHit } from "./api";
 import { sanitizeSnippet } from "./sanitize";
 import { addItemsToCollection, copyDoi, errMsg, trashItems } from "~/lib/actions";
+import { findFullText } from "~/lib/fulltext";
 import { attachmentIcon, itemTypeIcon } from "~/lib/icons";
 import { cn } from "~/lib/utils";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
-	ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent,
-	ContextMenuSubTrigger, ContextMenuTrigger,
+	ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub,
+	ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from "~/components/ui/context-menu";
+import { columnLayout as layout } from "./columns/layout";
+import { loadSchema, labelOf, moreColumns, MENU_COLUMNS, type Column } from "./columns/defs";
 
 const ROW = 26;
-const GRID = "grid grid-cols-[minmax(180px,1fr)_160px_48px_160px_88px_28px]";
-const COLS: { id: string; label: string; sort?: string; cls?: string }[] = [
-	{ id: "title", label: "Title", sort: "title" },
-	{ id: "creator", label: "Creator", sort: "creator" },
-	{ id: "year", label: "Year", sort: "year", cls: "justify-end" },
-	{ id: "pub", label: "Publication" },
-	{ id: "added", label: "Date Added", sort: "dateAdded" },
-	{ id: "att", label: "" },
-];
+const gridCols = () => layout.ids().map((id) => layout.widthOf(id) + "px").join(" ") + " 1fr";
+const alignCls = (c: Column) => (c.align === "right" ? "justify-end text-right" : c.align === "center" ? "justify-center text-center" : "");
 
 export const itemList = createItemList();
+
+/** Header row: sort on click, drag to reorder, drag the right edge to resize, right-click for the column picker. */
+const HeaderRow: Component<{ sbw: number; left: number }> = (p) => {
+	let outer!: HTMLDivElement;
+	let inner!: HTMLDivElement;
+	const [dragId, setDragId] = createSignal<string | null>(null);
+	const [dropAt, setDropAt] = createSignal<{ index: number; left: number } | null>(null);
+	let suppressClick = false;
+	// keep the header horizontally in step with the body
+	createEffect(() => { layout.total(); p.sbw; outer.scrollLeft = p.left; });
+
+	function sortBy(c: Column) {
+		if (suppressClick) return;
+		const s = store.sort();
+		store.setSort(s.key === c.sort ? { key: c.sort, dir: s.dir === "asc" ? "desc" : "asc" }
+			: { key: c.sort, dir: /^(dateAdded|dateModified|accessDate)$/.test(c.sort) ? "desc" : "asc" });
+	}
+
+	/** Follow the pointer until release; `onEnd` returns true when the gesture was a drag (so the trailing click must not sort). */
+	function track(e: PointerEvent, onMove: (e: PointerEvent) => void, onEnd: (e: PointerEvent) => boolean) {
+		const up = (ev: PointerEvent) => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", up);
+			window.removeEventListener("pointercancel", up);
+			if (onEnd(ev)) {
+				suppressClick = true;
+				setTimeout(() => (suppressClick = false), 0);
+			}
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", up);
+		window.addEventListener("pointercancel", up);
+		e.preventDefault();
+	}
+
+	function startResize(e: PointerEvent, id: string) {
+		if (e.button !== 0) return;
+		e.stopPropagation();
+		const x0 = e.clientX, w0 = layout.widthOf(id);
+		track(e, (ev) => layout.setWidth(id, w0 + ev.clientX - x0), () => true);
+	}
+
+	function startDrag(e: PointerEvent, id: string) {
+		if (e.button !== 0) return;
+		const x0 = e.clientX;
+		let moved = false;
+		const cells = () => [...inner.querySelectorAll<HTMLElement>("[data-col]")];
+		const target = (x: number) => {
+			const cs = cells();
+			const base = inner.getBoundingClientRect().left;
+			let i = cs.findIndex((c) => { const r = c.getBoundingClientRect(); return x < r.left + r.width / 2; });
+			if (i < 0) i = cs.length;
+			const edge = i < cs.length ? cs[i].getBoundingClientRect().left : cs[cs.length - 1].getBoundingClientRect().right;
+			return { index: i, left: edge - base };
+		};
+		track(e, (ev) => {
+			if (!moved && Math.abs(ev.clientX - x0) < 5) return;
+			moved = true;
+			setDragId(id);
+			setDropAt(target(ev.clientX));
+		}, () => {
+			const t = dropAt();
+			if (moved && t) {
+				const from = layout.ids().indexOf(id);
+				layout.move(id, t.index > from ? t.index - 1 : t.index);
+			}
+			setDragId(null); setDropAt(null);
+			return moved;
+		});
+	}
+
+	return (
+		<ContextMenu>
+			<ContextMenuTrigger as="div" ref={outer} class="flex-none overflow-hidden border-b bg-card text-xs font-semibold" role="presentation">
+				<div ref={inner} role="row" aria-rowindex={1} class="relative grid h-[26px] items-center"
+					style={{ "grid-template-columns": gridCols(), width: layout.total() + p.sbw + "px", "min-width": "100%", "padding-right": p.sbw + "px" }}>
+					<For each={layout.columns()}>{(c) => (
+						<div role="columnheader" data-col={c.id}
+							aria-sort={store.sort().key === c.sort ? (store.sort().dir === "asc" ? "ascending" : "descending") : "none"}
+							aria-label={c.icon ? c.label : undefined}
+							title={c.icon ? c.label : undefined}
+							class={cn("relative flex h-full min-w-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap px-2 hover:bg-accent", alignCls(c), dragId() === c.id && "opacity-40")}
+							onPointerDown={(e) => startDrag(e, c.id)} onClick={() => sortBy(c)}>
+							<Show when={c.icon} fallback={<span class="truncate">{c.label}</span>}>
+								{c.icon === "attachments" ? <Paperclip class="size-3.5" /> : <StickyNote class="size-3.5" />}
+							</Show>
+							<Show when={store.sort().key === c.sort}>
+								{store.sort().dir === "asc" ? <ArrowUp class="size-3 flex-none text-primary" /> : <ArrowDown class="size-3 flex-none text-primary" />}
+							</Show>
+							<div data-resize={c.id} class="absolute right-0 top-0 z-10 h-full w-2 cursor-col-resize border-r border-border/60 hover:border-primary hover:bg-primary/20"
+								onPointerDown={(e) => startResize(e, c.id)} onClick={(e) => e.stopPropagation()} />
+						</div>
+					)}</For>
+					<Show when={dropAt()}>{(d) => <div class="pointer-events-none absolute top-0 z-20 h-full w-0.5 bg-primary" style={{ left: Math.max(0, d().left - 1) + "px" }} />}</Show>
+				</div>
+			</ContextMenuTrigger>
+			<ContextMenuContent class="max-h-[80vh] w-56 overflow-y-auto">
+				<For each={MENU_COLUMNS}>{(id) => (
+					<ContextMenuCheckboxItem checked={layout.has(id)} disabled={id === "title"} closeOnSelect={false}
+						onChange={(on) => layout.toggle(id, on)}>{labelOf(id)}</ContextMenuCheckboxItem>
+				)}</For>
+				<ContextMenuSeparator />
+				<ContextMenuSub>
+					<ContextMenuSubTrigger>More Columns</ContextMenuSubTrigger>
+					<ContextMenuSubContent class="max-h-[70vh] min-w-48 overflow-y-auto">
+						<For each={moreColumns()} fallback={<div class="px-2 py-1.5 text-muted-foreground">No other fields</div>}>{(f) => (
+							<ContextMenuCheckboxItem checked={layout.has(f.id)} closeOnSelect={false}
+								onChange={(on) => layout.toggle(f.id, on)}>{f.label}</ContextMenuCheckboxItem>
+						)}</For>
+					</ContextMenuSubContent>
+				</ContextMenuSub>
+				<ContextMenuSeparator />
+				<ContextMenuItem onSelect={() => layout.restoreOrder()}>Restore Column Order</ContextMenuItem>
+			</ContextMenuContent>
+		</ContextMenu>
+	);
+};
 
 /** Submenu body: collections the right-clicked item already belongs to (fetched lazily). */
 const ShowInCollection: Component<{ itemKey: string }> = (p) => {
@@ -70,6 +183,9 @@ export const ItemTable: Component = () => {
 	const list = itemList;
 	const [sbw, setSbw] = createSignal(0); // scrollbar width, so the header aligns with the rows
 	const [ctx, setCtx] = createSignal<ItemSummary | null>(null);
+	const [left, setLeft] = createSignal(0); // horizontal scroll offset, mirrored into the header
+	const listQuery = createMemo(() => ({ ...store.query(), fields: layout.fieldsParam() || undefined }));
+	loadSchema();
 
 	const v = createVirtualizer({
 		get count() { return list.total(); },
@@ -84,12 +200,15 @@ export const ItemTable: Component = () => {
 		onCleanup(() => ro.disconnect());
 	});
 
+	// A new query (view, filter, sort, tag) or a data change starts over from the top...
 	createEffect(on(() => [store.query(), store.itemsRev()], () => {
-		list.reset(store.query());
+		list.reset(untrack(listQuery));
 		scroller?.scrollTo({ top: 0 });
 		store.selectOnly(null);
 	}));
-	createEffect(() => { for (const r of v.getVirtualItems()) list.ensure(r.index); });
+	// ...whereas changing the visible columns only refetches the pages in view (selection and scroll stay).
+	createEffect(on(() => layout.fieldsParam(), () => list.reset(untrack(listQuery)), { defer: true }));
+	createEffect(() => { list.epoch(); for (const r of v.getVirtualItems()) list.ensure(r.index); });
 	createEffect(on(list.error, (e) => { if (e) toast.error("Could not load items", { description: e, id: "items-error" }); }));
 
 	function click(e: MouseEvent, index: number) {
@@ -156,72 +275,70 @@ export const ItemTable: Component = () => {
 		e.dataTransfer!.effectAllowed = "copy";
 	}
 
-	function header(c: (typeof COLS)[number]) {
-		if (!c.sort) return;
-		const s = store.sort();
-		store.setSort(s.key === c.sort ? { key: c.sort, dir: s.dir === "asc" ? "desc" : "asc" }
-			: { key: c.sort, dir: c.sort === "dateAdded" ? "desc" : "asc" });
-	}
-
 	const inTrash = () => store.view().kind === "trash";
+	const rowWidth = () => layout.total() + "px";
+
+	/** One body cell; text columns truncate and show their full value as a tooltip. */
+	const Cell: Component<{ col: Column; item: ItemSummary }> = (cp) => {
+		const text = () => cp.col.get(cp.item);
+		return (
+			<Switch fallback={
+				<div role="gridcell" class={cn("min-w-0 truncate px-2", alignCls(cp.col), (cp.col.id === "dateAdded" || cp.col.id === "year") && "tabular-nums opacity-70")} title={text() || undefined}>{text()}</div>
+			}>
+				<Match when={cp.col.id === "title"}>
+					<div role="gridcell" class="flex min-w-0 items-center gap-1.5 px-2" title={cp.item.title}>
+						<Dynamic component={itemTypeIcon(cp.item.itemType)} class="size-3.5 flex-none opacity-60" />
+						<span class="truncate">{cp.item.title || "(untitled)"}</span>
+					</div>
+				</Match>
+				<Match when={cp.col.id === "attachments"}>
+					<div role="gridcell" class="flex h-full items-center justify-center" title={cp.item.primaryAttachment?.contentType}
+						onClick={(e) => { if (cp.item.primaryAttachment) { e.stopPropagation(); store.openSummary(cp.item); } }}>
+						<Show when={cp.item.primaryAttachment || cp.item.attachmentCount}>
+							<Dynamic component={attachmentIcon(cp.item.primaryAttachment?.contentType, cp.item.primaryAttachment ? null : "linked_url")} class="size-3.5 opacity-70" />
+						</Show>
+					</div>
+				</Match>
+			</Switch>
+		);
+	};
 
 	return (
 		<div class="flex min-h-0 flex-1 flex-col">
-			<div class={cn(GRID, "h-[26px] flex-none items-center border-b bg-card text-xs font-semibold")} style={{ "padding-right": sbw() + "px" }}>
-				<For each={COLS}>{(c) => (
-					<div class={cn("flex h-full items-center gap-1 whitespace-nowrap px-2", c.cls, c.sort && "cursor-pointer hover:bg-accent")} onClick={() => header(c)}>
-						{c.label}
-						<Show when={c.sort && store.sort().key === c.sort}>
-							{store.sort().dir === "asc" ? <ArrowUp class="size-3 text-primary" /> : <ArrowDown class="size-3 text-primary" />}
-						</Show>
-					</div>
-				)}</For>
-			</div>
+			<div role="grid" aria-label="Items" aria-multiselectable="true" aria-rowcount={list.total() + 1} aria-colcount={layout.ids().length}
+				class="flex min-h-0 flex-1 flex-col">
+			<HeaderRow sbw={sbw()} left={left()} />
 			<ContextMenu onOpenChange={(o) => !o && setCtx(null)}>
-				<ContextMenuTrigger as="div" ref={scroller} tabindex="0" onKeyDown={onKey} onContextMenu={onContextMenu}
-					class="group/list relative min-h-0 flex-1 overflow-y-auto outline-none">
-					<div style={{ height: v.getTotalSize() + "px", position: "relative", width: "100%" }}>
+				<ContextMenuTrigger as="div" ref={scroller} role="rowgroup" tabindex="0" onKeyDown={onKey} onContextMenu={onContextMenu}
+					onScroll={() => setLeft(scroller.scrollLeft)}
+					class="group/list relative min-h-0 flex-1 overflow-auto outline-none">
+					<div role="presentation" style={{ height: v.getTotalSize() + "px", position: "relative", width: rowWidth(), "min-width": "100%" }}>
 						<For each={v.getVirtualItems()}>{(r) => {
 							const it = () => list.get(r.index);
 							const selected = () => !!it() && store.selected().has(it()!.key);
 							return (
-								<div data-index={r.index}
-									class={cn(GRID, "absolute inset-x-0 top-0 h-[26px] select-none items-center hover:bg-accent",
+								<div data-index={r.index} role="row" aria-rowindex={r.index + 2} aria-selected={selected()}
+									class={cn("absolute inset-x-0 top-0 grid h-[26px] select-none items-center hover:bg-accent",
 										r.index % 2 === 1 && "bg-muted/50",
 										selected() && "bg-primary/15 hover:bg-primary/20 group-focus-within/list:bg-primary group-focus-within/list:text-primary-foreground group-focus-within/list:hover:bg-primary",
 										store.focusIndex() === r.index && "outline-1 -outline-offset-1 outline-ring/60")}
-									style={{ transform: `translateY(${r.start}px)` }}
+									style={{ transform: `translateY(${r.start}px)`, "grid-template-columns": gridCols() }}
 									draggable={!!it()} onDragStart={(e) => dragStart(e, r.index)}
 									onClick={(e) => click(e, r.index)}
 									onDblClick={() => { const x = it(); if (x) store.openSummary(x); }}>
-									<Show when={it()} fallback={<>
-										<div class="px-2"><Skeleton class="h-3 w-4/5 rounded-sm" /></div>
-										<div class="px-2"><Skeleton class="h-3 w-3/5 rounded-sm" /></div>
-										<div class="px-2"><Skeleton class="h-3 w-full rounded-sm" /></div>
-									</>}>
-										{(x) => (<>
-											<div class="flex min-w-0 items-center gap-1.5 px-2" title={x().title}>
-												<Dynamic component={itemTypeIcon(x().itemType)} class="size-3.5 flex-none opacity-60" />
-												<span class="truncate">{x().title || "(untitled)"}</span>
-											</div>
-											<div class="truncate px-2">{x().creatorsSummary}</div>
-											<div class="px-2 text-right tabular-nums opacity-70">{x().year ?? ""}</div>
-											<div class="truncate px-2">{x().publication ?? ""}</div>
-											<div class="truncate px-2 tabular-nums opacity-70">{x().dateAdded.slice(0, 10)}</div>
-											<div class="flex h-full items-center justify-center" title={x().primaryAttachment?.contentType}
-												onClick={(e) => { if (x().primaryAttachment) { e.stopPropagation(); store.openSummary(x()); } }}>
-												<Show when={x().primaryAttachment || x().attachmentCount}>
-													<Dynamic component={attachmentIcon(x().primaryAttachment?.contentType, x().primaryAttachment ? null : "linked_url")} class="size-3.5 opacity-70" />
-												</Show>
-											</div>
-										</>)}
+									<Show when={it()} fallback={
+										<For each={layout.columns()}>{(c) => (
+											<div role="gridcell" class="px-2"><Skeleton class={cn("h-3 rounded-sm", c.id === "title" ? "w-4/5" : "w-3/5")} /></div>
+										)}</For>
+									}>
+										{(x) => <For each={layout.columns()}>{(c) => <Cell col={c} item={x()} />}</For>}
 									</Show>
 								</div>
 							);
 						}}</For>
 					</div>
 					<Show when={list.total() === 0 && !list.loading()}>
-						<div class="p-6 text-center text-muted-foreground">No items</div>
+						<div class="sticky left-0 p-6 text-center text-muted-foreground">No items</div>
 					</Show>
 				</ContextMenuTrigger>
 				<ContextMenuContent class="w-56">
@@ -230,6 +347,12 @@ export const ItemTable: Component = () => {
 						return (<>
 							<ContextMenuItem disabled={!it().primaryAttachment} onSelect={() => store.openSummary(it())}>
 								<BookOpen class="mr-2 size-4" /> Open
+							</ContextMenuItem>
+							<ContextMenuItem onSelect={() => findFullText(keys())}>
+								<FileSearch class="mr-2 size-4" /> Find Full Text
+							</ContextMenuItem>
+							<ContextMenuItem onSelect={() => findFullText(keys(), { openAccessOnly: true })}>
+								<FileSearch class="mr-2 size-4" /> Find Full Text (open access only)
 							</ContextMenuItem>
 							<ShowInCollection itemKey={it().key} />
 							<AddToCollection keys={keys()} />
@@ -250,6 +373,7 @@ export const ItemTable: Component = () => {
 					}}</Show>
 				</ContextMenuContent>
 			</ContextMenu>
+			</div>
 			<div class="flex-none border-t bg-card px-2 py-0.5 text-xs text-muted-foreground">
 				{list.total().toLocaleString()} items{list.loading() ? " · loading…" : ""}
 				<Show when={list.error()}> · <span class="text-destructive">{list.error()}</span></Show>

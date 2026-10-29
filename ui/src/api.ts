@@ -1,10 +1,10 @@
 import type {
-	Collection, ItemList, ItemDetail, SearchResult, ZoteroItemData,
+	Collection, ItemList, ItemDetail, SearchResult, ZoteroItemData, ZoteroSchema,
 } from "../../core/src/api-types";
 
 export type {
 	Collection, ItemList, ItemSummary, ItemDetail, SearchResult, SearchHit,
-	ChildSummary, Creator, ZoteroItemData,
+	ChildSummary, Creator, ZoteroItemData, ZoteroSchema,
 } from "../../core/src/api-types";
 
 const BASE = "/api";
@@ -31,6 +31,8 @@ export interface ItemQuery {
 	dir: "asc" | "desc";
 	unfiled?: boolean;
 	trash?: boolean;
+	/** comma-separated Zotero data fields to return in ItemSummary.fields */
+	fields?: string;
 }
 
 const qs = (o: Record<string, string | number | undefined | boolean>) => {
@@ -53,6 +55,7 @@ export const api = {
 		req<{ ok: true }>("POST", `/collections/${key}/items`, { keys }),
 	items: (q: ItemQuery, offset: number, limit: number) =>
 		req<ItemList>("GET", "/items?" + qs({ ...q, limit, offset })),
+	schema: () => req<ZoteroSchema>("GET", "/schema"),
 	item: (key: string) => req<ItemDetail>("GET", `/items/${key}`),
 	patchItem: (key: string, data: Partial<ZoteroItemData>) =>
 		req<ItemDetail>("PATCH", `/items/${key}`, { data }),

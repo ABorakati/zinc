@@ -1,13 +1,13 @@
 // Mock of the zotero-next core HTTP API (core/src/api-types.ts) with ~30k generated
 // items, for developing/testing ui/ without the real core.
 //   bun ui/mock-api.ts   -> http://127.0.0.1:23121/app/  (API under /api)
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type {
-	Collection, ItemSummary, ItemDetail, ZoteroItemData, ChildSummary, SearchHit, ReaderAnnotation,
+	ZoteroSchema, Collection, ItemSummary, ItemDetail, ZoteroItemData, ChildSummary, SearchHit, ReaderAnnotation,
 } from "../core/src/api-types";
 
 const PORT = Number(process.env.PORT ?? 23121);
-const DIST = join(import.meta.dir, "dist");
+const DIST = process.env.ZN_UI_DIST ? resolve(process.env.ZN_UI_DIST) : join(import.meta.dir, "dist"); // ZN_UI_DIST: alternative build dir (relative to cwd, or absolute)
 
 // ---- deterministic data -------------------------------------------------
 let seed = 42;
@@ -36,7 +36,10 @@ interface Rec {
 	text: string;
 	sortCreator: string;
 	sortTitle: string;
+	idx: number;
 }
+const ITEM_TYPES = ["journalArticle", "journalArticle", "journalArticle", "journalArticle", "book", "conferencePaper", "thesis", "report", "webpage"];
+const hash = (i: number, s: string) => { let h = (2166136261 ^ i) >>> 0; for (let k = 0; k < s.length; k++) h = Math.imul(h ^ s.charCodeAt(k), 16777619); return (h ^ (h >>> 15)) >>> 0; };
 const recs = new Map<string, Rec>();
 const childRecs = new Map<string, ZoteroItemData & { annotations: number; hasFile: boolean }>();
 const annotations = new Map<string, ReaderAnnotation[]>();
@@ -78,18 +81,19 @@ for (let i = 0; i < 30000; i++) {
 	if (rnd() < 0.3) itemTags.add(pick(TAGS));
 	const colls = new Set<string>();
 	if (rnd() < 0.7) colls.add(pick(collKeys));
+	const itemType = ITEM_TYPES[hash(i, "type") % ITEM_TYPES.length];
 	const data: ZoteroItemData = {
-		key: k, itemType: "journalArticle", title: t, creators: authors, date: `${year}-0${1 + Math.floor(rnd() * 9)}-1${Math.floor(rnd() * 9)}`,
+		key: k, itemType, title: t, creators: authors, date: `${year}-0${1 + Math.floor(rnd() * 9)}-1${Math.floor(rnd() * 9)}`,
 		abstractNote: `We study ${t.toLowerCase()} using ${pick(WORDS)} methods. ` + "Lorem ipsum dolor sit amet. ".repeat(4),
 		publicationTitle: pub ?? undefined, DOI: `10.1000/zn.${i}`, url: rnd() < 0.5 ? `https://example.org/paper/${i}` : undefined,
 		dateAdded: added, dateModified: added,
 	};
 	recs.set(k, {
-		data, collections: colls, tags: itemTags, children, trashed: i % 400 === 0,
+		data, idx: i, collections: colls, tags: itemTags, children, trashed: i % 400 === 0,
 		sortCreator: summaryCreators.toLowerCase(), sortTitle: t.toLowerCase(),
 		text: (t + " " + summaryCreators + " " + year).toLowerCase(),
 		summary: {
-			key: k, itemType: "journalArticle", title: t, creatorsSummary: summaryCreators, year, publication: pub, dateAdded: added,
+			key: k, itemType, title: t, creatorsSummary: summaryCreators, year, publication: pub, dateAdded: added,
 			primaryAttachment: hasPdf ? { key: children[0], contentType: "application/pdf" } : null,
 			attachmentCount: hasPdf ? 1 : 0, noteCount,
 		},
@@ -107,14 +111,86 @@ recount();
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
 const fail = (status: number, error: string) => json({ error }, status);
 const sortCache = new Map<string, Rec[]>();
+
+// Hand-written subset of the Zotero schema (the real one comes from core's GET /api/schema).
+const FIELD_LABELS: Record<string, string> = {
+	title: "Title", itemType: "Item Type", date: "Date", dateAdded: "Date Added", dateModified: "Date Modified", abstractNote: "Abstract",
+	publicationTitle: "Publication", journalAbbreviation: "Journal Abbr", publisher: "Publisher", language: "Language", accessDate: "Accessed",
+	libraryCatalog: "Library Catalog", callNumber: "Call Number", rights: "Rights", archive: "Archive", archiveLocation: "Loc. in Archive",
+	place: "Place", volume: "Volume", edition: "Edition", number: "Number", pages: "Pages", issue: "Issue", series: "Series",
+	section: "Section", shortTitle: "Short Title", extra: "Extra", DOI: "DOI", url: "URL", ISSN: "ISSN", ISBN: "ISBN",
+	seriesTitle: "Series Title", seriesText: "Series Text", numPages: "# of Pages", numberOfVolumes: "# of Volumes",
+	bookTitle: "Book Title", proceedingsTitle: "Proceedings Title", conferenceName: "Conference Name", university: "University",
+	thesisType: "Type", institution: "Institution", reportNumber: "Report Number", reportType: "Report Type", websiteTitle: "Website Title",
+	websiteType: "Website Type", medium: "Medium", genre: "Genre", system: "System", versionNumber: "Version", runningTime: "Running Time",
+	seriesNumber: "Series Number", volumeTitle: "Volume Title", court: "Court", committee: "Committee", repository: "Repository",
+	archiveID: "Archive ID", PMID: "PMID",
+};
+const SCHEMA: ZoteroSchema = {
+	version: 1,
+	fieldLabels: FIELD_LABELS,
+	itemTypes: [
+		["journalArticle", "Journal Article", ["title", "date", "publicationTitle", "volume", "issue", "pages", "journalAbbreviation", "DOI", "ISSN", "language", "libraryCatalog", "extra"]],
+		["book", "Book", ["title", "date", "publisher", "place", "edition", "numPages", "ISBN", "series", "language", "extra"]],
+		["conferencePaper", "Conference Paper", ["title", "date", "proceedingsTitle", "conferenceName", "publisher", "place", "pages", "DOI", "extra"]],
+		["thesis", "Thesis", ["title", "date", "thesisType", "university", "place", "numPages", "extra"]],
+		["report", "Report", ["title", "date", "reportNumber", "reportType", "institution", "place", "pages", "extra"]],
+		["webpage", "Web Page", ["title", "date", "websiteTitle", "websiteType", "url", "accessDate", "extra"]],
+	].map(([itemType, label, fields]) => ({
+		itemType: itemType as string, label: label as string,
+		fields: (fields as string[]).map((field) => ({ field, label: FIELD_LABELS[field] ?? field })),
+		creatorTypes: [{ creatorType: "author", label: "Author", primary: true }, { creatorType: "editor", label: "Editor", primary: false }],
+	})),
+};
+
+const POOLS: Record<string, string[]> = {
+	publisher: ["Elsevier", "Springer", "Wiley", "Oxford University Press", "Nature Publishing Group", "BMJ Publishing"],
+	journalAbbreviation: ["Nat.", "Lancet", "BMJ", "Ann. Surg.", "PLoS ONE", "JAMA", "Science", "npj Digit. Med."],
+	language: ["en", "en", "en", "de", "fr", "es"],
+	libraryCatalog: ["PubMed", "Crossref", "DOI.org (Crossref)", "WorldCat", "Semantic Scholar"],
+	rights: ["CC BY 4.0", "All rights reserved", "CC BY-NC 4.0", "Open Access"],
+	archive: ["PubMed Central", "arXiv", "Zenodo", "SSRN"],
+	place: ["London", "New York", "Berlin", "Tokyo", "Oxford", "Cambridge, MA"],
+	series: ["Methods in Medicine", "Lecture Notes in CS", "Advances in Surgery", "Studies in Health"],
+	section: ["Original Article", "Review", "Letters", "Editorial"],
+	edition: ["1st", "2nd", "3rd", "Revised"],
+	ISSN: ["0028-0836", "0140-6736", "1932-6203", "0003-4932"],
+};
+/** Value of a Zotero data field for a mock record: real data where present, deterministic synthetic otherwise. */
+function fieldValue(r: Rec, f: string): string | null {
+	const d = r.data;
+	if (f === "dateModified") return new Date(Date.parse(d.dateAdded!) + (hash(r.idx, f) % 90) * 86400000).toISOString();
+	if (typeof d[f] === "string" && d[f]) return d[f] as string;
+	if (f === "itemType") return d.itemType;
+	const h = hash(r.idx, f);
+	if (f === "accessDate") return h % 3 ? new Date(Date.UTC(2023, 0, 1) + (h % 900) * 86400000).toISOString() : null;
+	if (h % 5 === 0) return null; // some blanks
+	const pool = POOLS[f];
+	if (pool) return pool[h % pool.length];
+	switch (f) {
+		case "volume": return String(1 + (h % 60));
+		case "issue": return String(1 + (h % 12));
+		case "number": return String(1 + (h % 999));
+		case "pages": { const a = 1 + (h % 400); return `${a}-${a + 5 + (h % 20)}`; }
+		case "callNumber": return `QA${h % 900}.${(h >> 8) % 99}`;
+		case "archiveLocation": return `Box ${h % 50}`;
+		case "shortTitle": return (d.title ?? "").split(" ").slice(0, 3).join(" ");
+		case "extra": return `PMID: ${10000000 + (h % 80000000)}`;
+		case "numPages": return String(40 + (h % 500));
+		default: return FIELD_LABELS[f] ? `${FIELD_LABELS[f]} ${h % 100}` : null;
+	}
+}
+
 const sorted = (sort: string, dir: string) => {
 	const ck = sort + dir;
 	let a = sortCache.get(ck);
 	if (!a) {
 		const f: Record<string, (r: Rec) => string | number> = {
 			title: (r) => r.sortTitle, creator: (r) => r.sortCreator, year: (r) => r.summary.year ?? 0, dateAdded: (r) => r.summary.dateAdded,
+			itemType: (r) => r.data.itemType, publication: (r) => (r.summary.publication ?? "").toLowerCase(),
+			noteCount: (r) => r.summary.noteCount, attachmentCount: (r) => r.summary.attachmentCount,
 		};
-		const g = f[sort] ?? f.dateAdded;
+		const g = f[sort] ?? (sort in FIELD_LABELS ? (r: Rec) => (fieldValue(r, sort) ?? "").toLowerCase() : f.dateAdded);
 		a = [...all].sort((x, y) => (g(x) < g(y) ? -1 : g(x) > g(y) ? 1 : 0));
 		if (dir === "desc") a.reverse();
 		sortCache.set(ck, a);
@@ -191,7 +267,12 @@ async function api(req: Request, url: URL): Promise<Response> {
 				(r) => r.trashed === trash && (!col || r.collections.has(col)) && (!unfiled || r.collections.size === 0) &&
 					(!tag || r.tags.has(tag)) && (!q || q.split(/\s+/).every((w) => r.text.includes(w))),
 			);
-			return json({ total: rows.length, items: rows.slice(offset, offset + limit).map((r) => r.summary) });
+			const fields = s.get("fields")?.split(",").filter(Boolean);
+			return json({
+				total: rows.length,
+				items: rows.slice(offset, offset + limit).map((r) =>
+					fields ? { ...r.summary, fields: Object.fromEntries(fields.map((f) => [f, fieldValue(r, f)])) } : r.summary),
+			});
 		}
 		const r = recs.get(p[1]) ;
 		const child = childRecs.get(p[1]);
@@ -211,6 +292,7 @@ async function api(req: Request, url: URL): Promise<Response> {
 			return json({ ok: true });
 		}
 	}
+	if (p[0] === "schema" && m === "GET") return json(SCHEMA);
 	if (p[0] === "tags" && m === "GET") {
 		const counts = new Map<string, number>();
 		for (const r of all) for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
