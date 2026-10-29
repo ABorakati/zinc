@@ -1,14 +1,13 @@
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { ArrowDown, ArrowUp, BookOpen, FileSearch, FolderInput, FolderSearch, Paperclip, Quote, RotateCcw, StickyNote, Trash2 } from "lucide-solid";
+import { ArrowDown, ArrowUp, Paperclip, StickyNote } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { createItemList } from "./itemlist";
 import { store } from "./store";
 import { api, type ItemSummary, type SearchHit } from "./api";
 import { sanitizeSnippet } from "./sanitize";
-import { addItemsToCollection, copyDoi, errMsg, trashItems } from "~/lib/actions";
-import { findFullText } from "~/lib/fulltext";
+import { errMsg } from "~/lib/actions";
 import { attachmentIcon, itemTypeIcon } from "~/lib/icons";
 import { cn } from "~/lib/utils";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -17,6 +16,8 @@ import {
 	ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from "~/components/ui/context-menu";
 import { columnLayout as layout } from "./columns/layout";
+import { selectClick, focusRow, startItemDrag, ItemMenuItems } from "./cards/shared";
+import { CardList } from "./cards/CardList";
 import { loadSchema, labelOf, moreColumns, MENU_COLUMNS, type Column } from "./columns/defs";
 
 const ROW = 26;
@@ -142,43 +143,7 @@ const HeaderRow: Component<{ sbw: number; left: number }> = (p) => {
 	);
 };
 
-/** Submenu body: collections the right-clicked item already belongs to (fetched lazily). */
-const ShowInCollection: Component<{ itemKey: string }> = (p) => {
-	const [d] = createResource(() => p.itemKey, (k) => api.item(k));
-	const mine = () => (store.collections() ?? []).filter((c) => d()?.collections.includes(c.key));
-	return (
-		<ContextMenuSub overlap>
-			<ContextMenuSubTrigger disabled={!mine().length}>
-				<FolderSearch class="mr-2 size-4" /> Show in collection…
-			</ContextMenuSubTrigger>
-			<ContextMenuSubContent class="max-h-72 min-w-44 overflow-y-auto">
-				<For each={mine()}>{(c) => <ContextMenuItem onSelect={() => store.setView({ kind: "collection", key: c.key })}>{c.name}</ContextMenuItem>}</For>
-			</ContextMenuSubContent>
-		</ContextMenuSub>
-	);
-};
-
-const AddToCollection: Component<{ keys: string[] }> = (p) => {
-	const sorted = () => [...(store.collections() ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-	const path = (k: string | null): string => {
-		const c = store.collections()?.find((x) => x.key === k);
-		return c ? (c.parentKey ? path(c.parentKey) + " / " : "") + c.name : "";
-	};
-	return (
-		<ContextMenuSub overlap>
-			<ContextMenuSubTrigger disabled={store.view().kind === "trash"}>
-				<FolderInput class="mr-2 size-4" /> Add to collection
-			</ContextMenuSubTrigger>
-			<ContextMenuSubContent class="max-h-72 min-w-52 overflow-y-auto">
-				<For each={sorted()} fallback={<div class="px-2 py-1.5 text-muted-foreground">No collections</div>}>
-					{(c) => <ContextMenuItem onSelect={() => addItemsToCollection(c.key, c.name, p.keys)}>{path(c.key)}</ContextMenuItem>}
-				</For>
-			</ContextMenuSubContent>
-		</ContextMenuSub>
-	);
-};
-
-export const ItemTable: Component = () => {
+const TableView: Component = () => {
 	let scroller!: HTMLDivElement;
 	const list = itemList;
 	const [sbw, setSbw] = createSignal(0); // scrollbar width, so the header aligns with the rows
@@ -211,36 +176,11 @@ export const ItemTable: Component = () => {
 	createEffect(() => { list.epoch(); for (const r of v.getVirtualItems()) list.ensure(r.index); });
 	createEffect(on(list.error, (e) => { if (e) toast.error("Could not load items", { description: e, id: "items-error" }); }));
 
-	function click(e: MouseEvent, index: number) {
-		const it = list.get(index);
-		if (!it) return;
-		const sel = new Set(store.selected());
-		if (e.shiftKey && store.anchor() >= 0) {
-			const [a, b] = [Math.min(store.anchor(), index), Math.max(store.anchor(), index)];
-			if (!(e.ctrlKey || e.metaKey)) sel.clear();
-			for (let i = a; i <= b; i++) { const x = list.get(i); if (x) sel.add(x.key); }
-			store.setFocusIndex(index);
-		} else if (e.ctrlKey || e.metaKey) {
-			sel.has(it.key) ? sel.delete(it.key) : sel.add(it.key);
-			store.setAnchor(index); store.setFocusIndex(index);
-		} else {
-			store.selectOnly(it.key, index);
-			return;
-		}
-		store.setSelected(sel);
-		store.setActiveKey(it.key);
-	}
+	const click = (e: MouseEvent, index: number) => selectClick(list, index, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
 
 	function move(delta: number, extend: boolean) {
 		const next = Math.max(0, Math.min(list.total() - 1, (store.focusIndex() < 0 ? -1 : store.focusIndex()) + delta));
-		const it = list.get(next);
-		if (!it) { v.scrollToIndex(next); return; }
-		if (extend && store.anchor() >= 0) {
-			const [a, b] = [Math.min(store.anchor(), next), Math.max(store.anchor(), next)];
-			const sel = new Set<string>();
-			for (let i = a; i <= b; i++) { const x = list.get(i); if (x) sel.add(x.key); }
-			store.setSelected(sel); store.setActiveKey(it.key); store.setFocusIndex(next);
-		} else store.selectOnly(it.key, next);
+		if (!focusRow(list, next, extend)) { v.scrollToIndex(next); return; }
 		v.scrollToIndex(next, { align: "auto" });
 	}
 
@@ -265,17 +205,8 @@ export const ItemTable: Component = () => {
 		setCtx(it);
 	}
 
-	function dragStart(e: DragEvent, index: number) {
-		const it = list.get(index);
-		if (!it) return;
-		if (!store.selected().has(it.key)) store.selectOnly(it.key, index);
-		const keys = [...store.selected()];
-		e.dataTransfer!.setData("application/x-zn-items", JSON.stringify(keys));
-		e.dataTransfer!.setData("text/plain", keys.join(","));
-		e.dataTransfer!.effectAllowed = "copy";
-	}
+	const dragStart = (e: DragEvent, index: number) => startItemDrag(list, e, index);
 
-	const inTrash = () => store.view().kind === "trash";
 	const rowWidth = () => layout.total() + "px";
 
 	/** One body cell; text columns truncate and show their full value as a tooltip. */
@@ -342,35 +273,7 @@ export const ItemTable: Component = () => {
 					</Show>
 				</ContextMenuTrigger>
 				<ContextMenuContent class="w-56">
-					<Show when={ctx()}>{(it) => {
-						const keys = () => [...store.selected()];
-						return (<>
-							<ContextMenuItem disabled={!it().primaryAttachment} onSelect={() => store.openSummary(it())}>
-								<BookOpen class="mr-2 size-4" /> Open
-							</ContextMenuItem>
-							<ContextMenuItem onSelect={() => findFullText(keys())}>
-								<FileSearch class="mr-2 size-4" /> Find Full Text
-							</ContextMenuItem>
-							<ContextMenuItem onSelect={() => findFullText(keys(), { openAccessOnly: true })}>
-								<FileSearch class="mr-2 size-4" /> Find Full Text (open access only)
-							</ContextMenuItem>
-							<ShowInCollection itemKey={it().key} />
-							<AddToCollection keys={keys()} />
-							<ContextMenuItem onSelect={() => copyDoi(it().key)}>
-								<Quote class="mr-2 size-4" /> Copy DOI
-							</ContextMenuItem>
-							<ContextMenuSeparator />
-							<Show when={inTrash()} fallback={
-								<ContextMenuItem class="text-destructive focus:text-destructive" onSelect={() => trashItems(keys(), true)}>
-									<Trash2 class="mr-2 size-4" /> Move to Trash{keys().length > 1 ? ` (${keys().length})` : ""}
-								</ContextMenuItem>
-							}>
-								<ContextMenuItem onSelect={() => trashItems(keys(), false)}>
-									<RotateCcw class="mr-2 size-4" /> Restore{keys().length > 1 ? ` (${keys().length})` : ""}
-								</ContextMenuItem>
-							</Show>
-						</>);
-					}}</Show>
+						<Show when={ctx()}>{(it) => <ItemMenuItems item={it()} />}</Show>
 				</ContextMenuContent>
 			</ContextMenu>
 			</div>
@@ -382,6 +285,13 @@ export const ItemTable: Component = () => {
 		</div>
 	);
 };
+
+/** The item list in the chosen view mode (table or cards); both read the shared itemList cache. */
+export const ItemTable: Component = () => (
+	<Show when={store.viewMode() === "cards"} fallback={<TableView />}>
+		<CardList list={itemList} />
+	</Show>
+);
 
 export const SearchResults: Component = () => {
 	const [hits, setHits] = createSignal<SearchHit[]>([]);

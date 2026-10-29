@@ -11,8 +11,12 @@
 // One compiled module, two instances: "pure" (stateless fx_inspect) and "engine" (stateful fx_step).
 // A trap poisons the instance it happened in; the module is cached so re-instantiating is cheap.
 
-import wasmFile from "../../vendor/fulltext-wasm/fulltext.wasm" with { type: "file" };
+import { isAbsolute, join } from "node:path";
+import wasmPath from "../../vendor/fulltext-wasm/fulltext.wasm" with { type: "file" };
 import type { Inspection, InspectMeta, StepIn, StepOut } from "./proto";
+
+// Unbundled, the import is an absolute path; bundled (Electrobun), it is relative to the bundle's folder.
+const wasmFile = isAbsolute(wasmPath) ? wasmPath : join(import.meta.dir, wasmPath);
 
 export const ABI_VERSION = 1;
 const REQUIRED_EXPORTS = [

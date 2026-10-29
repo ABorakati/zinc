@@ -2,9 +2,12 @@
 // Extraction never runs on the main thread; each job has a hard timeout, after which the worker is
 // terminated (pdf.js cannot be interrupted) and replaced.
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
-const BUILD_DIR = new URL("../../../vendor/document-worker/build/", import.meta.url);
-const WORKER_ENTRY = new URL("./pdf-worker.ts", import.meta.url);
+// Defaults point into the repo; a bundled app passes its own copies to configureExtractPool.
+let BUILD_DIR = new URL("../../../vendor/document-worker/build/", import.meta.url);
+let WORKER_ENTRY = new URL("./pdf-worker.ts", import.meta.url);
+let docWorkerDir: string | undefined; // set by configureExtractPool; handed to pdf-worker.ts as ZN_DOCWORKER_DIR
 const RECYCLE_AFTER_JOBS = 40; // pdf.js leaks a little per document; start fresh workers periodically
 
 export type ExtractErrorCode = "encrypted" | "corrupt" | "timeout" | "too-large" | "worker";
@@ -39,7 +42,8 @@ class PoolWorker {
 	private nextId = 1;
 
 	constructor() {
-		this.worker = new Worker(WORKER_ENTRY.href);
+		// Workers don't see process.env changes made after startup, so pass the build folder explicitly.
+		this.worker = new Worker(WORKER_ENTRY.href, docWorkerDir ? { env: { ...process.env, ZN_DOCWORKER_DIR: docWorkerDir } } as WorkerOptions : undefined);
 		(this.worker as unknown as { unref?: () => void }).unref?.();
 		let onReady!: () => void;
 		let onFail!: (e: Error) => void;
@@ -166,9 +170,18 @@ class Pool {
 
 const pool = new Pool();
 
-export function configureExtractPool(opts: { concurrency?: number; timeoutMs?: number }): void {
+/**
+ * buildDir: folder holding Zotero's built document-worker (worker.js, cmaps/, standard_fonts/...).
+ * workerEntry: path to pdf-worker.ts. Both only matter before the first extraction starts a worker.
+ */
+export function configureExtractPool(opts: { concurrency?: number; timeoutMs?: number; buildDir?: string; workerEntry?: string }): void {
 	if (opts.concurrency) pool.size = Math.max(1, Math.floor(opts.concurrency));
 	if (opts.timeoutMs) pool.timeoutMs = opts.timeoutMs;
+	if (opts.buildDir) {
+		BUILD_DIR = pathToFileURL(opts.buildDir.replace(/[\\/]*$/, "/"));
+		docWorkerDir = opts.buildDir;
+	}
+	if (opts.workerEntry) WORKER_ENTRY = pathToFileURL(opts.workerEntry);
 }
 
 export function extractPdfText(buf: ArrayBuffer): Promise<PdfText> {

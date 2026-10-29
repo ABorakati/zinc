@@ -37,7 +37,8 @@ describe("collections", () => {
 	});
 	test("create / rename / reparent / delete", async () => {
 		const created = await j(await call(fx.db, "POST", "/api/collections", { name: "New", parentKey: "COLLAAA1" }));
-		expect(created.key).toMatch(/^[2-9A-HJ-NP-Z]{8}$/);
+		// Zotero's key alphabet: 2-9 and A-Z without O (I is allowed).
+		expect(created.key).toMatch(/^[2-9A-NP-Z]{8}$/);
 		expect(created.parentKey).toBe("COLLAAA1");
 		const renamed = await j(await call(fx.db, "PATCH", `/api/collections/${created.key}`, { name: "Renamed", parentKey: null }));
 		expect(renamed.name).toBe("Renamed");

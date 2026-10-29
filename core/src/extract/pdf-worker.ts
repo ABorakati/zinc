@@ -27,6 +27,10 @@ try {
 	(process.versions as any).nw = "1";
 } catch {}
 
-const workerPath = new URL("../../../vendor/document-worker/build/worker.js", import.meta.url).href;
+// ZN_DOCWORKER_DIR is set by configureExtractPool when the app ships its own copy of the build.
+const dir = process.env.ZN_DOCWORKER_DIR;
+const workerPath = dir
+	? new URL("worker.js", "file:///" + dir.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/*$/, "/")).href
+	: new URL("../../../vendor/document-worker/build/worker.js", import.meta.url).href;
 await import(workerPath);
 self.postMessage({ ready: true });

@@ -3,6 +3,7 @@ import { VIEWS_FOLDER } from "electrobun/main/paths";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { startServer } from "../../../core/src/server";
+import { configureExtractPool } from "../../../core/src/extract";
 
 // The core service (database, API, static UI and reader) runs inside the main
 // process for now; Phase 2 moves it to a standalone background service.
@@ -14,6 +15,15 @@ const ROOT = process.env.ZN_ROOT;
 const uiDir = ROOT ? `${ROOT}/ui/dist/` : join(VIEWS_FOLDER, "app") + "/";
 const readerDir = ROOT ? `${ROOT}/reader-host/dist/` : join(VIEWS_FOLDER, "reader-host") + "/";
 const noteDir = ROOT ? `${ROOT}/note-host/dist/` : join(VIEWS_FOLDER, "note-host") + "/";
+
+// Text extraction uses the document-worker build shipped with the reader, and the worker
+// script copied next to the bundle (repo defaults apply under ZN_ROOT).
+if (!ROOT) {
+	configureExtractPool({
+		buildDir: join(VIEWS_FOLDER, "reader-host", "document-worker"),
+		workerEntry: join(import.meta.dir, "pdf-worker.ts"),
+	});
+}
 
 // Library database: ZN_DB, else the library imported into the repo, else the
 // app's own data folder (an empty library).

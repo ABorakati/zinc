@@ -1,6 +1,8 @@
 // zotero-next reader host page: wires Zotero's reader (web build) to the core HTTP API.
 import { SDT_PACK_VERSION, SDT_SCHEMA_VERSION } from '../../vendor/reader/structured-document-text/src/version.js';
 
+import { installCitationActions } from './citations.js';
+
 const params = new URLSearchParams(location.search);
 const attachment = params.get('attachment');
 const API = '/api/attachments/' + encodeURIComponent(attachment || '');
@@ -334,6 +336,7 @@ async function main() {
 		onChangeSidebarView() {},
 	});
 	watchFirstRender(type);
+	installCitationActions({ attachment, postToParent });
 }
 
 main().catch((e) => {

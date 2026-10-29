@@ -1,10 +1,14 @@
 import { createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
-import { ArrowDownAZ, ArrowUpAZ, Library as LibraryIcon, ListFilter, Search, TextSearch, X } from "lucide-solid";
+import { BookOpenText, Library as LibraryIcon, LayoutList, Search, Table2, TextSearch, X } from "lucide-solid";
+import { toast } from "solid-sonner";
 import { CollectionsPane } from "./Collections";
 import { TagList } from "./Tags";
 import { ItemTable, SearchResults } from "./ItemTable";
 import { ItemPane } from "./ItemPane";
 import { FullTextProgress } from "./fulltext/Progress";
+import { findFullText } from "./lib/fulltext";
+import { ReferencesPanel } from "./references/ReferencesPanel";
+import { api } from "./api";
 import { store } from "./store";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -12,10 +16,6 @@ import { Input } from "~/components/ui/input";
 import { Resizable, ResizableHandle, ResizablePanel } from "~/components/ui/resizable";
 import { Toaster } from "~/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import {
-	DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
-	DropdownMenuSeparator, DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
 
 /** Pane sizes (fractions summing to 1) persisted in localStorage; storage may be unavailable. */
 function persistedSizes(key: string, fallback: number[]) {
@@ -34,11 +34,38 @@ function persistedSizes(key: string, fallback: number[]) {
 	}] as const;
 }
 
-const SORTS = [
-	{ key: "dateAdded", label: "Date Added" },
-	{ key: "title", label: "Title" },
-	{ key: "creator", label: "Creator" },
-	{ key: "year", label: "Year" },
+/** A persisted boolean (localStorage may be unavailable). */
+function persistedFlag(key: string, fallback: boolean) {
+	const k = "zn.flag." + key;
+	let initial = fallback;
+	try {
+		const v = localStorage.getItem(k);
+		if (v !== null) initial = v === "1";
+	} catch {}
+	const [flag, setFlag] = createSignal(initial);
+	return [flag, (v: boolean) => {
+		setFlag(v);
+		try { localStorage.setItem(k, v ? "1" : "0"); } catch {}
+	}] as const;
+}
+
+/** "Open in library" from a citation: open the item's PDF beside the current tab, else show it in the library. */
+async function revealItem(key: string) {
+	try {
+		const d = await api.item(key);
+		const att = d.children.find((c) => c.itemType === "attachment" && c.hasFile && /pdf|epub/i.test(c.contentType ?? ""));
+		if (att) return store.openAttachment(att.key, d.data.title ?? att.title);
+		store.setActiveTab("library");
+		store.setSelected(new Set([key]));
+		store.setActiveKey(key);
+	} catch (e) {
+		toast.error("Could not open item", { description: e instanceof Error ? e.message : String(e) });
+	}
+}
+
+const VIEW_MODES = [
+	{ mode: "table" as const, label: "Table view", icon: Table2 },
+	{ mode: "cards" as const, label: "Card view", icon: LayoutList },
 ];
 
 const Toolbar: Component = () => (
@@ -66,22 +93,18 @@ const Toolbar: Component = () => (
 			</TooltipTrigger>
 			<TooltipContent>Search inside PDFs and notes</TooltipContent>
 		</Tooltip>
-		<DropdownMenu>
-			<DropdownMenuTrigger as={Button} variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" disabled={store.fulltext()}>
-				<ListFilter /> Sort
-			</DropdownMenuTrigger>
-			<DropdownMenuContent class="w-44">
-				<DropdownMenuLabel>Sort by</DropdownMenuLabel>
-				<DropdownMenuRadioGroup value={store.sort().key} onChange={(key) => store.setSort({ key, dir: key === "dateAdded" ? "desc" : "asc" })}>
-					<For each={SORTS}>{(s) => <DropdownMenuRadioItem value={s.key}>{s.label}</DropdownMenuRadioItem>}</For>
-				</DropdownMenuRadioGroup>
-				<DropdownMenuSeparator />
-				<DropdownMenuRadioGroup value={store.sort().dir} onChange={(dir) => store.setSort({ key: store.sort().key, dir: dir as "asc" | "desc" })}>
-					<DropdownMenuRadioItem value="asc"><ArrowDownAZ class="mr-2 size-4" /> Ascending</DropdownMenuRadioItem>
-					<DropdownMenuRadioItem value="desc"><ArrowUpAZ class="mr-2 size-4" /> Descending</DropdownMenuRadioItem>
-				</DropdownMenuRadioGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<div role="group" aria-label="View" class="inline-flex rounded-md border p-0.5">
+			<For each={VIEW_MODES}>{(m) => (
+				<Tooltip>
+					<TooltipTrigger as="button" type="button" aria-label={m.label} aria-pressed={store.viewMode() === m.mode} data-view={m.mode}
+						class={cn("inline-flex size-6 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:text-foreground [&_svg]:size-3.5", store.viewMode() === m.mode && "bg-primary/15 text-primary hover:text-primary")}
+						onClick={() => store.setViewMode(m.mode)}>
+						<m.icon />
+					</TooltipTrigger>
+					<TooltipContent>{m.label}</TooltipContent>
+				</Tooltip>
+			)}</For>
+		</div>
 	</div>
 );
 
@@ -119,14 +142,31 @@ export const App: Component = () => {
 			store.closeTab(store.activeTab());
 		}
 	};
-	// The reader asks the shell to open links it doesn't handle (DOIs, references).
+	// References panel beside each reader (one toggle for all tabs), and the reference
+	// a citation popup asked to show, per tab.
+	const [refsOpen, setRefsOpen] = persistedFlag("references", true);
+	const [refsFocus, setRefsFocus] = createSignal<Record<string, { index: number }>>({});
+
+	// Messages from reader pages: links to open, items to reveal, references to show.
 	const onMessage = (e: MessageEvent) => {
-		if (e.origin !== location.origin || e.data?.type !== "open-link" || typeof e.data.url !== "string") return;
-		fetch("/api/open-url", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ url: e.data.url }),
-		}).catch(() => {});
+		if (e.origin !== location.origin || !e.data || typeof e.data.type !== "string") return;
+		const m = e.data;
+		if (m.type === "open-link" && typeof m.url === "string") {
+			fetch("/api/open-url", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ url: m.url }),
+			}).catch(() => {});
+		} else if (m.type === "open-item" && typeof m.key === "string") {
+			revealItem(m.key);
+		} else if (m.type === "show-references" && typeof m.index === "number") {
+			setRefsOpen(true);
+			setRefsFocus({ ...refsFocus(), [store.activeTab()]: { index: m.index } });
+		} else if (m.type === "reference-added") {
+			store.bumpItems();
+		} else if (m.type === "find-fulltext" && Array.isArray(m.keys) && m.keys.every((k: unknown) => typeof k === "string")) {
+			findFullText(m.keys);
+		}
 	};
 	onMount(() => {
 		window.addEventListener("keydown", onKey);
@@ -184,6 +224,21 @@ export const App: Component = () => {
 						</div>
 					)}
 				</For>
+				<Show when={store.activeTab() !== "library"}>
+					<Tooltip>
+						<TooltipTrigger
+							as={Button}
+							variant="ghost"
+							size="sm"
+							class={cn("ml-auto h-8 gap-1 rounded-none px-3 text-xs", refsOpen() && "text-primary")}
+							aria-pressed={refsOpen()}
+							onClick={() => setRefsOpen(!refsOpen())}
+						>
+							<BookOpenText /> References
+						</TooltipTrigger>
+						<TooltipContent>Show or hide this paper's references</TooltipContent>
+					</Tooltip>
+				</Show>
 			</div>
 			<div class="relative min-h-0 flex-1">
 				<div class="absolute inset-0" classList={{ hidden: store.activeTab() !== "library" }}>
@@ -191,8 +246,17 @@ export const App: Component = () => {
 				</div>
 				<For each={store.tabs()}>
 					{(t) => (
-						<div class="absolute inset-0" classList={{ hidden: store.activeTab() !== t.id }}>
-							<iframe class="size-full border-0 bg-background" src={`/reader-host/index.html?attachment=${encodeURIComponent(t.attachmentKey)}`} title={t.title} onLoad={watchFrameKeys} />
+						<div class="absolute inset-0 flex" classList={{ hidden: store.activeTab() !== t.id }}>
+							<iframe class="h-full min-w-0 flex-1 border-0 bg-background" src={`/reader-host/index.html?attachment=${encodeURIComponent(t.attachmentKey)}`} title={t.title} onLoad={watchFrameKeys} />
+							<Show when={refsOpen()}>
+								<ReferencesPanel
+									class="h-full w-[340px] flex-none border-l"
+									itemKey={t.attachmentKey}
+									onOpenItem={revealItem}
+									onAdded={() => store.bumpItems()}
+									focus={refsFocus()[t.id] ?? null}
+								/>
+							</Show>
 						</div>
 					)}
 				</For>

@@ -99,8 +99,8 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 								onChange={(v) => patchAt(i, { creatorType: v })}
 							/>
 						</div>
-						<div class="flex min-w-0 items-start gap-0.5">
-							<div class="flex min-w-0 flex-1 items-start">
+						<div class="relative flex min-w-0 items-start gap-0.5">
+							<div class="flex min-w-0 flex-1 items-start [&>*]:break-normal">
 								<Show
 									when={c().name === undefined}
 									fallback={
@@ -112,7 +112,8 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 									<Editable ariaLabel={`Creator ${i + 1} first name`} class="flex-1" value={c().firstName ?? ""} placeholder="First" onSave={(v) => patchAt(i, { firstName: v })} />
 								</Show>
 							</div>
-							<div class="flex flex-none items-center gap-px pt-[1px] opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100">
+							{/* Hover actions float over the names (like Zotero) so they don't squeeze them. */}
+							<div class="pointer-events-none absolute top-0 right-0 flex items-center gap-px rounded bg-card pt-[1px] pl-1 opacity-0 shadow-sm transition-opacity group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100">
 								<IconBtn title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"} onClick={() => toggleMode(i)}><Replace /></IconBtn>
 								<IconBtn title="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp /></IconBtn>
 								<IconBtn title="Move down" disabled={i === creators().length - 1} onClick={() => move(i, 1)}><ArrowDown /></IconBtn>

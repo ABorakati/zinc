@@ -3,7 +3,7 @@
 //   bun ui/mock-api.ts   -> http://127.0.0.1:23121/app/  (API under /api)
 import { join, resolve } from "node:path";
 import type {
-	ZoteroSchema, Collection, ItemSummary, ItemDetail, ZoteroItemData, ChildSummary, SearchHit, ReaderAnnotation,
+	ZoteroSchema, Collection, ItemSummary, TagColor, ItemDetail, ZoteroItemData, ChildSummary, SearchHit, ReaderAnnotation,
 } from "../core/src/api-types";
 
 const PORT = Number(process.env.PORT ?? 23121);
@@ -57,6 +57,8 @@ for (let i = 0; i < 80; i++) {
 for (let i = 0; i < 30000; i++) {
 	const k = key();
 	const authors = Array.from({ length: 1 + Math.floor(rnd() * 3) }, () => ({ creatorType: "author", firstName: pick(FIRST), lastName: pick(LAST) }));
+	// every 6th item gets a longer author list (derived from the item index so the random stream is unchanged)
+	if (i % 6 === 0) for (let n = 0, extra = 2 + (hash(i, "au") % 5); n < extra; n++) authors.push({ creatorType: "author", firstName: FIRST[hash(i, "f" + n) % FIRST.length], lastName: LAST[hash(i, "l" + n) % LAST.length] });
 	const year = 1990 + Math.floor(rnd() * 36);
 	const pub = pick(JOURNALS);
 	const added = new Date(Date.UTC(2020, 0, 1) + Math.floor(rnd() * 6.5 * 365) * 86400000 + i * 1000).toISOString();
@@ -79,6 +81,9 @@ for (let i = 0; i < 30000; i++) {
 	const itemTags = new Set<string>();
 	if (rnd() < 0.6) itemTags.add(pick(TAGS));
 	if (rnd() < 0.3) itemTags.add(pick(TAGS));
+	if (hash(i, "star") % 9 === 0) itemTags.add("Starred");
+	if (hash(i, "bk") % 5 === 0) itemTags.add("Backlog");
+	if (hash(i, "eco") % 7 === 0) itemTags.add("Ecology");
 	const colls = new Set<string>();
 	if (rnd() < 0.7) colls.add(pick(collKeys));
 	const itemType = ITEM_TYPES[hash(i, "type") % ITEM_TYPES.length];
@@ -100,6 +105,12 @@ for (let i = 0; i < 30000; i++) {
 	});
 }
 const all = [...recs.values()];
+const tagColors: TagColor[] = [
+	{ name: "Backlog", color: "#2EA8E5", position: 0 },
+	{ name: "Ecology", color: "#5FB236", position: 1 },
+	{ name: "key paper", color: "#FF8C19", position: 2 },
+	{ name: "to-read", color: "#A28AE5", position: 3 },
+];
 
 function recount() {
 	for (const c of collections.values()) c.itemCount = 0;
@@ -268,10 +279,15 @@ async function api(req: Request, url: URL): Promise<Response> {
 					(!tag || r.tags.has(tag)) && (!q || q.split(/\s+/).every((w) => r.text.includes(w))),
 			);
 			const fields = s.get("fields")?.split(",").filter(Boolean);
+			const include = new Set(s.get("include")?.split(",").filter(Boolean));
 			return json({
 				total: rows.length,
-				items: rows.slice(offset, offset + limit).map((r) =>
-					fields ? { ...r.summary, fields: Object.fromEntries(fields.map((f) => [f, fieldValue(r, f)])) } : r.summary),
+				items: rows.slice(offset, offset + limit).map((r) => ({
+					...r.summary,
+					...(fields ? { fields: Object.fromEntries(fields.map((f) => [f, fieldValue(r, f)])) } : {}),
+					...(include.has("creators") ? { creators: (r.data.creators ?? []).map((c) => `${c.lastName} ${(c.firstName ?? "")[0] ?? ""}`.trim()) } : {}),
+					...(include.has("tags") ? { tags: [...r.tags].sort().map((tag) => ({ tag, type: 0 })) } : {}),
+				})),
 			});
 		}
 		const r = recs.get(p[1]) ;
@@ -293,6 +309,10 @@ async function api(req: Request, url: URL): Promise<Response> {
 		}
 	}
 	if (p[0] === "schema" && m === "GET") return json(SCHEMA);
+	if (p[0] === "tag-colors") {
+		if (m === "PUT") { const b = await body(); if (Array.isArray(b)) tagColors.splice(0, tagColors.length, ...b); }
+		return json(tagColors);
+	}
 	if (p[0] === "tags" && m === "GET") {
 		const counts = new Map<string, number>();
 		for (const r of all) for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1);

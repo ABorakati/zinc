@@ -1,10 +1,10 @@
 import type {
-	Collection, ItemList, ItemDetail, SearchResult, ZoteroItemData, ZoteroSchema,
+	Collection, ItemList, ItemDetail, SearchResult, TagColor, ZoteroItemData, ZoteroSchema,
 } from "../../core/src/api-types";
 
 export type {
 	Collection, ItemList, ItemSummary, ItemDetail, SearchResult, SearchHit,
-	ChildSummary, Creator, ZoteroItemData, ZoteroSchema,
+	ChildSummary, Creator, TagColor, ZoteroItemData, ZoteroSchema,
 } from "../../core/src/api-types";
 
 const BASE = "/api";
@@ -33,6 +33,8 @@ export interface ItemQuery {
 	trash?: boolean;
 	/** comma-separated Zotero data fields to return in ItemSummary.fields */
 	fields?: string;
+	/** comma-separated extras: "creators" (full author list), "tags" */
+	include?: string;
 }
 
 const qs = (o: Record<string, string | number | undefined | boolean>) => {
@@ -65,6 +67,8 @@ export const api = {
 	addTags: (key: string, tags: string[]) => req<{ ok: true }>("POST", `/items/${key}/tags`, { tags }),
 	removeTags: (key: string, tags: string[]) => req<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),
 	tags: () => req<{ tag: string; count: number }[]>("GET", "/tags"),
+	tagColors: () => req<TagColor[]>("GET", "/tag-colors"),
+	putTagColors: (colors: TagColor[]) => req<TagColor[]>("PUT", "/tag-colors", colors),
 	search: (q: string, limit = 100, offset = 0) =>
 		req<SearchResult>("GET", "/search?" + qs({ q, limit, offset })),
 };

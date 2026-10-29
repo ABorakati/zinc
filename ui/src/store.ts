@@ -18,6 +18,12 @@ function loadSort(): { key: string; dir: "asc" | "desc" } {
 	return { key: "dateAdded", dir: "desc" };
 }
 
+export type ViewMode = "table" | "cards";
+const VIEWMODE_KEY = "zn.viewmode.v1";
+function loadViewMode(): ViewMode {
+	try { return localStorage.getItem(VIEWMODE_KEY) === "cards" ? "cards" : "table"; } catch { return "table"; }
+}
+
 export interface Tab { id: string; title: string; attachmentKey: string }
 
 function createStore() {
@@ -27,6 +33,9 @@ function createStore() {
 	const [fulltext, setFulltext] = createSignal(false);
 	const [sort, setSort] = createSignal<{ key: string; dir: "asc" | "desc" }>(loadSort());
 	createEffect(() => { try { localStorage.setItem(SORT_KEY, JSON.stringify(sort())); } catch { /* ignore */ } });
+
+	const [viewMode, setViewMode] = createSignal<ViewMode>(loadViewMode());
+	createEffect(() => { try { localStorage.setItem(VIEWMODE_KEY, viewMode()); } catch { /* ignore */ } });
 
 	const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set());
 	const [activeKey, setActiveKey] = createSignal<string | null>(null); // item shown in pane
@@ -98,7 +107,7 @@ function createStore() {
 	}
 
 	return {
-		view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
+		viewMode, setViewMode, view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
 		selected, setSelected, activeKey, setActiveKey, anchor, setAnchor, focusIndex, setFocusIndex,
 		tabs, activeTab, setActiveTab, openAttachment, closeTab, openItem, openSummary,
 		collections, refetchCollections, collectionsRev, bumpCollections, tagsRev, bumpTags, itemsRev, bumpItems,

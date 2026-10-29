@@ -16,6 +16,8 @@ export default {
 			"../ui/dist": "views/app",
 			"../reader-host/dist": "views/reader-host",
 			"../note-host/dist": "views/note-host",
+			// Full-text extraction runs this in a Bun worker (it can't be bundled into main).
+			"../core/src/extract/pdf-worker.ts": "bun/pdf-worker.ts",
 		},
 		mac: {
 			bundleCEF: false,
