@@ -334,6 +334,7 @@ async function main() {
 	if (title) document.title = title;
 
 	window.createReader({
+		colorScheme: themeScheme(),
 		type,
 		readOnly: false,
 		data: { buf: new Uint8Array(fileBuf.slice(0)), url: new URL('/', location).toString() },
@@ -360,8 +361,22 @@ async function main() {
 		onChangeSidebarWidth() {},
 		onChangeSidebarView() {},
 	});
+	// follow Settings > Appearance (other document -> storage event); "system" hands the choice back to the OS
+	window.addEventListener('storage', (e) => {
+		if (e.key !== 'zn.theme' && e.key !== null) return;
+		try { window._reader?.setColorScheme(themeScheme()); } catch (err) { console.warn('colour scheme', err); }
+	});
 	watchFirstRender(type);
 	installCitationActions({ attachment, postToParent });
+}
+
+/** 'light' | 'dark' from the app's theme setting (zn.theme, same-origin localStorage); null = follow the OS. */
+function themeScheme() {
+	try {
+		const m = JSON.parse(localStorage.getItem('zn.theme') || 'null')?.mode;
+		return m === 'light' || m === 'dark' ? m : null;
+	}
+	catch { return null; }
 }
 
 main().catch((e) => {

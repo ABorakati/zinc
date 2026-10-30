@@ -7,8 +7,11 @@ import { reflowPlugin } from "./reflow";
 import type { ReaderPlugin } from "./contract";
 import { ViewerController } from "./viewer/controller";
 import { watchReadingVars } from "./viewer/appearance";
+import { watchTheme } from "./viewer/theme";
 import { getEngine, PdfDoc, type OutlineNode } from "./viewer/pdf";
 import { Viewer } from "./viewer/Viewer";
+
+watchTheme(); // chrome theme (mode, colour scheme, font, size) from the app's Settings > Appearance; follows it live
 
 const root = document.getElementById("root")!;
 const params = new URLSearchParams(location.search);

@@ -3,6 +3,20 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<script>
+/* Apply the saved theme before first paint (same logic as reader-next/src/viewer/theme.ts applyTheme; the colours are precomputed in zn.theme.v) */
+(function () {
+	var r = document.documentElement, t = null;
+	try { t = JSON.parse(localStorage.getItem("zn.theme") || "null"); } catch (e) {}
+	var m = (t && t.mode) || "system";
+	var d = m === "dark" || (m !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+	r.classList.toggle("dark", d);
+	r.dataset.theme = d ? "dark" : "light";
+	r.style.colorScheme = d ? "dark" : "light";
+	var v = t && t.v;
+	if (v) [v.g, d ? v.dark : v.light].forEach(function (o) { for (var k in o) r.style.setProperty(k, o[k]); });
+})();
+</script>
 		<title>Reader</title>
 	</head>
 	<body>

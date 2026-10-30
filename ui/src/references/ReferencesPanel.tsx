@@ -85,7 +85,7 @@ function ReferenceRow(props: { reference: Reference; highlighted: boolean } & Re
 							<Show when={r().openAccessUrl}>
 								<Badge
 									variant="outline"
-									class="cursor-pointer gap-1 border-amber-500/50 px-1.5 py-0 text-[10px] font-medium text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
+									class="cursor-pointer gap-1 border-amber-500/50 px-1.5 py-0 text-[10px] font-medium text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
 									role="button"
 									tabindex="-1"
 									title="Open the open-access PDF"
