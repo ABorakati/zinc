@@ -28,11 +28,19 @@ $exe = Join-Path $dest "zotero-next\bin\launcher.exe"
 if (-not (Test-Path $exe)) { throw "launcher.exe missing after unpacking" }
 Write-Host "deployed $version -> $exe"
 
-# 2. shortcuts: Start menu "Zotero Next" (+ the desktop one if it exists)
+# 2. shortcuts: Start menu "Zotero Next", plus every shortcut (Start menu, desktop, taskbar pins) that still opens the
+#    installed copy or an older portable version
 $shell = New-Object -ComObject WScript.Shell
 $links = @((Join-Path ([Environment]::GetFolderPath("Programs")) "Zotero Next.lnk"))
-$desk = Join-Path ([Environment]::GetFolderPath("Desktop")) "zotero-next.lnk"
-if (Test-Path $desk) { $links += $desk }
+$installed = "$env:LOCALAPPDATA\dev.zotero-next.app\*\launcher.exe"
+$folders = @([Environment]::GetFolderPath("Programs"), [Environment]::GetFolderPath("Desktop"), "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar")
+foreach ($f in $folders) {
+	if (-not (Test-Path $f)) { continue }
+	foreach ($l in Get-ChildItem $f -Filter *.lnk -Recurse -ErrorAction SilentlyContinue) {
+		$t = $shell.CreateShortcut($l.FullName).TargetPath
+		if (($t -like $installed -or $t -like "$Root\versions\*\launcher.exe") -and $links -notcontains $l.FullName) { $links += $l.FullName }
+	}
+}
 if ($NoShortcuts) { $links = @() }
 foreach ($l in $links) {
 	$s = $shell.CreateShortcut($l)

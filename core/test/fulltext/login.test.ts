@@ -927,6 +927,19 @@ describe("Find Full Text API: settings, institutions, sign-in", () => {
 		expect(bridge.cookieCalls[0]).toBe("https://login.openathens.net/");
 	});
 
+	test("a session found by its cookies also counts for downloads (the tick and the fetch route agree)", async () => {
+		const bridge = new FakeBridge();
+		bridge.cookies = [{ name: "oa", value: "x", domain: ".openathens.net", path: "/", secure: true, httpOnly: true }];
+		setBrowserBridge(bridge);
+		const { call } = setup();
+		expect(((await (await call("GET", "/sign-in/status"))!.json()) as FullTextSignInStatus).signedIn).toBe(true);
+		// the session was marked signed in, so it stays signed in without re-reading cookies (downloads use the browser)
+		bridge.cookies = [];
+		const calls = bridge.cookieCalls.length;
+		expect(((await (await call("GET", "/sign-in/status"))!.json()) as FullTextSignInStatus).signedIn).toBe(true);
+		expect(bridge.cookieCalls.length).toBe(calls);
+	});
+
 	test("an institution without a sign-in method gets no_method", async () => {
 		const bridge = new FakeBridge();
 		setBrowserBridge(bridge);

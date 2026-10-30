@@ -264,6 +264,8 @@ export class FulltextService {
 		const runner = this.runner!;
 		if (runner.activeRuns() === 0) this.configure();
 		else if (runner.needsConfigure) this.configure();
+		// an existing institutional session (signed in earlier, or before a restart) is used for this job's downloads
+		if (!openAccessOnly && !runner.login.signedIn() && (await this.sessionCookiesPresent())) runner.login.markSignedIn();
 
 		const { items, missing } = snapshotItems(this.db, keys, this.nextItem);
 		this.nextItem += items.length;
@@ -429,6 +431,24 @@ export class FulltextService {
 			out.signedIn = true;
 			return out;
 		}
+		out.signedIn = await this.sessionCookiesPresent();
+		// the tick and the downloads must agree: with a live session, fetch through the signed-in browser
+		if (out.signedIn) {
+			try { await this.boot(); this.runner!.login.markSignedIn(); } catch { /* the finder can't start: nothing to mark */ }
+		}
+		return out;
+	}
+
+	/**
+	 * Does the embedded browser hold unexpired cookies for the institution's sign-in hosts (OpenAthens, the IdP...)?
+	 * A sign-in that ended on the institution's own page (not a publisher's), or one from before the app restarted,
+	 * leaves these without setting LoginController.signedInAt — and without that flag downloads skipped the browser,
+	 * reached the publisher without the session, got its login page and asked to sign in again.
+	 */
+	private async sessionCookiesPresent(): Promise<boolean> {
+		const bridge = getBrowserBridge();
+		const { r, engine } = this.institutionNow();
+		if (!bridge || !r.enabled) return false;
 		const now = Date.now() / 1000;
 		for (const host of sessionHosts(engine)) {
 			try {
@@ -436,15 +456,12 @@ export class FulltextService {
 					bridge.cookiesFor(`https://${host}/`),
 					new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000)),
 				]);
-				if (cookies.some((c) => c.expires === undefined || c.expires > now)) {
-					out.signedIn = true;
-					break;
-				}
+				if (cookies.some((c) => c.expires === undefined || c.expires > now)) return true;
 			} catch {
 				/* unreachable bridge: not signed in as far as we can tell */
 			}
 		}
-		return out;
+		return false;
 	}
 
 	getJob(id: string): FullTextJob | null {
