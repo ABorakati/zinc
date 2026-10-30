@@ -247,6 +247,31 @@ function queueViewState(state) {
 }
 
 function flushAll() { flushSave(true); flushViewState(true); }
+
+// The app shell asks an idle tab to persist everything before it unloads this frame; ack once both PUTs succeeded.
+addEventListener('message', async (e) => {
+	if (e.source !== window.parent || e.origin !== location.origin || e.data?.type !== 'zn-save-now') return;
+	let ok = true;
+	let batch = [], state = null;
+	try {
+		let jobs = [];
+		if (pendingSave.size) {
+			batch = [...pendingSave.values()];
+			pendingSave.clear();
+			jobs.push(fetch(API + '/annotations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(batch) }));
+		}
+		if (pendingViewState) {
+			state = pendingViewState;
+			pendingViewState = null;
+			jobs.push(fetch(API + '/view-state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) }));
+		}
+		clearTimeout(saveTimer); clearTimeout(viewStateTimer);
+		ok = (await Promise.all(jobs)).every((r) => r.ok);
+	}
+	catch { ok = false; }
+	if (!ok) { for (let a of batch) if (!pendingSave.has(a.id)) pendingSave.set(a.id, a); if (state && !pendingViewState) pendingViewState = state; }
+	window.parent.postMessage({ type: 'zn-saved', id: e.data.id, ok }, location.origin);
+});
 addEventListener('pagehide', flushAll);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
 

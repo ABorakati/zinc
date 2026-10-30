@@ -1,5 +1,6 @@
 import { createSignal, createMemo, createRoot, createResource, createEffect } from "solid-js";
 import { api, type ItemQuery, type ItemSummary } from "./api";
+import { unloadTabsMinutes } from "./settings/prefs";
 import { openSummary as openItemSummary } from "./itemopen"; // circular with store, but only used inside functions
 
 export type View =
@@ -62,6 +63,77 @@ function createStore() {
 
 	const [tabs, setTabs] = createSignal<Tab[]>([]);
 	const [activeTab, setActiveTab] = createSignal("library");
+
+	// ---- idle reader tabs: unload the reader iframe (tens of MB each) after the "Unload tabs after" idle time.
+	// The tab stays in the bar; coming back recreates the iframe, and the reader restores page/zoom/annotations
+	// from the core API. A reader must acknowledge a "save now" message first, otherwise it stays loaded.
+	const [unloaded, setUnloaded] = createSignal<ReadonlySet<string>>(new Set());
+	const lastSeen = new Map<string, number>(); // tab id -> when it was last active (or left)
+	const frames = new Map<string, HTMLIFrameElement>();
+	const unloading = new Set<string>();
+	const registerFrame = (id: string, el: HTMLIFrameElement | null) => { if (el) frames.set(id, el); else frames.delete(id); };
+	const isUnloaded = (id: string) => unloaded().has(id);
+	let prevTab = "library";
+	createEffect(() => {
+		const a = activeTab();
+		const now = Date.now();
+		if (prevTab !== a) lastSeen.set(prevTab, now);
+		lastSeen.set(a, now);
+		prevTab = a;
+		if (unloaded().has(a)) setUnloaded((s) => { const n = new Set(s); n.delete(a); return n; });
+	});
+
+	let saveSeq = 0;
+	/** Ask a reader frame to persist view state + annotations now; resolves true only on a positive ack. */
+	function requestSave(frame: HTMLIFrameElement): Promise<boolean> {
+		return new Promise((resolve) => {
+			const w = frame.contentWindow;
+			if (!w) return resolve(false);
+			const id = ++saveSeq;
+			const done = (ok: boolean) => { clearTimeout(timer); window.removeEventListener("message", on); resolve(ok); };
+			const on = (e: MessageEvent) => {
+				if (e.source === w && e.data && e.data.type === "zn-saved" && e.data.id === id) done(e.data.ok === true);
+			};
+			const timer = setTimeout(() => done(false), 4000);
+			window.addEventListener("message", on);
+			try { w.postMessage({ type: "zn-save-now", id }, location.origin); } catch { done(false); }
+		});
+	}
+
+	async function tryUnload(id: string) {
+		if (unloading.has(id) || unloaded().has(id) || id === activeTab()) return;
+		const frame = frames.get(id);
+		if (!frame) return;
+		unloading.add(id);
+		try {
+			const ok = await requestSave(frame);
+			// the user may have come back while we waited; a failed flush keeps the tab loaded until the next sweep
+			if (!ok || activeTab() === id || !tabs().some((t) => t.id === id)) return;
+			frames.delete(id);
+			setUnloaded((s) => new Set(s).add(id));
+		} finally { unloading.delete(id); }
+	}
+
+	let timeoutOverrideMs: number | null = null;
+	function sweep() {
+		const ms = timeoutOverrideMs ?? unloadTabsMinutes() * 60_000;
+		if (!(ms > 0)) return;
+		const now = Date.now();
+		for (const t of tabs()) {
+			if (t.kind !== "reader" || t.id === activeTab() || unloaded().has(t.id)) continue;
+			if (now - (lastSeen.get(t.id) ?? now) >= ms) void tryUnload(t.id);
+		}
+	}
+	if (typeof window !== "undefined") {
+		setInterval(sweep, 15_000);
+		// debug/test hook: shorten the timeout and sweep on demand
+		(window as unknown as { __znTabs: unknown }).__znTabs = {
+			setTimeoutMs: (ms: number | null) => { timeoutOverrideMs = ms; },
+			sweep,
+			unloaded: () => [...unloaded()],
+			tabs: () => tabs().map((t) => t.id),
+		};
+	}
 
 	// bump to force collection/tag re-fetch
 	const [collectionsRev, setCollectionsRev] = createSignal(0);
@@ -167,6 +239,9 @@ function createStore() {
 		if (i < 0) return;
 		const next = list.filter((t) => t.id !== id);
 		setTabs(next);
+		frames.delete(id);
+		lastSeen.delete(id);
+		if (unloaded().has(id)) setUnloaded((s) => { const n = new Set(s); n.delete(id); return n; });
 		if (activeTab() === id) setActiveTab(next[Math.min(i, next.length - 1)]?.id ?? "library");
 	}
 
@@ -186,6 +261,7 @@ function createStore() {
 	return {
 		qmode, setQMode, viewMode, setViewMode, view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
 		selected, setSelected, activeKey, setActiveKey, anchor, setAnchor, focusIndex, setFocusIndex,
+		isUnloaded, registerFrame,
 		tabs, activeTab, setActiveTab, openAttachment, openSettings, closeTab, openItem, openSummary,
 		collections, refetchCollections, collectionsRev, bumpCollections, tagsRev, bumpTags, itemsRev, bumpItems,
 		query, selectOnly,

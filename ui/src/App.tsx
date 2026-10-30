@@ -254,7 +254,7 @@ export const App: Component = () => {
 							onAuxClick={(e) => e.button === 1 && store.closeTab(t.id)}
 						>
 							<Show when={t.kind === "settings"}><Settings class="size-3.5" /></Show>
-							<span class="truncate">{t.title || "Reader"}</span>
+							<span class="truncate" classList={{ "opacity-50": store.isUnloaded(t.id) }} title={store.isUnloaded(t.id) ? "Unloaded to save memory; click to reopen" : undefined}>{t.title || "Reader"}</span>
 							<Tooltip>
 								<TooltipTrigger
 									as="button"
@@ -341,7 +341,9 @@ export const App: Component = () => {
 					{(t) => (
 						<div class="absolute inset-0 flex" classList={{ hidden: store.activeTab() !== t.id }}>
 							<Show when={t.kind === "reader"} fallback={<SettingsPage active={store.activeTab() === t.id} />}>
-								<iframe class="h-full min-w-0 flex-1 border-0 bg-background" src={readerSrc(t)} title={t.title} onLoad={watchFrameKeys} />
+								<Show when={!store.isUnloaded(t.id)} fallback={<div class="flex h-full min-w-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">Loading…</div>}>
+									<iframe ref={(el) => store.registerFrame(t.id, el)} class="h-full min-w-0 flex-1 border-0 bg-background" src={readerSrc(t)} title={t.title} onLoad={watchFrameKeys} />
+								</Show>
 								<Show when={refsOpen() && readerFor(t.id) === "zotero"}>
 									<ReferencesPanel
 										class="h-full w-[340px] flex-none border-l"

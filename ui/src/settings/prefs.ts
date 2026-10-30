@@ -34,7 +34,25 @@ export const setDefaultReader = (r: PdfReader) => {
 };
 export { defaultReader };
 
+/** Reader tabs idle this many minutes are unloaded (iframe removed, tab kept); 0 = never. */
+export const UNLOAD_CHOICES = [0, 5, 10, 30, 60] as const;
+const UNLOAD_KEY = "zn.unloadTabsMinutes";
+const [unloadTabsMinutes, setUnloadTabsMinutesRaw] = createSignal<number>((() => {
+	try {
+		const v = Number(localStorage.getItem(UNLOAD_KEY));
+		if (localStorage.getItem(UNLOAD_KEY) !== null && (UNLOAD_CHOICES as readonly number[]).includes(v)) return v;
+	} catch { /* ignore */ }
+	return 10;
+})());
+export const setUnloadTabsMinutes = (m: number) => {
+	setUnloadTabsMinutesRaw(m);
+	try { localStorage.setItem(UNLOAD_KEY, String(m)); } catch { /* ignore */ }
+};
+export { unloadTabsMinutes };
+
 /** References side panel beside Zotero-reader tabs (one toggle for all tabs). */
 export const [refsOpen, setRefsOpen] = persistedFlag("references", true);
+/** Recognise PDFs added as standalone attachments (drag-drop, Add Attachment) and give them a parent item. */
+export const [autoRetrieveMetadata, setAutoRetrieveMetadata] = persistedFlag("autoRetrieveMetadata", true);
 /** Tag selector: show tags that were added automatically (by importers/translators). */
 export const [showAutoTags, setShowAutoTags] = persistedFlag("showAutomaticTags", true);

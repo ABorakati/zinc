@@ -9,7 +9,7 @@ import { DEFAULT_COLUMNS, labelOf, MENU_COLUMNS } from "~/columns/defs";
 import { QUICK_MODES } from "~/searches/QuickSearchMode";
 import { store, type QMode, type ViewMode } from "~/store";
 import { Segmented, Select, Switch } from "../controls";
-import { defaultReader, READERS, refsOpen, setDefaultReader, setRefsOpen, setShowAutoTags, showAutoTags, type PdfReader } from "../prefs";
+import { autoRetrieveMetadata, defaultReader, READERS, setAutoRetrieveMetadata, refsOpen, setDefaultReader, setRefsOpen, setShowAutoTags, setUnloadTabsMinutes, showAutoTags, UNLOAD_CHOICES, unloadTabsMinutes, type PdfReader } from "../prefs";
 import { registerSection, registerSettings } from "../registry";
 
 registerSection({ id: "general", label: "General", icon: SlidersHorizontal, order: 10, description: "How items open and what the main window shows.", keywords: ["preferences", "options"] });
@@ -99,12 +99,23 @@ registerSettings([
 		control: () => <Switch label="Show references panel" checked={refsOpen()} onChange={setRefsOpen} />,
 	},
 	{
+		id: "general.unloadTabs", section: "general", label: "Unload tabs after",
+		description: "Free memory by unloading reader tabs you have not looked at for a while. The tab stays in the bar and reopens where you left off; the active tab is never unloaded.",
+		keywords: ["memory", "ram", "idle", "reader tabs", "suspend", "performance"],
+		control: () => (
+			<Select<string> label="Unload tabs after" value={String(unloadTabsMinutes())} onChange={(v) => setUnloadTabsMinutes(Number(v))}
+				options={UNLOAD_CHOICES.map((m) => ({ value: String(m), label: m === 0 ? "Never" : `${m} minutes` }))} />
+		),
+	},
+	{
 		id: "general.attachPdfs", section: "general", label: "Automatically attach associated PDFs when adding items",
 		keywords: ["add item", "identifier", "doi", "isbn", "import"], unavailable: true,
 	},
 	{
 		id: "general.retrieveMetadata", section: "general", label: "Automatically retrieve metadata for PDFs",
-		keywords: ["recognize pdf", "import", "drag and drop"], unavailable: true,
+		description: "Look up PDFs you add as standalone attachments (drag and drop, Add Attachment) and create their parent item. Right-click a PDF for Retrieve Metadata for PDF.",
+		keywords: ["recognize pdf", "import", "drag and drop", "retrieve metadata", "parent item"],
+		control: () => <Switch label="Automatically retrieve metadata for PDFs" checked={autoRetrieveMetadata()} onChange={setAutoRetrieveMetadata} />,
 	},
 	{
 		id: "general.autoTag", section: "general", label: "Automatically tag items with keywords and subject headings",

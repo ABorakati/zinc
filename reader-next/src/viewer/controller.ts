@@ -210,7 +210,16 @@ export class ViewerController implements ViewerHandle {
 		if (this.scroller) { this.restorePageFrac(page, frac); this.scroller.scrollLeft = 0; }
 		this.scheduleSettle();
 	}
+	private hiddenFrame = false;
 	onResize(w: number, h: number) {
+		// A background tab is display:none (0x0): keep the layout and last scroll position as they were, so neither the
+		// zoom collapses nor a save/unload records page 0; restore the scroll offset the browser dropped when shown again.
+		if (w <= 0 || h <= 0) { this.hiddenFrame = true; return; }
+		if (this.hiddenFrame) {
+			this.hiddenFrame = false;
+			const sc = this.scroller;
+			if (sc) { sc.scrollTop = this.scrollTop[0](); sc.scrollLeft = this.scrollLeft[0](); }
+		}
 		const v = this.viewport[0]();
 		if (Math.abs(v.w - w) < 1 && Math.abs(v.h - h) < 1) return;
 		const page = this.curPage();
@@ -538,6 +547,17 @@ export class ViewerController implements ViewerHandle {
 		void fetch(`/api/attachments/${this.attachmentKey}/view-state`, {
 			method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this.currentState()), keepalive,
 		}).catch(() => {});
+	}
+	/** Save the view state now and resolve true once the server accepted it (used before the tab is unloaded). */
+	async saveNowAck(): Promise<boolean> {
+		clearTimeout(this.saveTimer);
+		if (!this.ready[0]()) return true; // nothing restored/changed yet: the stored state is still the truth
+		try {
+			const r = await fetch(`/api/attachments/${this.attachmentKey}/view-state`, {
+				method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this.currentState()),
+			});
+			return r.ok;
+		} catch { return false; }
 	}
 	restoreState(s: { page?: number; offset?: number; zoom?: number; zoomMode?: ZoomMode; rotation?: number; pageRotations?: Record<string, number> } | null) {
 		if (!s) return;

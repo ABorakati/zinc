@@ -6,6 +6,7 @@ import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
 import { HttpError, clearFileCache, createItem, deriveColumns, generateKey, getItemDetail, nowIso } from "../db";
 import { extractFulltext } from "../extract";
+import { storageTargetFor } from "../files/storage";
 import { indexItem } from "../search";
 
 export const hooks = {
@@ -110,28 +111,35 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	const now = nowIso();
 	let stored: string;
 	let dir: string | undefined;
+	let finalMode: "imported_file" | "linked_file" = mode;
+	let createdDir = false; // only a folder this call created is removed again on failure (a custom folder may hold other files)
 	if (mode === "imported_file") {
-		dir = join(storageRoot(db), key);
-		stored = join(dir, name);
-		mkdirSync(dir, { recursive: true });
+		const t = storageTargetFor(db, { key, name, parentKey: req.parentKey });
+		finalMode = t.mode;
+		dir = t.dir;
+		stored = t.path;
+		createdDir = !t.custom;
 		try {
-			if (source) copyFileSync(source, stored);
-			else writeFileSync(stored, bytes ?? Buffer.from(req.dataBase64 as string, "base64"));
+			mkdirSync(t.dir, { recursive: true });
+			if (source) copyFileSync(source, t.path);
+			else writeFileSync(t.path, bytes ?? Buffer.from(req.dataBase64 as string, "base64"));
 		} catch (e) {
-			rmSync(dir, { recursive: true, force: true });
+			if (createdDir) rmSync(t.dir, { recursive: true, force: true });
+			else rmSync(t.path, { force: true });
 			throw new HttpError(500, `could not store the file: ${e instanceof Error ? e.message : e}`);
 		}
 	} else {
 		stored = source as string;
 	}
+	const fileName = basename(stored);
 
 	const data: ZoteroItemData = {
 		key,
 		itemType: "attachment",
-		linkMode: mode,
+		linkMode: finalMode,
 		title: name,
 		contentType,
-		filename: name,
+		filename: fileName,
 		tags: [],
 		relations: {},
 		collections: collectionKey ? [collectionKey] : [],
@@ -139,7 +147,7 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 		dateModified: now,
 	};
 	if (req.parentKey) data.parentItem = req.parentKey;
-	if (mode === "linked_file") data.path = stored;
+	if (finalMode === "linked_file") data.path = stored;
 	const cols = deriveColumns(data);
 	try {
 		db.transaction(() => {
@@ -147,11 +155,12 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 				`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted)
 				 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 			).run(key, req.parentKey || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
-			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(key, mode, contentType, stored);
+			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(key, finalMode, contentType, stored);
 			if (collectionKey) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(collectionKey, key);
 		})();
 	} catch (e) {
-		if (dir) rmSync(dir, { recursive: true, force: true });
+		if (dir && createdDir) rmSync(dir, { recursive: true, force: true });
+		else if (mode === "imported_file") rmSync(stored, { force: true });
 		throw e;
 	}
 	clearFileCache();

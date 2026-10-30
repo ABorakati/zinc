@@ -4,6 +4,8 @@ import { createSignal } from "solid-js";
 import { toast } from "solid-sonner";
 import type { ItemDetail } from "~/api";
 import { errMsg, fail } from "~/lib/actions";
+import { getDetail } from "~/itemopen";
+import { autoRetrieveMetadata } from "~/settings/prefs";
 import { store } from "~/store";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -123,11 +125,12 @@ export async function createNote(parentKey?: string): Promise<void> {
 	}
 }
 
-/** Import files (stored copies) with a progress toast; PDFs without a parent then get "Retrieve Metadata". */
+/** Import files (stored copies) with a progress toast; standalone PDFs then get "Retrieve Metadata" in the
+ *  background (progress panel) when "Automatically retrieve metadata for PDFs" is on. */
 export async function importFiles(files: File[], opts: { parentKey?: string; retrieve?: boolean } = {}): Promise<void> {
 	if (!files.length) return;
 	const id = toast.loading(`Importing ${plural(files.length, "file")}…`);
-	const pdfKeys: string[] = [];
+	const pdfs: { key: string; title: string }[] = [];
 	const errors: string[] = [];
 	let done = 0;
 	let last: ItemDetail | null = null;
@@ -136,46 +139,109 @@ export async function importFiles(files: File[], opts: { parentKey?: string; ret
 		try {
 			const d = await addApi.file({ name: f.name, contentType: f.type, dataBase64: await readBase64(f), mode: "imported_file", parentKey: opts.parentKey, collectionKey: opts.parentKey ? undefined : currentCollection() });
 			last = d;
-			if (isPdf(f) && !opts.parentKey) pdfKeys.push(d.data.key);
+			if (isPdf(f) && !opts.parentKey) pdfs.push({ key: d.data.key, title: f.name });
 		} catch (e) {
 			errors.push(`${f.name}: ${errMsg(e)}`);
 		}
 	}
 	refresh();
-	let retrieved = 0;
-	if (pdfKeys.length && opts.retrieve !== false) {
-		toast.loading(`Retrieving metadata for ${plural(pdfKeys.length, "PDF")}…`, { id });
-		try {
-			const r = await addApi.retrieve(pdfKeys);
-			retrieved = r.results.filter((x) => x.status !== "failed").length;
-			refresh();
-			const first = r.results.find((x) => x.itemKey);
-			if (first?.itemKey) store.selectOnly(first.itemKey);
-		} catch (e) {
-			errors.push(`metadata: ${errMsg(e)}`);
-		}
-	} else if (last) store.selectOnly(last.data.key);
-	const ok = files.length - errors.filter((e) => !e.startsWith("metadata:")).length;
-	const msg = `Imported ${plural(ok, "file")}` + (pdfKeys.length ? `, identified ${retrieved}/${pdfKeys.length} PDF${pdfKeys.length === 1 ? "" : "s"}` : "");
+	const auto = pdfs.length > 0 && opts.retrieve !== false && autoRetrieveMetadata();
+	if (auto) enqueueRetrieve(pdfs);
+	else if (last) store.selectOnly(last.data.key);
+	const msg = `Imported ${plural(files.length - errors.length, "file")}`;
 	if (errors.length) toast.error(msg, { id, description: errors.join("\n") });
 	else toast.success(msg, { id });
 }
 
-export async function retrieveMetadata(attachmentKeys: string[]): Promise<void> {
-	const id = toast.loading(`Retrieving metadata for ${plural(attachmentKeys.length, "PDF")}…`);
-	try {
-		const r = await addApi.retrieve(attachmentKeys);
-		refresh();
-		const ok = r.results.filter((x) => x.status !== "failed");
-		const bad = r.results.filter((x) => x.status === "failed");
-		const first = ok.find((x) => x.itemKey);
-		if (first?.itemKey) store.selectOnly(first.itemKey);
-		if (bad.length) toast.error(`Retrieved ${ok.length}/${r.results.length}`, { id, description: bad.map((b) => b.error).join("\n") });
-		else toast.success(`Retrieved metadata for ${plural(ok.length, "PDF")}`, { id });
-	} catch (e) {
-		toast.dismiss(id);
-		fail("Could not retrieve metadata", e);
+// ---------------------------------------------------------------- Retrieve Metadata for PDF (one shared queue + panel)
+
+export type RetrieveRowState = "queued" | "running" | "retrieved" | "existing" | "failed";
+export interface RetrieveRow {
+	key: string;
+	title: string;
+	state: RetrieveRowState;
+	message?: string;
+	itemKey?: string;
+}
+const [retrieveRows, setRetrieveRows] = createSignal<RetrieveRow[]>([]);
+export { retrieveRows };
+export const retrieveActive = () => retrieveRows().some((r) => r.state === "queued" || r.state === "running");
+export const dismissRetrieve = () => {
+	if (!retrieveActive()) setRetrieveRows([]);
+};
+let draining = false;
+let dismissTimer: ReturnType<typeof setTimeout> | undefined;
+
+const patchRow = (key: string, p: Partial<RetrieveRow>) => setRetrieveRows((l) => l.map((r) => (r.key === key ? { ...r, ...p } : r)));
+
+/** Queue standalone PDF attachments for recognition; rows show in the panel (RetrievePanel). */
+export function enqueueRetrieve(items: { key: string; title?: string }[]): void {
+	clearTimeout(dismissTimer);
+	const fresh = items.filter((i, n) => items.findIndex((j) => j.key === i.key) === n);
+	setRetrieveRows((l) => {
+		const keep = l.some((r) => r.state === "queued" || r.state === "running") ? l : []; // a finished run is replaced
+		const have = new Set(keep.map((r) => r.key));
+		return [...keep, ...fresh.filter((i) => !have.has(i.key)).map((i): RetrieveRow => ({ key: i.key, title: i.title ?? i.key, state: "queued" }))];
+	});
+	for (const i of fresh) {
+		if (i.title) continue;
+		getDetail(i.key).then((d) => patchRow(i.key, { title: d.data.filename || d.data.title || i.key })).catch(() => {});
 	}
+	void drainRetrieve();
+}
+
+async function drainRetrieve(): Promise<void> {
+	if (draining) return;
+	draining = true;
+	const startSelection = new Set(store.selected());
+	const batch = new Set<string>();
+	try {
+		for (;;) {
+			const next = retrieveRows().find((r) => r.state === "queued");
+			if (!next) break;
+			batch.add(next.key);
+			patchRow(next.key, { state: "running" });
+			try {
+				const r = (await addApi.retrieve([next.key])).results[0];
+				if (r && r.status !== "failed") patchRow(next.key, { state: r.status, itemKey: r.itemKey, message: r.status === "existing" ? "Attached to an item already in the library" : undefined });
+				else patchRow(next.key, { state: "failed", message: r?.error ?? "Not found" });
+				refresh();
+			} catch (e) {
+				patchRow(next.key, { state: "failed", message: errMsg(e) });
+			}
+		}
+	} finally {
+		draining = false;
+	}
+	// Select the first new parent unless the user moved on to something else meanwhile.
+	const sel = store.selected();
+	const untouched = sel.size === 0 || [...sel].every((k) => startSelection.has(k) || batch.has(k));
+	const first = retrieveRows().find((r) => batch.has(r.key) && r.itemKey);
+	if (first?.itemKey && untouched) store.selectOnly(first.itemKey);
+	if (retrieveRows().every((r) => r.state === "retrieved" || r.state === "existing")) dismissTimer = setTimeout(dismissRetrieve, 8000);
+}
+
+export async function retrieveMetadata(attachmentKeys: string[]): Promise<void> {
+	const keys = attachmentKeys.filter((k) => pdfAttachment(k) !== false);
+	if (!keys.length) return void toast.info("Select standalone PDF attachments to retrieve their metadata");
+	enqueueRetrieve(keys.map((key) => ({ key })));
+}
+
+// ---------------------------------------------------------------- which top-level items are standalone PDFs
+
+const [pdfMap, setPdfMap] = createSignal<Record<string, boolean>>({});
+const probing = new Set<string>();
+/** true/false once known (a standalone PDF attachment), undefined while its detail is being fetched (reactive). */
+export function pdfAttachment(key: string): boolean | undefined {
+	const m = pdfMap();
+	if (key in m) return m[key];
+	if (!probing.has(key)) {
+		probing.add(key);
+		getDetail(key)
+			.then((d) => setPdfMap((p) => ({ ...p, [key]: d.data.itemType === "attachment" && !d.data.parentItem && (/pdf/i.test(d.data.contentType ?? "") || /\.pdf$/i.test(d.data.filename ?? "")) })))
+			.catch(() => probing.delete(key));
+	}
+	return undefined;
 }
 
 export function pickFiles(onFiles: (files: File[]) => void): void {
@@ -190,7 +256,9 @@ export async function addLinkedFile(path: string, parentKey?: string): Promise<b
 	try {
 		const d = await addApi.file({ mode: "linked_file", path: path.trim().replace(/^"|"$/g, ""), name: "", parentKey, collectionKey: parentKey ? undefined : currentCollection() });
 		refresh();
-		store.selectOnly(parentKey ?? d.data.key);
+		const recognise = !parentKey && /\.pdf$/i.test(path.trim().replace(/^"|"$/g, "")) && autoRetrieveMetadata();
+		if (recognise) enqueueRetrieve([{ key: d.data.key, title: d.data.filename || d.data.title }]);
+		else store.selectOnly(parentKey ?? d.data.key);
 		toast.success("Linked file added");
 		return true;
 	} catch (e) {

@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ItemDetail } from "../../src/api-types";
 import { openDb } from "../../src/db";
 import { hooks } from "../../src/additems/files";
@@ -253,6 +253,25 @@ describe("attachments", () => {
 		expect((await call(db, "POST", "/api/add/file", { name: "a.txt", dataBase64: "AA==", parentKey: "NOPE0000" })).status).toBe(404);
 	});
 
+	test("custom storage location: file goes to <folder>/<pattern>/<name>, linked by default, imported when asked", async () => {
+		const { setStorage } = await import("../../src/files/storage");
+		insertItem(db, { key: "PARENT01", itemType: "journalArticle", title: "Parent", date: "2021" });
+		const custom = join(dir, "custom-store");
+		setStorage(db, { dir: custom, subfolder: "{%y}" });
+		const a = await post<ItemDetail>("/api/add/file", { name: "a.pdf", dataBase64: "AA==", parentKey: "PARENT01" }, 201);
+		const rowA = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(a.data.key) as { path: string; link_mode: string };
+		expect(a.data.linkMode).toBe("linked_file");
+		expect(rowA.link_mode).toBe("linked_file");
+		expect(a.data.path).toBe(join(custom, "2021", "a.pdf"));
+		expect(existsSync(join(custom, "2021", "a.pdf"))).toBe(true);
+		expect(existsSync(join(dir, "storage", a.data.key))).toBe(false);
+		setStorage(db, { linked: false });
+		const b = await post<ItemDetail>("/api/add/file", { name: "a.pdf", dataBase64: "AA==", parentKey: "PARENT01" }, 201);
+		expect(b.data.linkMode).toBe("imported_file");
+		expect(b.data.filename).toBe("a (2).pdf"); // unique inside the shared folder
+		expect(existsSync(join(custom, "2021", "a (2).pdf"))).toBe(true);
+	});
+
 	test("multipart upload also works through the handler", async () => {
 		const fd = new FormData();
 		fd.set("file", new File([new Uint8Array([9, 9])], "up.txt", { type: "text/plain" }));
@@ -295,9 +314,12 @@ describe("retrieve metadata for PDFs", () => {
 		const row = db.query("SELECT parent_key FROM items WHERE key = ?").get(att) as { parent_key: string };
 		expect(row.parent_key).toBe(parent);
 		expect(db.query("SELECT 1 FROM collection_items WHERE item_key = ?").get(att)).toBeNull();
-		// the PDF file stayed put
+		// the stored file was renamed from the parent's metadata (Zotero's default) and still exists
 		const path = (db.query("SELECT path FROM attachments WHERE item_key = ?").get(att) as { path: string }).path;
 		expect(existsSync(path)).toBe(true);
+		expect(r.results[0].renamed).toBe(true);
+		expect(basename(path)).toBe("Smith and Patel - 2023 - Outcomes after liver transplantation.pdf");
+		expect((JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(att) as { data: string }).data) as { filename: string }).filename).toBe(basename(path));
 		// a second PDF with the same DOI attaches to the existing item
 		const att2 = await importPdf(["doi: 10.1136/bmj-2023-078378"]);
 		const r2 = await post("/api/add/retrieve-metadata", { attachmentKeys: [att2] });
@@ -319,6 +341,54 @@ describe("retrieve metadata for PDFs", () => {
 		const att = await importPdf(["Outcomes after liver transplantation", "Jane Smith and Raj Patel", "Department of Surgery"]);
 		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [att] });
 		expect(r.results[0]).toMatchObject({ status: "retrieved", via: "title" });
+	});
+
+	test("several PDFs at once: found ones get parents, the unidentifiable one is left alone", async () => {
+		const a = await importPdf(["doi: 10.1136/bmj-2023-078378"]);
+		const b = await importPdf(["Attention Is All You Need", "arXiv:1706.03762v7 [cs.CL]"]);
+		const c = await importPdf(["Nothing identifiable lives in this particular document at all"]);
+		const cPath = (db.query("SELECT path FROM attachments WHERE item_key = ?").get(c) as { path: string }).path;
+		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [a, b, c] });
+		expect(r.results.map((x: any) => x.status)).toEqual(["retrieved", "retrieved", "failed"]);
+		expect(r.items.length).toBe(2);
+		const parentOf = (k: string) => (db.query("SELECT parent_key FROM items WHERE key = ?").get(k) as { parent_key: string | null }).parent_key;
+		expect(parentOf(a)).toBe(r.results[0].itemKey);
+		expect(parentOf(b)).toBe(r.results[1].itemKey);
+		// the failed PDF: still standalone, in its collection, file name untouched
+		expect(parentOf(c)).toBeNull();
+		expect(db.query("SELECT 1 FROM collection_items WHERE item_key = ? AND collection_key = 'COLLAAA1'").get(c)).not.toBeNull();
+		expect((db.query("SELECT path FROM attachments WHERE item_key = ?").get(c) as { path: string }).path).toBe(cPath);
+		expect(existsSync(cPath)).toBe(true);
+	});
+
+	test("rename:false keeps the file name", async () => {
+		const att = await importPdf(["doi: 10.1136/bmj-2023-078378"]);
+		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [att], rename: false });
+		expect(r.results[0].status).toBe("retrieved");
+		expect(r.results[0].renamed).toBeUndefined();
+		expect(basename((db.query("SELECT path FROM attachments WHERE item_key = ?").get(att) as { path: string }).path)).toBe("scan.pdf");
+	});
+
+	test("a linked PDF gets a parent but its file is never renamed", async () => {
+		const local = join(dir, "linked.pdf");
+		writeFileSync(local, tinyPdf(["doi: 10.1136/bmj-2023-078378"]));
+		const lnk = await post<ItemDetail>("/api/add/file", { mode: "linked_file", path: local }, 201);
+		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [lnk.data.key] });
+		expect(r.results[0].status).toBe("retrieved");
+		expect(existsSync(local)).toBe(true);
+		expect((db.query("SELECT path FROM attachments WHERE item_key = ?").get(lnk.data.key) as { path: string }).path).toBe(local);
+	});
+
+	test("the sync outbox records the new parent and the moved attachment; a failed lookup records nothing", async () => {
+		const fail = await importPdf(["Nothing identifiable lives in this particular document at all"]);
+		const att = await importPdf(["doi: 10.1136/bmj-2023-078378"]);
+		db.query("DELETE FROM sync_outbox").run();
+		await post("/api/add/retrieve-metadata", { attachmentKeys: [fail] });
+		expect(db.query("SELECT count(*) AS n FROM sync_outbox").get()).toEqual({ n: 0 });
+		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [att] });
+		const rows = db.query("SELECT type, key, op FROM sync_outbox").all() as { type: string; key: string; op: string }[];
+		expect(rows).toContainEqual({ type: "item", key: r.results[0].itemKey, op: "upsert" });
+		expect(rows).toContainEqual({ type: "item", key: att, op: "upsert" });
 	});
 
 	test("failures: not found, not a PDF, already has a parent", async () => {

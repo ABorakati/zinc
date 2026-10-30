@@ -6,9 +6,11 @@ import { createComponent } from "solid-js";
 import { toast } from "solid-sonner";
 import { registerAppAction, registerItemAction, registerOverlay } from "~/lib/registry";
 import { AddItemsDialogs } from "./Dialogs";
-import { createNote, dialog, importFiles, looksLikeIdentifiers, pickFiles, retrieveMetadata, setDialog } from "./client";
+import { RetrievePanel } from "./RetrievePanel";
+import { createNote, dialog, importFiles, looksLikeIdentifiers, pdfAttachment, pickFiles, retrieveMetadata, setDialog } from "./client";
 
 registerOverlay("additems-dialogs", () => createComponent(AddItemsDialogs, {}));
+registerOverlay("additems-retrieve-panel", () => createComponent(RetrievePanel, {}));
 
 const openIdentifier = (text?: string) => setDialog({ kind: "identifier", text });
 
@@ -31,7 +33,8 @@ registerItemAction({
 	label: "Retrieve Metadata for PDF",
 	icon: FileSearch,
 	group: "maintain",
-	visible: (ctx) => ctx.item.itemType === "attachment",
+	// Standalone PDF attachments only (single or multi-select); hidden for anything else in the selection.
+	visible: (ctx) => ctx.view.kind !== "trash" && ctx.item.itemType === "attachment" && ctx.keys.every((k) => pdfAttachment(k) !== false),
 	run: (ctx) => void retrieveMetadata(ctx.keys),
 });
 

@@ -39,7 +39,10 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 			return json(await addByIdentifier(db, b.text, b.collectionKey));
 		}
 		if (route === "link") return json(addLink(db, await readJson(req)), 201);
-		if (route === "retrieve-metadata") return json(await retrieveMetadata(db, (await readJson(req)).attachmentKeys));
+		if (route === "retrieve-metadata") {
+			const b = await readJson(req);
+			return json(await retrieveMetadata(db, b.attachmentKeys, { rename: b.rename !== false }));
+		}
 
 		// route === "file"
 		const type = (req.headers.get("content-type") ?? "").toLowerCase();

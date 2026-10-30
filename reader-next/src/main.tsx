@@ -78,4 +78,20 @@ async function boot() {
 	}, 16);
 }
 
+// The app shell asks an idle tab to persist everything before it unloads this frame: view state (page, zoom,
+// scroll) and any pending annotation / comment edits. Reply ok only if both were accepted by the server.
+window.addEventListener("message", (e: MessageEvent) => {
+	if (e.source !== window.parent || e.origin !== location.origin || !e.data || e.data.type !== "zn-save-now") return;
+	const w = window as unknown as { __rn?: ViewerController; __rnAnn?: { store: { flush(): Promise<void>; status(): string } } };
+	void (async () => {
+		let ok = true;
+		try {
+			if (w.__rn) ok = await w.__rn.saveNowAck();
+			const ann = w.__rnAnn?.store;
+			if (ann) { await ann.flush(); if (ann.status() === "error") ok = false; }
+		} catch { ok = false; }
+		window.parent.postMessage({ type: "zn-saved", id: e.data.id, ok }, location.origin);
+	})();
+});
+
 void boot();

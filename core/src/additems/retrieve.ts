@@ -7,8 +7,9 @@ import { extractFulltext } from "../extract";
 import { normalizeDoi } from "../references/ids";
 import { mailtoFor } from "../references/net";
 import { crossrefQuery } from "../references/sources";
+import { renameFiles } from "../maintenance/rename-files";
 import { addOne, loadKnown } from "./add";
-import { reparentAttachment } from "./files";
+import { reparentAttachment, storageRoot } from "./files";
 import { findArxivId, type ParsedId } from "./identifiers";
 
 export interface RetrieveResult {
@@ -17,7 +18,14 @@ export interface RetrieveResult {
 	itemKey?: string;
 	/** how the work was identified */
 	via?: "doi" | "arxiv" | "title";
+	/** the stored file was renamed from the parent's metadata (Zotero's "Rename attachment files using parent metadata") */
+	renamed?: boolean;
 	error?: string;
+}
+
+export interface RetrieveOptions {
+	/** Rename the stored file from the parent's metadata afterwards; default true, like Zotero's autoRenameFiles pref. */
+	rename?: boolean;
 }
 
 export interface RetrieveResponse {
@@ -58,7 +66,7 @@ async function resolve(db: Database, text: string): Promise<{ id: ParsedId; via:
 	return out;
 }
 
-export async function retrieveOne(db: Database, attachmentKey: string, known = loadKnown(db)): Promise<{ result: RetrieveResult; item?: ItemDetail }> {
+export async function retrieveOne(db: Database, attachmentKey: string, known = loadKnown(db), opts: RetrieveOptions = {}): Promise<{ result: RetrieveResult; item?: ItemDetail }> {
 	const fail = (error: string): { result: RetrieveResult } => ({ result: { attachmentKey, status: "failed", error } });
 	const row = db.query("SELECT i.parent_key, i.deleted, a.content_type, a.path FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.key = ?").get(attachmentKey) as
 		| { parent_key: string | null; deleted: number; content_type: string | null; path: string | null }
@@ -88,8 +96,16 @@ export async function retrieveOne(db: Database, attachmentKey: string, known = l
 		if (r.added) {
 			for (const c of colls.slice(1)) db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parent);
 		}
+		let renamed = false;
+		if (opts.rename !== false) {
+			try {
+				renamed = renameFiles(db, [attachmentKey], storageRoot(db))[0]?.status === "renamed";
+			} catch (e) {
+				console.error("rename after retrieve failed:", e instanceof Error ? e.message : e);
+			}
+		}
 		return {
-			result: { attachmentKey, status: r.added ? ("retrieved" as const) : ("existing" as const), itemKey: parent, via },
+			result: { attachmentKey, status: r.added ? ("retrieved" as const) : ("existing" as const), itemKey: parent, via, ...(renamed ? { renamed } : {}) },
 			item: getItemDetail(db, parent) ?? undefined,
 		};
 	};
@@ -113,7 +129,7 @@ export async function retrieveOne(db: Database, attachmentKey: string, known = l
 	return fail(lastError);
 }
 
-export async function retrieveMetadata(db: Database, attachmentKeys: unknown): Promise<RetrieveResponse> {
+export async function retrieveMetadata(db: Database, attachmentKeys: unknown, opts: RetrieveOptions = {}): Promise<RetrieveResponse> {
 	if (!Array.isArray(attachmentKeys) || attachmentKeys.length === 0 || attachmentKeys.some((k) => typeof k !== "string")) {
 		throw new HttpError(400, "attachmentKeys must be a non-empty array of strings");
 	}
@@ -121,7 +137,7 @@ export async function retrieveMetadata(db: Database, attachmentKeys: unknown): P
 	const results: RetrieveResult[] = [];
 	const items: ItemDetail[] = [];
 	for (const key of attachmentKeys as string[]) {
-		const { result, item } = await retrieveOne(db, key, known);
+		const { result, item } = await retrieveOne(db, key, known, opts);
 		results.push(result);
 		if (item && !items.some((i) => i.data.key === item.data.key)) items.push(item);
 	}
