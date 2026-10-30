@@ -39,6 +39,11 @@ describe("hyphen joining", () => {
 		expect(fixGlyphs("(N 1⁄4 88)")).toBe("(N = 88)");
 		expect(fixGlyphs("¼ cup")).toBe("¼ cup");
 	});
+	test("fixGlyphs spells out ligature characters, which reading fonts mostly lack", () => {
+		expect(fixGlyphs("reﬁned eﬀect ﬂow eﬃcient baﬄe")).toBe("refined effect flow efficient baffle");
+		const items = buildItems(doc([blk("b1", "list", "a ﬁrst item", 0), blk("b2", "reference", "deﬁned", 0)]));
+		expect(JSON.stringify(items)).not.toMatch(/[ﬀ-ﬆ]/);
+	});
 	test("a paragraph continuing on the next page is merged across an intervening figure", () => {
 		const items = buildItems(doc([
 			blk("b1", "paragraph", "This sentence runs over the informa-", 0),

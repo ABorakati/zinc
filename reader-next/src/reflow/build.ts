@@ -52,9 +52,13 @@ export function continuesInto(prevText: string, nextText: string, crossBreak = f
 /**
  * Some PDFs (Elsevier's math fonts among them) map "=" to the glyph "¼" in their text layer:
  * "N ¼ 88". A spaced "¼" between words or numbers is that "=".
+ * Others keep ligature characters (U+FB01 for "fi"). Reading fonts mostly lack these code points, so each would be
+ * drawn in a fallback font; as plain letters the reading font draws them, with its own ligature where it has one.
  */
 export function fixGlyphs(s: string): string {
-	return s.replace(/(\s)(?:¼|1⁄4)(?=\s)/g, "$1="); // also its normalised form, 1 U+2044 4
+	return s
+		.replace(/(\s)(?:¼|1⁄4)(?=\s)/g, "$1=") // also its normalised form, 1 U+2044 4
+		.replace(/[ﬀ-ﬆ]/g, (c) => c.normalize("NFKC"));
 }
 
 const isTiny = (r: PdfRect) => r[2] - r[0] < 36 || r[3] - r[1] < 24;
@@ -115,11 +119,11 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				break;
 			}
 			case "list":
-				out.push({ kind: "list", id: "r" + b.id, blockIds: [b.id], page: b.page, html: b.html || `<p>${escapeHtml(b.text)}</p>` });
+				out.push({ kind: "list", id: "r" + b.id, blockIds: [b.id], page: b.page, html: fixGlyphs(b.html || `<p>${escapeHtml(b.text)}</p>`) });
 				lastPara = null;
 				break;
 			case "other":
-				if (b.text.trim()) out.push({ kind: "code", id: "r" + b.id, blockIds: [b.id], page: b.page, text: b.text });
+				if (b.text.trim()) out.push({ kind: "code", id: "r" + b.id, blockIds: [b.id], page: b.page, text: fixGlyphs(b.text) });
 				break;
 			case "equation": {
 				const r = b.rects[0];
