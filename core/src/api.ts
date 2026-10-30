@@ -13,10 +13,11 @@ import { handleDuplicatesApi } from "./duplicates/api";
 import { handleIoApi } from "./io/api";
 import { handleSearchesApi } from "./searches/api";
 import { handleMaintenanceApi } from "./maintenance/api";
+import { handleFilesApi } from "./files/api";
 
 // Feature route modules; each returns null for paths outside its prefix.
 import { handleUiApi } from "./connector/ui";
-const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleUiApi];
+const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi];
 import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
 import { indexItem, search } from "./search";

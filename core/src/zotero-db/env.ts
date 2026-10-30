@@ -19,27 +19,79 @@ export interface ZoteroDbOptions {
 	keepBackups?: number;
 }
 
-function defaultProfilesDir(): string {
+export function defaultProfilesDir(): string {
 	const appData = process.env.APPDATA ?? join(process.env.USERPROFILE ?? homedir(), "AppData", "Roaming");
 	return join(appData, "Zotero", "Zotero", "Profiles");
+}
+
+/** Value of one `user_pref("name", value)` line of a prefs.js text; null when absent or malformed. */
+export function parsePref(prefsText: string, name: string): string | boolean | number | null {
+	const re = new RegExp(`user_pref\\("${name.replaceAll(".", "\\.")}",\\s*("(?:[^"\\\\]|\\\\.)*"|true|false|-?\\d+)\\)`);
+	const m = re.exec(prefsText);
+	if (!m) return null;
+	try {
+		return JSON.parse(m[1]);
+	} catch {
+		return null;
+	}
 }
 
 /** Read a string/boolean pref from the first profile's prefs.js that sets it. */
 export function readZoteroPref(name: string, profilesDir: string = defaultProfilesDir()): string | boolean | number | null {
 	if (!existsSync(profilesDir)) return null;
-	const re = new RegExp(`user_pref\\("${name.replaceAll(".", "\\.")}",\\s*("(?:[^"\\\\]|\\\\.)*"|true|false|-?\\d+)\\)`);
 	for (const d of readdirSync(profilesDir)) {
 		const p = join(profilesDir, d, "prefs.js");
 		if (!existsSync(p)) continue;
-		const m = re.exec(readFileSync(p, "utf8"));
-		if (!m) continue;
-		try {
-			return JSON.parse(m[1]);
-		} catch {
-			// malformed pref, try the next profile
-		}
+		const v = parsePref(readFileSync(p, "utf8"), name);
+		if (v !== null) return v;
 	}
 	return null;
+}
+
+export interface ZoteroProfileInfo {
+	/** Profile folder name, e.g. "y1hq89n6.default". */
+	name: string;
+	dir: string;
+	prefsPath: string;
+	/** extensions.zotero.dataDir (null: not set, Zotero uses ~/Zotero). */
+	dataDir: string | null;
+	useDataDir: boolean | null;
+	baseAttachmentPath: string | null;
+	saveRelativeAttachmentPath: boolean | null;
+}
+
+/** Every Zotero profile that has a prefs.js, with the file-location prefs read from it. */
+export function listZoteroProfiles(profilesDir: string = defaultProfilesDir()): ZoteroProfileInfo[] {
+	if (!existsSync(profilesDir)) return [];
+	const out: ZoteroProfileInfo[] = [];
+	for (const name of readdirSync(profilesDir)) {
+		const prefsPath = join(profilesDir, name, "prefs.js");
+		if (!existsSync(prefsPath)) continue;
+		let text: string;
+		try {
+			text = readFileSync(prefsPath, "utf8");
+		} catch {
+			continue;
+		}
+		const str = (n: string) => {
+			const v = parsePref(text, n);
+			return typeof v === "string" && v ? v : null;
+		};
+		const bool = (n: string) => {
+			const v = parsePref(text, n);
+			return typeof v === "boolean" ? v : null;
+		};
+		out.push({
+			name,
+			dir: join(profilesDir, name),
+			prefsPath,
+			dataDir: str("extensions.zotero.dataDir"),
+			useDataDir: bool("extensions.zotero.useDataDir"),
+			baseAttachmentPath: str("extensions.zotero.baseAttachmentPath"),
+			saveRelativeAttachmentPath: bool("extensions.zotero.saveRelativeAttachmentPath"),
+		});
+	}
+	return out;
 }
 
 export function findZoteroDataDir(profilesDir?: string): string {

@@ -3,6 +3,7 @@
 // document-worker running in a Bun Worker pool (see pool.ts); failures throw ExtractError.
 import type { Database } from "bun:sqlite";
 import { extname } from "node:path";
+import { resolveStoredPath } from "../files/paths";
 import { indexItem, stripHtml } from "../search";
 import { ExtractError, extractPdfText } from "./pool";
 
@@ -31,16 +32,17 @@ export async function extractFulltext(db: Database, attachmentKey: string, opts:
 	const row = db
 		.query("SELECT content_type, path FROM attachments WHERE item_key = ?")
 		.get(attachmentKey) as { content_type: string | null; path: string | null } | null;
-	if (!row?.path) return { attachmentKey, chars: 0, skipped: "no-file" };
+	const filePath = resolveStoredPath(db, row?.path); // "attachments:<rel>" -> absolute
+	if (!row || !filePath) return { attachmentKey, chars: 0, skipped: "no-file" };
 
-	const kind = kindOf(row.content_type, row.path);
+	const kind = kindOf(row.content_type, filePath);
 	if (!kind) return { attachmentKey, chars: 0, skipped: "unsupported" };
 
 	if (!opts.force && db.query("SELECT 1 FROM fulltext WHERE attachment_key = ?").get(attachmentKey)) {
 		return { attachmentKey, chars: 0, skipped: "already-indexed" };
 	}
 
-	const file = Bun.file(row.path);
+	const file = Bun.file(filePath);
 	if (!(await file.exists())) return { attachmentKey, chars: 0, skipped: "no-file" };
 	if (file.size > MAX_BYTES) throw new ExtractError("too-large", `${file.size} bytes`);
 

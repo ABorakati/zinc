@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, rmdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { nowIso } from "../db";
+import { resolveStoredPath } from "../files/paths";
 import type { EntityType, ZoteroJson, ZoteroWrite, ZoteroWriteResult } from "./protocol";
 
 export interface Group {
@@ -115,6 +116,8 @@ export function buildPush(db: Database, dataDir: string): PushPlan {
 					content_type: string | null;
 					path: string | null;
 				} | null;
+				// Zotero expects an absolute path in data.path (its writer relativises it against Zotero's own base directory)
+				if (att?.path && att.link_mode === "linked_file") data.path = resolveStoredPath(db, att.path) ?? data.path;
 				if (att?.path && att.link_mode.startsWith("imported_") && existsSync(att.path) && !isInside(att.path, storageDir)) {
 					const filename = basename(att.path);
 					data.filename = filename;

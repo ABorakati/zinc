@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ZoteroItemData } from "../api-types";
 import { deriveColumns, nowIso } from "../db";
+import { storedFormForNewLink } from "../files/paths";
 import { indexItem } from "../search";
 import type { EntityType, ZoteroJson } from "./protocol";
 
@@ -261,7 +262,9 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	// attachment row
 	if (itemType === "attachment") {
 		const old = db.query("SELECT path FROM attachments WHERE item_key = ?").get(key) as { path: string | null } | null;
-		const path = attachmentPath(c.dataDir, key, itemData, old?.path ?? null);
+		const abs = attachmentPath(c.dataDir, key, itemData, old?.path ?? null);
+		// linked files under the base directory may be kept in Zotero's "attachments:<relative>" form (files/paths.ts)
+		const path = abs && itemData.linkMode === "linked_file" ? storedFormForNewLink(db, abs) : abs;
 		db.query(
 			`INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, ?)
 			 ON CONFLICT(item_key) DO UPDATE SET link_mode = excluded.link_mode, content_type = excluded.content_type,

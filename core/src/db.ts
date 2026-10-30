@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import schema from "../schema.sql" with { type: "text" };
 import syncSchema from "./sync/schema.sql" with { type: "text" };
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
+import { resolveStoredPath } from "./files/paths";
 import { assertQuickMode, compileSearch, quickSearchClause } from "./searches/compile";
 import { ensureSearchSchema, getSavedSearch } from "./searches/store";
 import type { QuickSearchMode, SearchDefinition } from "./searches/types";
@@ -633,7 +634,7 @@ export function getItemDetail(db: Database, key: string): ItemDetail | null {
 		title: k.title ?? "",
 		contentType: k.content_type,
 		linkMode: k.link_mode,
-		hasFile: k.item_type === "attachment" && fileExists(k.path),
+		hasFile: k.item_type === "attachment" && fileExists(resolveStoredPath(db, k.path)),
 		annotationCount: k.ann_count,
 	}));
 	const collections = (
@@ -919,7 +920,9 @@ export interface AttachmentRow {
 }
 
 export function getAttachment(db: Database, key: string): AttachmentRow | null {
-	return db.query("SELECT * FROM attachments WHERE item_key = ?").get(key) as AttachmentRow | null;
+	const row = db.query("SELECT * FROM attachments WHERE item_key = ?").get(key) as AttachmentRow | null;
+	if (row) row.path = resolveStoredPath(db, row.path); // "attachments:<rel>" -> absolute (files/paths.ts)
+	return row;
 }
 
 function requireAttachment(db: Database, key: string): void {

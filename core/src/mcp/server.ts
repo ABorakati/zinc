@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { ChildSummary, Collection, ZoteroItemData } from "../api-types";
 import * as repo from "../db";
 import { HttpError } from "../db";
+import { resolveStoredPath } from "../files/paths";
 import { indexItem, search, stripHtml } from "../search";
 
 const MAX_LIMIT = 100;
@@ -68,8 +69,8 @@ function attachmentsOf(db: Database, parentKey: string): AttachmentInfo[] {
 	return rows.map((r) => ({
 		key: r.key,
 		contentType: r.content_type,
-		path: r.path,
-		hasFile: repo.fileExists(r.path),
+		path: resolveStoredPath(db, r.path),
+		hasFile: repo.fileExists(resolveStoredPath(db, r.path)),
 		hasText: !!r.has_text,
 	}));
 }

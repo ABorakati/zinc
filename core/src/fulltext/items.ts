@@ -3,6 +3,7 @@
 import type { Database } from "bun:sqlite";
 import type { ZoteroItemData } from "../api-types";
 import { fileExists, pickPrimary } from "../db";
+import { resolveStoredPath } from "../files/paths";
 import type { ItemSnapshot } from "./proto";
 
 const NOT_REGULAR = new Set(["attachment", "note", "annotation"]);
@@ -46,7 +47,7 @@ export function snapshotItems(db: Database, keys: string[], firstId = 1): { item
 			if (primary) {
 				const c = children.find((x) => x.key === primary.key)!;
 				// A linked_url attachment has no file at all: it does not count as a downloaded PDF.
-				best = { kind: primary.contentType === "application/pdf" ? "pdf" : "other", exists: fileExists(c.path) };
+				best = { kind: primary.contentType === "application/pdf" ? "pdf" : "other", exists: fileExists(resolveStoredPath(db, c.path)) };
 			} else if (children.length) {
 				best = { kind: "other", exists: false };
 			}

@@ -2,6 +2,7 @@
 import type { Database } from "bun:sqlite";
 import type { ZoteroItemData } from "../api-types";
 import { HttpError } from "../db";
+import { resolveStoredPath } from "../files/paths";
 import { exportBibtex, type ExportItem } from "./bibtex";
 import { htmlToText } from "./common";
 import { exportCsv } from "./csv";
@@ -96,7 +97,7 @@ export function gatherItems(db: Database, req: ExportRequest): (ExportItem & { f
 			tags: tags.map((t) => t.tag),
 			autoTags: tags.filter((t) => t.type === 1).map((t) => t.tag),
 			notes,
-			files: atts.filter((a) => a.path && a.link_mode !== "linked_url").map((a) => a.path!),
+			files: atts.filter((a) => a.path && a.link_mode !== "linked_url").map((a) => resolveStoredPath(db, a.path) ?? a.path!),
 			links: atts.filter((a) => a.link_mode === "linked_url" && a.url).map((a) => a.url!),
 		};
 	});
