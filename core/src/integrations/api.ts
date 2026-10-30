@@ -17,11 +17,16 @@ export function setIntegrationsRepo(path: string): void {
 
 const WORD_ADDIN_KEY = "HKCU\\Software\\Microsoft\\Office\\Word\\Addins\\ZoteroNext.WordAddIn";
 const CHROME_HOST_KEY = "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.zotero_next.connector_host";
+const EDGE_HOST_KEY = "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.zotero_next.connector_host";
 export const CONNECTOR_EXTENSION_ID = "pakgagonakcalfbmckaolkpidcojacaf";
 
 export interface IntegrationsStatus {
 	word: { installed: boolean; available: boolean; wordRunning: boolean; problem?: string };
-	chrome: { hostInstalled: boolean; available: boolean; extensionDir: string; chromeFound: boolean; problem?: string };
+	/** The browser connector (one extension and helper for Chrome and Edge). hostInstalled: for every browser found. */
+	chrome: {
+		hostInstalled: boolean; available: boolean; extensionDir: string; problem?: string;
+		chromeFound: boolean; edgeFound: boolean; chromeHost: boolean; edgeHost: boolean;
+	};
 }
 
 const paths = () => ({
@@ -34,11 +39,13 @@ const paths = () => ({
 	extensionDir: join(repo, "..", "zotero-next-connector", "build", "manifestv3"),
 });
 
-function chromeExe(): string | null {
+type Browser = "chrome" | "edge";
+function browserExe(b: Browser): string | null {
+	const [vendor, product, exe] = b === "chrome" ? ["Google", "Chrome", "chrome.exe"] : ["Microsoft", "Edge", "msedge.exe"];
 	for (const p of [
-		join(process.env.ProgramFiles ?? "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
-		join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
-		join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"),
+		join(process.env.ProgramFiles ?? "C:\\Program Files", vendor, product, "Application", exe),
+		join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", vendor, product, "Application", exe),
+		join(process.env.LOCALAPPDATA ?? "", vendor, product, "Application", exe),
 	]) if (existsSync(p)) return p;
 	return null;
 }
@@ -62,7 +69,10 @@ async function wordRunning(): Promise<boolean> {
 
 export async function integrationsStatus(): Promise<IntegrationsStatus> {
 	const p = paths();
-	const [wordInstalled, hostInstalled, running] = await Promise.all([regKeyExists(WORD_ADDIN_KEY), regKeyExists(CHROME_HOST_KEY), wordRunning()]);
+	const [wordInstalled, chromeHost, edgeHost, running] = await Promise.all([regKeyExists(WORD_ADDIN_KEY), regKeyExists(CHROME_HOST_KEY), regKeyExists(EDGE_HOST_KEY), wordRunning()]);
+	const chromeFound = browserExe("chrome") !== null, edgeFound = browserExe("edge") !== null;
+	// installed = registered for every browser on this PC (an older install registered Chrome only)
+	const hostInstalled = (chromeHost || !chromeFound) && (edgeHost || !edgeFound) && (chromeHost || edgeHost);
 	const wordAvail = existsSync(p.wordInstall) && existsSync(p.wordBuilt);
 	const chromeAvail = existsSync(p.hostInstall) && existsSync(p.hostExe) && existsSync(join(p.extensionDir, "manifest.json"));
 	return {
@@ -71,7 +81,7 @@ export async function integrationsStatus(): Promise<IntegrationsStatus> {
 			...(wordAvail ? {} : { problem: `The add-in is not built (${p.wordBuilt}); run word\\build.ps1 in the repo.` }),
 		},
 		chrome: {
-			hostInstalled, available: chromeAvail, extensionDir: p.extensionDir, chromeFound: chromeExe() !== null,
+			hostInstalled, available: chromeAvail, extensionDir: p.extensionDir, chromeFound, edgeFound, chromeHost, edgeHost,
 			...(chromeAvail ? {} : { problem: "The connector or its helper is not built (connector-host\\dist, zotero-next-connector\\build)." }),
 		},
 	};
@@ -110,10 +120,13 @@ export async function handleIntegrationsApi(req: Request): Promise<Response | nu
 		return json({ ok: true, status: await integrationsStatus() });
 	}
 	if (what === "chrome" && action === "open") {
-		const chrome = chromeExe();
-		if (chrome) Bun.spawn([chrome, "chrome://extensions"], { stdout: "ignore", stderr: "ignore" });
+		// ?browser=edge|chrome (default: Edge if Chrome is missing)
+		const asked = new URL(req.url).searchParams.get("browser");
+		const browser: Browser = asked === "edge" || (asked !== "chrome" && !browserExe("chrome")) ? "edge" : "chrome";
+		const exe = browserExe(browser);
+		if (exe) Bun.spawn([exe, `${browser}://extensions`], { stdout: "ignore", stderr: "ignore" });
 		if (existsSync(p.extensionDir)) Bun.spawn(["explorer.exe", p.extensionDir.replace(/\//g, "\\")], { stdout: "ignore", stderr: "ignore" });
-		return json({ ok: true, chromeOpened: !!chrome, extensionDir: p.extensionDir });
+		return json({ ok: true, browser, opened: !!exe, chromeOpened: !!exe, extensionDir: p.extensionDir });
 	}
 	return json({ error: "not found" }, 404);
 }

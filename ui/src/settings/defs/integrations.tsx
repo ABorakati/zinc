@@ -1,5 +1,5 @@
 // Install buttons for the Word add-in (Cite section) and the browser connector (General), like Zotero's own.
-import { createSignal, Show, type Component } from "solid-js";
+import { createSignal, For, Show, type Component } from "solid-js";
 import { toast } from "solid-sonner";
 import { Button } from "~/components/ui/button";
 import type { IntegrationsStatus } from "../../../../core/src/integrations/api";
@@ -54,11 +54,24 @@ const WordControl: Component = () => (
 	</Show>
 );
 
+type Browser = "edge" | "chrome";
+const NAME: Record<Browser, string> = { edge: "Edge", chrome: "Chrome" };
+
 const ChromeControl: Component = () => {
-	const open = () => void call<{ chromeOpened: boolean }>("POST", "/api/integrations/chrome/open").then(
-		(r) => toast.info(r.chromeOpened ? "In Chrome: turn on Developer mode, click Load unpacked, choose the folder that just opened" : "Chrome was not found: open chrome://extensions yourself", { duration: 15000 }),
-		(e) => toast.error("Could not open Chrome", { description: String(e) }),
+	const open = (b: Browser) => void call<{ opened: boolean }>("POST", `/api/integrations/chrome/open?browser=${b}`).then(
+		(r) => toast.info(r.opened
+			? `In ${NAME[b]}: turn on Developer mode, click Load unpacked, choose the folder that just opened`
+			: `${NAME[b]} was not found: open ${b}://extensions yourself`, { duration: 15000 }),
+		(e) => toast.error(`Could not open ${NAME[b]}`, { description: String(e) }),
 	);
+	/** Browsers on this PC, Edge first. */
+	const browsers = (): Browser[] => {
+		const s = status()?.chrome;
+		const list: Browser[] = [];
+		if (s?.edgeFound) list.push("edge");
+		if (s?.chromeFound) list.push("chrome");
+		return list.length ? list : ["edge"];
+	};
 	return (
 		<Show when={status()} fallback={<Value>Checking…</Value>}>
 			{(s) => (
@@ -66,12 +79,12 @@ const ChromeControl: Component = () => {
 					<div class="flex items-center gap-1.5">
 						<Show when={s().chrome.hostInstalled} fallback={
 							<Button size="sm" class={btn} disabled={!s().chrome.available || !!busy()}
-								onClick={async () => { if (await act("chrome", "install", "Browser connector helper installed")) open(); }}>
-								{busy() === "chrome.install" ? "Installing…" : "Install Chrome connector"}
+								onClick={async () => { if (await act("chrome", "install", "Browser connector helper installed for Edge and Chrome")) open(browsers()[0]); }}>
+								{busy() === "chrome.install" ? "Installing…" : "Install browser connector"}
 							</Button>
 						}>
 							<span class="text-xs text-success-foreground">Helper installed</span>
-							<Button variant="outline" size="sm" class={btn} onClick={open}>Add to Chrome…</Button>
+							<For each={browsers()}>{(b) => <Button variant="outline" size="sm" class={btn} onClick={() => open(b)}>Add to {NAME[b]}…</Button>}</For>
 							<Button variant="outline" size="sm" class={btn} disabled={!!busy()} onClick={() => void act("chrome", "uninstall", "Browser connector helper removed")}>
 								{busy() === "chrome.uninstall" ? "Removing…" : "Uninstall"}
 							</Button>
@@ -92,9 +105,9 @@ registerSettings([
 		control: () => <WordControl />,
 	},
 	{
-		id: "general.connector", section: "general", group: "Browser", label: "Chrome connector",
-		description: "Save papers and PDFs from Chrome into this library, even when the app is closed. Chrome asks you to add the extension yourself (Load unpacked).",
-		keywords: ["chrome", "browser", "extension", "connector", "save to zotero", "web", "install"],
+		id: "general.connector", section: "general", group: "Browser", label: "Browser connector (Edge / Chrome)",
+		description: "Save papers and PDFs from Edge or Chrome into this library, even when the app is closed. The browser asks you to add the extension yourself (Load unpacked).",
+		keywords: ["edge", "microsoft edge", "chrome", "browser", "extension", "connector", "save to zotero", "web", "install"],
 		control: () => <ChromeControl />,
 	},
 ]);

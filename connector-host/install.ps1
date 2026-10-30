@@ -47,13 +47,16 @@ $manifest = [ordered]@{
 # Chrome reads the file as UTF-8 without a BOM.
 [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 
-$key = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
-New-Item -Path $key -Force | Out-Null
-Set-ItemProperty -Path $key -Name "(default)" -Value $manifestPath
+# Chrome and Edge (also Chromium) each look under their own key; the same manifest and extension id serve both.
+foreach ($browser in "Google\Chrome", "Microsoft\Edge") {
+  $key = "HKCU:\Software\$browser\NativeMessagingHosts\$hostName"
+  New-Item -Path $key -Force | Out-Null
+  Set-ItemProperty -Path $key -Name "(default)" -Value $manifestPath
+}
 
-Write-Host "Registered native messaging host '$hostName'"
+Write-Host "Registered native messaging host '$hostName' for Chrome and Edge"
 Write-Host "  manifest : $manifestPath"
 Write-Host "  host exe : $HostExe"
 Write-Host "  allowed  : chrome-extension://$ExtensionId/"
 Write-Host ""
-Write-Host "Next: chrome://extensions -> Developer mode -> Load unpacked -> zotero-next-connector\build\manifestv3"
+Write-Host "Next: chrome://extensions or edge://extensions -> Developer mode -> Load unpacked -> zotero-next-connector\build\manifestv3"
