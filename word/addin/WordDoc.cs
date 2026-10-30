@@ -159,6 +159,8 @@ namespace ZoteroNext.Word
                 }
                 off += t.Length;
             }
+            // writing Code.Text leaves the field toggled to show its code; show the formatted result instead
+            try { f.ShowCodes = false; } catch { }
         }
 
         static string Wrap(string code) { return " " + code.Trim() + " "; }
