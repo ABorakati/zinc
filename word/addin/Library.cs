@@ -26,11 +26,11 @@ namespace ZoteroNext.Word
                 "publication", r[4] ?? "", "itemType", r[5], "doi", r[6] ?? "");
         }
 
-        public static Dictionary<string, object> Info()
+        public static Dictionary<string, object> Info(bool full)
         {
             var path = Settings.DbPath();
             var d = Json.Map("dbPath", path, "dbExists", File.Exists(path), "dataDir", Path.GetDirectoryName(path));
-            if (!File.Exists(path)) return d;
+            if (!full || !File.Exists(path)) return d;
             try
             {
                 using (var db = Open())
@@ -67,7 +67,9 @@ namespace ZoteroNext.Word
                 }
                 else
                 {
-                    rows = db.Query("SELECT " + Cols + " FROM items i WHERE " + TopFilter + " ORDER BY i.date_added DESC LIMIT ?", limit);
+                    // the planner would scan and sort every top-level item; this partial index is already in date order
+                    try { rows = db.Query("SELECT " + Cols + " FROM items i INDEXED BY items_top_added WHERE " + TopFilter + " AND i.item_type <> 'annotation' ORDER BY i.date_added DESC LIMIT ?", limit); }
+                    catch (SqliteException) { rows = db.Query("SELECT " + Cols + " FROM items i WHERE " + TopFilter + " ORDER BY i.date_added DESC LIMIT ?", limit); } // a database zotero-next has not upgraded yet
                 }
                 return rows.Select(Row).ToList();
             }

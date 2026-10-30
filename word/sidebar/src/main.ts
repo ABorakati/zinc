@@ -23,6 +23,8 @@ const LOCALES = ["", "en-US", "en-GB", "de-DE", "fr-FR", "es-ES", "it-IT", "pt-P
 
 let app: App;
 let host: Host;
+/** settled once host.info has answered; item URIs and the default style depend on it */
+let started: Promise<void>;
 let picks: Pick[] = [];
 let editing: { ref: { story: string; idx: number }; citationID: string } | null = null;
 let results: LibRow[] = [];
@@ -45,6 +47,7 @@ async function busy<T>(label: string, fn: () => Promise<T>): Promise<T | undefin
 	btns.forEach((b) => (b.disabled = true));
 	$("status").textContent = label;
 	try {
+		await started; // a citation written before host.info answers would carry the wrong item URIs
 		return await fn();
 	} catch (e) {
 		toast(e instanceof Error ? e.message : String(e), true, 8000);
@@ -70,6 +73,7 @@ function renderDocLine() {
 
 async function refreshDocState() {
 	try {
+		await started;
 		const st = await app.docState();
 		docName = st.hasDoc ? (st.name ?? "") : "";
 		docStyle = st.prefs ? styleUrlToId(st.prefs.styleId) + (st.prefs.locale ? " (" + st.prefs.locale + ")" : "") : st.hasDoc ? `new document · default ${app.defaults.style}` : "";
@@ -134,6 +138,7 @@ function renderResults(q: string) {
 
 /** A click on a result: cite it straight away, unless a multi-item citation is being built or edited (then add it). */
 async function choose(key: string) {
+	await started;
 	if (picks.length || editing) return addPick(key);
 	const p = await app.pickFromKey(key);
 	if (!p) return toast("That item is no longer in the library.", true);
@@ -154,6 +159,7 @@ async function togglePick(key: string) {
 
 async function addPick(key: string) {
 	if (picked(key)) return;
+	await started;
 	const p = await app.pickFromKey(key);
 	if (!p) return toast("That item is no longer in the library.", true);
 	picks.push(p);
@@ -242,7 +248,7 @@ function renderCited() {
 			const acts = h("div", { class: "acts row" });
 			if (it.key && it.inLibrary) acts.append(h("button", { onclick: () => void openInApp(it.key!) }, "Open in zotero-next"));
 			if (it.doi) acts.append(h("button", { class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch((e) => toast(String(e.message ?? e), true)) }, "DOI"));
-			if (!it.abstract && it.doi && app.info?.zn.up) {
+			if (!it.abstract && it.doi && app.info?.zn?.up) {
 				acts.append(
 					h("button", { class: "ghost", onclick: async (e: Event) => {
 						(e.target as HTMLButtonElement).disabled = true;
@@ -312,6 +318,7 @@ async function deleteCited() {
 }
 
 async function onCursor(c: any) {
+	await started;
 	if (!c?.hasDoc) {
 		docName = "";
 		cursorView = null;
@@ -337,7 +344,7 @@ async function openSettings() {
 		box.hidden = true;
 		return;
 	}
-	const info = await app.init();
+	const info = await app.init(true);
 	const st = await app.docState();
 	const styleNow = st.prefs ? styleUrlToId(st.prefs.styleId) : app.defaults.style;
 	const localeNow = st.prefs ? st.prefs.locale : app.defaults.locale;
@@ -377,7 +384,7 @@ async function openSettings() {
 			h("label", {}, "Database path (optional override)", dbIn),
 			h("label", {}, "zotero.org user id (for citation links)", uidIn),
 			h("div", { class: "small muted" }, `Citation links use ${info.uri.base} (${info.uri.source}).`),
-			h("div", { class: "small muted" }, info.zn.up ? "zotero-next is running." : "zotero-next is not running (not needed; it is started on demand for Open)."),
+			h("div", { class: "small muted" }, info.zn?.up ? "zotero-next is running." : "zotero-next is not running (not needed; it is started on demand for Open)."),
 			h("div", { class: "row" },
 				h("button", { class: "primary", onclick: async () => {
 					await host.call("settings.set", { dbPath: (dbIn as HTMLInputElement).value.trim(), userId: (uidIn as HTMLInputElement).value.trim() });
@@ -403,11 +410,8 @@ async function main() {
 		toast("Preview mode: not inside Word, using sample data.");
 	}
 	app = new App(host);
-	try {
-		await app.init();
-	} catch (e) {
-		toast(e instanceof Error ? e.message : String(e), true, 10000);
-	}
+	// the box and buttons work right away; these three answer in whatever order they finish
+	started = app.init().then(() => {}, (e) => toast(e instanceof Error ? e.message : String(e), true, 10000));
 	const q = $<HTMLInputElement>("q");
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	q.addEventListener("input", () => {
@@ -450,9 +454,10 @@ async function main() {
 		else if (d?.name === "refresh") $("refresh").click();
 	});
 	renderTray();
-	await refreshDocState();
-	await runSearch();
 	q.focus();
+	await Promise.all([started, refreshDocState(), runSearch()]);
+	// the "fetch abstract" button in the cited card appears only while zotero-next is running
+	void app.checkApp().then(renderCited, () => {});
 }
 
 void main();

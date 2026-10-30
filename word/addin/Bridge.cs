@@ -40,7 +40,14 @@ namespace ZoteroNext.Word
             switch (method)
             {
                 case "host.info":
-                    return Json.Map("version", "0.1.0", "library", Library.Info(), "uri", Library.UriBase(), "settings", Settings.Load(), "zn", ZnClient.Status());
+                    {
+                        // startup asks for the quick part only; a refused API probe alone costs 800 ms when zotero-next is
+                        // not running. The settings panel passes full=true for the item count and the running status.
+                        var full = Json.Get(p, "full") is bool && (bool)Json.Get(p, "full");
+                        var info = Json.Map("version", "0.1.0", "library", Library.Info(full), "uri", Library.UriBase(), "settings", Settings.Load());
+                        if (full) info["zn"] = ZnClient.Status();
+                        return info;
+                    }
                 case "settings.get": return Settings.Load();
                 case "settings.set": return Settings.Patch(p);
 
