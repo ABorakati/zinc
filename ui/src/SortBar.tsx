@@ -133,7 +133,7 @@ export const SortBar: Component<{
 }> = (p) => {
 	const sel = () => store.selected().size;
 	return (
-		<div class={cn("flex flex-wrap items-center gap-2 border-b px-5 pb-2.5 text-xs text-muted-foreground", p.class)} data-testid="sort-bar">
+		<div class={cn("flex flex-wrap items-center gap-2 border-b px-5 py-1.5 text-xs text-muted-foreground", p.class)} data-testid="sort-bar">
 			<span class="flex items-center gap-1.5"><LayoutPanelTop class="size-3.5" /> Group</span>
 			<GroupChip />
 			<span class="mx-1 h-4 w-px bg-border" aria-hidden="true" />
