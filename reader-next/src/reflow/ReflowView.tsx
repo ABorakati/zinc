@@ -318,8 +318,10 @@ export function ReflowView(props: ReflowProps) {
 					<button class="rr-reading-btn rr-toc-toggle" title="Show contents" onClick={() => setTocPrefs({ mode: "pinned" })} data-testid="rr-toc-open">☰ Contents</button>
 				</Show>
 				<Show when={tocPrefs().mode === "auto" && !tocPeek()}>
-					{/* auto-hide: a slim tab at the left edge; hovering it slides the contents out */}
-					<div class="rr-toc-edge" title="Contents" onPointerEnter={() => peek(true)} data-testid="rr-toc-edge"><span>Contents</span></div>
+					{/* auto-hide: a small ☰ in the corner (hover or click) and an invisible strip along the left edge */}
+					<button class="rr-reading-btn rr-toc-toggle rr-toc-icon" title="Contents" aria-label="Contents" data-testid="rr-toc-edge"
+						onPointerEnter={() => peek(true)} onClick={() => peek(true)}>☰</button>
+					<div class="rr-toc-hot" aria-hidden="true" onPointerEnter={() => peek(true)} />
 				</Show>
 				<Show when={tocShown()}>
 					<nav class="rr-toc" classList={{ "rr-toc-auto": tocPrefs().mode === "auto" }} style={tocPos()} aria-label="Contents" data-testid="rr-toc"

@@ -55,10 +55,10 @@ export const READING_CSS = `
 .rr-toc-btn.on { filter: none; opacity: 1; }
 .rr-toc-auto { box-shadow: 0 10px 30px rgba(0,0,0,.18); animation: rr-toc-in .14s ease-out; }
 @keyframes rr-toc-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
-.rr-toc-edge { position: absolute; top: 50%; left: 0; z-index: 5; transform: translateY(-50%); width: 14px; height: 120px; border: 1px solid var(--rr-rule); border-left: 0;
-  border-radius: 0 8px 8px 0; background: var(--rn-reading-bg); cursor: pointer; display: grid; place-items: center; opacity: .75; }
-.rr-toc-edge span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 9.5px system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--rr-muted); }
-.rr-toc-edge:hover { opacity: 1; width: 18px; }
+.rr-toc-icon { min-width: 32px; padding: 0 8px; font-size: 15px; opacity: .55; }
+.rr-toc-icon:hover { opacity: 1; }
+/* invisible: reaching the left edge with the pointer opens the contents */
+.rr-toc-hot { position: absolute; top: 52px; bottom: 0; left: 0; width: 10px; z-index: 4; }
 .rr-toc-item { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--rr-muted); cursor: pointer;
   padding: 4px 6px; border-radius: 6px; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 2px solid transparent; }
 .rr-toc-item:hover { color: var(--rn-reading-fg); background: color-mix(in srgb, var(--rn-reading-fg) 6%, transparent); }
