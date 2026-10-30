@@ -1,11 +1,13 @@
 # Build zotero-next and deploy it as a portable copy, instead of running the installer.
 #   pwsh -NoProfile -File app\portable.ps1            # build (stable) + deploy
 #   pwsh -NoProfile -File app\portable.ps1 -NoBuild   # deploy the last build
-# Each deploy unpacks into its own folder, %LOCALAPPDATA%\ZoteroNext\versions\<yyyyMMdd-HHmmss>\, and points the
+# Each deploy unpacks into its own folder, %USERPROFILE%\ZoteroNext\versions\<yyyyMMdd-HHmmss>\, and points the
 # Start menu (and desktop) shortcuts at it, so the running app is never overwritten: close and reopen it to get the
 # new version. Old versions are removed once nothing runs from them (the newest two are kept).
 #   -NoShortcuts: unpack only (tests)
-param([switch]$NoBuild, [switch]$NoShortcuts, [string]$Root = "$env:LOCALAPPDATA\ZoteroNext")
+# Default root is in the user profile, not %LOCALAPPDATA%: tools running inside a packaged (MSIX) app get a redirected
+# LOCALAPPDATA, which put an earlier deploy inside that app's private folder.
+param([switch]$NoBuild, [switch]$NoShortcuts, [string]$Root = "$env:USERPROFILE\ZoteroNext")
 $ErrorActionPreference = "Stop"
 $app = $PSScriptRoot
 $env:PATH = "C:\Windows\System32;C:\Users\abora\.hutch\bin;" + $env:PATH # Hutch needs Windows' tar, not Git's
@@ -38,7 +40,7 @@ foreach ($f in $folders) {
 	if (-not (Test-Path $f)) { continue }
 	foreach ($l in Get-ChildItem $f -Filter *.lnk -Recurse -ErrorAction SilentlyContinue) {
 		$t = $shell.CreateShortcut($l.FullName).TargetPath
-		if (($t -like $installed -or $t -like "$Root\versions\*\launcher.exe") -and $links -notcontains $l.FullName) { $links += $l.FullName }
+		if (($t -like $installed -or $t -like "*\ZoteroNext\versions\*\launcher.exe") -and $links -notcontains $l.FullName) { $links += $l.FullName }
 	}
 }
 if ($NoShortcuts) { $links = @() }
