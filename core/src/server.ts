@@ -5,6 +5,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { handleApi } from "./api";
+import { createDevReload } from "./devreload";
 import { openDb } from "./db";
 import { handleMcp } from "./mcp/http";
 
@@ -18,6 +19,8 @@ export interface ServerOptions {
 	port?: number;
 	hostname?: string;
 	mounts?: Mount[];
+	/** Development: pages reload themselves when files under their mount change (see devreload.ts). */
+	devReload?: boolean;
 }
 
 const MIME: Record<string, string> = {
@@ -119,10 +122,15 @@ export function startServer(opts: ServerOptions) {
 	const db: Database = openDb(opts.dbPath);
 	const mounts = [...(opts.mounts ?? [])].sort((a, b) => normPrefix(b.prefix).length - normPrefix(a.prefix).length);
 	for (const m of mounts) if (!existsSync(m.dir)) console.warn(`mount directory missing: ${m.dir}`);
+	const live = opts.devReload ? createDevReload(mounts) : null;
 	const server = Bun.serve({
 		port: opts.port ?? 23120,
 		hostname: opts.hostname ?? "127.0.0.1",
-		async fetch(req) {
+		async fetch(req, srv) {
+			if (live) {
+				const sse = live.handle(req);
+				if (sse) { srv.timeout(req, 0); return sse; } // long-lived event stream
+			}
 			const mcp = await handleMcp(req, db);
 			if (mcp) return mcp;
 			const rejected = apiRequestRejected(req);
@@ -130,8 +138,11 @@ export function startServer(opts: ServerOptions) {
 			const api = await handleApi(req, db);
 			if (api) return api;
 			if (req.method !== "GET" && req.method !== "HEAD") return new Response("method not allowed", { status: 405 });
-			const res = serveStatic(new URL(req.url).pathname, mounts);
-			return res ?? new Response("not found", { status: 404 });
+			const pathname = new URL(req.url).pathname;
+			const res = serveStatic(pathname, mounts);
+			if (!res) return new Response("not found", { status: 404 });
+			const mount = live && res.status === 200 ? mounts.find((m) => pathname.startsWith(normPrefix(m.prefix))) : undefined;
+			return mount ? live!.inject(res, mount.prefix) : res;
 		},
 	});
 	return {
@@ -139,6 +150,7 @@ export function startServer(opts: ServerOptions) {
 		db,
 		url: `http://${server.hostname}:${server.port}`,
 		stop() {
+			live?.close();
 			server.stop(true);
 			db.close();
 		},

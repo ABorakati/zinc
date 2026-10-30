@@ -14,8 +14,11 @@ import { createZoteroBackends } from "../../../core/src/zotero-db";
 const PORT = Number(process.env.ZN_PORT) || 23120; // 23119 is Zotero's own port; ZN_PORT overrides (tests)
 
 // The UI and reader are copied into the app bundle (electrobun.config.ts `copy`).
-// ZN_ROOT points at the repo instead, to serve fresh builds during development.
-const ROOT = process.env.ZN_ROOT;
+// ZN_ROOT points at the repo instead, to serve fresh builds during development; so does the marker file
+// data/live-dev in the repo, which lets the installed app pick up rebuilt UI/reader code (pages reload
+// themselves when their build folder changes) without reinstalling. Delete the file to go back.
+const REPO = "C:/Users/abora/zotero-next";
+const ROOT = process.env.ZN_ROOT ?? (existsSync(`${REPO}/data/live-dev`) ? REPO : undefined);
 const uiDir = ROOT ? `${ROOT}/ui/dist/` : join(VIEWS_FOLDER, "app") + "/";
 const readerDir = ROOT ? `${ROOT}/reader-host/dist/` : join(VIEWS_FOLDER, "reader-host") + "/";
 const noteDir = ROOT ? `${ROOT}/note-host/dist/` : join(VIEWS_FOLDER, "note-host") + "/";
@@ -32,7 +35,7 @@ if (!ROOT) {
 
 // Library database: ZN_DB, else the library imported into the repo, else the
 // app's own data folder (an empty library).
-const REPO_DB = "C:/Users/abora/zotero-next/data/library.sqlite";
+const REPO_DB = `${REPO}/data/library.sqlite`;
 const dbPath = process.env.ZN_DB ?? (existsSync(REPO_DB) ? REPO_DB : join(Utils.paths.userData, "library.sqlite"));
 
 const core = startServer({
@@ -44,7 +47,9 @@ const core = startServer({
 		{ prefix: "/note-host/", dir: noteDir },
 		{ prefix: "/reader-next/", dir: readerNextDir },
 	],
+	devReload: !!ROOT,
 });
+if (ROOT) console.log(`[dev] serving UI and readers from ${ROOT} with live reload`);
 
 // Two-way sync with the local Zotero library (reading is always on; writing is opt-in in the UI).
 if (process.env.ZN_SYNC !== "0") {

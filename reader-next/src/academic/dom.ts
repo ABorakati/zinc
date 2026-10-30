@@ -106,6 +106,10 @@ export class PopupManager {
 	private hideTimer: ReturnType<typeof setTimeout> | undefined;
 	private current: string | null = null;
 	pinned = false;
+	/** The pointer is over the popup: it stays, and hovering other links does not replace it. */
+	private inside = false;
+	private placed: { left: number; top: number } | null = null;
+	private ro: ResizeObserver | null = null;
 	private off: (() => void)[] = [];
 
 	constructor() {
@@ -120,24 +124,26 @@ export class PopupManager {
 	get key() { return this.current; }
 
 	show(key: string, at: { x: number; y: number }, content: HTMLElement, pinned: boolean) {
-		clearTimeout(this.hideTimer);
 		if (this.el && this.current === key) {
+			clearTimeout(this.hideTimer);
 			this.pinned = this.pinned || pinned;
 			return;
 		}
+		// on the way to (or inside) the open popup the pointer crosses other links: don't swap the popup for theirs
+		if (this.el && this.inside && !pinned) return;
+		clearTimeout(this.hideTimer);
 		this.hide();
 		const el = h("div", { class: "rn-pop", role: "dialog", "data-testid": "rn-popup" }, content);
-		el.addEventListener("pointerenter", () => clearTimeout(this.hideTimer));
-		el.addEventListener("pointerleave", () => { if (!this.pinned) this.scheduleHide(350); });
+		el.addEventListener("pointerenter", () => { this.inside = true; clearTimeout(this.hideTimer); });
+		el.addEventListener("pointerleave", () => { this.inside = false; if (!this.pinned) this.scheduleHide(450); });
 		document.body.appendChild(el);
 		this.el = el;
 		this.current = key;
 		this.pinned = pinned;
 		this.place(at);
 		// content may grow (abstract arrives): keep it on screen
-		const ro = new ResizeObserver(() => this.place(at));
-		ro.observe(el);
-		this.off.push(() => ro.disconnect());
+		this.ro = new ResizeObserver(() => this.place(at));
+		this.ro.observe(el);
 	}
 
 	private place(at: { x: number; y: number }) {
@@ -146,15 +152,26 @@ export class PopupManager {
 		const m = 8;
 		const w = el.offsetWidth;
 		const hh = el.offsetHeight;
-		let left = Math.min(Math.max(m, at.x - 24), window.innerWidth - w - m);
-		let top = at.y + 16;
-		if (top + hh > window.innerHeight - m) top = Math.max(m, at.y - hh - 12);
+		let left: number;
+		let top: number;
+		if (this.placed) {
+			// content grew after it opened: stay put (moving away would lose the pointer); only nudge back on screen
+			left = Math.min(this.placed.left, window.innerWidth - w - m);
+			top = Math.max(m, Math.min(this.placed.top, window.innerHeight - hh - m));
+		}
+		else {
+			left = Math.min(Math.max(m, at.x - 24), window.innerWidth - w - m);
+			top = at.y + 10; // close to the pointer, so the gap to cross is small
+			if (top + hh > window.innerHeight - m) top = Math.max(m, at.y - hh - 8);
+			this.placed = { left, top };
+		}
 		el.style.left = left + "px";
 		el.style.top = top + "px";
 	}
 
 	scheduleHide(ms = 300) {
-		if (this.pinned) return;
+		if (this.pinned || this.inside) return;
+		ms = Math.max(ms, 500); // time to move the pointer from the link onto the popup
 		clearTimeout(this.hideTimer);
 		this.hideTimer = setTimeout(() => this.hide(), ms);
 	}
@@ -163,10 +180,14 @@ export class PopupManager {
 
 	hide() {
 		clearTimeout(this.hideTimer);
+		this.ro?.disconnect();
+		this.ro = null;
 		this.el?.remove();
 		this.el = null;
 		this.current = null;
 		this.pinned = false;
+		this.inside = false;
+		this.placed = null;
 	}
 
 	dispose() {
