@@ -24,9 +24,9 @@ registerAppAction({
 for (const m of QUICK_MODES) {
 	registerAppAction({
 		id: `quick-search-${m.mode}`,
-		get label() { return `${store.qmode() === m.mode ? "✓ " : " "}Quick search: ${m.label}`; },
+		get label() { return `${!store.fulltext() && store.qmode() === m.mode ? "✓ " : " "}Quick search: ${m.label}`; },
 		menu: "tools",
-		run: () => store.setQMode(m.mode),
+		run: () => { store.setFulltext(false); store.setQMode(m.mode); },
 	});
 }
 

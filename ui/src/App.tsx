@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
-import { BookOpen, BookOpenText, FileText, Library as LibraryIcon, LayoutList, PanelLeft, PanelRight, Search, Settings, Table2, TextSearch, X } from "lucide-solid";
+import { BookOpen, BookOpenText, FileText, Library as LibraryIcon, LayoutList, PanelLeft, PanelRight, Search, Settings, Table2, X } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { CollectionsPane } from "./Collections";
 import { TagList } from "./Tags";
@@ -103,7 +103,7 @@ const VIEW_MODES = [
 
 const Toolbar: Component = () => (
 	<div class="flex flex-none items-center gap-2.5 border-b border-border-soft px-4 pt-3.5 pb-2.5">
-		<Show when={!store.fulltext()}><QuickSearchMode class="h-9 rounded-lg" /></Show>
+		<QuickSearchMode class="h-9 rounded-lg" />
 		<div class="relative flex-1">
 			<Search class="pointer-events-none absolute left-3 top-1/2 size-[15px] -translate-y-1/2 text-muted-foreground" />
 			<Input
@@ -114,19 +114,6 @@ const Toolbar: Component = () => (
 				onInput={(e) => store.setFilter(e.currentTarget.value)}
 			/>
 		</div>
-		<Tooltip>
-			<TooltipTrigger
-				as={Button}
-				variant="ghost"
-				size="sm"
-				class={cn("h-9 gap-1.5 rounded-lg px-2.5 text-[13px] text-muted-foreground", store.fulltext() && "bg-primary-tint text-primary-deep hover:bg-primary-tint")}
-				aria-pressed={store.fulltext()}
-				onClick={() => store.setFulltext(!store.fulltext())}
-			>
-				<TextSearch /> Full text
-			</TooltipTrigger>
-			<TooltipContent>Search inside PDFs and notes</TooltipContent>
-		</Tooltip>
 		<div role="group" aria-label="View" class="inline-flex rounded-lg bg-muted p-[3px]">
 			<For each={VIEW_MODES}>{(m) => (
 				<Tooltip>
