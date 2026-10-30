@@ -22,6 +22,8 @@ export function indexFromStructure(s: DocStructure | null | undefined): FigItem[
 	for (const f of [...s.figures, ...s.tables]) {
 		const cap = f.caption ?? (f.captionBlockId ? byId.get(f.captionBlockId)?.text : undefined);
 		const key = labelKey(f.label) ?? labelKey(cap);
+		// unlabelled pieces are mostly continuation fragments of a labelled table; they would only clutter the list
+		if (!key) continue;
 		const label = key ? (f.kind === "figure" ? "Figure " : "Table ") + key.split(":")[1] : f.label ?? (f.kind === "figure" ? "Figure" : "Table");
 		out.push({ id: f.id, kind: f.kind, label, key, page: f.page, rect: f.rect, caption: cap?.trim() || undefined });
 	}

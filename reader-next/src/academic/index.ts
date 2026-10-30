@@ -87,8 +87,14 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		if (back.length) showPill(); else hidePill();
 		return true;
 	}
-	/** Jump somewhere remembering where we were. */
+	/** Jump somewhere remembering where we were (leaving the reading view first if it is open). */
 	function jump(page: number, rect: PdfRect) {
+		if (viewer.alternateActive()) {
+			// the reading view returns to its own position as it closes; reveal the target after that
+			viewer.setAlternateView(null);
+			setTimeout(() => jump(page, rect), 120);
+			return;
+		}
 		const here = viewer.page();
 		if (!back.length || back[back.length - 1]!.page !== here) back.push({ page: here });
 		if (back.length > 30) back.shift();
@@ -251,6 +257,36 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 				button(`${i === 0 ? "Go to citation · " : ""}${label(s)}`, () => { popups.hide(); jump(s.page, s.rect); }, { primary: i === 0 }))) : null,
 		);
 	}
+
+	// ---------------------------------------------------------------- citations in the reading view (reflow/)
+	// reflow dispatches 'reader-next:citation' {page, top, text, clientX, clientY, kind} for links in its text
+	// (page/top = the link's destination); a click we handle is cancelled so reflow doesn't jump instead.
+	const onReadingCite = (ev: Event) => {
+		const d = (ev as CustomEvent).detail as { page: number; top?: number; text: string; clientX: number; clientY: number; kind: "hover" | "click" } | undefined;
+		if (!d || !Number.isFinite(d.page)) return;
+		const pinned = d.kind === "click";
+		const m = findFigureMentions(d.text)[0];
+		const it = m && figItems.length ? findByKey(figItems, m.key) : undefined;
+		if (it) {
+			if (pinned) ev.preventDefault();
+			popups.show(`rfig:${it.key}`, { x: d.clientX, y: d.clientY }, figureContent(it), pinned);
+			return;
+		}
+		const e = {
+			page: d.page, rect: [0, 0, 0, 0] as PdfRect, target: { kind: "internal" as const, page: d.page, top: d.top },
+			text: d.text, clientX: d.clientX, clientY: d.clientY, preventDefault() { /* reflow event */ },
+		} satisfies LinkClick;
+		if (!isRefLink(e)) return;
+		if (pinned) ev.preventDefault();
+		void showCitation(e, pinned);
+	};
+	const onReadingLeave = () => { linkToken++; popups.scheduleHide(400); };
+	window.addEventListener("reader-next:citation", onReadingCite);
+	window.addEventListener("reader-next:citation-leave", onReadingLeave);
+	own(() => {
+		window.removeEventListener("reader-next:citation", onReadingCite);
+		window.removeEventListener("reader-next:citation-leave", onReadingLeave);
+	});
 
 	// ---------------------------------------------------------------- figure / supplementary / author-year hover targets
 	function figureContent(it: FigItem): HTMLElement {

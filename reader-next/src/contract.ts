@@ -71,6 +71,8 @@ export interface ViewerHandle {
 	addToolbarButton(btn: { id: string; title: string; icon?: string; onClick: () => void; active?: () => boolean }): () => void;
 	/** Switch between the page view and an alternate full-pane view (reflow/). */
 	setAlternateView(render: ((container: HTMLElement) => void | (() => void)) | null): void;
+	/** True while an alternate view (the reading view) covers the pages. */
+	alternateActive(): boolean;
 }
 
 /** Registered by academic/ and reflow/ from their index.ts; the viewer calls each once ready. */

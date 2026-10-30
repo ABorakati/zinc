@@ -334,6 +334,7 @@ export class ViewerController implements ViewerHandle {
 		return () => this.toolbarBtns[1]((t) => t.filter((x) => x !== btn));
 	}
 	setAlternateView(render: AlternateRender | null) { this.alternate[1](() => render); }
+	alternateActive() { return !!this.alternate[0](); }
 
 	// ------------------------------------------------------------------ links
 
