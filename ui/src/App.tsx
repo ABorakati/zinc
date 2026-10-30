@@ -358,7 +358,8 @@ export const App: Component = () => {
 			</div>
 			<FullTextProgress />
 			<For each={overlays()}>{(o) => o.render()}</For>
-			<Toaster position="bottom-right" closeButton />
+			{/* bottom centre: the Find Full Text panel owns the bottom-right corner */}
+			<Toaster position="bottom-center" closeButton visibleToasts={3} />
 		</div>
 	);
 };

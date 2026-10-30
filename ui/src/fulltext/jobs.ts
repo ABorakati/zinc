@@ -52,13 +52,10 @@ export function summarize(job: FullTextJob) {
 	return c;
 }
 
-function progressText(job: FullTextJob): string {
-	const c = summarize(job);
-	const done = job.items.length - c.open;
-	return `${done} of ${plural(job.items.length, "item")} done${c.attached ? `, ${c.attached} attached` : ""}`;
-}
-
+// The progress panel (Progress.tsx) is where a job's progress and result show. A toast only adds the result
+// when the panel is collapsed; a second progress display on top of the panel was just noise.
 function finishToast(t: TrackedJob) {
+	if (!panelCollapsed()) return;
 	const job = t.job;
 	const c = summarize(job);
 	const id = toastId(job.id);
@@ -100,8 +97,6 @@ function apply(snapshot: FullTextJob) {
 		sources.get(snapshot.id)?.();
 		sources.delete(snapshot.id);
 		if (justDone) finishToast({ ...before, job: snapshot });
-	} else {
-		toast.loading("Finding full text", { id: toastId(snapshot.id), description: progressText(snapshot), duration: Infinity });
 	}
 }
 
@@ -144,8 +139,8 @@ function follow(id: string) {
 
 function fail(id: string, e: unknown) {
 	const msg = e instanceof Error ? e.message : String(e);
-	update(id, (t) => ({ ...t, error: msg }));
-	toast.error("Lost contact with Find Full Text", { id: toastId(id), description: msg });
+	update(id, (t) => ({ ...t, error: msg })); // shown in the panel
+	if (panelCollapsed()) toast.error("Lost contact with Find Full Text", { id: toastId(id), description: msg });
 }
 
 /** Start a job for top-level item keys and track it. Resolves with the job id. */
@@ -154,16 +149,8 @@ export async function startJob(keys: string[], openAccessOnly = false): Promise<
 	const job = await call<FullTextJob>("GET", `/jobs/${jobId}`);
 	setJobs((list) => [{ job, openAccessOnly, startedAt: Date.now(), cancelling: false }, ...list].slice(0, 10));
 	setPanelCollapsed(false);
-	if (job.done) {
-		finishToast({ job, openAccessOnly, startedAt: Date.now(), cancelling: false });
-	} else {
-		toast.loading(openAccessOnly ? "Finding open access full text" : "Finding full text", {
-			id: toastId(jobId),
-			description: plural(keys.length, "item"),
-			duration: Infinity,
-		});
-		follow(jobId);
-	}
+	if (job.done) finishToast({ job, openAccessOnly, startedAt: Date.now(), cancelling: false });
+	else follow(jobId);
 	return jobId;
 }
 
