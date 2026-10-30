@@ -152,9 +152,10 @@ export const CollectionsPane: Component = () => {
 	};
 
 	const special = (kind: "library" | "unfiled" | "trash", label: string, Icon: typeof Library) => (
-		<div role="treeitem" aria-selected={isView(kind)} class={cn(rowCls, "pl-2.5")}
+		// same geometry as the registered rows below (Duplicate Items, saved searches) so the Library list lines up
+		<div role="treeitem" aria-selected={isView(kind)} class="relative flex h-6 cursor-pointer items-center gap-1 rounded-lg pl-6 pr-2 text-[13px] text-foreground/90 hover:bg-foreground/5"
 			onClick={() => store.setView({ kind })}>
-			<Icon class={cn("size-[15px] flex-none", isView(kind) ? "text-primary" : "text-muted-foreground")} />
+			<Icon class={cn("size-4 flex-none", isView(kind) ? "text-primary" : "text-muted-foreground")} />
 			<span class="flex-1 truncate">{label}</span>
 		</div>
 	);
