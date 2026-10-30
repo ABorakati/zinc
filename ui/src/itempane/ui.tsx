@@ -28,7 +28,8 @@ export const Section: Component<{
 			<div class="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>{p.actions}</div>
 		</div>
 		<Show when={!isCollapsed(p.id)}>
-			<div class="px-2 pt-0.5 pb-2.5">{p.children}</div>
+			{/* a size container: rows size their label column from the pane's width (see Row) */}
+			<div class="px-2 pt-0.5 pb-2.5 [container-type:inline-size]">{p.children}</div>
 		</Show>
 	</section>
 );
@@ -81,7 +82,7 @@ export const TextBtn: Component<{
 
 /** A label/value row in Zotero's two-column style. */
 export const Row: Component<{ label: string; children: JSX.Element; class?: string; labelClass?: string; id?: string }> = (p) => (
-	<div class={cn("group/row grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-2 py-[2px]", p.class)} data-field={p.id}>
+	<div class={cn("group/row grid grid-cols-[var(--ip-label)_minmax(0,1fr)] items-start gap-x-2 py-[2px]", p.class)} data-field={p.id}>
 		<label class={cn("truncate pt-[4px] text-right text-xs text-muted-foreground", p.labelClass)} title={p.label}>{p.label}</label>
 		<div class="min-w-0">{p.children}</div>
 	</div>

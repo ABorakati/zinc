@@ -90,7 +90,7 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 			</Show>
 			<Index each={creators().slice(0, visibleCount())}>
 				{(c, i) => (
-					<div class="group/row grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-2 py-[2px]" data-creator={i}>
+					<div class="group/row grid grid-cols-[var(--ip-label)_minmax(0,1fr)] items-start gap-x-2 py-[2px]" data-creator={i}>
 						<div class="flex justify-end pt-[1px]">
 							<NativeSelect
 								ariaLabel={`Creator type ${i + 1}`}
@@ -100,22 +100,24 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 								onChange={(v) => patchAt(i, { creatorType: v })}
 							/>
 						</div>
-						<div class="flex min-w-0 items-start gap-0.5">
+						{/* When the pane is too narrow for names + buttons, the buttons wrap to their own line (right-aligned)
+						    instead of squeezing the names to nothing. */}
+						<div class="flex min-w-0 flex-wrap items-start gap-x-0.5 gap-y-0.5">
 							{/* Names stay on one line and truncate (full value on hover / when editing). */}
-							<div class="flex min-w-0 flex-1 items-start">
+							<div class="flex min-w-[6.5rem] flex-1 items-start">
 								<Show
 									when={c().name === undefined}
 									fallback={
 										<Editable ariaLabel={`Creator ${i + 1} name`} class="truncate whitespace-nowrap" value={c().name ?? ""} placeholder="Name" onSave={(v) => patchAt(i, { name: v })} />
 									}
 								>
-									<Editable ariaLabel={`Creator ${i + 1} last name`} class="min-w-0 flex-[1.2] truncate whitespace-nowrap" value={c().lastName ?? ""} placeholder="Last" onSave={(v) => patchAt(i, { lastName: v })} />
+									<Editable ariaLabel={`Creator ${i + 1} last name`} class="min-w-[4rem] flex-[1.2] truncate whitespace-nowrap" value={c().lastName ?? ""} placeholder="Last" onSave={(v) => patchAt(i, { lastName: v })} />
 									<span class="px-0.5 pt-[3px] text-muted-foreground">,</span>
-									<Editable ariaLabel={`Creator ${i + 1} first name`} class="min-w-0 flex-1 truncate whitespace-nowrap" value={c().firstName ?? ""} placeholder="First" onSave={(v) => patchAt(i, { firstName: v })} />
+									<Editable ariaLabel={`Creator ${i + 1} first name`} class="min-w-[3rem] flex-1 truncate whitespace-nowrap" value={c().firstName ?? ""} placeholder="First" onSave={(v) => patchAt(i, { firstName: v })} />
 								</Show>
 							</div>
 							{/* Always-visible actions in their own strip (never over the names). */}
-							<div class="flex flex-none items-center pt-[2px]">
+							<div class="ml-auto flex flex-none items-center pt-[2px]">
 								<IconBtn title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"} onClick={() => toggleMode(i)}><Replace /></IconBtn>
 								<IconBtn title="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp /></IconBtn>
 								<IconBtn title="Move down" disabled={i === creators().length - 1} onClick={() => move(i, 1)}><ArrowDown /></IconBtn>

@@ -13,6 +13,8 @@
 	--nh: 260;
 	--zn-font: "ZN Manrope", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 	--zn-scale: 1;
+	/* item pane label column: shrinks with the pane (each section is a size container), 56–104 px */
+	--ip-label: clamp(56px, 30cqw, 104px);
 	--background: oklch(0.995 0 0);
 	--foreground: oklch(0.24 0.012 var(--nh));
 	--card: oklch(0.972 0.003 var(--nh));
