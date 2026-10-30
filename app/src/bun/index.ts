@@ -1,6 +1,7 @@
 import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
 import { setBrowserBridge } from "../../../core/src/fulltext/browser-bridge";
 import { createSigninBridge } from "./signin";
+import { watchWindowMemory } from "./memory";
 import { VIEWS_FOLDER } from "electrobun/main/paths";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -8,7 +9,9 @@ import { startServer } from "../../../core/src/server";
 import { startZoteroPort } from "../../../core/src/zport";
 import { configureExtractPool } from "../../../core/src/extract";
 import { startSyncService, stopSync } from "../../../core/src/sync";
-import { createZoteroBackends } from "../../../core/src/zotero-db";
+import { createZoteroBackends, findZoteroDataDir } from "../../../core/src/zotero-db";
+import { configuredZoteroDataDir } from "../../../core/src/files/config";
+import { setFolderPicker } from "../../../core/src/files/api";
 
 // The core service (database, API, static UI and reader) runs inside the main
 // process for now; Phase 2 moves it to a standalone background service.
@@ -65,10 +68,20 @@ Electrobun.events.on("before-quit", () => zport?.stop());
 if (process.env.ZN_SYNC !== "0") {
 	// Backends passed explicitly (a run-time lookup wouldn't survive bundling). Each write session
 	// backs up zotero.sqlite (~180 MB); keep only the last 2 because disk space is tight.
-	const zotero = createZoteroBackends(process.env.ZN_ZOTERO_DIR, { keepBackups: 2 });
-	void startSyncService(core.db, { dataDir: process.env.ZN_ZOTERO_DIR, ...zotero }).catch((e) => console.warn("[sync] not started:", e));
+	// Zotero data folder: ZN_ZOTERO_DIR, else the one chosen in Settings (zotero-next.config.json next to the library),
+	// else what Zotero's own prefs say. The same folder feeds the backends and the sync service.
+	const zoteroDir = configuredZoteroDataDir(dbPath) ?? findZoteroDataDir();
+	const zotero = createZoteroBackends(zoteroDir, { keepBackups: 2 });
+	void startSyncService(core.db, { dataDir: zoteroDir, ...zotero }).catch((e) => console.warn("[sync] not started:", e));
 	Electrobun.events.on("before-quit", () => void stopSync(core.db));
 }
+
+// Settings > Advanced > Files and Folders: "Browse..." opens the native folder dialog.
+setFolderPicker(async (startIn) => {
+	const picked = await Utils.openFileDialog({ startingFolder: startIn ?? "", canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false });
+	const first = Array.isArray(picked) ? picked[0] : undefined;
+	return first ? first : null;
+});
 
 // Embedded sign-in browser for Find Full Text (institution sign-in window + hidden page loader).
 const signin = createSigninBridge();
@@ -78,9 +91,10 @@ if (process.env.ZN_SIGNIN_SELFTEST === "1") {
 	void import("./signin-selftest").then((m) => m.runSigninSelftest(signin));
 }
 
-new BrowserWindow({
+const mainWindow = new BrowserWindow({
 	title: "zotero-next",
 	url: `http://127.0.0.1:${PORT}/app/`,
 	frame: { width: 1400, height: 900, x: 80, y: 60 },
 	hidden: process.env.ZN_HIDDEN === "1",
 });
+watchWindowMemory(mainWindow);
