@@ -19,6 +19,7 @@ const ROOT = process.env.ZN_ROOT;
 const uiDir = ROOT ? `${ROOT}/ui/dist/` : join(VIEWS_FOLDER, "app") + "/";
 const readerDir = ROOT ? `${ROOT}/reader-host/dist/` : join(VIEWS_FOLDER, "reader-host") + "/";
 const noteDir = ROOT ? `${ROOT}/note-host/dist/` : join(VIEWS_FOLDER, "note-host") + "/";
+const readerNextDir = ROOT ? `${ROOT}/reader-next/dist/` : join(VIEWS_FOLDER, "reader-next") + "/";
 
 // Text extraction uses the document-worker build shipped with the reader, and the worker
 // script copied next to the bundle (repo defaults apply under ZN_ROOT).
@@ -41,6 +42,7 @@ const core = startServer({
 		{ prefix: "/app/", dir: uiDir },
 		{ prefix: "/reader-host/", dir: readerDir },
 		{ prefix: "/note-host/", dir: noteDir },
+		{ prefix: "/reader-next/", dir: readerNextDir },
 	],
 });
 

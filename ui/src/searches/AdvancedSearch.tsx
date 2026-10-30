@@ -46,6 +46,8 @@ function flatCollections(list: Collection[]): { key: string; label: string }[] {
 	return out;
 }
 
+import { DateParts } from "~/components/DateParts";
+
 const ValueEditor: Component<{
 	row: Row; kind: ReturnType<typeof fieldKind>; tags: string[]; itemTypes: { itemType: string; label: string }[];
 	onChange: (v: string) => void;
@@ -93,11 +95,8 @@ const ValueEditor: Component<{
 						</div>
 					);
 				}
-				if (k === "datetime") {
-					return <Input type="date" class="min-w-0 flex-1" value={v().slice(0, 10)} onInput={(e) => p.onChange(e.currentTarget.value)} />;
-				}
-				if (k === "date") {
-					return <Input class="min-w-0 flex-1" value={v()} placeholder="YYYY, YYYY-MM or YYYY-MM-DD" onInput={(e) => p.onChange(e.currentTarget.value)} />;
+				if (k === "datetime" || k === "date") {
+					return <DateParts class="min-w-0 flex-1" allowText={false} value={k === "datetime" ? v().slice(0, 10) : v()} onChange={(nv) => p.onChange(nv)} />;
 				}
 				if (k === "year") {
 					return <Input type="number" class="min-w-0 flex-1" value={v()} placeholder="2020" onInput={(e) => p.onChange(e.currentTarget.value)} />;

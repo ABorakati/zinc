@@ -1,0 +1,31 @@
+{
+  "name": "zotero-next-reader",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebuild": "bun -e \"await Bun.write('public/pdfium.wasm', Bun.file('node_modules/@embedpdf/pdfium/dist/pdfium.wasm'))\"",
+    "build": "bun --bun x vite build",
+    "dev": "bun --bun x vite",
+    "check": "bun check"
+  },
+  "dependencies": {
+    "@embedpdf/engines": "^2.15.1",
+    "@embedpdf/models": "^2.15.1",
+    "@embedpdf/pdfium": "^2.15.1",
+    "@kobalte/core": "^0.13.14",
+    "@tailwindcss/vite": "^4.3.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-solid": "^1.64.0",
+    "solid-js": "^1.9.18",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-solid": "^2.11.14"
+  }
+}
