@@ -66,7 +66,7 @@ d("sidebar controller driving an invisible Word", () => {
 
 	test("library: opens read-only, searches with FTS, DOI and year filters", async () => {
 		expect(app.info!.library.dbExists).toBe(true);
-		expect(app.info!.library.items).toBeGreaterThan(1000);
+		expect((await app.init(true)).library.items).toBeGreaterThan(1000);
 		const rows = await app.search("liver transplantation", 10);
 		expect(rows.length).toBeGreaterThan(0);
 		expect(rows[0]!.key).toMatch(/^[A-Z0-9]{8}$/);
@@ -247,9 +247,7 @@ d("sidebar controller driving an invisible Word", () => {
 		await until("page init", "document.getElementById('docline').textContent.includes('Document')");
 		await ev("(() => { const q = document.getElementById('q'); q.value = 'liver transplantation'; q.dispatchEvent(new Event('input')); return 1; })()");
 		await until("results", "document.querySelectorAll('#results li').length > 0");
-		await ev("document.querySelector('#results li').click(); 1");
-		await until("tray", "document.querySelectorAll('#tray .pick').length === 1");
-		await ev("document.getElementById('insert').click(); 1");
+		await ev("document.querySelector('#results li').click(); 1"); // one click cites straight away
 		await until("field in Word", "document.getElementById('status') !== null && document.querySelectorAll('#toast .t').length > 0");
 		const fields = await app.readFields();
 		expect(fields.length).toBe(1);
