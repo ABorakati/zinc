@@ -1,13 +1,13 @@
 // Settings backed by the server or other features: Sync, Find Full Text, Cite (Quick Copy) and Export.
 // Server state is read when the Settings tab is shown (see net.ts) and written through the features' own endpoints.
-import { createRoot, createSignal, Show } from "solid-js";
+import { createEffect, createRoot, createSignal, on, Show } from "solid-js";
 import { Download, FileSearch, Quote, RefreshCw } from "lucide-solid";
 import { toast } from "solid-sonner";
 import type { FullTextSettingsPatch, FullTextSettingsView } from "../../../../core/src/api-types";
 import { Button } from "~/components/ui/button";
 import { fail } from "~/lib/actions";
 import { cn } from "~/lib/utils";
-import { citeApi, type CiteFormat, type CiteMode, type CiteSettings, type CiteStyleInfo } from "~/cite/client";
+import { citeApi, citeRev, type CiteFormat, type CiteMode, type CiteSettings, type CiteStyleInfo } from "~/cite/client";
 import { openCiteSettings } from "~/cite/dialogs";
 import { call as ftCall } from "~/fulltext/jobs";
 import { openFullTextSettings } from "~/fulltext/Settings";
@@ -200,8 +200,10 @@ const cite = createRoot(() => {
 	const [error, setError] = createSignal("");
 	const refresh = () => {
 		citeApi.settings().then((s) => { setSettings(s); setError(""); }).catch((e) => setError(e instanceof Error ? e.message : String(e)));
-		citeApi.styles("").then(setStyles).catch(() => {});
+		citeApi.styles().then(setStyles).catch(() => {});
 	};
+	// styles installed/removed or settings saved in the style picker dialog
+	createEffect(on(citeRev, refresh, { defer: true }));
 	const put = (patch: Partial<CiteSettings["quickCopy"]>) => citeApi.putSettings(patch).then(setSettings).catch((e) => fail("Could not save", e));
 	return { settings, styles, error, refresh, put };
 });
@@ -223,7 +225,7 @@ registerSettings([
 					return (
 						<div class="flex items-center gap-2">
 							<Select label="Quick Copy style" value={s().quickCopy.style} onChange={(style) => void cite.put({ style })} options={opts()} class="max-w-56" />
-							<Button variant="outline" size="sm" class="h-7 px-2 text-xs" onClick={openCiteSettings}>More styles…</Button>
+							<Button variant="outline" size="sm" class="h-7 px-2 text-xs" onClick={openCiteSettings}>Browse all styles…</Button>
 						</div>
 					);
 				}}

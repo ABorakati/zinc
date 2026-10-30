@@ -11,7 +11,7 @@ declare module "citeproc" {
 		updateItems(ids: string[]): void;
 		makeBibliography(): [Record<string, unknown> & { bibstart: string; bibend: string }, string[]] | false;
 		processCitationCluster(
-			citation: { citationItems: { id: string }[]; properties: { noteIndex: number } },
+			citation: { citationID?: string; citationItems: { id: string }[]; properties: { noteIndex: number } },
 			pre: unknown[],
 			post: unknown[],
 		): [unknown, [number, string, string][]];
