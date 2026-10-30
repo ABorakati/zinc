@@ -9,6 +9,17 @@ import { resolveTarget } from "./targets";
 
 export type SessionAction = "saveItems" | "saveSnapshot" | "saveStandaloneAttachment" | "import";
 
+export interface SerializedSession {
+	id: string;
+	action: SessionAction;
+	created: number;
+	items: [string, string][];
+	targetId: string;
+	tags: string[];
+	note: string;
+	userNotes: [string, string][];
+}
+
 export class SaveSession {
 	readonly created = Date.now();
 	/** the extension's key (item.id, page URL, attachment URL) -> library key */
@@ -22,6 +33,31 @@ export class SaveSession {
 	autoRecognize: Promise<unknown> | null = null;
 
 	constructor(readonly id: string, readonly action: SessionAction) {}
+
+	/** Plain-data form, so a session can outlive the process that created it (the native-messaging host). */
+	toJSON(): SerializedSession {
+		return {
+			id: this.id,
+			action: this.action,
+			created: this.created,
+			items: [...this.items],
+			targetId: this.targetId,
+			tags: this.tags,
+			note: this.note,
+			userNotes: [...this.userNotes],
+		};
+	}
+
+	static fromJSON(d: SerializedSession): SaveSession {
+		const s = new SaveSession(d.id, d.action);
+		(s as { created: number }).created = d.created;
+		s.items = new Map(d.items);
+		s.targetId = d.targetId;
+		s.tags = d.tags;
+		s.note = d.note;
+		s.userNotes = new Map(d.userNotes);
+		return s;
+	}
 
 	getItem(connectorKey: unknown): string | undefined {
 		return this.items.get(String(connectorKey));
@@ -115,6 +151,16 @@ export const SessionManager = {
 		return s;
 	},
 	remove: (id: string) => void sessions.delete(id),
+	/** Every live session as plain data (see SaveSession.toJSON). */
+	exportAll: (): SerializedSession[] => {
+		gc();
+		return [...sessions.values()].map((s) => s.toJSON());
+	},
+	/** Adopt sessions saved by another process; sessions already here win (their state is newer). */
+	importAll(list: SerializedSession[]): void {
+		for (const d of list) if (d && typeof d.id === "string" && !sessions.has(d.id)) sessions.set(d.id, SaveSession.fromJSON(d));
+		gc();
+	},
 	/** Tests only. */
 	clear: () => sessions.clear(),
 };

@@ -85,6 +85,7 @@ function createStore() {
 		});
 		if (typeof document !== "undefined") {
 			let lastRev: number | null = null;
+			let lastExt: number | null = null;
 			let lastReveal: number | null = null;
 			// "Open in zotero-next" from the Word sidebar (POST /api/ui/reveal): show the item in the library tab.
 			const doReveal = (key: string, title: string) => {
@@ -92,7 +93,7 @@ function createStore() {
 			};
 			setInterval(() => {
 				// the reveal check also runs while the window is hidden/minimized, the list refresh only when visible
-				fetch("/api/ui/selection").then((r) => r.json()).then((s: { rev?: number; reveal?: { key: string; title: string; seq: number; at?: number } | null }) => {
+				fetch("/api/ui/selection").then((r) => r.json()).then((s: { rev?: number; ext?: number; reveal?: { key: string; title: string; seq: number; at?: number } | null }) => {
 					if (typeof s.rev !== "number") return;
 					const rv = s.reveal;
 					if (rv && typeof rv.seq === "number") {
@@ -102,8 +103,11 @@ function createStore() {
 						lastReveal = rv.seq;
 					} else if (lastReveal === null) lastReveal = 0;
 					if (document.hidden) return;
-					if (lastRev !== null && s.rev !== lastRev) { bumpItems(); bumpCollections(); bumpTags(); }
+					// rev: saves through the app's own connector; ext: writes by other processes (browser host, MCP)
+					const changed = (lastRev !== null && s.rev !== lastRev) || (lastExt !== null && s.ext !== undefined && s.ext !== lastExt);
+					if (changed) { bumpItems(); bumpCollections(); bumpTags(); }
 					lastRev = s.rev;
+					if (s.ext !== undefined) lastExt = s.ext;
 				}).catch(() => {});
 			}, 1500);
 		}

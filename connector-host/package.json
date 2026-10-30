@@ -1,0 +1,15 @@
+{
+	"name": "zotero-next-connector-host",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Native-messaging host that lets the Zotero Next Connector browser extension save into zotero-next without any app running",
+	"scripts": {
+		"build": "bun build --compile src/main.ts --outfile dist/zotero-next-host.exe",
+		"test": "bun test",
+		"typecheck": "bun check"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.4.4"
+	}
+}
