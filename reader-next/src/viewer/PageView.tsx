@@ -12,22 +12,22 @@ const MAX_PIXELS = 28_000_000;
  * line. Placing each word exactly (rather than whole PDFium text runs, whose justified spacing differs
  * from the browser's) keeps double-click and drag selection on the glyphs the user sees.
  */
-export function pageWords(d: Pick<PageTextData, "text" | "rects">): { text: string; rect: PdfRect }[] {
-	const out: { text: string; rect: PdfRect }[] = [];
-	let cur: { text: string; rect: PdfRect } | null = null;
+export function pageWords(d: Pick<PageTextData, "text" | "rects">): { text: string; rect: PdfRect; start: number }[] {
+	const out: { text: string; rect: PdfRect; start: number }[] = [];
+	let cur: { text: string; rect: PdfRect; start: number } | null = null;
 	const flush = () => { if (cur) out.push(cur); cur = null; };
 	for (let i = 0; i < d.text.length; i++) {
 		const ch = d.text[i]!;
 		const r = d.rects[i];
 		if (/\s/.test(ch) || !r || r[2] <= r[0] || r[3] <= r[1]) { flush(); continue; }
 		if (cur) {
-			const c: { text: string; rect: PdfRect } = cur;
+			const c: { text: string; rect: PdfRect; start: number } = cur;
 			const h = Math.max(c.rect[3] - c.rect[1], r[3] - r[1]);
 			const sameLine = Math.abs((c.rect[1] + c.rect[3]) / 2 - (r[1] + r[3]) / 2) < h * 0.5;
 			const adjacent = r[0] >= c.rect[2] - h * 0.3 && r[0] - c.rect[2] < h * 0.25;
 			if (!sameLine || !adjacent) flush();
 		}
-		if (!cur) cur = { text: ch, rect: [...r] as PdfRect };
+		if (!cur) cur = { text: ch, rect: [...r] as PdfRect, start: i };
 		else {
 			cur.text += ch;
 			cur.rect = [Math.min(cur.rect[0], r[0]), Math.min(cur.rect[1], r[1]), Math.max(cur.rect[2], r[2]), Math.max(cur.rect[3], r[3])];
@@ -56,6 +56,7 @@ function buildTextLayer(el: HTMLElement, d: PageTextData, H: number, page: numbe
 		span.dataset.x2 = String(r.rect[2]);
 		span.dataset.y = String((r.rect[1] + r.rect[3]) / 2);
 		span.dataset.h = String(h);
+		span.dataset.c = String(r.start); // index of the word's first character in the page text
 		frag.appendChild(span);
 		spans.push({ span, w });
 	}

@@ -1,4 +1,5 @@
 import {
+	Highlighter, MessageSquare, PenLine, SquareDashed, StickyNote, Underline,
 	RotateCcw, RotateCw, BookOpen, ChevronDown, ChevronUp, Columns2, FileText, Image, LayoutGrid, List, Maximize2, MoveHorizontal, Palette, PanelLeft,
 	Paperclip, Quote, Search, Table2, X, ZoomIn, ZoomOut, type LucideProps,
 } from "lucide-solid";
@@ -18,6 +19,7 @@ const ICONS: Record<string, Component<LucideProps>> = {
 	image: Image, figure: Image, figures: Image, table: Table2, tables: Table2, "book-open": BookOpen, book: BookOpen, reading: BookOpen,
 	quote: Quote, quotes: Quote, citation: Quote, "file-text": FileText, list: List, grid: LayoutGrid, columns: Columns2, search: Search,
 	paperclip: Paperclip, attachment: Paperclip, supplementary: Paperclip,
+	annotations: MessageSquare, "ann-highlight": Highlighter, "ann-underline": Underline, "ann-note": StickyNote, "ann-area": SquareDashed, "ann-ink": PenLine,
 };
 function PluginIcon(props: { icon?: string; title: string }) {
 	const C = () => (props.icon ? ICONS[props.icon.toLowerCase()] : undefined);

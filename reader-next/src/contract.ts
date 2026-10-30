@@ -38,6 +38,13 @@ export interface LinkClick {
 	clientY: number;
 }
 
+/** The current text selection, resolved to PDF space for annotations/. */
+export interface SelectionInfo {
+	text: string; // as copied
+	pages: { page: number; rects: PdfRect[] }[]; // one rect per selected word (partial words trimmed), in reading order
+	bounds: { left: number; top: number; right: number; bottom: number }; // CSS px in the window, for positioning a popup
+}
+
 export interface ViewerHandle {
 	readonly attachmentKey: string;
 	readonly itemKey: string | null; // parent item
@@ -73,6 +80,18 @@ export interface ViewerHandle {
 	setAlternateView(render: ((container: HTMLElement) => void | (() => void)) | null): void;
 	/** True while an alternate view (the reading view) covers the pages. */
 	alternateActive(): boolean;
+	/** The page under a window point, with the PDF-space point there; null outside any page. */
+	pointAt(clientX: number, clientY: number): { page: number; x: number; y: number } | null;
+	/** PDF-space point of a window point on a given page (not clamped to the page). */
+	pagePoint(page: number, clientX: number, clientY: number): [number, number];
+	/** A PDF rect on a page as a window rect in CSS px (null while the page is not mounted). */
+	rectToClient(page: number, rect: PdfRect): { left: number; top: number; right: number; bottom: number } | null;
+	/** The text selection in PDF space (null when nothing is selected); onSelection fires after it changes. */
+	selection(): SelectionInfo | null;
+	onSelection(cb: (s: SelectionInfo | null) => void): () => void;
+	clearSelection(): void;
+	/** Fires when the pages move on screen (scroll, zoom, layout), so popups can follow their anchors. */
+	onViewChange(cb: () => void): () => void;
 }
 
 /** Registered by academic/ and reflow/ from their index.ts; the viewer calls each once ready. */

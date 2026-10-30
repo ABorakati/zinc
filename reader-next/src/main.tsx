@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import "./styles.css";
 import { academicPlugin } from "./academic";
+import { annotationsPlugin } from "./annotations";
 import { reflowPlugin } from "./reflow";
 import type { ReaderPlugin } from "./contract";
 import { ViewerController } from "./viewer/controller";
@@ -60,7 +61,7 @@ async function boot() {
 
 	// plugins get the handle once the first page has been painted
 	const start = () => {
-		for (const p of [academicPlugin, reflowPlugin] as ReaderPlugin[]) {
+		for (const p of [academicPlugin, annotationsPlugin, reflowPlugin] as ReaderPlugin[]) {
 			try { p(ctl); } catch (e) { console.error("reader plugin failed", e); }
 		}
 	};

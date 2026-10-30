@@ -1,7 +1,7 @@
 // ViewerController: all viewer state (layout, zoom, scroll, find, plugin registries) and the ViewerHandle
 // implementation. The Solid components in Viewer.tsx are thin renderers over this.
-import { batch, createMemo, createSignal, type Accessor } from "solid-js";
-import type { LinkClick, PageInfo, PdfRect, ViewerHandle } from "../contract";
+import { batch, createEffect, createMemo, createRoot, createSignal, on, type Accessor } from "solid-js";
+import type { LinkClick, PageInfo, PdfRect, SelectionInfo, ViewerHandle } from "../contract";
 import { PdfDoc, type FindHit, type LinkInfo, type PageTextData } from "./pdf";
 
 export const CSS_PER_PT = 96 / 72; // zoom 1 (100%) = 96 dpi
@@ -335,6 +335,98 @@ export class ViewerController implements ViewerHandle {
 	}
 	setAlternateView(render: AlternateRender | null) { this.alternate[1](() => render); }
 	alternateActive() { return !!this.alternate[0](); }
+
+	// ------------------------------------------------------------------ pointer + selection mapping (annotations/)
+
+	private pageEl(page: number) { return document.querySelector<HTMLElement>(`.rn-page[data-page="${page}"]`); }
+	/** Inverse of the page rotation: a point in the (rotated) page box -> PDF space. */
+	pagePoint(page: number, clientX: number, clientY: number): [number, number] {
+		const el = this.pageEl(page);
+		const p = this.pages[page];
+		if (!el || !p) return [0, 0];
+		const r = el.getBoundingClientRect();
+		const s = this.layout().scale;
+		const a = clientX - r.left, b = clientY - r.top;
+		const uw = p.width * s, uh = p.height * s;
+		const rot = this.layout().rots[page] ?? 0;
+		const [u, v] = rot === 90 ? [b, uh - a] : rot === 180 ? [uw - a, uh - b] : rot === 270 ? [uw - b, a] : [a, b];
+		return [u / s, p.height - v / s];
+	}
+	pointAt(clientX: number, clientY: number) {
+		for (const el of document.elementsFromPoint(clientX, clientY)) {
+			const pg = (el as HTMLElement).closest?.<HTMLElement>(".rn-page");
+			if (!pg) continue;
+			const page = Number(pg.dataset.page);
+			const [x, y] = this.pagePoint(page, clientX, clientY);
+			return { page, x, y };
+		}
+		return null;
+	}
+	rectToClient(page: number, rect: PdfRect) {
+		const el = this.pageEl(page);
+		if (!el) return null;
+		const o = el.getBoundingClientRect();
+		const b = this.rectToBox(page, rect);
+		return { left: o.left + b.left, top: o.top + b.top, right: o.left + b.right, bottom: o.top + b.bottom };
+	}
+	selection(): SelectionInfo | null {
+		const sel = window.getSelection();
+		if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+		const range = sel.getRangeAt(0);
+		const text = this.copyText();
+		if (!text) return null;
+		const byPage = new Map<number, PdfRect[]>();
+		for (const s of document.querySelectorAll<HTMLElement>(".rn-text .rn-run")) {
+			if (!range.intersectsNode(s)) continue;
+			const node = s.firstChild;
+			if (!node) continue;
+			const len = node.textContent?.length ?? 0;
+			const sc = range.startContainer, ec = range.endContainer;
+			// a selection that starts or ends in the word's trailing space does not include the word's own characters
+			if (sc !== node && s.contains(sc) && !(sc === s && range.startOffset === 0)) continue;
+			if (ec === s && range.endOffset === 0) continue;
+			const a = sc === node ? range.startOffset : 0;
+			const b = ec === node ? range.endOffset : len;
+			if (b <= a) continue;
+			const page = Number(s.dataset.p), c0 = Number(s.dataset.c);
+			const chars = this.textCache.get(page)?.rects;
+			let r: PdfRect | null = null;
+			if (chars && Number.isFinite(c0)) {
+				for (let k = c0 + a; k < c0 + b; k++) {
+					const c = chars[k];
+					if (!c || c[2] <= c[0]) continue;
+					r = r ? [Math.min(r[0], c[0]), Math.min(r[1], c[1]), Math.max(r[2], c[2]), Math.max(r[3], c[3])] : [...c] as PdfRect;
+				}
+			}
+			if (!r) {
+				const hh = Number(s.dataset.h), y = Number(s.dataset.y);
+				r = [Number(s.dataset.x1), y - hh / 2, Number(s.dataset.x2), y + hh / 2];
+			}
+			let list = byPage.get(page);
+			if (!list) byPage.set(page, list = []);
+			list.push(r);
+		}
+		if (!byPage.size) return null;
+		const rb = range.getBoundingClientRect();
+		return {
+			text,
+			pages: [...byPage].sort((x, y) => x[0] - y[0]).map(([page, rects]) => ({ page, rects })),
+			bounds: { left: rb.left, top: rb.top, right: rb.right, bottom: rb.bottom },
+		};
+	}
+	onSelection(cb: (s: SelectionInfo | null) => void) {
+		let t = 0;
+		const on = () => { clearTimeout(t); t = window.setTimeout(() => cb(this.selection()), 120); };
+		document.addEventListener("selectionchange", on);
+		return () => { clearTimeout(t); document.removeEventListener("selectionchange", on); };
+	}
+	clearSelection() { window.getSelection()?.removeAllRanges(); }
+	onViewChange(cb: () => void) {
+		return createRoot((dispose) => {
+			createEffect(on([this.scrollTop[0], this.scrollLeft[0], this.zoomVal[0], this.layout], () => cb(), { defer: true }));
+			return dispose;
+		});
+	}
 
 	// ------------------------------------------------------------------ links
 
