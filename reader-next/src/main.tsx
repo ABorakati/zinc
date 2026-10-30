@@ -40,7 +40,11 @@ async function boot() {
 		json<{ data: { parentItem?: string; title?: string; filename?: string } }>(`/api/items/${attachment}`),
 		json<Record<string, unknown>>(`/api/attachments/${attachment}/view-state`),
 	]);
-	if (!bytesRes.ok) return message(`Could not load the file (HTTP ${bytesRes.status}).`);
+	if (!bytesRes.ok) {
+		// the server explains why (e.g. OneDrive could not download an online-only file)
+		const why = await bytesRes.json().then((b: { error?: string }) => b.error, () => undefined);
+		return message(why ?? `Could not load the file (HTTP ${bytesRes.status}).`);
+	}
 	const bytes = await bytesRes.arrayBuffer();
 	(window as unknown as { __rnT0: number }).__rnT0 = performance.now();
 	const pdfP = PdfDoc.open(bytes);

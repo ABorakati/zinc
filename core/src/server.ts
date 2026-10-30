@@ -126,6 +126,8 @@ export function startServer(opts: ServerOptions) {
 	const server = Bun.serve({
 		port: opts.port ?? 23120,
 		hostname: opts.hostname ?? "127.0.0.1",
+		// a PDF that OneDrive keeps online-only can take a while to arrive; the default 10 s cut it off
+		idleTimeout: 255,
 		async fetch(req, srv) {
 			if (live) {
 				const sse = live.handle(req);

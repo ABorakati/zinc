@@ -1,6 +1,7 @@
 // HTTP API (see api-types.ts for the contract). handleApi returns null for non-/api paths.
 
 import type { Database } from "bun:sqlite";
+import { open, stat, type FileHandle } from "node:fs/promises";
 import type { ReaderAnnotation, ZoteroItemData } from "./api-types";
 import * as repo from "./db";
 import { HttpError } from "./db";
@@ -301,14 +302,62 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 
 // ---------------------------------------------------------------- file streaming
 
-function serveFile(req: Request, db: Database, key: string): Response {
+/**
+ * The bytes start..end (inclusive) of a file as a stream read on libuv's thread pool. Bun.file() responses read
+ * on the main thread, and a OneDrive "online-only" file downloads during that read, which froze every other
+ * request until it finished; with pooled reads only this response waits.
+ */
+export function fileStream(path: string, start: number, end: number, first?: Uint8Array): ReadableStream<Uint8Array> {
+	let pos = start;
+	return new ReadableStream<Uint8Array>({
+		start(ctrl) {
+			if (first?.length) { ctrl.enqueue(first); pos += first.length; }
+		},
+		async pull(ctrl) {
+			try {
+				const chunk = await readChunk(path, pos, Math.min(1024 * 1024, end + 1 - pos));
+				if (!chunk.length) { ctrl.close(); return; }
+				pos += chunk.length;
+				ctrl.enqueue(chunk);
+			}
+			catch (e) { ctrl.error(e); }
+		},
+	});
+}
+
+/** Up to `want` bytes at `pos`, read on the thread pool. Opened per chunk, so an abandoned response leaks nothing. */
+async function readChunk(path: string, pos: number, want: number): Promise<Uint8Array> {
+	if (want <= 0) return new Uint8Array(0);
+	let fh: FileHandle | null = null;
+	try {
+		fh = await open(path, "r");
+		const buf = new Uint8Array(want);
+		const { bytesRead } = await fh.read(buf, 0, want, pos);
+		return bytesRead === want ? buf : buf.subarray(0, bytesRead);
+	}
+	finally { await fh?.close().catch(() => {}); }
+}
+
+/**
+ * Read the first chunk before answering: for an online-only cloud file this is where the download happens, and
+ * a failure (OneDrive offline or timing out) becomes a clear 503 instead of a response that breaks midway.
+ */
+async function firstChunk(path: string, start: number, end: number): Promise<Uint8Array> {
+	try { return await readChunk(path, start, Math.min(1024 * 1024, end + 1 - start)); }
+	catch (e) {
+		throw new HttpError(503, `The file could not be read${/onedrive/i.test(path) ? " (OneDrive could not download it; check OneDrive is signed in and online, or mark the folder 'Always keep on this device')" : ""}: ${e instanceof Error ? e.message : String(e)}`);
+	}
+}
+
+async function serveFile(req: Request, db: Database, key: string): Promise<Response> {
 	const att = repo.getAttachment(db, key);
 	if (!att) throw new HttpError(404, "attachment not found");
-	if (!att.path || !repo.fileExists(att.path)) throw new HttpError(404, "file not found on disk");
-	const file = Bun.file(att.path);
-	const size = file.size;
+	if (!att.path) throw new HttpError(404, "file not found on disk");
+	const st = await stat(att.path).catch(() => null); // metadata only: does not download a cloud file
+	if (!st?.isFile()) throw new HttpError(404, "file not found on disk");
+	const size = st.size;
 	const headers: Record<string, string> = {
-		"Content-Type": att.content_type || file.type || "application/octet-stream",
+		"Content-Type": att.content_type || Bun.file(att.path).type || "application/octet-stream",
 		"Accept-Ranges": "bytes",
 		"Cache-Control": "no-cache",
 	};
@@ -328,7 +377,7 @@ function serveFile(req: Request, db: Database, key: string): Response {
 		if (size === 0 || start >= size || start > end) {
 			return new Response(null, { status: 416, headers: { ...headers, "Content-Range": `bytes */${size}` } });
 		}
-		return new Response(req.method === "HEAD" ? null : file.slice(start, end + 1), {
+		return new Response(req.method === "HEAD" ? null : fileStream(att.path, start, end, await firstChunk(att.path, start, end)), {
 			status: 206,
 			headers: {
 				...headers,
@@ -337,7 +386,7 @@ function serveFile(req: Request, db: Database, key: string): Response {
 			},
 		});
 	}
-	return new Response(req.method === "HEAD" ? null : file, {
+	return new Response(req.method === "HEAD" || size === 0 ? null : fileStream(att.path, 0, size - 1, await firstChunk(att.path, 0, size - 1)), {
 		status: 200,
 		headers: { ...headers, "Content-Length": String(size) },
 	});
