@@ -17,6 +17,7 @@ import type { ParsedItem } from "../io/common";
 import { itemDoi } from "../references/ids";
 import { indexItem } from "../search";
 import { storeWebAttachment } from "./attachments";
+import { proxyFrom, toProper } from "./proxy";
 import { convertTags, saveTranslatedItem } from "./items";
 import { SaveSession, SessionManager, type SessionAction } from "./session";
 import { bumpRev } from "./state";
@@ -179,9 +180,10 @@ export const saveItems: Handler = async (req, { db }) => {
 	try {
 		const collectionKey = currentCollection(db);
 		session.update(db, targetIdFor(collectionKey));
+		session.proxy = proxyFrom(data.proxy); // URLs of this save are stored without the university proxy
 		for (const raw of data.items) {
 			if (!raw || typeof raw !== "object") continue;
-			const saved = saveTranslatedItem(db, raw as Record<string, unknown>, collectionKey);
+			const saved = saveTranslatedItem(db, raw as Record<string, unknown>, collectionKey, [], session.proxy);
 			session.addItem(db, saved.connectorId || saved.key, saved.key);
 			for (const [aid, key] of Object.entries(saved.attachments)) session.items.set(aid, key);
 		}
@@ -257,7 +259,7 @@ export const saveSingleFile: Handler = async (req, { db }) => {
 		storeWebAttachment(db, {
 			parentKey,
 			bytes: new TextEncoder().encode(html),
-			url: String(data.url ?? ""),
+			url: toProper(s.proxy, String(data.url ?? "")),
 			title: String(data.title || "Snapshot"),
 			contentType: "text/html",
 		});
@@ -281,7 +283,7 @@ export const saveAttachment: Handler = async (req, { db, url }) => {
 		const key = storeWebAttachment(db, {
 			parentKey,
 			bytes,
-			url: String(meta.url ?? ""),
+			url: toProper(s.proxy, String(meta.url ?? "")),
 			title: typeof meta.title === "string" ? meta.title : undefined,
 			contentType: mediaType(req) || String(meta.contentType ?? ""),
 		});

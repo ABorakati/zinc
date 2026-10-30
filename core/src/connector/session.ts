@@ -5,6 +5,7 @@ import { createItem, getItemDetail, patchItem } from "../db";
 import { indexItem } from "../search";
 import { userNoteToHtml } from "./items";
 import { bumpRev, updateRecents } from "./state";
+import type { ProxyInfo } from "./proxy";
 import { resolveTarget } from "./targets";
 
 export type SessionAction = "saveItems" | "saveSnapshot" | "saveStandaloneAttachment" | "import";
@@ -18,6 +19,7 @@ export interface SerializedSession {
 	tags: string[];
 	note: string;
 	userNotes: [string, string][];
+	proxy?: ProxyInfo | null;
 }
 
 export class SaveSession {
@@ -31,6 +33,8 @@ export class SaveSession {
 	private userNotes = new Map<string, string>();
 	/** standalone PDF: resolves when "retrieve metadata" finished */
 	autoRecognize: Promise<unknown> | null = null;
+	/** the proxy the saved page came through: attachment URLs of this save are stored without it */
+	proxy: ProxyInfo | null = null;
 
 	constructor(readonly id: string, readonly action: SessionAction) {}
 
@@ -45,6 +49,7 @@ export class SaveSession {
 			tags: this.tags,
 			note: this.note,
 			userNotes: [...this.userNotes],
+			proxy: this.proxy,
 		};
 	}
 
@@ -56,6 +61,7 @@ export class SaveSession {
 		s.tags = d.tags;
 		s.note = d.note;
 		s.userNotes = new Map(d.userNotes);
+		s.proxy = d.proxy ?? null;
 		return s;
 	}
 

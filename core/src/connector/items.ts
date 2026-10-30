@@ -6,6 +6,7 @@ import { createItem, nowIso } from "../db";
 import { fieldFor } from "../io/common";
 import { getSchema, hasItemType } from "../schema-data";
 import { indexItem } from "../search";
+import { toProper, type ProxyInfo } from "./proxy";
 
 type SchemaType = ReturnType<typeof getSchema>["itemTypes"][number];
 
@@ -130,10 +131,12 @@ export interface SavedItem {
 }
 
 /** Create one translated item (with its notes and link attachments) in `collectionKey`. */
-export function saveTranslatedItem(db: Database, raw: Record<string, unknown>, collectionKey: string | null, tags: { tag: string; type: number }[] = []): SavedItem {
+export function saveTranslatedItem(db: Database, raw: Record<string, unknown>, collectionKey: string | null, tags: { tag: string; type: number }[] = [], proxy: ProxyInfo | null = null): SavedItem {
 	const requested = str(raw.itemType);
 	const itemType = hasItemType(requested) && requested !== "attachment" ? requested : "document";
 	const fields = convertFields(raw, itemType);
+	// a page read through the university proxy: store the publisher's own URL, as Zotero does
+	if (typeof fields.url === "string") fields.url = toProper(proxy, fields.url);
 	const creators = convertCreators(raw.creators, itemType);
 	const mergedTags = [...convertTags(raw.tags, 1), ...tags];
 	const data: Partial<ZoteroItemData> = {
@@ -159,7 +162,7 @@ export function saveTranslatedItem(db: Database, raw: Record<string, unknown>, c
 		// Only link-only attachments (snapshot: false) come with the item; files are uploaded afterwards.
 		for (const a of Array.isArray(raw.attachments) ? raw.attachments : []) {
 			if (!a || typeof a !== "object" || (a as { snapshot?: unknown }).snapshot !== false) continue;
-			const url = str((a as { url?: unknown }).url).trim();
+			const url = toProper(proxy, str((a as { url?: unknown }).url).trim());
 			if (!url || !/^https?:\/\//i.test(url)) continue;
 			const mime = str((a as { mimeType?: unknown }).mimeType);
 			const att = createItem(db, {
