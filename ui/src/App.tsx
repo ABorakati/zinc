@@ -1,5 +1,5 @@
-import { createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
-import { BookOpenText, Library as LibraryIcon, LayoutList, Search, Table2, TextSearch, X } from "lucide-solid";
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
+import { BookOpen, BookOpenText, Library as LibraryIcon, LayoutList, Search, Table2, TextSearch, X } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { CollectionsPane } from "./Collections";
 import { TagList } from "./Tags";
@@ -13,7 +13,8 @@ import "./features";
 import { QuickSearchMode } from "./searches/QuickSearchMode";
 import { Plus, Wrench } from "lucide-solid";
 import {
-	DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger,
+	DropdownMenu, DropdownMenuContent, DropdownMenuGroupLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem,
+	DropdownMenuShortcut, DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 
 /** Toolbar dropdown for registered app actions ("+" add menu or Tools). Hidden while empty. */
@@ -82,6 +83,22 @@ function persistedFlag(key: string, fallback: boolean) {
 		try { localStorage.setItem(k, v ? "1" : "0"); } catch {}
 	}] as const;
 }
+
+/** Which reader opens PDFs: Zotero's own reader, or zotero-next's (reflow, rotation, citation cards).
+ *  EPUBs and snapshots always use Zotero's reader. The last choice applies to new tabs. */
+type PdfReader = "zotero" | "next";
+const READER_KEY = "zn.pdfReader";
+const READERS: { id: PdfReader; label: string; hint: string }[] = [
+	{ id: "zotero", label: "Zotero reader", hint: "Annotations, Zotero look" },
+	{ id: "next", label: "Zotero Next reader", hint: "Reflow, fonts, rotation, figures" },
+];
+const [defaultReader, setDefaultReaderRaw] = createSignal<PdfReader>((() => {
+	try { return localStorage.getItem(READER_KEY) === "next" ? "next" : "zotero"; } catch { return "zotero"; }
+})());
+const setDefaultReader = (r: PdfReader) => {
+	setDefaultReaderRaw(r);
+	try { localStorage.setItem(READER_KEY, r); } catch {}
+};
 
 /** "Open in library" from a citation: open the item's PDF beside the current tab, else show it in the library. */
 async function revealItem(key: string) {
@@ -184,6 +201,26 @@ export const App: Component = () => {
 	const [refsOpen, setRefsOpen] = persistedFlag("references", true);
 	const [refsFocus, setRefsFocus] = createSignal<Record<string, { index: number }>>({});
 
+	// Per tab: whether it is a PDF (only PDFs can switch reader) and the reader chosen for it.
+	const [isPdf, setIsPdf] = createSignal<Record<string, boolean>>({});
+	const [tabReader, setTabReader] = createSignal<Record<string, PdfReader>>({});
+	createEffect(() => {
+		for (const t of store.tabs()) {
+			if (t.id in isPdf()) continue;
+			setIsPdf({ ...isPdf(), [t.id]: false });
+			api.item(t.attachmentKey)
+				.then((d) => setIsPdf({ ...isPdf(), [t.id]: /pdf/i.test(String(d.data.contentType ?? "")) }))
+				.catch(() => {});
+		}
+	});
+	const readerFor = (id: string): PdfReader => (isPdf()[id] ? (tabReader()[id] ?? defaultReader()) : "zotero");
+	const readerSrc = (t: { id: string; attachmentKey: string }) =>
+		`/${readerFor(t.id) === "next" ? "reader-next" : "reader-host"}/index.html?attachment=${encodeURIComponent(t.attachmentKey)}`;
+	const chooseReader = (r: PdfReader) => {
+		setTabReader({ ...tabReader(), [store.activeTab()]: r });
+		setDefaultReader(r);
+	};
+
 	// Messages from reader pages: links to open, items to reveal, references to show.
 	const onMessage = (e: MessageEvent) => {
 		if (e.origin !== location.origin || !e.data || typeof e.data.type !== "string") return;
@@ -199,6 +236,8 @@ export const App: Component = () => {
 		} else if (m.type === "show-references" && typeof m.index === "number") {
 			setRefsOpen(true);
 			setRefsFocus({ ...refsFocus(), [store.activeTab()]: { index: m.index } });
+		} else if (m.type === "open-attachment" && typeof m.key === "string") {
+			store.openAttachment(m.key, typeof m.title === "string" ? m.title : "");
 		} else if (m.type === "reference-added") {
 			store.bumpItems();
 		} else if (m.type === "find-fulltext" && Array.isArray(m.keys) && m.keys.every((k: unknown) => typeof k === "string")) {
@@ -262,7 +301,35 @@ export const App: Component = () => {
 					)}
 				</For>
 				<div class="ml-auto flex flex-none items-center gap-1 pr-1">
-				<Show when={store.activeTab() !== "library"}>
+				<Show when={store.activeTab() !== "library" && isPdf()[store.activeTab()]}>
+					<DropdownMenu>
+						<Tooltip>
+							<TooltipTrigger
+								as={DropdownMenuTrigger}
+								class="inline-flex h-8 items-center gap-1 px-3 text-xs text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
+								aria-label="PDF reader"
+							>
+								<BookOpen /> {readerFor(store.activeTab()) === "next" ? "Zotero Next reader" : "Zotero reader"}
+							</TooltipTrigger>
+							<TooltipContent>Choose the PDF reader (remembered for new tabs)</TooltipContent>
+						</Tooltip>
+						<DropdownMenuContent class="w-64">
+							<DropdownMenuRadioGroup value={readerFor(store.activeTab())} onChange={(v: string) => chooseReader(v === "next" ? "next" : "zotero")}>
+								<DropdownMenuGroupLabel>Open PDFs in</DropdownMenuGroupLabel>
+								<For each={READERS}>{(r) => (
+									<DropdownMenuRadioItem value={r.id} closeOnSelect>
+										<div class="flex flex-col">
+											<span>{r.label}</span>
+											<span class="text-[11px] text-muted-foreground">{r.hint}</span>
+										</div>
+									</DropdownMenuRadioItem>
+								)}</For>
+							</DropdownMenuRadioGroup>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</Show>
+				{/* reader-next has its own References tab, so the side panel is only for Zotero's reader. */}
+				<Show when={store.activeTab() !== "library" && readerFor(store.activeTab()) === "zotero"}>
 					<Tooltip>
 						<TooltipTrigger
 							as={Button}
@@ -288,8 +355,8 @@ export const App: Component = () => {
 				<For each={store.tabs()}>
 					{(t) => (
 						<div class="absolute inset-0 flex" classList={{ hidden: store.activeTab() !== t.id }}>
-							<iframe class="h-full min-w-0 flex-1 border-0 bg-background" src={`/reader-host/index.html?attachment=${encodeURIComponent(t.attachmentKey)}`} title={t.title} onLoad={watchFrameKeys} />
-							<Show when={refsOpen()}>
+							<iframe class="h-full min-w-0 flex-1 border-0 bg-background" src={readerSrc(t)} title={t.title} onLoad={watchFrameKeys} />
+							<Show when={refsOpen() && readerFor(t.id) === "zotero"}>
 								<ReferencesPanel
 									class="h-full w-[340px] flex-none border-l"
 									itemKey={t.attachmentKey}
