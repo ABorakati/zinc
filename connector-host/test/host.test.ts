@@ -90,7 +90,11 @@ beforeAll(() => {
 	if (!existsSync(HOST_EXE)) throw new Error(`build the host first: ${HOST_EXE} is missing`);
 });
 afterAll(() => {
-	if (!process.env.ZNH_TEST_DIR) rmSync(ROOT, { recursive: true, force: true });
+	// Windows keeps the folder locked for a moment after the host process exits: retry, and never fail the run
+	if (!process.env.ZNH_TEST_DIR) {
+		try { rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+		catch (e) { console.warn(`could not remove ${ROOT}:`, e); }
+	}
 });
 
 describe("native host: a full save", () => {
