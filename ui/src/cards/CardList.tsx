@@ -175,7 +175,7 @@ export const CardList: Component<{ list: ItemListHandle }> = (props) => {
 						<div class="p-10 text-center text-muted-foreground">No items</div>
 					</Show>
 				</ContextMenuTrigger>
-				<ContextMenuContent class="w-56">
+				<ContextMenuContent class="max-h-[85vh] w-72 overflow-y-auto">
 					<Show when={ctx()}>{(it) => <ItemMenuItems item={it()} />}</Show>
 				</ContextMenuContent>
 			</ContextMenu>

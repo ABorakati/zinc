@@ -125,13 +125,16 @@ const ContextMenuSubContent = <T extends ValidComponent = "div">(
 ) => {
   const [local, others] = splitProps(props as ContextMenuSubContentProps, ["class"])
   return (
-    <ContextMenuPrimitive.SubContent
-      class={cn(
-        "z-50 min-w-32 origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in",
-        local.class
-      )}
-      {...others}
-    />
+    // portalled: inline, the parent menu's overflow clipping would hide a submenu that opens beside it
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.SubContent
+        class={cn(
+          "z-50 min-w-32 origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in",
+          local.class
+        )}
+        {...others}
+      />
+    </ContextMenuPrimitive.Portal>
   )
 }
 

@@ -71,6 +71,13 @@ for (let i = 0; i < 30000; i++) {
 		children.push(ck);
 		childRecs.set(ck, { key: ck, itemType: "attachment", title: "Full Text PDF", contentType: "application/pdf", linkMode: "imported_file", parentItem: k, annotations: Math.floor(rnd() * 12), hasFile: true });
 	}
+	// some items also carry a linked-URL attachment (derived from the index so the random stream is unchanged)
+	const hasLink = hash(i, "link") % 8 === 0;
+	if (hasLink) {
+		const lk = key();
+		children.push(lk);
+		childRecs.set(lk, { key: lk, itemType: "attachment", title: "Web link", contentType: "", linkMode: "linked_url", url: `https://example.org/link/${i}`, parentItem: k, annotations: 0, hasFile: false });
+	}
 	let noteCount = 0;
 	if (rnd() < 0.15) {
 		const nk = key();
@@ -100,7 +107,7 @@ for (let i = 0; i < 30000; i++) {
 		summary: {
 			key: k, itemType, title: t, creatorsSummary: summaryCreators, year, publication: pub, dateAdded: added,
 			primaryAttachment: hasPdf ? { key: children[0], contentType: "application/pdf" } : null,
-			attachmentCount: hasPdf ? 1 : 0, noteCount,
+			attachmentCount: (hasPdf ? 1 : 0) + (hasLink ? 1 : 0), noteCount,
 		},
 	});
 }
@@ -308,6 +315,7 @@ async function api(req: Request, url: URL): Promise<Response> {
 			return json({ ok: true });
 		}
 	}
+	if (p[0] === "open-url" && m === "POST") return json({ ok: true });
 	if (p[0] === "schema" && m === "GET") return json(SCHEMA);
 	if (p[0] === "tag-colors") {
 		if (m === "PUT") { const b = await body(); if (Array.isArray(b)) tagColors.splice(0, tagColors.length, ...b); }
@@ -320,6 +328,7 @@ async function api(req: Request, url: URL): Promise<Response> {
 	}
 	if (p[0] === "attachments") {
 		const k = p[1];
+		if ((p[2] === "reveal" || p[2] === "open-external") && m === "POST") return json({ ok: true });
 		if (p[2] === "file") return new Response("%PDF-1.4\n% mock\n", { headers: { "Content-Type": "application/pdf" } });
 		if (p[2] === "annotations") {
 			const list = annotations.get(k) ?? [];

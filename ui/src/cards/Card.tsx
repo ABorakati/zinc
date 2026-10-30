@@ -1,4 +1,4 @@
-import { For, Show, type Component, type JSX } from "solid-js";
+import { For, Show, type Component } from "solid-js";
 import { Check, Ellipsis, Paperclip, Star, StickyNote } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import { attachmentIcon } from "~/lib/icons";
@@ -9,17 +9,7 @@ import { cardLayout } from "./layout";
 import { metaText } from "./fields";
 import { badgeTags, isStarred, toggleStar } from "./tags";
 import { selectClick, type ItemListHandle } from "./shared";
-
-/** Open a section of the item pane for the selected item (the pane renders it once the item has loaded). */
-function showInPane(section: string) {
-	let tries = 0;
-	const go = () => {
-		const nav = document.querySelector<HTMLElement>(`[data-nav="${section}"]`);
-		if (nav) nav.click();
-		else if (tries++ < 8) setTimeout(go, 120);
-	};
-	setTimeout(go, 60);
-}
+import { AttachmentMenu } from "./AttachmentMenu";
 
 const mix = (c: string, pct: number, into: string) => `color-mix(in srgb, ${c} ${pct}%, ${into})`;
 
@@ -38,14 +28,6 @@ export const TagBadge: Component<{ name: string; color?: string }> = (p) => (
 		onClick={(e) => { e.stopPropagation(); store.setTag(p.name); }}
 		onDblClick={(e) => e.stopPropagation()}>
 		<span class="truncate">{p.name}</span>
-	</button>
-);
-
-const IconButton: Component<{ title: string; onClick: (e: MouseEvent) => void; class?: string; children: JSX.Element }> = (p) => (
-	<button type="button" tabindex="-1" title={p.title} aria-label={p.title}
-		class={cn("inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground", p.class)}
-		onClick={(e) => { e.stopPropagation(); p.onClick(e); }} onDblClick={(e) => e.stopPropagation()}>
-		{p.children}
 	</button>
 );
 
@@ -72,26 +54,25 @@ export const Card: Component<{
 	const badges = () => (L().tags ? badgeTags(p.item, L().allTags) : []);
 
 	const notes = () => p.item.noteCount;
+	const extraAtts = () => p.item.attachmentCount - (p.item.primaryAttachment ? 1 : 0);
+	/** One dropdown listing every attachment and note; entries open like a double-click on them. */
 	const IconsRow: Component = () => (
 		<div class="flex items-center gap-0.5">
-			<Show when={p.item.noteCount > 0}>
-				<IconButton title={`${notes()} note${notes() === 1 ? "" : "s"}`} onClick={() => { store.selectOnly(p.item.key, p.index); showInPane("notes"); }}>
-					<StickyNote class="size-3.5" /> {notes()}
-				</IconButton>
-			</Show>
-			<Show when={p.item.primaryAttachment}>{(a) => (
-				<IconButton title={`Open ${typeLabel(a().contentType)}`} class="text-primary hover:text-primary" onClick={() => store.openSummary(p.item)}>
-					<Dynamic component={attachmentIcon(a().contentType)} class="size-3.5" /> {typeLabel(a().contentType)}
-				</IconButton>
-			)}</Show>
-			<Show when={p.item.attachmentCount > 1}>
-				<IconButton title={`${p.item.attachmentCount} attachments`} onClick={() => { store.selectOnly(p.item.key, p.index); showInPane("attachments"); }}>
-					<Paperclip class="size-3.5" /> {p.item.attachmentCount}
-				</IconButton>
-			</Show>
+			<AttachmentMenu item={p.item} notes title="Attachments and notes"
+				class="inline-flex h-6 items-center gap-2 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground data-[expanded]:bg-foreground/10">
+				<Show when={notes() > 0}>
+					<span class="inline-flex items-center gap-1" title={`${notes()} note${notes() === 1 ? "" : "s"}`}><StickyNote class="size-3.5" /> {notes()}</span>
+				</Show>
+				<Show when={p.item.primaryAttachment}>{(a) => (
+					<span class="inline-flex items-center gap-1 text-primary"><Dynamic component={attachmentIcon(a().contentType)} class="size-3.5" /> {typeLabel(a().contentType)}</span>
+				)}</Show>
+				<Show when={extraAtts() > 0}>
+					<span class="inline-flex items-center gap-1" title={`${p.item.attachmentCount} attachments`}><Paperclip class="size-3.5" /> {extraAtts()}</span>
+				</Show>
+			</AttachmentMenu>
 		</div>
 	);
-	const hasIcons = () => L().icons && (p.item.noteCount > 0 || !!p.item.primaryAttachment || p.item.attachmentCount > 1);
+	const hasIcons = () => L().icons && (p.item.noteCount > 0 || p.item.attachmentCount > 0);
 
 	return (
 		<div

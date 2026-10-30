@@ -22,10 +22,10 @@ registerAppAction({ id: "add.linkUri", label: "Add Attachment: Link to URI…", 
 const isRegular = (t: string) => t !== "attachment" && t !== "note" && t !== "annotation";
 const single = (ctx: { keys: string[]; item: { itemType: string } }) => ctx.keys.length === 1 && isRegular(ctx.item.itemType);
 
-registerItemAction({ id: "add.attachFile", label: "Add Attachment: Stored File…", icon: Paperclip, group: "edit", visible: single, run: (ctx) => pickFiles((f) => void importFiles(f, { parentKey: ctx.item.key })) });
-registerItemAction({ id: "add.attachLinkFile", label: "Add Attachment: Link to File…", icon: Link, group: "edit", visible: single, run: (ctx) => setDialog({ kind: "linkFile", parentKey: ctx.item.key }) });
-registerItemAction({ id: "add.attachLinkUri", label: "Add Attachment: Link to URI…", icon: Link, group: "edit", visible: single, run: (ctx) => setDialog({ kind: "linkUri", parentKey: ctx.item.key }) });
 registerItemAction({ id: "add.childNote", label: "Add Note", icon: StickyNote, group: "edit", visible: single, run: (ctx) => void createNote(ctx.item.key) });
+registerItemAction({ id: "add.attachFile", label: "Stored File…", submenu: "Add Attachment", icon: Paperclip, group: "edit", visible: single, run: (ctx) => pickFiles((f) => void importFiles(f, { parentKey: ctx.item.key })) });
+registerItemAction({ id: "add.attachLinkFile", label: "Link to File…", submenu: "Add Attachment", icon: Link, group: "edit", visible: single, run: (ctx) => setDialog({ kind: "linkFile", parentKey: ctx.item.key }) });
+registerItemAction({ id: "add.attachLinkUri", label: "Link to URI…", submenu: "Add Attachment", icon: Link, group: "edit", visible: single, run: (ctx) => setDialog({ kind: "linkUri", parentKey: ctx.item.key }) });
 registerItemAction({
 	id: "add.retrieveMetadata",
 	label: "Retrieve Metadata for PDF",

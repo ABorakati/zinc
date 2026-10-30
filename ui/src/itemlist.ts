@@ -53,8 +53,22 @@ export function createItemList() {
 
 	onCleanup(() => gen++);
 
+	// key -> index of the loaded rows, rebuilt lazily when pages arrive (used to place expanded child rows)
+	let kmTick = -1;
+	let km = new Map<string, number>();
+
 	return {
 		total, loading, error, epoch,
+		/** Loaded rows by key (reactive on page loads). */
+		keyMap(): ReadonlyMap<string, number> {
+			const t = tick();
+			if (t !== kmTick) {
+				km = new Map();
+				for (const [i, it] of cache) km.set(it.key, i);
+				kmTick = t;
+			}
+			return km;
+		},
 		get(i: number): ItemSummary | undefined { tick(); return cache.get(i); },
 		ensure, reset,
 		patch(key: string, p: Partial<ItemSummary>) {

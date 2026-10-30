@@ -20,6 +20,7 @@ export interface ItemAction {
 	// Menu section, in this order: "open", "cite", "export", "edit", "maintain"
 	group?: "open" | "cite" | "export" | "edit" | "maintain";
 	shortcut?: string; // display only, e.g. "Ctrl+Shift+C"
+	submenu?: string; // actions of a group sharing this label are shown under one submenu (e.g. "Add Attachment")
 	visible?: (ctx: ItemActionContext) => boolean;
 	run: (ctx: ItemActionContext) => void;
 }

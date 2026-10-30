@@ -7,12 +7,31 @@ import { ipApi } from "./api";
 import { usePane } from "./ctx";
 import { IconBtn, Section, TextBtn } from "./ui";
 
+// A note the item list asked to open ("zn:show-note" from a child-row double-click). The pane may
+// still be switching to the parent item, so it is applied once that item's notes are shown.
+const [pendingNote, setPendingNote] = createSignal<{ parentKey: string; noteKey: string } | null>(null);
+if (typeof window !== "undefined") {
+	window.addEventListener("zn:show-note", (e) => {
+		const d = (e as CustomEvent).detail as { parentKey?: string; noteKey?: string } | undefined;
+		if (d?.parentKey && d.noteKey) setPendingNote({ parentKey: d.parentKey, noteKey: d.noteKey });
+	});
+}
+
 export const NotesSection: Component = () => {
 	const { d, reload } = usePane();
 	const notes = () => d.children.filter((c) => c.itemType === "note");
 	const [openKey, setOpenKey] = createSignal<string | null>(null);
 	const [adding, setAdding] = createSignal(false);
 	createEffect(on(() => d.data.key, () => setOpenKey(null), { defer: true }));
+	createEffect(() => {
+		const p = pendingNote();
+		if (!p || p.parentKey !== d.data.key || !notes().some((n) => n.key === p.noteKey)) return;
+		setPendingNote(null);
+		queueMicrotask(() => {
+			setOpenKey(p.noteKey);
+			document.getElementById("ip-sec-notes")?.scrollIntoView({ block: "start", behavior: "smooth" });
+		});
+	});
 
 	async function addNote() {
 		if (adding()) return;

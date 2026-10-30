@@ -1,5 +1,6 @@
 import { createSignal, createMemo, createRoot, createResource, createEffect } from "solid-js";
 import { api, type ItemQuery, type ItemSummary } from "./api";
+import { openSummary as openItemSummary } from "./itemopen"; // circular with store, but only used inside functions
 
 export type View =
 	| { kind: "library" }
@@ -119,8 +120,9 @@ function createStore() {
 		if (att) openAttachment(att.key, title || att.title);
 	}
 
+	/** Double-click / Enter on an item: attachment in a reader tab, else a link in the browser (see itemopen.ts). */
 	function openSummary(it: ItemSummary) {
-		if (it.primaryAttachment) openAttachment(it.primaryAttachment.key, it.title);
+		void openItemSummary(it);
 	}
 
 	return {
