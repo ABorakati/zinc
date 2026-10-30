@@ -8,7 +8,7 @@ import { addItemsToCollection, copyDoi, trashItems } from "~/lib/actions";
 import { findFullText } from "~/lib/fulltext";
 import { ITEM_GROUPS, itemActions, type ItemActionContext } from "~/lib/registry";
 import {
-	ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger,
+	ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger,
 } from "~/components/ui/context-menu";
 
 export type ItemListHandle = ReturnType<typeof createItemList>;
@@ -106,6 +106,7 @@ const RegisteredItemActions: Component<{ item: ItemSummary; keys: string[] }> = 
 				<ContextMenuItem onSelect={() => a.run(ctx())}>
 					<Show when={a.icon}>{(I) => { const C = I(); return <C class="mr-2 size-4" />; }}</Show>
 					{typeof a.label === "function" ? a.label(ctx()) : a.label}
+					<Show when={a.shortcut}><ContextMenuShortcut>{a.shortcut}</ContextMenuShortcut></Show>
 				</ContextMenuItem>
 			)}</For>
 		</>)}</For>

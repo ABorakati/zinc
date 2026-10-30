@@ -514,5 +514,33 @@ export function createMcpServer(db: Database): McpServer {
 		}),
 	);
 
+	server.registerTool(
+		"format_bibliography",
+		{
+			title: "Format bibliography",
+			description:
+				"Format items as a bibliography (or in-text citation) in any CSL citation style (default: the user's Quick Copy style, " +
+				"initially Vancouver). Styles are downloaded from zotero.org on first use; pass the style id such as 'apa', 'nature', " +
+				"'the-lancet', 'harvard-cite-them-right'. Returns plain text by default.",
+			inputSchema: {
+				keys: z.array(keySchema).min(1).max(500).describe("Item keys, in the order they should appear"),
+				style: z.string().optional().describe("zotero.org style id (default: Quick Copy style)"),
+				format: z.enum(["text", "html", "rtf"]).optional().describe("Output format (default text)"),
+				mode: z.enum(["bibliography", "citation"]).optional().describe("bibliography (default) or one in-text citation for all items"),
+			},
+			annotations: readOnly,
+		},
+		async ({ keys, style, format, mode }) => {
+			try {
+				const { citeService } = await import("../cite/api");
+				const f = format ?? "text";
+				const res = await citeService(db).format(db, { keys, style, format: f, mode });
+				return text(res[f] ?? "");
+			} catch (e) {
+				return fail(e instanceof Error ? e.message : String(e));
+			}
+		},
+	);
+
 	return server;
 }

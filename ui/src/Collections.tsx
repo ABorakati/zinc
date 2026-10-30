@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show, type Component } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show, type Component } from "solid-js";
 import { ChevronRight, Folder, FolderOpen, FolderPlus, Inbox, Library, Pencil, Plus, Trash2 } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { api, type Collection } from "./api";
@@ -54,6 +54,17 @@ export const CollectionsPane: Component = () => {
 		setExpanded(s);
 	};
 	const byKey = (k: string | undefined) => store.collections()?.find((c) => c.key === k) ?? null;
+	// Keyboard shortcuts "+" / "-" (maintenance/shortcuts.ts) expand or collapse the whole tree.
+	const expandAll = () => setExpanded(new Set((store.collections() ?? []).map((c) => c.key)));
+	const collapseAll = () => setExpanded(new Set<string>());
+	onMount(() => {
+		window.addEventListener("zn:collections-expand-all", expandAll);
+		window.addEventListener("zn:collections-collapse-all", collapseAll);
+	});
+	onCleanup(() => {
+		window.removeEventListener("zn:collections-expand-all", expandAll);
+		window.removeEventListener("zn:collections-collapse-all", collapseAll);
+	});
 
 	async function commitCreate(parent: string | "root", name: string) {
 		setCreating(null);
@@ -148,7 +159,7 @@ export const CollectionsPane: Component = () => {
 	);
 
 	return (
-		<div class="flex h-full min-h-0 flex-col">
+		<div class="flex h-full min-h-0 flex-col" data-pane="collections" tabindex={-1}>
 			<div class="flex flex-none items-center justify-between py-1 pl-2 pr-1">
 				<span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Collections</span>
 				<Tooltip>

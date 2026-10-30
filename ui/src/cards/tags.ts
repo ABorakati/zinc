@@ -1,5 +1,5 @@
 // Tag colours (Zotero's coloured tags) and the "Starred" tag used for the card star.
-import { createMemo, createRoot, createSignal } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal, on } from "solid-js";
 import { toast } from "solid-sonner";
 import { api, type ItemSummary, type TagColor } from "../api";
 import { store } from "../store";
@@ -16,6 +16,14 @@ export function loadTagColors() {
 	requested = true;
 	api.tagColors().then((c) => setColors([...c].sort((a, b) => a.position - b.position))).catch((e) => { requested = false; console.warn("tag colours unavailable", e); });
 }
+
+/** Re-read colours (after a tag rename/delete/merge changed them on the server). */
+export function reloadTagColors() {
+	requested = false;
+	loadTagColors();
+}
+// Tag edits bump tagsRev; refresh colours then so renamed tags keep theirs.
+createRoot(() => createEffect(on(() => store.tagsRev(), () => { if (requested) reloadTagColors(); }, { defer: true })));
 
 const byName = createRoot(() => createMemo(() => new Map(colors().map((c) => [c.name, c]))));
 export const tagColor = (name: string) => byName().get(name);

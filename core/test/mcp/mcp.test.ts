@@ -40,7 +40,7 @@ describe("tools/list", () => {
 		const names = tools.map((t) => t.name).sort();
 		expect(names).toEqual(
 			[
-				"add_tags", "add_to_collection", "create_collection", "get_annotations", "get_file_path", "get_fulltext",
+				"add_tags", "add_to_collection", "create_collection", "format_bibliography", "get_annotations", "get_file_path", "get_fulltext",
 				"get_item", "list_collections", "list_items", "remove_from_collection", "remove_tags", "restore_item",
 				"search_library", "trash_item", "update_item",
 			].sort(),
@@ -208,7 +208,7 @@ describe("HTTP endpoint", () => {
 		expect(((await init!.json()) as any).result.serverInfo.name).toBe("zotero-next");
 
 		const list = await handleMcp(rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }), fx.db);
-		expect(((await list!.json()) as any).result.tools.length).toBe(15);
+		expect(((await list!.json()) as any).result.tools.length).toBe(16);
 
 		const call = await handleMcp(
 			rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_collections", arguments: {} } }),

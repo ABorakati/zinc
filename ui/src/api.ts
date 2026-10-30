@@ -23,7 +23,14 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 	return res.json() as Promise<T>;
 }
 
+export type { SavedSearch, SearchCondition, SearchOptions, Operator, QuickSearchMode } from "../../core/src/searches/types";
+import type { SavedSearch, SearchCondition, SearchOptions } from "../../core/src/searches/types";
+
 export interface ItemQuery {
+	/** saved search key: list that search's results */
+	search?: string;
+	/** quick-search mode for `q`: titleCreatorYear (default) | fields | everything */
+	qmode?: string;
 	collection?: string;
 	tag?: string;
 	q?: string;
@@ -69,6 +76,15 @@ export const api = {
 	tags: () => req<{ tag: string; count: number }[]>("GET", "/tags"),
 	tagColors: () => req<TagColor[]>("GET", "/tag-colors"),
 	putTagColors: (colors: TagColor[]) => req<TagColor[]>("PUT", "/tag-colors", colors),
+	savedSearches: () => req<SavedSearch[]>("GET", "/searches"),
+	createSavedSearch: (name: string, conditions: SearchCondition[], options: SearchOptions) =>
+		req<SavedSearch>("POST", "/searches", { name, conditions, options }),
+	patchSavedSearch: (key: string, patch: { name?: string; conditions?: SearchCondition[]; options?: SearchOptions }) =>
+		req<SavedSearch>("PATCH", `/searches/${key}`, patch),
+	deleteSavedSearch: (key: string) => req<{ ok: true }>("DELETE", `/searches/${key}`),
+	/** Run conditions without saving them. */
+	runSearch: (conditions: SearchCondition[], options: SearchOptions, limit = 100, offset = 0) =>
+		req<ItemList>("POST", "/searches/run", { conditions, options, limit, offset, sort: "title", dir: "asc" }),
 	search: (q: string, limit = 100, offset = 0) =>
 		req<SearchResult>("GET", "/search?" + qs({ q, limit, offset })),
 };

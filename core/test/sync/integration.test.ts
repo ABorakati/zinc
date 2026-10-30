@@ -48,7 +48,8 @@ describe("real Zotero copy", () => {
 		await svc.pull();
 		let st = await svc.status();
 		expect(st.lastError).toBeUndefined();
-		expect(st.pending).toBe(0);
+		// The copied library may hold the user's own queued edits (writing into Zotero is opt-in),
+		// so pending can be > 0 here; the push below must clear all of them.
 
 		const key = repo.createItem(db, { itemType: "journalArticle", title: "zotero-next sync integration test" }).data.key;
 		await svc.setEnabled(true);

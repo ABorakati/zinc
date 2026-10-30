@@ -5,7 +5,19 @@ export type View =
 	| { kind: "library" }
 	| { kind: "unfiled" }
 	| { kind: "trash" }
-	| { kind: "collection"; key: string };
+	| { kind: "collection"; key: string }
+	| { kind: "search"; key: string };
+
+/** Quick-search modes (toolbar search box), as Zotero: "Title, Creator, Year" | "All Fields & Tags" | "Everything". */
+export type QMode = "titleCreatorYear" | "fields" | "everything";
+const QMODE_KEY = "zn.qmode.v1";
+function loadQMode(): QMode {
+	try {
+		const v = localStorage.getItem(QMODE_KEY);
+		if (v === "fields" || v === "everything") return v;
+	} catch { /* ignore */ }
+	return "titleCreatorYear";
+}
 
 export const PAGE = 100;
 
@@ -37,6 +49,9 @@ function createStore() {
 	const [viewMode, setViewMode] = createSignal<ViewMode>(loadViewMode());
 	createEffect(() => { try { localStorage.setItem(VIEWMODE_KEY, viewMode()); } catch { /* ignore */ } });
 
+	const [qmode, setQMode] = createSignal<QMode>(loadQMode());
+	createEffect(() => { try { localStorage.setItem(QMODE_KEY, qmode()); } catch { /* ignore */ } });
+
 	const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set());
 	const [activeKey, setActiveKey] = createSignal<string | null>(null); // item shown in pane
 	const [anchor, setAnchor] = createSignal(-1);
@@ -60,6 +75,8 @@ function createStore() {
 		const s = sort();
 		return {
 			collection: v.kind === "collection" ? v.key : undefined,
+			search: v.kind === "search" ? v.key : undefined,
+			qmode: qmode() !== "titleCreatorYear" ? qmode() : undefined,
 			unfiled: v.kind === "unfiled",
 			trash: v.kind === "trash",
 			tag: tag() ?? undefined,
@@ -107,7 +124,7 @@ function createStore() {
 	}
 
 	return {
-		viewMode, setViewMode, view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
+		qmode, setQMode, viewMode, setViewMode, view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
 		selected, setSelected, activeKey, setActiveKey, anchor, setAnchor, focusIndex, setFocusIndex,
 		tabs, activeTab, setActiveTab, openAttachment, closeTab, openItem, openSummary,
 		collections, refetchCollections, collectionsRev, bumpCollections, tagsRev, bumpTags, itemsRev, bumpItems,

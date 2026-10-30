@@ -19,6 +19,7 @@ export interface ItemAction {
 	icon?: Icon;
 	// Menu section, in this order: "open", "cite", "export", "edit", "maintain"
 	group?: "open" | "cite" | "export" | "edit" | "maintain";
+	shortcut?: string; // display only, e.g. "Ctrl+Shift+C"
 	visible?: (ctx: ItemActionContext) => boolean;
 	run: (ctx: ItemActionContext) => void;
 }

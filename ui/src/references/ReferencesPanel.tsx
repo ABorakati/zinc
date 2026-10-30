@@ -29,13 +29,21 @@ function matches(r: Reference, q: string) {
 	return q.split(/\s+/).every((t) => hay.includes(t));
 }
 
+// Only one hover card may be open at a time: moving quickly between rows used to leave earlier
+// cards visible during their close delay. Opening a card closes whichever one was open.
+const [openCard, setOpenCard] = createSignal<Reference | null>(null);
+
 function ReferenceRow(props: { reference: Reference; highlighted: boolean } & ReferenceActions) {
 	const r = () => props.reference;
 	const meta = () => [r().authors?.[0] && (r().authors!.length > 1 ? `${r().authors![0]} et al.` : r().authors![0]), r().year, r().venue].filter(Boolean).join(" · ");
 	const target = () => (r().inLibraryKey ? () => props.onOpenItem?.(r().inLibraryKey!) : referenceUrl(r()) ? () => openUrl(referenceUrl(r())!) : undefined);
+	const onOpenChange = (open: boolean) => {
+		if (open) setOpenCard(r());
+		else if (openCard() === r()) setOpenCard(null);
+	};
 
 	return (
-		<HoverCard openDelay={350} closeDelay={150} placement="left-start" flip>
+		<HoverCard open={openCard() === r()} onOpenChange={onOpenChange} openDelay={350} closeDelay={150} placement="left-start" flip>
 			<HoverCardTrigger
 				as="div"
 				tabindex="0"

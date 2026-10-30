@@ -10,6 +10,7 @@ import { findFullText } from "./lib/fulltext";
 import { SyncStatus } from "./sync/SyncStatus";
 import { appActions, overlays } from "./lib/registry";
 import "./features";
+import { QuickSearchMode } from "./searches/QuickSearchMode";
 import { Plus, Wrench } from "lucide-solid";
 import {
 	DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger,
@@ -104,6 +105,7 @@ const VIEW_MODES = [
 const Toolbar: Component = () => (
 	<div class="flex flex-none items-center gap-1.5 border-b px-2 py-1.5">
 		<ActionMenu menu="add" label="Add items" />
+		<Show when={!store.fulltext()}><QuickSearchMode /></Show>
 		<div class="relative flex-1">
 			<Search class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
 			<Input

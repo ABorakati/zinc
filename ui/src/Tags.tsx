@@ -1,9 +1,14 @@
 import { createMemo, createResource, createSignal, For, onMount, Show, type Component } from "solid-js";
-import { Check } from "lucide-solid";
+import { Check, Ellipsis } from "lucide-solid";
 import { api } from "./api";
 import { store } from "./store";
 import { loadTagColors, setTagColor, tagColor, TAG_PALETTE } from "./cards/tags";
 import { fail } from "~/lib/actions";
+import { maintenance } from "./maintenance/client";
+import { deleteAutomaticTags, deleteTag, renameTag } from "./maintenance/ops";
+import {
+	DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -15,16 +20,37 @@ export const TagList: Component = () => {
 	const [tags] = createResource(() => store.tagsRev(), () => api.tags().catch((e) => { fail("Could not load tags", e); return []; }));
 	const [f, setF] = createSignal("");
 	onMount(loadTagColors);
+	// "Show Automatic": automatic tags (added by importers/translators) can be hidden; remembered across sessions.
+	const [showAuto, setShowAutoRaw] = createSignal(((): boolean => { try { return localStorage.getItem("zn.flag.showAutomaticTags") !== "0"; } catch { return true; } })());
+	const setShowAuto = (v: boolean) => { setShowAutoRaw(v); try { localStorage.setItem("zn.flag.showAutomaticTags", v ? "1" : "0"); } catch { /* ignore */ } };
+	const [auto] = createResource(() => store.tagsRev(), () => maintenance.automaticTags().catch(() => []));
+	const autoOnly = createMemo(() => new Map((auto() ?? []).map((a) => [a.tag, a.count])));
 	// Coloured tags first in Zotero's position order, then the rest alphabetically.
 	const shown = createMemo(() => {
 		const q = f().toLowerCase();
-		const list = (tags() ?? []).filter((t) => t.tag.toLowerCase().includes(q));
+		const hideAuto = !showAuto();
+		const list = (tags() ?? []).filter((t) =>
+			t.tag.toLowerCase().includes(q) &&
+			// only hide tags whose every use is automatic
+			!(hideAuto && !tagColor(t.tag) && autoOnly().get(t.tag) === t.count));
 		const pos = (name: string) => tagColor(name)?.position ?? Infinity;
 		return list.sort((a, b) => pos(a.tag) - pos(b.tag)).slice(0, 500);
 	});
 	return (
 		<div class="flex h-full min-h-0 flex-col">
-			<div class="flex-none px-2 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tags</div>
+			<div class="flex flex-none items-center justify-between px-2 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+				Tags
+				<DropdownMenu>
+					<DropdownMenuTrigger class="inline-flex size-5 items-center justify-center rounded-md hover:bg-accent hover:text-foreground [&_svg]:size-3.5" aria-label="Tag menu">
+						<Ellipsis />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent class="w-64 normal-case tracking-normal">
+						<DropdownMenuCheckboxItem checked={showAuto()} onChange={setShowAuto}>Show Automatic</DropdownMenuCheckboxItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onSelect={() => void deleteAutomaticTags()}>Delete Automatic Tags in This Library…</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
 			<Input class="mx-2 mb-1.5 w-auto flex-none" placeholder="Filter tags" value={f()} onInput={(e) => setF(e.currentTarget.value)} />
 			<div class="flex min-h-0 flex-1 flex-wrap content-start gap-1 overflow-y-auto px-2 pb-2">
 				<Show when={!tags.loading || tags()} fallback={
@@ -54,6 +80,9 @@ export const TagList: Component = () => {
 									<ContextMenuSeparator />
 									<ContextMenuItem onSelect={() => setTagColor(t.tag, null)}>Remove colour</ContextMenuItem>
 								</Show>
+								<ContextMenuSeparator />
+								<ContextMenuItem onSelect={() => void renameTag(t.tag)}>Rename Tag…</ContextMenuItem>
+								<ContextMenuItem onSelect={() => void deleteTag(t.tag, t.count)}>Delete Tag…</ContextMenuItem>
 							</ContextMenuContent>
 						</ContextMenu>
 					)}</For>

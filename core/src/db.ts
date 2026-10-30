@@ -7,6 +7,9 @@ import { existsSync } from "node:fs";
 import schema from "../schema.sql" with { type: "text" };
 import syncSchema from "./sync/schema.sql" with { type: "text" };
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
+import { assertQuickMode, compileSearch, quickSearchClause } from "./searches/compile";
+import { ensureSearchSchema, getSavedSearch } from "./searches/store";
+import type { QuickSearchMode, SearchDefinition } from "./searches/types";
 import type {
 	ChildSummary,
 	Collection,
@@ -278,6 +281,9 @@ export interface ListOptions {
 	trash?: boolean;
 	fields?: string[];
 	include?: string[]; // "creators", "tags"
+	search?: string; // saved search key: restrict to its results
+	searchDef?: SearchDefinition; // ad-hoc (unsaved) search, same semantics
+	qmode?: string; // quick search mode for q: titleCreatorYear (default) | fields | everything
 }
 
 interface SummaryRow {
@@ -342,7 +348,22 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 		}
 	}
 	if (opts.unfiled) where.push("NOT EXISTS (SELECT 1 FROM collection_items ci WHERE ci.item_key = i.key)");
-	if (opts.q) {
+	if (opts.qmode) assertQuickMode(opts.qmode);
+	if (opts.search || opts.searchDef) {
+		ensureSearchSchema(db);
+		const def = opts.searchDef ?? getSavedSearch(db, opts.search!);
+		if (!def) throw new HttpError(404, "saved search not found");
+		const c = compileSearch(db, def);
+		if (c.includeTrash) where[2] = "1";
+		where.push(c.sql);
+		params.push(...c.params);
+	}
+	if (opts.q && opts.qmode && opts.qmode !== "titleCreatorYear") {
+		ensureSearchSchema(db);
+		const c = quickSearchClause(opts.q, opts.qmode as QuickSearchMode);
+		where.push(c.sql);
+		params.push(...c.params);
+	} else if (opts.q) {
 		for (const term of opts.q.split(/\s+/).filter(Boolean)) {
 			const like = `%${likeEscape(term)}%`;
 			where.push(
@@ -377,14 +398,33 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 			? `items i INDEXED BY ${indexName}`
 			: "items i";
 	params.unshift(...driverParams);
-	const total = (db.query(`SELECT count(*) AS n FROM ${from} WHERE ${whereSql}`).get(...params) as { n: number }).n;
-	const rows = db
-		.query(
-			`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year, i.publication, i.date_added
-			 FROM ${from} WHERE ${whereSql}
-			 ORDER BY ${sortExpr} ${dir}, i.key ${dir} LIMIT ? OFFSET ?`,
-		)
-		.all(...params, limit, offset) as SummaryRow[];
+	let total: number;
+	let rows: SummaryRow[];
+	if (opts.search || opts.searchDef || (opts.q && opts.qmode && opts.qmode !== "titleCreatorYear")) {
+		// Expensive predicates: evaluate the filter once and get the total from a window count.
+		const r = db
+			.query(
+				`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year, i.publication, i.date_added, count(*) OVER () AS total
+				 FROM ${from} WHERE ${whereSql}
+				 ORDER BY ${sortExpr} ${dir}, i.key ${dir} LIMIT ? OFFSET ?`,
+			)
+			.all(...params, limit, offset) as (SummaryRow & { total: number })[];
+		rows = r;
+		total = r.length
+			? r[0].total
+			: offset > 0
+				? (db.query(`SELECT count(*) AS n FROM ${from} WHERE ${whereSql}`).get(...params) as { n: number }).n
+				: 0;
+	} else {
+		total = (db.query(`SELECT count(*) AS n FROM ${from} WHERE ${whereSql}`).get(...params) as { n: number }).n;
+		rows = db
+			.query(
+				`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year, i.publication, i.date_added
+				 FROM ${from} WHERE ${whereSql}
+				 ORDER BY ${sortExpr} ${dir}, i.key ${dir} LIMIT ? OFFSET ?`,
+			)
+			.all(...params, limit, offset) as SummaryRow[];
+	}
 	const items = summarize(db, rows);
 	if (fieldNames.length > 0) attachFields(db, items, fieldNames);
 	const inc = new Set(opts.include ?? []);
