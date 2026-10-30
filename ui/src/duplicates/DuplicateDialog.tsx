@@ -26,7 +26,6 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { fail } from "~/lib/actions";
 import { cn } from "~/lib/utils";
 import { store } from "~/store";
-import { afterListShown } from "~/startup";
 import { duplicatesApi, type DuplicateReason, type DuplicateSet } from "./client";
 
 const INTERNAL_FIELDS = new Set([
@@ -112,9 +111,10 @@ function createDuplicatesState() {
 
 	const bumpDuplicates = () => setDupRev((n) => n + 1);
 
+	// detection takes about half a second and blocks the server, so it runs only while the dialog is open
 	const [dupList] = createResource(
-		() => [store.itemsRev(), dupRev()] as const,
-		() => afterListShown(1500).then(() => duplicatesApi.list(true)),
+		() => (open() ? ([store.itemsRev(), dupRev()] as const) : false),
+		() => duplicatesApi.list(true),
 	);
 
 	const [schema] = createResource(() => api.schema());
@@ -123,7 +123,6 @@ function createDuplicatesState() {
 		setManualKeys(null);
 		setSelectedIdx(0);
 		setOpen(true);
-		bumpDuplicates();
 	}
 
 	function openMergeForKeys(keys: string[]) {
@@ -155,7 +154,8 @@ function createDuplicatesState() {
 export const dupState = createRoot(createDuplicatesState);
 
 export const DuplicateSidebarEntry: Component = () => {
-	const count = () => dupState.dupList()?.total ?? 0;
+	// blank until the dialog has been opened once
+	const count = () => dupState.dupList()?.total;
 	return (
 		<div
 			role="treeitem"

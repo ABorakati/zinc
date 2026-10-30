@@ -10,7 +10,7 @@ import { cn } from "~/lib/utils";
 export const sectionOpen = {
 	library: persistedFlag("sidebar.library", true),
 	collections: persistedFlag("sidebar.collections", true),
-	tags: persistedFlag("sidebar.tags", true),
+	tags: persistedFlag("sidebar.tags", false),
 };
 
 export const SectionHeader: Component<{

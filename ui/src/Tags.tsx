@@ -22,13 +22,15 @@ import {
 
 export const TagList: Component = () => {
 	// one shared fetch per tag-list change (itempane/Tags.tsx allTags), also used by tag autocomplete
-	const [tags] = createResource(() => store.tagsRev(), () => afterListShown().then(allTags).catch((e) => { fail("Could not load tags", e); return []; }));
+	const [open, setOpen] = sectionOpen.tags;
+	// the list is large (tens of thousands of tags on a big library), so it loads only while the section is open
+	const [tags] = createResource(() => (open() ? store.tagsRev() + 1 : false), () => afterListShown().then(allTags).catch((e) => { fail("Could not load tags", e); return []; }));
 	const [f, setF] = createSignal("");
 	onMount(loadTagColors);
 	// "Show Automatic": automatic tags (added by importers/translators) can be hidden; remembered across sessions.
 	// (shared with Settings, see settings/prefs.ts)
 	const showAuto = showAutoTags, setShowAuto = setShowAutoTags;
-	const [auto] = createResource(() => store.tagsRev(), () => afterListShown().then(maintenance.automaticTags).catch(() => []));
+	const [auto] = createResource(() => (open() ? store.tagsRev() + 1 : false), () => afterListShown().then(maintenance.automaticTags).catch(() => []));
 	const autoOnly = createMemo(() => new Map((auto() ?? []).map((a) => [a.tag, a.count])));
 	// Coloured tags first in Zotero's position order, then the rest alphabetically.
 	const TAG_LIMIT = 500;
@@ -43,7 +45,6 @@ export const TagList: Component = () => {
 		return list.sort((a, b) => pos(a.tag) - pos(b.tag));
 	});
 	const shown = createMemo(() => filtered().slice(0, TAG_LIMIT));
-	const [open, setOpen] = sectionOpen.tags;
 	return (
 		<div class="flex min-h-0 flex-col" style={{ flex: open() ? "2 1 0%" : "0 0 auto" }} data-pane="tags">
 			<SectionHeader label="Tags" open={open()} onToggle={() => setOpen(!open())} icon={<Tag class="size-3" />} actions={
