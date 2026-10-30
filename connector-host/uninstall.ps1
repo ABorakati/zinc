@@ -18,7 +18,8 @@ foreach ($browser in "Google\Chrome", "Microsoft\Edge") {
   }
 }
 
-$dir = Join-Path $env:LOCALAPPDATA "zotero-next-connector-host"
+$localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [Environment]::GetFolderPath("LocalApplicationData") }
+$dir = Join-Path $localAppData "zotero-next-connector-host"
 if (Test-Path -LiteralPath $dir) {
   Remove-Item -LiteralPath $dir -Recurse -Force
   Write-Host "Removed $dir"

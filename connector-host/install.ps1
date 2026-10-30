@@ -22,18 +22,22 @@
 [CmdletBinding()]
 param(
   [string]$ExtensionId = "pakgagonakcalfbmckaolkpidcojacaf",
-  [string]$HostExe = (Join-Path $PSScriptRoot "dist\zotero-next-host.exe")
+  [string]$HostExe
 )
 $ErrorActionPreference = "Stop"
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty in parameter defaults, so resolve paths here
+$here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $HostExe) { $HostExe = Join-Path $here "dist\zotero-next-host.exe" }
+$localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [Environment]::GetFolderPath("LocalApplicationData") }
 
 $hostName = "com.zotero_next.connector_host"
 if ($ExtensionId -notmatch '^[a-p]{32}$') { throw "ExtensionId must be 32 letters a-p (see chrome://extensions)." }
 if (-not (Test-Path -LiteralPath $HostExe)) {
-  throw "Host not found: $HostExe`nBuild it first:  cd '$PSScriptRoot'; bun run build"
+  throw "Host not found: $HostExe`nBuild it first:  cd '$here'; bun run build"
 }
 $HostExe = (Resolve-Path -LiteralPath $HostExe).Path
 
-$dir = Join-Path $env:LOCALAPPDATA "zotero-next-connector-host"
+$dir = Join-Path $localAppData "zotero-next-connector-host"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $manifestPath = Join-Path $dir "$hostName.json"
 
