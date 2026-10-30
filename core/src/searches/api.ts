@@ -54,6 +54,7 @@ export async function handleSearchesApi(req: Request, db: Database): Promise<Res
 					searchDef: def,
 					sort: typeof b.sort === "string" ? b.sort : undefined,
 					dir: typeof b.dir === "string" ? b.dir : undefined,
+					then: typeof b.then === "string" ? b.then : undefined,
 					limit: typeof b.limit === "number" ? b.limit : undefined,
 					offset: typeof b.offset === "number" ? b.offset : undefined,
 					fields: strList(b.fields),

@@ -1,10 +1,11 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { createVirtualizer, type VirtualItem } from "@tanstack/solid-virtual";
-import { ArrowDown, ArrowUp, ChevronRight, Paperclip, StickyNote } from "lucide-solid";
+import { ChevronRight, Paperclip, StickyNote } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { createItemList } from "./itemlist";
-import { store } from "./store";
+import { store, type SortLevel } from "./store";
+import { createGroupedRows, type Group } from "./groups";
 import { api, type ChildSummary, type ItemSummary, type SearchHit } from "./api";
 import { childIcon, childLabel, getDetail, openChild } from "./itemopen";
 import { AttachmentMenu } from "./cards/AttachmentMenu";
@@ -20,9 +21,10 @@ import {
 import { columnLayout as layout } from "./columns/layout";
 import { selectClick, focusRow, startItemDrag, ItemMenuItems, ChildMenuItems } from "./cards/shared";
 import { CardList } from "./cards/CardList";
+import { SortBar } from "./SortBar";
 import { loadSchema, labelOf, moreColumns, MENU_COLUMNS, type Column } from "./columns/defs";
 
-const ROW = 26;
+const ROW = 30;
 const gridCols = () => layout.ids().map((id) => layout.widthOf(id) + "px").join(" ") + " 1fr";
 const alignCls = (c: Column) => (c.align === "right" ? "justify-end text-right" : c.align === "center" ? "justify-center text-center" : "");
 
@@ -38,12 +40,25 @@ const HeaderRow: Component<{ sbw: number; left: number }> = (p) => {
 	// keep the header horizontally in step with the body
 	createEffect(() => { layout.total(); p.sbw; outer.scrollLeft = p.left; });
 
-	function sortBy(c: Column) {
+	const defaultDir = (key: string): SortLevel["dir"] => (/^(dateAdded|dateModified|accessDate)$/.test(key) ? "desc" : "asc");
+	const flip = (d: SortLevel["dir"]): SortLevel["dir"] => (d === "asc" ? "desc" : "asc");
+	/** Click sorts by this column (flipping the direction when it is already the active level); Shift+click edits the level list. */
+	function sortBy(c: Column, shift: boolean) {
 		if (suppressClick) return;
-		const s = store.sort();
-		store.setSort(s.key === c.sort ? { key: c.sort, dir: s.dir === "asc" ? "desc" : "asc" }
-			: { key: c.sort, dir: /^(dateAdded|dateModified|accessDate)$/.test(c.sort) ? "desc" : "asc" });
+		const levels = store.sortLevels();
+		const idx = levels.findIndex((l) => l.key === c.sort);
+		if (shift) {
+			if (idx < 0) store.setSortLevels([...levels, { key: c.sort, dir: defaultDir(c.sort) }]);
+			else if (idx === 0 || levels[idx].dir === defaultDir(c.sort)) store.setSortLevels(levels.map((l, i) => (i === idx ? { ...l, dir: flip(l.dir) } : l)));
+			else store.setSortLevels(levels.filter((_, i) => i !== idx)); // default -> flipped -> removed
+			return;
+		}
+		// while grouped, level 1 is the group field: a plain click on another column edits the level after it
+		const at = store.groupBy() !== "none" && c.sort !== store.groupBy() ? 1 : 0;
+		const cur = levels[at];
+		store.sortBy(cur?.key === c.sort ? { key: c.sort, dir: flip(cur.dir) } : { key: c.sort, dir: defaultDir(c.sort) });
 	}
+	const levelOf = (c: Column) => store.sortLevels().findIndex((l) => l.key === c.sort);
 
 	/** Follow the pointer until release; `onEnd` returns true when the gesture was a drag (so the trailing click must not sort). */
 	function track(e: PointerEvent, onMove: (e: PointerEvent) => void, onEnd: (e: PointerEvent) => boolean) {
@@ -100,23 +115,25 @@ const HeaderRow: Component<{ sbw: number; left: number }> = (p) => {
 
 	return (
 		<ContextMenu>
-			<ContextMenuTrigger as="div" ref={outer} class="flex-none overflow-hidden border-b bg-card text-xs font-semibold" role="presentation">
-				<div ref={inner} role="row" aria-rowindex={1} class="relative grid h-[26px] items-center"
+			<ContextMenuTrigger as="div" ref={outer} class="flex-none overflow-hidden border-b border-border/70 bg-muted/50 text-xs font-medium text-muted-foreground" role="presentation">
+				<div ref={inner} role="row" aria-rowindex={1} class="relative grid h-8 items-center"
 					style={{ "grid-template-columns": gridCols(), width: layout.total() + p.sbw + "px", "min-width": "100%", "padding-right": p.sbw + "px" }}>
 					<For each={layout.columns()}>{(c) => (
 						<div role="columnheader" data-col={c.id}
-							aria-sort={store.sort().key === c.sort ? (store.sort().dir === "asc" ? "ascending" : "descending") : "none"}
+							aria-sort={levelOf(c) === 0 ? (store.sortLevels()[0].dir === "asc" ? "ascending" : "descending") : "none"}
 							aria-label={c.icon ? c.label : undefined}
 							title={c.icon ? c.label : undefined}
-							class={cn("relative flex h-full min-w-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap px-2 hover:bg-accent", alignCls(c), dragId() === c.id && "opacity-40")}
-							onPointerDown={(e) => startDrag(e, c.id)} onClick={() => sortBy(c)}>
+							class={cn("relative flex h-full min-w-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap px-2 hover:bg-accent/60 hover:text-foreground", alignCls(c), dragId() === c.id && "opacity-40")}
+							onPointerDown={(e) => startDrag(e, c.id)} onClick={(e) => sortBy(c, e.shiftKey)}>
 							<Show when={c.icon} fallback={<span class="truncate">{c.label}</span>}>
 								{c.icon === "attachments" ? <Paperclip class="size-3.5" /> : <StickyNote class="size-3.5" />}
 							</Show>
-							<Show when={store.sort().key === c.sort}>
-								{store.sort().dir === "asc" ? <ArrowUp class="size-3 flex-none text-primary" /> : <ArrowDown class="size-3 flex-none text-primary" />}
+							<Show when={levelOf(c) >= 0}>
+								<span class="flex-none text-primary" title={`Sort level ${levelOf(c) + 1}`}>
+									{store.sortLevels()[levelOf(c)].dir === "asc" ? "\u2191" : "\u2193"}<sup class="text-[9px]">{levelOf(c) + 1}</sup>
+								</span>
 							</Show>
-							<div data-resize={c.id} class="absolute right-0 top-0 z-10 h-full w-2 cursor-col-resize border-r border-border/60 hover:border-primary hover:bg-primary/20"
+							<div data-resize={c.id} class="absolute right-0 top-0 z-10 h-full w-2 cursor-col-resize border-r border-border/40 hover:border-primary hover:bg-primary/20"
 								onPointerDown={(e) => startResize(e, c.id)} onClick={(e) => e.stopPropagation()} />
 						</div>
 					)}</For>
@@ -145,9 +162,9 @@ const HeaderRow: Component<{ sbw: number; left: number }> = (p) => {
 	);
 };
 
-interface Ins { itemIndex: number; key: string; count: number; start: number; endCum: number }
+interface Ins { itemIndex: number; row: number; key: string; count: number; start: number; endCum: number }
 type ChildRef = { kind: "child"; e: Ins; ci: number; c: ChildSummary };
-type RowRef = { kind: "item"; i: number } | ChildRef;
+type RowRef = { kind: "item"; i: number } | { kind: "header"; group: Group; gi: number } | ChildRef;
 const hasKids = (it: ItemSummary) => it.attachmentCount + it.noteCount > 0;
 
 interface TableOps { expandAll(): void; collapseAll(): void; has(t: EventTarget | null): boolean }
@@ -167,6 +184,7 @@ if (typeof window !== "undefined") {
 const TableView: Component = () => {
 	let scroller!: HTMLDivElement;
 	const list = itemList;
+	const grp = createGroupedRows(list.total);
 	const [sbw, setSbw] = createSignal(0); // scrollbar width, so the header aligns with the rows
 	const [ctx, setCtx] = createSignal<ItemSummary | null>(null);
 	const [ctxChild, setCtxChild] = createSignal<{ parent: { key: string; title: string }; child: ChildSummary } | null>(null);
@@ -189,32 +207,37 @@ const TableView: Component = () => {
 		const arr: Ins[] = [];
 		for (const key of ex) {
 			const c = kidsMap.get(key), i = km.get(key);
-			if (c?.length && i !== undefined) arr.push({ itemIndex: i, key, count: c.length, start: 0, endCum: 0 });
+			const row = i === undefined ? -1 : grp.rowOf(i); // -1: parent hidden in a collapsed group
+			if (c?.length && row >= 0) arr.push({ itemIndex: i!, row, key, count: c.length, start: 0, endCum: 0 });
 		}
-		arr.sort((a, b) => a.itemIndex - b.itemIndex);
+		arr.sort((a, b) => a.row - b.row);
 		let cum = 0;
-		for (const e of arr) { e.start = e.itemIndex + cum; cum += e.count; e.endCum = cum; }
+		for (const e of arr) { e.start = e.row + cum; cum += e.count; e.endCum = cum; }
 		return arr;
 	});
-	const totalRows = () => list.total() + (ins().at(-1)?.endCum ?? 0);
+	const totalRows = () => grp.count() + (ins().at(-1)?.endCum ?? 0);
 
-	/** Virtual row index -> item row or child row. */
+	/** Virtual row index -> group header, item or child row. Virtual rows = grouped rows (headers + visible items) plus expanded children. */
 	function rowAt(v: number): RowRef {
 		const a = ins();
 		let lo = 0, hi = a.length - 1, j = -1;
 		while (lo <= hi) { const m = (lo + hi) >> 1; if (a[m].start <= v) { j = m; lo = m + 1; } else hi = m - 1; }
-		if (j < 0) return { kind: "item", i: v };
-		const e = a[j];
-		if (v === e.start) return { kind: "item", i: e.itemIndex };
-		if (v <= e.start + e.count) { const ci = v - e.start - 1; return { kind: "child", e, ci, c: kidsMap.get(e.key)![ci] }; }
-		return { kind: "item", i: v - e.endCum };
+		if (j >= 0) {
+			const e = a[j];
+			if (v > e.start && v <= e.start + e.count) { const ci = v - e.start - 1; return { kind: "child", e, ci, c: kidsMap.get(e.key)![ci] }; }
+		}
+		const base = j < 0 ? v : v === a[j].start ? a[j].row : v - a[j].endCum;
+		const r = grp.row(base);
+		return r.kind === "item" ? { kind: "item", i: r.index } : r;
 	}
-	/** Item index -> virtual row index. */
+	/** Item index -> virtual row index (-1 while its group is collapsed). */
 	function vOfItem(i: number): number {
+		const b = grp.rowOf(i);
+		if (b < 0) return -1;
 		const a = ins();
 		let lo = 0, hi = a.length;
-		while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].itemIndex < i) lo = m + 1; else hi = m; }
-		return i + (lo ? a[lo - 1].endCum : 0);
+		while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].row < b) lo = m + 1; else hi = m; }
+		return b + (lo ? a[lo - 1].endCum : 0);
 	}
 
 	let active = 0;
@@ -241,7 +264,7 @@ const TableView: Component = () => {
 		setFocusChild(null);
 		const i = parentIndex(key);
 		store.selectOnly(key, i);
-		if (i >= 0) v.scrollToIndex(vOfItem(i), { align: "auto" });
+		if (i >= 0 && vOfItem(i) >= 0) v.scrollToIndex(vOfItem(i), { align: "auto" });
 	}
 	function expand(key: string) {
 		if (expanded().has(key)) return;
@@ -340,8 +363,19 @@ const TableView: Component = () => {
 
 	function move(delta: number, extend: boolean) {
 		const hadChild = !!focusChild();
-		const next = Math.max(0, Math.min(totalRows() - 1, currentV() + delta));
+		const cur = currentV(), last = totalRows() - 1;
+		if (last < 0) return;
+		let next = Math.max(0, Math.min(last, cur + delta));
+		// group headers are not focusable: step past them in the direction of travel, or back if that runs off the end
+		const dir = delta < 0 ? -1 : 1;
+		while (next >= 0 && next <= last && rowAt(next).kind === "header") next += dir;
+		if (next < 0 || next > last) {
+			next = Math.max(0, Math.min(last, cur + delta));
+			while (next >= 0 && next <= last && rowAt(next).kind === "header") next -= dir;
+			if (next < 0 || next > last) return;
+		}
 		const row = rowAt(next);
+		if (row.kind === "header") return;
 		if (row.kind === "child") { selectChild(row); v.scrollToIndex(next, { align: "auto" }); return; }
 		setFocusChild(null);
 		if (!focusRow(list, row.i, extend && !hadChild)) { v.scrollToIndex(next); return; }
@@ -384,6 +418,7 @@ const TableView: Component = () => {
 		const idx = (e.target as HTMLElement).closest<HTMLElement>("[data-index]")?.dataset.index;
 		if (idx === undefined) return e.preventDefault();
 		const row = rowAt(+idx);
+		if (row.kind === "header") return e.preventDefault();
 		if (row.kind === "child") {
 			if (!store.selected().has(row.c.key)) selectChild(row);
 			setCtx(null);
@@ -407,7 +442,7 @@ const TableView: Component = () => {
 		const open = () => expanded().has(cp.item.key);
 		return (
 			<Switch fallback={
-				<div role="gridcell" class={cn("min-w-0 truncate px-2", alignCls(cp.col), (cp.col.id === "dateAdded" || cp.col.id === "year") && "tabular-nums opacity-70")} title={text() || undefined}>{text()}</div>
+				<div role="gridcell" class={cn("min-w-0 truncate px-2", alignCls(cp.col), cp.col.id !== "title" && "text-foreground/80", (cp.col.id === "dateAdded" || cp.col.id === "year") && "tabular-nums")} title={text() || undefined}>{text()}</div>
 			}>
 				<Match when={cp.col.id === "title"}>
 					<div role="gridcell" class="flex min-w-0 items-center gap-1.5 px-2" title={cp.item.title}>
@@ -419,7 +454,7 @@ const TableView: Component = () => {
 								<ChevronRight class={cn("size-3.5 transition-transform", open() && "rotate-90")} />
 							</button>
 						</Show>
-						<Dynamic component={itemTypeIcon(cp.item.itemType)} class="size-3.5 flex-none opacity-60" />
+						<Dynamic component={itemTypeIcon(cp.item.itemType)} class="size-3.5 flex-none text-muted-foreground" />
 						<span class="truncate">{cp.item.title || "(untitled)"}</span>
 					</div>
 				</Match>
@@ -428,7 +463,7 @@ const TableView: Component = () => {
 						<Show when={cp.item.attachmentCount}>
 							<AttachmentMenu item={cp.item} title={cp.item.primaryAttachment?.contentType ?? "Attachments"}
 								class="inline-flex size-6 items-center justify-center rounded hover:bg-foreground/15 data-[expanded]:bg-foreground/15">
-								<Dynamic component={attachmentIcon(cp.item.primaryAttachment?.contentType, cp.item.primaryAttachment ? null : "linked_url")} class="size-3.5 opacity-70" />
+								<Dynamic component={attachmentIcon(cp.item.primaryAttachment?.contentType, cp.item.primaryAttachment ? null : "linked_url")} class="size-3.5 text-muted-foreground" />
 							</AttachmentMenu>
 						</Show>
 					</div>
@@ -438,10 +473,22 @@ const TableView: Component = () => {
 	};
 
 	const rowCls = (index: number, selected: boolean, focused: boolean) =>
-		cn("absolute inset-x-0 top-0 grid h-[26px] select-none items-center hover:bg-accent",
-			index % 2 === 1 && "bg-muted/50",
-			selected && "bg-primary/15 hover:bg-primary/20 group-focus-within/list:bg-primary group-focus-within/list:text-primary-foreground group-focus-within/list:hover:bg-primary",
+		cn("absolute inset-x-0 top-0 grid h-[30px] select-none items-center border-b border-border/40 hover:bg-accent/50",
+			selected && "bg-primary/10 hover:bg-primary/15 group-focus-within/list:bg-primary/15",
 			focused && "outline-1 -outline-offset-1 outline-ring/60");
+
+	const GroupRow: Component<{ r: VirtualItem; group: Group }> = (rp) => (
+		<div data-index={rp.r.index} data-group role="row" aria-rowindex={rp.r.index + 2} aria-expanded={!grp.isCollapsed(rp.group)}
+			class="absolute inset-x-0 top-0 h-[30px] cursor-default select-none border-b border-border/60 bg-muted/60 text-sm"
+			style={{ transform: `translateY(${rp.r.start}px)` }}
+			onClick={() => grp.toggle(rp.group)}>
+			<div class="sticky left-0 flex h-full w-max items-center gap-2 px-3">
+				<ChevronRight class={cn("size-3.5 flex-none text-muted-foreground transition-transform", !grp.isCollapsed(rp.group) && "rotate-90")} />
+				<span class="font-semibold">{rp.group.label}</span>
+				<span class="text-muted-foreground tabular-nums">{rp.group.count.toLocaleString()}</span>
+			</div>
+		</div>
+	);
 
 	const ItemRow: Component<{ r: VirtualItem; i: number }> = (rp) => {
 		const it = () => list.get(rp.i);
@@ -477,7 +524,7 @@ const TableView: Component = () => {
 				<For each={layout.columns()}>{(col) => col.id === "title" ? (
 					<div role="gridcell" class="flex min-w-0 items-center gap-1.5 px-2" title={childLabel(rp.cr.c)}>
 						<span class="w-4 flex-none" /><span class="w-4 flex-none" />
-						<Dynamic component={childIcon(rp.cr.c)} class="size-3.5 flex-none opacity-60" />
+						<Dynamic component={childIcon(rp.cr.c)} class="size-3.5 flex-none text-muted-foreground" />
 						<span class="truncate">{childLabel(rp.cr.c)}</span>
 					</div>
 				) : <div role="gridcell" />}</For>
@@ -486,7 +533,8 @@ const TableView: Component = () => {
 	};
 
 	return (
-		<div class="flex min-h-0 flex-1 flex-col">
+		<div class="flex min-h-0 flex-1 flex-col bg-card">
+			<SortBar />
 			<div role="grid" aria-label="Items" aria-multiselectable="true" aria-rowcount={totalRows() + 1} aria-colcount={layout.ids().length}
 				class="flex min-h-0 flex-1 flex-col">
 			<HeaderRow sbw={sbw()} left={left()} />
@@ -499,9 +547,14 @@ const TableView: Component = () => {
 							const ref = createMemo(() => rowAt(r.index));
 							const itemIdx = createMemo(() => { const x = ref(); return x.kind === "item" ? x.i : -1; });
 							const child = createMemo(() => { const x = ref(); return x.kind === "child" ? x : null; });
+							const header = createMemo(() => { const x = ref(); return x.kind === "header" ? x.group : null; });
 							return (
-								<Show when={child()} fallback={<ItemRow r={r} i={itemIdx()} />}>
-									{(cr) => <ChildRow r={r} cr={cr()} />}
+								<Show when={header()} fallback={
+									<Show when={child()} fallback={<ItemRow r={r} i={itemIdx()} />}>
+										{(cr) => <ChildRow r={r} cr={cr()} />}
+									</Show>
+								}>
+									{(g) => <GroupRow r={r} group={g()} />}
 								</Show>
 							);
 						}}</For>
@@ -557,7 +610,7 @@ export const SearchResults: Component = () => {
 		<div class="flex min-h-0 flex-1 flex-col">
 			<div class="relative min-h-0 flex-1 overflow-y-auto">
 				<For each={hits()}>{(h) => (
-					<div class={cn("cursor-default border-b px-3 py-1.5 hover:bg-accent", store.selected().has(h.key) && "bg-primary/15 hover:bg-primary/20")}
+					<div class={cn("cursor-default border-b border-border/40 px-4 py-2 hover:bg-accent/50", store.selected().has(h.key) && "bg-primary/10 hover:bg-primary/15")}
 						onClick={() => store.selectOnly(h.key)}
 						onDblClick={() => store.openItem(h.key, h.title).catch((e) => toast.error("Could not open item", { description: errMsg(e) }))}>
 						<div class="font-semibold">{h.title || "(untitled)"}</div>

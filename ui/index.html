@@ -14,6 +14,7 @@
 	r.classList.toggle("dark", d);
 	r.dataset.theme = d ? "dark" : "light";
 	r.style.colorScheme = d ? "dark" : "light";
+	if (!t) r.style.setProperty("--canvas", d ? "#141413" : "#F7F6F3"); /* default scheme (Quiet Paper): paint its canvas until the app applies the full palette */
 	var v = t && t.v;
 	if (v) [v.g, d ? v.dark : v.light].forEach(function (o) { for (var k in o) r.style.setProperty(k, o[k]); });
 })();

@@ -24,7 +24,7 @@ export interface ThemePrefs {
 }
 
 export const THEME_KEY = "zn.theme";
-export const DEFAULT_THEME: ThemePrefs = { mode: "system", scheme: "blue", accent: "#2f6fdc", font: "manrope", fontCustom: "", size: 13 };
+export const DEFAULT_THEME: ThemePrefs = { mode: "system", scheme: "paper", accent: "#2f6fdc", font: "inter", fontCustom: "", size: 13 };
 export const TEXT_SIZES = [12, 13, 14, 15] as const;
 const BASE_SIZE = 13;
 
@@ -39,8 +39,42 @@ export interface SchemeDef {
 	lDark: number;
 	/** hue of the neutral greys (tinted very slightly towards the accent) */
 	nh: number;
+	/** Hand-picked CSS variables for a whole look (surfaces, text, borders, accent), replacing the computed accent and the
+	 *  CSS neutrals. Cleared from <html> again when another scheme is chosen. */
+	palette?: { light: Record<string, string>; dark: Record<string, string> };
 }
+
+/** "Quiet Paper": warm paper canvas with raised white cards (the zotero-next default look). */
+const PAPER: NonNullable<SchemeDef["palette"]> = {
+	light: {
+		"--canvas": "#F7F6F3", "--topbar": "#F1EFEA",
+		"--background": "#FFFFFF", "--foreground": "#23221F",
+		"--card": "#FBFAF8", "--muted": "#F4F2EE", "--muted-foreground": "#6B675F",
+		"--popover": "#FFFFFF", "--popover-foreground": "#23221F",
+		"--border": "#E4E1DA", "--border-soft": "#ECE9E3", "--input": "#D2CEC5",
+		"--secondary": "#F1EFEA", "--secondary-foreground": "#3B3934",
+		"--accent": "#F1EFEA", "--accent-foreground": "#23221F",
+		"--primary": "#2B5FA8", "--ring": "#2B5FA8", "--primary-foreground": "#FFFFFF",
+		"--primary-soft": "#EEF3FA", "--primary-tint": "#E3ECF9", "--primary-line": "#C9D7EC", "--primary-deep": "#1D467F",
+		"--header-tint": "#F6F8FC",
+	},
+	dark: {
+		"--canvas": "#141413", "--topbar": "#1A1917",
+		"--background": "#1E1D1B", "--foreground": "#EDEBE6",
+		"--card": "#1A1917", "--muted": "#272623", "--muted-foreground": "#A29E94",
+		"--popover": "#242320", "--popover-foreground": "#EDEBE6",
+		"--border": "#35332F", "--border-soft": "#2C2A27", "--input": "#47443E",
+		"--secondary": "#2A2926", "--secondary-foreground": "#E4E1DA",
+		"--accent": "#2A2926", "--accent-foreground": "#EDEBE6",
+		"--primary": "#7BA3E6", "--ring": "#7BA3E6", "--primary-foreground": "#0E121C",
+		"--primary-soft": "#1D2431", "--primary-tint": "#243350", "--primary-line": "#35507E", "--primary-deep": "#A9C4F0",
+		"--header-tint": "#1B212D",
+	},
+};
+const PALETTE_KEYS = Object.keys({ ...PAPER.light, ...PAPER.dark });
+
 export const SCHEMES: SchemeDef[] = [
+	{ id: "paper", label: "Quiet Paper", h: 258, c: 0.13, lLight: 0.5, lDark: 0.72, nh: 85, palette: PAPER },
 	{ id: "blue", label: "Blue", h: 255, c: 0.16, lLight: 0.55, lDark: 0.7, nh: 260 },
 	{ id: "teal", label: "Teal", h: 190, c: 0.11, lLight: 0.55, lDark: 0.74, nh: 205 },
 	{ id: "violet", label: "Violet", h: 295, c: 0.17, lLight: 0.52, lDark: 0.72, nh: 295 },
@@ -164,7 +198,8 @@ export function computeVars(p: ThemePrefs): ThemeVars {
 			nh = k.C > 0.03 ? k.h : 260;
 		}
 		const a = accentFor(h, c, l, dark);
-		return { "--primary": a.primary, "--ring": a.primary, "--primary-foreground": a.foreground, "--nh": String(Math.round(nh)) };
+		const base = { "--primary": a.primary, "--ring": a.primary, "--primary-foreground": a.foreground, "--nh": String(Math.round(nh)) };
+		return def?.palette ? { ...base, ...def.palette[dark ? "dark" : "light"] } : base;
 	};
 	return {
 		g: { "--zn-font": fontStack(p), "--zn-scale": String(+(p.size / BASE_SIZE).toFixed(4)) },
@@ -189,6 +224,8 @@ export function applyTheme(p: ThemePrefs, root: HTMLElement = document.documentE
 	root.dataset.scheme = p.scheme;
 	root.style.colorScheme = dark ? "dark" : "light";
 	const v = computeVars(p);
+	// a previous scheme's hand-picked palette must not linger once another scheme is chosen
+	for (const k of PALETTE_KEYS) root.style.removeProperty(k);
 	for (const [k, val] of Object.entries({ ...v.g, ...(dark ? v.dark : v.light) })) root.style.setProperty(k, val);
 }
 

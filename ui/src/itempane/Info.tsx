@@ -90,11 +90,11 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 			</Show>
 			<Index each={creators().slice(0, visibleCount())}>
 				{(c, i) => (
-					<div class="group/row grid grid-cols-[var(--ip-label)_minmax(0,1fr)] items-start gap-x-2 py-[2px]" data-creator={i}>
-						<div class="flex justify-end pt-[1px]">
+					<div class="group/row grid grid-cols-[var(--ip-label)_minmax(0,1fr)] items-start gap-x-3 py-[2px]" data-creator={i}>
+						<div class="flex justify-start pt-[1px]">
 							<NativeSelect
 								ariaLabel={`Creator type ${i + 1}`}
-								class="border-transparent bg-transparent text-right text-xs text-muted-foreground [text-align-last:right]"
+								class="bg-transparent px-0 text-xs text-muted-foreground"
 								value={c().creatorType}
 								options={typeOpts().some((o) => o.value === c().creatorType) ? typeOpts() : [...typeOpts(), { value: c().creatorType, label: c().creatorType }]}
 								onChange={(v) => patchAt(i, { creatorType: v })}

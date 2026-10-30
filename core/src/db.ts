@@ -276,6 +276,7 @@ export interface ListOptions {
 	q?: string;
 	sort?: string;
 	dir?: string;
+	then?: string; // extra sort levels: "creator:asc,title:asc" (key[:dir], dir defaults to asc, max 3)
 	limit?: number;
 	offset?: number;
 	unfiled?: boolean;
@@ -327,7 +328,7 @@ function likeEscape(s: string): string {
 	return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
-export function listItems(db: Database, opts: ListOptions = {}): ItemList {
+function buildFilter(db: Database, opts: ListOptions) {
 	const where: string[] = ["i.parent_key IS NULL", "i.item_type <> 'annotation'", `i.deleted = ${opts.trash ? 1 : 0}`];
 	const params: (string | number)[] = [];
 	// A collection or tag filter drives the join (CROSS JOIN fixes the loop order), so the
@@ -374,9 +375,66 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 		}
 	}
 	const whereSql = where.join(" AND ");
+	const unfiltered = where.length === 3 && !opts.trash && !driver;
+	const from = driver ? `${driver} f CROSS JOIN items i ON i.key = f.k` : "items i";
+	const expensive = !!(opts.search || opts.searchDef || (opts.q && opts.qmode && opts.qmode !== "titleCreatorYear"));
+	return { whereSql, from, params: [...driverParams, ...params], driver, unfiltered, expensive };
+}
+
+const MAX_SORT_LEVELS = 4;
+
+function orderTerm(spec: { expr: string; nullsLast: boolean }, dir: string): string {
+	return spec.nullsLast ? `(${spec.expr} IS NULL), ${spec.expr} ${dir}` : `${spec.expr} ${dir}`;
+}
+
+// "creator:asc,title" -> ORDER BY terms. Each key goes through resolveSort; dir defaults to asc.
+function parseThen(then: string | undefined): string[] {
+	if (!then) return [];
+	const parts = then.split(",").map((p) => p.trim()).filter(Boolean);
+	if (parts.length > MAX_SORT_LEVELS - 1) throw new HttpError(400, `too many sort levels (max ${MAX_SORT_LEVELS})`);
+	return parts.map((p) => {
+		const [key, d, ...rest] = p.split(":");
+		const dir = (d ?? "asc").toLowerCase();
+		if (rest.length || (dir !== "asc" && dir !== "desc")) throw new HttpError(400, `invalid then: ${p}`);
+		const spec = resolveSort(key);
+		if (!spec) throw new HttpError(400, `invalid then sort: ${key}`);
+		return orderTerm(spec, dir);
+	});
+}
+
+const GROUP_EXPR: Record<string, { sel: string; spec: { expr: string; nullsLast: boolean } }> = {
+	year: { sel: "i.year", spec: { expr: "i.year", nullsLast: false } },
+	itemType: { sel: "MIN(i.item_type)", spec: { expr: "i.item_type COLLATE NOCASE", nullsLast: false } },
+	publication: { sel: "MIN(i.publication)", spec: { expr: "i.publication COLLATE NOCASE", nullsLast: true } },
+};
+
+export interface ItemGroup {
+	value: string | null;
+	count: number;
+}
+
+// Counts per group in the same order listItems yields when its primary sort is the same key/dir.
+export function listItemGroups(db: Database, by: string, dirIn: string | undefined, opts: ListOptions = {}): { groups: ItemGroup[] } {
+	const g = Object.hasOwn(GROUP_EXPR, by) ? GROUP_EXPR[by] : undefined;
+	if (!g) throw new HttpError(400, `invalid by: ${by}`);
+	const dir = (dirIn ?? "desc").toLowerCase();
+	if (dir !== "asc" && dir !== "desc") throw new HttpError(400, `invalid dir: ${dirIn}`);
+	const f = buildFilter(db, opts);
+	const rows = db
+		.query(
+			`SELECT ${g.sel} AS v, count(*) AS n FROM ${f.from} WHERE ${f.whereSql}
+			 GROUP BY ${g.spec.expr} ORDER BY ${orderTerm(g.spec, dir)}`,
+		)
+		.all(...f.params) as { v: string | number | null; n: number }[];
+	return { groups: rows.map((r) => ({ value: r.v === null ? null : String(r.v), count: r.n })) };
+}
+
+export function listItems(db: Database, opts: ListOptions = {}): ItemList {
+	const f = buildFilter(db, opts);
+	const { whereSql, driver } = f;
 	const sortSpec = resolveSort(opts.sort ?? "dateAdded");
 	if (!sortSpec) throw new HttpError(400, `invalid sort: ${opts.sort}`);
-	const sortExpr = sortSpec.nullsLast ? `(${sortSpec.expr} IS NULL), ${sortSpec.expr}` : sortSpec.expr;
+	const extraTerms = parseThen(opts.then);
 	const fieldNames = (opts.fields ?? []).map((f) => {
 		const c = canonicalField(f);
 		if (!c) throw new HttpError(400, `invalid field: ${f}`);
@@ -389,25 +447,22 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 
 	// Unfiltered listings walk a partial sort index (see openDb); without stats the planner
 	// would otherwise pick items_parent and sort every row.
-	const unfiltered = where.length === 3 && !opts.trash && !driver;
 	const indexName = { title: "items_top_title", creator: "items_top_creator", year: "items_top_year", dateAdded: "items_top_added" }[
 		opts.sort ?? "dateAdded"
 	];
-	const from = driver
-		? `${driver} f CROSS JOIN items i ON i.key = f.k`
-		: unfiltered && indexName
-			? `items i INDEXED BY ${indexName}`
-			: "items i";
-	params.unshift(...driverParams);
+	const { unfiltered, params } = f;
+	const from =
+		driver || extraTerms.length > 0 || !unfiltered || !indexName ? f.from : `items i INDEXED BY ${indexName}`;
+	const orderBy = [orderTerm(sortSpec, dir), ...extraTerms, `i.key ${dir}`].join(", ");
 	let total: number;
 	let rows: SummaryRow[];
-	if (opts.search || opts.searchDef || (opts.q && opts.qmode && opts.qmode !== "titleCreatorYear")) {
+	if (f.expensive) {
 		// Expensive predicates: evaluate the filter once and get the total from a window count.
 		const r = db
 			.query(
 				`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year, i.publication, i.date_added, count(*) OVER () AS total
 				 FROM ${from} WHERE ${whereSql}
-				 ORDER BY ${sortExpr} ${dir}, i.key ${dir} LIMIT ? OFFSET ?`,
+				 ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
 			)
 			.all(...params, limit, offset) as (SummaryRow & { total: number })[];
 		rows = r;
@@ -422,7 +477,7 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 			.query(
 				`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year, i.publication, i.date_added
 				 FROM ${from} WHERE ${whereSql}
-				 ORDER BY ${sortExpr} ${dir}, i.key ${dir} LIMIT ? OFFSET ?`,
+				 ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
 			)
 			.all(...params, limit, offset) as SummaryRow[];
 	}

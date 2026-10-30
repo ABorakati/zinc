@@ -1,17 +1,14 @@
 import { createEffect, createMemo, createSignal, For, on, Show, untrack, type Component } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { ArrowDown, ArrowUp, ChevronDown } from "lucide-solid";
+import { ChevronDown } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { store } from "../store";
 import { cn } from "~/lib/utils";
-import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "~/components/ui/context-menu";
-import {
-	DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
-	DropdownMenuSeparator, DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
-import { labelOf, loadSchema, moreColumns } from "../columns/defs";
+import { loadSchema } from "../columns/defs";
+import { createGroupedRows, type Group } from "../groups";
+import { SortBar } from "../SortBar";
 import type { ItemSummary } from "../api";
 import { Card } from "./Card";
 import { CustomizeRows } from "./Customize";
@@ -19,54 +16,14 @@ import { cardLayout } from "./layout";
 import { focusRow, ItemMenuItems, selectClick, startItemDrag, type ItemListHandle } from "./shared";
 import { loadTagColors } from "./tags";
 
-const SORT_OPTIONS = [
-	{ key: "title", label: "Title" },
-	{ key: "creator", label: "Author" },
-	{ key: "year", label: "Year" },
-	{ key: "dateAdded", label: "Date Added" },
-	{ key: "dateModified", label: "Date Modified" },
-	{ key: "itemType", label: "Item Type" },
-	{ key: "publication", label: "Publication" },
-	{ key: "noteCount", label: "Notes" },
-	{ key: "attachmentCount", label: "Attachments" },
-];
-const sortLabel = (key: string) => SORT_OPTIONS.find((o) => o.key === key)?.label ?? labelOf(key);
-const defaultDir = (key: string) => (/^(dateAdded|dateModified|accessDate)$/.test(key) ? "desc" : "asc");
-
-const SortControl: Component = () => {
-	const s = store.sort;
-	const known = new Set(SORT_OPTIONS.map((o) => o.key));
-	return (
-		<div class="inline-flex items-center rounded-md hover:bg-accent/60">
-			<Button variant="ghost" size="sm" class="h-7 w-7 px-0" title={s().dir === "asc" ? "Ascending - click to reverse" : "Descending - click to reverse"}
-				aria-label="Reverse sort order" onClick={() => store.setSort({ key: s().key, dir: s().dir === "asc" ? "desc" : "asc" })}>
-				{s().dir === "asc" ? <ArrowUp /> : <ArrowDown />}
-			</Button>
-			<DropdownMenu>
-				<DropdownMenuTrigger as={Button} variant="ghost" size="sm" class="-ml-1 h-7 gap-1 px-1.5 text-xs font-medium" aria-label="Sort by">
-					{sortLabel(s().key)} <ChevronDown class="!size-3 opacity-60" />
-				</DropdownMenuTrigger>
-				<DropdownMenuContent class="max-h-[70vh] w-52 overflow-y-auto">
-					<DropdownMenuLabel>Sort by</DropdownMenuLabel>
-					<DropdownMenuRadioGroup value={s().key} onChange={(key) => store.setSort({ key, dir: defaultDir(key) })}>
-						<For each={SORT_OPTIONS}>{(o) => <DropdownMenuRadioItem value={o.key}>{o.label}</DropdownMenuRadioItem>}</For>
-						<Show when={moreColumns().length}>
-							<DropdownMenuSeparator />
-							<DropdownMenuLabel class="text-xs text-muted-foreground">More fields</DropdownMenuLabel>
-							<For each={moreColumns().filter((c) => !known.has(c.id))}>{(c) => <DropdownMenuRadioItem value={c.id}>{c.label}</DropdownMenuRadioItem>}</For>
-						</Show>
-					</DropdownMenuRadioGroup>
-				</DropdownMenuContent>
-			</DropdownMenu>
-		</div>
-	);
-};
+const HEADER_H = 40;
 
 export const CardList: Component<{ list: ItemListHandle }> = (props) => {
 	let scroller!: HTMLDivElement;
 	const list = props.list;
 	const [ctx, setCtx] = createSignal<ItemSummary | null>(null);
 	const L = cardLayout.layout;
+	const rows = createGroupedRows(list.total);
 	const listQuery = createMemo(() => ({
 		...store.query(),
 		fields: cardLayout.fieldsParam() || undefined,
@@ -76,15 +33,14 @@ export const CardList: Component<{ list: ItemListHandle }> = (props) => {
 	loadTagColors();
 
 	const estimate = () => {
-		const l = L();
-		const compact = l.density === "compact";
-		return (compact ? 14 : 30) + (compact ? 20 : 24) + (l.creators !== "off" ? (compact ? 18 : 22) : 0) + (compact ? 20 : 24) + (l.icons && !compact ? 30 : 0) + 8;
+		const compact = L().density === "compact";
+		return compact ? 78 : 104 + (L().creators !== "off" ? 0 : -18);
 	};
 
 	const v = createVirtualizer({
-		get count() { return list.total(); },
+		get count() { return rows.count(); },
 		getScrollElement: () => scroller,
-		estimateSize: estimate,
+		estimateSize: (i) => (rows.row(i).kind === "header" ? HEADER_H : estimate()),
 		overscan: 6,
 		gap: 0,
 	});
@@ -97,19 +53,34 @@ export const CardList: Component<{ list: ItemListHandle }> = (props) => {
 	}));
 	// ...whereas changing what the cards show only refetches the pages in view (selection and scroll stay).
 	createEffect(on(() => [cardLayout.fieldsParam(), cardLayout.includeParam()], () => list.reset(untrack(listQuery)), { defer: true }));
-	// Row heights depend on the layout: forget the measured ones.
-	createEffect(on(() => JSON.stringify(L()), () => {
+	const remeasure = () => {
 		v.measure();
 		// the mounted rows keep their elements, so measure them again once the new layout has rendered
 		requestAnimationFrame(() => scroller?.querySelectorAll<HTMLElement>("[data-index]").forEach((el) => v.measureElement(el)));
-	}, { defer: true }));
-	createEffect(() => { list.epoch(); for (const r of v.getVirtualItems()) list.ensure(r.index); });
+	};
+	// Row heights depend on the layout: forget the measured ones.
+	createEffect(on(() => JSON.stringify(L()), remeasure, { defer: true }));
+	// Row -> content mapping changes with the groups (and collapsing): the cached sizes belong to other rows now.
+	createEffect(on(() => [rows.grouped(), rows.count(), rows.groups().map((g) => rows.isCollapsed(g)).join()] as const, remeasure, { defer: true }));
+	createEffect(() => {
+		list.epoch();
+		for (const r of v.getVirtualItems()) {
+			const row = rows.row(r.index);
+			if (row.kind === "item") list.ensure(row.index);
+		}
+	});
 	createEffect(on(list.error, (e) => { if (e) toast.error("Could not load items", { description: e, id: "items-error" }); }));
 
+	/** Move the focus by `delta` items (in item index space), skipping items hidden in collapsed groups. */
 	function move(delta: number, extend: boolean) {
-		const next = Math.max(0, Math.min(list.total() - 1, (store.focusIndex() < 0 ? -1 : store.focusIndex()) + delta));
-		if (!focusRow(list, next, extend)) { v.scrollToIndex(next); return; }
-		v.scrollToIndex(next, { align: "auto" });
+		const last = list.total() - 1;
+		const dir = delta < 0 ? -1 : 1;
+		let next = Math.max(0, Math.min(last, (store.focusIndex() < 0 ? -1 : store.focusIndex()) + delta));
+		while (next >= 0 && next <= last && rows.rowOf(next) < 0) next += dir;
+		if (next < 0 || next > last) return;
+		const row = rows.rowOf(next);
+		if (!focusRow(list, next, extend)) { v.scrollToIndex(row); return; }
+		v.scrollToIndex(row, { align: "auto" });
 	}
 
 	function onKey(e: KeyboardEvent) {
@@ -129,45 +100,28 @@ export const CardList: Component<{ list: ItemListHandle }> = (props) => {
 	}
 
 	function onContextMenu(e: MouseEvent) {
-		const idx = (e.target as HTMLElement).closest<HTMLElement>("[data-index]")?.dataset.index;
+		const idx = (e.target as HTMLElement).closest<HTMLElement>("[data-item]")?.dataset.item;
 		const it = idx === undefined ? undefined : list.get(+idx);
-		if (!it) return e.preventDefault(); // blank area / placeholder row: no menu
+		if (!it) return e.preventDefault(); // blank area / header / placeholder row: no menu
 		if (!store.selected().has(it.key)) store.selectOnly(it.key, +idx!);
 		setCtx(it);
 	}
 
-	const selCount = () => store.selected().size;
-
 	return (
-		<div class="flex min-h-0 flex-1 flex-col">
-			<div class="flex flex-none items-center justify-end gap-2 border-b bg-card px-3 py-1" data-testid="cards-header">
-				<SortControl />
-				<span class="text-xs tabular-nums text-muted-foreground" data-testid="cards-count">
-					{list.total().toLocaleString()} {list.total() === 1 ? "reference" : "references"}
-					<Show when={selCount() > 0}> · {selCount().toLocaleString()} selected</Show>
-					<Show when={list.loading()}> · loading…</Show>
-				</span>
-				<CustomizeRows />
-			</div>
+		<div class="flex min-h-0 flex-1 flex-col bg-card">
+			<SortBar total={list.total()} loading={list.loading()} trailing={<CustomizeRows />} />
 			<ContextMenu onOpenChange={(o) => !o && setCtx(null)}>
 				<ContextMenuTrigger as="div" ref={scroller} role="listbox" aria-label="Items" aria-multiselectable="true" tabindex="0"
 					onKeyDown={onKey} onContextMenu={onContextMenu}
-					class="group/list relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background outline-none" data-testid="cards-scroller">
+					class="group/list relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-card outline-none" data-testid="cards-scroller">
 					<div role="presentation" style={{ height: v.getTotalSize() + "px", position: "relative", width: "100%" }}>
 						<For each={v.getVirtualItems()}>{(r) => {
-							const it = () => list.get(r.index);
-							const selected = () => !!it() && store.selected().has(it()!.key);
+							const row = () => rows.row(r.index);
 							return (
-								<div data-index={r.index} role="option" aria-selected={selected()} ref={(el) => queueMicrotask(() => v.measureElement(el))}
-									class="absolute inset-x-0 top-0 select-none px-3 py-[3px]"
-									style={{ transform: `translateY(${r.start}px)` }}
-									draggable={!!it()} onDragStart={(e) => startItemDrag(list, e, r.index)}
-									onClick={(e) => selectClick(list, r.index, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey })}
-									onDblClick={() => { const x = it(); if (x) store.openSummary(x); }}>
-									<Show when={it()} fallback={<CardSkeleton />}>
-										{(x) => <Card item={x()} index={r.index} list={list} selected={selected()} focused={store.focusIndex() === r.index} />}
-									</Show>
-								</div>
+								<Show when={row()} keyed>{(rw) => rw.kind === "header"
+									? <GroupHeader index={r.index} start={r.start} group={rw.group} collapsed={rows.isCollapsed(rw.group)} onToggle={() => rows.toggle(rw.group)} measure={(el) => v.measureElement(el)} />
+									: <ItemRow index={r.index} start={r.start} item={rw.index} list={list} measure={(el) => v.measureElement(el)} />
+								}</Show>
 							);
 						}}</For>
 					</div>
@@ -183,13 +137,45 @@ export const CardList: Component<{ list: ItemListHandle }> = (props) => {
 	);
 };
 
+const GroupHeader: Component<{
+	index: number; start: number; group: Group; collapsed: boolean; onToggle: () => void; measure: (el: HTMLElement) => void;
+}> = (p) => (
+	<div data-index={p.index} role="presentation" ref={(el) => queueMicrotask(() => p.measure(el))}
+		class="absolute inset-x-0 top-0 z-[1] select-none" style={{ transform: `translateY(${p.start}px)` }}>
+		<button type="button" tabindex="-1" aria-expanded={!p.collapsed} aria-label={`${p.group.label}, ${p.group.count} items`}
+			class="flex w-full items-center gap-2 border-b border-border/60 bg-muted/50 px-5 pb-1.5 pt-3 text-left"
+			onClick={p.onToggle} onDblClick={(e) => e.stopPropagation()}>
+			<span class="font-title text-base font-semibold text-primary-deep">{p.group.label}</span>
+			<span class="rounded-full bg-primary/10 px-2 py-px text-[11.5px] font-medium tabular-nums text-primary">{p.group.count.toLocaleString()}</span>
+			<ChevronDown class={cn("ml-auto size-4 text-muted-foreground transition-transform", p.collapsed && "-rotate-90")} aria-hidden="true" />
+		</button>
+	</div>
+);
+
+const ItemRow: Component<{ index: number; start: number; item: number; list: ItemListHandle; measure: (el: HTMLElement) => void }> = (p) => {
+	const it = () => p.list.get(p.item);
+	const selected = () => !!it() && store.selected().has(it()!.key);
+	return (
+		<div data-index={p.index} data-item={p.item} role="option" aria-selected={selected()} ref={(el) => queueMicrotask(() => p.measure(el))}
+			class="absolute inset-x-0 top-0 select-none px-2.5"
+			style={{ transform: `translateY(${p.start}px)` }}
+			draggable={!!it()} onDragStart={(e) => startItemDrag(p.list, e, p.item)}
+			onClick={(e) => selectClick(p.list, p.item, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey })}
+			onDblClick={() => { const x = it(); if (x) store.openSummary(x); }}>
+			<Show when={it()} fallback={<CardSkeleton />}>
+				{(x) => <Card item={x()} index={p.item} list={p.list} selected={selected()} focused={store.focusIndex() === p.item} />}
+			</Show>
+		</div>
+	);
+};
+
 const CardSkeleton: Component = () => (
-	<div class={cn("flex gap-3 rounded-lg border bg-card px-3.5 py-3", cardLayout.layout().density === "compact" && "py-2")}>
+	<div class={cn("flex gap-3 border-b border-border/60 px-2.5 py-2.5", cardLayout.layout().density === "compact" && "py-1.5")}>
 		<Skeleton class="mt-0.5 size-[18px] rounded-[5px]" />
 		<div class="flex-1 space-y-2">
 			<Skeleton class="h-4 w-4/5" />
 			<Skeleton class="h-3 w-1/2" />
-			<Skeleton class="h-3 w-1/3" />
+			<Skeleton class="h-7 w-1/3" />
 		</div>
 	</div>
 );

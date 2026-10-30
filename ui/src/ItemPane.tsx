@@ -25,14 +25,15 @@ import { MultiSelect } from "./itempane/Multi";
 import { reconcile as _r } from "solid-js/store";
 void _r;
 
-const SECTIONS: { id: string; title: string; icon: Component<LucideProps> }[] = [
-	{ id: "info", title: "Info", icon: Info },
-	{ id: "abstract", title: "Abstract", icon: AlignLeft },
-	{ id: "attachments", title: "Attachments", icon: Paperclip },
-	{ id: "notes", title: "Notes", icon: StickyNote },
-	{ id: "collections", title: "Libraries and Collections", icon: Library },
-	{ id: "tags", title: "Tags", icon: Tag },
-	{ id: "related", title: "Related", icon: Link2 },
+/** Sections in scroll order; `tab` is the short label in the tab row under the header. */
+const SECTIONS: { id: string; title: string; tab: string; icon: Component<LucideProps> }[] = [
+	{ id: "info", title: "Info", tab: "Details", icon: Info },
+	{ id: "abstract", title: "Abstract", tab: "Abstract", icon: AlignLeft },
+	{ id: "notes", title: "Notes", tab: "Notes", icon: StickyNote },
+	{ id: "attachments", title: "Attachments", tab: "Files", icon: Paperclip },
+	{ id: "collections", title: "Libraries and Collections", tab: "Collections", icon: Library },
+	{ id: "tags", title: "Tags", tab: "Tags", icon: Tag },
+	{ id: "related", title: "Related", tab: "Related", icon: Link2 },
 ];
 
 const empty = (t: string) => (
@@ -67,6 +68,12 @@ const Detail: Component<{ ctx: PaneCtx }> = (p) => {
 		if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) cur = SECTIONS[SECTIONS.length - 1].id;
 		setActive(cur);
 	};
+	const count = (id: string) =>
+		id === "notes" ? p.ctx.d.children.filter((c) => c.itemType === "note").length
+		: id === "attachments" ? p.ctx.d.children.filter((c) => c.itemType === "attachment").length
+		: id === "tags" ? p.ctx.d.tags.length
+		: id === "collections" ? p.ctx.d.collections.length
+		: 0;
 	const goTo = (id: string) => {
 		setCollapsed(id, false);
 		queueMicrotask(() => {
@@ -80,39 +87,38 @@ const Detail: Component<{ ctx: PaneCtx }> = (p) => {
 		<PaneContext.Provider value={p.ctx}>
 			<div class="flex h-full min-h-0 flex-col" data-testid="ip-detail" data-item={p.ctx.d.data.key}>
 				<Header />
-				<div class="flex min-h-0 flex-1">
-					<div ref={scroller} class="relative min-w-0 flex-1 overflow-y-auto" onScroll={spy}>
-						<InfoSection />
-						<AbstractSection />
-						<AttachmentsSection />
-						<NotesSection />
-						<CollectionsSection />
-						<TagsSection />
-						<RelatedSection />
-						<div class="h-48" />
-					</div>
-					<nav class="flex w-8 flex-none flex-col items-center gap-0.5 border-l bg-card py-1.5" aria-label="Item pane sections">
-						<For each={SECTIONS}>
-							{(s) => (
-								<button
-									type="button"
-									title={s.title}
-									aria-label={s.title}
-									data-nav={s.id}
-									onClick={() => goTo(s.id)}
-									class={cn(
-										"relative inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-										active() === s.id && "bg-accent text-foreground",
-									)}
-								>
-									<Show when={active() === s.id}>
-										<span class="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-primary" />
-									</Show>
-									<Dynamic component={s.icon} class="size-4" />
-								</button>
-							)}
-						</For>
-					</nav>
+				{/* tab row: jumps to (and follows) the pane's sections */}
+				<nav role="tablist" class="flex flex-none gap-4 overflow-x-auto border-b border-border-soft px-5 text-[12.5px] [scrollbar-width:none]" aria-label="Item pane sections">
+					<For each={SECTIONS}>
+						{(s) => (
+							<button
+								type="button"
+								role="tab"
+								aria-selected={active() === s.id}
+								title={s.title}
+								data-nav={s.id}
+								onClick={() => goTo(s.id)}
+								class={cn(
+									"-mb-px flex h-[38px] flex-none items-center gap-1.5 border-0 border-b-2 border-transparent bg-transparent p-0 whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
+									active() === s.id && "border-foreground font-semibold text-foreground",
+								)}
+							>
+								<Dynamic component={s.icon} class="size-3.5" />
+								{s.tab}
+								<Show when={count(s.id)}><span class="font-normal tabular-nums">{count(s.id)}</span></Show>
+							</button>
+						)}
+					</For>
+				</nav>
+				<div ref={scroller} class="relative min-h-0 min-w-0 flex-1 overflow-y-auto" onScroll={spy}>
+					<InfoSection />
+					<AbstractSection />
+					<NotesSection />
+					<AttachmentsSection />
+					<CollectionsSection />
+					<TagsSection />
+					<RelatedSection />
+					<div class="h-48" />
 				</div>
 			</div>
 		</PaneContext.Provider>

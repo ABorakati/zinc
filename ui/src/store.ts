@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createRoot, createResource, createEffect } from "solid-js";
+import { batch, createSignal, createMemo, createRoot, createResource, createEffect } from "solid-js";
 import { api, type ItemQuery, type ItemSummary } from "./api";
 import { unloadTabsMinutes } from "./settings/prefs";
 import { openSummary as openItemSummary } from "./itemopen"; // circular with store, but only used inside functions
@@ -32,10 +32,43 @@ function loadSort(): { key: string; dir: "asc" | "desc" } {
 	return { key: "dateAdded", dir: "desc" };
 }
 
+export interface SortLevel { key: string; dir: "asc" | "desc" }
+const isLevel = (s: unknown): s is SortLevel =>
+	!!s && typeof (s as SortLevel).key === "string" && /^[A-Za-z][A-Za-z0-9]*$/.test((s as SortLevel).key) &&
+	((s as SortLevel).dir === "asc" || (s as SortLevel).dir === "desc");
+
+/** Sort levels after the first (the server takes at most 4 in `then`). */
+const THEN_KEY = "zn.sort.then.v1";
+function loadThen(): SortLevel[] {
+	try {
+		const v = JSON.parse(localStorage.getItem(THEN_KEY) ?? "null");
+		if (Array.isArray(v)) return v.filter(isLevel).slice(0, 3);
+	} catch { /* ignore */ }
+	return [];
+}
+
+/** List grouping; while grouped, the first sort level is the group field (groups stay contiguous). */
+export type GroupBy = "none" | "year" | "itemType" | "publication";
+export const GROUP_BY: { id: GroupBy; label: string }[] = [
+	{ id: "none", label: "None" },
+	{ id: "year", label: "Year" },
+	{ id: "itemType", label: "Item type" },
+	{ id: "publication", label: "Publication" },
+];
+const GROUP_KEY = "zn.groupby.v1";
+function loadGroupBy(): GroupBy {
+	try {
+		const v = localStorage.getItem(GROUP_KEY);
+		if (GROUP_BY.some((g) => g.id === v)) return v as GroupBy;
+	} catch { /* ignore */ }
+	return "year";
+}
+
+/** "cards" is the List view, "table" the Classic Zotero table. */
 export type ViewMode = "table" | "cards";
 const VIEWMODE_KEY = "zn.viewmode.v1";
 function loadViewMode(): ViewMode {
-	try { return localStorage.getItem(VIEWMODE_KEY) === "cards" ? "cards" : "table"; } catch { return "table"; }
+	try { return localStorage.getItem(VIEWMODE_KEY) === "table" ? "table" : "cards"; } catch { return "cards"; }
 }
 
 /** A reader tab (attachmentKey set) or the single Settings tab. */
@@ -49,6 +82,36 @@ function createStore() {
 	const [fulltext, setFulltext] = createSignal(false);
 	const [sort, setSort] = createSignal<{ key: string; dir: "asc" | "desc" }>(loadSort());
 	createEffect(() => { try { localStorage.setItem(SORT_KEY, JSON.stringify(sort())); } catch { /* ignore */ } });
+	const [thenSort, setThenSortSig] = createSignal<SortLevel[]>(loadThen());
+	createEffect(() => { try { localStorage.setItem(THEN_KEY, JSON.stringify(thenSort())); } catch { /* ignore */ } });
+	const [groupBy, setGroupBySig] = createSignal<GroupBy>(loadGroupBy());
+	createEffect(() => { try { localStorage.setItem(GROUP_KEY, groupBy()); } catch { /* ignore */ } });
+
+	/** All sort levels, first one included. Levels never repeat a key. */
+	const sortLevels = createMemo<SortLevel[]>(() => [sort(), ...thenSort().filter((l) => l.key !== sort().key)]);
+	const groupDir = (g: GroupBy): "asc" | "desc" => (g === "year" ? "desc" : "asc");
+	/** Replace every level; while grouped, the group field is forced to stay first. */
+	function setSortLevels(levels: SortLevel[]) {
+		const seen = new Set<string>();
+		let ls = levels.filter((l) => isLevel(l) && !seen.has(l.key) && !!seen.add(l.key));
+		const g = groupBy();
+		if (g !== "none" && ls[0]?.key !== g) ls = [ls.find((l) => l.key === g) ?? { key: g, dir: groupDir(g) }, ...ls.filter((l) => l.key !== g)];
+		if (!ls.length) ls = [{ key: "dateAdded", dir: "desc" }];
+		batch(() => { setSort(ls[0]); setThenSortSig(ls.slice(1, 4)); });
+	}
+	/** Group the list; the group field becomes sort level 1 and the old levels follow it. */
+	function setGroupBy(g: GroupBy) {
+		setGroupBySig(g);
+		if (g !== "none") setSortLevels(sortLevels());
+	}
+	/** One-level sort (header click): keeps the group level first while grouped. */
+	function sortBy(level: SortLevel) {
+		const g = groupBy();
+		if (g === "none" || level.key === g) setSortLevels([level, ...sortLevels().slice(1).filter((l) => l.key !== level.key)]);
+		else setSortLevels([sortLevels()[0], level]);
+	}
+	// a stored grouping with a stale first level (e.g. from before grouping existed)
+	if (groupBy() !== "none" && sort().key !== groupBy()) setSortLevels(sortLevels());
 
 	const [viewMode, setViewMode] = createSignal<ViewMode>(loadViewMode());
 	createEffect(() => { try { localStorage.setItem(VIEWMODE_KEY, viewMode()); } catch { /* ignore */ } });
@@ -197,6 +260,7 @@ function createStore() {
 			q: !fulltext() && filter().trim() ? filter().trim() : undefined,
 			sort: s.key,
 			dir: s.dir,
+			then: sortLevels().slice(1).map((l) => `${l.key}:${l.dir}`).join(",") || undefined,
 		};
 	});
 
@@ -260,6 +324,7 @@ function createStore() {
 
 	return {
 		qmode, setQMode, viewMode, setViewMode, view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
+		sortLevels, setSortLevels, sortBy, groupBy, setGroupBy,
 		selected, setSelected, activeKey, setActiveKey, anchor, setAnchor, focusIndex, setFocusIndex,
 		isUnloaded, registerFrame,
 		tabs, activeTab, setActiveTab, openAttachment, openSettings, closeTab, openItem, openSummary,

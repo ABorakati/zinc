@@ -36,6 +36,8 @@ export interface ItemQuery {
 	q?: string;
 	sort: string;
 	dir: "asc" | "desc";
+	/** further sort levels, e.g. "creator:asc,title:asc" */
+	then?: string;
 	unfiled?: boolean;
 	trash?: boolean;
 	/** comma-separated Zotero data fields to return in ItemSummary.fields */
@@ -64,6 +66,11 @@ export const api = {
 		req<{ ok: true }>("POST", `/collections/${key}/items`, { keys }),
 	items: (q: ItemQuery, offset: number, limit: number) =>
 		req<ItemList>("GET", "/items?" + qs({ ...q, limit, offset })),
+	/** Group sizes for a query, in list order (the query's first sort level must be `by`). */
+	itemGroups: (q: ItemQuery, by: string) => {
+		const { fields: _f, include: _i, then: _t, sort: _s, ...rest } = q;
+		return req<{ groups: { value: string | null; count: number }[] }>("GET", "/items/groups?" + qs({ ...rest, by }));
+	},
 	schema: () => req<ZoteroSchema>("GET", "/schema"),
 	item: (key: string) => req<ItemDetail>("GET", `/items/${key}`),
 	patchItem: (key: string, data: Partial<ZoteroItemData>) =>

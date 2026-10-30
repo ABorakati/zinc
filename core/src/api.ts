@@ -192,6 +192,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 					q: p.get("q") || undefined,
 					sort: p.get("sort") || undefined,
 					dir: p.get("dir") || undefined,
+					then: p.get("then") || undefined,
 					limit: intParam(p.get("limit")),
 					offset: intParam(p.get("offset")),
 					search: p.get("search") || undefined,
@@ -200,6 +201,21 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 					trash: p.get("trash") === "1",
 					fields: p.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean),
 					include: p.get("include")?.split(",").map((f) => f.trim()).filter(Boolean),
+				}),
+			);
+		}
+		if (n === 2 && b === "groups") {
+			if (m !== "GET") return methodNotAllowed();
+			const p = url.searchParams;
+			return json(
+				repo.listItemGroups(db, p.get("by") ?? "", p.get("dir") || undefined, {
+					collection: p.get("collection") || undefined,
+					tag: p.get("tag") || undefined,
+					q: p.get("q") || undefined,
+					search: p.get("search") || undefined,
+					qmode: p.get("qmode") || undefined,
+					unfiled: p.get("unfiled") === "1",
+					trash: p.get("trash") === "1",
 				}),
 			);
 		}

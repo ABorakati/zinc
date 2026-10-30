@@ -6,6 +6,7 @@ import { store } from "./store";
 import { fail } from "~/lib/actions";
 import { collectionActions, sidebarSections } from "~/lib/registry";
 import { cn } from "~/lib/utils";
+import { CountBadge, folderStyle, SectionHeader, sectionOpen } from "./sidebar";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -31,7 +32,8 @@ function buildTree(list: Collection[]): Node[] {
 	return roots;
 }
 
-const rowCls = "relative flex h-6 items-center gap-1 pr-2 text-[13px] hover:bg-accent";
+// selected entries get the raised white pill from styles.css (.zn-sidebar [role="treeitem"][aria-selected="true"])
+const rowCls = "relative flex min-h-7 items-center gap-1.5 rounded-lg pr-2 text-[13px] text-foreground/90 hover:bg-foreground/5";
 
 export const CollectionsPane: Component = () => {
 	const tree = createMemo(() => buildTree(store.collections() ?? []));
@@ -115,9 +117,8 @@ export const CollectionsPane: Component = () => {
 		return (
 			<>
 				<div role="treeitem" aria-selected={isView(p.n.c.key)} data-ckey={p.n.c.key}
-					class={cn(rowCls, isView(p.n.c.key) && "bg-primary/15 text-foreground hover:bg-primary/20",
-						ctx()?.key === p.n.c.key && "bg-accent", dropKey() === p.n.c.key && "outline-2 -outline-offset-2 outline-primary")}
-					style={{ "padding-left": 4 + p.depth * 14 + "px" }}
+					class={cn(rowCls, ctx()?.key === p.n.c.key && "bg-foreground/5", dropKey() === p.n.c.key && "outline-2 -outline-offset-2 outline-primary")}
+					style={{ "padding-left": 6 + p.depth * 14 + "px" }}
 					onClick={() => store.setView({ kind: "collection", key: p.n.c.key })}
 					onDblClick={() => setEditing(p.n.c.key)}
 					onDragOver={(e) => { e.preventDefault(); setDropKey(p.n.c.key); }}
@@ -129,16 +130,16 @@ export const CollectionsPane: Component = () => {
 							<ChevronRight class={cn("size-3.5 transition-transform", open() && "rotate-90")} />
 						</Show>
 					</span>
-					<Show when={open() || isView(p.n.c.key)} fallback={<Folder class="size-4 flex-none text-primary/80" />}>
-						<FolderOpen class="size-4 flex-none text-primary" />
+					<Show when={open() || isView(p.n.c.key)} fallback={<Folder class="size-[15px] flex-none dark:brightness-125" style={folderStyle(p.n.c.key)} />}>
+						<FolderOpen class="size-[15px] flex-none dark:brightness-125" style={folderStyle(p.n.c.key)} />
 					</Show>
 					<Show when={editing() === p.n.c.key} fallback={<span class="flex-1 truncate">{p.n.c.name}</span>}>
 						<NameInput value={p.n.c.name} onDone={(v) => commitRename(p.n.c.key, v, p.n.c.name)} onCancel={() => setEditing(null)} />
 					</Show>
-					<span class="ml-1 text-[11px] tabular-nums text-muted-foreground">{p.n.c.itemCount}</span>
+					<CountBadge n={p.n.c.itemCount} class="ml-1" />
 				</div>
 				<Show when={creating() === p.n.c.key}>
-					<div class={rowCls} style={{ "padding-left": 4 + (p.depth + 1) * 14 + 20 + "px" }}>
+					<div class={rowCls} style={{ "padding-left": 6 + (p.depth + 1) * 14 + 20 + "px" }}>
 						<Folder class="size-4 flex-none text-muted-foreground" />
 						<NameInput value="" onDone={(v) => commitCreate(p.n.c.key, v)} onCancel={() => setCreating(null)} />
 					</div>
@@ -151,45 +152,56 @@ export const CollectionsPane: Component = () => {
 	};
 
 	const special = (kind: "library" | "unfiled" | "trash", label: string, Icon: typeof Library) => (
-		<div role="treeitem" aria-selected={isView(kind)} class={cn(rowCls, "pl-6", isView(kind) && "bg-primary/15 hover:bg-primary/20")}
+		<div role="treeitem" aria-selected={isView(kind)} class={cn(rowCls, "pl-2.5")}
 			onClick={() => store.setView({ kind })}>
-			<Icon class="size-4 flex-none text-muted-foreground" />
+			<Icon class={cn("size-[15px] flex-none", isView(kind) ? "text-primary" : "text-muted-foreground")} />
 			<span class="flex-1 truncate">{label}</span>
 		</div>
 	);
 
+	const [libOpen, setLibOpen] = sectionOpen.library;
+	const [colOpen, setColOpen] = sectionOpen.collections;
 	return (
-		<div class="flex h-full min-h-0 flex-col" data-pane="collections" tabindex={-1}>
-			<div class="flex flex-none items-center justify-between py-1 pl-2 pr-1">
-				<span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Collections</span>
-				<Tooltip>
-					<TooltipTrigger as={Button} variant="ghost" size="icon" class="size-6" aria-label="New collection" onClick={() => setCreating("root")}>
-						<Plus />
-					</TooltipTrigger>
-					<TooltipContent>New collection</TooltipContent>
-				</Tooltip>
-			</div>
+		<div class="flex min-h-0 flex-col overflow-y-auto" style={{ flex: colOpen() ? "3 1 0%" : "0 1 auto" }} data-pane="collections" tabindex={-1}>
 			<ContextMenu onOpenChange={(o) => !o && setCtx(null)}>
-				<ContextMenuTrigger as="div" role="tree" class="min-h-0 flex-1 overflow-y-auto pb-1.5"
+				<ContextMenuTrigger as="div" role="tree" class="flex flex-col gap-4 pb-1"
 					onContextMenu={(e: MouseEvent) => {
 						const c = byKey((e.target as HTMLElement).closest<HTMLElement>("[data-ckey]")?.dataset.ckey);
 						if (c) setCtx(c); else e.preventDefault();
 					}}>
-					{special("library", "My Library", Library)}
-					<Show when={!store.collections.loading || store.collections()} fallback={
-						<div class="space-y-2 px-3 py-2"><Skeleton class="h-3.5 w-3/4" /><Skeleton class="h-3.5 w-1/2" /><Skeleton class="h-3.5 w-2/3" /></div>
-					}>
-						<For each={tree()}>{(n) => <Row n={n} depth={0} />}</For>
-					</Show>
-					<Show when={creating() === "root"}>
-						<div class={rowCls} style={{ "padding-left": "24px" }}>
-							<Folder class="size-4 flex-none text-muted-foreground" />
-							<NameInput value="" onDone={(v) => commitCreate("root", v)} onCancel={() => setCreating(null)} />
-						</div>
-					</Show>
-					{special("unfiled", "Unfiled", Inbox)}
-					{special("trash", "Trash", Trash2)}
-					<For each={sidebarSections()}>{(s) => s.render()}</For>
+					<div class="flex flex-col gap-px" role="group" aria-label="Library">
+						<SectionHeader label="Library" open={libOpen()} onToggle={() => setLibOpen(!libOpen())} />
+						<Show when={libOpen()}>
+							{special("library", "My Library", Library)}
+							{special("unfiled", "Unfiled", Inbox)}
+							{special("trash", "Trash", Trash2)}
+							<For each={sidebarSections()}>{(s) => s.render()}</For>
+						</Show>
+					</div>
+					<div class="flex flex-col gap-px" role="group" aria-label="Collections">
+						<SectionHeader label="Collections" open={colOpen()} onToggle={() => setColOpen(!colOpen())} actions={
+							<Tooltip>
+								<TooltipTrigger as={Button} variant="ghost" size="icon" class="size-5 text-muted-foreground" aria-label="New collection"
+									onClick={() => { setColOpen(true); setCreating("root"); }}>
+									<Plus />
+								</TooltipTrigger>
+								<TooltipContent>New collection</TooltipContent>
+							</Tooltip>
+						} />
+						<Show when={colOpen()}>
+							<Show when={!store.collections.loading || store.collections()} fallback={
+								<div class="space-y-2 px-3 py-2"><Skeleton class="h-3.5 w-3/4" /><Skeleton class="h-3.5 w-1/2" /><Skeleton class="h-3.5 w-2/3" /></div>
+							}>
+								<For each={tree()}>{(n) => <Row n={n} depth={0} />}</For>
+							</Show>
+							<Show when={creating() === "root"}>
+								<div class={rowCls} style={{ "padding-left": "26px" }}>
+									<Folder class="size-[15px] flex-none text-muted-foreground" />
+									<NameInput value="" onDone={(v) => commitCreate("root", v)} onCancel={() => setCreating(null)} />
+								</div>
+							</Show>
+						</Show>
+					</div>
 				</ContextMenuTrigger>
 				<ContextMenuContent class="w-52" onCloseAutoFocus={(e: Event) => e.preventDefault()}>
 					<ContextMenuItem onSelect={() => { const c = ctx(); if (c) setCreating(c.key); }}>

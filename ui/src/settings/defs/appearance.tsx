@@ -42,7 +42,10 @@ const Swatch = (p: { color: string; label: string; active: boolean; onClick: () 
 
 const SchemePicker = () => {
 	const dark = () => (theme(), resolveDark(theme().mode));
-	const colours = createMemo(() => SCHEMES.map((s) => ({ s, a: accentFor(s.h, s.c, dark() ? s.lDark : s.lLight, dark()) })));
+	const colours = createMemo(() => SCHEMES.map((s) => {
+		const pal = s.palette?.[dark() ? "dark" : "light"];
+		return { s, a: pal ? { primary: pal["--primary"], foreground: pal["--primary-foreground"] } : accentFor(s.h, s.c, dark() ? s.lDark : s.lLight, dark()) };
+	}));
 	const custom = createMemo(() => {
 		const v = computeVars({ ...theme(), scheme: "custom" })[dark() ? "dark" : "light"];
 		return { bg: v["--primary"], fg: v["--primary-foreground"] };
@@ -52,7 +55,7 @@ const SchemePicker = () => {
 		<div class="space-y-1.5" data-testid="settings-schemes">
 			<div role="radiogroup" aria-label="Colour scheme" class="flex flex-wrap items-center gap-1">
 				<For each={colours()}>{(c) => (
-					<Swatch color={c.a.primary} label={c.s.label + (c.s.id === "blue" ? " (default)" : "")} active={active() === c.s.id}
+					<Swatch color={c.a.primary} label={c.s.label + (c.s.id === DEFAULT_THEME.scheme ? " (default)" : "")} active={active() === c.s.id}
 						fg={c.a.foreground} onClick={() => setTheme({ scheme: c.s.id })} />
 				)}</For>
 				<span class="mx-1 h-5 w-px bg-border" />
@@ -80,8 +83,8 @@ const FontPicker = () => {
 	return (
 		<div class="space-y-2" data-testid="settings-font">
 			<div class="flex flex-wrap items-center gap-2">
-				<Select<FontId> label="Interface font" value={known(theme().font) ? theme().font : "manrope"} onChange={(v) => setTheme({ font: v })}
-					options={[...FONTS.map((f) => ({ value: f.id, label: f.id === "manrope" ? "Manrope (default)" : f.label })), { value: "custom" as FontId, label: "Other…" }]} />
+				<Select<FontId> label="Interface font" value={known(theme().font) ? theme().font : "inter"} onChange={(v) => setTheme({ font: v })}
+					options={[...FONTS.map((f) => ({ value: f.id, label: f.id === DEFAULT_THEME.font ? f.label + " (default)" : f.label })), { value: "custom" as FontId, label: "Other…" }]} />
 				<Show when={theme().font === "custom"}>
 					<input
 						type="text"
@@ -136,7 +139,7 @@ registerSettings([
 	},
 	{
 		id: "appearance.reset", section: "appearance", label: "Reset appearance",
-		description: "Back to System theme, Blue, Manrope, 13 px.",
+		description: "Back to System theme, Quiet Paper, Inter, 13 px.",
 		keywords: ["default", "restore"],
 		control: () => <Button variant="outline" size="sm" class="h-7 px-2 text-xs" onClick={() => setTheme({ ...DEFAULT_THEME })}>Reset</Button>,
 	},

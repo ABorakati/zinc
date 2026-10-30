@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, onMount, Show, type Component } from "solid-js";
-import { Check, Ellipsis } from "lucide-solid";
+import { Check, Ellipsis, Tag } from "lucide-solid";
 import { api } from "./api";
 import { store } from "./store";
 import { allTags } from "./itempane/Tags";
@@ -11,9 +11,10 @@ import { deleteAutomaticTags, deleteTag, renameTag } from "./maintenance/ops";
 import {
 	DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { Badge } from "~/components/ui/badge";
 import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
+import { cn } from "~/lib/utils";
+import { SectionHeader, sectionOpen } from "./sidebar";
 import {
 	ContextMenu, ContextMenuContent, ContextMenuGroupLabel, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from "~/components/ui/context-menu";
@@ -29,7 +30,8 @@ export const TagList: Component = () => {
 	const [auto] = createResource(() => store.tagsRev(), () => maintenance.automaticTags().catch(() => []));
 	const autoOnly = createMemo(() => new Map((auto() ?? []).map((a) => [a.tag, a.count])));
 	// Coloured tags first in Zotero's position order, then the rest alphabetically.
-	const shown = createMemo(() => {
+	const TAG_LIMIT = 500;
+	const filtered = createMemo(() => {
 		const q = f().toLowerCase();
 		const hideAuto = !showAuto();
 		const list = (tags() ?? []).filter((t) =>
@@ -37,38 +39,43 @@ export const TagList: Component = () => {
 			// only hide tags whose every use is automatic
 			!(hideAuto && !tagColor(t.tag) && autoOnly().get(t.tag) === t.count));
 		const pos = (name: string) => tagColor(name)?.position ?? Infinity;
-		return list.sort((a, b) => pos(a.tag) - pos(b.tag)).slice(0, 500);
+		return list.sort((a, b) => pos(a.tag) - pos(b.tag));
 	});
+	const shown = createMemo(() => filtered().slice(0, TAG_LIMIT));
+	const [open, setOpen] = sectionOpen.tags;
 	return (
-		<div class="flex h-full min-h-0 flex-col">
-			<div class="flex flex-none items-center justify-between px-2 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-				Tags
+		<div class="flex min-h-0 flex-col" style={{ flex: open() ? "2 1 0%" : "0 0 auto" }} data-pane="tags">
+			<SectionHeader label="Tags" open={open()} onToggle={() => setOpen(!open())} icon={<Tag class="size-3" />} actions={
 				<DropdownMenu>
-					<DropdownMenuTrigger class="inline-flex size-5 items-center justify-center rounded-md hover:bg-accent hover:text-foreground [&_svg]:size-3.5" aria-label="Tag menu">
+					<DropdownMenuTrigger class="inline-flex size-5 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-3.5" aria-label="Tag menu">
 						<Ellipsis />
 					</DropdownMenuTrigger>
-					<DropdownMenuContent class="w-64 normal-case tracking-normal">
+					<DropdownMenuContent class="w-64">
 						<DropdownMenuCheckboxItem checked={showAuto()} onChange={setShowAuto}>Show Automatic</DropdownMenuCheckboxItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem onSelect={() => void deleteAutomaticTags()}>Delete Automatic Tags in This Library…</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
-			</div>
-			<Input class="mx-2 mb-1.5 w-auto flex-none" placeholder="Filter tags" value={f()} onInput={(e) => setF(e.currentTarget.value)} />
-			<div class="flex min-h-0 flex-1 flex-wrap content-start gap-1 overflow-y-auto px-2 pb-2">
-				<Show when={!tags.loading || tags()} fallback={
-					<For each={[48, 64, 40, 56, 72]}>{(w) => <Skeleton class="h-5 rounded-full" style={{ width: w + "px" }} />}</For>
-				}>
-					<For each={shown()}>{(t) => (
+			} />
+			<Show when={open()}>
+				<Input class="mx-2.5 mb-2 h-7 w-auto flex-none rounded-lg border-transparent bg-muted" placeholder="Filter tags" value={f()} onInput={(e) => setF(e.currentTarget.value)} />
+				<div class="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 overflow-y-auto px-2.5 pb-2">
+					<Show when={!tags.loading || tags()} fallback={
+						<For each={[48, 64, 40, 56, 72]}>{(w) => <Skeleton class="h-6 rounded-full" style={{ width: w + "px" }} />}</For>
+					}>
+						<For each={shown()}>{(t) => (
 						<ContextMenu>
 							<ContextMenuTrigger as="span">
-								<Badge round variant={store.tag() === t.tag ? "default" : "outline"}
-									class="cursor-default gap-1 px-2 py-0 font-normal hover:border-primary"
-									title={`${t.count} items`} role="button"
+								<span
+									class={cn(
+										"inline-flex h-6 max-w-full cursor-default items-center gap-1.5 rounded-full bg-background px-2.5 text-xs whitespace-nowrap ring-1 ring-border transition-colors hover:ring-primary/50",
+										store.tag() === t.tag ? "bg-primary-tint font-medium text-primary-deep ring-primary-line" : "text-secondary-foreground",
+									)}
+									title={`${t.count} items`} role="button" aria-pressed={store.tag() === t.tag}
 									onClick={() => store.setTag(store.tag() === t.tag ? null : t.tag)}>
-									<Show when={tagColor(t.tag)}>{(c) => <span class="size-2 rounded-full" style={{ background: c().color }} />}</Show>
-									{t.tag}
-								</Badge>
+									<Show when={tagColor(t.tag)}>{(c) => <span class="size-[7px] flex-none rounded-full" style={{ background: c().color }} />}</Show>
+									<span class="truncate">{t.tag}</span>
+								</span>
 							</ContextMenuTrigger>
 							<ContextMenuContent class="w-44">
 								<ContextMenuGroupLabel>Tag colour</ContextMenuGroupLabel>
@@ -89,8 +96,12 @@ export const TagList: Component = () => {
 							</ContextMenuContent>
 						</ContextMenu>
 					)}</For>
-				</Show>
-			</div>
+						<Show when={filtered().length > TAG_LIMIT}>
+							<span class="inline-flex h-6 items-center px-2 text-xs text-muted-foreground">+ {(filtered().length - TAG_LIMIT).toLocaleString()} more</span>
+						</Show>
+					</Show>
+				</div>
+			</Show>
 		</div>
 	);
 };

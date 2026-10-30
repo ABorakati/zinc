@@ -47,7 +47,7 @@ export const cardLayout = createRoot(() => {
 	const set = <K extends keyof CardLayout>(k: K, v: CardLayout[K]) => setLayout((l) => ({ ...l, [k]: v }));
 	const metaFields = createMemo(() => layout().meta.map(getMetaField));
 	/** Zotero data fields the shown meta fields need (`fields=`). */
-	const fieldsParam = createMemo(() => [...new Set(metaFields().flatMap((m) => m.fields))].sort().join(","));
+	const fieldsParam = createMemo(() => [...new Set([...metaFields().flatMap((m) => m.fields), "url", "DOI"])].sort().join(","));
 	/** `include=` extras the card needs. */
 	const includeParam = createMemo(() => {
 		const l = layout();

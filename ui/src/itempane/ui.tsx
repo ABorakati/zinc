@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type Component, type JSX } from "solid-js";
-import { ChevronDown, ChevronRight, type LucideProps } from "lucide-solid";
+import { BookOpen, Calendar, ChevronDown, ChevronRight, FileText, Globe, Link2, ListOrdered, Type, type LucideProps } from "lucide-solid";
 import { Dynamic } from "solid-js/web";
 import { cn } from "~/lib/utils";
 import { isCollapsed, setCollapsed } from "./ctx";
@@ -13,23 +13,23 @@ export const Section: Component<{
 	actions?: JSX.Element;
 	children: JSX.Element;
 }> = (p) => (
-	<section id={`ip-sec-${p.id}`} data-sec={p.id} class="border-t first:border-t-0">
+	<section id={`ip-sec-${p.id}`} data-sec={p.id} class="border-t border-border-soft first:border-t-0">
 		<div
-			class="group/sec flex h-7 items-center gap-1.5 px-2 select-none hover:bg-accent/40"
+			class="group/sec flex h-9 items-center gap-1.5 px-5 select-none hover:bg-foreground/[0.03]"
 			onClick={() => setCollapsed(p.id, !isCollapsed(p.id))}
 		>
 			<Dynamic component={isCollapsed(p.id) ? ChevronRight : ChevronDown} class="size-3.5 flex-none text-muted-foreground" />
 			<Dynamic component={p.icon} class="size-3.5 flex-none text-muted-foreground" />
-			<span class="text-[13px] font-semibold">{p.title}</span>
+			<span class="text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">{p.title}</span>
 			<Show when={p.count !== undefined && p.count > 0}>
-				<span class="text-[11px] text-muted-foreground">{p.count}</span>
+				<span class="inline-flex h-[18px] min-w-[22px] items-center justify-center rounded-full bg-border-soft px-1.5 text-[11px] font-semibold text-secondary-foreground tabular-nums">{p.count}</span>
 			</Show>
 			<div class="flex-1" />
 			<div class="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>{p.actions}</div>
 		</div>
 		<Show when={!isCollapsed(p.id)}>
 			{/* a size container: rows size their label column from the pane's width (see Row) */}
-			<div class="px-2 pt-0.5 pb-2.5 [container-type:inline-size]">{p.children}</div>
+			<div class="px-5 pt-0.5 pb-3.5 [container-type:inline-size]">{p.children}</div>
 		</Show>
 	</section>
 );
@@ -80,10 +80,18 @@ export const TextBtn: Component<{
 	</button>
 );
 
-/** A label/value row in Zotero's two-column style. */
+const FIELD_ICONS: Record<string, Component<LucideProps>> = {
+	title: Type, publicationTitle: BookOpen, bookTitle: BookOpen, proceedingsTitle: BookOpen, websiteTitle: Globe, date: Calendar,
+	volume: ListOrdered, issue: ListOrdered, pages: FileText, DOI: Link2, url: Globe,
+};
+
+/** A label/value row: the label (with a small icon for common fields) left, the value right. */
 export const Row: Component<{ label: string; children: JSX.Element; class?: string; labelClass?: string; id?: string }> = (p) => (
-	<div class={cn("group/row grid grid-cols-[var(--ip-label)_minmax(0,1fr)] items-start gap-x-2 py-[2px]", p.class)} data-field={p.id}>
-		<label class={cn("truncate pt-[4px] text-right text-xs text-muted-foreground", p.labelClass)} title={p.label}>{p.label}</label>
+	<div class={cn("group/row grid grid-cols-[var(--ip-label)_minmax(0,1fr)] items-start gap-x-3 py-[2px]", p.class)} data-field={p.id}>
+		<label class={cn("flex items-center gap-1.5 pt-[5px] text-xs text-muted-foreground", p.labelClass)} title={p.label}>
+			<Show when={p.id && FIELD_ICONS[p.id]}>{(_) => <Dynamic component={FIELD_ICONS[p.id!]} class="size-3.5 flex-none" />}</Show>
+			<span class="truncate">{p.label}</span>
+		</label>
 		<div class="min-w-0">{p.children}</div>
 	</div>
 );
@@ -121,7 +129,7 @@ export const Editable: Component<{
 					aria-label={p.ariaLabel}
 					class={cn(
 						base,
-						"min-h-[24px] cursor-text break-words whitespace-pre-wrap border-input bg-background/40 outline-none transition-colors hover:border-ring/60 hover:bg-accent/40 focus-visible:border-ring",
+						"min-h-[24px] cursor-text break-words whitespace-pre-wrap rounded-none border-transparent border-b-border-soft bg-transparent outline-none transition-colors hover:rounded hover:border-ring/50 hover:bg-muted/60 focus-visible:rounded focus-visible:border-ring",
 						!p.value && "text-muted-foreground/70",
 						p.class,
 					)}
@@ -167,7 +175,7 @@ export const NativeSelect: Component<{
 	<select
 		aria-label={p.ariaLabel}
 		class={cn(
-			"h-[24px] max-w-full cursor-pointer appearance-none rounded border border-input bg-background/40 px-1.5 text-[13px] outline-none transition-colors hover:border-ring/60 hover:bg-accent/40 focus-visible:border-ring [&>option]:bg-popover [&>option]:text-popover-foreground",
+			"h-[24px] max-w-full cursor-pointer appearance-none rounded border border-transparent bg-transparent px-1.5 text-[13px] outline-none transition-colors hover:border-ring/50 hover:bg-muted/60 focus-visible:border-ring [&>option]:bg-popover [&>option]:text-popover-foreground",
 			p.class,
 		)}
 		value={p.value}
