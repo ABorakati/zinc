@@ -109,8 +109,7 @@ export interface HostInfo {
 	library: { dbPath: string; dbExists: boolean; items?: number; error?: string; dataDir: string };
 	uri: { base: string; userId: string | null; source: string };
 	settings: Record<string, any>;
-	/** only with init(true) */
-	zn?: { up: boolean; api: string; launcher: string; launcherExists: boolean };
+	zn: { up: boolean; api: string; launcher: string; launcherExists: boolean };
 }
 
 const DEFAULT_STYLE = "vancouver";
@@ -171,16 +170,9 @@ export class App {
 		};
 	}
 
-	/** full also fetches the item count and whether zotero-next is running, which are slow (for the settings panel). */
-	async init(full = false): Promise<HostInfo> {
-		this.info = await this.host.call<HostInfo>("host.info", { full });
+	async init(): Promise<HostInfo> {
+		this.info = await this.host.call<HostInfo>("host.info");
 		return this.info;
-	}
-
-	/** Whether zotero-next is running; asked apart from init because it takes up to 800 ms when it is not. */
-	async checkApp(): Promise<void> {
-		const zn = await this.host.call<HostInfo["zn"]>("zn.status");
-		if (this.info) this.info.zn = zn;
 	}
 
 	get uriBase(): string {

@@ -22,7 +22,6 @@ namespace ZoteroNext.Word
     [ClassInterface(ClassInterfaceType.AutoDispatch)]
     public class PaneControl : UserControl
     {
-        const string SidebarHost = "zn-sidebar.test";
         static readonly List<WeakReference> Live = new List<WeakReference>();
         readonly WebView2 _web = new WebView2();
         readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 300 };
@@ -62,25 +61,22 @@ namespace ZoteroNext.Word
             {
                 var dir = Path.GetDirectoryName(typeof(PaneControl).Assembly.Location);
                 var site = Environment.GetEnvironmentVariable("ZN_SIDEBAR_DIR") ?? Path.Combine(dir, "sidebar");
-                var clock = System.Diagnostics.Stopwatch.StartNew();
                 Directory.CreateDirectory(Path.Combine(Settings.CacheDir, "webview2"));
                 var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Settings.CacheDir, "webview2"));
                 await _web.EnsureCoreWebView2Async(env);
-                Log.Write("webview created in " + clock.ElapsedMilliseconds + " ms");
                 var core = _web.CoreWebView2;
                 core.Settings.AreDevToolsEnabled = true;
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
-                // not a .local name: those hold every page's subresources back by a fixed 2 s
-                core.SetVirtualHostNameToFolderMapping(SidebarHost, site, CoreWebView2HostResourceAccessKind.Allow);
+                core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", site, CoreWebView2HostResourceAccessKind.Allow);
                 core.WebMessageReceived += OnMessage;
-                core.NavigationCompleted += (s, e) => { _ready = true; FlushPending(); Log.Write("sidebar loaded " + clock.ElapsedMilliseconds + " ms after opening"); };
+                core.NavigationCompleted += (s, e) => { _ready = true; FlushPending(); };
                 core.NewWindowRequested += (s, e) =>
                 {
                     e.Handled = true;
                     try { var u = e.Uri; if (u.StartsWith("https://") || u.StartsWith("http://")) System.Diagnostics.Process.Start(u); } catch { }
                 };
-                _web.Source = new Uri("https://" + SidebarHost + "/index.html");
+                _web.Source = new Uri("https://zn-sidebar.local/index.html");
                 _timer.Start();
                 Log.Write("pane ready, site " + site);
             }
