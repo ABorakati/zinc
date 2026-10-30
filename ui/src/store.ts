@@ -37,7 +37,9 @@ function loadViewMode(): ViewMode {
 	try { return localStorage.getItem(VIEWMODE_KEY) === "cards" ? "cards" : "table"; } catch { return "table"; }
 }
 
-export interface Tab { id: string; title: string; attachmentKey: string }
+/** A reader tab (attachmentKey set) or the single Settings tab. */
+export interface Tab { id: string; title: string; attachmentKey: string; kind: "reader" | "settings" }
+export const SETTINGS_TAB = "settings";
 
 function createStore() {
 	const [view, setView] = createSignal<View>({ kind: "library" });
@@ -97,9 +99,15 @@ function createStore() {
 	function openAttachment(attachmentKey: string, title: string) {
 		const existing = tabs().find((t) => t.attachmentKey === attachmentKey);
 		if (existing) return setActiveTab(existing.id);
-		const t: Tab = { id: "t" + attachmentKey, title, attachmentKey };
+		const t: Tab = { id: "t" + attachmentKey, title, attachmentKey, kind: "reader" };
 		setTabs([...tabs(), t]);
 		setActiveTab(t.id);
+	}
+
+	/** Open (or focus) the Settings tab; there is only ever one. */
+	function openSettings() {
+		if (!tabs().some((t) => t.id === SETTINGS_TAB)) setTabs([...tabs(), { id: SETTINGS_TAB, title: "Settings", attachmentKey: "", kind: "settings" }]);
+		setActiveTab(SETTINGS_TAB);
 	}
 
 	function closeTab(id: string) {
@@ -128,7 +136,7 @@ function createStore() {
 	return {
 		qmode, setQMode, viewMode, setViewMode, view, setView, tag, setTag, filter, setFilter, fulltext, setFulltext, sort, setSort,
 		selected, setSelected, activeKey, setActiveKey, anchor, setAnchor, focusIndex, setFocusIndex,
-		tabs, activeTab, setActiveTab, openAttachment, closeTab, openItem, openSummary,
+		tabs, activeTab, setActiveTab, openAttachment, openSettings, closeTab, openItem, openSummary,
 		collections, refetchCollections, collectionsRev, bumpCollections, tagsRev, bumpTags, itemsRev, bumpItems,
 		query, selectOnly,
 	};

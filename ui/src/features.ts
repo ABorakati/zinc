@@ -5,3 +5,4 @@ import "./duplicates/register";
 import "./io/register";
 import "./searches/register";
 import "./maintenance/register";
+import "./settings/register";

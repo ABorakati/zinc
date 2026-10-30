@@ -30,10 +30,53 @@ export class AlreadyInLibrary extends Error {
 	}
 }
 
+// Lookups go to OpenAlex/Crossref (a second or more each), so results are kept in the database: found works
+// for 30 days, "not found" for a day. The library match is redone on each request (cheap, see libraryIndex).
+const DETAIL_TTL = 30 * 86400_000;
+const MISS_TTL = 86400_000;
+
+function detailCache(db: Database) {
+	db.exec("CREATE TABLE IF NOT EXISTS reference_detail_cache(k TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
+	return {
+		get(k: string): ReferenceDetail | null | undefined {
+			const row = db.query("SELECT data, fetched_at FROM reference_detail_cache WHERE k = ?").get(k) as { data: string | null; fetched_at: number } | null;
+			if (!row || Date.now() - row.fetched_at > (row.data ? DETAIL_TTL : MISS_TTL)) return undefined;
+			try { return row.data ? JSON.parse(row.data) as ReferenceDetail : null; } catch { return undefined; }
+		},
+		set(k: string, d: ReferenceDetail | null) {
+			db.query("INSERT OR REPLACE INTO reference_detail_cache(k, data, fetched_at) VALUES(?, ?, ?)").run(k, d ? JSON.stringify(d) : null, Date.now());
+		},
+	};
+}
+
+/** The library DOI/title index, rebuilt at most every 30 s (it scans every item; hover cards ask often). */
+let libIndex: { db: Database; at: number; index: ReturnType<typeof buildLibraryIndex> } | null = null;
+function libraryIndex(db: Database) {
+	if (!libIndex || libIndex.db !== db || Date.now() - libIndex.at > 30_000) libIndex = { db, at: Date.now(), index: buildLibraryIndex(db) };
+	return libIndex.index;
+}
+
 export async function lookupReference(db: Database, q: { doi?: string | null; title?: string | null }): Promise<ReferenceDetail> {
 	const doi = normalizeDoi(q.doi);
 	const title = q.title?.trim() || null;
 	if (!doi && !title) throw new HttpError(400, "doi or title is required");
+	const cache = detailCache(db);
+	const ck = doi ? `doi:${doi}` : `title:${title!.toLowerCase()}`;
+	const hit = cache.get(ck);
+	if (hit === null) throw new HttpError(404, "work not found");
+	if (hit) {
+		const inLib = libraryIndex(db).match(hit);
+		return inLib ? { ...hit, inLibraryKey: inLib } : hit;
+	}
+	const detail = await fetchDetail(db, doi, title);
+	cache.set(ck, detail);
+	if (!detail) throw new HttpError(404, "work not found");
+	const inLib = libraryIndex(db).match(detail);
+	if (inLib) detail.inLibraryKey = inLib;
+	return detail;
+}
+
+async function fetchDetail(db: Database, doi: string | null, title: string | null): Promise<ReferenceDetail | null> {
 	const mailto = mailtoFor(db);
 	let detail: ReferenceDetail | null = null;
 	const w = await openAlexLookup({ doi, title }, mailto).catch(() => null);
@@ -56,9 +99,6 @@ export async function lookupReference(db: Database, q: { doi?: string | null; ti
 			}) as ReferenceDetail;
 		}
 	}
-	if (!detail) throw new HttpError(404, "work not found");
-	const inLib = buildLibraryIndex(db).match(detail);
-	if (inLib) detail.inLibraryKey = inLib;
 	return detail;
 }
 

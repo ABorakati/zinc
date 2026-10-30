@@ -212,6 +212,20 @@ describe("lookup", () => {
 		const bad = (await handleReferencesApi(new Request("http://x/api/references/lookup"), db))!;
 		expect(bad.status).toBe(400);
 	});
+
+	test("results (and misses) are cached in the database, so a second hover needs no network", async () => {
+		let calls = 0;
+		routes = [[/api\.openalex\.org\/works\/doi:10\.1000\/cache1/, () => { calls++; return { ...OA_W.W1, doi: "https://doi.org/10.1000/cache1", abstract_inverted_index: { Cached: [0] } }; }]];
+		const get = async (q: string) => (await handleReferencesApi(new Request(`http://x/api/references/lookup?${q}`), db))!;
+		expect((await (await get("doi=10.1000/cache1")).json() as ReferenceDetail).abstract).toBe("Cached");
+		routes = []; // network gone: the cached copy still answers
+		const again = await get("doi=10.1000/cache1");
+		expect(again.status).toBe(200);
+		expect((await again.json() as ReferenceDetail).abstract).toBe("Cached");
+		expect(calls).toBe(1);
+		expect((await get("doi=10.1000/nothing-here")).status).toBe(404);
+		expect((await get("doi=10.1000/nothing-here")).status).toBe(404);
+	});
 });
 
 describe("POST /api/references/add", () => {

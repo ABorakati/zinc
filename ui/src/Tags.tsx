@@ -2,6 +2,7 @@ import { createMemo, createResource, createSignal, For, onMount, Show, type Comp
 import { Check, Ellipsis } from "lucide-solid";
 import { api } from "./api";
 import { store } from "./store";
+import { setShowAutoTags, showAutoTags } from "./settings/prefs";
 import { loadTagColors, setTagColor, tagColor, TAG_PALETTE } from "./cards/tags";
 import { fail } from "~/lib/actions";
 import { maintenance } from "./maintenance/client";
@@ -21,8 +22,8 @@ export const TagList: Component = () => {
 	const [f, setF] = createSignal("");
 	onMount(loadTagColors);
 	// "Show Automatic": automatic tags (added by importers/translators) can be hidden; remembered across sessions.
-	const [showAuto, setShowAutoRaw] = createSignal(((): boolean => { try { return localStorage.getItem("zn.flag.showAutomaticTags") !== "0"; } catch { return true; } })());
-	const setShowAuto = (v: boolean) => { setShowAutoRaw(v); try { localStorage.setItem("zn.flag.showAutomaticTags", v ? "1" : "0"); } catch { /* ignore */ } };
+	// (shared with Settings, see settings/prefs.ts)
+	const showAuto = showAutoTags, setShowAuto = setShowAutoTags;
 	const [auto] = createResource(() => store.tagsRev(), () => maintenance.automaticTags().catch(() => []));
 	const autoOnly = createMemo(() => new Map((auto() ?? []).map((a) => [a.tag, a.count])));
 	// Coloured tags first in Zotero's position order, then the rest alphabetically.

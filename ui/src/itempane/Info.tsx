@@ -1,7 +1,6 @@
 import { createMemo, createSignal, For, Index, Show, type Component } from "solid-js";
-import { AlertTriangle, ArrowDown, ArrowUp, Ellipsis, ExternalLink, Info, Minus, Plus, Replace } from "lucide-solid";
+import { AlertTriangle, ArrowDown, ArrowUp, ExternalLink, Info, Minus, Plus, Replace } from "lucide-solid";
 import { DateParts } from "~/components/DateParts";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
 import type { Creator } from "../api";
 import { fail } from "~/lib/actions";
 import { ipApi, type ZoteroSchemaField, type ZoteroSchemaItemType } from "./api";
@@ -91,11 +90,11 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 			</Show>
 			<Index each={creators().slice(0, visibleCount())}>
 				{(c, i) => (
-					<div class="group/row grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-2" data-creator={i}>
+					<div class="group/row grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-2 py-[2px]" data-creator={i}>
 						<div class="flex justify-end pt-[1px]">
 							<NativeSelect
 								ariaLabel={`Creator type ${i + 1}`}
-								class="text-right text-xs text-muted-foreground [text-align-last:right]"
+								class="border-transparent bg-transparent text-right text-xs text-muted-foreground [text-align-last:right]"
 								value={c().creatorType}
 								options={typeOpts().some((o) => o.value === c().creatorType) ? typeOpts() : [...typeOpts(), { value: c().creatorType, label: c().creatorType }]}
 								onChange={(v) => patchAt(i, { creatorType: v })}
@@ -111,32 +110,15 @@ const CreatorRows: Component<{ st: () => ZoteroSchemaItemType | undefined }> = (
 									}
 								>
 									<Editable ariaLabel={`Creator ${i + 1} last name`} class="min-w-0 flex-[1.2] truncate whitespace-nowrap" value={c().lastName ?? ""} placeholder="Last" onSave={(v) => patchAt(i, { lastName: v })} />
-									<span class="pt-[3px] text-muted-foreground">,</span>
+									<span class="px-0.5 pt-[3px] text-muted-foreground">,</span>
 									<Editable ariaLabel={`Creator ${i + 1} first name`} class="min-w-0 flex-1 truncate whitespace-nowrap" value={c().firstName ?? ""} placeholder="First" onSave={(v) => patchAt(i, { firstName: v })} />
 								</Show>
 							</div>
-							{/* A narrow strip with its own space (never over the names): ⋯ menu, remove, add. */}
-							<div class="flex flex-none items-center gap-px pt-[1px] opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100">
-								<DropdownMenu>
-									<DropdownMenuTrigger
-										class="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
-										aria-label={`More actions for creator ${i + 1}`}
-										title="More"
-									>
-										<Ellipsis />
-									</DropdownMenuTrigger>
-									<DropdownMenuContent class="w-52">
-										<DropdownMenuItem onSelect={() => toggleMode(i)}>
-											<Replace class="mr-2 size-4" /> {c().name !== undefined ? "Switch to two fields" : "Switch to single field"}
-										</DropdownMenuItem>
-										<DropdownMenuItem disabled={i === 0} onSelect={() => move(i, -1)}>
-											<ArrowUp class="mr-2 size-4" /> Move up
-										</DropdownMenuItem>
-										<DropdownMenuItem disabled={i === creators().length - 1} onSelect={() => move(i, 1)}>
-											<ArrowDown class="mr-2 size-4" /> Move down
-										</DropdownMenuItem>
-									</DropdownMenuContent>
-								</DropdownMenu>
+							{/* Always-visible actions in their own strip (never over the names). */}
+							<div class="flex flex-none items-center pt-[2px]">
+								<IconBtn title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"} onClick={() => toggleMode(i)}><Replace /></IconBtn>
+								<IconBtn title="Move up" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp /></IconBtn>
+								<IconBtn title="Move down" disabled={i === creators().length - 1} onClick={() => move(i, 1)}><ArrowDown /></IconBtn>
 								<IconBtn title="Remove creator" onClick={() => remove(i)}><Minus /></IconBtn>
 								<IconBtn title="Add creator" onClick={() => insertAfter(i)}><Plus /></IconBtn>
 							</div>

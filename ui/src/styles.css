@@ -85,7 +85,7 @@
 	--color-warning-foreground: var(--warning-foreground);
 	--color-error: var(--error);
 	--color-error-foreground: var(--error-foreground);
-	--font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+	--font-sans: "Manrope Variable", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 }
 
 @layer base {

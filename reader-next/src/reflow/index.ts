@@ -6,7 +6,7 @@ import type { DocStructure, ReaderPlugin } from "../contract";
 import { loadStructure } from "../structure/load";
 import { installFonts } from "./fonts";
 import { ReflowView, type LoadState } from "./ReflowView";
-import { DEFAULT_SETTINGS, loadSettings, palette, saveSettings, type ReadingSettings } from "./settings";
+import { DEFAULT_SETTINGS, loadSettings, palette, saveSettings, STORAGE_KEY, type ReadingSettings } from "./settings";
 
 export const reflowPlugin: ReaderPlugin = (viewer) => {
 	const [settings, setSettingsSig] = createSignal<ReadingSettings>(loadSettings());
@@ -26,6 +26,13 @@ export const reflowPlugin: ReaderPlugin = (viewer) => {
 		saveSettings(next);
 		publish();
 	};
+	// the app's Settings page edits these from another document: follow it live
+	const onStorage = (e: StorageEvent) => {
+		if (e.key !== STORAGE_KEY && e.key !== null) return;
+		setSettingsSig(loadSettings());
+		publish();
+	};
+	window.addEventListener("storage", onStorage);
 	// reset typography and theme; "open by default" is a separate choice and stays
 	const resetSettings = () => setSettings({ ...DEFAULT_SETTINGS, openByDefault: settings().openByDefault });
 
@@ -76,6 +83,7 @@ export const reflowPlugin: ReaderPlugin = (viewer) => {
 
 	return () => {
 		clearTimeout(auto);
+		window.removeEventListener("storage", onStorage);
 		removeBtn();
 		if (on()) close();
 		document.documentElement.style.removeProperty("--rn-reading-bg");

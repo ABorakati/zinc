@@ -7,6 +7,7 @@ import { Dynamic } from "solid-js/web";
 import { appearance, hasReadingColours, pageLook, setAppearance, type AppearanceMode } from "./appearance";
 import { GAP, type ViewerController, type ZoomMode } from "./controller";
 import { PageView } from "./PageView";
+import { loadViewerPrefs } from "./prefs";
 import { OutlineTree, PluginTab, Thumbnails } from "./Sidebar";
 import type { OutlineNode } from "./pdf";
 import { Button } from "./ui/button";
@@ -153,13 +154,23 @@ export function Viewer(props: { ctl: ViewerController; outline: OutlineNode[] })
 	const sideDefault = (): SideTab => {
 		try { return localStorage.getItem("rn.sideTab") || (props.outline.length ? "outline" : "thumbs"); } catch { return "outline"; }
 	};
-	const [sideOpen, setSideOpen] = createSignal((() => { try { return localStorage.getItem("rn.sideOpen") === "1"; } catch { return false; } })());
+	// Settings > PDF viewer: side panel as last left, or always open / closed
+	const prefs = loadViewerPrefs();
+	const [sideOpen, setSideOpen] = createSignal(prefs.sidebar === "remember"
+		? (() => { try { return localStorage.getItem("rn.sideOpen") === "1"; } catch { return false; } })()
+		: prefs.sidebar === "open");
 	const [sideTab, setSideTab] = createSignal<SideTab>(sideDefault());
 	const [pageInput, setPageInput] = createSignal<string | null>(null);
 	let scroller!: HTMLDivElement;
 	const look = createMemo(() => pageLook(appearance()));
 
-	createEffect(() => { try { localStorage.setItem("rn.sideOpen", sideOpen() ? "1" : "0"); localStorage.setItem("rn.sideTab", sideTab()); } catch { /* ignore */ } });
+	createEffect(() => {
+		const open = sideOpen(), tab = sideTab();
+		try {
+			if (prefs.sidebar === "remember") localStorage.setItem("rn.sideOpen", open ? "1" : "0");
+			localStorage.setItem("rn.sideTab", tab);
+		} catch { /* ignore */ }
+	});
 
 	const visible = createMemo(() => {
 		const [a, b] = ctl.range();
@@ -228,6 +239,12 @@ export function Viewer(props: { ctl: ViewerController; outline: OutlineNode[] })
 		queueMicrotask(() => {
 			const s = (window as unknown as { __rnState?: Parameters<ViewerController["restoreState"]>[0] }).__rnState;
 			ctl.restoreState(s ?? null);
+			// first time this document is opened: Settings > PDF viewer > default zoom
+			if (!s?.zoomMode) {
+				const z = prefs.zoom;
+				if (z === "page") ctl.setMode("page");
+				else if (typeof z === "number") ctl.setZoom(z);
+			}
 			ctl.ready[1](true);
 		});
 		onCleanup(() => {

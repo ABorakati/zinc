@@ -23,11 +23,35 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 	return res.json() as Promise<T>;
 }
 
+/**
+ * Reference details kept in localStorage for 30 days (shared by all reader tabs), so a paper reopened later
+ * shows abstracts at once. Oldest entries go first when there are more than 1500.
+ */
+const STASH_KEY = "rn.refDetails";
+const stash = {
+	all(): Record<string, { t: number; d: ReferenceDetail }> {
+		try { return JSON.parse(localStorage.getItem(STASH_KEY) ?? "{}"); } catch { return {}; }
+	},
+	get(k: string): ReferenceDetail | null {
+		const e = stash.all()[k];
+		return e && Date.now() - e.t < 30 * 86400_000 ? { ...e.d, inLibraryKey: undefined } : null;
+	},
+	set(k: string, d: ReferenceDetail) {
+		const all = stash.all();
+		all[k] = { t: Date.now(), d: { ...d, inLibraryKey: undefined } }; // library membership changes: always ask
+		const keys = Object.keys(all);
+		if (keys.length > 1500) for (const old of keys.sort((a, b) => all[a].t - all[b].t).slice(0, keys.length - 1500)) delete all[old];
+		try { localStorage.setItem(STASH_KEY, JSON.stringify(all)); } catch { /* full or unavailable */ }
+	},
+};
+
 export interface AcademicApi {
 	/** The paper's resolved bibliography (cached; failures are retried after 30 s). */
 	refs(): Promise<Reference[]>;
 	refList(refresh?: boolean): Promise<ReferenceList>;
 	lookup(r: Pick<Reference, "doi" | "title">): Promise<ReferenceDetail>;
+	/** Look up these references in the background (3 at a time). */
+	prefetch(refs: Pick<Reference, "doi" | "title">[]): void;
 	add(body: { doi?: string; reference?: Reference }): Promise<string>; // -> item key (also when it was already there)
 	openUrl(url: string): Promise<void>;
 	openExternal(attachmentKey: string): Promise<void>;
@@ -60,14 +84,27 @@ export function createApi(attachmentKey: string, itemKey: string | null): Academ
 			const k = (r.doi ?? r.title ?? "").toLowerCase();
 			let p = detail.get(k);
 			if (!p) {
-				const q = new URLSearchParams();
-				if (r.doi) q.set("doi", r.doi);
-				else if (r.title) q.set("title", r.title);
-				p = req<ReferenceDetail>("GET", "/references/lookup?" + q);
-				p.catch(() => detail.delete(k));
+				const stored = stash.get(k);
+				if (stored) p = Promise.resolve(stored);
+				else {
+					const q = new URLSearchParams();
+					if (r.doi) q.set("doi", r.doi);
+					else if (r.title) q.set("title", r.title);
+					p = req<ReferenceDetail>("GET", "/references/lookup?" + q);
+					p.then((d) => stash.set(k, d), () => detail.delete(k));
+				}
 				detail.set(k, p);
 			}
 			return p;
+		},
+		prefetch(refs) {
+			// a few at a time in the background, so hover cards open with their abstract already there
+			const queue = refs.filter((r) => (r.doi || r.title) && !detail.has((r.doi ?? r.title ?? "").toLowerCase()));
+			const next = (): Promise<void> | undefined => {
+				const r = queue.shift();
+				return r && api.lookup(r).then(next, next);
+			};
+			for (let i = 0; i < 3; i++) void next();
 		},
 		async add(body) {
 			try {

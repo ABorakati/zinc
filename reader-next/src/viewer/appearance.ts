@@ -32,6 +32,11 @@ export function setAppearance(a: Appearance) {
 	try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /* ignore */ }
 }
 
+// The app's Settings page edits this key from another document: follow it live.
+if (typeof window !== "undefined") {
+	window.addEventListener("storage", (e) => { if (e.key === KEY || e.key === null) setAppearanceSig(load()); });
+}
+
 export type RGB = [number, number, number];
 
 let probe: CanvasRenderingContext2D | null = null;

@@ -62,6 +62,9 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		isReady = true;
 		for (const f of figListeners) f();
 	})();
+	// fetch every reference's details (abstract, citation counts) in the background, so hover cards are instant
+	const prefetchTimer = setTimeout(() => void api.refs().then((r) => api.prefetch(r)), 1500);
+	own(() => clearTimeout(prefetchTimer));
 
 	// ---------------------------------------------------------------- navigation + back stack
 	const back: { page: number }[] = [];

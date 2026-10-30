@@ -81,8 +81,8 @@ export const TextBtn: Component<{
 
 /** A label/value row in Zotero's two-column style. */
 export const Row: Component<{ label: string; children: JSX.Element; class?: string; labelClass?: string; id?: string }> = (p) => (
-	<div class={cn("group/row grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-2", p.class)} data-field={p.id}>
-		<label class={cn("truncate pt-[3px] text-right text-xs text-muted-foreground", p.labelClass)} title={p.label}>{p.label}</label>
+	<div class={cn("group/row grid grid-cols-[104px_minmax(0,1fr)] items-start gap-x-2 py-[2px]", p.class)} data-field={p.id}>
+		<label class={cn("truncate pt-[4px] text-right text-xs text-muted-foreground", p.labelClass)} title={p.label}>{p.label}</label>
 		<div class="min-w-0">{p.children}</div>
 	</div>
 );
@@ -108,7 +108,8 @@ export const Editable: Component<{
 		if (cancelled) { cancelled = false; return; }
 		if (v !== p.value) p.onSave(v);
 	};
-	const base = "w-full min-w-0 rounded px-1.5 py-[2px] text-[13px] leading-[18px]";
+	// a visible outline at rest (not only while editing), so fields read as fields
+	const base = "w-full min-w-0 rounded border px-1.5 py-[2px] text-[13px] leading-[18px]";
 	return (
 		<Show
 			when={editing()}
@@ -119,7 +120,7 @@ export const Editable: Component<{
 					aria-label={p.ariaLabel}
 					class={cn(
 						base,
-						"min-h-[22px] cursor-text break-words whitespace-pre-wrap outline-none hover:bg-accent/70 focus-visible:bg-accent/70",
+						"min-h-[24px] cursor-text break-words whitespace-pre-wrap border-input bg-background/40 outline-none transition-colors hover:border-ring/60 hover:bg-accent/40 focus-visible:border-ring",
 						!p.value && "text-muted-foreground/70",
 						p.class,
 					)}
@@ -143,7 +144,7 @@ export const Editable: Component<{
 						else if (e.key === "Enter" && (!p.multiline || e.ctrlKey || e.metaKey)) { e.preventDefault(); e.currentTarget.blur(); }
 					},
 				};
-				const cls = cn(base, "border border-ring bg-background outline-none ring-2 ring-ring/25", p.class);
+				const cls = cn(base, "min-h-[24px] border-ring bg-background outline-none ring-2 ring-ring/25", p.class);
 				return p.multiline ? (
 					<textarea {...props} rows={2} class={cn(cls, "[field-sizing:content] max-h-72 min-h-[44px] resize-none")} />
 				) : (
@@ -165,7 +166,7 @@ export const NativeSelect: Component<{
 	<select
 		aria-label={p.ariaLabel}
 		class={cn(
-			"h-[22px] max-w-full cursor-pointer appearance-none rounded border border-transparent bg-transparent px-1.5 text-[13px] outline-none hover:bg-accent/70 focus-visible:border-ring [&>option]:bg-popover [&>option]:text-popover-foreground",
+			"h-[24px] max-w-full cursor-pointer appearance-none rounded border border-input bg-background/40 px-1.5 text-[13px] outline-none transition-colors hover:border-ring/60 hover:bg-accent/40 focus-visible:border-ring [&>option]:bg-popover [&>option]:text-popover-foreground",
 			p.class,
 		)}
 		value={p.value}
