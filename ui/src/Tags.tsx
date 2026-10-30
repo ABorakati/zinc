@@ -2,6 +2,7 @@ import { createMemo, createResource, createSignal, For, onMount, Show, type Comp
 import { Check, Ellipsis } from "lucide-solid";
 import { api } from "./api";
 import { store } from "./store";
+import { allTags } from "./itempane/Tags";
 import { setShowAutoTags, showAutoTags } from "./settings/prefs";
 import { loadTagColors, setTagColor, tagColor, TAG_PALETTE } from "./cards/tags";
 import { fail } from "~/lib/actions";
@@ -18,7 +19,8 @@ import {
 } from "~/components/ui/context-menu";
 
 export const TagList: Component = () => {
-	const [tags] = createResource(() => store.tagsRev(), () => api.tags().catch((e) => { fail("Could not load tags", e); return []; }));
+	// one shared fetch per tag-list change (itempane/Tags.tsx allTags), also used by tag autocomplete
+	const [tags] = createResource(() => store.tagsRev(), () => allTags().catch((e) => { fail("Could not load tags", e); return []; }));
 	const [f, setF] = createSignal("");
 	onMount(loadTagColors);
 	// "Show Automatic": automatic tags (added by importers/translators) can be hidden; remembered across sessions.

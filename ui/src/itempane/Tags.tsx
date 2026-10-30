@@ -1,4 +1,4 @@
-import { createResource, For, Show, type Component } from "solid-js";
+import { For, Show, type Component } from "solid-js";
 import { Tag, X } from "lucide-solid";
 import { api } from "../api";
 import { store } from "../store";
@@ -7,13 +7,29 @@ import { cn } from "~/lib/utils";
 import { usePane } from "./ctx";
 import { Picker, Section } from "./ui";
 
-/** Tag autocomplete source, refetched when the tag list changes anywhere in the app. */
+/**
+ * The library's tag list, fetched once per change of the tag list (store.tagsRev) and shared app-wide. It is
+ * large (MBs, about a second on a big library), so the item pane must not fetch it per item shown: that made
+ * every click through the item list wait on it.
+ */
+let tagCache: { rev: number; list: Promise<Awaited<ReturnType<typeof api.tags>>> } | null = null;
+export function allTags() {
+	const rev = store.tagsRev();
+	if (!tagCache || tagCache.rev !== rev) {
+		const list = api.tags();
+		list.catch(() => { if (tagCache?.list === list) tagCache = null; }); // retry next time
+		tagCache = { rev, list };
+	}
+	return tagCache.list;
+}
+
+/** Tag autocomplete source: loads the tag list only once the user types. */
 export function createTagSource() {
-	const [all] = createResource(() => store.tagsRev(), () => api.tags());
-	return (q: string, exclude: string[] = []) => {
+	return async (q: string, exclude: string[] = []) => {
 		const needle = q.trim().toLowerCase();
 		if (!needle) return [];
-		return (all() ?? []).filter((t) => t.tag.toLowerCase().includes(needle) && !exclude.includes(t.tag)).slice(0, 12).map((t) => t.tag);
+		const all = await allTags().catch(() => []);
+		return all.filter((t) => t.tag.toLowerCase().includes(needle) && !exclude.includes(t.tag)).slice(0, 12).map((t) => t.tag);
 	};
 }
 
