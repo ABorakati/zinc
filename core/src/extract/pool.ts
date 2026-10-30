@@ -129,8 +129,12 @@ class Pool {
 	private all = new Set<PoolWorker>();
 	private waiters: (() => void)[] = [];
 	private active = 0;
+	/** Idle workers are stopped after this long without work (each holds a document worker's memory). */
+	idleMs = 60_000;
+	private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
 	private async acquire(): Promise<PoolWorker> {
+		clearTimeout(this.idleTimer);
 		while (this.active >= this.size) await new Promise<void>((r) => this.waiters.push(r));
 		this.active++;
 		let w = this.idle.pop();
@@ -150,7 +154,22 @@ class Pool {
 			this.idle.push(w);
 		}
 		this.waiters.shift()?.();
+		if (this.active === 0) {
+			clearTimeout(this.idleTimer);
+			this.idleTimer = setTimeout(() => this.stopIdle(), this.idleMs);
+			(this.idleTimer as { unref?: () => void }).unref?.();
+		}
 	}
+
+	/** Stop workers with nothing to do; the next extraction starts a fresh one (about half a second). */
+	private stopIdle(): void {
+		if (this.active) return;
+		for (const w of this.idle) { w.terminate(); this.all.delete(w); }
+		this.idle = [];
+	}
+
+	/** Tests only. */
+	get workerCount(): number { return this.all.size; }
 
 	async extractPdf(buf: ArrayBuffer): Promise<PdfText> {
 		const w = await this.acquire();
@@ -162,6 +181,7 @@ class Pool {
 	}
 
 	shutdown(): void {
+		clearTimeout(this.idleTimer);
 		for (const w of this.all) w.terminate();
 		this.all.clear();
 		this.idle = [];
@@ -174,9 +194,10 @@ const pool = new Pool();
  * buildDir: folder holding Zotero's built document-worker (worker.js, cmaps/, standard_fonts/...).
  * workerEntry: path to pdf-worker.ts. Both only matter before the first extraction starts a worker.
  */
-export function configureExtractPool(opts: { concurrency?: number; timeoutMs?: number; buildDir?: string; workerEntry?: string }): void {
+export function configureExtractPool(opts: { concurrency?: number; timeoutMs?: number; idleMs?: number; buildDir?: string; workerEntry?: string }): void {
 	if (opts.concurrency) pool.size = Math.max(1, Math.floor(opts.concurrency));
 	if (opts.timeoutMs) pool.timeoutMs = opts.timeoutMs;
+	if (opts.idleMs) pool.idleMs = opts.idleMs;
 	if (opts.buildDir) {
 		BUILD_DIR = pathToFileURL(opts.buildDir.replace(/[\\/]*$/, "/"));
 		docWorkerDir = opts.buildDir;
@@ -186,6 +207,11 @@ export function configureExtractPool(opts: { concurrency?: number; timeoutMs?: n
 
 export function extractPdfText(buf: ArrayBuffer): Promise<PdfText> {
 	return pool.extractPdf(buf);
+}
+
+/** Running document workers (tests). */
+export function extractWorkerCount(): number {
+	return pool.workerCount;
 }
 
 export function shutdownExtractPool(): void {
