@@ -2,7 +2,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { DocStructure, PdfRect, ViewerHandle } from "../contract";
-import { bestTarget, buildItems, firstItemOnPage, type ReflowItem } from "./build";
+import { bestTarget, buildItems, firstItemOnPage, tocEntries, type ReflowItem } from "./build";
 import { READING_CSS } from "./css";
 import {
 	contrastColor, DEFAULT_SETTINGS, FONTS, fontStack, isFontInstalled, LIMITS, palette, type ReadingSettings, type ThemeKind,
@@ -35,6 +35,7 @@ export interface ReflowProps {
 }
 
 const pad = (r: PdfRect, d: number): PdfRect => [r[0] - d, r[1] - d, r[2] + d, r[3] + d];
+const TOC_KEY = "rn.reading.toc";
 
 export function ReflowView(props: ReflowProps) {
 	let scroller!: HTMLDivElement;
@@ -57,10 +58,73 @@ export function ReflowView(props: ReflowProps) {
 		for (const el of Array.from(article.children) as HTMLElement[]) {
 			const p = el.dataset.page;
 			if (p === undefined) continue;
-			if (el.getBoundingClientRect().bottom > top) { topPage = Number(p); return; }
+			if (el.getBoundingClientRect().bottom > top) { topPage = Number(p); break; }
 		}
+		trackSection(top);
 	};
 	const onScroll = () => { if (!raf) raf = requestAnimationFrame(trackTop); };
+
+	// ------------------------------------------------------------ contents (from the headings the layout analysis found,
+	// so it works for PDFs without bookmarks)
+	const toc = createMemo(() => tocEntries(items()));
+	// pinned: always shown; auto: a slim tab at the edge that opens on hover; closed: only the "Contents" button.
+	// Where it sits (dragged by its header) is remembered too.
+	type TocPrefs = { mode: "pinned" | "auto" | "closed"; x?: number; y?: number };
+	const [tocPrefs, setTocPrefsRaw] = createSignal<TocPrefs>((() => {
+		try {
+			const v = JSON.parse(localStorage.getItem(TOC_KEY) ?? "null") as TocPrefs | null;
+			if (v && (v.mode === "pinned" || v.mode === "auto" || v.mode === "closed")) return v;
+		} catch { /* storage unavailable or old format */ }
+		return { mode: window.innerWidth >= 1200 ? "pinned" : "auto" };
+	})());
+	const setTocPrefs = (p: Partial<TocPrefs>) => {
+		const next = { ...tocPrefs(), ...p };
+		setTocPrefsRaw(next);
+		try { localStorage.setItem(TOC_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+	};
+	const [tocPeek, setTocPeek] = createSignal(false); // auto mode: open while hovered
+	let peekTimer: ReturnType<typeof setTimeout> | undefined;
+	const peek = (on: boolean) => { clearTimeout(peekTimer); if (on) setTocPeek(true); else peekTimer = setTimeout(() => setTocPeek(false), 450); };
+	onCleanup(() => clearTimeout(peekTimer));
+	const tocShown = () => tocPrefs().mode === "pinned" || (tocPrefs().mode === "auto" && tocPeek());
+	/** Drag the panel by its header; the position is kept inside the view and remembered. */
+	const startDrag = (e: PointerEvent) => {
+		if ((e.target as HTMLElement).closest("button")) return;
+		const nav = (e.currentTarget as HTMLElement).closest<HTMLElement>(".rr-toc")!;
+		const host = nav.offsetParent as HTMLElement;
+		const r = nav.getBoundingClientRect(), h = host.getBoundingClientRect();
+		const dx = e.clientX - r.left, dy = e.clientY - r.top;
+		const move = (ev: PointerEvent) => {
+			const x = Math.max(0, Math.min(ev.clientX - dx - h.left, h.width - r.width));
+			const y = Math.max(0, Math.min(ev.clientY - dy - h.top, h.height - 40));
+			nav.style.left = `${x}px`; nav.style.top = `${y}px`;
+		};
+		const up = () => {
+			window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+			setTocPrefs({ x: parseFloat(nav.style.left), y: parseFloat(nav.style.top) });
+		};
+		window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+		e.preventDefault();
+	};
+	const tocPos = (): JSX.CSSProperties => {
+		const p = tocPrefs();
+		return p.x === undefined ? {} : { left: `${p.x}px`, top: `${p.y ?? 10}px` };
+	};
+	const [section, setSection] = createSignal<string | null>(null);
+	/** The section being read: the last heading above the top of the view (with a little lead). */
+	const trackSection = (top: number) => {
+		let cur: string | null = null;
+		for (const e of toc()) {
+			const el = article?.querySelector<HTMLElement>(`[data-item="${CSS.escape(e.id)}"]`);
+			if (!el) continue;
+			if (el.getBoundingClientRect().top <= top + 80) cur = e.id; else break;
+		}
+		setSection(cur);
+	};
+	const goToSection = (id: string) => {
+		const el = article?.querySelector<HTMLElement>(`[data-item="${CSS.escape(id)}"]`);
+		if (el) goToEl(el, "start");
+	};
 
 	let entered = false;
 	createEffect(() => {
@@ -108,12 +172,12 @@ export function ReflowView(props: ReflowProps) {
 		goToEl(a ?? el);
 		return true;
 	};
-	const goToEl = (el: HTMLElement) => {
+	const goToEl = (el: HTMLElement, block?: ScrollLogicalPosition) => {
 		if (!article) return;
 		back.push(scroller.scrollTop);
 		if (back.length > 30) back.shift();
 		setBackCount(back.length);
-		el.scrollIntoView({ block: el.offsetHeight < scroller.clientHeight * 0.6 ? "center" : "start", behavior: "smooth" });
+		el.scrollIntoView({ block: block ?? (el.offsetHeight < scroller.clientHeight * 0.6 ? "center" : "start"), behavior: "smooth" });
 		for (const f of article.querySelectorAll(".rr-flash")) f.classList.remove("rr-flash");
 		void el.offsetWidth; // restart the animation
 		el.classList.add("rr-flash");
@@ -248,6 +312,36 @@ export function ReflowView(props: ReflowProps) {
 			</div>
 			<Show when={menuOpen()}>
 				<Typography settings={s} set={props.setSettings} reset={props.resetSettings} close={() => setMenuOpen(false)} />
+			</Show>
+			<Show when={toc().length >= 2}>
+				<Show when={tocPrefs().mode === "closed"}>
+					<button class="rr-reading-btn rr-toc-toggle" title="Show contents" onClick={() => setTocPrefs({ mode: "pinned" })} data-testid="rr-toc-open">☰ Contents</button>
+				</Show>
+				<Show when={tocPrefs().mode === "auto" && !tocPeek()}>
+					{/* auto-hide: a slim tab at the left edge; hovering it slides the contents out */}
+					<div class="rr-toc-edge" title="Contents" onPointerEnter={() => peek(true)} data-testid="rr-toc-edge"><span>Contents</span></div>
+				</Show>
+				<Show when={tocShown()}>
+					<nav class="rr-toc" classList={{ "rr-toc-auto": tocPrefs().mode === "auto" }} style={tocPos()} aria-label="Contents" data-testid="rr-toc"
+						onPointerEnter={() => peek(true)} onPointerLeave={() => peek(false)}>
+						<div class="rr-toc-head" onPointerDown={startDrag} title="Drag to move">
+							<span>Contents</span>
+							<span class="rr-toc-actions">
+								<button class="rr-toc-btn" classList={{ on: tocPrefs().mode === "pinned" }} data-testid="rr-toc-pin"
+									title={tocPrefs().mode === "pinned" ? "Unpin (hide until you hover the edge)" : "Pin open"}
+									onClick={() => setTocPrefs({ mode: tocPrefs().mode === "pinned" ? "auto" : "pinned" })}>📌</button>
+								<Show when={tocPrefs().x !== undefined}>
+									<button class="rr-toc-btn" title="Put back at the side" onClick={() => setTocPrefs({ x: undefined, y: undefined })}>⇤</button>
+								</Show>
+								<button class="rr-toc-btn" title="Close contents" data-testid="rr-toc-close" onClick={() => { setTocPeek(false); setTocPrefs({ mode: "closed" }); }}>×</button>
+							</span>
+						</div>
+						<For each={toc()}>{(e) => (
+							<button class={`rr-toc-item rr-toc-l${e.level}`} classList={{ on: section() === e.id }} title={e.text}
+								onClick={() => goToSection(e.id)}>{e.text}</button>
+						)}</For>
+					</nav>
+				</Show>
 			</Show>
 			<div class="rr-reading-scroll" ref={scroller} onScroll={onScroll} onClick={onClick} onMouseOver={onOver} onMouseOut={onOut}>
 				<Show when={props.state().phase === "ready"} fallback={<Status state={props.state} retry={props.retry} />}>

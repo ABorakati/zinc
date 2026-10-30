@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Block, DocStructure } from "../../src/contract";
-import { bestTarget, buildItems, continuesInto, dehyphenate, firstItemOnPage, fixGlyphs, joinHtml } from "../../src/reflow/build";
+import { bestTarget, buildItems, continuesInto, tocEntries, dehyphenate, firstItemOnPage, fixGlyphs, joinHtml } from "../../src/reflow/build";
 import {
 	contrastColor, contrastRatio, DEFAULT_SETTINGS, fontStack, loadSettings, palette, parseHex, sanitize, saveSettings, STORAGE_KEY,
 } from "../../src/reflow/settings";
@@ -97,6 +97,21 @@ describe("skipping furniture", () => {
 		expect(bestTarget(cands, 5, 560)).toBe(3); // below everything: nearest top
 		expect(bestTarget(cands, 5)).toBe(0); // no top: highest block on the page
 		expect(bestTarget(cands, 4, 600)).toBe(-1);
+	});
+	test("tocEntries: headings with relative levels, skips misdetected long ones, adds References", () => {
+		const items = buildItems(doc([
+			blk("t", "title", "Paper title"),
+			blk("h1", "heading", "Introduction", 0, { level: 2 }),
+			blk("h2", "heading", "Study design", 1, { level: 3 }),
+			blk("h3", "heading", "x".repeat(150), 1, { level: 2 }),
+			blk("p", "paragraph", "Body."),
+			blk("r1", "reference", "1. A ref", 5),
+		]));
+		expect(tocEntries(items).map((e) => [e.text.slice(0, 12), e.level])).toEqual([["Introduction", 1], ["Study design", 2], ["References", 1]]);
+		const named = buildItems(doc([blk("h", "heading", "References", 5, { level: 2 }), blk("r1", "reference", "1. A ref", 5)]));
+		expect(tocEntries(named).map((e) => e.text)).toEqual(["References"]);
+		const real = tocEntries(buildItems(convertSdt(paper as unknown as Sdt)));
+		expect(real.length).toBeGreaterThan(3);
 	});
 	test("firstItemOnPage", () => {
 		const its = [{ page: 0 }, { page: 0 }, { page: 2 }, { page: 3 }];

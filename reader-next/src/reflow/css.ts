@@ -44,6 +44,30 @@ export const READING_CSS = `
 .rr-article a.rx-cite[data-kind=other] { font-weight: inherit; background: none; border-bottom: 1px dotted color-mix(in srgb, var(--rr-cite) 55%, transparent); border-radius: 0; }
 .rr-article a.rx-cite:hover { text-decoration: underline; background: color-mix(in srgb, var(--rr-cite) 24%, transparent); }
 
+.rr-toc { position: absolute; top: 10px; left: 14px; z-index: 5; width: 236px; max-height: calc(100% - 28px); overflow-y: auto; box-sizing: border-box;
+  padding: 8px 6px 10px; border: 1px solid var(--rr-rule); border-radius: 10px; background: color-mix(in srgb, var(--rn-reading-bg) 92%, transparent);
+  backdrop-filter: blur(6px); font: 12.5px/1.35 system-ui, "Segoe UI", sans-serif; }
+.rr-toc-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 6px 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--rr-muted); cursor: grab; user-select: none; touch-action: none; }
+.rr-toc-head:active { cursor: grabbing; }
+.rr-toc-actions { display: flex; gap: 2px; }
+.rr-toc-btn { border: 0; background: none; color: var(--rr-muted); font-size: 13px; line-height: 1; cursor: pointer; padding: 3px 4px; border-radius: 5px; filter: grayscale(1); opacity: .7; }
+.rr-toc-btn:hover { color: var(--rn-reading-fg); opacity: 1; background: color-mix(in srgb, var(--rn-reading-fg) 8%, transparent); }
+.rr-toc-btn.on { filter: none; opacity: 1; }
+.rr-toc-auto { box-shadow: 0 10px 30px rgba(0,0,0,.18); animation: rr-toc-in .14s ease-out; }
+@keyframes rr-toc-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+.rr-toc-edge { position: absolute; top: 50%; left: 0; z-index: 5; transform: translateY(-50%); width: 14px; height: 120px; border: 1px solid var(--rr-rule); border-left: 0;
+  border-radius: 0 8px 8px 0; background: var(--rn-reading-bg); cursor: pointer; display: grid; place-items: center; opacity: .75; }
+.rr-toc-edge span { writing-mode: vertical-rl; transform: rotate(180deg); font: 600 9.5px system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--rr-muted); }
+.rr-toc-edge:hover { opacity: 1; width: 18px; }
+.rr-toc-item { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--rr-muted); cursor: pointer;
+  padding: 4px 6px; border-radius: 6px; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 2px solid transparent; }
+.rr-toc-item:hover { color: var(--rn-reading-fg); background: color-mix(in srgb, var(--rn-reading-fg) 6%, transparent); }
+.rr-toc-item.on { color: var(--rn-reading-fg); font-weight: 600; border-left-color: var(--rr-cite); border-radius: 0 6px 6px 0; }
+.rr-toc-l2 { padding-left: 18px; }
+.rr-toc-l3 { padding-left: 30px; font-size: 12px; }
+.rr-toc-toggle { position: absolute; top: 10px; left: 14px; z-index: 5; }
+@media (max-width: 1100px) { .rr-toc { width: 200px; } }
+
 .rr-flash { animation: rr-flash 1.8s ease-out; border-radius: 4px; }
 @keyframes rr-flash { 0%, 35% { background: color-mix(in srgb, var(--rr-cite) 22%, transparent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--rr-cite) 22%, transparent); } 100% { background: transparent; box-shadow: 0 0 0 6px transparent; } }
 

@@ -184,6 +184,34 @@ export function bestTarget(cands: { blocks: Block[] }[], page: number, top?: num
 	return best;
 }
 
+export interface TocEntry { id: string; text: string; level: number }
+
+/**
+ * Contents for the reading view, from the headings the layout analysis detected (works without PDF bookmarks).
+ * Levels are made relative (the top level found becomes 1, at most 3 levels). Over-long "headings" are paragraphs
+ * the analysis misjudged and are skipped; the reference list gets an entry if no heading already names it.
+ */
+export function tocEntries(items: ReflowItem[]): TocEntry[] {
+	const out: TocEntry[] = [];
+	let refsNamed = false;
+	for (const it of items) {
+		if (it.kind === "heading") {
+			const text = stripTags(it.html).replace(/\s+/g, " ").trim();
+			if (!text || text.length > 120) continue;
+			if (/^(references|bibliography|works cited|literature cited)\b/i.test(text)) refsNamed = true;
+			out.push({ id: it.id, text, level: it.level });
+		}
+		else if (it.kind === "refs" && !refsNamed) {
+			out.push({ id: it.id, text: "References", level: 0 });
+			refsNamed = true;
+		}
+	}
+	const real = out.filter((e) => e.level > 0).map((e) => e.level);
+	const top = real.length ? Math.min(...real) : 1;
+	for (const e of out) e.level = e.level === 0 ? 1 : Math.min(e.level - top + 1, 3);
+	return out;
+}
+
 /** First item that starts on or after `page` (0-based). */
 export function firstItemOnPage<T extends { page: number }>(items: T[], page: number): number {
 	const i = items.findIndex((it) => it.page === page);
