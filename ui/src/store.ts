@@ -73,6 +73,28 @@ function createStore() {
 
 	const [collections, { refetch: refetchCollections }] = createResource(collectionsRev, () => api.collections());
 
+		// Browser-extension saves (core: /connector/*) go to the collection selected here, and bump a revision the
+		// UI polls so new items show up. Best effort: failures are ignored.
+		createEffect(() => {
+			const v = view();
+			void fetch("/api/ui/selection", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(v.kind === "collection" || v.kind === "search" ? { kind: v.kind, key: v.key } : { kind: v.kind }),
+			}).catch(() => {});
+		});
+		if (typeof document !== "undefined") {
+			let lastRev: number | null = null;
+			setInterval(() => {
+				if (document.hidden) return;
+				fetch("/api/ui/selection").then((r) => r.json()).then((s: { rev?: number }) => {
+					if (typeof s.rev !== "number") return;
+					if (lastRev !== null && s.rev !== lastRev) { bumpItems(); bumpCollections(); bumpTags(); }
+					lastRev = s.rev;
+				}).catch(() => {});
+			}, 2500);
+		}
+
 	const query = createMemo<ItemQuery>(() => {
 		const v = view();
 		const s = sort();

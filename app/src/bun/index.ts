@@ -5,6 +5,7 @@ import { VIEWS_FOLDER } from "electrobun/main/paths";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { startServer } from "../../../core/src/server";
+import { startZoteroPort } from "../../../core/src/zport";
 import { configureExtractPool } from "../../../core/src/extract";
 import { startSyncService, stopSync } from "../../../core/src/sync";
 import { createZoteroBackends } from "../../../core/src/zotero-db";
@@ -50,6 +51,15 @@ const core = startServer({
 	devReload: !!ROOT,
 });
 if (ROOT) console.log(`[dev] serving UI and readers from ${ROOT} with live reload`);
+
+// Zotero's port (23119) for the browser Connector and Word: taken only while Zotero itself isn't running,
+// re-checked every 30 s so zotero-next steps in when Zotero quits. ZN_ZPORT overrides the port (tests); 0 disables.
+const zport = process.env.ZN_ZPORT === "0" ? null : startZoteroPort(core.db, {
+	port: Number(process.env.ZN_ZPORT) || undefined,
+	retryMs: 30_000,
+	onStart: (p) => console.log(`[zport] answering Zotero Connector / Word requests on ${p}`),
+});
+Electrobun.events.on("before-quit", () => zport?.stop());
 
 // Two-way sync with the local Zotero library (reading is always on; writing is opt-in in the UI).
 if (process.env.ZN_SYNC !== "0") {
