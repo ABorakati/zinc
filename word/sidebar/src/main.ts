@@ -304,9 +304,9 @@ async function startEdit() {
 async function deleteCited() {
 	const v = cursorView;
 	if (!v) return;
-	if (!confirm("Delete this citation from the document?")) return;
+	// no confirmation: the delete is one Word undo step (Ctrl+Z brings it back)
 	const r = await busy("Deleting citation…", () => app.deleteCitation(v.ref, v.citationID));
-	if (r) toast("Citation deleted. " + fmtReport(r));
+	if (r) toast("Citation deleted (Ctrl+Z in the document to undo). " + fmtReport(r));
 	cursorView = null;
 	renderCited();
 }
