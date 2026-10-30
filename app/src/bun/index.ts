@@ -2,6 +2,7 @@ import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
 import { setBrowserBridge } from "../../../core/src/fulltext/browser-bridge";
 import { createSigninBridge } from "./signin";
 import { watchWindowMemory } from "./memory";
+import { applyWindowIcon } from "./windowicon";
 import { VIEWS_FOLDER } from "electrobun/main/paths";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -98,3 +99,4 @@ const mainWindow = new BrowserWindow({
 	hidden: process.env.ZN_HIDDEN === "1",
 });
 watchWindowMemory(mainWindow);
+applyWindowIcon(join(VIEWS_FOLDER, "app-icon.ico"));

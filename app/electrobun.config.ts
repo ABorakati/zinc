@@ -18,6 +18,7 @@ export default {
 			"../note-host/dist": "views/note-host",
 			"../reader-next/dist": "views/reader-next",
 			"assets/icon.png": "views/app-icon.png",
+			"assets/icon.ico": "views/app-icon.ico",
 			// Full-text extraction runs this in a Bun worker (it can't be bundled into main).
 			"../core/src/extract/pdf-worker.ts": "bun/pdf-worker.ts",
 		},
