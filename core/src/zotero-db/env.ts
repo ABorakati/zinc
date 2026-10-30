@@ -106,7 +106,7 @@ export function findBaseAttachmentPath(profilesDir?: string): string | null {
 	return typeof v === "string" && v ? v : null;
 }
 
-/** True if any zotero.exe process exists (conservative: does not look at which profile it uses). */
+/** True if any Zotero process exists (conservative: does not look at which profile it uses). */
 export async function isZoteroProcessRunning(): Promise<boolean> {
 	try {
 		if (process.platform === "win32") {
@@ -118,7 +118,8 @@ export async function isZoteroProcessRunning(): Promise<boolean> {
 			await p.exited;
 			return out.includes('"zotero.exe"');
 		}
-		const p = Bun.spawn(["pgrep", "-x", "zotero"], { stdout: "pipe", stderr: "ignore" });
+		// "zotero" on macOS, "zotero-bin" from the Linux tarball; pgrep reads the name as a regular expression
+		const p = Bun.spawn(["pgrep", "-xi", "zotero|zotero-bin"], { stdout: "pipe", stderr: "ignore" });
 		const out = await new Response(p.stdout).text();
 		await p.exited;
 		return out.trim().length > 0;

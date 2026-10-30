@@ -3,6 +3,7 @@ import { setBrowserBridge } from "../../../core/src/fulltext/browser-bridge";
 import { createSigninBridge } from "./signin";
 import { watchWindowMemory } from "./memory";
 import { applyWindowIcon } from "./windowicon";
+import { installMacMenu } from "./macmenu";
 import { VIEWS_FOLDER } from "electrobun/main/paths";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -10,7 +11,7 @@ import { startServer } from "../../../core/src/server";
 import { startZoteroPort } from "../../../core/src/zport";
 import { configureExtractPool } from "../../../core/src/extract";
 import { startSyncService, stopSync } from "../../../core/src/sync";
-import { createZoteroBackends, findZoteroDataDir } from "../../../core/src/zotero-db";
+import { createZoteroBackends, findZoteroDataDir, isZoteroProcessRunning } from "../../../core/src/zotero-db";
 import { configuredZoteroDataDir } from "../../../core/src/files/config";
 import { setFolderPicker } from "../../../core/src/files/api";
 
@@ -73,7 +74,7 @@ if (process.env.ZN_SYNC !== "0") {
 	// else what Zotero's own prefs say. The same folder feeds the backends and the sync service.
 	const zoteroDir = configuredZoteroDataDir(dbPath) ?? findZoteroDataDir();
 	const zotero = createZoteroBackends(zoteroDir, { keepBackups: 2 });
-	void startSyncService(core.db, { dataDir: zoteroDir, ...zotero }).catch((e) => console.warn("[sync] not started:", e));
+	void startSyncService(core.db, { dataDir: zoteroDir, ...zotero, isZoteroRunning: isZoteroProcessRunning }).catch((e) => console.warn("[sync] not started:", e));
 	Electrobun.events.on("before-quit", () => void stopSync(core.db));
 }
 
@@ -91,6 +92,8 @@ Electrobun.events.on("before-quit", () => signin.closeAll());
 if (process.env.ZN_SIGNIN_SELFTEST === "1") {
 	void import("./signin-selftest").then((m) => m.runSigninSelftest(signin));
 }
+
+installMacMenu();
 
 const mainWindow = new BrowserWindow({
 	title: "zotero-next",

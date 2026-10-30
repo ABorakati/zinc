@@ -16,6 +16,8 @@ export interface StartSyncServiceOptions {
 	/** Backends from core/src/zotero-db; when omitted they are looked up by name (best effort). */
 	reader?: ZoteroReader;
 	writer?: ZoteroWriter;
+	/** Is the Zotero app open? Default: a Windows-only process check, which reports "closed" elsewhere. */
+	isZoteroRunning?: () => Promise<boolean>;
 }
 
 /**
@@ -39,5 +41,5 @@ export async function startSyncService(db: Database, opts: StartSyncServiceOptio
 		}
 	}
 	if (!reader || !writer) return null;
-	return startSync(db, { dataDir, reader, writer });
+	return startSync(db, { dataDir, reader, writer, isZoteroRunning: opts.isZoteroRunning });
 }

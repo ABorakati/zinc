@@ -69,7 +69,7 @@ if (typeof window !== "undefined") {
 	});
 
 	window.addEventListener("keydown", (e) => {
-		if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
+		if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
 			e.preventDefault();
 			openIdentifier();
 		}

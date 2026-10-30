@@ -192,7 +192,7 @@ export function Viewer(props: { ctl: ViewerController; outline: OutlineNode[] })
 		};
 		scroller.addEventListener("scroll", onScroll, { passive: true });
 		const onWheel = (e: WheelEvent) => {
-			if (!e.ctrlKey) return;
+			if (!e.ctrlKey && !e.metaKey) return; // a trackpad pinch also arrives as ctrlKey
 			e.preventDefault();
 			const r = scroller.getBoundingClientRect();
 			ctl.zoomBy(Math.exp(-e.deltaY * 0.0022), { x: e.clientX - r.left, y: e.clientY - r.top });
