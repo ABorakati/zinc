@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zotero Next</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+	<header class="bar">
+		<div class="doc" id="docline">Zotero Next</div>
+		<button id="btn-settings" class="icon" title="Document and library settings" aria-label="Settings">
+			&#9881;
+		</button>
+	</header>
+
+	<section id="cited" class="card" hidden aria-live="polite"></section>
+
+	<section id="add">
+		<label class="sr" for="q">Search library</label>
+		<input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search your library: title, author, year, DOI">
+		<ul id="results" class="results" role="listbox"></ul>
+		<div id="status" class="muted small"></div>
+		<div id="tray"></div>
+		<div class="row" id="tray-actions" hidden>
+			<button id="insert" class="primary">Insert citation</button>
+			<button id="cancel" class="ghost" hidden>Cancel edit</button>
+			<button id="clear" class="ghost">Clear</button>
+		</div>
+	</section>
+
+	<footer class="row">
+		<button id="bib">Insert bibliography</button>
+		<button id="refresh">Refresh all</button>
+	</footer>
+
+	<section id="settings" class="card" hidden></section>
+	<div id="toast" role="status" aria-live="polite"></div>
+</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

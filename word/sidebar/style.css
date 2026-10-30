@@ -1,0 +1,116 @@
+/* Same palette and feel as zotero-next's own UI (ui/src/styles.css), light and dark. */
+:root {
+	color-scheme: light dark;
+	--background: oklch(0.995 0 0);
+	--foreground: oklch(0.25 0.01 260);
+	--card: oklch(0.975 0.002 260);
+	--muted: oklch(0.96 0.003 260);
+	--muted-foreground: oklch(0.52 0.012 260);
+	--border: oklch(0.9 0.004 260);
+	--input: oklch(0.86 0.005 260);
+	--ring: oklch(0.58 0.15 255);
+	--primary: oklch(0.55 0.16 255);
+	--primary-foreground: oklch(0.99 0 0);
+	--accent: oklch(0.945 0.005 260);
+	--destructive: oklch(0.55 0.2 27);
+	--success-bg: oklch(0.95 0.05 150);
+	--success-fg: oklch(0.45 0.12 150);
+	--warning-bg: oklch(0.96 0.06 90);
+	--warning-fg: oklch(0.5 0.12 80);
+	--radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--background: oklch(0.2 0.006 260);
+		--foreground: oklch(0.92 0.005 260);
+		--card: oklch(0.175 0.006 260);
+		--muted: oklch(0.24 0.006 260);
+		--muted-foreground: oklch(0.7 0.012 260);
+		--border: oklch(0.3 0.008 260);
+		--input: oklch(0.34 0.008 260);
+		--accent: oklch(0.28 0.008 260);
+		--success-bg: oklch(0.28 0.05 150);
+		--success-fg: oklch(0.82 0.1 150);
+		--warning-bg: oklch(0.3 0.05 90);
+		--warning-fg: oklch(0.85 0.1 90);
+	}
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+	background: var(--background);
+	color: var(--foreground);
+	font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+#app { display: flex; flex-direction: column; gap: 10px; padding: 10px; min-height: 100%; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.small { font-size: 12px; }
+.muted { color: var(--muted-foreground); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.doc { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; }
+.card h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); font-weight: 600; }
+
+button {
+	font: inherit; color: inherit; cursor: pointer;
+	background: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px;
+}
+button:hover { background: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+button.primary { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+button.primary:hover { filter: brightness(1.08); }
+button.ghost { background: transparent; }
+button.icon { padding: 4px; line-height: 0; background: transparent; border-color: transparent; }
+button.link { background: none; border: none; padding: 0; color: var(--primary); text-decoration: underline; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+
+input[type="search"], input[type="text"], select, textarea {
+	font: inherit; color: inherit; width: 100%;
+	background: var(--background); border: 1px solid var(--input); border-radius: 6px; padding: 6px 8px;
+}
+textarea { resize: vertical; min-height: 44px; }
+
+.results { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 38vh; overflow-y: auto; }
+.results li { padding: 6px 8px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.results li:hover, .results li[aria-selected="true"] { background: var(--accent); }
+.results li[aria-selected="true"] { border-color: var(--ring); }
+.results .t { font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.results .m { color: var(--muted-foreground); font-size: 12px; }
+.results li.added .t::after { content: " (added)"; color: var(--success-fg); font-weight: 400; }
+
+.pick { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; margin-top: 8px; }
+.pick .head { display: flex; justify-content: space-between; gap: 8px; }
+.pick .t { font-weight: 600; }
+.pick .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.pick .grid .full { grid-column: 1 / -1; }
+.pick label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted-foreground); }
+.pick label.check { flex-direction: row; align-items: center; gap: 6px; }
+
+.badge { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 99px; background: var(--muted); color: var(--muted-foreground); }
+.badge.ok { background: var(--success-bg); color: var(--success-fg); }
+.badge.warn { background: var(--warning-bg); color: var(--warning-fg); }
+
+.cite-item { padding: 8px 0; border-top: 1px solid var(--border); }
+.cite-item:first-of-type { border-top: none; padding-top: 0; }
+.cite-item .t { font-weight: 600; }
+.cite-item .abs { margin: 6px 0 0; white-space: pre-wrap; max-height: 9.5em; overflow: hidden; position: relative; }
+.cite-item .abs.open { max-height: none; }
+.cite-item .abs.clamped::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2.4em; background: linear-gradient(transparent, var(--card)); }
+.cite-item .abs.open::after { display: none; }
+.cite-item .acts { margin-top: 6px; }
+
+.settings-grid { display: grid; gap: 10px; }
+.settings-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted-foreground); }
+.styles { list-style: none; margin: 4px 0 0; padding: 0; max-height: 26vh; overflow-y: auto; }
+.styles li { padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.styles li:hover { background: var(--accent); }
+.styles li.current { font-weight: 600; background: var(--accent); }
+
+#toast { position: fixed; left: 10px; right: 10px; bottom: 10px; pointer-events: none; display: flex; flex-direction: column; gap: 6px; }
+#toast .t { pointer-events: auto; background: var(--foreground); color: var(--background); padding: 8px 10px; border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .25); }
+#toast .t.err { background: var(--destructive); color: white; }
+footer { margin-top: auto; padding-top: 6px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { button { transition: background-color .12s; } }

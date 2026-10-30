@@ -85,14 +85,27 @@ function createStore() {
 		});
 		if (typeof document !== "undefined") {
 			let lastRev: number | null = null;
+			let lastReveal: number | null = null;
+			// "Open in zotero-next" from the Word sidebar (POST /api/ui/reveal): show the item in the library tab.
+			const doReveal = (key: string, title: string) => {
+				store_revealItem(key, title);
+			};
 			setInterval(() => {
-				if (document.hidden) return;
-				fetch("/api/ui/selection").then((r) => r.json()).then((s: { rev?: number }) => {
+				// the reveal check also runs while the window is hidden/minimized, the list refresh only when visible
+				fetch("/api/ui/selection").then((r) => r.json()).then((s: { rev?: number; reveal?: { key: string; title: string; seq: number; at?: number } | null }) => {
 					if (typeof s.rev !== "number") return;
+					const rv = s.reveal;
+					if (rv && typeof rv.seq === "number") {
+						// on the first poll only a reveal from the last minute counts (the sidebar may have started this app for it)
+						const fresh = lastReveal !== null || (typeof rv.at === "number" && Date.now() - rv.at < 60_000);
+						if (rv.seq !== lastReveal && fresh) doReveal(rv.key, rv.title);
+						lastReveal = rv.seq;
+					} else if (lastReveal === null) lastReveal = 0;
+					if (document.hidden) return;
 					if (lastRev !== null && s.rev !== lastRev) { bumpItems(); bumpCollections(); bumpTags(); }
 					lastRev = s.rev;
 				}).catch(() => {});
-			}, 2500);
+			}, 1500);
 		}
 
 	const query = createMemo<ItemQuery>(() => {
@@ -110,6 +123,17 @@ function createStore() {
 			dir: s.dir,
 		};
 	});
+
+	/** Show an item in the library tab: library view, no tag/filter, the item selected (the title filter puts it in the list). */
+	function store_revealItem(key: string, title: string) {
+		setActiveTab("library");
+		setView({ kind: "library" });
+		setTag(null);
+		setFulltext(false);
+		setFilter(title.trim() ? `"${title.replace(/"/g, " ").trim()}"` : "");
+		selectOnly(key, 0);
+		try { window.focus(); } catch { /* ignore */ }
+	}
 
 	function selectOnly(key: string | null, index = -1) {
 		setSelected(key ? new Set([key]) : new Set<string>());

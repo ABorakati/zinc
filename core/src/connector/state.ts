@@ -60,4 +60,35 @@ export function recentTargetIds(): Set<string> {
 export function resetConnectorState(): void {
 	selection = { kind: "library" };
 	recents = [];
+	reveal = null;
+	revealSeq = 0;
+}
+
+// "Show this item in the library" requests (POST /api/ui/reveal, used by the Word sidebar). The UI polls
+// /api/ui/selection, sees a new `seq` and selects the item. In memory only: a request is for the running UI.
+export interface RevealRequest {
+	key: string;
+	title: string;
+	seq: number;
+	/** Date.now() when requested; a UI that starts later still acts on a recent one. */
+	at: number;
+}
+let reveal: RevealRequest | null = null;
+let revealSeq = 0;
+
+export function getReveal(): RevealRequest | null {
+	return reveal;
+}
+
+/** Ask the UI to show an item (any change moves `rev` too, so a UI that only watches `rev` reloads). */
+export function requestReveal(key: string, title: string): RevealRequest {
+	reveal = { key, title, seq: ++revealSeq, at: Date.now() };
+	bumpRev();
+	return reveal;
+}
+
+/** Tests only. */
+export function resetReveal(): void {
+	reveal = null;
+	revealSeq = 0;
 }

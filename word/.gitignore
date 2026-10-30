@@ -1,0 +1,8 @@
+dist/
+node_modules/
+addin/obj/
+addin/bin/
+harness/obj/
+harness/bin/
+bin/
+obj/
