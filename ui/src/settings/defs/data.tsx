@@ -268,7 +268,7 @@ registerSettings([
 			</Show>
 		),
 	},
-	{ id: "cite.wordProcessor", section: "cite", label: "Word processor plugins", description: "Install the Word, LibreOffice and Google Docs integrations.", keywords: ["word", "libreoffice", "google docs", "plugin"], unavailable: true },
+	{ id: "cite.wordProcessor", section: "cite", group: "Word processors", label: "LibreOffice and Google Docs", description: "Cite-while-you-write for LibreOffice and Google Docs.", keywords: ["libreoffice", "google docs", "plugin"], unavailable: true },
 ]);
 
 // ---------------------------------------------------------------- Export (remembered by the Export dialog)

@@ -17,7 +17,8 @@ import { handleFilesApi } from "./files/api";
 
 // Feature route modules; each returns null for paths outside its prefix.
 import { handleUiApi } from "./connector/ui";
-const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi];
+import { handleIntegrationsApi } from "./integrations/api";
+const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi, handleIntegrationsApi];
 import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
 import { indexItem, search } from "./search";
