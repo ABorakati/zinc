@@ -105,6 +105,8 @@
 .rn-text { pointer-events: auto; cursor: text; user-select: text; line-height: 1; }
 .rn-text .rn-run { position: absolute; white-space: pre; color: transparent; transform-origin: 0 0; font-family: "Segoe UI", system-ui, sans-serif; }
 .rn-text ::selection { background: rgba(40, 110, 255, 0.35); color: transparent; }
+/* word separator: selectable and copied, but too narrow to paint a highlight over the next word */
+.rn-text .rn-sp { font-size: 1px; }
 .rn-hit { position: absolute; background: rgba(255, 214, 0, 0.45); border-radius: 2px; }
 .rn-hit-cur { background: rgba(255, 128, 0, 0.6); outline: 2px solid rgba(255, 128, 0, 0.9); }
 .rn-flash { position: absolute; border-radius: 3px; background: rgba(255, 214, 0, 0.5); outline: 2px solid rgba(255, 160, 0, 0.9); animation: rn-flash 1.8s ease-out forwards; }

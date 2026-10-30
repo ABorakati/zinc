@@ -60,6 +60,8 @@ export class ViewerController implements ViewerHandle {
 
 	// ---- plugins
 	sidebarTabs = createSignal<SidebarTabDef[]>([]);
+	/** Request from a plugin to open the sidebar on a tab (Viewer.tsx applies it). */
+	sidebarRequest = createSignal<{ id: string } | null>(null, { equals: false });
 	toolbarBtns = createSignal<ToolbarBtnDef[]>([]);
 	alternate = createSignal<AlternateRender | null>(null);
 	private overlayCbs = new Set<OverlayCb>();
@@ -293,6 +295,19 @@ export class ViewerController implements ViewerHandle {
 	pageText(index: number) {
 		return this.loadText(index).then((d) => ({ text: d.text, rects: d.rects }));
 	}
+	/** Crop of a page region as a canvas, at most maxWidth CSS px wide (sharp on high-DPI screens). */
+	async renderRegion(page: number, rect: PdfRect, maxWidth: number): Promise<HTMLCanvasElement> {
+		const w = Math.max(1, rect[2] - rect[0]);
+		const css = Math.min(maxWidth / w, 4);
+		const dpr = Math.min(window.devicePixelRatio || 1, 2);
+		const img = await this.pdf.renderRect(page, rect, css * dpr);
+		const canvas = document.createElement("canvas");
+		canvas.width = img.width;
+		canvas.height = img.height;
+		canvas.style.width = `${Math.round(img.width / dpr)}px`;
+		canvas.getContext("2d")!.putImageData(new ImageData(img.data, img.width, img.height), 0, 0);
+		return canvas;
+	}
 	loadText(index: number): Promise<PageTextData> {
 		const c = this.textCache.get(index);
 		if (c) return Promise.resolve(c);
@@ -307,6 +322,12 @@ export class ViewerController implements ViewerHandle {
 	addSidebarTab(tab: SidebarTabDef) {
 		this.sidebarTabs[1]((t) => [...t.filter((x) => x.id !== tab.id), tab]);
 		return () => this.sidebarTabs[1]((t) => t.filter((x) => x !== tab));
+	}
+	showSidebarTab(id: string) { this.sidebarRequest[1]({ id }); }
+	/** Link annotations of a page with the text under each. */
+	async pageLinks(index: number) {
+		const [links] = await Promise.all([this.loadLinks(index), this.loadText(index)]);
+		return links.map((l) => ({ rect: l.rect, target: l.target, text: this.textUnder(index, l.rect) }));
 	}
 	addToolbarButton(btn: ToolbarBtnDef) {
 		this.toolbarBtns[1]((t) => [...t.filter((x) => x.id !== btn.id), btn]);

@@ -59,8 +59,14 @@ export interface ViewerHandle {
 	onLinkHover(cb: (e: LinkClick | null) => void): () => void;
 	/** Text of a page with character rects, for mapping citations/reference entries to positions. */
 	pageText(index: number): Promise<{ text: string; rects: PdfRect[] }>;
+	/** A crop of page `page` (rect in PDF space) rendered as a canvas at most maxWidth CSS px wide. */
+	renderRegion(page: number, rect: PdfRect, maxWidth: number): Promise<HTMLCanvasElement>;
 	/** Side panel slots in the viewer chrome (left sidebar tabs and a right panel). */
 	addSidebarTab(tab: { id: string; title: string; icon?: string; render: (container: HTMLElement) => void | (() => void) }): () => void;
+	/** Link annotations of a page (rect, target, text under the link). */
+	pageLinks(index: number): Promise<{ rect: PdfRect; target: LinkTarget; text?: string }[]>;
+	/** Open the sidebar on one of the tabs added with addSidebarTab. */
+	showSidebarTab(id: string): void;
 	/** Toolbar button (e.g. "Reading view", "Figures"). */
 	addToolbarButton(btn: { id: string; title: string; icon?: string; onClick: () => void; active?: () => boolean }): () => void;
 	/** Switch between the page view and an alternate full-pane view (reflow/). */

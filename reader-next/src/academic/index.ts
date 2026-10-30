@@ -113,6 +113,14 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 
 	// ---------------------------------------------------------------- citation popups
 	let refsFocus: ((index: number) => void) | null = null;
+	let pendingRefFocus: number | null = null;
+	/** Open the References tab and highlight entry `index` (once the tab has loaded its list). */
+	function showInRefs(index: number) {
+		popups.hide();
+		pendingRefFocus = index;
+		viewer.showSidebarTab("references");
+		if (refsFocus) refsFocus(index);
+	}
 	let linkToken = 0;
 
 	const keyOf = (e: LinkClick) => `link:${e.page}:${e.rect.map((n) => Math.round(n)).join(",")}`;
@@ -167,7 +175,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 				li.addEventListener("click", () => {
 					if (!ref) return;
 					if (body) { body.remove(); body = null; return; }
-					body = h("div", { class: "rn-li-body" }, buildRefCard(api, { ref, compact: true, onShowInRefs: (i) => refsFocus?.(i) }));
+					body = h("div", { class: "rn-li-body" }, buildRefCard(api, { ref, compact: true, onShowInRefs: showInRefs }));
 					body.addEventListener("click", (ev) => ev.stopPropagation());
 					li.append(body);
 				});
@@ -179,7 +187,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 			ref: res.ref,
 			rawText: res.entry?.text,
 			onJump: () => jump(dest, jumpRect()),
-			onShowInRefs: (i) => refsFocus?.(i),
+			onShowInRefs: showInRefs,
 		});
 	}
 
@@ -201,10 +209,56 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		void showCitation(e, false);
 	}));
 
+	// ---------------------------------------------------------------- where each numbered reference is cited
+	type CiteSite = { page: number; rect: PdfRect };
+	let citeIndex: Promise<Map<number, CiteSite[]>> | null = null;
+	/** Reference number -> places in the text that cite it (from citation links, groups like "[3–5]" expanded). */
+	function citationIndex(): Promise<Map<number, CiteSite[]>> {
+		citeIndex ??= (async () => {
+			await ready;
+			const map = new Map<number, CiteSite[]>();
+			const last = refStart ? refStart.page : viewer.pages.length - 1;
+			for (let p = 0; p <= last; p++) {
+				const [links, pt] = await Promise.all([viewer.pageLinks(p), pageText(p)]);
+				for (const l of links) {
+					if (!isRefLink({ page: p, rect: l.rect, target: l.target, text: l.text } as LinkClick)) continue;
+					let nums = parseCitationNumbers(l.text ?? "");
+					const idx = charsInRect(pt.rects, l.rect, 0.5);
+					if (idx) {
+						const g = parseCitationNumbers(expandCitationGroup(pt.text, idx));
+						if (g.length > nums.length) nums = g;
+					}
+					for (const n of nums) {
+						const list = map.get(n) ?? [];
+						if (!list.some((s) => s.page === p && Math.abs(s.rect[1] - l.rect[1]) < 2 && Math.abs(s.rect[0] - l.rect[0]) < 2)) list.push({ page: p, rect: l.rect });
+						map.set(n, list);
+					}
+				}
+			}
+			return map;
+		})();
+		return citeIndex;
+	}
+
+	function citedByContent(n: number, sites: CiteSite[]): HTMLElement {
+		const label = (s: CiteSite) => `p. ${viewer.pages[s.page]?.label ?? s.page + 1}`;
+		return h("div", { "data-testid": "rn-cited-by" },
+			h("div", { class: "rn-title" }, `Reference ${n}`),
+			sites.length
+				? h("div", { class: "rn-meta" }, `Cited ${sites.length === 1 ? "once" : `${sites.length} times`} in this paper`)
+				: h("div", { class: "rn-note" }, "No citation links to this reference were found in the text."),
+			sites.length ? h("div", { class: "rn-row" }, ...sites.slice(0, 24).map((s, i) =>
+				button(`${i === 0 ? "Go to citation · " : ""}${label(s)}`, () => { popups.hide(); jump(s.page, s.rect); }, { primary: i === 0 }))) : null,
+		);
+	}
+
 	// ---------------------------------------------------------------- figure / supplementary / author-year hover targets
 	function figureContent(it: FigItem): HTMLElement {
+		const preview = h("div", { class: "rn-fig-preview" });
+		void thumb(it, 400).then((el) => { if (el) preview.append(el); else preview.remove(); });
 		return h("div", { "data-testid": "rn-fig-popup" },
 			h("div", { class: "rn-title" }, it.label, h("span", { class: "rn-pg" }, `page ${viewer.pages[it.page]?.label ?? it.page + 1}`)),
+			preview,
 			it.caption ? h("div", { class: "rn-abs", style: { maxHeight: "170px" } }, it.caption) : h("div", { class: "rn-note" }, "No caption found."),
 			h("div", { class: "rn-row" }, button(`Go to ${it.kind}`, () => { popups.hide(); jump(it.page, it.rect); }, { primary: true })),
 		);
@@ -254,11 +308,31 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 						if (refStart && page === refStart.page && (y === undefined || y <= refStart.y + 2)) continue;
 						const ref = resolveAuthorYear(refs, ay);
 						if (!ref) continue;
-						hots.push({ rects: rangeRects(pt.rects, ay.start, ay.end), key: `ay:${page}:${ay.start}`, content: () => buildRefCard(api, { ref, onShowInRefs: (i) => refsFocus?.(i) }) });
+						hots.push({ rects: rangeRects(pt.rects, ay.start, ay.end), key: `ay:${page}:${ay.start}`, content: () => buildRefCard(api, { ref, onShowInRefs: showInRefs }) });
 					}
 				}
 			}
+			// bibliography entries: hover shows where the paper cites them, with jumps
+			if (refStart && page >= refStart.page) {
+				const cites = await citationIndex();
+				if (!alive) return;
+				for (const line of lines) {
+					const n = markerOf(line.text);
+					if (n === null || n === undefined || (page === refStart.page && line.y2 > refStart.y + 2)) continue;
+					hots.push({ rects: [lineRect(line)], key: `bib:${page}:${n}`, content: () => citedByContent(n, cites.get(n) ?? []) });
+				}
+			}
 			if (!alive) return;
+
+			// in-text citation links: a coloured highlight under the PDF's own link (hover/click stay with the viewer)
+			for (const l of await viewer.pageLinks(page)) {
+				if (!alive) return;
+				if (!isRefLink({ page, rect: l.rect, target: l.target, text: l.text } as LinkClick)) continue;
+				const s = toScreen(l.rect);
+				const el = h("div", { class: "rn-cite", style: { left: s.left + "px", top: s.top + "px", width: s.width + "px", height: s.height + "px" } });
+				layer.append(el);
+				nodes.push(el);
+			}
 
 			for (const hot of hots) {
 				for (const r of hot.rects) {
@@ -286,25 +360,10 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 	}));
 
 	// ---------------------------------------------------------------- tabs
-	/** Thumbnail via an optional viewer.renderRegion(page, rect, maxWidth) extension; label + caption only otherwise. */
-	const thumb = async (it: FigItem): Promise<HTMLElement | null> => {
-		const fn = (viewer as unknown as { renderRegion?: (page: number, rect: PdfRect, maxWidth: number) => Promise<unknown> }).renderRegion;
-		if (typeof fn !== "function") return null;
-		try {
-			const out = await fn.call(viewer, it.page, it.rect, 128);
-			if (out instanceof HTMLCanvasElement || out instanceof HTMLImageElement) return out;
-			if (typeof out === "string") return h("img", { src: out, alt: "" });
-			if (out instanceof Blob) return h("img", { src: URL.createObjectURL(out), alt: "" });
-			if (typeof ImageBitmap !== "undefined" && out instanceof ImageBitmap) {
-				const c = document.createElement("canvas");
-				c.width = out.width;
-				c.height = out.height;
-				c.getContext("2d")?.drawImage(out, 0, 0);
-				return c;
-			}
-		}
-		catch { /* label only */ }
-		return null;
+	/** A rendered crop of the figure/table region (label + caption only if rendering fails). */
+	const thumb = async (it: FigItem, maxWidth: number): Promise<HTMLElement | null> => {
+		try { return await viewer.renderRegion(it.page, it.area ?? it.rect, maxWidth); }
+		catch { return null; }
 	};
 
 	own(viewer.addSidebarTab({
@@ -324,9 +383,9 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 					if (!list.length) continue;
 					scroll.append(h("div", { class: "rn-sec" }, `${title} (${list.length})`));
 					for (const it of list) {
-						const th = h("div", { class: "rn-thumb" }, kind === "figure" ? "▦" : "▤");
-						void thumb(it).then((el) => { if (el && alive) { th.textContent = ""; th.append(el); } });
-						const row = h("div", { class: "rn-item", tabindex: "0", role: "button", "data-key": it.key ?? "" },
+						const th = h("div", { class: "rn-thumb rn-thumb-lg" }, kind === "figure" ? "▦" : "▤");
+						void thumb(it, 300).then((el) => { if (el && alive) { th.textContent = ""; th.append(el); } });
+						const row = h("div", { class: "rn-item rn-figitem", tabindex: "0", role: "button", "data-key": it.key ?? "" },
 							th,
 							h("div", { class: "rn-grow" },
 								h("div", { class: "rn-lbl" }, it.label, h("span", { class: "rn-pg" }, `p. ${viewer.pages[it.page]?.label ?? it.page + 1}`)),
@@ -350,6 +409,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		id: "references", title: "References", icon: "quote",
 		render(container) {
 			let alive = true;
+			let loaded = false;
 			let refs: Reference[] = [];
 			const input = h("input", { class: "rn-input", type: "search", placeholder: "Filter references", "aria-label": "Filter references" });
 			const scroll = h("div", { class: "rn-scroll" }, h("div", { class: "rn-empty" }, "Loading…"));
@@ -408,12 +468,16 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 				scroll.append(h("div", { class: "rn-empty" }, force ? "Refreshing…" : "Loading…"));
 				try { refs = force ? (await api.refList(true)).references : await api.refs(); }
 				catch { refs = []; }
+				loaded = true;
 				draw();
+				if (pendingRefFocus !== null) refsFocus?.(pendingRefFocus);
 			}
 			input.addEventListener("input", draw);
 			void load(false);
 
 			refsFocus = (index) => {
+				if (!loaded) return; // applied by load() when the list arrives
+				pendingRefFocus = null;
 				input.value = "";
 				draw();
 				const el = scroll.querySelector<HTMLElement>(`[data-ref-index="${index}"]`);

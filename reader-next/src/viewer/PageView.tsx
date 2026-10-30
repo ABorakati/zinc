@@ -7,19 +7,50 @@ import type { LinkInfo, PageTextData } from "./pdf";
 
 const MAX_PIXELS = 28_000_000;
 
+/**
+ * Words of a page from its per-character rects: one entry per run of non-space characters on one
+ * line. Placing each word exactly (rather than whole PDFium text runs, whose justified spacing differs
+ * from the browser's) keeps double-click and drag selection on the glyphs the user sees.
+ */
+export function pageWords(d: Pick<PageTextData, "text" | "rects">): { text: string; rect: PdfRect }[] {
+	const out: { text: string; rect: PdfRect }[] = [];
+	let cur: { text: string; rect: PdfRect } | null = null;
+	const flush = () => { if (cur) out.push(cur); cur = null; };
+	for (let i = 0; i < d.text.length; i++) {
+		const ch = d.text[i]!;
+		const r = d.rects[i];
+		if (/\s/.test(ch) || !r || r[2] <= r[0] || r[3] <= r[1]) { flush(); continue; }
+		if (cur) {
+			const c: { text: string; rect: PdfRect } = cur;
+			const h = Math.max(c.rect[3] - c.rect[1], r[3] - r[1]);
+			const sameLine = Math.abs((c.rect[1] + c.rect[3]) / 2 - (r[1] + r[3]) / 2) < h * 0.5;
+			const adjacent = r[0] >= c.rect[2] - h * 0.3 && r[0] - c.rect[2] < h * 0.25;
+			if (!sameLine || !adjacent) flush();
+		}
+		if (!cur) cur = { text: ch, rect: [...r] as PdfRect };
+		else {
+			cur.text += ch;
+			cur.rect = [Math.min(cur.rect[0], r[0]), Math.min(cur.rect[1], r[1]), Math.max(cur.rect[2], r[2]), Math.max(cur.rect[3], r[3])];
+		}
+	}
+	flush();
+	return out;
+}
+
 function buildTextLayer(el: HTMLElement, d: PageTextData, H: number, page: number, scale: number, rot: number) {
 	const frag = document.createDocumentFragment();
 	const spans: { span: HTMLSpanElement; w: number }[] = [];
-	for (const r of d.runs) {
-		const text = r.text.replace(/[\r\n]+/g, "");
-		if (!text.trim()) continue;
+	const words = pageWords(d);
+	for (let k = 0; k < words.length; k++) {
+		const r = words[k]!;
 		const w = r.rect[2] - r.rect[0], h = r.rect[3] - r.rect[1];
-		if (w <= 0 || h <= 0 || (h > w * 1.5 && text.length > 2)) continue; // skip rotated runs
+		if (w <= 0 || h <= 0 || (h > w * 1.5 && r.text.length > 2)) continue; // skip rotated text
 		const span = document.createElement("span");
 		span.className = "rn-run";
-		span.textContent = text;
+		// a tiny trailing space (added after measuring, below) keeps words apart for double-click and copy
+		span.textContent = r.text;
 		const top = H - r.rect[3];
-		span.style.cssText = `left:${r.rect[0]}px;top:${top}px;height:${h}px;line-height:${h}px;font-size:${r.fontSize || h * 0.85}px`;
+		span.style.cssText = `left:${r.rect[0]}px;top:${top}px;height:${h}px;line-height:${h}px;font-size:${h * 0.85}px`;
 		span.dataset.p = String(page);
 		span.dataset.x1 = String(r.rect[0]);
 		span.dataset.x2 = String(r.rect[2]);
@@ -35,6 +66,10 @@ function buildTextLayer(el: HTMLElement, d: PageTextData, H: number, page: numbe
 	spans.forEach((s, i) => {
 		const nat = widths[i];
 		if (nat > 0) s.span.style.transform = `scaleX(${s.w / nat})`;
+		const sp = document.createElement("span");
+		sp.className = "rn-sp";
+		sp.textContent = " ";
+		s.span.append(sp);
 	});
 }
 

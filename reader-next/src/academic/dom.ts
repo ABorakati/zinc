@@ -55,6 +55,12 @@ const CSS = `
 .rn-item.rn-flash{background:color-mix(in oklab,var(--primary,#2563eb) 20%,transparent)}
 .rn-thumb{width:64px;height:48px;flex:none;border-radius:4px;border:1px solid var(--border,rgba(128,128,128,.3));background:var(--muted,rgba(128,128,128,.12));object-fit:contain;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--muted-foreground,GrayText);font-size:16px}
 .rn-thumb canvas,.rn-thumb img{max-width:100%;max-height:100%}
+.rn-figitem{flex-direction:column;gap:6px}
+.rn-thumb.rn-thumb-lg{width:100%;height:auto;min-height:90px;max-height:260px;background:#fff;font-size:22px}
+.rn-thumb.rn-thumb-lg canvas{width:auto!important;max-width:100%;max-height:258px;height:auto}
+.rn-fig-preview{display:flex;justify-content:center;background:#fff;border-radius:4px;border:1px solid var(--border,rgba(128,128,128,.3));margin:6px 0;overflow:hidden}
+.rn-fig-preview canvas{width:auto!important;max-width:100%;max-height:300px;height:auto}
+.rn-cite{position:absolute;pointer-events:none;border-radius:2px;background:rgba(37,99,235,.20);box-shadow:inset 0 -2px 0 rgba(37,99,235,.85);mix-blend-mode:multiply}
 .rn-ico{width:28px;height:34px;flex:none;border-radius:4px;border:1px solid var(--border,rgba(128,128,128,.3));background:var(--muted,rgba(128,128,128,.12));display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;letter-spacing:.03em;color:var(--muted-foreground,GrayText)}
 .rn-grow{flex:1;min-width:0}
 .rn-lbl{font-weight:600}

@@ -1,6 +1,6 @@
 import {
 	RotateCcw, RotateCw, BookOpen, ChevronDown, ChevronUp, Columns2, FileText, Image, LayoutGrid, List, Maximize2, MoveHorizontal, Palette, PanelLeft,
-	Quote, Search, Table2, X, ZoomIn, ZoomOut, type LucideProps,
+	Paperclip, Quote, Search, Table2, X, ZoomIn, ZoomOut, type LucideProps,
 } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, type JSX, type Component, on, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -16,6 +16,7 @@ import { cn } from "./ui/utils";
 const ICONS: Record<string, Component<LucideProps>> = {
 	image: Image, figure: Image, figures: Image, table: Table2, tables: Table2, "book-open": BookOpen, book: BookOpen, reading: BookOpen,
 	quote: Quote, quotes: Quote, citation: Quote, "file-text": FileText, list: List, grid: LayoutGrid, columns: Columns2, search: Search,
+	paperclip: Paperclip, attachment: Paperclip, supplementary: Paperclip,
 };
 function PluginIcon(props: { icon?: string; title: string }) {
 	const C = () => (props.icon ? ICONS[props.icon.toLowerCase()] : undefined);
@@ -120,14 +121,15 @@ function selectionText(): string | null {
 	let out = "";
 	let prev: HTMLElement | null = null;
 	for (const s of spans) {
+		// a span is the word's text node plus a separate trailing-space node
 		const node = s.firstChild;
-		let t = s.textContent ?? "";
+		let t = node?.textContent ?? "";
 		if (node) {
 			const a = range.startContainer === node ? range.startOffset : 0;
 			const b = range.endContainer === node ? range.endOffset : t.length;
 			t = t.slice(a, b);
 		}
-		if (!t) continue;
+		if (!t.trim()) continue;
 		if (prev) {
 			const h = Number(s.dataset.h), py = Number(prev.dataset.y), cy = Number(s.dataset.y);
 			if (prev.dataset.p !== s.dataset.p) out += "\n\n";
@@ -240,6 +242,13 @@ export function Viewer(props: { ctl: ViewerController; outline: OutlineNode[] })
 		if (id !== "outline" && id !== "thumbs" && !ctl.sidebarTabs[0]().some((t) => t.id === id)) setSideTab("thumbs");
 	});
 
+	// a plugin asked to show one of its tabs (e.g. "Show in References" from a citation card)
+	createEffect(on(ctl.sidebarRequest[0], (req) => {
+		if (!req) return;
+		setSideTab(req.id as SideTab);
+		setSideOpen(true);
+	}, { defer: true }));
+
 	// alternate view mount
 	let altEl!: HTMLDivElement;
 	createEffect(on(ctl.alternate[0], (render) => {
@@ -347,7 +356,7 @@ export function Viewer(props: { ctl: ViewerController; outline: OutlineNode[] })
 
 			<div class="relative flex min-h-0 flex-1">
 				<Show when={sideOpen()}>
-					<aside class="flex w-60 shrink-0 flex-col border-r bg-card" data-sidebar>
+					<aside class="flex w-80 shrink-0 flex-col border-r bg-card" data-sidebar>
 						<div class="flex shrink-0 border-b">
 							{tabBtn("outline", "Outline", <List class="size-4" />)}
 							{tabBtn("thumbs", "Thumbnails", <LayoutGrid class="size-4" />)}

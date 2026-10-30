@@ -93,6 +93,13 @@ export class PdfDoc {
 		const task = this.engine.renderPageRaw(this.doc, this.page(i), { scaleFactor: cssScale, dpr, withAnnotations: true, withForms: false });
 		return { promise: task.toPromise(), cancel: () => { try { task.abort({ code: PdfErrorCode.Cancelled, message: "cancelled" }); } catch { /* ignore */ } } };
 	}
+	/** Render only rect (PdfRect, bottom-left origin) of page i at scale pixels per point, as raw RGBA. */
+	renderRect(i: number, rect: PdfRect, scale: number): Promise<ImageDataLike> {
+		const pg = this.page(i);
+		const H = pg.size.height;
+		const r: Rect = { origin: { x: rect[0], y: H - rect[3] }, size: { width: rect[2] - rect[0], height: rect[3] - rect[1] } };
+		return this.engine.renderPageRectRaw(this.doc, pg, r, { scaleFactor: scale, dpr: 1, withAnnotations: false }).toPromise();
+	}
 	renderThumb(i: number, scale: number): { promise: Promise<ImageDataLike>; cancel: () => void } {
 		const task = this.engine.renderPageRaw(this.doc, this.page(i), { scaleFactor: scale, dpr: 1, withAnnotations: false });
 		return { promise: task.toPromise(), cancel: () => { try { task.abort({ code: PdfErrorCode.Cancelled, message: "cancelled" }); } catch { /* ignore */ } } };

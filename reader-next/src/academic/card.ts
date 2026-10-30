@@ -93,7 +93,7 @@ export function buildRefCard(api: AcademicApi, o: CardOpts): HTMLElement {
 		}
 		if (url) row.append(button("Open in browser", () => api.openUrl(url).catch(() => {}), { title: url }));
 		if (d.openAccessUrl) row.append(button("Open PDF", () => api.openUrl(d.openAccessUrl!).catch(() => {})));
-		if (r) row.append(button("Show in References", () => { api.post({ type: "show-references", index: r.index }); o.onShowInRefs?.(r.index); }));
+		if (r && o.onShowInRefs) row.append(button("Show in References", () => o.onShowInRefs!(r.index)));
 		if (o.onJump) row.append(button("Jump to reference in this PDF", () => o.onJump!()));
 		if (row.childElementCount) root.append(row);
 		if (addError) root.append(h("div", { class: "rn-note" }, addError));
