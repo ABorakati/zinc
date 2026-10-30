@@ -98,6 +98,8 @@ async function runSearch() {
 	}
 }
 
+const picked = (key: string) => picks.some((p) => p.key === key);
+
 function renderResults(q: string) {
 	const ul = $("results");
 	ul.replaceChildren(
@@ -107,20 +109,51 @@ function renderResults(q: string) {
 				{
 					role: "option",
 					"aria-selected": String(i === active),
-					class: picks.some((p) => p.key === r.key) ? "added" : "",
-					onclick: () => void addPick(r.key),
+					class: picked(r.key) ? "added" : "",
+					title: picks.length || editing ? "Add to this citation" : "Cite this at the cursor",
+					onclick: () => void choose(r.key),
 				},
-				h("div", { class: "t" }, r.title || "(untitled)"),
-				h("div", { class: "m" }, [r.creators, r.year, r.publication].filter(Boolean).join(" · ")),
+				h("input", {
+					type: "checkbox",
+					checked: picked(r.key),
+					title: "Select to cite several items together",
+					"aria-label": "Select " + (r.title || "item"),
+					onclick: (e: Event) => e.stopPropagation(),
+					onchange: () => void togglePick(r.key),
+				}),
+				h("div", { class: "body" },
+					h("div", { class: "t" }, r.title || "(untitled)"),
+					h("div", { class: "m" }, [r.creators, r.year, r.publication].filter(Boolean).join(" · ")),
+				),
 			),
 		),
 	);
 	if (!results.length) $("status").textContent = q.trim() ? "No matches" : "";
-	else $("status").textContent = q.trim() ? `${results.length} shown` : "Recently added";
+	else $("status").textContent = (q.trim() ? `${results.length} shown` : "Recently added") + " · click to cite, tick to cite several together";
+}
+
+/** A click on a result: cite it straight away, unless a multi-item citation is being built or edited (then add it). */
+async function choose(key: string) {
+	if (picks.length || editing) return addPick(key);
+	const p = await app.pickFromKey(key);
+	if (!p) return toast("That item is no longer in the library.", true);
+	const r = await busy("Inserting citation…", () => app.insertCitation([p]));
+	if (r) {
+		toast("Citation inserted. " + fmtReport(r));
+		void refreshDocState();
+	}
+}
+
+async function togglePick(key: string) {
+	if (picked(key)) {
+		picks = picks.filter((p) => p.key !== key);
+		renderTray();
+		renderResults($<HTMLInputElement>("q").value);
+	} else await addPick(key);
 }
 
 async function addPick(key: string) {
-	if (picks.some((p) => p.key === key)) return;
+	if (picked(key)) return;
 	const p = await app.pickFromKey(key);
 	if (!p) return toast("That item is no longer in the library.", true);
 	picks.push(p);
@@ -145,6 +178,10 @@ function renderTray() {
 					h("button", { class: "icon", title: "Remove", "aria-label": "Remove from citation", onclick: () => { picks.splice(i, 1); renderTray(); renderResults($<HTMLInputElement>("q").value); } }, "✕"),
 				),
 				h(
+					"details",
+					{ open: !!(p.locator || p.prefix || p.suffix || p.suppressAuthor) },
+					h("summary", { class: "muted small" }, "Page, prefix, suffix…"),
+					h(
 					"div",
 					{ class: "grid" },
 					h("label", {}, "Locator", h("input", { type: "text", value: p.locator, placeholder: "e.g. 23-25", oninput: bind("locator") })),
@@ -161,12 +198,13 @@ function renderTray() {
 					h("label", {}, "Prefix", h("input", { type: "text", value: p.prefix, placeholder: "see", oninput: bind("prefix") })),
 					h("label", {}, "Suffix", h("input", { type: "text", value: p.suffix, placeholder: "and others", oninput: bind("suffix") })),
 					h("label", { class: "check full" }, h("input", { type: "checkbox", checked: p.suppressAuthor, onchange: (e: Event) => (p.suppressAuthor = (e.target as HTMLInputElement).checked) }), "Omit author"),
+					),
 				),
 			);
 		}),
 	);
 	$("tray-actions").hidden = picks.length === 0 && !editing;
-	$("insert").textContent = editing ? "Update citation" : "Insert citation";
+	$("insert").textContent = editing ? "Update citation" : picks.length > 1 ? `Insert citation (${picks.length} items)` : "Insert citation";
 	$("cancel").hidden = !editing;
 }
 
@@ -385,7 +423,8 @@ async function main() {
 		} else if (e.key === "Enter") {
 			e.preventDefault();
 			if (e.ctrlKey) void doInsert();
-			else if (results[active]) void addPick(results[active]!.key);
+			else if (e.shiftKey && results[active]) void togglePick(results[active]!.key);
+			else if (results[active]) void choose(results[active]!.key);
 		} else if (e.key === "Escape") {
 			q.value = "";
 			void runSearch();
