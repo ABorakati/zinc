@@ -8,6 +8,11 @@ export const READING_CSS = `
   border: 1px solid var(--rr-rule); border-radius: 8px; background: var(--rn-reading-bg); color: var(--rr-muted); font: 600 13px/1 system-ui, sans-serif; cursor: pointer; opacity: .92; }
 .rr-reading-btn:hover, .rr-reading-btn[aria-expanded=true] { color: var(--rn-reading-fg); border-color: var(--rr-muted); opacity: 1; }
 .rr-reading-btn.rr-wide { margin-top: 14px; }
+.rr-reading-btn:disabled { opacity: .4; cursor: default; }
+.rr-reading-group { display: flex; }
+.rr-reading-group .rr-reading-btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.rr-reading-group .rr-reading-btn + .rr-reading-btn { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.rr-missing { display: block; font: 10px/1.2 system-ui, sans-serif; color: var(--rr-muted); }
 
 .rr-article { box-sizing: content-box; max-width: var(--rr-width); margin: 0 auto; padding: 56px 28px 160px;
   font-family: var(--rr-font); font-size: var(--rr-size); line-height: var(--rr-lh); text-align: var(--rr-align); hyphens: var(--rr-hyphens); overflow-wrap: break-word; }
@@ -36,6 +41,9 @@ export const READING_CSS = `
 .rr-article a.rx-cite[data-kind=other] { font-weight: inherit; background: none; border-bottom: 1px dotted color-mix(in srgb, var(--rr-cite) 55%, transparent); border-radius: 0; }
 .rr-article a.rx-cite:hover { text-decoration: underline; background: color-mix(in srgb, var(--rr-cite) 24%, transparent); }
 
+.rr-flash { animation: rr-flash 1.8s ease-out; border-radius: 4px; }
+@keyframes rr-flash { 0%, 35% { background: color-mix(in srgb, var(--rr-cite) 22%, transparent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--rr-cite) 22%, transparent); } 100% { background: transparent; box-shadow: 0 0 0 6px transparent; } }
+
 .rr-figure { margin: 1.6em 0 1.8em; text-align: left; hyphens: manual; }
 .rr-figure.rr-wide { margin-left: -4%; margin-right: -4%; }
 .rr-region { position: relative; width: 100%; margin: 0 auto; }
@@ -60,7 +68,7 @@ export const READING_CSS = `
 .rr-progress { height: 4px; border-radius: 2px; background: var(--rr-rule); margin: 18px 0 8px; overflow: hidden; }
 .rr-progress-bar { height: 100%; background: var(--rr-cite); border-radius: 2px; transition: width .3s ease; }
 
-.rr-pop { position: absolute; top: 48px; right: 22px; z-index: 6; width: 320px; max-width: calc(100% - 32px); padding: 14px 16px 12px; border-radius: 12px;
+.rr-pop { position: absolute; top: 48px; right: 22px; z-index: 6; width: 340px; max-width: calc(100% - 32px); max-height: calc(100% - 64px); overflow-y: auto; box-sizing: border-box; padding: 14px 16px 12px; border-radius: 12px;
   background: var(--rn-reading-bg); color: var(--rn-reading-fg); border: 1px solid var(--rr-rule); box-shadow: 0 12px 34px rgba(0,0,0,.22), 0 2px 6px rgba(0,0,0,.1);
   font: 13px/1.35 system-ui, "Segoe UI", sans-serif; }
 .rr-pop-h { margin: 10px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--rr-muted); }

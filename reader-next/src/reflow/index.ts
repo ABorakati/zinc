@@ -4,6 +4,7 @@ import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { DocStructure, ReaderPlugin } from "../contract";
 import { loadStructure } from "../structure/load";
+import { installFonts } from "./fonts";
 import { ReflowView, type LoadState } from "./ReflowView";
 import { DEFAULT_SETTINGS, loadSettings, palette, saveSettings, type ReadingSettings } from "./settings";
 
@@ -25,7 +26,8 @@ export const reflowPlugin: ReaderPlugin = (viewer) => {
 		saveSettings(next);
 		publish();
 	};
-	const resetSettings = () => { setSettingsSig({ ...DEFAULT_SETTINGS }); saveSettings({ ...DEFAULT_SETTINGS }); publish(); };
+	// reset typography and theme; "open by default" is a separate choice and stays
+	const resetSettings = () => setSettings({ ...DEFAULT_SETTINGS, openByDefault: settings().openByDefault });
 
 	let started = false;
 	const start = async () => {
@@ -68,7 +70,12 @@ export const reflowPlugin: ReaderPlugin = (viewer) => {
 		onClick: () => (on() ? close() : open()), active: on,
 	});
 
+	installFonts();
+	// "Open PDFs in the reading view" setting
+	const auto = settings().openByDefault ? setTimeout(open, 0) : undefined;
+
 	return () => {
+		clearTimeout(auto);
 		removeBtn();
 		if (on()) close();
 		document.documentElement.style.removeProperty("--rn-reading-bg");

@@ -62,6 +62,34 @@ export function expandCitationGroup(text: string, idx: [number, number]): string
 	return g || text.slice(a, b);
 }
 
+const ABBREV = /(?:\bet al|\bFigs?|\bTab|\be\.g|\bi\.e|\bvs|\bcf|\bRefs?|\bNo|\bDr|\bapprox|\bSuppl?|\b[A-Z])\.$/;
+
+/**
+ * The sentence around a citation (char range `idx` of the page text), split so the citation can be marked:
+ * the sentence start up to the citation, the citation itself, and the rest of the sentence. Line-break hyphens
+ * are joined and whitespace collapsed; long sentences are cut with "…".
+ */
+export function sentenceAround(text: string, idx: [number, number], maxBefore = 260, maxAfter = 160): { before: string; cite: string; after: string } {
+	const [a, b] = idx;
+	let s = a;
+	while (s > 0 && a - s < maxBefore) {
+		if (/[.!?]/.test(text[s - 1]!) && /\s/.test(text[s] ?? "") && !ABBREV.test(text.slice(Math.max(0, s - 8), s))) break;
+		s--;
+	}
+	let e = b;
+	while (e < text.length && e - b < maxAfter) {
+		if (/[.!?]/.test(text[e]!) && (e + 1 >= text.length || /\s/.test(text[e + 1]!)) && !ABBREV.test(text.slice(Math.max(0, e - 7), e + 1))) { e++; break; }
+		e++;
+	}
+	// pdfium marks line-break hyphens as U+FFFE (or a soft hyphen): drop them with the line break
+	const clean = (t: string) => t.replace(/[￾­]\s*/g, "").replace(/(\p{L})-\s*\n\s*(\p{Ll})/gu, "$1$2").replace(/\s+/g, " ");
+	return {
+		before: (s > 0 && a - s >= maxBefore ? "…" : "") + clean(text.slice(s, a)).trimStart(),
+		cite: clean(text.slice(a, b)),
+		after: clean(text.slice(b, e)).trimEnd() + (e < text.length && e - b >= maxAfter ? "…" : ""),
+	};
+}
+
 // ---------------------------------------------------------------- reference-list region
 
 export interface RefStart {
@@ -228,6 +256,14 @@ function structureEntry(s: DocStructure | null | undefined, page: number, top: n
 	return null;
 }
 
+function structureEntryByIndex(s: DocStructure | null | undefined, n: number): Entry | null {
+	// the printed marker ("18." / "[18]") first; the entry's position in the list only for unmarked lists
+	const refs = s?.references ?? [];
+	const e = refs.find((r) => markerOf(r.text) === n) ?? (refs.some((r) => markerOf(r.text) != null) ? undefined : refs.find((r) => r.index === n));
+	if (!e || !e.rects.length) return null;
+	return { page: e.page, text: stripMarker(e.text), marker: n, rect: unionRects(e.rects)!, lineRects: e.rects };
+}
+
 export interface ResolveInput {
 	refs: Reference[];
 	page: number;
@@ -243,7 +279,9 @@ export interface ResolveInput {
 export function resolveCitation(inp: ResolveInput): Resolution {
 	const { refs } = inp;
 	let candidates: Entry[] = [];
-	const se = inp.top !== undefined ? structureEntry(inp.structure, inp.page, inp.top) : null;
+	let se = inp.top !== undefined ? structureEntry(inp.structure, inp.page, inp.top) : null;
+	// many PDFs point every citation at the top of the list: the printed number beats the destination's position
+	if (inp.number !== undefined && se?.marker !== inp.number) se = structureEntryByIndex(inp.structure, inp.number) ?? se;
 	if (se) candidates = [se];
 	else if (inp.pageText) {
 		// an explicit marker equal to the cited number is the most reliable anchor; else whatever sits at the destination's top

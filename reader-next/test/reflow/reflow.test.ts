@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Block, DocStructure } from "../../src/contract";
-import { buildItems, continuesInto, dehyphenate, firstItemOnPage, fixGlyphs, joinHtml } from "../../src/reflow/build";
+import { bestTarget, buildItems, continuesInto, dehyphenate, firstItemOnPage, fixGlyphs, joinHtml } from "../../src/reflow/build";
 import {
 	contrastColor, contrastRatio, DEFAULT_SETTINGS, fontStack, loadSettings, palette, parseHex, sanitize, saveSettings, STORAGE_KEY,
 } from "../../src/reflow/settings";
@@ -87,6 +87,17 @@ describe("skipping furniture", () => {
 		expect(items.filter((i) => i.kind === "figure").length).toBe(13);
 		expect(JSON.stringify(items)).not.toContain("PLDI");
 	});
+	test("bestTarget: a containing block wins, the single entry over its whole list", () => {
+		const e1 = blk("e1", "reference", "[1] A", 5, { rects: [[50, 600, 300, 620]] });
+		const e2 = blk("e2", "reference", "[2] B", 5, { rects: [[50, 570, 300, 590]] });
+		const para = blk("p", "paragraph", "x", 5, { rects: [[50, 640, 300, 700]] });
+		const cands = [{ blocks: [para] }, { blocks: [e1, e2] }, { blocks: [e1] }, { blocks: [e2] }];
+		expect(bestTarget(cands, 5, 588)).toBe(3); // inside e2
+		expect(bestTarget(cands, 5, 622)).toBe(2); // just above e1's top: still e1 (3pt slack)
+		expect(bestTarget(cands, 5, 560)).toBe(3); // below everything: nearest top
+		expect(bestTarget(cands, 5)).toBe(0); // no top: highest block on the page
+		expect(bestTarget(cands, 4, 600)).toBe(-1);
+	});
 	test("firstItemOnPage", () => {
 		const its = [{ page: 0 }, { page: 0 }, { page: 2 }, { page: 3 }];
 		expect(firstItemOnPage(its, 2)).toBe(2);
@@ -131,6 +142,14 @@ describe("settings", () => {
 		expect(fontStack({ ...DEFAULT_SETTINGS, font: "custom", customFont: 'Fira "Code"' })).toStartWith('"Fira Code"');
 		expect(fontStack({ ...DEFAULT_SETTINGS, font: "custom", customFont: "  " })).toContain("serif");
 		expect(fontStack({ ...DEFAULT_SETTINGS, font: "dyslexic" })).toContain("Atkinson Hyperlegible");
+		expect(fontStack({ ...DEFAULT_SETTINGS, font: "literata" })).toStartWith('"Literata Variable"');
+		expect(fontStack({ ...DEFAULT_SETTINGS, font: "bookerly" })).toStartWith('"Bookerly"');
+	});
+	test("new font ids and the open-by-default flag survive a round trip; unknown fonts fall back", () => {
+		const s = store();
+		saveSettings({ ...DEFAULT_SETTINGS, font: "source-sans", openByDefault: true }, s);
+		expect(loadSettings(s)).toMatchObject({ font: "source-sans", openByDefault: true });
+		expect(sanitize({ font: "comic-sans", openByDefault: "yes" })).toMatchObject({ font: "serif", openByDefault: false });
 	});
 });
 

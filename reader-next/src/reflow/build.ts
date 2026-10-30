@@ -161,6 +161,29 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 	return out;
 }
 
+/**
+ * Which candidate (an item, or one bibliography entry) a link destination (page, PDF y of its top) lands in.
+ * A block rect containing `top` wins, the candidate with the fewest blocks first (an entry beats its whole list);
+ * otherwise the block top nearest to `top` on that page; with no `top`, the highest block on the page. -1 if
+ * no candidate has a block on that page.
+ */
+export function bestTarget(cands: { blocks: Block[] }[], page: number, top?: number): number {
+	let best = -1;
+	let bestScore = Infinity;
+	cands.forEach((c, i) => {
+		for (const b of c.blocks) {
+			if (b.page !== page) continue;
+			for (const r of b.rects) {
+				const score = (top === undefined ? -r[3]
+					: top <= r[3] + 3 && top >= r[1] - 3 ? -1e6
+					: Math.abs(r[3] - top)) + c.blocks.length * 1e-3; // ties: the more specific candidate
+				if (score < bestScore) { bestScore = score; best = i; }
+			}
+		}
+	});
+	return best;
+}
+
 /** First item that starts on or after `page` (0-based). */
 export function firstItemOnPage<T extends { page: number }>(items: T[], page: number): number {
 	const i = items.findIndex((it) => it.page === page);

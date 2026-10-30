@@ -1,8 +1,28 @@
 // Reading view settings: typography + theme. Pure helpers (no DOM) except the localStorage wrappers, which
 // are try/catch'd because storage can be missing or throw (private windows, blocked site data).
 
-export type FontKind = "serif" | "sans" | "dyslexic" | "custom";
 export type ThemeKind = "light" | "sepia" | "dark" | "custom";
+
+/**
+ * Reading fonts. `bundled` ones ship with the reader (open licences, loaded from ./fonts.ts); the others are used
+ * when installed on this computer (Bookerly is Amazon's and cannot be bundled).
+ */
+export const FONTS = [
+	{ id: "serif", label: "Charter", group: "serif", stack: `"Charter", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, "Times New Roman", serif` },
+	{ id: "literata", label: "Literata", group: "serif", bundled: true, stack: `"Literata Variable", Georgia, serif` },
+	{ id: "source-serif", label: "Source Serif", group: "serif", bundled: true, stack: `"Source Serif 4 Variable", Georgia, serif` },
+	{ id: "merriweather", label: "Merriweather", group: "serif", bundled: true, stack: `"Merriweather Variable", Georgia, serif` },
+	{ id: "bookerly", label: "Bookerly", group: "serif", installed: "Bookerly", stack: `"Bookerly", "Literata Variable", Georgia, serif` },
+	{ id: "georgia", label: "Georgia", group: "serif", stack: `Georgia, "Times New Roman", serif` },
+	{ id: "sans", label: "Inter", group: "sans", bundled: true, stack: `"Inter Variable", "Inter", "Segoe UI", system-ui, sans-serif` },
+	{ id: "source-sans", label: "Source Sans", group: "sans", bundled: true, stack: `"Source Sans 3 Variable", "Segoe UI", system-ui, sans-serif` },
+	{ id: "segoe", label: "Segoe UI", group: "sans", stack: `"Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif` },
+	{ id: "lexend", label: "Lexend", group: "sans", bundled: true, stack: `"Lexend Variable", "Segoe UI", sans-serif` },
+	{ id: "dyslexic", label: "Atkinson Hyperlegible", group: "sans", bundled: true, stack: `"Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible", "OpenDyslexic", Verdana, sans-serif` },
+] as const satisfies readonly { id: string; label: string; group: "serif" | "sans"; stack: string; bundled?: boolean; installed?: string }[];
+
+export type FontKind = (typeof FONTS)[number]["id"] | "custom";
+const FONT_IDS = new Set<string>([...FONTS.map((f) => f.id), "custom"]);
 
 export interface ReadingSettings {
 	font: FontKind;
@@ -13,6 +33,7 @@ export interface ReadingSettings {
 	theme: ThemeKind;
 	customBg: string; // #rrggbb, used when theme === "custom"
 	justify: boolean;
+	openByDefault: boolean; // open PDFs straight in the reading view
 }
 
 export const DEFAULT_SETTINGS: ReadingSettings = {
@@ -24,6 +45,7 @@ export const DEFAULT_SETTINGS: ReadingSettings = {
 	theme: "light",
 	customBg: "#e6efe3",
 	justify: false,
+	openByDefault: false,
 };
 
 export const LIMITS = {
@@ -42,7 +64,7 @@ export function sanitize(v: unknown): ReadingSettings {
 	const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
 	const d = DEFAULT_SETTINGS;
 	return {
-		font: o.font === "serif" || o.font === "sans" || o.font === "dyslexic" || o.font === "custom" ? o.font : d.font,
+		font: typeof o.font === "string" && FONT_IDS.has(o.font) ? o.font as FontKind : d.font,
 		customFont: typeof o.customFont === "string" ? o.customFont.slice(0, 80) : d.customFont,
 		size: clamp(o.size, LIMITS.size, d.size),
 		lineHeight: clamp(o.lineHeight, LIMITS.lineHeight, d.lineHeight),
@@ -50,6 +72,7 @@ export function sanitize(v: unknown): ReadingSettings {
 		theme: o.theme === "light" || o.theme === "sepia" || o.theme === "dark" || o.theme === "custom" ? o.theme : d.theme,
 		customBg: typeof o.customBg === "string" && parseHex(o.customBg) ? normaliseHex(o.customBg) : d.customBg,
 		justify: typeof o.justify === "boolean" ? o.justify : d.justify,
+		openByDefault: typeof o.openByDefault === "boolean" ? o.openByDefault : d.openByDefault,
 	};
 }
 
@@ -129,15 +152,11 @@ export function palette(s: ReadingSettings): Palette {
 }
 
 export function fontStack(s: ReadingSettings): string {
-	switch (s.font) {
-		case "sans": return `"Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif`;
-		case "dyslexic": return `"Atkinson Hyperlegible", "OpenDyslexic", "Lexend", "Verdana", "Segoe UI", sans-serif`;
-		case "custom": {
-			const name = s.customFont.replace(/["\\;{}<>]/g, "").trim();
-			return name ? `"${name}", Georgia, serif` : fontStack({ ...s, font: "serif" });
-		}
-		default: return `"Charter", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, "Times New Roman", serif`;
+	if (s.font === "custom") {
+		const name = s.customFont.replace(/["\\;{}<>]/g, "").trim();
+		return name ? `"${name}", Georgia, serif` : fontStack({ ...s, font: "serif" });
 	}
+	return (FONTS.find((f) => f.id === s.font) ?? FONTS[0]).stack;
 }
 
 /** Best-effort check whether a font family is installed (canvas width comparison). */

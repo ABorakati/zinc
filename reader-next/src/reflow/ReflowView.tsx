@@ -2,10 +2,10 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { DocStructure, PdfRect, ViewerHandle } from "../contract";
-import { buildItems, firstItemOnPage, type ReflowItem } from "./build";
+import { bestTarget, buildItems, firstItemOnPage, type ReflowItem } from "./build";
 import { READING_CSS } from "./css";
 import {
-	contrastColor, DEFAULT_SETTINGS, fontStack, isFontInstalled, LIMITS, palette, type FontKind, type ReadingSettings, type ThemeKind,
+	contrastColor, DEFAULT_SETTINGS, FONTS, fontStack, isFontInstalled, LIMITS, palette, type ReadingSettings, type ThemeKind,
 } from "./settings";
 
 export type LoadState =
@@ -86,13 +86,72 @@ export function ReflowView(props: ReflowProps) {
 		props.close();
 	};
 
+	// ------------------------------------------------------------ links within the reading view
+	const blockById = createMemo(() => {
+		const st = props.state();
+		return new Map(st.phase === "ready" ? st.doc.blocks.map((b) => [b.id, b]) : []);
+	});
+	const back: number[] = [];
+	const [backCount, setBackCount] = createSignal(0);
+	let flashTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Scroll to the item (or bibliography entry) holding PDF location (page, top), remembering where we were. */
+	const goTo = (page: number, top?: number, citeNumber?: number): boolean => {
+		if (!article) return false;
+		const els = Array.from(article.querySelectorAll<HTMLElement>("[data-blocks]"));
+		const map = blockById();
+		const i = bestTarget(els.map((el) => ({ blocks: el.dataset.blocks!.split(" ").flatMap((id) => map.get(id) ?? []) })), page, top);
+		const el = i >= 0 ? els[i] : article.querySelector<HTMLElement>(`[data-item="${CSS.escape(items()[firstItemOnPage(items(), page)]?.id ?? "")}"]`);
+		if (!el) return false;
+		// going to a citation of reference n: mark that citation itself, not the whole paragraph
+		const a = citeNumber === undefined ? undefined
+			: Array.from(el.querySelectorAll<HTMLElement>("a.rx-cite")).find((x) => (x.textContent ?? "").match(/\d+/g)?.includes(String(citeNumber)));
+		goToEl(a ?? el);
+		return true;
+	};
+	const goToEl = (el: HTMLElement) => {
+		if (!article) return;
+		back.push(scroller.scrollTop);
+		if (back.length > 30) back.shift();
+		setBackCount(back.length);
+		el.scrollIntoView({ block: el.offsetHeight < scroller.clientHeight * 0.6 ? "center" : "start", behavior: "smooth" });
+		for (const f of article.querySelectorAll(".rr-flash")) f.classList.remove("rr-flash");
+		void el.offsetWidth; // restart the animation
+		el.classList.add("rr-flash");
+		clearTimeout(flashTimer);
+		flashTimer = setTimeout(() => el.classList.remove("rr-flash"), 1800);
+	};
+	const goBack = () => {
+		const y = back.pop();
+		setBackCount(back.length);
+		if (y !== undefined) scroller.scrollTo({ top: y, behavior: "smooth" });
+	};
+	// other plugins (popups' "Go to" buttons) ask for a location; handled here instead of leaving the reading view
+	const onGoto = (e: Event) => {
+		const d = (e as CustomEvent<{ page: number; rect?: PdfRect; cite?: number }>).detail;
+		if (d && Number.isFinite(d.page) && goTo(d.page, d.rect?.[3], d.cite)) e.preventDefault();
+	};
+	const onKey = (e: KeyboardEvent) => {
+		const t = e.target as HTMLElement | null;
+		if (menuOpen() || !back.length || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable))) return;
+		if (e.key === "Escape" || (e.key === "ArrowLeft" && e.altKey)) { e.preventDefault(); goBack(); }
+	};
+	window.addEventListener("reader-next:reading-goto", onGoto);
+	window.addEventListener("keydown", onKey);
+	onCleanup(() => {
+		window.removeEventListener("reader-next:reading-goto", onGoto);
+		window.removeEventListener("keydown", onKey);
+		clearTimeout(flashTimer);
+	});
+
 	// ------------------------------------------------------------ citations
 	let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 	const detailFor = (a: HTMLElement, e: MouseEvent, kind: "hover" | "click"): CitationDetail => {
 		const top = Number(a.dataset.top);
+		// a bare "," / "–" link inside a citation group stands for its neighbour's number
+		const near = [a, a.nextElementSibling, a.previousElementSibling].find((el) => el?.matches("a.rx-cite") && /\d/.test(el.textContent ?? ""));
 		return {
 			page: Number(a.dataset.page), top: Number.isFinite(top) && a.dataset.top !== undefined ? top : undefined,
-			text: a.textContent ?? "", clientX: e.clientX, clientY: e.clientY, kind,
+			text: (near ?? a).textContent ?? "", clientX: e.clientX, clientY: e.clientY, kind,
 		};
 	};
 	const cite = (e: MouseEvent) => (e.target as HTMLElement | null)?.closest?.<HTMLElement>("a.rx-cite") ?? null;
@@ -101,18 +160,50 @@ export function ReflowView(props: ReflowProps) {
 		if (!a) return;
 		e.preventDefault();
 		clearTimeout(hoverTimer);
-		const detail = detailFor(a, e, "click");
-		const ev = new CustomEvent("reader-next:citation", { detail, cancelable: true });
-		// nobody claimed it (no popup layer listening): fall back to jumping to the target in the page view
-		if (window.dispatchEvent(ev) && Number.isFinite(detail.page)) viewOnPage(detail.page, detail.top);
+		window.dispatchEvent(new CustomEvent("reader-next:citation-leave"));
+		// a click goes straight to the target in this view (hovering shows the popup)
+		const entry = a.dataset.kind === "ref" ? refEntry(a) : null;
+		if (entry) { goToEl(entry); return; }
+		const d = detailFor(a, e, "click");
+		if (Number.isFinite(d.page) && !goTo(d.page, d.top)) viewOnPage(d.page, d.top);
 	};
+	/**
+	 * The bibliography entry a numbered citation link names. PDF link destinations are often only the top of the
+	 * list or column, so the number is the better guide. Bare "," / "–" links in a group borrow a neighbour's number.
+	 */
+	const refEntry = (a: HTMLElement): HTMLElement | null => {
+		const num = (el: Element | null) => (el?.matches("a.rx-cite") ? /\d+/.exec(el.textContent ?? "")?.[0] : undefined);
+		const n = num(a) ?? num(a.nextElementSibling) ?? num(a.previousElementSibling);
+		if (!n || !article) return null;
+		const entries = Array.from(article.querySelectorAll<HTMLElement>(".rr-refs li"));
+		const re = new RegExp(`^\\s*\\[?${n}(?![\\d])[\\].:)]?\\s`);
+		return entries.find((li) => re.test(li.textContent ?? "")) ?? null;
+	};
+	const entryOf = (t: EventTarget | null) => (t as HTMLElement | null)?.closest?.<HTMLElement>(".rr-refs li") ?? null;
 	const onOver = (e: MouseEvent) => {
+		const li = entryOf(e.target);
+		if (li && !cite(e)) {
+			if (entryOf(e.relatedTarget) === li) return;
+			// a bibliography entry: the popup layer shows where the paper cites it
+			const index = Array.prototype.indexOf.call(li.parentElement!.children, li) + 1;
+			const detail = { text: li.textContent ?? "", index, clientX: e.clientX, clientY: e.clientY };
+			clearTimeout(hoverTimer);
+			hoverTimer = setTimeout(() => window.dispatchEvent(new CustomEvent("reader-next:bib-hover", { detail })), 260);
+			return;
+		}
 		const a = cite(e);
 		if (!a) return;
 		clearTimeout(hoverTimer);
 		hoverTimer = setTimeout(() => window.dispatchEvent(new CustomEvent("reader-next:citation", { detail: detailFor(a, e, "hover") })), 220);
 	};
 	const onOut = (e: MouseEvent) => {
+		const li = entryOf(e.target);
+		if (li && !cite(e)) {
+			if (entryOf(e.relatedTarget) === li) return;
+			clearTimeout(hoverTimer);
+			window.dispatchEvent(new CustomEvent("reader-next:citation-leave"));
+			return;
+		}
 		if (!cite(e)) return;
 		clearTimeout(hoverTimer);
 		window.dispatchEvent(new CustomEvent("reader-next:citation-leave"));
@@ -131,7 +222,18 @@ export function ReflowView(props: ReflowProps) {
 		<div class="rr-reading" data-theme={s().theme} style={rootStyle()} data-testid="rr-reading">
 			<style>{READING_CSS}</style>
 			<div class="rr-reading-bar">
-				<button class="rr-reading-btn" title="Typography and theme" aria-expanded={menuOpen()} onClick={() => setMenuOpen(!menuOpen())} data-testid="rr-reading-typo">
+				<Show when={backCount() > 0}>
+					<button class="rr-reading-btn" title="Back to where you were (Esc or Alt+←)" onClick={goBack} data-testid="rr-reading-back">← Back</button>
+				</Show>
+				<div class="rr-reading-group">
+					<button class="rr-reading-btn" title="Smaller text" disabled={s().size <= LIMITS.size[0]} onClick={() => props.setSettings({ size: s().size - 1 })} data-testid="rr-size-down">A−</button>
+					<button class="rr-reading-btn" title="Larger text" disabled={s().size >= LIMITS.size[1]} onClick={() => props.setSettings({ size: s().size + 1 })} data-testid="rr-size-up">A+</button>
+				</div>
+				<div class="rr-reading-group">
+					<button class="rr-reading-btn" title="Narrower column" disabled={s().width <= LIMITS.width[0]} onClick={() => props.setSettings({ width: Math.max(LIMITS.width[0], s().width - 60) })} data-testid="rr-width-down">→←</button>
+					<button class="rr-reading-btn" title="Wider column" disabled={s().width >= LIMITS.width[1]} onClick={() => props.setSettings({ width: Math.min(LIMITS.width[1], s().width + 60) })} data-testid="rr-width-up">←→</button>
+				</div>
+				<button class="rr-reading-btn" title="Fonts, size, width, theme and more" aria-expanded={menuOpen()} onClick={() => setMenuOpen(!menuOpen())} data-testid="rr-reading-typo">
 					<span style={{ "font-family": "Georgia, serif" }}>A</span><span style={{ "font-size": "0.75em", "font-family": "Georgia, serif" }}>a</span>
 				</button>
 				<button class="rr-reading-btn" title="Back to the PDF page view" onClick={() => props.close()} data-testid="rr-reading-close">PDF</button>
@@ -250,12 +352,6 @@ function Region(props: { viewer: ViewerHandle; scroller: () => HTMLElement; page
 
 // ---------------------------------------------------------------- typography popover
 
-const FONTS: { id: FontKind; label: string; sample: string }[] = [
-	{ id: "serif", label: "Serif", sample: "Charter, Georgia, serif" },
-	{ id: "sans", label: "Sans", sample: "Segoe UI, system-ui, sans-serif" },
-	{ id: "dyslexic", label: "Dyslexia-friendly", sample: "Atkinson Hyperlegible, Verdana, sans-serif" },
-	{ id: "custom", label: "Other…", sample: "inherit" },
-];
 const THEMES: { id: ThemeKind; label: string; bg: string; fg: string }[] = [
 	{ id: "light", label: "Light", bg: "#fbfaf7", fg: "#1f1e1c" },
 	{ id: "sepia", label: "Sepia", bg: "#f4ecd8", fg: "#3b2f22" },
@@ -266,7 +362,14 @@ function Typography(props: { settings: () => ReadingSettings; set: (p: Partial<R
 	const s = props.settings;
 	let pop!: HTMLDivElement;
 	const [installed, setInstalled] = createSignal<boolean | null>(null);
-	const dyslexicInstalled = isFontInstalled("Atkinson Hyperlegible") || isFontInstalled("OpenDyslexic");
+	// fonts that are only used when installed here (Bookerly): checked once per popover
+	const missing = new Set<string>(FONTS.filter((f) => "installed" in f && !isFontInstalled(f.installed)).map((f) => f.id));
+	const fontButton = (f: (typeof FONTS)[number]) => (
+		<button classList={{ on: s().font === f.id }} style={{ "font-family": f.stack }} onClick={() => props.set({ font: f.id })}
+			title={missing.has(f.id) ? `${f.label} is not installed on this computer` : f.label} data-testid={`rr-font-${f.id}`}>
+			{f.label}<Show when={missing.has(f.id)}><span class="rr-missing">not installed</span></Show>
+		</button>
+	);
 	createEffect(on(() => [s().font, s().customFont] as const, ([f, name]) => {
 		setInstalled(f === "custom" && name.trim() ? isFontInstalled(name.trim()) : null);
 	}));
@@ -290,19 +393,22 @@ function Typography(props: { settings: () => ReadingSettings; set: (p: Partial<R
 	);
 	return (
 		<div class="rr-pop" ref={pop} role="dialog" aria-label="Typography and theme" data-testid="rr-reading-pop">
-			<div class="rr-pop-h">Font</div>
+			<div class="rr-pop-h">Serif</div>
 			<div class="rr-seg">
-				<For each={FONTS}>{(f) => (
-					<button classList={{ on: s().font === f.id }} style={{ "font-family": f.sample }} onClick={() => props.set({ font: f.id })} data-testid={`rr-font-${f.id}`}>{f.label}</button>
-				)}</For>
+				<For each={FONTS.filter((f) => f.group === "serif")}>{fontButton}</For>
+			</div>
+			<div class="rr-pop-h">Sans serif</div>
+			<div class="rr-seg">
+				<For each={FONTS.filter((f) => f.group === "sans")}>{fontButton}</For>
+				<button classList={{ on: s().font === "custom" }} onClick={() => props.set({ font: "custom" })} data-testid="rr-font-custom">Other…</button>
 			</div>
 			<Show when={s().font === "custom"}>
 				<input class="rr-text" type="text" placeholder="Any installed font, e.g. Georgia" value={s().customFont} spellcheck={false}
 					onInput={(e) => props.set({ customFont: e.currentTarget.value })} data-testid="rr-font-custom-name" />
 				<Show when={installed() !== null}><div class="rr-hint">{installed() ? "Found on this computer." : "Not found here; falling back to a serif font."}</div></Show>
 			</Show>
-			<Show when={s().font === "dyslexic" && !dyslexicInstalled}>
-				<div class="rr-hint">Atkinson Hyperlegible / OpenDyslexic are not installed; using Verdana. Install either font to use it here.</div>
+			<Show when={missing.has(s().font)}>
+				<div class="rr-hint">This font is not installed on this computer, so Literata is used instead.</div>
 			</Show>
 			{slider("Size", "size", LIMITS.size, 1, (v) => `${v}px`)}
 			{slider("Line height", "lineHeight", LIMITS.lineHeight, 0.05, (v) => v.toFixed(2))}
@@ -322,7 +428,11 @@ function Typography(props: { settings: () => ReadingSettings; set: (p: Partial<R
 				<input type="checkbox" checked={s().justify} onChange={(e) => props.set({ justify: e.currentTarget.checked })} data-testid="rr-set-justify" />
 				<span>Justify text</span>
 			</label>
-			<button class="rr-reset" onClick={props.reset}>Reset to defaults ({DEFAULT_SETTINGS.size}px {DEFAULT_SETTINGS.font})</button>
+			<label class="rr-check">
+				<input type="checkbox" checked={s().openByDefault} onChange={(e) => props.set({ openByDefault: e.currentTarget.checked })} data-testid="rr-set-default" />
+				<span>Open PDFs in the reading view</span>
+			</label>
+			<button class="rr-reset" onClick={props.reset}>Reset to defaults ({DEFAULT_SETTINGS.size}px Charter)</button>
 		</div>
 	);
 }

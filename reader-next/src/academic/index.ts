@@ -6,13 +6,13 @@ import { createApi, type Reference } from "./api";
 import { buildRefCard } from "./card";
 import {
 	expandCitationGroup, findRefStartInPages, isInReferences, markerOf, parseCitationNumbers,
-	refStartFromStructure, resolveAuthorYear, resolveCitation, type RefStart,
+	refStartFromStructure, resolveAuthorYear, resolveCitation, sentenceAround, type RefStart,
 } from "./citations";
 import { button, h, PopupManager, useStyles } from "./dom";
 import { findByKey, indexFromStructure, mergeIndex, scanCaptionsInPage, type FigItem } from "./figures";
 import { captionStart, findAuthorYear, findFigureMentions, findSupplementaryMentions } from "./mentions";
 import { createSupplement } from "./supplement";
-import { charsInRect, computeLines, lineAt, lineRect, rangeRects } from "./textlines";
+import { charsInRect, computeLines, lineAt, lineRect, rangeRects, unionRects } from "./textlines";
 
 type PT = { text: string; rects: PdfRect[] };
 const EMPTY: DocStructure = { blocks: [], figures: [], tables: [], references: [], outline: [] };
@@ -88,11 +88,14 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		return true;
 	}
 	/** Jump somewhere remembering where we were (leaving the reading view first if it is open). */
-	function jump(page: number, rect: PdfRect) {
+	function jump(page: number, rect: PdfRect, cite?: number) {
 		if (viewer.alternateActive()) {
-			// the reading view returns to its own position as it closes; reveal the target after that
+			// the reading view scrolls to the target itself when it can (it cancels the event); cite: mark that citation
+			const ev = new CustomEvent("reader-next:reading-goto", { detail: { page, rect, cite }, cancelable: true });
+			if (!window.dispatchEvent(ev)) { popups.hide(); return; }
+			// otherwise leave it: it returns to its own position as it closes; reveal the target after that
 			viewer.setAlternateView(null);
-			setTimeout(() => jump(page, rect), 120);
+			setTimeout(() => jump(page, rect, cite), 120);
 			return;
 		}
 		const here = viewer.page();
@@ -108,9 +111,10 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
 		if (e.key === "Escape") {
 			if (popups.isOpen) { popups.hide(); e.stopPropagation(); return; }
+			if (viewer.alternateActive()) return; // the reading view keeps its own history
 			if (back.length && goBack()) e.preventDefault();
 		}
-		else if (e.key === "ArrowLeft" && e.altKey && back.length) {
+		else if (e.key === "ArrowLeft" && e.altKey && back.length && !viewer.alternateActive()) {
 			if (goBack()) e.preventDefault();
 		}
 	};
@@ -192,7 +196,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		return buildRefCard(api, {
 			ref: res.ref,
 			rawText: res.entry?.text,
-			onJump: () => jump(dest, jumpRect()),
+			onJump: () => jump(res.entry?.page ?? dest, jumpRect()),
 			onShowInRefs: showInRefs,
 		});
 	}
@@ -204,10 +208,23 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		popups.show(keyOf(e), { x: e.clientX, y: e.clientY }, content, pinned);
 	}
 
+	/** Where a citation link's (first) bibliography entry is, for clicking straight through to it. */
+	async function citationTarget(e: LinkClick): Promise<{ page: number; rect: PdfRect }> {
+		const dest = e.target.page!;
+		const [refs, destText] = await Promise.all([api.refs(), pageText(dest)]);
+		const number = parseCitationNumbers(e.text ?? "")[0];
+		const res = resolveCitation({ refs, page: dest, top: e.target.top, pageText: destText, structure, number, maxY: refStart && dest === refStart.page ? refStart.y : undefined });
+		const top = e.target.top ?? 0;
+		return res.entry ? { page: res.entry.page, rect: res.entry.rect } : { page: dest, rect: [0, top - 14, viewer.pages[dest]?.width ?? 600, top + 4] };
+	}
+
+	// a click goes straight to the reference; hovering shows the popup
 	own(viewer.onLink((e) => {
 		if (!isRefLink(e)) return;
 		e.preventDefault();
-		void showCitation(e, true);
+		linkToken++;
+		popups.hide();
+		void citationTarget(e).then((t) => jump(t.page, t.rect));
 	}));
 	own(viewer.onLinkHover((e) => {
 		if (!e) { linkToken++; popups.scheduleHide(400); return; }
@@ -218,6 +235,51 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 	// ---------------------------------------------------------------- where each numbered reference is cited
 	type CiteSite = { page: number; rect: PdfRect };
 	let citeIndex: Promise<Map<number, CiteSite[]>> | null = null;
+	const add = (map: Map<number, CiteSite[]>, n: number, page: number, rect: PdfRect) => {
+		const list = map.get(n) ?? [];
+		// the same citation from a link annotation and from the structure: overlapping rects
+		const overlaps = (r: PdfRect) => r[0] < rect[2] + 2 && rect[0] < r[2] + 2 && r[1] < rect[3] + 2 && rect[1] < r[3] + 2;
+		if (!list.some((s) => s.page === page && overlaps(s.rect))) list.push({ page, rect });
+		map.set(n, list);
+	};
+
+	/**
+	 * Citation sites from the document structure: its paragraphs mark citations (rx-cite anchors) but carry no
+	 * positions for them, so each anchor's text is found in the page text inside the paragraph's area, in order.
+	 */
+	async function structureCiteSites(): Promise<{ page: number; rect: PdfRect; nums: number[] }[]> {
+		const out: { page: number; rect: PdfRect; nums: number[] }[] = [];
+		for (const b of structure.blocks) {
+			if (!b.html?.includes('data-kind="ref"') || b.type === "reference") continue;
+			const anchors = [...b.html.matchAll(/<a class="rx-cite"[^>]*data-kind="ref"[^>]*>(.*?)<\/a>/g)].map((m) => m[1]!.replace(/<[^>]*>/g, "").trim());
+			if (!anchors.some((t) => /\d/.test(t))) continue;
+			const pt = await pageText(b.page);
+			let lo = Infinity, hi = -1;
+			for (const r of b.rects) {
+				const ix = charsInRect(pt.rects, r, 1);
+				if (ix) { lo = Math.min(lo, ix[0]); hi = Math.max(hi, ix[1]); }
+			}
+			if (hi < 0) continue;
+			let cursor = lo;
+			for (const t of anchors) {
+				if (!/\d/.test(t)) continue;
+				const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+				const m = new RegExp(`(?<!\\d)${esc}(?!\\d)`, "g");
+				m.lastIndex = cursor;
+				const hit = m.exec(pt.text);
+				if (!hit || hit.index > hi) continue;
+				const idx: [number, number] = [hit.index, hit.index + hit[0].length];
+				cursor = idx[1];
+				let nums = parseCitationNumbers(t);
+				const g = parseCitationNumbers(expandCitationGroup(pt.text, idx));
+				if (g.length > nums.length) nums = g;
+				const rect = unionRects(rangeRects(pt.rects, idx[0], idx[1]));
+				if (rect && nums.length) out.push({ page: b.page, rect, nums });
+			}
+		}
+		return out;
+	}
+
 	/** Reference number -> places in the text that cite it (from citation links, groups like "[3–5]" expanded). */
 	function citationIndex(): Promise<Map<number, CiteSite[]>> {
 		citeIndex ??= (async () => {
@@ -234,27 +296,38 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 						const g = parseCitationNumbers(expandCitationGroup(pt.text, idx));
 						if (g.length > nums.length) nums = g;
 					}
-					for (const n of nums) {
-						const list = map.get(n) ?? [];
-						if (!list.some((s) => s.page === p && Math.abs(s.rect[1] - l.rect[1]) < 2 && Math.abs(s.rect[0] - l.rect[0]) < 2)) list.push({ page: p, rect: l.rect });
-						map.set(n, list);
-					}
+					for (const n of nums) add(map, n, p, l.rect);
 				}
 			}
+			// citations found by the layout analysis (PDFs without link annotations have only these)
+			for (const site of await structureCiteSites()) for (const n of site.nums) add(map, n, site.page, site.rect);
+			for (const list of map.values()) list.sort((a, b) => a.page - b.page || b.rect[3] - a.rect[3] || a.rect[0] - b.rect[0]);
 			return map;
 		})();
 		return citeIndex;
 	}
 
-	function citedByContent(n: number, sites: CiteSite[]): HTMLElement {
+	/** Where reference n is cited, each with the sentence around the citation; clicking one goes there. */
+	async function citedByContent(n: number, sites: CiteSite[]): Promise<HTMLElement> {
 		const label = (s: CiteSite) => `p. ${viewer.pages[s.page]?.label ?? s.page + 1}`;
+		const shown = sites.slice(0, 12);
+		const rows = await Promise.all(shown.map(async (s) => {
+			const pt = await pageText(s.page);
+			const idx = charsInRect(pt.rects, s.rect, 0.5);
+			const ctx = idx ? sentenceAround(pt.text, idx) : null;
+			const row = h("button", { class: "rn-ctx", type: "button", title: "Go to this citation" },
+				h("span", { class: "rn-ctx-pg" }, label(s)),
+				ctx ? h("span", null, ctx.before, h("mark", null, ctx.cite), ctx.after) : h("span", { class: "rn-note" }, "Go to citation"),
+			);
+			row.addEventListener("click", () => { popups.hide(); jump(s.page, s.rect, n); });
+			return row;
+		}));
 		return h("div", { "data-testid": "rn-cited-by" },
 			h("div", { class: "rn-title" }, `Reference ${n}`),
 			sites.length
-				? h("div", { class: "rn-meta" }, `Cited ${sites.length === 1 ? "once" : `${sites.length} times`} in this paper`)
+				? h("div", { class: "rn-meta" }, `Cited ${sites.length === 1 ? "once" : `${sites.length} times`} in this paper${sites.length > shown.length ? ` (first ${shown.length} shown)` : ""}`)
 				: h("div", { class: "rn-note" }, "No citation links to this reference were found in the text."),
-			sites.length ? h("div", { class: "rn-row" }, ...sites.slice(0, 24).map((s, i) =>
-				button(`${i === 0 ? "Go to citation · " : ""}${label(s)}`, () => { popups.hide(); jump(s.page, s.rect); }, { primary: i === 0 }))) : null,
+			rows.length ? h("div", { class: "rn-ctx-list" }, ...rows) : null,
 		);
 	}
 
@@ -264,7 +337,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 	const onReadingCite = (ev: Event) => {
 		const d = (ev as CustomEvent).detail as { page: number; top?: number; text: string; clientX: number; clientY: number; kind: "hover" | "click" } | undefined;
 		if (!d || !Number.isFinite(d.page)) return;
-		const pinned = d.kind === "click";
+		const pinned = d.kind === "click"; // the reading view handles clicks itself now; kept for older senders
 		const m = findFigureMentions(d.text)[0];
 		const it = m && figItems.length ? findByKey(figItems, m.key) : undefined;
 		if (it) {
@@ -281,9 +354,21 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		void showCitation(e, pinned);
 	};
 	const onReadingLeave = () => { linkToken++; popups.scheduleHide(400); };
+	// a bibliography entry hovered in the reading view: {text, index (1-based position), clientX, clientY}
+	const onReadingBib = async (ev: Event) => {
+		const d = (ev as CustomEvent).detail as { text: string; index: number; clientX: number; clientY: number } | undefined;
+		if (!d) return;
+		const n = markerOf(d.text) ?? d.index;
+		const token = ++linkToken;
+		const content = await citedByContent(n, (await citationIndex()).get(n) ?? []);
+		if (token !== linkToken) return;
+		popups.show(`rbib:${n}`, { x: d.clientX, y: d.clientY }, content, false);
+	};
 	window.addEventListener("reader-next:citation", onReadingCite);
 	window.addEventListener("reader-next:citation-leave", onReadingLeave);
+	window.addEventListener("reader-next:bib-hover", onReadingBib);
 	own(() => {
+		window.removeEventListener("reader-next:bib-hover", onReadingBib);
 		window.removeEventListener("reader-next:citation", onReadingCite);
 		window.removeEventListener("reader-next:citation-leave", onReadingLeave);
 	});
@@ -300,7 +385,8 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		);
 	}
 
-	type Hot = { rects: PdfRect[]; key: string; content: () => Promise<HTMLElement> | HTMLElement };
+	/** go: where a click on the mention leads (hover shows `content`). */
+	type Hot = { rects: PdfRect[]; key: string; content: () => Promise<HTMLElement> | HTMLElement; go?: () => void };
 
 	own(viewer.onPageOverlay((page, layer, toScreen) => {
 		let alive = true;
@@ -325,7 +411,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 				// the caption's own label is not a mention
 				if (capLine && it.page === page && it.caption && norm(it.caption).startsWith(norm(capLine.text).slice(0, 15))) continue;
 				covered.push([m.start, m.end]);
-				hots.push({ rects: rangeRects(pt.rects, m.start, m.end), key: `fig:${page}:${m.start}`, content: () => figureContent(it) });
+				hots.push({ rects: rangeRects(pt.rects, m.start, m.end), key: `fig:${page}:${m.start}`, content: () => figureContent(it), go: () => jump(it.page, it.rect) });
 			}
 			// supplementary material
 			for (const m of findSupplementaryMentions(pt.text)) {
@@ -355,7 +441,7 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 				for (const line of lines) {
 					const n = markerOf(line.text);
 					if (n === null || n === undefined || (page === refStart.page && line.y2 > refStart.y + 2)) continue;
-					hots.push({ rects: [lineRect(line)], key: `bib:${page}:${n}`, content: () => citedByContent(n, cites.get(n) ?? []) });
+					hots.push({ rects: [lineRect(line)], key: `bib:${page}:${n}`, content: () => citedByContent(n, cites.get(n) ?? []), go: () => { const s = cites.get(n)?.[0]; if (s) jump(s.page, s.rect, n); } });
 				}
 			}
 			if (!alive) return;
@@ -387,6 +473,10 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 						}, 220);
 					});
 					el.addEventListener("pointerleave", () => { clearTimeout(timer); popups.scheduleHide(350); });
+					if (hot.go) {
+						el.style.cursor = "pointer";
+						el.addEventListener("click", () => { clearTimeout(timer); popups.hide(); hot.go!(); });
+					}
 					layer.append(el);
 					nodes.push(el);
 				}

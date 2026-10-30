@@ -3,6 +3,7 @@ import type { PdfRect } from "../../src/contract";
 import type { Reference } from "../../../core/src/api-types";
 import {
 	entryCandidates, expandCitationGroup, findRefStartInPages, isInReferences, parseCitationNumbers, resolveAuthorYear, resolveCitation,
+	sentenceAround,
 } from "../../src/academic/citations";
 import { captionStart, findAuthorYear, findFigureMentions, findSupplementaryMentions } from "../../src/academic/mentions";
 import { classifyAttachment, matchSupplement, supplementaryItems } from "../../src/academic/supp";
@@ -174,5 +175,23 @@ describe("supplementary", () => {
 		expect(matchSupplement(m, items)[0]!.item.key).toBe("B");
 		const f = findSupplementaryMentions("Supplementary Table S2")[0]!;
 		expect(matchSupplement(f, items).find((x) => x.item.key === "B")?.score ?? 0).toBeLessThan(matchSupplement(m, items)[0]!.score);
+	});
+});
+
+describe("citation context", () => {
+	test("sentenceAround returns the citing sentence, skipping abbreviations", () => {
+		const text = "Earlier work exists. Outcomes were poor in older patients (see Fig. 2), as Smith et al. showed [12] in a large\ncohort. The next sentence.";
+		const a = text.indexOf("[12]");
+		const s = sentenceAround(text, [a, a + 4]);
+		expect(s.before).toBe("Outcomes were poor in older patients (see Fig. 2), as Smith et al. showed ");
+		expect(s.cite).toBe("[12]");
+		expect(s.after).toBe(" in a large cohort.");
+	});
+	test("long sentences are cut with an ellipsis and line-break hyphens joined", () => {
+		const text = "x".repeat(400) + " infor-\nmation 5 more";
+		const a = text.indexOf("5");
+		const s = sentenceAround(text, [a, a + 1], 30, 10);
+		expect(s.before.startsWith("…")).toBe(true);
+		expect(s.before).toContain("information");
 	});
 });

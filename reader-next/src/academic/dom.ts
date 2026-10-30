@@ -58,6 +58,11 @@ const CSS = `
 .rn-figitem{flex-direction:column;gap:6px}
 .rn-thumb.rn-thumb-lg{width:100%;height:auto;min-height:90px;max-height:260px;background:#fff;font-size:22px}
 .rn-thumb.rn-thumb-lg canvas{width:auto!important;max-width:100%;max-height:258px;height:auto}
+.rn-ctx-list{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow-y:auto;margin-top:2px}
+.rn-ctx{display:block;width:100%;text-align:left;font:inherit;line-height:1.4;color:inherit;background:transparent;border:1px solid var(--border,rgba(128,128,128,.3));border-radius:6px;padding:6px 8px;cursor:pointer}
+.rn-ctx:hover{background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.45)}
+.rn-ctx-pg{float:right;margin-left:8px;font-size:11px;color:var(--muted-foreground,GrayText)}
+.rn-ctx mark{background:rgba(37,99,235,.18);color:inherit;font-weight:600;border-radius:2px;padding:0 1px}
 .rn-fig-preview{display:flex;justify-content:center;background:#fff;border-radius:4px;border:1px solid var(--border,rgba(128,128,128,.3));margin:6px 0;overflow:hidden}
 .rn-fig-preview canvas{width:auto!important;max-width:100%;max-height:300px;height:auto}
 .rn-cite{position:absolute;pointer-events:none;border-radius:2px;background:rgba(37,99,235,.20);box-shadow:inset 0 -2px 0 rgba(37,99,235,.85);mix-blend-mode:multiply}
