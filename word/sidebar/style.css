@@ -46,6 +46,9 @@ body {
 #app { display: flex; flex-direction: column; gap: 10px; padding: 10px; height: 100%; overflow-y: auto; }
 /* the search section takes the height left over, so the results list reaches the bottom of the pane */
 #add { flex: 1 0 auto; min-height: 14rem; display: flex; flex-direction: column; }
+/* picked items and "Insert citation" stay under the search box; the list (which fills the rest) goes last */
+#add > #status { order: 1; margin-top: 6px; }
+#add > .results { order: 2; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .small { font-size: 12px; }
 .muted { color: var(--muted-foreground); }
