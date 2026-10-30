@@ -364,11 +364,22 @@ export const academicPlugin: ReaderPlugin = (viewer) => {
 		if (token !== linkToken) return;
 		popups.show(`rbib:${n}`, { x: d.clientX, y: d.clientY }, content, false);
 	};
+	const onReadingBibClick = async (ev: Event) => {
+		const d = (ev as CustomEvent).detail as { text: string; index: number } | undefined;
+		if (!d) return;
+		const n = markerOf(d.text) ?? d.index;
+		const s = (await citationIndex()).get(n)?.[0];
+		linkToken++;
+		popups.hide();
+		if (s) jump(s.page, s.rect, n);
+	};
 	window.addEventListener("reader-next:citation", onReadingCite);
 	window.addEventListener("reader-next:citation-leave", onReadingLeave);
 	window.addEventListener("reader-next:bib-hover", onReadingBib);
+	window.addEventListener("reader-next:bib-click", onReadingBibClick);
 	own(() => {
 		window.removeEventListener("reader-next:bib-hover", onReadingBib);
+		window.removeEventListener("reader-next:bib-click", onReadingBibClick);
 		window.removeEventListener("reader-next:citation", onReadingCite);
 		window.removeEventListener("reader-next:citation-leave", onReadingLeave);
 	});

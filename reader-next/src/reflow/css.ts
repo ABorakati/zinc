@@ -34,7 +34,10 @@ export const READING_CSS = `
 .rr-notes { margin: 1.2em 0 1.4em; padding-top: .6em; border-top: 1px solid var(--rr-rule); font-size: .82em; line-height: 1.5; color: var(--rr-muted); }
 .rr-notes p { margin: 0 0 .4em; }
 .rr-refs { margin: 0 0 1em; padding: 0; list-style: none; font-size: .86em; line-height: 1.5; color: var(--rn-reading-fg); text-align: left; hyphens: manual; }
-.rr-refs li { margin: 0 0 .5em; padding-left: 2.2em; text-indent: -2.2em; }
+.rr-refs li { margin: 0 0 .5em; padding-left: 2.2em; text-indent: -2.2em; cursor: pointer; border-radius: 3px; transition: background-color .12s; }
+/* like the page view: the entry's first line is a dotted link (hover: where it is cited; click: go to the first citation) */
+.rr-refs li::first-line { text-decoration: underline dotted var(--rr-cite); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.rr-refs li:hover { background: var(--rr-cite-bg); }
 
 .rr-article a { color: var(--rr-cite); text-underline-offset: 2px; }
 .rr-article a.rx-cite { text-decoration: none; font-weight: 600; background: var(--rr-cite-bg); border-bottom: 1px solid color-mix(in srgb, var(--rr-cite) 45%, transparent); border-radius: 3px; padding: 0 .2em; margin: 0 .02em; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background-color .12s; }

@@ -157,6 +157,14 @@ export function ReflowView(props: ReflowProps) {
 	const cite = (e: MouseEvent) => (e.target as HTMLElement | null)?.closest?.<HTMLElement>("a.rx-cite") ?? null;
 	const onClick = (e: MouseEvent) => {
 		const a = cite(e);
+		const li = entryOf(e.target);
+		if (!a && li && !(e.target as HTMLElement).closest("a")) {
+			// a bibliography entry: the popup layer goes to its first citation
+			clearTimeout(hoverTimer);
+			const index = Array.prototype.indexOf.call(li.parentElement!.children, li) + 1;
+			window.dispatchEvent(new CustomEvent("reader-next:bib-click", { detail: { text: li.textContent ?? "", index } }));
+			return;
+		}
 		if (!a) return;
 		e.preventDefault();
 		clearTimeout(hoverTimer);
