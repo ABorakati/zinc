@@ -26,6 +26,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { fail } from "~/lib/actions";
 import { cn } from "~/lib/utils";
 import { store } from "~/store";
+import { afterListShown } from "~/startup";
 import { duplicatesApi, type DuplicateReason, type DuplicateSet } from "./client";
 
 const INTERNAL_FIELDS = new Set([
@@ -113,7 +114,7 @@ function createDuplicatesState() {
 
 	const [dupList] = createResource(
 		() => [store.itemsRev(), dupRev()] as const,
-		() => duplicatesApi.list(true),
+		() => afterListShown(1500).then(() => duplicatesApi.list(true)),
 	);
 
 	const [schema] = createResource(() => api.schema());

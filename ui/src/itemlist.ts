@@ -1,6 +1,7 @@
 import { batch, createSignal, onCleanup } from "solid-js";
 import { api, type ItemQuery, type ItemSummary } from "./api";
 import { PAGE } from "./store";
+import { markListShown } from "./startup";
 
 /** Sparse, page-at-a-time cache of the server's item list. */
 export function createItemList() {
@@ -31,6 +32,7 @@ export function createItemList() {
 		} catch (e) {
 			if (g === gen) setError((e as Error).message);
 		} finally {
+			markListShown();
 			inflight.delete(p);
 			if (g === gen) setLoading(false);
 		}

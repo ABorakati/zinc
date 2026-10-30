@@ -2,6 +2,7 @@ import { createMemo, createResource, createSignal, For, onMount, Show, type Comp
 import { Check, Ellipsis, Tag } from "lucide-solid";
 import { api } from "./api";
 import { store } from "./store";
+import { afterListShown } from "./startup";
 import { allTags } from "./itempane/Tags";
 import { setShowAutoTags, showAutoTags } from "./settings/prefs";
 import { loadTagColors, setTagColor, tagColor, TAG_PALETTE } from "./cards/tags";
@@ -21,13 +22,13 @@ import {
 
 export const TagList: Component = () => {
 	// one shared fetch per tag-list change (itempane/Tags.tsx allTags), also used by tag autocomplete
-	const [tags] = createResource(() => store.tagsRev(), () => allTags().catch((e) => { fail("Could not load tags", e); return []; }));
+	const [tags] = createResource(() => store.tagsRev(), () => afterListShown().then(allTags).catch((e) => { fail("Could not load tags", e); return []; }));
 	const [f, setF] = createSignal("");
 	onMount(loadTagColors);
 	// "Show Automatic": automatic tags (added by importers/translators) can be hidden; remembered across sessions.
 	// (shared with Settings, see settings/prefs.ts)
 	const showAuto = showAutoTags, setShowAuto = setShowAutoTags;
-	const [auto] = createResource(() => store.tagsRev(), () => maintenance.automaticTags().catch(() => []));
+	const [auto] = createResource(() => store.tagsRev(), () => afterListShown().then(maintenance.automaticTags).catch(() => []));
 	const autoOnly = createMemo(() => new Map((auto() ?? []).map((a) => [a.tag, a.count])));
 	// Coloured tags first in Zotero's position order, then the rest alphabetically.
 	const TAG_LIMIT = 500;
