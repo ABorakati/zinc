@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { App, plainReference, stripNumberLabel } from "../src/app";
+import { App, plainReference, stripNumberLabel, tidyLabel } from "../src/app";
 import { escapeHtml, metaLine, noteChips, popupHeight, runsToHtml, targetFromCursor } from "../src/cited";
 import { SAMPLE_ITEMS, createMockHost } from "../src/mockhost";
 
@@ -74,5 +74,65 @@ describe("App.describeForPopup", () => {
 	test("returns null for a non-citation field", async () => {
 		const { app } = setup();
 		expect(await app.describeForPopup("ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY")).toBeNull();
+	});
+});
+
+describe("App.docLabels", () => {
+	async function twoCitations(prefsXml: string | null) {
+		const { app, host } = setup(prefsXml);
+		await app.init();
+		// first citation cites BBBB then CCCC, second cites AAAA (so the numbers are not in key order)
+		await app.insertCitation([(await app.pickFromKey("BBBB2222"))!, (await app.pickFromKey("CCCC3333"))!]);
+		await app.insertCitation([(await app.pickFromKey("AAAA1111"))!]);
+		return { app, host };
+	}
+	test("numeric style (Vancouver): the item's citation number in the document", async () => {
+		const { app, host } = await twoCitations(null);
+		const labels = await app.docLabels();
+		expect(labels.get("BBBB2222")).toBe("(1)");
+		expect(labels.get("CCCC3333")).toBe("(2)");
+		expect(labels.get("AAAA1111")).toBe("(3)");
+		// agrees with the numbers the document actually shows
+		const shown = host.fields.filter((f) => f.kind === "item").map((f) => f.text);
+		expect(shown[1]).toContain("(3)");
+	});
+	test("author-date style (APA): the in-text citation without parentheses", async () => {
+		const { app, host } = setup();
+		await app.init();
+		await app.setStyle("apa", "");
+		await app.insertCitation([(await app.pickFromKey("AAAA1111"))!, (await app.pickFromKey("BBBB2222"))!]);
+		const labels = await app.docLabels();
+		expect(labels.get("AAAA1111")).toBe("Smith & Haddad, 2021");
+		expect(labels.get("BBBB2222")).toBe("Chen, 2019");
+		const shown = host.fields.find((f) => f.kind === "item")!.text;
+		expect(shown).toContain("Smith & Haddad, 2021");
+	});
+	test("cached for the same document, recomputed when a citation is added", async () => {
+		const { app, host } = await twoCitations(null);
+		const a = await app.docLabels();
+		const calls = () => host.calls.filter((c) => c === "lib.items").length;
+		const n = calls();
+		expect(await app.docLabels()).toBe(a);
+		expect(calls()).toBe(n);
+		await app.insertCitation([(await app.pickFromKey("CCCC3333"))!]);
+		const b = await app.docLabels();
+		expect(b).not.toBe(a);
+		expect(b.get("AAAA1111")).toBe("(3)");
+	});
+	test("tidyLabel and quickView", () => {
+		expect(tidyLabel("(Smith et al., 2020)")).toBe("Smith et al., 2020");
+		expect(tidyLabel("[3]")).toBe("[3]");
+		expect(tidyLabel("3–5")).toBe("3–5");
+		expect(tidyLabel("(Smith, 2020; Jones, 2019)")).toBe("Smith, 2020; Jones, 2019");
+	});
+	test("quickView paints from the embedded copy without host calls", async () => {
+		const { app, host } = setup();
+		const code = await citationCode(host, app, ["AAAA1111"]);
+		const n = host.calls.length;
+		const v = app.quickView(code)!;
+		expect(host.calls.length).toBe(n);
+		expect(v.items[0]!.title).toContain("Outcomes after liver");
+		expect(v.items[0]!.pending).toBe(true);
+		expect(v.items[0]!.cslId).toBe("AAAA1111");
 	});
 });

@@ -1,21 +1,32 @@
 /* Citation popup (popup.html): small borderless WebView2 window under the citation. Tokens come from style.css. */
-html, body.popup { height: auto; }
-body.popup { overflow: hidden; }
-#pop {
-	display: flex; flex-direction: column; gap: 0;
-	max-height: 520px; overflow-y: auto;
-	background: var(--background); padding: 10px 12px 12px;
-	border: 1px solid var(--border);
+/* The host clips the window to a rounded rect (radius 10) plus a 10px tail triangle and tells us where via popup.place, so the
+   page is transparent and draws the bubble itself: #bubble (card background, 1px border) with a rotated-square tail. */
+html, body.popup { height: auto; background: transparent; }
+body.popup { overflow: hidden; --tail: 10px; }
+body.popup.below { padding-top: var(--tail); }
+body.popup.above { padding-bottom: var(--tail); }
+#bubble {
+	position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 10px;
 }
-body.popup.mock { width: 420px; margin: 24px auto; box-shadow: 0 8px 28px rgb(0 0 0 / .25); border-radius: var(--radius); }
-body.popup.mock #pop { border-radius: var(--radius); }
+#pop {
+	position: relative; z-index: 1; /* above the tail's inner half, which sits under the content */
+	display: flex; flex-direction: column; gap: 0;
+	max-height: 548px; overflow-y: auto; border-radius: 9px; padding: 10px 12px 12px;
+}
+/* a 20px-diagonal square turned 45deg: 10px of it pokes out of the edge, the other half merges into the bubble */
+#bubble .tail { display: none; position: absolute; width: 14.142px; height: 14.142px; background: var(--card); border: 1px solid var(--border); transform: rotate(45deg); left: calc(var(--tail-x, 40px) - 7.071px - 1px); }
+body.popup.below #bubble .tail { display: block; top: -8.071px; border-right: none; border-bottom: none; }
+body.popup.above #bubble .tail { display: block; bottom: -8.071px; border-left: none; border-top: none; }
+body.popup.mock { width: 420px; margin: 24px auto; }
 #pop .item { padding: 10px 0; border-top: 1px solid var(--border); }
 #pop .item:first-child { border-top: none; padding-top: 0; }
 #pop .head .t { font-weight: 600; font-size: 13.5px; line-height: 1.3; }
+#pop .lab { display: inline-block; max-width: 11em; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--primary); color: var(--primary-foreground); font-size: 11.5px; font-weight: 600; line-height: 1.5; vertical-align: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pop .lab[hidden] { display: none; }
 #pop .head .m { color: var(--muted-foreground); font-size: 12px; margin-top: 2px; }
 #pop .chips { margin-top: 4px; gap: 6px; }
 #pop .ref {
-	margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--card); border: 1px solid var(--border);
+	margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--muted); border: 1px solid var(--border);
 	font-size: 12.5px; line-height: 1.45; user-select: text; overflow-wrap: anywhere;
 }
 #pop .abs-label { margin-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); font-weight: 600; }
@@ -24,7 +35,7 @@ body.popup.mock #pop { border-radius: var(--radius); }
 #pop .item .acts { margin-top: 6px; }
 #pop .msg { padding: 10px 0; }
 #pop .msg.err { color: var(--destructive); }
-#pop .actions { position: sticky; bottom: -12px; margin: 4px -12px -12px; padding: 8px 12px; background: var(--background); border-top: 1px solid var(--border); }
+#pop .actions { position: sticky; bottom: -12px; margin: 4px -12px -12px; padding: 8px 12px; background: var(--card); border-radius: 0 0 9px 9px; border-top: 1px solid var(--border); }
 #pop .actions .spacer { flex: 1; }
 button.danger { color: var(--destructive); }
 button.danger:hover { background: color-mix(in srgb, var(--destructive) 12%, transparent); }

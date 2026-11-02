@@ -1,6 +1,7 @@
 // Citation popup: shown by the add-in (borderless WebView2 under the citation) when the cursor enters a Zotero
-// citation. Events from the host: popup.show (Word cursor object) and popup.hide. RPC to the host: the usual Bridge
-// methods plus popup.close, popup.resize {height} and popup.edit.
+// citation. Events from the host: popup.show (Word cursor object), popup.hide and popup.place {side, tailX, tail, radius}
+// (the window is clipped to a speech bubble; the page draws it). RPC to the host: the usual Bridge methods plus
+// popup.close, popup.resize {height: total window height incl. the tail} and popup.edit.
 import { App, type PopupCitation, type PopupItemView } from "./app";
 import { metaLine, noteChips, popupHeight, runsToHtml, targetFromCursor, type PopupTarget } from "./cited";
 import { CITATION_SCHEMA, buildItemCode } from "./fields";
@@ -23,16 +24,30 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
 }
 
 const root = document.getElementById("pop") as HTMLElement;
-const MAX_HEIGHT = 520;
+const MAX_HEIGHT = 560; // total window height cap; #pop (max-height 548 + border + tail) scrolls beyond it
+const bubble = document.getElementById("bubble") as HTMLElement;
+let place = { side: "none" as "below" | "above" | "none", tailX: 40, tail: 10 };
 let host: Host;
 let app: App;
 let seq = 0; // bumped on every show/hide/delete: late results of an older request are dropped
-let current: { target: PopupTarget; view: PopupCitation } | null = null;
+let current: { target: PopupTarget; view: PopupCitation; labels: Map<string, string> | null } | null = null;
+
+function applyPlace(p: any) {
+	const side = p?.side === "below" || p?.side === "above" ? p.side : "none";
+	place = { side, tailX: typeof p?.tailX === "number" ? p.tailX : place.tailX, tail: typeof p?.tail === "number" ? p.tail : 10 };
+	document.body.classList.toggle("below", side === "below");
+	document.body.classList.toggle("above", side === "above");
+	document.body.style.setProperty("--tail", place.tail + "px");
+	bubble.style.setProperty("--tail-x", place.tailX + "px");
+	reportSize();
+}
 
 function reportSize() {
 	requestAnimationFrame(() => {
-		// #pop is not stretched to the window, so its scrollHeight is the content height (capped; it scrolls inside beyond that)
-		void host.call("popup.resize", { height: popupHeight(root.scrollHeight + 2, MAX_HEIGHT + 2) }).catch(() => {});
+		// #pop is not stretched to the window, so its scrollHeight is the content height (capped; it scrolls inside beyond that);
+		// the window is the bubble (content + its 1px borders) plus the tail
+		const tail = place.side === "none" ? 0 : place.tail;
+		void host.call("popup.resize", { height: popupHeight(root.scrollHeight + 2 + tail, MAX_HEIGHT) }).catch(() => {});
 	});
 }
 
@@ -55,31 +70,62 @@ async function show(cursor: any) {
 	const my = ++seq;
 	const target = targetFromCursor(cursor);
 	if (!target) return message("This is not a Zotero citation.", { err: true });
-	message("Loading citation…", { busy: true });
+	// first paint straight from the field code (no host call); library status, reference, abstract and label fill in after
+	const quick = app.quickView(target.code);
+	if (quick) {
+		current = { target, view: quick, labels: null };
+		render();
+	} else {
+		message("Loading citation…", { busy: true });
+	}
+	void app.docLabels().then(
+		(labels) => {
+			if (my !== seq || !current) return;
+			current.labels = labels;
+			paintLabels();
+		},
+		() => {},
+	);
 	let view: PopupCitation | null;
 	try {
 		if (!app.info) await app.init().catch(() => {});
 		view = await app.describeForPopup(target.code);
 	} catch (e) {
-		if (my === seq) message(e instanceof Error ? e.message : String(e), { err: true });
+		if (my === seq && !quick) message(e instanceof Error ? e.message : String(e), { err: true });
 		return;
 	}
 	if (my !== seq) return;
-	if (!view) return message("Could not read this citation.", { err: true });
-	current = { target, view };
+	if (!view) {
+		current = null;
+		return message("Could not read this citation.", { err: true });
+	}
+	current = { target, view, labels: current?.labels ?? null };
 	render();
+}
+
+/** Set the label badges of the items on screen (in place: keeps an expanded abstract open). */
+function paintLabels() {
+	if (!current) return;
+	const { view, labels } = current;
+	root.querySelectorAll<HTMLElement>(".item .lab").forEach((el, i) => {
+		const l = labels && view.items[i]?.cslId ? labels.get(view.items[i]!.cslId!) : undefined;
+		el.textContent = l ?? "";
+		el.title = l ?? "";
+		el.hidden = !l;
+	});
+	reportSize();
 }
 
 // ---------------------------------------------------------------- rendering
 
 function renderItem(it: PopupItemView): HTMLElement {
-	const status = h("div", { class: "row small chips" },
+	const status = it.pending ? null : h("div", { class: "row small chips" },
 		it.trashed ? h("span", { class: "badge warn" }, "In trash") : it.inLibrary ? h("span", { class: "badge ok" }, "In library") : h("span", { class: "badge warn" }, "Not in library: showing the copy stored in the document"),
 		...noteChips(it).map((c) => h("span", { class: "badge" }, c)),
 	);
 	const err = h("div", { class: "small msg err", hidden: true });
 	const acts = h("div", { class: "acts row" });
-	if (it.key && it.inLibrary) {
+	if (!it.pending && it.key && it.inLibrary) {
 		const open = h("button", { class: "primary", onclick: async () => {
 			open.disabled = true;
 			open.textContent = "Opening zotero-next…";
@@ -100,7 +146,7 @@ function renderItem(it: PopupItemView): HTMLElement {
 		} }, "Open in zotero-next");
 		acts.append(open);
 	}
-	if (it.doi) acts.append(h("button", { class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch(() => {}) }, "DOI"));
+	if (!it.pending && it.doi) acts.append(h("button", { class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch(() => {}) }, "DOI"));
 
 	const abs = h("div", { class: "abs" }, it.abstract);
 	const more = h("button", { class: "link small", hidden: true, onclick: () => {
@@ -110,7 +156,7 @@ function renderItem(it: PopupItemView): HTMLElement {
 	} }, "Show more");
 	const absBlock = h("div", {});
 	if (it.abstract) absBlock.append(h("div", { class: "abs-label" }, "Abstract"), abs, more);
-	else absBlock.append(h("div", { class: "muted small", style: "margin-top:8px" }, "No abstract on record."));
+	else if (!it.pending) absBlock.append(h("div", { class: "muted small", style: "margin-top:8px" }, "No abstract on record."));
 	if (!it.abstract && it.doi && app.info?.zn.up) {
 		const fetchBtn = h("button", { class: "ghost", onclick: async () => {
 			fetchBtn.disabled = true;
@@ -132,9 +178,9 @@ function renderItem(it: PopupItemView): HTMLElement {
 	});
 
 	return h("div", { class: "item" },
-		h("div", { class: "head" }, h("div", { class: "t" }, it.title), h("div", { class: "m" }, metaLine(it))),
+		h("div", { class: "head" }, h("div", { class: "t" }, h("span", { class: "lab", hidden: true }), it.title), h("div", { class: "m" }, metaLine(it))),
 		status,
-		it.reference.length ? h("div", { class: "ref", html: runsToHtml(it.reference) }) : null,
+		it.reference.length && !it.pending ? h("div", { class: "ref", html: runsToHtml(it.reference) }) : null,
 		absBlock,
 		err,
 		acts.childElementCount ? acts : null,
@@ -152,7 +198,7 @@ function render() {
 			h("button", { class: "ghost danger", onclick: () => void del() }, "Delete citation"),
 		),
 	);
-	reportSize();
+	paintLabels();
 }
 
 async function del() {
@@ -185,6 +231,7 @@ async function main() {
 	app = new App(host);
 	host.on("popup.show", (c) => void show(c));
 	host.on("popup.hide", hide);
+	host.on("popup.place", applyPlace);
 	document.addEventListener("keydown", (e) => {
 		if (e.key === "Escape") {
 			e.preventDefault();
@@ -194,12 +241,16 @@ async function main() {
 	new ResizeObserver(() => reportSize()).observe(root);
 	try {
 		await app.init();
+		// compile the document's citation style now so the first popup does not wait for it
+		void app.warmUp();
 	} catch {
 		/* surfaced when the first citation loads */
 	}
+	const mockHost = host as ReturnType<typeof createMockHost>;
 	if (mock) {
 		document.body.classList.add("mock");
-		startMock(host as ReturnType<typeof createMockHost>);
+		mockHost.emit("popup.place", { side: "below", tailX: 40, tail: 10, radius: 10 });
+		startMock(mockHost);
 	}
 }
 

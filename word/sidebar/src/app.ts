@@ -3,7 +3,7 @@
 // or against the harness that drives an invisible Word.
 import type { ZoteroItemData } from "../../../core/src/api-types";
 import { parseQuery } from "../../../core/src/search";
-import { CslFormatter, type DocCitation, type StyleSource, libraryItemToCsl } from "./csl";
+import { CslFormatter, type DocCitation, type FormatResult, type StyleSource, libraryItemToCsl } from "./csl";
 import {
 	type BibliographyData,
 	type CitationData,
@@ -130,6 +130,12 @@ const issuedYear = (csl: CslItem): string => {
 	const m = /\d{4}/.exec(issued?.raw ?? issued?.literal ?? "");
 	return m ? m[0] : "";
 };
+
+/** The CSL id resolveAll will give a cited item: its library key when the URI names one, else the embedded-copy hash. */
+function guessCslId(ci: CitationItem): string {
+	const k = keysOfCitationItem(ci)[0];
+	return k ?? hashId((ci.uris ?? [])[0] ?? JSON.stringify(ci.itemData?.title ?? ci.id));
+}
 
 function hashId(s: string): string {
 	let h = 5381;
@@ -317,6 +323,25 @@ export class App {
 		return { ref: cursor.ref, citationID: data.citationID, items, text: cursor.text ?? "" };
 	}
 
+	/** Instant first paint of the popup: the items as embedded in the field code, no host call and no formatting. */
+	quickView(code: string): PopupCitation | null {
+		const parsed = parseFieldCode(code);
+		if (!parsed || parsed.kind !== "item") return null;
+		const items: PopupItemView[] = parsed.data.citationItems.map((ci) => ({ ...viewOfCitationItem(ci, undefined), reference: [], missing: false, cslId: guessCslId(ci), pending: true }));
+		return { citationID: parsed.data.citationID, items };
+	}
+
+	/** Compile the document's citation style ahead of the first popup/refresh (call once after init()). */
+	async warmUp(): Promise<void> {
+		try {
+			const prefs = (await this.docState()).prefs;
+			const d = this.defaults;
+			await this.formatter(prefs ? styleUrlToId(prefs.styleId) : d.style, prefs ? prefs.locale : d.locale);
+		} catch {
+			/* no document or style yet: the first real use reports it */
+		}
+	}
+
 	/** What the citation popup shows: each cited item with its full reference in the document's style. */
 	async describeForPopup(code: string): Promise<PopupCitation | null> {
 		const parsed = parseFieldCode(code);
@@ -345,7 +370,7 @@ export class App {
 				}
 			}
 			if (!reference.length && (r || ci.itemData)) reference = [{ t: plainReference(view) }];
-			return { ...view, reference, missing: !r };
+			return { ...view, reference, missing: !r, cslId: r?.cslId ?? guessCslId(ci) };
 		});
 		return { citationID: data.citationID, items };
 	}
@@ -493,24 +518,25 @@ export class App {
 		await this.writePrefs(prefs);
 	}
 
-	/** Re-read every Zotero field, re-resolve the items from the library, reformat the whole document and rewrite what changed. */
-	async refreshAll(): Promise<RefreshReport> {
+	/**
+	 * The whole-document formatting pass shared by refreshAll (which then writes the result back) and docLabels (which
+	 * only reads it): read the fields, resolve the cited items, build the citation list in document order and format it.
+	 * `probes` appends one synthetic one-item citation per distinct cited item after the real ones (see docLabels).
+	 */
+	private async formatDocument(opts: { probes?: boolean; wantBib?: boolean } = {}): Promise<DocFormat> {
 		const fields = await this.readFields();
 		const items = fields.filter((f): f is DocField & { parsed: { kind: "item"; data: CitationData } } => f.parsed?.kind === "item");
 		const bibls = fields.filter((f): f is DocField & { parsed: { kind: "bibl"; data: BibliographyData } } => f.parsed?.kind === "bibl");
 		const st = await this.docState();
 		let prefs = st.prefs;
-		const report: RefreshReport = { citations: items.length, updated: 0, bibliographies: bibls.length, missing: [], style: "", changed: [] };
-		if (items.length === 0 && bibls.length === 0) {
-			report.style = prefs ? styleUrlToId(prefs.styleId) : this.defaults.style;
-			return report;
-		}
+		const missing: string[] = [];
 		if (!prefs) {
 			const d = this.defaults;
 			prefs = defaultPrefs(d.style, d.locale);
 		}
 		const styleId = styleUrlToId(prefs.styleId);
-		report.style = styleId;
+		const base = { fields, items, bibls, st, prefs, styleId, missing, resolved: new Map<CitationItem, Resolved>(), docCitations: [] as DocCitation[], engineIds: [] as string[], probeIds: new Map<string, string>() };
+		if (items.length === 0 && bibls.length === 0) return { ...base, fmt: null, out: null };
 		const fmt = await this.formatter(styleId, prefs.locale);
 
 		// uncited items listed in the bibliography field(s)
@@ -539,7 +565,7 @@ export class App {
 				items: f.parsed.data.citationItems.flatMap((ci) => {
 					const r = resolved.get(ci);
 					if (!r) {
-						report.missing.push(String(ci.itemData?.title ?? ci.uris?.[0] ?? ci.id));
+						missing.push(String(ci.itemData?.title ?? ci.uris?.[0] ?? ci.id));
 						return [];
 					}
 					return [
@@ -556,8 +582,66 @@ export class App {
 				}),
 			});
 		}
+		const probeIds = new Map<string, string>(); // CSL id -> engine id of its probe citation
+		if (opts.probes) {
+			const distinct = [...new Set(docCitations.flatMap((c) => c.items.map((i) => i.id)))];
+			// a probe straight after a real citation of the same single item would render "Ibid."; start with another item
+			const last = docCitations[docCitations.length - 1];
+			if (distinct.length > 1 && last && last.items.length === 1 && last.items[0]!.id === distinct[0]) distinct.push(distinct.shift()!);
+			let note = docCitations.reduce((m, c) => Math.max(m, c.noteIndex), 0);
+			distinct.forEach((id, i) => {
+				const pid = `~probe~${i}`;
+				probeIds.set(id, pid);
+				docCitations.push({ citationID: pid, noteIndex: fmt.style.xclass === "note" ? ++note : 0, items: [{ id }] });
+			});
+		}
 		const uncitedIds = uncitedItems.map((u) => resolved.get(u)?.cslId).filter((x): x is string => !!x);
-		const out = fmt.format(docCitations, cslById, uncitedIds, bibls.length > 0);
+		const out = fmt.format(docCitations, cslById, uncitedIds, opts.wantBib ?? bibls.length > 0);
+		return { ...base, resolved, docCitations, engineIds, probeIds, fmt, out };
+	}
+
+	private labelCache: { key: string; at: number; labels: Promise<Map<string, string>> } | null = null;
+
+	/**
+	 * Per cited item (by CSL id) the label the document shows for it: numeric styles -> its citation number ("[3]", "3."),
+	 * author-date styles -> its in-text citation without the outer parentheses ("Smith et al., 2020"), note styles -> the
+	 * short (subsequent-citation) form. It is the output of a one-item citation for that item appended after the real
+	 * citations of a whole-document format pass, so numbering, et-al. and year-suffix disambiguation match the document.
+	 * Cached ~10 s per document (name + field count + total code length) so repeated clicks are quick.
+	 */
+	async docLabels(ttlMs = 10_000): Promise<Map<string, string>> {
+		const st = await this.docState();
+		if (!st.hasDoc) return new Map();
+		const fields = await this.readFields();
+		const key = `${st.name ?? ""}|${fields.length}|${fields.reduce((n, f) => n + f.code.length, 0)}|${st.prefs?.styleId ?? ""}`;
+		const c = this.labelCache;
+		if (c && c.key === key && Date.now() - c.at < ttlMs) return c.labels;
+		const labels = this.computeLabels();
+		this.labelCache = { key, at: Date.now(), labels };
+		labels.catch(() => {
+			if (this.labelCache?.labels === labels) this.labelCache = null;
+		});
+		return labels;
+	}
+
+	private async computeLabels(): Promise<Map<string, string>> {
+		const d = await this.formatDocument({ probes: true, wantBib: false });
+		const labels = new Map<string, string>();
+		if (!d.out) return labels;
+		for (const [id, pid] of d.probeIds) {
+			const o = d.out.citations.get(pid);
+			const label = o ? tidyLabel(o.plain) : "";
+			if (label) labels.set(id, label);
+		}
+		return labels;
+	}
+
+	/** Re-read every Zotero field, re-resolve the items from the library, reformat the whole document and rewrite what changed. */
+	async refreshAll(): Promise<RefreshReport> {
+		const d = await this.formatDocument();
+		const { items, bibls, st, prefs, resolved, docCitations, engineIds, out } = d;
+		const report: RefreshReport = { citations: items.length, updated: 0, bibliographies: bibls.length, missing: d.missing, style: d.styleId, changed: [] };
+		if (!out) return report;
 
 		await this.host.call("doc.begin", { name: "Refresh citations" });
 		try {
@@ -630,7 +714,35 @@ export class App {
 	}
 }
 
+interface DocFormat {
+	fields: DocField[];
+	items: (DocField & { parsed: { kind: "item"; data: CitationData } })[];
+	bibls: (DocField & { parsed: { kind: "bibl"; data: BibliographyData } })[];
+	st: { hasDoc: boolean; name?: string; prefs: DocPrefs | null; readOnly?: boolean };
+	prefs: DocPrefs;
+	styleId: string;
+	missing: string[];
+	resolved: Map<CitationItem, Resolved>;
+	docCitations: DocCitation[];
+	engineIds: string[];
+	probeIds: Map<string, string>;
+	fmt: CslFormatter | null;
+	out: FormatResult | null;
+}
+
+/** "(Smith et al., 2020)" -> "Smith et al., 2020"; numeric labels ("[3]", "3.", "(3)") stay as the style renders them. */
+export function tidyLabel(plain: string): string {
+	const t = plain.replace(/\s+/g, " ").trim();
+	if (/^[[(]?\d+(?:\s*[,–—-]\s*\d+)*[\])]?\.?$/u.test(t)) return t;
+	const m = /^\((.*)\)$/s.exec(t);
+	return m && !m[1]!.includes("(") ? m[1]!.trim() : t;
+}
+
 export interface PopupItemView extends CitedItemView {
+	/** CSL id of the item in the document's formatting pass: the key of docLabels() */
+	cslId: string | null;
+	/** only the embedded copy has been read so far: library status, reference and abstract are still loading */
+	pending?: boolean;
 	/** the item's full reference in the document's style (styled runs) */
 	reference: Run[];
 	/** nothing to show: not in the library and no embedded copy */

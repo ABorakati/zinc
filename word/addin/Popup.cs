@@ -49,7 +49,9 @@ namespace ZoteroNext.Word
         const int SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
         const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
         const int GWLP_HWNDPARENT = -8;
-        const int Width96 = 420, MinH = 60, MaxH = 600, InitH = 120;
+        const int WM_DPICHANGED = 0x02E0;
+        const int Width96 = 420, MinH = 60, MaxH = 620, InitH = 120;
+        const int TailH = 10, TailBase = 20, Radius = 10;   // CSS px; contract with popup.html
 
         // ---------------------------------------------------------------- controller (static)
 
@@ -60,6 +62,7 @@ namespace ZoteroNext.Word
         static bool _enabled = true;
         static DateTime _settingsAt = DateTime.MinValue;
         static int[] _lastRect;
+        static DateTime _warmAt = DateTime.MinValue;   // when to build the hidden form (warm-up)
 
         public static void Start()
         {
@@ -75,7 +78,7 @@ namespace ZoteroNext.Word
             try { if (_timer != null) { _timer.Stop(); _timer.Dispose(); } } catch { }
             _timer = null;
             try { if (_form != null) { _form.Hide_(); _form.Dispose(); } } catch { }
-            _form = null; _shownKey = null; _suppressKey = null;
+            _form = null; _shownKey = null; _suppressKey = null; _warmAt = DateTime.MinValue;
         }
 
         static void RefreshSettings()
@@ -93,6 +96,16 @@ namespace ZoteroNext.Word
             if (b == null) return;
             bool shown = _form != null && !_form.IsDisposed && _form._visible;
             if (!_enabled) { if (shown) HideAndReset(); return; }
+
+            // Warm-up: build the hidden form (WebView2 + popup.html) shortly after Word has a document; never shown here.
+            if (_form == null || _form.IsDisposed)
+            {
+                if (_warmAt == DateTime.MinValue)
+                {
+                    try { b.Doc.WindowHandle(); _warmAt = DateTime.Now.AddMilliseconds(1500); } catch { }
+                }
+                else if (DateTime.Now >= _warmAt) { _form = Create(); Log.Write("popup warm-up"); }
+            }
 
             // Word is not the foreground app (deactivated) or is minimised: close.
             uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
@@ -119,7 +132,7 @@ namespace ZoteroNext.Word
                 return;
             }
 
-            if (_form == null || _form.IsDisposed) _form = new Popup();
+            if (_form == null || _form.IsDisposed) _form = Create();
             int[] rc = null;
             try { rc = b.Doc.FieldRect(r); } catch { }
             int hwnd = 0;
@@ -148,6 +161,15 @@ namespace ZoteroNext.Word
             HideAndReset();
         }
 
+        /// <summary>Create the form with its handle in a per-monitor-v2 DPI context so Word's physical pixel coordinates map 1:1.</summary>
+        static Popup Create()
+        {
+            IntPtr old = IntPtr.Zero; bool swapped = false;
+            try { old = SetThreadDpiAwarenessContext(new IntPtr(-4)); swapped = old != IntPtr.Zero; } catch { }
+            try { return new Popup(); }
+            finally { if (swapped) { try { SetThreadDpiAwarenessContext(old); } catch { } } }
+        }
+
         // ---------------------------------------------------------------- the window
 
         readonly WebView2 _web = new WebView2();
@@ -155,6 +177,8 @@ namespace ZoteroNext.Word
         IntPtr _owner = IntPtr.Zero;
         int _heightCss = InitH;
         int[] _anchor;
+        string _lastPlace;      // last popup.place payload sent
+        bool _logNext;
         readonly List<string> _pending = new List<string>();
 
         Popup()
@@ -163,6 +187,8 @@ namespace ZoteroNext.Word
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
             _web.Dock = DockStyle.Fill;
+            // the page draws the bubble on a transparent background; the window region clips the rest
+            _web.DefaultBackgroundColor = Color.Transparent;
             Controls.Add(_web);
             var h = Handle;   // create the window (hidden) so WebView2 can initialise
             var t = InitAsync();
@@ -184,6 +210,7 @@ namespace ZoteroNext.Word
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == WM_MOUSEACTIVATE) { m.Result = (IntPtr)MA_NOACTIVATE; return; }
+            if (m.Msg == WM_DPICHANGED) { m.Result = IntPtr.Zero; return; }   // we size/position ourselves in Place()
             base.WndProc(ref m);
         }
 
@@ -234,6 +261,7 @@ namespace ZoteroNext.Word
                 if (IntPtr.Size == 8) SetWindowLongPtr64(Handle, GWLP_HWNDPARENT, _owner); else SetWindowLong32(Handle, GWLP_HWNDPARENT, (int)_owner);
             }
             _heightCss = InitH;
+            _lastPlace = null; _logNext = true;
             Place(rect);
             if (!_visible) { ShowWindow(Handle, SW_SHOWNOACTIVATE); _visible = true; }
             Post(Json.Dump(Json.Map("event", "popup.show", "data", cursor)));
@@ -247,44 +275,97 @@ namespace ZoteroNext.Word
             Post(Json.Dump(Json.Map("event", "popup.hide")));
         }
 
-        float Scale()
+        static int DpiFor(IntPtr hmon, IntPtr hwnd)
         {
-            try { uint d = GetDpiForWindow(Handle); if (d > 0) return d / 96f; } catch { }
-            using (var g = Graphics.FromHwnd(Handle)) return g.DpiX / 96f;
+            try { uint dx, dy; if (hmon != IntPtr.Zero && GetDpiForMonitor(hmon, 0, out dx, out dy) == 0 && dx > 0) return (int)dx; } catch { }
+            try { uint d = GetDpiForWindow(hwnd); if (d > 0) return (int)d; } catch { }
+            return 96;
         }
 
-        /// <summary>Position below the citation rect {left, top, width, height} (screen px), above if it does not fit.</summary>
+        /// <summary>Place the bubble relative to the citation rect {left, top, width, height} in physical screen px.
+        /// Order: below (tail up), above (tail down), right, left. The window never intersects the citation.</summary>
         void Place(int[] rect)
         {
             _anchor = rect;
             _lastRect = rect;
-            float s = Scale();
-            int w = (int)Math.Round(Width96 * s), h = (int)Math.Round(_heightCss * s);
-            Rectangle wa;
-            int x, y;
-            const int gap = 4;
+            var h0 = Handle;
+            int[] fieldRect = rect;
+            IntPtr hmon;
             if (rect == null)
             {
                 // could not measure the field (e.g. in a footnote): hang off the mouse pointer instead
                 var p = Cursor.Position;
-                wa = Screen.FromPoint(p).WorkingArea;
-                rect = new[] { p.X, p.Y, 0, (int)(20 * s) };
+                var pr = new RECT { L = p.X, T = p.Y, R = p.X + 1, B = p.Y + 1 };
+                hmon = MonitorFromRect(ref pr, 2);
+                rect = new[] { p.X, p.Y, 0, (int)(20 * DpiFor(hmon, h0) / 96.0) };
             }
             else
             {
-                wa = Screen.FromRectangle(new Rectangle(rect[0], rect[1], Math.Max(1, rect[2]), Math.Max(1, rect[3]))).WorkingArea;
+                var rr = new RECT { L = rect[0], T = rect[1], R = rect[0] + Math.Max(1, rect[2]), B = rect[1] + Math.Max(1, rect[3]) };
+                hmon = MonitorFromRect(ref rr, 2);
             }
-            x = rect[0];
-            y = rect[1] + rect[3] + gap;
-            if (y + h > wa.Bottom)
+            var mi = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+            Rectangle wa;
+            if (hmon != IntPtr.Zero && GetMonitorInfo(hmon, ref mi)) wa = Rectangle.FromLTRB(mi.rcWork.L, mi.rcWork.T, mi.rcWork.R, mi.rcWork.B);
+            else wa = Screen.FromRectangle(new Rectangle(rect[0], rect[1], 1, 1)).WorkingArea;
+
+            double s = DpiFor(hmon, h0) / 96.0;
+            int w = Math.Min((int)Math.Round(Width96 * s), wa.Width);
+            int h = Math.Min((int)Math.Round(_heightCss * s), wa.Height);
+            int tail = (int)Math.Round(TailH * s), gap = 2;
+            int cl = rect[0], ct = rect[1], cr = rect[0] + Math.Max(0, rect[2]), cb = rect[1] + Math.Max(0, rect[3]);
+            int anchorX = cl + Math.Min(Math.Max(0, rect[2]) / 2, (int)Math.Round(24 * s));
+
+            string side;
+            int x = cl, y;
+            if (cb + gap + h <= wa.Bottom) { side = "below"; y = cb + gap; }
+            else if (ct - gap - h >= wa.Top) { side = "above"; y = ct - gap - h; }
+            else if (cr + gap + w <= wa.Right) { side = "none"; x = cr + gap; y = Math.Max(wa.Top, Math.Min(ct, wa.Bottom - h)); }
+            else if (cl - gap - w >= wa.Left) { side = "none"; x = cl - gap - w; y = Math.Max(wa.Top, Math.Min(ct, wa.Bottom - h)); }
+            else { side = "below"; y = Math.Max(wa.Top, Math.Min(cb + gap, wa.Bottom - h)); }
+            if (side == "below" || side == "above")
             {
-                int above = rect[1] - h - gap;
-                y = above >= wa.Top ? above : Math.Max(wa.Top, wa.Bottom - h);
+                if (x + w > wa.Right) x = wa.Right - w;
+                if (x < wa.Left) x = wa.Left;
             }
-            if (x + w > wa.Right) x = wa.Right - w;
-            if (x < wa.Left) x = wa.Left;
-            h = Math.Min(h, wa.Height);
+
+            int margin = (int)Math.Round((Radius + 10) * s);
+            int tailPx = Math.Max(margin, Math.Min(w - margin, anchorX - x));
+            double tailCss = Math.Round(tailPx / s, 1);
+
             SetWindowPos(Handle, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+            ApplyRegion(w, h, side, tailPx, (int)Math.Round(s * 2 * Radius), tail, (int)Math.Round(TailBase * s));
+
+            if (_logNext)
+            {
+                _logNext = false;
+                Log.Write("popup place: field=" + (fieldRect == null ? "null" : fieldRect[0] + "," + fieldRect[1] + " " + fieldRect[2] + "x" + fieldRect[3]) +
+                    " window=" + x + "," + y + " " + w + "x" + h + " side=" + side + " dpi=" + (int)Math.Round(s * 96) + " wa=" + wa);
+            }
+
+            var place = Json.Dump(Json.Map("event", "popup.place", "data",
+                Json.Map("side", side, "tailX", tailCss, "tail", TailH, "radius", Radius)));
+            if (place != _lastPlace) { _lastPlace = place; Post(place); }
+        }
+
+        void ApplyRegion(int w, int h, string side, int tailX, int diameter, int tail, int baseW)
+        {
+            IntPtr body;
+            if (side == "below") body = CreateRoundRectRgn(0, tail, w + 1, h + 1, diameter, diameter);
+            else if (side == "above") body = CreateRoundRectRgn(0, 0, w + 1, h - tail + 1, diameter, diameter);
+            else body = CreateRoundRectRgn(0, 0, w + 1, h + 1, diameter, diameter);
+            IntPtr rgn = body;
+            if (side == "below" || side == "above")
+            {
+                POINT[] pts = side == "below"
+                    ? new[] { new POINT(tailX - baseW / 2, tail + 1), new POINT(tailX, 0), new POINT(tailX + baseW / 2, tail + 1) }
+                    : new[] { new POINT(tailX - baseW / 2, h - tail - 1), new POINT(tailX, h), new POINT(tailX + baseW / 2, h - tail - 1) };
+                IntPtr tri = CreatePolygonRgn(pts, 3, 1);
+                rgn = CreateRectRgn(0, 0, 0, 0);
+                CombineRgn(rgn, body, tri, 2);   // RGN_OR
+                DeleteObject(body); DeleteObject(tri);
+            }
+            if (SetWindowRgn(Handle, rgn, true) == 0) DeleteObject(rgn);   // on success the system owns the region
         }
 
         void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -342,5 +423,19 @@ namespace ZoteroNext.Word
         [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
         [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr ctx);
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromRect(ref RECT r, uint flags);
+        [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr hmon, ref MONITORINFO mi);
+        [DllImport("user32.dll")] static extern int SetWindowRgn(IntPtr h, IntPtr rgn, bool redraw);
+        [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr hmon, int type, out uint dx, out uint dy);
+        [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int l, int t, int r, int b, int w, int h);
+        [DllImport("gdi32.dll")] static extern IntPtr CreateRectRgn(int l, int t, int r, int b);
+        [DllImport("gdi32.dll")] static extern IntPtr CreatePolygonRgn(POINT[] pts, int n, int mode);
+        [DllImport("gdi32.dll")] static extern int CombineRgn(IntPtr dst, IntPtr a, IntPtr b, int mode);
+        [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+
+        [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+        [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; public POINT(int x, int y) { X = x; Y = y; } }
+        [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; }
     }
 }
