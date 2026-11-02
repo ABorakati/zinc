@@ -313,27 +313,41 @@ export class App {
 		if (!parsed || parsed.kind !== "item") return null;
 		const data = parsed.data;
 		const res = await this.resolveAll(data.citationItems);
-		const items: CitedItemView[] = data.citationItems.map((ci) => {
-			const r = res.get(ci);
-			const csl = (r?.csl ?? ci.itemData ?? {}) as CslItem;
-			const d = r?.data;
-			return {
-				key: r?.key ?? null,
-				inLibrary: !!r?.inLibrary && !r?.trashed,
-				trashed: !!r?.trashed,
-				title: String(csl.title ?? "(untitled)"),
-				authors: authorsOf(csl),
-				year: issuedYear(csl),
-				journal: String(csl["container-title"] ?? csl.publisher ?? ""),
-				abstract: String(d?.abstractNote ?? csl.abstract ?? ""),
-				doi: String(csl.DOI ?? ""),
-				itemType: String(d?.itemType ?? csl.type ?? ""),
-				locator: ci.locator ?? "",
-				prefix: ci.prefix ?? "",
-				suffix: ci.suffix ?? "",
-			};
-		});
+		const items: CitedItemView[] = data.citationItems.map((ci) => viewOfCitationItem(ci, res.get(ci)));
 		return { ref: cursor.ref, citationID: data.citationID, items, text: cursor.text ?? "" };
+	}
+
+	/** What the citation popup shows: each cited item with its full reference in the document's style. */
+	async describeForPopup(code: string): Promise<PopupCitation | null> {
+		const parsed = parseFieldCode(code);
+		if (!parsed || parsed.kind !== "item") return null;
+		const data = parsed.data;
+		const res = await this.resolveAll(data.citationItems);
+		let fmt: CslFormatter | null = null;
+		try {
+			const prefs = (await this.docState()).prefs;
+			const d = this.defaults;
+			fmt = await this.formatter(prefs ? styleUrlToId(prefs.styleId) : d.style, prefs ? prefs.locale : d.locale);
+		} catch {
+			fmt = null; // no style available: fall back to a plain reference
+		}
+		const items: PopupItemView[] = data.citationItems.map((ci) => {
+			const r = res.get(ci);
+			const view = viewOfCitationItem(ci, r);
+			let reference: Run[] = [];
+			if (r && fmt) {
+				try {
+					const out = fmt.format([{ citationID: "popup", noteIndex: 0, items: [{ id: r.cslId }] }], new Map([[r.cslId, r.csl]]), [], true);
+					const entry = out.bibliography?.runs;
+					if (entry?.length) reference = stripNumberLabel(entry);
+				} catch {
+					reference = [];
+				}
+			}
+			if (!reference.length && (r || ci.itemData)) reference = [{ t: plainReference(view) }];
+			return { ...view, reference, missing: !r };
+		});
+		return { citationID: data.citationID, items };
 	}
 
 	/** Tray entries for editing an existing citation. */
@@ -614,6 +628,53 @@ export class App {
 			return "";
 		}
 	}
+}
+
+export interface PopupItemView extends CitedItemView {
+	/** the item's full reference in the document's style (styled runs) */
+	reference: Run[];
+	/** nothing to show: not in the library and no embedded copy */
+	missing: boolean;
+}
+export interface PopupCitation {
+	citationID: string;
+	items: PopupItemView[];
+}
+
+function viewOfCitationItem(ci: CitationItem, r: Resolved | undefined): CitedItemView {
+	const csl = (r?.csl ?? ci.itemData ?? {}) as CslItem;
+	const d = r?.data;
+	return {
+		key: r?.key ?? null,
+		inLibrary: !!r?.inLibrary && !r?.trashed,
+		trashed: !!r?.trashed,
+		title: String(csl.title ?? "(untitled)"),
+		authors: authorsOf(csl),
+		year: issuedYear(csl),
+		journal: String(csl["container-title"] ?? csl.publisher ?? ""),
+		abstract: String(d?.abstractNote ?? csl.abstract ?? ""),
+		doi: String(csl.DOI ?? ""),
+		itemType: String(d?.itemType ?? csl.type ?? ""),
+		locator: ci.locator ?? "",
+		prefix: ci.prefix ?? "",
+		suffix: ci.suffix ?? "",
+	};
+}
+
+/** A bibliography entry formatted on its own carries the number of a one-item list ("1. ", "[1] "); drop it. */
+export function stripNumberLabel(runs: Run[]): Run[] {
+	const out = runs.map((r) => ({ ...r }));
+	const first = out[0];
+	if (first) {
+		first.t = first.t.replace(/^\s*(?:\[\d+\]|\(\d+\)|\d{1,3}[.)])\s+/u, "");
+		if (!first.t) out.shift();
+	}
+	return out;
+}
+
+/** Fallback reference when no style could be loaded: authors. Title. Journal Year. */
+export function plainReference(v: { authors: string; title: string; journal: string; year: string }): string {
+	return [v.authors, v.title, [v.journal, v.year].filter(Boolean).join(" ")].filter(Boolean).join(". ").replace(/\.\.+/g, ".") + ".";
 }
 
 interface Resolved {

@@ -59,10 +59,8 @@ namespace ZoteroNext.Word
         {
             try
             {
-                var dir = Path.GetDirectoryName(typeof(PaneControl).Assembly.Location);
-                var site = Environment.GetEnvironmentVariable("ZN_SIDEBAR_DIR") ?? Path.Combine(dir, "sidebar");
-                Directory.CreateDirectory(Path.Combine(Settings.CacheDir, "webview2"));
-                var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Settings.CacheDir, "webview2"));
+                var site = WebHost.SiteDir();
+                var env = await WebHost.EnvAsync();
                 await _web.EnsureCoreWebView2Async(env);
                 var core = _web.CoreWebView2;
                 core.Settings.AreDevToolsEnabled = true;

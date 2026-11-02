@@ -349,6 +349,26 @@ namespace ZoteroNext.Word
             return res;
         }
 
+        // ---------------------------------------------------------------- popup helpers
+
+        /// <summary>Handle of Word's active window (owner for the citation popup).</summary>
+        public int WindowHandle() { return (int)_app.ActiveWindow.Hwnd; }
+
+        /// <summary>Screen rect [left, top, width, height] in pixels of a Zotero field's result, or null if it cannot be measured.</summary>
+        public int[] FieldRect(Dictionary<string, object> r)
+        {
+            try
+            {
+                dynamic f = FieldByRef(r);
+                dynamic rng = f.Result;
+                int l = 0, t = 0, w = 0, h = 0;
+                _app.ActiveWindow.GetPoint(ref l, ref t, ref w, ref h, rng);
+                if (w == 0 && h == 0) return null;
+                return new[] { l, t, w, h };
+            }
+            catch { return null; }
+        }
+
         // ---------------------------------------------------------------- preferences (ZOTERO_PREF_n custom properties)
 
         string ReadPrefsXml(dynamic d)

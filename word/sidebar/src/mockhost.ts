@@ -32,7 +32,7 @@ export const SAMPLE_ITEMS: ZoteroItemData[] = [
 	} as ZoteroItemData,
 ];
 
-export function createMockHost(opts: MockOptions = {}): Host & { fields: any[]; prefsXml: string | null; settings: Record<string, any>; calls: string[] } {
+export function createMockHost(opts: MockOptions = {}): Host & { emit(event: string, data: unknown): void; fields: any[]; prefsXml: string | null; settings: Record<string, any>; calls: string[] } {
 	const items = opts.items ?? SAMPLE_ITEMS;
 	const handlers = new Map<string, ((d: any) => void)[]>();
 	const fields: { story: string; idx: number; kind: string; code: string; text: string; start: number; end: number }[] = [];
@@ -108,11 +108,18 @@ export function createMockHost(opts: MockOptions = {}): Host & { fields: any[]; 
 		"doc.delete": (p) => { fields.splice(p.ref.idx - 1, 1); reindex(); state.cursor = -1; return { ok: true }; },
 		"doc.getPrefs": () => ({ xml: state.prefsXml }),
 		"doc.setPrefs": (p) => { state.prefsXml = p.xml; return { ok: true }; },
+		"popup.close": () => ({ ok: true }),
+		"popup.resize": () => ({ ok: true }),
+		"popup.edit": () => ({ ok: true }),
 		"doc.begin": () => ({ ok: true }),
 		"doc.end": () => ({ ok: true }),
 	};
 	const host = {
 		fields,
+		/** deliver a host event to the page (preview and tests) */
+		emit(event: string, data: unknown) {
+			for (const cb of handlers.get(event) ?? []) cb(data);
+		},
 		get prefsXml() { return state.prefsXml; },
 		settings: state.settings,
 		calls: state.calls,

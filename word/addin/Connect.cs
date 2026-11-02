@@ -18,6 +18,7 @@ namespace ZoteroNext.Word
     {
         public const string PaneProgId = "ZoteroNext.WordPane";
         internal static Bridge Shared;
+        static Connect _instance;
 
         dynamic _app;
         ICTPFactory _factory;
@@ -47,6 +48,8 @@ namespace ZoteroNext.Word
             {
                 _app = application;
                 Shared = new Bridge(new WordDoc(application));
+                _instance = this;
+                Popup.Start();
                 Log.Write("connected (" + connectMode + ") to Word " + (string)_app.Version);
             }
             catch (Exception e) { Log.Error("OnConnection", e); }
@@ -54,13 +57,14 @@ namespace ZoteroNext.Word
 
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
+            try { Popup.Stop(); } catch { }
             try
             {
                 foreach (var p in _panes.Values) { try { p.Delete(); } catch { } }
                 _panes.Clear();
             }
             catch { }
-            Shared = null; _app = null; _factory = null;
+            Shared = null; _instance = null; _app = null; _factory = null;
             Log.Write("disconnected");
         }
 
@@ -99,6 +103,21 @@ namespace ZoteroNext.Word
                 pane.Visible = show ?? !vis;
             }
             catch (Exception e) { Log.Error("ShowPane", e); }
+        }
+
+        /// <summary>Popup "edit" button: show the sidebar and tell it to edit the citation under the cursor.</summary>
+        internal static void EditCitationFromPopup()
+        {
+            var c = _instance;
+            if (c == null) return;
+            bool wasVisible = false;
+            try { dynamic p = c.PaneFor(false); if (p != null) wasVisible = (bool)p.Visible; } catch { }
+            c.ShowPane(true);
+            if (wasVisible) { PaneControl.Broadcast("editCitation"); return; }
+            // a pane that was just created/shown needs a moment to load its page (a pane queues messages until then)
+            var t = new System.Windows.Forms.Timer { Interval = 400 };
+            t.Tick += (s, e) => { t.Stop(); t.Dispose(); PaneControl.Broadcast("editCitation"); };
+            t.Start();
         }
 
         // ---- IRibbonExtensibility ------------------------------------------------------------------------------

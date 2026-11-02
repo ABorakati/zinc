@@ -9,7 +9,7 @@ const out = join(here, "..", "dist", "addin", "sidebar");
 mkdirSync(out, { recursive: true });
 
 const result = await Bun.build({
-	entrypoints: [join(here, "src", "main.ts")],
+	entrypoints: [join(here, "src", "main.ts"), join(here, "src", "popup.ts")],
 	outdir: out,
 	target: "browser",
 	format: "esm",
@@ -22,6 +22,8 @@ if (!result.success) {
 }
 cpSync(join(here, "index.html"), join(out, "index.html"));
 cpSync(join(here, "style.css"), join(out, "style.css"));
+cpSync(join(here, "popup.html"), join(out, "popup.html"));
+cpSync(join(here, "popup.css"), join(out, "popup.css"));
 console.log(`sidebar built -> ${out}`);
 
 if (process.argv.includes("--dev")) {
@@ -40,5 +42,5 @@ if (process.argv.includes("--dev")) {
 			return (await f.exists()) ? new Response(f) : new Response("not found", { status: 404 });
 		},
 	});
-	console.log("preview: http://127.0.0.1:5173/index.html?mock");
+	console.log("preview: http://127.0.0.1:5173/index.html?mock  and  http://127.0.0.1:5173/popup.html?mock");
 }

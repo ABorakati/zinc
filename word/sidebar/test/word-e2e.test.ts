@@ -247,7 +247,8 @@ d("sidebar controller driving an invisible Word", () => {
 		await until("page init", "document.getElementById('docline').textContent.includes('Document')");
 		await ev("(() => { const q = document.getElementById('q'); q.value = 'liver transplantation'; q.dispatchEvent(new Event('input')); return 1; })()");
 		await until("results", "document.querySelectorAll('#results li').length > 0");
-		await ev("document.querySelector('#results li').click(); 1");
+		// tick the result's checkbox (a plain click on the row inserts the citation at once)
+		await ev("document.querySelector('#results li input[type=checkbox]').click(); 1");
 		await until("tray", "document.querySelectorAll('#tray .pick').length === 1");
 		await ev("document.getElementById('insert').click(); 1");
 		await until("field in Word", "document.getElementById('status') !== null && document.querySelectorAll('#toast .t').length > 0");

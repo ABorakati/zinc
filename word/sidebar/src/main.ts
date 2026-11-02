@@ -301,6 +301,20 @@ async function startEdit() {
 	$<HTMLInputElement>("q").focus();
 }
 
+/** "editCitation" command (from the citation popup): the cursor view may not have arrived yet, so read the cursor first. */
+async function editCitationAtCursor() {
+	if (!cursorView) {
+		try {
+			const c = await app.host.call<any>("doc.cursor");
+			if (c?.inField && c.kind === "item") cursorView = await app.describeCitation(c);
+		} catch {
+			cursorView = null;
+		}
+	}
+	if (!cursorView) return toast("The cursor is not inside a citation.", true);
+	await startEdit();
+}
+
 async function deleteCited() {
 	const v = cursorView;
 	if (!v) return;
@@ -448,6 +462,7 @@ async function main() {
 		if (d?.name === "insertCitation") q.focus();
 		else if (d?.name === "insertBibliography") $("bib").click();
 		else if (d?.name === "refresh") $("refresh").click();
+		else if (d?.name === "editCitation") void editCitationAtCursor();
 	});
 	renderTray();
 	await refreshDocState();

@@ -1,0 +1,33 @@
+/* Citation popup (popup.html): small borderless WebView2 window under the citation. Tokens come from style.css. */
+html, body.popup { height: auto; }
+body.popup { overflow: hidden; }
+#pop {
+	display: flex; flex-direction: column; gap: 0;
+	max-height: 520px; overflow-y: auto;
+	background: var(--background); padding: 10px 12px 12px;
+	border: 1px solid var(--border);
+}
+body.popup.mock { width: 420px; margin: 24px auto; box-shadow: 0 8px 28px rgb(0 0 0 / .25); border-radius: var(--radius); }
+body.popup.mock #pop { border-radius: var(--radius); }
+#pop .item { padding: 10px 0; border-top: 1px solid var(--border); }
+#pop .item:first-child { border-top: none; padding-top: 0; }
+#pop .head .t { font-weight: 600; font-size: 13.5px; line-height: 1.3; }
+#pop .head .m { color: var(--muted-foreground); font-size: 12px; margin-top: 2px; }
+#pop .chips { margin-top: 4px; gap: 6px; }
+#pop .ref {
+	margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--card); border: 1px solid var(--border);
+	font-size: 12.5px; line-height: 1.45; user-select: text; overflow-wrap: anywhere;
+}
+#pop .abs-label { margin-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); font-weight: 600; }
+#pop .abs { margin-top: 2px; white-space: pre-wrap; user-select: text; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; }
+#pop .abs.open { display: block; -webkit-line-clamp: unset; }
+#pop .item .acts { margin-top: 6px; }
+#pop .msg { padding: 10px 0; }
+#pop .msg.err { color: var(--destructive); }
+#pop .actions { position: sticky; bottom: -12px; margin: 4px -12px -12px; padding: 8px 12px; background: var(--background); border-top: 1px solid var(--border); }
+#pop .actions .spacer { flex: 1; }
+button.danger { color: var(--destructive); }
+button.danger:hover { background: color-mix(in srgb, var(--destructive) 12%, transparent); }
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; vertical-align: -1px; margin-right: 6px; }
+@media (prefers-reduced-motion: no-preference) { .spin { animation: spin .8s linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg); } }
