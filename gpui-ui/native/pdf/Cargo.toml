@@ -1,0 +1,16 @@
+[package]
+name = "zn_pdf"
+version = "0.1.0"
+edition = "2024"
+description = "Spike: hayro-backed PDF page renderer + text layer behind a C ABI for bun:ffi (zotero-next GPUI reader)."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pure-Rust PDF rasterizer. Default features embed the standard-14 substitute fonts + predefined CMaps (needed for
+# non-embedded Helvetica/Times/CJK PDFs); turning them off saves ~1-2 MB but breaks those documents.
+# `hayro::kurbo` / `hayro::vello_cpu` / `hayro::hayro_interpret` / `hayro::hayro_syntax` are re-exported, so nothing else is needed.
+hayro = "0.8"

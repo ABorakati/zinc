@@ -3,6 +3,7 @@
 import { createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
 import { api, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, ItemRow, Mode, Store } from "./contracts";
+import { mark } from "./trace";
 
 export const PAGE = 100;
 const FILTER_DEBOUNCE_MS = 200;
@@ -30,7 +31,7 @@ function createStore(): AppStore {
 	// ---- collections ----
 	const [collections, setCollections] = createSignal<Collection[]>([]);
 	const [selectedCollection, setSelectedCollection] = createSignal<string | null>(null);
-	api.collections().then(setCollections).catch((e) => setError(String(e?.message ?? e)));
+	api.collections().then((c) => { setCollections(c); mark("collections-loaded"); }).catch((e) => setError(String(e?.message ?? e)));
 
 	// ---- filter (200 ms debounce) ----
 	const [filter, setFilterSig] = createSignal("");
@@ -85,6 +86,7 @@ function createStore(): AppStore {
 			setTotal(res.total);
 			setError(null);
 			setPagesLoaded((n) => n + 1);
+			mark("items-loaded");
 		} catch (e) {
 			if (g === gen && (e as Error)?.name !== "AbortError") setError(String((e as Error)?.message ?? e));
 		} finally {

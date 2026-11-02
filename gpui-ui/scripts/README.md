@@ -5,16 +5,24 @@ Everything is Bun only (`bun`, no node/npm/npx). Run from `gpui-ui/`.
 
 ## Prerequisites
 
-* A core API with a copy of the library: `http://127.0.0.1:23160` (also serves the web UI at `/app/`). The GPUI app reads
-  `ZN_URL` (default `http://127.0.0.1:23160`).
+* A core API with a copy of the library, either
+  * **external** (default): a core already running at `ZN_URL` (default `http://127.0.0.1:23160`, also serves the web UI at
+    `/app/`), or
+  * **in-process**: set `ZN_DB=<copy of the library>` and the app runs the core itself (`src/core.ts`, same as the Electrobun
+    app does). `ZN_PORT` (default 23161, falls back to a free port) is its loopback port; `ZN_CORE_DIRECT=1` skips HTTP and
+    calls the core's `handleApi` directly. **The core writes to its database: use a `VACUUM INTO` copy, never
+    `data/library.sqlite`** (the app refuses that path unless `ZN_ALLOW_REAL_DB=1`; there is no default for `ZN_DB`).
+    Make a copy with `bun -e 'import {Database} from "bun:sqlite"; new Database("src.sqlite",{readonly:true}).run("VACUUM INTO \"copy.sqlite\"")'`.
 * `bun install` (adds `@gpuix/*`, `solid-js`, and the harness deps `pngjs` + `pixelmatch`).
 * `agent-browser` on PATH (headless Chrome; used by `compare.ts` only; it never touches your own browser).
 
 ## Run the app
 
 ```
-bun src/main.tsx                              # opens the real GPUI window
+bun src/main.tsx                              # opens the real GPUI window (external core)
 ZN_URL=http://127.0.0.1:23160 bun src/main.tsx
+ZN_DB=C:/path/to/library-COPY.sqlite bun src/main.tsx    # core in the same process
+ZN_TRACE=1 bun src/main.tsx                   # prints startup milestones: "[zn-t] <name> <ms since process start>"
 bun --hot src/main.tsx                        # hot reload (bun run dev)
 bun check                                     # typecheck (do not use tsc via bunx)
 ```
@@ -59,27 +67,49 @@ and the `% different` printed on the last line.
 Notes: the web UI groups the list by year and shows live data, so a flat GPUI list will always differ in the list region; the
 number is a progress indicator, not a pass/fail. Lower is better; sub-pixel text anti-aliasing alone usually costs a few percent.
 
-## memory.ts: memory + time-to-window of the real GPUI window
+## memory.ts / startup.ts: memory + startup time of the real GPUI window
 
 ```
-bun scripts/memory.ts                         # 3 runs, 15 s each
+bun scripts/memory.ts                                         # external core at http://127.0.0.1:23160, 3 runs, 15 s each
 bun scripts/memory.ts --runs 1 --wait 6
-bun scripts/memory.ts --entry src/main.tsx --url http://127.0.0.1:23160 --port 23160
+bun scripts/memory.ts --url http://127.0.0.1:23170 --port 23170        # external core elsewhere
+bun scripts/memory.ts --db C:/path/to/library-COPY.sqlite             # in-process core (ZN_DB; port 23161)
+ZN_CORE_DIRECT=1 bun scripts/memory.ts --db C:/path/to/library-COPY.sqlite   # in-process, no HTTP
+bun scripts/startup.ts [same options]                         # 3 runs, 7 s each, prints only the time-to-window / first-items summary
 ```
 
 Each run opens a visible window (do not click or type in it). A generated PowerShell script (`%TEMP%\zn-memory\measure.ps1`)
-launches `bun <entry>` with `ZN_URL`, polls (about 40 ms) for a visible top-level window owned by the process tree, and at
-`--wait` seconds records private bytes (`PrivateMemorySize64`) and working set of:
+launches `bun <entry>` with `ZN_TRACE=1` and `ZN_URL` (or `ZN_DB`/`ZN_PORT` for the in-process core), polls (about 10 ms) for a
+visible top-level window owned by the process tree, and at `--wait` seconds records private bytes (`PrivateMemorySize64`) and
+working set of:
 
 * the GPUI process tree (bun plus any children; `conhost` is ignored), and
-* the core API process listening on `--port` (found with `Get-NetTCPConnection`, `netstat -ano` fallback), reported separately
-  because in the spike the core is its own process; the "total" columns add the two.
+* in external mode, the core API process listening on `--port` (found with `Get-NetTCPConnection`, `netstat -ano` fallback),
+  reported separately; the "total" columns add the two. In in-process mode the core is inside the GPUI process, so there is
+  no core column.
 
-Then it closes the window (`CloseMainWindow`, `taskkill /T /F` after 4 s) and prints a table with an average row. "window ms" is
-from process start to the first visible window, so it includes Bun start-up and font registration.
+Then it closes the window (`CloseMainWindow`, `taskkill /T /F` after 4 s) and prints a table with an average row.
 
-Reference: the current Electrobun app measured, library only, about 580 MB private / 710 MB WS total (bun main including the
-core about 230 MB plus six WebView2 processes about 350 MB).
+Columns: "window ms" is from process start (the PowerShell stopwatch, so it includes spawning Bun) to the first visible window; "colls
+ms" and "items ms" come from the app's own `ZN_TRACE` marks (`src/trace.ts`, ms since the Bun process started): the collections
+are in the store, and the app is mounted with its first page of items in the store (`first-items`; the next frame paints them).
+The two clocks differ by the process launch (about 50-150 ms). Other milestones are in the per-run line: `main-start`,
+`render-returned` (the splash is on its way), `fonts-registered`, `core-start`/`core-ready`, `store-ready`, `app-mounted`.
 
-The core's own memory is whatever that process has accumulated (it may serve other clients too), so compare the "GPUI" columns
-for the UI cost and treat the core columns as a constant.
+Startup notes (what the numbers are made of, so you know what is worth touching):
+
+* Bun start-up with the Solid preload (babel + the solid preset) is about 210 ms before any app code runs; the first `.tsx` file
+  pays babel's warm-up again (about 170 ms). `bun src/x.ts` with no JSX reaches `main-start` earlier.
+* `render()` itself takes 400-500 ms (native renderer init), and the window then appears about 250-900 ms after it returns
+  (GPU/window thread, not JS): an empty window is the floor, about 1.7 s on this machine under load.
+* Importing the UI modules (all the `.tsx`, through babel) is about 400-700 ms; the core's modules about 400 ms (server + MCP),
+  about 130 ms for just `db` + `api` (`ZN_CORE_DIRECT=1`).
+* Registering a font costs 5-20 ms while the tree has no text, but about 250 ms per file once the app's text is on screen
+  (everything is re-shaped), so `main.tsx` registers them right after the first `render()`.
+
+Reference: the Electrobun app measured, library only, about 580 MB private / 710 MB WS total (bun main including the core about
+230 MB plus six WebView2 processes about 350 MB).
+
+In external mode the core's own memory is whatever that process has accumulated (it may serve other clients too), so compare
+the "GPUI" columns for the UI cost and treat the core columns as a constant. Numbers on a busy machine vary a lot (run
+`startup.ts` a few times and look at the median, not one run).

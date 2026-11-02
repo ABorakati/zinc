@@ -1,7 +1,27 @@
 // Typed fetch client for the core API (the subset the library window needs).
 import type { Collection, ItemRow } from "./contracts";
 
-export const BASE_URL = ((typeof process !== "undefined" ? process.env.ZN_URL : undefined) ?? "http://127.0.0.1:23160").replace(/\/+$/, "");
+const trim = (u: string) => u.replace(/\/+$/, "");
+
+/**
+ * Where the core API lives. Default: an external core at ZN_URL (default http://127.0.0.1:23160). When ZN_DB is set, src/core.ts
+ * runs the core inside this process and repoints it (setBaseUrl, or setDirect for the no-HTTP shortcut).
+ */
+export let BASE_URL = trim((typeof process !== "undefined" ? process.env.ZN_URL : undefined) ?? "http://127.0.0.1:23160");
+
+/** In-process shortcut: answer /api requests by calling the core's handleApi directly (no socket, no loopback HTTP). */
+export type DirectHandler = (req: Request) => Promise<Response | null> | Response | null;
+let direct: DirectHandler | null = null;
+
+/** Requests wait for this before going out: main.tsx holds them while the in-process core starts (so the store can be created at once). */
+let gate: Promise<unknown> = Promise.resolve();
+
+export function setBaseUrl(u: string): void { BASE_URL = trim(u); direct = null; }
+export function setDirect(h: DirectHandler): void { direct = h; }
+export function holdRequestsUntil(p: Promise<unknown>): void {
+	gate = Promise.all([gate, p]);
+	gate.catch(() => {}); // a failed core start surfaces through the requests waiting on it, not as an unhandled rejection
+}
 
 /** Flat collection as GET /api/collections returns it. */
 export interface CollectionDto {
@@ -50,7 +70,11 @@ const qs = (o: Record<string, string | number | boolean | undefined>) => {
 };
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
-	const res = await fetch(BASE_URL + "/api" + path, { signal });
+	await gate;
+	signal?.throwIfAborted();
+	const res = direct
+		? (await direct(new Request("http://127.0.0.1/api" + path, { signal }))) ?? new Response('{"error":"not found"}', { status: 404 })
+		: await fetch(BASE_URL + "/api" + path, { signal });
 	if (!res.ok) {
 		let msg = res.statusText;
 		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch {}
