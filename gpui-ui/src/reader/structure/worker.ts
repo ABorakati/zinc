@@ -3,6 +3,7 @@
 // requests for cmaps / fonts / wasm / models, answered from the build directory on disk.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: number) => void }
 interface WorkerMessage {
@@ -20,7 +21,9 @@ export class DocumentWorker {
 	private ready: Promise<void>;
 
 	constructor() {
-		const w = new Worker(new URL("./docworker-entry.ts", import.meta.url).href);
+		// ZN_DOCWORKER_ENTRY: an on-disk copy of docworker-entry.ts (the packaged app ships one next to the exe)
+		const entry = process.env.ZN_DOCWORKER_ENTRY;
+		const w = new Worker(entry ? pathToFileURL(entry).href : new URL("./docworker-entry.ts", import.meta.url).href);
 		this.worker = w;
 		(w as unknown as { unref?: () => void }).unref?.(); // never keeps a headless script alive
 		this.ready = new Promise<void>((resolve, reject) => {

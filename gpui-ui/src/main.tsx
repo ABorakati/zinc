@@ -9,6 +9,7 @@
 //        - import the App and swap it in for the splash.
 //
 // Set ZN_TRACE=1 to print the milestones (see src/trace.ts; scripts/startup.ts reads them).
+import "./packaged"; // first: sets the packaged app's defaults before other modules read the environment
 import { render } from "@gpuix/solid";
 import { createComponent, createEffect, createRoot, createSignal, Show, type Component } from "solid-js";
 import type { Mode, Style } from "./contracts";

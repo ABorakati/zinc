@@ -186,7 +186,7 @@ for (const v of todo) {
 			autoloadTsconfig: false,
 			autoloadPackageJson: false,
 			...(v.bytecodeOrder ? { bytecodeOrder: v.bytecodeOrder } : {}),
-			windows: { hideConsole, title: "zotero-next", description: "zotero-next (GPUI spike)", version: "0.0.1.0" },
+			windows: { hideConsole, icon: join(root, "..", "app", "assets", "icon.ico"), title: "zotero-next", description: "zotero-next (GPUI)", version: "0.0.1.0" },
 		},
 	});
 	if (!result.success) {
