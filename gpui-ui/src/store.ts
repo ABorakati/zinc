@@ -1,0 +1,135 @@
+// App state for the library window (Solid signals). Implements Store from contracts.ts, plus a few extras
+// (qmode, loading, error, groups) the toolbar / list can use.
+import { createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
+import { api, type ItemGroup, type ItemQuery } from "./api";
+import type { Collection, ItemRow, Mode, Store } from "./contracts";
+
+export const PAGE = 100;
+const FILTER_DEBOUNCE_MS = 200;
+
+/** Quick-search modes (toolbar search box), as the web UI. */
+export type QMode = "titleCreatorYear" | "fields" | "everything";
+
+export interface AppStore extends Store {
+	qmode: () => QMode;
+	setQMode(m: QMode): void;
+	/** true while any page request is in flight */
+	loading: () => boolean;
+	error: () => string | null;
+	/** the effective item query (collection + debounced filter + sort) */
+	query: () => ItemQuery;
+	/** year group sizes in list order (same order as the rows); empty until loaded */
+	groups: () => ItemGroup[];
+	/** bumped whenever a page arrives (itemAt also tracks it) */
+	pagesLoaded: () => number;
+}
+
+function createStore(): AppStore {
+	const [mode, setMode] = createSignal<Mode>("dark");
+
+	// ---- collections ----
+	const [collections, setCollections] = createSignal<Collection[]>([]);
+	const [selectedCollection, setSelectedCollection] = createSignal<string | null>(null);
+	api.collections().then(setCollections).catch((e) => setError(String(e?.message ?? e)));
+
+	// ---- filter (200 ms debounce) ----
+	const [filter, setFilterSig] = createSignal("");
+	const [appliedFilter, setAppliedFilter] = createSignal("");
+	const [qmode, setQMode] = createSignal<QMode>("titleCreatorYear");
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const setFilter = (q: string) => {
+		setFilterSig(q);
+		clearTimeout(timer);
+		timer = setTimeout(() => setAppliedFilter(q.trim()), FILTER_DEBOUNCE_MS);
+	};
+	onCleanup(() => clearTimeout(timer));
+
+	// ---- item list: default List view = grouped by year (year desc, then date added desc) ----
+	const query = createMemo<ItemQuery>(() => ({
+		// "unfiled" and "trash" are library views, not collection keys
+		collection: selectedCollection() === "unfiled" || selectedCollection() === "trash" ? undefined : selectedCollection() ?? undefined,
+		unfiled: selectedCollection() === "unfiled" || undefined,
+		trash: selectedCollection() === "trash" || undefined,
+		qmode: qmode() !== "titleCreatorYear" ? qmode() : undefined,
+		q: appliedFilter() || undefined,
+		sort: "year",
+		dir: "desc",
+		then: "dateAdded:desc",
+		fields: "DOI,url",
+		include: "creators,tags",
+	}));
+
+	const [total, setTotal] = createSignal(0);
+	const [listVersion, setListVersion] = createSignal(0);
+	const [pagesLoaded, setPagesLoaded] = createSignal(0);
+	const [pending, setPending] = createSignal(0);
+	const [error, setError] = createSignal<string | null>(null);
+	const [groups, setGroups] = createSignal<ItemGroup[]>([]);
+	const [selectedItem, setSelectedItem] = createSignal<string | null>(null);
+
+	let gen = 0; // bumped on every reset
+	let cacheGen = -1; // the generation the rows in `cache` belong to
+	let cache = new Map<number, ItemRow>();
+	const inflight = new Set<number>();
+	let abort = new AbortController();
+
+	async function loadPage(p: number, g: number) {
+		if (inflight.has(p) || g !== gen) return;
+		inflight.add(p);
+		setPending((n) => n + 1);
+		try {
+			const res = await api.items(untrack(query), p * PAGE, PAGE, abort.signal);
+			if (g !== gen) return;
+			if (cacheGen !== g) { cache = new Map(); cacheGen = g; } // first page of the new list replaces the old rows
+			res.items.forEach((it, i) => cache.set(p * PAGE + i, it));
+			setTotal(res.total);
+			setError(null);
+			setPagesLoaded((n) => n + 1);
+		} catch (e) {
+			if (g === gen && (e as Error)?.name !== "AbortError") setError(String((e as Error)?.message ?? e));
+		} finally {
+			if (g === gen) inflight.delete(p);
+			setPending((n) => n - 1);
+		}
+	}
+
+	// A new collection / filter starts over; old rows stay visible until page 0 of the new list lands.
+	createEffect(on(query, (q) => {
+		gen++;
+		abort.abort();
+		abort = new AbortController();
+		inflight.clear();
+		setSelectedItem(null);
+		setListVersion(gen);
+		void loadPage(0, gen);
+		const g = gen;
+		api.itemGroups(q, "year", abort.signal).then((r) => { if (g === gen) setGroups(r.groups); }).catch(() => {});
+	}));
+
+	function itemAt(i: number): ItemRow | undefined {
+		pagesLoaded(); // re-run readers when pages arrive
+		listVersion();
+		const row = cache.get(i);
+		if (!row || cacheGen !== gen) {
+			// not loaded for the current list yet (a stale row, if any, is returned meanwhile)
+			if (i >= 0 && i < Math.max(total(), 1)) queueMicrotask(() => void loadPage(Math.floor(i / PAGE), gen));
+		}
+		return row;
+	}
+
+	return {
+		mode, setMode,
+		collections,
+		selectedCollection,
+		selectCollection: (key) => setSelectedCollection(key),
+		filter, setFilter,
+		total, itemAt, listVersion,
+		selectedItem, selectItem: (key) => setSelectedItem(key),
+		qmode, setQMode,
+		loading: () => pending() > 0,
+		error,
+		query, groups, pagesLoaded,
+	};
+}
+
+export const store: AppStore = createRoot(createStore);
