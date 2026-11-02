@@ -206,6 +206,9 @@ func TestOpeningAnItemMakesAReaderTab(t *testing.T) {
 	if n != 1 || active != "ATT00000" {
 		t.Fatalf("readers %d active %q", n, active)
 	}
+	if got := l.navigatedURLs(); len(got) != 1 || !strings.Contains(got[0], "attachment=ATT00000") {
+		t.Errorf("shared view navigated to %q", got)
+	}
 	if !tt.HasText("Reader: Paper 00000") {
 		t.Errorf("reader pane not shown: %q", tt.Texts())
 	}
@@ -224,5 +227,59 @@ func TestUnreachableCoreSaysSo(t *testing.T) {
 	tt := ui.NewTester(l.view, 800, 500)
 	if !tt.HasText("Core is not reachable") {
 		t.Errorf("texts %q", tt.Texts())
+	}
+}
+
+func (l *library) navigatedURLs() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.navigated...)
+}
+
+func TestReaderTabsShareOneWebView(t *testing.T) {
+	var made int
+	l, tt, _ := newTestApp(t, 100)
+	l.makeView = func(string) (*mygo.WebView, error) { made++; return nil, nil }
+	open := func(title string) {
+		if err := tt.Click(title); err != nil {
+			t.Fatal(err)
+		}
+		tt.Key(0, ui.KeyEnter)
+		tt.Frame()
+	}
+	open("Paper 00000")
+	if err := tt.Click("Library"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	open("Paper 00002")
+	open2 := l.navigatedURLs()
+	if len(open2) != 2 || !strings.Contains(open2[1], "attachment=ATT00002") {
+		t.Fatalf("second tab should navigate the shared view: %q", open2)
+	}
+	if made != 1 {
+		t.Fatalf("%d web views made for two reader tabs, want 1", made)
+	}
+	// Switching back to the first tab navigates again, not a new view.
+	if err := tt.Click("Paper 00000"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := l.navigatedURLs(); len(got) != 3 || !strings.Contains(got[2], "ATT00000") || made != 1 {
+		t.Fatalf("navigations %q, views %d", got, made)
+	}
+	// Closing both tabs releases the view; opening one again makes a new one.
+	if err := tt.Click("Close Paper 00002"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("Close Paper 00000"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	l.mu.Lock()
+	gone := l.shared == nil
+	l.mu.Unlock()
+	if !gone {
+		t.Error("closing the last tab should release the shared web view")
 	}
 }

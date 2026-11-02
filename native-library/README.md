@@ -2,8 +2,9 @@
 
 A native window for the zotero-next library, written with [MyGo](https://github.com/egoist/mygo)'s
 native UI toolkit: the collections tree and the item table are drawn by MyGo itself (GPU, no web
-view). PDFs open in tabs that are web views showing the existing `reader-next` page, so only the
-reader pays for a browser engine.
+view). PDFs open in tabs that share ONE web view showing the existing `reader-next` page (switching a
+tab navigates it; the reader restores page, zoom and annotations). One view per tab was tried first
+and measured 300-540 MB per tab on Windows, because each web view starts its own browser processes.
 
 It is a client of the core service's HTTP API (`GET /api/collections`, `GET /api/items`), so it runs
 beside the web UI against the same library. `core/` is unchanged.
@@ -23,8 +24,8 @@ macOS builds cross-compile from Linux.
 - Collections tree (nested, with counts) and My Library.
 - Item table over the whole library: pages of 100 rows are fetched when their rows scroll into view;
   a header click sorts on the server; the search box queries `q=` after a 200 ms pause.
-- Enter or double click on an item with an attachment opens it in a reader tab; tabs keep their page
-  while hidden and close with ×.
+- Enter or double click on an item with an attachment opens it in a reader tab; the tabs share one web
+  view, which navigates on tab switch and is destroyed when the last tab closes.
 
 ## Not done
 

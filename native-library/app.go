@@ -1,7 +1,7 @@
 // native-library is a native window for the zotero-next library: collections
 // and an item table drawn by MyGo on the GPU, with no web view for the
-// library itself. PDFs open in web view tabs (the existing reader-next page),
-// so only the reader pays for a browser engine.
+// library itself. PDFs open in tabs that share one web view showing the
+// existing reader-next page, so only the reader pays for a browser engine.
 //
 // The window is a client of the core service's HTTP API, so it can run
 // beside the web UI, against the same library.
@@ -22,10 +22,20 @@ import (
 
 const pageSize = 100
 
+// reader is a tab: which attachment it shows. Tabs hold no web view of their
+// own. Every web view starts its own browser processes (hundreds of MB), so
+// all tabs share one, which navigates to the active tab's page. The reader
+// restores page, zoom and annotations when its page loads again.
 type reader struct {
 	attachment string
 	title      string
-	view       *mygo.WebView
+	url        string
+}
+
+// sharedView is the one web view the reader tabs share.
+type sharedView struct {
+	view *mygo.WebView // nil in tests
+	url  string        // what it shows now
 }
 
 type library struct {
@@ -36,6 +46,8 @@ type library struct {
 	// makeView replaces the OS web view.
 	inline   bool
 	makeView func(url string) (*mygo.WebView, error)
+	// navigated records the pages the shared view was sent to (tests).
+	navigated []string
 
 	mu sync.Mutex
 
@@ -61,9 +73,10 @@ type library struct {
 	itemErr  string
 
 	// Reader tabs.
-	active  string
-	readers []*reader
-	opening map[string]bool
+	active   string
+	readers  []*reader
+	shared   *sharedView
+	creating bool
 
 	sidebar float32
 }
@@ -75,7 +88,6 @@ func newLibrary(api *API) *library {
 		open:     map[string]*bool{},
 		pages:    map[int][]Item{},
 		loading:  map[int]bool{},
-		opening:  map[string]bool{},
 		sort:     ui.SortOrder{Column: "title"},
 		selected: -1,
 		sidebar:  240,
@@ -222,39 +234,53 @@ func (l *library) openItem(it Item) bool {
 	if att == nil {
 		return false
 	}
+	l.active = att.Key
 	for _, r := range l.readers {
 		if r.attachment == att.Key {
-			l.active = att.Key
 			return true
 		}
 	}
-	if l.opening[att.Key] {
-		return true
-	}
-	l.opening[att.Key] = true
-	title := it.Title
-	url := l.api.ReaderURL(att.Key)
-	make := func() {
-		view, err := l.newView(url)
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		delete(l.opening, att.Key)
-		if err != nil {
-			l.itemErr = "reader: " + err.Error()
+	l.readers = append(l.readers, &reader{attachment: att.Key, title: it.Title, url: l.api.ReaderURL(att.Key)})
+	return true
+}
+
+// syncReader points the shared web view at the active tab, making it the
+// first time. It runs from the view: web views are made outside it.
+func (l *library) syncReader(r *reader) {
+	if l.shared == nil {
+		if l.creating {
 			return
 		}
-		l.readers = append(l.readers, &reader{attachment: att.Key, title: title, view: view})
-		l.active = att.Key
+		l.creating = true
+		create := func() {
+			view, err := l.newView(r.url)
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.creating = false
+			if err != nil {
+				l.itemErr = "reader: " + err.Error()
+				return
+			}
+			l.shared = &sharedView{view: view, url: r.url}
+			l.navigated = append(l.navigated, r.url)
+		}
+		if l.inline {
+			l.mu.Unlock()
+			create()
+			l.mu.Lock()
+			return
+		}
+		go func() { create(); l.invalidate() }()
+		return
 	}
-	if l.inline {
-		l.mu.Unlock()
-		make()
-		l.mu.Lock()
-		return true
+	if l.shared.url == r.url {
+		return
 	}
-	// Web views are made outside the view, from any goroutine.
-	go func() { make(); l.invalidate() }()
-	return true
+	l.shared.url = r.url
+	l.navigated = append(l.navigated, r.url)
+	if v := l.shared.view; v != nil {
+		go v.Page().LoadURL(r.url)
+	}
 }
 
 func (l *library) newView(url string) (*mygo.WebView, error) {
@@ -264,19 +290,23 @@ func (l *library) newView(url string) (*mygo.WebView, error) {
 	return l.win.NewWebView(mygo.WebViewOptions{URL: url})
 }
 
+// closeReader closes a tab. Closing the last one destroys the shared web
+// view, which gives its browser processes back.
 func (l *library) closeReader(key string) {
 	for i, r := range l.readers {
-		if r.attachment != key {
-			continue
+		if r.attachment == key {
+			l.readers = append(l.readers[:i], l.readers[i+1:]...)
+			break
 		}
-		l.readers = append(l.readers[:i], l.readers[i+1:]...)
-		if r.view != nil {
-			go r.view.Destroy()
-		}
-		break
 	}
 	if l.active == key {
 		l.active = ""
+	}
+	if len(l.readers) == 0 && l.shared != nil {
+		if v := l.shared.view; v != nil {
+			go v.Destroy()
+		}
+		l.shared = nil
 	}
 }
 
@@ -394,11 +424,12 @@ func tabButton(c *ui.Context, label string, shown bool) ui.Element {
 }
 
 func (l *library) readerView(c *ui.Context, r *reader) {
-	if r.view == nil {
+	l.syncReader(r)
+	if l.shared == nil || l.shared.view == nil {
 		ui.Text(c, "Reader: "+r.title).Padding(16)
 		return
 	}
-	ui.WebView(c, r.view).Grow(1)
+	ui.WebView(c, l.shared.view).Grow(1)
 }
 
 var columns = []ui.TableColumn{
@@ -441,7 +472,11 @@ func (l *library) itemsView(c *ui.Context) {
 		}
 		switch columns[col].ID {
 		case "title":
-			ui.Text(c, it.Title).SingleLine()
+			if it.Title == "" {
+				ui.Text(c, "(untitled)").SingleLine().TextColor(t.TextMuted)
+			} else {
+				ui.Text(c, it.Title).SingleLine()
+			}
 		case "creator":
 			ui.Text(c, it.CreatorsSummary).SingleLine().TextColor(t.TextMuted)
 		case "year":
