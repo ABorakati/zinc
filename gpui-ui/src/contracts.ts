@@ -47,7 +47,23 @@ export interface ItemRow {
 	[k: string]: unknown;
 }
 
+/** The permanent first tab: the library (sidebar | list | item pane). */
+export interface LibraryTab { id: "library" }
+/** A PDF reader tab; its id is the attachment key. */
+export interface ReaderTab { id: string; kind: "reader"; title: string; itemKey: string }
+export type Tab = LibraryTab | ReaderTab;
+export const isReaderTab = (t: Tab): t is ReaderTab => "kind" in t && t.kind === "reader";
+
 export interface Store {
+	/** Open tabs in strip order; tabs()[0] is always the library. */
+	tabs: Accessor<Tab[]>;
+	/** Tab id: "library" or a reader tab's attachment key. */
+	activeTab: Accessor<string>;
+	setActiveTab(id: string): void;
+	/** Open the attachment in a reader tab, or focus its tab if already open. */
+	openAttachment(attachmentKey: string, title: string, itemKey: string): void;
+	/** Close a reader tab (the library tab cannot be closed); the neighbour becomes active when the closed tab was. */
+	closeTab(id: string): void;
 	mode: Accessor<Mode>;
 	setMode(m: Mode): void;
 	collections: Accessor<Collection[]>; // tree (roots with children)

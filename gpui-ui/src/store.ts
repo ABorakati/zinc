@@ -2,7 +2,7 @@
 // (qmode, loading, error, groups) the toolbar / list can use.
 import { createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
 import { api, type ItemGroup, type ItemQuery } from "./api";
-import type { Collection, ItemRow, Mode, Store } from "./contracts";
+import type { Collection, ItemRow, Mode, Store, Tab } from "./contracts";
 import { mark } from "./trace";
 
 export const PAGE = 100;
@@ -119,7 +119,25 @@ function createStore(): AppStore {
 		return row;
 	}
 
+	// ---- tabs (not persisted): the library plus one reader tab per open attachment, as ui/src/store.ts ----
+	const [tabs, setTabs] = createSignal<Tab[]>([{ id: "library" }]);
+	const [activeTab, setActiveTab] = createSignal("library");
+	function openAttachment(attachmentKey: string, title: string, itemKey: string) {
+		if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), { id: attachmentKey, kind: "reader", title, itemKey }]);
+		setActiveTab(attachmentKey);
+	}
+	function closeTab(id: string) {
+		if (id === "library") return;
+		const list = tabs();
+		const i = list.findIndex((t) => t.id === id);
+		if (i < 0) return;
+		const next = list.filter((t) => t.id !== id);
+		setTabs(next);
+		if (activeTab() === id) setActiveTab(next[Math.min(i, next.length - 1)]!.id); // neighbour on the right, else on the left
+	}
+
 	return {
+		tabs, activeTab, setActiveTab, openAttachment, closeTab,
 		mode, setMode,
 		collections,
 		selectedCollection,

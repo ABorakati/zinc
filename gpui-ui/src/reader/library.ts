@@ -1,21 +1,74 @@
-// Find the on-disk PDF of an attachment, read-only. The core API serves file BYTES (GET /api/attachments/:key/file), not a
-// path, and the spike wants to open the file in place (zero copies), so the path comes from the library database opened
-// read-only (bun:sqlite readonly never takes a write lock and is safe next to the running core). Nothing is modified or moved.
-import { Database } from "bun:sqlite";
+// Get a PDF for an attachment key through the core, never by opening data/library.sqlite.
+//
+// The core serves an attachment's file as BYTES (GET /api/attachments/:key/file, Range-capable); item JSON only carries the
+// stored path ("attachments:<relative>" for linked files), which only the core can resolve, and its MCP get_file_path is not an
+// HTTP route. So the reader fetches the bytes and hands them to the cdylib (zpdf_open_bytes: one copy into the worker, which
+// is the same single in-memory copy the path-based open makes with fs::read).
+//
+// Where the request goes: api.ts's BASE_URL (an external core at ZN_URL, or the in-process core's loopback server when ZN_DB
+// is set; startCore() is awaited first so a starting in-process core is waited for). In ZN_CORE_DIRECT=1 mode the core has no
+// socket and api.ts keeps its direct handler private, so the app must wire it: `setFileFetcher((key) => handleApi(...))`.
+//
+// Fallback (off by default): ZN_READER_SQLITE=1 resolves "key:ABCD1234" through the library database opened READ-ONLY, for
+// diagnosing a core that is down. It cannot resolve relative ("attachments:...") paths.
 import { existsSync } from "node:fs";
+import { BASE_URL } from "../api";
+import { startCore } from "../core";
+import { PdfDoc } from "./pdf";
 
-const DB = process.env.ZN_DB_FILE ?? "C:/Users/abora/zotero-next/data/library.sqlite";
+export type FileFetcher = (attachmentKey: string, signal?: AbortSignal) => Promise<Response>;
+let fetcher: FileFetcher | undefined;
+/** Override how attachment files are fetched (the in-process direct-handler mode, tests). */
+export function setFileFetcher(f: FileFetcher | undefined): void { fetcher = f; }
 
-/** "key:ABCD1234" (attachment key) -> its PDF path; anything else is returned as given. */
-export function resolvePdf(spec: string): string {
-	if (!spec.startsWith("key:")) return spec;
-	const key = spec.slice(4);
-	const db = new Database(DB, { readonly: true });
+export class PdfLoadError extends Error {}
+
+/** Fetch an attachment's PDF bytes from the core. */
+export async function fetchAttachment(key: string, signal?: AbortSignal): Promise<Uint8Array> {
+	const core = await startCore();
+	let res: Response;
+	try {
+		if (fetcher) res = await fetcher(key, signal);
+		else if (core?.direct) throw new PdfLoadError("the core runs in direct mode (ZN_CORE_DIRECT=1): the app must call setFileFetcher() from reader/library.ts");
+		else res = await fetch(`${BASE_URL}/api/attachments/${encodeURIComponent(key)}/file`, { signal });
+	} catch (e) {
+		if (e instanceof PdfLoadError || (e as Error).name === "AbortError") throw e;
+		throw new PdfLoadError(`cannot reach the core (${BASE_URL}): ${(e as Error).message}`);
+	}
+	if (!res.ok) {
+		let msg = res.statusText || `HTTP ${res.status}`;
+		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not JSON */ }
+		throw new PdfLoadError(res.status === 404 ? `no file for this attachment (${msg})` : msg);
+	}
+	const type = res.headers.get("content-type") ?? "";
+	if (type && !/pdf|octet-stream/i.test(type)) throw new PdfLoadError(`this attachment is ${type.split(";")[0]}, not a PDF`);
+	return new Uint8Array(await res.arrayBuffer());
+}
+
+/** An attachment key, "key:<attachment key>", or a file path -> an open document (the caller closes it). */
+export async function openPdf(spec: string, signal?: AbortSignal): Promise<PdfDoc> {
+	const key = spec.startsWith("key:") ? spec.slice(4) : /^[A-Z0-9]{8}$/.test(spec) ? spec : undefined;
+	if (!key) return PdfDoc.open(spec);
+	if (process.env.ZN_READER_SQLITE === "1") return PdfDoc.open(sqlitePath(key));
+	const bytes = await fetchAttachment(key, signal);
+	if (bytes.byteLength < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") throw new PdfLoadError("the file is not a PDF");
+	try { return PdfDoc.openBytes(bytes); } catch (e) { throw new PdfLoadError(`cannot open the PDF: ${(e as Error).message}`); }
+}
+
+/** @deprecated kept so older callers still compile: openPdf() resolves "key:" specs through the core itself, so this is the identity. */
+export const resolvePdf = (spec: string): string => spec;
+
+// ------------------------------------------------------------------------------------------------ opt-in read-only fallback
+
+function sqlitePath(key: string): string {
+	// lazy so that bun:sqlite is only loaded when the flag is on
+	const { Database } = require("bun:sqlite") as typeof import("bun:sqlite");
+	const db = new Database(process.env.ZN_DB_FILE ?? "C:/Users/abora/zotero-next/data/library.sqlite", { readonly: true });
 	try {
 		const row = db.query("SELECT path FROM attachments WHERE item_key = ?").get(key) as { path: string } | null;
-		if (!row?.path) throw new Error(`no path for attachment ${key}`);
-		if (row.path.startsWith("attachments:")) throw new Error(`attachment ${key} uses a relative path (${row.path}); pass a file path instead`);
-		if (!existsSync(row.path)) throw new Error(`file missing: ${row.path}`);
+		if (!row?.path) throw new PdfLoadError(`no path for attachment ${key}`);
+		if (row.path.startsWith("attachments:")) throw new PdfLoadError(`attachment ${key} uses a relative path (${row.path}); the core must resolve it`);
+		if (!existsSync(row.path)) throw new PdfLoadError(`file missing: ${row.path}`);
 		return row.path;
 	} finally { db.close(); }
 }

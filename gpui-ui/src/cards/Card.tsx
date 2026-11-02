@@ -18,6 +18,13 @@ const ICON_BY_TYPE: Record<string, string> = {
 	journalArticle: "file-text", magazineArticle: "newspaper", newspaperArticle: "newspaper", book: "book", bookSection: "book-open",
 	webpage: "globe", blogPost: "globe", conferencePaper: "presentation", thesis: "graduation-cap", report: "scroll-text", preprint: "file-clock",
 };
+/** Open the item's PDF in a reader tab (double-click on a card, or its "Open PDF" button). Other attachments (EPUB, snapshot) are left as is. */
+export function openPdf(item: ItemRow): boolean {
+	const prim = item.primaryAttachment;
+	if (!prim || openLabel(prim.contentType) !== "Open PDF") return false;
+	store.openAttachment(prim.key, item.title || "Reader", item.key);
+	return true;
+}
 export const typeIcon = (t: string) => ICON_BY_TYPE[t] ?? "file";
 
 const BTN = "inline-flex flex-none items-center gap-1.5 rounded-[7px] border text-[12.5px] h-7";
@@ -181,7 +188,7 @@ export function Card(p: { item: ItemRow; index: number }): JSX.Element {
 				<div style={tw("flex flex-wrap gap-1.5 mt-2", mode())}>
 					<For each={actions()}>{(a) => {
 						switch (a.k) {
-							case "open": return <ActionBtn mode={mode()} icon="file-text" label={a.label} tint="orange" strong />;
+							case "open": return <ActionBtn mode={mode()} icon="file-text" label={a.label} tint="orange" strong onClick={() => openPdf(it())} />;
 							case "fulltext": return <ActionBtn mode={mode()} icon="download" label="Find full text" tint="blue" strong />;
 							case "web": return <ActionBtn mode={mode()} icon="external-link" label="Open webpage" />;
 							case "cite": return <ActionBtn mode={mode()} icon="copy" label="Cite" />;

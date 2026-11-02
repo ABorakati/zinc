@@ -47,6 +47,10 @@ async function start(dbPath: string): Promise<Core> {
 		];
 		const db = dbMod.openDb(dbPath);
 		setDirect((req) => apiMod.handleApi(req, db));
+		// the reader fetches attachment bytes too, and there is no socket in this mode
+		const { setFileFetcher } = await import("./reader/library");
+		setFileFetcher(async (key, signal) =>
+			(await apiMod.handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db)) ?? new Response("not found", { status: 404 }));
 		mark("core-ready");
 		return { url: null, direct: true, stop: () => db.close() };
 	}

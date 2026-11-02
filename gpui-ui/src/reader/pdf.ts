@@ -26,6 +26,7 @@ let lib: ReturnType<typeof open> | undefined;
 function open() {
 	return dlopen(findDll(), {
 		zpdf_open: { args: [P], returns: P },
+		zpdf_open_bytes: { args: [P, usize], returns: P },
 		zpdf_page_count: { args: [P], returns: I32 },
 		zpdf_page_size: { args: [P, I32, P], returns: I32 },
 		zpdf_render_size: { args: [P, I32, F32, P], returns: I32 },
@@ -82,13 +83,24 @@ export class PdfDoc {
 	}
 
 	static open(path: string): PdfDoc {
-		const s = sym();
-		const h = s.zpdf_open(ptr(Buffer.from(path + "\0", "utf8")));
+		const h = sym().zpdf_open(ptr(Buffer.from(path + "\0", "utf8")));
 		if (!h) throw new Error(`zpdf_open failed: ${lastError()}`);
-		const n = s.zpdf_page_count(h);
+		return PdfDoc.measure(h);
+	}
+
+	/** Open a PDF held in memory (the bytes are copied into the worker; the caller may drop its buffer afterwards). */
+	static openBytes(data: Uint8Array): PdfDoc {
+		const h = sym().zpdf_open_bytes(ptr(data), data.byteLength);
+		if (!h) throw new Error(`zpdf_open_bytes failed: ${lastError()}`);
+		return PdfDoc.measure(h);
+	}
+
+	private static measure(h: number | bigint): PdfDoc {
+		const s = sym();
+		const n = s.zpdf_page_count(h as never);
 		const sizes: [number, number][] = [];
 		const f = new Float32Array(2);
-		for (let i = 0; i < n; i++) { s.zpdf_page_size(h, i, ptr(f)); sizes.push([f[0]!, f[1]!]); }
+		for (let i = 0; i < n; i++) { s.zpdf_page_size(h as never, i, ptr(f)); sizes.push([f[0]!, f[1]!]); }
 		return new PdfDoc(h as number, n, sizes);
 	}
 

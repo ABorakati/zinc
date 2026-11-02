@@ -4,6 +4,7 @@
 //   bun scripts/reader-bench.ts --timing              # only render/text-layer timings (pure FFI, no UI)
 //   bun scripts/reader-bench.ts --memory              # only memory scenarios, each in a fresh child process
 //   bun scripts/reader-bench.ts --memory --window     # same, but in a REAL (visible) GPUIX window; it autoplays, never touch it
+//   ... --window --auto-dpr                            # let the reader detect the window's scale factor (prints detectedDpr) instead of forcing --dpr
 //   bun scripts/reader-bench.ts --pdf key:SG6SKCRD --pdf C:/some/file.pdf --dpr 2 --out results.json
 //
 // PDFs are named "label=spec" with spec = a file path or key:<attachment key> (resolved read-only, see src/reader/library.ts).
@@ -21,7 +22,7 @@ import { dlopen, FFIType, ptr } from "bun:ffi";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { PdfDoc, nativeVersion } from "../src/reader/pdf";
-import { resolvePdf } from "../src/reader/library";
+import { fetchAttachment } from "../src/reader/library";
 import type { ReaderController } from "../src/reader/Reader";
 
 const args = process.argv.slice(2);
@@ -55,6 +56,7 @@ const r1 = (x: number) => Math.round(x * 10) / 10;
 // ---------------------------------------------------------------------------------------------------------------- stats
 const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] ?? 0; };
 const spread = (n: number, k: number) => Array.from({ length: Math.min(n, k) }, (_, i) => Math.floor((i * n) / Math.min(n, k)));
+const bytesOf = async (spec: string): Promise<Uint8Array> => (spec.startsWith("key:") ? fetchAttachment(spec.slice(4)) : new Uint8Array(await Bun.file(spec).arrayBuffer()));
 const split = (spec: string): [string, string] => (spec.includes("=") ? [spec.split("=")[0]!, spec.slice(spec.indexOf("=") + 1)] : [spec, spec]);
 
 // ---------------------------------------------------------------------------------------------------------------- timing
@@ -63,14 +65,15 @@ async function timing(pdfs: string[]) {
 	console.log(`native: ${nativeVersion()}\n`);
 	for (const spec of pdfs) {
 		const [label, src] = split(spec);
-		const path = resolvePdf(src);
-		const bytes = (await Bun.file(path).stat()).size;
+		// the bytes come from the core (key:) or the file system; they are fetched once, so "open" is the parse + measure cost
+		const data = await bytesOf(src);
+		const bytes = data.byteLength;
 		let t = performance.now();
-		const doc = PdfDoc.open(path);
+		const doc = PdfDoc.openBytes(data);
 		const openMs = performance.now() - t;
 		doc.close();
-		t = performance.now(); // reopen: separates the OS/AV/OneDrive first-read cost from the parse cost
-		const doc2 = PdfDoc.open(path);
+		t = performance.now();
+		const doc2 = PdfDoc.openBytes(data);
 		const warmOpenMs = performance.now() - t;
 		const pages = spread(doc2.pageCount, 12);
 		const row: Record<string, unknown> = { pdf: label, MB: r1(bytes / 1e6), pages: doc2.pageCount, "open ms (1st)": r1(openMs), "open ms (warm)": r1(warmOpenMs) };
@@ -111,14 +114,14 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	const WIN: Record<string, number> = { retain1: 1, retain5: 5, scroll50: 7, retain50: 50 };
 	const win = WIN[name];
 	if (!win) throw new Error(`unknown scenario ${name}`);
-	const path = resolvePdf(spec);
 	const { Reader } = await import("../src/reader/Reader");
+	(await import("../src/reader/env")).setReaderMode("dark"); // do not pull the app store (and its library requests) into the measurement
 	let ctl!: ReaderController;
 	let pump: (ms: number) => Promise<void>;
 	const { createComponent, createSignal } = await import("solid-js");
 	// no JSX here (this is a .ts file). The window starts empty (baseline sample), then the Reader (which fills its parent) is shown.
 	const [go, setGo] = createSignal(false);
-	const tree = () => (() => (go() ? createComponent(Reader, { path, dpr, window: win, viewportWidth: 1000, controller: (c: ReaderController) => { ctl = c; } }) : null)) as never;
+	const tree = () => (() => (go() ? createComponent(Reader, { attachmentKey: spec.replace(/^key:/, ""), path: spec.startsWith("key:") ? undefined : spec, title: "reader-bench", dpr: has("auto-dpr") ? undefined : dpr, window: win, controller: (c: ReaderController) => { ctl = c; } }) : null)) as never;
 	const base0 = mem();
 	if (windowMode) {
 		const { render } = await import("@gpuix/solid");
@@ -128,13 +131,15 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		const { createTestRoot } = await import("@gpuix/solid/testing");
 		const t = createTestRoot({ width: 1000, height: 880 });
 		t.render(tree);
-		pump = async (ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { t.renderer.flush(); await Bun.sleep(16); } };
+		pump = async (ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { t.renderer.flush(); t.renderer.dispatchNativeEvents(); await Bun.sleep(16); } };
 	}
 	await pump(windowMode ? 1500 : 300);
 	Bun.gc(true);
 	await Bun.sleep(100);
 	const base = mem(); // empty window / empty test root: the cost of the UI runtime itself
 	setGo(true);
+	while (!ctl) await pump(20);
+	await Promise.race([ctl.ready(), Bun.sleep(30000)]);
 	await pump(200);
 	const settle = async (minRenders: number) => {
 		const t0 = performance.now();
@@ -147,14 +152,15 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	};
 	let peak = mem();
 	const sample = () => { const m = mem(); if (m.privMB > peak.privMB) peak = m; return m; };
-	await settle(Math.min(win, ctl.doc.pageCount));
+	await settle(Math.min(win, ctl.doc()!.pageCount));
 	Bun.gc(true);
 	const afterFirst = sample();
-	const out: Record<string, unknown> = { scenario: name, pdf: spec, dpr, window: win, windowMode, pages: ctl.doc.pageCount, startPrivMB: r1(base0.privMB), emptyPrivMB: r1(base.privMB), emptyWsMB: r1(base.wsMB) };
+	const out: Record<string, unknown> = { scenario: name, pdf: spec, dpr, window: win, windowMode, pages: ctl.doc()!.pageCount, startPrivMB: r1(base0.privMB), emptyPrivMB: r1(base.privMB), emptyWsMB: r1(base.wsMB) };
 	out.firstPageMs = r1(ctl.stats.lastRenderMs);
+	out.detectedDpr = ctl.dpr(); // with --auto-dpr: the real window's scale factor (src/reader/env.ts)
 	const t0 = performance.now();
 	if (name === "scroll50") {
-		const N = Math.min(50, ctl.doc.pageCount);
+		const N = Math.min(50, ctl.doc()!.pageCount);
 		const at: Record<number, { privMB: number; wsMB: number }> = {};
 		for (let i = 1; i < N; i++) {
 			// pages already inside the window need no render, so do not wait for one: let the scroll land, then until idle
@@ -205,7 +211,7 @@ async function memory(pdfs: string[], windowMode: boolean) {
 		const [label, src] = split(spec);
 		for (const sc of ["retain1", "retain5", "scroll50", "retain50"]) {
 			const t0 = performance.now();
-			const p = Bun.spawnSync([process.execPath, import.meta.path, "--scenario", sc, "--pdf", src, "--dpr", String(dpr), ...(windowMode ? ["--window"] : [])], { stdout: "pipe", stderr: "pipe", timeout: 180000 });
+			const p = Bun.spawnSync([process.execPath, import.meta.path, "--scenario", sc, "--pdf", src, "--dpr", String(dpr), ...(windowMode ? ["--window"] : []), ...(has("auto-dpr") ? ["--auto-dpr"] : [])], { stdout: "pipe", stderr: "pipe", timeout: 180000 });
 			const line = p.stdout.toString().split("\n").find((l) => l.startsWith("RESULT "));
 			if (!line) { console.error(`[${label}/${sc}] failed:\n${p.stdout.toString().slice(-600)}\n${p.stderr.toString().slice(-600)}`); continue; }
 			const r = JSON.parse(line.slice(7)) as Record<string, unknown>;

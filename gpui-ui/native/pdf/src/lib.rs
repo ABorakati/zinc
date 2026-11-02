@@ -4,6 +4,7 @@
 //! is `!Send`, so it must live on one thread). The JS side never blocks on rasterization unless it asks to:
 //!
 //!   zpdf_open(path) -> doc          parse + measure every page (blocking, fast)
+//!   zpdf_open_bytes(ptr, len) -> doc   same, from a PDF already in memory (copied; the caller keeps its buffer)
 //!   zpdf_page_count(doc), zpdf_page_size(doc, i, f32[2] out)       page size in PDF points (rotation applied)
 //!   zpdf_render_begin(doc, i, scale) -> job      queue a rasterization; scale = device px per point
 //!   zpdf_job_poll(job) / zpdf_job_wait(job, ms)  0 pending, 1 done, -1 failed
@@ -20,6 +21,7 @@
 //! Differences: glyph rects are the font's em box (advance x [-0.2,0.8] em) instead of the ink bounding box, so a word's
 //! rect has the line's height rather than the ragged height of its tallest letter, and glyphs are grouped into words here.
 
+use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
@@ -120,18 +122,27 @@ pub struct Doc {
     dims: Vec<(f32, f32)>,
 }
 
-fn worker(path: String, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc::Receiver<Cmd>) {
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(e) => {
-            let _ = ready.send(Err(format!("read {path}: {e}")));
-            return;
-        }
+/// Where a document's bytes come from.
+enum Source {
+    Path(String),
+    Bytes(Vec<u8>),
+}
+
+fn worker(src: Source, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc::Receiver<Cmd>) {
+    let (bytes, what) = match src {
+        Source::Path(path) => match std::fs::read(&path) {
+            Ok(b) => (b, path),
+            Err(e) => {
+                let _ = ready.send(Err(format!("read {path}: {e}")));
+                return;
+            }
+        },
+        Source::Bytes(b) => (b, "<memory>".to_string()),
     };
     let pdf = match Pdf::new(Arc::new(bytes)) {
         Ok(p) => p,
         Err(e) => {
-            let _ = ready.send(Err(format!("parse {path}: {e:?}")));
+            let _ = ready.send(Err(format!("parse {what}: {e:?}")));
             return;
         }
     };
@@ -232,12 +243,30 @@ pub unsafe extern "C" fn zpdf_open(path: *const c_char) -> *mut Doc {
         return std::ptr::null_mut();
     }
     let path = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();
+    spawn_doc(Source::Path(path))
+}
+
+/// Open a PDF held in memory: `data[..len]` is copied, so the caller may free or reuse its buffer straight away.
+/// Null on failure (see `zpdf_last_error`).
+///
+/// # Safety
+/// `data` must point to `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_open_bytes(data: *const u8, len: usize) -> *mut Doc {
+    if data.is_null() || len == 0 {
+        set_error("empty pdf buffer");
+        return std::ptr::null_mut();
+    }
+    spawn_doc(Source::Bytes(unsafe { std::slice::from_raw_parts(data, len) }.to_vec()))
+}
+
+fn spawn_doc(src: Source) -> *mut Doc {
     let (tx, rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
     let join = match std::thread::Builder::new()
         .name("zn-pdf".into())
         .stack_size(32 * 1024 * 1024)
-        .spawn(move || worker(path, ready_tx, rx))
+        .spawn(move || worker(src, ready_tx, rx))
     {
         Ok(j) => j,
         Err(e) => {
@@ -525,10 +554,16 @@ struct G {
     x1: f32,
     y1: f32,
     space: bool,
+    /// the font's cache key (0 = unknown, e.g. Type3) and the glyph's advance in em; 0.0 when the font does not say
+    font: u128,
+    adv: f32,
+    /// which text-showing operation (one `draw_glyph_run`) the glyph came from
+    run: u32,
 }
 
 struct Collector {
     glyphs: Vec<G>,
+    run: u32,
 }
 
 impl<'a> Device<'a> for Collector {
@@ -541,6 +576,7 @@ impl<'a> Device<'a> for Collector {
 
     // Invisible glyphs (OCR layers over scans) are recorded too: that is the searchable text of a scanned page.
     fn draw_glyph_run(&mut self, run: &GlyphRun<'_, 'a>, props: DrawProps<'a>, _mode: &DrawMode) {
+        self.run += 1;
         for glyph in run.glyphs() {
             self.glyph(glyph, props.transform * glyph.transform());
         }
@@ -556,17 +592,27 @@ impl Collector {
             Some(BfString::String(s)) => s,
             None => return,
         };
+        let (font, raw_adv) = match glyph {
+            Glyph::Outline(o) => (o.font_cache_key(), o.advance_width()),
+            Glyph::Type3(_) => (0, None), // not public in hayro 0.8; falls back to a half-em box below
+        };
+        let adv = raw_adv.filter(|a| *a > 0.0).map(f64::from);
+        let adv_em = adv.map_or(0.0, |a| (a / U) as f32);
         if text.chars().all(char::is_whitespace) {
             let p = m.translation();
-            self.glyphs.push(G { text: " ".into(), x0: p.x as f32, y0: p.y as f32, x1: p.x as f32, y1: p.y as f32, space: true });
+            self.glyphs.push(G {
+                text: " ".into(),
+                x0: p.x as f32,
+                y0: p.y as f32,
+                x1: p.x as f32,
+                y1: p.y as f32,
+                space: true,
+                font,
+                adv: adv_em,
+                run: self.run,
+            });
             return;
         }
-        let adv = match glyph {
-            Glyph::Outline(o) => o.advance_width(),
-            Glyph::Type3(_) => None, // not public in hayro 0.8; falls back to a half-em box below
-        }
-        .filter(|a| *a > 0.0)
-        .map(f64::from);
         // glyph space: x along the advance, y up, 1000 units per em. Em box: descender 0.2 em .. ascender 0.8 em.
         let (gx0, gx1) = match (adv, glyph) {
             (Some(a), _) => (0.0, a),
@@ -586,7 +632,7 @@ impl Collector {
             Rect::new(f64::MAX, f64::MAX, f64::MIN, f64::MIN),
             |r, c| Rect::new(r.x0.min(c.x), r.y0.min(c.y), r.x1.max(c.x), r.y1.max(c.y)),
         );
-        self.glyphs.push(G { text, x0: r.x0 as f32, y0: r.y0 as f32, x1: r.x1 as f32, y1: r.y1 as f32, space: false });
+        self.glyphs.push(G { text, x0: r.x0 as f32, y0: r.y0 as f32, x1: r.x1 as f32, y1: r.y1 as f32, space: false, font, adv: adv_em, run: self.run });
     }
 }
 
@@ -610,20 +656,69 @@ struct Word {
     line: u32,
 }
 
-fn text_layer_json(page: &hayro::hayro_syntax::page::Page<'_>) -> String {
-    let (pw, ph) = page.render_dimensions();
-    let initial = page.initial_transform(true).to_kurbo();
-    let cache = InterpreterCache::new();
-    let mut ctx = Context::new(initial, Rect::new(0.0, 0.0, pw as f64, ph as f64), &cache, page.xref(), InterpreterSettings::default());
-    let mut col = Collector { glyphs: Vec::new() };
-    interpret_page(page, &mut ctx, &mut col);
+fn median(v: &mut [f32]) -> Option<f32> {
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.total_cmp(b));
+    Some(v[v.len() / 2])
+}
 
-    // glyphs -> words: break on a space glyph, a new line, a backwards jump, or a gap wider than ~0.12 em (TJ-style spacing; PDFs often have no space glyph).
+/// Word-break threshold per font, in em: a fraction of that font's space width. The space width is what the font draws a
+/// real space glyph with, else estimated from its median letter advance (a space is about 0.55 of that). A fixed
+/// threshold fails both ways: justified lines squeeze the space to ~0.1 em (words glued) while monospace or wide fonts have
+/// 0.3-0.6 em spaces (a tight fixed value splits nothing, a loose one glues). Unknown fonts (Type3) keep the old 0.12 em.
+fn font_thresholds(glyphs: &[G]) -> HashMap<u128, f32> {
+    let mut letters: HashMap<u128, Vec<f32>> = HashMap::new();
+    let mut spaces: HashMap<u128, Vec<f32>> = HashMap::new();
+    for g in glyphs.iter().filter(|g| g.font != 0 && g.adv > 0.0) {
+        (if g.space { &mut spaces } else { &mut letters }).entry(g.font).or_default().push(g.adv);
+    }
+    let mut out = HashMap::new();
+    for (font, mut l) in letters {
+        let space = spaces.get_mut(&font).and_then(|s| median(s)).or_else(|| median(&mut l).map(|m| m * 0.55));
+        if let Some(sp) = space {
+            out.insert(font, (sp * 0.33).clamp(0.05, 0.25));
+        }
+    }
+    out
+}
+
+/// Glyphs -> words: break on a space glyph, a new line, a backwards jump, or a gap wider than the font's word-break
+/// threshold (PDFs often draw no space glyph at all: the gap is TJ spacing). Letter-spaced runs (headings) raise the threshold
+/// by the run's median gap so that "T I T L E" does not shatter into letters.
+fn group_words(glyphs: &[G]) -> Vec<Word> {
+    const DEFAULT_THR: f32 = 0.12;
+    let thr = font_thresholds(glyphs);
+
+    // per run: median gap between consecutive same-line glyphs, in em (tracking / letter-spacing)
+    let mut run_gaps: HashMap<u32, Vec<f32>> = HashMap::new();
+    {
+        let mut prev: Option<&G> = None;
+        for g in glyphs {
+            if g.space {
+                prev = None;
+                continue;
+            }
+            if let Some(p) = prev.filter(|p| p.run == g.run) {
+                let lh = (g.y1 - g.y0).max(p.y1 - p.y0).max(0.5);
+                if ((g.y0 + g.y1) / 2.0 - (p.y0 + p.y1) / 2.0).abs() <= lh * 0.6 && g.x0 >= p.x0 {
+                    run_gaps.entry(g.run).or_default().push((g.x0 - p.x1) / lh);
+                }
+            }
+            prev = Some(g);
+        }
+    }
+    let tracking: HashMap<u32, f32> = run_gaps
+        .into_iter()
+        .filter_map(|(r, mut v)| (v.len() >= 4).then(|| median(&mut v).map(|m| (r, m))).flatten())
+        .collect();
+
     let mut words: Vec<Word> = Vec::new();
     let mut cur: Option<Word> = None;
     let mut prev: Option<(f32, f32, f32, f32)> = None; // x0,y0,x1,y1 of previous real glyph
     let mut line = 0u32;
-    for g in &col.glyphs {
+    for g in glyphs {
         if g.space {
             if let Some(w) = cur.take() {
                 words.push(w);
@@ -637,10 +732,12 @@ fn text_layer_json(page: &hayro::hayro_syntax::page::Page<'_>) -> String {
             let lh = h.max(ph_);
             let new_line = ((g.y0 + g.y1) / 2.0 - (py0 + py1) / 2.0).abs() > lh * 0.6;
             let gap = g.x0 - px1;
+            let base = thr.get(&g.font).copied().unwrap_or(DEFAULT_THR);
+            let track = tracking.get(&g.run).copied().filter(|t| *t > base * 0.6).unwrap_or(0.0);
             if new_line {
                 line += 1;
                 brk = true;
-            } else if gap > lh * 0.12 || g.x0 < px0 - lh * 0.1 {
+            } else if gap > lh * (base + track) || g.x0 < px0 - lh * 0.1 {
                 brk = true;
             }
         }
@@ -664,6 +761,18 @@ fn text_layer_json(page: &hayro::hayro_syntax::page::Page<'_>) -> String {
     if let Some(w) = cur.take() {
         words.push(w);
     }
+    words
+}
+
+fn text_layer_json(page: &hayro::hayro_syntax::page::Page<'_>) -> String {
+    let (pw, ph) = page.render_dimensions();
+    let initial = page.initial_transform(true).to_kurbo();
+    let cache = InterpreterCache::new();
+    let mut ctx = Context::new(initial, Rect::new(0.0, 0.0, pw as f64, ph as f64), &cache, page.xref(), InterpreterSettings::default());
+    let mut col = Collector { glyphs: Vec::new(), run: 0 };
+    interpret_page(page, &mut ctx, &mut col);
+
+    let words = group_words(&col.glyphs);
 
     let mut out = String::with_capacity(64 + words.len() * 64);
     out.push_str(&format!("{{\"pw\":{pw:.2},\"ph\":{ph:.2},\"words\":["));

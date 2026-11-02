@@ -7,7 +7,7 @@ import type { EventPayload } from "@gpuix/solid";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { textStyle, tw } from "../theme";
-import { Card, tok } from "./Card";
+import { Card, openPdf, tok } from "./Card";
 import { createRows, type Group, type Rows } from "./rows";
 
 /** Rows mounted at once, and the logical row height used until a row has been measured. */
@@ -50,7 +50,12 @@ function ItemRowView(p: { index: number }): JSX.Element {
 	const item = createMemo(() => store.itemAt(p.index));
 	return (
 		<div style={tw("flex flex-col w-full flex-none px-2.5", store.mode())}
-			onClick={() => { const it = untrack(item); if (it) store.selectItem(it.key); }}>
+			onClick={(e: EventPayload) => {
+				const it = untrack(item);
+				if (!it) return;
+				store.selectItem(it.key);
+				if ((e.clickCount ?? 1) >= 2 && e.button !== 2) openPdf(it); // double-click opens the PDF in a reader tab
+			}}>
 			<Show when={item()} fallback={<CardSkeleton />}>{(x) => <Card item={x()} index={p.index} />}</Show>
 		</div>
 	);
