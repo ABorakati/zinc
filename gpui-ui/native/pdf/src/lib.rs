@@ -14,6 +14,22 @@
 //!   zpdf_text_layer(doc, i) -> char*  (JSON: page size + word rects normalised 0..1), free with zpdf_str_free
 //!   zpdf_clear_cache(doc), zpdf_close(doc), zpdf_last_error(), zpdf_version()
 //!
+//! v0.2 additions (the reader's memory + navigation work):
+//!   zpdf_render_size2(doc, i, scale, rot, u32[2] out)            full bitmap size at a scale and an extra rotation (0/90/180/270 cw)
+//!   zpdf_render2(doc, i, scale, rot, rx, ry, rw, rh, look, c0, c1) -> job
+//!        like render_begin, but rotated, and optionally only the device-pixel region (rx, ry, rw, rh) of the full bitmap
+//!        (rw = 0: everything), so a zoomed-in page is rendered in small tiles instead of one huge bitmap; `look` recolours the
+//!        page while converting to BGRA (0 normal, 1 dark, 2 multiply by c0, 3 dark + screen onto c0, 4 duotone c0 -> c1)
+//!   zpdf_outline_begin(doc) -> job (JSON), zpdf_links_begin(doc, i) -> job (JSON); see nav.rs
+//!
+//! v0.2 additions (the reader's memory + navigation work):
+//!   zpdf_render_size2(doc, i, scale, rot, u32[2] out)            full bitmap size at a scale and an extra rotation (0/90/180/270 cw)
+//!   zpdf_render2(doc, i, scale, rot, rx, ry, rw, rh, look, c0, c1) -> job
+//!        like render_begin, but rotated, and optionally only the device-pixel region (rx, ry, rw, rh) of the full bitmap
+//!        (rw = 0: everything), so a zoomed-in page is rendered in small tiles instead of one huge bitmap; `look` recolours the
+//!        page while converting to BGRA (0 normal, 1 dark, 2 multiply by c0, 3 dark + screen onto c0, 4 duotone c0 -> c1)
+//!   zpdf_outline_begin(doc) -> job (JSON), zpdf_links_begin(doc, i) -> job (JSON); see nav.rs
+//!
 //! Pixels are BGRA8 (GPUI's native order, so `setImagePixels(.., "bgra")` skips the swizzle), opaque, composited on white.
 //!
 //! Text layer: adapted from gpui-pdf (packetThrower/zorite, MIT, Copyright (c) packetThrower), `text.rs`: a custom hayro
@@ -30,6 +46,8 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+mod nav;
+
 use hayro::hayro_interpret::font::{Glyph, GlyphRun};
 use hayro::hayro_interpret::hayro_cmap::BfString;
 use hayro::hayro_interpret::{
@@ -39,7 +57,8 @@ use hayro::hayro_interpret::{
 use hayro::hayro_syntax::Pdf;
 use hayro::kurbo::{Affine, BezPath, Point, Rect, Shape};
 use hayro::vello_cpu::color::palette::css::WHITE;
-use hayro::{PixmapSettings, RenderCache, RenderSettings, render};
+use hayro::vello_cpu::{RasterizerSettings, RenderContext, Resources, TargetInit};
+use hayro::{RenderCache, RenderSettings, render_into};
 
 /// Largest rendered side in device pixels; bigger requests are scaled down (hayro's context is u16 anyway).
 const MAX_SIDE: f32 = 16384.0;
@@ -68,7 +87,7 @@ pub extern "C" fn zpdf_last_error() -> *const c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zpdf_version() -> *const c_char {
-    c"zn_pdf 0.1.0 (hayro 0.8)".as_ptr()
+    c"zn_pdf 0.2.0 (hayro 0.8)".as_ptr()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -109,9 +128,28 @@ impl Job {
 // document + worker thread
 // ---------------------------------------------------------------------------------------------------------------------
 
+/// One rasterization request. Region and size are in device pixels of the full (rotated, scaled) bitmap.
+#[derive(Clone, Copy)]
+struct RenderReq {
+    page: usize,
+    scale: f32,
+    /// extra clockwise rotation: 0, 90, 180 or 270
+    rot: u16,
+    rx: u32,
+    ry: u32,
+    /// 0 = the whole page
+    rw: u32,
+    rh: u32,
+    look: u32,
+    c0: u32,
+    c1: u32,
+}
+
 enum Cmd {
-    Render(Arc<Job>, usize, f32),
+    Render(Arc<Job>, RenderReq),
     Text(Arc<Job>, usize),
+    Outline(Arc<Job>),
+    Links(Arc<Job>, usize),
     ClearCache,
     Quit,
 }
@@ -154,34 +192,18 @@ fn worker(src: Source, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc:
     let settings = InterpreterSettings::default();
     let render_settings = RenderSettings::default();
     let mut cache = RenderCache::new();
+    let mut nav = nav::Nav::new(&pdf);
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
             Cmd::Quit => break,
             Cmd::ClearCache => cache = RenderCache::new(),
-            Cmd::Render(job, _, _) | Cmd::Text(job, _) if job.cancelled.load(Ordering::Acquire) => job.finish(-2),
-            Cmd::Render(job, idx, scale) => {
+            Cmd::Render(job, _) | Cmd::Text(job, _) | Cmd::Links(job, _) | Cmd::Outline(job) if job.cancelled.load(Ordering::Acquire) => job.finish(-2),
+            Cmd::Render(job, req) => {
                 let t0 = Instant::now();
                 let out = catch_unwind(AssertUnwindSafe(|| {
-                    let page = pages.get(idx)?;
-                    let (pw, ph) = page.render_dimensions();
-                    let scale = clamp_scale(pw, ph, scale);
-                    let pm = render(
-                        page,
-                        &cache,
-                        &settings,
-                        &render_settings,
-                        &PixmapSettings { x_scale: scale, y_scale: scale, bg_color: WHITE },
-                    );
-                    let (w, h) = (pm.width() as u32, pm.height() as u32);
-                    // premultiplied RGBA over opaque white == straight RGBA with alpha 255; swap R/B for BGRA.
-                    let mut pm = pm;
-                    let mut buf = pm.data_as_u8_slice_mut().to_vec();
-                    for px in buf.chunks_exact_mut(4) {
-                        px.swap(0, 2);
-                        px[3] = 255;
-                    }
-                    Some((w, h, buf))
+                    let page = pages.get(req.page)?;
+                    Some(render_region(page, &cache, &settings, &render_settings, &req))
                 }));
                 match out {
                     Ok(Some((w, h, buf))) => {
@@ -192,17 +214,37 @@ fn worker(src: Source, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc:
                         job.finish(1);
                     }
                     Ok(None) => {
-                        set_error(format!("no page {idx}"));
+                        set_error(format!("no page {}", req.page));
                         job.finish(-1);
                     }
                     Err(_) => {
                         // A panic inside hayro leaves the cache in an unknown state: start clean.
                         cache = RenderCache::new();
-                        set_error(format!("render page {idx} panicked"));
+                        set_error(format!("render page {} panicked", req.page));
                         job.finish(-1);
                     }
                 }
             }
+            Cmd::Outline(job) => match catch_unwind(AssertUnwindSafe(|| nav.outline_json())) {
+                Ok(json) => {
+                    let _ = job.data.set(json.into_bytes());
+                    job.finish(1);
+                }
+                Err(_) => {
+                    set_error("outline failed");
+                    job.finish(-1);
+                }
+            },
+            Cmd::Links(job, idx) => match catch_unwind(AssertUnwindSafe(|| nav.links_json(idx))) {
+                Ok(json) => {
+                    let _ = job.data.set(json.into_bytes());
+                    job.finish(1);
+                }
+                Err(_) => {
+                    set_error(format!("links of page {idx} failed"));
+                    job.finish(-1);
+                }
+            },
             Cmd::Text(job, idx) => {
                 let t0 = Instant::now();
                 match catch_unwind(AssertUnwindSafe(|| pages.get(idx).map(|p| text_layer_json(p)))) {
@@ -220,6 +262,93 @@ fn worker(src: Source, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc:
         }
     }
     // `cache` borrows `pdf`; it is dropped first (reverse declaration order), then `pdf`.
+}
+
+/// Rasterize (a region of) a page. Returns (w, h, BGRA bytes).
+fn render_region<'a>(
+    page: &'a hayro::hayro_syntax::page::Page<'a>,
+    cache: &RenderCache<'a>,
+    settings: &InterpreterSettings,
+    rs: &RenderSettings,
+    req: &RenderReq,
+) -> (u32, u32, Vec<u8>) {
+    let (pw, ph) = page.render_dimensions();
+    let rot = req.rot % 360;
+    let (bw, bh) = if rot % 180 == 0 { (pw, ph) } else { (ph, pw) };
+    let scale = clamp_scale(bw, bh, req.scale);
+    let (fw, fh) = (((bw * scale) as u16) as u32, ((bh * scale) as u16) as u32);
+    let (fw, fh) = (fw.max(1), fh.max(1));
+    let (rx, ry, rw, rh) = if req.rw == 0 || req.rh == 0 {
+        (0, 0, fw, fh)
+    } else {
+        let rx = req.rx.min(fw - 1);
+        let ry = req.ry.min(fh - 1);
+        (rx, ry, req.rw.min(fw - rx), req.rh.min(fh - ry))
+    };
+    let rotm = match rot {
+        90 => Affine::new([0.0, 1.0, -1.0, 0.0, ph as f64, 0.0]),
+        180 => Affine::new([-1.0, 0.0, 0.0, -1.0, pw as f64, ph as f64]),
+        270 => Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, pw as f64]),
+        _ => Affine::IDENTITY,
+    };
+    let transform = Affine::translate((-(rx as f64), -(ry as f64))) * Affine::scale(scale as f64) * rotm * page.initial_transform(true).to_kurbo();
+    let mut ctx = RenderContext::new(rw as u16, rh as u16);
+    render_into(page, cache, settings, rs, &mut ctx, transform);
+    ctx.flush();
+    let mut pm = hayro::vello_cpu::Pixmap::new(ctx.width(), ctx.height());
+    ctx.render_with(
+        &mut pm,
+        &mut Resources::default(),
+        RasterizerSettings { target_init: TargetInit::Clear(WHITE), ..Default::default() },
+    );
+    drop(ctx);
+    let (w, h) = (pm.width() as u32, pm.height() as u32);
+    // premultiplied RGBA over opaque white == straight RGBA with alpha 255; the Vec is taken without a copy.
+    let mut buf = pm.take_rgba8(hayro::vello_cpu::peniko::ImageAlphaType::AlphaPremultiplied);
+    to_bgra(&mut buf, req.look, req.c0, req.c1);
+    (w, h, buf)
+}
+
+/// RGBA (opaque) -> BGRA in place, recolouring on the way (see the `look` values in the module docs).
+fn to_bgra(buf: &mut [u8], look: u32, c0: u32, c1: u32) {
+    let rgb = |c: u32| [((c >> 16) & 255) as f32 / 255.0, ((c >> 8) & 255) as f32 / 255.0, (c & 255) as f32 / 255.0];
+    let (k0, k1) = (rgb(c0), rgb(c1));
+    // CSS `invert(a) hue-rotate(180deg)`: keeps hues, flips lightness
+    let dark = |p: [f32; 3], a: f32| -> [f32; 3] {
+        let inv = |c: f32| a * (1.0 - c) + (1.0 - a) * c;
+        let (r, g, b) = (inv(p[0]), inv(p[1]), inv(p[2]));
+        [
+            (-0.574 * r + 1.430 * g + 0.144 * b).clamp(0.0, 1.0),
+            (0.426 * r + 0.430 * g + 0.144 * b).clamp(0.0, 1.0),
+            (0.426 * r + 1.430 * g - 0.856 * b).clamp(0.0, 1.0),
+        ]
+    };
+    if look == 0 {
+        for px in buf.chunks_exact_mut(4) {
+            px.swap(0, 2);
+            px[3] = 255;
+        }
+        return;
+    }
+    for px in buf.chunks_exact_mut(4) {
+        let p = [px[0] as f32 / 255.0, px[1] as f32 / 255.0, px[2] as f32 / 255.0];
+        let o = match look {
+            1 => dark(p, 0.92),
+            2 => [p[0] * k0[0], p[1] * k0[1], p[2] * k0[2]],
+            3 => {
+                let d = dark(p, 1.0);
+                [1.0 - (1.0 - d[0]) * (1.0 - k0[0]), 1.0 - (1.0 - d[1]) * (1.0 - k0[1]), 1.0 - (1.0 - d[2]) * (1.0 - k0[2])]
+            }
+            _ => {
+                let l = 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+                [k0[0] + (k1[0] - k0[0]) * l, k0[1] + (k1[1] - k0[1]) * l, k0[2] + (k1[2] - k0[2]) * l]
+            }
+        };
+        px[0] = (o[2] * 255.0 + 0.5) as u8;
+        px[1] = (o[1] * 255.0 + 0.5) as u8;
+        px[2] = (o[0] * 255.0 + 0.5) as u8;
+        px[3] = 255;
+    }
 }
 
 fn clamp_scale(pw: f32, ph: f32, scale: f32) -> f32 {
@@ -370,12 +499,79 @@ pub unsafe extern "C" fn zpdf_render_begin(doc: *const Doc, page: i32, scale: f3
         set_error(format!("page {page} out of range"));
         return std::ptr::null();
     }
-    let job = Job::new();
-    if d.tx.send(Cmd::Render(job.clone(), idx, scale)).is_err() {
+    submit(d, Cmd::Render(Job::new(), RenderReq { page: idx, scale, rot: 0, rx: 0, ry: 0, rw: 0, rh: 0, look: 0, c0: 0, c1: 0 }))
+}
+
+/// Queue `cmd` (whose job is the first field) and hand the job out.
+fn submit(d: &Doc, cmd: Cmd) -> *const Job {
+    let job = match &cmd {
+        Cmd::Render(j, _) | Cmd::Text(j, _) | Cmd::Outline(j) | Cmd::Links(j, _) => j.clone(),
+        _ => return std::ptr::null(),
+    };
+    if d.tx.send(cmd).is_err() {
         set_error("worker is gone");
         return std::ptr::null();
     }
     Arc::into_raw(job)
+}
+
+/// Like `zpdf_render_begin`, with an extra clockwise rotation (0/90/180/270) and an optional device-pixel region
+/// `(rx, ry, rw, rh)` of the full bitmap (`rw` = 0: all of it), recoloured by `look` (see the module docs).
+///
+/// # Safety
+/// `doc` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_render2(doc: *const Doc, page: i32, scale: f32, rot: i32, rx: u32, ry: u32, rw: u32, rh: u32, look: u32, c0: u32, c1: u32) -> *const Job {
+    let Some(d) = (unsafe { doc.as_ref() }) else { return std::ptr::null() };
+    let Ok(idx) = usize::try_from(page) else { return std::ptr::null() };
+    if idx >= d.dims.len() {
+        set_error(format!("page {page} out of range"));
+        return std::ptr::null();
+    }
+    let rot = (rot.rem_euclid(360) / 90 * 90) as u16;
+    submit(d, Cmd::Render(Job::new(), RenderReq { page: idx, scale, rot, rx, ry, rw, rh, look, c0, c1 }))
+}
+
+/// Full bitmap size `[w, h]` of a render at `scale` with an extra rotation.
+///
+/// # Safety
+/// `out` must point to two `u32`s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_render_size2(doc: *const Doc, page: i32, scale: f32, rot: i32, out: *mut u32) -> i32 {
+    let Some(d) = (unsafe { doc.as_ref() }) else { return -1 };
+    let Some(&(w, h)) = usize::try_from(page).ok().and_then(|i| d.dims.get(i)) else { return -1 };
+    let (w, h) = if rot.rem_euclid(180) == 0 { (w, h) } else { (h, w) };
+    let s = clamp_scale(w, h, scale);
+    unsafe {
+        *out = ((w * s) as u16) as u32;
+        *out.add(1) = ((h * s) as u16) as u32;
+    }
+    0
+}
+
+/// Queue the outline extraction. The job's data is JSON (see nav.rs).
+///
+/// # Safety
+/// `doc` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_outline_begin(doc: *const Doc) -> *const Job {
+    let Some(d) = (unsafe { doc.as_ref() }) else { return std::ptr::null() };
+    submit(d, Cmd::Outline(Job::new()))
+}
+
+/// Queue the link-annotation extraction of one page. The job's data is JSON (see nav.rs).
+///
+/// # Safety
+/// `doc` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_links_begin(doc: *const Doc, page: i32) -> *const Job {
+    let Some(d) = (unsafe { doc.as_ref() }) else { return std::ptr::null() };
+    let Ok(idx) = usize::try_from(page) else { return std::ptr::null() };
+    if idx >= d.dims.len() {
+        set_error(format!("page {page} out of range"));
+        return std::ptr::null();
+    }
+    submit(d, Cmd::Links(Job::new(), idx))
 }
 
 /// # Safety
@@ -495,12 +691,7 @@ pub unsafe extern "C" fn zpdf_text_begin(doc: *const Doc, page: i32) -> *const J
         set_error(format!("page {page} out of range"));
         return std::ptr::null();
     }
-    let job = Job::new();
-    if d.tx.send(Cmd::Text(job.clone(), idx)).is_err() {
-        set_error("worker is gone");
-        return std::ptr::null();
-    }
-    Arc::into_raw(job)
+    submit(d, Cmd::Text(Job::new(), idx))
 }
 
 /// Ask for a queued job to be skipped (no effect once it runs). Its state becomes -2.

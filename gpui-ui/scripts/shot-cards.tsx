@@ -8,7 +8,10 @@ import { createTestRoot } from "@gpuix/solid/testing";
 import { PNG } from "pngjs";
 import { CardList } from "../src/cards/CardList";
 import { registerFonts } from "../src/fonts";
-import { store } from "../src/store";
+import { store, uiState } from "../src/store";
+
+uiState.disableWrites(); // never write the user's ui-state.json
+store.setViewMode("cards");
 
 const DEFAULT_OUT = "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots/cards.png";
 const args = process.argv.slice(2);
@@ -44,7 +47,7 @@ for (let i = 0; i < 5; i++) { t.renderer.flush(); await Bun.sleep(20); }
 console.log(`first page + groups after ${Math.round(performance.now() - t0)} ms; total=${store.total()} groups=${store.groups().length}`);
 
 const sel = Number(val("select", "-1"));
-if (sel >= 0) { const it = store.itemAt(sel); if (it) store.selectItem(it.key); }
+if (sel >= 0) { const it = store.itemAt(sel); if (it) store.selectOnly(it.key, sel); }
 const scroll = Number(val("scroll", "0"));
 if (scroll > 0) {
 	const list = t.renderer.findByType("virtual-list")[0]!;

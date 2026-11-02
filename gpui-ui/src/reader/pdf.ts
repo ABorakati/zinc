@@ -30,6 +30,10 @@ function open() {
 		zpdf_page_count: { args: [P], returns: I32 },
 		zpdf_page_size: { args: [P, I32, P], returns: I32 },
 		zpdf_render_size: { args: [P, I32, F32, P], returns: I32 },
+		zpdf_render_size2: { args: [P, I32, F32, I32, P], returns: I32 },
+		zpdf_render2: { args: [P, I32, F32, I32, U32, U32, U32, U32, U32, U32, U32], returns: P },
+		zpdf_outline_begin: { args: [P], returns: P },
+		zpdf_links_begin: { args: [P, I32], returns: P },
 		zpdf_render_begin: { args: [P, I32, F32], returns: P },
 		zpdf_job_poll: { args: [P], returns: I32 },
 		zpdf_job_wait: { args: [P, U32], returns: I32 },
@@ -57,6 +61,22 @@ const lastError = (): string => String(sym().zpdf_last_error());
 /** One word of a page's text layer; x/y/w/h are fractions (0..1) of the page, origin top-left; l = line index. */
 export interface TextWord { t: string; x: number; y: number; w: number; h: number; l: number }
 export interface TextLayer { pw: number; ph: number; words: TextWord[] }
+
+/** How the page is recoloured while it is rasterized (page appearance): 0 normal, 1 dark, 2 multiply by c0, 3 dark + screen onto c0, 4 duotone c0 (black) -> c1 (white). Colours are 0xRRGGBB. */
+export interface Look { mode: 0 | 1 | 2 | 3 | 4; c0?: number; c1?: number }
+
+export interface RenderOpts {
+	/** extra clockwise rotation in degrees (0 / 90 / 180 / 270) */
+	rot?: number;
+	/** only this part of the full bitmap, in device pixels (default: all of it) */
+	region?: { x: number; y: number; w: number; h: number };
+	look?: Look;
+}
+
+/** One bookmark: page is 0-based (-1 when it could not be resolved), y a fraction (0..1) of the page height, -1 when unknown. */
+export interface OutlineEntry { t: string; l: number; p: number; y: number }
+/** A link annotation: x/y/w/h are fractions of the page as rendered (unrotated view). */
+export type PdfLink = { x: number; y: number; w: number; h: number } & ({ k: "page"; p: number; ty: number } | { k: "uri"; u: string });
 
 export interface Rendered {
 	width: number;
@@ -115,6 +135,37 @@ export class PdfDoc {
 		sym().zpdf_render_size(this.h() as never, page, scale, ptr(o));
 		return [o[0]!, o[1]!];
 	}
+
+	/** Full bitmap size of a render at `scale` with an extra rotation. */
+	renderSize2(page: number, scale: number, rot = 0): [number, number] {
+		const o = new Uint32Array(2);
+		sym().zpdf_render_size2(this.h() as never, page, scale, rot, ptr(o));
+		return [o[0]!, o[1]!];
+	}
+
+	/** Like render(), rotated, recoloured and/or restricted to a region of the full bitmap (tiles). */
+	render2(page: number, scale: number, o: RenderOpts = {}): RenderTask {
+		const s = sym();
+		const r = o.region, k = o.look;
+		const job = s.zpdf_render2(this.h() as never, page, scale, o.rot ?? 0, r?.x ?? 0, r?.y ?? 0, r?.w ?? 0, r?.h ?? 0, k?.mode ?? 0, k?.c0 ?? 0, k?.c1 ?? 0);
+		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
+		return { promise: this.finish(job, page), cancel: () => s.zpdf_job_cancel(job as never) };
+	}
+
+	/** Run a JSON-producing job (outline, links) on the worker. */
+	private async jsonJob<T>(begin: () => number | bigint | null, what: string): Promise<T> {
+		const s = sym();
+		const job = begin();
+		if (!job) throw new Error(`${what} failed: ${lastError()}`);
+		const st = await this.poll(job);
+		try {
+			if (st !== 1) throw new Error(`${what} failed: ${lastError()}`);
+			const len = Number(s.zpdf_job_len(job as never));
+			return JSON.parse(toBuffer(s.zpdf_job_data(job as never) as never, 0, len).toString("utf8")) as T;
+		} finally { s.zpdf_job_free(job as never); }
+	}
+	outlineAsync(): Promise<OutlineEntry[]> { return this.jsonJob(() => sym().zpdf_outline_begin(this.h() as never) as never, "outline"); }
+	linksAsync(page: number): Promise<PdfLink[]> { return this.jsonJob(() => sym().zpdf_links_begin(this.h() as never, page) as never, `links of page ${page}`); }
 
 	/**
 	 * Queue a rasterization. `promise` resolves when the worker is done (polled every few ms, so the JS thread is never

@@ -34,6 +34,10 @@ export interface CollectionDto {
 /** Query params of GET /api/items (same names the web UI sends). */
 export interface ItemQuery {
 	collection?: string;
+	/** list a saved search's results */
+	search?: string;
+	/** only items with this tag (the core takes a single tag) */
+	tag?: string;
 	/** the Unfiled / Trash views of the library */
 	unfiled?: boolean;
 	trash?: boolean;
@@ -69,19 +73,32 @@ const qs = (o: Record<string, string | number | boolean | undefined>) => {
 	return p.toString();
 };
 
-async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
 	await gate;
 	signal?.throwIfAborted();
+	const init: RequestInit = {
+		method,
+		signal,
+		headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+		body: body !== undefined ? JSON.stringify(body) : undefined,
+	};
 	const res = direct
-		? (await direct(new Request("http://127.0.0.1/api" + path, { signal }))) ?? new Response('{"error":"not found"}', { status: 404 })
-		: await fetch(BASE_URL + "/api" + path, { signal });
+		? (await direct(new Request("http://127.0.0.1/api" + path, init))) ?? new Response('{"error":"not found"}', { status: 404 })
+		: await fetch(BASE_URL + "/api" + path, init);
 	if (!res.ok) {
 		let msg = res.statusText;
 		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch {}
 		throw new Error(msg);
 	}
-	return (await res.json()) as T;
+	const text = await res.text();
+	return (text ? JSON.parse(text) : {}) as T;
 }
+const get = <T,>(path: string, signal?: AbortSignal) => request<T>("GET", path, undefined, signal);
+
+/** Raw verbs for features that need an endpoint this file does not wrap yet. `path` is relative to /api. */
+export const apiRequest = request;
+/** Same, under the name feature modules feature-detect (itempane/net.ts); honours the in-process direct mode. */
+export { request };
 
 /** Turn the flat collection list into a tree (roots first, siblings sorted by name). */
 export function buildTree(flat: CollectionDto[]): Collection[] {
@@ -101,6 +118,49 @@ export function buildTree(flat: CollectionDto[]): Collection[] {
 	return roots;
 }
 
+// ---- response shapes (core/src/api-types.ts, the parts the list needs) ----
+
+export interface ChildSummary {
+	key: string;
+	itemType: string;
+	title?: string;
+	contentType?: string | null;
+	linkMode?: string | null;
+	hasFile?: boolean;
+	[k: string]: unknown;
+}
+export interface ItemDetail {
+	data: Record<string, unknown> & { key: string; itemType: string; title?: string; DOI?: string; url?: string };
+	children: ChildSummary[];
+	collections: string[];
+	tags: { tag: string; type?: number }[];
+}
+export interface SearchHit {
+	key: string;
+	title: string;
+	creatorsSummary: string;
+	year: number | null;
+	/** FTS5 snippet with <mark>..</mark> around the matches */
+	snippet: string;
+	matchedIn: ("metadata" | "fulltext" | "notes")[];
+	rank: number;
+}
+export interface SearchResult { total: number; hits: SearchHit[] }
+export interface TagColor { name: string; color: string; position: number }
+export interface ZoteroSchema {
+	itemTypes: { itemType: string; label: string; fields: { field: string; label: string; baseField?: string }[] }[];
+	fieldLabels: Record<string, string>;
+	[k: string]: unknown;
+}
+export interface DuplicateSet { keys: string[]; reason: string; title?: string; creatorsSummary?: string; year?: number | null; itemType?: string }
+export interface CiteSettings { quickCopy: { style: string; locale?: string; mode: "bibliography" | "citation"; format: string } }
+export interface CiteResult { text?: string; html?: string; rtf?: string }
+export interface FullTextJob {
+	id: string;
+	done: boolean;
+	items: { key: string; title: string; state: string; source?: string; message?: string; attachmentKey?: string; handoffUrl?: string }[];
+}
+
 export const api = {
 	collections: async () => buildTree(await get<CollectionDto[]>("/collections")),
 	items: (q: ItemQuery, offset: number, limit: number, signal?: AbortSignal) =>
@@ -110,4 +170,28 @@ export const api = {
 		const { fields: _f, include: _i, then: _t, sort: _s, ...rest } = q;
 		return get<{ groups: ItemGroup[] }>("/items/groups?" + qs({ ...rest, by }), signal);
 	},
+	schema: (signal?: AbortSignal) => get<ZoteroSchema>("/schema", signal),
+	item: (key: string, signal?: AbortSignal) => get<ItemDetail>(`/items/${key}`, signal),
+	/** Full-text + metadata search with snippets (the "Full text" quick-search mode). */
+	search: (q: string, limit = 200, offset = 0, signal?: AbortSignal) => get<SearchResult>("/search?" + qs({ q, limit, offset }), signal),
+	tagColors: (signal?: AbortSignal) => get<TagColor[]>("/tag-colors", signal),
+	addTags: (key: string, tags: string[]) => request<{ ok: true }>("POST", `/items/${key}/tags`, { tags }),
+	removeTags: (key: string, tags: string[]) => request<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),
+	/** Move to / restore from the trash (Zotero convention: data.deleted = 1 | 0). */
+	setDeleted: (key: string, deleted: boolean) => request<ItemDetail>("PATCH", `/items/${key}`, { data: { deleted: deleted ? 1 : 0 } }),
+	addToCollection: (collectionKey: string, keys: string[]) => request<{ ok: true }>("POST", `/collections/${collectionKey}/items`, { keys }),
+	removeFromCollection: (collectionKey: string, keys: string[]) => request<{ ok: true }>("DELETE", `/collections/${collectionKey}/items`, { keys }),
+	duplicates: (signal?: AbortSignal) => get<{ sets: DuplicateSet[]; total: number }>("/duplicates?summary=1", signal),
+	/** Open an http(s) URL in the system browser (through the core). */
+	openUrl: (url: string) => request<{ ok: true }>("POST", "/open-url", { url }),
+	/** Open the attachment's file in its default app / show it in Explorer. */
+	openExternal: (attachmentKey: string) => request<{ ok: true }>("POST", `/attachments/${attachmentKey}/open-external`, {}),
+	reveal: (attachmentKey: string) => request<{ ok: true }>("POST", `/attachments/${attachmentKey}/reveal`, {}),
+	citeSettings: () => get<CiteSettings>("/cite/settings"),
+	citeFormat: (b: { keys: string[]; style?: string; locale?: string; mode?: string; format?: string | string[] }) => request<CiteResult>("POST", "/cite/format", b),
+	/** Find Full Text: starts a job for top-level item keys; returns its id. */
+	findFullText: (keys: string[], openAccessOnly = false) => request<{ jobId: string }>("POST", "/fulltext/find", { keys, openAccessOnly }),
+	fullTextJob: (id: string) => get<FullTextJob>(`/fulltext/jobs/${id}`),
+	/** Browser-extension saves go to the collection selected here (best effort). */
+	postSelection: (sel: { kind: string; key?: string }) => request<unknown>("POST", "/ui/selection", sel),
 };

@@ -21,12 +21,35 @@ export interface ReaderContext {
 	zoom: Accessor<number>;
 	scrollTo(page: number, yNorm?: number): void;
 	/** current text selection (set by the reader core's drag-select), null when none */
-	selection: Accessor<{ page: number; text: string; rects: NRect[] } | null>;
+	selection: Accessor<{
+		/** the page of the selection's first word; `rects` are that page's rects (unrotated page space) */
+		page: number; text: string; rects: NRect[];
+		/** added by the core: every page the selection touches, in order (a selection can span pages); `pages[0]` is {page, rects} */
+		pages?: { page: number; rects: NRect[] }[];
+	} | null>;
 	clearSelection(): void;
 	/** switch between the page view and a plugin's full-pane view (null = page view) */
 	altView: Accessor<string | null>;
 	setAltView(id: string | null): void;
 	mode: Accessor<"light" | "dark">;
+
+	// ---- optional additions by the reader core (always provided by the core; optional so older plugin code and mocks still type-check)
+	/** the page's rotation in degrees (0/90/180/270) as displayed. pageOverlay draws in UNROTATED page space: the core hides a plugin's
+	 *  overlay on a rotated page unless the plugin sets `handlesRotation` (then it must rotate its own rects, see core/text.ts rotRect). */
+	rotation?(page: number): number;
+	/** link annotations of a page: rect in unrotated page space; internal targets carry the destination page + y (0..1, -1 unknown) */
+	pageLinks?(page: number): Promise<{ rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string } }[]>;
+	/** Intercept link clicks (e.g. to show a citation popup instead of jumping): return true to stop the core's navigation. x/y: window px. */
+	onLink?(cb: (e: { page: number; rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string }; x: number; y: number }) => boolean | void): () => void;
+	openUrl?(url: string): boolean;
+	/** put text on the clipboard */
+	copy?(text: string): boolean;
+	/** window-space rect (logical px) of a rect on a mounted page, null while the page is not mounted: for positioning popups */
+	rectToWindow?(page: number, rect: NRect): { x: number; y: number; width: number; height: number } | null;
+	/** bumps whenever pages move on screen (scroll, zoom, layout): read it in an effect to follow an anchored popup */
+	viewTick?: Accessor<number>;
+	/** the page currently being drawn: 0-based indexes of the mounted pages */
+	mountedPages?: Accessor<number[]>;
 }
 
 export interface ReaderPlugin {
@@ -41,6 +64,8 @@ export interface ReaderPlugin {
 	selectionPopup?: (ctx: ReaderContext) => JSX.Element;
 	/** a full-pane alternate view, shown when ctx.altView() === id (e.g. the reflowed reading view) */
 	altView?: { id: string; label: string; icon: string; render: (ctx: ReaderContext) => JSX.Element };
+	/** the plugin's pageOverlay rotates its own rects (see ReaderContext.rotation); otherwise the overlay is hidden on rotated pages */
+	handlesRotation?: boolean;
 	/** called once per open document */
 	onOpen?: (ctx: ReaderContext) => void | (() => void);
 }

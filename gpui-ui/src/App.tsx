@@ -1,16 +1,24 @@
-// The library window: top bar, then sidebar | list card (toolbar, sort bar, cards) | item-pane card on the canvas.
-// Layout and class strings follow ui/src/App.tsx (Library / LibraryPanels / GutterHandle); sizes are the default
-// column fractions [0.18, 0.54, 0.28] (the web UI's resizable panels are fixed here).
-import { createSignal, ErrorBoundary, For, Show, type JSX } from "solid-js";
+// The window: top bar, then the tab bodies on the canvas — Library (sidebar | list card | item-pane card in resizable columns), one
+// reader per open attachment, and the Settings tab. Layout and class strings follow ui/src/App.tsx (Library / LibraryPanels /
+// GutterHandle). Panel visibility and column sizes persist (shell/layout.ts -> ui-state.json). <OverlayHost/> (menus, dialogs,
+// popovers, toasts) is mounted once at the root, followed by the overlays features registered.
+import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show, type JSX } from "solid-js";
 import { isReaderTab, type Mode, type ReaderTab, type Style } from "./contracts";
 import { Icon } from "./icons";
+import { overlays } from "./registry";
 import { Sidebar } from "./Sidebar";
 import { CardList } from "./cards/CardList";
+import { ItemPane } from "./itempane";
 import { Reader } from "./reader/Reader";
+import { SettingsPage } from "./settings";
+import { getCols, leftOpen, panelKey, setCols, SETTINGS_TAB, settingsOpen } from "./shell/layout";
+import { HIDDEN } from "./shell/kit";
+import { setWindowTitle } from "./shell/native";
 import { store } from "./store";
 import { textStyle, tokens, tw } from "./theme";
 import { SortBar, Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
+import { OverlayHost, Resizable } from "./ui";
 
 const mode = (): Mode => store.mode();
 const t = (cls: string): Style => tw(cls, mode());
@@ -28,8 +36,10 @@ function ItemPaneEmpty() {
 	);
 }
 
-/** GPUIX has no display:none that takes the box out of the layout: collapse it and hide it (what tw() does for `hidden`). The subtree stays mounted. */
-const HIDDEN: Style = { display: "none", visibility: "hidden", width: 0, height: 0, flexGrow: 0, flexShrink: 1, overflow: "hidden", padding: 0, paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 };
+/** The item pane (src/itempane); the placeholder shows if it throws while rendering. */
+function ItemPaneSlot(): JSX.Element {
+	return <ErrorBoundary fallback={() => <ItemPaneEmpty />}><ItemPane /></ErrorBoundary>;
+}
 
 /**
  * A reader tab's content. Contract with the reader: `<Reader attachmentKey title active />`, filling its parent; it resolves the
@@ -51,40 +61,91 @@ function ReaderTabView(p: { tab: ReaderTab }): JSX.Element {
 	);
 }
 
+/** The Settings tab body; mounted on first open and kept (search text, section) while another tab is active. */
+function SettingsTabView(): JSX.Element {
+	const active = () => store.activeTab() === SETTINGS_TAB;
+	return (
+		<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["background"], ...(active() ? {} : HIDDEN) }}>
+			<ErrorBoundary fallback={(err) => (
+				<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
+					<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>Settings could not be shown</text>
+					<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
+				</div>
+			)}>
+				<SettingsPage active={active()} />
+			</ErrorBoundary>
+		</div>
+	);
+}
+
+/** Minimum column fractions (ui/src/App.tsx: sidebar 0.1, list 0.25, item pane 0.15). */
+const MINS = { sidebar: 0.1, list: 0.25, pane: 0.15 };
+
+/** The panels present for one combination of sidebar / item-pane visibility; rebuilt when that combination changes. */
+function LibraryPanels(p: { k: string }): JSX.Element {
+	const left = p.k[0] === "1", right = p.k[1] === "1";
+	const [cols, setColsSig] = createSignal(getCols(p.k));
+	const panels: JSX.Element[] = [];
+	const mins: number[] = [];
+	if (left) {
+		// the Sidebar draws the zn-sidebar padding itself
+		panels.push(
+			<div style={{ ...t("flex flex-col min-h-0"), height: "100%", width: "100%", minWidth: 0 }}>
+				<Sidebar />
+			</div>,
+		);
+		mins.push(MINS.sidebar);
+	}
+	panels.push(
+		<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), height: "100%", width: "100%" }}>
+			<Toolbar />
+			<SortBar />
+			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
+				<CardList />
+			</div>
+		</div>,
+	);
+	mins.push(MINS.list);
+	if (right) {
+		panels.push(
+			<div style={{ ...t(`${CARD} overflow-hidden`), height: "100%", width: "100%" }}>
+				<ItemPaneSlot />
+			</div>,
+		);
+		mins.push(MINS.pane);
+	}
+	return (
+		<Resizable sizes={cols()} minSizes={mins} gutter={12} line={false} onSizes={(s) => { setColsSig(s); setCols(p.k, s); }}>
+			{panels}
+		</Resizable>
+	);
+}
+
 export function App() {
-	const [leftOpen, setLeftOpen] = createSignal(true);
-	const [rightOpen, setRightOpen] = createSignal(true);
+	const panelsKey = createMemo(panelKey);
+	const onLibrary = () => store.activeTab() === "library";
+
+	// window title: the reader's document, Settings, or the app name
+	createEffect(() => {
+		const id = store.activeTab();
+		const reader = store.tabs().filter(isReaderTab).find((x) => x.id === id);
+		setWindowTitle(reader ? `${reader.title || "Reader"} - zotero-next` : id === SETTINGS_TAB ? "Settings - zotero-next" : "zotero-next");
+	});
+
 	return (
 		<div style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }}>
-			<TopBar leftOpen={leftOpen()} rightOpen={rightOpen()} onLeft={() => setLeftOpen(!leftOpen())} onRight={() => setRightOpen(!rightOpen())} />
+			<TopBar />
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
-			    Kept mounted (just not displayed) while a reader tab is active, so the list keeps its scroll position. */}
-			<div style={{ ...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3"), paddingLeft: leftOpen() ? 0 : 12, width: "100%", ...(store.activeTab() === "library" ? {} : HIDDEN) }}>
-				<Show when={leftOpen()}>
-					<div style={{ width: "18%", flexShrink: 0, minWidth: 0, display: "flex", flexDirection: "column", height: "100%" }}>
-						{/* the Sidebar draws the zn-sidebar padding itself */}
-						<div style={{ ...t("flex flex-col min-h-0"), height: "100%" }}>
-							<Sidebar />
-						</div>
-					</div>
-					<div style={{ width: 12, flexShrink: 0 }} />
-				</Show>
-				<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), flexGrow: 1, flexShrink: 1, minWidth: 0, height: "100%" }}>
-					<Toolbar />
-					<SortBar />
-					<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
-						<CardList />
-					</div>
-				</div>
-				<Show when={rightOpen()}>
-					<div style={{ width: 12, flexShrink: 0 }} />
-					<div style={{ ...t(`${CARD} overflow-hidden`), width: "28%", flexShrink: 0, height: "100%" }}>
-						<ItemPaneEmpty />
-					</div>
-				</Show>
+			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}
+			<div style={{ ...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3"), paddingLeft: leftOpen() ? 0 : 12, width: "100%", ...(onLibrary() ? {} : HIDDEN) }}>
+				<Show when={panelsKey()} keyed>{(k) => <LibraryPanels k={k} />}</Show>
 			</div>
 			{/* Reader tabs: full width below the top bar, one per open attachment, all kept mounted */}
 			<For each={store.tabs().filter(isReaderTab)}>{(tab) => <ReaderTabView tab={tab} />}</For>
+			<Show when={settingsOpen()}><SettingsTabView /></Show>
+			{/* menus, dialogs, popovers, toasts; then the features' always-mounted overlays */}
+			<OverlayHost />
+			<For each={overlays()}>{(o) => o.render()}</For>
 		</div>
 	);
 }

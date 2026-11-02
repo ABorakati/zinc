@@ -11,11 +11,11 @@
 // Defaults (from the user's library): a normal article, a 521-page document, a figure-heavy article (page 5 is the slowest of
 // the sample), and a Type3-bitmap-font paper. Library files are only read; nothing is modified or moved.
 //
-// Memory scenarios (each its own process, so allocator high-water marks do not leak between them):
-//   retain1    window=1   one page alive                                  -> "1 page rendered"
-//   retain5    window=5   five pages alive (all five kept in memory)      -> "5 pages rendered"
-//   scroll50   window=7   scroll through 50 pages one by one; pages leave the window and are freed  -> windowed behaviour
-//   retain50   window=50  all 50 pages alive at once                      -> "50 pages rendered", worst case
+// Memory scenarios (each its own process, so allocator high-water marks do not leak between them). The reader renders only
+// tiles near the viewport (src/reader/core/Page.tsx), so what matters is a PDF being open and what scrolling / zooming adds:
+//   open       the PDF open at fit width, idle                              -> "one open PDF"
+//   scroll50   scroll through 50 pages one by one; tiles leave the margin and are freed
+//   zoom4      400 % zoom (a 6 MP+ page: tiles only) after a short scroll
 // Numbers are PrivateUsage and WorkingSet of the whole bun process (GetProcessMemoryInfo), after Bun.gc(true). GPU memory is
 // not part of either; in --window mode the script also asks the Windows GPU perf counters for this process.
 import { dlopen, FFIType, ptr } from "bun:ffi";
@@ -111,9 +111,8 @@ async function timing(pdfs: string[]) {
 
 // ---------------------------------------------------------------------------------------------------------------- scenario (child process)
 async function scenario(name: string, spec: string, windowMode: boolean) {
-	const WIN: Record<string, number> = { retain1: 1, retain5: 5, scroll50: 7, retain50: 50 };
-	const win = WIN[name];
-	if (!win) throw new Error(`unknown scenario ${name}`);
+	if (!["open", "scroll50", "zoom4"].includes(name)) throw new Error(`unknown scenario ${name}`);
+	process.env.ZN_READER_STATE = "off";
 	const { Reader } = await import("../src/reader/Reader");
 	(await import("../src/reader/env")).setReaderMode("dark"); // do not pull the app store (and its library requests) into the measurement
 	let ctl!: ReaderController;
@@ -121,7 +120,7 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	const { createComponent, createSignal } = await import("solid-js");
 	// no JSX here (this is a .ts file). The window starts empty (baseline sample), then the Reader (which fills its parent) is shown.
 	const [go, setGo] = createSignal(false);
-	const tree = () => (() => (go() ? createComponent(Reader, { attachmentKey: spec.replace(/^key:/, ""), path: spec.startsWith("key:") ? undefined : spec, title: "reader-bench", dpr: has("auto-dpr") ? undefined : dpr, window: win, controller: (c: ReaderController) => { ctl = c; } }) : null)) as never;
+	const tree = () => (() => (go() ? createComponent(Reader, { attachmentKey: spec.replace(/^key:/, ""), path: spec.startsWith("key:") ? undefined : spec, title: "reader-bench", dpr: has("auto-dpr") ? undefined : dpr, ephemeral: true, itemKey: "", zoom: name === "zoom4" ? 4 : undefined, controller: (c: ReaderController) => { ctl = c; } }) : null)) as never;
 	const base0 = mem();
 	if (windowMode) {
 		const { render } = await import("@gpuix/solid");
@@ -140,6 +139,7 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	setGo(true);
 	while (!ctl) await pump(20);
 	await Promise.race([ctl.ready(), Bun.sleep(30000)]);
+	const openedMem = mem(); // the document is open, no tile has been drawn yet (the UI chrome is up)
 	await pump(200);
 	const settle = async (minRenders: number) => {
 		const t0 = performance.now();
@@ -152,11 +152,12 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	};
 	let peak = mem();
 	const sample = () => { const m = mem(); if (m.privMB > peak.privMB) peak = m; return m; };
-	await settle(Math.min(win, ctl.doc()!.pageCount));
+	await settle(1);
 	Bun.gc(true);
 	const afterFirst = sample();
-	const out: Record<string, unknown> = { scenario: name, pdf: spec, dpr, window: win, windowMode, pages: ctl.doc()!.pageCount, startPrivMB: r1(base0.privMB), emptyPrivMB: r1(base.privMB), emptyWsMB: r1(base.wsMB) };
+	const out: Record<string, unknown> = { scenario: name, pdf: spec, dpr, windowMode, pages: ctl.doc()!.pageCount, startPrivMB: r1(base0.privMB), emptyPrivMB: r1(base.privMB), emptyWsMB: r1(base.wsMB) };
 	out.firstPageMs = r1(ctl.stats.lastRenderMs);
+	out.openedDeltaMB = r1(openedMem.privMB - base.privMB); // doc open + reader chrome, before any tile
 	out.detectedDpr = ctl.dpr(); // with --auto-dpr: the real window's scale factor (src/reader/env.ts)
 	const t0 = performance.now();
 	if (name === "scroll50") {
@@ -174,6 +175,11 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		out.sampledAtPage = Object.fromEntries(Object.entries(at).map(([k, v]) => [k, { privMB: r1(v.privMB), wsMB: r1(v.wsMB) }]));
 		out.scrollSeconds = r1((performance.now() - t0) / 1000);
 	}
+	if (name === "zoom4") {
+		const N = Math.min(6, ctl.doc()!.pageCount);
+		for (let i = 1; i < N; i++) { ctl.scrollToPage(i); await pump(150); await ctl.idle(); await pump(150); sample(); }
+		out.zoom = ctl.zoom();
+	}
 	await pump(500);
 	Bun.gc(true);
 	await Bun.sleep(100);
@@ -184,8 +190,18 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	out.afterFirstPrivMB = r1(afterFirst.privMB);
 	out.deltaPrivMB = r1(end.privMB - base.privMB);
 	out.deltaWsMB = r1(end.wsMB - base.wsMB);
+	{
+		// what hayro's per-document caches (fonts, glyphs, decoded images) hold: clear them and look again
+		ctl.doc()!.clearCache();
+		await pump(600);
+		Bun.gc(true);
+		await Bun.sleep(150);
+		out.afterClearPrivMB = r1(mem().privMB);
+		out.cacheMB = r1(end.privMB - mem().privMB);
+	}
 	out.mountedNow = ctl.mounted();
-	out.peakMounted = ctl.stats.peakMounted;
+	out.peakTiles = ctl.stats.peakTiles;
+	out.tilesNow = ctl.tiles();
 	out.renders = ctl.stats.renders;
 	out.cancelled = ctl.stats.cancelled;
 	out.avgRenderMs = r1(ctl.stats.totalRenderMs / Math.max(1, ctl.stats.renders));
@@ -209,7 +225,7 @@ async function memory(pdfs: string[], windowMode: boolean) {
 	const results: Record<string, unknown>[] = [];
 	for (const spec of pdfs) {
 		const [label, src] = split(spec);
-		for (const sc of ["retain1", "retain5", "scroll50", "retain50"]) {
+		for (const sc of ["open", "scroll50", "zoom4"]) {
 			const t0 = performance.now();
 			const p = Bun.spawnSync([process.execPath, import.meta.path, "--scenario", sc, "--pdf", src, "--dpr", String(dpr), ...(windowMode ? ["--window"] : []), ...(has("auto-dpr") ? ["--auto-dpr"] : [])], { stdout: "pipe", stderr: "pipe", timeout: 180000 });
 			const line = p.stdout.toString().split("\n").find((l) => l.startsWith("RESULT "));
@@ -223,7 +239,7 @@ async function memory(pdfs: string[], windowMode: boolean) {
 	console.log(`\nProcess memory of the whole bun process (MB), mode=${windowMode ? "real window" : "headless test renderer"}, dpr=${dpr}. "empty" = the same window/test root before the reader is shown; delta = end - empty.`);
 	console.table(results.map((r) => ({
 		pdf: r.label, scenario: r.scenario, pagesAlive: r.mountedNow, "empty priv": r.emptyPrivMB, "end priv": r.privMB, "end ws": r.wsMB, "peak priv": r.peakPrivMB, "delta priv": r.deltaPrivMB, "delta ws": r.deltaWsMB,
-		renders: r.renders, "avg render ms": r.avgRenderMs, ...(windowMode ? { gpu: JSON.stringify(r.gpu) } : {}),
+		"doc open MB": r.openedDeltaMB, "hayro cache MB": r.cacheMB, renders: r.renders, "avg render ms": r.avgRenderMs, ...(windowMode ? { gpu: JSON.stringify(r.gpu) } : {}),
 	})));
 	for (const r of results) if (r.sampledAtPage) console.log(`${r.label} scroll50 samples (priv/ws MB at page N):`, JSON.stringify(r.sampledAtPage), `in ${r.scrollSeconds}s`);
 	return results;

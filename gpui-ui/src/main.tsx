@@ -14,12 +14,17 @@ import { createComponent, createEffect, createRoot, createSignal, Show, type Com
 import type { Mode, Style } from "./contracts";
 import { startCore } from "./core";
 import { registerFonts } from "./fonts";
+import { applyAppearance, startAppearance } from "./shell/appearance";
+import { bindUiState } from "./shell/prefs";
+import { handleWindowKeyDown } from "./shell/shortcuts";
 import { tw } from "./theme";
 import { mark } from "./trace";
 
 mark("main-start");
 
-const MODE: Mode = "dark"; // the store's initial mode
+// Stored appearance (colour scheme, text size, UI font, light/dark/system) before the first frame, so the splash and the first
+// App render already have the user's look; startAppearance() below keeps it live once the store exists.
+const MODE: Mode = applyAppearance();
 const t = (cls: string): Style => tw(cls, MODE);
 const FULL: Style = { width: "100%", height: "100%" };
 
@@ -49,7 +54,8 @@ function Root() {
 	return <Show when={app()} fallback={<Splash />}>{(C) => createComponent(C(), {})}</Show>;
 }
 
-render(() => <Root />, { title: "zotero-next", width: 1400, height: 900 });
+// onKeyDown is the window-level key handler: global shortcuts of the registry's appActions (shell/shortcuts.ts).
+render(() => <Root />, { title: "zotero-next", width: 1400, height: 900, onKeyDown: handleWindowKeyDown });
 mark("render-returned");
 
 // Fonts now, while the tree has no text: registering is ~10-30 ms per file then, but ~250 ms per file once a laid-out app is on
@@ -73,11 +79,19 @@ await new Promise((r) => setTimeout(r, 0));
 void startCore().catch((e) => console.error("[core]", e instanceof Error ? e.message : e)); // before the store: it holds requests
 const storeP = import("./store"); // creating the store starts the data loading right now
 const appP = import("./App");
-const { store } = await storeP;
+const { store, uiState } = await storeP;
+bindUiState(uiState); // shell preferences are written by store.ts's ui-state.json writer
 mark("store-ready");
+startAppearance(store); // store.mode follows the stored mode / the OS; colours, font and size follow the preferences
 const { App } = await appP;
 setApp(() => App);
 mark("app-mounted");
+
+// ---- FEATURES: each feature's register() puts its menu entries, dialogs, sidebar/settings sections and reader plugins in the registry
+await import("./features").then(
+	() => mark("features-registered"),
+	(e) => console.error("[features]", e),
+);
 
 createRoot((dispose) => {
 	createEffect(() => {

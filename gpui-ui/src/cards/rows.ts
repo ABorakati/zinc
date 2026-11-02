@@ -1,24 +1,30 @@
 // Header + item rows over the store's year groups (ui/src/groups.ts createGroupedRows, with the groups coming from the store).
 // Group g covers item indexes [start, start + count); a collapsed group shows only its header row.
-import { createMemo, createSignal } from "solid-js";
+import { createEffect, createMemo, createSignal, on } from "solid-js";
 import { store } from "../store";
 
 export interface Group { value: string | null; label: string; count: number; start: number }
 export type Row = { kind: "header"; group: Group } | { kind: "item"; index: number };
 
-const label = (v: string | null) => (v === null || v === "" ? "No date" : v);
+const typeLabel = (t: string) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+/** Group header text (ui/src/groups.ts label): depends on what the list is grouped by. */
+const label = (by: string, v: string | null) =>
+	v === null || v === "" ? (by === "year" ? "No date" : by === "publication" ? "No publication" : "Other") : by === "itemType" ? typeLabel(v) : v;
 const keyOf = (g: Group) => String(g.value);
 
 export function createRows() {
 	const [collapsed, setCollapsed] = createSignal<ReadonlySet<string>>(new Set());
+	// a new grouping starts with every group open
+	createEffect(on(() => store.groupBy(), () => setCollapsed(new Set<string>()), { defer: true }));
 
 	/** Groups only count when they cover the whole list (a stale / missing fetch falls back to plain item rows). */
 	const active = createMemo<Group[] | null>(() => {
 		const raw = store.groups();
 		store.listVersion();
 		if (!raw.length) return null;
+		const by = store.groupBy();
 		let start = 0;
-		const gs = raw.map((g) => { const x = { value: g.value, label: label(g.value), count: g.count, start }; start += g.count; return x; });
+		const gs = raw.map((g) => { const x = { value: g.value, label: label(by, g.value), count: g.count, start }; start += g.count; return x; });
 		return start === store.total() ? gs : null;
 	});
 	/** rowStart[g] = row index of group g's header; last entry = total rows. */
