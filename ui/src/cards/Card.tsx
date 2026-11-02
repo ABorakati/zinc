@@ -1,6 +1,6 @@
 import { createSignal, For, Show, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { ExternalLink, FileSearch, FileText, Download, Ellipsis, Paperclip, Quote, Star, StickyNote, type LucideProps } from "lucide-solid";
+import { Copy, ExternalLink, FileSearch, FileText, Download, Ellipsis, Paperclip, Star, StickyNote, type LucideProps } from "lucide-solid";
 import { toast } from "solid-sonner";
 import { itemTypeIcon } from "~/lib/icons";
 import type { ItemSummary } from "../api";
@@ -185,7 +185,7 @@ export const Card: Component<{
 						<ActionBtn icon={ExternalLink} label="Open webpage" compact={compact()} onClick={() => void openUrl(u())} />
 					)}</Show>
 					<Show when={regular()}>
-						<ActionBtn icon={Quote} label={citing() ? "Copying…" : "Cite"} title="Copy citation" compact={compact()}
+						<ActionBtn icon={Copy} label={citing() ? "Copying…" : "Cite"} title="Copy citation" compact={compact()}
 							onClick={() => { setCiting(true); void copyCitation(p.item.key).finally(() => setCiting(false)); }} />
 					</Show>
 					<Show when={L().icons && notes() > 0}>
