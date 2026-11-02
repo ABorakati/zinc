@@ -47,6 +47,44 @@ export interface ItemRow {
 	[k: string]: unknown;
 }
 
+// ---- feature-parity port: shared types (see registry.ts for extension points, ui/index.tsx for UI building blocks) ----
+
+/** What the item list shows (ui/src/store.ts View). */
+export type View =
+	| { kind: "library" }
+	| { kind: "collection"; key: string }
+	| { kind: "unfiled" }
+	| { kind: "trash" }
+	| { kind: "duplicates" }
+	| { kind: "savedSearch"; key: string }
+	| { kind: "publications" };
+
+/** Sort level as in the web UI's SortBar (up to 4); while grouped, level 1 is the group field. */
+export interface SortLevel { key: string; dir: "asc" | "desc" }
+export type GroupBy = "none" | "year" | "itemType" | "creator" | "publication" | "dateAdded";
+
+/**
+ * Library-list state added for parity (implemented in store.ts by the list/table owner; other features use it).
+ * view/setView replaces selectedCollection (which becomes view().kind === "collection" ? key : null);
+ * selectedItem() stays the focused item, selected() is the multi-selection.
+ */
+export interface ListStore {
+	view: Accessor<View>;
+	setView(v: View): void;
+	tagFilter: Accessor<string[]>;
+	setTagFilter(tags: string[]): void;
+	selected: Accessor<Set<string>>;
+	setSelected(keys: Set<string>): void;
+	viewMode: Accessor<"cards" | "table">;
+	setViewMode(m: "cards" | "table"): void;
+	sortLevels: Accessor<SortLevel[]>;
+	setSortLevels(l: SortLevel[]): void;
+	groupBy: Accessor<GroupBy>;
+	setGroupBy(g: GroupBy): void;
+	/** re-fetch collections + the list after a change (edits, imports, trash…) */
+	refresh(): void;
+}
+
 /** The permanent first tab: the library (sidebar | list | item pane). */
 export interface LibraryTab { id: "library" }
 /** A PDF reader tab; its id is the attachment key. */

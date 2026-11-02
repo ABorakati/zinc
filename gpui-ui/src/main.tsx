@@ -57,6 +57,16 @@ mark("render-returned");
 registerFonts();
 mark("fonts-registered");
 
+/** Measurement aid: ZN_OPEN_TABS=attKey1,attKey2 opens those PDFs as reader tabs 2 s apart once the list is in (last one active). */
+async function openTabsFromEnv(open: (key: string, title: string, itemKey: string) => void) {
+	const keys = (process.env.ZN_OPEN_TABS ?? "").split(",").filter(Boolean);
+	for (const k of keys) {
+		await new Promise((r) => setTimeout(r, 2000));
+		open(k, k, k);
+		mark("tab-opened");
+	}
+}
+
 // let the splash be presented before the heavy imports occupy the thread
 await new Promise((r) => setTimeout(r, 0));
 
@@ -74,6 +84,7 @@ createRoot((dispose) => {
 		if (store.pagesLoaded() > 0 || store.error()) {
 			mark("first-items"); // the App is mounted and its first page is in: the next frame paints it
 			dispose();
+			void openTabsFromEnv(store.openAttachment);
 		}
 	});
 });
