@@ -163,7 +163,7 @@ export const CollectionsPane: Component = () => {
 	const [libOpen, setLibOpen] = sectionOpen.library;
 	const [colOpen, setColOpen] = sectionOpen.collections;
 	return (
-		<div class="flex min-h-0 flex-col overflow-y-auto" style={{ flex: colOpen() ? "3 1 0%" : "0 1 auto" }} data-pane="collections" tabindex={-1}>
+		<div class="flex min-h-0 flex-col overflow-y-auto pr-2" style={{ flex: colOpen() ? "3 1 0%" : "0 1 auto" }} data-pane="collections" tabindex={-1}>
 			<ContextMenu onOpenChange={(o) => !o && setCtx(null)}>
 				<ContextMenuTrigger as="div" role="tree" class="flex flex-col gap-4 pb-1"
 					onContextMenu={(e: MouseEvent) => {
