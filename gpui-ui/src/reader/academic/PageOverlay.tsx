@@ -6,21 +6,23 @@ import { createResource, createSignal, For, Show, type Accessor, type JSX } from
 import { withAlpha } from "../../theme";
 import { Icon } from "../../icons";
 import { Button } from "../../ui";
+import { windowSize } from "../../ui/core";
 import type { ReaderContext } from "../plugins";
 import { kit, type Kit } from "../structure/kit";
-import { fromNRect } from "../structure/pagetext";
+import { fromNRect, toNRect } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
-import { CiteGroup, FigureCard, RefCard, SuppCard } from "./Cards";
+import { CitedByCard, CiteGroup, FigureCard, RefCard, SuppCard } from "./Cards";
 import {
-	expandCitationGroup, isInReferences, parseCitationNumbers, resolveAuthorYear, resolveCitation, type Resolution,
+	expandCitationGroup, isInReferences, markerOf, parseCitationNumbers, resolveAuthorYear, resolveCitation, type Resolution,
 } from "./citations";
 import { findByKey } from "./figures";
 import { captionStart, findAuthorYear, findFigureMentions, findSupplementaryMentions } from "./mentions";
 import { academicFor, type AcademicSession } from "./session";
-import { charsInRect, computeLines, lineAt, rangeRects, type Line } from "./textlines";
+import { charsInRect, computeLines, lineAt, lineRect, rangeRects, type Line } from "./textlines";
 
-type HotKind = "cite" | "figure" | "supp" | "author-year";
-interface Hot { kind: HotKind; rects: PdfRect[]; key: string; content: () => JSX.Element }
+type HotKind = "cite" | "figure" | "supp" | "author-year" | "bib";
+/** go: what a click on the mention does besides pinning its card (bibliography entries jump to their first citation). */
+interface Hot { kind: HotKind; rects: PdfRect[]; key: string; content: () => JSX.Element; go?: () => void }
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
 const BRACKET_GROUP = /\[\s*\d{1,3}(?:\s*[,;–—−\-]\s*\d{1,3})*\s*\]/g;
@@ -77,6 +79,23 @@ export function CiteContent(p: { s: AcademicSession; k: Kit; spec: CiteSpec; jum
 }
 
 // ---------------------------------------------------------------------------------------------------- finding the hot areas
+
+/** A line's rect minus the horizontal spans of the links on it (the hot zones sit above the PDF's own link zones, so a DOI link inside a
+ *  bibliography entry must stay uncovered to remain clickable). */
+function minusLinks(line: PdfRect, links: PdfRect[]): PdfRect[] {
+	const spans = links
+		.filter((l) => l[1] < line[3] && l[3] > line[1] && l[0] < line[2] && l[2] > line[0])
+		.map((l) => [Math.max(l[0], line[0]), Math.min(l[2], line[2])] as const)
+		.sort((a, b) => a[0] - b[0]);
+	const out: PdfRect[] = [];
+	let x = line[0];
+	for (const [a, b] of spans) {
+		if (a > x + 1) out.push([x, line[1], a, line[3]]);
+		x = Math.max(x, b);
+	}
+	if (line[2] > x + 1) out.push([x, line[1], line[2], line[3]]);
+	return out;
+}
 
 async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number): Promise<Hot[]> {
 	const [pt] = await Promise.all([s.pageText(page), s.start()]);
@@ -136,7 +155,12 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 		}
 		if (idx) covered.push([idx[0], idx[1]]);
 		const spec: CiteSpec = { nums: nums.length ? nums : [], groupText: groupText || text, dest: { page: l.target.page, top } };
-		hots.push({ kind: "cite", rects: [rect], key: `link:${page}:${rect.map((n) => Math.round(n)).join(",")}`, content: () => <CiteContent s={s} k={k} spec={spec} /> });
+		// the zone sits above the PDF's own link, so it does the link's job on a click: go to the reference (the card has the details)
+		const dest = l.target;
+		hots.push({
+			kind: "cite", rects: [rect], key: `link:${page}:${rect.map((n) => Math.round(n)).join(",")}`, content: () => <CiteContent s={s} k={k} spec={spec} />,
+			go: () => s.jump(dest.page, top !== undefined ? [0, top - 10, 0, top] : null),
+		});
 	}
 
 	// "[3, 5-7]" groups with no link (PDFs without link annotations)
@@ -166,12 +190,28 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 			}
 		}
 	}
+
+	const uriRects = links.filter((l) => l.target.kind === "uri").map((l) => fromNRect(l.rect, ctx.pageSize(page).w, ctx.pageSize(page).h));
+	// bibliography entries: hover shows where the paper cites them (with the sentences), a click jumps to the first citation
+	if (rs && page >= rs.page) {
+		const cites = await s.citeIndex();
+		for (const line of lines) {
+			const n = markerOf(line.text);
+			if (n === undefined || (page === rs.page && line.y2 > rs.y + 2)) continue;
+			const sites = cites.get(n) ?? [];
+			hots.push({
+				kind: "bib", rects: minusLinks(lineRect(line), uriRects), key: `bib:${page}:${n}`,
+				content: () => <CitedByCard s={s} k={k} n={n} sites={sites} onJump={(site) => s.jump(site.page, site.rect)} />,
+				go: sites[0] ? () => s.jump(sites[0]!.page, sites[0]!.rect) : undefined,
+			});
+		}
+	}
 	return hots.filter((h) => h.rects.length > 0);
 }
 
 // ---------------------------------------------------------------------------------------------------- the overlay
 
-const TINT: Record<HotKind, string> = { cite: "#3b82f6", figure: "#14b8a6", supp: "#f59e0b", "author-year": "#3b82f6" };
+const TINT: Record<HotKind, string> = { cite: "#3b82f6", figure: "#14b8a6", supp: "#f59e0b", "author-year": "#3b82f6", bib: "#8b5cf6" };
 const CARD_W = 380;
 
 export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accessor<{ width: number; height: number }> }): JSX.Element {
@@ -201,11 +241,14 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 					s.scheduleHide(450);
 				}}
 				// a click pins the card (it then stays until closed)
-				onClick={() => { clearTimeout(timers.get(q.h.key)); open(q.h, true); }}
+				onClick={() => {
+					clearTimeout(timers.get(q.h.key));
+					if (q.h.go) { s.hidePopup(); q.h.go(); } else open(q.h, true);
+				}}
 				style={{
 					position: "absolute", left: q.r[0] * sc() - 1, top: (size().h - q.r[3]) * sc() - 1, width: (q.r[2] - q.r[0]) * sc() + 2, height: (q.r[3] - q.r[1]) * sc() + 2,
-					backgroundColor: withAlpha(TINT[q.h.kind], on() ? 0.28 : 0.1), borderRadius: 2, cursor: "pointer",
-					borderBottomWidth: 1, borderColor: withAlpha(TINT[q.h.kind], on() ? 0.9 : 0.5),
+					backgroundColor: withAlpha(TINT[q.h.kind], on() ? (q.h.kind === "bib" ? 0.12 : 0.28) : q.h.kind === "bib" ? 0 : 0.1), borderRadius: 2, cursor: "pointer", pointerEvents: "auto",
+					...(q.h.kind === "bib" ? {} : { borderBottomWidth: 1, borderColor: withAlpha(TINT[q.h.kind], on() ? 0.9 : 0.5) }),
 				}}
 			/>
 		);
@@ -218,7 +261,11 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 		const r = pp.rect;
 		const left = Math.max(4, Math.min((r[0] * sc()), p.box().width - CARD_W - 4));
 		const rectTop = (size().h - r[3]) * sc(), rectBottom = (size().h - r[1]) * sc();
-		const below = rectBottom + 8 + 260 < p.box().height || rectTop < 270;
+		// below the mention when the window has room there (a card is up to ~430 px tall), else above it; the page box is taller than the window
+		p.ctx.viewTick?.();
+		const w = p.ctx.rectToWindow?.(p.page, toNRect(r, size().w, size().h));
+		const room = w ? windowSize().height - (w.y + w.height) : 0;
+		const below = w ? room >= 440 || room >= w.y : rectBottom + 8 + 260 < p.box().height || rectTop < 270;
 		return (
 			<div
 				onMouseEnter={() => s.cancelHide()}
@@ -227,7 +274,7 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 				style={{
 					...k.t("flex flex-col rounded-lg border bg-popover"), position: "absolute", left, width: CARD_W, padding: 12,
 					...(below ? { top: Math.min(rectBottom + 6, p.box().height - 80) } : { bottom: p.box().height - rectTop + 6 }),
-					borderColor: k.tok("border"), boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" }],
+					borderColor: k.tok("border"), pointerEvents: "auto", boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" }],
 				}}
 			>
 				<Show when={pp.pinned}>
@@ -255,11 +302,18 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 /** Mounted once (in the toolbar): the "Back to page N" button that follows a jump from a popup or the panels. */
 export function AcademicHost(p: { ctx: ReaderContext }): JSX.Element {
 	const s = academicFor(p.ctx);
+	const k = kit(p.ctx.mode);
 	return (
+		<>
+		<Show when={s.struct().phase === "error"}>
+			{/* the layout analysis failed (the worker is missing or crashed): citations found in the text still work, the reading view shows the error */}
+			<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Layout analysis unavailable</text>
+		</Show>
 		<Show when={s.backStack().length > 0}>
 			<Button size="sm" variant="outline" icon="arrow-left" onClick={() => s.goBack()}>
 				{`Back to page ${(s.backStack()[s.backStack().length - 1] ?? 0) + 1}`}
 			</Button>
 		</Show>
+		</>
 	);
 }

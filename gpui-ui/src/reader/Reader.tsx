@@ -24,7 +24,7 @@ import { openPdf, fetchAttachment } from "./library";
 import { PdfDoc, type OutlineEntry, type PdfLink, type TextLayer, type TextWord } from "./pdf";
 import { readerPlugins, type NRect, type ReaderContext, type ReaderPlugin, type Word } from "./plugins";
 import { readerAppearance as appearance, initReaderAppearance, lookOf, paperColor, paperIsDark, setReaderAppearance, type Appearance } from "./core/appearance";
-import { type LinkInfo, PageSlot, type PageEnv, type PageStats, type ViewRect } from "./core/Page";
+import { type LinkInfo, type Margins, PageSlot, type PageEnv, type PageStats, type ViewRect } from "./core/Page";
 import { Scheduler } from "./core/scheduler";
 import { FindResults, Outline, Sidebar, Thumbnails, type HitRow, type SideTab } from "./core/Sidebar";
 import { getDocState, getSidebar, saveSidebar, setDocState, type ZoomMode } from "./core/state";
@@ -87,6 +87,10 @@ export interface ReaderController {
 	debug(): unknown;
 	/** simulate a key press as the root element receives it (tests) */
 	key(e: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean }): void;
+	/** a mouse-wheel event over the page list through GPUI's own hit test (positive dy = scroll down, css px); false when there is no list yet */
+	wheel(dy: number): boolean;
+	/** for every mounted page that intersects the viewport, as the list's true scroll position (not the polled one) puts it: visible area and the fractions blank / soft / sharp */
+	coverage(): { page: number; vis: number; blank: number; soft: number; sharp: number }[];
 }
 
 export interface ReaderProps {
@@ -182,6 +186,25 @@ function IconButton(p: { icon: string; title: string; mode: Accessor<Mode>; onCl
 			}}
 		>
 			<Icon name={p.icon} size={p.size ?? 16} color={tok(p.disabled ? "border" : p.on ? "foreground" : "muted-foreground")} />
+		</div>
+	);
+}
+
+/** A labelled toolbar toggle (icon + text), for the plugins' alternate views ("Reading view"): an icon alone is not discoverable. */
+function LabelButton(p: { icon: string; label: string; mode: Accessor<Mode>; onClick: () => void; on?: boolean }): JSX.Element {
+	const t = (cls: string): Style => tw(cls, p.mode());
+	const tok = (n: string) => tokens[p.mode()][n] ?? "#888";
+	return (
+		<div
+			aria-label={p.label}
+			onClick={p.onClick}
+			style={{
+				...t("flex h-8 flex-none items-center justify-center gap-1.5 rounded-md border px-2.5"), cursor: "pointer", borderColor: tok(p.on ? "foreground" : "input"),
+				...(p.on ? { backgroundColor: tok("accent") } : {}), hover: t("bg-accent"),
+			}}
+		>
+			<Icon name={p.icon} size={15} color={tok(p.on ? "foreground" : "muted-foreground")} />
+			<text style={{ ...textStyle("text-[12px] font-medium text-foreground", p.mode()), whiteSpace: "nowrap" }}>{p.label}</text>
 		</div>
 	);
 }
@@ -320,6 +343,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const stats: ReaderStats = { renders: 0, lastRenderMs: 0, lastUploadMs: 0, totalRenderMs: 0, cancelled: 0, tiles: 0, peakTiles: 0 };
 	const pending = { n: 0 };
 	const reg: PageEnv["reg"] = { boxes: new Map() };
+	const probe: PageEnv["probe"] = new Map();
+	const jobs: PageEnv["jobs"] = new Set();
 	const count = () => doc()?.pageCount ?? 0;
 	const [vis, setVis] = createSignal<[number, number]>([0, 1]);
 	const [win, setWin] = createSignal<[number, number]>([0, 3]);
@@ -334,6 +359,49 @@ export function Reader(props: ReaderProps): JSX.Element {
 		return Array.from({ length: Math.max(0, hi - lo) }, (_, k) => lo + k);
 	});
 	const first = () => indices()[0] ?? 0;
+	// which way the reader scrolls (1 down, -1 up; down until the first move): the margin of pre-rendered tiles is long on that side
+	const [dir, setDir] = createSignal(0);
+	const margins = createMemo(() => {
+		const vh = sp().h || vp().h || 800;
+		const ahead = Math.max(600, Math.round(vh * 0.7)), behind = Math.max(200, Math.round(vh * 0.2));
+		const d = dir();
+		const mg: Margins = { up: d < 0 ? ahead : behind, down: d < 0 ? behind : ahead, keep: Math.round(vh * 0.15), ahead: d };
+		return mg;
+	}, undefined, { equals: (a, b) => a.up === b.up && a.down === b.down && a.keep === b.keep && a.ahead === b.ahead });
+	const laidOut = () => vp().w > 0 && sp().h > 0;
+	const MAX_MOUNT = 14;
+	/** the pages whose row touches the viewport or the margins (+ keep distance) around it: they are mounted, so their tiles can be rendered ahead of time */
+	function windowFor(s: { idx: number; off: number; h: number }): [number, number] {
+		const n = untrack(count);
+		if (!n) return [0, 0];
+		const m = untrack(margins), vh = s.h || untrack(vp).h || 800;
+		const idx = clamp(s.idx, 0, n - 1);
+		let lo = idx, y = -s.off;
+		while (lo > 0 && y > -(m.up + m.keep)) { lo--; y -= rowHeight(lo); }
+		let hi = idx + 1;
+		y = -s.off + rowHeight(idx);
+		while (hi < n && y < vh + m.down + m.keep) { y += rowHeight(hi); hi++; }
+		hi = Math.min(n, Math.max(hi, idx + 1));
+		if (hi - lo > MAX_MOUNT) { lo = Math.max(0, Math.min(lo, idx - 2)); hi = Math.min(hi, lo + MAX_MOUNT); }
+		return [lo, hi];
+	}
+	function updateWin(s: { idx: number; off: number; h: number }) {
+		const w = windowFor(s), cw = untrack(win);
+		if (w[0] !== cw[0] || w[1] !== cw[1]) setWin(w);
+	}
+	// row heights change with the zoom, the viewport and rotations (the first layout comes after the first scroll sample): re-fit the window
+	createEffect(() => {
+		zoom(); docRot(); pageRots(); vp();
+		if (!doc()) return;
+		untrack(() => { const s = sp(); if (s.h) updateWin(s); });
+	});
+	let reprioTimer: ReturnType<typeof setTimeout> | undefined;
+	/** the queued render jobs follow the viewport: re-set their priorities (at most every 30 ms) */
+	function reprioSoon() {
+		if (reprioTimer) return;
+		reprioTimer = setTimeout(() => { reprioTimer = undefined; for (const f of jobs) f(); }, 30);
+	}
+	onCleanup(() => clearTimeout(reprioTimer));
 	/** the page under a line 35% of the way down the viewport (the web reader's "current page") */
 	const curPage = createMemo(() => {
 		const d = doc();
@@ -369,8 +437,13 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
 		if (a && a.length >= 3) {
 			const n = { idx: clamp(a[0]!, 0, Math.max(0, count() - 1)), off: Math.round(a[1]!), h: Math.round(a[2]!) };
-			if (!eqScroll(untrack(sp), n)) {
+			const prev = untrack(sp);
+			if (!eqScroll(prev, n)) {
+				const moved = n.idx !== prev.idx ? n.idx - prev.idx : n.off - prev.off;
+				if (prev.h && moved !== 0) setDir(moved > 0 ? 1 : -1);
 				setSp(n); bump(); saveSoon();
+				updateWin(n);
+				reprioSoon();
 				if (performance.now() > zoomingUntil) lastAnchor = anchor();
 			}
 		}
@@ -380,8 +453,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 		setVis([a, b]);
 		refreshScroll();
 		const lo = Math.max(0, Math.floor(a) - 1), hi = Math.min(untrack(count), Math.ceil(b) + 1);
+		// once the scroll position is known refreshScroll() owns the window (pages inside the margins); until then trust the list's range
 		const w = untrack(win);
-		if (w[0] !== lo || w[1] !== hi) setWin([lo, hi]);
+		if (!untrack(sp).h && (w[0] !== lo || w[1] !== hi)) setWin([lo, hi]);
 		bump();
 		saveSoon();
 	};
@@ -463,12 +537,12 @@ export function Reader(props: ReaderProps): JSX.Element {
 	}
 
 	// the viewport in a page's own css coordinates
-	function viewFor(i: number): ViewRect {
-		const s = sp();
+	function viewFor(i: number, s = sp()): ViewRect {
 		const vh = s.h || vp().h;
+		// the viewport top inside page i's row: `off` into the anchor row, minus every row between the anchor and page i (plus, for pages above it)
 		let top = s.off;
-		if (i > s.idx) for (let k = s.idx; k < i; k++) top += rowHeight(k);
-		else for (let k = i; k < s.idx; k++) top -= rowHeight(k);
+		if (i > s.idx) for (let k = s.idx; k < i; k++) top -= rowHeight(k);
+		else for (let k = i; k < s.idx; k++) top += rowHeight(k);
 		const y0 = top - rowPad(i)[0];
 		const left = (innerWidth() - pageWidth(i)) / 2;
 		const x0 = -scrollX() - left;
@@ -477,7 +551,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 
 	// the visible-range event only fires when the integer page range changes: follow the scroll position within a page too
 	{
-		const poll = setInterval(() => { if (untrack(pagesShown) && list) { refreshScroll(); } }, 100);
+		const poll = setInterval(() => { if (untrack(pagesShown) && list) { refreshScroll(); } }, 16);
 		onCleanup(() => clearInterval(poll));
 	}
 
@@ -522,7 +596,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		saveNow();
 		setWin([Math.max(0, saved[0] - 1), saved[0] + 3]);
 		list = undefined;
-		sched.clear();
+		// (the queue is not cleared: tiles cancel their own jobs when they unmount, and the sidebar's thumbnails still need theirs)
 		doc()?.clearCache();
 	}, { defer: true }));
 	function onListRef(el: { id: number }) {
@@ -1033,6 +1107,20 @@ export function Reader(props: ReaderProps): JSX.Element {
 		setAltView: (id) => setAltViewSig(id),
 		debug: () => ({ sp: sp(), vis: vis(), win: win(), vp: vp(), zoom: zoom(), scrollX: scrollX(), view: indices().map((i) => ({ i, v: viewFor(i), h: pageHeight(i), w: pageWidth(i) })), raw: list ? gpuix?.renderer.getListScrollTop?.(list.id) : null }),
 		key: (e) => onKey({ key: e.key, modifiers: { ctrl: e.ctrl, shift: e.shift, alt: e.alt } }),
+		wheel: (dy) => {
+			const b = paneEl ? gpuix?.renderer.getElementBounds?.(paneEl.id) : null;
+			if (!b || !list) return false;
+			(gpuix?.renderer as unknown as { simulateScrollWheel?(x: number, y: number, dx: number, dy: number): void } | undefined)?.simulateScrollWheel?.(b.x + b.width / 2, b.y + b.height / 2, 0, -dy);
+			return true;
+		},
+		coverage: () => {
+			const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
+			if (!a || a.length < 3) return [];
+			const s = { idx: a[0]!, off: a[1]!, h: a[2]! };
+			const out: { page: number; vis: number; blank: number; soft: number; sharp: number }[] = [];
+			for (const [page, f] of probe) { const r = f(viewFor(page, s)); if (r.vis > 0) out.push({ page, ...r }); }
+			return out;
+		},
 	});
 
 	// ---- view -------------------------------------------------------------------------------------------------------------------------
@@ -1112,7 +1200,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 					{(p: ReaderPlugin) => (
 						<>
 							<Show when={p.altView}>
-								{(av) => <IconButton icon={av().icon} title={av().label} mode={mode} on={altView() === av().id} onClick={() => setAltViewSig(altView() === av().id ? null : av().id)} />}
+								{(av) => <LabelButton icon={av().icon} label={av().label} mode={mode} on={altView() === av().id} onClick={() => setAltViewSig(altView() === av().id ? null : av().id)} />}
 							</Show>
 							<Show when={p.toolbar && ctxSig()}>{p.toolbar!(ctx())}</Show>
 						</>
@@ -1142,7 +1230,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const curAlt = createMemo(() => { const id = altView(); return id ? plugins().find((p) => p.altView?.id === id)?.altView : undefined; });
 	const pageEnv = createMemo<PageEnv | null>(() => {
 		const d = doc();
-		return d ? { doc: d, sched, dpr, look, paper: () => paperColor(appearance()), stats, pending, reg } : null;
+		return d ? { doc: d, sched, dpr, look, paper: () => paperColor(appearance()), stats, pending, reg, probe, margins, jobs, laidOut } : null;
 	});
 
 	/** overlays of every plugin for one page, in a pointer-transparent box the size of the page */
@@ -1181,7 +1269,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 			<Show when={sbOpen()}>
 				<Sidebar mode={mode} width={getSidebar().width} tabs={sideTabs} tab={sbTab} onTab={(id) => setSidebar(true, id)} />
 			</Show>
-			<div ref={(el: { id: number }) => { paneEl = el; }} style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, minHeight: 0, position: "relative", backgroundColor: tok("muted") }}>
+			<div ref={(el: { id: number }) => { paneEl = el; }} onLayout={onViewport} style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, minHeight: 0, position: "relative", backgroundColor: tok("muted") }}>
 				<Show
 					when={curAlt()}
 					fallback={

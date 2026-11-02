@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeClipboard } from "../shell/clipboard-win";
 import { clipboard } from "../ui";
 import { post } from "./http";
 
@@ -46,7 +47,7 @@ if ($HtmlFile) { $d.SetData([System.Windows.Forms.DataFormats]::Html, [IO.File]:
 
 async function powershell(scriptName: string, script: string, args: string[] = []): Promise<string> {
 	const file = tmpFile(scriptName, script);
-	const p = Bun.spawn(["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", file, ...args], { stdout: "pipe", stderr: "pipe" });
+	const p = Bun.spawn(["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", file, ...args], { stdout: "pipe", stderr: "pipe", windowsHide: true });
 	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 	if (code !== 0) throw new Error(err.trim().split("\n")[0] || `PowerShell exited with ${code}`);
 	return out;
@@ -72,6 +73,8 @@ export const copyText = (text: string): Promise<void> => clipboard.writeText(tex
 /** HTML + plain text on the clipboard (rich paste into Word, plain paste elsewhere). */
 export async function copyRich(html: string, text: string): Promise<void> {
 	if (!html || process.platform !== "win32") return clipboard.writeText(text);
+	// Win32 directly: no PowerShell helper, so no console window flashes up (the script below stays as a fallback)
+	if (writeClipboard(text, cfHtml(html))) return;
 	const t = tmpFile("clip.txt", text);
 	const h = html ? tmpFile("clip.html", cfHtml(html)) : "";
 	await powershell("set-clipboard.ps1", SET_CLIP_PS, h ? [t, h] : [t]);

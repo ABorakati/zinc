@@ -7,7 +7,7 @@ import { useGpuix } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/solid";
 import { dragSource } from "../dnd";
 import { Icon } from "../icons";
-import { store } from "../store";
+import { stats, store } from "../store";
 import { TableView } from "../table/Table";
 import { loadSchema } from "../table/defs";
 import { textStyle, tw } from "../theme";
@@ -138,11 +138,14 @@ export function CardsView(): JSX.Element {
 	};
 	// keep the mounted window around the visible rows (recentre only when the view nears an edge)
 	const onVisibleRange = (e: EventPayload) => {
+		const t0 = performance.now();
 		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
 		visA = a; visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		const s = untrack(first);
 		if ((a < s + 6 && s > 0) || b > s + WINDOW - 6) setStart(Math.max(0, a - WINDOW / 4));
+		const d = performance.now() - t0;
+		stats.visCalls++; stats.visMs += d; stats.visMaxMs = Math.max(stats.visMaxMs, d);
 	};
 
 	// a new list (view / filter / sort) starts at the top

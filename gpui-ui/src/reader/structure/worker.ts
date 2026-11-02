@@ -1,6 +1,7 @@
 // Client for Zotero's document worker running in a Bun Worker (see docworker-entry.ts), modelled on
 // reader-next/src/structure/worker.ts and reader-host/src/host.js: request/response by numeric id, plus the worker's own Fetch*
 // requests for cmaps / fonts / wasm / models, answered from the build directory on disk.
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,6 +24,10 @@ export class DocumentWorker {
 	constructor() {
 		// ZN_DOCWORKER_ENTRY: an on-disk copy of docworker-entry.ts (the packaged app ships one next to the exe)
 		const entry = process.env.ZN_DOCWORKER_ENTRY;
+		const bundle = join(WORKER_DIR, "worker.js");
+		// say what is missing (a copy of the exe without its folder, or an install without vendor/) instead of failing inside the worker
+		if (!existsSync(bundle)) throw new Error(`The reading view needs Zotero's document worker, which was not found (${bundle}). Keep the vendor folder next to zotero-next-gpui.exe, or set ZN_ROOT.`);
+		if (entry && !existsSync(entry)) throw new Error(`The document worker's entry script was not found (${entry}); keep docworker-entry.ts next to zotero-next-gpui.exe.`);
 		const w = new Worker(entry ? pathToFileURL(entry).href : new URL("./docworker-entry.ts", import.meta.url).href);
 		this.worker = w;
 		(w as unknown as { unref?: () => void }).unref?.(); // never keeps a headless script alive

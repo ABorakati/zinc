@@ -1,17 +1,25 @@
 // One page of the reader: a box of the page's size with the rasterized tiles in it, the search / selection washes, the link hot
 // zones and the plugins' overlays.
 //
-// MEMORY MODEL. A page is not one bitmap. Its pixels (page size x zoom x device pixel ratio) are cut into tiles of at most
-// ~1024 px on a side, and only the tiles that touch the viewport (plus a margin) exist as images; the rest of the page is the
-// paper colour. Scrolling creates the tiles that come into the margin and destroys the ones that leave it, so the cost of an
-// open PDF is the size of the viewport, whatever the page count or the zoom (a 6x zoom is a few more small tiles, not a 500 MB
-// page). Pixels are handed to GPUIX once (setImagePixels copies them into its own image) and the native buffer is freed on the
-// spot: the JS side never keeps a copy.
+// MEMORY MODEL. A page is not one bitmap held forever. Its pixels (page size x zoom x device pixel ratio) are cut into tiles
+// (bands, or a grid when the page is wide), and only the tiles that touch the viewport or sit in a margin ahead of it (the
+// direction the reader is scrolling in) exist as images; the rest of the page is the paper colour. Scrolling creates the
+// tiles that come into the margin and destroys the ones that leave it (after a grace distance, so a small reversal does not
+// thrash), so the cost of an open PDF is the size of the viewport plus the margin, whatever the page count or the zoom (a 6x
+// zoom is a few more small tiles, not a 500 MB page). Pixels are handed to GPUIX once (setImagePixels copies them into its own
+// image) and the native buffer is freed on the spot: the JS side never keeps a copy.
+//
+// LATENCY MODEL. Rendering is queued natively (native/pdf: a pool of worker threads over one priority queue). Every job carries a
+// priority (0 tiles that touch the viewport, 1e6 tiles in the margin ahead, 2e6 behind; within a band: nearest to the viewport
+// centre first), and the reader re-sets the priorities of the waiting jobs whenever the scroll position changes, so the
+// worker that frees up always renders what the screen needs most. A tile that is destroyed before a worker took its job is
+// cancelled. A single-column page of a moderate size is rasterized by ONE job and cut into its band tiles (hayro walks the whole
+// content stream for every job, so a page drawn as three tiles pays three interpretations: dense figures took ~300 ms each).
 //
 // A zoom or resize does not blank the page: the tiles of the old resolution stay, stretched to the new box, until the new
 // ones that cover the viewport are ready (the new ones are requested after a short debounce).
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
-import type { Look, PdfDoc } from "../pdf";
+import type { Look, PdfDoc, RenderTask } from "../pdf";
 import type { NRect } from "../plugins";
 import { lookKey } from "./appearance";
 import type { Scheduler } from "./scheduler";
@@ -19,14 +27,27 @@ import { rotRect } from "./text";
 
 export const MAX_TILE = 800; // device px per tile edge when a page needs several
 const SINGLE_COL_MAX = 2400; // a page up to this wide (device px) is one column of tiles, whatever its width
-const MARGIN_Y = 200; // css px around the viewport that are kept rendered
-const MARGIN_X = 160;
+const WHOLE_BAND = 512; // band height (device px) of a whole-page job: finer than MAX_TILE because cutting a bitmap is free and GPUIX keeps ~4x the pixel bytes of every live image
+const WHOLE_MAX_PX = 6_000_000; // a single-column page up to this many device px is rasterized by one job and cut into bands
+const MARGIN_X = 48;
 const ZOOM_DEBOUNCE = 140;
+
+/** Queue priorities (lower runs first). The native side also uses 5e6+ for text layers, links and the outline. */
+export const PRIO_VISIBLE = 0;
+export const PRIO_AHEAD = 1e6;
+export const PRIO_BEHIND = 2e6;
+export const PRIO_BACKGROUND = 4e6;
 
 export interface ViewRect { x0: number; y0: number; x1: number; y1: number }
 export interface LinkInfo { rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string } }
 
 export interface PageStats { renders: number; lastRenderMs: number; lastUploadMs: number; totalRenderMs: number; cancelled: number; tiles: number; peakTiles: number }
+
+/**
+ * How far around the viewport (css px) tiles are rendered ahead of time. `up` / `down` are the margins above / below it (the one in
+ * the scroll direction is the long one), `keep` the extra distance a tile survives outside its margin, `ahead` the direction (1 down, -1 up).
+ */
+export interface Margins { up: number; down: number; keep: number; ahead: number }
 
 export interface PageEnv {
 	doc: PdfDoc;
@@ -39,7 +60,19 @@ export interface PageEnv {
 	pending: { n: number };
 	/** window-space bookkeeping for hit-testing: the page box and every tile image register here */
 	reg: { boxes: Map<number, { id: number }> };
+	/** every mounted page registers a coverage probe here (benchmarks: what part of the visible page shows pixels, and how sharp) */
+	probe: Map<number, PageProbe>;
+	margins: Accessor<Margins>;
+	/** false until the viewport has a size and the list a scroll position: nothing is rendered before (the first layout is a throw-away guess) */
+	laidOut: Accessor<boolean>;
+	/** priority updaters of the live render jobs; the reader calls them all when the scroll position moved */
+	jobs: Set<() => void>;
 }
+
+/** Fractions (0..1) of the part of the page inside `view` that is blank paper, shows a stretched / lower resolution image, or is sharp; `vis` is the visible area in css px^2. */
+export type PageProbe = (view: ViewRect) => { vis: number; blank: number; soft: number; sharp: number };
+
+type ImgNode = { id: number; mounted: boolean; setImagePixels(w: number, h: number, b: Uint8Array, o?: { format?: "rgba" | "bgra" }): void };
 
 interface TileSpec {
 	key: string;
@@ -49,60 +82,30 @@ interface TileSpec {
 	scale: number;
 	rot: number;
 	look: Look;
+	/** part of a whole-page job (cut out of one bitmap) rather than a job of its own */
+	whole: boolean;
 	ready: Accessor<boolean>;
 	setReady(v: boolean): void;
-	/** 0: touches the viewport, 1: only the margin */
+	/** 0: touches the viewport, 1: margin ahead, 2: margin behind */
 	tier: Accessor<number>;
 	setTier(v: number): void;
+	img?: ImgNode;
+	alive: boolean;
 }
 
-interface Grid { sk: string; W: number; H: number; scale: number; rot: number; look: Look; cols: number; rows: number; TW: number; TH: number }
+interface Grid { sk: string; W: number; H: number; scale: number; rot: number; look: Look; cols: number; rows: number; TW: number; TH: number; whole: boolean }
 
-type ImgNode = { id: number; mounted: boolean; setImagePixels(w: number, h: number, b: Uint8Array, o?: { format?: "rgba" | "bgra" }): void };
+/** A render job in flight and the tiles waiting for it. */
+interface Inflight { key: string; tiles: Set<TileSpec>; task: RenderTask | null; update(): void }
 
-function TileView(p: { env: PageEnv; page: number; spec: TileSpec; boxW: Accessor<number>; boxH: Accessor<number>; dist: (s: TileSpec) => number; onReady(): void }): JSX.Element {
+function TileView(p: { env: PageEnv; spec: TileSpec; boxW: Accessor<number>; boxH: Accessor<number>; onGone(t: TileSpec): void }): JSX.Element {
 	const { env, spec } = p;
-	let img: ImgNode | undefined;
-	let alive = true;
-	let task: { cancel(): void } | undefined;
 	env.stats.tiles++;
 	env.stats.peakTiles = Math.max(env.stats.peakTiles, env.stats.tiles);
-	const handle = env.sched.add({
-		pri: () => spec.tier() * 1e6 + p.dist(spec),
-		dropped: () => { env.pending.n--; },
-		run: async () => {
-			if (!alive) { env.pending.n--; return; }
-			try {
-				const t = env.doc.render2(p.page, spec.scale, { rot: spec.rot, look: spec.look, region: { x: spec.x, y: spec.y, w: spec.w, h: spec.h } });
-				task = t;
-				const r = await t.promise;
-				task = undefined;
-				if (!r) return;
-				// the element may not be inserted yet right after mount: wait for it (a few frames at most)
-				for (let i = 0; i < 40 && alive && !(img && img.mounted); i++) await Bun.sleep(8);
-				if (!alive || !img || !img.mounted) { r.release(); return; }
-				const u0 = performance.now();
-				img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" });
-				env.stats.lastUploadMs = performance.now() - u0;
-				env.stats.renders++;
-				env.stats.lastRenderMs = r.renderMs;
-				env.stats.totalRenderMs += r.renderMs;
-				r.release(); // the native copy goes now; GPUIX holds its own
-				spec.setReady(true);
-				p.onReady();
-			} catch (e) {
-				if (alive) console.error(`[reader] page ${p.page} tile:`, e instanceof Error ? e.message : e);
-			} finally {
-				env.pending.n--;
-			}
-		},
-	});
-	env.pending.n++;
 	onCleanup(() => {
-		alive = false;
-		handle.cancel();
-		if (task) { task.cancel(); env.stats.cancelled++; }
+		spec.alive = false;
 		env.stats.tiles--;
+		p.onGone(spec);
 	});
 	// css box of the tile inside the page box (rounded outwards so neighbours never leave a seam)
 	const geo = () => {
@@ -112,7 +115,7 @@ function TileView(p: { env: PageEnv; page: number; spec: TileSpec; boxW: Accesso
 	};
 	return (
 		<img
-			ref={(el: ImgNode) => { img = el; }}
+			ref={(el: ImgNode) => { spec.img = el; }}
 			objectFit="fill"
 			style={{ position: "absolute", pointerEvents: "none", ...geo() }}
 		/>
@@ -163,38 +166,56 @@ export function PageSlot(p: {
 		const scale = renderW() / base;
 		const [W, H] = env.doc.renderSize2(p.index, scale, rot);
 		const cols = W <= SINGLE_COL_MAX ? 1 : Math.ceil(W / MAX_TILE);
-		const rows = Math.max(1, Math.ceil(H / MAX_TILE));
-		return { sk: `${W}x${H}.${rot}.${lookKey(look)}`, W, H, scale, rot, look, cols, rows, TW: Math.ceil(W / cols), TH: Math.ceil(H / rows) };
+		const whole = cols === 1 && W * H <= WHOLE_MAX_PX;
+		const rows = Math.max(1, Math.ceil(H / (whole ? WHOLE_BAND : MAX_TILE)));
+		return { sk: `${W}x${H}.${rot}.${lookKey(look)}`, W, H, scale, rot, look, cols, rows, TW: Math.ceil(W / cols), TH: Math.ceil(H / rows), whole };
 	});
 
-	/** tiles of the current grid that touch the viewport (tier 0) or its margin (tier 1) */
+	/**
+	 * Tiles of the current grid worth having: zone 0 touches the viewport, 1 is inside the margin (created, rendered), 2 only inside
+	 * the keep distance (an existing tile stays, a missing one is not created).
+	 */
+	interface Want { key: string; c: number; r: number; tier: number; zone: number }
 	const wanted = createMemo(() => {
-		const g = grid(), v = p.view();
+		const g = grid(), v = p.view(), m = env.margins();
+		if (!env.laidOut()) return [];
 		const kx = g.W / p.boxW(), ky = g.H / p.boxH(); // css -> device px
-		const vx0 = (v.x0 - MARGIN_X) * kx, vx1 = (v.x1 + MARGIN_X) * kx, vy0 = (v.y0 - MARGIN_Y) * ky, vy1 = (v.y1 + MARGIN_Y) * ky;
 		const ix0 = v.x0 * kx, ix1 = v.x1 * kx, iy0 = v.y0 * ky, iy1 = v.y1 * ky;
-		const out: { key: string; c: number; r: number; tier: number }[] = [];
-		if (vy1 <= 0 || vy0 >= g.H || vx1 <= 0 || vx0 >= g.W) return out;
-		const c0 = Math.max(0, Math.floor(vx0 / g.TW)), c1 = Math.min(g.cols - 1, Math.floor((vx1 - 1) / g.TW));
-		const r0 = Math.max(0, Math.floor(vy0 / g.TH)), r1 = Math.min(g.rows - 1, Math.floor((vy1 - 1) / g.TH));
+		// zoomed in (a grid of tiles, every tile re-interprets the page) the margins are shorter: the pixel bytes per css px are far higher
+		const f = g.whole ? 1 : 0.25;
+		const wx0 = (v.x0 - MARGIN_X) * kx, wx1 = (v.x1 + MARGIN_X) * kx, wy0 = (v.y0 - m.up * f) * ky, wy1 = (v.y1 + m.down * f) * ky;
+		const kp = m.keep * f * ky, kpx = MARGIN_X * kx;
+		const out: Want[] = [];
+		// nothing of this page is near enough to matter
+		if (wy1 + kp <= 0 || wy0 - kp >= g.H || wx1 + kpx <= 0 || wx0 - kpx >= g.W) return out;
+		const c0 = Math.max(0, Math.floor((wx0 - kpx) / g.TW)), c1 = Math.min(g.cols - 1, Math.floor((wx1 + kpx - 1) / g.TW));
+		const r0 = Math.max(0, Math.floor((wy0 - kp) / g.TH)), r1 = Math.min(g.rows - 1, Math.floor((wy1 + kp - 1) / g.TH));
 		for (let r = r0; r <= r1; r++) {
 			for (let c = c0; c <= c1; c++) {
 				const tx0 = c * g.TW, tx1 = tx0 + g.TW, ty0 = r * g.TH, ty1 = ty0 + g.TH;
 				const inside = tx1 > ix0 && tx0 < ix1 && ty1 > iy0 && ty0 < iy1;
-				out.push({ key: `${g.sk}:${c}:${r}`, c, r, tier: inside ? 0 : 1 });
+				const near = tx1 > wx0 && tx0 < wx1 && ty1 > wy0 && ty0 < wy1;
+				const kept = tx1 > wx0 - kpx && tx0 < wx1 + kpx && ty1 > wy0 - kp && ty0 < wy1 + kp;
+				const zone = inside ? 0 : near ? 1 : kept ? 2 : 3;
+				if (zone === 3) continue;
+				const below = ty0 >= iy1;
+				const tier = inside ? 0 : (below ? (m.ahead >= 0 ? 1 : 2) : (m.ahead < 0 ? 1 : 2));
+				out.push({ key: `${g.sk}:${c}:${r}`, c, r, tier, zone });
 			}
 		}
 		return out;
-	}, undefined, { equals: (a, b) => a.length === b.length && a.every((t, i) => t.key === b[i]!.key && t.tier === b[i]!.tier) });
+	}, undefined, { equals: (a, b) => a.length === b.length && a.every((t, i) => t.key === b[i]!.key && t.tier === b[i]!.tier && t.zone === b[i]!.zone) });
 
 	// ---- tile set
 	const [tiles, setTiles] = createSignal<TileSpec[]>([]);
 	const [tick, setTick] = createSignal(0);
+	/** grids whose whole-page job has started: a band that turns up later (the reader scrolled on) gets a job of its own, for just its rows */
+	const wholeStarted = new Set<string>();
 	const make = (g: Grid, c: number, r: number, key: string, tier: number): TileSpec => {
 		const [ready, setReady] = createSignal(false);
 		const [t, setT] = createSignal(tier);
 		const x = c * g.TW, y = r * g.TH;
-		return { key, sk: g.sk, x, y, w: Math.min(g.TW, g.W - x), h: Math.min(g.TH, g.H - y), W: g.W, H: g.H, scale: g.scale, rot: g.rot, look: g.look, ready, setReady, tier: t, setTier: setT };
+		return { key, sk: g.sk, x, y, w: Math.min(g.TW, g.W - x), h: Math.min(g.TH, g.H - y), W: g.W, H: g.H, scale: g.scale, rot: g.rot, look: g.look, whole: g.whole && !wholeStarted.has(g.sk), ready, setReady, tier: t, setTier: setT, alive: true };
 	};
 	createEffect(() => {
 		const g = grid(), want = wanted();
@@ -202,14 +223,16 @@ export function PageSlot(p: {
 		untrack(() => {
 			const cur = tiles();
 			const byKey = new Map(cur.map((t) => [t.key, t]));
-			const fresh: TileSpec[] = want.map((w) => {
+			const fresh: TileSpec[] = [];
+			for (const w of want) {
 				const old = byKey.get(w.key);
-				if (old) { if (old.tier() !== w.tier) old.setTier(w.tier); return old; }
-				return make(g, w.c, w.r, w.key, w.tier);
-			});
-			// older resolutions stay (under the new tiles) until everything on screen is redrawn at the new one
+				if (old) { if (old.tier() !== w.tier) old.setTier(w.tier); fresh.push(old); }
+				else if (w.zone <= 1) fresh.push(make(g, w.c, w.r, w.key, w.tier));
+			}
+			if (!fresh.length) wholeStarted.clear(); // the page left the margin: its next visit starts with a whole-page job again
+			// older resolutions stay (under the new tiles) until everything on screen is redrawn at the new one; only drawn ones are worth keeping
 			const covered = fresh.every((t) => t.tier() !== 0 || t.ready());
-			const stale = covered ? [] : cur.filter((t) => t.sk !== g.sk);
+			const stale = covered ? [] : cur.filter((t) => t.sk !== g.sk && t.ready());
 			const next = [...stale, ...fresh];
 			if (next.length === cur.length && next.every((t, i) => t === cur[i])) return;
 			setTiles(next);
@@ -217,10 +240,124 @@ export function PageSlot(p: {
 	});
 
 	const dist = (s: TileSpec): number => {
-		const v = untrack(p.view), bw = untrack(p.boxW), bh = untrack(p.boxH);
+		const v = untrack(p.view), bh = untrack(p.boxH);
 		const cy = ((s.y + s.h / 2) / s.H) * bh, vy = (v.y0 + v.y1) / 2;
 		return Math.abs(cy - vy);
 	};
+
+	// ---- rendering: the tiles that exist and are not drawn get a job (one per tile, or one for the whole page)
+	const inflight = new Map<string, Inflight>();
+	const BANDS = [PRIO_VISIBLE, PRIO_AHEAD, PRIO_BEHIND];
+	const prioOf = (inf: Inflight): number => {
+		let best = Infinity;
+		for (const t of inf.tiles) best = Math.min(best, BANDS[t.tier()]! + dist(t));
+		return Number.isFinite(best) ? best : PRIO_BEHIND;
+	};
+	async function upload(inf: Inflight, r: NonNullable<Awaited<RenderTask["promise"]>>): Promise<void> {
+		for (const t of [...inf.tiles]) {
+			// the element may not be inserted yet right after mount: wait for it (a few frames at most)
+			for (let i = 0; i < 60 && t.alive && !(t.img && t.img.mounted); i++) await Bun.sleep(2);
+			if (!t.alive || !t.img || !t.img.mounted) continue;
+			const u0 = performance.now();
+			if (t.whole) t.img.setImagePixels(r.width, t.h, r.slice(t.y, t.h), { format: "bgra" });
+			else t.img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" });
+			env.stats.lastUploadMs = performance.now() - u0;
+			t.setReady(true);
+		}
+	}
+	function startJob(key: string, first: TileSpec): void {
+		if (first.whole) wholeStarted.add(first.sk);
+		const inf: Inflight = { key, tiles: new Set([first]), task: null, update: () => {} };
+		inflight.set(key, inf);
+		env.pending.n++;
+		let task: RenderTask;
+		try {
+			task = env.doc.render3(p.index, first.scale, { rot: first.rot, look: first.look, region: first.whole ? undefined : { x: first.x, y: first.y, w: first.w, h: first.h }, prio: prioOf(inf) });
+		} catch (e) {
+			inflight.delete(key);
+			env.pending.n--;
+			if (first.alive) console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
+			return;
+		}
+		inf.task = task;
+		inf.update = () => task.setPrio(prioOf(inf));
+		env.jobs.add(inf.update);
+		void (async () => {
+			try {
+				const r = await task.promise;
+				if (!r) return;
+				try {
+					if (inf.tiles.size) {
+						await upload(inf, r);
+						env.stats.renders++;
+						env.stats.lastRenderMs = r.renderMs;
+						env.stats.totalRenderMs += r.renderMs;
+						setTick((n) => n + 1);
+					}
+				} finally { r.release(); } // the native copy goes now; GPUIX holds its own
+			} catch (e) {
+				console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
+			} finally {
+				env.jobs.delete(inf.update);
+				if (inflight.get(key) === inf) inflight.delete(key);
+				env.pending.n--;
+				// a tile that appeared while the bitmap was being uploaded missed this job: give it one of its own
+				if (inf.tiles.size) untrack(() => ensureJobs(tiles()));
+			}
+		})();
+	}
+	function ensureJobs(list: TileSpec[]): void {
+		for (const t of list) {
+			if (t.ready() || !t.alive || t.sk !== untrack(grid).sk) continue;
+			const key = t.whole ? t.sk : t.key;
+			const inf = inflight.get(key);
+			if (inf) { if (!inf.tiles.has(t)) inf.tiles.add(t); }
+			else startJob(key, t);
+		}
+	}
+	createEffect(() => {
+		const list = tiles();
+		untrack(() => ensureJobs(list));
+	});
+	/** a tile element went away: drop it from its job; a job nobody waits for any more is cancelled (a no-op once a worker took it) */
+	function onGone(t: TileSpec): void {
+		for (const inf of inflight.values()) {
+			if (!inf.tiles.delete(t) || inf.tiles.size) continue;
+			inf.task?.cancel();
+			env.stats.cancelled++;
+			if (inflight.get(inf.key) === inf) inflight.delete(inf.key);
+		}
+	}
+	onCleanup(() => {
+		for (const inf of inflight.values()) { inf.tiles.clear(); inf.task?.cancel(); }
+		inflight.clear();
+	});
+
+	// ---- coverage probe (benchmarks only; costs nothing unless called)
+	p.env.probe.set(p.index, (v) => {
+		const bw = untrack(p.boxW), bh = untrack(p.boxH);
+		const x0 = Math.max(0, v.x0), x1 = Math.min(bw, v.x1), y0 = Math.max(0, v.y0), y1 = Math.min(bh, v.y1);
+		if (x1 <= x0 || y1 <= y0) return { vis: 0, blank: 0, soft: 0, sharp: 0 };
+		const sk = untrack(grid).sk;
+		const ts = untrack(tiles).filter((t) => untrack(t.ready));
+		let blank = 0, soft = 0, sharp = 0;
+		const NY = 16, NX = 3;
+		for (let a = 0; a < NY; a++) {
+			for (let b = 0; b < NX; b++) {
+				const x = x0 + ((b + 0.5) / NX) * (x1 - x0), y = y0 + ((a + 0.5) / NY) * (y1 - y0);
+				let best = 0;
+				for (const t of ts) {
+					if (x < (t.x / t.W) * bw || x >= ((t.x + t.w) / t.W) * bw || y < (t.y / t.H) * bh || y >= ((t.y + t.h) / t.H) * bh) continue;
+					best = Math.max(best, t.sk === sk ? 2 : 1);
+					if (best === 2) break;
+				}
+				if (best === 2) sharp++; else if (best === 1) soft++; else blank++;
+			}
+		}
+		const n = NX * NY;
+		return { vis: (x1 - x0) * (y1 - y0), blank: blank / n, soft: soft / n, sharp: sharp / n };
+	});
+	onCleanup(() => p.env.probe.delete(p.index));
 
 	// ---- geometry of the washes (unrotated page space -> displayed css px)
 	const place = (r: NRect): Record<string, unknown> => {
@@ -246,7 +383,7 @@ export function PageSlot(p: {
 			}}
 		>
 			<For each={tiles()}>
-				{(spec) => <TileView env={env} page={p.index} spec={spec} boxW={p.boxW} boxH={p.boxH} dist={dist} onReady={() => setTick((n) => n + 1)} />}
+				{(spec) => <TileView env={env} spec={spec} boxW={p.boxW} boxH={p.boxH} onGone={onGone} />}
 			</For>
 			<For each={p.hits()}>
 				{(h) => (
@@ -263,7 +400,6 @@ export function PageSlot(p: {
 					{(r) => <div style={{ ...place(r), borderWidth: 1, borderColor: "#e5484d", backgroundColor: "#e5484d1f", pointerEvents: "none" }} />}
 				</For>
 			</Show>
-			{p.overlays()}
 			<For each={p.links()}>
 				{(l) => (
 					<div
@@ -272,6 +408,8 @@ export function PageSlot(p: {
 					/>
 				)}
 			</For>
+			{/* the plugins' overlays sit ABOVE the link zones: a plugin's hover / click zone over a citation link (academic popovers) must win the pointer; the links draw first and still catch everything the overlays leave free */}
+			{p.overlays()}
 			{/* the web reader's ring-1 ring-black/10 */}
 			<div style={{ position: "absolute", left: 0, top: 0, width: p.boxW(), height: p.boxH(), borderWidth: 1, borderColor: "rgba(0, 0, 0, 0.1)", pointerEvents: "none" }} />
 		</div>

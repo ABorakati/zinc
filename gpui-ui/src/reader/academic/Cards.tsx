@@ -1,11 +1,14 @@
 // Cards shown in the academic popovers and panels: a bibliography reference (abstract, add to library, open), a figure / table
 // preview, a supplementary-material match and the list for a citation group like "[3, 5-7]".
-import { createMemo, createSignal, For, onMount, Show, type JSX } from "solid-js";
+import { createMemo, createResource, createSignal, For, onMount, Show, type JSX } from "solid-js";
 import { Button } from "../../ui";
 import { kit, RegionImage, type Kit } from "../structure/kit";
 import { renderRegion, type Crop } from "../structure/regions";
 import type { PdfRect } from "../structure/types";
 import { openAttachmentTab, openInLibrary, openUrl } from "./actions";
+import { sentenceAround } from "./citations";
+import type { CiteSite } from "./citedby";
+import { charsInRect } from "./textlines";
 import { extractDoi, referenceUrl } from "./match";
 import type { FigItem } from "./figures";
 import type { SuppMention } from "./mentions";
@@ -193,6 +196,44 @@ export function SuppRow(p: { s: AcademicSession; item: SuppItem }): JSX.Element 
 				<text style={{ ...k.tx("text-[12px] text-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.item.title}</text>
 			</div>
 			<Show when={size() !== null}><text style={{ ...k.tx("text-[10.5px] text-muted-foreground"), whiteSpace: "nowrap" }}>{formatSize(size()!)}</text></Show>
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------------------------------- cited by
+
+/** Hovering a bibliography entry: where this paper cites it, each with the sentence around the citation; a row jumps there. */
+export function CitedByCard(p: { s: AcademicSession; k: Kit; n: number; sites: CiteSite[]; onJump: (site: CiteSite) => void }): JSX.Element {
+	const shown = () => p.sites.slice(0, 8);
+	const [rows] = createResource(async () => Promise.all(shown().map(async (s) => {
+		const pt = await p.s.pageText(s.page);
+		const idx = charsInRect(pt.rects, s.rect, 0.5);
+		const c = idx ? sentenceAround(pt.text, idx, 150, 110) : null;
+		return { site: s, text: c ? `${c.before}${c.cite}${c.after}`.trim() : "" };
+	})));
+	const small = p.k.tx("text-[11.5px] text-muted-foreground");
+	return (
+		<div style={{ display: "flex", flexDirection: "column", width: "100%", gap: 6, minWidth: 0 }}>
+			<text style={p.k.tx("text-[13px] font-medium text-foreground")}>{`Reference ${p.n}`}</text>
+			<Show
+				when={p.sites.length > 0}
+				fallback={<text style={small}>No citation links to this reference were found in the text.</text>}
+			>
+				<text style={small}>{`Cited ${p.sites.length === 1 ? "once" : `${p.sites.length} times`} in this paper${p.sites.length > shown().length ? ` (first ${shown().length} shown)` : ""}`}</text>
+				<Show when={rows()} fallback={<text style={small}>Looking up the sentences...</text>}>
+					<For each={rows()}>
+						{(r) => (
+							<div
+								onClick={() => p.onJump(r.site)}
+								style={{ ...p.k.t("flex flex-col rounded-md border px-2 py-1"), gap: 2, cursor: "pointer", hover: p.k.t("bg-accent"), borderColor: p.k.tok("border") }}
+							>
+								<text style={{ ...p.k.tx("text-[10.5px] font-medium text-primary"), whiteSpace: "nowrap" }}>{`p. ${r.site.page + 1}`}</text>
+								<Show when={r.text}><text style={{ ...p.k.tx("text-[11.5px] text-foreground"), lineClamp: 3 }}>{r.text}</text></Show>
+							</div>
+						)}
+					</For>
+				</Show>
+			</Show>
 		</div>
 	);
 }

@@ -1,8 +1,12 @@
 // bun:ffi bindings for native/pdf (zn_pdf.dll: hayro rasterizer + text layer). See native/pdf/src/lib.rs for the ABI.
 //
-// Rendering is asynchronous on the Rust side (one worker thread per document); renderAsync() polls the job so the JS thread
-// (and with it GPUIX's event loop) is never blocked by a rasterization. The returned Rendered.pixels is a Buffer that
-// aliases Rust memory (zero copy): hand it to setImagePixels(..., { format: "bgra" }) and then call release().
+// Rendering is asynchronous on the Rust side (a small pool of worker threads per document over one priority queue); a job is
+// polled (one shared 1-2 ms timer for all of them) so the JS thread (and with it GPUIX's event loop) is never blocked by a
+// rasterization. The returned Rendered.pixels is a Buffer that aliases Rust memory (zero copy): hand it to
+// setImagePixels(..., { format: "bgra" }) and then call release().
+//
+// Jobs carry a priority (lower runs first, see core/Page.tsx for the bands) that can be changed while the job waits
+// (RenderTask.setPrio), and a job nobody wants any more can be cancelled (RenderTask.cancel) as long as no worker has started it.
 import { CString, dlopen, FFIType, ptr, toBuffer } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -32,6 +36,9 @@ function open() {
 		zpdf_render_size: { args: [P, I32, F32, P], returns: I32 },
 		zpdf_render_size2: { args: [P, I32, F32, I32, P], returns: I32 },
 		zpdf_render2: { args: [P, I32, F32, I32, U32, U32, U32, U32, U32, U32, U32], returns: P },
+		zpdf_render3: { args: [P, I32, F32, I32, U32, U32, U32, U32, U32, U32, U32, F32], returns: P },
+		zpdf_job_prio: { args: [P, F32], returns: FFIType.void },
+		zpdf_pool_size: { args: [P], returns: I32 },
 		zpdf_outline_begin: { args: [P], returns: P },
 		zpdf_links_begin: { args: [P, I32], returns: P },
 		zpdf_render_begin: { args: [P, I32, F32], returns: P },
@@ -65,12 +72,17 @@ export interface TextLayer { pw: number; ph: number; words: TextWord[] }
 /** How the page is recoloured while it is rasterized (page appearance): 0 normal, 1 dark, 2 multiply by c0, 3 dark + screen onto c0, 4 duotone c0 (black) -> c1 (white). Colours are 0xRRGGBB. */
 export interface Look { mode: 0 | 1 | 2 | 3 | 4; c0?: number; c1?: number }
 
+/** Queue priority of work nobody is waiting for on screen (thumbnails, ...): behind every tile of the page list. */
+export const PRIO_BACKGROUND = 4e6;
+
 export interface RenderOpts {
 	/** extra clockwise rotation in degrees (0 / 90 / 180 / 270) */
 	rot?: number;
 	/** only this part of the full bitmap, in device pixels (default: all of it) */
 	region?: { x: number; y: number; w: number; h: number };
 	look?: Look;
+	/** queue priority, lower first (default PRIO_BACKGROUND) */
+	prio?: number;
 }
 
 /** One bookmark: page is 0-based (-1 when it could not be resolved), y a fraction (0..1) of the page height, -1 when unknown. */
@@ -85,10 +97,40 @@ export interface Rendered {
 	pixels: Buffer;
 	/** rasterization time inside the worker, ms */
 	renderMs: number;
+	/** h rows of the bitmap from row y (BGRA, full width) as a view onto the same native memory: a page rendered once can be cut into band tiles without a copy */
+	slice(y: number, h: number): Buffer;
 	release(): void;
 }
 
-export interface RenderTask { promise: Promise<Rendered | null>; cancel(): void }
+export interface RenderTask {
+	promise: Promise<Rendered | null>;
+	/** skip the job if no worker has started it (resolves null); harmless afterwards */
+	cancel(): void;
+	/** change the queue priority of a job that is still waiting; harmless afterwards */
+	setPrio(prio: number): void;
+}
+
+// One timer polls every pending job (a scroll queues dozens): 1 ms while work is fresh, 2 ms after.
+const watching = new Map<number | bigint, (state: number) => void>();
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+let pollSpins = 0;
+function pollTick(): void {
+	pollTimer = undefined;
+	const s = sym();
+	for (const [job, done] of watching) {
+		const st = s.zpdf_job_poll(job as never);
+		if (st !== 0) { watching.delete(job); done(st); }
+	}
+	if (watching.size) pollTimer = setTimeout(pollTick, pollSpins++ < 8 ? 1 : 2);
+}
+/** resolves with the job's final state (1 done, -1 failed, -2 cancelled) */
+function watch(job: number | bigint): Promise<number> {
+	return new Promise((res) => {
+		watching.set(job, res);
+		pollSpins = 0;
+		if (pollTimer === undefined) pollTimer = setTimeout(pollTick, 1);
+	});
+}
 
 export class PdfDoc {
 	readonly pageCount: number;
@@ -144,12 +186,29 @@ export class PdfDoc {
 	}
 
 	/** Like render(), rotated, recoloured and/or restricted to a region of the full bitmap (tiles). */
-	render2(page: number, scale: number, o: RenderOpts = {}): RenderTask {
+	render2(page: number, scale: number, o: RenderOpts = {}): RenderTask { return this.render3(page, scale, o); }
+
+	/** render2 with a queue priority (o.prio, lower runs first) */
+	render3(page: number, scale: number, o: RenderOpts = {}): RenderTask {
 		const s = sym();
 		const r = o.region, k = o.look;
-		const job = s.zpdf_render2(this.h() as never, page, scale, o.rot ?? 0, r?.x ?? 0, r?.y ?? 0, r?.w ?? 0, r?.h ?? 0, k?.mode ?? 0, k?.c0 ?? 0, k?.c1 ?? 0);
+		const job = s.zpdf_render3(this.h() as never, page, scale, o.rot ?? 0, r?.x ?? 0, r?.y ?? 0, r?.w ?? 0, r?.h ?? 0, k?.mode ?? 0, k?.c0 ?? 0, k?.c1 ?? 0, o.prio ?? PRIO_BACKGROUND);
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
-		return { promise: this.finish(job, page), cancel: () => s.zpdf_job_cancel(job as never) };
+		return this.task(job, page);
+	}
+
+	/** Worker threads this document renders with. */
+	poolSize(): number { return sym().zpdf_pool_size(this.h() as never); }
+
+	/** cancel / setPrio must not touch a job that was freed (release() or a failed / cancelled finish) */
+	private task(job: number | bigint, page: number): RenderTask {
+		const s = sym();
+		const ref = { freed: false };
+		return {
+			promise: this.finish(job, page, ref),
+			cancel: () => { if (!ref.freed) s.zpdf_job_cancel(job as never); },
+			setPrio: (p) => { if (!ref.freed) s.zpdf_job_prio(job as never, p); },
+		};
 	}
 
 	/** Run a JSON-producing job (outline, links) on the worker. */
@@ -172,27 +231,22 @@ export class PdfDoc {
 	 * blocked), or with null if cancel() got there before the worker started the job.
 	 */
 	render(page: number, scale: number): RenderTask {
-		const s = sym();
-		const job = s.zpdf_render_begin(this.h() as never, page, scale);
+		const job = sym().zpdf_render_begin(this.h() as never, page, scale);
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
-		return { promise: this.finish(job, page), cancel: () => s.zpdf_job_cancel(job as never) };
+		return this.task(job, page);
 	}
 
 	renderAsync(page: number, scale: number): Promise<Rendered | null> { return this.render(page, scale).promise; }
 
 	private async poll(job: number | bigint): Promise<number> {
-		const s = sym();
-		let spins = 0;
-		for (;;) {
-			const st = s.zpdf_job_poll(job as never);
-			if (st !== 0) return st;
-			await (spins++ < 6 ? Bun.sleep(1) : Bun.sleep(4)); // tight at first (fast pages), then back off
-		}
+		const st = sym().zpdf_job_poll(job as never);
+		return st !== 0 ? st : watch(job);
 	}
 
-	private async finish(job: number | bigint, page: number): Promise<Rendered | null> {
+	private async finish(job: number | bigint, page: number, ref: { freed: boolean }): Promise<Rendered | null> {
 		const st = await this.poll(job);
-		if (st === 1) return this.collect(job);
+		if (st === 1) return this.collect(job, ref);
+		ref.freed = true;
 		sym().zpdf_job_free(job as never);
 		if (st === -2) return null;
 		throw new Error(`render page ${page} failed: ${lastError()}`);
@@ -204,21 +258,22 @@ export class PdfDoc {
 		const job = s.zpdf_render_begin(this.h() as never, page, scale);
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
 		if (s.zpdf_job_wait(job, 0xffffffff) !== 1) { s.zpdf_job_free(job); throw new Error(`render page ${page} failed: ${lastError()}`); }
-		return this.collect(job);
+		return this.collect(job, { freed: false });
 	}
 
-	private collect(job: number | bigint): Rendered {
+	private collect(job: number | bigint, ref: { freed: boolean }): Rendered {
 		const s = sym();
 		const wh = new Uint32Array(2);
 		s.zpdf_job_size(job as never, ptr(wh));
 		const len = Number(s.zpdf_job_len(job as never));
 		const data = s.zpdf_job_data(job as never);
 		const pixels = toBuffer(data as never, 0, len);
-		let freed = false;
+		const width = wh[0]!, height = wh[1]!;
 		return {
-			width: wh[0]!, height: wh[1]!, pixels,
+			width, height, pixels,
 			renderMs: Number(s.zpdf_job_micros(job as never)) / 1000,
-			release: () => { if (!freed) { freed = true; s.zpdf_job_free(job as never); } },
+			slice: (y, h) => toBuffer(data as never, y * width * 4, Math.min(h, height - y) * width * 4),
+			release: () => { if (!ref.freed) { ref.freed = true; s.zpdf_job_free(job as never); } },
 		};
 	}
 

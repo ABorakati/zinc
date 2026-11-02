@@ -14,7 +14,7 @@ import { mix } from "../cards/logic";
 import { dragSource } from "../dnd";
 import type { ItemRow } from "../contracts";
 import { attachmentIconName, Icon, itemTypeIconName } from "../icons";
-import { defaultDir, store } from "../store";
+import { defaultDir, stats, store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
 import { DropdownMenu, openMenu, type MenuItem } from "../ui";
 import { getColumn, labelOf, loadSchema, MENU_COLUMNS, moreColumns, type Column } from "./defs";
@@ -218,11 +218,14 @@ export function TableView(): JSX.Element {
 		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.group.start;
 	};
 	const onVisibleRange = (e: EventPayload) => {
+		const t0 = performance.now();
 		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
 		visA = a; visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		const s = untrack(first);
 		if ((a < s + 10 && s > 0) || b > s + WINDOW - 10) setStart(Math.max(0, a - WINDOW / 4));
+		const d = performance.now() - t0;
+		stats.visCalls++; stats.visMs += d; stats.visMaxMs = Math.max(stats.visMaxMs, d);
 	};
 	createEffect(on(() => store.listVersion(), () => {
 		setStart(0);

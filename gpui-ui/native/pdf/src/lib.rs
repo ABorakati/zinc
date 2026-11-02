@@ -1,7 +1,10 @@
 //! zn_pdf: a small C ABI over hayro (pure-Rust PDF rasterizer) for `bun:ffi`, used by the GPUI reader spike.
 //!
-//! Model: every open document owns one worker thread. The worker owns the parsed `Pdf` and hayro's `RenderCache` (which
-//! is `!Send`, so it must live on one thread). The JS side never blocks on rasterization unless it asks to:
+//! Model: every open document owns a small pool of worker threads (2 by default, `ZN_PDF_THREADS`). Each worker has its own parse of
+//! the (shared) bytes and its own hayro `RenderCache` (`!Send`, so it lives on one thread). Jobs wait in ONE priority queue:
+//! the worker that frees up takes the waiting job with the lowest priority value, and the JS side can re-prioritise
+//! (`zpdf_job_prio`) or cancel (`zpdf_job_cancel`) a job while it waits, so the queue follows the scroll position.
+//! The JS side never blocks on rasterization unless it asks to:
 //!
 //!   zpdf_open(path) -> doc          parse + measure every page (blocking, fast)
 //!   zpdf_open_bytes(ptr, len) -> doc   same, from a PDF already in memory (copied; the caller keeps its buffer)
@@ -13,6 +16,8 @@
 //!   zpdf_render_page(doc, i, scale, out, cap, u32[2] wh) -> bytes   blocking convenience that copies into `out`
 //!   zpdf_text_layer(doc, i) -> char*  (JSON: page size + word rects normalised 0..1), free with zpdf_str_free
 //!   zpdf_clear_cache(doc), zpdf_close(doc), zpdf_last_error(), zpdf_version()
+//!
+//! v0.3: the worker pool + priorities: zpdf_render3(.., prio) (render2 plus a queue priority), zpdf_job_prio(job, prio), zpdf_pool_size(doc).
 //!
 //! v0.2 additions (the reader's memory + navigation work):
 //!   zpdf_render_size2(doc, i, scale, rot, u32[2] out)            full bitmap size at a scale and an extra rotation (0/90/180/270 cw)
@@ -87,7 +92,7 @@ pub extern "C" fn zpdf_last_error() -> *const c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zpdf_version() -> *const c_char {
-    c"zn_pdf 0.2.0 (hayro 0.8)".as_ptr()
+    c"zn_pdf 0.3.0 (hayro 0.8)".as_ptr()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -98,6 +103,9 @@ pub struct Job {
     /// 0 pending, 1 done, -1 failed, -2 cancelled before it ran
     state: AtomicI32,
     cancelled: AtomicBool,
+    /// scheduling priority as f32 bits: the idle worker takes the queued job with the LOWEST value (ties: oldest first). The JS
+    /// side changes it while the job waits (`zpdf_job_prio`), so the queue follows the viewport.
+    prio: AtomicU32,
     width: AtomicU32,
     height: AtomicU32,
     micros: AtomicU64,
@@ -106,10 +114,11 @@ pub struct Job {
 }
 
 impl Job {
-    fn new() -> Arc<Job> {
+    fn new(prio: f32) -> Arc<Job> {
         Arc::new(Job {
             state: AtomicI32::new(0),
             cancelled: AtomicBool::new(false),
+            prio: AtomicU32::new(prio.to_bits()),
             width: AtomicU32::new(0),
             height: AtomicU32::new(0),
             micros: AtomicU64::new(0),
@@ -122,7 +131,17 @@ impl Job {
         *self.done.0.lock().unwrap() = true;
         self.done.1.notify_all();
     }
+    fn prio(&self) -> f32 {
+        let p = f32::from_bits(self.prio.load(Ordering::Relaxed));
+        if p.is_nan() { f32::MAX } else { p }
+    }
 }
+
+/// Queue priorities of the non-render jobs (the reader's own bands: visible tiles < 1e6, margin ahead < 2e6, behind < 3e6; render2 / render_begin default to PRIO_BACKGROUND).
+const PRIO_BACKGROUND: f32 = 4.0e6;
+const PRIO_TEXT: f32 = 5.0e6;
+const PRIO_LINKS: f32 = 5.5e6;
+const PRIO_OUTLINE: f32 = 7.0e6;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // document + worker thread
@@ -150,13 +169,29 @@ enum Cmd {
     Text(Arc<Job>, usize),
     Outline(Arc<Job>),
     Links(Arc<Job>, usize),
-    ClearCache,
-    Quit,
+}
+
+impl Cmd {
+    fn job(&self) -> &Arc<Job> {
+        match self {
+            Cmd::Render(j, _) | Cmd::Text(j, _) | Cmd::Outline(j) | Cmd::Links(j, _) => j,
+        }
+    }
+}
+
+/// What the document's worker threads share: one priority queue (the worker that frees up takes the most urgent job) and the
+/// flags that ask them to drop their caches or stop.
+struct Shared {
+    queue: Mutex<Vec<Cmd>>,
+    cv: Condvar,
+    quit: AtomicBool,
+    /// bumped by `zpdf_clear_cache`: every worker rebuilds its `RenderCache` when it sees a newer value
+    cache_gen: AtomicU64,
 }
 
 pub struct Doc {
-    tx: Sender<Cmd>,
-    join: Option<JoinHandle<()>>,
+    shared: Arc<Shared>,
+    joins: Vec<JoinHandle<()>>,
     dims: Vec<(f32, f32)>,
 }
 
@@ -166,39 +201,100 @@ enum Source {
     Bytes(Vec<u8>),
 }
 
-fn worker(src: Source, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc::Receiver<Cmd>) {
-    let (bytes, what) = match src {
-        Source::Path(path) => match std::fs::read(&path) {
-            Ok(b) => (b, path),
-            Err(e) => {
-                let _ = ready.send(Err(format!("read {path}: {e}")));
-                return;
+/// Worker threads per document: `ZN_PDF_THREADS`, else 2 (a third one cost ~20-30 MB of per-thread caches and bought little). Each has its own parse of the (shared)
+/// bytes and its own glyph / font / image caches, because `RenderCache` is `!Send`.
+fn pool_size() -> usize {
+    if let Some(n) = std::env::var("ZN_PDF_THREADS").ok().and_then(|v| v.parse::<usize>().ok()) {
+        return n.clamp(1, 16);
+    }
+    2
+}
+
+/// Rendering is background work: keep the UI and JS threads ahead of it when the machine is busy.
+fn lower_thread_priority() {
+    #[cfg(windows)]
+    unsafe {
+        unsafe extern "system" {
+            fn GetCurrentThread() -> isize;
+            fn SetThreadPriority(thread: isize, priority: i32) -> i32;
+        }
+        const THREAD_PRIORITY_BELOW_NORMAL: i32 = -1;
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
+}
+
+enum Wake {
+    Job(Cmd),
+    Clear,
+    Quit,
+}
+
+/// Block until there is something to do: the queued job with the lowest priority value (cancelled ones are finished on the way).
+fn wait_next(shared: &Shared, cgen: u64) -> Wake {
+    let mut q = shared.queue.lock().unwrap();
+    loop {
+        if shared.quit.load(Ordering::Acquire) {
+            return Wake::Quit;
+        }
+        if shared.cache_gen.load(Ordering::Acquire) != cgen {
+            return Wake::Clear;
+        }
+        q.retain(|c| {
+            let j = c.job();
+            if j.cancelled.load(Ordering::Acquire) {
+                j.finish(-2);
+                false
+            } else {
+                true
             }
-        },
-        Source::Bytes(b) => (b, "<memory>".to_string()),
-    };
-    let pdf = match Pdf::new(Arc::new(bytes)) {
+        });
+        let mut best: Option<usize> = None;
+        for (i, c) in q.iter().enumerate() {
+            if best.is_none_or(|b| c.job().prio() < q[b].job().prio()) {
+                best = Some(i);
+            }
+        }
+        if let Some(i) = best {
+            return Wake::Job(q.remove(i));
+        }
+        q = shared.cv.wait(q).unwrap();
+    }
+}
+
+fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>) {
+    lower_thread_priority();
+    let pdf = match Pdf::new(bytes) {
         Ok(p) => p,
         Err(e) => {
-            let _ = ready.send(Err(format!("parse {what}: {e:?}")));
+            if let Some(r) = ready {
+                let _ = r.send(Err(format!("parse {what}: {e:?}")));
+            }
             return;
         }
     };
     let pages = pdf.pages();
-    let dims: Vec<(f32, f32)> = pages.iter().map(|p| p.render_dimensions()).collect();
-    let _ = ready.send(Ok(dims));
-    drop(ready);
+    if let Some(r) = ready {
+        let dims: Vec<(f32, f32)> = pages.iter().map(|p| p.render_dimensions()).collect();
+        let _ = r.send(Ok(dims));
+    }
 
     let settings = InterpreterSettings::default();
     let render_settings = RenderSettings::default();
     let mut cache = RenderCache::new();
     let mut nav = nav::Nav::new(&pdf);
+    let mut cgen = shared.cache_gen.load(Ordering::Acquire);
 
-    while let Ok(cmd) = rx.recv() {
+    loop {
+        let cmd = match wait_next(&shared, cgen) {
+            Wake::Quit => break,
+            Wake::Clear => {
+                cache = RenderCache::new();
+                cgen = shared.cache_gen.load(Ordering::Acquire);
+                continue;
+            }
+            Wake::Job(c) => c,
+        };
         match cmd {
-            Cmd::Quit => break,
-            Cmd::ClearCache => cache = RenderCache::new(),
-            Cmd::Render(job, _) | Cmd::Text(job, _) | Cmd::Links(job, _) | Cmd::Outline(job) if job.cancelled.load(Ordering::Acquire) => job.finish(-2),
             Cmd::Render(job, req) => {
                 let t0 = Instant::now();
                 let out = catch_unwind(AssertUnwindSafe(|| {
@@ -261,10 +357,10 @@ fn worker(src: Source, ready: Sender<Result<Vec<(f32, f32)>, String>>, rx: mpsc:
             }
         }
     }
-    // `cache` borrows `pdf`; it is dropped first (reverse declaration order), then `pdf`.
+    // `cache` and `nav` borrow `pdf`; they are dropped first (reverse declaration order), then `pdf`.
 }
 
-/// Rasterize (a region of) a page. Returns (w, h, BGRA bytes).
+// Rasterize (a region of) a page. Returns (w, h, BGRA bytes).
 fn render_region<'a>(
     page: &'a hayro::hayro_syntax::page::Page<'a>,
     cache: &RenderCache<'a>,
@@ -390,13 +486,24 @@ pub unsafe extern "C" fn zpdf_open_bytes(data: *const u8, len: usize) -> *mut Do
 }
 
 fn spawn_doc(src: Source) -> *mut Doc {
-    let (tx, rx) = mpsc::channel();
+    let (bytes, what) = match src {
+        Source::Path(path) => match std::fs::read(&path) {
+            Ok(b) => (b, path),
+            Err(e) => {
+                set_error(format!("read {path}: {e}"));
+                return std::ptr::null_mut();
+            }
+        },
+        Source::Bytes(b) => (b, "<memory>".to_string()),
+    };
+    let bytes = Arc::new(bytes);
+    let shared = Arc::new(Shared { queue: Mutex::new(Vec::new()), cv: Condvar::new(), quit: AtomicBool::new(false), cache_gen: AtomicU64::new(0) });
     let (ready_tx, ready_rx) = mpsc::channel();
-    let join = match std::thread::Builder::new()
-        .name("zn-pdf".into())
-        .stack_size(32 * 1024 * 1024)
-        .spawn(move || worker(src, ready_tx, rx))
-    {
+    let spawn = |ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>| {
+        let (b, w, sh) = (bytes.clone(), what.clone(), shared.clone());
+        std::thread::Builder::new().name("zn-pdf".into()).stack_size(32 * 1024 * 1024).spawn(move || worker(b, w, sh, ready))
+    };
+    let first = match spawn(Some(ready_tx)) {
         Ok(j) => j,
         Err(e) => {
             set_error(format!("spawn: {e}"));
@@ -404,15 +511,24 @@ fn spawn_doc(src: Source) -> *mut Doc {
         }
     };
     match ready_rx.recv() {
-        Ok(Ok(dims)) => Box::into_raw(Box::new(Doc { tx, join: Some(join), dims })),
+        Ok(Ok(dims)) => {
+            // the first worker parsed the file: the others (each parses on its own thread) join the pool without anyone waiting for them
+            let mut joins = vec![first];
+            for _ in 1..pool_size() {
+                if let Ok(j) = spawn(None) {
+                    joins.push(j);
+                }
+            }
+            Box::into_raw(Box::new(Doc { shared, joins, dims }))
+        }
         Ok(Err(e)) => {
             set_error(e);
-            let _ = join.join();
+            let _ = first.join();
             std::ptr::null_mut()
         }
         Err(_) => {
             set_error("worker died while opening (panic in parser)");
-            let _ = join.join();
+            let _ = first.join();
             std::ptr::null_mut()
         }
     }
@@ -423,6 +539,15 @@ fn spawn_doc(src: Source) -> *mut Doc {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_page_count(doc: *const Doc) -> i32 {
     unsafe { doc.as_ref() }.map_or(-1, |d| d.dims.len() as i32)
+}
+
+/// Number of worker threads the document was given.
+///
+/// # Safety
+/// `doc` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_pool_size(doc: *const Doc) -> i32 {
+    unsafe { doc.as_ref() }.map_or(-1, |d| d.joins.len() as i32)
 }
 
 /// Writes `[width, height]` in PDF points (page rotation applied). Returns 0, or -1 for a bad page.
@@ -456,18 +581,21 @@ pub unsafe extern "C" fn zpdf_render_size(doc: *const Doc, page: i32, scale: f32
     0
 }
 
-/// Drop hayro's per-document caches (parsed fonts, glyph cache, decoded images). Memory goes back to the allocator.
+//// Drop hayro's per-document caches (parsed fonts, glyph cache, decoded images) in every worker. Memory goes back to the allocator.
 ///
 /// # Safety
 /// `doc` must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_clear_cache(doc: *const Doc) {
     if let Some(d) = unsafe { doc.as_ref() } {
-        let _ = d.tx.send(Cmd::ClearCache);
+        d.shared.cache_gen.fetch_add(1, Ordering::AcqRel);
+        let _q = d.shared.queue.lock().unwrap();
+        d.shared.cv.notify_all();
     }
 }
 
-/// Close the document: stops the worker (after queued work) and frees everything. Jobs already returned stay valid.
+/// Close the document: queued jobs that did not start are cancelled (state -2), running ones finish, then the workers stop and
+/// everything is freed. Jobs already returned stay valid.
 ///
 /// # Safety
 /// `doc` must come from `zpdf_open`; it is invalid afterwards.
@@ -477,9 +605,16 @@ pub unsafe extern "C" fn zpdf_close(doc: *mut Doc) {
         return;
     }
     let mut d = unsafe { Box::from_raw(doc) };
-    let _ = d.tx.send(Cmd::Quit);
-    if let Some(j) = d.join.take() {
+    d.shared.quit.store(true, Ordering::Release);
+    {
+        let _q = d.shared.queue.lock().unwrap();
+        d.shared.cv.notify_all();
+    }
+    for j in d.joins.drain(..) {
         let _ = j.join();
+    }
+    for c in d.shared.queue.lock().unwrap().drain(..) {
+        c.job().finish(-2);
     }
 }
 
@@ -493,25 +628,18 @@ pub unsafe extern "C" fn zpdf_close(doc: *mut Doc) {
 /// `doc` must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_render_begin(doc: *const Doc, page: i32, scale: f32) -> *const Job {
-    let Some(d) = (unsafe { doc.as_ref() }) else { return std::ptr::null() };
-    let Ok(idx) = usize::try_from(page) else { return std::ptr::null() };
-    if idx >= d.dims.len() {
-        set_error(format!("page {page} out of range"));
-        return std::ptr::null();
-    }
-    submit(d, Cmd::Render(Job::new(), RenderReq { page: idx, scale, rot: 0, rx: 0, ry: 0, rw: 0, rh: 0, look: 0, c0: 0, c1: 0 }))
+    unsafe { zpdf_render3(doc, page, scale, 0, 0, 0, 0, 0, 0, 0, 0, PRIO_BACKGROUND) }
 }
 
-/// Queue `cmd` (whose job is the first field) and hand the job out.
+/// Queue `cmd` and hand its job out.
 fn submit(d: &Doc, cmd: Cmd) -> *const Job {
-    let job = match &cmd {
-        Cmd::Render(j, _) | Cmd::Text(j, _) | Cmd::Outline(j) | Cmd::Links(j, _) => j.clone(),
-        _ => return std::ptr::null(),
-    };
-    if d.tx.send(cmd).is_err() {
+    let job = cmd.job().clone();
+    if d.shared.quit.load(Ordering::Acquire) {
         set_error("worker is gone");
         return std::ptr::null();
     }
+    d.shared.queue.lock().unwrap().push(cmd);
+    d.shared.cv.notify_one();
     Arc::into_raw(job)
 }
 
@@ -522,6 +650,16 @@ fn submit(d: &Doc, cmd: Cmd) -> *const Job {
 /// `doc` must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_render2(doc: *const Doc, page: i32, scale: f32, rot: i32, rx: u32, ry: u32, rw: u32, rh: u32, look: u32, c0: u32, c1: u32) -> *const Job {
+    unsafe { zpdf_render3(doc, page, scale, rot, rx, ry, rw, rh, look, c0, c1, PRIO_BACKGROUND) }
+}
+
+/// `zpdf_render2` with a queue priority: the idle worker takes the waiting job with the lowest `prio` (change it later with
+/// `zpdf_job_prio`).
+///
+/// # Safety
+/// `doc` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_render3(doc: *const Doc, page: i32, scale: f32, rot: i32, rx: u32, ry: u32, rw: u32, rh: u32, look: u32, c0: u32, c1: u32, prio: f32) -> *const Job {
     let Some(d) = (unsafe { doc.as_ref() }) else { return std::ptr::null() };
     let Ok(idx) = usize::try_from(page) else { return std::ptr::null() };
     if idx >= d.dims.len() {
@@ -529,8 +667,20 @@ pub unsafe extern "C" fn zpdf_render2(doc: *const Doc, page: i32, scale: f32, ro
         return std::ptr::null();
     }
     let rot = (rot.rem_euclid(360) / 90 * 90) as u16;
-    submit(d, Cmd::Render(Job::new(), RenderReq { page: idx, scale, rot, rx, ry, rw, rh, look, c0, c1 }))
+    submit(d, Cmd::Render(Job::new(prio), RenderReq { page: idx, scale, rot, rx, ry, rw, rh, look, c0, c1 }))
 }
+
+/// Change the queue priority of a job that has not started (lower runs first). No effect once it runs.
+///
+/// # Safety
+/// `job` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_job_prio(job: *const Job, prio: f32) {
+    if let Some(j) = unsafe { job.as_ref() } {
+        j.prio.store(prio.to_bits(), Ordering::Relaxed);
+    }
+}
+
 
 /// Full bitmap size `[w, h]` of a render at `scale` with an extra rotation.
 ///
@@ -556,7 +706,7 @@ pub unsafe extern "C" fn zpdf_render_size2(doc: *const Doc, page: i32, scale: f3
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_outline_begin(doc: *const Doc) -> *const Job {
     let Some(d) = (unsafe { doc.as_ref() }) else { return std::ptr::null() };
-    submit(d, Cmd::Outline(Job::new()))
+    submit(d, Cmd::Outline(Job::new(PRIO_OUTLINE)))
 }
 
 /// Queue the link-annotation extraction of one page. The job's data is JSON (see nav.rs).
@@ -571,7 +721,7 @@ pub unsafe extern "C" fn zpdf_links_begin(doc: *const Doc, page: i32) -> *const 
         set_error(format!("page {page} out of range"));
         return std::ptr::null();
     }
-    submit(d, Cmd::Links(Job::new(), idx))
+    submit(d, Cmd::Links(Job::new(PRIO_LINKS), idx))
 }
 
 /// # Safety
@@ -691,7 +841,7 @@ pub unsafe extern "C" fn zpdf_text_begin(doc: *const Doc, page: i32) -> *const J
         set_error(format!("page {page} out of range"));
         return std::ptr::null();
     }
-    submit(d, Cmd::Text(Job::new(), idx))
+    submit(d, Cmd::Text(Job::new(PRIO_TEXT), idx))
 }
 
 /// Ask for a queued job to be skipped (no effect once it runs). Its state becomes -2.

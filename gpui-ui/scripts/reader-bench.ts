@@ -5,6 +5,8 @@
 //   bun scripts/reader-bench.ts --memory              # only memory scenarios, each in a fresh child process
 //   bun scripts/reader-bench.ts --memory --window     # same, but in a REAL (visible) GPUIX window; it autoplays, never touch it
 //   ... --window --auto-dpr                            # let the reader detect the window's scale factor (prints detectedDpr) instead of forcing --dpr
+//   bun scripts/reader-bench.ts --latency --window --dpr 2 [--modes slow,fast,jump] [--pages 8] [--start N]   # scroll latency in a REAL window: wheel events through GPUI,
+//       per page the ms from its first visible pixel row to first pixels / no blank hole / fully sharp, from the list's TRUE scroll position (ReaderController.wheel / coverage)
 //   bun scripts/reader-bench.ts --pdf key:SG6SKCRD --pdf C:/some/file.pdf --dpr 2 --out results.json
 //
 // PDFs are named "label=spec" with spec = a file path or key:<attachment key> (resolved read-only, see src/reader/library.ts).
@@ -111,7 +113,7 @@ async function timing(pdfs: string[]) {
 
 // ---------------------------------------------------------------------------------------------------------------- scenario (child process)
 async function scenario(name: string, spec: string, windowMode: boolean) {
-	if (!["open", "scroll50", "zoom4"].includes(name)) throw new Error(`unknown scenario ${name}`);
+	if (!["open", "scroll50", "zoom4"].includes(name) && !name.startsWith("lat-")) throw new Error(`unknown scenario ${name}`);
 	process.env.ZN_READER_STATE = "off";
 	const { Reader } = await import("../src/reader/Reader");
 	(await import("../src/reader/env")).setReaderMode("dark"); // do not pull the app store (and its library requests) into the measurement
@@ -175,6 +177,7 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		out.sampledAtPage = Object.fromEntries(Object.entries(at).map(([k, v]) => [k, { privMB: r1(v.privMB), wsMB: r1(v.wsMB) }]));
 		out.scrollSeconds = r1((performance.now() - t0) / 1000);
 	}
+	if (name.startsWith("lat-")) Object.assign(out, await latency(ctl, name.slice(4), pump, sample));
 	if (name === "zoom4") {
 		const N = Math.min(6, ctl.doc()!.pageCount);
 		for (let i = 1; i < N; i++) { ctl.scrollToPage(i); await pump(150); await ctl.idle(); await pump(150); sample(); }
@@ -200,6 +203,7 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		out.cacheMB = r1(end.privMB - mem().privMB);
 	}
 	out.mountedNow = ctl.mounted();
+	{ const d = ctl.debug() as { win: number[]; vis: number[]; sp: unknown; vp: unknown; view: { i: number; h: number }[] }; out.dbg = { win: d.win, vis: d.vis, sp: d.sp, vp: d.vp, hs: d.view.map((v) => `${v.i}:${v.h}`) }; }
 	out.peakTiles = ctl.stats.peakTiles;
 	out.tilesNow = ctl.tiles();
 	out.renders = ctl.stats.renders;
@@ -209,6 +213,80 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	if (windowMode) out.gpu = await gpuMemory();
 	console.log("RESULT " + JSON.stringify(out));
 	process.exit(0);
+}
+
+/**
+ * Scroll latency. Scrolls the page list with wheel events through GPUI's own hit test (the path a mouse wheel takes), samples the
+ * list's TRUE scroll position every few ms and asks each mounted page how much of its visible part is blank / soft / sharp.
+ *   first  ms from a page's first visible pixel row to any pixels at all on its visible part (even a stretched preview)
+ *   full   ms to no paper-white hole left on the visible part
+ *   sharp  ms until the whole visible part is at full resolution (only counted while the page is still visible)
+ *   blank% / soft%  area-time share of everything that was visible during the run
+ * modes: slow (500 css px/s), fast (4000 px/s), jump (PageDown every 900 ms)
+ */
+async function latency(ctl: ReaderController, mode: string, pump: (ms: number) => Promise<void>, sample: () => unknown): Promise<Record<string, unknown>> {
+	const n = ctl.doc()!.pageCount;
+	const start = Math.max(0, Number(val("start", String(n > 100 ? 200 : 0))));
+	const pagesToScroll = Math.max(1, Math.min(Number(val("pages", "8")), n - start - 2));
+	ctl.scrollToPage(Math.max(0, start));
+	await pump(300);
+	await ctl.idle();
+	await pump(600);
+	const speed = mode === "slow" ? Number(val("slow", "500")) : mode === "fast" ? Number(val("fast", "4000")) : 0;
+	type PS = { enter: number; first?: number; full?: number; sharp?: number; lastSoft: number; last: number; fullPre: boolean };
+	const ps = new Map<number, PS>();
+	let blankT = 0, softT = 0, visT = 0;
+	const seen0 = new Set(ctl.coverage().map((c) => c.page)); // visible when the run starts: not an "entry"
+	let tPrev = performance.now();
+	const t0 = tPrev;
+	const obs = () => {
+		const now = performance.now(), dt = now - tPrev;
+		tPrev = now;
+		for (const c of ctl.coverage()) {
+			let s = ps.get(c.page);
+			if (!s) { s = { enter: now, lastSoft: now, last: now, fullPre: seen0.has(c.page) }; ps.set(c.page, s); }
+			s.last = now;
+			const px = c.blank + c.soft + c.sharp;
+			if (s.first === undefined && c.soft + c.sharp > 0 && px > 0) s.first = now - s.enter;
+			if (s.full === undefined && c.blank === 0) s.full = now - s.enter;
+			if (c.sharp < 1) s.lastSoft = now;
+			if (s.sharp === undefined && c.sharp === 1) s.sharp = now - s.enter;
+			visT += c.vis * dt; blankT += c.vis * c.blank * dt; softT += c.vis * c.soft * dt;
+		}
+	};
+	const a0 = ctl.debug() as { raw: number[] | null };
+	let moved = 0;
+	if (mode === "jump") {
+		for (let j = 0; j < pagesToScroll; j++) {
+			ctl.key({ key: "pagedown" }); ctl.key({ key: "pagedown" });
+			const end = performance.now() + 900;
+			while (performance.now() < end) { obs(); sample(); await Bun.sleep(4); }
+		}
+	} else {
+		const rowH = (ctl.debug() as { view: { h: number }[] }).view[0]?.h ?? 900;
+		const total = pagesToScroll * (rowH + 12);
+		let last = performance.now();
+		while (moved < total) {
+			const now = performance.now(), dy = (speed * (now - last)) / 1000;
+			last = now;
+			if (dy > 0) { ctl.wheel(dy); moved += dy; }
+			obs(); sample();
+			await Bun.sleep(4);
+		}
+	}
+	const tScroll = performance.now() - t0;
+	const end = performance.now() + 2500;
+	while (performance.now() < end) { obs(); sample(); await Bun.sleep(4); }
+	const a1 = ctl.debug() as { raw: number[] | null };
+	const rows = [...ps.entries()].filter(([, s]) => !s.fullPre);
+	const col = (f: (s: PS) => number | undefined) => rows.map(([, s]) => f(s)).filter((x): x is number => x !== undefined);
+	const stat = (xs: number[]) => (xs.length ? { n: xs.length, med: r1(q(xs, 0.5)), p95: r1(q(xs, 0.95)), max: r1(Math.max(...xs)) } : { n: 0 });
+	return {
+		mode, speed, start, pagesEntered: rows.length, scrollMs: Math.round(tScroll), raw0: a0.raw, raw1: a1.raw,
+		first: stat(col((s) => s.first)), full: stat(col((s) => s.full)), sharp: stat(col((s) => s.sharp)),
+		neverFull: rows.filter(([, s]) => s.full === undefined).length, neverSharp: rows.filter(([, s]) => s.sharp === undefined).length,
+		blankPct: r1((100 * blankT) / Math.max(1, visT)), softPct: r1((100 * softT) / Math.max(1, visT)),
+	};
 }
 
 /** GPU memory of this process from the Windows perf counters (dedicated = VRAM, shared = system memory used by the GPU). */
@@ -221,13 +299,13 @@ async function gpuMemory(): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------- orchestrator
-async function memory(pdfs: string[], windowMode: boolean) {
+async function memory(pdfs: string[], windowMode: boolean, scenarios = ["open", "scroll50", "zoom4"]) {
 	const results: Record<string, unknown>[] = [];
 	for (const spec of pdfs) {
 		const [label, src] = split(spec);
-		for (const sc of ["open", "scroll50", "zoom4"]) {
+		for (const sc of scenarios) {
 			const t0 = performance.now();
-			const p = Bun.spawnSync([process.execPath, import.meta.path, "--scenario", sc, "--pdf", src, "--dpr", String(dpr), ...(windowMode ? ["--window"] : []), ...(has("auto-dpr") ? ["--auto-dpr"] : [])], { stdout: "pipe", stderr: "pipe", timeout: 180000 });
+			const p = Bun.spawnSync([process.execPath, import.meta.path, "--scenario", sc, "--pdf", src, "--dpr", String(dpr), ...(windowMode ? ["--window"] : []), ...(has("auto-dpr") ? ["--auto-dpr"] : []), ...["start", "pages", "slow", "fast"].flatMap((n) => (val(n) ? [`--${n}`, val(n)!] : []))], { stdout: "pipe", stderr: "pipe", timeout: 180000 });
 			const line = p.stdout.toString().split("\n").find((l) => l.startsWith("RESULT "));
 			if (!line) { console.error(`[${label}/${sc}] failed:\n${p.stdout.toString().slice(-600)}\n${p.stderr.toString().slice(-600)}`); continue; }
 			const r = JSON.parse(line.slice(7)) as Record<string, unknown>;
@@ -235,6 +313,12 @@ async function memory(pdfs: string[], windowMode: boolean) {
 			results.push(r);
 			console.error(`[${label}/${sc}] ${Math.round(performance.now() - t0)} ms`);
 		}
+	}
+	if (scenarios.some((x) => x.startsWith("lat-"))) {
+		console.log(`\nScroll latency (ms after a page's first visible pixel row), real window=${windowMode}, dpr=${dpr}`);
+		const f = (o: unknown) => { const x = o as { n: number; med?: number; p95?: number; max?: number }; return x.n ? `${x.med} / ${x.p95} / ${x.max} (n=${x.n})` : "-"; };
+		console.table(results.map((r) => ({ pdf: r.label, mode: r.mode, pages: r.pagesEntered, "first med/p95/max": f(r.first), "full med/p95/max": f(r.full), "sharp med/p95/max": f(r.sharp), neverFull: r.neverFull, neverSharp: r.neverSharp, "blank%": r.blankPct, "soft%": r.softPct, "delta priv": r.deltaPrivMB, "peak priv": r.peakPrivMB })));
+		return results;
 	}
 	console.log(`\nProcess memory of the whole bun process (MB), mode=${windowMode ? "real window" : "headless test renderer"}, dpr=${dpr}. "empty" = the same window/test root before the reader is shown; delta = end - empty.`);
 	console.table(results.map((r) => ({
@@ -251,10 +335,11 @@ if (scen) {
 	await scenario(scen, val("pdf")!, has("window"));
 } else {
 	const pdfs = vals("pdf").length ? vals("pdf") : DEFAULT_PDFS;
-	const onlyT = has("timing"), onlyM = has("memory");
+	const onlyT = has("timing"), onlyM = has("memory") || has("latency");
 	const result: Record<string, unknown> = { when: new Date().toISOString(), dpr, native: nativeVersion() };
 	if (!onlyM) result.timing = await timing(pdfs);
-	if (!onlyT) result.memory = await memory(pdfs, has("window"));
+	if (has("latency")) result.latency = await memory(pdfs, has("window"), val("modes", "slow,fast,jump")!.split(",").map((m) => `lat-${m}`));
+	else if (!onlyT) result.memory = await memory(pdfs, has("window"));
 	const out = val("out", `${SCRATCH}/reader-bench.json`)!;
 	mkdirSync(dirname(out), { recursive: true });
 	writeFileSync(out, JSON.stringify(result, null, 1));

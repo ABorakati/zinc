@@ -2,11 +2,12 @@
 // Text is drawn with GPUIX: paragraphs and lists through <markdown> (inline emphasis, links, sup/subscripts), headings through
 // <text>; figures, tables and equations are crops of the PDF page. Citation links open the same reference popover as the page view.
 import { useGpuix } from "@gpuix/solid";
-import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
+import { createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
 import { Icon } from "../../icons";
 import { Popover } from "../../ui";
 import { CiteContent } from "../academic/PageOverlay";
-import { parseCitationNumbers } from "../academic/citations";
+import { CitedByCard } from "../academic/Cards";
+import { markerOf, parseCitationNumbers } from "../academic/citations";
 import { academicFor } from "../academic/session";
 import type { ReaderContext } from "../plugins";
 import { kit, RegionImage } from "../structure/kit";
@@ -129,6 +130,22 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		if (/^https?:/i.test(url)) { if (!p.ctx.openUrl?.(url)) void s.api.openUrl(url).catch(() => {}); }
 	}
 
+	/** Click on a bibliography entry: where the paper cites it (the reading-view counterpart of hovering an entry in the PDF). */
+	function showCitedBy(blockId: string, position: number) {
+		const n = markerOf(blockById().get(blockId)?.text ?? "") ?? position;
+		setPop({
+			anchor: { x: pointer.x, y: pointer.y },
+			content: () => {
+				const [sites] = createResource(() => s.citeIndex().then((m) => m.get(n) ?? []));
+				return (
+					<Show when={sites()} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>Looking for the citations...</text>}>
+						{(ss) => <CitedByCard s={s} k={k} n={n} sites={ss()} onJump={(site) => { setPop(null); goTo(site.page, site.rect[3]); }} />}
+					</Show>
+				);
+			},
+		});
+	}
+
 	// ---- rendering of the items
 	const family = () => fontFamilyOf(st());
 	const base = () => ({ color: pal().fg, fontFamily: family(), fontSize: st().size, lineHeight: Math.round(st().size * st().lineHeight * 10) / 10 });
@@ -208,7 +225,9 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				<Match when={it.kind === "refs"}>
 					<Row id={it.id} gap={1.2}>
 						<For each={(it as { entries: { id: string; html: string }[] }).entries}>
-							{(e) => <div style={{ paddingBottom: Math.round(st().size * 0.35) }}>{md(e.html, 0.84)}</div>}
+							{(e, i) => (
+								<div onClick={() => showCitedBy(e.id, i() + 1)} style={{ paddingBottom: Math.round(st().size * 0.35), cursor: "pointer" }}>{md(e.html, 0.84)}</div>
+							)}
 						</For>
 					</Row>
 				</Match>

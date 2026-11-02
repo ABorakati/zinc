@@ -9,10 +9,17 @@ import type { Collection, GroupBy, ItemRow, ListStore, Mode, SortLevel, Store, T
 import { mark } from "./trace";
 
 export const PAGE = 100;
-/** Pages farther than this from the page in the middle of the visible range are dropped from the cache (memory). */
-export const KEEP_PAGES = 3;
+/** Page cache size (LRU by distance): when more pages are cached, the ones farthest from the visible range go (a page is ~100 rows = ~300 KB). */
+export const MAX_PAGES = 24;
+/** Pages fetched ahead of the visible range in the scroll direction (and 1 behind), so scrolling meets rows, not skeletons. */
+export const PREFETCH_AHEAD = 2;
+/** Prefetching pauses while this many page requests are in flight (a fling across the library asks for many pages). */
+const MAX_PREFETCH_INFLIGHT = 3;
 const FILTER_DEBOUNCE_MS = 200;
 export const MAX_LEVELS = 4;
+
+/** Counters for scripts/scroll-bench.ts (plain increments, no reactivity): row evaluations, skeleton evaluations, page fetches. */
+export const stats = { itemAt: 0, skeleton: 0, fetches: 0, evictions: 0, visCalls: 0, visMs: 0, visMaxMs: 0, fetchMs: 0, fetchMaxMs: 0, prefetches: 0, pageTouches: 0 };
 
 // ------------------------------------------------------------------------------------------------ persisted UI state
 // The web UI keeps list preferences in localStorage; here they live in %APPDATA%\zotero-next-gpui\ui-state.json (one JSON
@@ -90,7 +97,7 @@ export interface AppStore extends Store, ListStore {
 	query: () => ItemQuery;
 	/** group sizes in list order (same order as the rows); empty when not grouped / not loaded */
 	groups: () => ItemGroup[];
-	/** bumped whenever a page arrives (itemAt also tracks it) */
+	/** bumped whenever a page arrives (itemAt does NOT track it: rows depend only on their own page) */
 	pagesLoaded: () => number;
 	/** Zotero data fields / extras the visible list needs, sent as the query's `fields` / `include`. Changing them refetches the visible pages only. */
 	setListFields(fields: string, include: string): void;
@@ -248,6 +255,18 @@ function createStore(): AppStore {
 	const inflight = new Set<number>();
 	let abort = new AbortController();
 	let centerPage = 0;
+	let scrollDir = 1; // direction the visible range last moved in (1 = down)
+	let lastVisible = { fp: -1, lp: -1, dir: 0 };
+	// Per-page reactivity: a row reads only the signal of its own page, so a page arriving (or an edit patching a row) re-runs the
+	// rows of that page, not every mounted row. Signals are created on first read (at most one per page of the list).
+	const pageSigs = new Map<number, [() => number, (f: (n: number) => number) => void]>();
+	const pageVersion = (p: number): number => {
+		let s = pageSigs.get(p);
+		if (!s) { const [get, set] = createSignal(0); s = [get, set]; pageSigs.set(p, s); }
+		return s[0]();
+	};
+	const touchPage = (p: number) => { const s = pageSigs.get(p); if (s) { stats.pageTouches++; s[1]((n) => n + 1); } };
+	const touchAllPages = () => batch(() => { for (const p of [...pageSigs.keys()]) touchPage(p); });
 	let dupCache: Promise<ItemRow[]> | null = null;
 
 	/** The duplicate sets as flat rows (one per item, sets adjacent): the core lists sets, not items. */
@@ -269,27 +288,42 @@ function createStore(): AppStore {
 		return api.items(untrack(query), p * PAGE, PAGE, signal);
 	}
 
+	/** Keep at most MAX_PAGES pages: drop the ones farthest from the visible range. */
 	function evict() {
-		for (const p of cache.keys()) if (Math.abs(p - centerPage) > KEEP_PAGES) cache.delete(p);
+		if (cache.size <= MAX_PAGES) return;
+		const far = [...cache.keys()].sort((a, b) => Math.abs(b - centerPage) - Math.abs(a - centerPage));
+		for (const p of far) {
+			if (cache.size <= MAX_PAGES) break;
+			cache.delete(p);
+			stats.evictions++;
+		}
 	}
 
 	async function loadPage(p: number, g: number) {
 		if (inflight.has(p) || g !== gen) return;
 		inflight.add(p);
+		stats.fetches++;
 		setPending((n) => n + 1);
+		const t0 = performance.now();
 		try {
 			const res = await fetchPage(p, abort.signal);
 			if (g !== gen) return;
+			const dropped: number[] = [];
 			if (hardCleared < hardGen) { // first page of a new list replaces the old list's rows
-				for (const [k, v] of cache) if (v.gen < hardGen) cache.delete(k);
+				for (const [k, v] of cache) if (v.gen < hardGen) { cache.delete(k); dropped.push(k); }
 				hardCleared = hardGen;
 			}
 			cache.set(p, { gen: g, rows: res.items });
 			evict();
+			const ms = performance.now() - t0;
+			stats.fetchMs += ms;
+			stats.fetchMaxMs = Math.max(stats.fetchMaxMs, ms);
 			batch(() => {
 				setTotal(res.total);
 				setError(null);
 				setPagesLoaded((n) => n + 1);
+				touchPage(p);
+				for (const k of dropped) touchPage(k); // rows still showing the old list's page go to skeleton / refetch
 			});
 			mark("items-loaded");
 		} catch (e) {
@@ -312,7 +346,8 @@ function createStore(): AppStore {
 			centerPage = 0;
 			batch(() => { setSelectedSig(new Set<string>()); setActiveKey(null); setAnchor(-1); setFocusIndex(-1); setListVersion(gen); });
 		}
-		// the stale rows stay on screen until the fresh page lands; itemAt() asks for every page in view
+		// the stale rows stay on screen until the fresh page lands; itemAt() asks for every page in view (soft reset: wake the rows)
+		if (!hard) touchAllPages();
 		void loadPage(hard ? 0 : Math.min(centerPage, Math.max(0, Math.ceil(untrack(total) / PAGE) - 1)), gen);
 	}
 
@@ -336,33 +371,51 @@ function createStore(): AppStore {
 	}, { defer: true }));
 
 	function itemAt(i: number): ItemRow | undefined {
-		pagesLoaded(); // re-run readers when pages arrive
-		listVersion();
+		stats.itemAt++;
 		const p = Math.floor(i / PAGE);
+		pageVersion(p); // re-run this row when ITS page arrives (not on every page of the list)
+		listVersion();
 		const e = cache.get(p);
 		if ((!e || e.gen !== gen) && i >= 0 && i < Math.max(untrack(total), 1)) queueMicrotask(() => void loadPage(p, gen));
+		if (!e) stats.skeleton++;
 		return e?.rows[i - p * PAGE]; // a stale row (older generation) is returned meanwhile
 	}
 	const peek = (i: number): ItemRow | undefined => {
 		const p = Math.floor(i / PAGE);
 		return cache.get(p)?.rows[i - p * PAGE];
 	};
+	/** The visible item range: re-centres the cache and prefetches the pages ahead in the scroll direction. */
 	function setVisible(first: number, last: number) {
+		const fp = Math.max(0, Math.floor(first / PAGE)), lp = Math.max(fp, Math.floor(last / PAGE));
 		const c = Math.max(0, Math.floor((first + last) / 2 / PAGE));
-		if (c === centerPage) return;
-		centerPage = c;
-		evict();
+		if (c !== centerPage) {
+			scrollDir = c > centerPage ? 1 : -1;
+			centerPage = c;
+			evict();
+		}
+		if (fp === lastVisible.fp && lp === lastVisible.lp && scrollDir === lastVisible.dir) return;
+		lastVisible = { fp, lp, dir: scrollDir };
+		const lastPage = Math.ceil(untrack(total) / PAGE) - 1;
+		if (lastPage < 0) return;
+		const from = Math.max(0, fp - (scrollDir < 0 ? PREFETCH_AHEAD : 1)), to = Math.min(lastPage, lp + (scrollDir > 0 ? PREFETCH_AHEAD : 1));
+		for (let p = from; p <= to; p++) {
+			const e = cache.get(p);
+			if ((e && e.gen === gen) || inflight.has(p)) continue;
+			const visible = p >= fp && p <= lp;
+			if (!visible && inflight.size >= MAX_PREFETCH_INFLIGHT) continue;
+			if (!visible) stats.prefetches++;
+			void loadPage(p, gen);
+		}
 	}
 	function indexOfKey(key: string): number {
 		for (const [p, e] of cache) { const j = e.rows.findIndex((r) => r.key === key); if (j >= 0) return p * PAGE + j; }
 		return -1;
 	}
 	function patchItem(key: string, patch: Partial<ItemRow>) {
-		for (const e of cache.values()) {
+		for (const [p, e] of cache) {
 			const j = e.rows.findIndex((r) => r.key === key);
-			if (j >= 0) e.rows[j] = { ...e.rows[j]!, ...patch };
+			if (j >= 0) { e.rows[j] = { ...e.rows[j]!, ...patch }; touchPage(p); }
 		}
-		setPagesLoaded((n) => n + 1);
 	}
 
 	/** Re-fetch collections + the list (after edits, imports, trash...). Selection and scroll stay. */

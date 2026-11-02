@@ -8,6 +8,7 @@ import { loadStructure } from "../structure/load";
 import type { DocStructure, PdfRect } from "../structure/types";
 import { createApi, type AcademicApi } from "./api";
 import { findRefStartInPages, refStartFromStructure, type RefStart } from "./citations";
+import { buildCiteIndex, type CiteIndex } from "./citedby";
 import { indexFromStructure, mergeIndex, scanCaptionsInPage, type FigItem } from "./figures";
 
 export type StructState =
@@ -67,6 +68,11 @@ export function createSession(ctx: ReaderContext) {
 		})());
 	}
 
+	/** Reference number -> where the text cites it (built once, after the structure and the page texts are in). */
+	let citeP: Promise<CiteIndex> | null = null;
+	const structureNow = (): DocStructure => { const s = struct(); return s.phase === "ready" ? s.doc : EMPTY_STRUCTURE; };
+	const citeIndex = (): Promise<CiteIndex> => (citeP ??= start().then(() => buildCiteIndex({ ctx, pageText, structure: structureNow, refStart: () => refStart })));
+
 	/** Start over after a failure (the structure loader forgets failed runs). */
 	function retry(): Promise<void> {
 		started = null;
@@ -98,9 +104,9 @@ export function createSession(ctx: ReaderContext) {
 
 	return {
 		ctx, api, struct, figItems, analysed,
-		structure: (): DocStructure => { const s = struct(); return s.phase === "ready" ? s.doc : EMPTY_STRUCTURE; },
+		structure: structureNow,
 		refStart: () => refStart,
-		pageText, start, retry,
+		pageText, start, retry, citeIndex,
 		popup,
 		showPopup(p: Popup) { cancelHide(); setPopup(p); },
 		hidePopup() { cancelHide(); setPopup(null); },

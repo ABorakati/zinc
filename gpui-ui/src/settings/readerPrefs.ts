@@ -1,6 +1,7 @@
 // Defaults of the native PDF reader chosen in Settings > Reader, persisted in ui-state.json ("shell.reader.*"). The reader reads
 // these signals when it opens a document for the first time:  import { readerPrefs } from "../settings/readerPrefs".
 import { persisted } from "../shell/prefs";
+import { reflowSettings, resetReflowSettings, setReflowSettings } from "../reader/reflow/state";
 
 /** Zoom for a document opened for the first time: fit width, fit page, or a fixed scale (1 = 100%). */
 export type DefaultZoom = "width" | "page" | number;
@@ -28,4 +29,14 @@ export const readerPrefs = {
 	sidebar, setSidebar,
 	pageAppearance: pages, setPageAppearance: setPages,
 	reset(): void { setZoomKey("width"); setSidebar("remember"); setPages("app"); },
+};
+
+// ---- the reflowed reading view (reader/reflow): typography, theme and "open PDFs in the reading view by default". They live in
+// reading-settings.json next to ui-state.json (reader/reflow/settings.ts); the signals are in a module without UI imports.
+export { FONTS as READING_FONTS, LIMITS as READING_LIMITS } from "../reader/reflow/settings";
+export type { ReadingSettings, ThemeKind as ReadingTheme } from "../reader/reflow/settings";
+export const readingView = {
+	settings: reflowSettings,
+	set: setReflowSettings,
+	reset: resetReflowSettings,
 };
