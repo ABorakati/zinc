@@ -244,7 +244,12 @@ function createStore(): AppStore {
 	const [listVersion, setListVersion] = createSignal(0);
 	const [pagesLoaded, setPagesLoaded] = createSignal(0);
 	const [pending, setPending] = createSignal(0);
-	const [error, setError] = createSignal<string | null>(null);
+	const [error, setErrorRaw] = createSignal<string | null>(null);
+	// a refused connection means no library service is running: say that, not "ECONNREFUSED"
+	const setError = (m: string | null) =>
+		setErrorRaw(m && /ECONNREFUSED|Unable to connect|failed to fetch|connection refused/i.test(m)
+			? "Can't reach the library. Start zotero-next, then reopen this window."
+			: m);
 	const [groups, setGroups] = createSignal<ItemGroup[]>([]);
 	const [itemsRev, setItemsRev] = createSignal(0);
 
