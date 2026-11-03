@@ -111,6 +111,7 @@ export async function isZoteroProcessRunning(): Promise<boolean> {
 	try {
 		if (process.platform === "win32") {
 			const p = Bun.spawn(["tasklist", "/FI", "IMAGENAME eq zotero.exe", "/FO", "CSV", "/NH"], {
+				windowsHide: true, // a console-less parent (the packaged GPUI app) would otherwise flash a console window
 				stdout: "pipe",
 				stderr: "ignore",
 			});

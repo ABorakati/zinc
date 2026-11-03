@@ -5,11 +5,13 @@
 //     zotero-next-gpui.exe          the app (UI, fonts, icons, Solid runtime and the GPUI addon embedded)
 //     zn_pdf.dll                    the native PDF renderer (native/pdf, hayro)
 //     docworker-entry.ts            entry of the document-structure worker (citations, figures, reading view)
+//     pdf-worker.ts                 entry of the PDF full-text extraction worker (core/src/extract/pdf-worker.ts, a copy)
 //     vendor/document-worker/build  Zotero's document worker (pdf.js + models)
 //     vendor/reader/structured-document-text/src
 //     README.txt
-// The exe finds these next to itself (src/packaged.ts) and uses the running zotero-next's core on 127.0.0.1:23120; it never
-// opens a library database itself. --zip also writes out/package/zotero-next-gpui-<date>.zip.
+// The exe finds these next to itself (src/packaged.ts). It is standalone: it runs the core in its own process on the library
+// (after a one-time backup) and the same services as zotero-next (API on 23120, Zotero port 23119, Zotero sync, PDF extraction;
+// src/services.ts). --zip also writes out/package/zotero-next-gpui-<date>.zip.
 import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -42,15 +44,23 @@ mkdirSync(app, { recursive: true });
 cpSync(exe, join(app, "zotero-next-gpui.exe"));
 cpSync(dll, join(app, "zn_pdf.dll"));
 cpSync(join(root, "src", "reader", "structure", "docworker-entry.ts"), join(app, "docworker-entry.ts"));
+cpSync(join(repo, "core", "src", "extract", "pdf-worker.ts"), join(app, "pdf-worker.ts")); // PDF full-text extraction (the pool's Worker entry)
 cpSync(join(repo, "vendor", "document-worker", "build"), join(app, "vendor", "document-worker", "build"), { recursive: true });
 cpSync(join(repo, "vendor", "reader", "structured-document-text", "src"), join(app, "vendor", "reader", "structured-document-text", "src"), { recursive: true });
 writeFileSync(join(app, "README.txt"), [
 	"zotero-next (GPUI)",
 	"",
-	"Start zotero-next-gpui.exe. It shows the library of the zotero-next that is running on this computer (its core on",
-	"127.0.0.1:23120), so start zotero-next first. It never opens a library database itself.",
+	"Start zotero-next-gpui.exe. It does not need zotero-next: it opens the library itself (ZN_LIBRARY, default",
+	"C:/Users/abora/zotero-next/data/library.sqlite), after making one backup copy (library.backup-gpui-*.sqlite next to it), and runs",
+	"the same services: HTTP API on 127.0.0.1:23120 (Word add-in, MCP), Zotero Connector port 23119, two-way sync with",
+	"Zotero (reading always, writing opt-in) and PDF full-text extraction.",
 	"",
-	"Environment overrides: ZN_URL (another core), ZN_PDF_DLL, ZN_ROOT, ZN_DOCWORKER_ENTRY, ZN_TRACE=1 (start-up timings).",
+	"Do not run it together with zotero-next on the same library for sync: if port 23120 is taken, this app still opens the",
+	"library but leaves Zotero sync and port 23119 to the other app (the sync indicator says so). Institution sign-in for",
+	"Find Full Text needs zotero-next.",
+	"",
+	"Environment overrides: ZN_LIBRARY, ZN_DB (another database), ZN_URL (use an external core, run nothing here), ZN_PORT,",
+	"ZN_SYNC=0, ZN_ZPORT=0|<port>, ZN_ZOTERO_DIR, ZN_PDF_DLL, ZN_ROOT, ZN_DOCWORKER_ENTRY, ZN_TRACE=1 (start-up timings).",
 	"Settings and window state: %APPDATA%\\zotero-next-gpui\\",
 	"",
 ].join("\r\n"));

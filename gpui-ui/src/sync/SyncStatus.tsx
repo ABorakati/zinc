@@ -6,6 +6,7 @@ import { Icon } from "../icons";
 import { Divider, Note, NoteText, Txt, t, tok } from "../shell/kit";
 import { ago } from "../shell/net";
 import { Button, Popover } from "../ui";
+import { syncOwner, syncOwnerNote } from "./owner";
 import { showRecord, sync, ZOTERO_LABEL, type SyncConflict } from "./state";
 
 /** "Label ......... value" rows of the popover's status block. */
@@ -44,6 +45,7 @@ function PopoverBody(): JSX.Element {
 	const [confirming, setConfirming] = createSignal(false);
 	const s = () => sync.status();
 	return (
+		<Show when={syncOwner() === "self"} fallback={<Note tone="warn"><NoteText tone="warn">{syncOwnerNote()}</NoteText></Note>}>
 		<Show when={s()} fallback={<Txt cls="text-xs text-muted-foreground">Sync is not available.</Txt>}>
 			{(st) => (
 				<div style={{ ...t("flex flex-col gap-3 p-3"), width: "100%" }}>
@@ -135,6 +137,7 @@ function PopoverBody(): JSX.Element {
 				</div>
 			)}
 		</Show>
+		</Show>
 	);
 }
 
@@ -148,8 +151,8 @@ export function SyncStatus(p: { onChanged?: () => void }): JSX.Element {
 	onMount(() => sync.start(p.onChanged));
 	createEffect(() => sync.watchConflicts(open()));
 	const st = () => sync.status();
-	const problem = () => !!st()?.lastError || st()?.zotero === "error";
-	const label = () => (st() ? ZOTERO_LABEL[st()!.zotero] : "Zotero");
+	const problem = () => syncOwner() === "self" && (!!st()?.lastError || st()?.zotero === "error");
+	const label = () => (syncOwner() === "other" ? "Sync: zotero-next" : syncOwner() === "off" ? "Sync off" : st() ? ZOTERO_LABEL[st()!.zotero] : "Zotero");
 	return (
 		<>
 			<div
@@ -163,7 +166,7 @@ export function SyncStatus(p: { onChanged?: () => void }): JSX.Element {
 				<Icon
 					name={problem() ? "circle-alert" : "refresh-cw"}
 					size={14}
-					color={tok(problem() ? "destructive" : st()?.zotero === "missing" ? "muted-foreground" : "foreground")}
+					color={tok(problem() ? "destructive" : syncOwner() !== "self" || st()?.zotero === "missing" ? "muted-foreground" : "foreground")}
 				/>
 				<Txt cls="text-xs text-foreground" wrap={false}>{label()}</Txt>
 				<Show when={(st()?.pending ?? 0) > 0}>

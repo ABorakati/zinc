@@ -48,7 +48,7 @@ export interface SyncConflict {
 async function tasklistHasZotero(): Promise<boolean> {
 	if (process.platform !== "win32") return false;
 	try {
-		const p = Bun.spawn(["tasklist", "/FI", "IMAGENAME eq zotero.exe", "/NH", "/FO", "CSV"], { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
+		const p = Bun.spawn(["tasklist", "/FI", "IMAGENAME eq zotero.exe", "/NH", "/FO", "CSV"], { stdout: "pipe", stderr: "ignore", stdin: "ignore", windowsHide: true });
 		const out = await new Response(p.stdout).text();
 		await p.exited;
 		return /"zotero\.exe"/i.test(out);

@@ -3,6 +3,7 @@ import { createSignal, Show, type JSX } from "solid-js";
 import { appActions } from "../../registry";
 import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { ago, plural } from "../../shell/net";
+import { syncOwner, syncOwnerNote } from "../../sync/owner";
 import { sync, ZOTERO_LABEL } from "../../sync/state";
 import { Btn, Kbd, Toggle, Value } from "../controls";
 import { onSettingsShown, registerSection, registerSettings, registerSettingsProvider } from "../registry";
@@ -13,9 +14,13 @@ onSettingsShown(() => { sync.start(); void sync.refresh(); });
 
 const loading = (): JSX.Element => <Value>{sync.reachable() ? "Loading…" : "Sync is not available."}</Value>;
 
+/** Another zotero-next (or ZN_SYNC=0) owns the sync: say so instead of the status of a sync service that is not running here. */
+const ownerNote = (): JSX.Element => <Txt cls="text-xs text-muted-foreground" style={{ textAlign: "right", maxWidth: 380 }}>{syncOwnerNote()}</Txt>;
+
 function WriteControl(): JSX.Element {
 	const [confirming, setConfirming] = createSignal(false);
 	return (
+		<Show when={syncOwner() === "self"} fallback={ownerNote()}>
 		<Show when={sync.status()} fallback={loading()}>
 			{(s) => (
 				<div style={t("flex flex-col gap-2")}>
@@ -38,6 +43,7 @@ function WriteControl(): JSX.Element {
 				</div>
 			)}
 		</Show>
+		</Show>
 	);
 }
 
@@ -47,6 +53,7 @@ registerSettings([
 		description: "State of the Zotero data folder this library is kept in step with.",
 		keywords: ["status", "sync now", "refresh", "pull", "read", "conflicts", "pending", "last sync"],
 		control: () => (
+			<Show when={syncOwner() === "self"} fallback={ownerNote()}>
 			<Show when={sync.status()} fallback={loading()}>
 				{(s) => (
 					<div style={{ ...t("flex flex-col items-end gap-1"), maxWidth: 380 }}>
@@ -57,6 +64,7 @@ registerSettings([
 						<Btn icon="refresh-cw" disabled={sync.busy() || s().zotero === "missing"} onClick={() => void sync.syncNow()}>Sync now</Btn>
 					</div>
 				)}
+			</Show>
 			</Show>
 		),
 	},

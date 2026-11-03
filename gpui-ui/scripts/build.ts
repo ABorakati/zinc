@@ -23,7 +23,8 @@
 //      embedded with compile.assets.
 //   4. src/core.ts imports the core with a variable specifier (import(dir + "server")), which the bundler cannot follow. The same load
 //      plugin rewrites those three calls to literal specifiers so the core (and its wasm via `with { type: "file" }`, schema.json) is
-//      bundled. Proper fix: make them literal in src/core.ts. Not handled: the PDF text-extraction Worker (core/src/extract/pool.ts).
+//      bundled. Proper fix: make them literal in src/core.ts. The PDF text-extraction Worker (core/src/extract/pool.ts)
+//      is not embedded: package.ts ships pdf-worker.ts and the document-worker build next to the exe and src/services.ts points the pool at them.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -115,7 +115,7 @@ function SettingsDialog(p: { close: () => void }): JSX.Element {
 			</div>
 			<Txt class="text-xs text-muted-foreground">{`Sign-in methods set up: ${methods().length ? methods().map((m) => METHOD_LABEL[m]).join(", ") : "none yet. Add at least one to use institutional access."}`}</Txt>
 			<div style={{ ...t("flex flex-row gap-3"), width: "100%" }}>
-				<Field label="How to sign in" hint={view() && !view()!.embeddedBrowser ? "This build has no sign-in window; links open in your own browser." : undefined} style={{ flexGrow: 1, flexBasis: 0 }}>
+				<Field label="How to sign in" hint={view() && !view()!.embeddedBrowser ? "This app has no sign-in window: institution sign-in needs zotero-next. Links open in your own browser." : undefined} style={{ flexGrow: 1, flexBasis: 0 }}>
 					<Select value={mode()} onChange={setMode} options={LOGIN_OPTS} />
 				</Field>
 				<Field label="Unpaywall email" hint="Needed for Unpaywall; stays on your computer." style={{ flexGrow: 1, flexBasis: 0 }}>
