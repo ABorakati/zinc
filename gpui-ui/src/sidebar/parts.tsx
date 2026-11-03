@@ -74,6 +74,31 @@ export const labelCls = (sel: boolean): string => (sel ? "text-[13px] font-semib
 /** Width a thin web scrollbar takes beside the content; GPUIX's thumb overlays the container's right edge. */
 export const SCROLLBAR_GUTTER = 11;
 
+/**
+ * One entry of the sidebar's virtual list. GPUIX rebuilds, lays out and paints every node of the window on every frame (there is no
+ * per-subtree cache), and a scrolling container does that for ALL its rows, on screen or not: a 36-row collections tree cost ~8 ms
+ * per frame while only the item list scrolled. A <virtual-list> builds just the rows that intersect its viewport.
+ *
+ * The list's children must be exactly the entries (a <Show> or a conditional next to them leaves an empty placeholder text node
+ * behind, i.e. a zero-height item), so the sidebar flattens its sections into `Entry[]` and renders a single <For> over them.
+ */
+export interface Entry {
+	id: string;
+	render: () => JSX.Element;
+}
+
+/** Right padding of a list entry: the old `pr-2` plus the gutter GPUIX's overlaid scrollbar thumb needs. */
+const ENTRY_PAD_RIGHT = 8 + SCROLLBAR_GUTTER;
+
+/**
+ * Wraps one row of the virtual list. A list item is measured as its own box, so the 1px flex gap the rows had (`gap-px`) and the
+ * scrollbar gutter live in this wrapper's padding. `gap` is that 1px (0 inside the saved-searches block, which had no gap),
+ * `top` extra space above (the 16px between the Library and Collections groups).
+ */
+export function ListItem(p: { children: JSX.Element; gap?: number; top?: number }): JSX.Element {
+	return <div style={{ width: "100%", paddingRight: ENTRY_PAD_RIGHT, paddingBottom: p.gap ?? 1, paddingTop: p.top ?? 0 }}>{p.children}</div>;
+}
+
 export function SectionHeader(p: {
 	label: string;
 	open: boolean;

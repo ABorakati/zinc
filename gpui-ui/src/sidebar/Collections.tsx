@@ -3,7 +3,7 @@
 //
 // Drags (a collection moved in the tree, or items dropped from the list) are hit-tested by coordinates: GPUIX captures the
 // pointer for the element a press started on (any element with onMouseDown + onMouseMove), so other rows see no enter / up.
-import { createEffect, createMemo, createRoot, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import type { Collection } from "../contracts";
 import { Icon } from "../icons";
@@ -15,7 +15,7 @@ import { itemDrag, itemDragPoint } from "./dndBridge";
 import { errMsg, sidebarApi } from "./client";
 import { NameInput } from "./NameInput";
 import {
-	CountBadge, folderColor, folderSvg, IconButton, labelCls, muted, pill, ROW, SectionHeader, t, tok, TRUNCATE, tx,
+	CountBadge, type Entry, folderColor, folderSvg, IconButton, labelCls, ListItem, muted, pill, ROW, SectionHeader, t, tok, TRUNCATE, tx,
 } from "./parts";
 import { collectionsOpen, expandedKeys, setCollectionsOpen, setExpandedKeys } from "./state";
 
@@ -67,6 +67,11 @@ export const collapseAll = () => setExpanded(new Set());
 
 const [editing, setEditing] = createSignal<string | null>(null);
 const [creating, setCreating] = createSignal<string | "root" | null>(null);
+/** The collection ("root" = top level) an inline new-collection field is open under, or null. */
+export { creating };
+/** Called right before a new-collection field opens (the sidebar snapshots its scroll position there). */
+let beforeCreate: (() => void) | undefined;
+export const onBeforeCreate = (f: (() => void) | undefined) => { beforeCreate = f; };
 /** The collection row (or "root" = the Collections header) a drag is currently over. */
 const [dropKey, setDropKey] = createSignal<string | null>(null);
 const [menuKey, setMenuKey] = createSignal<string | null>(null);
@@ -181,6 +186,7 @@ createRoot(() => {
 });
 
 function startCreate(parent: string | "root") {
+	beforeCreate?.();
 	setCollectionsOpen(true);
 	if (parent !== "root") setExpanded(new Set(expanded()).add(parent));
 	setCreating(parent);
@@ -213,8 +219,9 @@ function headerMenu(x: number, y: number) {
 	]);
 }
 
-// ---- rows ----
+// ---- rows (entries of the sidebar's virtual list) ----
 
+/** One collection row. The tree is flattened by collectionEntries(); a row knows its depth, not its children's rows. */
 function Row(p: { c: Collection; depth: number }): JSX.Element {
 	const kids = () => p.c.children ?? [];
 	const open = () => expanded().has(p.c.key);
@@ -226,7 +233,7 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 	/** The drag is over this row and it may be dropped here (items go anywhere; a collection not into itself). */
 	const over = () => dropKey() === p.c.key && (!colDrag() || validTarget(colDrag()!, p.c.key));
 	return (
-		<>
+		<ListItem>
 			<div
 				ref={(el: HostElement) => {
 					rowEls.set(p.c.key, el);
@@ -290,23 +297,19 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 				</Show>
 				<CountBadge n={p.c.itemCount} />
 			</div>
-			<Show when={creating() === p.c.key}>
-				<CreateRow parent={p.c.key} padLeft={6 + (p.depth + 1) * 14} />
-			</Show>
-			<Show when={open()}>
-				<For each={kids()}>{(c) => <Row c={c} depth={p.depth + 1} />}</For>
-			</Show>
-		</>
+		</ListItem>
 	);
 }
 
 /** The inline "new collection" row: a muted folder and a name field, indented past the chevron slot. */
 function CreateRow(p: { parent: string | "root"; padLeft: number }): JSX.Element {
 	return (
-		<div style={{ ...t(ROW), paddingLeft: p.padLeft + 20 }}>
-			<Icon name="folder" size={15} color={muted()} />
-			<NameInput value="" placeholder="Collection name" onDone={(v) => void commitCreate(p.parent, v)} onCancel={() => setCreating(null)} />
-		</div>
+		<ListItem>
+			<div style={{ ...t(ROW), paddingLeft: p.padLeft + 20 }}>
+				<Icon name="folder" size={15} color={muted()} />
+				<NameInput value="" placeholder="Collection name" onDone={(v) => void commitCreate(p.parent, v)} onCancel={() => setCreating(null)} />
+			</div>
+		</ListItem>
 	);
 }
 
@@ -320,28 +323,42 @@ export function endDrags() {
 /** Registers the scrolling pane the rows live in (drops only count inside it). */
 export const setCollectionsPane = (el: HostElement) => { paneEl = el; };
 
-export function CollectionsGroup(): JSX.Element {
-	return (
-		<div style={t("flex flex-col gap-px")}>
-			<div
-				ref={(el: HostElement) => { headerEl = el; }}
-				style={dropKey() === "root" && colDrag() && validTarget(colDrag()!, "root") ? { outlineWidth: 2, outlineColor: tok("primary"), outlineOffset: -2, borderRadius: 8 } : {}}
-			>
-				<SectionHeader
-					label="Collections"
-					open={collectionsOpen()}
-					onToggle={() => setCollectionsOpen(!collectionsOpen())}
-					onContextMenu={headerMenu}
-					actions={<IconButton name="plus" box={20} icon={16} label="New collection" onClick={() => startCreate("root")} />}
-				/>
-			</div>
-			<Show when={collectionsOpen()}>
-				{/* the new-collection field sits at the top so it is on screen however long the tree is */}
-				<Show when={creating() === "root"}>
-					<CreateRow parent="root" padLeft={6} />
-				</Show>
-				<For each={collections()}>{(c) => <Row c={c} depth={0} />}</For>
-			</Show>
-		</div>
-	);
+/**
+ * The Collections group as entries of the sidebar's virtual list: the header, then (while open) the new-collection field for the
+ * top level, the visible rows of the tree in order (a collection's children right after it while it is expanded) and each inline
+ * new-subcollection field right after its parent. `top` is the space above the header (the 16px gap between the groups).
+ */
+export function collectionEntries(top: number): Entry[] {
+	const out: Entry[] = [{
+		id: "c:header",
+		render: () => (
+			<ListItem top={top}>
+				<div
+					ref={(el: HostElement) => { headerEl = el; }}
+					style={dropKey() === "root" && colDrag() && validTarget(colDrag()!, "root") ? { outlineWidth: 2, outlineColor: tok("primary"), outlineOffset: -2, borderRadius: 8 } : {}}
+				>
+					<SectionHeader
+						label="Collections"
+						open={collectionsOpen()}
+						onToggle={() => setCollectionsOpen(!collectionsOpen())}
+						onContextMenu={headerMenu}
+						actions={<IconButton name="plus" box={20} icon={16} label="New collection" onClick={() => startCreate("root")} />}
+					/>
+				</div>
+			</ListItem>
+		),
+	}];
+	if (!collectionsOpen()) return out;
+	// the new-collection field sits at the top so it is on screen however long the tree is
+	if (creating() === "root") out.push({ id: "c:create:root", render: () => <CreateRow parent="root" padLeft={6} /> });
+	const open = expanded();
+	const walk = (list: Collection[], depth: number) => {
+		for (const c of list) {
+			out.push({ id: `c:${c.key}`, render: () => <Row c={c} depth={depth} /> });
+			if (creating() === c.key) out.push({ id: `c:create:${c.key}`, render: () => <CreateRow parent={c.key} padLeft={6 + (depth + 1) * 14} /> });
+			if (open.has(c.key) && c.children) walk(c.children, depth + 1);
+		}
+	};
+	walk(collections(), 0);
+	return out;
 }

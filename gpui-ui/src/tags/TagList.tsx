@@ -1,6 +1,8 @@
 // The TAGS pane at the bottom of the sidebar (ui/src/Tags.tsx): filter box, tag pills with colour dots, click to filter the
 // list (several tags AND together), right-click for colour / rename / delete, "..." menu for Show Automatic.
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, Show, type JSX } from "solid-js";
+import type { HostElement } from "@gpuix/solid";
+import type { Rect } from "../ui/core";
 import { Icon } from "../icons";
 import { refreshStore, setTagFilter, tagFilter } from "../sidebar/bridge";
 import { errMsg, sidebarApi } from "../sidebar/client";
@@ -9,12 +11,21 @@ import { IconButton, mode, muted, SectionHeader, t, tok, tx } from "../sidebar/p
 import { collectionsFraction, setShowAutoTags, setTagsOpen, showAutoTags, tagsOpen } from "../sidebar/state";
 import { store } from "../store";
 import { Button, confirm, openDialog, openMenu, toast, type MenuItem } from "../ui";
+import { boundsOf } from "../ui/core";
 import {
 	isAutomaticOnly, loadTags, setTagColor, tagColor, tags, tagsAge, tagsLoaded, tagsLoading, TAG_PALETTE, toggleTag, type TagCount,
 } from "./state";
 
 /** Same cap as the web UI: tens of thousands of pills would be too many nodes. */
 const TAG_LIMIT = 500;
+/**
+ * Pills are mounted a chunk at a time as the pane scrolls. GPUIX builds, lays out and paints every node of a scroll container on every
+ * frame, on screen or not, and a pill (box + label) costs ~70 us per frame: all 500 added ~34 ms to every frame of the window while the
+ * tags pane was open (even when only the item list scrolled). A flowing, wrapping layout cannot go in a <virtual-list> (a row's pills
+ * depend on their measured widths), so the pane keeps its flex-wrap layout, byte for byte, and just grows the mounted prefix when the
+ * last mounted pill comes within one viewport of the visible area.
+ */
+const TAG_CHUNK = 48;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const EMOJI = /^[\p{Extended_Pictographic}‍️\p{Emoji_Modifier}\s]+$/u;
 
@@ -129,13 +140,14 @@ function paneMenu(x: number, y: number) {
 
 // ---- pills ----
 
-function Pill(p: { tag: TagCount }): JSX.Element {
+function Pill(p: { tag: TagCount; onEl?: (el: HostElement | undefined) => void }): JSX.Element {
 	const sel = () => tagFilter().includes(p.tag.tag);
 	const colour = () => tagColor(p.tag.tag);
 	const emoji = () => EMOJI.test(p.tag.tag);
 	const [menu, setMenu] = createSignal(false);
 	return (
 		<div
+			ref={(el: HostElement) => { p.onEl?.(el); onCleanup(() => p.onEl?.(undefined)); }}
 			role="button"
 			aria-pressed={sel()}
 			aria-label={`${p.tag.tag}, ${p.tag.count} items`}
@@ -211,6 +223,27 @@ export function TagList(): JSX.Element {
 		return [...extra, ...top];
 	});
 
+	// the mounted prefix of `shown()` (see TAG_CHUNK)
+	const [limit, setLimit] = createSignal(TAG_CHUNK);
+	const mounted = createMemo(() => shown().slice(0, limit()));
+	createEffect(on(filter, () => setLimit(TAG_CHUNK), { defer: true }));
+	const pillEls = new Map<number, HostElement>();
+	let box: HostElement | undefined;
+	let check: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => clearTimeout(check));
+	/** Mount another chunk when the last mounted pill ends less than one viewport below the top of the visible area's bottom edge. */
+	function more() {
+		const n = Math.min(limit(), shown().length);
+		if (n >= shown().length) return;
+		const c: Rect | null = boundsOf(box);
+		const b: Rect | null = boundsOf(pillEls.get(n - 1));
+		if (!c || !b) return;
+		if (b.y < c.y + c.height * 2) setLimit(Math.min(shown().length, n + TAG_CHUNK));
+	}
+	// bounds exist once a frame has painted: look again shortly after anything that changes what is mounted or how much room there is
+	const soon = () => { clearTimeout(check); check = setTimeout(more, 60); };
+	createEffect(() => { limit(); shown().length; tagsOpen(); tagsLoaded(); soon(); });
+
 	return (
 		<div style={{ ...t("flex min-h-0 flex-col"), flexGrow: tagsOpen() ? 1 - collectionsFraction() : 0, flexShrink: tagsOpen() ? 1 : 0, flexBasis: tagsOpen() ? 0 : undefined }}>
 			<SectionHeader
@@ -240,7 +273,12 @@ export function TagList(): JSX.Element {
 						}}
 					/>
 				</div>
-				<div style={{ ...t("flex min-h-0 flex-wrap content-start gap-1.5 overflow-y-auto px-2.5 pb-2"), flexGrow: 1, flexShrink: 1, flexBasis: 0 }}>
+				<div
+					ref={(el: HostElement) => { box = el; }}
+					onScrollChange={more}
+					onLayout={soon}
+					style={{ ...t("flex min-h-0 flex-wrap content-start gap-1.5 overflow-y-auto px-2.5 pb-2"), flexGrow: 1, flexShrink: 1, flexBasis: 0 }}
+				>
 					<Show
 						when={tagsLoaded()}
 						fallback={
@@ -248,8 +286,8 @@ export function TagList(): JSX.Element {
 						}
 					>
 						{/* Index, not For: GPUIX loses a moved element's event handlers, and a tag that gets a colour or is selected changes position */}
-						<Index each={shown()}>{(x) => <Pill tag={x()} />}</Index>
-						<Show when={filtered().length > TAG_LIMIT}>
+						<Index each={mounted()}>{(x, i) => <Pill tag={x()} onEl={(el) => { if (el) pillEls.set(i, el); else pillEls.delete(i); }} />}</Index>
+						<Show when={filtered().length > TAG_LIMIT && limit() >= shown().length}>
 							<div style={t("inline-flex h-6 items-center px-2")}>
 								<text style={tx("text-xs text-muted-foreground")}>{`+ ${(filtered().length - TAG_LIMIT).toLocaleString("en-US")} more`}</text>
 							</div>

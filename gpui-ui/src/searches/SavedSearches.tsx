@@ -1,14 +1,14 @@
 // "Saved Searches" under the Library rows in the left pane (ui/src/searches/SavedSearches.tsx): list, select -> savedSearch view,
 // rename inline, edit via the Advanced Search dialog, delete, "+" opens a fresh advanced search.
-import { createSignal, For, onMount, Show, type JSX } from "solid-js";
+import { createSignal, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { currentView, refreshStore, setView } from "../sidebar/bridge";
 import { errMsg, sidebarApi, type SavedSearch } from "../sidebar/client";
 import { NameInput } from "../sidebar/NameInput";
-import { IconButton, labelCls, pill, SPECIAL, t, tok, TRUNCATE, tracked, tx } from "../sidebar/parts";
+import { type Entry, IconButton, labelCls, ListItem, pill, SPECIAL, t, tok, TRUNCATE, tracked, tx } from "../sidebar/parts";
 import { confirm, openMenu, toast } from "../ui";
 import { openAdvancedSearch } from "./AdvancedSearch";
-import { ensureSavedSearches, refreshSavedSearches, savedSearches } from "./state";
+import { refreshSavedSearches, savedSearches } from "./state";
 
 const [renaming, setRenaming] = createSignal<string | null>(null);
 const [menuKey, setMenuKey] = createSignal<string | null>(null);
@@ -52,53 +52,69 @@ function showMenu(s: SavedSearch, x: number, y: number) {
 	setTimeout(() => setMenuKey((k) => (k === s.key ? null : k)), 3000);
 }
 
-/** The "Saved Searches" sub-section of the Library group. */
-export function SavedSearchesSection(): JSX.Element {
-	onMount(ensureSavedSearches);
-	const active = (k: string) => {
-		const v = currentView();
-		return v.kind === "savedSearch" && v.key === k;
-	};
+const active = (k: string) => {
+	const v = currentView();
+	return v.kind === "savedSearch" && v.key === k;
+};
+
+function SavedSearchRow(p: { s: SavedSearch }): JSX.Element {
+	const s = p.s;
 	return (
-		<div style={t("flex flex-col")}>
-			<div style={t("flex items-center justify-between py-1 pl-2 pr-1 pt-2")}>
-				<text style={tx("text-[11px] font-semibold text-muted-foreground")}>{tracked("Saved Searches")}</text>
-				<IconButton name="plus" box={24} icon={16} label="Advanced search" onClick={() => void openAdvancedSearch()} />
-			</div>
+		<div
+			role="treeitem"
+			aria-selected={active(s.key)}
+			onClick={(e) => {
+				if (renaming() === s.key) return;
+				if ((e.clickCount ?? 1) >= 2) void openAdvancedSearch(s.key);
+				else setView({ kind: "savedSearch", key: s.key });
+			}}
+			onAuxClick={(e) => { if (e.isRightClick) showMenu(s, e.x ?? 0, e.y ?? 0); }}
+			style={{
+				...t(SPECIAL),
+				...(menuKey() === s.key && !active(s.key) ? { backgroundColor: tok("accent") } : {}),
+				...pill(active(s.key)),
+			}}
+		>
+			<Icon name="search" size={16} color={tok(active(s.key) ? "primary" : "muted-foreground")} />
 			<Show
-				when={savedSearches().length > 0}
-				fallback={
-					<div style={t("px-6 py-1")}>
-						<text style={tx("text-xs text-muted-foreground")}>No saved searches</text>
-					</div>
-				}
+				when={renaming() === s.key}
+				fallback={<text style={{ ...tx(labelCls(active(s.key))), ...TRUNCATE, flexGrow: 1, flexBasis: 0 }}>{s.name}</text>}
 			>
-				<For each={savedSearches()}>{(s) => (
-					<div
-						role="treeitem"
-						aria-selected={active(s.key)}
-						onClick={(e) => {
-							if (renaming() === s.key) return;
-							if ((e.clickCount ?? 1) >= 2) void openAdvancedSearch(s.key);
-							else setView({ kind: "savedSearch", key: s.key });
-						}}
-						onAuxClick={(e) => { if (e.isRightClick) showMenu(s, e.x ?? 0, e.y ?? 0); }}
-						style={{
-							...t(SPECIAL),
-							...(menuKey() === s.key && !active(s.key) ? { backgroundColor: tok("accent") } : {}),
-							...pill(active(s.key)),
-						}}
-					>
-						<Icon name="search" size={16} color={tok(active(s.key) ? "primary" : "muted-foreground")} />
-						<Show
-							when={renaming() === s.key}
-							fallback={<text style={{ ...tx(labelCls(active(s.key))), ...TRUNCATE, flexGrow: 1, flexBasis: 0 }}>{s.name}</text>}
-						>
-							<NameInput value={s.name} onDone={(v) => void commitRename(s, v)} onCancel={() => setRenaming(null)} />
-						</Show>
-					</div>
-				)}</For>
+				<NameInput value={s.name} onDone={(v) => void commitRename(s, v)} onCancel={() => setRenaming(null)} />
 			</Show>
 		</div>
 	);
+}
+
+/**
+ * The "Saved Searches" sub-section of the Library group, as entries of the sidebar's virtual list: a header (label + "+"), then one
+ * row per search or the empty note. Inside the block the rows have no gap (`gap={0}`), as the old `flex flex-col` column had.
+ */
+export function savedSearchEntries(): Entry[] {
+	const list = savedSearches();
+	const out: Entry[] = [{
+		id: "ss:header",
+		render: () => (
+			<ListItem gap={0}>
+				<div style={t("flex items-center justify-between py-1 pl-2 pr-1 pt-2")}>
+					<text style={tx("text-[11px] font-semibold text-muted-foreground")}>{tracked("Saved Searches")}</text>
+					<IconButton name="plus" box={24} icon={16} label="Advanced search" onClick={() => void openAdvancedSearch()} />
+				</div>
+			</ListItem>
+		),
+	}];
+	if (!list.length) {
+		out.push({
+			id: "ss:empty",
+			render: () => (
+				<ListItem gap={0}>
+					<div style={t("px-6 py-1")}>
+						<text style={tx("text-xs text-muted-foreground")}>No saved searches</text>
+					</div>
+				</ListItem>
+			),
+		});
+	}
+	for (const s of list) out.push({ id: `ss:${s.key}`, render: () => <ListItem gap={0}><SavedSearchRow s={s} /></ListItem> });
+	return out;
 }
