@@ -89,8 +89,13 @@ export interface ListStore {
 export interface LibraryTab { id: "library" }
 /** A PDF reader tab; its id is the attachment key. */
 export interface ReaderTab { id: string; kind: "reader"; title: string; itemKey: string }
-export type Tab = LibraryTab | ReaderTab;
+/** A web reader tab (HTML snapshots, EPUBs): Zotero's reader-host page in the shared WebView2 (src/webview); its id is the attachment key. */
+export interface WebTab { id: string; kind: "web"; title: string; itemKey: string; attachmentKey: string; contentType: string }
+export type Tab = LibraryTab | ReaderTab | WebTab;
 export const isReaderTab = (t: Tab): t is ReaderTab => "kind" in t && t.kind === "reader";
+export const isWebTab = (t: Tab): t is WebTab => "kind" in t && t.kind === "web";
+/** Tabs that hold a document (native reader or web view): drawn as a chip in the top bar and a full-width body. */
+export const isDocTab = (t: Tab): t is ReaderTab | WebTab => isReaderTab(t) || isWebTab(t);
 
 export interface Store {
 	/** Open tabs in strip order; tabs()[0] is always the library. */

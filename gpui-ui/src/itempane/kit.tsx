@@ -5,8 +5,10 @@ import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { textStyle, tokens, tw, withAlpha } from "../theme";
-import { useGpuix } from "@gpuix/solid";
+import { useGpuix, type HostElement } from "@gpuix/solid";
+import type { EventPayload } from "@gpuix/native";
 import { openMenu, Tooltip, type MenuItem } from "../ui";
+import { boundsOf, hideTooltip, showTooltip } from "../ui/core";
 
 export const mode = (): Mode => store.mode();
 export const tok = (name: string): string => tokens[mode()][name] ?? "#888";
@@ -36,23 +38,35 @@ export function inputTheme(bg?: string) {
 /** `size-5 rounded text-muted-foreground hover:bg-accent` icon button (IconBtn). */
 export function IconBtn(p: { icon: string; title: string; onClick?: () => void; disabled?: boolean; size?: number; box?: number; color?: string }): JSX.Element {
 	const box = () => p.box ?? 20;
+	// the Tooltip component wraps its child in a div; inline handlers give the same delayed label with one node less per button
+	let el: HostElement | undefined;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const cancel = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; hideTooltip(); };
+	onCleanup(cancel);
+	const enter = (e: EventPayload) => {
+		cancel();
+		const pointer = { x: e.x ?? 0, y: e.y ?? 0 };
+		timer = setTimeout(() => { timer = undefined; showTooltip({ label: p.title, rect: boundsOf(el), pointer }); }, 500);
+	};
 	return (
-		<Tooltip label={p.title}>
-			<div
-				role="button"
-				aria-label={p.title}
-				onClick={() => { if (!p.disabled) p.onClick?.(); }}
-				style={{
-					...t("flex flex-none items-center justify-center rounded"),
-					width: box(), height: box(),
-					cursor: p.disabled ? "default" : "pointer",
-					opacity: p.disabled ? 0.3 : 1,
-					hover: p.disabled ? {} : { backgroundColor: tok("accent") },
-				}}
-			>
-				<Icon name={p.icon} size={p.size ?? 14} color={p.color ?? tok("muted-foreground")} />
-			</div>
-		</Tooltip>
+		<div
+			ref={(x: HostElement) => { el = x; }}
+			role="button"
+			aria-label={p.title}
+			onClick={() => { if (!p.disabled) p.onClick?.(); }}
+			onMouseEnter={enter}
+			onMouseLeave={cancel}
+			onMouseDown={cancel}
+			style={{
+				...t("flex flex-none items-center justify-center rounded"),
+				width: box(), height: box(),
+				cursor: p.disabled ? "default" : "pointer",
+				opacity: p.disabled ? 0.3 : 1,
+				hover: p.disabled ? {} : { backgroundColor: tok("accent") },
+			}}
+		>
+			<Icon name={p.icon} size={p.size ?? 14} color={p.color ?? tok("muted-foreground")} />
+		</div>
 	);
 }
 
@@ -96,17 +110,44 @@ export function CountBadge(p: { n: number }): JSX.Element {
 }
 
 /** A collapsible section: 36 px header (chevron, icon, UPPERCASE title, count, right-aligned actions) over the body. */
-export function Section(p: { id: string; title: string; icon: string; count?: number; actions?: JSX.Element; children: JSX.Element; first?: boolean; ref?: (el: unknown) => void }): JSX.Element {
+/** One item of the pane's virtual list: a section (or a piece of the Info section) and the section it belongs to (tab row, scroll-to). */
+export interface Entry { id: string; section: string; render: () => JSX.Element }
+
+type HeadProps = { id: string; title: string; icon: string; count?: number; actions?: JSX.Element; first?: boolean };
+
+/** The section frame's top: border-t (not on the first section) and the clickable 36 px header row. */
+export function SectionHead(p: HeadProps): JSX.Element {
 	return (
-		<div ref={p.ref as never} style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first ? 0 : 1, borderColor: tok("border-soft") }}>
-			<div style={{ ...t("flex h-9 flex-none items-center gap-1.5 px-5"), cursor: "pointer", hover: { backgroundColor: withAlpha(tok("foreground"), 0.03) } }} onClick={() => setCollapsed(p.id, !isCollapsed(p.id))}>
-				<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={tok("muted-foreground")} />
-				<Icon name={p.icon} size={14} color={tok("muted-foreground")} />
-				<text style={{ ...tx("text-[11px] font-semibold text-muted-foreground"), whiteSpace: "nowrap" }}>{p.title.toUpperCase()}</text>
-				<Show when={(p.count ?? 0) > 0}><CountBadge n={p.count!} /></Show>
-				<div style={{ flexGrow: 1 }} />
-				<div style={{ ...t("flex items-center gap-0.5") }} onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}>{p.actions}</div>
-			</div>
+		<div style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first ? 0 : 1, borderColor: tok("border-soft") }}>
+			<HeadRow {...p} />
+		</div>
+	);
+}
+
+function HeadRow(p: HeadProps): JSX.Element {
+	return (
+		<div style={{ ...t("flex h-9 flex-none items-center gap-1.5 px-5"), cursor: "pointer", hover: { backgroundColor: withAlpha(tok("foreground"), 0.03) } }} onClick={() => setCollapsed(p.id, !isCollapsed(p.id))}>
+			<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={tok("muted-foreground")} />
+			<Icon name={p.icon} size={14} color={tok("muted-foreground")} />
+			<text style={{ ...tx("text-[11px] font-semibold text-muted-foreground"), whiteSpace: "nowrap" }}>{p.title.toUpperCase()}</text>
+			<Show when={(p.count ?? 0) > 0}><CountBadge n={p.count!} /></Show>
+			<div style={{ flexGrow: 1 }} />
+			<div style={{ ...t("flex items-center gap-0.5") }} onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}>{p.actions}</div>
+		</div>
+	);
+}
+
+/** One block of a virtualised section's body: the body's `px-5` plus its `pt-0.5` (first block) / `pb-3.5` (last block). */
+export function Block(p: { first?: boolean; last?: boolean; children: JSX.Element }): JSX.Element {
+	return (
+		<div style={{ ...t("flex flex-col w-full flex-none px-5"), paddingTop: p.first ? 2 : 0, paddingBottom: p.last ? 14 : 0 }}>{p.children}</div>
+	);
+}
+
+export function Section(p: HeadProps & { children: JSX.Element }): JSX.Element {
+	return (
+		<div style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first ? 0 : 1, borderColor: tok("border-soft") }}>
+			<HeadRow {...p} />
 			<Show when={!isCollapsed(p.id)}>
 				<div style={{ ...t("flex flex-col w-full pt-0.5 pb-3.5 px-5") }}>{p.children}</div>
 			</Show>
@@ -131,11 +172,12 @@ const [labelW, setLabelW] = createSignal(100);
 export { labelW, setLabelW };
 
 export function Row(p: { label: string; icon?: string; children: JSX.Element; id?: string }): JSX.Element {
+	const tight = () => p.label.length * 6.6 > labelW() - (p.icon ? 20 : 0);
 	return (
 		<div style={{ ...t("flex items-start gap-x-3 py-[2px] w-full"), }}>
 			<div style={{ width: labelW(), flexShrink: 0, ...t("flex items-center gap-1.5"), paddingTop: 5 }}>
 				<Show when={p.icon}><Icon name={p.icon!} size={14} color={tok("muted-foreground")} /></Show>
-				<text style={{ ...tx("text-xs text-muted-foreground"), ...TRUNC }}>{p.label}</text>
+				<text style={{ ...tx("text-xs text-muted-foreground"), ...(tight() ? TRUNC : { whiteSpace: "nowrap" }) }}>{p.label}</text>
 			</div>
 			<div style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, flexBasis: 0 }}>{p.children}</div>
 		</div>
@@ -208,7 +250,7 @@ export function Field(p: {
 						...p.rootStyle,
 					}}
 				>
-					<text
+					<Show when={p.value || p.placeholder}><text
 						style={{
 							...tx(p.cls ?? "text-[13px] leading-[18px]"),
 							...(p.value ? {} : { color: withAlpha(tok("muted-foreground"), 0.7) }),
@@ -216,8 +258,8 @@ export function Field(p: {
 							...(p.nowrap ? TRUNC : {}),
 						}}
 					>
-						{p.value || p.placeholder || " "}
-					</text>
+						{p.value || p.placeholder}
+					</text></Show>
 					{p.end}
 				</div>
 			}

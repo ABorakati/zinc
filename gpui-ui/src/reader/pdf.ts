@@ -1,4 +1,4 @@
-// bun:ffi bindings for native/pdf (zn_pdf.dll: hayro rasterizer + text layer). See native/pdf/src/lib.rs for the ABI.
+// bun:ffi bindings for native/pdf (zn_pdf.dll: PDFium rasteriser (hayro as the fallback) + hayro text layer / links / outline). See native/pdf/src/lib.rs for the ABI.
 //
 // Rendering is asynchronous on the Rust side (a small pool of worker threads per document over one priority queue); a job is
 // polled (one shared 1-2 ms timer for all of them) so the JS thread (and with it GPUIX's event loop) is never blocked by a
@@ -39,6 +39,8 @@ function open() {
 		zpdf_render3: { args: [P, I32, F32, I32, U32, U32, U32, U32, U32, U32, U32, F32], returns: P },
 		zpdf_job_prio: { args: [P, F32], returns: FFIType.void },
 		zpdf_pool_size: { args: [P], returns: I32 },
+		zpdf_backend: { args: [P], returns: I32 },
+		zpdf_pdfium_status: { args: [], returns: cstring },
 		zpdf_outline_begin: { args: [P], returns: P },
 		zpdf_links_begin: { args: [P, I32], returns: P },
 		zpdf_render_begin: { args: [P, I32, F32], returns: P },
@@ -63,6 +65,8 @@ function open() {
 const sym = () => (lib ??= open()).symbols;
 
 export const nativeVersion = (): string => String(sym().zpdf_version());
+/** Why PDFium is not in use (empty when it is): pdfium.dll missing / unloadable, or ZN_PDF_BACKEND=hayro. */
+export const pdfiumStatus = (): string => String(sym().zpdf_pdfium_status());
 const lastError = (): string => String(sym().zpdf_last_error());
 
 /** One word of a page's text layer; x/y/w/h are fractions (0..1) of the page, origin top-left; l = line index. */
@@ -196,6 +200,9 @@ export class PdfDoc {
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
 		return this.task(job, page);
 	}
+
+	/** Which rasteriser draws this document: PDFium (pdfium.dll next to zn_pdf.dll) or hayro (the fallback). */
+	backend(): "pdfium" | "hayro" { return sym().zpdf_backend(this.h() as never) === 1 ? "pdfium" : "hayro"; }
 
 	/** Worker threads this document renders with. */
 	poolSize(): number { return sym().zpdf_pool_size(this.h() as never); }

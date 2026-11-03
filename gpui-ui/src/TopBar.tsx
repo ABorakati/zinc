@@ -2,7 +2,7 @@
 // Class strings are the web UI's, resolved through tw() / textStyle().
 import { createSignal, For, Show } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
-import { isReaderTab, type Mode, type ReaderTab, type Style } from "./contracts";
+import { isDocTab, type Mode, type ReaderTab, type Style, type WebTab } from "./contracts";
 import { Icon } from "./icons";
 import { closeSettings, leftOpen, openSettings, rightOpen, setLeftOpen, setRightOpen, SETTINGS_TAB, settingsOpen } from "./shell/layout";
 import { refreshLibraryLists } from "./sync/state";
@@ -55,7 +55,7 @@ function LibraryTabChip(p: { active: boolean; onClick: () => void }) {
 }
 
 /** A reader tab: file-text icon, title (truncated at max-w-56 = 224px incl. padding), close button (shown on hover / when active). */
-function ReaderTabChip(p: { tab: ReaderTab; active: boolean }) {
+function ReaderTabChip(p: { tab: ReaderTab | WebTab; active: boolean }) {
 	const [hover, setHover] = createSignal(false);
 	const [overClose, setOverClose] = createSignal(false);
 	const fg = () => tok(p.active || hover() ? "foreground" : "muted-foreground");
@@ -73,7 +73,7 @@ function ReaderTabChip(p: { tab: ReaderTab; active: boolean }) {
 				onClick={(e: EventPayload) => (e.button === 1 ? store.closeTab(p.tab.id) : store.setActiveTab(p.tab.id))}
 				style={{ ...tw("flex h-full min-w-0 flex-1 items-center gap-1.5 pl-3 pr-1 cursor-pointer", mode()) }}
 			>
-				<Icon name="file-text" size={14} color={fg()} style={{ flexShrink: 0 }} />
+				<Icon name={p.tab.kind === "web" ? (/epub/i.test(p.tab.contentType) ? "book-open" : "globe") : "file-text"} size={14} color={fg()} style={{ flexShrink: 0 }} />
 				<text style={{ ...textStyle(`min-w-0 truncate text-[13px] ${p.active ? "font-medium" : ""}`, mode()), color: fg(), flexShrink: 1 }}>{p.tab.title || "Reader"}</text>
 			</div>
 			<div
@@ -130,7 +130,7 @@ export function TopBar() {
 	const t = (cls: string): Style => tw(cls, mode());
 	const tx = (cls: string): Style => textStyle(cls, mode());
 	const onLibrary = () => store.activeTab() === "library";
-	const readers = () => store.tabs().filter(isReaderTab);
+	const readers = () => store.tabs().filter(isDocTab);
 	return (
 		<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }}>
 			{/* the panel toggles belong to the library layout (disabled on a reader tab, as the web UI) */}

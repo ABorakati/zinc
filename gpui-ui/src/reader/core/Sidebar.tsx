@@ -9,6 +9,7 @@ import type { Mode, Style } from "../../contracts";
 import { Icon } from "../../icons";
 import { textStyle, tokens, tw, withAlpha } from "../../theme";
 import type { Look, OutlineEntry, PdfDoc } from "../pdf";
+import { hiddenUntil, type ImgNode, whenMounted } from "./pixels";
 import type { Scheduler } from "./scheduler";
 
 export const THUMB_W = 116;
@@ -73,12 +74,13 @@ export interface ThumbsProps {
 	onMenu?(page: number, x: number, y: number): void;
 }
 
-type ImgNode = { mounted: boolean; setImagePixels(w: number, h: number, b: Uint8Array, o?: { format?: "rgba" | "bgra" }): void };
-
 function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }): JSX.Element {
 	const tok = (n: string) => tokens[p.mode()][n] ?? "#888";
 	let img: ImgNode | undefined;
 	let alive = true;
+	// the <img> is created hidden and shown by the step that gives it pixels (never GPUIX's "img: no src" box); the previous
+	// thumbnail stays until a re-render (rotation, appearance) has produced the new one
+	const [ready, setReady] = createSignal(false);
 	let handle: { cancel(): void } | undefined;
 	let task: { cancel(): void } | undefined;
 	onCleanup(() => { alive = false; handle?.cancel(); task?.cancel(); });
@@ -103,9 +105,9 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }):
 				const r = await t.promise;
 				task = undefined;
 				if (!r) return;
-				for (let k = 0; k < 40 && alive && !(img && img.mounted); k++) await Bun.sleep(8);
-				if (alive && img?.mounted) img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" });
-				r.release();
+				try {
+					if (await whenMounted(() => img, () => alive) && img) { img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" }); setReady(true); }
+				} finally { r.release(); }
 			},
 		});
 	}));
@@ -124,7 +126,7 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }):
 				}}
 			>
 				<div style={{ position: "relative", width: p.box()[0], height: p.box()[1], backgroundColor: "#ffffff", borderWidth: current() ? 2 : 1, borderColor: current() ? tok("primary") : "rgba(0,0,0,0.12)" }}>
-					<img ref={(el) => { img = el as never; }} objectFit="fill" style={{ position: "absolute", left: 0, top: 0, width: p.box()[0], height: p.box()[1] }} />
+					<img ref={(el) => { img = el as never; }} objectFit="fill" style={{ position: "absolute", left: 0, top: 0, width: p.box()[0], height: p.box()[1], ...hiddenUntil(ready()) }} />
 				</div>
 				<text style={{ ...textStyle("text-[11px] text-muted-foreground", p.mode()), whiteSpace: "nowrap" }}>{String(p.i + 1)}</text>
 			</div>

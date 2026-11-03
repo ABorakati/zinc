@@ -52,6 +52,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 mod nav;
+mod pdfium;
 
 use hayro::hayro_interpret::font::{Glyph, GlyphRun};
 use hayro::hayro_interpret::hayro_cmap::BfString;
@@ -92,7 +93,7 @@ pub extern "C" fn zpdf_last_error() -> *const c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zpdf_version() -> *const c_char {
-    c"zn_pdf 0.3.0 (hayro 0.8)".as_ptr()
+    c"zn_pdf 0.4.0 (pdfium 8125 + hayro 0.8)".as_ptr()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -109,6 +110,7 @@ pub struct Job {
     width: AtomicU32,
     height: AtomicU32,
     micros: AtomicU64,
+    created: Instant,
     data: OnceLock<Vec<u8>>,
     done: (Mutex<bool>, Condvar),
 }
@@ -122,6 +124,7 @@ impl Job {
             width: AtomicU32::new(0),
             height: AtomicU32::new(0),
             micros: AtomicU64::new(0),
+            created: Instant::now(),
             data: OnceLock::new(),
             done: (Mutex::new(false), Condvar::new()),
         })
@@ -187,12 +190,66 @@ struct Shared {
     quit: AtomicBool,
     /// bumped by `zpdf_clear_cache`: every worker rebuilds its `RenderCache` when it sees a newer value
     cache_gen: AtomicU64,
+    /// last render time (ms) of each page per rasteriser `[pdfium, hayro]`, 0 = not measured: which engine suits a page is learned
+    perf: Mutex<HashMap<usize, [f32; 2]>>,
+    /// decoded length of each page's content stream, measured on first use (a 30 MB stream is a dense vector figure)
+    clen: Mutex<HashMap<usize, usize>>,
 }
+
+impl Shared {
+    /// PDFium is the default. A page that took it long (a dense vector figure: path count, not pixels, is what costs) is tried with
+    /// hayro, and whichever was quicker is used from then on.
+    fn prefer_pdfium(&self, page: usize, content_len: impl FnOnce() -> usize) -> bool {
+        if force_pdfium() {
+            return true;
+        }
+        let len = *self.clen.lock().unwrap().entry(page).or_insert_with(content_len);
+        if len > HEAVY_CONTENT {
+            return false;
+        }
+        match self.perf.lock().unwrap().get(&page) {
+            Some(&[p, h]) if p > 0.0 && h > 0.0 => p <= h,
+            Some(&[p, h]) if p > SLOW_PDFIUM_MS && h == 0.0 => false,
+            _ => true,
+        }
+    }
+    fn note(&self, page: usize, engine: usize, ms: f32) {
+        self.perf.lock().unwrap().entry(page).or_insert([0.0; 2])[engine] = ms.max(0.01);
+    }
+}
+
+/// `ZN_PDF_BACKEND=pdfium`: no per-page engine choice, PDFium draws everything it can (A/B benchmarks).
+fn force_pdfium() -> bool {
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| std::env::var("ZN_PDF_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("pdfium")))
+}
+
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+/// `ZN_PDF_TRACE=1`: one line per render job on stderr (when, which engine, how long it ran and waited)
+fn trace() -> bool {
+    static T: OnceLock<bool> = OnceLock::new();
+    *T.get_or_init(|| {
+        EPOCH.get_or_init(Instant::now);
+        std::env::var("ZN_PDF_TRACE").is_ok_and(|v| v == "1")
+    })
+}
+
+/// A page whose decoded content stream is longer than this (bytes) is drawn by hayro: PDFium needed 0.9-1.1 s for a 30 MB scatter-plot
+/// page where hayro needed 0.36 s (ordinary pages: 5-60 KB, a figure-rich one 0.4 MB).
+const HEAVY_CONTENT: usize = 2 << 20;
+
+/// How long a render the screen is waiting for waits for PDFium's lock before hayro draws the page instead.
+const URGENT_WAIT: Duration = Duration::from_millis(60);
+
+/// A PDFium render slower than this makes the page a candidate for hayro.
+const SLOW_PDFIUM_MS: f32 = 150.0;
 
 pub struct Doc {
     shared: Arc<Shared>,
     joins: Vec<JoinHandle<()>>,
     dims: Vec<(f32, f32)>,
+    /// PDFium renders this document when set (else hayro)
+    pdfium: Option<Arc<pdfium::PdfiumDoc>>,
 }
 
 /// Where a document's bytes come from.
@@ -203,15 +260,19 @@ enum Source {
 
 /// Worker threads per document: `ZN_PDF_THREADS`, else 2 (a third one cost ~20-30 MB of per-thread caches and bought little). Each has its own parse of the (shared)
 /// bytes and its own glyph / font / image caches, because `RenderCache` is `!Send`.
-fn pool_size() -> usize {
+fn pool_size(pdfium: bool) -> usize {
     if let Some(n) = std::env::var("ZN_PDF_THREADS").ok().and_then(|v| v.parse::<usize>().ok()) {
         return n.clamp(1, 16);
     }
-    2
+    // With PDFium (one job at a time) the others are hayro workers for what PDFium is too busy or too slow for, and for the text layer,
+    // links and outline; they hold no render caches until they draw something.
+    if pdfium { 3 } else { 2 }
 }
 
-/// Rendering is background work: keep the UI and JS threads ahead of it when the machine is busy.
-fn lower_thread_priority() {
+/// Margin / background work yields to the UI and JS threads when the machine is busy; a job the screen is waiting for (the reader's
+/// priority band 0: tiles that touch the viewport, and the previews of visible pages) runs at normal priority, else a loaded machine
+/// (a build running next to the app) starves the render threads for hundreds of ms while the page they draw is already on screen.
+fn set_thread_priority(urgent: bool) {
     #[cfg(windows)]
     unsafe {
         unsafe extern "system" {
@@ -219,7 +280,8 @@ fn lower_thread_priority() {
             fn SetThreadPriority(thread: isize, priority: i32) -> i32;
         }
         const THREAD_PRIORITY_BELOW_NORMAL: i32 = -1;
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+        const THREAD_PRIORITY_NORMAL: i32 = 0;
+        SetThreadPriority(GetCurrentThread(), if urgent { THREAD_PRIORITY_NORMAL } else { THREAD_PRIORITY_BELOW_NORMAL });
     }
 }
 
@@ -261,8 +323,8 @@ fn wait_next(shared: &Shared, cgen: u64) -> Wake {
     }
 }
 
-fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>) {
-    lower_thread_priority();
+fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, pdfium: Option<Arc<pdfium::PdfiumDoc>>, ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>) {
+    set_thread_priority(false);
     let pdf = match Pdf::new(bytes) {
         Ok(p) => p,
         Err(e) => {
@@ -273,8 +335,14 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, ready: Option<
         }
     };
     let pages = pdf.pages();
+    // PDFium and hayro must agree on the page count, else PDFium is not used for this document. Its page sizes are the ones that
+    // count: it draws the pages (the text layer and links are fractions of the page, so they do not care).
+    let pdfium = pdfium.filter(|p| p.dims.len() == pages.len());
     if let Some(r) = ready {
-        let dims: Vec<(f32, f32)> = pages.iter().map(|p| p.render_dimensions()).collect();
+        let dims: Vec<(f32, f32)> = match &pdfium {
+            Some(p) => p.dims.clone(),
+            None => pages.iter().map(|p| p.render_dimensions()).collect(),
+        };
         let _ = r.send(Ok(dims));
     }
 
@@ -289,6 +357,9 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, ready: Option<
             Wake::Quit => break,
             Wake::Clear => {
                 cache = RenderCache::new();
+                if let Some(p) = &pdfium {
+                    p.clear();
+                }
                 cgen = shared.cache_gen.load(Ordering::Acquire);
                 continue;
             }
@@ -296,11 +367,41 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, ready: Option<
         };
         match cmd {
             Cmd::Render(job, req) => {
+                set_thread_priority(job.prio() < 5.0e5);
                 let t0 = Instant::now();
+                let mut engine = 1;
+                // the ms the engine that drew the page needed (waiting for PDFium's lock is not part of it)
+                let mut draw_ms = 0.0f32;
                 let out = catch_unwind(AssertUnwindSafe(|| {
+                    let clen = || pages.get(req.page).and_then(|p| p.page_stream()).map_or(0, |s| s.len());
+                    if let Some(p) = pdfium.as_ref().filter(|_| shared.prefer_pdfium(req.page, clen)) {
+                        // PDFium runs one job at a time: a job that finds it busy waits for it (a page takes it 5-30 ms, hayro 2-4x that),
+                        // the ones the screen is waiting for only so long, then hayro draws the page; thumbnails and the like wait as long as it takes.
+                        let wait = if job.prio() < 5.0e5 { Some(URGENT_WAIT) } else { None };
+                        if let Ok(Some((r, ms))) = render_pdfium(p, req.page, &req, wait) {
+                            engine = 0;
+                            draw_ms = ms;
+                            return Some(r);
+                        }
+                    }
                     let page = pages.get(req.page)?;
-                    Some(render_region(page, &cache, &settings, &render_settings, &req))
+                    let h0 = Instant::now();
+                    let r = render_region(page, &cache, &settings, &render_settings, &req);
+                    draw_ms = h0.elapsed().as_secs_f32() * 1000.0;
+                    Some(r)
                 }));
+                if pdfium.is_some() {
+                    shared.note(req.page, engine, draw_ms);
+                }
+                if trace() {
+                    let (w0, h0) = (req.rw, req.rh);
+                    let clen = pages.get(req.page).and_then(|p| p.page_stream()).map_or(0, |s| s.len());
+                    eprintln!(
+                        "[zpdf] t={:.0} page={} {}x{}+{}+{} scale={:.2} {} {:.1}ms prio={:.0} waited={:.1}ms content={}B",
+                        EPOCH.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0, req.page, w0, h0, req.rx, req.ry, req.scale,
+                        if engine == 0 { "pdfium" } else { "hayro" }, t0.elapsed().as_secs_f32() * 1000.0, job.prio(), t0.duration_since(job.created).as_secs_f32() * 1000.0, clen
+                    );
+                }
                 match out {
                     Ok(Some((w, h, buf))) => {
                         job.width.store(w, Ordering::Relaxed);
@@ -360,15 +461,18 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, ready: Option<
     // `cache` and `nav` borrow `pdf`; they are dropped first (reverse declaration order), then `pdf`.
 }
 
-// Rasterize (a region of) a page. Returns (w, h, BGRA bytes).
-fn render_region<'a>(
-    page: &'a hayro::hayro_syntax::page::Page<'a>,
-    cache: &RenderCache<'a>,
-    settings: &InterpreterSettings,
-    rs: &RenderSettings,
-    req: &RenderReq,
-) -> (u32, u32, Vec<u8>) {
-    let (pw, ph) = page.render_dimensions();
+/// Device-pixel geometry of a render request: the full bitmap is `fw` x `fh`, the part to produce is `(rx, ry, rw, rh)` of it.
+struct Geo {
+    fw: u32,
+    fh: u32,
+    rx: u32,
+    ry: u32,
+    rw: u32,
+    rh: u32,
+}
+
+/// `pw` x `ph` is the page in points (page rotation applied); the request's extra rotation is applied here.
+fn geometry(pw: f32, ph: f32, req: &RenderReq) -> Geo {
     let rot = req.rot % 360;
     let (bw, bh) = if rot % 180 == 0 { (pw, ph) } else { (ph, pw) };
     let scale = clamp_scale(bw, bh, req.scale);
@@ -381,6 +485,38 @@ fn render_region<'a>(
         let ry = req.ry.min(fh - 1);
         (rx, ry, req.rw.min(fw - rx), req.rh.min(fh - ry))
     };
+    Geo { fw, fh, rx, ry, rw, rh }
+}
+
+/// Rasterize (a region of) a page with PDFium. Returns (w, h, BGRA bytes), None when PDFium cannot do this page.
+/// `Err(())`: PDFium is busy and `wait` is false.
+fn render_pdfium(doc: &pdfium::PdfiumDoc, page: usize, req: &RenderReq, wait: Option<Duration>) -> Result<Option<((u32, u32, Vec<u8>), f32)>, ()> {
+    let Some(&(pw, ph)) = doc.dims.get(page) else { return Ok(None) };
+    let g = geometry(pw, ph, req);
+    let Some((mut buf, ms)) = doc.render(wait, page, g.fw, g.fh, req.rot / 90, g.rx, g.ry, g.rw, g.rh)? else { return Ok(None) };
+    if req.look != 0 {
+        // the recolouring below reads RGBA and writes BGRA: hand it RGBA
+        for px in buf.chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+        to_bgra(&mut buf, req.look, req.c0, req.c1);
+    }
+    Ok(Some(((g.rw, g.rh, buf), ms)))
+}
+
+// Rasterize (a region of) a page with hayro. Returns (w, h, BGRA bytes).
+fn render_region<'a>(
+    page: &'a hayro::hayro_syntax::page::Page<'a>,
+    cache: &RenderCache<'a>,
+    settings: &InterpreterSettings,
+    rs: &RenderSettings,
+    req: &RenderReq,
+) -> (u32, u32, Vec<u8>) {
+    let (pw, ph) = page.render_dimensions();
+    let rot = req.rot % 360;
+    let g = geometry(pw, ph, req);
+    let scale = clamp_scale(if rot % 180 == 0 { pw } else { ph }, if rot % 180 == 0 { ph } else { pw }, req.scale);
+    let (rx, ry, rw, rh) = (g.rx, g.ry, g.rw, g.rh);
     let rotm = match rot {
         90 => Affine::new([0.0, 1.0, -1.0, 0.0, ph as f64, 0.0]),
         180 => Affine::new([-1.0, 0.0, 0.0, -1.0, pw as f64, ph as f64]),
@@ -497,11 +633,18 @@ fn spawn_doc(src: Source) -> *mut Doc {
         Source::Bytes(b) => (b, "<memory>".to_string()),
     };
     let bytes = Arc::new(bytes);
-    let shared = Arc::new(Shared { queue: Mutex::new(Vec::new()), cv: Condvar::new(), quit: AtomicBool::new(false), cache_gen: AtomicU64::new(0) });
+    let shared = Arc::new(Shared { queue: Mutex::new(Vec::new()), cv: Condvar::new(), quit: AtomicBool::new(false), cache_gen: AtomicU64::new(0), perf: Mutex::new(HashMap::new()), clen: Mutex::new(HashMap::new()) });
     let (ready_tx, ready_rx) = mpsc::channel();
+    let pdfium = match pdfium::PdfiumDoc::open(bytes.clone()) {
+        Ok(d) => Some(Arc::new(d)),
+        Err(e) => {
+            set_error(e); // kept for diagnostics: the document renders with hayro
+            None
+        }
+    };
     let spawn = |ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>| {
-        let (b, w, sh) = (bytes.clone(), what.clone(), shared.clone());
-        std::thread::Builder::new().name("zn-pdf".into()).stack_size(32 * 1024 * 1024).spawn(move || worker(b, w, sh, ready))
+        let (b, w, sh, pd) = (bytes.clone(), what.clone(), shared.clone(), pdfium.clone());
+        std::thread::Builder::new().name("zn-pdf".into()).stack_size(32 * 1024 * 1024).spawn(move || worker(b, w, sh, pd, ready))
     };
     let first = match spawn(Some(ready_tx)) {
         Ok(j) => j,
@@ -512,14 +655,16 @@ fn spawn_doc(src: Source) -> *mut Doc {
     };
     match ready_rx.recv() {
         Ok(Ok(dims)) => {
+            // PDFium and hayro must agree on the page count, else PDFium is not used for this document (the worker decided already)
+            let pdfium_ok = pdfium.clone().filter(|p| p.dims.len() == dims.len());
             // the first worker parsed the file: the others (each parses on its own thread) join the pool without anyone waiting for them
             let mut joins = vec![first];
-            for _ in 1..pool_size() {
+            for _ in 1..pool_size(pdfium_ok.is_some()) {
                 if let Ok(j) = spawn(None) {
                     joins.push(j);
                 }
             }
-            Box::into_raw(Box::new(Doc { shared, joins, dims }))
+            Box::into_raw(Box::new(Doc { shared, joins, dims, pdfium: pdfium_ok }))
         }
         Ok(Err(e)) => {
             set_error(e);
@@ -539,6 +684,22 @@ fn spawn_doc(src: Source) -> *mut Doc {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_page_count(doc: *const Doc) -> i32 {
     unsafe { doc.as_ref() }.map_or(-1, |d| d.dims.len() as i32)
+}
+
+/// 1 when PDFium renders this document, 0 when hayro does (pdfium.dll could not be loaded or opened the document differently).
+///
+/// # Safety
+/// `doc` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_backend(doc: *const Doc) -> i32 {
+    unsafe { doc.as_ref() }.map_or(-1, |d| d.pdfium.is_some() as i32)
+}
+
+/// Why PDFium is not in use ("" when it is).
+#[unsafe(no_mangle)]
+pub extern "C" fn zpdf_pdfium_status() -> *const c_char {
+    static MSG: OnceLock<CString> = OnceLock::new();
+    MSG.get_or_init(|| CString::new(pdfium::unavailable().unwrap_or("")).unwrap_or_default()).as_ptr()
 }
 
 /// Number of worker threads the document was given.

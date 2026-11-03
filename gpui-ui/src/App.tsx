@@ -3,7 +3,7 @@
 // GutterHandle). Panel visibility and column sizes persist (shell/layout.ts -> ui-state.json). <OverlayHost/> (menus, dialogs,
 // popovers, toasts) is mounted once at the root, followed by the overlays features registered.
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show, type JSX } from "solid-js";
-import { isReaderTab, type Mode, type ReaderTab, type Style } from "./contracts";
+import { isDocTab, isWebTab, type Mode, type ReaderTab, type Style, type WebTab } from "./contracts";
 import { Icon } from "./icons";
 import { overlays } from "./registry";
 import { Sidebar } from "./Sidebar";
@@ -18,6 +18,7 @@ import { store } from "./store";
 import { textStyle, tokens, tw } from "./theme";
 import { SortBar, Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
+import { WebTabView } from "./webview/WebTabView";
 import { OverlayHost, Resizable } from "./ui";
 
 const mode = (): Mode => store.mode();
@@ -45,7 +46,7 @@ function ItemPaneSlot(): JSX.Element {
  * A reader tab's content. Contract with the reader: `<Reader attachmentKey title active />`, filling its parent; it resolves the
  * PDF from the attachment key (via the core) and, when `active` is false, stays mounted but frees its page bitmaps.
  */
-function ReaderTabView(p: { tab: ReaderTab }): JSX.Element {
+function ReaderTabView(p: { tab: ReaderTab | WebTab }): JSX.Element {
 	const active = () => store.activeTab() === p.tab.id;
 	return (
 		<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["canvas"], ...(active() ? {} : HIDDEN) }}>
@@ -55,7 +56,7 @@ function ReaderTabView(p: { tab: ReaderTab }): JSX.Element {
 					<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
 				</div>
 			)}>
-				<Reader attachmentKey={p.tab.id} title={p.tab.title} active={active()} />
+				<Show when={isWebTab(p.tab)} fallback={<Reader attachmentKey={p.tab.id} title={p.tab.title} active={active()} />}><WebTabView tab={p.tab as WebTab} /></Show>
 			</ErrorBoundary>
 		</div>
 	);
@@ -128,7 +129,7 @@ export function App() {
 	// window title: the reader's document, Settings, or the app name
 	createEffect(() => {
 		const id = store.activeTab();
-		const reader = store.tabs().filter(isReaderTab).find((x) => x.id === id);
+		const reader = store.tabs().filter(isDocTab).find((x) => x.id === id);
 		setWindowTitle(reader ? `${reader.title || "Reader"} - zotero-next` : id === SETTINGS_TAB ? "Settings - zotero-next" : "zotero-next");
 	});
 
@@ -141,7 +142,7 @@ export function App() {
 				<Show when={panelsKey()} keyed>{(k) => <LibraryPanels k={k} />}</Show>
 			</div>
 			{/* Reader tabs: full width below the top bar, one per open attachment, all kept mounted */}
-			<For each={store.tabs().filter(isReaderTab)}>{(tab) => <ReaderTabView tab={tab} />}</For>
+			<For each={store.tabs().filter(isDocTab)}>{(tab) => <ReaderTabView tab={tab} />}</For>
 			<Show when={settingsOpen()}><SettingsTabView /></Show>
 			{/* menus, dialogs, popovers, toasts; then the features' always-mounted overlays */}
 			<OverlayHost />

@@ -43,6 +43,9 @@ type Native = {
 	resetDebugFrameOverlayStats(): void;
 	getDebugFrameOverlayStats(): { currentMs?: number; p90Ms?: number; p99Ms?: number; maxMs?: number; frames: number; samples: number };
 	getPaintedText(): string[];
+	getWindowSize(): { width: number; height: number };
+	zoomWindow(): void;
+	activateWindow(): void;
 };
 const host = (globalThis as Record<symbol, { renderer?: Native }>)[Symbol.for("@gpuix/solid/render-host")];
 const R = host!.renderer!;
@@ -63,7 +66,59 @@ const R = host!.renderer!;
 	if (arg("lib")) sb.setLibraryOpen(arg("lib") === "1");
 	if (arg("tags")) sb.setTagsOpen(arg("tags") === "1");
 }
+// --win WxH: resize this process's own window (logical px; SetWindowPos on the top-level window owned by this pid, never another
+// window); --max 1 maximises it (zoomWindow). DPR is the display's (this machine: 200%), so 1920x1080 logical = 3840x2160 physical.
+if (arg("win") && process.platform === "win32") {
+	const [w, h] = arg("win")!.split("x").map(Number) as [number, number];
+	const { dlopen, FFIType, JSCallback } = await import("bun:ffi");
+	const u = dlopen("user32.dll", {
+		EnumWindows: { args: [FFIType.function, FFIType.i64], returns: FFIType.i32 },
+		GetWindowThreadProcessId: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
+		IsWindowVisible: { args: [FFIType.ptr], returns: FFIType.i32 },
+		SetWindowPos: { args: [FFIType.ptr, FFIType.ptr, FFIType.i32, FFIType.i32, FFIType.i32, FFIType.i32, FFIType.u32], returns: FFIType.i32 },
+		GetDpiForWindow: { args: [FFIType.ptr], returns: FFIType.u32 },
+	});
+	const pid = new Uint32Array(1);
+	let hwnd: bigint | null = null;
+	const cb = new JSCallback((h: bigint) => {
+		u.symbols.GetWindowThreadProcessId(h as never, pid);
+		if (pid[0] === process.pid && u.symbols.IsWindowVisible(h as never)) { hwnd = h; return 0; }
+		return 1;
+	}, { args: [FFIType.ptr], returns: FFIType.i32 });
+	u.symbols.EnumWindows(cb.ptr as never, 0 as never);
+	if (hwnd) {
+		const dpi = u.symbols.GetDpiForWindow(hwnd as never) || 96;
+		const s = dpi / 96;
+		u.symbols.SetWindowPos(hwnd as never, 0 as never, 0, 0, Math.round(w * s), Math.round(h * s), 0x0002 | 0x0004 | 0x0010); // NOMOVE | NOZORDER | NOACTIVATE
+		console.log(`window ${w}x${h} logical at dpi ${dpi} (x${s})`);
+	} else console.error("--win: no window found for this process");
+}
+if (arg("max") === "1") R.zoomWindow();
 await sleep(1500);
+console.log("window", JSON.stringify(R.getWindowSize()));
+
+// --select N: select item N (fills the item pane)
+if (arg("select")) {
+	const n = Number(arg("select"));
+	for (let i = 0; i < 100 && !store.itemAt(n); i++) await sleep(50);
+	const it = store.itemAt(n);
+	if (it) store.selectOnly(it.key, n);
+	await sleep(1500);
+}
+/** The automation tree as JSON; the native side answers on its next drawn frame, so retry (and wake the window) when it times out. */
+const treeJson = async (): Promise<string> => {
+	for (let k = 0; ; k++) {
+		try { return R.getAutomationTree(); } catch (e) { if (k >= 6) throw e; R.activateWindow(); await sleep(500); }
+	}
+};
+type TN = { type: string; children?: TN[] };
+const countNodes = (n: TN, acc: Record<string, number> = {}) => { acc[n.type] = (acc[n.type] ?? 0) + 1; for (const c of n.children ?? []) countNodes(c, acc); return acc; };
+const nodeReport = async (label: string) => {
+	const a = countNodes(JSON.parse(await treeJson()) as TN);
+	console.log(`nodes[${label}] total=${Object.values(a).reduce((x, y) => x + y, 0)} ${JSON.stringify(a)}`);
+};
+if (arg("nodes") === "1") await nodeReport("window");
+if (arg("dump")) await Bun.write(arg("dump")!, await treeJson());
 
 // count + time the mutation batches the Solid commit sends to the native tree
 let batches = 0, ops = 0, batchMs = 0, maxBatchMs = 0;
@@ -105,13 +160,13 @@ undefined
 type Box = { x: number; y: number; width: number; height: number };
 type TreeNode = { id: number; testId?: string; bounds?: Box; children?: TreeNode[] };
 /** The list element and the painted bounds of its nearest ancestor (the virtual-list itself reports none). */
-function findList(testId: string): { id: number; b: Box } | null {
+async function findList(testId: string): Promise<{ id: number; b: Box } | null> {
 	const walk = (n: TreeNode, anc: Box | undefined): { id: number; b: Box } | null => {
 		if (n.testId === testId) return anc ? { id: n.id, b: anc } : null;
 		for (const c of n.children ?? []) { const f = walk(c, n.bounds ?? anc); if (f) return f; }
 		return null;
 	};
-	return walk(JSON.parse(R.getAutomationTree()) as TreeNode, undefined);
+	return walk(JSON.parse(await treeJson()) as TreeNode, undefined);
 }
 
 type Result = Record<string, number | string>;
@@ -181,7 +236,7 @@ async function runProfile(view: string, profile: string, listId: number, cx: num
 	const row: Result = {
 		view, profile, steps, wallSec: r2(wall / 1000),
 		framesDrawn, fps: r2(framesDrawn / (wall / 1000)),
-		drawP50: r2(q(drawSamples, 0.5)), drawP95: r2(q(drawSamples, 0.95)), gapP50: r2(q(frameGaps, 0.5)), gapP95: r2(q(frameGaps, 0.95)),
+		drawP10: r2(q(drawSamples, 0.1)), drawP25: r2(q(drawSamples, 0.25)), drawP50: r2(q(drawSamples, 0.5)), drawP95: r2(q(drawSamples, 0.95)), drawP99s: r2(q(drawSamples, 0.99)), gapP99: r2(q(frameGaps, 0.99)), gapP50: r2(q(frameGaps, 0.5)), gapP95: r2(q(frameGaps, 0.95)),
 		slowFrames25: frameGaps.filter((x) => x > 25).length, slowFrames40: frameGaps.filter((x) => x > 40).length, drawCur: r2(ov.currentMs ?? 0), drawP90: r2(ov.p90Ms ?? 0), drawP99: r2(ov.p99Ms ?? 0), drawMax: r2(ov.maxMs ?? 0),
 		lagP50: r2(q(lag, 0.5)), lagP95: r2(q(lag, 0.95)), lagP99: r2(q(lag, 0.99)), lagMax: r2(Math.max(0, ...lag)),
 		lagOver16: lag.filter((x) => x > 16).length, lagOver33: lag.filter((x) => x > 33).length,
@@ -201,10 +256,11 @@ for (const view of VIEWS) {
 	store.setViewMode(view);
 	await sleep(1500);
 	const testId = view === "cards" ? "card-list" : "table-list";
-	const l = findList(testId);
+	const l = await findList(testId);
 	if (!l) { console.error(`no ${testId} in the tree`); continue; }
 	const b = l.b;
 	const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+	if (arg("nodes") === "1") await nodeReport(view);
 	console.log(`-- ${view}: list ${l.id} at ${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)}`);
 	for (const p of PROFILES) await runProfile(view, p, l.id, cx, cy);
 }

@@ -210,6 +210,7 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	out.cancelled = ctl.stats.cancelled;
 	out.avgRenderMs = r1(ctl.stats.totalRenderMs / Math.max(1, ctl.stats.renders));
 	out.lastUploadMs = r1(ctl.stats.lastUploadMs);
+	{ const st = ctl.stats, j = Math.max(1, st.jobs ?? 0); out.jobs = st.jobs ?? 0; out.avgQueueMs = r1((st.queueMs ?? 0) / j); out.avgMountMs = r1((st.mountWaitMs ?? 0) / j); out.avgUploadMs = r1((st.uploadMs ?? 0) / j); }
 	if (windowMode) out.gpu = await gpuMemory();
 	console.log("RESULT " + JSON.stringify(out));
 	process.exit(0);
@@ -235,14 +236,17 @@ async function latency(ctl: ReaderController, mode: string, pump: (ms: number) =
 	const speed = mode === "slow" ? Number(val("slow", "500")) : mode === "fast" ? Number(val("fast", "4000")) : 0;
 	type PS = { enter: number; first?: number; full?: number; sharp?: number; lastSoft: number; last: number; fullPre: boolean };
 	const ps = new Map<number, PS>();
-	let blankT = 0, softT = 0, visT = 0;
+	let blankT = 0, softT = 0, visT = 0, noSrcT = 0, noSrcTicks = 0, ticks = 0, noSrcMax = 0;
 	const seen0 = new Set(ctl.coverage().map((c) => c.page)); // visible when the run starts: not an "entry"
 	let tPrev = performance.now();
 	const t0 = tPrev;
 	const obs = () => {
 		const now = performance.now(), dt = now - tPrev;
 		tPrev = now;
+		let ns = 0;
+		ticks++;
 		for (const c of ctl.coverage()) {
+			ns += c.noSrc;
 			let s = ps.get(c.page);
 			if (!s) { s = { enter: now, lastSoft: now, last: now, fullPre: seen0.has(c.page) }; ps.set(c.page, s); }
 			s.last = now;
@@ -253,6 +257,7 @@ async function latency(ctl: ReaderController, mode: string, pump: (ms: number) =
 			if (s.sharp === undefined && c.sharp === 1) s.sharp = now - s.enter;
 			visT += c.vis * dt; blankT += c.vis * c.blank * dt; softT += c.vis * c.soft * dt;
 		}
+		if (ns > 0) { noSrcT += dt; noSrcTicks++; noSrcMax = Math.max(noSrcMax, ns); }
 	};
 	const a0 = ctl.debug() as { raw: number[] | null };
 	let moved = 0;
@@ -286,6 +291,7 @@ async function latency(ctl: ReaderController, mode: string, pump: (ms: number) =
 		first: stat(col((s) => s.first)), full: stat(col((s) => s.full)), sharp: stat(col((s) => s.sharp)),
 		neverFull: rows.filter(([, s]) => s.full === undefined).length, neverSharp: rows.filter(([, s]) => s.sharp === undefined).length,
 		blankPct: r1((100 * blankT) / Math.max(1, visT)), softPct: r1((100 * softT) / Math.max(1, visT)),
+		noSrcMs: Math.round(noSrcT), noSrcPct: r1((100 * noSrcTicks) / Math.max(1, ticks)), noSrcMax, backend: ctl.doc()!.backend(), previews: ctl.previews().made,
 	};
 }
 
@@ -317,7 +323,7 @@ async function memory(pdfs: string[], windowMode: boolean, scenarios = ["open", 
 	if (scenarios.some((x) => x.startsWith("lat-"))) {
 		console.log(`\nScroll latency (ms after a page's first visible pixel row), real window=${windowMode}, dpr=${dpr}`);
 		const f = (o: unknown) => { const x = o as { n: number; med?: number; p95?: number; max?: number }; return x.n ? `${x.med} / ${x.p95} / ${x.max} (n=${x.n})` : "-"; };
-		console.table(results.map((r) => ({ pdf: r.label, mode: r.mode, pages: r.pagesEntered, "first med/p95/max": f(r.first), "full med/p95/max": f(r.full), "sharp med/p95/max": f(r.sharp), neverFull: r.neverFull, neverSharp: r.neverSharp, "blank%": r.blankPct, "soft%": r.softPct, "delta priv": r.deltaPrivMB, "peak priv": r.peakPrivMB })));
+		console.table(results.map((r) => ({ pdf: r.label, mode: r.mode, pages: r.pagesEntered, "first med/p95/max": f(r.first), "full med/p95/max": f(r.full), "sharp med/p95/max": f(r.sharp), neverFull: r.neverFull, neverSharp: r.neverSharp, "blank%": r.blankPct, "soft%": r.softPct, "noSrc ms": r.noSrcMs, "noSrc ticks%": r.noSrcPct, be: r.backend, pv: r.previews, jobs: r.jobs, "render/queue/mount/upload ms": `${r.avgRenderMs}/${r.avgQueueMs}/${r.avgMountMs}/${r.avgUploadMs}`, "delta priv": r.deltaPrivMB, "peak priv": r.peakPrivMB })));
 		return results;
 	}
 	console.log(`\nProcess memory of the whole bun process (MB), mode=${windowMode ? "real window" : "headless test renderer"}, dpr=${dpr}. "empty" = the same window/test root before the reader is shown; delta = end - empty.`);

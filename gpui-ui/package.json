@@ -22,7 +22,8 @@
 		"solid-js": "1.9.18",
 		"tailwind-merge": "3.7.0",
 		"turndown": "7.2.4",
-		"turndown-plugin-gfm": "1.0.2"
+		"turndown-plugin-gfm": "1.0.2",
+		"webview-bun": "2.4.0"
 	},
 	"devDependencies": {
 		"@types/turndown": "5.0.6",

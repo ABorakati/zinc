@@ -16,6 +16,14 @@
 // cancelled. A single-column page of a moderate size is rasterized by ONE job and cut into its band tiles (hayro walks the whole
 // content stream for every job, so a page drawn as three tiles pays three interpretations: dense figures took ~300 ms each).
 //
+// NO "img: no src". An <img> without pixels paints as a dark box with that text, and a tile cannot get pixels before its host node
+// exists, so every tile (and the page preview) is created hidden (core/pixels.ts) and shown by the step that sets its pixels; until
+// then the page's own paper colour (and, once rendered, its low-resolution preview) shows through.
+//
+// PREVIEWS (core/preview.ts). Under the tiles, a page shows its whole-page low-resolution preview (a fifth of the sharp resolution,
+// kept in a cache that outlives the page component and fed for the pages AHEAD of the reader), so a tile that is still in the queue
+// leaves a blurry page and not a hole.
+//
 // A zoom or resize does not blank the page: the tiles of the old resolution stay, stretched to the new box, until the new
 // ones that cover the viewport are ready (the new ones are requested after a short debounce).
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
@@ -23,6 +31,8 @@ import type { Look, PdfDoc, RenderTask } from "../pdf";
 import type { NRect } from "../plugins";
 import { lookKey } from "./appearance";
 import type { Scheduler } from "./scheduler";
+import { HIDE_UNTIL_PIXELS, hiddenUntil, type ImgNode, whenMounted } from "./pixels";
+import type { Previews } from "./preview";
 import { rotRect } from "./text";
 
 export const MAX_TILE = 800; // device px per tile edge when a page needs several
@@ -41,7 +51,11 @@ export const PRIO_BACKGROUND = 4e6;
 export interface ViewRect { x0: number; y0: number; x1: number; y1: number }
 export interface LinkInfo { rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string } }
 
-export interface PageStats { renders: number; lastRenderMs: number; lastUploadMs: number; totalRenderMs: number; cancelled: number; tiles: number; peakTiles: number }
+export interface PageStats {
+	renders: number; lastRenderMs: number; lastUploadMs: number; totalRenderMs: number; cancelled: number; tiles: number; peakTiles: number;
+	/** per-job breakdown sums (ms): waiting in the native queue + the poll delay, waiting for the <img> host node, handing the pixels to GPUIX; and the job count */
+	jobs?: number; queueMs?: number; mountWaitMs?: number; uploadMs?: number;
+}
 
 /**
  * How far around the viewport (css px) tiles are rendered ahead of time. `up` / `down` are the margins above / below it (the one in
@@ -67,12 +81,60 @@ export interface PageEnv {
 	laidOut: Accessor<boolean>;
 	/** priority updaters of the live render jobs; the reader calls them all when the scroll position moved */
 	jobs: Set<() => void>;
+	/** whole-page low-resolution previews of this document (shown under the tiles) */
+	previews?: Previews;
+	/** recently rendered whole-page bitmaps (band tiles that appear later are cut out of them) */
+	bitmaps?: BitmapCache;
+}
+
+type Bitmap = NonNullable<Awaited<RenderTask["promise"]>>;
+interface BitmapEntry { key: string; page: number; r: Bitmap; uses: number; doomed: boolean }
+
+/**
+ * The most recently rendered whole-page bitmaps (native memory, BGRA, ~7.7 MB for a Letter page at DPR 2), kept so that a band tile that
+ * turns up AFTER the page was rendered (the reader scrolled on, or back) is cut out of it instead of costing another interpretation of
+ * the whole content stream (hayro and PDFium walk all of it for every job: a 30 MB scatter plot page takes 0.4-1 s EVERY time, a normal
+ * page 5-20 ms times the 3-4 bands of the page). GPUIX keeps its own copy of what it was given, so this is extra native memory: the
+ * budget bounds it (default 24 MB; ZN_BITMAP_MB). An entry that is being cut when it is evicted is freed afterwards.
+ */
+export class BitmapCache {
+	private map = new Map<string, BitmapEntry>();
+	bytes = 0;
+	constructor(readonly budget = (Number(process.env.ZN_BITMAP_MB) || 24) * 1048576) {}
+	get size(): number { return this.map.size; }
+	/** takes ownership of `r`; the caller holds one use of the returned entry and must call unuse() */
+	put(key: string, page: number, r: Bitmap): BitmapEntry {
+		const e: BitmapEntry = { key, page, r, uses: 1, doomed: false };
+		if (this.budget <= 0) { e.doomed = true; return e; }
+		for (const o of [...this.map.values()]) if (o.page === page) this.drop(o); // an older resolution / look of the same page
+		const len = r.pixels.length;
+		while (this.map.size && this.bytes + len > this.budget) this.drop(this.map.values().next().value!);
+		this.map.set(key, e);
+		this.bytes += len;
+		return e;
+	}
+	acquire(key: string): BitmapEntry | undefined {
+		const e = this.map.get(key);
+		if (!e) return undefined;
+		this.map.delete(key);
+		this.map.set(key, e); // most recently used last
+		e.uses++;
+		return e;
+	}
+	unuse(e: BitmapEntry): void {
+		if (--e.uses <= 0 && e.doomed) e.r.release();
+	}
+	private drop(e: BitmapEntry): void {
+		this.map.delete(e.key);
+		this.bytes -= e.r.pixels.length;
+		e.doomed = true;
+		if (e.uses <= 0) e.r.release();
+	}
+	clear(): void { for (const e of [...this.map.values()]) this.drop(e); }
 }
 
 /** Fractions (0..1) of the part of the page inside `view` that is blank paper, shows a stretched / lower resolution image, or is sharp; `vis` is the visible area in css px^2. */
-export type PageProbe = (view: ViewRect) => { vis: number; blank: number; soft: number; sharp: number };
-
-type ImgNode = { id: number; mounted: boolean; setImagePixels(w: number, h: number, b: Uint8Array, o?: { format?: "rgba" | "bgra" }): void };
+export type PageProbe = (view: ViewRect) => { vis: number; blank: number; soft: number; sharp: number; noSrc: number };
 
 interface TileSpec {
 	key: string;
@@ -91,6 +153,8 @@ interface TileSpec {
 	setTier(v: number): void;
 	img?: ImgNode;
 	alive: boolean;
+	/** being cut out of a cached bitmap right now */
+	busy?: boolean;
 }
 
 interface Grid { sk: string; W: number; H: number; scale: number; rot: number; look: Look; cols: number; rows: number; TW: number; TH: number; whole: boolean }
@@ -117,7 +181,28 @@ function TileView(p: { env: PageEnv; spec: TileSpec; boxW: Accessor<number>; box
 		<img
 			ref={(el: ImgNode) => { spec.img = el; }}
 			objectFit="fill"
-			style={{ position: "absolute", pointerEvents: "none", ...geo() }}
+			style={{ position: "absolute", pointerEvents: "none", ...geo(), ...hiddenUntil(spec.ready()) }}
+		/>
+	);
+}
+
+/** The page's preview: one image over the whole page box, hidden until it has its pixels. */
+function PreviewImg(p: { data: { w: number; h: number; px: Uint8Array }; boxW: Accessor<number>; boxH: Accessor<number>; onShown(v: boolean): void }): JSX.Element {
+	let img: ImgNode | undefined;
+	let alive = true;
+	const [ready, setReady] = createSignal(false);
+	onCleanup(() => { alive = false; p.onShown(false); });
+	void (async () => {
+		if (!(await whenMounted(() => img, () => alive)) || !img) return;
+		img.setImagePixels(p.data.w, p.data.h, p.data.px, { format: "bgra" });
+		setReady(true);
+		p.onShown(true);
+	})();
+	return (
+		<img
+			ref={(el: ImgNode) => { img = el; }}
+			objectFit="fill"
+			style={{ position: "absolute", left: 0, top: 0, width: p.boxW(), height: p.boxH(), pointerEvents: "none", ...hiddenUntil(ready()) }}
 		/>
 	);
 }
@@ -206,16 +291,18 @@ export function PageSlot(p: {
 		return out;
 	}, undefined, { equals: (a, b) => a.length === b.length && a.every((t, i) => t.key === b[i]!.key && t.tier === b[i]!.tier && t.zone === b[i]!.zone) });
 
+	// ---- preview under the tiles
+	const [pvShown, setPvShown] = createSignal(false);
+	const pv = createMemo(() => env.previews?.get(p.index, p.rot()));
+
 	// ---- tile set
 	const [tiles, setTiles] = createSignal<TileSpec[]>([]);
 	const [tick, setTick] = createSignal(0);
-	/** grids whose whole-page job has started: a band that turns up later (the reader scrolled on) gets a job of its own, for just its rows */
-	const wholeStarted = new Set<string>();
 	const make = (g: Grid, c: number, r: number, key: string, tier: number): TileSpec => {
 		const [ready, setReady] = createSignal(false);
 		const [t, setT] = createSignal(tier);
 		const x = c * g.TW, y = r * g.TH;
-		return { key, sk: g.sk, x, y, w: Math.min(g.TW, g.W - x), h: Math.min(g.TH, g.H - y), W: g.W, H: g.H, scale: g.scale, rot: g.rot, look: g.look, whole: g.whole && !wholeStarted.has(g.sk), ready, setReady, tier: t, setTier: setT, alive: true };
+		return { key, sk: g.sk, x, y, w: Math.min(g.TW, g.W - x), h: Math.min(g.TH, g.H - y), W: g.W, H: g.H, scale: g.scale, rot: g.rot, look: g.look, whole: g.whole, ready, setReady, tier: t, setTier: setT, alive: true };
 	};
 	createEffect(() => {
 		const g = grid(), want = wanted();
@@ -229,7 +316,6 @@ export function PageSlot(p: {
 				if (old) { if (old.tier() !== w.tier) old.setTier(w.tier); fresh.push(old); }
 				else if (w.zone <= 1) fresh.push(make(g, w.c, w.r, w.key, w.tier));
 			}
-			if (!fresh.length) wholeStarted.clear(); // the page left the margin: its next visit starts with a whole-page job again
 			// older resolutions stay (under the new tiles) until everything on screen is redrawn at the new one; only drawn ones are worth keeping
 			const covered = fresh.every((t) => t.tier() !== 0 || t.ready());
 			const stale = covered ? [] : cur.filter((t) => t.sk !== g.sk && t.ready());
@@ -253,20 +339,26 @@ export function PageSlot(p: {
 		for (const t of inf.tiles) best = Math.min(best, BANDS[t.tier()]! + dist(t));
 		return Number.isFinite(best) ? best : PRIO_BEHIND;
 	};
-	async function upload(inf: Inflight, r: NonNullable<Awaited<RenderTask["promise"]>>): Promise<void> {
-		for (const t of [...inf.tiles]) {
+	const bitmaps = env.bitmaps ?? new BitmapCache(0);
+	const bmKey = (sk: string) => p.index + "|" + sk;
+	/** hand the tiles their pixels, the ones the reader sees first before the others */
+	async function uploadTiles(list: Iterable<TileSpec>, r: Bitmap): Promise<void> {
+		const order = [...list].sort((a, b) => a.tier() - b.tier() || dist(a) - dist(b));
+		for (const t of order) {
+			if (t.ready()) continue;
 			// the element may not be inserted yet right after mount: wait for it (a few frames at most)
-			for (let i = 0; i < 60 && t.alive && !(t.img && t.img.mounted); i++) await Bun.sleep(2);
-			if (!t.alive || !t.img || !t.img.mounted) continue;
+			const m0 = performance.now();
+			if (!(await whenMounted(() => t.img, () => t.alive)) || !t.img) continue;
 			const u0 = performance.now();
+			env.stats.mountWaitMs = (env.stats.mountWaitMs ?? 0) + (u0 - m0);
 			if (t.whole) t.img.setImagePixels(r.width, t.h, r.slice(t.y, t.h), { format: "bgra" });
 			else t.img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" });
 			env.stats.lastUploadMs = performance.now() - u0;
+			env.stats.uploadMs = (env.stats.uploadMs ?? 0) + env.stats.lastUploadMs;
 			t.setReady(true);
 		}
 	}
 	function startJob(key: string, first: TileSpec): void {
-		if (first.whole) wholeStarted.add(first.sk);
 		const inf: Inflight = { key, tiles: new Set([first]), task: null, update: () => {} };
 		inflight.set(key, inf);
 		env.pending.n++;
@@ -280,39 +372,48 @@ export function PageSlot(p: {
 			return;
 		}
 		inf.task = task;
+		const tReq = performance.now();
 		inf.update = () => task.setPrio(prioOf(inf));
 		env.jobs.add(inf.update);
 		void (async () => {
 			try {
 				const r = await task.promise;
 				if (!r) return;
+				env.stats.jobs = (env.stats.jobs ?? 0) + 1;
+				env.stats.queueMs = (env.stats.queueMs ?? 0) + Math.max(0, performance.now() - tReq - r.renderMs);
+				// a whole-page bitmap stays in the cache (band tiles that appear later are cut out of it), a region is freed once uploaded
+				const entry = first.whole ? bitmaps.put(bmKey(first.sk), p.index, r) : null;
 				try {
 					if (inf.tiles.size) {
-						await upload(inf, r);
+						await uploadTiles(inf.tiles, r);
 						env.stats.renders++;
 						env.stats.lastRenderMs = r.renderMs;
 						env.stats.totalRenderMs += r.renderMs;
 						setTick((n) => n + 1);
 					}
-				} finally { r.release(); } // the native copy goes now; GPUIX holds its own
+				} finally { if (entry) bitmaps.unuse(entry); else r.release(); } // GPUIX holds its own copy of what it got
 			} catch (e) {
 				console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
 			} finally {
 				env.jobs.delete(inf.update);
 				if (inflight.get(key) === inf) inflight.delete(key);
 				env.pending.n--;
-				// a tile that appeared while the bitmap was being uploaded missed this job: give it one of its own
+				// a tile that appeared while the bitmap was being uploaded: it is cut out of the cached bitmap
 				if (inf.tiles.size) untrack(() => ensureJobs(tiles()));
 			}
 		})();
 	}
 	function ensureJobs(list: TileSpec[]): void {
 		for (const t of list) {
-			if (t.ready() || !t.alive || t.sk !== untrack(grid).sk) continue;
+			if (t.ready() || t.busy || !t.alive || t.sk !== untrack(grid).sk) continue;
 			const key = t.whole ? t.sk : t.key;
 			const inf = inflight.get(key);
-			if (inf) { if (!inf.tiles.has(t)) inf.tiles.add(t); }
-			else startJob(key, t);
+			if (inf) { if (!inf.tiles.has(t)) inf.tiles.add(t); continue; }
+			const cached = t.whole ? bitmaps.acquire(bmKey(t.sk)) : undefined;
+			if (cached) {
+				t.busy = true;
+				void uploadTiles([t], cached.r).finally(() => { t.busy = false; bitmaps.unuse(cached); });
+			} else startJob(key, t);
 		}
 	}
 	createEffect(() => {
@@ -337,9 +438,19 @@ export function PageSlot(p: {
 	p.env.probe.set(p.index, (v) => {
 		const bw = untrack(p.boxW), bh = untrack(p.boxH);
 		const x0 = Math.max(0, v.x0), x1 = Math.min(bw, v.x1), y0 = Math.max(0, v.y0), y1 = Math.min(bh, v.y1);
-		if (x1 <= x0 || y1 <= y0) return { vis: 0, blank: 0, soft: 0, sharp: 0 };
+		if (x1 <= x0 || y1 <= y0) return { vis: 0, blank: 0, soft: 0, sharp: 0, noSrc: 0 };
 		const sk = untrack(grid).sk;
-		const ts = untrack(tiles).filter((t) => untrack(t.ready));
+		const all = untrack(tiles);
+		const ts = all.filter((t) => untrack(t.ready));
+		// tiles that exist natively, intersect the view and would paint GPUIX's "img: no src" box (never with hidden-until-pixels images)
+		let noSrc = 0;
+		if (!HIDE_UNTIL_PIXELS) {
+			for (const t of all) {
+				if (untrack(t.ready) || !t.img?.mounted) continue;
+				if ((t.x + t.w) / t.W * bw > x0 && (t.x / t.W) * bw < x1 && (t.y + t.h) / t.H * bh > y0 && (t.y / t.H) * bh < y1) noSrc++;
+			}
+		}
+		const pvOn = untrack(pvShown);
 		let blank = 0, soft = 0, sharp = 0;
 		const NY = 16, NX = 3;
 		for (let a = 0; a < NY; a++) {
@@ -351,11 +462,11 @@ export function PageSlot(p: {
 					best = Math.max(best, t.sk === sk ? 2 : 1);
 					if (best === 2) break;
 				}
-				if (best === 2) sharp++; else if (best === 1) soft++; else blank++;
+				if (best === 2) sharp++; else if (best === 1 || pvOn) soft++; else blank++;
 			}
 		}
 		const n = NX * NY;
-		return { vis: (x1 - x0) * (y1 - y0), blank: blank / n, soft: soft / n, sharp: sharp / n };
+		return { vis: (x1 - x0) * (y1 - y0), blank: blank / n, soft: soft / n, sharp: sharp / n, noSrc };
 	});
 	onCleanup(() => p.env.probe.delete(p.index));
 
@@ -382,6 +493,9 @@ export function PageSlot(p: {
 				pointerEvents: "none",
 			}}
 		>
+			<Show when={pv()} keyed>
+				{(d) => <PreviewImg data={d} boxW={p.boxW} boxH={p.boxH} onShown={setPvShown} />}
+			</Show>
 			<For each={tiles()}>
 				{(spec) => <TileView env={env} spec={spec} boxW={p.boxW} boxH={p.boxH} onGone={onGone} />}
 			</For>

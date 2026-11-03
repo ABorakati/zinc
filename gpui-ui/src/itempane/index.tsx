@@ -5,18 +5,19 @@
 //   the list store has it: more than one key shows the multi-selection summary).
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
+import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { withAlpha } from "../theme";
 import { AbstractSection, Header } from "./Header";
 import { AttachmentsSection } from "./Attachments";
 import { CollectionsSection } from "./Collections";
-import { InfoSection } from "./Info";
+import { useInfoEntries } from "./Info";
 import { MultiSelect } from "./Multi";
 import { NoteEditor, NotesSection } from "./Notes";
 import { RelatedSection } from "./Related";
 import { TagsSection } from "./Tags";
-import { Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx } from "./kit";
+import { Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx, type Entry } from "./kit";
 import { createPaneModel, PaneContext, usePane } from "./model";
 import { firstLine } from "./util";
 
@@ -61,20 +62,33 @@ function Body(): JSX.Element {
 	const gp = useGpuix();
 	const d = () => pane.detail()!;
 	const [active, setActive] = createSignal("info");
-	let scroller: { id: number; scrollIntoView?: () => void } | undefined;
-	const sections = new Map<string, { id: number; scrollIntoView?: () => void }>();
-	const bounds = (el: { id: number }) => gp?.renderer.getElementBounds?.(el.id) ?? null;
+	let list: { id: number } | undefined;
+
+	// The body is one <virtual-list> (the native side builds only the entries on screen; a scrolling container would lay out and paint every
+	// field of every section on every frame, even while only the item list scrolls). Its children are exactly the entries: the Info
+	// section's header and rows, then one entry per other section.
+	const infoEntries = useInfoEntries();
+	const entryOf = (id: string, render: () => JSX.Element): Entry => ({ id, section: id, render });
+	const rest: Entry[] = [
+		entryOf("abstract", () => <AbstractSection />),
+		entryOf("notes", () => <NotesSection />),
+		entryOf("attachments", () => <AttachmentsSection />),
+		entryOf("collections", () => <CollectionsSection />),
+		entryOf("tags", () => <TagsSection />),
+		entryOf("related", () => <RelatedSection />),
+		{ id: "spacer", section: "related", render: () => <div style={{ width: "100%", height: 192, flexShrink: 0 }} /> },
+	];
+	const entries = createMemo(() => [...infoEntries(), ...rest]);
+	const indexOf = (id: string) => entries().findIndex((e) => e.section === id);
 
 	let lockUntil = 0; // a tab click scrolls programmatically; the highlight stays on the clicked tab meanwhile
-	const spy = () => {
-		if (!scroller || Date.now() < lockUntil) return;
-		const top = bounds(scroller)?.y;
-		if (top === undefined) return;
+	const spy = (e: EventPayload) => {
+		if (Date.now() < lockUntil) return;
+		const first = Math.floor(e.startIndex ?? 0);
 		let cur = SECTIONS[0]!.id;
 		for (const s of SECTIONS) {
-			const el = sections.get(s.id);
-			const b = el && bounds(el);
-			if (b && b.y <= top + 12) cur = s.id;
+			const i = indexOf(s.id);
+			if (i >= 0 && i <= first) cur = s.id;
 		}
 		setActive(cur);
 	};
@@ -82,15 +96,10 @@ function Body(): JSX.Element {
 		setCollapsed(id, false);
 		lockUntil = Date.now() + 500;
 		setActive(id);
-		// after the section has expanded: scroll so its top meets the scroller's top (scrollIntoView alone only makes it visible)
+		// after the section has expanded: scroll so its first entry meets the list's top
 		setTimeout(() => {
-			const r = gp?.renderer;
-			const el = sections.get(id);
-			const sb = scroller && bounds(scroller);
-			const eb = el && bounds(el);
-			const off = scroller && r?.getScrollOffset?.(scroller.id);
-			if (r?.scrollTo && scroller && sb && eb && off) r.scrollTo(scroller.id, 0, Math.min(0, off[1]! - (eb.y - sb.y)));
-			else el?.scrollIntoView?.();
+			const i = indexOf(id);
+			if (list && i >= 0) gp?.renderer.scrollToItem?.(list.id, i, 0);
 			setActive(id);
 		}, 30);
 	};
@@ -103,7 +112,6 @@ function Body(): JSX.Element {
 		: id === "collections" ? d().collections.length
 		: id === "related" ? (d().related?.length ?? 0)
 		: 0;
-	const ref = (id: string) => (el: unknown) => { sections.set(id, el as never); };
 
 	return (
 		<>
@@ -131,19 +139,19 @@ function Body(): JSX.Element {
 				</For>
 			</div>
 			<div
-				ref={(el: unknown) => { scroller = el as never; }}
 				onLayout={(e) => { const w = (e as { width?: number }).width; if (w) setLabelW(Math.min(112, Math.max(64, Math.round(0.28 * (w - 40))))); }}
-				onScrollChange={spy}
-				style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0, width: "100%", overflow: "scroll", display: "flex", flexDirection: "column", scrollbarColor: withAlpha(tok("foreground"), 0.25), scrollbarWidth: 6 }}
+				style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0, width: "100%", display: "flex", flexDirection: "column" }}
 			>
-				<div ref={ref("info")} style={{ width: "100%" }}><InfoSection /></div>
-				<div ref={ref("abstract")} style={{ width: "100%" }}><AbstractSection /></div>
-				<div ref={ref("notes")} style={{ width: "100%" }}><NotesSection /></div>
-				<div ref={ref("attachments")} style={{ width: "100%" }}><AttachmentsSection /></div>
-				<div ref={ref("collections")} style={{ width: "100%" }}><CollectionsSection /></div>
-				<div ref={ref("tags")} style={{ width: "100%" }}><TagsSection /></div>
-				<div ref={ref("related")} style={{ width: "100%" }}><RelatedSection /></div>
-				<div style={{ height: 192, flexShrink: 0 }} />
+				<virtual-list
+					ref={(el: { id: number }) => { list = el; }}
+					testId="ip-list"
+					estimatedItemHeight={28}
+					overdraw={80}
+					onVisibleRange={spy}
+					style={{ width: "100%", flexGrow: 1, minHeight: 0, scrollbarColor: withAlpha(tok("foreground"), 0.25), scrollbarWidth: 6 }}
+				>
+					<For each={entries()}>{(e) => e.render()}</For>
+				</virtual-list>
 			</div>
 		</>
 	);

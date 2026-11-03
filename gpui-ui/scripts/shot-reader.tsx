@@ -27,6 +27,7 @@
 //     --wait MS         wait this long (pumping frames) before the shot
 //     --demo-plugin     register a demo plugin (toolbar item, sidebar panel, page overlay, selection popup, alternate view, onOpen) and show it
 //     --alt             with --demo-plugin: switch to the plugin's alternate view for the shot
+//     --early MS        screenshot MS after the document opened WITHOUT waiting for the tiles (a page mid-load shows paper / its preview, never "img: no src"); --page N scrolls there first
 //     --keys K,K,...    send keys (names as the controller takes them: pagedown, home, ctrl+=, ...)
 // Prints per-tile render timings and how many tiles / pages are mounted. Needs a core (ZN_URL, default http://127.0.0.1:23160) for keys.
 import { mkdirSync } from "node:fs";
@@ -40,7 +41,7 @@ import { Reader, type ReaderController } from "../src/reader/Reader";
 import { registerReaderPlugin } from "../src/reader/plugins";
 
 const args = process.argv.slice(2);
-const VALUE_OPTS = new Set(["width", "page", "zoom", "zoom-after", "hscroll", "resize", "search", "next", "dpr", "sidebar", "rotate", "appearance", "select", "drag", "keys", "wheel", "realkeys", "wait", "click", "persist"]);
+const VALUE_OPTS = new Set(["width", "page", "zoom", "zoom-after", "hscroll", "resize", "search", "next", "dpr", "sidebar", "rotate", "appearance", "select", "drag", "keys", "wheel", "realkeys", "wait", "click", "persist", "early"]);
 const val = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
 const has = (n: string) => args.includes(`--${n}`);
 const positional = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]!.startsWith("--") && VALUE_OPTS.has(args[i - 1]!.slice(2))));
@@ -117,6 +118,17 @@ await Promise.race([ctl.ready(), Bun.sleep(15000)]);
 if (ctl.error()) {
 	await frame(500);
 	console.log("error state:", ctl.error());
+} else if (Number(val("early", "0")) > 0) {
+	// the state of a page mid-load: tiles exist but have no pixels yet
+	const pg = Number(val("page", "0"));
+	if (pg > 0) ctl.scrollToPage(pg);
+	await frame(Number(val("early", "0")));
+	console.log("early:", ctl.coverage().map((c) => "p" + c.page + " blank " + c.blank.toFixed(2) + " soft " + c.soft.toFixed(2) + " sharp " + c.sharp.toFixed(2) + " noSrc " + c.noSrc).join(" | "), "previews", JSON.stringify(ctl.previews()));
+	mkdirSync(dirname(out), { recursive: true });
+	r.captureScreenshot(out);
+	console.log("wrote", out);
+	t.unmount();
+	process.exit(0);
 } else {
 	await frame(150);
 	const sb = val("sidebar", "");

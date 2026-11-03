@@ -7,6 +7,7 @@ import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanu
 import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, GroupBy, ItemRow, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
 import { mark } from "./trace";
+import { isWebContent, webBase } from "./webview/config";
 
 export const PAGE = 100;
 /** Page cache size (LRU by distance): when more pages are cached, the ones farthest from the visible range go (a page is ~100 rows = ~300 KB). */
@@ -508,18 +509,22 @@ function createStore(): AppStore {
 	const [activeTab, setActiveTab] = createSignal("library");
 	function openAttachment(attachmentKey: string, title: string, itemKey: string) {
 		if (tabs().some((t) => t.id === attachmentKey)) return void setActiveTab(attachmentKey);
-		const openTab = () => {
-			if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), { id: attachmentKey, kind: "reader", title, itemKey }]);
+		const openTab = (tab: Tab = { id: attachmentKey, kind: "reader", title, itemKey }) => {
+			if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), tab]);
 			setActiveTab(attachmentKey);
 		};
-		// The native reader shows PDFs only (no web view for snapshots/EPUBs): anything else opens in its default app.
+		// PDFs open in the native reader; snapshots and EPUBs in a web tab (Zotero's reader-host in the shared WebView2, src/webview) when
+		// the core serves it, else in their default app.
 		void api.item(attachmentKey).then(
 			(d) => {
 				const ct = String((d.data as { contentType?: unknown }).contentType ?? "");
 				if (!ct || /pdf/i.test(ct)) return openTab();
-				return apiRequest("POST", `/attachments/${encodeURIComponent(attachmentKey)}/open-external`).catch(openTab);
+				// a linked URL has no file for the reader (the core opens it in the browser)
+				const linked = (d.data as { linkMode?: unknown }).linkMode === "linked_url";
+				if (isWebContent(ct) && !linked && webBase()) return openTab({ id: attachmentKey, kind: "web", title, itemKey, attachmentKey, contentType: ct });
+				return apiRequest("POST", `/attachments/${encodeURIComponent(attachmentKey)}/open-external`).catch(() => openTab());
 			},
-			openTab, // unknown: let the reader try and report
+			() => openTab(), // unknown: let the reader try and report
 		);
 	}
 	function closeTab(id: string) {

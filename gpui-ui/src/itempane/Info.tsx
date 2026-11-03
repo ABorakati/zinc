@@ -1,9 +1,9 @@
 // Info section: item type, every field of that type (from the core schema) with inline editing, the creators editor (type, two-field /
 // single-field names, add, remove, reorder) and the date as year / month / day parts. Port of ui/src/itempane/Info.tsx + DateParts.
-import { createEffect, createMemo, createSignal, For, Index, on, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { Select } from "../ui";
-import { BoxInput, Field, IconBtn, MiniSelect, Row, Section, TextBtn, labelW, t, tok, tx } from "./kit";
+import { Block, BoxInput, Field, IconBtn, MiniSelect, Row, SectionHead, TextBtn, isCollapsed, labelW, t, tok, tx, type Entry } from "./kit";
 import { usePane } from "./model";
 import { openLink } from "./actions";
 import type { Creator, ZoteroSchemaField, ZoteroSchemaItemType } from "./net";
@@ -82,17 +82,26 @@ function DateParts(p: { value: string; onChange: (v: string) => void }): JSX.Ele
 }
 
 // ---- creators ----
+// ---- creators ----
 
-function CreatorRows(p: { st: () => ZoteroSchemaItemType | undefined }): JSX.Element {
+type MakeEntry = (id: string, render: () => JSX.Element) => Entry;
+const NO_CREATOR: Creator = { creatorType: "author" };
+
+/**
+ * The creators editor as entries of the pane's virtual list: one per creator row (row i follows creators()[i]), the "Add" row of an
+ * item without creators and the "N more…" row of a long list.
+ */
+function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry: MakeEntry): () => Entry[] {
 	const pane = usePane();
 	const [shown, setShown] = createSignal(0); // 0 = default (all, or SHOW_WHEN_COLLAPSED when long)
 	createEffect(on(pane.itemKey, () => setShown(0), { defer: true }));
 	const creators = () => (pane.detail()?.data.creators ?? []) as Creator[];
-	const typeOpts = () => (p.st()?.creatorTypes ?? [{ creatorType: "author", label: "Author", primary: true }]).map((c) => ({ value: c.creatorType, label: c.label }));
-	const defaultType = () => p.st()?.creatorTypes.find((c) => c.primary)?.creatorType ?? "author";
+	const typeOpts = () => (st()?.creatorTypes ?? [{ creatorType: "author", label: "Author", primary: true }]).map((c) => ({ value: c.creatorType, label: c.label }));
+	const defaultType = () => st()?.creatorTypes.find((c) => c.primary)?.creatorType ?? "author";
 	const labelOf = (ty: string) => typeOpts().find((o) => o.value === ty)?.label ?? ty;
-	const limit = () => (creators().length <= COLLAPSE_AT ? creators().length : shown() || SHOW_WHEN_COLLAPSED);
-	const hidden = () => Math.max(0, creators().length - limit());
+	const count = createMemo(() => creators().length);
+	const limit = createMemo(() => (count() <= COLLAPSE_AT ? count() : shown() || SHOW_WHEN_COLLAPSED));
+	const hidden = () => Math.max(0, count() - limit());
 
 	const commit = (list: Creator[]) => pane.save({ creators: list });
 	const patchAt = (i: number, patch: Partial<Creator>) => void commit(creators().map((c, j) => (j === i ? { ...c, ...patch } : { ...c })));
@@ -111,7 +120,8 @@ function CreatorRows(p: { st: () => ZoteroSchemaItemType | undefined }): JSX.Ele
 		void commit(list);
 	};
 	const toggleMode = (i: number) => {
-		const c = creators()[i]!;
+		const c = creators()[i];
+		if (!c) return;
 		let next: Creator;
 		if (c.name !== undefined) {
 			const parts = c.name.trim().split(/\s+/).filter(Boolean);
@@ -123,69 +133,85 @@ function CreatorRows(p: { st: () => ZoteroSchemaItemType | undefined }): JSX.Ele
 		void commit(creators().map((x, j) => (j === i ? next : { ...x })));
 	};
 
-	return (
-		<>
-			<Show when={creators().length === 0}>
-				<Row label={labelOf(defaultType())}>
-					<TextBtn icon="plus" label="Add" title="Add creator" onClick={() => void commit([{ creatorType: defaultType(), lastName: "", firstName: "" }])} />
-				</Row>
-			</Show>
-			<Index each={creators().slice(0, limit())}>
-				{(c, i) => (
-					<div style={{ ...t("flex items-start gap-x-3 py-[2px] w-full") }}>
-						<div style={{ width: labelW(), flexShrink: 0, paddingTop: 1 }}>
-							<MiniSelect
-								value={c().creatorType}
-								options={typeOpts().some((o) => o.value === c().creatorType) ? typeOpts() : [...typeOpts(), { value: c().creatorType, label: c().creatorType }]}
-								onChange={(v) => patchAt(i, { creatorType: v })}
-								width={labelW() - 4}
-							/>
-						</div>
-						<div style={{ ...t("flex items-start"), flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}>
-							<div style={{ ...t("flex items-start"), flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}>
-								<Show
-									when={c().name === undefined}
-									fallback={<Field nowrap value={c().name ?? ""} placeholder="Name" onSave={(v) => patchAt(i, { name: v })} />}
-								>
-									<Field nowrap value={c().lastName ?? ""} placeholder="Last" rootStyle={{ width: "auto", flexGrow: 1.2, flexBasis: 0, minWidth: 40 }} onSave={(v) => patchAt(i, { lastName: v })} />
-									<text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 2, paddingRight: 2, paddingTop: 3 }}>,</text>
-									<Field nowrap value={c().firstName ?? ""} placeholder="First" rootStyle={{ width: "auto", flexGrow: 1, flexBasis: 0, minWidth: 36 }} onSave={(v) => patchAt(i, { firstName: v })} />
-								</Show>
-							</div>
-							<div style={{ ...t("flex flex-none items-center"), paddingTop: 2 }}>
-								<IconBtn icon="replace" size={13} title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"} onClick={() => toggleMode(i)} />
-								<IconBtn icon="arrow-up" size={13} title="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
-								<IconBtn icon="arrow-down" size={13} title="Move down" disabled={i === creators().length - 1} onClick={() => move(i, 1)} />
-								<IconBtn icon="minus" size={13} title="Remove creator" onClick={() => remove(i)} />
-								<IconBtn icon="plus" size={13} title="Add creator" onClick={() => insertAfter(i)} />
-							</div>
-						</div>
-					</div>
-				)}
-			</Index>
-			<Show when={creators().length > COLLAPSE_AT}>
-				<Row label="">
-					<div style={{ ...t("flex items-center gap-3 px-1.5") }}>
-						<Show when={hidden() > 0}>
-							<div role="button" onClick={() => setShown(limit() + PAGE)} style={{ cursor: "pointer" }}>
-								<text style={{ ...tx("text-xs"), color: tok("primary") }}>{`${Math.min(PAGE, hidden())} more… (${hidden()} hidden)`}</text>
-							</div>
-						</Show>
-						<Show when={limit() > SHOW_WHEN_COLLAPSED}>
-							<div role="button" onClick={() => setShown(SHOW_WHEN_COLLAPSED)} style={{ cursor: "pointer" }}>
-								<text style={{ ...tx("text-xs"), color: tok("primary") }}>Show fewer</text>
-							</div>
+	const creatorRow = (i: number): JSX.Element => {
+		const c = () => creators()[i] ?? NO_CREATOR;
+		return (
+			<div style={{ ...t("flex items-start gap-x-3 py-[2px] w-full") }}>
+				<div style={{ width: labelW(), flexShrink: 0, paddingTop: 1 }}>
+					<MiniSelect
+						value={c().creatorType}
+						options={typeOpts().some((o) => o.value === c().creatorType) ? typeOpts() : [...typeOpts(), { value: c().creatorType, label: c().creatorType }]}
+						onChange={(v) => patchAt(i, { creatorType: v })}
+						width={labelW() - 4}
+					/>
+				</div>
+				<div style={{ ...t("flex items-start"), flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}>
+					<div style={{ ...t("flex items-start"), flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}>
+						<Show
+							when={c().name === undefined}
+							fallback={<Field nowrap value={c().name ?? ""} placeholder="Name" onSave={(v) => patchAt(i, { name: v })} />}
+						>
+							<Field nowrap value={c().lastName ?? ""} placeholder="Last" rootStyle={{ width: "auto", flexGrow: 1.2, flexBasis: 0, minWidth: 40 }} onSave={(v) => patchAt(i, { lastName: v })} />
+							<text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 2, paddingRight: 2, paddingTop: 3 }}>,</text>
+							<Field nowrap value={c().firstName ?? ""} placeholder="First" rootStyle={{ width: "auto", flexGrow: 1, flexBasis: 0, minWidth: 36 }} onSave={(v) => patchAt(i, { firstName: v })} />
 						</Show>
 					</div>
-				</Row>
-			</Show>
-		</>
-	);
+					<div style={{ ...t("flex flex-none items-center"), paddingTop: 2 }}>
+						<IconBtn icon="replace" size={13} title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"} onClick={() => toggleMode(i)} />
+						<IconBtn icon="arrow-up" size={13} title="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
+						<IconBtn icon="arrow-down" size={13} title="Move down" disabled={i === count() - 1} onClick={() => move(i, 1)} />
+						<IconBtn icon="minus" size={13} title="Remove creator" onClick={() => remove(i)} />
+						<IconBtn icon="plus" size={13} title="Add creator" onClick={() => insertAfter(i)} />
+					</div>
+				</div>
+			</div>
+		);
+	};
+
+	return createMemo(() => {
+		const out: Entry[] = [];
+		if (count() === 0) {
+			out.push(entry("c:add", () => (
+				<Block>
+					<Row label={labelOf(defaultType())}>
+						<TextBtn icon="plus" label="Add" title="Add creator" onClick={() => void commit([{ creatorType: defaultType(), lastName: "", firstName: "" }])} />
+					</Row>
+				</Block>
+			)));
+		}
+		for (let i = 0; i < limit(); i++) out.push(entry(`c:${i}`, () => <Block>{creatorRow(i)}</Block>));
+		if (count() > COLLAPSE_AT) {
+			out.push(entry("c:more", () => (
+				<Block>
+					<Row label="">
+						<div style={{ ...t("flex items-center gap-3 px-1.5") }}>
+							<Show when={hidden() > 0}>
+								<div role="button" onClick={() => setShown(limit() + PAGE)} style={{ cursor: "pointer" }}>
+									<text style={{ ...tx("text-xs"), color: tok("primary") }}>{`${Math.min(PAGE, hidden())} more… (${hidden()} hidden)`}</text>
+								</div>
+							</Show>
+							<Show when={limit() > SHOW_WHEN_COLLAPSED}>
+								<div role="button" onClick={() => setShown(SHOW_WHEN_COLLAPSED)} style={{ cursor: "pointer" }}>
+									<text style={{ ...tx("text-xs"), color: tok("primary") }}>Show fewer</text>
+								</div>
+							</Show>
+						</div>
+					</Row>
+				</Block>
+			)));
+		}
+		return out;
+	});
 }
 
 // ---- the section ----
 
-export function InfoSection(): JSX.Element {
+/**
+ * The Info section as entries of the pane's virtual list (header, item type, every field, the creators, dates): the native list builds
+ * only the rows on screen, where one scrolling container would lay out and paint all ~25 rows on every frame.
+ * Entries are cached by id, so a structural change (item type, creator count) keeps the rows that stay.
+ */
+export function useInfoEntries(): () => Entry[] {
 	const pane = usePane();
 	const data = () => pane.detail()!.data;
 	const st = () => pane.schema()?.itemTypes.find((x) => x.itemType === data().itemType);
@@ -195,6 +221,7 @@ export function InfoSection(): JSX.Element {
 		if (!f.some((x) => x.field === "extra")) f = [...f, { field: "extra", label: "Extra" }];
 		return f;
 	});
+	const fieldDefs = createMemo(() => new Map(fields().map((f) => [f.field, f])));
 	const typeOptions = createMemo(() => {
 		const list = (pane.schema()?.itemTypes ?? []).filter((x) => !["attachment", "note", "annotation"].includes(x.itemType));
 		const opts = list.map((x) => ({ value: x.itemType, label: x.label })).sort((a, b) => a.label.localeCompare(b.label));
@@ -214,11 +241,52 @@ export function InfoSection(): JSX.Element {
 	const linkUrl = (f: string, v: string) => (f === "DOI" ? "https://doi.org/" + encodeURI(v.replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")) : v);
 	const isLink = (f: string, v: string) => !!v && (f === "DOI" || (f === "url" && /^https?:\/\//i.test(v)));
 
-	return (
-		<Section id="info" title="Info" icon="info" first>
+	const cache = new Map<string, Entry>();
+	const entry: MakeEntry = (id, render) => {
+		let e = cache.get(id);
+		if (!e) { e = { id, section: "info", render }; cache.set(id, e); }
+		return e;
+	};
+	const creatorEntries = createCreatorEntries(st, entry);
+
+	const fieldRow = (field: string): JSX.Element => {
+		const f = () => fieldDefs().get(field) ?? { field, label: field };
+		const v = () => (data()[field] as string | undefined) ?? "";
+		return (
+			<Block>
+				<Row label={f().label} icon={FIELD_ICONS[field]}>
+					<Show
+						when={field !== "date"}
+						fallback={<DateParts value={v()} onChange={(nv) => void pane.save({ date: nv })} />}
+					>
+						<Field
+							value={v()}
+							multiline={field === "extra"}
+							onSave={(nv) => void pane.save({ [field]: nv })}
+							end={
+								<Show when={isLink(field, v())}>
+									<div role="button" aria-label={`Open ${f().label}`} onClick={() => void openLink(linkUrl(field, v()))} style={{ cursor: "pointer", marginLeft: 4, paddingTop: 2 }}>
+										<Icon name="external-link" size={14} color={tok("muted-foreground")} />
+									</div>
+								</Show>
+							}
+						/>
+					</Show>
+				</Row>
+			</Block>
+		);
+	};
+
+	const head = entry("head", () => <SectionHead id="info" title="Info" icon="info" first />);
+	const itemType = entry("type", () => (
+		<Block first>
 			<Row label="Item Type">
 				<Select value={pending()?.to.itemType ?? data().itemType} options={typeOptions()} onChange={changeType} />
 			</Row>
+		</Block>
+	));
+	const warning = entry("pending", () => (
+		<Block>
 			<Show when={pending()}>
 				{(pd) => (
 					<Row label="">
@@ -237,39 +305,20 @@ export function InfoSection(): JSX.Element {
 					</Row>
 				)}
 			</Show>
-			<For each={fields()}>
-				{(f) => {
-					const v = () => (data()[f.field] as string | undefined) ?? "";
-					return (
-						<>
-							<Row label={f.label} icon={FIELD_ICONS[f.field]}>
-								<Show
-									when={f.field !== "date"}
-									fallback={<DateParts value={v()} onChange={(nv) => void pane.save({ date: nv })} />}
-								>
-									<Field
-										value={v()}
-										multiline={f.field === "extra"}
-										onSave={(nv) => void pane.save({ [f.field]: nv })}
-										end={
-											<Show when={isLink(f.field, v())}>
-												<div role="button" aria-label={`Open ${f.label}`} onClick={() => void openLink(linkUrl(f.field, v()))} style={{ cursor: "pointer", marginLeft: 4, paddingTop: 2 }}>
-													<Icon name="external-link" size={14} color={tok("muted-foreground")} />
-												</div>
-											</Show>
-										}
-									/>
-								</Show>
-							</Row>
-							<Show when={f.field === "title"}>
-								<CreatorRows st={st} />
-							</Show>
-						</>
-					);
-				}}
-			</For>
-			<Row label="Date Added"><text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 6, paddingTop: 2 }}>{fmtTimestamp(data().dateAdded)}</text></Row>
-			<Row label="Modified"><text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 6, paddingTop: 2 }}>{fmtTimestamp(data().dateModified)}</text></Row>
-		</Section>
-	);
+		</Block>
+	));
+	const added = entry("added", () => <Block><Row label="Date Added"><text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 6, paddingTop: 2 }}>{fmtTimestamp(data().dateAdded)}</text></Row></Block>);
+	const modified = entry("modified", () => <Block last><Row label="Modified"><text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 6, paddingTop: 2 }}>{fmtTimestamp(data().dateModified)}</text></Row></Block>);
+
+	return createMemo(() => {
+		if (isCollapsed("info")) return [head];
+		const out: Entry[] = [head, itemType];
+		if (pending()) out.push(warning);
+		for (const f of fields()) {
+			out.push(entry(`f:${f.field}`, () => fieldRow(f.field)));
+			if (f.field === "title") out.push(...creatorEntries());
+		}
+		out.push(added, modified);
+		return out;
+	});
 }

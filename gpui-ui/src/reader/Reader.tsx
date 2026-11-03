@@ -24,7 +24,8 @@ import { openPdf, fetchAttachment } from "./library";
 import { PdfDoc, type OutlineEntry, type PdfLink, type TextLayer, type TextWord } from "./pdf";
 import { readerPlugins, type NRect, type ReaderContext, type ReaderPlugin, type Word } from "./plugins";
 import { readerAppearance as appearance, initReaderAppearance, lookOf, paperColor, paperIsDark, setReaderAppearance, type Appearance } from "./core/appearance";
-import { type LinkInfo, type Margins, PageSlot, type PageEnv, type PageStats, type ViewRect } from "./core/Page";
+import { BitmapCache, type LinkInfo, type Margins, PageSlot, type PageEnv, type PageStats, type ViewRect } from "./core/Page";
+import { Previews, type PreviewWant } from "./core/preview";
 import { Scheduler } from "./core/scheduler";
 import { FindResults, Outline, Sidebar, Thumbnails, type HitRow, type SideTab } from "./core/Sidebar";
 import { getDocState, getSidebar, saveSidebar, setDocState, type ZoomMode } from "./core/state";
@@ -37,6 +38,8 @@ export const PAD = 16; // around the page column
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 6;
 const TEXT_CACHE = 40; // pages of text layer kept (selection, links and plugins use them)
+/** css px of pre-rendered page ahead of the viewport (at rest .. at the fastest scroll), and behind it */
+const AHEAD_MIN = 400, AHEAD_MAX = 1000, BEHIND = 120;
 
 export interface ReaderStats extends PageStats {}
 
@@ -90,7 +93,9 @@ export interface ReaderController {
 	/** a mouse-wheel event over the page list through GPUI's own hit test (positive dy = scroll down, css px); false when there is no list yet */
 	wheel(dy: number): boolean;
 	/** for every mounted page that intersects the viewport, as the list's true scroll position (not the polled one) puts it: visible area and the fractions blank / soft / sharp */
-	coverage(): { page: number; vis: number; blank: number; soft: number; sharp: number }[];
+	coverage(): { page: number; vis: number; blank: number; soft: number; sharp: number; noSrc: number }[];
+	/** low-resolution page previews: rendered so far and still in flight */
+	previews(): { made: number; pending: number };
 }
 
 export interface ReaderProps {
@@ -361,11 +366,15 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const first = () => indices()[0] ?? 0;
 	// which way the reader scrolls (1 down, -1 up; down until the first move): the margin of pre-rendered tiles is long on that side
 	const [dir, setDir] = createSignal(0);
+	// ... and how far ahead: every live tile costs ~4x its pixel bytes in GPUIX (a 1000 px wide page at DPR 2 is ~18 MB per 256 px of height),
+	// so the lead follows the scroll speed (css px/s, decays to 0 shortly after the last movement): ~0.3 s of travel plus a floor that
+	// covers the render + upload time of a page that is not scrolling yet (a band is ready within ~60-100 ms), capped.
+	const [speed, setSpeed] = createSignal(0);
 	const margins = createMemo(() => {
 		const vh = sp().h || vp().h || 800;
-		const ahead = Math.max(600, Math.round(vh * 0.7)), behind = Math.max(200, Math.round(vh * 0.2));
+		const ahead = clamp(Math.round((AHEAD_MIN + speed() * 0.3) / 50) * 50, AHEAD_MIN, AHEAD_MAX), behind = BEHIND;
 		const d = dir();
-		const mg: Margins = { up: d < 0 ? ahead : behind, down: d < 0 ? behind : ahead, keep: Math.round(vh * 0.15), ahead: d };
+		const mg: Margins = { up: d < 0 ? ahead : behind, down: d < 0 ? behind : ahead, keep: Math.round(vh * 0.1), ahead: d };
 		return mg;
 	}, undefined, { equals: (a, b) => a.up === b.up && a.down === b.down && a.keep === b.keep && a.ahead === b.ahead });
 	const laidOut = () => vp().w > 0 && sp().h > 0;
@@ -396,6 +405,27 @@ export function Reader(props: ReaderProps): JSX.Element {
 		untrack(() => { const s = sp(); if (s.h) updateWin(s); });
 	});
 	let reprioTimer: ReturnType<typeof setTimeout> | undefined;
+	let speedTimer: ReturnType<typeof setTimeout> | undefined;
+	let speedAt = 0;
+	/** scroll speed from the move between two list positions (css px); a jump over many rows is not a speed */
+	function noteSpeed(prev: { idx: number; off: number }, n: { idx: number; off: number }) {
+		const now = performance.now();
+		let dy = n.off - prev.off;
+		if (n.idx !== prev.idx) {
+			if (Math.abs(n.idx - prev.idx) > 3) { speedAt = now; return; }
+			const [a, b] = n.idx > prev.idx ? [prev.idx, n.idx] : [n.idx, prev.idx];
+			let rows = 0;
+			for (let i = a; i < b; i++) rows += rowHeight(i);
+			dy += n.idx > prev.idx ? rows : -rows;
+		}
+		const dt = Math.max(8, now - speedAt);
+		const v = speedAt ? Math.abs(dy) / (dt / 1000) : 0;
+		speedAt = now;
+		setSpeed((s) => Math.round(s * 0.6 + Math.min(v, 12000) * 0.4));
+		clearTimeout(speedTimer);
+		speedTimer = setTimeout(() => { speedAt = 0; setSpeed(0); }, 450);
+	}
+	onCleanup(() => clearTimeout(speedTimer));
 	/** the queued render jobs follow the viewport: re-set their priorities (at most every 30 ms) */
 	function reprioSoon() {
 		if (reprioTimer) return;
@@ -440,7 +470,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 			const prev = untrack(sp);
 			if (!eqScroll(prev, n)) {
 				const moved = n.idx !== prev.idx ? n.idx - prev.idx : n.off - prev.off;
-				if (prev.h && moved !== 0) setDir(moved > 0 ? 1 : -1);
+				if (prev.h && moved !== 0) { setDir(moved > 0 ? 1 : -1); noteSpeed(prev, n); }
 				setSp(n); bump(); saveSoon();
 				updateWin(n);
 				reprioSoon();
@@ -1081,7 +1111,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 		mounted: () => reg.boxes.size,
 		visible: () => vis(),
 		dpr,
-		idle: async () => { while (pending.n > 0 || sched.pending > 0) await Bun.sleep(5); },
+		idle: async () => { while (pending.n > 0 || sched.pending > 0 || (previews()?.pending ?? 0) > 0) await Bun.sleep(5); },
+			previews: () => ({ made: previews()?.made ?? 0, pending: previews()?.pending ?? 0 }),
 		ready: () => (doc() || error() ? Promise.resolve() : new Promise<void>((r) => readyWaiters.push(r))),
 		error,
 		search: (q) => { clearTimeout(searchTimer); setQuery(q); void runSearch(q); },
@@ -1117,7 +1148,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 			const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
 			if (!a || a.length < 3) return [];
 			const s = { idx: a[0]!, off: a[1]!, h: a[2]! };
-			const out: { page: number; vis: number; blank: number; soft: number; sharp: number }[] = [];
+			const out: { page: number; vis: number; blank: number; soft: number; sharp: number; noSrc: number }[] = [];
 			for (const [page, f] of probe) { const r = f(viewFor(page, s)); if (r.vis > 0) out.push({ page, ...r }); }
 			return out;
 		},
@@ -1228,9 +1259,47 @@ export function Reader(props: ReaderProps): JSX.Element {
 	);
 
 	const curAlt = createMemo(() => { const id = altView(); return id ? plugins().find((p) => p.altView?.id === id)?.altView : undefined; });
+	// Whole-page low-resolution previews (core/preview.ts): the visible and mounted pages first, then a few pages ahead in the scroll
+	// direction (one behind), so the page the reader is about to reach already has a stretched image under its tiles.
+	const previews = createMemo<Previews | null>(() => {
+		const d = doc();
+		if (!d || process.env.ZN_NO_PREVIEW === "1") return null; // (the env switch is for before / after benchmarks)
+		const pv = new Previews(d, dpr, look);
+		onCleanup(() => pv.close());
+		return pv;
+	});
+	// recently rendered whole-page bitmaps, so a band tile that turns up later is cut out of one instead of rendering the page again
+	const bitmaps = createMemo<BitmapCache | null>(() => {
+		if (!doc()) return null;
+		const c = new BitmapCache();
+		onCleanup(() => c.clear());
+		return c;
+	});
+	const PREVIEW_AHEAD = 4, PREVIEW_BEHIND = 1;
+	createEffect(() => {
+		const pv = previews();
+		if (!pv || !active() || !laidOut()) return;
+		vis(); win(); dir(); docRot(); pageRots(); look(); dpr(); sp();
+		untrack(() => {
+			const n = count(), dr = dir() || 1, [a, b] = vis();
+			const lo = clamp(Math.floor(a), 0, n - 1), hi = clamp(Math.ceil(b), lo + 1, n);
+			const want = new Map<number, PreviewWant>();
+			const add = (page: number, prio: number) => {
+				if (page < 0 || page >= n) return;
+				const old = want.get(page);
+				if (!old || prio < old.prio) want.set(page, { page, rot: rotOf(page), prio });
+			};
+			const cp = curPage();
+			for (let i = lo; i < hi; i++) add(i, 0.4e6 + Math.abs(i - cp));
+			for (const i of indices()) add(i, 0.5e6 + Math.abs(i - cp));
+			for (let k = 0; k < PREVIEW_AHEAD; k++) add(dr > 0 ? hi + k : lo - 1 - k, 1.5e6 + k * 1000);
+			for (let k = 0; k < PREVIEW_BEHIND; k++) add(dr > 0 ? lo - 1 - k : hi + k, 1.6e6 + k * 1000);
+			pv.want([...want.values()]);
+		});
+	});
 	const pageEnv = createMemo<PageEnv | null>(() => {
 		const d = doc();
-		return d ? { doc: d, sched, dpr, look, paper: () => paperColor(appearance()), stats, pending, reg, probe, margins, jobs, laidOut } : null;
+		return d ? { doc: d, sched, dpr, look, paper: () => paperColor(appearance()), stats, pending, reg, probe, margins, jobs, laidOut, previews: previews() ?? undefined, bitmaps: bitmaps() ?? undefined } : null;
 	});
 
 	/** overlays of every plugin for one page, in a pointer-transparent box the size of the page */

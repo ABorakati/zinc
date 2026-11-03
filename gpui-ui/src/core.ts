@@ -21,6 +21,8 @@ import { packaged } from "./packaged";
 import { holdRequestsUntil, setBaseUrl, setDirect } from "./api";
 import { onShutdown, portInUse, startServices, servicesWanted } from "./services";
 import { mark } from "./trace";
+import { webMounts } from "./webview/mounts";
+import { setWebBase } from "./webview/config";
 
 const REAL_LIBRARY = "c:/users/abora/zotero-next/data/library.sqlite";
 const norm = (p: string) => p.replaceAll("\\", "/").toLowerCase();
@@ -60,23 +62,27 @@ async function start(dbPath: string): Promise<Core> {
 		setFileFetcher(async (key, signal) =>
 			(await apiMod.handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db)) ?? new Response("not found", { status: 404 }));
 		mark("core-ready");
+		setWebBase(null); // no HTTP in this mode: web tabs fall back to the default app
 		return finish({ url: null, direct: true, primary: true, db, dbPath, wantedPort: null, stopServer: () => db.close() });
 	}
-	const { startServer } = await import("../../core/src/server" as string) as unknown as { startServer(o: { dbPath: string; port?: number; hostname?: string }): Started };
+	const { startServer } = await import("../../core/src/server" as string) as unknown as { startServer(o: { dbPath: string; port?: number; hostname?: string; mounts?: { prefix: string; dir: string }[] }): Started };
+	const mounts = webMounts(); // /reader-host/ (web tabs) and /note-host/, when their builds exist
+	const serves = mounts.some((m) => m.prefix === "/reader-host/");
 	const want = Number(process.env.ZN_PORT) || (packaged ? 23120 : 23161);
 	let s: Started | undefined;
 	let primary = true;
 	if (await portInUse(want)) primary = false; // another zotero-next (or anything) answers there: do not even try to share it
 	else {
 		try {
-			s = startServer({ dbPath, port: want, hostname: "127.0.0.1" });
+			s = startServer({ dbPath, port: want, hostname: "127.0.0.1", mounts });
 		} catch (e) {
 			if ((e as { code?: string })?.code !== "EADDRINUSE") throw e;
 			primary = false;
 		}
 	}
-	s ??= startServer({ dbPath, port: 0, hostname: "127.0.0.1" }); // taken: any free loopback port
+	s ??= startServer({ dbPath, port: 0, hostname: "127.0.0.1", mounts }); // taken: any free loopback port
 	setBaseUrl(s.url);
+	setWebBase(serves ? s.url : null);
 	mark("core-ready");
 	const server = s;
 	return finish({ url: s.url, direct: false, primary, db: s.db, dbPath, wantedPort: want, stopServer: () => server.stop() });

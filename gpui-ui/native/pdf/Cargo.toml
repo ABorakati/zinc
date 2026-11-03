@@ -14,3 +14,7 @@ crate-type = ["cdylib"]
 # non-embedded Helvetica/Times/CJK PDFs); turning them off saves ~1-2 MB but breaks those documents.
 # `hayro::kurbo` / `hayro::vello_cpu` / `hayro::hayro_interpret` / `hayro::hayro_syntax` are re-exported, so nothing else is needed.
 hayro = "0.8"
+
+# PDFium (Chrome's rasterizer; what the web reader runs as WASM) is loaded at run time from pdfium.dll (vendor/pdfium, shipped next to
+# the exe) through a dozen hand-declared C functions (src/pdfium.rs): no crate. hayro stays for the text layer, links and outline,
+# and renders when pdfium.dll cannot be loaded.

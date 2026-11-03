@@ -49,9 +49,9 @@ const tab = async (id: string) => { const el = t.renderer.findByTestId("ip-nav-"
 const text = () => t.renderer.getAllText();
 const want = (s: string) => { if (!text().some((x) => x.includes(s))) console.log(`!! missing text "${s}"`); };
 const scrollSections = (y: number) => {
-	// the pane's single scroller is the biggest overflow:scroll div
-	const el = t.renderer.findByType("div").find((d) => d.style.overflow === "scroll");
-	if (el) { t.renderer.scrollTo(el.id, 0, -y); }
+	// the pane's body is a <virtual-list> (testId ip-list): scroll to the entry about y px down (entries are ~30 px)
+	const el = t.renderer.findByTestId("ip-list");
+	if (el) t.renderer.scrollToItem(el.id, Math.floor(y / 30));
 	else console.log("!! no scroller");
 };
 const run = (n: string) => !only || only === n;

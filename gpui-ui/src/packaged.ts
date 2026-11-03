@@ -43,6 +43,9 @@ if (packaged) {
 	if (existsSync(join(dir, "docworker-entry.ts"))) set("ZN_DOCWORKER_ENTRY", join(dir, "docworker-entry.ts"));
 	if (existsSync(join(dir, "pdf-worker.ts"))) set("ZN_PDF_WORKER_ENTRY", join(dir, "pdf-worker.ts")); // PDF full-text extraction worker
 	if (existsSync(join(dir, "zn_pdf.dll"))) set("ZN_PDF_DLL", join(dir, "zn_pdf.dll"));
+	// the web reader (snapshots, EPUBs) and note editor pages the in-process core serves at /reader-host/ and /note-host/ (src/webview/mounts.ts)
+	if (existsSync(join(dir, "reader-host", "dist", "index.html"))) set("ZN_READER_HOST", join(dir, "reader-host", "dist"));
+	if (existsSync(join(dir, "note-host", "dist", "editor.html"))) set("ZN_NOTE_HOST", join(dir, "note-host", "dist"));
 
 	if (process.env.ZN_DB) startup.library = "in-process";
 	else if (process.env.ZN_URL) Object.assign(startup, { library: "external", url: process.env.ZN_URL });
