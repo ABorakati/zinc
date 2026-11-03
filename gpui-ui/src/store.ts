@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFile } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
-import { api, type ItemGroup, type ItemQuery } from "./api";
+import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, GroupBy, ItemRow, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
 import { mark } from "./trace";
 
@@ -507,8 +507,20 @@ function createStore(): AppStore {
 	const [tabs, setTabs] = createSignal<Tab[]>([{ id: "library" }]);
 	const [activeTab, setActiveTab] = createSignal("library");
 	function openAttachment(attachmentKey: string, title: string, itemKey: string) {
-		if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), { id: attachmentKey, kind: "reader", title, itemKey }]);
-		setActiveTab(attachmentKey);
+		if (tabs().some((t) => t.id === attachmentKey)) return void setActiveTab(attachmentKey);
+		const openTab = () => {
+			if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), { id: attachmentKey, kind: "reader", title, itemKey }]);
+			setActiveTab(attachmentKey);
+		};
+		// The native reader shows PDFs only (no web view for snapshots/EPUBs): anything else opens in its default app.
+		void api.item(attachmentKey).then(
+			(d) => {
+				const ct = String((d.data as { contentType?: unknown }).contentType ?? "");
+				if (!ct || /pdf/i.test(ct)) return openTab();
+				return apiRequest("POST", `/attachments/${encodeURIComponent(attachmentKey)}/open-external`).catch(openTab);
+			},
+			openTab, // unknown: let the reader try and report
+		);
 	}
 	function closeTab(id: string) {
 		if (id === "library") return;

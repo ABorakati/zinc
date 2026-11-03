@@ -44,7 +44,9 @@ g.ImageData ??= class ImageData {
 };
 try { Object.defineProperty(process.versions, "nw", { value: "0", configurable: true }); } catch { /* read-only: pdf.js then fails loudly */ }
 
-// <zotero-next>/vendor/document-worker/build/worker.js (this file is <zotero-next>/gpui-ui/src/reader/structure/)
-const root = process.env.ZN_ROOT ?? `${import.meta.dir}/../../../..`;
+// <root>/vendor/document-worker/build/worker.js. Bun does not pass the parent's runtime env changes into a Worker, so ZN_ROOT set by
+// packaged.ts may be missing here: the packaged app ships this file next to vendor/ (use that), the repo has it four levels down.
+const beside = `${import.meta.dir}/vendor/document-worker/build/worker.js`;
+const root = process.env.ZN_ROOT ?? ((await Bun.file(beside).exists()) ? import.meta.dir : `${import.meta.dir}/../../../..`);
 await import(`${root}/vendor/document-worker/build/worker.js`);
 (globalThis as unknown as { postMessage(m: unknown): void }).postMessage({ __ready: true });
