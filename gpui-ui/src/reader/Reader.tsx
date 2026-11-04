@@ -1180,7 +1180,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const toolbar = () => (
 		<div style={t("relative flex h-10 flex-none items-center gap-1 border-b bg-card px-2")}>
 			<Show when={doc()}>
-				<IconButton icon="panel-left" title="Sidebar" mode={mode} on={sbOpen() && !curAlt()} disabled={!!curAlt()} onClick={() => setSidebar(!sbOpen())} />
+				<IconButton icon="panel-left" title="Sidebar" mode={mode} on={sbOpen()} onClick={() => setSidebar(!sbOpen())} />
 				<IconButton icon="arrow-left" title="Back (Alt+Left)" mode={mode} disabled={history().length === 0} onClick={goBack} />
 			</Show>
 			<div style={t("mx-2 flex min-w-0 flex-1 items-center")}>
@@ -1346,7 +1346,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 
 	const body = (env: PageEnv) => (
 		<div onLayout={(e: EventPayload) => setBodyW(e.width ?? 0)} style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%" }}>
-			<Show when={sbOpen() && !curAlt()}>
+			{/* the sidebar (annotations, figures, references…) stays available in the reading view too; Contents there is a dropdown */}
+			<Show when={sbOpen()}>
 				<Sidebar mode={mode} width={Math.min(sbW(), sbMax())} tabs={sideTabs} tab={sbTab} onTab={(id) => setSidebar(true, id)} onWidth={resizeSidebar} maxWidth={sbMax} />
 			</Show>
 			<div ref={(el: { id: number }) => { paneEl = el; }} onLayout={onViewport} style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, minHeight: 0, position: "relative", backgroundColor: tok("muted") }}>

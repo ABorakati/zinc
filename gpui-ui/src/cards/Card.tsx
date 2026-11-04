@@ -226,23 +226,23 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 				{/* title; right-aligned: more-actions button (shown on hover) and the star (starred, or on hover) */}
 				<div style={tw("flex items-start gap-2", mode())}>
 					<text style={titleStyle()}>{it().title || "(untitled)"}</text>
-					{/* the button box (24 px, 44 with the star) stays reserved; the buttons themselves exist only on hover / when starred */}
-					<div style={{ ...tw("flex flex-none items-start", mode()), flexDirection: "row-reverse", width: 24 + (L().star && (isStarred(it()) || hovered()) ? 20 : 0), height: 24 }}>
-						<Show when={hovered()}>
-							<div
-								onClick={(e: { x?: number; y?: number }) => {
-									swallow();
-									p.onMore({ x: (e.x ?? 0) - 12, y: (e.y ?? 0) - 12, width: 24, height: 24 });
-								}}
-								style={{ ...tw("flex size-6 flex-none items-center justify-center rounded-md cursor-pointer hover:bg-foreground/10", mode()) }}
-							>
-								<Icon name="ellipsis" size={16} color={muted().color as string} />
-							</div>
-						</Show>
-						<Show when={L().star && (isStarred(it()) || hovered())}>
+					{/* The button box has a FIXED width (24 px, 44 with the star column) and both buttons stay mounted: hover only fades them.
+					    Growing the box on hover narrowed the title, which could re-wrap it, change the card's height, move it out from under the
+					    pointer (leave), shrink back (enter) — a hover flicker loop. */}
+					<div style={{ ...tw("flex flex-none items-start", mode()), flexDirection: "row-reverse", width: 24 + (L().star ? 20 : 0), height: 24 }}>
+						<div
+							onClick={(e: { x?: number; y?: number }) => {
+								swallow();
+								p.onMore({ x: (e.x ?? 0) - 12, y: (e.y ?? 0) - 12, width: 24, height: 24 });
+							}}
+							style={{ ...tw("flex size-6 flex-none items-center justify-center rounded-md cursor-pointer hover:bg-foreground/10", mode()), opacity: hovered() ? 1 : 0 }}
+						>
+							<Icon name="ellipsis" size={16} color={muted().color as string} />
+						</div>
+						<Show when={L().star}>
 							<div
 								onClick={() => { swallow(); void toggleStar(it()); }}
-								style={{ ...tw("flex size-5 flex-none items-center justify-center mt-0.5 rounded cursor-pointer hover:bg-foreground/10", mode()) }}
+								style={{ ...tw("flex size-5 flex-none items-center justify-center mt-0.5 rounded cursor-pointer hover:bg-foreground/10", mode()), opacity: isStarred(it()) || hovered() ? 1 : 0 }}
 							>
 								<Icon name="star" size={16} color={(isStarred(it()) ? tw("text-amber-500", mode()) : tw("text-muted-foreground/60", mode())).color as string} />
 							</div>

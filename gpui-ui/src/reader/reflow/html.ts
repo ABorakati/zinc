@@ -60,6 +60,10 @@ export function htmlToMarkdown(html: string): string {
 			case "b": case "strong": emit(wrap("**", f.buf)); break;
 			case "code": {
 				const raw = decode(f.buf.replace(/\\([\\`*_[\]<>~|])/g, "$1"));
+				// The structure converter marks a run drawn in another font as <code>. PDFs draw ligatures ("fi", "fl", "ffi") and odd
+				// glyphs in a font of their own, so a few letters inside a word arrive as code: keep those as plain text (a code box
+				// mid-word, in a monospace font, is what the user saw). Real code (longer, or with spaces/symbols) stays code.
+				if (/^[\p{L}\p{N}]{1,4}$/u.test(raw.trim())) { emit(escapeMd(raw)); break; }
 				emit(raw.trim() ? (raw.includes("`") ? `\`\` ${raw} \`\`` : `\`${raw}\``) : "");
 				break;
 			}
