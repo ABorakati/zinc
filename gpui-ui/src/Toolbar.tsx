@@ -170,10 +170,15 @@ function ActionMenu(p: { menu: "add" | "tools" }) {
 	);
 }
 
+/** GPUIX cache region sized by its content (Toolbar, SortBar); typed because the host style type does not list the key. */
+const CONTENT_REGION: Style = { cacheRegion: "content" };
+
 /** flex flex-none items-center gap-2.5 border-b border-border-soft px-4 pt-3.5 pb-2.5 */
 export function Toolbar() {
 	return (
-		<div style={{ ...t("flex flex-none items-center border-b border-border-soft px-4 pt-3.5 pb-2.5"), width: "100%" }}>
+		// cacheRegion "content": drawn by its own cached GPUI view at the height it last painted with (re-measured whenever its
+		// subtree changes), so list scrolling does not rebuild the toolbar every frame.
+		<div style={{ ...t("flex flex-none items-center border-b border-border-soft px-4 pt-3.5 pb-2.5"), width: "100%", ...CONTENT_REGION }}>
 			<QuickSearchMode />
 			<div style={{ width: 10, flexShrink: 0 }} />
 			<SearchBox />
@@ -292,7 +297,7 @@ export function SortBar() {
 	};
 	// the sort bar belongs to the item list: the full-text results have their own header-less list
 	return (
-		<div style={{ ...t("flex flex-none items-center gap-2 border-b px-5 py-1.5"), width: "100%", overflow: "hidden", ...(store.fulltext() ? HIDDEN : {}) }}>
+		<div style={{ ...t("flex flex-none items-center gap-2 border-b px-5 py-1.5"), width: "100%", overflow: "hidden", ...CONTENT_REGION, ...(store.fulltext() ? HIDDEN : {}) }}>
 			<div style={t("flex items-center gap-1.5")}>
 				<Icon name="layout-panel-top" size={14} color={tok("muted-foreground")} />
 				<text style={tx("text-xs text-muted-foreground")}>Group</text>

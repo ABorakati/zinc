@@ -73,7 +73,32 @@ const qs = (o: Record<string, string | number | boolean | undefined>) => {
 	return p.toString();
 };
 
+// ---- early answers (src/prefetch.ts): a worker answers the first screen's GETs while the main thread is busy starting up ----
+const early = new Map<string, Promise<string | null>>();
+/** The first screen's request paths, in order, collected until takeRecordedPaths() (read-only requests the worker may repeat). */
+let recorded: string[] | null = [];
+const PREFETCHABLE = /^\/(collections|items\?|items\/groups\?|schema|tag-colors|searches)/;
+let onDemand: (() => void) | null = null;
+/** Start the in-process core on the first request that early answers do not cover (main.tsx starts it anyway after the first page). */
+export function startCoreOnDemand(start: () => void): void { onDemand = start; }
+export function expectEarly(path: string, answer: Promise<string | null>): void { early.set(path, answer); }
+export function takeRecordedPaths(): string[] {
+	const r = recorded ?? [];
+	recorded = null;
+	return r;
+}
+
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+	if (method === "GET") {
+		if (recorded && PREFETCHABLE.test(path) && !recorded.includes(path) && recorded.length < 8) recorded.push(path);
+		const e = early.get(path);
+		if (e) { // each early answer is used once: later identical requests (refresh) go to the core
+			early.delete(path);
+			const text = await e;
+			if (text != null) { try { return JSON.parse(text) as T; } catch { /* fall through to the core */ } }
+		}
+	}
+	if (onDemand) { const start = onDemand; onDemand = null; start(); } // the in-process core was left to start lazily (main.tsx): now it is needed
 	await gate;
 	signal?.throwIfAborted();
 	const init: RequestInit = {

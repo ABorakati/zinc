@@ -66,6 +66,7 @@ async function start(dbPath: string): Promise<Core> {
 		return finish({ url: null, direct: true, primary: true, db, dbPath, wantedPort: null, stopServer: () => db.close() });
 	}
 	const { startServer } = await import("../../core/src/server" as string) as unknown as { startServer(o: { dbPath: string; port?: number; hostname?: string; mounts?: { prefix: string; dir: string }[] }): Started };
+	mark("core-imported");
 	const mounts = webMounts(); // /reader-host/ (web tabs) and /note-host/, when their builds exist
 	const serves = mounts.some((m) => m.prefix === "/reader-host/");
 	const want = Number(process.env.ZN_PORT) || (packaged ? 23120 : 23161);
@@ -81,6 +82,7 @@ async function start(dbPath: string): Promise<Core> {
 		}
 	}
 	s ??= startServer({ dbPath, port: 0, hostname: "127.0.0.1", mounts }); // taken: any free loopback port
+	mark("core-server-started");
 	setBaseUrl(s.url);
 	setWebBase(serves ? s.url : null);
 	mark("core-ready");

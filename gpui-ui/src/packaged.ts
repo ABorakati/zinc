@@ -10,6 +10,9 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { mark } from "./trace";
+
+mark("boot");
 
 const exe = process.execPath;
 export const packaged = /^zotero-next-gpui.*\.exe$/i.test(basename(exe));
@@ -73,3 +76,4 @@ if (packaged) {
 		}
 	}
 }
+mark("packaged-done");

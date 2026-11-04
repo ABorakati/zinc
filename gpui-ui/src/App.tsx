@@ -26,6 +26,8 @@ const t = (cls: string): Style => tw(cls, mode());
 
 /** const card = "min-w-0 rounded-[14px] bg-background shadow-raised" */
 const CARD = "min-w-0 rounded-[14px] bg-background shadow-raised";
+/** GPUIX cache region (see the sidebar panel below); a typed constant because the host style type does not list the key. */
+const REGION: Style = { cacheRegion: true };
 // GPUI clips children to a rectangle, not to the card's rounded outline, so no child may paint a background into a corner: the
 // item pane's tinted header carries the card's top radii itself, and the list keeps a strip of padding below its last row.
 // (An earlier canvas-coloured corner mask covered the card's shadow and looked wrong.)
@@ -93,8 +95,10 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 	const mins: number[] = [];
 	if (left) {
 		// the Sidebar draws the zn-sidebar padding itself
+		// cacheRegion (sidebar, list body, item pane): each is drawn by its own cached GPUI view, so a frame where only the list
+		// scrolled replays the other two instead of rebuilding them. A region must take its size from its parent (100%, flex-grow).
 		panels.push(
-			<div style={{ ...t("flex flex-col min-h-0"), height: "100%", width: "100%", minWidth: 0 }}>
+			<div style={{ ...t("flex flex-col min-h-0"), height: "100%", width: "100%", minWidth: 0, ...REGION }}>
 				<Sidebar />
 			</div>,
 		);
@@ -104,7 +108,7 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 		<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), height: "100%", width: "100%" }}>
 			<Toolbar />
 			<SortBar />
-			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column", paddingBottom: 10, backgroundColor: tokens[mode()]["card"], borderBottomLeftRadius: 14, borderBottomRightRadius: 14 }}>
+			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column", paddingBottom: 10, backgroundColor: tokens[mode()]["card"], borderBottomLeftRadius: 14, borderBottomRightRadius: 14, ...REGION }}>
 				<CardList />
 			</div>
 		</div>,
@@ -112,7 +116,7 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 	mins.push(MINS.list);
 	if (right) {
 		panels.push(
-			<div style={{ ...t(`${CARD} overflow-hidden`), height: "100%", width: "100%" }}>
+			<div style={{ ...t(`${CARD} overflow-hidden`), height: "100%", width: "100%", ...REGION }}>
 				<ItemPaneSlot />
 			</div>,
 		);

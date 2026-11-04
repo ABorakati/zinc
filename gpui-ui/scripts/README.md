@@ -113,3 +113,20 @@ Reference: the Electrobun app measured, library only, about 580 MB private / 710
 In external mode the core's own memory is whatever that process has accumulated (it may serve other clients too), so compare
 the "GPUI" columns for the UI cost and treat the core columns as a constant. Numbers on a busy machine vary a lot (run
 `startup.ts` a few times and look at the median, not one run).
+
+## Custom GPUIX native addon (cache regions)
+
+The app runs a locally built `@gpuix/native` addon, not the npm 0.11.0 binary. It adds `cacheRegion` (a style key: `true`, or
+`"content"` for a region sized by its children). Each region is drawn by its own cached GPUI view, so a frame where only the list
+scrolled replays the sidebar, toolbar and item pane instead of rebuilding them (scroll draw p50 ~5.4 -> ~3.3 ms).
+
+* Source: `C:\Users\abora\src\gpuix`, branch `zn-cache` (commit `00e9146`, on top of the 0.11.0 release `2e31b47`); its `zed`
+  submodule is on a local branch `zn-cache` (commit `23bea52`). Neither is pushed.
+* Build: in `packages/native`, `bun run build` (napi release build with `test-support`).
+* Install: copy `packages/native/gpuix-native.win32-x64-msvc.node` over
+  `node_modules/@gpuix/native-win32-x64-msvc/gpuix-native.win32-x64-msvc.node` (the npm original is kept beside it as `.orig`).
+  `bun install` puts the npm binary back: copy the custom one again before `bun scripts/build.ts` / `package.ts`.
+* Without the custom addon, `cacheRegion` is ignored and the app still works (whole-window redraws, as before).
+* Scroll bench at 120 fps input: `bun scripts/scroll-bench.ts --db <copy> --view cards --profile slow,fast --step 8`
+  (the default 16 ms step caps fps near 62). `NAPI_RS_NATIVE_LIBRARY_PATH=<file>.node` runs it with another addon (the name must
+  end in `.node`).

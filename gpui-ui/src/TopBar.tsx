@@ -126,13 +126,17 @@ function SettingsTabChip(p: { active: boolean }) {
 	);
 }
 
+/** GPUIX cache region; typed because the host style type does not list the key. */
+const REGION: Style = { cacheRegion: true };
+
 export function TopBar() {
 	const t = (cls: string): Style => tw(cls, mode());
 	const tx = (cls: string): Style => textStyle(cls, mode());
 	const onLibrary = () => store.activeTab() === "library";
 	const readers = () => store.tabs().filter(isDocTab);
 	return (
-		<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }}>
+		// cacheRegion: drawn by its own cached GPUI view (fixed h-10), replayed while the list scrolls
+		<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%", ...REGION }}>
 			{/* the panel toggles belong to the library layout (disabled on a reader tab, as the web UI) */}
 			<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>
 				<PanelButton icon="panel-left" on={leftOpen()} onClick={() => onLibrary() && setLeftOpen(!leftOpen())} />

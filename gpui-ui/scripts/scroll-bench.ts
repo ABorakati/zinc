@@ -7,7 +7,9 @@
 //   * row evaluations per step (store.itemAt runs: rows that re-render), skeleton evaluations, page fetches, backwards jumps
 //
 //   bun scripts/scroll-bench.ts --db C:/path/to/library-COPY.sqlite [--view cards|table|both] [--profile slow,fast,fling,updown]
-//                               [--secs 3] [--json out.json]
+//                               [--secs 3] [--json out.json] [--step 16]
+//   --step ms: one wheel step every <ms> (default 16) at the same px/s. GPUI draws one frame per input, so at 16 ms fps can't pass
+//              ~62; use --step 8 to see whether the app can keep up at 120 fps.
 // ZN_DB must be a VACUUM INTO copy (the core writes to it). Never point it at data/library.sqlite.
 import { performance } from "node:perf_hooks";
 
@@ -20,6 +22,7 @@ const VIEWS = (arg("view", "both") === "both" ? ["cards", "table"] : [arg("view"
 const PROFILES = (arg("profile", "slow,fast,fling,updown") ?? "").split(",").filter(Boolean);
 const SECS = Number(arg("secs", "3"));
 const TRACE = arg("trace");
+const STEP = Number(arg("step", "16"));
 
 process.env.ZN_DB = DB;
 process.env.ZN_UI_STATE = "off"; // never read or write the user's ui-state.json
@@ -179,12 +182,12 @@ async function settle(listId: number, to = 0) {
 
 /** Wheel deltas (px, positive = scroll down) per 16 ms frame for a profile. */
 function* deltas(profile: string): Generator<{ dy: number; gap?: number }> {
-	const frames = Math.round((SECS * 1000) / 16);
-	if (profile === "slow") for (let i = 0; i < frames; i++) yield { dy: 24 };
-	else if (profile === "fast") for (let i = 0; i < frames; i++) yield { dy: 100 };
-	else if (profile === "blast") for (let i = 0; i < frames; i++) yield { dy: 400 }; // ~25 000 px/s
-	else if (profile === "longback") { for (let i = 0; i < frames; i++) yield { dy: 600 }; for (let i = 0; i < frames; i++) yield { dy: -600 }; }
-	else if (profile === "updown") { for (let i = 0; i < frames; i++) yield { dy: 60 }; for (let i = 0; i < frames; i++) yield { dy: -60 }; }
+	const frames = Math.round((SECS * 1000) / STEP);
+	if (profile === "slow") for (let i = 0; i < frames; i++) yield { dy: 24 * STEP / 16 };
+	else if (profile === "fast") for (let i = 0; i < frames; i++) yield { dy: 100 * STEP / 16 };
+	else if (profile === "blast") for (let i = 0; i < frames; i++) yield { dy: 400 * STEP / 16 }; // ~25 000 px/s
+	else if (profile === "longback") { for (let i = 0; i < frames; i++) yield { dy: 600 * STEP / 16 }; for (let i = 0; i < frames; i++) yield { dy: -600 }; }
+	else if (profile === "updown") { for (let i = 0; i < frames; i++) yield { dy: 60 * STEP / 16 }; for (let i = 0; i < frames; i++) yield { dy: -60 }; }
 	else if (profile === "fling") {
 		for (let k = 0; k < 3; k++) {
 			let v = 500;
@@ -224,7 +227,7 @@ async function runProfile(view: string, profile: string, listId: number, cx: num
 			lastIdx = idx;
 			anchorHist.push(anchor[0]!);
 		}
-		next += 16;
+		next += STEP;
 		const wait = next - performance.now();
 		await sleep(Math.max(0, wait));
 	}

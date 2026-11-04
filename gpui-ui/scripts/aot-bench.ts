@@ -153,6 +153,10 @@ function makeBaseCopy() {
 	rmSync(baseCopy, { force: true });
 	const src = new Database(dbSource, { readonly: true });
 	try { src.run(`VACUUM INTO '${baseCopy.replaceAll("\\", "/").replaceAll("'", "''")}'`); } finally { src.close(); }
+	// VACUUM INTO writes a rollback-journal database; the real library is WAL. Switch the copy once, or every run pays the core's
+	// ~200 ms WAL conversion at start-up (the per-run copies are file copies of this one, so they start in WAL mode too).
+	const c = new Database(baseCopy);
+	try { c.run("PRAGMA journal_mode = WAL"); } finally { c.close(); }
 	console.log(`library copy: ${baseCopy} (${(statSync(baseCopy).size / 1048576).toFixed(0)} MB) from ${dbSource}`);
 }
 function freshDb(tag: string): string {

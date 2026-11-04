@@ -171,7 +171,7 @@ for (const v of todo) {
 	rmSync(outfile, { force: true });
 	const t0 = performance.now();
 	const result = await Bun.build({
-		entrypoints: [entry],
+		entrypoints: [entry, "src/prefetch-worker.ts"], // the worker of src/prefetch.ts is a second entry point: Bun embeds it and `new Worker("./prefetch-worker.ts")` finds it
 		target: "bun",
 		format: "esm",
 		minify: v.minify,

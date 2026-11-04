@@ -68,6 +68,13 @@ const dbCopy = join(work, "library.sqlite");
 	const t = performance.now();
 	const db = new Database(src, { readonly: true });
 	db.run("VACUUM INTO ?", [dbCopy]);
+	{
+		// VACUUM INTO writes a rollback-journal database; the real library is WAL, so switch the copy (else the core converts it at
+		// every start-up, ~200 ms that the real app never pays)
+		const c = new Database(dbCopy);
+		c.run("PRAGMA journal_mode = WAL");
+		c.close();
+	}
 	db.close();
 	console.log(`library copy: ${(statSync(dbCopy).size / 1e6).toFixed(0)} MB in ${((performance.now() - t) / 1000).toFixed(1)} s`);
 }

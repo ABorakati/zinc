@@ -3,10 +3,13 @@
 //   1. render() a splash straight away (canvas colour + the layout's skeleton). main.tsx statically imports only the renderer, the
 //      theme (colours) and tiny helpers: the heavy modules (the app ~400 ms, the core ~400 ms) are imported afterwards.
 //   2. Register the fonts right away, while the tree has no text (cheap then; see below).
-//   3. Yield one tick so the splash is presented, then in parallel:
-//        - start the in-process core when ZN_DB is set (src/core.ts); api.ts holds requests until it is up,
+//   3. Yield one tick so the splash is presented, then:
 //        - import the store, which starts the data loading (collections, first page of items, year groups) at once,
-//        - import the App and swap it in for the splash.
+//        - import the App and swap it in for the splash,
+//        - the in-process core (ZN_DB; src/core.ts, api.ts holds requests until it is up) starts at once, or, when the prefetch worker
+//          (src/prefetch.ts) is answering the first screen's requests, right after the first page is in.
+//   Before render(): startPrefetch() launches that worker, so the first screen's data is read while render() blocks this thread.
+//   After the first page of items: the core and its services, the feature modules, the prefetch hint.
 //
 // Set ZN_TRACE=1 to print the milestones (see src/trace.ts; scripts/startup.ts reads them).
 import "./packaged"; // first: sets the packaged app's defaults before other modules read the environment
@@ -19,6 +22,8 @@ import { applyAppearance, startAppearance } from "./shell/appearance";
 import { bindUiState } from "./shell/prefs";
 import { handleWindowKeyDown } from "./shell/shortcuts";
 import { tw } from "./theme";
+import { startCoreOnDemand } from "./api";
+import { saveHint, startPrefetch } from "./prefetch";
 import { mark } from "./trace";
 
 mark("main-start");
@@ -31,6 +36,7 @@ const FULL: Style = { width: "100%", height: "100%" };
 
 /** Same frame as App.tsx (top bar, sidebar | list card | item card on the canvas), with grey bars where the content goes. */
 function Splash() {
+	mark("splash-start");
 	const bar = (w: number | string, h = 10): Style => ({ ...t("rounded-md bg-border"), width: w, height: h, opacity: 0.5 });
 	return (
 		<div style={{ ...t("flex flex-col bg-canvas"), ...FULL }}>
@@ -55,6 +61,8 @@ function Root() {
 	return <Show when={app()} fallback={<Splash />}>{(C) => createComponent(C(), {})}</Show>;
 }
 
+const earlyData = startPrefetch(); // a worker answers the first screen's requests while render() below blocks this thread (src/prefetch.ts)
+mark("pre-render");
 // onKeyDown is the window-level key handler: global shortcuts of the registry's appActions (shell/shortcuts.ts).
 render(() => <Root />, { title: "zotero-next", width: 1400, height: 900, onKeyDown: handleWindowKeyDown });
 mark("render-returned");
@@ -77,7 +85,10 @@ async function openTabsFromEnv(open: (key: string, title: string, itemKey: strin
 // let the splash be presented before the heavy imports occupy the thread
 await new Promise((r) => setTimeout(r, 0));
 
-void startCore().catch((e) => console.error("[core]", e instanceof Error ? e.message : e)); // before the store: it holds requests
+// The core: at once, unless the prefetch worker is answering the first screen's requests (src/prefetch.ts); then it starts when the
+// first page is in (below) or when a request needs it (api.ts calls this on the first request the worker did not answer).
+const bootCore = () => void startCore().catch((e) => console.error("[core]", e instanceof Error ? e.message : e));
+if (earlyData) startCoreOnDemand(bootCore); else bootCore(); // before the store: it holds requests
 const storeP = import("./store"); // creating the store starts the data loading right now
 const appP = import("./App");
 const { store, uiState } = await storeP;
@@ -88,18 +99,26 @@ const { App } = await appP;
 setApp(() => App);
 mark("app-mounted");
 
+// The App is mounted; this resolves when its first page of items is in (or the load failed): the next frame paints it.
+await new Promise<void>((resolve) => createRoot((dispose) => {
+	createEffect(() => {
+		if (store.pagesLoaded() > 0 || store.error()) {
+			mark("first-items");
+			dispose();
+			resolve();
+		}
+	});
+}));
+
+// Everything below is off the path to the first items. Let the frame go out first.
+await new Promise((r) => setTimeout(r, 16));
+bootCore(); // (a no-op when it already started)
+saveHint();
+
 // ---- FEATURES: each feature's register() puts its menu entries, dialogs, sidebar/settings sections and reader plugins in the registry
+// (registered after the first page: the registry is reactive, the menus and sections fill in a few ms later)
 await import("./features").then(
 	() => mark("features-registered"),
 	(e) => console.error("[features]", e),
 );
-
-createRoot((dispose) => {
-	createEffect(() => {
-		if (store.pagesLoaded() > 0 || store.error()) {
-			mark("first-items"); // the App is mounted and its first page is in: the next frame paints it
-			dispose();
-			void openTabsFromEnv(store.openAttachment);
-		}
-	});
-});
+void openTabsFromEnv(store.openAttachment);
