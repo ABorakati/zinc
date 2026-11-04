@@ -235,14 +235,16 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 								swallow();
 								p.onMore({ x: (e.x ?? 0) - 12, y: (e.y ?? 0) - 12, width: 24, height: 24 });
 							}}
-							style={{ ...tw("flex size-6 flex-none items-center justify-center rounded-md cursor-pointer hover:bg-foreground/10", mode()), opacity: hovered() ? 1 : 0 }}
+							style={{ ...tw("flex size-6 flex-none items-center justify-center rounded-md cursor-pointer", mode()), opacity: hovered() ? 1 : 0 }}
 						>
 							<Icon name="ellipsis" size={16} color={muted().color as string} />
 						</div>
 						<Show when={L().star}>
 							<div
 								onClick={() => { swallow(); void toggleStar(it()); }}
-								style={{ ...tw("flex size-5 flex-none items-center justify-center mt-0.5 rounded cursor-pointer hover:bg-foreground/10", mode()), opacity: isStarred(it()) || hovered() ? 1 : 0 }}
+								// no hover background on the star / more buttons: in GPUIX a filled element blocks its ancestors' mouse
+								// handlers, so a hover fill made the card see a mouse-leave, hide the button, see an enter — a flicker loop
+								style={{ ...tw("flex size-5 flex-none items-center justify-center mt-0.5 rounded cursor-pointer", mode()), opacity: isStarred(it()) || hovered() ? 1 : 0 }}
 							>
 								<Icon name="star" size={16} color={(isStarred(it()) ? tw("text-amber-500", mode()) : tw("text-muted-foreground/60", mode())).color as string} />
 							</div>

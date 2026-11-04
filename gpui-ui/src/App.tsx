@@ -32,7 +32,8 @@ const CARD_R = 14;
 // or hovered row at the bottom of the list, the item pane's tinted header) squares it off. These masks paint the window background
 // over the area outside each corner's arc, so the card always reads rounded. (svg alpha tinted by style.color, see icons.tsx)
 const CORNER = (t: string) =>
-	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CARD_R} ${CARD_R}"><path transform="${t}" d="M0 0H${CARD_R}A${CARD_R} ${CARD_R} 0 0 0 0 ${CARD_R}Z" fill="#000"/></svg>`;
+	// no transform attribute at all for the unflipped corner: an empty transform="" made the svg fail to parse (top-left stayed square)
+	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CARD_R} ${CARD_R}"><path${t ? ` transform="${t}"` : ""} d="M0 0H${CARD_R}A${CARD_R} ${CARD_R} 0 0 0 0 ${CARD_R}Z" fill="#000"/></svg>`;
 const CORNERS = [
 	{ src: CORNER(""), pos: { top: 0, left: 0 } },
 	{ src: CORNER(`translate(${CARD_R} 0) scale(-1 1)`), pos: { top: 0, right: 0 } },
