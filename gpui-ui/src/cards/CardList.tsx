@@ -140,10 +140,32 @@ export function CardsView(): JSX.Element {
 	// happens at most every 100 ms, and at once only when the view is about to run off the mounted rows.
 	const nearEdge = (rows: number) => { const s = untrack(first); return (visA < s + rows && s > 0) || visB > s + WINDOW - rows; };
 	const recentre = throttledCommit(() => { if (nearEdge(8)) setStart(Math.max(0, visA - WINDOW / 4)); }, 100);
+	// The group popup: while the list scrolls, a pill beside the scrollbar thumb names the group at the top of the view ("2019").
+	// It only commits when its text or (4 px-rounded) position changes, at most every 60 ms, and hides 700 ms after the scroll stops.
+	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
+	let listH = 0, quietUntil = 0, hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let want: { label: string; top: number } | null = null;
+	const showBubble = throttledCommit(() => {
+		const cur = untrack(bubble);
+		if (want && (!cur || cur.label !== want.label || cur.top !== want.top)) setBubble(want);
+	}, 60);
+	const trackBubble = (a: number, b: number) => {
+		const g = rows.groupAt(a);
+		if (!g || performance.now() < quietUntil || count() < 40 || listH < 120) return;
+		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
+		const frac = Math.min(1, a / span);
+		want = { label: g.label, top: Math.round((14 + frac * (listH - 56)) / 4) * 4 };
+		showBubble(false);
+		if (hideTimer) clearTimeout(hideTimer);
+		hideTimer = setTimeout(() => { want = null; setBubble(null); }, 700);
+	};
+	onCleanup(() => { if (hideTimer) clearTimeout(hideTimer); });
+
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
 		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
+		if (a !== visA) trackBubble(a, b); // the top row moved: a scroll (not the first layout or a resize)
 		visA = a; visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(3)) recentre(true);
@@ -154,6 +176,9 @@ export function CardsView(): JSX.Element {
 
 	// a new list (view / filter / sort) starts at the top
 	createEffect(on(() => store.listVersion(), () => {
+		quietUntil = performance.now() + 400; // the jump back to the top is not a scroll: no popup for it
+		want = null;
+		setBubble(null);
 		setStart(0);
 		if (list) gpuix?.renderer.scrollToItem?.(list.id, 0);
 	}, { defer: true }));
@@ -191,7 +216,7 @@ export function CardsView(): JSX.Element {
 			onFocus={() => setListFocused(true)}
 			onBlur={() => setListFocused(false)}
 			onScroll={markScroll}
-			onLayout={(e: EventPayload) => { const w = Math.round(e.width ?? 0); if (w !== untrack(cardListWidthNow)) setCardListWidth(w); }}
+			onLayout={(e: EventPayload) => { listH = e.height ?? listH; const w = Math.round(e.width ?? 0); if (w !== untrack(cardListWidthNow)) setCardListWidth(w); }}
 			style={{ ...tw("flex flex-col flex-1 min-h-0 w-full h-full bg-card", store.mode()), keyboardFocusDim: false }}
 		>
 			<virtual-list
@@ -202,9 +227,17 @@ export function CardsView(): JSX.Element {
 				estimatedItemHeight={estimate()}
 				overdraw={400}
 				onVisibleRange={onVisibleRange}
-				style={{ width: "100%", height: "100%" }}>
+				// the overlaid thumb at the list's right edge (as the sidebar's list); the rows' px-2.5 keeps cards clear of it
+				style={{ width: "100%", height: "100%", scrollbarColor: tok("input", store.mode()), scrollbarWidth: 6 }}>
 				<For each={indices()}>{(i) => <RowView row={i} rows={rows} />}</For>
 			</virtual-list>
+			<Show when={bubble()}>
+				{(bb) => (
+					<div style={{ ...tw("flex items-center rounded-full bg-primary px-3 py-1 shadow-raised", store.mode()), position: "absolute", right: 18, top: bb().top, pointerEvents: "none" }}>
+						<text style={{ ...textStyle("select-none font-title text-sm font-semibold", store.mode()), color: tok("primary-foreground", store.mode()) }}>{bb().label}</text>
+					</div>
+				)}
+			</Show>
 			<Show when={count() === 0 && !store.loading()}>
 				<div style={tw("flex flex-col absolute top-10 inset-x-0 items-center gap-1", store.mode())}>
 					<text style={textStyle("text-muted-foreground", store.mode())}>{store.view().kind === "publications" ? "My Publications is not available in this library" : "No items"}</text>

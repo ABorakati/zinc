@@ -57,6 +57,14 @@ export function createRows() {
 			const off = r - rs[gi]!;
 			return off === 0 ? { kind: "header", group: gs[gi]! } : { kind: "item", index: gs[gi]!.start + off - 1 };
 		},
+		/** The group row `r` belongs to (its header or one of its items); undefined when the list is not grouped. */
+		groupAt(r: number): Group | undefined {
+			const gs = active();
+			if (!gs) return undefined;
+			const rs = rowStart();
+			if (r < 0 || r >= rs[rs.length - 1]!) return undefined;
+			return gs[floor(rs, r, gs.length)];
+		},
 		isCollapsed: (g: Group) => collapsed().has(keyOf(g)),
 		toggle(g: Group) {
 			const s = new Set(collapsed());

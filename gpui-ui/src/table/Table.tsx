@@ -364,7 +364,7 @@ export function TableView(): JSX.Element {
 							estimatedItemHeight={ROW}
 							overdraw={300}
 							onVisibleRange={onVisibleRange}
-							style={{ width: "100%", flexGrow: 1, minHeight: 0 }}
+							style={{ width: "100%", flexGrow: 1, minHeight: 0, scrollbarColor: tok("input"), scrollbarWidth: 6 }}
 						>
 							<For each={indices()}>{(i) => <RowView row={i} rows={rows} cols={cols} total={total} />}</For>
 						</virtual-list>
