@@ -26,27 +26,9 @@ const t = (cls: string): Style => tw(cls, mode());
 
 /** const card = "min-w-0 rounded-[14px] bg-background shadow-raised" */
 const CARD = "min-w-0 rounded-[14px] bg-background shadow-raised";
-const CARD_R = 14;
-
-// GPUI clips children to a rectangle, not to the card's rounded outline: a child that paints a background into a corner (a selected
-// or hovered row at the bottom of the list, the item pane's tinted header) squares it off. These masks paint the window background
-// over the area outside each corner's arc, so the card always reads rounded. (svg alpha tinted by style.color, see icons.tsx)
-const CORNER = (t: string) =>
-	// no transform attribute at all for the unflipped corner: an empty transform="" made the svg fail to parse (top-left stayed square)
-	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CARD_R} ${CARD_R}"><path${t ? ` transform="${t}"` : ""} d="M0 0H${CARD_R}A${CARD_R} ${CARD_R} 0 0 0 0 ${CARD_R}Z" fill="#000"/></svg>`;
-const CORNERS = [
-	{ src: CORNER(""), pos: { top: 0, left: 0 } },
-	{ src: CORNER(`translate(${CARD_R} 0) scale(-1 1)`), pos: { top: 0, right: 0 } },
-	{ src: CORNER(`translate(0 ${CARD_R}) scale(1 -1)`), pos: { bottom: 0, left: 0 } },
-	{ src: CORNER(`translate(${CARD_R} ${CARD_R}) scale(-1 -1)`), pos: { bottom: 0, right: 0 } },
-];
-function CornerMasks(): JSX.Element {
-	return (
-		<For each={CORNERS}>
-			{(c) => <svg source={c.src} style={{ position: "absolute", ...c.pos, width: CARD_R, height: CARD_R, color: tokens[mode()]["canvas"], pointerEvents: "none" }} />}
-		</For>
-	);
-}
+// GPUI clips children to a rectangle, not to the card's rounded outline, so no child may paint a background into a corner: the
+// item pane's tinted header carries the card's top radii itself, and the list keeps a strip of padding below its last row.
+// (An earlier canvas-coloured corner mask covered the card's shadow and looked wrong.)
 
 /** ItemPane empty(): flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground */
 function ItemPaneEmpty() {
@@ -119,21 +101,19 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 		mins.push(MINS.sidebar);
 	}
 	panels.push(
-		<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), position: "relative", height: "100%", width: "100%" }}>
+		<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), height: "100%", width: "100%" }}>
 			<Toolbar />
 			<SortBar />
-			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
+			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column", paddingBottom: 10, backgroundColor: tokens[mode()]["card"], borderBottomLeftRadius: 14, borderBottomRightRadius: 14 }}>
 				<CardList />
 			</div>
-			<CornerMasks />
 		</div>,
 	);
 	mins.push(MINS.list);
 	if (right) {
 		panels.push(
-			<div style={{ ...t(`${CARD} overflow-hidden`), position: "relative", height: "100%", width: "100%" }}>
+			<div style={{ ...t(`${CARD} overflow-hidden`), height: "100%", width: "100%" }}>
 				<ItemPaneSlot />
-				<CornerMasks />
 			</div>,
 		);
 		mins.push(MINS.pane);

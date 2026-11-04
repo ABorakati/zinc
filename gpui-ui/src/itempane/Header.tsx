@@ -95,7 +95,7 @@ export function Header(): JSX.Element {
 	return (
 		<div
 			data-testid="ip-header"
-			style={{ ...t("flex flex-col flex-none w-full"), paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 16, backgroundColor: tok("header-tint"), borderBottomWidth: 1, borderColor: tok("border-soft") }}
+			style={{ ...t("flex flex-col flex-none w-full"), paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 16, backgroundColor: tok("header-tint"), borderTopLeftRadius: 14, borderTopRightRadius: 14, borderBottomWidth: 1, borderColor: tok("border-soft") }}
 		>
 			{/* item type badge */}
 			<div style={{ ...t("flex items-center gap-1.5 rounded-full px-2.5 py-1"), alignSelf: "flex-start", backgroundColor: tok("primary-tint") }}>

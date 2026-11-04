@@ -164,7 +164,7 @@ function NotePane(): JSX.Element {
 	const title = () => firstLine((d().data.note as string | undefined) ?? "") || "Untitled note";
 	return (
 		<div style={{ ...t("flex flex-col w-full h-full") }}>
-			<div style={{ ...t("flex flex-col flex-none gap-2.5 px-5 pt-5 pb-4"), backgroundColor: tok("header-tint"), borderBottomWidth: 1, borderColor: tok("border-soft") }}>
+			<div style={{ ...t("flex flex-col flex-none gap-2.5 px-5 pt-5 pb-4"), backgroundColor: tok("header-tint"), borderTopLeftRadius: 14, borderTopRightRadius: 14, borderBottomWidth: 1, borderColor: tok("border-soft") }}>
 				<div style={{ ...t("flex items-center gap-1.5 rounded-full px-2.5 py-1"), alignSelf: "flex-start", backgroundColor: tok("primary-tint") }}>
 					<Icon name="sticky-note" size={14} color={tok("primary-deep")} />
 					<text style={{ ...tx("text-[11px] font-semibold"), color: tok("primary-deep") }}>NOTE</text>

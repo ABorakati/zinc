@@ -204,7 +204,9 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 				...ring,
 			};
 		}
-		return { ...base, ...tw("rounded-none border-b border-border/60", m), ...(p.focused ? { backgroundColor: mix(tok("accent", m), 50, "transparent") } : hovered() ? { backgroundColor: mix(tok("accent", m), 40, "transparent") } : {}), ...ring };
+		// Hover is GPUI's own (style.hover, a hit-test on the pointer position), not JS enter/leave: in GPUIX a child that paints (a
+		// button, the star, an icon) blocks its ancestors' mouse handlers, so JS hover saw leave/enter pairs across a card and flickered.
+		return { ...base, ...tw("rounded-none border-b border-border/60", m), ...(p.focused ? { backgroundColor: mix(tok("accent", m), 50, "transparent") } : { hover: { backgroundColor: mix(tok("accent", m), 40, "transparent") } }), ...ring };
 	};
 
 	const muted = () => textStyle(compact() ? "text-xs text-muted-foreground" : "text-[13px] text-muted-foreground", mode());
@@ -235,16 +237,15 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 								swallow();
 								p.onMore({ x: (e.x ?? 0) - 12, y: (e.y ?? 0) - 12, width: 24, height: 24 });
 							}}
-							style={{ ...tw("flex size-6 flex-none items-center justify-center rounded-md cursor-pointer", mode()), opacity: hovered() ? 1 : 0 }}
+							style={{ ...tw("flex size-6 flex-none items-center justify-center rounded-md cursor-pointer", mode()), opacity: 0.45, hover: { opacity: 1 } }}
 						>
 							<Icon name="ellipsis" size={16} color={muted().color as string} />
 						</div>
 						<Show when={L().star}>
 							<div
 								onClick={() => { swallow(); void toggleStar(it()); }}
-								// no hover background on the star / more buttons: in GPUIX a filled element blocks its ancestors' mouse
-								// handlers, so a hover fill made the card see a mouse-leave, hide the button, see an enter — a flicker loop
-								style={{ ...tw("flex size-5 flex-none items-center justify-center mt-0.5 rounded cursor-pointer", mode()), opacity: isStarred(it()) || hovered() ? 1 : 0 }}
+								// always present, faint until hovered itself (GPUIX can't style a child from its card's hover; JS hover flickered)
+								style={{ ...tw("flex size-5 flex-none items-center justify-center mt-0.5 rounded cursor-pointer", mode()), opacity: isStarred(it()) ? 1 : 0.35, hover: { opacity: 1 } }}
 							>
 								<Icon name="star" size={16} color={(isStarred(it()) ? tw("text-amber-500", mode()) : tw("text-muted-foreground/60", mode())).color as string} />
 							</div>
@@ -271,12 +272,12 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 					<For each={actions()}>{(a) => {
 						const c = compact();
 						switch (a.k) {
-							case "open": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="file-text" label={a.label} tint="orange" strong onClick={() => store.openAttachment(it().primaryAttachment!.key, it().title || "Reader", it().key)} />;
-							case "fulltext": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="download" label="Find full text" tint="blue" strong onClick={() => void findFullText([it().key])} />;
-							case "web": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="external-link" label="Open webpage" onClick={() => { const u = webpageOf(it()); if (u) void openUrl(u); }} />;
-							case "cite": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="copy" label={citing() ? "Copying…" : "Cite"} onClick={() => { setCiting(true); void copyCitation(it().key).finally(() => setCiting(false)); }} />;
-							case "notes": return <CountChip mode={mode()} compact={c} hot={hovered()} item={it()} icon="sticky-note" label={c ? String(a.n) : plural(a.n, "note")} notes />;
-							case "atts": return <CountChip mode={mode()} compact={c} hot={hovered()} item={it()} icon="paperclip" label={String(a.n)} />;
+							case "open": return <ActionBtn mode={mode()} compact={c} hot icon="file-text" label={a.label} tint="orange" strong onClick={() => store.openAttachment(it().primaryAttachment!.key, it().title || "Reader", it().key)} />;
+							case "fulltext": return <ActionBtn mode={mode()} compact={c} hot icon="download" label="Find full text" tint="blue" strong onClick={() => void findFullText([it().key])} />;
+							case "web": return <ActionBtn mode={mode()} compact={c} hot icon="external-link" label="Open webpage" onClick={() => { const u = webpageOf(it()); if (u) void openUrl(u); }} />;
+							case "cite": return <ActionBtn mode={mode()} compact={c} hot icon="copy" label={citing() ? "Copying…" : "Cite"} onClick={() => { setCiting(true); void copyCitation(it().key).finally(() => setCiting(false)); }} />;
+							case "notes": return <CountChip mode={mode()} compact={c} hot item={it()} icon="sticky-note" label={c ? String(a.n) : plural(a.n, "note")} notes />;
+							case "atts": return <CountChip mode={mode()} compact={c} hot item={it()} icon="paperclip" label={String(a.n)} />;
 						}
 					}}</For>
 				</div>

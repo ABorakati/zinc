@@ -19,7 +19,7 @@ import { cardLayout, cardListWidth as cardListWidthNow, setCardListWidth } from 
 import { loadTagColors } from "./logic";
 import { openItemMenu } from "./menus";
 import { createRows, type Group, type Rows } from "./rows";
-import { gatedHover, markScroll, throttledCommit } from "./scrolling";
+import { markScroll, throttledCommit } from "./scrolling";
 import { SearchResults } from "./SearchResults";
 
 /** Rows mounted at once. */
@@ -59,8 +59,8 @@ function CardSkeleton(): JSX.Element {
 
 function ItemRowView(p: { index: number }): JSX.Element {
 	const item = createMemo(() => store.itemAt(p.index));
-	const [hovered, setHovered] = createSignal(false);
-	const hover = gatedHover(setHovered); // no hover commits while the list scrolls (scrolling.ts)
+	// no JS hover here: the card's hover wash and buttons use GPUI's native hover (see Card.tsx), which neither flickers over
+	// children nor commits anything while the list scrolls
 	const src = dragSource(
 		() => { const it = untrack(item); return it ? store.keysFor(it.key) : []; },
 		() => { const it = untrack(item); if (it && !store.selected().has(it.key)) store.selectOnly(it.key, p.index); },
@@ -68,8 +68,6 @@ function ItemRowView(p: { index: number }): JSX.Element {
 	return (
 		<div
 			style={tw("flex flex-col w-full flex-none px-2.5", store.mode())}
-			onMouseEnter={hover.enter}
-			onMouseLeave={hover.leave}
 			onMouseDown={src.onMouseDown}
 			onMouseMove={src.onMouseMove}
 			onMouseUp={src.onMouseUp}
@@ -91,7 +89,7 @@ function ItemRowView(p: { index: number }): JSX.Element {
 			<Show when={item()} fallback={<CardSkeleton />}>
 				{(x) => (
 					<Card
-						item={x()} index={p.index} hovered={hovered()}
+						item={x()} index={p.index} hovered={false}
 						focused={listFocused() && store.focusIndex() === p.index}
 						onMore={(r) => openItemMenu({ x: r.x, y: r.y + r.height }, x(), p.index)}
 					/>
