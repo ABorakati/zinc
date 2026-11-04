@@ -48,6 +48,8 @@ const ALL: Variant[] = [
 	{ id: "plain", exe: join(outDir, "zotero-next-gpui-plain.exe"), args: [] },
 	{ id: "bytecode", exe: join(outDir, "zotero-next-gpui-bytecode.exe"), args: [] },
 	{ id: "bytecode-min", exe: join(outDir, "zotero-next-gpui-bytecode-min.exe"), args: [] },
+	// the installed package (scripts/package.ts output copied to %USERPROFILE%\ZoteroNext\gpui): what the Start-menu shortcut runs
+	{ id: "installed", exe: join(process.env.USERPROFILE ?? "", "ZoteroNext", "gpui", "zotero-next-gpui.exe"), args: [] },
 ];
 const wantedV = arg("variants", ALL.map((v) => v.id).join(",")).split(",");
 const variants = ALL.filter((v) => wantedV.includes(v.id));

@@ -11,6 +11,7 @@
 //   --profile fresh|copy   WebView2 profile: an empty one (default), or a copy of the app's real profile
 //                     (open tabs, view settings) so start-up matches what you see
 //   --sync            keep Zotero sync on (off by default so runs are comparable)
+//   --scroll          also wheel-scroll the item list (slow, fast) and report frame pacing (fps, frame-gap percentiles)
 //   --frames          filmstrip: a JPEG in run-<n>/frames/ each time the window's picture changes (first 8 s)
 //   --out DIR         output folder (default: %TEMP%/zn-trace/<timestamp>)
 //
@@ -208,6 +209,39 @@ async function traceRun(n: number) {
 	await Bun.sleep(Math.max(0, seconds * 1000 - at()));
 	await coreUp;
 
+	// the app's processes: the WebView2 processes carry this run's profile folder on their command line, plus the installed bun
+	const procs = `(Get-CimInstance Win32_Process | ? { $_.CommandLine -like '*${profile.replace(/'/g, "''")}*' -or ($_.Name -eq 'bun.exe' -and $_.ExecutablePath -like '*ZoteroNext*') })`;
+	// memory at <seconds> s, library window only (same moment as the GPUI app's aot-bench sample)
+	{
+		const m = JSON.parse(await ps(`$r = ${procs} | % { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } | ? { $_ }; @{ n = @($r).Count; priv = [math]::Round((($r | Measure-Object PrivateMemorySize64 -Sum).Sum) / 1MB); ws = [math]::Round((($r | Measure-Object WorkingSet64 -Sum).Sum) / 1MB) } | ConvertTo-Json -Compress`) || "{}");
+		ev("memory", `memory: ${m.priv} MB private, ${m.ws} MB working set (${m.n} processes)`, m);
+	}
+	// --scroll: wheel-scroll the item list through the DevTools input API (no OS mouse) at the GPUI scroll-bench's paces
+	// (one wheel step every 16 ms for 3 s: slow 24 px, fast 100 px per step) and time the page's frames with requestAnimationFrame
+	const eval_ = (expression: string) => new Promise<any>((r) => {
+		const id = ++msgId;
+		const prev = ws!.onmessage!;
+		ws!.onmessage = (e) => { const m = JSON.parse(String(e.data)); if (m.id === id) { ws!.onmessage = prev; r(m.result?.result?.value); } else (prev as any)(e); };
+		ws!.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } }));
+		setTimeout(() => r(undefined), 8000);
+	});
+	if (ws && flag("scroll")) {
+		const box = await eval_(`(() => { let best = null; for (const el of document.querySelectorAll("*")) { const s = getComputedStyle(el); if (!/(auto|scroll)/.test(s.overflowY) || el.scrollHeight <= el.clientHeight + 50) continue; if (!best || el.scrollHeight > best.scrollHeight) best = el; } if (!best) return null; window.__znScroller = best; const r = best.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, h: best.scrollHeight }; })()`);
+		if (box) for (const [name, dy] of [["slow", 24], ["fast", 100]] as const) {
+			await eval_(`(() => { window.__znScroller.scrollTop = 0; window.__znGaps = []; let last = performance.now(); const tick = (t) => { window.__znGaps.push(t - last); last = t; if (!window.__znStop) requestAnimationFrame(tick); }; window.__znStop = false; requestAnimationFrame(tick); return 1; })()`);
+			const t = performance.now();
+			let steps = 0;
+			while (performance.now() - t < 3000) {
+				ws.send(JSON.stringify({ id: ++msgId, method: "Input.dispatchMouseEvent", params: { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: dy } }));
+				steps++;
+				await Bun.sleep(16);
+			}
+			const r = await eval_(`(() => { window.__znStop = true; const g = window.__znGaps.slice(2); const s = [...g].sort((a, b) => a - b); const q = (p) => Math.round(s[Math.min(s.length - 1, Math.floor(p * s.length))] * 10) / 10; return { frames: g.length, fps: Math.round(g.length / (g.reduce((a, b) => a + b, 0) / 1000)), gapP50: q(0.5), gapP95: q(0.95), gapP99: q(0.99), slow25: g.filter((x) => x > 25).length, slow40: g.filter((x) => x > 40).length, scrolledPx: Math.round(window.__znScroller.scrollTop) }; })()`);
+			ev("scroll", `scroll ${name}: ${JSON.stringify(r)} (${steps} wheel steps)`, { name, ...r });
+		}
+		else ev("scroll", "scroll: no scrollable list found");
+	}
+
 	// idle cost: CPU seconds used by the app's processes (bun + its web views) over 3 s with nothing happening
 	{
 		const cpu = `(Get-CimInstance Win32_Process | ? { $_.CommandLine -like '*${profile.replace(/'/g, "''")}*' -or ($_.Name -eq 'bun.exe' -and $_.ExecutablePath -like '*ZoteroNext*') } | % { (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).TotalProcessorTime.TotalSeconds } | Measure-Object -Sum).Sum`;
@@ -258,6 +292,9 @@ async function traceRun(n: number) {
 		reloads: Math.max(0, navs.length - 1),
 		firstItemsResponseMs: (() => { const r = api.filter((x) => /\/api\/items\b/.test(x.url)).sort((a, b) => a.end - b.end)[0]; return r ? r.end : -1; })(),
 		apiRequests: api.length,
+		memory: events.find((e) => e.kind === "memory")?.data,
+		scroll: events.filter((e) => e.kind === "scroll").map((e) => e.data),
+		idleCpu: events.find((e) => e.kind === "idle")?.text,
 		repeated: repeated.slice(0, 12).map(([k, c]) => `${c}x ${k}`),
 		slowest: [...api].sort((a, b) => b.end - b.start - (a.end - a.start)).slice(0, 8).map((r) => `${r.end - r.start} ms ${r.url.replace(/^https?:\/\/[^/]+/, "")}`),
 		errors: events.filter((e) => e.kind === "error" || e.kind === "main-err").map((e) => e.text).slice(0, 10),
