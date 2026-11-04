@@ -15,9 +15,10 @@ import { itemDrag, itemDragPoint } from "./dndBridge";
 import { errMsg, sidebarApi } from "./client";
 import { NameInput } from "./NameInput";
 import {
-	CountBadge, type Entry, folderColor, folderSvg, IconButton, labelCls, ListItem, muted, pill, ROW, SectionHeader, t, tok, TRUNCATE, tx,
+	CountBadge, type Entry, folderColor, folderSvg, IconButton, labelCls, ListItem, muted, pill, ROW, ROW_HOVER, ROW_STATIC, SectionHeader, t, tok, tx,
 } from "./parts";
-import { collectionsOpen, expandedKeys, setCollectionsOpen, setExpandedKeys } from "./state";
+import { collectionsOpen, expandedKeys, setCollectionsOpen, setExpandedKeys, sidebarWidth } from "./state";
+import { clipText, textWidth } from "../clip";
 
 // ---- data: the store's tree, replaced by a fresher copy right after a write ----
 
@@ -230,6 +231,16 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 		return v.kind === "collection" && v.key === p.c.key;
 	};
 	const isEditing = () => editing() === p.c.key;
+	const [hov, setHov] = createSignal(false);
+	/** The name cut to the row (JS pre-clipping instead of textOverflow: ellipsis, see clip.ts): the sidebar's paddings, the row's
+	    indent, chevron, folder, gaps and the count badge are what the label does not get. */
+	const name = () => {
+		const W = sidebarWidth();
+		if (W <= 0) return p.c.name;
+		const n = p.c.itemCount;
+		const badge = n ? 10 + Math.max(22, textWidth(n.toLocaleString("en-US"), 11, 600) + 12) : 0;
+		return clipText(p.c.name, W - 20 - 19 - (6 + p.depth * 14) - 16 - 6 - 15 - 6 - 8 - badge, 13, sel() ? 600 : 400);
+	};
 	/** The drag is over this row and it may be dropped here (items go anywhere; a collection not into itself). */
 	const over = () => dropKey() === p.c.key && (!colDrag() || validTarget(colDrag()!, p.c.key));
 	return (
@@ -247,6 +258,8 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 					setView({ kind: "collection", key: p.c.key });
 				}}
 				onAuxClick={(e) => { if (e.isRightClick && visibleAt(e.x ?? 0, e.y ?? 0)) showCollectionMenu(p.c, e.x ?? 0, e.y ?? 0); }}
+				onMouseEnter={() => setHov(true)}
+				onMouseLeave={() => setHov(false)}
 				onMouseDown={(e) => { if (e.button === 0 && !isEditing()) press = { key: p.c.key, x: e.x ?? 0, y: e.y ?? 0 }; }}
 				// this row holds the pointer from the press until the release, so the move / up events carry the drag
 				onMouseMove={(e) => {
@@ -268,9 +281,10 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 					press = null;
 				}}
 				style={{
-					...t(ROW),
+					...t(ROW_STATIC),
 					cursor: colDrag() ? "grabbing" : "pointer",
 					paddingLeft: 6 + p.depth * 14,
+					...(hov() ? t(ROW_HOVER) : {}),
 					...(menuKey() === p.c.key && !sel() ? { backgroundColor: tok("accent") } : {}),
 					...pill(sel()),
 					...(colDrag() === p.c.key ? { opacity: 0.45 } : {}),
@@ -291,7 +305,7 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 				<svg source={folderSvg(open() || sel())} style={{ width: 15, height: 15, flexShrink: 0, color: folderColor(p.c.key) }} />
 				<Show
 					when={isEditing()}
-					fallback={<text style={{ ...tx(labelCls(sel())), ...TRUNCATE, flexGrow: 1, flexBasis: 0 }}>{p.c.name}</text>}
+					fallback={<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>{name()}</text>}
 				>
 					<NameInput value={p.c.name} onDone={(v) => void commitRename(p.c, v)} onCancel={() => setEditing(null)} />
 				</Show>

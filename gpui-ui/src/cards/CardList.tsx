@@ -15,10 +15,11 @@ import { openItem } from "./actions";
 import { Card, tok } from "./Card";
 import { modsOf, swallowed } from "./click";
 import { listFocused, listKeyHandler, setListFocused } from "./keys";
-import { cardLayout } from "./layout";
+import { cardLayout, cardListWidth as cardListWidthNow, setCardListWidth } from "./layout";
 import { loadTagColors } from "./logic";
 import { openItemMenu } from "./menus";
 import { createRows, type Group, type Rows } from "./rows";
+import { gatedHover, markScroll, throttledCommit } from "./scrolling";
 import { SearchResults } from "./SearchResults";
 
 /** Rows mounted at once. */
@@ -30,9 +31,9 @@ export function GroupHeader(p: { group: Group; collapsed: boolean; onToggle: () 
 	return (
 		<div onClick={() => p.onToggle()} style={{ ...tw("flex w-full flex-none items-center gap-2 border-b border-border/60 bg-muted/50 px-5 pb-1.5 pt-3 cursor-pointer", m()) }}>
 			{/* 16.7px instead of text-base (16px): same serif optical-size compensation as the card titles */}
-			<text style={{ ...textStyle("font-title text-base font-semibold text-primary-deep", m()), fontSize: 16.7 }}>{p.group.label}</text>
+			<text style={{ ...textStyle("select-none font-title text-base font-semibold text-primary-deep", m()), fontSize: 16.7 }}>{p.group.label}</text>
 			<div style={tw("flex items-center rounded-full bg-primary/10 px-2 py-px", m())}>
-				<text style={textStyle("text-[11.5px] font-medium tabular-nums text-primary", m())}>{p.group.count.toLocaleString("en-US")}</text>
+				<text style={textStyle("select-none text-[11.5px] font-medium tabular-nums text-primary", m())}>{p.group.count.toLocaleString("en-US")}</text>
 			</div>
 			<div style={{ flexGrow: 1 }} />
 			<Icon name={p.collapsed ? "chevron-right" : "chevron-down"} size={16} color={tok("muted-foreground", m())} />
@@ -59,6 +60,7 @@ function CardSkeleton(): JSX.Element {
 function ItemRowView(p: { index: number }): JSX.Element {
 	const item = createMemo(() => store.itemAt(p.index));
 	const [hovered, setHovered] = createSignal(false);
+	const hover = gatedHover(setHovered); // no hover commits while the list scrolls (scrolling.ts)
 	const src = dragSource(
 		() => { const it = untrack(item); return it ? store.keysFor(it.key) : []; },
 		() => { const it = untrack(item); if (it && !store.selected().has(it.key)) store.selectOnly(it.key, p.index); },
@@ -66,8 +68,8 @@ function ItemRowView(p: { index: number }): JSX.Element {
 	return (
 		<div
 			style={tw("flex flex-col w-full flex-none px-2.5", store.mode())}
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
+			onMouseEnter={hover.enter}
+			onMouseLeave={hover.leave}
 			onMouseDown={src.onMouseDown}
 			onMouseMove={src.onMouseMove}
 			onMouseUp={src.onMouseUp}
@@ -136,14 +138,18 @@ export function CardsView(): JSX.Element {
 		const rw = rows.row(Math.max(0, Math.min(r, count() - 1)));
 		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.group.start;
 	};
-	// keep the mounted window around the visible rows (recentre only when the view nears an edge)
+	// Keep the mounted window around the visible rows. Moving it is a JS commit (a full, uncached frame), so while scrolling it
+	// happens at most every 100 ms, and at once only when the view is about to run off the mounted rows.
+	const nearEdge = (rows: number) => { const s = untrack(first); return (visA < s + rows && s > 0) || visB > s + WINDOW - rows; };
+	const recentre = throttledCommit(() => { if (nearEdge(8)) setStart(Math.max(0, visA - WINDOW / 4)); }, 100);
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
+		markScroll();
 		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
 		visA = a; visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
-		const s = untrack(first);
-		if ((a < s + 6 && s > 0) || b > s + WINDOW - 6) setStart(Math.max(0, a - WINDOW / 4));
+		if (nearEdge(3)) recentre(true);
+		else if (nearEdge(8)) recentre(false);
 		const d = performance.now() - t0;
 		stats.visCalls++; stats.visMs += d; stats.visMaxMs = Math.max(stats.visMaxMs, d);
 	};
@@ -186,6 +192,8 @@ export function CardsView(): JSX.Element {
 			onKeyDown={keys}
 			onFocus={() => setListFocused(true)}
 			onBlur={() => setListFocused(false)}
+			onScroll={markScroll}
+			onLayout={(e: EventPayload) => { const w = Math.round(e.width ?? 0); if (w !== untrack(cardListWidthNow)) setCardListWidth(w); }}
 			style={{ ...tw("flex flex-col flex-1 min-h-0 w-full h-full bg-card", store.mode()), keyboardFocusDim: false }}
 		>
 			<virtual-list

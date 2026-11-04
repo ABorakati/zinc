@@ -14,6 +14,9 @@ const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 const isFraction = (v: unknown): v is number => typeof v === "number" && v > 0.1 && v < 0.9;
 
+/** Width (px) of the sidebar, from its onLayout (0 until the first layout): rows clip their one-line labels to it (clip.ts). */
+export const [sidebarWidth, setSidebarWidth] = createSignal(0);
+
 /** Sections (ui/src/sidebar.tsx sectionOpen): Library and Collections open, Tags closed. */
 export const [libraryOpen, setLibraryOpen] = persisted("sidebar.library", true, isBool);
 export const [collectionsOpen, setCollectionsOpen] = persisted("sidebar.collections", true, isBool);

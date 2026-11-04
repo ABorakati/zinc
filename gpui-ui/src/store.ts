@@ -244,7 +244,22 @@ function createStore(): AppStore {
 	const [total, setTotal] = createSignal(0);
 	const [listVersion, setListVersion] = createSignal(0);
 	const [pagesLoaded, setPagesLoaded] = createSignal(0);
-	const [pending, setPending] = createSignal(0);
+	// "loading…" is a signal other views render, so it must not flicker (a commit each) for the 60 ms page fetches a scroll triggers:
+	// with rows on screen it turns on only once a fetch has been pending for 250 ms; with an empty list it is immediate.
+	let pendingN = 0;
+	let loadingTimer: ReturnType<typeof setTimeout> | undefined;
+	const [loadingSig, setLoadingSig] = createSignal(false);
+	const setPending = (f: (n: number) => number) => {
+		pendingN = f(pendingN);
+		if (pendingN > 0) {
+			if (untrack(loadingSig) || loadingTimer) return;
+			if (untrack(total) === 0) { setLoadingSig(true); return; }
+			loadingTimer = setTimeout(() => { loadingTimer = undefined; if (pendingN > 0) setLoadingSig(true); }, 250);
+		} else {
+			if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = undefined; }
+			if (untrack(loadingSig)) setLoadingSig(false);
+		}
+	};
 	const [error, setErrorRaw] = createSignal<string | null>(null);
 	// a refused connection means no library service is running: say that, not "ECONNREFUSED"
 	const setError = (m: string | null) =>
@@ -547,7 +562,7 @@ function createStore(): AppStore {
 		total, itemAt, listVersion,
 		selectedItem, selectItem: (key) => selectOnly(key, key ? indexOfKey(key) : -1),
 		qmode, setQMode, fulltext, setFulltext: setFulltextSig,
-		loading: () => pending() > 0,
+		loading: loadingSig,
 		error,
 		query, groups, pagesLoaded,
 		// ListStore

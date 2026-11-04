@@ -11,6 +11,8 @@ import { listFocused, listKeyHandler, setListFocused } from "../cards/keys";
 import { openItemMenu } from "../cards/menus";
 import { createRows, type Group, type Rows } from "../cards/rows";
 import { mix } from "../cards/logic";
+import { gatedHover, markScroll, throttledCommit } from "../cards/scrolling";
+import { clipText } from "../clip";
 import { dragSource } from "../dnd";
 import type { ItemRow } from "../contracts";
 import { attachmentIconName, Icon, itemTypeIconName } from "../icons";
@@ -65,8 +67,8 @@ function GroupRow(p: { group: Group; collapsed: boolean; onToggle: () => void })
 	return (
 		<div onClick={p.onToggle} style={{ ...tw("flex flex-none items-center gap-2 px-3 border-b border-border/60 bg-muted/60 cursor-pointer", mode()), height: ROW, width: "100%" }}>
 			<Icon name={p.collapsed ? "chevron-right" : "chevron-down"} size={14} color={tok("muted-foreground")} />
-			<text style={textStyle("text-sm font-semibold text-foreground", mode())}>{p.group.label}</text>
-			<text style={textStyle("text-sm tabular-nums text-muted-foreground", mode())}>{p.group.count.toLocaleString("en-US")}</text>
+			<text style={textStyle("select-none text-sm font-semibold text-foreground", mode())}>{p.group.label}</text>
+			<text style={textStyle("select-none text-sm tabular-nums text-muted-foreground", mode())}>{p.group.count.toLocaleString("en-US")}</text>
 		</div>
 	);
 }
@@ -77,7 +79,8 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 		...tw("flex items-center px-2 min-w-0", mode()), width: p.col.width, flexShrink: 0, flexGrow: 0, height: "100%", overflow: "hidden",
 		...(c().align === "right" ? { justifyContent: "flex-end" } : c().align === "center" ? { justifyContent: "center" } : {}),
 	});
-	const text = () => c().get(p.item);
+	// one-line cell text, cut to the column in JS (clip.ts) instead of textOverflow: ellipsis; the cell's overflow:hidden catches the rest
+	const text = () => clipText(c().get(p.item), p.col.width - 16, 13);
 	const attach = () => (p.item.attachmentCount ?? 0) > 0;
 	return (
 		<Show
@@ -87,7 +90,7 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 					when={c().id === "attachments"}
 					fallback={
 						<div style={base()}>
-							<text style={{ ...textStyle("text-[13px] text-foreground/80", mode()), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{text()}</text>
+							<text style={{ ...textStyle("select-none text-[13px] text-foreground/80", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>{text()}</text>
 						</div>
 					}
 				>
@@ -108,7 +111,7 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 		>
 			<div style={{ ...base(), gap: 6 }}>
 				<Icon name={itemTypeIconName(p.item.itemType)} size={14} color={tok("muted-foreground")} />
-				<text style={{ ...textStyle("text-[13px] text-foreground", mode()), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{p.item.title || "(untitled)"}</text>
+				<text style={{ ...textStyle("select-none text-[13px] text-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>{clipText(p.item.title || "(untitled)", p.col.width - 16 - 20, 13)}</text>
 			</div>
 		</Show>
 	);
@@ -127,6 +130,7 @@ function RowSkeleton(p: { cols: ColInfo[] }): JSX.Element {
 function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => number }): JSX.Element {
 	const item = createMemo(() => store.itemAt(p.index));
 	const [hovered, setHovered] = createSignal(false);
+	const hover = gatedHover(setHovered); // no hover commits while the list scrolls (cards/scrolling.ts)
 	const selected = () => { const it = item(); return !!it && store.selected().has(it.key); };
 	const focused = () => listFocused() && store.focusIndex() === p.index;
 	const src = dragSource(
@@ -135,8 +139,8 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 	);
 	return (
 		<div
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
+			onMouseEnter={hover.enter}
+			onMouseLeave={hover.leave}
 			onMouseDown={src.onMouseDown}
 			onMouseMove={src.onMouseMove}
 			onMouseUp={src.onMouseUp}
@@ -217,13 +221,17 @@ export function TableView(): JSX.Element {
 		const rw = rows.row(Math.max(0, Math.min(r, count() - 1)));
 		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.group.start;
 	};
+	// moving the mounted window is a JS commit (a full, uncached frame): at most every 100 ms while scrolling, at once only at the edge
+	const nearEdge = (rows: number) => { const s = untrack(first); return (visA < s + rows && s > 0) || visB > s + WINDOW - rows; };
+	const recentre = throttledCommit(() => { if (nearEdge(14)) setStart(Math.max(0, visA - WINDOW / 4)); }, 100);
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
+		markScroll();
 		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
 		visA = a; visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
-		const s = untrack(first);
-		if ((a < s + 10 && s > 0) || b > s + WINDOW - 10) setStart(Math.max(0, a - WINDOW / 4));
+		if (nearEdge(4)) recentre(true);
+		else if (nearEdge(14)) recentre(false);
 		const d = performance.now() - t0;
 		stats.visCalls++; stats.visMs += d; stats.visMaxMs = Math.max(stats.visMaxMs, d);
 	};
@@ -298,7 +306,7 @@ export function TableView(): JSX.Element {
 				onFocus={() => setListFocused(true)}
 				onBlur={() => setListFocused(false)}
 				onLayout={(e: EventPayload) => setVw(e.width ?? 0)}
-				onScroll={(e: EventPayload) => { if (e.deltaX) setPanX(Math.max(0, Math.min(maxPan(), panX() - e.deltaX))); }}
+				onScroll={(e: EventPayload) => { markScroll(); if (e.deltaX) setPanX(Math.max(0, Math.min(maxPan(), panX() - e.deltaX))); }}
 				style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, width: "100%", overflow: "hidden", keyboardFocusDim: false }}
 			>
 				<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, minHeight: 0, width: Math.max(total(), vw(), 1), marginLeft: -Math.min(panX(), maxPan()) }}>
@@ -327,11 +335,11 @@ export function TableView(): JSX.Element {
 										...(c.def.align === "right" ? { justifyContent: "flex-end" } : c.def.align === "center" ? { justifyContent: "center" } : {}),
 									}}
 								>
-									<Show when={c.def.icon} fallback={<text style={{ ...textStyle("text-xs font-medium text-muted-foreground", mode()), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{c.def.label}</text>}>
+									<Show when={c.def.icon} fallback={<text style={{ ...textStyle("select-none text-xs font-medium text-muted-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>{clipText(c.def.label, c.width - 16 - (mark() ? 24 : 0), 12, 500)}</text>}>
 										<Icon name={c.def.icon === "attachments" ? "paperclip" : "sticky-note"} size={14} color={tok("muted-foreground")} />
 									</Show>
 									<Show when={mark()}>
-										{(mk) => <text style={{ ...textStyle("text-xs text-primary", mode()), whiteSpace: "nowrap" }}>{`${mk().arrow}${mk().n}`}</text>}
+										{(mk) => <text style={{ ...textStyle("select-none text-xs text-primary", mode()), whiteSpace: "nowrap" }}>{`${mk().arrow}${mk().n}`}</text>}
 									</Show>
 									{/* resize handle: the cell's right edge */}
 									<div

@@ -13,8 +13,9 @@ import { ensureSavedSearches } from "./searches/state";
 import { currentView, setView } from "./sidebar/bridge";
 import { errMsg, sidebarApi } from "./sidebar/client";
 import { collectionEntries, creating, onBeforeCreate, reloadCollections, setCollectionsPane } from "./sidebar/Collections";
-import { CountBadge, type Entry, labelCls, ListItem, pill, SectionHeader, SPECIAL, t, tok, TRUNCATE, tx } from "./sidebar/parts";
-import { collectionsFraction, libraryOpen, setCollectionsFraction, setLibraryOpen, tagsOpen } from "./sidebar/state";
+import { CountBadge, type Entry, labelCls, ListItem, pill, ROW_HOVER, SectionHeader, SPECIAL_STATIC, t, tok, tx } from "./sidebar/parts";
+import { collectionsFraction, libraryOpen, setCollectionsFraction, setLibraryOpen, setSidebarWidth, sidebarWidth, tagsOpen } from "./sidebar/state";
+import { clipText, textWidth } from "./clip";
 import { TagList } from "./tags/TagList";
 import { confirm, openMenu, toast } from "./ui";
 
@@ -45,17 +46,27 @@ function Special(p: { view: View; label: string; icon: string; count?: number; o
 		const v = currentView();
 		return v.kind === p.view.kind && ("key" in p.view ? "key" in v && v.key === p.view.key : true);
 	};
+	const [hov, setHov] = createSignal(false);
+	// the label cut to the row (clip.ts): sidebar paddings 20 + 19, row pl 24 + pr 8, icon 16 + gap 4, then the count badge
+	const label = () => {
+		const W = sidebarWidth();
+		if (W <= 0) return p.label;
+		const badge = p.count ? 8 + Math.max(22, textWidth(p.count.toLocaleString("en-US"), 11, 600) + 12) : 0;
+		return clipText(p.label, W - 20 - 19 - 24 - 8 - 16 - 4 - badge, 13, sel() ? 600 : 400);
+	};
 	return (
 		<ListItem>
 			<div
 				role="treeitem"
 				aria-selected={sel()}
+				onMouseEnter={() => setHov(true)}
+				onMouseLeave={() => setHov(false)}
 				onClick={() => setView(p.view)}
 				onAuxClick={(e) => { if (e.isRightClick) p.onMenu?.(e.x ?? 0, e.y ?? 0); }}
-				style={{ ...t(SPECIAL), ...pill(sel()) }}
+				style={{ ...t(SPECIAL_STATIC), ...(hov() ? t(ROW_HOVER) : {}), ...pill(sel()) }}
 			>
 				<Icon name={p.icon} size={16} color={tok(sel() ? "primary" : "muted-foreground")} />
-				<text style={{ ...tx(labelCls(sel())), ...TRUNCATE, flexGrow: 1, flexBasis: 0 }}>{p.label}</text>
+				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>{label()}</text>
 				<CountBadge n={p.count} />
 			</div>
 		</ListItem>
@@ -143,7 +154,7 @@ export function Sidebar(): JSX.Element {
 	return (
 		// App.tsx: `zn-sidebar flex h-full min-h-0 flex-col gap-3 px-2.5 pt-1.5 pb-1`; the 12px gap is the split handle between the panes
 		<div
-			onLayout={(e) => { box = { y: e.y ?? 0, h: Math.max(1, e.height ?? 1) }; }}
+			onLayout={(e) => { box = { y: e.y ?? 0, h: Math.max(1, e.height ?? 1) }; const w = Math.round(e.width ?? 0); if (w !== sidebarWidth()) setSidebarWidth(w); }}
 			style={{ ...t("flex h-full min-h-0 w-full flex-col px-2.5 pt-1.5 pb-1"), userSelect: "none" }}
 		>
 			{/* CollectionsPane: `flex min-h-0 flex-col overflow-y-auto pr-2`, flex 3 1 0% (open). The pane box itself no longer scrolls: the

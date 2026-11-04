@@ -10,10 +10,14 @@ import { textStyle, tokens, tw } from "../theme";
 import { DropdownMenu, type MenuItem } from "../ui";
 import { childIcon, childLabel, copyCitation, findFullText, getDetail, openChild, peekDetail, openUrl, toggleStar } from "./actions";
 import { swallow } from "./click";
-import { cardLayout } from "./layout";
+import { clipText, textWidth } from "../clip";
+import { cardLayout, cardListWidth } from "./layout";
 import {
 	authorsText, badgeTags, extraAttachments, isRegular, isStarred, metaParts, mix, needsFullText, openLabel, plural, webpageOf,
 } from "./logic";
+
+/** Width the card's text column leaves out of the list: row padding 2 x 10 + card padding 2 x 10 + type icon 22 + gap 12. */
+const TEXT_COL_INSET = 74;
 
 /** A resolved colour token ("primary", "card", "foreground" ...) in the given mode. */
 export const tok = (name: string, mode: Mode) => tokens[mode][name]!;
@@ -28,21 +32,21 @@ export const typeIcon = (t: string) => ICON_BY_TYPE[t] ?? "file";
 const BTN = "inline-flex flex-none items-center gap-1.5 rounded-[7px] border text-[12.5px]";
 
 /** Action button (ActionBtn in Card.tsx): h-7 px-[11px] rounded-[7px] border text-[12.5px] gap-1.5, optional orange / blue tint. */
-function ActionBtn(p: { mode: Mode; compact: boolean; icon: string; label: string; tint?: "orange" | "blue"; strong?: boolean; onClick?: () => void }) {
+function ActionBtn(p: { mode: Mode; compact: boolean; hot: boolean; icon: string; label: string; tint?: "orange" | "blue"; strong?: boolean; onClick?: () => void }) {
 	const look = createMemo(() => {
 		const m = p.mode;
 		const card = tok("card", m), fg = tok("foreground", m), primary = tok("primary", m);
 		const box = tw(`${BTN} ${p.compact ? "h-6 px-1.5" : "h-7 px-[11px]"} cursor-pointer`, m);
-		const text = (color: string): Style => ({ ...textStyle(`text-[12.5px] ${p.strong ? "font-semibold" : "font-medium"}`, m), color, whiteSpace: "nowrap" });
+		const text = (color: string): Style => ({ ...textStyle(`select-none text-[12.5px] ${p.strong ? "font-semibold" : "font-medium"}`, m), color, whiteSpace: "nowrap" });
 		if (p.tint === "orange") {
 			const bg = mix(ORANGE, 11, card), c = mix(ORANGE, 72, fg);
-			return { box: { ...box, backgroundColor: bg, borderColor: mix(ORANGE, 32, card), hover: { backgroundColor: mix(ORANGE, 17, card) } }, text: text(c) };
+			return { box: { ...box, backgroundColor: bg, borderColor: mix(ORANGE, 32, card), ...(p.hot ? { hover: { backgroundColor: mix(ORANGE, 17, card) } } : {}) }, text: text(c) };
 		}
 		if (p.tint === "blue") {
 			const bg = mix(primary, 9, card), c = mix(primary, 85, fg);
-			return { box: { ...box, backgroundColor: bg, borderColor: mix(primary, 28, card), hover: { backgroundColor: mix(primary, 15, card) } }, text: text(c) };
+			return { box: { ...box, backgroundColor: bg, borderColor: mix(primary, 28, card), ...(p.hot ? { hover: { backgroundColor: mix(primary, 15, card) } } : {}) }, text: text(c) };
 		}
-		return { box: { ...box, ...tw("border-border bg-card hover:bg-accent", m) }, text: textStyle("text-[12.5px] font-medium text-foreground/85", m) };
+		return { box: { ...box, ...tw(p.hot ? "border-border bg-card hover:bg-accent" : "border-border bg-card", m) }, text: textStyle("select-none text-[12.5px] font-medium text-foreground/85", m) };
 	});
 	return (
 		<div onClick={() => { swallow(); p.onClick?.(); }} style={look().box}>
@@ -78,10 +82,10 @@ export function childMenu(item: { key: string; title: string }, notes: boolean):
 }
 
 /** Notes / attachments count chip (AttachmentMenu triggers): border-border bg-card, hover:bg-accent. */
-function CountChip(p: { mode: Mode; compact: boolean; item: ItemRow; icon: string; label: string; notes?: boolean }) {
+function CountChip(p: { mode: Mode; compact: boolean; hot: boolean; item: ItemRow; icon: string; label: string; notes?: boolean }) {
 	const items = childMenu(p.item, !!p.notes);
-	const box = () => tw(`${BTN} border-border bg-card hover:bg-accent ${p.compact ? "h-6 px-1.5" : p.notes ? "h-7 px-[11px]" : "h-7 px-2.5"} cursor-pointer`, p.mode);
-	const text = () => textStyle(`text-[12.5px] ${p.notes ? "text-foreground/85" : "text-muted-foreground"}`, p.mode);
+	const box = () => tw(`${BTN} border-border bg-card ${p.hot ? "hover:bg-accent" : ""} ${p.compact ? "h-6 px-1.5" : p.notes ? "h-7 px-[11px]" : "h-7 px-2.5"} cursor-pointer`, p.mode);
+	const text = () => textStyle(`select-none text-[12.5px] ${p.notes ? "text-foreground/85" : "text-muted-foreground"}`, p.mode);
 	return (
 		<DropdownMenu
 			items={items}
@@ -102,13 +106,15 @@ function TagBadge(p: { mode: Mode; name: string; color?: string }) {
 		return { ...base, height: 20, backgroundColor: mix(p.color, 16, "transparent"), borderColor: mix(p.color, 38, "transparent") };
 	};
 	const text = (): Style => {
-		const base = textStyle("text-[11px] font-medium leading-[18px]", p.mode);
-		return { ...base, color: p.color ? mix(p.color, 62, tok("foreground", p.mode)) : tok("muted-foreground", p.mode), whiteSpace: "nowrap", textOverflow: "ellipsis" };
+		const base = textStyle("select-none text-[11px] font-medium leading-[18px]", p.mode);
+		return { ...base, color: p.color ? mix(p.color, 62, tok("foreground", p.mode)) : tok("muted-foreground", p.mode), whiteSpace: "nowrap" };
 	};
+	// max-w-48 (192) - px-2 (16) - border (2); clipped here, not by textOverflow (see clip.ts)
+	const label = () => clipText(p.name, 174, 11, 500);
 	// Show items tagged "name"
 	return (
 		<div onClick={() => { swallow(); store.setTagFilter([p.name]); }} style={box()}>
-			<text style={text()}>{p.name}</text>
+			<text style={text()}>{label()}</text>
 		</div>
 	);
 }
@@ -118,7 +124,12 @@ function TagBadge(p: { mode: Mode; name: string; color?: string }) {
 // <For> over descriptors) as their last child, or only static children.
 
 type Action = { k: "open"; label: string } | { k: "fulltext" } | { k: "web" } | { k: "cite" } | { k: "notes"; n: number } | { k: "atts"; n: number };
-type MetaPart = { k: "authors"; text: string } | { k: "sep" } | { k: "meta"; text: string; accent: boolean };
+/** One text of the meta line: consecutive same-colour parts are joined (with their " · " separators) into one <text>. */
+type MetaRun = { text: string; accent: boolean };
+/** Gap between the meta line's texts. */
+const META_GAP = 4;
+/** The accent run (publication) keeps its web `max-w-[40%]`. */
+const ACCENT_MAX = 0.4;
 
 /** The card's "more actions" (...) button calls this to open the context menu at the button. */
 export type MoreHandler = (rect: { x: number; y: number; width: number; height: number }) => void;
@@ -133,15 +144,36 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 	const [citing, setCiting] = createSignal(false);
 
 	const badges = () => (L().tags ? badgeTags(it()) : []);
-	const parts = createMemo<MetaPart[]>(() => {
-		const out: MetaPart[] = [];
+	// creators · publication · year · type as FEW texts as possible (a <text> is a host div + selectable wrapper + canvas underlay):
+	// GPUIX has no styled runs inside one <text>, so only parts of the same colour merge; the separators ride on the muted runs.
+	const runs = createMemo<MetaRun[]>(() => {
+		const parts: MetaRun[] = [];
 		const a = authorsText(it());
-		if (a) out.push({ k: "authors", text: a });
-		metaParts(it()).forEach((m, i) => {
-			if (i > 0 || a) out.push({ k: "sep" });
-			out.push({ k: "meta", text: m.text, accent: m.accent });
-		});
-		return out;
+		if (a) parts.push({ text: a, accent: false });
+		for (const m of metaParts(it())) parts.push({ text: m.text, accent: m.accent });
+		const out: MetaRun[] = [];
+		for (const x of parts) {
+			const last = out[out.length - 1];
+			if (last && !x.accent && !last.accent) last.text += " \u00b7 " + x.text;
+			else out.push({ text: x.text, accent: x.accent });
+		}
+		return out.map((r, i) => (r.accent ? r : { ...r, text: (i > 0 ? "\u00b7 " : "") + r.text + (i < out.length - 1 ? " \u00b7" : "") }));
+	});
+	/** The runs clipped to the card's text column (JS pre-clipping instead of textOverflow: ellipsis): the first run (the creators) gives way first. */
+	const fitted = createMemo<string[]>(() => {
+		const rs = runs(), W = cardListWidth();
+		if (W <= 0) return rs.map((r) => r.text);
+		const size = compact() ? 12 : 13, C = (W - TEXT_COL_INSET) * 0.985; // 1.5% shaved (clip.ts): the estimate may be a little low
+		const w = rs.map((r) => Math.min(textWidth(r.text, size), r.accent ? C * ACCENT_MAX : Infinity));
+		const squeezed = rs.map(() => false);
+		let over = w.reduce((n, x) => n + x, 0) + META_GAP * Math.max(0, rs.length - 1) - C;
+		for (let i = 0; i < rs.length && over > 0; i++) { // squeeze the first run, then the later ones from the end
+			const k = i === 0 ? 0 : rs.length - i;
+			const cut = Math.min(over, Math.max(0, w[k]! - 12));
+			if (cut > 0) { w[k]! -= cut; over -= cut; squeezed[k] = true; }
+		}
+		// a run the accent cap (40%) shortened is clipped too
+		return rs.map((r, i) => (squeezed[i] || (r.accent && textWidth(r.text, size) > w[i]!) ? clipText(r.text, w[i]!, size, 400, 1) : r.text));
 	});
 	const actions = createMemo<Action[]>(() => {
 		const i = it(), out: Action[] = [];
@@ -172,7 +204,7 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 				...ring,
 			};
 		}
-		return { ...base, ...tw("rounded-none border-b border-border/60 hover:bg-accent/40", m), ...(p.focused ? { backgroundColor: mix(tok("accent", m), 50, "transparent") } : {}), ...ring };
+		return { ...base, ...tw("rounded-none border-b border-border/60", m), ...(p.focused ? { backgroundColor: mix(tok("accent", m), 50, "transparent") } : hovered() ? { backgroundColor: mix(tok("accent", m), 40, "transparent") } : {}), ...ring };
 	};
 
 	const muted = () => textStyle(compact() ? "text-xs text-muted-foreground" : "text-[13px] text-muted-foreground", mode());
@@ -225,14 +257,11 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 					</div>
 				</Show>
 
-				{/* creators · publication · year · type */}
-				<div style={tw("mt-[3px] flex min-w-0 items-baseline gap-x-1.5 text-muted-foreground", mode())}>
-					<For each={parts()}>{(x) => x.k === "authors"
-						? <text style={{ ...textStyle(`min-w-0 truncate ${metaSize()} text-muted-foreground`, mode()), flexShrink: 1 }}>{x.text}</text>
-						: x.k === "sep"
-							? <text style={textStyle(`flex-none ${metaSize()} text-muted-foreground/50`, mode())}>{"·"}</text>
-							: <text style={textStyle(`flex-none max-w-[40%] truncate ${metaSize()} ${x.accent ? "text-primary/90" : "text-muted-foreground"}`, mode())}>{x.text}</text>
-					}</For>
+				{/* creators · publication · year · type: the box clips whatever the width estimate got wrong */}
+				<div style={tw("mt-[3px] flex min-w-0 items-baseline gap-x-1 overflow-hidden", mode())}>
+					<For each={runs()}>{(x, i) => (
+						<text style={textStyle(`select-none flex-none whitespace-nowrap ${metaSize()} ${x.accent ? "text-primary/90" : "text-muted-foreground"}`, mode())}>{fitted()[i()] ?? x.text}</text>
+					)}</For>
 				</div>
 
 				{/* actions */}
@@ -240,12 +269,12 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 					<For each={actions()}>{(a) => {
 						const c = compact();
 						switch (a.k) {
-							case "open": return <ActionBtn mode={mode()} compact={c} icon="file-text" label={a.label} tint="orange" strong onClick={() => store.openAttachment(it().primaryAttachment!.key, it().title || "Reader", it().key)} />;
-							case "fulltext": return <ActionBtn mode={mode()} compact={c} icon="download" label="Find full text" tint="blue" strong onClick={() => void findFullText([it().key])} />;
-							case "web": return <ActionBtn mode={mode()} compact={c} icon="external-link" label="Open webpage" onClick={() => { const u = webpageOf(it()); if (u) void openUrl(u); }} />;
-							case "cite": return <ActionBtn mode={mode()} compact={c} icon="copy" label={citing() ? "Copying…" : "Cite"} onClick={() => { setCiting(true); void copyCitation(it().key).finally(() => setCiting(false)); }} />;
-							case "notes": return <CountChip mode={mode()} compact={c} item={it()} icon="sticky-note" label={c ? String(a.n) : plural(a.n, "note")} notes />;
-							case "atts": return <CountChip mode={mode()} compact={c} item={it()} icon="paperclip" label={String(a.n)} />;
+							case "open": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="file-text" label={a.label} tint="orange" strong onClick={() => store.openAttachment(it().primaryAttachment!.key, it().title || "Reader", it().key)} />;
+							case "fulltext": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="download" label="Find full text" tint="blue" strong onClick={() => void findFullText([it().key])} />;
+							case "web": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="external-link" label="Open webpage" onClick={() => { const u = webpageOf(it()); if (u) void openUrl(u); }} />;
+							case "cite": return <ActionBtn mode={mode()} compact={c} hot={hovered()} icon="copy" label={citing() ? "Copying…" : "Cite"} onClick={() => { setCiting(true); void copyCitation(it().key).finally(() => setCiting(false)); }} />;
+							case "notes": return <CountChip mode={mode()} compact={c} hot={hovered()} item={it()} icon="sticky-note" label={c ? String(a.n) : plural(a.n, "note")} notes />;
+							case "atts": return <CountChip mode={mode()} compact={c} hot={hovered()} item={it()} icon="paperclip" label={String(a.n)} />;
 						}
 					}}</For>
 				</div>

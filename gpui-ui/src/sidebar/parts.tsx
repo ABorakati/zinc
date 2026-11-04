@@ -56,6 +56,11 @@ export const HEADER_BTN = "flex min-w-0 items-center gap-1.5 rounded-md px-2.5 p
 export const HEADER_TEXT = "text-[11px] font-semibold text-muted-foreground";
 export const ROW = "relative flex min-h-7 items-center gap-1.5 rounded-lg pr-2 hover:bg-foreground/5";
 export const SPECIAL = "relative flex min-h-7 cursor-pointer items-center gap-1 rounded-lg pl-6 pr-2 hover:bg-foreground/5";
+// The same rows without the native `hover:` refinement: each refinement costs frame time on every visible row, so the rows keep
+// a hover flag instead (a commit only while the pointer is over the sidebar) and paint ROW_HOVER on it.
+export const ROW_STATIC = ROW.replace(" hover:bg-foreground/5", "");
+export const SPECIAL_STATIC = SPECIAL.replace(" hover:bg-foreground/5", "");
+export const ROW_HOVER = "bg-foreground/5";
 export const BADGE = "inline-flex h-[18px] min-w-[22px] flex-none items-center justify-center rounded-full bg-border-soft px-1.5";
 
 /** CSS `uppercase tracking-[0.06em]` for 11px text: GPUIX has no letter-spacing, so uppercase the label only. */

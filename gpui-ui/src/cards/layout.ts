@@ -68,3 +68,6 @@ export const cardLayout = createRoot(() => {
 		reset: () => setLayout({ ...DEFAULT_LAYOUT, meta: [...DEFAULT_LAYOUT.meta] }),
 	};
 });
+
+/** Width (px) of the card list, from its onLayout (0 until the first layout): the cards clip their one-line texts to it (clip.ts). */
+export const [cardListWidth, setCardListWidth] = createSignal(0);
