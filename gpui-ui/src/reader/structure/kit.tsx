@@ -26,6 +26,17 @@ export function kit(mode: Accessor<Mode>): Kit {
 	};
 }
 
+/**
+ * Text that stays inside its box: `lines` = 1 is one line cut with an ellipsis, more is a wrapped paragraph of at most that many
+ * lines whose last one ends in an ellipsis (a bare lineClamp clips at the box edge with no ellipsis, and a nowrap text in a flex
+ * row refuses to shrink: both read as "cut off").
+ */
+export function clampTx(lines: number): Style {
+	return lines <= 1
+		? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1 }
+		: { whiteSpace: "normal", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1, lineClamp: lines };
+}
+
 export function IconButton(p: { k: Kit; icon: string; title?: string; onClick: () => void; on?: boolean; disabled?: boolean; size?: number; box?: number; color?: string }): JSX.Element {
 	const box = () => p.box ?? 28;
 	return (

@@ -78,6 +78,19 @@ export function CiteContent(p: { s: AcademicSession; k: Kit; spec: CiteSpec; jum
 	);
 }
 
+/** A figure / table mention found before the figure index exists: the card appears when the index does. */
+function LazyFigureCard(p: { s: AcademicSession; fkey: string; label: string }): JSX.Element {
+	const k = kit(p.s.ctx.mode);
+	const [item] = createResource(async () => { await p.s.start(); return findByKey(p.s.figItems(), p.fkey) ?? null; });
+	return (
+		<Show when={!item.loading} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>{`Looking for ${p.label}...`}</text>}>
+			<Show when={item()} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>{`${p.label} was not found in this document.`}</text>}>
+				{(it) => <FigureCard s={p.s} item={it()} />}
+			</Show>
+		</Show>
+	);
+}
+
 // ---------------------------------------------------------------------------------------------------- finding the hot areas
 
 /** A line's rect minus the horizontal spans of the links on it (the hot zones sit above the PDF's own link zones, so a DOI link inside a
@@ -97,8 +110,14 @@ function minusLinks(line: PdfRect, links: PdfRect[]): PdfRect[] {
 	return out;
 }
 
+/**
+ * The hot areas of a page. It does NOT wait for the document analysis (s.start(): the layout worker plus the text of every page,
+ * seconds to minutes): what the page text and the PDF's own link annotations give (citations, supplementary and figure / table
+ * mentions) is there at once, and the page is scanned again when the analysis is done (figure index, reference list, bibliography
+ * entries, author-year citations), see AcademicPage.
+ */
 async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number): Promise<Hot[]> {
-	const [pt] = await Promise.all([s.pageText(page), s.start()]);
+	const pt = await s.pageText(page);
 	if (!pt.text) return [];
 	const k = kit(ctx.mode);
 	const lines = computeLines(pt.text, pt.rects);
@@ -120,13 +139,18 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 	const figs = s.figItems();
 
 	// figures & tables
+	const indexed = s.analysed();
 	for (const m of findFigureMentions(pt.text)) {
 		const it = figs.length ? findByKey(figs, m.key) : undefined;
-		if (!it) continue;
+		if (indexed && !it) continue; // not a figure of this paper
+		if (!indexed && startsCaption(m.start)) continue; // (a caption's own label, until the index can tell)
 		const capLine = startsCaption(m.start);
-		if (capLine && it.page === page && it.caption && norm(it.caption).startsWith(norm(capLine.text).slice(0, 15))) continue; // the caption's own label
+		if (it && capLine && it.page === page && it.caption && norm(it.caption).startsWith(norm(capLine.text).slice(0, 15))) continue; // the caption's own label
 		covered.push([m.start, m.end]);
-		hots.push({ kind: "figure", rects: rangeRects(pt.rects, m.start, m.end), key: `fig:${page}:${m.start}`, content: () => <FigureCard s={s} item={it} /> });
+		hots.push({
+			kind: "figure", rects: rangeRects(pt.rects, m.start, m.end), key: `fig:${page}:${m.start}`,
+			content: () => (it ? <FigureCard s={s} item={it} /> : <LazyFigureCard s={s} fkey={m.key} label={m.label} />),
+		});
 	}
 	// supplementary material
 	for (const m of findSupplementaryMentions(pt.text)) {
@@ -144,7 +168,8 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 		const text = idx ? pt.text.slice(idx[0], idx[1]) : "";
 		const destSize = ctx.pageSize(l.target.page);
 		const top = l.target.y >= 0 ? (1 - l.target.y) * destSize.h : undefined;
-		const refLike = isInReferences(rs, l.target.page, top) || (!!rs && l.target.page === rs.page && parseCitationNumbers(text).length > 0);
+		// before the analysis the reference list is not located: a link whose own text reads as citation numbers ("[3]", "4,5") is one
+		const refLike = rs ? isInReferences(rs, l.target.page, top) || (l.target.page === rs.page && parseCitationNumbers(text).length > 0) : parseCitationNumbers(text).length > 0;
 		if (!refLike) continue;
 		let nums = parseCitationNumbers(text);
 		let groupText = text;
@@ -211,7 +236,9 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 
 // ---------------------------------------------------------------------------------------------------- the overlay
 
-const TINT: Record<HotKind, string> = { cite: "#3b82f6", figure: "#14b8a6", supp: "#f59e0b", "author-year": "#3b82f6", bib: "#8b5cf6" };
+/** Every mention is a blue link (reader-next: .rn-hot, the primary colour as an underline, a tint on hover); the web reader's blue is #2563eb. */
+const LINK = "#2563eb";
+const TINT: Record<HotKind, string> = { cite: LINK, figure: LINK, supp: LINK, "author-year": LINK, bib: LINK };
 const CARD_W = 380;
 
 export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accessor<{ width: number; height: number }> }): JSX.Element {
@@ -219,7 +246,8 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 	const k = kit(p.ctx.mode);
 	const size = () => p.ctx.pageSize(p.page);
 	const sc = () => p.box().width / size().w; // px per PDF point
-	const [hots] = createResource(() => computeHots(s, p.ctx, p.page).catch((e) => { console.warn("[academic] page scan failed:", (e as Error).message); return [] as Hot[]; }));
+	// scanned at once, and again when the document analysis (reference list, figure index) lands; the old zones stay until the new ones are in
+	const [hots] = createResource(() => ({ analysed: s.analysed() }), () => computeHots(s, p.ctx, p.page).catch((e) => { console.warn("[academic] page scan failed:", (e as Error).message); return [] as Hot[]; }));
 	const [hover, setHover] = createSignal<string | null>(null);
 	const timers = new Map<string, ReturnType<typeof setTimeout>>();
 	const open = (h: Hot, pinned: boolean) => s.showPopup({ key: h.key, page: p.page, rect: h.rects[0]!, content: h.content, pinned });
@@ -247,8 +275,8 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 				}}
 				style={{
 					position: "absolute", left: q.r[0] * sc() - 1, top: (size().h - q.r[3]) * sc() - 1, width: (q.r[2] - q.r[0]) * sc() + 2, height: (q.r[3] - q.r[1]) * sc() + 2,
-					backgroundColor: withAlpha(TINT[q.h.kind], on() ? (q.h.kind === "bib" ? 0.12 : 0.28) : q.h.kind === "bib" ? 0 : 0.1), borderRadius: 2, cursor: "pointer", pointerEvents: "auto",
-					...(q.h.kind === "bib" ? {} : { borderBottomWidth: 1, borderColor: withAlpha(TINT[q.h.kind], on() ? 0.9 : 0.5) }),
+					backgroundColor: withAlpha(TINT[q.h.kind], on() ? 0.22 : q.h.kind === "bib" ? 0.04 : 0.1), borderRadius: 2, cursor: "pointer", pointerEvents: "auto",
+					borderBottomWidth: q.h.kind === "bib" ? 0 : 1.5, borderColor: withAlpha(TINT[q.h.kind], on() ? 1 : 0.85),
 				}}
 			/>
 		);
@@ -305,6 +333,10 @@ export function AcademicHost(p: { ctx: ReaderContext }): JSX.Element {
 	const k = kit(p.ctx.mode);
 	return (
 		<>
+		<Show when={s.struct().phase === "loading"}>
+			{/* the layout analysis runs in a worker thread; citations and mentions already work from the page text meanwhile */}
+			<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>{`Analysing layout ${Math.round((s.struct() as { pct?: number }).pct ?? 0)}%`}</text>
+		</Show>
 		<Show when={s.struct().phase === "error"}>
 			{/* the layout analysis failed (the worker is missing or crashed): citations found in the text still work, the reading view shows the error */}
 			<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Layout analysis unavailable</text>

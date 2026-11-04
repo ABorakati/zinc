@@ -4,10 +4,12 @@
 // when its row scrolls out of the window.
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
-import type { EventPayload } from "@gpuix/solid";
+import type { EventPayload, HostElement } from "@gpuix/solid";
 import type { Mode, Style } from "../../contracts";
 import { Icon } from "../../icons";
 import { textStyle, tokens, tw, withAlpha } from "../../theme";
+import { clampTx } from "../structure/kit";
+import { boundsOf, hideTooltip, showTooltip } from "../../ui/core";
 import type { Look, OutlineEntry, PdfDoc } from "../pdf";
 import { hiddenUntil, type ImgNode, whenMounted } from "./pixels";
 import type { Scheduler } from "./scheduler";
@@ -23,36 +25,88 @@ export interface SidebarProps {
 	tabs: Accessor<SideTab[]>;
 	tab: Accessor<string>;
 	onTab(id: string): void;
+	/** drag the right edge: the new width (the reader clamps and persists it); absent = a fixed width */
+	onWidth?(w: number): void;
+	minWidth?: number;
+	maxWidth?: Accessor<number>;
+}
+
+export const SIDEBAR_MIN = 180;
+
+/** One icon tab: the label shows as a tooltip after a short delay (the strip is icon-only, so nothing is ever clipped). */
+function TabButton(p: { tab: SideTab; on: boolean; mode: Accessor<Mode>; onClick(): void }): JSX.Element {
+	const t = (c: string): Style => tw(c, p.mode());
+	const tok = (n: string) => tokens[p.mode()][n] ?? "#888";
+	let el: HostElement | undefined;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const cancel = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; hideTooltip(); };
+	onCleanup(cancel);
+	return (
+		<div
+			ref={(x: HostElement) => { el = x; }}
+			role="button"
+			onClick={() => { cancel(); p.onClick(); }}
+			aria-label={p.tab.label}
+			onMouseEnter={(e: EventPayload) => {
+				cancel();
+				const pointer = { x: e.x ?? 0, y: e.y ?? 0 };
+				timer = setTimeout(() => { timer = undefined; showTooltip({ label: p.tab.label, rect: boundsOf(el), pointer }); }, 400);
+			}}
+			onMouseLeave={cancel}
+			onMouseDown={cancel}
+			style={{
+				...t("flex size-7 flex-none items-center justify-center rounded-md"), cursor: "pointer",
+				...(p.on ? { backgroundColor: tok("accent") } : {}),
+				hover: t("bg-accent"),
+			}}
+		>
+			<Icon name={p.tab.icon} size={15} color={tok(p.on ? "foreground" : "muted-foreground")} />
+		</div>
+	);
 }
 
 export function Sidebar(p: SidebarProps): JSX.Element {
 	const t = (c: string): Style => tw(c, p.mode());
 	const tok = (n: string) => tokens[p.mode()][n] ?? "#888";
 	const active = createMemo(() => p.tabs().find((x) => x.id === p.tab()) ?? p.tabs()[0]);
+	const [drag, setDrag] = createSignal<{ x0: number; w0: number } | null>(null);
+	const [hot, setHot] = createSignal(false);
+	const lo = () => p.minWidth ?? SIDEBAR_MIN;
+	const move = (e: EventPayload) => {
+		const d = drag();
+		if (!d) return;
+		if ((e.pressedButton === undefined || e.pressedButton === null) && process.env.ZN_SIM_MOUSE !== "1") { setDrag(null); setHot(false); return; } // released outside the window
+		p.onWidth?.(clamp(Math.round(d.w0 + (e.x ?? d.x0) - d.x0), lo(), Math.max(lo(), p.maxWidth?.() ?? 600)));
+	};
 	return (
+		<div style={{ display: "flex", flexDirection: "row", flexShrink: 0, width: p.width + (p.onWidth ? 3 : 0), height: "100%", minHeight: 0 }}>
 		<div style={{ ...t("flex flex-none flex-col border-r bg-card"), width: p.width, height: "100%", minHeight: 0 }}>
-			<div style={{ ...t("flex h-9 flex-none items-center gap-0.5 border-b px-1.5"), width: "100%" }}>
+			{/* icon-only tabs that wrap onto more rows in a narrow sidebar: nothing is clipped at any width */}
+			<div style={{ ...t("flex flex-none flex-row items-center gap-0.5 border-b px-1.5 py-1"), flexWrap: "wrap", width: "100%", minHeight: 36 }}>
 				<For each={p.tabs()}>
-					{(x) => (
-						<div
-							onClick={() => p.onTab(x.id)}
-							aria-label={x.label}
-							style={{
-								...t("flex size-7 flex-none items-center justify-center rounded-md"), cursor: "pointer",
-								...(active()?.id === x.id ? { backgroundColor: tok("accent") } : {}),
-								hover: t("bg-accent"),
-							}}
-						>
-							<Icon name={x.icon} size={15} color={tok(active()?.id === x.id ? "foreground" : "muted-foreground")} />
-						</div>
-					)}
+					{(x) => <TabButton tab={x} on={active()?.id === x.id} mode={p.mode} onClick={() => p.onTab(x.id)} />}
 				</For>
-				<div style={{ flexGrow: 1 }} />
-				<text style={{ ...textStyle("text-[11px] text-muted-foreground", p.mode()), whiteSpace: "nowrap" }}>{active()?.label ?? ""}</text>
 			</div>
 			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%" }}>
 				<Show when={active()} keyed>{(a) => a.render()}</Show>
 			</div>
+		</div>
+			{/* the drag handle: a thin gutter beside the sidebar's right border, a transparent window-sized layer captures the pointer while it is dragged */}
+			<Show when={p.onWidth}>
+				<div
+					onMouseDown={(e: EventPayload) => setDrag({ x0: e.x ?? 0, w0: p.width })}
+					onMouseEnter={() => setHot(true)}
+					onMouseLeave={() => { if (!drag()) setHot(false); }}
+					style={{ width: 5, flexShrink: 0, height: "100%", cursor: "col-resize", backgroundColor: "rgba(0, 0, 0, 0.004)", display: "flex", flexDirection: "row", justifyContent: "center", marginLeft: -2 }}
+				>
+					<div style={{ width: 2, height: "100%", pointerEvents: "none", backgroundColor: drag() ? tok("primary") : hot() ? withAlpha(tok("primary"), 0.6) : "transparent" }} />
+				</div>
+			</Show>
+			<Show when={drag()}>
+				<anchored fill="window" priority={1000} style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }}>
+					<div onMouseMove={move} onMouseUp={() => { setDrag(null); setHot(false); }} style={{ width: "100%", height: "100%", cursor: "col-resize" }} />
+				</anchored>
+			</Show>
 		</div>
 	);
 }
@@ -317,7 +371,7 @@ export function FindResults(p: HitsProps): JSX.Element {
 							}}
 						>
 							<text style={{ ...textStyle("text-[10.5px] text-muted-foreground", p.mode()), whiteSpace: "nowrap" }}>{`Page ${p.hits()[i]!.page + 1}`}</text>
-							<text style={{ ...textStyle("text-[12px] text-foreground", p.mode()), lineClamp: 2 }}>{p.hits()[i]!.snippet}</text>
+							<text style={{ ...textStyle("text-[12px] text-foreground", p.mode()), ...clampTx(2) }}>{p.hits()[i]!.snippet}</text>
 						</div>
 					)}
 				</For>

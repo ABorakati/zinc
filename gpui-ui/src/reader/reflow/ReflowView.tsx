@@ -5,12 +5,13 @@ import { useGpuix } from "@gpuix/solid";
 import { createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
 import { Icon } from "../../icons";
 import { Popover } from "../../ui";
+import { boundsOf } from "../../ui/core";
 import { CiteContent } from "../academic/PageOverlay";
 import { CitedByCard } from "../academic/Cards";
 import { markerOf, parseCitationNumbers } from "../academic/citations";
 import { academicFor } from "../academic/session";
 import type { ReaderContext } from "../plugins";
-import { kit, RegionImage } from "../structure/kit";
+import { clampTx, kit, RegionImage } from "../structure/kit";
 import { renderRegion, type Crop } from "../structure/regions";
 import type { Block, DocStructure, PdfRect } from "../structure/types";
 import { bestTarget, buildItems, firstItemOnPage, tocEntries, type ReflowItem } from "./build";
@@ -59,7 +60,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	const indexOf = createMemo(() => new Map(items().map((it, i) => [it.id, i])));
 
 	const [settingsOpen, setSettingsOpen] = createSignal(false);
-	const [tocOpen, setTocOpen] = createSignal(true);
+	const [tocOpen, setTocOpen] = createSignal(false);
 	const [top, setTop] = createSignal(0);
 	const [flash, setFlash] = createSignal<string | null>(null);
 	const [back, setBack] = createSignal<number[]>([]);
@@ -236,9 +237,10 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	}
 
 	// ---- chrome
-	function Chip(c: { label?: string; icon?: string; on?: boolean; onClick: () => void; w?: number; disabled?: boolean }): JSX.Element {
+	function Chip(c: { label?: string; icon?: string; on?: boolean; onClick: () => void; w?: number; disabled?: boolean; refEl?: (el: { id: number }) => void }): JSX.Element {
 		return (
 			<div
+				ref={(el: { id: number }) => c.refEl?.(el)}
 				onClick={() => { if (!c.disabled) c.onClick(); }}
 				style={{
 					display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, height: 26, paddingLeft: 9, paddingRight: 9, borderRadius: 6, flexShrink: 0,
@@ -285,28 +287,45 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		</div>
 	);
 
+	let rootEl: { id: number } | undefined;
+	let tocBtn: { id: number } | undefined;
+	let tocClosedAt = 0;
+	const closeToc = () => { if (tocOpen()) { tocClosedAt = Date.now(); setTocOpen(false); } };
+	/** the Contents dropdown (reader-next: a floating contents panel): anchored under the toolbar chip, scrolls, closes on pick / outside / Escape */
 	const tocPanel = (): JSX.Element => {
+		const rb = boundsOf(rootEl as never), bb = boundsOf(tocBtn as never);
+		const left = rb && bb ? Math.max(6, bb.x - rb.x) : 76;
 		const cur = createMemo(() => {
 			let c: string | null = null;
 			for (const e of toc()) { if ((indexOf().get(e.id) ?? 0) <= top()) c = e.id; else break; }
 			return c;
 		});
 		return (
-			<div style={{ display: "flex", flexDirection: "column", width: 250, flexShrink: 0, height: "100%", borderRightWidth: 1, borderColor: pal().rule, minHeight: 0 }}>
-				<div style={{ display: "flex", alignItems: "center", height: 34, paddingLeft: 14, flexShrink: 0 }}>
+			<div
+				tabIndex={0}
+				autoFocus
+				onKeyDown={(e) => { if (e.key === "escape") closeToc(); }}
+				onMouseDownOutside={closeToc}
+				style={{
+					position: "absolute", left, top: 40, width: 300, maxHeight: 440, display: "flex", flexDirection: "column", borderRadius: 8, borderWidth: 1,
+					borderColor: pal().rule, backgroundColor: pal().bg, overflow: "hidden", keyboardFocusDim: false,
+					boxShadow: [{ offsetX: 0, offsetY: 10, blurRadius: 30, spreadRadius: 0, color: "rgba(0, 0, 0, 0.28)" }],
+				}}
+			>
+				<div style={{ display: "flex", alignItems: "center", height: 30, paddingLeft: 14, flexShrink: 0 }}>
 					<text style={{ color: pal().muted, fontFamily: "Inter", fontSize: 11, fontWeight: 600 }}>CONTENTS</text>
 				</div>
-				<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, overflowY: "scroll", scrollbarColor: "rgba(128, 128, 128, 0.4)", scrollbarWidth: 5, paddingBottom: 12 }}>
+				<div style={{ display: "flex", flexDirection: "column", minHeight: 0, maxHeight: 400, overflowY: "scroll", scrollbarColor: "rgba(128, 128, 128, 0.4)", scrollbarWidth: 5, paddingBottom: 8 }}>
 					<For each={toc()}>
 						{(e) => (
 							<div
-								onClick={() => { const i = indexOf().get(e.id); if (i !== undefined) goToIndex(i); }}
+								onClick={() => { const i = indexOf().get(e.id); closeToc(); if (i !== undefined) goToIndex(i); }}
 								style={{
 									display: "flex", paddingTop: 4, paddingBottom: 4, paddingRight: 10, paddingLeft: 14 + (e.level - 1) * 12, cursor: "pointer",
-									backgroundColor: cur() === e.id ? pal().panel : "transparent", hover: { backgroundColor: pal().panel },
+									backgroundColor: cur() === e.id ? pal().panel : "transparent", borderLeftWidth: 2, borderColor: cur() === e.id ? pal().cite : "transparent", hover: { backgroundColor: pal().panel },
 								}}
 							>
-								<text style={{ color: cur() === e.id ? pal().fg : pal().muted, fontFamily: "Inter", fontSize: 12, fontWeight: cur() === e.id ? 600 : 400, lineClamp: 2 }}>{e.text}</text>
+								<text style={{ color: cur() === e.id ? pal().fg : pal().muted, fontFamily: "Inter", fontSize: 12, fontWeight: cur() === e.id ? 600 : 400, ...clampTx(2) }}>{e.text}</text>
 							</div>
 						)}
 					</For>
@@ -318,7 +337,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	const bar = (): JSX.Element => (
 		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6, height: 42, paddingLeft: 10, paddingRight: 10, flexShrink: 0, borderBottomWidth: 1, borderColor: pal().rule }}>
 			<Chip icon="arrow-left" label="PDF" onClick={() => p.ctx.setAltView(null)} />
-			<Chip icon="list" label="Contents" on={tocOpen()} onClick={() => setTocOpen(!tocOpen())} disabled={toc().length === 0} />
+			<Chip icon="list" label="Contents" on={tocOpen()} refEl={(el) => { tocBtn = el; }} onClick={() => { if (tocOpen()) closeToc(); else if (Date.now() - tocClosedAt > 250) setTocOpen(true); }} disabled={toc().length === 0} />
 			<Show when={back().length > 0}><Chip icon="undo-2" label="Back" onClick={goBack} /></Show>
 			<div style={{ flexGrow: 1 }} />
 			<text style={{ color: pal().muted, fontFamily: "Inter", fontSize: 11.5, whiteSpace: "nowrap" }}>Reading view</text>
@@ -343,8 +362,9 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 
 	return (
 		<div
+			ref={(el: { id: number }) => { rootEl = el; }}
 			onMouseMove={(e) => { pointer.x = e.x ?? pointer.x; pointer.y = e.y ?? pointer.y; }}
-			style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, minWidth: 0, backgroundColor: pal().bg }}
+			style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, minWidth: 0, backgroundColor: pal().bg, position: "relative" }}
 		>
 			{bar()}
 			<Show when={settingsOpen()}>{settingsPanel()}</Show>
@@ -357,7 +377,6 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				</Match>
 				<Match when={p.state().phase === "ready"}>
 					<div style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0 }}>
-						<Show when={tocOpen() && toc().length > 0}>{tocPanel()}</Show>
 						<Show when={items().length > 0} fallback={message("file-text", "No readable text was found in this PDF.")}>
 							<virtual-list
 								ref={onListRef}
@@ -372,6 +391,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 					</div>
 				</Match>
 			</Switch>
+			<Show when={tocOpen() && toc().length > 0}>{tocPanel()}</Show>
 			<Popover open={pop() !== null} onClose={() => setPop(null)} anchor={pop()?.anchor ?? { x: 0, y: 0 }} width={380}>
 				<div style={{ display: "flex", flexDirection: "column", width: "100%", padding: 2 }}>{pop()?.content()}</div>
 			</Popover>

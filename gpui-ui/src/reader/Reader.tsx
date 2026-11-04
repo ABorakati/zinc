@@ -27,7 +27,8 @@ import { readerAppearance as appearance, initReaderAppearance, lookOf, paperColo
 import { BitmapCache, type LinkInfo, type Margins, PageSlot, type PageEnv, type PageStats, type ViewRect } from "./core/Page";
 import { Previews, type PreviewWant } from "./core/preview";
 import { Scheduler } from "./core/scheduler";
-import { FindResults, Outline, Sidebar, Thumbnails, type HitRow, type SideTab } from "./core/Sidebar";
+import { runSelfTest, selfTestDir } from "./selftest";
+import { FindResults, Outline, Sidebar, SIDEBAR_MIN, Thumbnails, type HitRow, type SideTab } from "./core/Sidebar";
 import { getDocState, getSidebar, saveSidebar, setDocState, type ZoomMode } from "./core/state";
 import { copyText, isSafeUrl, openUrl } from "./core/sys";
 import { buildPageText, caretAt, cmpCaret, lineAt, rotRect, selectionRects, selectionText, unrotPoint, wordAt, type Caret, type PageText } from "./core/text";
@@ -1007,11 +1008,21 @@ export function Reader(props: ReaderProps): JSX.Element {
 		});
 	});
 	onCleanup(runCleanups);
+	// ZN_READER_SELFTEST=<dir>: the packaged-app check of the mentions and the structure worker (src/reader/selftest.ts)
+	createEffect(() => {
+		const c = ctxSig();
+		if (c && active() && laidOut() && selfTestDir()) untrack(() => void runSelfTest(c, gpuix!.renderer as never));
+	});
 
 	// ---- sidebar ----------------------------------------------------------------------------------------------------------------
 	const sb0 = getSidebar();
 	const [sbOpen, setSbOpen] = createSignal(sb0.open);
 	const [sbTab, setSbTab] = createSignal(sb0.tab);
+	// the sidebar's width: dragged by its right edge (180 px .. half of the reader), remembered with the rest of the reader state
+	const [sbW, setSbW] = createSignal(clamp(sb0.width || 232, SIDEBAR_MIN, 900));
+	const [bodyW, setBodyW] = createSignal(0);
+	const sbMax = () => Math.max(SIDEBAR_MIN, Math.floor((bodyW() || 1200) / 2));
+	const resizeSidebar = (w: number) => { setSbW(w); if (persist) saveSidebar({ ...getSidebar(), width: w }); };
 	const setSidebar = (open: boolean, tab?: string) => { setSbOpen(open); if (tab) setSbTab(tab); if (persist) saveSidebar({ ...getSidebar(), open, tab: tab ?? sbTab() }); };
 	const hitRows = createMemo<HitRow[]>(() => hits().map((h) => ({ page: h.page, snippet: h.snippet })));
 	const look = createMemo(() => lookOf(appearance()));
@@ -1024,7 +1035,6 @@ export function Reader(props: ReaderProps): JSX.Element {
 				render: () => <Thumbnails mode={mode} doc={doc} sched={sched} dpr={dpr} look={look} rot={rotOf} epoch={thumbEpoch} curPage={curPage} goTo={(p) => goTo(p, -1, false)} />,
 			},
 			{ id: "outline", label: "Outline", icon: "list-tree", render: () => <Outline mode={mode} outline={outline} goTo={(p, y) => goTo(p, y)} curPage={curPage} /> },
-			{ id: "find", label: "Find", icon: "search", render: () => <FindResults mode={mode} query={query} hits={hitRows} cur={cur} done={scanDone} show={showHit} /> },
 		];
 		const extra: SideTab[] = [];
 		for (const p of plugins()) if (p.sidePanel) {
@@ -1042,7 +1052,6 @@ export function Reader(props: ReaderProps): JSX.Element {
 
 	// ---- keyboard ----------------------------------------------------------------------------------------------------------------------
 	function focusSearch() {
-		setSidebar(true, "find");
 		if (searchEl) gpuix?.renderer.focusElement?.(searchEl.id);
 	}
 	function onKey(e: { key?: string; keyChar?: string; modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; cmd?: boolean }; preventDefault?: () => void }) {
@@ -1165,12 +1174,13 @@ export function Reader(props: ReaderProps): JSX.Element {
 		appearance: mode(), bg: tok("background"), text: tok("foreground"), textMuted: tok("muted-foreground"),
 		textFaint: tok("muted-foreground"), textDim: tok("muted-foreground"), accent: tok("primary"), caret: tok("primary"), fontSans: "Inter",
 	});
+	const [hitList, setHitList] = createSignal(false);
 	const sep = () => <div style={{ ...t("mx-1 h-5 w-px flex-none"), backgroundColor: tok("border") }} />;
 
 	const toolbar = () => (
 		<div style={t("relative flex h-10 flex-none items-center gap-1 border-b bg-card px-2")}>
 			<Show when={doc()}>
-				<IconButton icon="panel-left" title="Sidebar" mode={mode} on={sbOpen()} onClick={() => setSidebar(!sbOpen())} />
+				<IconButton icon="panel-left" title="Sidebar" mode={mode} on={sbOpen() && !curAlt()} disabled={!!curAlt()} onClick={() => setSidebar(!sbOpen())} />
 				<IconButton icon="arrow-left" title="Back (Alt+Left)" mode={mode} disabled={history().length === 0} onClick={goBack} />
 			</Show>
 			<div style={t("mx-2 flex min-w-0 flex-1 items-center")}>
@@ -1225,6 +1235,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 				</div>
 				<IconButton icon="chevron-up" title="Previous match" mode={mode} disabled={hits().length === 0} onClick={() => step(-1)} />
 				<IconButton icon="chevron-down" title="Next match" mode={mode} disabled={hits().length === 0} onClick={() => step(1)} />
+				<IconButton icon="list" title="Match list" mode={mode} on={hitList()} disabled={hits().length === 0} onClick={() => setHitList(!hitList())} />
 
 				{/* plugins: their toolbar items, and a toggle for every alternate view */}
 				<For each={plugins()}>
@@ -1334,9 +1345,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 	});
 
 	const body = (env: PageEnv) => (
-		<div style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%" }}>
-			<Show when={sbOpen()}>
-				<Sidebar mode={mode} width={getSidebar().width} tabs={sideTabs} tab={sbTab} onTab={(id) => setSidebar(true, id)} />
+		<div onLayout={(e: EventPayload) => setBodyW(e.width ?? 0)} style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%" }}>
+			<Show when={sbOpen() && !curAlt()}>
+				<Sidebar mode={mode} width={Math.min(sbW(), sbMax())} tabs={sideTabs} tab={sbTab} onTab={(id) => setSidebar(true, id)} onWidth={resizeSidebar} maxWidth={sbMax} />
 			</Show>
 			<div ref={(el: { id: number }) => { paneEl = el; }} onLayout={onViewport} style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, minHeight: 0, position: "relative", backgroundColor: tok("muted") }}>
 				<Show
@@ -1416,6 +1427,16 @@ export function Reader(props: ReaderProps): JSX.Element {
 		</div>
 	);
 
+	/** the list of matches, a dropdown under the toolbar's search box (the sidebar has no Find tab: the box is the one place to search) */
+	const hitMenu = () => (
+		<div
+			onMouseDownOutside={() => setHitList(false)}
+			style={{ ...t("absolute flex flex-col rounded-lg border bg-popover"), overflow: "hidden", right: 8, top: 44, width: 340, height: Math.min(360, Math.max(1, hitRows().length) * 50 + 2), boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 18, spreadRadius: 0, color: "rgba(0,0,0,0.3)" }] }}
+		>
+			<FindResults mode={mode} query={query} hits={hitRows} cur={cur} done={scanDone} show={(i) => showHit(i)} />
+		</div>
+	);
+
 	const appearanceMenu = () => (
 		<div
 			onMouseDownOutside={() => { if (openMenu() === "appearance") setOpenMenu(null); }}
@@ -1483,6 +1504,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 					{(env) => body(env)}
 				</Show>
 				<Show when={openMenu() === "appearance"}>{appearanceMenu()}</Show>
+				<Show when={hitList() && hits().length > 0}>{hitMenu()}</Show>
 			</Show>
 		</div>
 	);

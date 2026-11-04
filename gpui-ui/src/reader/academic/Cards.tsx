@@ -1,8 +1,9 @@
 // Cards shown in the academic popovers and panels: a bibliography reference (abstract, add to library, open), a figure / table
 // preview, a supplementary-material match and the list for a citation group like "[3, 5-7]".
 import { createMemo, createResource, createSignal, For, onMount, Show, type JSX } from "solid-js";
+import { withAlpha } from "../../theme";
 import { Button } from "../../ui";
-import { kit, RegionImage, type Kit } from "../structure/kit";
+import { clampTx, kit, RegionImage, type Kit } from "../structure/kit";
 import { renderRegion, type Crop } from "../structure/regions";
 import type { PdfRect } from "../structure/types";
 import { openAttachmentTab, openInLibrary, openUrl } from "./actions";
@@ -23,7 +24,29 @@ export interface RefCardOpts {
 	onJump?: () => void; // "Jump to reference in this PDF"
 	onShowInRefs?: (index: number) => void;
 	compact?: boolean; // list rows: no lookup until asked
+	/** the caller's row already shows the title and authors (the References panel): only the badge, abstract, stats and actions follow */
+	bare?: boolean;
 	onChange?: () => void;
+}
+
+/** A compact action button (h-6, text-xs) of the reference card: they flow in a wrapping row. */
+function ActBtn(p: { k: Kit; primary?: boolean; disabled?: boolean; onClick: () => void; children: string }): JSX.Element {
+	const k = p.k;
+	return (
+		<div
+			role="button"
+			onClick={() => { if (!p.disabled) p.onClick(); }}
+			style={{
+				...k.t("flex h-6 flex-none items-center rounded-md border px-2"), marginRight: 4, marginBottom: 4,
+				borderColor: p.primary ? "transparent" : k.tok("border"),
+				backgroundColor: p.primary ? k.tok("primary") : "transparent",
+				cursor: p.disabled ? "default" : "pointer", opacity: p.disabled ? 0.5 : 1,
+				hover: p.disabled ? {} : { backgroundColor: p.primary ? withAlpha(k.tok("primary"), 0.9) : k.tok("accent") },
+			}}
+		>
+			<text style={{ ...k.tx("text-[11.5px] font-medium"), color: p.primary ? k.tok("primary-foreground") : k.tok("foreground"), whiteSpace: "nowrap" }}>{p.children}</text>
+		</div>
+	);
 }
 
 export function RefCard(p: { s: AcademicSession; opts: RefCardOpts }): JSX.Element {
@@ -65,51 +88,58 @@ export function RefCard(p: { s: AcademicSession; opts: RefCardOpts }): JSX.Eleme
 		setBusy(null);
 	}
 
-	const small = k.tx("text-[11.5px] text-muted-foreground");
+	const small = { ...k.tx("text-[11.5px] text-muted-foreground"), whiteSpace: "normal" as const, minWidth: 0 };
+	const m6 = { marginTop: 6 };
+	const badge = () => (
+		<div style={{ ...k.t("flex flex-none items-center rounded bg-primary/15 px-1.5"), height: 18 }}>
+			<text style={{ ...k.tx("text-[10.5px] font-medium text-primary"), whiteSpace: "nowrap" }}>In library</text>
+		</div>
+	);
 	return (
-		<div style={{ display: "flex", flexDirection: "column", width: "100%", gap: 6, minWidth: 0 }}>
-			<div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
-				<div style={{ display: "flex", flexGrow: 1, minWidth: 0 }}>
-					<text style={{ ...k.tx("text-[13px] font-medium text-foreground"), lineClamp: o.compact ? 3 : 4 }}>{d().title ?? d().raw ?? o.rawText ?? "Reference"}</text>
-				</div>
-				<Show when={inLib()}>
-					<div style={{ ...k.t("flex flex-none items-center rounded bg-primary/15 px-1.5"), height: 18 }}>
-						<text style={{ ...k.tx("text-[10.5px] font-medium text-primary"), whiteSpace: "nowrap" }}>In library</text>
+		<div style={{ display: "flex", flexDirection: "column", width: "100%", minWidth: 0, marginTop: -6 }}>
+			<Show when={!o.bare}>
+				<div style={{ ...m6, display: "flex", flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
+					<div style={{ display: "flex", flexGrow: 1, minWidth: 0 }}>
+						<text style={{ ...k.tx("text-[13px] font-medium text-foreground"), ...clampTx(o.compact ? 3 : 4) }}>{d().title ?? d().raw ?? o.rawText ?? "Reference"}</text>
 					</div>
-				</Show>
-			</div>
-			<Show when={meta()}><text style={{ ...small, lineClamp: 2 }}>{meta()}</text></Show>
+					<Show when={inLib()}>{badge()}</Show>
+				</div>
+				<Show when={meta()}><text style={{ ...small, ...m6, ...clampTx(2) }}>{meta()}</text></Show>
+			</Show>
+			<Show when={o.bare && inLib()}>
+				<div style={{ ...m6, display: "flex", flexDirection: "row" }}>{badge()}</div>
+			</Show>
 			<Show when={!o.ref && o.rawText}>
-				<div style={{ ...k.t("flex rounded-md bg-muted p-2") }}><text style={{ ...k.tx("text-[11.5px] text-foreground") }}>{o.rawText ?? ""}</text></div>
-				<text style={small}>No match in the resolved bibliography.</text>
+				<div style={{ ...k.t("flex rounded-md bg-muted p-2"), ...m6 }}><text style={{ ...k.tx("text-[11.5px] text-foreground") }}>{o.rawText ?? ""}</text></div>
+				<text style={{ ...small, ...m6 }}>No match in the resolved bibliography.</text>
 			</Show>
 			<Show when={loading()}>
-				<div style={{ ...k.t("rounded bg-muted"), height: 10 }} />
-				<div style={{ ...k.t("rounded bg-muted"), height: 10, width: "80%" }} />
+				<div style={{ ...k.t("rounded bg-muted"), ...m6, height: 10 }} />
+				<div style={{ ...k.t("rounded bg-muted"), ...m6, height: 10, width: "80%" }} />
 			</Show>
 			<Show when={!loading() && detail()?.abstract}>
-				<text style={{ ...k.tx("text-[12px] text-foreground"), lineClamp: o.compact ? 6 : 9 }}>{detail()!.abstract ?? ""}</text>
+				<text style={{ ...k.tx("text-[12px] text-foreground"), ...m6, ...clampTx(o.compact ? 6 : 9) }}>{detail()!.abstract ?? ""}</text>
 			</Show>
-			<Show when={!loading() && !detail()?.abstract && o.ref && !failed() && !o.compact}><text style={small}>No abstract available.</text></Show>
-			<Show when={failed()}><text style={small}>{`Details unavailable (${failed()}).`}</text></Show>
-			<Show when={stats()}><text style={small}>{stats()}</text></Show>
-			<div style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+			<Show when={!loading() && !detail()?.abstract && o.ref && !failed() && !o.compact}><text style={{ ...small, ...m6 }}>No abstract available.</text></Show>
+			<Show when={failed()}><text style={{ ...small, ...m6 }}>{`Details unavailable (${failed()}).`}</text></Show>
+			<Show when={stats()}><text style={{ ...small, ...m6 }}>{stats()}</text></Show>
+			<div style={{ ...m6, display: "flex", flexDirection: "row", flexWrap: "wrap" }}>
 				<Show
 					when={inLib()}
 					fallback={
 						<Show when={o.ref || doi()}>
-							<Button size="sm" variant="primary" disabled={busy() !== null} onClick={() => void add()}>{busy() ? "Adding..." : "Add to library"}</Button>
+							<ActBtn k={k} primary disabled={busy() !== null} onClick={() => void add()}>{busy() ? "Adding..." : "Add to library"}</ActBtn>
 						</Show>
 					}
 				>
-					<Button size="sm" variant="primary" onClick={() => void openInLibrary(inLib()!)}>Open in library</Button>
+					<ActBtn k={k} primary onClick={() => void openInLibrary(inLib()!)}>Open in library</ActBtn>
 				</Show>
-				<Show when={url()}><Button size="sm" onClick={() => openUrl(p.s.ctx, p.s.api, url()!)}>Open in browser</Button></Show>
-				<Show when={d().openAccessUrl}><Button size="sm" onClick={() => openUrl(p.s.ctx, p.s.api, d().openAccessUrl!)}>Open PDF</Button></Show>
-				<Show when={o.ref && o.onShowInRefs}><Button size="sm" onClick={() => o.onShowInRefs!(o.ref!.index)}>Show in References</Button></Show>
-				<Show when={o.onJump}><Button size="sm" onClick={() => o.onJump!()}>Jump to reference</Button></Show>
+				<Show when={url()}><ActBtn k={k} onClick={() => openUrl(p.s.ctx, p.s.api, url()!)}>Open in browser</ActBtn></Show>
+				<Show when={d().openAccessUrl}><ActBtn k={k} onClick={() => openUrl(p.s.ctx, p.s.api, d().openAccessUrl!)}>Open PDF</ActBtn></Show>
+				<Show when={o.ref && o.onShowInRefs}><ActBtn k={k} onClick={() => o.onShowInRefs!(o.ref!.index)}>Show in References</ActBtn></Show>
+				<Show when={o.onJump}><ActBtn k={k} onClick={() => o.onJump!()}>Jump to reference</ActBtn></Show>
 			</div>
-			<Show when={addError()}><text style={k.tx("text-[11.5px] text-destructive")}>{addError()!}</text></Show>
+			<Show when={addError()}><text style={{ ...k.tx("text-[11.5px] text-destructive"), ...m6 }}>{addError()!}</text></Show>
 		</div>
 	);
 }
@@ -136,7 +166,7 @@ export function FigureCard(p: { s: AcademicSession; item: FigItem }): JSX.Elemen
 			</div>
 			<RegionImage k={k} crop={crop} width={340} maxHeight={260} fallbackHeight={90} />
 			<Show when={it.caption} fallback={<text style={k.tx("text-[11.5px] text-muted-foreground")}>No caption found.</text>}>
-				<text style={{ ...k.tx("text-[11.5px] text-muted-foreground"), lineClamp: 6 }}>{it.caption ?? ""}</text>
+				<text style={{ ...k.tx("text-[11.5px] text-muted-foreground"), ...clampTx(6) }}>{it.caption ?? ""}</text>
 			</Show>
 			<div style={{ display: "flex", flexDirection: "row" }}>
 				<Button size="sm" variant="primary" onClick={() => p.s.jump(it.page, it.rect)}>{`Go to ${it.kind}`}</Button>
@@ -228,7 +258,7 @@ export function CitedByCard(p: { s: AcademicSession; k: Kit; n: number; sites: C
 								style={{ ...p.k.t("flex flex-col rounded-md border px-2 py-1"), gap: 2, cursor: "pointer", hover: p.k.t("bg-accent"), borderColor: p.k.tok("border") }}
 							>
 								<text style={{ ...p.k.tx("text-[10.5px] font-medium text-primary"), whiteSpace: "nowrap" }}>{`p. ${r.site.page + 1}`}</text>
-								<Show when={r.text}><text style={{ ...p.k.tx("text-[11.5px] text-foreground"), lineClamp: 3 }}>{r.text}</text></Show>
+								<Show when={r.text}><text style={{ ...p.k.tx("text-[11.5px] text-foreground"), ...clampTx(3) }}>{r.text}</text></Show>
 							</div>
 						)}
 					</For>
@@ -253,7 +283,7 @@ export function CiteGroup(p: { s: AcademicSession; k: Kit; text: string; entries
 							style={{ ...p.k.t("flex flex-row items-start rounded-md px-1.5 py-1"), gap: 6, cursor: e.ref ? "pointer" : "default", hover: e.ref ? p.k.t("bg-accent") : {} }}
 						>
 							<text style={{ ...p.k.tx("text-[11.5px] font-medium text-primary"), whiteSpace: "nowrap" }}>{`[${e.n}]`}</text>
-							<text style={{ ...p.k.tx("text-[12px] text-foreground"), lineClamp: 2 }}>{e.ref ? (e.ref.title ?? e.ref.raw ?? "") : "(not found in the resolved bibliography)"}</text>
+							<text style={{ ...p.k.tx("text-[12px] text-foreground"), ...clampTx(2) }}>{e.ref ? (e.ref.title ?? e.ref.raw ?? "") : "(not found in the resolved bibliography)"}</text>
 						</div>
 						<Show when={open() === e.n && e.ref}>
 							<div style={{ paddingLeft: 24 }}><RefCard s={p.s} opts={{ ref: e.ref, compact: true, onShowInRefs: p.onShowInRefs }} /></div>

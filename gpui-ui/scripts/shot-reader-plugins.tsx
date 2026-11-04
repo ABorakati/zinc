@@ -24,7 +24,7 @@ import { OverlayHost } from "../src/ui";
 const args = process.argv.slice(2);
 const val = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
 const has = (n: string) => args.includes(`--${n}`);
-const spec = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]!.startsWith("--") && ["out", "only", "page"].includes(args[i - 1]!.slice(2))));
+const spec = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]!.startsWith("--") && ["out", "only", "page", "panel-w", "click", "tag"].includes(args[i - 1]!.slice(2))));
 if (!spec) { console.error("usage: bun scripts/shot-reader-plugins.tsx <attachment key | file.pdf> [--out DIR] [--only annotations,academic,figures,references,reflow] [--light]"); process.exit(2); }
 const OUT = val("out", "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots");
 mkdirSync(OUT, { recursive: true });
@@ -115,7 +115,7 @@ function Chrome(): JSX.Element {
 	const altPlugin = createMemo(() => plugins().find((p) => p.altView && p.altView.id === alt()));
 	return (
 		<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%", backgroundColor: k.tok("background") }}>
-			<div style={{ ...k.t("flex flex-col border-r bg-card"), width: 340, flexShrink: 0, height: "100%", minHeight: 0 }}>
+			<div style={{ ...k.t("flex flex-col border-r bg-card"), width: Number(val("panel-w", "340")), flexShrink: 0, height: "100%", minHeight: 0 }}>
 				<Show when={cur()}>{cur()!.render(ctx)}</Show>
 			</div>
 			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, height: "100%" }}>
@@ -265,7 +265,19 @@ try {
 			}
 		}
 		if (only.has("figures")) { setPanel("figures-tables"); setCurPage(0); await shot("figures", 2500); }
-		if (only.has("references")) { setPanel("references"); await frame(500); await shot("references", 2500); }
+		if (only.has("references")) {
+			setPanel("references");
+			await frame(500);
+			await shot(`references${val("tag", "")}`, 2500);
+			// --click x,y[;x,y...]: expand entries by clicking their rows
+			for (const c of val("click", "").split(";").filter(Boolean)) {
+				const [cx, cy] = c.split(",").map(Number);
+				r.nativeSimulateMouseMove(cx!, cy!);
+				r.nativeSimulateClick(cx!, cy!);
+				await frame(2500);
+			}
+			if (val("click", "")) await shot(`references-expanded${val("tag", "")}`, 1500);
+		}
 	}
 
 	// ------------------------------------------------------------------------------------------ reflow

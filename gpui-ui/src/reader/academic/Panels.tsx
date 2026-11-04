@@ -4,7 +4,7 @@ import { createMemo, createResource, createSignal, For, onMount, Show, type JSX 
 import { Icon } from "../../icons";
 import { Button } from "../../ui";
 import type { ReaderContext } from "../plugins";
-import { Field, kit, RegionImage, type Kit } from "../structure/kit";
+import { clampTx, Field, kit, RegionImage, type Kit } from "../structure/kit";
 import { RefCard, SuppRow, useCrop } from "./Cards";
 import type { FigItem } from "./figures";
 import { academicFor, type AcademicSession } from "./session";
@@ -33,7 +33,7 @@ function FigRow(p: { s: AcademicSession; it: FigItem }): JSX.Element {
 					<text style={{ ...k.tx("text-[12.5px] font-medium text-foreground"), whiteSpace: "nowrap" }}>{p.it.label}</text>
 					<text style={{ ...k.tx("text-[10.5px] text-muted-foreground"), whiteSpace: "nowrap" }}>{`p. ${p.it.page + 1}`}</text>
 				</div>
-				<Show when={cap()}><text style={{ ...k.tx("text-[11.5px] text-muted-foreground"), lineClamp: 4 }}>{cap()}</text></Show>
+				<Show when={cap()}><text style={{ ...k.tx("text-[11.5px] text-muted-foreground"), ...clampTx(4) }}>{cap()}</text></Show>
 			</div>
 		</div>
 	);
@@ -87,18 +87,18 @@ function RefRow(p: { s: AcademicSession; r: Reference; onJump: (r: Reference) =>
 				<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, gap: 2 }}>
 					<div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "flex-start" }}>
 						<div style={{ display: "flex", flexGrow: 1, minWidth: 0 }}>
-							<text style={{ ...k.tx("text-[12.5px] font-medium text-foreground"), lineClamp: 3 }}>{p.r.title ?? p.r.raw ?? ""}</text>
+							<text style={{ ...k.tx("text-[12.5px] font-medium text-foreground"), ...clampTx(3) }}>{p.r.title ?? p.r.raw ?? ""}</text>
 						</div>
 						<Show when={inLib()}>
 							<Icon name="library" size={13} color={k.tok("primary")} />
 						</Show>
 					</div>
-					<Show when={meta()}><text style={{ ...k.tx("text-[11px] text-muted-foreground"), lineClamp: 1 }}>{meta()}</text></Show>
+					<Show when={meta()}><text style={{ ...k.tx("text-[11px] text-muted-foreground"), ...clampTx(1) }}>{meta()}</text></Show>
 				</div>
 			</div>
 			<Show when={open()}>
-				<div style={{ paddingLeft: 34 }}>
-					<RefCard s={p.s} opts={{ ref: p.r, compact: true, onJump: () => p.onJump(p.r), onChange: () => setInLib(p.r.inLibraryKey) }} />
+				<div style={{ paddingLeft: 38, width: "100%", minWidth: 0 }}>
+					<RefCard s={p.s} opts={{ ref: p.r, compact: true, bare: true, onJump: () => p.onJump(p.r), onChange: () => setInLib(p.r.inLibraryKey) }} />
 				</div>
 			</Show>
 		</div>

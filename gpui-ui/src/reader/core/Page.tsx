@@ -518,7 +518,7 @@ export function PageSlot(p: {
 				{(l) => (
 					<div
 						onClick={(e) => p.onLink(l, e)}
-						style={{ ...place(l.rect), cursor: "pointer", hover: { backgroundColor: "rgba(60, 120, 230, 0.14)" } }}
+						style={{ ...place(l.rect), cursor: "pointer", pointerEvents: "auto", hover: { backgroundColor: "rgba(60, 120, 230, 0.14)" } }}
 					/>
 				)}
 			</For>
