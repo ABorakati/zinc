@@ -13,14 +13,17 @@ import { childKind, creatorFull, creatorLast, doiUrl, MONTH_ABBR, parseDate, web
 const MAX_AUTHORS = 6;
 
 /** `h-8 rounded-[7px] border px-3 text-[13px]` header action button. */
-function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kind?: "primary" | "tint" | "plain"; title?: string; square?: boolean }): JSX.Element {
+function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kind?: "primary" | "tint" | "plain"; title?: string; square?: boolean; testId?: string }): JSX.Element {
 	const kind = () => p.kind ?? "plain";
 	const fg = () => (kind() === "primary" ? tok("primary-foreground") : kind() === "tint" ? tok("primary-deep") : tok("foreground"));
 	return (
 		<div
 			role="button"
+			testId={p.testId}
 			aria-label={p.title ?? p.label}
-			onClick={() => p.onClick?.()}
+			// only with an action: GPUIX gives a click to the innermost element with a handler, so an empty one here swallowed the
+			// click a wrapping DropdownMenu (the "More actions" button) needs
+			onClick={p.onClick}
 			style={{
 				...t("flex h-8 flex-none items-center justify-center"), marginRight: 8,
 				borderRadius: 7,
@@ -31,6 +34,10 @@ function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kin
 				borderColor: kind() === "tint" ? tok("primary-line") : tok("input"),
 				backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-soft") : tok("background"),
 				cursor: "pointer",
+				// GPUIX: a filled box blocks the hit test for the boxes around it (should_occlude), so the DropdownMenu wrapped
+				// around "More actions" never got the click. "none" only turns that blocking off; the button keeps its own
+				// hover and click. Nothing clickable sits behind these buttons.
+				pointerEvents: "none",
 				...(kind() === "primary" ? { boxShadow: shadows[store.mode()].primary } : {}),
 				hover: { backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-tint") : tok("muted"), opacity: kind() === "primary" ? 0.92 : 1 },
 			}}
@@ -147,7 +154,7 @@ export function Header(): JSX.Element {
 					align="start"
 					width={224}
 					items={moreItems}
-					trigger={<HeaderBtn square icon="ellipsis" title="More actions" />}
+					trigger={<HeaderBtn square icon="ellipsis" title="More actions" testId="ip-more" />}
 				/>
 			</div>
 		</div>

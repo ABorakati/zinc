@@ -155,7 +155,7 @@ function ActionMenu(p: { menu: "add" | "tools" }) {
 				width={240}
 				trigger={p.menu === "add" ? (
 					/* Add: h-9 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground shadow-primary */
-					<div role="button" aria-label="Add items" style={{ ...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"), boxShadow: shadows[mode()].primary, cursor: "pointer" }}>
+					<div role="button" aria-label="Add items" style={{ ...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"), boxShadow: shadows[mode()].primary, cursor: "pointer", pointerEvents: "none" /* filled: else it blocks the DropdownMenu's click */ }}>
 						<Icon name="plus" size={14} color={tok("primary-foreground")} />
 						<text style={tx("text-[13px] font-medium text-primary-foreground")}>Add</text>
 					</div>

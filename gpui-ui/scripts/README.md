@@ -120,8 +120,8 @@ The app runs a locally built `@gpuix/native` addon, not the npm 0.11.0 binary. I
 `"content"` for a region sized by its children). Each region is drawn by its own cached GPUI view, so a frame where only the list
 scrolled replays the sidebar, toolbar and item pane instead of rebuilding them (scroll draw p50 ~5.4 -> ~3.3 ms).
 
-* Source: `C:\Users\abora\src\gpuix`, branch `zn-cache` (commit `00e9146`, on top of the 0.11.0 release `2e31b47`); its `zed`
-  submodule is on a local branch `zn-cache` (commit `23bea52`). Neither is pushed.
+* Source: `C:\Users\abora\src\gpuix`, branch `zn-cache` (commit `f5d4383`, on top of the 0.11.0 release `2e31b47`); its `zed`
+  submodule is on a local branch `zn-cache` (commit `17be001`). Neither is pushed.
 * Build: in `packages/native`, `bun run build` (napi release build with `test-support`).
 * Install: copy `packages/native/gpuix-native.win32-x64-msvc.node` over
   `node_modules/@gpuix/native-win32-x64-msvc/gpuix-native.win32-x64-msvc.node` (the npm original is kept beside it as `.orig`).
