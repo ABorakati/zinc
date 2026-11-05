@@ -71,6 +71,7 @@ namespace ZoteroNext.Word
                 case "doc.set": return _doc.SetField(p);
                 case "doc.delete": return _doc.DeleteField(p);
                 case "doc.unlink": return _doc.RemoveFieldCode(p);
+                case "doc.convert": return _doc.ConvertField(p);
                 case "doc.select": return _doc.SelectField(p);
                 case "doc.getPrefs": return _doc.GetPrefs();
                 case "doc.setPrefs": return _doc.SetPrefs(p);

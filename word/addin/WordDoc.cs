@@ -163,21 +163,41 @@ namespace ZoteroNext.Word
 
         static string Wrap(string code) { return " " + code.Trim() + " "; }
 
-        /// <summary>Insert a citation (kind item) or bibliography (kind bibl) at the cursor.</summary>
+        /// <summary>
+        /// Insert a citation (kind item) or bibliography (kind bibl). Default: at the cursor. p.placement = inline | footnote |
+        /// endnote puts a citation into a new note. p.after = {story, idx} inserts the citation directly after that field
+        /// instead (same story, nothing in between), which is how a citation is split into several.
+        /// </summary>
         public object InsertField(Dictionary<string, object> p)
         {
             dynamic d = Doc;
             string kind = Json.Str(p, "kind", "item");
             string code = Json.Str(p, "code");
             if (KindOf(code ?? "") != kind) throw new ArgumentException("code does not match kind " + kind);
-            bool footnote = Json.Str(p, "placement") == "footnote";
+            string placement = Json.Str(p, "placement", "inline");
+            var after = Json.Obj(Json.Get(p, "after"));
+            var runs = Json.Arr(Json.Get(p, "runs"));
+            if (runs.Length == 0) runs = new object[] { Json.Map("t", Json.Str(p, "text", "")) };
+            if (after != null)
+            {
+                if (kind != "item") throw new ArgumentException("only citations can be inserted after another field");
+                string afterStory = Json.Str(after, "story", "main");
+                dynamic prev = FieldByRef(after);
+                int pos = (int)prev.Result.End + 1;   // just past the closing field mark
+                dynamic at;
+                if (afterStory == "main") at = d.Range(pos, pos);
+                else { at = d.StoryRanges.Item(afterStory == "fn" ? wdFootnotesStory : wdEndnotesStory).Duplicate; at.SetRange(pos, pos); }
+                NewField(at, code, runs);
+                return Json.Map("ok", true, "story", afterStory);
+            }
+            bool footnote = placement == "footnote", endnote = placement == "endnote";
             dynamic sel = _app.Selection;
             dynamic range = sel.Range;
             if ((bool)range.Information(wdInFieldResult) || (bool)range.Information(wdInFieldCode))
             {
                 // never nest: continue after the field the cursor is in
-                int after = FieldEndAround(d, (int)sel.StoryType, (int)range.Start);
-                if (after >= 0) { range = d.Range(after, after); }
+                int afterPos = FieldEndAround(d, (int)sel.StoryType, (int)range.Start);
+                if (afterPos >= 0) { range = d.Range(afterPos, afterPos); }
             }
             if (kind == "bibl")
             {
@@ -188,27 +208,86 @@ namespace ZoteroNext.Word
             else
             {
                 range.Collapse(0);
-                if (footnote && (int)sel.StoryType == wdMainTextStory)
+                if ((footnote || endnote) && (int)sel.StoryType == wdMainTextStory)
                 {
-                    dynamic fn = d.Footnotes.Add(range);
-                    range = fn.Range;
+                    dynamic nt = footnote ? d.Footnotes.Add(range) : d.Endnotes.Add(range);
+                    range = nt.Range;
                     range.Collapse(1);
                 }
             }
-            dynamic f = range.Fields.Add(range, wdFieldEmpty, "QUOTE \"x\"", false);
-            f.Code.Text = Wrap(code);
-            var runs = Json.Arr(Json.Get(p, "runs"));
-            if (runs.Length == 0) runs = new object[] { Json.Map("t", Json.Str(p, "text", "")) };
-            SetResult(f, runs);
+            dynamic f = NewField(range, code, runs);
             if (kind == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
             int endPos = (int)f.Result.End + 1;
             if (kind == "bibl")
             {
                 try { dynamic nx = f.Result.Duplicate; nx.SetRange(endPos, endPos + 1); if ((string)nx.Text != "\r") { nx.SetRange(endPos, endPos); nx.InsertParagraphAfter(); } } catch { }
             }
-            string story = (int)sel.StoryType == wdMainTextStory ? (footnote ? "fn" : "main") : ((int)sel.StoryType == wdFootnotesStory ? "fn" : "en");
-            if (!footnote && (int)sel.StoryType == wdMainTextStory) { try { _app.Selection.SetRange(endPos, endPos); } catch { } }
+            int st = (int)sel.StoryType;
+            string story = st == wdMainTextStory ? (footnote ? "fn" : (endnote ? "en" : "main")) : (st == wdFootnotesStory ? "fn" : "en");
+            if (st == wdMainTextStory && !footnote && !endnote) { try { _app.Selection.SetRange(endPos, endPos); } catch { } }
             return Json.Map("ok", true, "story", story);
+        }
+
+        /// <summary>Create a Zotero field at a collapsed range: QUOTE field, its code replaced, the result set to the runs.</summary>
+        dynamic NewField(dynamic range, string code, object[] runs)
+        {
+            dynamic f = range.Fields.Add(range, wdFieldEmpty, "QUOTE \"x\"", false);
+            f.Code.Text = Wrap(code);
+            SetResult(f, runs);
+            return f;
+        }
+
+        /// <summary>
+        /// Move a citation to another place: inline text, a footnote or an endnote (what Zotero does when the note type or
+        /// the style class changes). The old field is deleted (with its whole note when the note holds nothing else) and a
+        /// new one with the same code and the same visible text is created where the field, or the note's reference mark,
+        /// was. The caller refreshes afterwards. p = {ref:{story,idx,kind,cid}, target: inline|footnote|endnote, code?}.
+        /// </summary>
+        public object ConvertField(Dictionary<string, object> p)
+        {
+            dynamic d = Doc;
+            var r = Json.Obj(Json.Get(p, "ref"));
+            string target = Json.Str(p, "target");
+            if (target != "inline" && target != "footnote" && target != "endnote") throw new ArgumentException("target must be inline, footnote or endnote");
+            string fromStory = Json.Str(r, "story", "main");
+            dynamic f = FieldByRef(r);
+            string code = Json.Str(p, "code") ?? ((string)f.Code.Text).Trim();
+            if (KindOf(code) != "item") throw new ArgumentException("only citations can be converted");
+            string now = fromStory == "main" ? "inline" : (fromStory == "fn" ? "footnote" : "endnote");
+            string targetStory = target == "inline" ? "main" : (target == "footnote" ? "fn" : "en");
+            if (now == target) return Json.Map("ok", true, "story", fromStory);
+            string text = "";
+            try { text = (string)f.Result.Text ?? ""; } catch { }
+            int fStart = (int)f.Code.Start - 1, fEnd = (int)f.Result.End + 1;
+            int anchor;
+            dynamic note = null;
+            bool wholeNote = false;
+            if (fromStory == "main") anchor = fStart;
+            else
+            {
+                // the note this field sits in, and where its reference mark is in the main text
+                dynamic coll = fromStory == "fn" ? d.Footnotes : d.Endnotes;
+                anchor = -1;
+                int nn = (int)coll.Count;
+                for (int i = 1; i <= nn; i++)
+                {
+                    dynamic nt = coll.Item(i);
+                    if (fStart >= (int)nt.Range.Start - 1 && fStart <= (int)nt.Range.End) { note = nt; anchor = (int)nt.Reference.Start; break; }
+                }
+                if (anchor < 0) throw new InvalidOperationException("Could not find the note this citation is in.");
+                // a note holding only this citation (plus its leading space) goes away with it; any other text keeps the note
+                wholeNote = ((int)note.Range.End - (int)note.Range.Start) - (fEnd - fStart) <= 2;
+            }
+            if (fromStory != "main" && wholeNote) note.Delete(); else f.Delete();
+            dynamic range = d.Range(anchor, anchor);
+            if (target != "inline")
+            {
+                dynamic nt2 = target == "footnote" ? d.Footnotes.Add(range) : d.Endnotes.Add(range);
+                range = nt2.Range;
+                range.Collapse(1);
+            }
+            NewField(range, code, new object[] { Json.Map("t", text) });
+            return Json.Map("ok", true, "story", targetStory);
         }
 
         /// <summary>Position just after the field that contains position pos in the story, or -1.</summary>

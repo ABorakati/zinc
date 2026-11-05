@@ -1,9 +1,19 @@
 // Sidebar controller: library search, picking items, writing/refreshing Zotero-compatible fields in the active
 // Word document through the add-in host. No DOM in here, so it runs unchanged under bun test against a mock host
 // or against the harness that drives an invisible Word.
+//
+// Zotero-plugin features implemented here (all on top of the host's doc.* field operations):
+//   - refresh with merging of adjacent citations (Citation.mergeCitation) and protection of hand-edited citation text
+//     (properties.dontUpdate), custom citation text (properties.custom) and unsorted items (properties.unsorted);
+//   - splitting a multi-item citation into one citation per item;
+//   - the bibliography editor (omitted / custom entry text / uncited items, stored in the ZOTERO_BIBL field code);
+//   - "Unlink citations" (fields -> plain text);
+//   - document preferences: converting citations between inline / footnotes / endnotes when the style class or the note
+//     type changes, and "Automatically update citations" off (a new or edited citation is formatted on its own only).
+// Not implemented: storing citations as bookmarks (the fieldType pref is kept as is), journal abbreviations (the pref is kept).
 import type { ZoteroItemData } from "../../../core/src/api-types";
 import { parseQuery } from "../../../core/src/search";
-import { CslFormatter, type DocCitation, type FormatResult, type StyleSource, libraryItemToCsl } from "./csl";
+import { CslFormatter, type DocCitation, type DocCitationItem, type FormatResult, type StyleSource, libraryItemToCsl } from "./csl";
 import {
 	type BibliographyData,
 	type CitationData,
@@ -17,12 +27,19 @@ import {
 	buildItemCode,
 	buildPrefsXml,
 	defaultPrefs,
+	isHandEdited,
 	itemUri,
 	keysOfCitationItem,
+	mergeCitationData,
 	newCitationID,
 	numericId,
 	parseFieldCode,
 	parsePrefsXml,
+	prepareForEditing,
+	richToRuns,
+	runsToPlain,
+	runsToRtf,
+	splitCitationData,
 	styleIdToUrl,
 	styleUrlToId,
 	uriToKey,
@@ -54,6 +71,7 @@ export interface FieldInfo {
 export interface DocField extends FieldInfo {
 	parsed: ParsedField;
 }
+type ItemField = DocField & { parsed: { kind: "item"; data: CitationData } };
 
 /** One item in the "Add citation" tray. */
 export interface Pick {
@@ -102,6 +120,66 @@ export interface RefreshReport {
 	style: string;
 	/** which fields were rewritten (kind#index and why), for diagnostics */
 	changed: string[];
+	/** adjacent citations folded into the one before them */
+	merged?: number;
+	/** hand-edited citations left alone (their text is not rewritten) */
+	kept?: number;
+}
+
+/** A citation whose text in the document differs from what was last written there (the user typed into it). */
+export interface ModifiedCitation {
+	ref: { story: string; idx: number };
+	citationID: string;
+	/** what the add-in wrote */
+	was: string;
+	/** what the document shows now */
+	now: string;
+}
+
+export type ModifiedChoice = "keep" | "overwrite";
+
+export interface RefreshOptions {
+	/** fold citations that touch each other into the first one (what Zotero does on Refresh). Default false. */
+	merge?: boolean;
+	/** hand-edited citations: keep the edit (flag it dontUpdate), overwrite it, or ask. Default "keep": never overwritten silently. */
+	onModified?: ModifiedChoice | ((items: ModifiedCitation[]) => Promise<ModifiedChoice> | ModifiedChoice);
+}
+
+/** One entry of the bibliography editor. */
+export interface BibEditorEntry {
+	/** CSL id of the (first) item of the entry */
+	cslId: string;
+	/** item URIs as stored in the document, for the field code */
+	uris: string[];
+	title: string;
+	/** what the bibliography shows for the entry now (custom text when set) */
+	runs: Run[];
+	/** the style's own formatting */
+	defaultRuns: Run[];
+	cited: boolean;
+	/** in the "add uncited item" list of the bibliography field (and not cited in the text) */
+	uncited: boolean;
+	omitted: boolean;
+	custom: boolean;
+}
+
+/** What the bibliography editor writes back into the ZOTERO_BIBL field code. Each list that is given replaces the stored one. */
+export interface BibliographyChanges {
+	/** URIs of the items left out of the bibliography */
+	omitted?: string[][];
+	/** URIs of the items listed although the text does not cite them */
+	uncited?: string[][];
+	/** replacement entry text (single-item entries only) */
+	custom?: { uris: string[]; runs: Run[] }[];
+}
+
+/** Bibliography changes that make the field code say what the editor entries say (entries with no state to store are dropped). */
+export function changesFromEntries(entries: BibEditorEntry[]): Required<BibliographyChanges> {
+	return {
+		omitted: entries.filter((e) => e.omitted).map((e) => e.uris),
+		uncited: entries.filter((e) => e.uncited && !e.cited).map((e) => e.uris),
+		custom: entries.filter((e) => e.custom).map((e) => ({ uris: e.uris, runs: e.runs })),
+	};
 }
 
 export interface HostInfo {
@@ -405,10 +483,10 @@ export class App {
 
 	// ---- building fields -------------------------------------------------------------------------------------
 
-	private citationDataFromPicks(picks: Pick[], citationID: string, noteIndex = 0): CitationData {
+	private citationDataFromPicks(picks: Pick[], citationID: string, noteIndex = 0, keep: CitationData["properties"] = {}): CitationData {
 		return {
 			citationID,
-			properties: { formattedCitation: "", plainCitation: "", noteIndex },
+			properties: { ...keep, formattedCitation: "", plainCitation: "", noteIndex },
 			citationItems: picks.map((p) => {
 				const nid = p.key ? numericId(p.key) : (typeof p.csl.id === "number" ? p.csl.id : numericId(p.cslId));
 				const ci: CitationItem = {
@@ -439,7 +517,29 @@ export class App {
 		return p;
 	}
 
-	/** Insert a citation at the cursor, then format the whole document. */
+	/**
+	 * A citation formatted on its own, as Zotero's writeDelayedCitation does when "Automatically update citations" is off:
+	 * no other citation and no bibliography is touched, so numbering is only what a one-citation document would show.
+	 */
+	private async previewCitation(data: CitationData, fmt: CslFormatter): Promise<{ runs: Run[]; plain: string; rtf: string; noteIndex: number }> {
+		const res = await this.resolveAll(data.citationItems);
+		const cslById = new Map<string, CslItem>();
+		for (const r of res.values()) cslById.set(r.cslId, r.csl);
+		const noteIndex = fmt.style.xclass === "note" ? 1 : 0;
+		let runs: Run[];
+		if (data.properties.custom) runs = richToRuns(data.properties.custom);
+		else {
+			const items = data.citationItems.flatMap((ci) => {
+				const r = res.get(ci);
+				return r ? [docCitationItem(ci, r)] : [];
+			});
+			const out = fmt.format([{ citationID: "preview", noteIndex, items, unsorted: data.properties.unsorted }], cslById, [], false);
+			runs = out.citations.get("preview")?.runs ?? [{ t: "(missing item)" }];
+		}
+		return { runs, plain: runsToPlain(runs), rtf: runsToRtf(runs), noteIndex };
+	}
+
+	/** Insert a citation at the cursor, then format the whole document (or only the new citation when automatic updates are off). */
 	async insertCitation(picks: Pick[]): Promise<RefreshReport> {
 		if (picks.length === 0) throw new Error("Pick at least one item.");
 		const prefs = await this.ensurePrefs();
@@ -449,27 +549,143 @@ export class App {
 			prefs.noteType = 1;
 			await this.writePrefs(prefs);
 		}
+		const placement = note ? (prefs.noteType === 2 ? "endnote" : "footnote") : "inline";
 		const data = this.citationDataFromPicks(picks, newCitationID());
 		await this.host.call("doc.begin", { name: "Insert citation" });
 		try {
-			await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), text: "…", placement: note ? "footnote" : "inline" });
+			if (prefs.delayCitationUpdates) {
+				const p = await this.previewCitation(data, f);
+				data.properties = { ...data.properties, formattedCitation: p.rtf, plainCitation: p.plain, noteIndex: p.noteIndex };
+				await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), runs: p.runs, placement });
+				return { citations: 1, updated: 1, bibliographies: 0, missing: [], style: styleUrlToId(prefs.styleId), changed: ["item#new:preview"] };
+			}
+			await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), text: "…", placement });
 			return await this.refreshAll();
 		} finally {
 			await this.host.call("doc.end");
 		}
 	}
 
-	/** Replace the items/locators of an existing citation, then format the whole document. */
+	/**
+	 * Replace the items/locators of an existing citation, then format the whole document (or only this citation when
+	 * automatic updates are off). Like Zotero's prepareForEditing the custom text and the item order are kept while the
+	 * cached text and the keep-my-edits flag are dropped.
+	 */
 	async updateCitation(ref: { story: string; idx: number }, citationID: string, picks: Pick[]): Promise<RefreshReport> {
 		if (picks.length === 0) throw new Error("A citation needs at least one item (use Delete to remove it).");
-		const data = this.citationDataFromPicks(picks, citationID);
+		const cur = (await this.readFields()).find((f) => f.story === ref.story && f.idx === ref.idx);
+		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID) throw new Error("The document changed under the sidebar. Refresh and try again.");
+		const old = cur.parsed.data.properties;
+		const data = this.citationDataFromPicks(picks, citationID, old.noteIndex ?? 0, prepareForEditing(old));
 		await this.host.call("doc.begin", { name: "Edit citation" });
 		try {
+			const prefs = await this.ensurePrefs();
+			if (prefs.delayCitationUpdates) {
+				const f = await this.formatter(styleUrlToId(prefs.styleId), prefs.locale);
+				const p = await this.previewCitation(data, f);
+				data.properties = { ...data.properties, formattedCitation: p.rtf, plainCitation: p.plain };
+				await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(data), runs: p.runs });
+				return { citations: 1, updated: 1, bibliographies: 0, missing: [], style: styleUrlToId(prefs.styleId), changed: ["item#" + ref.idx + ":preview"] };
+			}
 			await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(data) });
 			return await this.refreshAll();
 		} finally {
 			await this.host.call("doc.end");
 		}
+	}
+
+	/** A multi-item citation becomes one citation per item, one after another (locator, prefix and suffix stay with their item). */
+	async splitCitation(ref: { story: string; idx: number }, citationID: string): Promise<RefreshReport> {
+		const cur = (await this.readFields()).find((f) => f.story === ref.story && f.idx === ref.idx);
+		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID) throw new Error("The document changed under the sidebar. Refresh and try again.");
+		if (cur.parsed.data.citationItems.length < 2) throw new Error("This citation has only one item.");
+		const parts = splitCitationData(cur.parsed.data);
+		await this.host.call("doc.begin", { name: "Split citation" });
+		try {
+			await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(parts[0]!) });
+			// each new field goes straight after the first one, last item first, so they end up in the original order
+			for (let i = parts.length - 1; i >= 1; i--) {
+				await this.host.call("doc.insert", { kind: "item", code: buildItemCode(parts[i]!), text: "…", after: { story: ref.story, idx: ref.idx } });
+			}
+			return await this.refreshAll();
+		} finally {
+			await this.host.call("doc.end");
+		}
+	}
+
+	/** Fold citations that touch each other into the first of them (Zotero's merge on Refresh). Returns how many fields were removed. */
+	private async mergeAdjacent(): Promise<number> {
+		const fields = await this.readFields();
+		const mergeable = (f: DocField): f is ItemField =>
+			f.parsed?.kind === "item" && !f.parsed.data.properties.dontUpdate && !isHandEdited(f.parsed.data.properties, f.text);
+		const groups: ItemField[][] = [];
+		let cur: ItemField[] = [];
+		for (const f of fields) {
+			const last = cur[cur.length - 1];
+			if (mergeable(f) && last && f.story === last.story && (f.note ?? 0) === (last.note ?? 0) && f.start <= last.end) cur.push(f);
+			else {
+				if (cur.length > 1) groups.push(cur);
+				cur = mergeable(f) ? [f] : [];
+			}
+		}
+		if (cur.length > 1) groups.push(cur);
+		if (!groups.length) return 0;
+		await this.host.call("doc.begin", { name: "Merge citations" });
+		try {
+			const doomed: ItemField[] = [];
+			for (const g of groups) {
+				const [first, ...rest] = g as [ItemField, ...ItemField[]];
+				const merged = mergeCitationData(first.parsed.data, rest.map((r) => r.parsed.data));
+				merged.properties = prepareForEditing(merged.properties);
+				await this.host.call("doc.set", { ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID }, code: buildItemCode(merged) });
+				doomed.push(...rest);
+			}
+			// deletions last, highest index first, so no pending index moves
+			doomed.sort((a, b) => b.idx - a.idx);
+			for (const f of doomed) await this.host.call("doc.delete", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID } });
+			return doomed.length;
+		} finally {
+			await this.host.call("doc.end");
+		}
+	}
+
+	/** Unlink every Zotero field (citations and bibliographies): the visible text stays, the codes go. Preferences are kept. */
+	async unlinkCitations(): Promise<{ unlinked: number }> {
+		const fields = await this.readFields();
+		if (!fields.length) return { unlinked: 0 };
+		await this.host.call("doc.begin", { name: "Unlink citations" });
+		try {
+			// last field first: removing one only renumbers the fields after it in its story
+			for (const f of [...fields].reverse()) {
+				const kind = f.parsed?.kind ?? f.kind;
+				const cid = f.parsed?.kind === "item" ? f.parsed.data.citationID : undefined;
+				await this.host.call("doc.unlink", { ref: { story: f.story, idx: f.idx, kind, ...(cid ? { cid } : {}) } });
+			}
+		} finally {
+			await this.host.call("doc.end");
+		}
+		return { unlinked: fields.length };
+	}
+
+	/**
+	 * Move every citation to where the document's note setting wants it (inline, footnote or endnote). Citations marked
+	 * dontUpdate and bibliographies are left alone. The caller refreshes afterwards. Returns how many were moved.
+	 */
+	async convertCitations(target: "inline" | "footnote" | "endnote"): Promise<number> {
+		const want = target === "inline" ? "main" : target === "footnote" ? "fn" : "en";
+		const todo = (await this.readFields()).filter((f) => f.parsed?.kind === "item" && f.story !== want && !f.parsed.data.properties.dontUpdate);
+		if (!todo.length) return 0;
+		await this.host.call("doc.begin", { name: "Convert citations" });
+		try {
+			// last first: converting a citation only renumbers fields after it, never the ones still waiting
+			for (const f of [...todo].reverse()) {
+				const cid = f.parsed?.kind === "item" ? f.parsed.data.citationID : undefined;
+				await this.host.call("doc.convert", { ref: { story: f.story, idx: f.idx, kind: "item", cid }, target, code: f.code });
+			}
+		} finally {
+			await this.host.call("doc.end");
+		}
+		return todo.length;
 	}
 
 	async deleteCitation(ref: { story: string; idx: number }, citationID: string): Promise<RefreshReport> {
@@ -503,18 +719,44 @@ export class App {
 	/** Change the document's citation style and/or locale and reformat everything. */
 	async setStyle(styleId: string, locale: string): Promise<RefreshReport> {
 		const prefs = await this.ensurePrefs();
+		const wasNote = prefs.noteType !== 0;
 		prefs.styleId = styleIdToUrl(styleId);
 		prefs.locale = locale;
 		prefs.bibliographyStyleHasBeenSet = true;
 		const f = await this.formatter(styleId, locale);
-		prefs.noteType = f.style.xclass === "note" ? prefs.noteType || 1 : 0;
+		const isNote = f.style.xclass === "note";
+		prefs.noteType = isNote ? prefs.noteType || 1 : 0;
 		await this.writePrefs(prefs);
-		return this.refreshAll();
+		await this.host.call("doc.begin", { name: "Change citation style" });
+		try {
+			// switching between an in-text and a note style moves the existing citations into / out of the notes
+			if (wasNote !== isNote) await this.convertCitations(!isNote ? "inline" : prefs.noteType === 2 ? "endnote" : "footnote");
+			return await this.refreshAll();
+		} finally {
+			await this.host.call("doc.end");
+		}
 	}
 
-	async setNoteType(noteType: 1 | 2): Promise<void> {
+	/** Footnotes or endnotes for a note style: existing citations are converted, then everything is reformatted. In-text styles ignore it. */
+	async setNoteType(noteType: 1 | 2): Promise<RefreshReport | null> {
 		const prefs = await this.ensurePrefs();
+		const f = await this.formatter(styleUrlToId(prefs.styleId), prefs.locale);
+		if (f.style.xclass !== "note") return null;
 		prefs.noteType = noteType;
+		await this.writePrefs(prefs);
+		await this.host.call("doc.begin", { name: "Change note type" });
+		try {
+			await this.convertCitations(noteType === 2 ? "endnote" : "footnote");
+			return await this.refreshAll();
+		} finally {
+			await this.host.call("doc.end");
+		}
+	}
+
+	/** "Automatically update citations": off means a new or edited citation is formatted on its own and only Refresh updates the rest. */
+	async setAutoUpdate(auto: boolean): Promise<void> {
+		const prefs = await this.ensurePrefs();
+		prefs.delayCitationUpdates = !auto;
 		await this.writePrefs(prefs);
 	}
 
@@ -535,7 +777,7 @@ export class App {
 			prefs = defaultPrefs(d.style, d.locale);
 		}
 		const styleId = styleUrlToId(prefs.styleId);
-		const base = { fields, items, bibls, st, prefs, styleId, missing, resolved: new Map<CitationItem, Resolved>(), docCitations: [] as DocCitation[], engineIds: [] as string[], probeIds: new Map<string, string>() };
+		const base = { fields, items, bibls, st, prefs, styleId, missing, resolved: new Map<CitationItem, Resolved>(), docCitations: [] as DocCitation[], engineIds: [] as string[], probeIds: new Map<string, string>(), cslUris: new Map<string, string[]>(), uncitedIds: new Set<string>() };
 		if (items.length === 0 && bibls.length === 0) return { ...base, fmt: null, out: null };
 		const fmt = await this.formatter(styleId, prefs.locale);
 
@@ -568,18 +810,9 @@ export class App {
 						missing.push(String(ci.itemData?.title ?? ci.uris?.[0] ?? ci.id));
 						return [];
 					}
-					return [
-						{
-							id: r.cslId,
-							locator: ci.locator,
-							label: ci.locator ? ci.label ?? "page" : undefined,
-							prefix: ci.prefix,
-							suffix: ci.suffix,
-							"suppress-author": ci["suppress-author"],
-							"author-only": ci["author-only"],
-						},
-					];
+					return [docCitationItem(ci, r)];
 				}),
+				unsorted: f.parsed.data.properties.unsorted ? true : undefined,
 			});
 		}
 		const probeIds = new Map<string, string>(); // CSL id -> engine id of its probe citation
@@ -596,8 +829,43 @@ export class App {
 			});
 		}
 		const uncitedIds = uncitedItems.map((u) => resolved.get(u)?.cslId).filter((x): x is string => !!x);
-		const out = fmt.format(docCitations, cslById, uncitedIds, opts.wantBib ?? bibls.length > 0);
-		return { ...base, resolved, docCitations, engineIds, probeIds, fmt, out };
+		// bibliography editor state of the field code(s): item URIs -> CSL ids of the items resolved above
+		const cslUris = new Map<string, string[]>();
+		const idOfUri = new Map<string, string>();
+		for (const [ci, r] of resolved) {
+			const list = cslUris.get(r.cslId) ?? [];
+			for (const u of ci.uris ?? []) {
+				if (!list.includes(u)) list.push(u);
+				idOfUri.set(u, r.cslId);
+			}
+			cslUris.set(r.cslId, list);
+		}
+		const idForUris = (v: unknown): string | undefined => {
+			const uris = (Array.isArray(v) ? v : [v]).filter((x): x is string => typeof x === "string");
+			for (const u of uris) if (idOfUri.has(u)) return idOfUri.get(u);
+			for (const u of uris) {
+				const k = uriToKey(u);
+				if (k && cslById.has(k)) return k;
+			}
+			return undefined;
+		};
+		const omitted = new Set<string>();
+		const custom = new Map<string, Run[]>();
+		for (const b of bibls) {
+			for (const o of b.parsed.data.omitted ?? []) {
+				const id = idForUris(o);
+				if (id) omitted.add(id);
+			}
+			for (const c of b.parsed.data.custom ?? []) {
+				// [[uris], text] as Zotero stores it (the old id -> text hash form is not read)
+				if (!Array.isArray(c) || typeof c[1] !== "string") continue;
+				const id = idForUris(c[0]);
+				const runs = id ? richToRuns(c[1]) : [];
+				if (id && runs.length) custom.set(id, runs);
+			}
+		}
+		const out = fmt.format(docCitations, cslById, uncitedIds, opts.wantBib ?? bibls.length > 0, { omitted, custom });
+		return { ...base, resolved, docCitations, engineIds, probeIds, fmt, out, cslUris, uncitedIds: new Set(uncitedIds) };
 	}
 
 	private labelCache: { key: string; at: number; labels: Promise<Map<string, string>> } | null = null;
@@ -637,11 +905,24 @@ export class App {
 	}
 
 	/** Re-read every Zotero field, re-resolve the items from the library, reformat the whole document and rewrite what changed. */
-	async refreshAll(): Promise<RefreshReport> {
+	async refreshAll(opts: RefreshOptions = {}): Promise<RefreshReport> {
+		const merged = opts.merge ? await this.mergeAdjacent() : 0;
 		const d = await this.formatDocument();
 		const { items, bibls, st, prefs, resolved, docCitations, engineIds, out } = d;
-		const report: RefreshReport = { citations: items.length, updated: 0, bibliographies: bibls.length, missing: d.missing, style: d.styleId, changed: [] };
+		const report: RefreshReport = { citations: items.length, updated: 0, bibliographies: bibls.length, missing: d.missing, style: d.styleId, changed: [], merged, kept: 0 };
 		if (!out) return report;
+
+		// citations whose text the user typed into: never overwritten silently
+		const edited = items.filter((f) => !f.parsed.data.properties.dontUpdate && isHandEdited(f.parsed.data.properties, f.text));
+		let choice: ModifiedChoice = "keep";
+		if (edited.length) {
+			const on = opts.onModified ?? "keep";
+			choice =
+				typeof on === "function"
+					? await on(edited.map((f) => ({ ref: { story: f.story, idx: f.idx }, citationID: f.parsed.data.citationID, was: f.parsed.data.properties.plainCitation ?? "", now: f.text })))
+					: on;
+		}
+		const editedSet = new Set(edited);
 
 		await this.host.call("doc.begin", { name: "Refresh citations" });
 		try {
@@ -651,8 +932,18 @@ export class App {
 				const dc = docCitations[n]!;
 				n++;
 				if (!o) continue;
+				const keepEdit = editedSet.has(f) && choice === "keep";
+				// hand-edited text stays as it is; the citation still took part in numbering above
+				const frozen = !!f.parsed.data.properties.dontUpdate || keepEdit;
+				const custom = f.parsed.data.properties.custom;
+				const shown = custom ? richToRuns(custom) : o.runs;
 				const data = structuredClone(f.parsed.data) as CitationData;
-				data.properties = { ...data.properties, formattedCitation: o.rtf, plainCitation: o.plain, noteIndex: dc.noteIndex };
+				if (frozen) {
+					data.properties = { ...data.properties, noteIndex: dc.noteIndex, dontUpdate: true };
+					if (keepEdit) report.kept = (report.kept ?? 0) + 1;
+				} else {
+					data.properties = { ...data.properties, formattedCitation: custom ? runsToRtf(shown) : o.rtf, plainCitation: custom ? runsToPlain(shown) : o.plain, noteIndex: dc.noteIndex };
+				}
 				data.schema ??= CITATION_SCHEMA;
 				for (const ci of data.citationItems) {
 					const orig = f.parsed.data.citationItems[data.citationItems.indexOf(ci)]!;
@@ -666,8 +957,9 @@ export class App {
 				}
 				const code = buildItemCode(data);
 				const same = JSON.stringify(f.parsed.data) === JSON.stringify(data);
-				if (same && f.text === o.plain) continue;
-				await this.host.call("doc.set", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID }, code, runs: o.runs });
+				const wantText = runsToPlain(shown);
+				if (same && (frozen || f.text === wantText)) continue;
+				await this.host.call("doc.set", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID }, code, ...(frozen ? {} : { runs: shown }) });
 				report.updated++;
 				report.changed.push(`item#${f.idx}:${same ? "text" : "code"}`);
 			}
@@ -678,7 +970,8 @@ export class App {
 				if (plain === b.text) continue;
 				await this.host.call("doc.set", {
 					ref: { story: b.story, idx: b.idx, kind: "bibl" },
-					runs: bib.runs as Run[],
+					// every entry left out: the field is emptied rather than left showing the old text
+					runs: (bib.runs.length ? bib.runs : [{ t: "" }]) as Run[],
 					format: { hanging: bib.hanging, secondFieldAlign: bib.secondFieldAlign, entrySpacing: bib.entrySpacing },
 				});
 				report.updated++;
@@ -694,6 +987,54 @@ export class App {
 			await this.host.call("doc.end");
 		}
 		return report;
+	}
+
+	// ---- bibliography editor ---------------------------------------------------------------------------------
+
+	/**
+	 * The entries of the document's bibliography as the editor shows them: everything cited plus the uncited items of the
+	 * field, in the order the style lists them, with whether each is excluded or has custom text. Null without a bibliography field.
+	 */
+	async bibliographyEditor(): Promise<BibEditorEntry[] | null> {
+		const d = await this.formatDocument({ wantBib: true });
+		if (!d.out?.bibliography || d.bibls.length === 0) return null;
+		const cited = new Set(d.docCitations.flatMap((c) => c.items.map((i) => i.id)));
+		return d.out.bibliography.all.map((e) => {
+			const id = e.ids[0] ?? "";
+			const csl = [...d.resolved.values()].find((r) => r.cslId === id)?.csl;
+			const uris = [...new Set(e.ids.flatMap((i) => d.cslUris.get(i) ?? []))];
+			return {
+				cslId: id,
+				uris: uris.length ? uris : [itemUri(this.uriBase, id)],
+				title: String(csl?.title ?? "(untitled)"),
+				runs: e.runs,
+				defaultRuns: e.defaultRuns,
+				cited: e.ids.some((i) => cited.has(i)),
+				uncited: e.ids.some((i) => d.uncitedIds.has(i)) && !e.ids.some((i) => cited.has(i)),
+				omitted: e.omitted,
+				custom: e.custom,
+			};
+		});
+	}
+
+	/** Write the editor's choices into the ZOTERO_BIBL field code(s) (as Zotero stores them) and reformat. */
+	async saveBibliography(changes: BibliographyChanges): Promise<RefreshReport> {
+		const bibls = (await this.readFields()).filter((f) => f.parsed?.kind === "bibl");
+		if (!bibls.length) throw new Error("The document has no bibliography.");
+		const uris = (l: string[][]) => l.filter((u) => u.length);
+		await this.host.call("doc.begin", { name: "Edit bibliography" });
+		try {
+			for (const b of bibls) {
+				const data = { ...(b.parsed as { data: BibliographyData }).data };
+				if (changes.omitted) data.omitted = uris(changes.omitted);
+				if (changes.uncited) data.uncited = uris(changes.uncited);
+				if (changes.custom) data.custom = changes.custom.filter((c) => c.uris.length && c.runs.length).map((c) => [c.uris, runsToRtf(c.runs)]);
+				await this.host.call("doc.set", { ref: { story: b.story, idx: b.idx, kind: "bibl" }, code: buildBiblCode(data) });
+			}
+			return await this.refreshAll();
+		} finally {
+			await this.host.call("doc.end");
+		}
 	}
 
 	// ---- opening in zotero-next ------------------------------------------------------------------------------
@@ -714,6 +1055,19 @@ export class App {
 	}
 }
 
+/** The citation-engine form of a cited item (the CSL id plus what the cluster says about it). */
+function docCitationItem(ci: CitationItem, r: Resolved): DocCitationItem {
+	return {
+		id: r.cslId,
+		locator: ci.locator,
+		label: ci.locator ? ci.label ?? "page" : undefined,
+		prefix: ci.prefix,
+		suffix: ci.suffix,
+		"suppress-author": ci["suppress-author"],
+		"author-only": ci["author-only"],
+	};
+}
+
 interface DocFormat {
 	fields: DocField[];
 	items: (DocField & { parsed: { kind: "item"; data: CitationData } })[];
@@ -726,6 +1080,10 @@ interface DocFormat {
 	docCitations: DocCitation[];
 	engineIds: string[];
 	probeIds: Map<string, string>;
+	/** CSL id -> the item URIs the document uses for it (citations and uncited list) */
+	cslUris: Map<string, string[]>;
+	/** CSL ids listed as uncited in the bibliography field(s) */
+	uncitedIds: Set<string>;
 	fmt: CslFormatter | null;
 	out: FormatResult | null;
 }

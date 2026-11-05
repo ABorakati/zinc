@@ -114,6 +114,22 @@ textarea { resize: vertical; min-height: 44px; }
 
 .settings-grid { display: grid; gap: 10px; }
 .settings-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted-foreground); }
+.settings-grid label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--foreground); }
+button.danger { color: var(--destructive); border-color: var(--destructive); background: transparent; }
+button.danger:hover { background: color-mix(in srgb, var(--destructive) 12%, transparent); }
+
+/* bibliography editor */
+.bibed { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 42vh; overflow-y: auto; }
+.bibed > li { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); display: flex; flex-direction: column; gap: 4px; }
+.bibed .ent { overflow-wrap: anywhere; }
+.bibed .ent .b { font-weight: 700; }
+.bibed .ent.off { text-decoration: line-through; color: var(--muted-foreground); }
+.bibed .edit { display: flex; flex-direction: column; gap: 6px; }
+.found { list-style: none; margin: 4px 0 0; padding: 0; max-height: 20vh; overflow-y: auto; }
+.found:empty { display: none; }
+.found li { padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.found li:hover { background: var(--accent); }
+.found .t { font-weight: 500; }
 .styles { list-style: none; margin: 4px 0 0; padding: 0; max-height: 26vh; overflow-y: auto; }
 .styles li { padding: 4px 6px; border-radius: 6px; cursor: pointer; }
 .styles li:hover { background: var(--accent); }
@@ -123,7 +139,7 @@ textarea { resize: vertical; min-height: 44px; }
 #toast { order: 1; display: flex; flex-direction: column; gap: 6px; }
 #toast:empty { display: none; }
 #app > footer { order: 2; }
-#app > #settings { order: 3; }
+#app > #settings, #app > #bibed { order: 3; }
 #toast .t { pointer-events: auto; background: var(--foreground); color: var(--background); padding: 8px 10px; border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / .25); }
 #toast .t.err { background: var(--destructive); color: white; }
 footer { margin-top: auto; padding-top: 6px; }

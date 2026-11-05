@@ -102,7 +102,7 @@ describe("document preferences", () => {
 		expect(styleUrlToId(p.styleId)).toBe("the-lancet");
 		expect(p.hasBibliography).toBe(true);
 		expect(p.automaticJournalAbbreviations).toBe(true);
-		expect(p.extraPrefs.dontAskDelayCitationUpdates).toBe("true");
+		expect(p.dontAskDelayCitationUpdates).toBe(true); // now a typed DocPref, no longer an extra pref
 		expect(buildPrefsXml(p)).toContain('<pref name="dontAskDelayCitationUpdates" value="true"/>');
 	});
 	test("style ids", () => {

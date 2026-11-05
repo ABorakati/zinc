@@ -1,8 +1,10 @@
 // Sidebar UI (vanilla DOM). All logic lives in app.ts; this file renders and wires events.
-import { App, type CitationView, type LibRow, type Pick } from "./app";
+// Panels: search + citation tray, "Cited here" card (edit / split / delete), bibliography editor (exclude, edit text,
+// add uncited), settings (style, note type, automatic updates, library, unlink citations).
+import { App, type BibEditorEntry, type CitationView, type LibRow, type ModifiedCitation, type Pick, changesFromEntries } from "./app";
 import { createWebViewHost, type Host } from "./host";
 import { createMockHost } from "./mockhost";
-import { styleUrlToId } from "./fields";
+import { htmlToRuns, isHandEdited, parseFieldCode, runsToHtml, styleUrlToId, type Run } from "./fields";
 
 type Child = Node | string | null | undefined | false;
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, any> = {}, ...kids: Child[]): HTMLElementTagNameMap[K] {
@@ -55,9 +57,22 @@ async function busy<T>(label: string, fn: () => Promise<T>): Promise<T | undefin
 	}
 }
 
-function fmtReport(r: { citations: number; updated: number; missing: string[] }): string {
+function fmtReport(r: { citations: number; updated: number; missing: string[]; merged?: number; kept?: number }): string {
 	const miss = r.missing.length ? `, ${r.missing.length} item(s) not found in the library or the document` : "";
-	return `${r.citations} citation(s), ${r.updated} updated${miss}`;
+	const merged = r.merged ? `, ${r.merged} adjacent citation(s) merged` : "";
+	const kept = r.kept ? `, ${r.kept} hand-edited citation(s) left as they are` : "";
+	return `${r.citations} citation(s), ${r.updated} updated${miss}${merged}${kept}`;
+}
+
+/** Refresh asks once when citations were typed into: keep the edits (they are flagged so Refresh leaves them alone) or overwrite them. */
+async function askAboutEdits(items: ModifiedCitation[]): Promise<"keep" | "overwrite"> {
+	const n = items.length;
+	const which = items
+		.slice(0, 3)
+		.map((i) => `"${i.now}"`)
+		.join(", ");
+	const keep = window.confirm(`${n} citation${n === 1 ? " was" : "s were"} edited by hand (${which}${n > 3 ? ", ..." : ""}).\n\nKeep your edits? OK keeps them, Cancel replaces them with the formatted citation.`);
+	return keep ? "keep" : "overwrite";
 }
 
 // ---------------------------------------------------------------- doc line
@@ -275,6 +290,7 @@ function renderCited() {
 			"div",
 			{ class: "row", style: "margin-top:8px" },
 			h("button", { class: "primary", onclick: () => void startEdit() }, "Edit citation"),
+			v.items.length > 1 ? h("button", { title: "Make one citation per item", onclick: () => void splitCited() }, "Split") : null,
 			h("button", { class: "ghost", onclick: () => void deleteCited() }, "Delete"),
 		),
 	);
@@ -291,6 +307,9 @@ async function startEdit() {
 	const cur = await app.host.call<any>("doc.cursor");
 	const code = cur.code as string | undefined;
 	if (!code) return;
+	// like Zotero: editing replaces text the user typed into the citation, so say so first
+	const parsed = parseFieldCode(code);
+	if (parsed?.kind === "item" && (parsed.data.properties.dontUpdate || isHandEdited(parsed.data.properties, String(cur.text ?? ""))) && !window.confirm("This citation was edited by hand. Editing it will replace your changes with the formatted citation. Continue?")) return;
 	const r = await busy("Loading citation…", () => app.picksFromCitation(code));
 	if (!r) return;
 	picks = r.picks;
@@ -313,6 +332,15 @@ async function editCitationAtCursor() {
 	}
 	if (!cursorView) return toast("The cursor is not inside a citation.", true);
 	await startEdit();
+}
+
+async function splitCited() {
+	const v = cursorView;
+	if (!v) return;
+	const r = await busy("Splitting citation…", () => app.splitCitation(v.ref, v.citationID));
+	if (r) toast("Split into " + v.items.length + " citations (Refresh joins touching citations again). " + fmtReport(r));
+	cursorView = null;
+	renderCited();
 }
 
 async function deleteCited() {
@@ -343,6 +371,124 @@ async function onCursor(c: any) {
 	renderCited();
 }
 
+// ---------------------------------------------------------------- bibliography editor
+
+/** The entry text as the editor's text box shows it: plain, or with <i> <b> <sup> <sub> tags when the entry has formatting. */
+function runsToEditText(runs: Run[]): string {
+	return runs.some((r) => r.i || r.b || r.sup || r.sub || r.sc) ? runsToHtml(runs) : runs.map((r) => r.t).join("");
+}
+function editTextToRuns(text: string): Run[] {
+	return /<\/?(?:i|b|sup|sub)>/i.test(text) ? htmlToRuns(text) : text ? [{ t: text }] : [];
+}
+
+let bibState: BibEditorEntry[] = [];
+
+function renderBibEntries() {
+	const list = $("bibed-list");
+	const changed = bibState.some((e) => e.omitted || e.custom || (e.uncited && !e.cited));
+	$("bibed-revert").hidden = !bibState.some((e) => e.omitted || e.custom);
+	list.replaceChildren(
+		...bibState.map((e, i) => {
+			const body = h("div", { class: "ent" + (e.omitted ? " off" : "") });
+			if (e.runs.length) for (const r of e.runs) body.append(h(r.i ? "i" : "span", { class: r.b ? "b" : "" }, r.t));
+			else body.append(e.title);
+			const acts = h("div", { class: "row" },
+				h("button", { onclick: () => { e.omitted = !e.omitted; renderBibEntries(); } }, e.omitted ? "Include" : "Exclude"),
+				h("button", { class: "ghost", onclick: () => editBibEntry(i) }, "Edit text"),
+				e.custom ? h("button", { class: "ghost", onclick: () => { e.custom = false; e.runs = e.defaultRuns; renderBibEntries(); } }, "Revert") : null,
+				e.uncited && !e.cited ? h("button", { class: "ghost", onclick: () => { bibState.splice(i, 1); renderBibEntries(); } }, "Remove") : null,
+			);
+			return h("li", {},
+				body,
+				h("div", { class: "row small" },
+					e.omitted ? h("span", { class: "badge warn" }, "Excluded") : null,
+					e.custom ? h("span", { class: "badge" }, "Edited text") : null,
+					e.uncited && !e.cited ? h("span", { class: "badge" }, "Not cited in the text") : null,
+				),
+				acts,
+			);
+		}),
+	);
+	if (!bibState.length) list.append(h("li", { class: "muted" }, "The bibliography is empty."));
+	$("bibed-save").textContent = changed ? "Save changes" : "Save";
+}
+
+function editBibEntry(i: number) {
+	const e = bibState[i]!;
+	const ta = h("textarea", { rows: 4, value: runsToEditText(e.runs.length ? e.runs : e.defaultRuns), "aria-label": "Entry text" });
+	const li = $("bibed-list").children[i] as HTMLElement;
+	const box = h("div", { class: "edit" },
+		ta,
+		h("div", { class: "muted small" }, "Use <i>…</i> for italics, <b>…</b> for bold. Only this entry changes."),
+		h("div", { class: "row" },
+			h("button", { class: "primary", onclick: () => {
+				const runs = editTextToRuns((ta as HTMLTextAreaElement).value);
+				if (!runs.length) return toast("The entry text is empty. Use Exclude to leave the entry out.", true);
+				e.runs = runs;
+				e.custom = JSON.stringify(runs) !== JSON.stringify(e.defaultRuns);
+				renderBibEntries();
+			} }, "Done"),
+			h("button", { class: "ghost", onclick: () => renderBibEntries() }, "Cancel"),
+		),
+	);
+	li.replaceChildren(box);
+	(ta as HTMLTextAreaElement).focus();
+}
+
+async function openBibEditor() {
+	const box = $("bibed");
+	if (!box.hidden) {
+		box.hidden = true;
+		return;
+	}
+	$("settings").hidden = true;
+	const entries = await busy("Reading the bibliography…", () => app.bibliographyEditor());
+	if (entries === undefined) return;
+	if (entries === null) return toast("Insert a bibliography first (Insert bibliography), then edit it here.", true);
+	bibState = entries;
+	let seq = 0;
+	const search = h("input", { type: "search", placeholder: "Add an uncited item: search your library", autocomplete: "off", oninput: async (e: Event) => {
+		const mine = ++seq;
+		const q = (e.target as HTMLInputElement).value.trim();
+		const found = q ? await app.search(q, 8).catch(() => []) : [];
+		if (mine !== seq) return;
+		found_.replaceChildren(
+			...found.map((r) =>
+				h("li", { onclick: async () => {
+					const p = await app.pickFromKey(r.key);
+					if (!p) return toast("That item is no longer in the library.", true);
+					if (bibState.some((x) => x.uris.some((u) => p.uris.includes(u)))) return toast("It is already in the bibliography.");
+					bibState.push({ cslId: p.cslId, uris: p.uris, title: p.title, runs: [], defaultRuns: [], cited: false, uncited: true, omitted: false, custom: false });
+					(search as HTMLInputElement).value = "";
+					found_.replaceChildren();
+					renderBibEntries();
+				} }, h("div", { class: "t" }, r.title || "(untitled)"), h("div", { class: "m muted small" }, [r.creators, r.year].filter(Boolean).join(" · "))),
+			),
+		);
+	} });
+	const found_ = h("ul", { class: "found" });
+	box.replaceChildren(
+		h("h3", {}, "Edit bibliography"),
+		h("div", { class: "muted small" }, "Exclude an entry, change its text, or list an item the text does not cite. Changes are stored in the bibliography field, as Zotero does."),
+		h("ul", { id: "bibed-list", class: "bibed" }),
+		search,
+		found_,
+		h("div", { class: "row", style: "margin-top:8px" },
+			h("button", { id: "bibed-save", class: "primary", onclick: async () => {
+				const r = await busy("Saving bibliography…", () => app.saveBibliography(changesFromEntries(bibState)));
+				if (r) {
+					toast("Bibliography updated. " + fmtReport(r));
+					box.hidden = true;
+				}
+			} }, "Save"),
+			h("button", { id: "bibed-revert", class: "ghost", onclick: () => { for (const e of bibState) { e.omitted = false; e.custom = false; e.runs = e.defaultRuns; } renderBibEntries(); } }, "Revert all"),
+			h("button", { class: "ghost", onclick: () => (box.hidden = true) }, "Close"),
+		),
+	);
+	renderBibEntries();
+	box.hidden = false;
+}
+
 // ---------------------------------------------------------------- settings
 
 async function openSettings() {
@@ -351,6 +497,7 @@ async function openSettings() {
 		box.hidden = true;
 		return;
 	}
+	$("bibed").hidden = true;
 	const info = await app.init();
 	const st = await app.docState();
 	const styleNow = st.prefs ? styleUrlToId(st.prefs.styleId) : app.defaults.style;
@@ -376,14 +523,23 @@ async function openSettings() {
 	}
 	const dbIn = h("input", { type: "text", value: info.settings.dbPath ?? "", placeholder: info.library.dbPath });
 	const uidIn = h("input", { type: "text", value: info.settings.userId ?? "", placeholder: info.uri.userId ? `${info.uri.userId} (${info.uri.source})` : "zotero.org user id, or leave empty for a local library" });
-	const noteSel = h("select", { onchange: (e: Event) => void app.setNoteType(Number((e.target as HTMLSelectElement).value) as 1 | 2).then(() => toast("Saved. Applies to new note-style citations.")) },
+	const noteSel = h("select", { onchange: async (e: Event) => {
+		const r = await busy("Moving citations…", () => app.setNoteType(Number((e.target as HTMLSelectElement).value) as 1 | 2));
+		if (r) toast("Note type changed. " + fmtReport(r));
+		else if (r === null) toast("The note type only applies to note styles (the current style puts citations in the text).");
+	} },
 		h("option", { value: "1", selected: (st.prefs?.noteType ?? 1) !== 2 }, "Footnotes"), h("option", { value: "2", selected: st.prefs?.noteType === 2 }, "Endnotes"));
+	const autoChk = h("input", { type: "checkbox", checked: !st.prefs?.delayCitationUpdates, onchange: (e: Event) => {
+		const on = (e.target as HTMLInputElement).checked;
+		void app.setAutoUpdate(on).then(() => toast(on ? "Citations update automatically." : "Automatic updates are off: a new citation is formatted on its own, use Refresh to update the rest."));
+	} });
 	box.replaceChildren(
 		h("h3", {}, "Citation style"),
 		h("div", { class: "settings-grid" },
 			h("label", {}, "Search styles", h("input", { type: "search", placeholder: "e.g. vancouver, nature, apa", oninput: (e: Event) => { styleQ = (e.target as HTMLInputElement).value; void loadStyles(); } }), list),
 			h("label", {}, "Language", loc),
-			h("label", {}, "Note styles use", noteSel),
+			h("label", {}, "Note styles use (existing citations move to match)", noteSel),
+			h("label", { class: "check" }, autoChk, "Automatically update citations"),
 		),
 		h("h3", { style: "margin-top:12px" }, "Library"),
 		h("div", { class: "settings-grid" },
@@ -402,9 +558,25 @@ async function openSettings() {
 				} }, "Save"),
 				h("button", { class: "ghost", onclick: () => (box.hidden = true) }, "Close")),
 		),
+		h("h3", { style: "margin-top:12px" }, "Document"),
+		h("div", { class: "settings-grid" },
+			h("div", { class: "small muted" }, "Unlink citations turns every citation and the bibliography into plain text. The text stays, but it can no longer be refreshed or edited here."),
+			h("div", { class: "row" }, h("button", { class: "danger", onclick: () => void unlinkAll(box) }, "Unlink citations…")),
+		),
 	);
 	box.hidden = false;
 	void loadStyles();
+}
+
+async function unlinkAll(box: HTMLElement) {
+	if (!window.confirm("Unlink all citations and the bibliography?\n\nThey become plain text and cannot be refreshed or edited afterwards. (Ctrl+Z in Word undoes it.)")) return;
+	const r = await busy("Unlinking…", () => app.unlinkCitations());
+	if (r) {
+		toast(`${r.unlinked} field(s) unlinked.`);
+		box.hidden = true;
+		cursorView = null;
+		renderCited();
+	}
 }
 
 // ---------------------------------------------------------------- start
@@ -452,8 +624,9 @@ async function main() {
 		if (r) toast("Bibliography updated. " + fmtReport(r));
 		void refreshDocState();
 	});
+	$("bib-edit").addEventListener("click", () => void openBibEditor());
 	$("refresh").addEventListener("click", async () => {
-		const r = await busy("Refreshing…", () => app.refreshAll());
+		const r = await busy("Refreshing…", () => app.refreshAll({ merge: true, onModified: askAboutEdits }));
 		if (r) toast("Refreshed. " + fmtReport(r));
 	});
 	$("btn-settings").addEventListener("click", () => void openSettings());
