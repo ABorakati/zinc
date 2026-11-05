@@ -8,6 +8,8 @@ import { persisted } from "../prefs";
 import { refresh, setView } from "../shared";
 import { errMsg, plural, stripExt } from "../text";
 import { toast } from "../../ui";
+import { autoAttachPdfs, autoTag } from "../../settings/generalPrefs";
+import { findFullText } from "../fulltext/jobs";
 
 export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv";
 
@@ -20,11 +22,11 @@ export const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[]
 ];
 
 export interface ExportResult { filename: string; contentType: string; text: string; count: number }
-export interface ImportResult { created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string }
+export interface ImportResult { created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string; itemKeys?: string[] }
 
 export const ioApi = {
 	export: (b: { keys?: string[]; collectionKey?: string; format: ExportFormat; includeNotes?: boolean }) => post<ExportResult>("/api/io/export", b),
-	import: (b: { text: string; format?: string; collectionName?: string | null; collectionKey?: string }) => post<ImportResult>("/api/io/import", b),
+	import: (b: { text: string; format?: string; collectionName?: string | null; collectionKey?: string; autoTag?: boolean }) => post<ImportResult>("/api/io/import", b),
 };
 
 /** Defaults remembered between exports and edited in Settings > Export. */
@@ -67,19 +69,30 @@ export async function runExport(target: ExportTarget, format: ExportFormat, incl
 }
 
 /** Import text (a file's contents or the clipboard). The new collection is named after the file. */
-export async function runImport(text: string, collectionName: string): Promise<void> {
+export async function runImport(text: string, collectionName: string, collectionKey?: string): Promise<ImportResult | null> {
 	toast("Importing…", { durationMs: 2500 });
 	try {
-		const r = await ioApi.import({ text, format: "auto", collectionName });
+		const r = await ioApi.import({
+			text,
+			format: "auto",
+			collectionName: collectionKey ? null : collectionName,
+			collectionKey: collectionKey || undefined,
+			autoTag: autoTag(),
+		});
 		refresh();
 		const parts = [`Imported ${plural(r.created, "item")}`];
 		if (r.skipped) parts.push(`${r.skipped} already in the library`);
 		const description = r.errors.length ? `${plural(r.errors.length, "problem")}: ${r.errors[0]}` : r.collectionKey ? `Added to the collection "${collectionName}"` : undefined;
 		if (r.errors.length && r.created === 0 && r.skipped === 0) toast("Nothing imported", { kind: "error", description });
 		else toast(parts.join(", "), { kind: r.errors.length ? "info" : "success", description, durationMs: r.errors.length ? 10_000 : 5000 });
-		if (r.collectionKey && r.created > 0) setView({ kind: "collection", key: r.collectionKey });
+		if (r.collectionKey && r.created > 0 && !collectionKey) setView({ kind: "collection", key: r.collectionKey });
+		if (r.created > 0 && autoAttachPdfs() && r.itemKeys?.length) {
+			findFullText(r.itemKeys);
+		}
+		return r;
 	} catch (e) {
 		fail("Import failed", e);
+		return null;
 	}
 }
 

@@ -26,6 +26,7 @@ export interface RetrieveResult {
 export interface RetrieveOptions {
 	/** Rename the stored file from the parent's metadata afterwards; default true, like Zotero's autoRenameFiles pref. */
 	rename?: boolean;
+	autoTag?: boolean;
 }
 
 export interface RetrieveResponse {
@@ -90,7 +91,7 @@ export async function retrieveOne(db: Database, attachmentKey: string, known = l
 	let lastError = "no DOI, arXiv ID or matching title found in the PDF";
 
 	const tryId = async (p: ParsedId, via: "doi" | "arxiv" | "title") => {
-		const r = await addOne(db, p, known, colls[0]);
+		const r = await addOne(db, p, known, colls[0], opts.autoTag !== false);
 		const parent = r.added?.data.key ?? r.existing!;
 		reparentItem(db, attachmentKey, parent);
 		if (r.added) {

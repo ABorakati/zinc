@@ -4,6 +4,7 @@ import { Icon, itemTypeIconName } from "../../icons";
 import { Button, openDialog, TextInput } from "../../ui";
 import { ErrorLine, Field, Footer, Para, Row, Scroll, t, tok, Txt } from "../kit";
 import { get } from "../http";
+import { readClipboard } from "../../shell/clipboard-win";
 import { pickPaths, readClipboardText } from "../platform";
 import { errMsg, looksLikeIdentifiers } from "../text";
 import type { ZoteroSchema } from "../types";
@@ -41,7 +42,9 @@ export async function openIdentifierDialog(initial?: string): Promise<void> {
 	let text = initial ?? "";
 	if (!text) {
 		try {
-			const clip = (await readClipboardText()).trim();
+			let clip = readClipboard();
+			if (clip === null) clip = await readClipboardText();
+			clip = (clip ?? "").trim();
 			if (looksLikeIdentifiers(clip)) text = clip;
 		} catch { /* no clipboard access: start empty */ }
 	}

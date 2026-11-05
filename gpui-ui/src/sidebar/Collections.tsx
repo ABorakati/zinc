@@ -14,6 +14,7 @@ import { currentView, refreshStore, setView, storeCollections } from "./bridge";
 import { itemDrag, itemDragPoint } from "./dndBridge";
 import { errMsg, sidebarApi } from "./client";
 import { NameInput } from "./NameInput";
+import { handleFileDrop } from "../features/additems/client";
 import {
 	CountBadge, type Entry, folderColor, folderSvg, IconButton, labelCls, ListItem, muted, pill, ROW, ROW_HOVER, ROW_STATIC, SectionHeader, t, tok, tx,
 } from "./parts";
@@ -94,6 +95,11 @@ const hit = (el: HostElement | undefined, x: number, y: number): boolean => {
 };
 /** True when a window point is inside the collections pane (rows scrolled out of it must not react to clicks there). */
 const visibleAt = (x: number, y: number): boolean => !paneEl || hit(paneEl, x, y);
+/** The collection (or "root" for the header) under a window point, or null. Rows scrolled out of the pane do not count. */
+export function collectionAt(x: number, y: number): string | null {
+	const k = targetAt(x, y);
+	return k && k !== "root" ? k : null;
+}
 /** The collection (or "root" for the header) under a window point, or null. Rows scrolled out of the pane do not count. */
 function targetAt(x: number, y: number): string | null {
 	if (hit(headerEl, x, y)) return "root";
@@ -252,6 +258,7 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 				}}
 				role="treeitem"
 				aria-selected={sel()}
+				onFileDrop={(e) => void handleFileDrop(e.paths ?? [], { collectionKey: p.c.key })}
 				onClick={(e) => {
 					if (Date.now() - childClickAt < 150 || Date.now() - justDragged < 250 || isEditing()) return;
 					if ((e.clickCount ?? 1) >= 2) return setEditing(p.c.key);

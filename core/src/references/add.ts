@@ -145,6 +145,13 @@ export function crossrefToItem(m: any, doi: string): Partial<ZoteroItemData> {
 	const type = TYPE_MAP[m.type] ?? "journalArticle";
 	const container: string | undefined = m["container-title"]?.[0] ? stripMarkup(m["container-title"][0]) : undefined;
 	const short: string | undefined = m["short-container-title"]?.[0];
+	const tags: { tag: string; type?: number }[] = [];
+	if (Array.isArray(m.subject)) {
+		for (const s of m.subject) {
+			const str = String(s).trim();
+			if (str) tags.push({ tag: str, type: 1 });
+		}
+	}
 	const common = {
 		title: m.title?.[0] ? stripMarkup(m.title[0]) : "",
 		creators: creatorsFrom(m),
@@ -153,6 +160,7 @@ export function crossrefToItem(m: any, doi: string): Partial<ZoteroItemData> {
 		url: m.URL || `https://doi.org/${doi}`,
 		abstractNote: typeof m.abstract === "string" ? stripMarkup(m.abstract).replace(/^abstract\s*/i, "") : undefined,
 		language: m.language,
+		tags: tags.length ? tags : undefined,
 	};
 	const issn = Array.isArray(m.ISSN) ? m.ISSN[0] : undefined;
 	const isbn = Array.isArray(m.ISBN) ? m.ISBN[0] : undefined;

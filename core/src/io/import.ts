@@ -16,6 +16,7 @@ export interface ImportRequest {
 	format?: ImportFormat | "auto";
 	collectionName?: string | null;
 	collectionKey?: string;
+	autoTag?: boolean;
 }
 export interface ImportResult {
 	created: number;
@@ -23,6 +24,7 @@ export interface ImportResult {
 	errors: string[];
 	collectionKey: string | null;
 	format: ImportFormat;
+	itemKeys?: string[];
 }
 
 export function detectFormat(text: string): ImportFormat | null {
@@ -77,7 +79,11 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 	}
 
 	const { items, errors } = parse(req.text, format);
+	if (req.autoTag === false) {
+		for (const it of items) delete it.data.tags;
+	}
 	const seen = existingDois(db);
+	const itemKeys: string[] = [];
 	let created = 0;
 	let skipped = 0;
 	const wantNewCollection = !collectionKey && req.collectionName !== null;
@@ -97,10 +103,11 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 			for (const html of it.notes) createItem(db, { itemType: "note", note: html, parentItem: detail.data.key });
 			if (doi) seen.add(doi);
 			created++;
+			itemKeys.push(detail.data.key);
 		} catch (e) {
 			errors.push(`item ${i + 1}${it.data.title ? ` (${String(it.data.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`);
 		}
 	}
 	})();
-	return { created, skipped, errors, collectionKey, format };
+	return { created, skipped, errors, collectionKey, format, itemKeys };
 }

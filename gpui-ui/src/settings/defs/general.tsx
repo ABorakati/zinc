@@ -7,6 +7,7 @@ import { Choice, Segmented, TextField, Toggle } from "../controls";
 import { readState } from "../../readState";
 import { registerSection, registerSettings } from "../registry";
 import { openUrlResolver, setOpenUrlResolver } from "../../locate/prefs";
+import { autoAttachPdfs, autoTag, setAutoAttachPdfs, setAutoTag } from "../generalPrefs";
 
 registerSection({ id: "general", label: "General", icon: "sliders-horizontal", order: 10, description: "How items open and what the main window shows.", keywords: ["preferences", "options"] });
 
@@ -84,10 +85,14 @@ registerSettings([
 	},
 	{
 		id: "general.attachPdfs", section: "general", group: "Adding items", label: "Automatically attach associated PDFs when adding items",
-		keywords: ["add item", "identifier", "doi", "isbn", "import"], unavailable: true,
+		description: "Find and attach available full-text PDFs when adding items by identifier or importing.",
+		keywords: ["add item", "identifier", "doi", "isbn", "import", "pdf", "full text"],
+		control: () => <Toggle checked={autoAttachPdfs()} onChange={setAutoAttachPdfs} />,
 	},
 	{
 		id: "general.autoTag", section: "general", group: "Adding items", label: "Automatically tag items with keywords and subject headings",
-		keywords: ["import", "tags"], unavailable: true,
+		description: "Add tags from keywords and subject headings found in fetched metadata or imported files.",
+		keywords: ["import", "tags", "keywords", "subjects", "metadata"],
+		control: () => <Toggle checked={autoTag()} onChange={setAutoTag} />,
 	},
 ]);

@@ -20,6 +20,7 @@ import { SortBar, Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
 import { WebTabView } from "./webview/WebTabView";
 import { OverlayHost, Resizable } from "./ui";
+import { handleFileDrop } from "./features/additems/client";
 
 const mode = (): Mode => store.mode();
 const t = (cls: string): Style => tw(cls, mode());
@@ -141,7 +142,7 @@ export function App() {
 	});
 
 	return (
-		<div style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }}>
+		<div style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }} onFileDrop={(e) => void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y })}>
 			<TopBar />
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
 			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}

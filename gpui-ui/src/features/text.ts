@@ -22,7 +22,8 @@ export function htmlToText(html: string): string {
 
 /** True when the text is only DOIs / PMIDs / arXiv IDs / ISBNs (cheap client-side screen; additems/client.ts of the web UI). */
 export function looksLikeIdentifiers(text: string): boolean {
-	const toks = text.trim().split(/[\s,;]+/).filter(Boolean);
+	const glued = text.replace(/\b(pmid|pubmed|isbn(?:-1[03])?|arxiv|doi|pmcid)\s*:?\s+(?=\S)/gi, (_m, l) => `${String(l).toLowerCase()}:`);
+	const toks = glued.trim().split(/[\s,;]+/).filter(Boolean);
 	if (!toks.length || toks.length > 50) return false;
 	return toks.every((t) =>
 		/^(doi:)?(https?:\/\/(dx\.)?doi\.org\/)?10\.\d{4,9}\/\S+$/i.test(t) ||

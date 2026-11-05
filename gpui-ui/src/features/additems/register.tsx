@@ -1,6 +1,6 @@
 // Registers the add-items feature (ui/src/additems/register.ts): Add Item by Identifier, New Item, attachments (stored file /
-// linked file / link), notes, Duplicate Item, Retrieve Metadata for PDF, Create Parent Item. Window-level drag-and-drop of files
-// and "paste an identifier" have no GPUIX counterpart yet: Ctrl+Shift+I offers identifiers found on the clipboard instead.
+// linked file / link), notes, Duplicate Item, Retrieve Metadata for PDF, Create Parent Item. Window-level file drops and Ctrl+V
+// "paste an identifier" in the list are handled directly by handleFileDrop and listKeyHandler.
 import { registerAppAction, registerItemAction, registerOverlay } from "../../registry";
 import { createNote, duplicateItems, pickAndImport, retrieveMetadata } from "./client";
 import { openIdentifierDialog, openLinkFileDialog, openLinkUriDialog, openNewItemDialog } from "./dialogs";
@@ -52,3 +52,4 @@ export function register(): void {
 		run: (ctx) => void openCreateParentDialog(ctx.item.key),
 	});
 }
+export { addByIdentifier, handleFileDrop } from "./client";

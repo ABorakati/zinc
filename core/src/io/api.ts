@@ -63,6 +63,7 @@ export async function handleIoApi(req: Request, db: Database): Promise<Response 
 				format: optString(b.format, "format") as ImportFormat | "auto" | undefined,
 				collectionName: name,
 				collectionKey: optString(b.collectionKey, "collectionKey"),
+				autoTag: b.autoTag !== false,
 			}),
 		);
 	} catch (e) {

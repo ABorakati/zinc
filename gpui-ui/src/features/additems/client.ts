@@ -5,10 +5,16 @@ import { get, post } from "../http";
 import { getPref } from "../prefs";
 import { pickPaths } from "../platform";
 import { currentCollection, refresh, selectMany, selectOnly } from "../shared";
-import { errMsg, plural } from "../text";
+import { baseName, errMsg, plural, stripExt } from "../text";
 import type { ItemDetail } from "../types";
 import { toast } from "../../ui";
 import { focusTitle } from "../../itempane/focus";
+import { autoAttachPdfs, autoTag, setAutoAttachPdfs, setAutoTag } from "../../settings/generalPrefs";
+import { collectionAt } from "../../sidebar/Collections";
+import { runImport } from "../io/client";
+import { findFullText } from "../fulltext/jobs";
+
+export { autoAttachPdfs, autoTag, setAutoAttachPdfs, setAutoTag };
 
 export interface IdentifierResult {
 	added: ItemDetail[];
@@ -28,11 +34,11 @@ export interface CreateParentResult {
 }
 
 export const addApi = {
-	identifier: (text: string, collectionKey?: string) => post<IdentifierResult>("/api/add/identifier", { text, collectionKey }),
+	identifier: (text: string, collectionKey?: string, autoTag?: boolean) => post<IdentifierResult>("/api/add/identifier", { text, collectionKey, autoTag }),
 	file: (b: { name?: string; contentType?: string; path: string; mode?: "imported_file" | "linked_file"; parentKey?: string; collectionKey?: string }) =>
 		post<ItemDetail>("/api/add/file", { name: "", ...b }),
 	link: (b: { url: string; title?: string; parentKey?: string; collectionKey?: string }) => post<ItemDetail>("/api/add/link", b),
-	retrieve: (attachmentKeys: string[]) => post<{ results: RetrieveResult[]; items: ItemDetail[] }>("/api/add/retrieve-metadata", { attachmentKeys }),
+	retrieve: (attachmentKeys: string[], opts?: { rename?: boolean; autoTag?: boolean }) => post<{ results: RetrieveResult[]; items: ItemDetail[] }>("/api/add/retrieve-metadata", { attachmentKeys, ...opts }),
 	createItem: (data: Record<string, unknown>) => post<ItemDetail>("/api/items", { data }),
 	duplicate: (key: string) => post<ItemDetail>(`/api/items/${encodeURIComponent(key)}/duplicate`, {}),
 	createParent: (b: { itemKey: string; text?: string; itemType?: string }) => post<CreateParentResult>("/api/add/create-parent", b),
@@ -48,7 +54,7 @@ const fail = (what: string, e: unknown) => toast(what, { kind: "error", descript
 export async function addByIdentifier(text: string): Promise<IdentifierResult | null> {
 	toast("Looking up identifiers…", { durationMs: 2500 });
 	try {
-		const r = await addApi.identifier(text, currentCollection());
+		const r = await addApi.identifier(text, currentCollection(), autoTag());
 		refresh();
 		const parts = [
 			r.added.length ? `Added ${plural(r.added.length, "item")}` : "",
@@ -61,6 +67,9 @@ export async function addByIdentifier(text: string): Promise<IdentifierResult | 
 		else toast(parts.join(", ") || "Nothing added", { kind: "error", description });
 		if (r.added.length) selectOnly(r.added[0]!.data.key);
 		else if (r.existing.length) selectOnly(r.existing[0]!.key);
+		if (r.added.length && autoAttachPdfs()) {
+			findFullText(r.added.map((item) => item.data.key));
+		}
 		return r;
 	} catch (e) {
 		fail("Could not add by identifier", e);
@@ -126,7 +135,7 @@ export async function createParentFor(itemKey: string, choice: { text?: string; 
 const isPdfPath = (p: string) => /\.pdf$/i.test(p);
 
 /** Import files (stored copies) with progress toasts; standalone PDFs then get "Retrieve Metadata" in the background when the preference is on. */
-export async function importPaths(paths: string[], opts: { parentKey?: string; retrieve?: boolean } = {}): Promise<void> {
+export async function importPaths(paths: string[], opts: { parentKey?: string; retrieve?: boolean; collectionKey?: string } = {}): Promise<void> {
 	if (!paths.length) return;
 	toast(`Importing ${plural(paths.length, "file")}…`, { durationMs: 2500 });
 	const pdfs: { key: string; title: string }[] = [];
@@ -135,7 +144,7 @@ export async function importPaths(paths: string[], opts: { parentKey?: string; r
 	for (const path of paths) {
 		const name = path.split(/[\\/]/).pop() ?? path;
 		try {
-			const d = await addApi.file({ path, mode: "imported_file", parentKey: opts.parentKey, collectionKey: opts.parentKey ? undefined : currentCollection() });
+			const d = await addApi.file({ path, mode: "imported_file", parentKey: opts.parentKey, collectionKey: opts.parentKey ? undefined : (opts.collectionKey ?? currentCollection()) });
 			last = d;
 			if (isPdfPath(path) && !opts.parentKey) pdfs.push({ key: d.data.key, title: name });
 		} catch (e) {
@@ -155,6 +164,34 @@ export async function pickAndImport(parentKey?: string): Promise<void> {
 	const paths = await pickPaths({ files: true, multiple: true, prompt: "Add" });
 	if (paths) await importPaths(paths, { parentKey });
 }
+const IMPORTER_EXTS = /\.(bib|bibtex|ris|rdf|json)$/i;
+
+/** Handle file drops anywhere on the window or onto a sidebar collection. */
+export async function handleFileDrop(paths: string[], target?: { x?: number; y?: number; collectionKey?: string }): Promise<void> {
+	if (!paths.length) return;
+	const colKey = target?.collectionKey ?? (target?.x !== undefined && target?.y !== undefined ? collectionAt(target.x, target.y) : null) ?? currentCollection();
+
+	const importerPaths: string[] = [];
+	const attachmentPaths: string[] = [];
+	for (const p of paths) {
+		if (IMPORTER_EXTS.test(p)) importerPaths.push(p);
+		else attachmentPaths.push(p);
+	}
+
+	for (const p of importerPaths) {
+		try {
+			const text = await Bun.file(p).text();
+			await runImport(text, stripExt(baseName(p)), colKey ?? undefined);
+		} catch (e) {
+			toast(`Could not read ${baseName(p)}`, { kind: "error", description: errMsg(e) });
+		}
+	}
+
+	if (attachmentPaths.length > 0) {
+		await importPaths(attachmentPaths, { collectionKey: colKey ?? undefined });
+	}
+}
+
 
 export async function addLinkedFile(path: string, parentKey?: string): Promise<boolean> {
 	const p = path.trim().replace(/^"|"$/g, "");
@@ -232,7 +269,7 @@ async function drainRetrieve(): Promise<void> {
 			batch.add(next.key);
 			patchRow(next.key, { state: "running" });
 			try {
-				const r = (await addApi.retrieve([next.key])).results[0];
+				const r = (await addApi.retrieve([next.key], { autoTag: autoTag() })).results[0];
 				if (r && r.status !== "failed") patchRow(next.key, { state: r.status, itemKey: r.itemKey, message: r.status === "existing" ? "Attached to an item already in the library" : undefined });
 				else patchRow(next.key, { state: "failed", message: r?.error ?? "Not found" });
 				refresh();

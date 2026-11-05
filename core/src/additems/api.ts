@@ -40,13 +40,13 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 
 		if (route === "identifier") {
 			const b = await readJson(req);
-			return json(await addByIdentifier(db, b.text, b.collectionKey));
+			return json(await addByIdentifier(db, b.text, b.collectionKey, b.autoTag !== false));
 		}
 		if (route === "create-parent") return json(await createParent(db, await readJson(req)), 201);
 		if (route === "link") return json(addLink(db, await readJson(req)), 201);
 		if (route === "retrieve-metadata") {
 			const b = await readJson(req);
-			return json(await retrieveMetadata(db, b.attachmentKeys, { rename: b.rename !== false }));
+			return json(await retrieveMetadata(db, b.attachmentKeys, { rename: b.rename !== false, autoTag: b.autoTag !== false }));
 		}
 
 		// route === "file"

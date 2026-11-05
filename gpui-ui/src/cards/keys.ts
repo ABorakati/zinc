@@ -2,6 +2,10 @@
 import { createSignal } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
 import { deleteSelected } from "../features/maintenance/ops";
+import { addByIdentifier } from "../features/additems/client";
+import { looksLikeIdentifiers } from "../features/text";
+import { readClipboard } from "../shell/clipboard-win";
+import { clipboard } from "../ui";
 import { store } from "../store";
 
 const [listFocused, setListFocused] = createSignal(false);
@@ -25,6 +29,23 @@ export interface ListKeyOps {
 	/** Extra keys (the table's left / right expand); return true when handled. */
 	extra?(key: string, e: KeyLike): boolean;
 }
+function tryPasteIdentifiers(): boolean {
+	let clip = readClipboard();
+	if (clip === null) {
+		void clipboard.readText().then((text) => {
+			const t = (text ?? "").trim();
+			if (looksLikeIdentifiers(t)) void addByIdentifier(t);
+		});
+		return false;
+	}
+	const text = clip.trim();
+	if (looksLikeIdentifiers(text)) {
+		void addByIdentifier(text);
+		return true;
+	}
+	return false;
+}
+
 
 export function listKeyHandler(ops: ListKeyOps) {
 	return (ev: EventPayload) => {
@@ -35,6 +56,7 @@ export function listKeyHandler(ops: ListKeyOps) {
 		let handled = true;
 		if (ctrl && k === "a") store.selectAll();
 		else if (ctrl && k === "f") focusSearch();
+		else if (ctrl && k === "v") handled = tryPasteIdentifiers();
 		else if (ctrl || m.alt) handled = false;
 		else if (k === "down") ops.move(1, !!m.shift);
 		else if (k === "up") ops.move(-1, !!m.shift);

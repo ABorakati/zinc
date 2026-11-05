@@ -320,6 +320,7 @@ export function TableView(): JSX.Element {
 		<div style={{ ...tw("flex flex-col flex-1 min-h-0 w-full bg-card", mode()), height: "100%" }}>
 			<div
 				tabIndex={0}
+				testId="table-container"
 				onKeyDown={keys}
 				onFocus={() => setListFocused(true)}
 				onBlur={() => setListFocused(false)}

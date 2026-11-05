@@ -126,6 +126,15 @@ export function pubmedToItem(article: string): ItemData {
 	const journal = xmlBlocks(art, "Journal")[0] ?? "";
 	const issn = xmlOne(journal, "ISSN");
 	const extraLines = [pmid ? `PMID: ${pmid}` : "", pmcid ? `PMCID: ${pmcid}` : ""].filter(Boolean).join("\n");
+	const tags: { tag: string; type?: number }[] = [];
+	const seenTags = new Set<string>();
+	for (const tag of [...xmlAll(med, "DescriptorName"), ...xmlAll(med, "Keyword")]) {
+		const t = tag.trim();
+		if (t && !seenTags.has(t.toLowerCase())) {
+			seenTags.add(t.toLowerCase());
+			tags.push({ tag: t, type: 1 });
+		}
+	}
 	return {
 		itemType: "journalArticle",
 		...compact({
@@ -143,6 +152,7 @@ export function pubmedToItem(article: string): ItemData {
 			language: xmlOne(art, "Language"),
 			url: pmid ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` : undefined,
 			extra: extraLines,
+			tags: tags.length ? tags : undefined,
 		}),
 	} as ItemData;
 }
@@ -166,6 +176,13 @@ export function europePmcToItem(r: any): ItemData {
 	const j = r.journalInfo ?? {};
 	const doi = normalizeDoi(r.doi);
 	const extra = [r.pmid ? `PMID: ${r.pmid}` : "", r.pmcid ? `PMCID: ${r.pmcid}` : ""].filter(Boolean).join("\n");
+	const tags: { tag: string; type?: number }[] = [];
+	if (Array.isArray(r.keywordList?.keyword)) {
+		for (const k of r.keywordList.keyword) {
+			const str = String(k).trim();
+			if (str) tags.push({ tag: str, type: 1 });
+		}
+	}
 	return {
 		itemType: "journalArticle",
 		...compact({
@@ -182,6 +199,7 @@ export function europePmcToItem(r: any): ItemData {
 			ISSN: j.journal?.issn,
 			url: r.pmcid ? `https://www.ncbi.nlm.nih.gov/pmc/articles/${r.pmcid}/` : doi ? `https://doi.org/${doi}` : undefined,
 			extra,
+			tags: tags.length ? tags : undefined,
 		}),
 	} as ItemData;
 }
@@ -203,6 +221,11 @@ export function arxivToItem(entry: string, id: string): ItemData {
 	const category = xmlAttr(entry, "arxiv:primary_category", "term") ?? xmlAttr(entry, "category", "term");
 	const journalRef = xmlOne(entry, "arxiv:journal_ref");
 	const extra = [`arXiv:${id}${category ? ` [${category}]` : ""}`, journalRef ? `Journal reference: ${journalRef}` : ""].filter(Boolean).join("\n");
+	const tags: { tag: string; type?: number }[] = [];
+	for (const c of xmlBlocks(entry, "category")) {
+		const term = xmlAttr(c, "term");
+		if (term) tags.push({ tag: term.trim(), type: 1 });
+	}
 	return {
 		itemType: "preprint",
 		...compact({
@@ -215,6 +238,7 @@ export function arxivToItem(entry: string, id: string): ItemData {
 			DOI: doi ?? `10.48550/arXiv.${id}`,
 			url: `https://arxiv.org/abs/${id}`,
 			extra,
+			tags: tags.length ? tags : undefined,
 		}),
 	} as ItemData;
 }
@@ -247,6 +271,9 @@ export function openLibraryToItem(b: any, isbn: string): ItemData {
 			numPages: b.number_of_pages ? String(b.number_of_pages) : undefined,
 			ISBN: isbn,
 			url: b.url,
+			tags: Array.isArray(b.subjects) && b.subjects.length
+				? b.subjects.map((s: unknown) => ({ tag: typeof s === "string" ? s.trim() : s && typeof s === "object" && "name" in s ? String(s.name).trim() : "", type: 1 })).filter((t: { tag: string }) => !!t.tag)
+				: undefined,
 		}),
 	} as ItemData;
 }
@@ -265,6 +292,9 @@ export function googleBooksToItem(v: any, isbn: string): ItemData {
 			language: v.language,
 			ISBN: isbn,
 			url: v.canonicalVolumeLink ?? v.infoLink,
+			tags: Array.isArray(v.categories) && v.categories.length
+				? v.categories.map((c: unknown) => ({ tag: String(c ?? "").trim(), type: 1 })).filter((t: { tag: string }) => !!t.tag)
+				: undefined,
 		}),
 	} as ItemData;
 }

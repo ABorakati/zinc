@@ -115,7 +115,7 @@ export async function fetchByIdentifier(db: Database, p: ParsedId): Promise<Item
 const KIND_LABEL = { doi: "DOI", pmid: "PMID", pmcid: "PMCID", arxiv: "arXiv ID", isbn: "ISBN" } as const;
 
 /** Resolve a single identifier to a new item, or to the existing item that already has it. */
-export async function addOne(db: Database, p: ParsedId, known: Known, collectionKey?: string): Promise<{ added?: ItemDetail; existing?: string }> {
+export async function addOne(db: Database, p: ParsedId, known: Known, collectionKey?: string, autoTag = true): Promise<{ added?: ItemDetail; existing?: string }> {
 	const have = knownFor(known, p);
 	if (have) return { existing: have };
 	const data = await fetchByIdentifier(db, p);
@@ -123,13 +123,14 @@ export async function addOne(db: Database, p: ParsedId, known: Known, collection
 	const dup = findExisting(known, data as Record<string, unknown>);
 	if (dup) return { existing: dup };
 	if (collectionKey) data.collections = [collectionKey];
+	if (!autoTag && data.tags) delete data.tags;
 	const detail = createItem(db, data);
 	indexItem(db, detail.data.key);
 	register(known, detail.data.key, detail.data as Record<string, unknown>);
 	return { added: detail };
 }
 
-export async function addByIdentifier(db: Database, text: unknown, collectionKey?: string): Promise<AddByIdentifierResult> {
+export async function addByIdentifier(db: Database, text: unknown, collectionKey?: string, autoTag = true): Promise<AddByIdentifierResult> {
 	if (typeof text !== "string" || !text.trim()) throw new HttpError(400, "text is required");
 	if (collectionKey !== undefined && collectionKey !== null && typeof collectionKey !== "string") throw new HttpError(400, "collectionKey must be a string");
 	const { ids, unknown } = parseIdentifiers(text);
@@ -138,7 +139,7 @@ export async function addByIdentifier(db: Database, text: unknown, collectionKey
 	const known = loadKnown(db);
 	const outcomes = await mapLimit(ids, 3, async (p) => {
 		try {
-			return { p, ...(await addOne(db, p, known, collectionKey || undefined)) };
+			return { p, ...(await addOne(db, p, known, collectionKey || undefined, autoTag)) };
 		} catch (e) {
 			return { p, error: e instanceof Error ? e.message : String(e) };
 		}

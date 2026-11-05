@@ -212,6 +212,7 @@ export function CardsView(): JSX.Element {
 	return (
 		<div
 			tabIndex={0}
+			testId="card-list-container"
 			onKeyDown={keys}
 			onFocus={() => setListFocused(true)}
 			onBlur={() => setListFocused(false)}
