@@ -43,6 +43,33 @@ struct Api {
     render: unsafe extern "C" fn(Ptr, Ptr, c_int, c_int, c_int, c_int, c_int, c_int),
     load_mem: unsafe extern "C" fn(*const c_void, usize, *const c_char) -> Ptr,
     last_error: unsafe extern "C" fn() -> u64,
+    /// page editing, saving and printing (src/ops.rs); None when this pdfium.dll lacks one of them (rendering still works)
+    extra: Option<Extra>,
+}
+
+/// FPDF_FILEWRITE with the bytes collected behind it (PDFium hands the struct back to `WriteBlock`).
+#[repr(C)]
+struct FileWrite {
+    version: c_int,
+    write_block: unsafe extern "C" fn(*mut FileWrite, *const c_void, u32) -> c_int,
+    buf: Vec<u8>,
+}
+
+unsafe extern "C" fn write_block(this: *mut FileWrite, data: *const c_void, size: u32) -> c_int {
+    let Some(w) = (unsafe { this.as_mut() }) else { return 0 };
+    if size > 0 && !data.is_null() {
+        w.buf.extend_from_slice(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size as usize) });
+    }
+    1
+}
+
+struct Extra {
+    get_rotation: unsafe extern "C" fn(Ptr) -> c_int,
+    set_rotation: unsafe extern "C" fn(Ptr, c_int),
+    delete_page: unsafe extern "C" fn(Ptr, c_int),
+    save_as_copy: unsafe extern "C" fn(Ptr, *mut FileWrite, u32) -> c_int,
+    /// FPDF_RenderPage: draws into a Windows device context (a printer's)
+    render_dc: unsafe extern "C" fn(isize, Ptr, c_int, c_int, c_int, c_int, c_int, c_int),
 }
 
 static LOCK: Mutex<()> = Mutex::new(());
@@ -138,7 +165,24 @@ fn load() -> Result<Api, String> {
             render: f!("FPDF_RenderPageBitmap"),
             load_mem: f!("FPDF_LoadMemDocument64"),
             last_error: f!("FPDF_GetLastError"),
+            extra: None,
         };
+        macro_rules! opt {
+            ($n:literal) => {{
+                let p = unsafe { GetProcAddress(m, concat!($n, "\0").as_ptr()) };
+                if p.is_null() { None } else { Some(unsafe { std::mem::transmute(p) }) }
+            }};
+        }
+        let extra = (|| {
+            Some(Extra {
+                get_rotation: opt!("FPDFPage_GetRotation")?,
+                set_rotation: opt!("FPDFPage_SetRotation")?,
+                delete_page: opt!("FPDFPage_Delete")?,
+                save_as_copy: opt!("FPDF_SaveAsCopy")?,
+                render_dc: opt!("FPDF_RenderPage")?,
+            })
+        })();
+        let api = Api { extra, ..api };
         unsafe { init() };
         return Ok(api);
     }
@@ -270,5 +314,134 @@ impl Drop for PdfiumDoc {
             unsafe { (self.api.close_page)(p) };
         }
         unsafe { (self.api.destroy_doc)(inner.doc) };
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// editing and printing (src/ops.rs drives these)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// FPDF_NO_INCREMENTAL: the saved file is written anew (no update section appended to the old one)
+const SAVE_FULL: u32 = 2;
+/// FPDF_ANNOT | FPDF_PRINTING (annotation appearances, and the print variant of them)
+const PRINT_FLAGS: c_int = 0x01 | 0x800;
+
+fn extra_api() -> Result<(&'static Api, &'static Extra), String> {
+    let api = api().map_err(|e| format!("PDFium is not available: {e}"))?;
+    let ex = api.extra.as_ref().ok_or("this pdfium.dll has no page editing and printing functions")?;
+    Ok((api, ex))
+}
+
+/// A document of its own (a separate parse of `bytes`, not the reader's), for one edit or one print job. Every call takes `LOCK`
+/// for its own duration only, so the screen's renders go on between the pages of a print job.
+pub struct OwnedDoc {
+    api: &'static Api,
+    ex: &'static Extra,
+    doc: Ptr,
+    _bytes: Arc<Vec<u8>>,
+}
+
+unsafe impl Send for OwnedDoc {}
+
+impl OwnedDoc {
+    pub fn open(bytes: Arc<Vec<u8>>) -> Result<OwnedDoc, String> {
+        let (api, ex) = extra_api()?;
+        let _g = lock(None).unwrap();
+        let doc = unsafe { (api.load_mem)(bytes.as_ptr().cast(), bytes.len(), std::ptr::null()) };
+        if doc.is_null() {
+            let code = unsafe { (api.last_error)() };
+            return Err(match code {
+                4 => "the PDF is password-protected".to_string(),
+                3 | 2 => "the file is not a valid PDF".to_string(),
+                _ => format!("PDFium cannot open the document (error {code})"),
+            });
+        }
+        Ok(OwnedDoc { api, ex, doc, _bytes: bytes })
+    }
+
+    pub fn page_count(&self) -> usize {
+        let _g = lock(None).unwrap();
+        unsafe { (self.api.page_count)(self.doc) }.max(0) as usize
+    }
+
+    /// Page size in points, the page's own rotation applied.
+    pub fn page_size(&self, page: usize) -> (f32, f32) {
+        let _g = lock(None).unwrap();
+        let mut s = SizeF::default();
+        if unsafe { (self.api.page_size)(self.doc, page as c_int, &mut s) } == 0 || !(s.w > 0.0 && s.h > 0.0) {
+            return (612.0, 792.0);
+        }
+        (s.w, s.h)
+    }
+
+    /// Rotate pages (`rotate`: page index and quarter turns clockwise to add to its /Rotate), then delete pages (indexes of the
+    /// original document), and return the whole document saved anew.
+    pub fn edit(&self, rotate: &[(usize, i32)], delete: &[usize]) -> Result<Vec<u8>, String> {
+        let _g = lock(None).unwrap();
+        let (api, ex, doc) = (self.api, self.ex, self.doc);
+        let n = unsafe { (api.page_count)(doc) }.max(0) as usize;
+        for &(p, q) in rotate {
+            if p >= n {
+                return Err(format!("page {} does not exist (the document has {n} pages)", p + 1));
+            }
+            let pg = unsafe { (api.load_page)(doc, p as c_int) };
+            if pg.is_null() {
+                return Err(format!("PDFium cannot load page {}", p + 1));
+            }
+            unsafe {
+                let r = ((ex.get_rotation)(pg) + q).rem_euclid(4);
+                (ex.set_rotation)(pg, r);
+                (api.close_page)(pg);
+            }
+        }
+        let mut del = delete.to_vec();
+        del.sort_unstable();
+        del.dedup();
+        if let Some(&p) = del.iter().find(|&&p| p >= n) {
+            return Err(format!("page {} does not exist (the document has {n} pages)", p + 1));
+        }
+        if !del.is_empty() && del.len() >= n {
+            return Err("at least one page must remain".into());
+        }
+        for &p in del.iter().rev() {
+            unsafe { (ex.delete_page)(doc, p as c_int) };
+        }
+        let left = unsafe { (api.page_count)(doc) }.max(0) as usize;
+        if left != n - del.len() {
+            return Err(format!("PDFium left {left} pages instead of {}", n - del.len()));
+        }
+        let mut w = FileWrite { version: 1, write_block, buf: Vec::with_capacity(self._bytes.len() + 4096) };
+        if unsafe { (ex.save_as_copy)(doc, &mut w, SAVE_FULL) } == 0 {
+            return Err(format!("PDFium could not save the document (error {})", unsafe { (api.last_error)() }));
+        }
+        if w.buf.len() < 8 || !w.buf.starts_with(b"%PDF-") {
+            return Err("PDFium saved something that is not a PDF".into());
+        }
+        Ok(std::mem::take(&mut w.buf))
+    }
+
+    /// Draw `page` into the device context `hdc` (a printer's) at the device-unit rect (x, y, w, h). `turn`: a quarter turn to fit
+    /// the paper's orientation, anticlockwise (the usual landscape print, and what undoes a /Rotate of 90), clockwise for a page
+    /// whose /Rotate is 270 (so a page turned by a rotation prints upright again).
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_dc(&self, hdc: isize, page: usize, x: i32, y: i32, w: i32, h: i32, turn: bool) -> Result<(), String> {
+        let _g = lock(None).unwrap();
+        let pg = unsafe { (self.api.load_page)(self.doc, page as c_int) };
+        if pg.is_null() {
+            return Err(format!("PDFium cannot load page {}", page + 1));
+        }
+        unsafe {
+            let rot = if !turn { 0 } else if (self.ex.get_rotation)(pg) == 3 { 1 } else { 3 };
+            (self.ex.render_dc)(hdc, pg, x, y, w, h, rot, PRINT_FLAGS);
+            (self.api.close_page)(pg);
+        }
+        Ok(())
+    }
+}
+
+impl Drop for OwnedDoc {
+    fn drop(&mut self) {
+        let _g = lock(None).unwrap();
+        unsafe { (self.api.destroy_doc)(self.doc) };
     }
 }

@@ -19,6 +19,9 @@
 //!
 //! v0.3: the worker pool + priorities: zpdf_render3(.., prio) (render2 plus a queue priority), zpdf_job_prio(job, prio), zpdf_pool_size(doc).
 //!
+//! v0.5: page editing and printing on PDFium (src/ops.rs): zpdf_page_rotation(doc, i), zpdf_edit_begin (rotate / delete pages ->
+//! the new PDF), zpdf_print_begin (system print dialog), zpdf_print_to_begin (no dialog: a named printer / a file).
+//!
 //! v0.2 additions (the reader's memory + navigation work):
 //!   zpdf_render_size2(doc, i, scale, rot, u32[2] out)            full bitmap size at a scale and an extra rotation (0/90/180/270 cw)
 //!   zpdf_render2(doc, i, scale, rot, rx, ry, rw, rh, look, c0, c1) -> job
@@ -52,6 +55,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 mod nav;
+mod ops;
 mod pdfium;
 
 use hayro::hayro_interpret::font::{Glyph, GlyphRun};
@@ -93,7 +97,7 @@ pub extern "C" fn zpdf_last_error() -> *const c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zpdf_version() -> *const c_char {
-    c"zn_pdf 0.4.0 (pdfium 8125 + hayro 0.8)".as_ptr()
+    c"zn_pdf 0.5.0 (pdfium 8125 + hayro 0.8)".as_ptr()
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -248,6 +252,8 @@ pub struct Doc {
     shared: Arc<Shared>,
     joins: Vec<JoinHandle<()>>,
     dims: Vec<(f32, f32)>,
+    /// each page's own /Rotate in degrees (0, 90, 180, 270), already part of `dims` and of every render
+    rots: Vec<u16>,
     /// PDFium renders this document when set (else hayro)
     pdfium: Option<Arc<pdfium::PdfiumDoc>>,
 }
@@ -323,7 +329,10 @@ fn wait_next(shared: &Shared, cgen: u64) -> Wake {
     }
 }
 
-fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, pdfium: Option<Arc<pdfium::PdfiumDoc>>, ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>) {
+/// What the first worker reports once it parsed the file: page sizes (points, rotation applied) and each page's /Rotate.
+type Ready = Result<(Vec<(f32, f32)>, Vec<u16>), String>;
+
+fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, pdfium: Option<Arc<pdfium::PdfiumDoc>>, ready: Option<Sender<Ready>>) {
     set_thread_priority(false);
     let pdf = match Pdf::new(bytes) {
         Ok(p) => p,
@@ -343,7 +352,16 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, pdfium: Option
             Some(p) => p.dims.clone(),
             None => pages.iter().map(|p| p.render_dimensions()).collect(),
         };
-        let _ = r.send(Ok(dims));
+        let rots: Vec<u16> = pages
+            .iter()
+            .map(|p| match p.rotation() {
+                hayro::hayro_syntax::page::Rotation::None => 0,
+                hayro::hayro_syntax::page::Rotation::Horizontal => 90,
+                hayro::hayro_syntax::page::Rotation::Flipped => 180,
+                hayro::hayro_syntax::page::Rotation::FlippedHorizontal => 270,
+            })
+            .collect();
+        let _ = r.send(Ok((dims, rots)));
     }
 
     let settings = InterpreterSettings::default();
@@ -642,7 +660,7 @@ fn spawn_doc(src: Source) -> *mut Doc {
             None
         }
     };
-    let spawn = |ready: Option<Sender<Result<Vec<(f32, f32)>, String>>>| {
+    let spawn = |ready: Option<Sender<Ready>>| {
         let (b, w, sh, pd) = (bytes.clone(), what.clone(), shared.clone(), pdfium.clone());
         std::thread::Builder::new().name("zn-pdf".into()).stack_size(32 * 1024 * 1024).spawn(move || worker(b, w, sh, pd, ready))
     };
@@ -654,7 +672,7 @@ fn spawn_doc(src: Source) -> *mut Doc {
         }
     };
     match ready_rx.recv() {
-        Ok(Ok(dims)) => {
+        Ok(Ok((dims, rots))) => {
             // PDFium and hayro must agree on the page count, else PDFium is not used for this document (the worker decided already)
             let pdfium_ok = pdfium.clone().filter(|p| p.dims.len() == dims.len());
             // the first worker parsed the file: the others (each parses on its own thread) join the pool without anyone waiting for them
@@ -664,7 +682,7 @@ fn spawn_doc(src: Source) -> *mut Doc {
                     joins.push(j);
                 }
             }
-            Box::into_raw(Box::new(Doc { shared, joins, dims, pdfium: pdfium_ok }))
+            Box::into_raw(Box::new(Doc { shared, joins, dims, rots, pdfium: pdfium_ok }))
         }
         Ok(Err(e)) => {
             set_error(e);

@@ -1,10 +1,21 @@
 // Reader: defaults of the native PDF viewer, and of its reflowed "Reading view" (the article view of the web reader: the toolbar's
 // "Reading view" button; font, size, spacing, width and theme are also in the view's own "Aa" panel).
 import { Btn, Choice, Toggle } from "../controls";
-import { READING_FONTS, readerPrefs, readingView, ZOOM_CHOICES, zoomLabel, type PageAppearance, type ReadingTheme, type SidebarStart } from "../readerPrefs";
+import { READING_FONTS, readerPrefs, readingView, ZOOM_CHOICES, zoomLabel, type PageAppearance, type ReadingTheme, type ScrollModePref, type SidebarStart, type SpreadModePref } from "../readerPrefs";
 import { registerSection, registerSettings } from "../registry";
 
 registerSection({ id: "reader", label: "Reader", icon: "file-text", order: 30, description: "Defaults of the PDF reader and its Reading view.", keywords: ["reader", "pdf", "viewer", "reading view"] });
+
+const SCROLL: { value: ScrollModePref; label: string; hint: string }[] = [
+	{ value: "vertical", label: "Vertical scrolling", hint: "Pages one below the other" },
+	{ value: "horizontal", label: "Horizontal scrolling", hint: "Pages side by side" },
+	{ value: "wrapped", label: "Wrapped scrolling", hint: "As many pages per row as fit" },
+];
+const SPREADS: { value: SpreadModePref; label: string; hint: string }[] = [
+	{ value: "none", label: "No spreads", hint: "One page at a time" },
+	{ value: "odd", label: "Odd spreads", hint: "Pages 1-2, 3-4, …" },
+	{ value: "even", label: "Even spreads", hint: "Page 1 alone, then 2-3, 4-5, …" },
+];
 
 const SIDEBAR: { value: SidebarStart; label: string }[] = [
 	{ value: "remember", label: "As I left it" },
@@ -48,11 +59,22 @@ registerSettings([
 		control: () => <Choice<SidebarStart> value={readerPrefs.sidebar()} onChange={readerPrefs.setSidebar} options={SIDEBAR} width={160} />,
 	},
 	{
+		id: "reader.scrollMode", section: "reader", label: "Scroll mode",
+		description: "How the pages of a PDF opened for the first time are laid out. Change it for one document in the reader's View menu.",
+		keywords: ["layout", "scrolling", "vertical", "horizontal", "wrapped", "page layout"],
+		control: () => <Choice<ScrollModePref> value={readerPrefs.scrollMode()} onChange={readerPrefs.setScrollMode} options={SCROLL} width={200} />,
+	},
+	{
+		id: "reader.spreadMode", section: "reader", label: "Page spreads",
+		description: "Show two pages side by side, like an open book.",
+		keywords: ["spread", "two-page", "two page", "facing pages", "book", "odd", "even", "layout"],
+		control: () => <Choice<SpreadModePref> value={readerPrefs.spreadMode()} onChange={readerPrefs.setSpreadMode} options={SPREADS} width={200} />,
+	},
+	{
 		id: "reader.reset", section: "reader", label: "Restore reader defaults",
 		keywords: ["reset"],
 		control: () => <Btn onClick={readerPrefs.reset}>Restore defaults</Btn>,
 	},
-	{ id: "reader.scrollMode", section: "reader", label: "Scroll mode and page layout", description: "Vertical, horizontal, wrapped or two-page spreads.", keywords: ["spread", "layout", "scrolling"], unavailable: true },
 
 	// ---- Reading view
 	{

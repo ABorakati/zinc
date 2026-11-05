@@ -62,6 +62,75 @@ function open() {
 		zpdf_version: { args: [], returns: cstring },
 	});
 }
+
+// Page editing and printing (zn_pdf 0.5, src/ops.rs) are bound on their own, so an older zn_pdf.dll without them still renders.
+let opsLib: ReturnType<typeof openOps> | null | undefined;
+let opsError = "";
+function openOps() {
+	return dlopen(findDll(), {
+		zpdf_page_rotation: { args: [P, I32], returns: I32 },
+		zpdf_edit_begin: { args: [P, usize, P, P, I32, P, I32], returns: P },
+		zpdf_print_begin: { args: [P, usize, P, I32], returns: P },
+		zpdf_print_to_begin: { args: [P, usize, P, P, P, I32, I32], returns: P },
+	});
+}
+function ops() {
+	if (opsLib === undefined) {
+		try { opsLib = openOps(); } catch (e) { opsLib = null; opsError = e instanceof Error ? e.message : String(e); }
+	}
+	return opsLib?.symbols ?? null;
+}
+/** Why page editing / printing cannot run (null when they can): the zn_pdf.dll in use predates them. */
+export function pdfOpsUnavailable(): string | null {
+	return ops() ? null : `this build of zn_pdf.dll cannot edit or print PDFs (${opsError || "missing functions"}); rebuild native/pdf`;
+}
+
+const cstr = (s: string) => Buffer.from(s + "\0", "utf8");
+
+/** Wait for a job that runs on a thread of its own (edit, print), polling every `ms`; returns its data (copied) or throws its error. */
+async function opJob(job: number | bigint | null, what: string, ms: number): Promise<Uint8Array> {
+	const s = sym();
+	if (!job) throw new Error(`${what}: ${lastError()}`);
+	try {
+		let st: number;
+		while ((st = s.zpdf_job_poll(job as never)) === 0) await Bun.sleep(ms);
+		if (st !== 1) throw new Error(lastError() || `${what} failed`);
+		const len = Number(s.zpdf_job_len(job as never));
+		return new Uint8Array(toBuffer(s.zpdf_job_data(job as never) as never, 0, len)).slice();
+	} finally { s.zpdf_job_free(job as never); }
+}
+
+/** Page edits as Zotero makes them: rotations add quarter turns clockwise to a page's /Rotate (negative: anticlockwise); deletions are indexes of the original document. */
+export interface PdfEdit { rotate?: { page: number; turns: number }[]; delete?: number[] }
+
+/** Apply `e` to the PDF in `bytes` (PDFium, on a thread of its own) and return the whole new file (not an incremental update). */
+export async function editPdf(bytes: Uint8Array, e: PdfEdit): Promise<Uint8Array> {
+	const o = ops();
+	if (!o) throw new Error(pdfOpsUnavailable()!);
+	const rp = new Int32Array((e.rotate ?? []).map((r) => r.page)), rt = new Int32Array((e.rotate ?? []).map((r) => r.turns));
+	const dp = new Int32Array(e.delete ?? []);
+	const one = new Int32Array(1); // bun:ffi needs a real pointer even for an empty array
+	const job = o.zpdf_edit_begin(ptr(bytes), bytes.byteLength, ptr(rp.length ? rp : one), ptr(rt.length ? rt : one), rp.length, ptr(dp.length ? dp : one), dp.length);
+	return opJob(job as never, "editing the PDF", 5);
+}
+
+export interface PrintResult { result: "printed" | "cancelled"; pages: number; printer: string }
+
+/** Show the system print dialog (owned by this app's window) and print the chosen pages through PDFium. `currentPage` (0-based) enables "Current page". */
+export async function printPdf(bytes: Uint8Array, o: { title: string; currentPage?: number }): Promise<PrintResult> {
+	const f = ops();
+	if (!f) throw new Error(pdfOpsUnavailable()!);
+	const job = f.zpdf_print_begin(ptr(bytes), bytes.byteLength, ptr(cstr(o.title)), o.currentPage === undefined ? 0 : o.currentPage + 1);
+	return JSON.parse(Buffer.from(await opJob(job as never, "printing", 100)).toString("utf8")) as PrintResult;
+}
+
+/** Print without a dialog: pages first..last (1-based; last 0 = to the end) on `printer` (default printer when omitted), into the file `output` when given (tests: "Microsoft Print to PDF"). */
+export async function printPdfTo(bytes: Uint8Array, o: { title: string; printer?: string; output?: string; first?: number; last?: number }): Promise<PrintResult> {
+	const f = ops();
+	if (!f) throw new Error(pdfOpsUnavailable()!);
+	const job = f.zpdf_print_to_begin(ptr(bytes), bytes.byteLength, ptr(cstr(o.title)), o.printer ? ptr(cstr(o.printer)) : null, o.output ? ptr(cstr(o.output)) : null, o.first ?? 1, o.last ?? 0);
+	return JSON.parse(Buffer.from(await opJob(job as never, "printing", 50)).toString("utf8")) as PrintResult;
+}
 const sym = () => (lib ??= open()).symbols;
 
 export const nativeVersion = (): string => String(sym().zpdf_version());
@@ -199,6 +268,12 @@ export class PdfDoc {
 		const job = s.zpdf_render3(this.h() as never, page, scale, o.rot ?? 0, r?.x ?? 0, r?.y ?? 0, r?.w ?? 0, r?.h ?? 0, k?.mode ?? 0, k?.c0 ?? 0, k?.c1 ?? 0, o.prio ?? PRIO_BACKGROUND);
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
 		return this.task(job, page);
+	}
+
+	/** The page's own /Rotate in degrees (0 / 90 / 180 / 270), already part of `sizes` and of every render; 0 when the dll predates it. */
+	pageRotation(page: number): number {
+		const o = ops();
+		return o ? Math.max(0, o.zpdf_page_rotation(this.h() as never, page)) : 0;
 	}
 
 	/** Which rasteriser draws this document: PDFium (pdfium.dll next to zn_pdf.dll) or hayro (the fallback). */

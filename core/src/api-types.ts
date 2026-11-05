@@ -21,6 +21,8 @@
 // GET    /api/tags                             -> {tag: string, count: number}[]
 //
 // GET    /api/attachments/:key/file            -> file bytes (Content-Type from attachment)
+// PUT    /api/attachments/:key/file            {dataBase64} -> {ok: true, size}  (atomic replace of a PDF attachment's file:
+//                                              the reader's Rotate / Delete Pages; core/src/files/replace.ts)
 // GET    /api/attachments/:key/annotations     -> ReaderAnnotation[]
 // PUT    /api/attachments/:key/annotations     ReaderAnnotation[] (upsert by id) -> {ok: true}
 // DELETE /api/attachments/:key/annotations     {ids: string[]} -> {ok: true}

@@ -17,9 +17,17 @@ const okZoom = (v: unknown): string | undefined => (typeof v === "string" && (ZO
 const okSide = (v: unknown): SidebarStart | undefined => (v === "remember" || v === "open" || v === "closed" ? v : undefined);
 const okPage = (v: unknown): PageAppearance | undefined => (v === "app" || v === "normal" || v === "dark" || v === "sepia" ? v : undefined);
 
+/** Page layout of a document opened for the first time (the reader's View menu changes it per document). */
+export type ScrollModePref = "vertical" | "horizontal" | "wrapped";
+export type SpreadModePref = "none" | "odd" | "even";
+const okScroll = (v: unknown): ScrollModePref | undefined => (v === "vertical" || v === "horizontal" || v === "wrapped" ? v : undefined);
+const okSpread = (v: unknown): SpreadModePref | undefined => (v === "none" || v === "odd" || v === "even" ? v : undefined);
+
 const [zoomKey, setZoomKey] = persisted<string>("shell.reader.zoom", "width", okZoom);
 const [sidebar, setSidebar] = persisted<SidebarStart>("shell.reader.sidebar", "remember", okSide);
 const [pages, setPages] = persisted<PageAppearance>("shell.reader.pages", "app", okPage);
+const [scrollMode, setScrollMode] = persisted<ScrollModePref>("shell.reader.scrollMode", "vertical", okScroll);
+const [spreadMode, setSpreadMode] = persisted<SpreadModePref>("shell.reader.spreadMode", "none", okSpread);
 
 export const readerPrefs = {
 	/** "width" | "page" | a scale as a number (1 = 100%) */
@@ -28,7 +36,9 @@ export const readerPrefs = {
 	setZoomKey,
 	sidebar, setSidebar,
 	pageAppearance: pages, setPageAppearance: setPages,
-	reset(): void { setZoomKey("width"); setSidebar("remember"); setPages("app"); },
+	scrollMode, setScrollMode,
+	spreadMode, setSpreadMode,
+	reset(): void { setZoomKey("width"); setSidebar("remember"); setPages("app"); setScrollMode("vertical"); setSpreadMode("none"); },
 };
 
 // ---- the reflowed reading view (reader/reflow): typography, theme and "open PDFs in the reading view by default". They live in

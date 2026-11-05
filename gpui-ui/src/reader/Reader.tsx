@@ -13,7 +13,10 @@
 //    popup, alternate full-pane views (the pages are unmounted while one is shown) and onOpen.
 //  * memory: see core/Page.tsx. Only the pixels near the viewport exist; `active=false` (a background tab) frees all of them.
 //  * layout follows the container (onLayout); the page column is centred with 16 px gutters and a 12 px gap on a "muted" canvas.
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
+//  * page layouts (the toolbar's View menu, per document, default in Settings): vertical / horizontal / wrapped scrolling and odd /
+//    even spreads (core/layout.ts groups the pages into the rows of the virtual list, or the columns of a horizontal strip); Rotate /
+//    Delete Pages change the PDF file as Zotero does (core/pageops.ts), Print shows the system print dialog (core/layoutui.tsx).
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/solid";
 import type { Mode, Style } from "../contracts";
@@ -32,10 +35,15 @@ import { FindResults, Outline, Sidebar, SIDEBAR_MIN, Thumbnails, type HitRow, ty
 import { getDocState, getSidebar, saveSidebar, setDocState, type ZoomMode } from "./core/state";
 import { copyText, isSafeUrl, openUrl } from "./core/sys";
 import { buildPageText, caretAt, cmpCaret, lineAt, rotRect, selectionRects, selectionText, unrotPoint, wordAt, type Caret, type PageText } from "./core/text";
+import { buildLayout, isScrollMode, isSpreadMode, medianUnit, rowAt, rowPages, unitOf, type Layout, type ScrollMode, type SpreadMode } from "./core/layout";
+import { setDocGeometry } from "./core/geometry";
+import { createPageCommands, PrintButton, ViewMenuButton } from "./core/layoutui";
+import { readerPrefs } from "../settings/readerPrefs";
 
 export const CSS_PER_PT = 96 / 72; // zoom 1 (100%) = 96 dpi, like the web reader
 export const GAP = 12; // between pages
 export const PAD = 16; // around the page column
+const SPREAD_GAP = 4; // between the two pages of a spread
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 6;
 const TEXT_CACHE = 40; // pages of text layer kept (selection, links and plugins use them)
@@ -97,6 +105,15 @@ export interface ReaderController {
 	coverage(): { page: number; vis: number; blank: number; soft: number; sharp: number; noSrc: number }[];
 	/** low-resolution page previews: rendered so far and still in flight */
 	previews(): { made: number; pending: number };
+	/** page layout (View menu): scroll mode and spreads */
+	layout(): { scroll: ScrollMode; spread: SpreadMode; rows: number };
+	setLayout(scroll?: ScrollMode, spread?: SpreadMode): void;
+	/** pages selected in the thumbnails (0-based) */
+	selectedPages(): number[];
+	selectPages(pages: number[]): void;
+	/** Rotate Pages / Delete Pages: change the PDF file (delete asks for confirmation unless `ask` is false) */
+	rotatePages(pages: number[], turns: number): Promise<void>;
+	deletePages(pages: number[], ask?: boolean): Promise<void>;
 }
 
 export interface ReaderProps {
@@ -289,7 +306,11 @@ export function Reader(props: ReaderProps): JSX.Element {
 			}
 			if (d.pageCount < 1) throw new Error("the PDF has no pages");
 			restoreState();
+			// re-opened after Rotate / Delete Pages: the same place, the view rotations on their pages
+			if (reopenWith) { saved = reopenWith.anchor; setPageRots(reopenWith.rots); reopenWith = undefined; }
+			setDocGeometry(key(), { rots: Array.from({ length: d.pageCount }, (_, i) => d.pageRotation(i)), sizes: d.sizes });
 			setDoc(d);
+			if (saved[0] > 0) { const r = rowOf(saved[0]); setWin([Math.max(0, r - 1), r + 3]); }
 		} catch (e) {
 			if (my !== loadGen || (e as Error).name === "AbortError") return;
 			setError(e instanceof Error ? e.message : String(e));
@@ -322,28 +343,43 @@ export function Reader(props: ReaderProps): JSX.Element {
 	/** displayed page size in PDF points */
 	const dispPt = (i: number): [number, number] => { const s = doc()!.sizes[i]!; return swapped(i) ? [s[1], s[0]] : s; };
 
-	const medianWidth = createMemo(() => {
-		const d = doc();
-		if (!d) return 612;
-		const ws = d.sizes.map((_, i) => dispPt(i)[0]).sort((a, b) => a - b);
-		return ws[ws.length >> 1] || 612;
-	});
-	const fitW = createMemo(() => clamp((Math.max(100, vp().w) - PAD * 2) / (medianWidth() * CSS_PER_PT), MIN_ZOOM, MAX_ZOOM));
+	// page layout (View menu, core/layout.ts): scroll mode and spreads, per document; new documents get the Settings default
+	const [scrollMode, setScrollMode] = createSignal<ScrollMode>(readerPrefs.scrollMode());
+	const [spreadMode, setSpreadMode] = createSignal<SpreadMode>(readerPrefs.spreadMode());
+	const horiz = () => scrollMode() === "horizontal";
+	// fit width / fit page fit a whole unit: with spreads, two pages side by side
+	const fitUnit = createMemo(() => { const d = doc(); return d ? medianUnit(d.pageCount, spreadMode(), (i) => dispPt(i)[0]) : { w: 612, pages: 1 }; });
+	const fitW = createMemo(() => clamp((Math.max(100, vp().w) - PAD * 2 - SPREAD_GAP * (fitUnit().pages - 1)) / (fitUnit().w * CSS_PER_PT), MIN_ZOOM, MAX_ZOOM));
 	const fitP = (): number => {
 		const d = doc();
 		if (!d) return 1;
-		const [w, h] = dispPt(untrack(curPage));
-		return clamp(Math.min((Math.max(100, vp().w) - PAD * 2) / (w * CSS_PER_PT), (Math.max(100, vp().h) - PAD * 2) / (h * CSS_PER_PT)), MIN_ZOOM, MAX_ZOOM);
+		const [a, b] = unitOf(d.pageCount, spreadMode(), untrack(curPage));
+		let w = 0, h = 0;
+		for (let i = a; i < b; i++) { const [pw, ph] = dispPt(i); w += pw; h = Math.max(h, ph); }
+		return clamp(Math.min((Math.max(100, vp().w) - PAD * 2 - SPREAD_GAP * (b - a - 1)) / (w * CSS_PER_PT), (Math.max(100, vp().h) - PAD * 2) / (h * CSS_PER_PT)), MIN_ZOOM, MAX_ZOOM);
 	};
 	const [fitPageZoom, setFitPageZoom] = createSignal(1);
 	const zoom = () => (zoomMode() === "width" ? fitW() : zoomMode() === "page" ? fitPageZoom() : zoomCustom());
 	const pageWidth = (i: number) => Math.max(8, Math.round(dispPt(i)[0] * CSS_PER_PT * zoom()));
 	const pageHeight = (i: number) => Math.round((pageWidth(i) * dispPt(i)[1]) / dispPt(i)[0]);
-	const rowPad = (i: number): [number, number] => [i === 0 ? PAD : GAP / 2, i === (doc()?.pageCount ?? 1) - 1 ? PAD : GAP / 2];
-	const rowHeight = (i: number) => pageHeight(i) + rowPad(i)[0] + rowPad(i)[1];
-	const maxWidthPt = createMemo(() => { const d = doc(); return d ? Math.max(1, ...d.sizes.map((_, i) => dispPt(i)[0])) : 612; });
-	/** width of the scrolled content: the viewport, or wider when the widest page (plus gutters) does not fit */
-	const innerWidth = () => Math.max(vp().w, Math.round(maxWidthPt() * CSS_PER_PT * zoom()) + PAD * 2);
+	// The pages grouped into rows (columns when scrolling horizontally): one row is one item of the virtual list, so every function
+	// below that walks the list works on ROWS; a page's row is rowOf(page). With no spreads and vertical scrolling a row is a page.
+	const layout = createMemo<Layout>(() => buildLayout({
+		n: doc()?.pageCount ?? 0, w: pageWidth, h: pageHeight, scroll: scrollMode(), spread: spreadMode(),
+		viewW: scrollMode() === "wrapped" ? vp().w : 0, pad: PAD, gap: GAP, spreadGap: SPREAD_GAP,
+	}));
+	const nRows = () => layout().rows;
+	/** main-axis extent of row r (a column's width when scrolling horizontally), its padding included */
+	const rowHeight = (r: number) => layout().ext[r] ?? 0;
+	const rowOf = (p: number) => layout().pageRow[clamp(p, 0, Math.max(0, layout().n - 1))] ?? 0;
+	/** where page p starts on the main axis inside its row */
+	const pageLead = (p: number) => { const L = layout(), r = rowOf(p); return (L.lead[r] ?? 0) + ((horiz() ? L.px[p] : L.py[p]) ?? 0); };
+	/** width of the scrolled content: the viewport, or wider when the widest row (plus gutters) does not fit; the whole strip when horizontal */
+	const innerWidth = () => (horiz() ? Math.max(vp().w, Math.round(layout().total)) : Math.max(vp().w, Math.round(layout().maxSize) + PAD * 2));
+	/** height of the horizontal strip: the viewport, or the tallest page plus gutters */
+	const innerHeight = () => Math.max(vp().h, Math.round(layout().maxSize) + PAD * 2);
+	/** top of column r's pages in the horizontal strip (the column is centred) */
+	const colTop = (r: number) => Math.max(PAD, Math.round((innerHeight() - (layout().size[r] ?? 0)) / 2));
 
 	// ---- the mounted pages -----------------------------------------------------------------------------------------
 	const stats: ReaderStats = { renders: 0, lastRenderMs: 0, lastUploadMs: 0, totalRenderMs: 0, cancelled: 0, tiles: 0, peakTiles: 0 };
@@ -352,19 +388,30 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const probe: PageEnv["probe"] = new Map();
 	const jobs: PageEnv["jobs"] = new Set();
 	const count = () => doc()?.pageCount ?? 0;
+	// vis, win and sp are in ROWS (see layout above); sp is the main-axis scroll position: the row at the viewport start, the offset
+	// into it and the viewport's length (its width when scrolling horizontally)
 	const [vis, setVis] = createSignal<[number, number]>([0, 1]);
 	const [win, setWin] = createSignal<[number, number]>([0, 3]);
 	const [sp, setSp] = createSignal({ idx: 0, off: 0, h: 0 }, { equals: eqScroll });
 	const [scrollX, setScrollX] = createSignal(0);
+	const [scrollY, setScrollY] = createSignal(0); // the horizontal strip's vertical offset (tall pages)
 	const [viewTick, setViewTick] = createSignal(0);
 	const bump = () => setViewTick((n) => n + 1);
-	const indices = createMemo(() => {
+	/** the mounted rows */
+	const rowIdx = createMemo(() => {
 		const [lo, hi0] = win();
-		let hi = Math.min(hi0, count());
+		let hi = Math.min(hi0, nRows());
 		if (props.window) hi = Math.min(hi, lo + Math.max(1, props.window));
 		return Array.from({ length: Math.max(0, hi - lo) }, (_, k) => lo + k);
 	});
-	const first = () => indices()[0] ?? 0;
+	/** the mounted pages */
+	const indices = createMemo(() => {
+		const L = layout(), rs = rowIdx();
+		if (!rs.length) return [];
+		const a = L.first[rs[0]!] ?? 0, b = L.first[rs[rs.length - 1]! + 1] ?? a;
+		return Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k);
+	}, [], { equals: (x, y) => x.length === y.length && x[0] === y[0] });
+	const first = () => rowIdx()[0] ?? 0;
 	// which way the reader scrolls (1 down, -1 up; down until the first move): the margin of pre-rendered tiles is long on that side
 	const [dir, setDir] = createSignal(0);
 	// ... and how far ahead: every live tile costs ~4x its pixel bytes in GPUIX (a 1000 px wide page at DPR 2 is ~18 MB per 256 px of height),
@@ -375,33 +422,35 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const vh = sp().h || vp().h || 800;
 		const ahead = clamp(Math.round((AHEAD_MIN + speed() * 0.3) / 50) * 50, AHEAD_MIN, AHEAD_MAX), behind = BEHIND;
 		const d = dir();
-		const mg: Margins = { up: d < 0 ? ahead : behind, down: d < 0 ? behind : ahead, keep: Math.round(vh * 0.1), ahead: d };
+		const mg: Margins = { up: d < 0 ? ahead : behind, down: d < 0 ? behind : ahead, keep: Math.round(vh * 0.1), ahead: d, axis: horiz() ? "x" : "y" };
 		return mg;
-	}, undefined, { equals: (a, b) => a.up === b.up && a.down === b.down && a.keep === b.keep && a.ahead === b.ahead });
+	}, undefined, { equals: (a, b) => a.up === b.up && a.down === b.down && a.keep === b.keep && a.ahead === b.ahead && a.axis === b.axis });
 	const laidOut = () => vp().w > 0 && sp().h > 0;
 	const MAX_MOUNT = 14;
-	/** the pages whose row touches the viewport or the margins (+ keep distance) around it: they are mounted, so their tiles can be rendered ahead of time */
+	/** the rows that touch the viewport or the margins (+ keep distance) around it: their pages are mounted, so their tiles can be rendered ahead of time */
 	function windowFor(s: { idx: number; off: number; h: number }): [number, number] {
-		const n = untrack(count);
+		const L = untrack(layout), n = L.rows;
 		if (!n) return [0, 0];
-		const m = untrack(margins), vh = s.h || untrack(vp).h || 800;
+		const m = untrack(margins), vh = s.h || (untrack(horiz) ? untrack(vp).w : untrack(vp).h) || 800;
 		const idx = clamp(s.idx, 0, n - 1);
-		let lo = idx, y = -s.off;
-		while (lo > 0 && y > -(m.up + m.keep)) { lo--; y -= rowHeight(lo); }
-		let hi = idx + 1;
-		y = -s.off + rowHeight(idx);
-		while (hi < n && y < vh + m.down + m.keep) { y += rowHeight(hi); hi++; }
-		hi = Math.min(n, Math.max(hi, idx + 1));
-		if (hi - lo > MAX_MOUNT) { lo = Math.max(0, Math.min(lo, idx - 2)); hi = Math.min(hi, lo + MAX_MOUNT); }
-		return [lo, hi];
+		const top = (L.start[idx] ?? 0) + s.off;
+		const lo = rowAt(L, top - (m.up + m.keep)), hi = Math.max(idx + 1, rowAt(L, top + vh + m.down + m.keep) + 1);
+		const pages = (a: number, b: number) => (L.first[b] ?? 0) - (L.first[a] ?? 0);
+		if (pages(lo, hi) <= MAX_MOUNT) return [lo, Math.min(n, hi)];
+		// too many pages: the visible rows (always), one row behind, and ahead as far as the page budget allows
+		const vlo = rowAt(L, top), vhi = Math.max(vlo + 1, rowAt(L, top + vh - 1) + 1);
+		const a = Math.max(lo, vlo - 1);
+		let b = vhi;
+		while (b < Math.min(n, hi) && pages(a, b + 1) <= MAX_MOUNT) b++;
+		return [a, Math.min(n, b)];
 	}
 	function updateWin(s: { idx: number; off: number; h: number }) {
 		const w = windowFor(s), cw = untrack(win);
 		if (w[0] !== cw[0] || w[1] !== cw[1]) setWin(w);
 	}
-	// row heights change with the zoom, the viewport and rotations (the first layout comes after the first scroll sample): re-fit the window
+	// row heights change with the zoom, the viewport, rotations and the layout (the first layout comes after the first scroll sample): re-fit the window
 	createEffect(() => {
-		zoom(); docRot(); pageRots(); vp();
+		zoom(); docRot(); pageRots(); vp(); layout();
 		if (!doc()) return;
 		untrack(() => { const s = sp(); if (s.h) updateWin(s); });
 	});
@@ -411,14 +460,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 	/** scroll speed from the move between two list positions (css px); a jump over many rows is not a speed */
 	function noteSpeed(prev: { idx: number; off: number }, n: { idx: number; off: number }) {
 		const now = performance.now();
-		let dy = n.off - prev.off;
-		if (n.idx !== prev.idx) {
-			if (Math.abs(n.idx - prev.idx) > 3) { speedAt = now; return; }
-			const [a, b] = n.idx > prev.idx ? [prev.idx, n.idx] : [n.idx, prev.idx];
-			let rows = 0;
-			for (let i = a; i < b; i++) rows += rowHeight(i);
-			dy += n.idx > prev.idx ? rows : -rows;
-		}
+		if (Math.abs(n.idx - prev.idx) > 3) { speedAt = now; return; }
+		const L = untrack(layout);
+		const dy = (L.start[n.idx] ?? 0) + n.off - (L.start[prev.idx] ?? 0) - prev.off;
 		const dt = Math.max(8, now - speedAt);
 		const v = speedAt ? Math.abs(dy) / (dt / 1000) : 0;
 		speedAt = now;
@@ -434,25 +478,35 @@ export function Reader(props: ReaderProps): JSX.Element {
 	}
 	onCleanup(() => clearTimeout(reprioTimer));
 	/** the page under a line 35% of the way down the viewport (the web reader's "current page") */
+	// (in a row of several pages: the first one that reaches into the viewport; scrolling horizontally: the one under that line)
 	const curPage = createMemo(() => {
 		const d = doc();
 		if (!d) return 0;
-		const s = sp();
+		const s = sp(), L = layout();
+		if (!L.rows) return 0;
+		let r: number, line = 0;
 		if (!s.h) {
 			const [a, b] = vis();
-			return clamp(Math.floor(a + 0.35 * Math.max(0, b - a)), 0, Math.max(0, count() - 1));
+			r = clamp(Math.floor(a + 0.35 * Math.max(0, b - a)), 0, L.rows - 1);
+		} else {
+			const pos = (L.start[clamp(s.idx, 0, L.rows - 1)] ?? 0) + s.off + 0.35 * s.h;
+			r = rowAt(L, pos);
+			line = pos - (L.start[r] ?? 0) - (L.lead[r] ?? 0);
 		}
-		let y = s.off + 0.35 * s.h, i = s.idx;
-		while (i < count() - 1 && y >= rowHeight(i)) { y -= rowHeight(i); i++; }
-		return clamp(i, 0, Math.max(0, count() - 1));
+		const a = L.first[r] ?? 0, b = L.first[r + 1] ?? a + 1;
+		if (b - a > 1) {
+			// the viewport's left edge in the row's content (vertical rows are centred in the content width)
+			const x0 = horiz() ? line : -scrollX() - (innerWidth() - (L.size[r] ?? 0)) / 2;
+			for (let i = a; i < b; i++) if ((L.px[i] ?? 0) + pageWidth(i) > x0 + 1) return i;
+			return b - 1;
+		}
+		return clamp(a, 0, Math.max(0, count() - 1));
 	});
 	const estimate = createMemo(() => {
-		const d = doc();
-		if (!d) return 800;
-		let sum = 0;
-		const n = Math.min(d.pageCount, 20);
-		for (let i = 0; i < n; i++) sum += pageHeight(i);
-		return Math.round(sum / Math.max(1, n)) + GAP;
+		const L = layout();
+		if (!L.rows) return 800;
+		const n = Math.min(L.rows, 20);
+		return Math.round((L.start[n] ?? 0) / n);
 	});
 
 	/** the scroll anchor before a Ctrl+wheel zoom started (the wheel scrolls the list as well; the zoom puts the position back) */
@@ -464,10 +518,32 @@ export function Reader(props: ReaderProps): JSX.Element {
 	let searchEl: { id: number } | undefined;
 	let paneEl: { id: number } | undefined; // the box the selection popup is positioned in
 
-	function refreshScroll() {
+	/** the main-axis scroll position as the list (or, scrolling horizontally, the strip) has it now */
+	function readScroll(): { idx: number; off: number; h: number } | null {
+		if (untrack(horiz)) {
+			const o = hbox ? gpuix?.renderer.getScrollOffset?.(hbox.id) : null;
+			const w = Math.round(untrack(vp).w);
+			if (!o || !w) return null;
+			const L = untrack(layout), x = Math.max(0, -(o[0] ?? 0)), idx = rowAt(L, x);
+			return { idx, off: Math.round(x - (L.start[idx] ?? 0)), h: w };
+		}
 		const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
-		if (a && a.length >= 3) {
-			const n = { idx: clamp(a[0]!, 0, Math.max(0, count() - 1)), off: Math.round(a[1]!), h: Math.round(a[2]!) };
+		if (!a || a.length < 3) return null;
+		return { idx: clamp(a[0]!, 0, Math.max(0, untrack(nRows) - 1)), off: Math.round(a[1]!), h: Math.round(a[2]!) };
+	}
+	function refreshScroll() {
+		const n = readScroll();
+		if (n) {
+			if (untrack(horiz) && hbox) {
+				// the strip has no visible-range event: the visible rows and the vertical offset come from here
+				const L = untrack(layout), o = gpuix?.renderer.getScrollOffset?.(hbox.id);
+				const y = Math.round(o?.[1] ?? 0);
+				if (y !== untrack(scrollY)) { setScrollY(y); bump(); }
+				const x = (L.start[n.idx] ?? 0) + n.off, e = rowAt(L, x + n.h - 1);
+				const v: [number, number] = [n.idx + n.off / Math.max(1, rowHeight(n.idx)), e + Math.min(1, (x + n.h - (L.start[e] ?? 0)) / Math.max(1, rowHeight(e)))];
+				const cv = untrack(vis);
+				if (Math.abs(cv[0] - v[0]) > 1e-3 || Math.abs(cv[1] - v[1]) > 1e-3) setVis(v);
+			}
 			const prev = untrack(sp);
 			if (!eqScroll(prev, n)) {
 				const moved = n.idx !== prev.idx ? n.idx - prev.idx : n.off - prev.off;
@@ -483,7 +559,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const a = e.startIndex ?? 0, b = e.endIndex ?? a + 1;
 		setVis([a, b]);
 		refreshScroll();
-		const lo = Math.max(0, Math.floor(a) - 1), hi = Math.min(untrack(count), Math.ceil(b) + 1);
+		const lo = Math.max(0, Math.floor(a) - 1), hi = Math.min(untrack(nRows), Math.ceil(b) + 1);
 		// once the scroll position is known refreshScroll() owns the window (pages inside the margins); until then trust the list's range
 		const w = untrack(win);
 		if (!untrack(sp).h && (w[0] !== lo || w[1] !== hi)) setWin([lo, hi]);
@@ -491,33 +567,56 @@ export function Reader(props: ReaderProps): JSX.Element {
 		saveSoon();
 	};
 
-	/** where the viewport top is: [page, fraction of that page's row above the top] */
+	/** where the viewport top (left, scrolling horizontally) is: [first page of the row there, fraction of that row before it]; a page, so it survives a layout change */
 	function anchor(): [number, number] {
-		const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
-		if (a && a.length >= 2) {
-			const i = clamp(a[0]!, 0, Math.max(0, count() - 1));
-			return [i, clamp(a[1]! / Math.max(1, rowHeight(i)), 0, 1)];
+		const L = untrack(layout), s = readScroll();
+		if (s && L.rows) {
+			const r = clamp(s.idx, 0, L.rows - 1);
+			return [L.first[r] ?? 0, clamp(s.off / Math.max(1, L.ext[r] ?? 1), 0, 1)];
 		}
-		const v = untrack(vis)[0];
-		return [Math.floor(v), v - Math.floor(v)];
+		const v = untrack(vis)[0], r = clamp(Math.floor(v), 0, Math.max(0, L.rows - 1));
+		return [L.first[r] ?? 0, v - Math.floor(v)];
 	}
-	function scrollTo(page: number, offset = 0) {
-		const idx = clamp(page, 0, Math.max(0, count() - 1));
-		setWin([Math.max(0, idx - 1), Math.min(count(), idx + 3)]);
-		if (list) gpuix?.renderer.scrollToItem?.(list.id, idx, offset);
+	/** scroll so that `offset` css px of row r are before the viewport start */
+	function scrollToRow(row: number, offset = 0) {
+		const r = clamp(row, 0, Math.max(0, nRows() - 1));
+		setWin([Math.max(0, r - 1), Math.min(nRows(), r + 3)]);
+		if (horiz()) {
+			const x = clamp((layout().start[r] ?? 0) + offset, 0, Math.max(0, innerWidth() - vp().w));
+			if (hbox) gpuix?.renderer.scrollTo?.(hbox.id, -x, scrollY());
+		} else if (list) gpuix?.renderer.scrollToItem?.(list.id, r, offset);
 		queueMicrotask(refreshScroll);
 	}
+	/** scroll to page's row, `offset` css px into the row */
+	const scrollTo = (page: number, offset = 0) => scrollToRow(rowOf(page), offset);
 	function restore([page, frac]: [number, number]) {
-		scrollTo(page, Math.round(frac * rowHeight(clamp(page, 0, Math.max(0, count() - 1)))));
+		scrollTo(page, Math.round(frac * rowHeight(rowOf(page))));
 	}
-	/** scroll by dy css px (positive = down), carrying the offset across page rows */
+	/** scroll by dy css px along the main axis (positive = down / right), carrying the offset across rows */
 	function scrollBy(dy: number) {
-		const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
-		if (!a || a.length < 2) return;
-		let idx = clamp(a[0]!, 0, count() - 1), off = a[1]! + dy;
-		while (off >= rowHeight(idx) && idx < count() - 1) { off -= rowHeight(idx); idx++; }
-		while (off < 0 && idx > 0) { idx--; off += rowHeight(idx); }
-		scrollTo(idx, Math.max(0, Math.round(off)));
+		const s = readScroll();
+		if (!s) return;
+		const L = layout(), pos = clamp((L.start[s.idx] ?? 0) + s.off + dy, 0, L.total), r = rowAt(L, pos);
+		scrollToRow(r, Math.max(0, Math.round(pos - (L.start[r] ?? 0))));
+	}
+	/** the strip's vertical offset (horizontal scrolling, pages taller than the viewport): `y` css px of the strip above the viewport */
+	function scrollStripY(y: number) {
+		if (!hbox || !horiz()) return;
+		const o = gpuix?.renderer.getScrollOffset?.(hbox.id);
+		const yy = -clamp(Math.round(y), 0, Math.max(0, innerHeight() - vp().h));
+		gpuix?.renderer.scrollTo?.(hbox.id, o?.[0] ?? 0, yy);
+		setScrollY(yy);
+		bump();
+	}
+	/** bring the point (nx, ny) of page p (0..1 of the page as displayed) `atY` css px below the viewport top (and, scrolling
+	 *  horizontally, `atX` px right of its left edge) */
+	function reveal(p: number, nx: number, ny: number, atY: number, atX = PAD) {
+		if (horiz()) {
+			scrollTo(p, Math.max(0, Math.round(pageLead(p) + nx * pageWidth(p) - atX)));
+			if (innerHeight() > vp().h) scrollStripY(colTop(rowOf(p)) + (layout().py[p] ?? 0) + ny * pageHeight(p) - atY);
+			return;
+		}
+		scrollTo(p, Math.max(0, Math.round(pageLead(p) + ny * pageHeight(p) - atY)));
 	}
 	/** run a layout change (zoom, resize, rotation) and keep the same spot of the document at the top, and the same column centred */
 	function keepAnchor(change: () => void) {
@@ -526,7 +625,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const sx0 = hbox ? gpuix?.renderer.getScrollOffset?.(hbox.id)?.[0] ?? 0 : 0;
 		change();
 		if (a && (a[0] > 0 || a[1] > 0)) queueMicrotask(() => restore(a));
-		if (hbox) {
+		if (hbox && !horiz()) {
 			const w1 = innerWidth(), v1 = vp().w, ratio = zoom() / z0;
 			const cx = (-sx0 + v0 / 2 - w0 / 2) * ratio + w1 / 2; // the content x that was in the middle of the viewport
 			const sx1 = clamp(-(cx - v1 / 2), -Math.max(0, w1 - v1), 0);
@@ -569,13 +668,16 @@ export function Reader(props: ReaderProps): JSX.Element {
 
 	// the viewport in a page's own css coordinates
 	function viewFor(i: number, s = sp()): ViewRect {
+		const L = layout(), r = L.pageRow[i] ?? 0, idx = clamp(s.idx, 0, Math.max(0, L.rows - 1));
+		// the viewport start relative to the content of page i's row: `off` into the anchor row, moved by the rows in between
+		const pos = (L.start[idx] ?? 0) + s.off - (L.start[r] ?? 0) - (L.lead[r] ?? 0);
+		if (horiz()) {
+			const x0 = pos - (L.px[i] ?? 0), y0 = -scrollY() - colTop(r) - (L.py[i] ?? 0);
+			return { x0, x1: x0 + vp().w, y0, y1: y0 + vp().h };
+		}
 		const vh = s.h || vp().h;
-		// the viewport top inside page i's row: `off` into the anchor row, minus every row between the anchor and page i (plus, for pages above it)
-		let top = s.off;
-		if (i > s.idx) for (let k = s.idx; k < i; k++) top -= rowHeight(k);
-		else for (let k = i; k < s.idx; k++) top += rowHeight(k);
-		const y0 = top - rowPad(i)[0];
-		const left = (innerWidth() - pageWidth(i)) / 2;
+		const y0 = pos - (L.py[i] ?? 0);
+		const left = (innerWidth() - (L.size[r] ?? 0)) / 2 + (L.px[i] ?? 0);
 		const x0 = -scrollX() - left;
 		return { x0, x1: x0 + vp().w, y0, y1: y0 + vh };
 	}
@@ -593,7 +695,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		saveTimer = undefined;
 		if (!persist || !doc() || !list) return;
 		const [page, frac] = anchor();
-		setDocState(key(), { page, frac, zoomMode: zoomMode(), zoom: zoomMode() === "page" ? fitPageZoom() : zoomCustom(), rot: docRot(), rots: Object.fromEntries(Object.entries(pageRots()).filter(([, v]) => v)) });
+		setDocState(key(), { page, frac, zoomMode: zoomMode(), zoom: zoomMode() === "page" ? fitPageZoom() : zoomCustom(), rot: docRot(), rots: Object.fromEntries(Object.entries(pageRots()).filter(([, v]) => v)), scroll: scrollMode(), spread: spreadMode() });
 	}
 	function saveSoon() {
 		if (!persist || saveTimer) return;
@@ -612,12 +714,16 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const m: Record<number, number> = {};
 		for (const [k, v] of Object.entries(s.rots ?? {})) if ([90, 180, 270].includes(v as number)) m[+k] = v as number;
 		setPageRots(m);
+		if (isScrollMode(s.scroll)) setScrollMode(s.scroll);
+		if (isSpreadMode(s.spread)) setSpreadMode(s.spread);
 		saved = [Math.max(0, Math.floor(s.page)), clamp(s.frac, 0, 1)];
 		setWin([Math.max(0, saved[0] - 1), saved[0] + 3]);
 	}
 
-	// ---- the list's lifecycle: inactive tab, alternate view -------------------------------------------------------------
+	// ---- the list's lifecycle: inactive tab, alternate view, page layout -----------------------------------------------
 	let saved: [number, number] = [0, 0];
+	/** set by Rotate / Delete Pages for the next load(): where to be, and the view rotations of the pages that remain */
+	let reopenWith: { anchor: [number, number]; rots: Record<number, number> } | undefined;
 	const [altView, setAltViewSig] = createSignal<string | null>(null);
 	const pagesShown = createMemo(() => active() && !altView() && !!doc());
 	createEffect(on(pagesShown, (shown, prev) => {
@@ -625,7 +731,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 		// the page list is about to be unmounted: remember where we were, free what hayro cached
 		saved = untrack(() => (list ? anchor() : [Math.floor(vis()[0]), vis()[0] - Math.floor(vis()[0])]));
 		saveNow();
-		setWin([Math.max(0, saved[0] - 1), saved[0] + 3]);
+		const r = untrack(() => rowOf(saved[0]));
+		setWin([Math.max(0, r - 1), r + 3]);
 		list = undefined;
 		// (the queue is not cleared: tiles cancel their own jobs when they unmount, and the sidebar's thumbnails still need theirs)
 		doc()?.clearCache();
@@ -636,8 +743,60 @@ export function Reader(props: ReaderProps): JSX.Element {
 			const s = saved;
 			saved = [0, 0];
 			setTimeout(() => restore(s), 0);
+			// the horizontal strip clamps a scroll set before its content is laid out: once more after the first frames
+			if (untrack(horiz)) setTimeout(() => restore(s), 60);
 		}
 	}
+	/** View menu: switch the scroll mode and / or spreads, keeping the same page at the top */
+	function setLayout(scroll?: ScrollMode, spread?: SpreadMode) {
+		const sm = scroll ?? scrollMode(), pm = spread ?? spreadMode();
+		if (sm === scrollMode() && pm === spreadMode()) return;
+		const a: [number, number] = doc() && list ? anchor() : [curPage(), 0];
+		const modeChanged = (sm === "horizontal") !== horiz();
+		// the list and the strip are different elements: the new one restores the position when it mounts (onListRef)
+		if (modeChanged) { saved = [a[0], Math.max(a[1], 1e-6)]; list = undefined; }
+		batch(() => {
+			setScrollMode(sm);
+			setSpreadMode(pm);
+			setSp({ idx: 0, off: 0, h: 0 }); // the old position is in the old rows: wait for the new one
+		});
+		const r = rowOf(a[0]);
+		batch(() => {
+			setVis([r, r + 1]);
+			setWin([Math.max(0, r - 1), r + 3]);
+			if (zoomMode() === "page") setFitPageZoom(fitP());
+		});
+		if (!modeChanged) {
+			queueMicrotask(() => restore(a));
+			setTimeout(() => restore(a), 60);
+		}
+		bump();
+		saveSoon();
+	}
+	// the toolbar's View menu and the thumbnails' commands change the PDF file through these (core/layoutui.tsx, core/pageops.ts)
+	const [selPages, setSelPages] = createSignal<number[]>([]);
+	const cmds = createPageCommands({
+		attachmentKey: () => key(),
+		path: () => props.path,
+		title: () => props.title ?? "",
+		doc,
+		curPage: () => curPage(),
+		selected: () => (sbOpen() && sbTab() === "thumbs" ? selPages() : []),
+		read: async () => (props.path ? new Uint8Array(await Bun.file(props.path).arrayBuffer()) : fetchAttachment(props.attachmentKey)),
+		canEdit: () => !props.doc,
+		reopen: async (map) => {
+			const a = list ? anchor() : saved;
+			let page = a[0];
+			// a deleted page: the next one that remains (or the last)
+			for (let p = a[0]; p < count() && (page = map(p)) < 0; p++);
+			if (page < 0) for (let p = a[0]; p >= 0 && (page = map(p)) < 0; p--);
+			const rots: Record<number, number> = {};
+			for (const [k, v] of Object.entries(untrack(pageRots))) { const m = map(+k); if (m >= 0 && v) rots[m] = v; }
+			setSelPages((s) => s.map(map).filter((p) => p >= 0));
+			reopenWith = { anchor: [Math.max(0, page), map(a[0]) >= 0 ? a[1] : 0], rots };
+			await load();
+		},
+	});
 
 	// ---- text layers + links ----------------------------------------------------------------------------------------------
 	const textCache = new Map<number, PageText>();
@@ -737,9 +896,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 		if (!doc()) return;
 		if (record) setHistory((h) => [...h.slice(-30), anchor()]);
 		const p = clamp(page, 0, count() - 1);
-		let off = 0;
-		if (y >= 0 && rotOf(p) === 0) off = Math.max(0, Math.round(rowPad(p)[0] + y * pageHeight(p) - 36));
-		scrollTo(p, off);
+		if (y >= 0 && rotOf(p) === 0) reveal(p, 0, y, 36);
+		else if (horiz()) reveal(p, 0, 0, 0);
+		else scrollTo(p, 0);
 	}
 	const goBack = () => {
 		const h = history();
@@ -773,8 +932,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 		if (!h) return;
 		setCur(id);
 		const r = rotRect(h.rects[0]!, rotOf(h.page));
-		// put the hit about a third of the way down the viewport
-		scrollTo(h.page, Math.max(0, Math.round(rowPad(h.page)[0] + r.y * pageHeight(h.page) - untrack(vp).h * 0.3)));
+		// put the hit about a third of the way down the viewport (and across it, scrolling horizontally)
+		reveal(h.page, r.x, r.y, untrack(vp).h * 0.3, untrack(vp).w * 0.3);
 	}
 	async function runSearch(q: string): Promise<void> {
 		const my = ++scanGen;
@@ -1035,7 +1194,12 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const core: SideTab[] = [
 			{
 				id: "thumbs", label: "Pages", icon: "layout-grid",
-				render: () => <Thumbnails mode={mode} doc={doc} sched={sched} dpr={dpr} look={look} rot={rotOf} epoch={thumbEpoch} curPage={curPage} goTo={(p) => goTo(p, -1, false)} />,
+				render: () => (
+					<Thumbnails
+						mode={mode} doc={doc} sched={sched} dpr={dpr} look={look} rot={rotOf} epoch={thumbEpoch} curPage={curPage} goTo={(p) => goTo(p, -1, false)}
+						selected={selPages} onSelect={setSelPages} onMenu={(p, x, y) => cmds.thumbMenu(p, x, y, selPages, setSelPages)}
+					/>
+				),
 			},
 			{ id: "outline", label: "Outline", icon: "list-tree", render: () => <Outline mode={mode} outline={outline} goTo={(p, y) => goTo(p, y)} curPage={curPage} /> },
 		];
@@ -1074,6 +1238,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 			if (k === "[") { stop(); rotate(-90, m.shift ? curPage() : undefined); return; }
 			if (k === "g") { stop(); step(m.shift ? -1 : 1); return; }
 			if (k === "c" && onRoot && selInfo()) { stop(); doCopy(); return; }
+			if (k === "p") { stop(); void cmds.print(); return; }
 			return;
 		}
 		if (k === "f3") { stop(); step(m.shift ? -1 : 1); return; }
@@ -1091,13 +1256,16 @@ export function Reader(props: ReaderProps): JSX.Element {
 			case "pageup": stop(); scrollBy(-vh * 0.9); break;
 			case "space": stop(); scrollBy(m.shift ? -vh * 0.9 : vh * 0.9); break;
 			case "home": stop(); goTo(0, -1, false); break;
-			case "end": stop(); scrollTo(count() - 1, Math.max(0, rowHeight(count() - 1) - vh)); break;
-			case "down": stop(); scrollBy(48); break;
-			case "up": stop(); scrollBy(-48); break;
-			case "right": stop(); if (innerWidth() > vp().w && hbox) panX(-48); else goTo(curPage() + 1, -1, false); break;
-			case "left": stop(); if (innerWidth() > vp().w && hbox) panX(48); else goTo(curPage() - 1, -1, false); break;
+			case "end": stop(); scrollToRow(nRows() - 1, Math.max(0, rowHeight(nRows() - 1) - vh)); break;
+			// scrolling horizontally: up / down move over a page taller than the viewport, left / right go to the previous / next page
+			case "down": stop(); if (horiz()) { if (innerHeight() > vp().h) scrollStripY(-scrollY() + 48); else stepRow(1); } else scrollBy(48); break;
+			case "up": stop(); if (horiz()) { if (innerHeight() > vp().h) scrollStripY(-scrollY() - 48); else stepRow(-1); } else scrollBy(-48); break;
+			case "right": stop(); if (!horiz() && innerWidth() > vp().w && hbox) panX(-48); else stepRow(1); break;
+			case "left": stop(); if (!horiz() && innerWidth() > vp().w && hbox) panX(48); else stepRow(-1); break;
 		}
 	}
+	/** the next / previous row (a page, a spread, a wrapped row of pages) */
+	const stepRow = (d: number) => goTo(layout().first[clamp(rowOf(curPage()) + d, 0, Math.max(0, nRows() - 1))] ?? 0, -1, false);
 	function panX(dx: number) {
 		if (!hbox) return;
 		const cur0 = gpuix?.renderer.getScrollOffset?.(hbox.id)?.[0] ?? 0;
@@ -1105,7 +1273,17 @@ export function Reader(props: ReaderProps): JSX.Element {
 	}
 	// Ctrl + wheel zooms (the page list scrolls too: its own wheel handling runs first, so the scroll position is put back)
 	const onWheel = (e: EventPayload) => {
-		if (!(e.modifiers?.ctrl || e.modifiers?.cmd)) { refreshScroll(); queueMicrotask(refreshScroll); return; }
+		if (!(e.modifiers?.ctrl || e.modifiers?.cmd)) {
+			// the horizontal strip: GPUIX keeps a sideways-only scroll box to the wheel's own axis, so an ordinary (vertical) wheel moves
+			// it here, as long as the pages fit the height (when they do not, the wheel scrolls up and down)
+			const dy = e.deltaY ?? 0;
+			if (horiz() && hbox && !(e.deltaX ?? 0) && dy && innerHeight() <= vp().h + 1) {
+				const o = gpuix?.renderer.getScrollOffset?.(hbox.id) ?? [0, 0];
+				const x = clamp((o[0] ?? 0) + (e.precise ? dy : dy * 26), -Math.max(0, innerWidth() - vp().w), 0);
+				gpuix?.renderer.scrollTo?.(hbox.id, x, o[1] ?? 0);
+			}
+			refreshScroll(); queueMicrotask(refreshScroll); return;
+		}
 		const dy = e.deltaY ?? 0;
 		if (!dy) return;
 		zoomingUntil = performance.now() + 500;
@@ -1148,7 +1326,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		outline,
 		setSidebar,
 		setAltView: (id) => setAltViewSig(id),
-		debug: () => ({ sp: sp(), vis: vis(), win: win(), vp: vp(), zoom: zoom(), scrollX: scrollX(), view: indices().map((i) => ({ i, v: viewFor(i), h: pageHeight(i), w: pageWidth(i) })), raw: list ? gpuix?.renderer.getListScrollTop?.(list.id) : null }),
+		debug: () => ({ sp: sp(), vis: vis(), win: win(), vp: vp(), zoom: zoom(), scrollX: scrollX(), scrollY: scrollY(), scroll: scrollMode(), spread: spreadMode(), rows: nRows(), curPage: curPage(), inner: [innerWidth(), innerHeight()], view: indices().map((i) => ({ i, v: viewFor(i), h: pageHeight(i), w: pageWidth(i) })), raw: readScroll() }),
 		key: (e) => onKey({ key: e.key, modifiers: { ctrl: e.ctrl, shift: e.shift, alt: e.alt } }),
 		wheel: (dy) => {
 			const b = paneEl ? gpuix?.renderer.getElementBounds?.(paneEl.id) : null;
@@ -1157,13 +1335,18 @@ export function Reader(props: ReaderProps): JSX.Element {
 			return true;
 		},
 		coverage: () => {
-			const a = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
-			if (!a || a.length < 3) return [];
-			const s = { idx: a[0]!, off: a[1]!, h: a[2]! };
+			const s = readScroll();
+			if (!s) return [];
 			const out: { page: number; vis: number; blank: number; soft: number; sharp: number; noSrc: number }[] = [];
 			for (const [page, f] of probe) { const r = f(viewFor(page, s)); if (r.vis > 0) out.push({ page, ...r }); }
 			return out;
 		},
+		layout: () => ({ scroll: scrollMode(), spread: spreadMode(), rows: nRows() }),
+		setLayout,
+		selectedPages: () => selPages(),
+		selectPages: (p) => setSelPages([...new Set(p)].sort((a, b) => a - b)),
+		rotatePages: (pages, turns) => cmds.rotate(turns, pages),
+		deletePages: (pages, ask = true) => cmds.remove(pages, ask),
 	});
 
 	// ---- view -------------------------------------------------------------------------------------------------------------------------
@@ -1212,6 +1395,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 				<IconButton icon="rotate-ccw" title="Rotate left (Ctrl+[)" mode={mode} onClick={() => rotate(-90)} />
 				<IconButton icon="rotate-cw" title="Rotate right (Ctrl+])" mode={mode} onClick={() => rotate(90)} />
 				<IconButton icon="palette" title="Page appearance" mode={mode} on={openMenu() === "appearance" || appearance().mode !== "normal"} onClick={() => setOpenMenu(openMenu() === "appearance" ? null : "appearance")} />
+				<ViewMenuButton mode={mode} scroll={scrollMode} spread={spreadMode} setLayout={setLayout} cmds={cmds} />
+				<PrintButton mode={mode} cmds={cmds} />
 
 				{sep()}
 
@@ -1293,10 +1478,12 @@ export function Reader(props: ReaderProps): JSX.Element {
 	createEffect(() => {
 		const pv = previews();
 		if (!pv || !active() || !laidOut()) return;
-		vis(); win(); dir(); docRot(); pageRots(); look(); dpr(); sp();
+		vis(); win(); dir(); docRot(); pageRots(); look(); dpr(); sp(); layout();
 		untrack(() => {
-			const n = count(), dr = dir() || 1, [a, b] = vis();
-			const lo = clamp(Math.floor(a), 0, n - 1), hi = clamp(Math.ceil(b), lo + 1, n);
+			// vis is in rows: the visible pages are those of the visible rows
+			const n = count(), dr = dir() || 1, [a, b] = vis(), L = layout();
+			const ra = clamp(Math.floor(a), 0, Math.max(0, L.rows - 1)), rb = clamp(Math.ceil(b), ra + 1, L.rows);
+			const lo = clamp(L.first[ra] ?? 0, 0, n - 1), hi = clamp(L.first[rb] ?? n, lo + 1, n);
 			const want = new Map<number, PreviewWant>();
 			const add = (page: number, prio: number) => {
 				if (page < 0 || page >= n) return;
@@ -1347,6 +1534,97 @@ export function Reader(props: ReaderProps): JSX.Element {
 		return { x, y };
 	});
 
+	const pageSlot = (env: PageEnv, i: number) => (
+		<PageSlot
+			env={env}
+			index={i}
+			boxW={() => pageWidth(i)}
+			boxH={() => pageHeight(i)}
+			rot={() => rotOf(i)}
+			view={() => viewFor(i)}
+			hits={() => hitsByPage().get(i) ?? []}
+			currentHit={cur}
+			selection={() => selRectsFor(i)}
+			links={() => linksOf(i)}
+			onLink={(l, e) => activateLink(i, l, e)}
+			overlays={overlaysFor(i)}
+			debugWords={() => (props.debugWords ? (textVer(), peekText(i)?.words.map((w) => ({ x: w.x, y: w.y, w: w.w, h: w.h })) ?? null) : null)}
+			selColor={selColor}
+			hitColor={HIT}
+			hitCurColor={HIT_CUR}
+		/>
+	);
+	/** the pages of row r side by side (a spread, a wrapped row), each at its offset from core/layout.ts */
+	const rowContent = (env: PageEnv, r: number) => (
+		<For each={rowPages(layout(), r)}>
+			{(i) => (
+				<div style={{ display: "flex", flexShrink: 0, marginLeft: i === layout().first[r] ? 0 : (layout().px[i] ?? 0) - (layout().px[i - 1] ?? 0) - pageWidth(i - 1), marginTop: layout().py[i] ?? 0 }}>
+					{pageSlot(env, i)}
+				</div>
+			)}
+		</For>
+	);
+	/** vertical and wrapped scrolling: a virtual list of rows inside a box that pans sideways when a row is wider than the viewport */
+	const verticalPages = (env: PageEnv) => (
+		<div
+			ref={(el: { id: number }) => { hbox = el; }}
+			onLayout={onViewport}
+			onScrollChange={(e: EventPayload) => { setScrollX(Math.round(e.scrollX ?? 0)); bump(); }}
+			onMouseDown={onMouseDown}
+			onMouseMove={onMouseMove}
+			onMouseUp={onMouseUp}
+			onScroll={onWheel}
+			style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%", overflowX: "scroll" }}
+		>
+			<div style={{ display: "flex", flexDirection: "column", flexShrink: 0, width: innerWidth(), height: "100%" }}>
+				<virtual-list
+					ref={onListRef}
+					testId="reader-pages"
+					itemCount={nRows()}
+					windowStart={first()}
+					estimatedItemHeight={estimate()}
+					overdraw={300}
+					onVisibleRange={onVisibleRange}
+					style={{ width: "100%", flexGrow: 1, minHeight: 0 }}
+				>
+					<For each={rowIdx()}>
+						{(r) => (
+							<div style={{ display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "flex-start", width: "100%", paddingTop: layout().lead[r] ?? 0, paddingBottom: layout().trail[r] ?? 0 }}>
+								{rowContent(env, r)}
+							</div>
+						)}
+					</For>
+				</virtual-list>
+			</div>
+		</div>
+	);
+	/** horizontal scrolling: a strip as wide as all columns, scrolled sideways, with only the columns near the viewport mounted after
+	 *  a spacer (an overflow box lays out its children every frame, so it must not hold every page) */
+	const horizontalPages = (env: PageEnv) => (
+		<div
+			ref={(el: { id: number }) => { hbox = el; onListRef(el); }}
+			testId="reader-pages"
+			onLayout={onViewport}
+			onScrollChange={(e: EventPayload) => { setScrollY(Math.round(e.scrollY ?? 0)); refreshScroll(); bump(); }}
+			onMouseDown={onMouseDown}
+			onMouseMove={onMouseMove}
+			onMouseUp={onMouseUp}
+			onScroll={onWheel}
+			style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%", overflowX: "scroll", overflowY: innerHeight() > vp().h + 1 ? "scroll" : "hidden" }}
+		>
+			<div style={{ display: "flex", flexDirection: "row", flexShrink: 0, alignItems: "flex-start", width: innerWidth(), height: innerHeight() }}>
+				<div style={{ flexShrink: 0, width: layout().start[first()] ?? 0, height: 1 }} />
+				<For each={rowIdx()}>
+					{(r) => (
+						<div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", flexShrink: 0, width: layout().ext[r] ?? 0, paddingLeft: layout().lead[r] ?? 0, paddingTop: colTop(r) }}>
+							{rowContent(env, r)}
+						</div>
+					)}
+				</For>
+			</div>
+		</div>
+	);
+
 	const body = (env: PageEnv) => (
 		<div onLayout={(e: EventPayload) => setBodyW(e.width ?? 0)} style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%" }}>
 			{/* the sidebar (annotations, figures, references…) stays available in the reading view too; Contents there is a dropdown */}
@@ -1356,56 +1634,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 			<div ref={(el: { id: number }) => { paneEl = el; }} onLayout={onViewport} style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, minHeight: 0, position: "relative", backgroundColor: tok("muted") }}>
 				<Show
 					when={curAlt()}
-					fallback={
-						<div
-							ref={(el: { id: number }) => { hbox = el; }}
-							onLayout={onViewport}
-							onScrollChange={(e: EventPayload) => { setScrollX(Math.round(e.scrollX ?? 0)); bump(); }}
-							onMouseDown={onMouseDown}
-							onMouseMove={onMouseMove}
-							onMouseUp={onMouseUp}
-							onScroll={onWheel}
-							style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%", overflowX: "scroll" }}
-						>
-							<div style={{ display: "flex", flexDirection: "column", flexShrink: 0, width: innerWidth(), height: "100%" }}>
-								<virtual-list
-									ref={onListRef}
-									testId="reader-pages"
-									itemCount={count()}
-									windowStart={first()}
-									estimatedItemHeight={estimate()}
-									overdraw={300}
-									onVisibleRange={onVisibleRange}
-									style={{ width: "100%", flexGrow: 1, minHeight: 0 }}
-								>
-									<For each={indices()}>
-										{(i) => (
-											<div style={{ display: "flex", flexDirection: "row", justifyContent: "center", width: "100%", paddingTop: rowPad(i)[0], paddingBottom: rowPad(i)[1] }}>
-												<PageSlot
-													env={env}
-													index={i}
-													boxW={() => pageWidth(i)}
-													boxH={() => pageHeight(i)}
-													rot={() => rotOf(i)}
-													view={() => viewFor(i)}
-													hits={() => hitsByPage().get(i) ?? []}
-													currentHit={cur}
-													selection={() => selRectsFor(i)}
-													links={() => linksOf(i)}
-													onLink={(l, e) => activateLink(i, l, e)}
-													overlays={overlaysFor(i)}
-													debugWords={() => (props.debugWords ? (textVer(), peekText(i)?.words.map((w) => ({ x: w.x, y: w.y, w: w.w, h: w.h })) ?? null) : null)}
-													selColor={selColor}
-													hitColor={HIT}
-													hitCurColor={HIT_CUR}
-												/>
-											</div>
-										)}
-									</For>
-								</virtual-list>
-							</div>
-						</div>
-					}
+					fallback={<Show when={horiz()} fallback={verticalPages(env)}>{horizontalPages(env)}</Show>}
 				>
 					{(av) => <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%" }}><Show when={ctxSig()}>{av().render(ctx())}</Show></div>}
 				</Show>

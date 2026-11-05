@@ -15,6 +15,7 @@ import { handleIoApi } from "./io/api";
 import { handleSearchesApi } from "./searches/api";
 import { handleMaintenanceApi } from "./maintenance/api";
 import { handleFilesApi } from "./files/api";
+import { replaceAttachmentFile } from "./files/replace";
 
 // Feature route modules; each returns null for paths outside its prefix.
 import { handleUiApi } from "./connector/ui";
@@ -279,6 +280,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 
 	if (a === "attachments" && n === 3) {
 		if (c === "file") {
+			if (m === "PUT") return json(await replaceAttachmentFile(db, b, req)); // the reader's Rotate / Delete Pages (files/replace.ts)
 			if (m !== "GET" && m !== "HEAD") return methodNotAllowed();
 			return serveFile(req, db, b);
 		}

@@ -60,8 +60,9 @@ export interface PageStats {
 /**
  * How far around the viewport (css px) tiles are rendered ahead of time. `up` / `down` are the margins above / below it (the one in
  * the scroll direction is the long one), `keep` the extra distance a tile survives outside its margin, `ahead` the direction (1 down, -1 up).
+ * `axis` "x" (horizontal scrolling): the same margins lie left / right of the viewport instead (up = left, down = right).
  */
-export interface Margins { up: number; down: number; keep: number; ahead: number }
+export interface Margins { up: number; down: number; keep: number; ahead: number; axis?: "x" | "y" }
 
 export interface PageEnv {
 	doc: PdfDoc;
@@ -268,8 +269,10 @@ export function PageSlot(p: {
 		const ix0 = v.x0 * kx, ix1 = v.x1 * kx, iy0 = v.y0 * ky, iy1 = v.y1 * ky;
 		// zoomed in (a grid of tiles, every tile re-interprets the page) the margins are shorter: the pixel bytes per css px are far higher
 		const f = g.whole ? 1 : 0.25;
-		const wx0 = (v.x0 - MARGIN_X) * kx, wx1 = (v.x1 + MARGIN_X) * kx, wy0 = (v.y0 - m.up * f) * ky, wy1 = (v.y1 + m.down * f) * ky;
-		const kp = m.keep * f * ky, kpx = MARGIN_X * kx;
+		const xa = m.axis === "x"; // scrolling horizontally: the long margins are left / right
+		const wx0 = (v.x0 - (xa ? m.up * f : MARGIN_X)) * kx, wx1 = (v.x1 + (xa ? m.down * f : MARGIN_X)) * kx;
+		const wy0 = (v.y0 - (xa ? MARGIN_X : m.up * f)) * ky, wy1 = (v.y1 + (xa ? MARGIN_X : m.down * f)) * ky;
+		const kp = (xa ? MARGIN_X : m.keep * f) * ky, kpx = (xa ? m.keep * f : MARGIN_X) * kx;
 		const out: Want[] = [];
 		// nothing of this page is near enough to matter
 		if (wy1 + kp <= 0 || wy0 - kp >= g.H || wx1 + kpx <= 0 || wx0 - kpx >= g.W) return out;
@@ -283,7 +286,7 @@ export function PageSlot(p: {
 				const kept = tx1 > wx0 - kpx && tx0 < wx1 + kpx && ty1 > wy0 - kp && ty0 < wy1 + kp;
 				const zone = inside ? 0 : near ? 1 : kept ? 2 : 3;
 				if (zone === 3) continue;
-				const below = ty0 >= iy1;
+				const below = xa ? tx0 >= ix1 : ty0 >= iy1;
 				const tier = inside ? 0 : (below ? (m.ahead >= 0 ? 1 : 2) : (m.ahead < 0 ? 1 : 2));
 				out.push({ key: `${g.sk}:${c}:${r}`, c, r, tier, zone });
 			}
@@ -326,8 +329,14 @@ export function PageSlot(p: {
 	});
 
 	const dist = (s: TileSpec): number => {
-		const v = untrack(p.view), bh = untrack(p.boxH);
+		const v = untrack(p.view);
+		const bh = untrack(p.boxH);
 		const cy = ((s.y + s.h / 2) / s.H) * bh, vy = (v.y0 + v.y1) / 2;
+		if (untrack(env.margins).axis === "x") {
+			// scrolling horizontally the pages ahead are to the side: distance along x first, then within the page
+			const cx = ((s.x + s.w / 2) / s.W) * untrack(p.boxW), vx = (v.x0 + v.x1) / 2;
+			return Math.abs(cx - vx) + Math.abs(cy - vy);
+		}
 		return Math.abs(cy - vy);
 	};
 

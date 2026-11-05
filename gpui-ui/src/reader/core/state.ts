@@ -17,6 +17,9 @@ export interface DocViewState {
 	/** per-page rotation in degrees (only non-zero pages are stored) and the whole-document rotation */
 	rot: number;
 	rots?: Record<string, number>;
+	/** page layout (the View menu): "vertical" | "horizontal" | "wrapped", and "none" | "odd" | "even" spreads */
+	scroll?: string;
+	spread?: string;
 	/** ms since epoch, to drop the oldest entries */
 	t: number;
 }

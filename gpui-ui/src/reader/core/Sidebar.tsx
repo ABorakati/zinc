@@ -126,9 +126,30 @@ export interface ThumbsProps {
 	goTo(page: number): void;
 	/** page right-click -> rotate etc. */
 	onMenu?(page: number, x: number, y: number): void;
+	/** pages picked for Rotate / Delete Pages (empty: the current page counts as selected, as in Zotero). A click picks nothing and
+	 *  goes to the page; Ctrl+click adds or removes a page, Shift+click picks the range from the last page picked. */
+	selected?: Accessor<number[]>;
+	onSelect?(pages: number[]): void;
 }
 
-function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }): JSX.Element {
+/** The selection after a click on page i with these modifiers (`anchor`: the page Shift extends from). */
+export function clickSelection(sel: number[], cur: number, i: number, mods: { ctrl?: boolean; shift?: boolean }, anchor: number | undefined): number[] {
+	const base = sel.length ? sel : [cur];
+	if (mods.shift) {
+		const a = anchor ?? cur, [lo, hi] = a <= i ? [a, i] : [i, a];
+		const out = new Set(mods.ctrl ? base : []);
+		for (let k = lo; k <= hi; k++) out.add(k);
+		return [...out].sort((x, y) => x - y);
+	}
+	if (mods.ctrl) {
+		const out = new Set(base);
+		if (!out.delete(i)) out.add(i);
+		return [...out].sort((x, y) => x - y);
+	}
+	return [];
+}
+
+function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]>; onPick(e: EventPayload): void }): JSX.Element {
 	const tok = (n: string) => tokens[p.mode()][n] ?? "#888";
 	let img: ImgNode | undefined;
 	let alive = true;
@@ -138,7 +159,8 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }):
 	let handle: { cancel(): void } | undefined;
 	let task: { cancel(): void } | undefined;
 	onCleanup(() => { alive = false; handle?.cancel(); task?.cancel(); });
-	const current = () => p.curPage() === p.i;
+	/** highlighted: picked for Rotate / Delete Pages, or the current page when nothing is picked */
+	const current = () => { const s = p.selected?.() ?? []; return s.length ? s.includes(p.i) : p.curPage() === p.i; };
 
 	createEffect(on(() => [p.dpr(), p.rot(p.i), p.epoch(), p.doc()] as const, () => {
 		const d = p.doc();
@@ -167,11 +189,7 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }):
 	}));
 
 	return (
-		<div
-			onClick={() => p.goTo(p.i)}
-			onAuxClick={(e: EventPayload) => p.onMenu?.(p.i, e.x ?? 0, e.y ?? 0)}
-			style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 6, paddingBottom: 6, width: "100%", cursor: "pointer" }}
-		>
+		<div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 6, paddingBottom: 6, width: "100%", cursor: "pointer" }}>
 			<div
 				style={{
 					display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: 5, borderRadius: 6,
@@ -184,6 +202,13 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]> }):
 				</div>
 				<text style={{ ...textStyle("text-[11px] text-muted-foreground", p.mode()), whiteSpace: "nowrap" }}>{String(p.i + 1)}</text>
 			</div>
+			{/* the clicks: a layer over the whole row (the filled boxes under it would keep a click from reaching a wrapper; pointerEvents
+			    "none" only means "does not block" in GPUIX, the layer still gets the click) */}
+			<div
+				onClick={p.onPick}
+				onAuxClick={(e: EventPayload) => p.onMenu?.(p.i, e.x ?? 0, e.y ?? 0)}
+				style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0, pointerEvents: "none" }}
+			/>
 		</div>
 	);
 }
@@ -213,6 +238,8 @@ export function Thumbnails(p: ThumbsProps): JSX.Element {
 	const hi = createMemo(() => Math.min(count(), Math.ceil(vis()[1]) + 4));
 	const idx = createMemo(() => Array.from({ length: Math.max(0, hi() - lo()) }, (_, k) => lo() + k));
 	let list: { id: number } | undefined;
+	/** the page Shift+click extends the selection from */
+	let anchor: number | undefined;
 	// keep the current page's thumbnail in view
 	createEffect(on(p.curPage, (c) => {
 		const [a, b] = untrack(vis);
@@ -233,9 +260,18 @@ export function Thumbnails(p: ThumbsProps): JSX.Element {
 			onVisibleRange={(e: EventPayload) => setVis([e.startIndex ?? 0, e.endIndex ?? 6])}
 			style={{ width: "100%", flexGrow: 1, minHeight: 0 }}
 		>
-			<For each={idx()}>{(i) => <Thumb {...p} i={i} box={() => box(i)} />}</For>
+			<For each={idx()}>{(i) => <Thumb {...p} i={i} box={() => box(i)} onPick={(e) => pick(i, e)} />}</For>
 		</virtual-list>
 	);
+	function pick(i: number, e: EventPayload) {
+		const m: { ctrl?: boolean; cmd?: boolean; shift?: boolean } = e.modifiers ?? {};
+		const mods = { ctrl: !!(m.ctrl || m.cmd), shift: !!m.shift };
+		const sel = p.selected?.() ?? [];
+		const next = clickSelection(sel, untrack(p.curPage), i, mods, anchor);
+		if (!mods.shift) anchor = i;
+		p.onSelect?.(next);
+		if (!mods.ctrl && !mods.shift) p.goTo(i);
+	}
 }
 
 // ------------------------------------------------------------------------------------------------ outline
