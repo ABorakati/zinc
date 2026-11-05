@@ -4,7 +4,7 @@ import type { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { hooks } from "../../src/additems/files";
-import { reparentAttachment } from "../../src/additems/files";
+import { reparentItem } from "../../src/additems/files";
 import { getItemDetail } from "../../src/db";
 import { deps } from "../../src/connector/handlers";
 import { SessionManager } from "../../src/connector/session";
@@ -305,7 +305,7 @@ describe("attachments", () => {
 		deps.recognize = async (_d, key) => {
 			recognizedFor = key;
 			const p = (await import("../../src/db")).createItem(db, { itemType: "journalArticle", title: "Recognized paper", collections: ["COLLAAA1"] });
-			reparentAttachment(db, key, p.data.key);
+			reparentItem(db, key, p.data.key);
 		};
 		const meta = { url: "https://arxiv.org/pdf/1234.pdf", contentType: "application/pdf", title: "1234.pdf" };
 		const res = await z("/connector/saveStandaloneAttachment?sessionID=P1", { body: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) } });

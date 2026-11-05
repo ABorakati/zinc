@@ -198,22 +198,22 @@ export function addLink(db: Database, req: { parentKey?: string; url?: string; t
 	return detail;
 }
 
-/** Move a standalone attachment under a top-level parent item (it leaves any collections, like Zotero child items). */
-export function reparentAttachment(db: Database, attachmentKey: string, parentKey: string): void {
+/** Move a standalone attachment or note under a top-level parent item (it leaves any collections, like Zotero child items). */
+export function reparentItem(db: Database, itemKey: string, parentKey: string): void {
 	checkParent(db, parentKey);
-	const row = db.query("SELECT data, parent_key, item_type FROM items WHERE key = ?").get(attachmentKey) as { data: string; parent_key: string | null; item_type: string } | null;
-	if (!row || row.item_type !== "attachment") throw new HttpError(404, "attachment not found");
-	if (row.parent_key) throw new HttpError(400, "attachment already has a parent");
+	const row = db.query("SELECT data, parent_key, item_type FROM items WHERE key = ?").get(itemKey) as { data: string; parent_key: string | null; item_type: string } | null;
+	if (!row || (row.item_type !== "attachment" && row.item_type !== "note")) throw new HttpError(404, "standalone attachment or note not found");
+	if (row.parent_key) throw new HttpError(400, "the item already has a parent");
 	const data = JSON.parse(row.data) as ZoteroItemData;
 	data.parentItem = parentKey;
 	data.collections = [];
 	const modified = nowIso();
 	data.dateModified = modified;
 	db.transaction(() => {
-		db.query("UPDATE items SET parent_key = ?, data = ?, date_modified = ? WHERE key = ?").run(parentKey, JSON.stringify(data), modified, attachmentKey);
-		db.query("DELETE FROM collection_items WHERE item_key = ?").run(attachmentKey);
+		db.query("UPDATE items SET parent_key = ?, data = ?, date_modified = ? WHERE key = ?").run(parentKey, JSON.stringify(data), modified, itemKey);
+		db.query("DELETE FROM collection_items WHERE item_key = ?").run(itemKey);
 	})();
 	clearFileCache();
 	indexItem(db, parentKey);
-	indexItem(db, attachmentKey);
+	indexItem(db, itemKey);
 }

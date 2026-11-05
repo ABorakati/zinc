@@ -37,6 +37,12 @@
 // GET    /api/schema                           -> ZoteroSchema (item types, fields, creator types, labels)
 // POST   /api/items                            {data: Partial<ZoteroItemData>} -> ItemDetail
 //        data.itemType required; data.parentItem set for child notes/attachments.
+// POST   /api/items/:key/duplicate             -> ItemDetail  (a copy of a top-level item: item type, fields, creators,
+//        tags, collections, relations; no children. A standalone attachment's copy keeps its file / link / URL.)
+// POST   /api/add/create-parent                {itemKey, text? | itemType?} -> {parent: ItemDetail, item: ItemDetail}
+//        "Create Parent Item": creates the parent from an identifier (DOI / PMID / PMCID / arXiv ID / ISBN) or empty of
+//        itemType, and moves the standalone attachment or note under it (the child leaves its collections, the parent
+//        takes them).
 // POST   /api/items/:key/related               {keys: string[]} -> ItemDetail  (adds dc:relation both ways)
 // DELETE /api/items/:key/related               {keys: string[]} -> ItemDetail
 // POST   /api/attachments/:key/reveal          -> {ok: true}  (shows the file in Explorer)

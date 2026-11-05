@@ -225,6 +225,8 @@ export function Field(p: {
 	let draft = p.value;
 	let cancelled = false;
 	const start = () => { draft = p.value; cancelled = false; setEditing(true); };
+	// startEditing may turn true after this row was built (the pane is a cached virtual list): open the editor then.
+	createEffect(on(() => p.startEditing, (v) => { if (v && !editing()) start(); }));
 	const commit = () => {
 		if (!editing()) return;
 		setEditing(false);

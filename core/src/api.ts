@@ -9,6 +9,7 @@ import { handleFulltextApi } from "./fulltext/api";
 import { handleReferencesApi } from "./references/api";
 import { handleCiteApi } from "./cite/api";
 import { handleAddItemsApi } from "./additems/api";
+import { duplicateItem } from "./additems/duplicate";
 import { handleDuplicatesApi } from "./duplicates/api";
 import { handleIoApi } from "./io/api";
 import { handleSearchesApi } from "./searches/api";
@@ -233,6 +234,10 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 				return json(detail);
 			}
 			return methodNotAllowed();
+		}
+		if (n === 3 && c === "duplicate") {
+			if (m !== "POST") return methodNotAllowed();
+			return json(duplicateItem(db, b), 201);
 		}
 		if (n === 3 && c === "tags") {
 			if (m !== "POST" && m !== "DELETE") return methodNotAllowed();

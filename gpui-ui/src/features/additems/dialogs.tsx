@@ -11,6 +11,8 @@ import { addByIdentifier, addLinkedFile, addLinkedUri, createNewItem } from "./c
 
 const Body = (p: { children: JSX.Element }) => <div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>{p.children}</div>;
 
+export { Body as DialogBody };
+
 function IdentifierDialog(p: { initial: string; close: () => void }): JSX.Element {
 	const [text, setText] = createSignal(p.initial);
 	const [busy, setBusy] = createSignal(false);

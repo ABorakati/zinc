@@ -5,6 +5,7 @@ import { Icon } from "../icons";
 import { Select } from "../ui";
 import { Block, BoxInput, Field, IconBtn, MiniSelect, Row, SectionHead, TextBtn, isCollapsed, labelW, t, tok, tx, type Entry } from "./kit";
 import { usePane } from "./model";
+import { clearTitleEdit, titleEditWanted } from "./focus";
 import { openLink } from "./actions";
 import type { Creator, ZoteroSchemaField, ZoteroSchemaItemType } from "./net";
 import { daysIn, fmtTimestamp, formatDateParts, isPlainDate, MONTH_ABBR, parseDate } from "./util";
@@ -263,6 +264,9 @@ export function useInfoEntries(): () => Entry[] {
 							value={v()}
 							multiline={field === "extra"}
 							onSave={(nv) => void pane.save({ [field]: nv })}
+							// Duplicate Item / Create Parent Item open the new item's title for editing (focusTitle in ./focus)
+							startEditing={field === "title" && titleEditWanted(data().key)}
+							onEditing={(e) => { if (!e && field === "title") clearTitleEdit(data().key); }}
 							end={
 								<Show when={isLink(field, v())}>
 									<div role="button" aria-label={`Open ${f().label}`} onClick={() => void openLink(linkUrl(field, v()))} style={{ cursor: "pointer", marginLeft: 4, paddingTop: 2 }}>

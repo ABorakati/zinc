@@ -4,12 +4,16 @@
 //                                    or multipart (file, mode, parentKey, collectionKey, path) -> ItemDetail
 //   POST /api/add/link               {url, title?, parentKey?, collectionKey?} -> ItemDetail (201)
 //   POST /api/add/retrieve-metadata  {attachmentKeys[]} -> {results: RetrieveResult[], items: ItemDetail[]}
+//   POST /api/add/create-parent      {itemKey, text? | itemType?} -> {parent: ItemDetail, item: ItemDetail}
+//                                    (an identifier makes the parent from the add-by-identifier data, itemType an empty one) ->
+//                                    the attachment or note becomes its child.
 // Notes are plain POST /api/items with itemType "note" (+ parentItem for a child note).
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../db";
 import { addByIdentifier } from "./add";
 import { addFile, addLink } from "./files";
 import { retrieveMetadata } from "./retrieve";
+import { createParent } from "./parent";
 
 function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8" } });
@@ -31,13 +35,14 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 	if (!pathname.startsWith("/api/add/")) return null;
 	try {
 		const route = pathname.slice("/api/add/".length).replace(/\/+$/, "");
-		if (!["identifier", "file", "link", "retrieve-metadata"].includes(route)) return json({ error: "not found" }, 404);
+		if (!["identifier", "file", "link", "retrieve-metadata", "create-parent"].includes(route)) return json({ error: "not found" }, 404);
 		if (req.method !== "POST") throw new HttpError(405, "method not allowed");
 
 		if (route === "identifier") {
 			const b = await readJson(req);
 			return json(await addByIdentifier(db, b.text, b.collectionKey));
 		}
+		if (route === "create-parent") return json(await createParent(db, await readJson(req)), 201);
 		if (route === "link") return json(addLink(db, await readJson(req)), 201);
 		if (route === "retrieve-metadata") {
 			const b = await readJson(req);

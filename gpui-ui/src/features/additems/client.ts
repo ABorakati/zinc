@@ -4,10 +4,11 @@ import { createSignal } from "solid-js";
 import { get, post } from "../http";
 import { getPref } from "../prefs";
 import { pickPaths } from "../platform";
-import { currentCollection, refresh, selectOnly } from "../shared";
+import { currentCollection, refresh, selectMany, selectOnly } from "../shared";
 import { errMsg, plural } from "../text";
 import type { ItemDetail } from "../types";
 import { toast } from "../../ui";
+import { focusTitle } from "../../itempane/focus";
 
 export interface IdentifierResult {
 	added: ItemDetail[];
@@ -20,6 +21,11 @@ export interface RetrieveResult {
 	itemKey?: string;
 	error?: string;
 }
+export interface CreateParentResult {
+	parent: ItemDetail;
+	/** the attachment or note, now a child of the parent */
+	item: ItemDetail;
+}
 
 export const addApi = {
 	identifier: (text: string, collectionKey?: string) => post<IdentifierResult>("/api/add/identifier", { text, collectionKey }),
@@ -28,6 +34,8 @@ export const addApi = {
 	link: (b: { url: string; title?: string; parentKey?: string; collectionKey?: string }) => post<ItemDetail>("/api/add/link", b),
 	retrieve: (attachmentKeys: string[]) => post<{ results: RetrieveResult[]; items: ItemDetail[] }>("/api/add/retrieve-metadata", { attachmentKeys }),
 	createItem: (data: Record<string, unknown>) => post<ItemDetail>("/api/items", { data }),
+	duplicate: (key: string) => post<ItemDetail>(`/api/items/${encodeURIComponent(key)}/duplicate`, {}),
+	createParent: (b: { itemKey: string; text?: string; itemType?: string }) => post<CreateParentResult>("/api/add/create-parent", b),
 };
 
 /** "Automatically retrieve metadata for PDFs" (Settings > General in the web UI; stored here until the settings page owns it). */
@@ -80,6 +88,39 @@ export async function createNote(parentKey?: string): Promise<void> {
 	} catch (e) {
 		fail("Could not create note", e);
 	}
+}
+
+/**
+ * "Duplicate Item": a copy of each item (item type, fields, creators, tags, collections, relations; no attachments, notes or
+ * annotations), then the copies are selected. With one copy its title opens for editing, as in Zotero.
+ */
+export async function duplicateItems(keys: string[]): Promise<void> {
+	if (!keys.length) return;
+	const made: string[] = [];
+	const errors: string[] = [];
+	for (const key of keys) {
+		try {
+			made.push((await addApi.duplicate(key)).data.key);
+		} catch (e) {
+			errors.push(errMsg(e));
+		}
+	}
+	if (errors.length) toast(keys.length > 1 ? "Some items could not be duplicated" : "Could not duplicate the item", { kind: "error", description: errors.join("\n") });
+	if (!made.length) return;
+	refresh();
+	selectMany(made);
+	if (made.length === 1) focusTitle(made[0]!);
+}
+
+/**
+ * "Create Parent Item" (the dialog's Create button): the parent comes from an identifier or is empty of the chosen type, and
+ * the attachment or note moves under it. Throws so the dialog can show why the lookup failed.
+ */
+export async function createParentFor(itemKey: string, choice: { text?: string; itemType?: string }): Promise<void> {
+	const r = await addApi.createParent({ itemKey, ...choice });
+	refresh();
+	selectOnly(r.parent.data.key);
+	focusTitle(r.parent.data.key);
 }
 
 const isPdfPath = (p: string) => /\.pdf$/i.test(p);

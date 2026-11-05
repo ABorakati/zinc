@@ -9,7 +9,7 @@ import { mailtoFor } from "../references/net";
 import { crossrefQuery } from "../references/sources";
 import { renameFiles } from "../maintenance/rename-files";
 import { addOne, loadKnown } from "./add";
-import { reparentAttachment, storageRoot } from "./files";
+import { reparentItem, storageRoot } from "./files";
 import { findArxivId, type ParsedId } from "./identifiers";
 
 export interface RetrieveResult {
@@ -92,7 +92,7 @@ export async function retrieveOne(db: Database, attachmentKey: string, known = l
 	const tryId = async (p: ParsedId, via: "doi" | "arxiv" | "title") => {
 		const r = await addOne(db, p, known, colls[0]);
 		const parent = r.added?.data.key ?? r.existing!;
-		reparentAttachment(db, attachmentKey, parent);
+		reparentItem(db, attachmentKey, parent);
 		if (r.added) {
 			for (const c of colls.slice(1)) db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parent);
 		}
