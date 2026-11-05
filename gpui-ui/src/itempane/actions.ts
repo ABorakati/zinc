@@ -45,4 +45,9 @@ export async function openLink(url: string): Promise<void> {
 	try { await ipApi.openUrl(url); } catch (e) { fail("Could not open link", e); }
 }
 
+/** Show the attachment's file in Explorer. */
+export async function revealAttachment(attachmentKey: string): Promise<void> {
+	try { await ipApi.reveal(attachmentKey); } catch (e) { fail("Could not show file", e); }
+}
+
 export { errMsg };

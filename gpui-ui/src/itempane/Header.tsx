@@ -5,10 +5,12 @@ import { Icon, itemTypeIconName } from "../icons";
 import { store } from "../store";
 import { DropdownMenu, type MenuItem } from "../ui";
 import { shadows } from "../theme";
-import { findFullText, openLink, quickCopy } from "./actions";
+import { findFullText, openLink, quickCopy, revealAttachment } from "./actions";
 import { Field, Section, goToSection, t, tok, tx } from "./kit";
+import { locateFileKey, locateItemOf } from "../locate/item";
+import { locateMenu } from "../locate/menu";
 import { usePane } from "./model";
-import { childKind, creatorFull, creatorLast, doiUrl, MONTH_ABBR, parseDate, webUrl } from "./util";
+import { childKind, creatorFull, creatorLast, MONTH_ABBR, parseDate } from "./util";
 
 const MAX_AUTHORS = 6;
 
@@ -82,15 +84,21 @@ export function Header(): JSX.Element {
 		const r = reader();
 		return /pdf/i.test(r?.contentType ?? "") ? "Open PDF" : /epub/i.test(r?.contentType ?? "") ? "Open EPUB" : "Open snapshot";
 	};
-	const link = () => webUrl(str("url")) ?? doiUrl(str("DOI"));
+	const fileKey = () => locateFileKey(data(), d().children);
 
 	const find = () => void findFullText([data().key], () => void pane.reload());
 	const moreItems = (): MenuItem[] => {
 		const items: MenuItem[] = [
+			{
+				label: "Locate", icon: "globe",
+				submenu: locateMenu(locateItemOf(data()), fileKey(), {
+					openUrl: (url) => void openLink(url),
+					revealFile: (key) => void revealAttachment(key),
+				}),
+			},
 			{ label: "Copy bibliography", icon: "list", onSelect: () => void quickCopy(data().key, "bibliography", pane.copyText) },
 			{ label: "Copy DOI", icon: "copy", disabled: !str("DOI"), onSelect: () => pane.copyText(str("DOI")) },
 		];
-		if (link()) items.push({ label: "Open webpage", icon: "external-link", onSelect: () => void openLink(link()!) });
 		if (hasPdf()) items.push({ separator: true }, { label: "Find full text again", icon: "file-search", onSelect: find });
 		return items;
 	};

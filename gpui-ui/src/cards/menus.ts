@@ -6,10 +6,11 @@ import { itemActions, type ItemAction, type ItemActionContext } from "../registr
 import { store } from "../store";
 import { readState } from "../readState";
 import { openMenu, type Anchor, type MenuItem } from "../ui";
+import { locateFileKey, locateItemFromRow, locateItemOf } from "../locate/item";
+import { locateMenu } from "../locate/menu";
 import {
 	addItemsToCollection, copyDoi, findFullText, getDetail, openItem, openUrl, revealAttachment, trashItems,
 } from "./actions";
-import { webpageOf } from "./logic";
 
 /** "Parent / Child" path labels for every collection, in tree order. */
 export function collectionPaths(): { key: string; path: string; name: string }[] {
@@ -55,12 +56,14 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 	const builtin = (m: MenuItem) => { if (!m.label || !taken.has(m.label)) out.push(m); };
 
 	out.push({ label: "Open", icon: "book-open", onSelect: () => void openItem(item) });
-	const online = webpageOf(item);
-	if (online) out.push({ label: "View Online", icon: "globe", onSelect: () => void openUrl(online) });
-	if (item.primaryAttachment) {
-		const a = item.primaryAttachment;
-		out.push({ label: "Show File", icon: "folder-open", onSelect: () => void revealAttachment(a.key) });
-	}
+	const fileKey = detail ? locateFileKey(detail.data, detail.children) : null;
+	out.push({
+		label: "Locate", icon: "globe",
+		submenu: locateMenu(detail ? locateItemOf(detail.data) : locateItemFromRow(item), fileKey, {
+			openUrl: (url) => void openUrl(url),
+			revealFile: (key) => void revealAttachment(key),
+		}),
+	});
 	for (const l of registered(ctx, ["open", "edit"])) { sep(); out.push(...l); }
 
 	sep();

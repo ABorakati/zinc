@@ -3,9 +3,10 @@
 import type { GroupBy, ListStore } from "../../contracts";
 import { store } from "../../store";
 import { leftOpen, rightOpen, setLeftOpen, setRightOpen } from "../../shell/layout";
-import { Choice, Segmented, Toggle } from "../controls";
+import { Choice, Segmented, TextField, Toggle } from "../controls";
 import { readState } from "../../readState";
 import { registerSection, registerSettings } from "../registry";
+import { openUrlResolver, setOpenUrlResolver } from "../../locate/prefs";
 
 registerSection({ id: "general", label: "General", icon: "sliders-horizontal", order: 10, description: "How items open and what the main window shows.", keywords: ["preferences", "options"] });
 
@@ -66,6 +67,20 @@ registerSettings([
 		description: "Show a small accent dot on items you have not opened yet.",
 		keywords: ["unread", "read", "dots", "status", "indicator", "new"],
 		control: () => <Toggle checked={readState.enabled()} onChange={(v) => readState.setEnabled(v)} />,
+	},
+	{
+		id: "general.openUrlResolver", section: "general", group: "Locate", label: "OpenURL resolver",
+		description: "Your library's OpenURL address. \"Library Lookup\" in an item's Locate menu opens it with the item's details.",
+		keywords: ["locate", "library lookup", "openurl", "resolver", "open url", "sfx", "alma", "link resolver", "library search"],
+		layout: "block",
+		control: () => (
+			<TextField
+				value={openUrlResolver()}
+				width={380}
+				placeholder="https://library.example.edu/openurl/"
+				onCommit={(v) => setOpenUrlResolver(v.trim())}
+			/>
+		),
 	},
 	{
 		id: "general.attachPdfs", section: "general", group: "Adding items", label: "Automatically attach associated PDFs when adding items",

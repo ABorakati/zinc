@@ -37,6 +37,7 @@ bun scripts/shot-hello.tsx out.png            # the Hello smoke test
 bun scripts/shot-app.tsx out.png              # the whole <App/>
 bun scripts/shot-sidebar.tsx out.png          # Sidebar alone   (written by the sidebar owner)
 bun scripts/shot-cards.tsx out.png            # CardList alone  (written by the cards owner)
+bun scripts/shot-locate.tsx                   # Locate menu probe: right-click an item and the item pane's More menu
 bun scripts/scroll-test.tsx                   # headless scroll/frame timing of the card list
 ```
 
