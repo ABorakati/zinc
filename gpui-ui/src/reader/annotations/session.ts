@@ -13,7 +13,7 @@ import {
 } from "./model";
 import { createStore } from "./store";
 
-export type Tool = "highlight" | "underline" | "note";
+export type Tool = "highlight" | "underline" | "note" | "ink" | "eraser";
 
 let rememberedColor: string = DEFAULT_COLOR;
 
@@ -22,15 +22,17 @@ export function createSession(ctx: ReaderContext) {
 	const [tool, setToolRaw] = createSignal<Tool | null>(null);
 	const [color, setColorRaw] = createSignal<string>(rememberedColor);
 	const [selectedId, select] = createSignal<string | null>(null);
+	const [inkWidth, setInkWidthRaw] = createSignal<number>(2);
 	/** annotation whose comment box should take focus (after "Add comment") */
 	const [focusComment, setFocusComment] = createSignal<string | null>(null);
 	const [message, setMessage] = createSignal<string | null>(null);
 	let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const ui = {
-		tool, color, selectedId, select, focusComment, setFocusComment, message,
+		tool, color, selectedId, select, focusComment, setFocusComment, message, inkWidth,
 		setTool(t: Tool | null) { setToolRaw(t); if (t) { select(null); ctx.clearSelection(); } },
 		setColor(c: string) { rememberedColor = c; setColorRaw(c); },
+		setInkWidth(w: number) { setInkWidthRaw(w); },
 		notify(msg: string) {
 			setMessage(msg);
 			clearTimeout(messageTimer);

@@ -46,15 +46,38 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 		{ id: "highlight", icon: "highlighter", title: "Highlight text" },
 		{ id: "underline", icon: "underline", title: "Underline text" },
 		{ id: "note", icon: "message-square-text", title: "Add note (click on the page)" },
+		{ id: "ink", icon: "pen-line", title: "Draw ink" },
+		{ id: "eraser", icon: "eraser", title: "Eraser (remove ink)" },
 	] as const;
+	const widths = [1, 2, 4];
 	return (
 		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>
 			{tools.map((t) => (
 				<IconButton k={k} icon={t.icon} title={t.title} on={s.ui.tool() === t.id} onClick={() => s.ui.setTool(s.ui.tool() === t.id ? null : t.id)} />
 			))}
-			<Show when={s.ui.tool()}>
+			<Show when={s.ui.tool() && s.ui.tool() !== "eraser"}>
 				<div style={{ marginLeft: 6 }}>
 					<Swatches k={k} colors={COLORS} value={s.ui.color()} size={14} onPick={(c) => s.ui.setColor(c)} />
+				</div>
+			</Show>
+			<Show when={s.ui.tool() === "ink"}>
+				<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 3, marginLeft: 6 }}>
+					{widths.map((w) => {
+						const isSel = () => (s.ui.inkWidth?.() ?? 2) === w;
+						return (
+							<div
+								onClick={() => s.ui.setInkWidth?.(w)}
+								style={{
+									...k.t("flex items-center justify-center rounded border"),
+									width: 22, height: 20, cursor: "pointer",
+									borderColor: isSel() ? k.tok("primary") : k.tok("input"),
+									backgroundColor: isSel() ? k.tok("accent") : "transparent",
+								}}
+							>
+								<div style={{ width: 12, height: w, backgroundColor: k.tok("foreground"), borderRadius: w / 2 }} />
+							</div>
+						);
+					})}
 				</div>
 			</Show>
 		</div>

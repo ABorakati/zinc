@@ -4,12 +4,17 @@
 // surface (notes) and the popup of the selected annotation do take input.
 import { useGpuix } from "@gpuix/solid";
 import { createMemo, createSignal, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js";
+import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../../icons";
+import { Button, openMenu } from "../../ui";
 import { withAlpha } from "../../theme";
 import type { ReaderContext } from "../plugins";
 import { kit, clamp, IconButton, Swatches, type Kit } from "../structure/kit";
 import type { PdfRect } from "../structure/types";
+import { annotationContextMenu } from "./contextMenu";
 import { rectsOnPage } from "./geometry";
+import { copyAnnotationImage, exportAnnotationImage } from "./imageExport";
+import { InkOverlay } from "./ink";
 import { boundingRect, COLORS, NOTE_SIZE, type Annotation } from "./model";
 import { sessionFor, type Session } from "./session";
 import { CommentBox, TagEditor } from "./Widgets";
@@ -50,6 +55,16 @@ function AnnotationPopup(p: { k: Kit; s: Session; a: Annotation; box: Accessor<{
 			<Show when={p.a.text}>
 				<div style={{ ...p.k.t("flex border-l-2 pl-2"), borderColor: p.a.color }}>
 					<text style={{ ...p.k.tx("text-[11.5px] text-muted-foreground"), lineClamp: 3 }}>{p.a.text}</text>
+				</div>
+			</Show>
+			<Show when={p.a.type === "image"}>
+				<div style={{ display: "flex", flexDirection: "row", gap: 6, marginTop: 2 }}>
+					<Button size="sm" variant="outline" icon="copy" onClick={() => void copyAnnotationImage(p.s.ctx, p.a, p.s.ui.notify)}>
+						Copy Image
+					</Button>
+					<Button size="sm" variant="outline" icon="download" onClick={() => void exportAnnotationImage(p.s.ctx, p.a, undefined, p.s.ui.notify)}>
+						Export Image…
+					</Button>
 				</div>
 			</Show>
 			<CommentBox k={p.k} s={p.s} id={p.a.id} rows={2} />
@@ -125,7 +140,17 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 					</Match>
 					<Match when={a()!.type === "image" || a()!.type === "text"}>
 						<For each={rects()}>
-							{(r) => <div style={{ position: "absolute", ...box(r), borderWidth: 2, borderColor: color(), borderStyle: "dashed", borderRadius: 2, pointerEvents: "none" }} />}
+							{(r) => (
+								<div
+									onClick={toggle}
+									onAuxClick={(e: EventPayload) => {
+										if (e.isRightClick || e.button === 2) {
+											openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, () => annotationContextMenu(p.ctx, a()!));
+										}
+									}}
+									style={{ position: "absolute", ...box(r), borderWidth: 2, borderColor: color(), borderStyle: "dashed", borderRadius: 2, pointerEvents: "auto", cursor: "pointer" }}
+								/>
+							)}
 						</For>
 					</Match>
 					<Match when={a()!.type === "ink"}>
@@ -138,6 +163,11 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 				<Show when={own() && a()!.type !== "note"}>
 					<div
 						onClick={toggle}
+						onAuxClick={(e: EventPayload) => {
+							if (e.isRightClick || e.button === 2) {
+								openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, () => annotationContextMenu(p.ctx, a()!));
+							}
+						}}
 						style={{
 							position: "absolute", ...handle(), width: 10, height: 10, borderRadius: 5, backgroundColor: color(), cursor: "pointer",
 							borderWidth: isSel() ? 2 : 1, borderColor: isSel() ? k.tok("foreground") : "rgba(0, 0, 0, 0.3)", opacity: isSel() ? 1 : 0.85,
@@ -157,6 +187,9 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 					onClick={onCatch}
 					style={{ position: "absolute", left: 0, top: 0, width: p.box().width, height: p.box().height, cursor: "crosshair", pointerEvents: "auto" }}
 				/>
+			</Show>
+			<Show when={s.ui.tool() === "ink" || s.ui.tool() === "eraser"}>
+				<InkOverlay ctx={p.ctx} page={page} box={p.box} sc={sc} ph={ph} s={s} />
 			</Show>
 			<Show when={selectedHere()}>
 				{(a) => <AnnotationPopup k={k} s={s} a={a()} box={p.box} sc={sc} ph={ph} />}

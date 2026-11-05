@@ -47,6 +47,7 @@ function win32(): Win32 | null {
 }
 
 const CF_UNICODETEXT = 13;
+const CF_DIB = 8;
 const GMEM_MOVEABLE = 2;
 
 function globalCopy(w: Win32, bytes: Buffer): number | bigint | null {
@@ -102,6 +103,78 @@ export function readClipboard(): string | null {
 				const s = Buffer.from(toArrayBuffer(src as never, 0, size)).toString("utf16le");
 				const end = s.indexOf("\0");
 				return end >= 0 ? s.slice(0, end) : s;
+			} finally {
+				w.GlobalUnlock(h);
+			}
+		} finally {
+			w.CloseClipboard();
+		}
+	}
+	return null;
+}
+
+/** Put an image (PNG buffer and optionally CF_DIB bitmap) on the clipboard. */
+export function writeClipboardImage(pngBytes: Buffer, dibBytes?: Buffer): boolean {
+	const w = win32();
+	if (!w) return false;
+	const parts: [number, Buffer][] = [];
+	if (dibBytes) {
+		parts.push([CF_DIB, dibBytes]);
+	}
+	const fmt = w.RegisterClipboardFormatW(Buffer.from("PNG\0", "utf16le"));
+	if (fmt) {
+		parts.push([fmt, pngBytes]);
+	}
+	for (let attempt = 0; attempt < 5; attempt++) {
+		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		try {
+			w.EmptyClipboard();
+			let ok = true;
+			for (const [f, bytes] of parts) {
+				const mem = globalCopy(w, bytes);
+				if (!mem) { ok = false; continue; }
+				if (!w.SetClipboardData(f, mem)) { w.GlobalFree(mem); ok = false; }
+			}
+			return ok;
+		} finally {
+			w.CloseClipboard();
+		}
+	}
+	return false;
+}
+
+/** Check if the clipboard holds an image (CF_DIB or PNG format). */
+export function hasClipboardImage(): boolean {
+	const w = win32();
+	if (!w) return false;
+	const fmt = w.RegisterClipboardFormatW(Buffer.from("PNG\0", "utf16le"));
+	for (let attempt = 0; attempt < 5; attempt++) {
+		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		try {
+			return !!(w.GetClipboardData(CF_DIB) || (fmt && w.GetClipboardData(fmt)));
+		} finally {
+			w.CloseClipboard();
+		}
+	}
+	return false;
+}
+
+/** Read PNG bytes from clipboard if available. */
+export function readClipboardImage(): Buffer | null {
+	const w = win32();
+	if (!w) return null;
+	const fmt = w.RegisterClipboardFormatW(Buffer.from("PNG\0", "utf16le"));
+	if (!fmt) return null;
+	for (let attempt = 0; attempt < 5; attempt++) {
+		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		try {
+			const h = w.GetClipboardData(fmt);
+			if (!h) return null;
+			const src = w.GlobalLock(h);
+			if (!src) return null;
+			try {
+				const size = Number(w.GlobalSize(h));
+				return Buffer.from(toArrayBuffer(src as never, 0, size));
 			} finally {
 				w.GlobalUnlock(h);
 			}
