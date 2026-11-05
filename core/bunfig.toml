@@ -1,0 +1,3 @@
+[test]
+# Temp folders from tests go to one per-run folder that is deleted afterwards (see test/tmp-preload.ts).
+preload = ["./test/tmp-preload.ts"]
