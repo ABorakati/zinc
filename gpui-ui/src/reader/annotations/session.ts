@@ -51,8 +51,24 @@ export function createSession(ctx: ReaderContext) {
 		return a;
 	}
 
+	/** A view that shows the document its own way (the reading view) can take over "jump to annotation"; it returns false to let
+	 *  the page view scroll as usual. */
+	let jumpOverride: ((a: Annotation) => boolean) | null = null;
+
 	const act = {
 		sortIndex,
+		/** Save a new annotation at an explicit position (PDF points), e.g. one made in the reading view; selects it. */
+		async create(type: AnnotationType, col: string, position: Position, extra: { text?: string; comment?: string; focusComment?: boolean } = {}): Promise<Annotation> {
+			const a = await create(type, col, position, { text: extra.text, comment: extra.comment });
+			select(a.id);
+			if (extra.focusComment) setFocusComment(a.id);
+			return a;
+		},
+		/** Route jump() to another view while it is shown; returns the remover. */
+		setJumpOverride(fn: ((a: Annotation) => boolean) | null): () => void {
+			jumpOverride = fn;
+			return () => { if (jumpOverride === fn) jumpOverride = null; };
+		},
 		/** Highlight/underline the current text selection; returns the new annotation. */
 		async fromSelection(type: "highlight" | "underline", col: string, opts: { comment?: boolean } = {}): Promise<Annotation | null> {
 			const sel = ctx.selection();
@@ -83,6 +99,7 @@ export function createSession(ctx: ReaderContext) {
 		/** Scroll to the annotation (its first rect) and select it. */
 		jump(a: Annotation) {
 			select(a.id);
+			if (jumpOverride?.(a)) return;
 			const r: PdfRect = a.position.rects?.[0] ?? boundingRect(a.position);
 			const s = ctx.pageSize(a.position.pageIndex);
 			ctx.scrollTo(a.position.pageIndex, Math.max(0, 1 - r[3] / s.h - 0.06));

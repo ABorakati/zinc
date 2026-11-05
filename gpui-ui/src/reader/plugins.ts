@@ -50,6 +50,10 @@ export interface ReaderContext {
 	viewTick?: Accessor<number>;
 	/** the page currently being drawn: 0-based indexes of the mounted pages */
 	mountedPages?: Accessor<number[]>;
+	/** open / close the reader's left sidebar, optionally on a tab (a plugin's sidePanel id) */
+	setSidebar?(open: boolean, tab?: string): void;
+	/** the sidebar tab being shown, null while the sidebar is closed */
+	sidebarTab?: Accessor<string | null>;
 }
 
 export interface ReaderPlugin {

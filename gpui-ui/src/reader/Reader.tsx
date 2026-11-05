@@ -979,6 +979,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 			},
 			viewTick,
 			mountedPages: indices,
+			// tabs by a plugin's sidePanel id (the sidebar keys them "plugin:<plugin>:<panel>")
+			setSidebar: (open, tab) => setSidebar(open, tab && (sideTabs().find((t) => t.id === tab || t.id.endsWith(`:${tab}`))?.id ?? tab)),
+			sidebarTab: () => (sbOpen() ? sbTab().replace(/^plugin:[^:]*:/, "") : null),
 		};
 	}
 	const plugins = readerPlugins;

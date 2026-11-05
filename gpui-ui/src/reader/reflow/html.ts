@@ -27,7 +27,64 @@ const plainOf = (md: string) => decode(md.replace(/(?<!\\)`/g, "").replace(/\\([
 
 const attr = (attrs: string, name: string) => new RegExp(`${name}="([^"]*)"`, "i").exec(attrs)?.[1];
 
+// ---- marks: annotation ranges carried through the conversion
+// A mark is a range of the html's TEXT (htmlText below). Its ends travel through the conversion as invisible delimiters, the same
+// ones GPUIX's <markdown marks> uses (mark i opens at U+F0000 + i, closes at U+100000 + i): they stay next to the characters they
+// were put beside through emphasis, links, sub/superscripts and escapes, and are taken out at the end, where their offsets in the
+// Markdown are the `marks` prop.
+const OPEN = 0xf0000, CLOSE = 0x100000, MAX_MARKS = 0xfffe;
+const MK = /[\u{F0000}-\u{10FFFF}]/gu;
+const unmark = (s: string) => s.replace(MK, "");
+
+/** The text of the converter's html, entities decoded, tags dropped (no whitespace collapsing): what mark offsets index. */
+export function htmlText(html: string): string {
+	return (html.match(/<\/?[a-z][^>]*>|[^<]+|</gi) ?? []).filter((t) => t[0] !== "<" || t.length === 1).map(decode).join("");
+}
+
+export interface MarkedMarkdown { source: string; marks: [number, number][] }
+
+/**
+ * htmlToMarkdown plus the Markdown ranges of `ranges` ([start, end) in htmlText(html) UTF-16 units; mark i is ranges[i]).
+ * A range that comes out empty (its text was dropped, e.g. a lone link comma) is [0, 0].
+ */
+export function htmlToMarkedMarkdown(html: string, ranges: [number, number][]): MarkedMarkdown {
+	const cuts: { at: number; ch: string; order: number }[] = [];
+	ranges.slice(0, MAX_MARKS).forEach(([a, b], i) => {
+		if (b <= a) return;
+		cuts.push({ at: a, ch: String.fromCodePoint(OPEN + i), order: 1 }, { at: b, ch: String.fromCodePoint(CLOSE + i), order: 0 });
+	});
+	cuts.sort((x, y) => x.at - y.at || x.order - y.order);
+	const marked = convert(html, cuts);
+	const marks: [number, number][] = ranges.map(() => [0, 0]);
+	let source = "";
+	for (const ch of marked) {
+		const cp = ch.codePointAt(0)!;
+		if (cp >= OPEN && cp < OPEN + MAX_MARKS) marks[cp - OPEN]![0] = source.length;
+		else if (cp >= CLOSE && cp < CLOSE + MAX_MARKS) marks[cp - CLOSE]![1] = source.length;
+		else source += ch;
+	}
+	return { source, marks: marks.map(([a, b]) => (b > a ? [a, b] : [0, 0])) };
+}
+
 export function htmlToMarkdown(html: string): string {
+	return convert(html, []);
+}
+
+function convert(html: string, cuts: { at: number; ch: string }[]): string {
+	let hPos = 0, ci = 0;
+	/** the decoded text token with the delimiters of the cuts that fall inside it */
+	const cut = (d: string): string => {
+		if (ci >= cuts.length) { hPos += d.length; return d; }
+		let out = "", from = 0;
+		while (ci < cuts.length && cuts[ci]!.at < hPos + d.length) {
+			const at = Math.max(cuts[ci]!.at - hPos, 0);
+			out += d.slice(from, at) + cuts[ci]!.ch;
+			from = at;
+			ci++;
+		}
+		hPos += d.length;
+		return out + d.slice(from);
+	};
 	const root: Frame = { tag: "", buf: "", attrs: "", n: 0 };
 	const stack: Frame[] = [root];
 	const top = () => stack[stack.length - 1]!;
@@ -38,7 +95,7 @@ export function htmlToMarkdown(html: string): string {
 	};
 	const tokens = html.match(/<\/?[a-z][^>]*>|[^<]+|</gi) ?? [];
 	for (const tok of tokens) {
-		if (tok[0] !== "<" || tok.length === 1) { emit(escapeMd(decode(tok))); continue; }
+		if (tok[0] !== "<" || tok.length === 1) { emit(escapeMd(cut(decode(tok)))); continue; }
 		const close = tok[1] === "/";
 		const m = /^<\/?([a-z0-9]+)([^>]*?)\/?>$/i.exec(tok);
 		if (!m) continue;
@@ -63,7 +120,7 @@ export function htmlToMarkdown(html: string): string {
 				// The structure converter marks a run drawn in another font as <code>. PDFs draw ligatures ("fi", "fl", "ffi") and odd
 				// glyphs in a font of their own, so a few letters inside a word arrive as code: keep those as plain text (a code box
 				// mid-word, in a monospace font, is what the user saw). Real code (longer, or with spaces/symbols) stays code.
-				if (/^[\p{L}\p{N}]{1,4}$/u.test(raw.trim())) { emit(escapeMd(raw)); break; }
+				if (/^[\p{L}\p{N}]{1,4}$/u.test(unmark(raw).trim())) { emit(escapeMd(raw)); break; }
 				emit(raw.trim() ? (raw.includes("`") ? `\`\` ${raw} \`\`` : `\`${raw}\``) : "");
 				break;
 			}
@@ -73,12 +130,12 @@ export function htmlToMarkdown(html: string): string {
 				const text = f.buf.trim();
 				if (!text) { emit(f.buf); break; }
 				// a bare "," or dash link of a citation group is plain text (its neighbours carry the numbers)
-				if (/\brx-cite\b/.test(f.attrs) && /^[\s,;‐-―−-]+$/.test(plainOf(f.buf))) { emit(f.buf); break; }
+				if (/\brx-cite\b/.test(f.attrs) && /^[\s,;‐-―−-]+$/.test(unmark(plainOf(f.buf)))) { emit(f.buf); break; }
 				const lead = /^\s*/.exec(f.buf)![0], trail = /\s*$/.exec(f.buf)![0];
 				emit(lead);
 				if (/\brx-cite\b/.test(f.attrs)) {
 					const kind = attr(f.attrs, "data-kind") ?? "other", page = attr(f.attrs, "data-page") ?? "0", t = attr(f.attrs, "data-top") ?? "";
-					emit(`[${text}](zn-cite:${kind}:${page}:${t}:${encodeURIComponent(plainOf(f.buf))})`);
+					emit(`[${text}](zn-cite:${kind}:${page}:${t}:${encodeURIComponent(unmark(plainOf(f.buf)))})`);
 				} else {
 					const href = decode(attr(f.attrs, "href") ?? "");
 					emit(href ? `[${text}](${href.replace(/[()\s]/g, (c) => encodeURIComponent(c))})` : text);
@@ -98,9 +155,13 @@ export function htmlToMarkdown(html: string): string {
 		}
 	}
 	while (stack.length > 1) { const f = stack.pop()!; emit(f.buf); }
-	let out = root.buf.trim();
+	let out = root.buf.trim() + cuts.slice(ci).map((c) => c.ch).join("");
 	// text that starts like a block (a "1. " label, "- ", "# ") must stay a paragraph
-	if (!/^<(?:ul|ol)\b/i.test(html.trim())) out = out.replace(/^(\d+)([.)])(\s)/, "$1\\$2$3").replace(/^([-+#>])(\s|#)/, "\\$1$2");
+	// (leading delimiters do not count: without marks GPUIX parses the text without them)
+	if (!/^<(?:ul|ol)\b/i.test(html.trim())) {
+		out = out.replace(/^([\u{F0000}-\u{10FFFF}]*\d+[\u{F0000}-\u{10FFFF}]*)([.)])([\u{F0000}-\u{10FFFF}]*\s)/u, "$1\\$2$3")
+			.replace(/^([\u{F0000}-\u{10FFFF}]*)([-+#>])([\u{F0000}-\u{10FFFF}]*(?:\s|#))/u, "$1\\$2$3");
+	}
 	return out;
 }
 

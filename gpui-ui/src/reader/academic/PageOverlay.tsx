@@ -2,7 +2,8 @@
 // mentions, supplementary-material mentions and author-year citations. Each becomes a soft highlight with hover / click popovers
 // (reader-next/src/academic/index.ts onPageOverlay). The overlay is sized to the page box; hot areas are the only things that take
 // pointer input.
-import { createResource, createSignal, For, Show, type Accessor, type JSX } from "solid-js";
+import { createResource, createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import { addKeyHandler } from "../../shell/shortcuts";
 import { withAlpha } from "../../theme";
 import { Icon } from "../../icons";
 import { Button } from "../../ui";
@@ -241,6 +242,16 @@ const LINK = "#2563eb";
 const TINT: Record<HotKind, string> = { cite: LINK, figure: LINK, supp: LINK, "author-year": LINK, bib: LINK };
 const CARD_W = 380;
 
+/** Escape closes the card while it is shown (hover cards never take keyboard focus, so this is a window-level handler). */
+export function EscapeCloses(p: { close: () => void }): JSX.Element {
+	onCleanup(addKeyHandler((e) => {
+		if (e.key !== "escape" || e.modifiers?.ctrl || e.modifiers?.alt || e.modifiers?.cmd) return false;
+		p.close();
+		return true;
+	}));
+	return undefined as unknown as JSX.Element;
+}
+
 export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accessor<{ width: number; height: number }> }): JSX.Element {
 	const s = academicFor(p.ctx);
 	const k = kit(p.ctx.mode);
@@ -298,7 +309,8 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 			<div
 				onMouseEnter={() => s.cancelHide()}
 				onMouseLeave={() => s.scheduleHide(600)}
-				onMouseDownOutside={() => { if (s.popup()?.pinned) s.hidePopup(); }}
+				// a press anywhere else closes the card, a hover card as much as a pinned one (pressing its own mention pins it again)
+				onMouseDownOutside={() => s.hidePopup()}
 				style={{
 					...k.t("flex flex-col rounded-lg border bg-popover"), position: "absolute", left, width: CARD_W, padding: 12,
 					...(below ? { top: Math.min(rectBottom + 6, p.box().height - 80) } : { bottom: p.box().height - rectTop + 6 }),
@@ -310,6 +322,7 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 						<Icon name="x" size={14} color={k.tok("muted-foreground")} />
 					</div>
 				</Show>
+				<EscapeCloses close={() => s.hidePopup()} />
 				{pp.content()}
 			</div>
 		);
