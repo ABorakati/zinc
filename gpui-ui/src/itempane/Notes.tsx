@@ -1,15 +1,19 @@
-// Notes: the child-note list and the note editor. The web UI embeds Zotero's note-editor in an iframe; GPUIX has no web view, so a note
-// is shown through the native <markdown> element (note HTML -> Markdown with turndown) and edited as Markdown text in a <textarea>
-// (back to HTML with marked on save, keeping Zotero's <div data-schema-version> wrapper). Notes that use formatting Markdown cannot
-// hold (annotation highlights and citations with attributes, tables, images, super/subscripts, styles) are edited as raw HTML instead.
+// Notes: the child-note list and the note editor. Like the web UI (which embeds Zotero's note-editor in an iframe), a note opens in
+// Zotero's own rich-text editor, here a WebView2 popup over a placeholder (RichNote.tsx, webview/notes.ts). Where that is unavailable
+// (no WebView2, no note-host build, the headless renderer) the fallback is the Markdown editor below: the note is shown through the
+// native <markdown> element (note HTML -> Markdown with turndown) and edited as Markdown text in a <textarea> (back to HTML with marked
+// on save, keeping Zotero's <div data-schema-version> wrapper). Notes that use formatting Markdown cannot hold (annotation highlights
+// and citations with attributes, tables, images, super/subscripts, styles) are edited as raw HTML there.
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { openLink } from "./actions";
-import { Empty, IconBtn, Section, TextBtn, inputTheme, t, tok, tx } from "./kit";
+import { Empty, IconBtn, Section, TextBtn, goToSection, inputTheme, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { htmlToMarkdown, isSimpleNoteHtml, markdownToHtml, noteWrapper } from "./noteHtml";
 import { ipApi } from "./net";
 import { firstLine } from "./util";
+import { RichNoteEditor } from "./RichNote";
+import { richNotesAvailable } from "../webview/notes";
 
 // A note the item list asked to open (double-click on a child note row); applied once that parent's notes are shown.
 const [pendingNote, setPendingNote] = createSignal<{ parentKey: string; noteKey: string } | null>(null);
@@ -57,11 +61,27 @@ function Segmented(p: { value: "edit" | "preview"; onChange: (v: "edit" | "previ
 	);
 }
 
+type NoteEditorProps = { noteKey: string; startEditing?: boolean; onClose?: () => void; onSaved?: (html: string) => void; height?: number; fill?: boolean };
+
+/** One note: Zotero's editor when it is available, else the Markdown editor. `fill` (top-level notes) fills the parent's height. */
+export function NoteEditor(p: NoteEditorProps): JSX.Element {
+	return (
+		<Show
+			when={richNotesAvailable() !== undefined}
+			fallback={<text style={{ ...tx("text-xs text-muted-foreground"), padding: 8 }}>Loading…</text>}
+		>
+			<Show when={richNotesAvailable()} fallback={<MarkdownNoteEditor {...p} />}>
+				<RichNoteEditor {...p} />
+			</Show>
+		</Show>
+	);
+}
+
 /**
- * One note: Edit / Preview toggle over the text. `startEditing` opens in the editor. Saves 800 ms after the last keystroke, when
+ * One note in the Markdown editor: Edit / Preview toggle over the text. `startEditing` opens in the editor. Saves 800 ms after the last keystroke, when
  * switching to Preview and when closed.
  */
-export function NoteEditor(p: { noteKey: string; startEditing?: boolean; onClose?: () => void; onSaved?: (html: string) => void; height?: number }): JSX.Element {
+export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 	const pane = usePane();
 	const [html, setHtml] = createSignal<string | null>(null);
 	const [mode, setMode] = createSignal<"edit" | "preview">(p.startEditing ? "edit" : "preview");
@@ -180,6 +200,7 @@ export function NotesSection(): JSX.Element {
 		setPendingNote(null);
 		setEditing(false);
 		setOpenKey(q.noteKey);
+		goToSection("notes"); // like the web UI's scrollIntoView: the editor only shows where its placeholder is on screen
 	});
 
 	async function addNote() {

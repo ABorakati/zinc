@@ -10,7 +10,7 @@ import { DialogLayerView } from "./dialogs";
 import {
 	addToast, armToast, boundsOf, dismissToast, focusedId, hideTooltip, newId, overlayLayers, pauseToast, placeAt, pushLayer, removeLayer,
 	restoreFocus, setNative, setWindowSignal, showTooltip, t, toastList, tok, tooltipState, tx, windowSize,
-	type Anchor, type NativeLike, type PopoverLayer, type ToastItem,
+	type Anchor, type NativeLike, type PopoverLayer, type Rect, type ToastItem,
 } from "./core";
 import { MenuLayerView } from "./menu";
 
@@ -121,6 +121,7 @@ function TooltipView() {
 			};
 			return (
 				<anchored
+					ref={(el: HostElement) => { tipEl = el; }}
 					position={{ x: pos().x, y: pos().y }}
 					anchor={pos().anchor}
 					fit="snap"
@@ -189,10 +190,21 @@ function ToastView(p: { item: ToastItem }) {
 	);
 }
 
+// the toast stack and the tooltip, for floatingRects()
+let toastEl: HostElement | undefined;
+let tipEl: HostElement | undefined;
+/** Window rects (logical px) of the toasts and the tooltip now on screen: a WebView2 popup cuts holes for them (webview/host.ts). */
+export function floatingRects(): Rect[] {
+	const out: Rect[] = [];
+	for (const el of [toastEl, tipEl]) { const r = boundsOf(el); if (r && r.width > 0 && r.height > 0) out.push(r); }
+	return out;
+}
+
 function ToastStack() {
 	return (
 		<Show when={toastList().length > 0}>
 			<anchored
+				ref={(el: HostElement) => { toastEl = el; }}
 				position={{ x: windowSize().width - 16, y: windowSize().height - 16 }}
 				anchor="bottomRight"
 				fit="snap"

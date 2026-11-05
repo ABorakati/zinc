@@ -4,7 +4,7 @@
 //   import { ItemPane } from "./itempane";   // <ItemPane /> fills its parent; it follows store.selectedItem() (and store.selected() when
 //   the list store has it: more than one key shows the multi-selection summary).
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js";
-import { useGpuix } from "@gpuix/solid";
+import { useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../icons";
 import { store } from "../store";
@@ -16,6 +16,9 @@ import { useInfoEntries } from "./Info";
 import { MultiSelect } from "./Multi";
 import { NoteEditor, NotesSection } from "./Notes";
 import { RelatedSection } from "./Related";
+import { NoteClip } from "./RichNote";
+import { richNotesAvailable } from "../webview/notes";
+import { boundsOf } from "../ui/core";
 import { TagsSection } from "./Tags";
 import { Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx, type Entry } from "./kit";
 import { createPaneModel, PaneContext, usePane } from "./model";
@@ -62,7 +65,8 @@ function Body(): JSX.Element {
 	const gp = useGpuix();
 	const d = () => pane.detail()!;
 	const [active, setActive] = createSignal("info");
-	let list: { id: number } | undefined;
+	let list: HostElement | undefined;
+	let listBox: HostElement | undefined; // the list's painted area (a <virtual-list> itself reports no bounds)
 
 	// The body is one <virtual-list> (the native side builds only the entries on screen; a scrolling container would lay out and paint every
 	// field of every section on every frame, even while only the item list scrolls). Its children are exactly the entries: the Info
@@ -104,6 +108,14 @@ function Body(): JSX.Element {
 		}, 30);
 	};
 	setGoTo(goTo);
+	// the wheel that reached the end of an open note's own scrolling (webview/notes.ts) scrolls the pane on
+	// (replayed as a wheel event over the list, so GPUI scrolls and clamps it exactly as for a real wheel)
+	const scrollBy = (dy: number) => {
+		type Wheel = (x: number, y: number, dx: number, dy: number) => void;
+		const r = gp?.renderer as { simulateScrollWheel?: Wheel; nativeSimulateScrollWheel?: Wheel } | undefined; // live / test renderer
+		const b = boundsOf(listBox);
+		if (b && r) (r.simulateScrollWheel ?? r.nativeSimulateScrollWheel)?.call(r, b.x + b.width / 2, b.y + b.height / 2, 0, -dy);
+	};
 
 	const count = (id: string) =>
 		id === "notes" ? d().children.filter((c) => c.itemType === "note").length
@@ -139,11 +151,13 @@ function Body(): JSX.Element {
 				</For>
 			</div>
 			<div
+				ref={(el: HostElement) => { listBox = el; }}
 				onLayout={(e) => { const w = (e as { width?: number }).width; if (w) setLabelW(Math.min(112, Math.max(64, Math.round(0.28 * (w - 40))))); }}
 				style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0, width: "100%", display: "flex", flexDirection: "column" }}
 			>
+				<NoteClip.Provider value={{ el: () => listBox, scrollBy }}>
 				<virtual-list
-					ref={(el: { id: number }) => { list = el; }}
+					ref={(el: HostElement) => { list = el; }}
 					testId="ip-list"
 					estimatedItemHeight={28}
 					overdraw={80}
@@ -152,6 +166,7 @@ function Body(): JSX.Element {
 				>
 					<For each={entries()}>{(e) => e.render()}</For>
 				</virtual-list>
+				</NoteClip.Provider>
 			</div>
 		</>
 	);
@@ -171,8 +186,9 @@ function NotePane(): JSX.Element {
 				</div>
 				<text style={{ ...tx("font-title text-[21px] font-semibold"), paddingLeft: 6 }}>{title()}</text>
 			</div>
-			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", overflow: "scroll", padding: 16 }}>
-				<NoteEditor noteKey={d().data.key} onSaved={() => pane.refreshList()} />
+			{/* Zotero's editor scrolls itself and fills the pane; the Markdown fallback scrolls here */}
+			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", padding: 16, ...(richNotesAvailable() ? { display: "flex", flexDirection: "column" } : { overflow: "scroll" }) }}>
+				<NoteEditor noteKey={d().data.key} fill onSaved={() => { void pane.reload(); pane.refreshList(); }} />
 			</div>
 		</div>
 	);

@@ -26,11 +26,20 @@ interface User32 {
 	DispatchMessageW(msg: unknown): bigint;
 	GetForegroundWindow(): H;
 	SetForegroundWindow(hwnd: H): number;
+	SetWindowRgn(hwnd: H, rgn: H | null, redraw: number): number;
+	GetWindowTextW(hwnd: H, buf: unknown, max: number): number;
+}
+interface Gdi32 {
+	CreateRectRgn(l: number, t: number, r: number, b: number): H;
+	CombineRgn(dst: H, a: H, b: H, mode: number): number;
+	DeleteObject(h: H): number;
 }
 
 let u32: User32 | null | undefined;
+let g32: Gdi32 | null | undefined;
 let enumCb: JSCallback | undefined;
 const pidBuf = new Uint32Array(1);
+const titleBuf = new Uint16Array(64);
 let found: H[] = [];
 
 function user32(): User32 | null {
@@ -56,13 +65,19 @@ function user32(): User32 | null {
 			DispatchMessageW: { args: [p], returns: FFIType.i64 },
 			GetForegroundWindow: { args: [], returns: p },
 			SetForegroundWindow: { args: [p], returns: i },
+			SetWindowRgn: { args: [p, p, i], returns: i },
+			GetWindowTextW: { args: [p, p, i], returns: i },
 		}).symbols as unknown as User32;
 		enumCb = new JSCallback(
 			(h: H) => {
 				const s = u32!;
 				s.GetWindowThreadProcessId(h, pidBuf);
-				// this process's visible top-level windows that have no owner (our own popup is owned, so it is skipped)
-				if (pidBuf[0] === process.pid && s.IsWindowVisible(h) && !s.GetWindow(h, 4)) found.push(h);
+				// this process's visible top-level windows that have no owner (our own popup is owned, so it is skipped), except the
+				// headless test renderer's window, which is never really on screen (a popup placed over it would be)
+				if (pidBuf[0] === process.pid && s.IsWindowVisible(h) && !s.GetWindow(h, 4)) {
+					const n = s.GetWindowTextW(h, titleBuf, titleBuf.length);
+					if (String.fromCharCode(...titleBuf.subarray(0, Math.max(0, n))) !== "GPUIX Test") found.push(h);
+				}
 				return 1;
 			},
 			{ args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
@@ -106,7 +121,7 @@ const rc = new Int32Array(4);
 /** The main window's client area in screen pixels, or null while it is minimised / gone. */
 export function clientOnScreen(): { x: number; y: number; width: number; height: number } | null {
 	const s = user32(), w = mainWindow();
-	if (!s || w == null || s.IsIconic(w)) return null;
+	if (!s || w == null || s.IsIconic(w) || !s.IsWindowVisible(w)) return null;
 	pt[0] = 0; pt[1] = 0;
 	if (!s.ClientToScreen(w, pt)) return null;
 	s.GetClientRect(w, rc);
@@ -121,13 +136,13 @@ const WS_EX_TOOLWINDOW = 0x80n, WS_EX_NOACTIVATE = 0x08000000n;
 const SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
 
 /** Turn a freshly created (top-level, framed) webview window into a frameless popup owned by the main window; it starts hidden. */
-export function makeOwnedPopup(h: H, owner: H): void {
+export function makeOwnedPopup(h: H, owner: H | null): void {
 	const s = user32();
 	if (!s) return;
 	s.ShowWindow(h, 0);
 	s.SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | WS_CLIPCHILDREN);
 	s.SetWindowLongPtrW(h, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
-	s.SetWindowLongPtrW(h, GWLP_HWNDPARENT, BigInt(owner)); // GWLP_HWNDPARENT on a top-level window sets its OWNER
+	if (owner != null) s.SetWindowLongPtrW(h, GWLP_HWNDPARENT, BigInt(owner)); // GWLP_HWNDPARENT on a top-level window sets its OWNER
 	s.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
@@ -138,6 +153,57 @@ export function placePopup(h: H, r: { x: number; y: number; width: number; heigh
 
 export function hidePopup(h: H): void {
 	user32()?.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+}
+
+function gdi32(): Gdi32 | null {
+	if (g32 !== undefined) return g32;
+	if (!user32()) return (g32 = null);
+	try {
+		const p = FFIType.ptr, i = FFIType.i32;
+		g32 = dlopen("gdi32.dll", {
+			CreateRectRgn: { args: [i, i, i, i], returns: p },
+			CombineRgn: { args: [p, p, p, i], returns: i },
+			DeleteObject: { args: [p], returns: i },
+		}).symbols as unknown as Gdi32;
+	} catch {
+		g32 = null;
+	}
+	return g32;
+}
+
+type PxRect = { x: number; y: number; width: number; height: number };
+const RGN_DIFF = 4;
+/**
+ * Clip what the popup shows to `keep` minus `holes` (rects in the popup's own pixels, origin at its top-left), or show all of it
+ * (`keep` null and no holes). The page keeps its full size, so a note scrolled half out of the item pane is cut off instead of squeezed.
+ * Clicks outside the region go to the window below (the GPUI window).
+ */
+export function clipPopup(h: H, keep: PxRect | null, holes: PxRect[] = []): void {
+	const s = user32(), g = gdi32();
+	if (!s) return;
+	if (!g || (!keep && !holes.length)) { s.SetWindowRgn(h, null, 1); return; }
+	const k = keep ?? { x: 0, y: 0, width: 1 << 15, height: 1 << 15 };
+	const rgn = g.CreateRectRgn(k.x, k.y, k.x + k.width, k.y + k.height);
+	for (const r of holes) {
+		const hole = g.CreateRectRgn(r.x, r.y, r.x + r.width, r.y + r.height);
+		g.CombineRgn(rgn, rgn, hole, RGN_DIFF);
+		g.DeleteObject(hole);
+	}
+	if (!s.SetWindowRgn(h, rgn, 1)) g.DeleteObject(rgn); // on success the system owns the region
+}
+
+/** Give the popup keyboard focus (an explicit "edit this" from the user); only while this app is in front, so it never steals focus. */
+export function focusPopup(h: H): void {
+	const s = user32();
+	if (s && appIsForeground()) s.SetForegroundWindow(h);
+}
+
+/** True when the popup (or a window inside it) is the foreground window. */
+export function popupHasFocus(h: H): boolean {
+	const s = user32();
+	if (!s) return false;
+	const f = s.GetForegroundWindow();
+	return !!f && BigInt(f) === BigInt(h);
 }
 
 /** Give keyboard focus back to the main window (after the popup is hidden). */

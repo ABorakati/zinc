@@ -22,7 +22,7 @@ import { holdRequestsUntil, setBaseUrl, setDirect } from "./api";
 import { onShutdown, portInUse, startServices, servicesWanted } from "./services";
 import { mark } from "./trace";
 import { webMounts } from "./webview/mounts";
-import { setWebBase } from "./webview/config";
+import { setNoteBase, setWebBase } from "./webview/config";
 
 const REAL_LIBRARY = "c:/users/abora/zotero-next/data/library.sqlite";
 const norm = (p: string) => p.replaceAll("\\", "/").toLowerCase();
@@ -63,6 +63,7 @@ async function start(dbPath: string): Promise<Core> {
 			(await apiMod.handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db)) ?? new Response("not found", { status: 404 }));
 		mark("core-ready");
 		setWebBase(null); // no HTTP in this mode: web tabs fall back to the default app
+		setNoteBase(null); // and notes to the built-in Markdown editor
 		return finish({ url: null, direct: true, primary: true, db, dbPath, wantedPort: null, stopServer: () => db.close() });
 	}
 	const { startServer } = await import("../../core/src/server" as string) as unknown as { startServer(o: { dbPath: string; port?: number; hostname?: string; mounts?: { prefix: string; dir: string }[] }): Started };
@@ -85,6 +86,7 @@ async function start(dbPath: string): Promise<Core> {
 	mark("core-server-started");
 	setBaseUrl(s.url);
 	setWebBase(serves ? s.url : null);
+	setNoteBase(mounts.some((m) => m.prefix === "/note-host/") ? s.url : null);
 	mark("core-ready");
 	const server = s;
 	return finish({ url: s.url, direct: false, primary, db: s.db, dbPath, wantedPort: want, stopServer: () => server.stop() });
