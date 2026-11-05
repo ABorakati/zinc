@@ -61,6 +61,11 @@ export function sameContent(a: unknown, b: unknown): boolean {
 
 const ABS_PATH = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
 
+function localInPublications(db: Database, key: string): boolean {
+	const r = db.query("SELECT json_extract(data, '$.inPublications') AS p FROM items WHERE key = ?").get(key) as { p: unknown } | null;
+	return !!r?.p;
+}
+
 function attachmentPath(dataDir: string, key: string, data: ZoteroJson, existing: string | null): string | null {
 	const linkMode = String(data.linkMode ?? "");
 	if (linkMode === "linked_url") return null;
@@ -214,8 +219,12 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 		date_modified: string;
 		version: number;
 	} | null;
-	// Fast path for the first full pull: identical modification time and nothing queued locally.
-	if (existing && !hasOutbox(db, "item", key) && ms(existing.date_modified) === ms(modified) && existing.version === (Number(data.version) || 0)) {
+	// Fast path for the first full pull: identical modification time and nothing queued locally. Not when My Publications
+	// differs: older imports dropped that flag, and Zotero does not bump dateModified when it is set, so only a full apply fixes it.
+	if (
+		existing && !hasOutbox(db, "item", key) && ms(existing.date_modified) === ms(modified) && existing.version === (Number(data.version) || 0) &&
+		!!data.inPublications === localInPublications(db, key)
+	) {
 		setBase(db, "item", key, dm || modified);
 		c.report.skipped++;
 		return;
@@ -226,6 +235,8 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 		return;
 	}
 	const itemData: Record<string, unknown> = { ...data, key };
+	// zotero.org sends every field of the item type, empty ones as "": store only the filled ones, as the local import does
+	for (const [f, v] of Object.entries(itemData)) if (v === "" && f !== "title" && f !== "itemType") delete itemData[f];
 	if (parent) itemData.parentItem = parent;
 	else delete itemData.parentItem;
 	const itemType = String(itemData.itemType ?? "document");
