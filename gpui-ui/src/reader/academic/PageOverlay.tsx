@@ -72,7 +72,7 @@ export function CiteContent(p: { s: AcademicSession; k: Kit; spec: CiteSpec; jum
 						/>
 					}
 				>
-					<CiteGroup s={p.s} k={p.k} text={p.spec.groupText} entries={d().map((x) => ({ n: x.n, ref: x.res.ref }))} />
+					<CiteGroup s={p.s} k={p.k} text={p.spec.groupText} entries={d().map((x) => ({ n: x.n, ref: x.res.ref, onJump: x.res.entry ? () => jump(x.res.entry!.page, x.res.entry!.rect) : undefined }))} />
 				</Show>
 			)}
 		</Show>

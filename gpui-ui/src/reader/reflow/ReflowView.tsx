@@ -111,12 +111,15 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		}
 	}
 	/** Scroll to the item (or bibliography entry) holding PDF location (page, top). */
-	function goTo(page: number, y?: number): boolean {
+	function targetIndex(page: number, y?: number): number {
 		const map = blockById();
 		const its = items();
 		const i = bestTarget(its.map((it) => ({ blocks: it.blockIds.flatMap((id) => map.get(id) ?? []) })), page, y);
-		const idx = i >= 0 ? i : firstItemOnPage(its, page);
-		if (idx < 0 || !its.length) return false;
+		return its.length ? (i >= 0 ? i : firstItemOnPage(its, page)) : -1;
+	}
+	function goTo(page: number, y?: number): boolean {
+		const idx = targetIndex(page, y);
+		if (idx < 0) return false;
 		goToIndex(idx);
 		return true;
 	}
@@ -141,6 +144,10 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		const page = topPage();
 		if (page !== undefined) setTimeout(() => p.ctx.scrollTo(page, 0), 40);
 	});
+
+	// the sidebar's figure / table / reference rows, the cards' "Go to" buttons and the page-view style links all call the session's
+	// jump(page, rect), which scrolls the PDF pages: while this view is shown it scrolls the reading list to the block there instead
+	onCleanup(s.setJumpOverride((page, rect) => goTo(page, rect ? rect[3] : undefined)));
 
 	// ---- cards for citation, figure and table links: hover opens one after a short delay, moving into it keeps it, leaving closes it;
 	// a click opens it pinned (it then stays until a press elsewhere, Escape or its X). The page view's AcademicPage does the same.
@@ -240,7 +247,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				>
 					<EscapeCloses close={closeCard} />
 					<Show when={c.pinned}>
-						<div onClick={closeCard} style={{ position: "absolute", right: 6, top: 6, display: "flex", cursor: "pointer" }}>
+						<div onClick={closeCard} style={{ position: "absolute", right: 6, top: 6, display: "flex", cursor: "pointer", padding: 2, backgroundColor: "rgba(128, 128, 128, 0.02)" }}>
 							<Icon name="x" size={14} color={k.tok("muted-foreground")} />
 						</div>
 					</Show>
@@ -252,7 +259,11 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 
 	/** ZN_REFLOW_PROBE=1: state for the headless probe (scripts/shot-reflow-annot.tsx) */
 	const probe = process.env.ZN_REFLOW_PROBE === "1"
-		? ((globalThis as Record<string, unknown>).__znReflow = { card, lastLink: null as null | { url: string; x: number; y: number; width: number; height: number }, selPop: () => selPop() }) as { lastLink: unknown; card: typeof card; selPop: () => unknown }
+		? ((globalThis as Record<string, unknown>).__znReflow = {
+			card, lastLink: null as null | { url: string; x: number; y: number; width: number; height: number }, selPop: () => selPop(),
+			top, flash, backLength: () => back().length, targetIndex, itemCount: () => items().length, goBack, goToIndex,
+			family: () => family(), size: () => st().size, theme: () => st().theme, items, toc,
+		}) as { lastLink: unknown; card: typeof card; selPop: () => unknown }
 		: null;
 
 	// ---- annotations: the document's, drawn in the text; new ones from a selection here (see anchor.ts)
@@ -561,7 +572,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 					<Row id={it.id} gap={1.2}>
 						<For each={(it as { entries: { id: string; html: string }[] }).entries}>
 							{(e, i) => (
-								<div onClick={() => { if (!selSpans().length) showCitedBy(e.id, i() + 1); }} style={{ paddingBottom: Math.round(st().size * 0.35), cursor: "pointer" }}>{md(e.id, e.html, [e.id], 0.84)}</div>
+								<div onClick={() => { if (!selSpans().length) showCitedBy(e.id, i() + 1); }} style={{ paddingBottom: Math.round(st().size * 0.35), cursor: "pointer", backgroundColor: hitFill() }}>{md(e.id, e.html, [e.id], 0.84)}</div>
 							)}
 						</For>
 					</Row>
@@ -571,6 +582,9 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	}
 
 	// ---- chrome
+	/** GPUIX only hit-tests a box that paints something: a "transparent" (or unfilled) clickable never gets its click. A fill of
+	 *  almost no alpha is invisible and still counts. */
+	const hitFill = () => withAlpha(pal().bg, 0.02);
 	function Chip(c: { label?: string; icon?: string; on?: boolean; onClick: () => void; w?: number; disabled?: boolean; refEl?: (el: { id: number }) => void }): JSX.Element {
 		return (
 			<div
@@ -578,7 +592,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				onClick={() => { if (!c.disabled) c.onClick(); }}
 				style={{
 					display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, height: 26, paddingLeft: 9, paddingRight: 9, borderRadius: 6, flexShrink: 0,
-					borderWidth: 1, borderColor: c.on ? pal().fg : pal().rule, backgroundColor: c.on ? pal().panel : "transparent", cursor: c.disabled ? "default" : "pointer",
+					borderWidth: 1, borderColor: c.on ? pal().fg : pal().rule, backgroundColor: c.on ? pal().panel : hitFill(), cursor: c.disabled ? "default" : "pointer",
 					opacity: c.disabled ? 0.45 : 1, ...(c.w ? { width: c.w } : {}),
 				}}
 			>
@@ -656,7 +670,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 								onClick={() => { const i = indexOf().get(e.id); closeToc(); if (i !== undefined) goToIndex(i); }}
 								style={{
 									display: "flex", paddingTop: 4, paddingBottom: 4, paddingRight: 10, paddingLeft: 14 + (e.level - 1) * 12, cursor: "pointer",
-									backgroundColor: cur() === e.id ? pal().panel : "transparent", borderLeftWidth: 2, borderColor: cur() === e.id ? pal().cite : "transparent", hover: { backgroundColor: pal().panel },
+									backgroundColor: cur() === e.id ? pal().panel : hitFill(), borderLeftWidth: 2, borderColor: cur() === e.id ? pal().cite : "transparent", hover: { backgroundColor: pal().panel },
 								}}
 							>
 								<text style={{ color: cur() === e.id ? pal().fg : pal().muted, fontFamily: "Inter", fontSize: 12, fontWeight: cur() === e.id ? 600 : 400, ...clampTx(2) }}>{e.text}</text>

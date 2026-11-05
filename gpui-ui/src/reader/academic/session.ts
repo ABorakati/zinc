@@ -87,7 +87,14 @@ export function createSession(ctx: ReaderContext) {
 
 	// ---- jumps with a way back
 	const [backStack, setBack] = createSignal<number[]>([]);
+	/** A view that shows the document its own way (the reading view) takes over jump(); it returns false to let the page view scroll. */
+	let jumpOverride: ((page: number, rect: PdfRect | null) => boolean) | null = null;
+	function setJumpOverride(fn: ((page: number, rect: PdfRect | null) => boolean) | null): () => void {
+		jumpOverride = fn;
+		return () => { if (jumpOverride === fn) jumpOverride = null; };
+	}
 	function jump(page: number, rect: PdfRect | null, remember = true) {
+		if (jumpOverride?.(page, rect)) { setPopup(null); return; }
 		const size = ctx.pageSize(page);
 		const here = ctx.currentPage();
 		if (remember && backStack()[backStack().length - 1] !== here) setBack((s) => [...s.slice(-29), here]);
@@ -112,7 +119,7 @@ export function createSession(ctx: ReaderContext) {
 		hidePopup() { cancelHide(); setPopup(null); },
 		scheduleHide(ms = 400) { cancelHide(); hideTimer = setTimeout(() => { if (!popup()?.pinned) setPopup(null); }, ms); },
 		cancelHide,
-		backStack, jump, goBack,
+		backStack, jump, goBack, setJumpOverride,
 		dispose() { closed = true; cancelHide(); closeRegions(ctx.attachmentKey); },
 	};
 }

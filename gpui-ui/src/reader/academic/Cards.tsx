@@ -270,7 +270,7 @@ export function CitedByCard(p: { s: AcademicSession; k: Kit; n: number; sites: C
 
 // ---------------------------------------------------------------------------------------------------- citation group
 
-export function CiteGroup(p: { s: AcademicSession; k: Kit; text: string; entries: { n: number; ref: Reference | null }[]; onShowInRefs?: (i: number) => void }): JSX.Element {
+export function CiteGroup(p: { s: AcademicSession; k: Kit; text: string; entries: { n: number; ref: Reference | null; onJump?: () => void }[]; onShowInRefs?: (i: number) => void }): JSX.Element {
 	const [open, setOpen] = createSignal<number | null>(null);
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
@@ -286,7 +286,7 @@ export function CiteGroup(p: { s: AcademicSession; k: Kit; text: string; entries
 							<text style={{ ...p.k.tx("text-[12px] text-foreground"), ...clampTx(2) }}>{e.ref ? (e.ref.title ?? e.ref.raw ?? "") : "(not found in the resolved bibliography)"}</text>
 						</div>
 						<Show when={open() === e.n && e.ref}>
-							<div style={{ paddingLeft: 24 }}><RefCard s={p.s} opts={{ ref: e.ref, compact: true, onShowInRefs: p.onShowInRefs }} /></div>
+							<div style={{ paddingLeft: 24 }}><RefCard s={p.s} opts={{ ref: e.ref, compact: true, onShowInRefs: p.onShowInRefs, onJump: e.onJump }} /></div>
 						</Show>
 					</div>
 				)}

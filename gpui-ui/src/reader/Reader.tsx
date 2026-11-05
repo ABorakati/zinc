@@ -1363,18 +1363,24 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const [hitList, setHitList] = createSignal(false);
 	const sep = () => <div style={{ ...t("mx-1 h-5 w-px flex-none"), backgroundColor: tok("border") }} />;
 
+	// The toolbar WRAPS: its controls are grouped in rows that stay together (navigation, page, zoom and view, search, plugins), and a
+	// group that does not fit moves to a second line instead of running past the window edge (the annotation tool options, the
+	// academic "Back" button and the reading-view toggle all add width). One line is 40 px tall, as before.
 	const toolbar = () => (
-		<div style={t("relative flex h-10 flex-none items-center gap-1 border-b bg-card px-2")}>
+		<div style={{ ...t("relative flex flex-none items-center gap-x-1 border-b bg-card px-2"), flexWrap: "wrap", minHeight: 40, paddingTop: 4, paddingBottom: 4, rowGap: 4 }}>
+			<div style={t("flex flex-none items-center gap-1")}>
 			<Show when={doc()}>
 				<IconButton icon="panel-left" title="Sidebar" mode={mode} on={sbOpen()} onClick={() => setSidebar(!sbOpen())} />
 				<IconButton icon="arrow-left" title="Back (Alt+Left)" mode={mode} disabled={history().length === 0} onClick={goBack} />
 			</Show>
-			<div style={t("mx-2 flex min-w-0 flex-1 items-center")}>
+			</div>
+			<div style={{ ...t("mx-2 flex min-w-0 items-center"), flexGrow: 1, flexShrink: 1, flexBasis: 96 }}>
 				<text style={{ ...tx("text-[13px] font-medium text-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{props.title ?? ""}</text>
 			</div>
 
 			<Show when={doc()}>
 				{/* page n / N */}
+				<div style={t("flex flex-none items-center gap-1")}>
 				<div style={{ ...t("flex h-7 w-11 flex-none items-center justify-center rounded border bg-background"), borderColor: tok("input") }}>
 					<input
 						value={String(curPage() + 1)}
@@ -1384,6 +1390,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 					/>
 				</div>
 				<text style={{ ...tx("mr-2 text-xs text-muted-foreground"), whiteSpace: "nowrap" }}>{`/ ${count()}`}</text>
+				</div>
+
+				<div style={t("flex flex-none items-center gap-1")}>
 
 				<IconButton icon="zoom-out" title="Zoom out (Ctrl+-)" mode={mode} onClick={() => zoomBy(1 / 1.15)} />
 				<div style={t("flex w-11 flex-none items-center justify-center")}>
@@ -1397,10 +1406,10 @@ export function Reader(props: ReaderProps): JSX.Element {
 				<IconButton icon="palette" title="Page appearance" mode={mode} on={openMenu() === "appearance" || appearance().mode !== "normal"} onClick={() => setOpenMenu(openMenu() === "appearance" ? null : "appearance")} />
 				<ViewMenuButton mode={mode} scroll={scrollMode} spread={spreadMode} setLayout={setLayout} cmds={cmds} />
 				<PrintButton mode={mode} cmds={cmds} />
-
-				{sep()}
+				</div>
 
 				{/* search */}
+				<div style={t("flex flex-none items-center gap-1")}>
 				<div style={{ ...t("flex h-7 w-60 flex-none items-center rounded-md border bg-background pl-2"), borderColor: tok("input") }}>
 					<Icon name="search" size={14} color={tok("muted-foreground")} />
 					<input
@@ -1424,6 +1433,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 				<IconButton icon="chevron-up" title="Previous match" mode={mode} disabled={hits().length === 0} onClick={() => step(-1)} />
 				<IconButton icon="chevron-down" title="Next match" mode={mode} disabled={hits().length === 0} onClick={() => step(1)} />
 				<IconButton icon="list" title="Match list" mode={mode} on={hitList()} disabled={hits().length === 0} onClick={() => setHitList(!hitList())} />
+				</div>
 
 				{/* plugins: their toolbar items, and a toggle for every alternate view */}
 				<For each={plugins()}>

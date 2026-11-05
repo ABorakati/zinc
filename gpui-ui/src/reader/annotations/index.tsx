@@ -1,8 +1,11 @@
 // annotations plugin (reader-next/src/annotations): highlight/underline from the current selection (selection popup with
 // colours), sticky notes, the annotations side panel (list, colour filter, comments, delete) and page overlays drawing the saved
 // annotations. Storage is the core's annotations API (Zotero reader JSON), so the web reader and Zotero see the same annotations.
-import { Show, type JSX } from "solid-js";
+import { createEffect, createSignal, Show, type JSX } from "solid-js";
+import type { HostElement } from "@gpuix/solid";
 import { Icon } from "../../icons";
+import { Popover } from "../../ui";
+import { boundsOf, type Anchor } from "../../ui/core";
 import type { ReaderContext, ReaderPlugin } from "../plugins";
 import { IconButton, Swatches, kit } from "../structure/kit";
 import { PageAnnotations } from "./PageOverlay";
@@ -50,35 +53,68 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 		{ id: "eraser", icon: "eraser", title: "Eraser (remove ink)" },
 	] as const;
 	const widths = [1, 2, 4];
+	// A tool's options (colour, ink thickness) live behind ONE small button that opens a popover, like Zotero's colour picker, so
+	// selecting a tool adds 44 px to the toolbar instead of a palette of eight swatches plus three sizes.
+	const hasOptions = () => !!s.ui.tool() && s.ui.tool() !== "eraser";
+	const [open, setOpen] = createSignal(false);
+	const [anchor, setAnchor] = createSignal<Anchor>({ x: 0, y: 0 });
+	let trigger: HostElement | undefined;
+	createEffect(() => { if (!hasOptions()) setOpen(false); });
+	const toggle = (e: { x?: number; y?: number }) => {
+		if (open()) { setOpen(false); return; }
+		const r = boundsOf(trigger);
+		setAnchor(r ? { rect: r, align: "start" } : { x: e.x ?? 0, y: e.y ?? 0 });
+		setOpen(true);
+	};
+	const label = (text: string) => <text style={{ ...k.tx("text-xs font-medium text-muted-foreground"), whiteSpace: "nowrap" }}>{text}</text>;
 	return (
-		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>
+		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 0 }}>
 			{tools.map((t) => (
 				<IconButton k={k} icon={t.icon} title={t.title} on={s.ui.tool() === t.id} onClick={() => s.ui.setTool(s.ui.tool() === t.id ? null : t.id)} />
 			))}
-			<Show when={s.ui.tool() && s.ui.tool() !== "eraser"}>
-				<div style={{ marginLeft: 6 }}>
-					<Swatches k={k} colors={COLORS} value={s.ui.color()} size={14} onPick={(c) => s.ui.setColor(c)} />
+			<Show when={hasOptions()}>
+				<div
+					ref={(x: HostElement) => { trigger = x; }}
+					style={{
+						...k.t("relative flex flex-none flex-row items-center rounded-md"),
+						height: 28, paddingLeft: 6, paddingRight: 4, gap: 4, marginLeft: 4, cursor: "pointer",
+						...(open() ? { backgroundColor: k.tok("accent") } : {}),
+						hover: k.t("bg-accent"),
+					}}
+				>
+					<div style={{ width: 16, height: 16, borderRadius: 8, flexShrink: 0, backgroundColor: s.ui.color(), borderWidth: 1, borderColor: "rgba(0, 0, 0, 0.25)" }} />
+					<Icon name="chevron-down" size={12} color={k.tok("muted-foreground")} />
+					{/* the click is taken by a transparent layer over the trigger, not by the trigger: a filled child (the swatch) would block it (see DropdownMenu) */}
+					<div onClick={toggle} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }} />
 				</div>
-			</Show>
-			<Show when={s.ui.tool() === "ink"}>
-				<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 3, marginLeft: 6 }}>
-					{widths.map((w) => {
-						const isSel = () => (s.ui.inkWidth?.() ?? 2) === w;
-						return (
-							<div
-								onClick={() => s.ui.setInkWidth?.(w)}
-								style={{
-									...k.t("flex items-center justify-center rounded border"),
-									width: 22, height: 20, cursor: "pointer",
-									borderColor: isSel() ? k.tok("primary") : k.tok("input"),
-									backgroundColor: isSel() ? k.tok("accent") : "transparent",
-								}}
-							>
-								<div style={{ width: 12, height: w, backgroundColor: k.tok("foreground"), borderRadius: w / 2 }} />
+				<Popover open={open()} onClose={() => setOpen(false)} anchor={anchor()} width={232}>
+					<div style={{ display: "flex", flexDirection: "column", gap: 8, userSelect: "none" }}>
+						{label("Colour")}
+						<Swatches k={k} colors={COLORS} value={s.ui.color()} size={20} onPick={(c) => { s.ui.setColor(c); setOpen(false); }} />
+						<Show when={s.ui.tool() === "ink"}>
+							{label("Thickness")}
+							<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
+								{widths.map((w) => {
+									const isSel = () => (s.ui.inkWidth?.() ?? 2) === w;
+									return (
+										<div
+											onClick={() => { s.ui.setInkWidth?.(w); setOpen(false); }}
+											style={{
+												...k.t("flex items-center justify-center rounded border"),
+												width: 36, height: 28, cursor: "pointer",
+												borderColor: isSel() ? k.tok("primary") : k.tok("input"),
+												backgroundColor: isSel() ? k.tok("accent") : "transparent",
+												hover: k.t("bg-accent"),
+											}}
+										>
+											<div style={{ width: 18, height: w, backgroundColor: k.tok("foreground"), borderRadius: w / 2 }} />
+										</div>
+									);
+								})}
 							</div>
-						);
-					})}
-				</div>
+						</Show>
+					</div>
+				</Popover>
 			</Show>
 		</div>
 	);
