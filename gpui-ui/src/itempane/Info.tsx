@@ -7,6 +7,7 @@ import { Block, BoxInput, Field, IconBtn, MiniSelect, Row, SectionHead, TextBtn,
 import { usePane } from "./model";
 import { clearTitleEdit, titleEditWanted } from "./focus";
 import { openLink } from "./actions";
+import { CITATION_KEY_FIELD, CitationKeyBlock } from "../features/bbt/InfoRow";
 import type { Creator, ZoteroSchemaField, ZoteroSchemaItemType } from "./net";
 import { daysIn, fmtTimestamp, formatDateParts, isPlainDate, MONTH_ABBR, parseDate } from "./util";
 
@@ -217,7 +218,7 @@ export function useInfoEntries(): () => Entry[] {
 	const data = () => pane.detail()!.data;
 	const st = () => pane.schema()?.itemTypes.find((x) => x.itemType === data().itemType);
 	const fields = createMemo<ZoteroSchemaField[]>(() => {
-		let f = (st()?.fields ?? FALLBACK).filter((x) => !HIDDEN.has(x.field));
+		let f = (st()?.fields ?? FALLBACK).filter((x) => !HIDDEN.has(x.field) && x.field !== CITATION_KEY_FIELD); // the Citation Key row is the BBT one
 		if (!f.some((x) => x.field === "title")) f = [{ field: "title", label: "Title" }, ...f];
 		if (!f.some((x) => x.field === "extra")) f = [...f, { field: "extra", label: "Extra" }];
 		return f;
@@ -320,7 +321,7 @@ export function useInfoEntries(): () => Entry[] {
 		if (pending()) out.push(warning);
 		for (const f of fields()) {
 			out.push(entry(`f:${f.field}`, () => fieldRow(f.field)));
-			if (f.field === "title") out.push(...creatorEntries());
+			if (f.field === "title") { out.push(...creatorEntries()); out.push(entry("citekey", () => <CitationKeyBlock itemType={data().itemType} />)); }
 		}
 		out.push(added, modified);
 		return out;

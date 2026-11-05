@@ -40,7 +40,8 @@ namespace ZoteroNext.Word
             switch (method)
             {
                 case "host.info":
-                    return Json.Map("version", "0.1.0", "library", Library.Info(), "uri", Library.UriBase(), "settings", Settings.Load(), "zn", ZnClient.Status());
+                    return Json.Map("version", "0.1.0", "library", Library.Info(), "uri", Library.UriBase(), "settings", Settings.Load(),
+                        "zn", Json.Bool(p, "light") ? Json.Map("up", false, "api", Settings.ApiBase(), "launcher", "", "launcherExists", false) : ZnClient.Status());
                 case "settings.get": return Settings.Load();
                 case "settings.set": return Settings.Patch(p);
 
@@ -65,6 +66,9 @@ namespace ZoteroNext.Word
                     }
 
                 case "doc.state": return _doc.State();
+                case "doc.list": return _doc.List();
+                case "doc.target": return _doc.SetTarget(p);
+                case "doc.locate": return _doc.Locate(p);
                 case "doc.fields": return _doc.Fields();
                 case "doc.cursor": return _doc.Cursor();
                 case "doc.insert": return _doc.InsertField(p);

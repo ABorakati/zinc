@@ -27,21 +27,138 @@ namespace ZoteroNext.Word
         readonly dynamic _app;
         public WordDoc(object app) { _app = app; }
 
+        /// <summary>
+        /// The document the calls act on: its full path (set by SetTarget), or null for Word's active document, which is what
+        /// the sidebar always uses. The agent API (MCP) has its own WordDoc, so a target never leaks into the sidebar.
+        /// </summary>
+        public string Target;
+
+        /// <summary>A second WordDoc over the same Word, with its own target and its own batch/undo state.</summary>
+        public WordDoc Clone() { return new WordDoc((object)_app); }
+
+        void NeedWord() { if (_app == null) throw new InvalidOperationException("Word is not available (no Word instance behind this bridge)."); }
+
         dynamic Doc
         {
             get
             {
+                NeedWord();
                 if ((int)_app.Documents.Count == 0) throw new InvalidOperationException("No document is open in Word.");
+                if (!string.IsNullOrEmpty(Target)) return FindDocument(Target);
                 return _app.ActiveDocument;
             }
+        }
+
+        /// <summary>The selection (cursor) of the target document's window.</summary>
+        dynamic Sel
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Target)) return _app.Selection;
+                try { return Doc.ActiveWindow.Selection; }
+                catch { throw new InvalidOperationException("The document has no window, so it has no cursor. Insert at the end or after some text instead."); }
+            }
+        }
+
+        dynamic FindDocument(string which)
+        {
+            dynamic docs = _app.Documents;
+            int n = (int)docs.Count;
+            if (n == 0) throw new InvalidOperationException("No document is open in Word.");
+            var byName = new List<object>();
+            var names = new List<string>();
+            for (int i = 1; i <= n; i++)
+            {
+                dynamic d = docs.Item(i);
+                string full = (string)d.FullName, name = (string)d.Name;
+                names.Add(name);
+                if (string.Equals(full, which, StringComparison.OrdinalIgnoreCase)) return d;
+                if (string.Equals(name, which, StringComparison.OrdinalIgnoreCase)) byName.Add((object)d);
+            }
+            if (byName.Count == 1) return byName[0];
+            if (byName.Count > 1) throw new InvalidOperationException("Several open documents are named '" + which + "'; use the full path from list_documents.");
+            throw new InvalidOperationException("No open document matches '" + which + "'. Open documents: " + string.Join(", ", names) + ".");
+        }
+
+        /// <summary>p.document = name or path of an open document, or null/empty for the active one. Applies to every later call of this WordDoc.</summary>
+        public object SetTarget(Dictionary<string, object> p)
+        {
+            string which = Json.Str(p, "document");
+            if (string.IsNullOrEmpty(which)) { Target = null; return Json.Map("ok", true); }
+            dynamic d = FindDocument(which);
+            Target = (string)d.FullName;
+            return Json.Map("ok", true, "name", (string)d.Name, "path", Target);
+        }
+
+        /// <summary>The open documents, for the agent API.</summary>
+        public object List()
+        {
+            NeedWord();
+            var list = new List<object>();
+            dynamic docs = _app.Documents;
+            int n = (int)docs.Count;
+            string active = null;
+            if (n > 0) { try { active = (string)_app.ActiveDocument.FullName; } catch { } }
+            for (int i = 1; i <= n; i++)
+            {
+                dynamic d = docs.Item(i);
+                string full = (string)d.FullName;
+                list.Add(Json.Map("name", (string)d.Name, "path", full, "active", active != null && string.Equals(active, full, StringComparison.OrdinalIgnoreCase), "saved", (bool)d.Saved, "readOnly", (bool)d.ReadOnly));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// A document position for an insert: p.end = just before the last paragraph mark of the body; p.afterText (+ occurrence, 1-based) =
+        /// the end of the n-th case-sensitive match of that text in the body. Returns {pos}. Throws with the match count when there is no such match.
+        /// </summary>
+        public object Locate(Dictionary<string, object> p)
+        {
+            dynamic d = Doc;
+            if (Json.Bool(p, "end")) return Json.Map("pos", Math.Max(0, (int)d.Content.End - 1));
+            string text = Json.Str(p, "afterText");
+            if (string.IsNullOrEmpty(text)) throw new ArgumentException("afterText is required");
+            if (text.Length > 250) throw new ArgumentException("afterText is limited to 250 characters (Word's search limit)");
+            if (text.IndexOf('\r') >= 0 || text.IndexOf('\n') >= 0) throw new ArgumentException("afterText must be within one paragraph");
+            int occurrence = Math.Max(1, Json.Int(p, "occurrence", 1));
+            int found = 0, hit = -1;
+            int docEnd = (int)d.Content.End;
+            dynamic rng = d.Content;
+            for (int guard = 0; guard < 20000; guard++)
+            {
+                dynamic f = rng.Find;
+                f.ClearFormatting();
+                // FindText, MatchCase, MatchWholeWord, MatchWildcards, MatchSoundsLike, MatchAllWordForms, Forward, Wrap (wdFindStop)
+                bool ok = (bool)f.Execute(text.Replace("^", "^^"), true, false, false, false, false, true, 0);
+                if (!ok) break;
+                found++;
+                int end = (int)rng.End;
+                if (found == occurrence) { hit = end; break; }
+                if (end >= docEnd) break;
+                rng = d.Range(end, docEnd);
+            }
+            if (hit < 0)
+            {
+                throw new InvalidOperationException("The text '" + (text.Length > 60 ? text.Substring(0, 60) + "..." : text) + "' was not found" +
+                    (found > 0 ? " as occurrence " + occurrence + " (only " + found + " occurrence(s) in the document body)" : " in the document body") + ". Matching is case-sensitive and covers one paragraph.");
+            }
+            return Json.Map("pos", hit);
+        }
+
+        /// <summary>Abandon a half-finished batch (a timed-out agent call): close the undo record, switch screen updating back on, clear the target.</summary>
+        public void ResetBatch()
+        {
+            Target = null;
+            if (_depth > 0) { _depth = 1; End(); }
         }
 
         // ---------------------------------------------------------------- state
 
         public Dictionary<string, object> State()
         {
+            NeedWord();
             if ((int)_app.Documents.Count == 0) return Json.Map("hasDoc", false);
-            dynamic d = _app.ActiveDocument;
+            dynamic d = Doc;
             var prefs = ReadPrefsXml(d);
             return Json.Map("hasDoc", true, "name", (string)d.Name, "fullName", (string)d.FullName, "readOnly", (bool)d.ReadOnly,
                 "prefsXml", prefs, "protection", (int)d.ProtectionType);
@@ -191,12 +308,28 @@ namespace ZoteroNext.Word
                 return Json.Map("ok", true, "story", afterStory);
             }
             bool footnote = placement == "footnote", endnote = placement == "endnote";
-            dynamic sel = _app.Selection;
-            dynamic range = sel.Range;
+            var atObj = Json.Obj(Json.Get(p, "at"));
+            dynamic sel = null;
+            dynamic range;
+            int storyType;
+            if (atObj != null)
+            {
+                // an explicit position in the main text (see Locate): the user's cursor is left where it is
+                int atPos = Json.Int(atObj, "pos", -1);
+                if (atPos < 0 || atPos > (int)d.Content.End) throw new ArgumentException("the insert position is outside the document");
+                range = d.Range(atPos, atPos);
+                storyType = wdMainTextStory;
+            }
+            else
+            {
+                sel = Sel;
+                range = sel.Range;
+                storyType = (int)sel.StoryType;
+            }
             if ((bool)range.Information(wdInFieldResult) || (bool)range.Information(wdInFieldCode))
             {
                 // never nest: continue after the field the cursor is in
-                int afterPos = FieldEndAround(d, (int)sel.StoryType, (int)range.Start);
+                int afterPos = FieldEndAround(d, storyType, (int)range.Start);
                 if (afterPos >= 0) { range = d.Range(afterPos, afterPos); }
             }
             if (kind == "bibl")
@@ -208,7 +341,7 @@ namespace ZoteroNext.Word
             else
             {
                 range.Collapse(0);
-                if ((footnote || endnote) && (int)sel.StoryType == wdMainTextStory)
+                if ((footnote || endnote) && storyType == wdMainTextStory)
                 {
                     dynamic nt = footnote ? d.Footnotes.Add(range) : d.Endnotes.Add(range);
                     range = nt.Range;
@@ -222,9 +355,9 @@ namespace ZoteroNext.Word
             {
                 try { dynamic nx = f.Result.Duplicate; nx.SetRange(endPos, endPos + 1); if ((string)nx.Text != "\r") { nx.SetRange(endPos, endPos); nx.InsertParagraphAfter(); } } catch { }
             }
-            int st = (int)sel.StoryType;
+            int st = storyType;
             string story = st == wdMainTextStory ? (footnote ? "fn" : (endnote ? "en" : "main")) : (st == wdFootnotesStory ? "fn" : "en");
-            if (st == wdMainTextStory && !footnote && !endnote) { try { _app.Selection.SetRange(endPos, endPos); } catch { } }
+            if (sel != null && st == wdMainTextStory && !footnote && !endnote) { try { sel.SetRange(endPos, endPos); } catch { } }
             return Json.Map("ok", true, "story", story);
         }
 
@@ -295,7 +428,7 @@ namespace ZoteroNext.Word
         {
             try
             {
-                dynamic story = storyType == wdMainTextStory ? d.Content : _app.Selection.StoryRange;
+                dynamic story = storyType == wdMainTextStory ? d.Content : Sel.StoryRange;
                 dynamic before = story.Duplicate; before.SetRange(story.Start, pos);
                 int idx = (int)before.Fields.Count + 1;
                 for (int i = Math.Max(1, idx - 1); i <= idx + 1 && i <= (int)story.Fields.Count; i++)

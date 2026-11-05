@@ -21,9 +21,9 @@ import {
 	dateForApi,
 	LINK_MODES,
 	parseYear,
-	PUBLICATION_FIELDS,
 	toIso,
 } from "../zotero-db/mapping";
+import { venueOf } from "../venue";
 import {
 	buildFileIndex,
 	defaultSearchRoots,
@@ -337,6 +337,10 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			else m[r.predicate] = [cur, r.object];
 		}
 
+		// My Publications
+		const pubs = new Set<number>();
+		for (const r of src.query("SELECT itemID FROM publicationsItems").iterate() as Iterable<Row>) pubs.add(r.itemID);
+
 		// notes / attachments
 		const notes = new Map<number, Row>();
 		for (const r of src.query("SELECT itemID, parentItemID, note, title FROM itemNotes").iterate() as Iterable<Row>) {
@@ -493,6 +497,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 				dateAdded: it.dateAdded,
 				dateModified: it.dateModified,
 				noteText: n?.note ?? "",
+				inPublications: pubs.has(it.itemID),
 				attachment: attInput,
 			});
 
@@ -500,13 +505,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 				it.type === "note"
 					? (n?.title ?? "")
 					: ((f.title ?? "") as string);
-			let publication: string | null = null;
-			for (const pf of PUBLICATION_FIELDS) {
-				if (f[pf]) {
-					publication = f[pf];
-					break;
-				}
-			}
+			const publication = venueOf(f, it.type); // same rule as every other writer (core/src/venue.ts)
 			const deleted = trashed.has(it.itemID) ? 1 : 0;
 			insItem.run(
 				it.key,

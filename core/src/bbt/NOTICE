@@ -1,0 +1,28 @@
+Better BibTeX (native) in zotero-next
+=====================================
+
+This folder re-implements the behaviour of Better BibTeX for Zotero
+(https://github.com/retorquere/zotero-better-bibtex), which is MIT licensed:
+
+    MIT License
+    Copyright (c) 2016 Emiliano Heyns
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+    associated documentation files (the "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+    following conditions: The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+    KIND, EXPRESS OR IMPLIED.
+
+No BBT source file was copied. The code here is original TypeScript written against BBT's documented behaviour
+and its source (read, never executed). What was taken over as data or specification, with attribution here:
+
+  - the formula language (function and filter names, parameters, defaults, alternatives, conditions),
+    the default skip-word list and unsafe-character list (formula.ts, text.ts, settings.ts);
+  - the field order, entry-type maps and case-protection rules of the BibTeX / BibLaTeX exporters (export/*);
+  - the shapes of the CAYW, pull-export and JSON-RPC endpoints (cite.ts, rpc.ts, http.ts).
+
+Unicode-to-LaTeX tables are small, hand-written subsets (export/latex.ts); BBT uses the unicode2latex package.
+Not ported: eta templates, Juris-M fields, jieba/kuromoji/pinyin transliteration, TeXstudio push, the BetterBibTeX JSON
+(jzon) debug format, group libraries.

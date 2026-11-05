@@ -44,6 +44,7 @@ function buildFixture() {
 	CREATE TABLE itemAttachments (itemID INTEGER PRIMARY KEY, parentItemID INT, linkMode INT, contentType TEXT, charsetID INT, path TEXT, storageModTime INT, storageHash TEXT);
 	CREATE TABLE itemAnnotations (itemID INTEGER PRIMARY KEY, parentItemID INT, type INT, authorName TEXT, text TEXT, comment TEXT, color TEXT, pageLabel TEXT, sortIndex TEXT, position TEXT);
 	CREATE TABLE deletedItems (itemID INTEGER PRIMARY KEY);
+	CREATE TABLE publicationsItems (itemID INTEGER PRIMARY KEY);
 	CREATE TABLE syncedSettings (setting TEXT, libraryID INT, value, version INT, synced INT);
 	INSERT INTO syncedSettings VALUES
 	 ('tagColors',1,'[{"name":"ml","color":"#FF6666"},{"name":"Starred","color":"#FFD400"},{"name":"ml","color":"#000000"}]',1,1),
@@ -81,6 +82,7 @@ function buildFixture() {
 	 (7,1,2,'application/pdf',NULL,'attachments:linked.pdf',NULL,NULL);
 	INSERT INTO itemAnnotations VALUES (5,2,1,NULL,'highlighted','my comment','#ffd400','3','00000|000001|00002','{"pageIndex":2,"rects":[[1,2,3,4]]}');
 	INSERT INTO deletedItems VALUES (6);
+	INSERT INTO publicationsItems VALUES (1);
 	`);
 	db.close();
 }
@@ -160,6 +162,8 @@ describe("importZotero", () => {
 			dateModified: "2021-01-02T03:04:05Z",
 		});
 		expect(data.relations["dc:relation"]).toHaveLength(2);
+		expect(data.inPublications).toBe(true); // publicationsItems row -> My Publications
+		expect(item("ITEM0002").data.inPublications).toBeUndefined();
 		expect(row.creators_summary).toBe("Smith and Jones");
 		expect(row.year).toBe(2019);
 		expect(row.publication).toBe("J Surg");

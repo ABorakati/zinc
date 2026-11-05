@@ -10,8 +10,11 @@ import { errMsg, plural, stripExt } from "../text";
 import { toast } from "../../ui";
 import { autoAttachPdfs, autoTag } from "../../settings/generalPrefs";
 import { findFullText } from "../fulltext/jobs";
+import { translateApi } from "../translate/client";
+import { isUnrecognisedFormat } from "../translate/logic";
+import { BBT_EXPORT_FORMATS, type BbtExportFormat } from "../bbt/formats";
 
-export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv" | "rdf" | "mods";
+export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv" | "rdf" | "mods" | BbtExportFormat;
 
 export const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
 	{ id: "bibtex", label: "BibTeX", hint: ".bib, for LaTeX" },
@@ -21,6 +24,7 @@ export const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[]
 	{ id: "csv", label: "CSV", hint: ".csv, spreadsheet columns as Zotero" },
 	{ id: "rdf", label: "Zotero RDF", hint: ".rdf, items, notes and attachment files" },
 	{ id: "mods", label: "MODS", hint: ".xml, library catalogue format" },
+	...BBT_EXPORT_FORMATS,
 ];
 
 export interface ExportResult { filename: string; contentType: string; text: string; count: number; path?: string; files?: number }
@@ -105,13 +109,18 @@ export async function runExport(target: ExportTarget, format: ExportFormat, incl
 export async function runImport(text: string, collectionName: string, collectionKey?: string, basePath?: string): Promise<ImportResult | null> {
 	toast("Importing…", { durationMs: 2500 });
 	try {
-		const r = await ioApi.import({
+		const body = {
 			text,
 			format: "auto",
 			collectionName: collectionKey ? null : collectionName,
 			collectionKey: collectionKey || undefined,
 			autoTag: autoTag(),
 			basePath,
+		};
+		// auto-detect failed: let the Zotero translators try (keeps the original error when they cannot read it either)
+		const r = await ioApi.import(body).catch(async (e) => {
+			if (!isUnrecognisedFormat(errMsg(e))) throw e;
+			try { return await translateApi.import({ text, collectionName: body.collectionName, collectionKey: body.collectionKey }); } catch { throw e; }
 		});
 		refresh();
 		const parts = [`Imported ${plural(r.created, "item")}`];

@@ -249,6 +249,7 @@ export interface ItemInput {
 	dateAdded: string; // ISO
 	dateModified: string; // ISO
 	noteText?: string; // itemNotes.note (notes, and embedded notes of attachments)
+	inPublications?: boolean; // has a publicationsItems row (My Publications)
 	attachment?: AttachmentInput;
 }
 
@@ -285,6 +286,7 @@ export function buildItemData(it: ItemInput): Record<string, unknown> {
 	}
 	data.tags = it.tags.map((t) => (t.type ? { tag: t.tag, type: t.type } : { tag: t.tag }));
 	if (!it.parentKey) data.collections = [...it.collections].sort();
+	if (it.inPublications) data.inPublications = true;
 	data.relations = it.relations;
 	data.dateAdded = it.dateAdded;
 	data.dateModified = it.dateModified;

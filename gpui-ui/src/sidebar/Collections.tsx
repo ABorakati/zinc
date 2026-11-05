@@ -3,12 +3,12 @@
 //
 // Drags (a collection moved in the tree, or items dropped from the list) are hit-tested by coordinates: GPUIX captures the
 // pointer for the element a press started on (any element with onMouseDown + onMouseMove), so other rows see no enter / up.
-import { createEffect, createMemo, createRoot, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal, on, onCleanup, Show, untrack, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import type { Collection } from "../contracts";
 import { Icon } from "../icons";
 import { collectionActions } from "../registry";
-import { confirm, openMenu, toast, type MenuItem } from "../ui";
+import { confirm, DropdownMenu, openMenu, toast, type MenuItem } from "../ui";
 import { boundsOf } from "../ui/core";
 import { currentView, refreshStore, setView, storeCollections } from "./bridge";
 import { itemDrag, itemDragPoint } from "./dndBridge";
@@ -16,10 +16,12 @@ import { errMsg, sidebarApi } from "./client";
 import { NameInput } from "./NameInput";
 import { handleFileDrop } from "../features/additems/client";
 import {
-	CountBadge, type Entry, folderColor, folderSvg, IconButton, labelCls, ListItem, muted, pill, ROW, ROW_HOVER, ROW_STATIC, SectionHeader, t, tok, tx,
+	brighten, CountBadge, type Entry, folderColor, folderSvg, mode, IconButton, labelCls, ListItem, muted, pill, ROW, ROW_HOVER, ROW_STATIC, SectionHeader, t, tok, tx,
 } from "./parts";
 import { collectionsOpen, expandedKeys, setCollectionsOpen, setExpandedKeys, sidebarWidth } from "./state";
 import { clipText, textWidth } from "../clip";
+import { buildRows, type HeaderRow } from "./collectionRows";
+import { collectionStyle, GROUP_KEYS, GROUP_LABELS, ICONS, PALETTE, paletteHex, SORT_KEYS, SORT_LABELS } from "./collectionStyle";
 
 // ---- data: the store's tree, replaced by a fresher copy right after a write ----
 
@@ -36,6 +38,8 @@ function flatten(list: Collection[], out = new Map<string, Collection>()): Map<s
 	return out;
 }
 const flat = createRoot(() => createMemo(() => flatten(collections())));
+// first-seen / last-changed times for "Date created / modified" (the core sends none): recorded whenever the list changes
+createRoot(() => createEffect(() => { const l = [...flat().values()]; untrack(() => collectionStyle.observe(l)); }));
 export const collectionByKey = (k: string): Collection | undefined => flat().get(k);
 
 /** Re-read the collection tree (counts too) and tell the store to refresh its list. */
@@ -104,7 +108,7 @@ export function collectionAt(x: number, y: number): string | null {
 function targetAt(x: number, y: number): string | null {
 	if (hit(headerEl, x, y)) return "root";
 	if (paneEl && !hit(paneEl, x, y)) return null;
-	for (const [k, el] of rowEls) if (hit(el, x, y)) return k;
+	for (const [k, el] of rowEls) if (hit(el, x, y)) return k.startsWith("pin:") ? k.slice(4) : k; // the Pinned copy of a row counts as the row
 	return null;
 }
 /** Can the dragged collection be dropped on `target` ("root" = top level)? */
@@ -146,6 +150,7 @@ async function remove(c: Collection) {
 	if (!ok) return;
 	try {
 		await sidebarApi.deleteCollection(c.key);
+		collectionStyle.forget(c.key);
 		const v = currentView();
 		if (v.kind === "collection" && inside(c.key, v.key)) setView({ kind: "library" });
 		await reloadCollections();
@@ -199,10 +204,60 @@ function startCreate(parent: string | "root") {
 	setCreating(parent);
 }
 
+/** Section name input: a new section (to put collection `key` in) or a rename; shown as an inline row at the top of the list. */
+const [sectionInput, setSectionInput] = createSignal<{ kind: "new"; key: string } | { kind: "rename"; name: string } | null>(null);
+
+function colourMenu(c: Collection): MenuItem[] {
+	const cur = collectionStyle.styleOf(c.key).color;
+	return [
+		...PALETTE.map((p): MenuItem => ({ label: p.name, icon: cur === p.id ? "circle-check" : "circle", iconColor: p.hex, onSelect: () => collectionStyle.setColor(c.key, p.id) })),
+		{ separator: true },
+		{ label: "None", icon: !cur ? "circle-check" : "circle", onSelect: () => collectionStyle.setColor(c.key, undefined) },
+	];
+}
+
+function iconMenu(c: Collection): MenuItem[] {
+	const cur = collectionStyle.styleOf(c.key).icon;
+	return [
+		{ label: "Folder (default)", icon: "folder", checked: !cur, onSelect: () => collectionStyle.setIcon(c.key, undefined) },
+		...ICONS.map((name): MenuItem => ({ label: name.replace(/-/g, " ").replace(/^./, (x) => x.toUpperCase()), icon: name, checked: cur === name, onSelect: () => collectionStyle.setIcon(c.key, name) })),
+	];
+}
+
+function sectionMenu(c: Collection): MenuItem[] {
+	const cur = collectionStyle.styleOf(c.key).section;
+	const sections = collectionStyle.get().sections;
+	return [
+		{ label: "New section…", icon: "folder-plus", onSelect: () => { beforeCreate?.(); setCollectionsOpen(true); setSectionInput({ kind: "new", key: c.key }); } },
+		...(sections.length ? [{ separator: true } satisfies MenuItem] : []),
+		...sections.map((s): MenuItem => ({ label: s, checked: cur === s, onSelect: () => collectionStyle.setSection(c.key, s) })),
+		...(cur ? [{ separator: true } satisfies MenuItem, { label: "Remove from section", icon: "x", onSelect: () => collectionStyle.setSection(c.key, undefined) } satisfies MenuItem] : []),
+	];
+}
+
+function commitSection(v: string) {
+	const input = sectionInput();
+	setSectionInput(null);
+	const n = v.trim();
+	if (!input || !n) return;
+	if (input.kind === "rename") {
+		if (!collectionStyle.renameSection(input.name, n) && n !== input.name) toast(`A section named "${n}" already exists`, { kind: "error" });
+		return;
+	}
+	collectionStyle.addSection(n); // an existing name just reuses that section
+	collectionStyle.setSection(input.key, n);
+	if (collectionStyle.get().group !== "section") toast(`Moved to section "${n}"`, { description: "Group the list \"By section\" from the ⋯ menu to see it." });
+}
+
 function collectionMenu(c: Collection): MenuItem[] {
+	const pinned = collectionStyle.isPinned(c.key);
 	return [
 		{ label: "New subcollection", icon: "folder-plus", onSelect: () => startCreate(c.key) },
 		{ label: "Rename", icon: "pencil", onSelect: () => setEditing(c.key) },
+		{ label: pinned ? "Unpin" : "Pin to top", icon: pinned ? "pin-off" : "pin", onSelect: () => (pinned ? collectionStyle.unpin(c.key) : collectionStyle.pin(c.key)) },
+		{ label: "Colour", icon: "palette", submenu: colourMenu(c) },
+		{ label: "Icon", icon: "shapes", submenu: iconMenu(c) },
+		...(c.parentKey ? [] : [{ label: "Move to section", icon: "folder-tree", submenu: sectionMenu(c) } satisfies MenuItem]),
 		...(c.parentKey ? [{ label: "Move to top level", icon: "corner-left-up", onSelect: () => void move(c.key, null) } satisfies MenuItem] : []),
 		...collectionActions().map((a): MenuItem => ({ label: a.label, icon: a.icon, onSelect: () => a.run({ collectionKey: c.key, name: c.name }) })),
 		{ separator: true },
@@ -217,6 +272,25 @@ function showCollectionMenu(c: Collection, x: number, y: number) {
 	setTimeout(() => setMenuKey((k) => (k === c.key ? null : k)), 3000);
 }
 
+/** The ⋯ menu of the Collections header: how the list is sorted and grouped. */
+function viewMenu(): MenuItem[] {
+	const d = collectionStyle.get();
+	return [
+		{ heading: "Sort by" },
+		...SORT_KEYS.map((k): MenuItem => ({ label: SORT_LABELS[k], checked: d.sort === k, onSelect: () => collectionStyle.setSort(k) })),
+		{ separator: true },
+		{ heading: "Group by" },
+		...GROUP_KEYS.map((k): MenuItem => ({ label: GROUP_LABELS[k], checked: d.group === k, onSelect: () => collectionStyle.setGroup(k) })),
+	];
+}
+
+function sectionHeaderMenu(name: string, x: number, y: number) {
+	openMenu({ x, y }, [
+		{ label: "Rename section", icon: "pencil", onSelect: () => { setCollectionsOpen(true); setSectionInput({ kind: "rename", name }); } },
+		{ label: "Delete section", icon: "trash-2", danger: true, onSelect: () => collectionStyle.deleteSection(name) },
+	]);
+}
+
 function headerMenu(x: number, y: number) {
 	openMenu({ x, y }, [
 		{ label: "New collection", icon: "folder-plus", onSelect: () => startCreate("root") },
@@ -229,9 +303,17 @@ function headerMenu(x: number, y: number) {
 // ---- rows (entries of the sidebar's virtual list) ----
 
 /** One collection row. The tree is flattened by collectionEntries(); a row knows its depth, not its children's rows. */
-function Row(p: { c: Collection; depth: number }): JSX.Element {
-	const kids = () => p.c.children ?? [];
-	const open = () => expanded().has(p.c.key);
+function Row(p: { c: Collection; depth: number; pinnedCopy?: boolean }): JSX.Element {
+	// a Pinned-section copy is a plain row: no expand arrow, and it registers its element as "pin:<key>" (see targetAt)
+	const kids = () => (p.pinnedCopy ? [] : p.c.children ?? []);
+	const open = () => !p.pinnedCopy && expanded().has(p.c.key);
+	const style = () => collectionStyle.styleOf(p.c.key);
+	/** Folder tint: the chosen colour; uncoloured rows keep the old automatic tint, except under "By colour" where they are muted. */
+	const tint = () => {
+		const hex = paletteHex(style().color);
+		if (!hex) return collectionStyle.get().group === "colour" ? muted() : folderColor(p.c.key);
+		return mode() === "dark" ? brighten(hex, 1.25) : hex;
+	};
 	const sel = () => {
 		const v = currentView();
 		return v.kind === "collection" && v.key === p.c.key;
@@ -245,7 +327,7 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 		if (W <= 0) return p.c.name;
 		const n = p.c.itemCount;
 		const badge = n ? 10 + Math.max(22, textWidth(n.toLocaleString("en-US"), 11, 600) + 12) : 0;
-		return clipText(p.c.name, W - 20 - 19 - (6 + p.depth * 14) - 16 - 6 - 15 - 6 - 8 - badge, 13, sel() ? 600 : 400);
+		return clipText(p.c.name, W - 20 - 19 - (6 + p.depth * 14) - 16 - 6 - 15 - 6 - 8 - badge - (p.pinnedCopy ? 17 : 0), 13, sel() ? 600 : 400);
 	};
 	/** The drag is over this row and it may be dropped here (items go anywhere; a collection not into itself). */
 	const over = () => dropKey() === p.c.key && (!colDrag() || validTarget(colDrag()!, p.c.key));
@@ -253,8 +335,9 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 		<ListItem>
 			<div
 				ref={(el: HostElement) => {
-					rowEls.set(p.c.key, el);
-					onCleanup(() => { if (rowEls.get(p.c.key) === el) rowEls.delete(p.c.key); });
+					const id = p.pinnedCopy ? `pin:${p.c.key}` : p.c.key;
+					rowEls.set(id, el);
+					onCleanup(() => { if (rowEls.get(id) === el) rowEls.delete(id); });
 				}}
 				role="treeitem"
 				aria-selected={sel()}
@@ -309,12 +392,20 @@ function Row(p: { c: Collection; depth: number }): JSX.Element {
 						<Icon name={open() ? "chevron-down" : "chevron-right"} size={14} color={muted()} />
 					</Show>
 				</div>
-				<svg source={folderSvg(open() || sel())} style={{ width: 15, height: 15, flexShrink: 0, color: folderColor(p.c.key) }} />
+				<Show
+					when={style().icon}
+					fallback={<svg source={folderSvg(open() || sel())} style={{ width: 15, height: 15, flexShrink: 0, color: tint() }} />}
+				>
+					<Icon name={style().icon!} size={15} color={tint()} />
+				</Show>
 				<Show
 					when={isEditing()}
 					fallback={<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>{name()}</text>}
 				>
 					<NameInput value={p.c.name} onDone={(v) => void commitRename(p.c, v)} onCancel={() => setEditing(null)} />
+				</Show>
+				<Show when={p.pinnedCopy}>
+					<Icon name="pin" size={11} color={muted()} style={{ marginLeft: 4 }} />
 				</Show>
 				<CountBadge n={p.c.itemCount} />
 			</div>
@@ -329,6 +420,47 @@ function CreateRow(p: { parent: string | "root"; padLeft: number }): JSX.Element
 			<div style={{ ...t(ROW), paddingLeft: p.padLeft + 20 }}>
 				<Icon name="folder" size={15} color={muted()} />
 				<NameInput value="" placeholder="Collection name" onDone={(v) => void commitCreate(p.parent, v)} onCancel={() => setCreating(null)} />
+			</div>
+		</ListItem>
+	);
+}
+
+/** Inline name field for a new / renamed section. */
+function SectionInputRow(p: { initial: string }): JSX.Element {
+	return (
+		<ListItem>
+			<div style={{ ...t(ROW), paddingLeft: 6 + 20 }}>
+				<Icon name="folder-tree" size={15} color={muted()} />
+				<NameInput value={p.initial} placeholder="Section name" onDone={commitSection} onCancel={() => setSectionInput(null)} />
+			</div>
+		</ListItem>
+	);
+}
+
+const DOT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/></svg>';
+
+/** A group header of the list: Pinned, a colour group or a section (click to collapse; sections: right-click to rename / delete). */
+function GroupHeader(p: { h: HeaderRow; gap: number }): JSX.Element {
+	const hex = () => paletteHex(p.h.color);
+	return (
+		<ListItem top={p.gap}>
+			<div
+				role="button"
+				aria-expanded={!p.h.collapsed}
+				aria-label={p.h.label}
+				onClick={() => collectionStyle.toggleCollapsed(p.h.id)}
+				onAuxClick={(e) => { if (e.isRightClick && p.h.section && visibleAt(e.x ?? 0, e.y ?? 0)) sectionHeaderMenu(p.h.section, e.x ?? 0, e.y ?? 0); }}
+				style={{ ...t("flex min-h-6 items-center gap-1.5 rounded-md pl-1.5 pr-2"), cursor: "pointer", hover: t("bg-foreground/5") }}
+			>
+				<Icon name={p.h.collapsed ? "chevron-right" : "chevron-down"} size={12} color={muted()} />
+				<Show when={hex()}>
+					<svg source={DOT_SVG} style={{ width: 8, height: 8, flexShrink: 0, color: mode() === "dark" ? brighten(hex()!, 1.25) : hex()! }} />
+				</Show>
+				<Show when={p.h.id === "pinned"}>
+					<Icon name="pin" size={11} color={muted()} />
+				</Show>
+				<text style={{ ...tx("text-[11px] font-semibold text-muted-foreground"), flexGrow: 1, flexBasis: 0, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden" }}>{p.h.label}</text>
+				<text style={{ ...tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>{String(p.h.count)}</text>
 			</div>
 		</ListItem>
 	);
@@ -363,7 +495,12 @@ export function collectionEntries(top: number): Entry[] {
 						open={collectionsOpen()}
 						onToggle={() => setCollectionsOpen(!collectionsOpen())}
 						onContextMenu={headerMenu}
-						actions={<IconButton name="plus" box={20} icon={16} label="New collection" onClick={() => startCreate("root")} />}
+						actions={(
+								<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 2 }}>
+									<DropdownMenu align="end" width={190} items={viewMenu} trigger={<IconButton name="arrow-up-down" box={20} icon={14} label="Sort and group collections" />} />
+									<IconButton name="plus" box={20} icon={16} label="New collection" onClick={() => startCreate("root")} />
+								</div>
+							)}
 					/>
 				</div>
 			</ListItem>
@@ -372,14 +509,22 @@ export function collectionEntries(top: number): Entry[] {
 	if (!collectionsOpen()) return out;
 	// the new-collection field sits at the top so it is on screen however long the tree is
 	if (creating() === "root") out.push({ id: "c:create:root", render: () => <CreateRow parent="root" padLeft={6} /> });
-	const open = expanded();
-	const walk = (list: Collection[], depth: number) => {
-		for (const c of list) {
-			out.push({ id: `c:${c.key}`, render: () => <Row c={c} depth={depth} /> });
-			if (creating() === c.key) out.push({ id: `c:create:${c.key}`, render: () => <CreateRow parent={c.key} padLeft={6 + (depth + 1) * 14} /> });
-			if (open.has(c.key) && c.children) walk(c.children, depth + 1);
+	const si = sectionInput();
+	if (si) out.push({ id: "c:section-input", render: () => <SectionInputRow initial={si.kind === "rename" ? si.name : ""} /> });
+	const d = collectionStyle.get();
+	const rows = buildRows({
+		collections: collections(), sort: d.sort, group: d.group, styles: d.styles, stamps: d.stamps, sections: d.sections, pins: d.pins,
+		expanded: expanded(), collapsed: new Set(d.collapsed),
+	});
+	let first = true;
+	for (const r of rows) {
+		if (r.kind === "header") {
+			out.push({ id: `c:h:${r.id}`, render: () => <GroupHeader h={r} gap={first ? 0 : 6} /> });
+		} else {
+			out.push({ id: r.id, render: () => <Row c={r.c} depth={r.depth} pinnedCopy={r.pinnedCopy} /> });
+			if (!r.pinnedCopy && creating() === r.c.key) out.push({ id: `c:create:${r.c.key}`, render: () => <CreateRow parent={r.c.key} padLeft={6 + (r.depth + 1) * 14} /> });
 		}
-	};
-	walk(collections(), 0);
+		first = false;
+	}
 	return out;
 }

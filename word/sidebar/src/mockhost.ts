@@ -13,6 +13,10 @@ export interface MockOptions {
 	localeXml?: (lang: string) => Promise<string | null>;
 	userId?: string;
 	prefsXml?: string | null;
+	/** body text of the fake document, for doc.locate (default: a few sentences) */
+	body?: string;
+	/** open documents besides Preview.docx, for doc.list / doc.target */
+	otherDocs?: string[];
 }
 
 export const SAMPLE_ITEMS: ZoteroItemData[] = [
@@ -46,6 +50,8 @@ export interface MockField {
 	note?: number;
 	/** characters of body text between the previous field of the same story and this one (default 1 in the main text, 3 between notes; 0 = touching) */
 	gap?: number;
+	/** document position the field was inserted at (doc.insert `at`); cursor inserts go last */
+	anchor?: number;
 }
 
 export function createMockHost(opts: MockOptions = {}): Host & { emit(event: string, data: unknown): void; fields: any[]; unlinked: { story: string; text: string }[]; prefsXml: string | null; settings: Record<string, any>; calls: string[] } {
@@ -54,7 +60,9 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 	// fields are kept in document order (main text, notes interleaved as Word's reference marks would place them); `idx` counts per story like Word's Fields collection
 	const fields: MockField[] = [];
 	const unlinked: { story: string; text: string }[] = [];
-	const state = { prefsXml: opts.prefsXml ?? (null as string | null), settings: { style: "vancouver" } as Record<string, any>, calls: [] as string[], cursor: -1 };
+	const state = { prefsXml: opts.prefsXml ?? (null as string | null), settings: { style: "vancouver" } as Record<string, any>, calls: [] as string[], cursor: -1, target: null as string | null };
+	const body = opts.body ?? "Intro sentence one. Second sentence here. Third sentence here. Final words.";
+	const docNames = ["Preview.docx", ...(opts.otherDocs ?? [])];
 	const fetchText = async (url: string) => {
 		const r = await fetch(url);
 		if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
@@ -114,7 +122,7 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 					return words.every((w) => hay.includes(w));
 				});
 			}
-			return rows.map(row);
+			return rows.slice(0, p.limit ?? rows.length).map(row);
 		},
 		"lib.items": (p) => (p.keys as string[]).map((k) => {
 			const d = items.find((x) => x.key === k);
@@ -128,7 +136,29 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 		"zn.reveal": () => ({ ok: false, error: "preview mode" }),
 		"zn.lookup": () => null,
 		"app.openUrl": () => ({ ok: true }),
-		"doc.state": () => ({ hasDoc: true, name: "Preview.docx", fullName: "Preview.docx", readOnly: false, prefsXml: state.prefsXml }),
+		"doc.list": () => docNames.map((n, i) => ({ name: n, path: "C:\docs\\" + n, active: i === 0, saved: true, readOnly: false })),
+		"doc.target": (p) => {
+			if (p.document == null) {
+				state.target = null;
+				return { ok: true, name: "Preview.docx" };
+			}
+			const hit = docNames.find((n) => n.toLowerCase() === String(p.document).toLowerCase() || ("C:\docs\\" + n).toLowerCase() === String(p.document).toLowerCase());
+			if (!hit) throw new Error("No open document matches '" + p.document + "'. Open documents: " + docNames.join(", "));
+			state.target = hit;
+			return { ok: true, name: hit };
+		},
+		"doc.locate": (p) => {
+			if (p.end) return { pos: body.length };
+			let at = -1;
+			let n = 0;
+			for (;;) {
+				at = body.indexOf(String(p.afterText), at + 1);
+				if (at < 0) break;
+				if (++n === (p.occurrence ?? 1)) return { pos: at + String(p.afterText).length };
+			}
+			throw new Error("The text '" + p.afterText + "' was not found" + (n ? " (only " + n + " occurrence(s))" : "") + " in the document body.");
+		},
+		"doc.state": () => ({ hasDoc: true, name: state.target ?? "Preview.docx", fullName: state.target ?? "Preview.docx", readOnly: false, prefsXml: state.prefsXml }),
 		"doc.fields": () => {
 			layout();
 			return fields.map((f) => ({ story: f.story, idx: f.idx, kind: f.kind, code: f.code, text: f.text, start: f.start, end: f.end, note: f.note ?? 0 }));
@@ -145,6 +175,12 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 				field.story = prev.story;
 				field.gap = 0;
 				fields.splice(fields.indexOf(prev) + 1, 0, field);
+			} else if (p.at) {
+				const pos = Number(p.at.pos);
+				field.anchor = pos;
+				const i = fields.findIndex((x) => (x.anchor ?? Infinity) > pos);
+				if (i < 0) fields.push(field);
+				else fields.splice(i, 0, field);
 			} else fields.push(field);
 			reindex();
 			state.cursor = fields.indexOf(field);

@@ -20,6 +20,10 @@
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <!-- the MCP tool list: served by McpServer.cs and validated against by sidebar/src/agent.ts -->
+    <EmbeddedResource Include="McpTools.json" LogicalName="McpTools.json" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
     <Reference Include="System.Web.Extensions" />

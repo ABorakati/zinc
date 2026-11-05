@@ -9,6 +9,7 @@ import { useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
 import { openMenu, Tooltip, type MenuItem } from "../ui";
 import { boundsOf, hideTooltip, showTooltip } from "../ui/core";
+import { gatedHover } from "../cards/scrolling";
 
 export const mode = (): Mode => store.mode();
 export const tok = (name: string): string => tokens[mode()][name] ?? "#888";
@@ -125,11 +126,22 @@ export function SectionHead(p: HeadProps): JSX.Element {
 }
 
 function HeadRow(p: HeadProps): JSX.Element {
+	// The header keeps a faint tint at all times (so the sections read as bands); hovering darkens its chevron, icon and title
+	// instead. GPUIX hover styles only restyle the hovered element itself, not its children, so the text colour follows a
+	// signal — gated, so the item pane's virtual list makes no hover commits while it scrolls.
+	const [hot, setHot] = createSignal(false);
+	const hover = gatedHover(setHot);
+	const fg = () => tok(hot() ? "foreground" : "muted-foreground");
 	return (
-		<div style={{ ...t("flex h-9 flex-none items-center gap-1.5 px-5"), cursor: "pointer", hover: { backgroundColor: withAlpha(tok("foreground"), 0.03) } }} onClick={() => setCollapsed(p.id, !isCollapsed(p.id))}>
-			<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={tok("muted-foreground")} />
-			<Icon name={p.icon} size={14} color={tok("muted-foreground")} />
-			<text style={{ ...tx("text-[11px] font-semibold text-muted-foreground"), whiteSpace: "nowrap" }}>{p.title.toUpperCase()}</text>
+		<div
+			onMouseEnter={hover.enter}
+			onMouseLeave={hover.leave}
+			style={{ ...t("flex h-9 flex-none items-center gap-1.5 px-5"), cursor: "pointer", backgroundColor: withAlpha(tok("foreground"), 0.03) }}
+			onClick={() => setCollapsed(p.id, !isCollapsed(p.id))}
+		>
+			<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={fg()} />
+			<Icon name={p.icon} size={14} color={fg()} />
+			<text style={{ ...tx("text-[11px] font-semibold"), color: fg(), whiteSpace: "nowrap" }}>{p.title.toUpperCase()}</text>
 			<Show when={(p.count ?? 0) > 0}><CountBadge n={p.count!} /></Show>
 			<div style={{ flexGrow: 1 }} />
 			<div style={{ ...t("flex items-center gap-0.5") }} onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}>{p.actions}</div>

@@ -20,9 +20,12 @@ import { replaceAttachmentFile } from "./files/replace";
 // Feature route modules; each returns null for paths outside its prefix.
 import { handleUiApi } from "./connector/ui";
 import { handleIntegrationsApi } from "./integrations/api";
-const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi, handleIntegrationsApi];
+import { handleBbtApi } from "./bbt/api";
+import { handleTranslateApi } from "./translate/api";
+const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi, handleIntegrationsApi, handleTranslateApi, handleBbtApi];
 import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
+import { handleWebSyncApi } from "./websync/api";
 import { indexItem, search } from "./search";
 
 function json(body: unknown, status = 200): Response {
@@ -123,6 +126,7 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 		if (res) return res;
 	}
 	if (url.pathname.startsWith("/api/sync/")) return handleSyncApi(req, db);
+	if (url.pathname.startsWith("/api/websync/")) return handleWebSyncApi(req, db);
 	try {
 		let parts: string[];
 		try {
@@ -200,6 +204,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 					search: p.get("search") || undefined,
 						qmode: p.get("qmode") || undefined,
 						unfiled: p.get("unfiled") === "1",
+					publications: p.get("publications") === "1",
 					trash: p.get("trash") === "1",
 					fields: p.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean),
 					include: p.get("include")?.split(",").map((f) => f.trim()).filter(Boolean),
@@ -217,6 +222,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 					search: p.get("search") || undefined,
 					qmode: p.get("qmode") || undefined,
 					unfiled: p.get("unfiled") === "1",
+					publications: p.get("publications") === "1",
 					trash: p.get("trash") === "1",
 				}),
 			);

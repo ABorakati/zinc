@@ -241,7 +241,7 @@ export function CardsView(): JSX.Element {
 			</Show>
 			<Show when={count() === 0 && !store.loading()}>
 				<div style={tw("flex flex-col absolute top-10 inset-x-0 items-center gap-1", store.mode())}>
-					<text style={textStyle("text-muted-foreground", store.mode())}>{store.view().kind === "publications" ? "My Publications is not available in this library" : "No items"}</text>
+					<text style={textStyle("text-muted-foreground", store.mode())}>{store.view().kind === "publications" ? "No items in My Publications" : "No items"}</text>
 					<Show when={store.error()}>
 						<text style={textStyle("text-xs text-destructive", store.mode())}>{store.error() ?? ""}</text>
 					</Show>

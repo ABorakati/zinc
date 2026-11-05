@@ -222,9 +222,10 @@ export function arxivToItem(entry: string, id: string): ItemData {
 	const journalRef = xmlOne(entry, "arxiv:journal_ref");
 	const extra = [`arXiv:${id}${category ? ` [${category}]` : ""}`, journalRef ? `Journal reference: ${journalRef}` : ""].filter(Boolean).join("\n");
 	const tags: { tag: string; type?: number }[] = [];
-	for (const c of xmlBlocks(entry, "category")) {
-		const term = xmlAttr(c, "term");
-		if (term) tags.push({ tag: term.trim(), type: 1 });
+	// <category term="cs.LG" scheme="…"/> is self-closing, so read each tag's term attribute (it has no inner text to block-match)
+	for (const m of entry.matchAll(/<category\s[^>]*\bterm="([^"]*)"/gi)) {
+		const term = m[1]?.trim();
+		if (term) tags.push({ tag: term, type: 1 });
 	}
 	return {
 		itemType: "preprint",

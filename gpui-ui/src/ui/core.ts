@@ -19,6 +19,7 @@ export const tok = (name: string): string => tokens[mode()][name] ?? "#888888";
 export interface MenuItem {
 	label?: string;
 	icon?: string; // lucide name
+	iconColor?: string; // tint of the icon (a swatch); default muted
 	shortcut?: string;
 	disabled?: boolean;
 	danger?: boolean;

@@ -22,6 +22,8 @@ internal static class Program
     static Bridge _bridge;
     static System.Windows.Forms.Form _form;
     static PaneControl _paneCtl;
+    static System.Windows.Forms.Control _inv;
+    static McpServer _mcp;
 
     /// <summary>A borderless window parked far off-screen, no taskbar button, never activated.</summary>
     sealed class OffscreenForm : System.Windows.Forms.Form
@@ -53,6 +55,7 @@ internal static class Program
         // here deadlocks COM callbacks from Word). Requests are read on a worker thread and run on this one.
         var inv = new System.Windows.Forms.Control();
         var handle = inv.Handle;
+        _inv = inv;
         var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
         listener.Start();
         var reader = new Thread(() =>
@@ -154,6 +157,7 @@ internal static class Program
                     dynamic r = _app.ActiveDocument.Range(Json.Int(p, "start"), Json.Int(p, "end"));
                     return Json.Map("italic", (int)r.Font.Italic, "sup", (int)r.Font.Superscript, "bold", (int)r.Font.Bold, "text", (string)r.Text);
                 }
+            case "h.undo": return Json.Map("ok", (bool)_app.ActiveDocument.Undo(Json.Int(p, "times", 1)));
             case "h.fieldCount": return Json.Map("count", (int)_app.ActiveDocument.Fields.Count);
             case "h.comSelfTest": return ComSelfTest();
             case "h.pane":
@@ -186,6 +190,16 @@ internal static class Program
                     while (DateTime.UtcNow < until) { System.Windows.Forms.Application.DoEvents(); Thread.Sleep(10); }
                     return Json.Map("ok", true);
                 }
+            case "h.mcp":
+                {
+                    // The MCP server on 127.0.0.1:port against this Word. Without h.start first (noWord) only the tools that do not need a
+                    // document work: search_library, search_styles. tokenFile: where the bearer token is kept (a test file, never the user's).
+                    if (_mcp != null) { _mcp.Dispose(); _mcp = null; }
+                    var bridge = _bridge ?? new Bridge(new WordDoc(null));
+                    _mcp = McpServer.Start(_inv, bridge, Json.Int(p, "port", McpServer.DefaultPort), Json.Str(p, "tokenFile"));
+                    return Json.Map("port", _mcp.Port);
+                }
+            case "h.mcpStop": if (_mcp != null) { _mcp.Dispose(); _mcp = null; } return Json.Map("ok", true);
             case "h.quit": Cleanup(); _quit = true; return Json.Map("ok", true);
             default: throw new ArgumentException("unknown harness method " + method);
         }
@@ -193,6 +207,7 @@ internal static class Program
 
     static void Cleanup()
     {
+        try { if (_mcp != null) { _mcp.Dispose(); _mcp = null; } } catch { }
         try { if (_form != null) { _form.Close(); _form.Dispose(); _form = null; } } catch { }
         try
         {

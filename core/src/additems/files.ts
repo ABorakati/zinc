@@ -1,12 +1,13 @@
 // Attachments: imported files (copied into <db dir>/storage/<KEY>/<name>, same layout as Zotero), linked files
 // (absolute path kept as is) and linked URLs; plus moving a standalone attachment under a parent item.
 import type { Database } from "bun:sqlite";
-import { copyFileSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
-import { HttpError, clearFileCache, createItem, deriveColumns, generateKey, getItemDetail, nowIso } from "../db";
+import { HttpError, addTags, clearFileCache, createItem, deriveColumns, generateKey, getItemDetail, nowIso } from "../db";
 import { extractFulltext } from "../extract";
-import { storageTargetFor } from "../files/storage";
+import { storedFormForNewLink } from "../files/paths";
+import { copyVerifiedSync, storageTargetFor } from "../files/storage";
 import { indexItem } from "../search";
 
 export const hooks = {
@@ -85,6 +86,10 @@ export interface AddFileRequest {
 	path?: string;
 	parentKey?: string;
 	collectionKey?: string;
+	/** Place the file in the attachment storage folder even when automatic placement is off (explicit commands such as "attach newest file"). */
+	forceStorage?: boolean;
+	/** `name` is the final file name in the storage folder (not renamed from the parent item). */
+	keepName?: boolean;
 }
 
 export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): ItemDetail {
@@ -113,23 +118,45 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	let dir: string | undefined;
 	let finalMode: "imported_file" | "linked_file" = mode;
 	let createdDir = false; // only a folder this call created is removed again on failure (a custom folder may hold other files)
+	let dbPath: string; // attachments.path: the absolute path, or "attachments:<relative>" for a file the user's base directory holds
+	let title = name;
+	let tag: string | undefined;
+	let extraCopy: string | undefined; // "copy" behaviour: the copy placed in the storage folder
 	if (mode === "imported_file") {
-		const t = storageTargetFor(db, { key, name, parentKey: req.parentKey });
+		const t = storageTargetFor(db, { key, name, parentKey: req.parentKey, collectionKey: req.collectionKey || null, force: req.forceStorage === true, keepName: req.keepName === true });
 		finalMode = t.mode;
 		dir = t.dir;
 		stored = t.path;
 		createdDir = !t.custom;
+		if (t.title) title = t.title;
+		tag = t.tag;
 		try {
 			mkdirSync(t.dir, { recursive: true });
-			if (source) copyFileSync(source, t.path);
-			else writeFileSync(t.path, bytes ?? Buffer.from(req.dataBase64 as string, "base64"));
+			if (source) copyVerifiedSync(source, t.path);
+			else {
+				const content = bytes ?? Buffer.from(req.dataBase64 as string, "base64");
+				writeFileSync(t.path, content);
+				if (statSync(t.path).size !== content.byteLength) throw new Error("the stored file is not the size it should be");
+			}
 		} catch (e) {
 			if (createdDir) rmSync(t.dir, { recursive: true, force: true });
 			else rmSync(t.path, { force: true });
 			throw new HttpError(500, `could not store the file: ${e instanceof Error ? e.message : e}`);
 		}
+		if (t.copyTo) {
+			// best effort: the attachment is already safe in zotero-next's own storage
+			try {
+				mkdirSync(t.copyTo.dir, { recursive: true });
+				copyVerifiedSync(t.path, t.copyTo.path);
+				extraCopy = t.copyTo.path;
+			} catch (e) {
+				console.error("could not copy the new file to the storage folder:", e instanceof Error ? e.message : e);
+			}
+		}
+		dbPath = finalMode === "linked_file" ? storedFormForNewLink(db, stored) : stored;
 	} else {
 		stored = source as string;
+		dbPath = stored;
 	}
 	const fileName = basename(stored);
 
@@ -137,7 +164,7 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 		key,
 		itemType: "attachment",
 		linkMode: finalMode,
-		title: name,
+		title,
 		contentType,
 		filename: fileName,
 		tags: [],
@@ -155,13 +182,21 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 				`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted)
 				 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 			).run(key, req.parentKey || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
-			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(key, finalMode, contentType, stored);
+			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(key, finalMode, contentType, dbPath);
 			if (collectionKey) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(collectionKey, key);
 		})();
 	} catch (e) {
 		if (dir && createdDir) rmSync(dir, { recursive: true, force: true });
 		else if (mode === "imported_file") rmSync(stored, { force: true });
+		if (extraCopy) rmSync(extraCopy, { force: true });
 		throw e;
+	}
+	if (tag) {
+		try {
+			addTags(db, key, [tag]);
+		} catch (e) {
+			console.error("could not tag the new attachment:", e instanceof Error ? e.message : e);
+		}
 	}
 	clearFileCache();
 	indexItem(db, key);

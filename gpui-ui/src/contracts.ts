@@ -27,6 +27,9 @@ export interface Collection {
 	name: string;
 	parentKey: string | null;
 	itemCount: number;
+	/** ISO dates, when the core sends them (it does not today: the sidebar then uses first-seen times, collectionStyle.ts). */
+	dateAdded?: string;
+	dateModified?: string;
 	children?: Collection[];
 }
 

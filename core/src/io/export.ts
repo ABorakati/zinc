@@ -5,6 +5,7 @@ import { basename, join, resolve } from "node:path";
 import type { ZoteroItemData } from "../api-types";
 import { HttpError } from "../db";
 import { resolveStoredPath } from "../files/paths";
+import { BBT_FORMATS, exportBetterFormat, type BbtExportFormat } from "../bbt/export";
 import { exportBibtex, type ExportItem } from "./bibtex";
 import { htmlToText } from "./common";
 import { exportCsv } from "./csv";
@@ -13,7 +14,7 @@ import { exportMods } from "./mods";
 import { exportZoteroRdf, type RdfAttachment, type RdfCollection } from "./rdf";
 import { exportRis } from "./ris";
 
-export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv" | "rdf" | "mods";
+export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv" | "rdf" | "mods" | BbtExportFormat;
 
 export const EXPORT_FORMATS: Record<ExportFormat, { label: string; ext: string; contentType: string }> = {
 	bibtex: { label: "BibTeX", ext: "bib", contentType: "application/x-bibtex; charset=utf-8" },
@@ -23,6 +24,7 @@ export const EXPORT_FORMATS: Record<ExportFormat, { label: string; ext: string; 
 	csv: { label: "CSV", ext: "csv", contentType: "text/csv; charset=utf-8" },
 	rdf: { label: "Zotero RDF", ext: "rdf", contentType: "application/rdf+xml; charset=utf-8" },
 	mods: { label: "MODS", ext: "xml", contentType: "application/mods+xml; charset=utf-8" },
+	...BBT_FORMATS, // Better BibTeX / BibLaTeX / CSL JSON / CSL YAML (core/src/bbt)
 };
 
 export interface ExportRequest {
@@ -133,6 +135,9 @@ export function exportItems(db: Database, req: ExportRequest): ExportResult {
 	const dir = req.dir ? resolve(req.dir) : undefined;
 	if (dir) mkdirSync(dir, { recursive: true });
 	switch (req.format) {
+		case "betterbibtex": case "betterbiblatex": case "bettercsljson": case "bettercslyaml":
+			text = exportBetterFormat(db, req.format, items, { includeNotes: req.includeNotes });
+			break;
 		case "bibtex": text = exportBibtex(items, "bibtex"); break;
 		case "biblatex": text = exportBibtex(items, "biblatex"); break;
 		case "ris": text = exportRis(items); break;

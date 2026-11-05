@@ -8,6 +8,8 @@
 //     pdfium-licenses/              PDFium's LICENSE + the licences of what it bundles
 //     docworker-entry.ts            entry of the document-structure worker (citations, figures, reading view)
 //     pdf-worker.ts                 entry of the PDF full-text extraction worker (core/src/extract/pdf-worker.ts, a copy)
+//     translate-worker.js           the Zotero translation worker, pre-bundled with jsdom (scripts/translate-worker.ts)
+//     vendor/zotero                 translate framework, utilities, zotero-schema and the translators (+ COPYING/README)
 //     vendor/document-worker/build  Zotero's document worker (pdf.js + models)
 //     vendor/reader/structured-document-text/src
 //     reader-host/dist              Zotero's web reader page (snapshot / EPUB tabs), served by the in-process core at /reader-host/
@@ -47,6 +49,10 @@ if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) throw new Error("pdfium.d
 run(["bun", "scripts/build.ts", "--variant", "bytecode", "--hide-console"]);
 const exe = join(root, "out", "zotero-next-gpui-bytecode.exe");
 
+// 2b. the Zotero translation worker, pre-bundled (jsdom and friends inside; see scripts/translate-worker.ts)
+const translateWorker = join(root, "out", "translate-worker.js");
+run(["bun", "scripts/translate-worker.ts", translateWorker]);
+
 // 3. assemble
 rmSync(app, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
@@ -57,6 +63,11 @@ cpSync(join(pdfiumDir, "licenses"), join(app, "pdfium-licenses"), { recursive: t
 cpSync(join(pdfiumDir, "LICENSE"), join(app, "pdfium-licenses", "PDFIUM-LICENSE.txt"));
 cpSync(join(root, "src", "reader", "structure", "docworker-entry.ts"), join(app, "docworker-entry.ts"));
 cpSync(join(repo, "core", "src", "extract", "pdf-worker.ts"), join(app, "pdf-worker.ts")); // PDF full-text extraction (the pool's Worker entry)
+cpSync(translateWorker, join(app, "translate-worker.js"));
+// Zotero translate framework + utilities + schema + translators (core/vendor/zotero; the worker reads them from disk), with their licences
+for (const part of ["translate", "utilities", "zotero-schema", "translators"]) cpSync(join(repo, "core", "vendor", "zotero", part), join(app, "vendor", "zotero", part), { recursive: true });
+cpSync(join(repo, "core", "vendor", "zotero", "README.md"), join(app, "vendor", "zotero", "README.md"));
+cpSync(join(repo, "core", "vendor", "zotero", "translation-server", "COPYING"), join(app, "vendor", "zotero", "translation-server", "COPYING"));
 cpSync(join(repo, "vendor", "document-worker", "build"), join(app, "vendor", "document-worker", "build"), { recursive: true });
 cpSync(join(repo, "vendor", "reader", "structured-document-text", "src"), join(app, "vendor", "reader", "structured-document-text", "src"), { recursive: true });
 // the web reader and note editor builds (reader-host/build.sh, note-host/build.sh); without them snapshots/EPUBs open in their default app
@@ -79,6 +90,7 @@ writeFileSync(join(app, "README.txt"), [
 	"",
 	"Environment overrides: ZN_LIBRARY, ZN_DB (another database), ZN_URL (use an external core, run nothing here), ZN_PORT,",
 	"ZN_SYNC=0, ZN_ZPORT=0|<port>, ZN_ZOTERO_DIR, ZN_PDF_DLL, ZN_PDFIUM_DLL, ZN_PDF_BACKEND=hayro (render with hayro instead of PDFium), ZN_ROOT, ZN_DOCWORKER_ENTRY, ZN_TRACE=1 (start-up timings).",
+	"ZN_TRANSLATE_WORKER / ZN_ZOTERO_VENDOR / ZN_TRANSLATORS_DIR point the Zotero translators (import, export, web capture) at other copies.",
 	"ZN_READER_HOST / ZN_NOTE_HOST point the core at other reader-host / note-host builds.",
 	"HTML snapshots and EPUBs open in a web tab (Zotero's reader in a WebView2 window over the tab; needs the Microsoft Edge WebView2 runtime,",
 	"preinstalled on Windows 11; its profile is %APPDATA%\zotero-next-gpui.exe\EBWebView).",

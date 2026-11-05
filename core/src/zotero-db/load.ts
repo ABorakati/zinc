@@ -172,6 +172,7 @@ function loadChunk(db: Database, lk: Lookups, ids: number[], out: Map<number, Lo
 		),
 		"itemID",
 	);
+	const pubs = new Set(q("SELECT itemID FROM publicationsItems WHERE itemID IN ({IDS})").map((r) => r.itemID as number));
 	const notes = new Map<number, Row>(
 		q("SELECT itemID, parentItemID, note, title FROM itemNotes WHERE itemID IN ({IDS})").map((r) => [r.itemID, r]),
 	);
@@ -276,6 +277,7 @@ function loadChunk(db: Database, lk: Lookups, ids: number[], out: Map<number, Lo
 			dateAdded: toIso(r.dateAdded),
 			dateModified: toIso(r.dateModified),
 			noteText: n?.note ?? undefined,
+			inPublications: pubs.has(r.itemID),
 		};
 		if (a) {
 			item.attRow = a;

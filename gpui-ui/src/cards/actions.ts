@@ -187,6 +187,17 @@ export async function trashItems(keys: string[], trashed: boolean): Promise<void
 	}
 }
 
+/** Add or remove top-level regular items in My Publications. */
+export async function setInPublications(keys: string[], inPublications: boolean): Promise<void> {
+	try {
+		await Promise.all(keys.map((k) => api.setInPublications(k, inPublications)));
+		store.refresh();
+		toast(`${inPublications ? "Added" : "Removed"} ${plural(keys.length, "item")} ${inPublications ? "to" : "from"} My Publications`, { kind: "success" });
+	} catch (e) {
+		fail(inPublications ? "Could not add to My Publications" : "Could not remove from My Publications", e);
+	}
+}
+
 export async function copyDoi(key: string): Promise<void> {
 	try {
 		const doi = (await getDetail(key)).data.DOI;

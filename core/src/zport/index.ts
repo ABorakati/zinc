@@ -9,6 +9,7 @@ import { routes } from "./routes";
 // Feature route files (each registers its routes on import).
 import "./connector";
 import "./integration";
+import "../bbt/http"; // Better BibTeX: /better-bibtex/* (cayw, json-rpc, exports)
 
 export { registerZRoute, type ZRoute } from "./routes";
 export const ZOTERO_PORT = 23119;

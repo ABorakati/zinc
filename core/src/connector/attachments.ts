@@ -83,16 +83,19 @@ export function storeWebAttachment(db: Database, o: StoreOpts): string {
 		o.bytes,
 	);
 	const key = detail.data.key;
-	const title = (o.title ?? "").trim() || detail.data.title || name;
-	// addFile made an imported_file; a web save keeps its source URL: imported_url.
+	// A file the storage folder took over (linked file, renamed to "Author - Year - Title") keeps that name as its title.
+	const managed = detail.data.linkMode === "linked_file";
+	const title = managed && detail.data.title && detail.data.title !== name ? detail.data.title : (o.title ?? "").trim() || detail.data.title || name;
+	// addFile made an imported_file; a web save keeps its source URL: imported_url. In the storage folder it stays a linked file.
+	const linkMode = managed ? "linked_file" : "imported_url";
 	patchItem(db, key, {
-		linkMode: "imported_url",
+		linkMode,
 		url: o.url,
 		accessDate: nowIso(),
 		title,
 		...(contentType === "text/html" || contentType === "application/xhtml+xml" ? { charset: "utf-8" } : {}),
 	});
-	db.query("UPDATE attachments SET link_mode = 'imported_url', url = ? WHERE item_key = ?").run(o.url, key);
+	db.query("UPDATE attachments SET link_mode = ?, url = ? WHERE item_key = ?").run(linkMode, o.url, key);
 	indexItem(db, key);
 	if (o.parentKey) indexItem(db, o.parentKey);
 	return key;

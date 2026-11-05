@@ -9,7 +9,7 @@
 // POST   /api/collections/:key/items           {keys: string[]} -> {ok: true}
 // DELETE /api/collections/:key/items           {keys: string[]} -> {ok: true}
 //
-// GET    /api/items?collection=&tag=&q=&sort=&dir=&limit=&offset=&unfiled=1&trash=1
+// GET    /api/items?collection=&tag=&q=&sort=&dir=&limit=&offset=&unfiled=1&publications=1&trash=1
 //                                              -> ItemList  (top-level items only)
 //        sort: title | creator | year | dateAdded (default dateAdded), dir: asc | desc
 //        q: plain-text filter over title/creators/year (not full text; use /api/search)

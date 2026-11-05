@@ -6,8 +6,13 @@
 //   PUT  /base-dir {mode, path?}   -> FilesSettingsView; mode zotero (follow Zotero's pref) | custom | none
 //   POST /base-dir/convert {direction: "relative"|"absolute", confirm?}
 //                                  -> preview {count, outside, sample} without confirm; {converted} with confirm: true
-//   PUT  /storage {dir?, subfolder?, linked?}           -> FilesSettingsView
+//   PUT  /storage {dir?, subfolder?, linked?, auto?, behavior?, allowedExt?, rename?, renameTitle?, addTag?, tag?, stripDiacritics?,
+//                  undefinedStr?, deleteFiles?, pruneEmptyDirs?, attachDir?, attachConfirm?}      -> FilesSettingsView
+//   POST /storage/preset {dir}     -> FilesSettingsView; ZotMoov's defaults around that one folder
 //   POST /storage/move {confirm?}  -> preview {count, totalBytes, sample, skipped...} without confirm; MoveReport with confirm: true
+//   POST /organize {action: move|copy|to-stored, keys, dir?, collectionKey?, preview?}
+//                                  -> the move/copy/convert commands on selected items; preview: what would happen; else MoveReport
+//   POST /attach-newest {parentKey, name?, preview?}    -> attach the newest file of the "attach from" folder; preview: which file, which name
 //   POST /pick-folder {start?}     -> {path|null}   (native folder dialog, supplied by the app)
 //   POST /reveal {what: "library"|"zotero"|"baseDir"|"storage"}  -> {ok}
 import type { Database } from "bun:sqlite";
@@ -26,7 +31,8 @@ import {
 	type BaseDirMode,
 	type ConvertDirection,
 } from "./paths";
-import { planMove, runMove, setStorage, storageView } from "./storage";
+import { attachNewest, planOrganize, previewAttachNewest } from "./organize";
+import { applyZotMoovPreset, planMove, runMove, setStorage, storageView } from "./storage";
 import { inspectDataDir, locateZotero } from "./zotero-locate";
 
 // ---------------------------------------------------------------- app-supplied OS hooks
@@ -177,16 +183,85 @@ async function dispatch(req: Request, db: Database, route: string): Promise<unkn
 
 	if (m === "PUT" && route === "storage") {
 		const b = await body(req);
+		const bool = (k: string) => (typeof b[k] === "boolean" ? (b[k] as boolean) : undefined);
+		const text = (k: string) => (typeof b[k] === "string" ? (b[k] as string) : undefined);
+		const folder = (k: string) => (b[k] === null ? null : text(k));
 		try {
 			setStorage(db, {
-				dir: b.dir === null ? null : typeof b.dir === "string" ? b.dir : undefined,
-				subfolder: typeof b.subfolder === "string" ? b.subfolder : undefined,
-				linked: typeof b.linked === "boolean" ? b.linked : undefined,
+				dir: folder("dir"),
+				subfolder: text("subfolder"),
+				linked: bool("linked"),
+				auto: bool("auto"),
+				behavior: b.behavior === "move" || b.behavior === "copy" ? b.behavior : undefined,
+				allowedExt: Array.isArray(b.allowedExt) ? b.allowedExt.map(String) : undefined,
+				rename: bool("rename"),
+				renameTitle: bool("renameTitle"),
+				addTag: bool("addTag"),
+				tag: text("tag"),
+				stripDiacritics: bool("stripDiacritics"),
+				undefinedStr: text("undefinedStr"),
+				deleteFiles: bool("deleteFiles"),
+				pruneEmptyDirs: bool("pruneEmptyDirs"),
+				attachDir: folder("attachDir"),
+				attachConfirm: bool("attachConfirm"),
 			});
 		} catch (e) {
 			throw new HttpError(400, e instanceof Error ? e.message : String(e));
 		}
 		return filesSettingsView(db);
+	}
+	if (m === "POST" && route === "storage/preset") {
+		// ZotMoov's defaults around one folder: automatic move, linked files, rename from the parent, tag, pdf/epub/docx/djvu
+		const dir = str((await body(req)).dir, "dir");
+		try {
+			applyZotMoovPreset(db, dir);
+		} catch (e) {
+			throw new HttpError(400, e instanceof Error ? e.message : String(e));
+		}
+		return filesSettingsView(db);
+	}
+	if (m === "POST" && route === "organize") {
+		const b = await body(req);
+		const action = b.action;
+		if (action !== "move" && action !== "copy" && action !== "to-stored") throw new HttpError(400, "action must be move, copy or to-stored");
+		if (!Array.isArray(b.keys) || !b.keys.length || b.keys.some((k) => typeof k !== "string")) throw new HttpError(400, "keys must be a list of item keys");
+		const orgReq = {
+			action,
+			keys: b.keys as string[],
+			dir: typeof b.dir === "string" ? b.dir : undefined,
+			collectionKey: typeof b.collectionKey === "string" ? b.collectionKey : undefined,
+		} as const;
+		if (b.preview === true) {
+			const plan = planOrganize(db, orgReq);
+			const reasons = new Map<string, number>();
+			for (const s of plan.skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
+			return {
+				target: plan.target,
+				count: plan.count,
+				totalBytes: plan.totalBytes,
+				onlineOnly: plan.onlineOnly,
+				sample: plan.sample,
+				skippedByReason: [...reasons].map(([reason, count]) => ({ reason, count })),
+				skippedSample: plan.skipped.slice(0, 15),
+			};
+		}
+		let report;
+		try {
+			report = await runMove(db, planOrganize(db, orgReq));
+		} catch (e) {
+			if (e instanceof HttpError) throw e;
+			throw new HttpError(409, e instanceof Error ? e.message : String(e));
+		}
+		clearFileCache();
+		return { ...report, skipped: report.skipped.length, skippedSample: report.skipped.slice(0, 15) };
+	}
+	if (m === "POST" && route === "attach-newest") {
+		const b = await body(req);
+		const parentKey = str(b.parentKey, "parentKey");
+		if (b.preview === true) return previewAttachNewest(db, parentKey);
+		const r = attachNewest(db, { parentKey, name: typeof b.name === "string" ? b.name : undefined });
+		clearFileCache();
+		return r;
 	}
 	if (m === "POST" && route === "storage/move") {
 		const b = await body(req);

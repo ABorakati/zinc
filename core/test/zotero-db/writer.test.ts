@@ -292,6 +292,20 @@ d("zotero-db writer + reader", () => {
 		expect((await readAll()).get(`item:${article}`)?.data).not.toHaveProperty("deleted");
 	});
 
+	test("My Publications: inPublications writes and clears the publicationsItems row", async () => {
+		const pubRow = () => q("SELECT 1 FROM publicationsItems WHERE itemID = (SELECT itemID FROM items WHERE key = ?)", article).length;
+		const cur = (await readAll()).get(`item:${article}`)!.data as Record<string, unknown>;
+		expect(pubRow()).toBe(0);
+		const on = await apply({ type: "item", op: "upsert", key: article, data: { ...cur, inPublications: true } });
+		expect(on.results[0]).toMatchObject({ ok: true, changed: true });
+		expect(pubRow()).toBe(1);
+		expect((await readAll()).get(`item:${article}`)?.data).toMatchObject({ inPublications: true });
+		const { inPublications: _drop, ...off } = { ...cur, inPublications: true };
+		await apply({ type: "item", op: "upsert", key: article, data: off });
+		expect(pubRow()).toBe(0);
+		expect((await readAll()).get(`item:${article}`)?.data).not.toHaveProperty("inPublications");
+	});
+
 	test("erase removes children, logs syncDeleteLog and the storage folder, reader reports deletes", async () => {
 		expect(existsSync(join(dataDir, "storage", att))).toBe(true);
 		const known = { item: [article, note, att], annotation: [ann], collection: [collA, collB] };

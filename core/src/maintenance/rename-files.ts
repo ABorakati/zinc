@@ -5,6 +5,8 @@ import type { Database } from "bun:sqlite";
 import { existsSync, renameSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { nowIso } from "../db";
+import { readConfig } from "../files/config";
+import { RELATIVE_PREFIX, resolveStoredPath, toStoredPath } from "../files/paths";
 import { indexItem } from "../search";
 import { isInside } from "./erase";
 
@@ -64,15 +66,24 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 			skip("standalone attachment has no parent item");
 			continue;
 		}
-		if (!att.link_mode.startsWith("imported_")) {
-			skip("linked file (not managed by zotero-next)");
+		// a linked file is renamed only inside the attachment storage folder (the one zotero-next manages, like ZotMoov)
+		const managedDir = readConfig(db).storage?.dir ?? null;
+		const linked = att.link_mode === "linked_file";
+		if (!linked && !att.link_mode.startsWith("imported_")) {
+			skip("linked URL (no file)");
 			continue;
 		}
-		if (!att.path || !existsSync(att.path)) {
+		const wasRelative = !!att.path?.startsWith(RELATIVE_PREFIX);
+		const current = resolveStoredPath(db, att.path);
+		if (!current || !existsSync(current)) {
 			skip("file is missing");
 			continue;
 		}
-		if (!ownStorageDir || !isInside(att.path, ownStorageDir)) {
+		if (linked && !(managedDir && isInside(current, managedDir))) {
+			skip("linked file outside the attachment storage folder (not managed by zotero-next)");
+			continue;
+		}
+		if (!linked && (!ownStorageDir || !isInside(current, ownStorageDir))) {
 			skip("file is not in zotero-next's own storage (Zotero-owned files are renamed later via sync)");
 			continue;
 		}
@@ -86,10 +97,10 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 			skip("parent item has no creator, year or title");
 			continue;
 		}
-		const ext = extname(att.path);
-		const dir = dirname(att.path);
+		const ext = extname(current);
+		const dir = dirname(current);
 		let name = base + ext;
-		if (name === basename(att.path)) {
+		if (name === basename(current)) {
 			skip("already named from parent metadata");
 			continue;
 		}
@@ -100,7 +111,7 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 			continue;
 		}
 		try {
-			renameSync(att.path, target);
+			renameSync(current, target);
 		} catch (e) {
 			skip(`rename failed: ${e instanceof Error ? e.message : String(e)}`);
 			continue;
@@ -108,7 +119,8 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 		const data = JSON.parse(att.data) as Record<string, unknown>;
 		const now = nowIso();
 		db.transaction(() => {
-			db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(target, key);
+			db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(wasRelative ? toStoredPath(db, target) : target, key);
+			if (linked) data.path = target; // sync hands Zotero the absolute path
 			data.filename = name;
 			data.dateModified = now;
 			db.query("UPDATE items SET data = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), now, key);

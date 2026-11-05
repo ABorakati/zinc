@@ -6,8 +6,11 @@ import { existsSync } from "node:fs";
 // Imported as text so bundlers (Electrobun) embed it instead of reading from disk.
 import schema from "../schema.sql" with { type: "text" };
 import syncSchema from "./sync/schema.sql" with { type: "text" };
+import websyncSchema from "./websync/schema.sql" with { type: "text" };
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
 import { resolveStoredPath } from "./files/paths";
+import { venueOf } from "./venue";
+import { backfillKeys, ensureBbtSchema, ensureKeys } from "./bbt/keys";
 import { assertQuickMode, compileSearch, quickSearchClause } from "./searches/compile";
 import { ensureSearchSchema, getSavedSearch } from "./searches/store";
 import type { QuickSearchMode, SearchDefinition } from "./searches/types";
@@ -105,18 +108,11 @@ export function deriveColumns(data: ZoteroItemData): DerivedColumns {
 	if (!title && data.itemType === "note" && typeof data.note === "string") {
 		title = stripHtmlBasic(data.note).slice(0, 120);
 	}
-	const pub =
-		(data.publicationTitle as string | undefined) ||
-		(data.bookTitle as string | undefined) ||
-		(data.websiteTitle as string | undefined) ||
-		(data.proceedingsTitle as string | undefined) ||
-		(data.repository as string | undefined) ||
-		null;
 	return {
 		title,
 		creators_summary: creatorsSummary(data.creators),
 		year: parseYear(data.date),
-		publication: pub || null,
+		publication: venueOf(data as Record<string, unknown>),
 	};
 }
 
@@ -126,6 +122,8 @@ export function openDb(path: string): Database {
 	const db = new Database(path, { create: true });
 	db.exec(schema);
 	db.exec(syncSchema);
+	db.exec(websyncSchema);
+	ensureBbtSchema(db);
 	db.exec("PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456;");
 	for (const [name, expr] of [
 		["title", "title COLLATE NOCASE"],
@@ -140,7 +138,36 @@ export function openDb(path: string): Database {
 	db.run(
 		"INSERT INTO meta(name, value) VALUES('schema_version', '1') ON CONFLICT(name) DO UPDATE SET value = excluded.value",
 	);
+	refreshVenues(db);
 	return db;
+}
+
+const VENUE_VERSION = "2"; // bump when venueOf (core/src/venue.ts) changes, so stored venues are recomputed once
+
+/**
+ * Recompute items.publication once per venue rule version. The column is a derived copy of data (the card's venue line), so
+ * this changes no item data: the sync 'suppress' flag is held for the transaction, so nothing is queued for Zotero or
+ * zotero.org.
+ */
+function refreshVenues(db: Database): void {
+	const cur = db.query("SELECT value FROM meta WHERE name = 'venue_version'").get() as { value: string } | null;
+	if (cur?.value === VENUE_VERSION) return;
+	db.transaction(() => {
+		db.run("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
+		const upd = db.query("UPDATE items SET publication = ? WHERE key = ?");
+		for (const r of db.query("SELECT key, item_type, publication, data FROM items WHERE item_type NOT IN ('note', 'attachment', 'annotation')").all() as { key: string; item_type: string; publication: string | null; data: string }[]) {
+			let data: Record<string, unknown>;
+			try {
+				data = JSON.parse(r.data);
+			} catch {
+				continue;
+			}
+			const v = venueOf(data, r.item_type);
+			if (v !== r.publication) upd.run(v, r.key);
+		}
+		db.run("DELETE FROM sync_flags WHERE name = 'suppress'");
+		db.run("INSERT INTO meta(name, value) VALUES('venue_version', ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value", [VENUE_VERSION]);
+	})();
 }
 
 // ---------------------------------------------------------------- collections
@@ -280,6 +307,7 @@ export interface ListOptions {
 	limit?: number;
 	offset?: number;
 	unfiled?: boolean;
+	publications?: boolean; // My Publications: regular top-level items flagged inPublications
 	trash?: boolean;
 	fields?: string[];
 	include?: string[]; // "creators", "tags"
@@ -311,6 +339,7 @@ const EXTRA_SORT_EXPR: Record<string, string> = {
 	dateModified: "i.date_modified",
 	publication: "i.publication COLLATE NOCASE",
 	noteCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'note' AND c.deleted = 0)",
+	citationKey: "COALESCE(NULLIF(json_extract(i.data, '$.citationKey'), ''), (SELECT k.key FROM bbt_keys k WHERE k.item_key = i.key)) COLLATE NOCASE",
 	attachmentCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'attachment' AND c.deleted = 0)",
 };
 
@@ -350,6 +379,9 @@ function buildFilter(db: Database, opts: ListOptions) {
 		}
 	}
 	if (opts.unfiled) where.push("NOT EXISTS (SELECT 1 FROM collection_items ci WHERE ci.item_key = i.key)");
+	if (opts.publications) {
+		where.push("i.item_type NOT IN ('note', 'attachment')", "json_extract(i.data, '$.inPublications') = 1");
+	}
 	if (opts.qmode) assertQuickMode(opts.qmode);
 	if (opts.search || opts.searchDef) {
 		ensureSearchSchema(db);
@@ -369,9 +401,9 @@ function buildFilter(db: Database, opts: ListOptions) {
 		for (const term of opts.q.split(/\s+/).filter(Boolean)) {
 			const like = `%${likeEscape(term)}%`;
 			where.push(
-				"(i.title LIKE ? ESCAPE '\\' OR i.creators_summary LIKE ? ESCAPE '\\' OR CAST(i.year AS TEXT) LIKE ? ESCAPE '\\')",
+				"(i.title LIKE ? ESCAPE '\\' OR i.creators_summary LIKE ? ESCAPE '\\' OR CAST(i.year AS TEXT) LIKE ? ESCAPE '\\' OR i.key IN (SELECT item_key FROM bbt_keys WHERE key LIKE ? ESCAPE '\\'))",
 			);
-			params.push(like, like, like);
+			params.push(like, like, like, like);
 		}
 	}
 	const whereSql = where.join(" AND ");
@@ -430,6 +462,7 @@ export function listItemGroups(db: Database, by: string, dirIn: string | undefin
 }
 
 export function listItems(db: Database, opts: ListOptions = {}): ItemList {
+	if (opts.sort === "citationKey" || opts.then?.includes("citationKey")) backfillKeys(db); // sorting needs every key to exist
 	const f = buildFilter(db, opts);
 	const { whereSql, driver } = f;
 	const sortSpec = resolveSort(opts.sort ?? "dateAdded");
@@ -583,7 +616,15 @@ export function setTagColors(db: Database, input: unknown): TagColor[] {
 // Fills ItemSummary.fields from items.data (field names are already whitelisted).
 function attachFields(db: Database, items: ItemSummary[], fields: string[]): void {
 	if (items.length === 0) return;
-	const cols = fields.map((f, i) => `json_extract(i.data, '$.${f}') AS f${i}`).join(", ");
+	// Better BibTeX: the citation key column shows the generated key when none is pinned in the item data
+	if (fields.includes("citationKey")) ensureKeys(db, items.map((it) => it.key));
+	const cols = fields
+		.map((f, i) =>
+			f === "citationKey"
+				? `COALESCE(NULLIF(json_extract(i.data, '$.citationKey'), ''), (SELECT k.key FROM bbt_keys k WHERE k.item_key = i.key)) AS f${i}`
+				: `json_extract(i.data, '$.${f}') AS f${i}`,
+		)
+		.join(", ");
 	const rows = db
 		.query(`SELECT i.key, ${cols} FROM json_each(?) j CROSS JOIN items i ON i.key = j.value`)
 		.all(JSON.stringify(items.map((it) => it.key))) as Record<string, unknown>[];
@@ -912,6 +953,11 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 		if (rest.deleted !== undefined) {
 			if (rest.deleted) data.deleted = 1;
 			else delete data.deleted;
+		}
+		// My Publications: data.inPublications = true while flagged, absent otherwise.
+		if (rest.inPublications !== undefined) {
+			if (rest.inPublications) data.inPublications = true;
+			else delete data.inPublications;
 		}
 		db.query(
 			"UPDATE items SET data = ?, item_type = ?, title = ?, creators_summary = ?, year = ?, publication = ?, date_modified = ?, deleted = ? WHERE key = ?",

@@ -24,7 +24,7 @@ export const FALLBACK_LABELS: Record<string, string> = {
 	libraryCatalog: "Library Catalog", callNumber: "Call Number", rights: "Rights", dateAdded: "Date Added",
 	dateModified: "Date Modified", archive: "Archive", archiveLocation: "Loc. in Archive", place: "Place",
 	volume: "Volume", edition: "Edition", number: "Number", pages: "Pages", issue: "Issue", series: "Series",
-	section: "Section", shortTitle: "Short Title", extra: "Extra", attachments: "Attachments", notes: "Notes", DOI: "DOI",
+	section: "Section", shortTitle: "Short Title", extra: "Extra", citationKey: "Citation Key", attachments: "Attachments", notes: "Notes", DOI: "DOI",
 };
 
 /** The columns listed directly in the picker, in Zotero's order (also the "Restore Column Order" order). */
@@ -32,7 +32,7 @@ export const MENU_COLUMNS = [
 	"title", "creator", "itemType", "date", "year", "publisher", "publicationTitle", "journalAbbreviation", "language",
 	"accessDate", "libraryCatalog", "callNumber", "rights", "dateAdded", "dateModified", "archive", "archiveLocation",
 	"place", "volume", "edition", "number", "pages", "issue", "series", "section", "shortTitle", "extra",
-	"attachments", "notes", "DOI",
+	"citationKey", "attachments", "notes", "DOI",
 ];
 export const DEFAULT_COLUMNS = ["title", "creator", "year", "publicationTitle", "dateAdded", "attachments"];
 /** Fields that are not columns in their own right (collections, internal bookkeeping). */
@@ -68,6 +68,7 @@ const SPECIAL: Record<string, Partial<Column> & Pick<Column, "get" | "sort">> = 
 	accessDate: { sort: "accessDate", field: "accessDate", width: 96, get: (it) => date10(fieldOf(it, "accessDate")) },
 	attachments: { sort: "attachmentCount", width: 40, align: "center", icon: "attachments", get: (it) => (it.attachmentCount ? String(it.attachmentCount) : "") },
 	notes: { sort: "noteCount", width: 48, align: "center", icon: "notes", get: (it) => (it.noteCount ? String(it.noteCount) : "") },
+	citationKey: { sort: "citationKey", field: "citationKey", width: 160, get: (it) => fieldOf(it, "citationKey") },
 };
 
 export function labelOf(id: string): string {

@@ -472,9 +472,13 @@ class Session {
 		}
 		const wantDeleted = data.deleted === undefined ? null : !!data.deleted && data.deleted !== "0";
 		const delChange = cur && wantDeleted !== null && wantDeleted !== cur.deleted;
+		// My Publications: Zotero keeps a publicationsItems row per item in it; the Web API JSON has inPublications: true then
+		// and omits the key otherwise, so an upsert without it means "not in My Publications".
+		const wantPub = data.inPublications === true;
+		const pubChange = cur ? wantPub !== !!cur.input?.inPublications : wantPub;
 
 		const filePath = this.attachmentPathFor(w.key, att, cur?.attRow);
-		if (cur && !changedAny && !delChange) {
+		if (cur && !changedAny && !delChange && !pubChange) {
 			return { changed: false, path: filePath ?? undefined, dateModified: cur.dateModified };
 		}
 
@@ -567,6 +571,7 @@ class Session {
 			for (const [p, o] of relIn) this.run("INSERT OR IGNORE INTO itemRelations (itemID, predicateID, object) VALUES (?, ?, ?)", itemID, this.predicateId(p), o);
 		}
 		if (wantDeleted !== null && (!cur ? wantDeleted : wantDeleted !== cur.deleted)) this.setDeleted(itemID, wantDeleted);
+		if (pubChange) this.setInPublications(itemID, wantPub);
 
 		this.bump("items", "itemID", itemID);
 		return { changed: true, path: filePath ?? undefined, dateModified: dm };
@@ -592,6 +597,15 @@ class Session {
 	private setDeleted(itemID: number, deleted: boolean): void {
 		if (deleted) this.run("INSERT OR IGNORE INTO deletedItems (itemID, dateDeleted) VALUES (?, ?)", itemID, this.now);
 		else this.run("DELETE FROM deletedItems WHERE itemID = ?", itemID);
+	}
+
+	private hasPubsTable: boolean | undefined;
+	private setInPublications(itemID: number, on: boolean): void {
+		// every Zotero 5+ schema has the table; a stripped-down test library may not — then there is nothing to keep in step
+		this.hasPubsTable ??= !!this.get("SELECT 1 x FROM sqlite_master WHERE type = 'table' AND name = 'publicationsItems'");
+		if (!this.hasPubsTable) return;
+		if (on) this.run("INSERT OR IGNORE INTO publicationsItems (itemID) VALUES (?)", itemID);
+		else this.run("DELETE FROM publicationsItems WHERE itemID = ?", itemID);
 	}
 
 	trashItem(key: string, restore: boolean): { changed: boolean; dateModified: string } {

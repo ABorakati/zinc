@@ -1,15 +1,16 @@
 // Bundle the sidebar into word/dist/addin/sidebar (what the add-in's WebView2 serves). Bun only.
+// ZN_WORD_DIST=<dir> builds into <dir>/addin/sidebar instead of word/dist (tests and scratch builds never touch the installed add-in).
 //   bun build.ts          build
 //   bun build.ts --dev    build and serve the preview at http://127.0.0.1:5173/index.html?mock
 import { cpSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const here = import.meta.dir;
-const out = join(here, "..", "dist", "addin", "sidebar");
+const out = join(process.env.ZN_WORD_DIST || join(here, "..", "dist"), "addin", "sidebar");
 mkdirSync(out, { recursive: true });
 
 const result = await Bun.build({
-	entrypoints: [join(here, "src", "main.ts"), join(here, "src", "popup.ts")],
+	entrypoints: [join(here, "src", "main.ts"), join(here, "src", "popup.ts"), join(here, "src", "agent-main.ts")],
 	outdir: out,
 	target: "browser",
 	format: "esm",
@@ -24,6 +25,7 @@ cpSync(join(here, "index.html"), join(out, "index.html"));
 cpSync(join(here, "style.css"), join(out, "style.css"));
 cpSync(join(here, "popup.html"), join(out, "popup.html"));
 cpSync(join(here, "popup.css"), join(out, "popup.css"));
+cpSync(join(here, "agent.html"), join(out, "agent.html"));
 console.log(`sidebar built -> ${out}`);
 
 if (process.argv.includes("--dev")) {

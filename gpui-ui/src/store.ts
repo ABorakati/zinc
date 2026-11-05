@@ -218,6 +218,7 @@ function createStore(): AppStore {
 			collection: v.kind === "collection" ? v.key : undefined,
 			search: v.kind === "savedSearch" ? v.key : undefined,
 			unfiled: v.kind === "unfiled" || undefined,
+			publications: v.kind === "publications" || undefined,
 			trash: v.kind === "trash" || undefined,
 			tag: tagFilter()[0],
 			qmode: qmode() !== "titleCreatorYear" ? qmode() : undefined,
@@ -232,7 +233,7 @@ function createStore(): AppStore {
 	const groupField = createMemo(() => {
 		const g = groupBy();
 		const k = view().kind;
-		return g !== "none" && sortLevels()[0]?.key === g && k !== "duplicates" && k !== "publications" ? g : null;
+		return g !== "none" && sortLevels()[0]?.key === g && k !== "duplicates" ? g : null;
 	});
 
 	// ---- selection state (the actions are below) ----
@@ -320,7 +321,6 @@ function createStore(): AppStore {
 			const rows = await duplicateRows(signal);
 			return { total: rows.length, items: rows.slice(p * PAGE, (p + 1) * PAGE) };
 		}
-		if (v.kind === "publications") return { total: 0, items: [] }; // the core has no "My Publications"
 		return api.items(untrack(query), p * PAGE, PAGE, signal);
 	}
 
@@ -551,7 +551,7 @@ function createStore(): AppStore {
 		const n = untrack(total);
 		if (n === 0) return;
 		const v = untrack(view);
-		if (v.kind === "duplicates" || v.kind === "publications" || n <= PAGE) {
+		if (v.kind === "duplicates" || n <= PAGE) {
 			void loadRange(0, n - 1).then(() => setSelectedSig(new Set(rangeKeys(0, n - 1))));
 			return;
 		}

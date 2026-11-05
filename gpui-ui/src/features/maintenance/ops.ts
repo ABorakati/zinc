@@ -6,7 +6,7 @@ import { currentView, refresh, selectOnly, selectedKeys } from "../shared";
 import { errMsg, plural } from "../text";
 import type { ItemDetail } from "../types";
 
-export interface EraseReport { erased: number; topLevel: number; filesRemoved: number; filesKept: number; missing: string[] }
+export interface EraseReport { erased: number; topLevel: number; filesRemoved: number; filesKept: number; linkedFilesRemoved?: number; missing: string[] }
 export interface RenameFileResult { key: string; status: "renamed" | "skipped"; reason?: string; path?: string }
 
 export const maintenance = {
@@ -23,8 +23,9 @@ export const maintenance = {
 
 const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
 
-function reportErase(r: { erased: number; filesRemoved: number }) {
-	toast(`Permanently deleted ${plural(r.erased, "item")}`, { kind: "success", description: r.filesRemoved ? `${plural(r.filesRemoved, "stored file")} removed` : undefined });
+function reportErase(r: { erased: number; filesRemoved: number; linkedFilesRemoved?: number }) {
+	const parts = [r.filesRemoved ? `${plural(r.filesRemoved, "stored file")} removed` : "", r.linkedFilesRemoved ? `${plural(r.linkedFilesRemoved, "file")} removed from the storage folder` : ""].filter(Boolean);
+	toast(`Permanently deleted ${plural(r.erased, "item")}`, { kind: "success", description: parts.join(", ") || undefined });
 }
 
 // ---------------------------------------------------------------- trash

@@ -3,7 +3,10 @@
 import { join } from "node:path";
 import type { Host } from "../src/host";
 
-export const HARNESS_EXE = join(import.meta.dir, "..", "..", "dist", "harness", "ZoteroNextWord.Harness.exe");
+/** Build output the tests use: ZN_WORD_DIST (a scratch build, laid out like word/dist) or the repo's word/dist. */
+export const WORD_DIST = process.env.ZN_WORD_DIST || join(import.meta.dir, "..", "..", "dist");
+export const HARNESS_EXE = join(WORD_DIST, "harness", "ZoteroNextWord.Harness.exe");
+export const SIDEBAR_DIR = join(WORD_DIST, "addin", "sidebar");
 
 type Sock = { write(data: string): number; end(): void };
 
@@ -26,7 +29,7 @@ export class HarnessHost implements Host {
 		const h = new HarnessHost();
 		const port = freePort();
 		h.proc = Bun.spawn([HARNESS_EXE, "--db", args.db, "--settings", args.settings, "--cache", args.cache, "--port", String(port)], {
-			env: { ...process.env, ZN_SIDEBAR_DIR: join(import.meta.dir, "..", "..", "dist", "addin", "sidebar") },
+			env: { ...process.env, ZN_SIDEBAR_DIR: SIDEBAR_DIR },
 			stdin: "ignore",
 			stdout: "inherit",
 			stderr: "inherit",

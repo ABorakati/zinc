@@ -22,6 +22,8 @@ namespace ZoteroNext.Word
 
         dynamic _app;
         ICTPFactory _factory;
+        McpServer _mcp;
+        System.Windows.Forms.Control _ui;
         readonly Dictionary<long, dynamic> _panes = new Dictionary<long, dynamic>();
 
         static Connect()
@@ -50,6 +52,7 @@ namespace ZoteroNext.Word
                 Shared = new Bridge(new WordDoc(application));
                 _instance = this;
                 Popup.Start();
+                StartMcp();
                 Log.Write("connected (" + connectMode + ") to Word " + (string)_app.Version);
             }
             catch (Exception e) { Log.Error("OnConnection", e); }
@@ -58,6 +61,9 @@ namespace ZoteroNext.Word
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
             try { Popup.Stop(); } catch { }
+            try { if (_mcp != null) _mcp.Dispose(); } catch { }
+            try { if (_ui != null) _ui.Dispose(); } catch { }
+            _mcp = null; _ui = null;
             try
             {
                 foreach (var p in _panes.Values) { try { p.Delete(); } catch { } }
@@ -66,6 +72,19 @@ namespace ZoteroNext.Word
             catch { }
             Shared = null; _instance = null; _app = null; _factory = null;
             Log.Write("disconnected");
+        }
+
+        /// <summary>The MCP server for AI agents (setting mcpEnabled, default on; mcpPort, default 23125). A failure here never stops the add-in.</summary>
+        void StartMcp()
+        {
+            try
+            {
+                if (!McpServer.EnabledBySetting()) { Log.Write("mcp: disabled by setting mcpEnabled"); return; }
+                _ui = new System.Windows.Forms.Control();   // created here, on Word's UI thread: tool calls are marshalled to it
+                var handle = _ui.Handle;
+                _mcp = McpServer.Start(_ui, Shared, McpServer.PortFromSetting(), null);
+            }
+            catch (Exception e) { Log.Error("mcp: could not start (port in use by another Word or program?)", e); }
         }
 
         public void OnAddInsUpdate(ref Array custom) { }

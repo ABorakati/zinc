@@ -99,6 +99,7 @@ export function Sidebar(): JSX.Element {
 			out.push(
 				{ id: "l:library", render: () => <Special view={{ kind: "library" }} label="My Library" icon="library" /> },
 				{ id: "l:unfiled", render: () => <Special view={{ kind: "unfiled" }} label="Unfiled" icon="inbox" /> },
+				{ id: "l:publications", render: () => <Special view={{ kind: "publications" }} label="My Publications" icon="book-user" /> },
 				{
 					id: "l:trash",
 					render: () => (

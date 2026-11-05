@@ -1,0 +1,509 @@
+{
+  "instructions": "Manage Zotero citations and the bibliography in the Word document that is open in the user's Word, using the zotero-next library. Citations are real Zotero fields (ADDIN ZOTERO_ITEM / ZOTERO_BIBL plus document preferences), so desktop Zotero can still refresh and edit them. Typical flow: search_library to find item keys, insert_citation to cite them (at the cursor, at the end, or right after some text), insert_bibliography once, then refresh after changing the library or the style. Every tool that changes the document is one undo step in Word (Ctrl+Z). All positions in lists are 1-based. Every document tool takes an optional 'document' (name or path from list_documents); the default is the active document.",
+  "tools": [
+    {
+      "name": "list_documents",
+      "title": "List open Word documents",
+      "description": "List the documents open in Word: name, full path, whether it is the active one, saved, read-only. Use a name or path from here as the 'document' argument of the other tools.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "search_library",
+      "title": "Search the Zotero library",
+      "description": "Search the user's zotero-next library (title, creators, abstract, publication, tags; a DOI or a 4-digit year in the query also works). Returns up to 'limit' items with the 8-character item 'key' that insert_citation and edit_citation take. Does not touch any document. An empty query returns the most recently added items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text, e.g. 'liver transplantation 2021', 'smith machine perfusion', or a DOI such as '10.1000/abc'. The last word matches as a prefix."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Maximum number of items to return."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "search_styles",
+      "title": "Search citation styles",
+      "description": "Find citation styles by name (e.g. 'apa', 'vancouver', 'nature', 'chicago author-date'). The returned 'id' is what set_style takes. An empty query lists the common and installed styles. 'installed' says whether the style file is already available offline; others are downloaded from zotero.org when first used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Part of the style's title or id. May be empty."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 15,
+            "description": "Maximum number of styles to return."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "list_citations",
+      "title": "List citations in the document",
+      "description": "List every Zotero citation in the document in document order (body, footnotes, endnotes): 1-based 'index', 'fieldId' (stable id of the field, use it with edit_citation and delete_citation), the rendered 'text' as it appears in the document, and its items with library 'key', title, locator, label, prefix, suffix and suppressAuthor. Also reports the document's style and whether a bibliography exists. Indexes shift when citations are inserted or deleted; fieldId does not.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "insert_citation",
+      "title": "Insert a citation",
+      "description": "Insert one citation (a Zotero field) citing one or more library items, then reformat the document so numbering and disambiguation are right. 'position' decides where: 'cursor' (the user's cursor in that document, the default), 'end' (end of the document body), or {afterText, occurrence} to insert immediately after the n-th occurrence (case-sensitive, 1-based) of a piece of text, e.g. {\"afterText\": \"was reported in 2020\"}. A cursor inside an existing citation inserts after it, never inside. For footnote and endnote styles the citation becomes a note. Returns the new citation's index, fieldId and rendered text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The items cited together in this one citation, in order (styles may re-sort them).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{8}$",
+                  "description": "8-character library item key from search_library."
+                },
+                "locator": {
+                  "type": "string",
+                  "description": "Pinpoint such as '45', '45-47' or 'xii'. Omit for none."
+                },
+                "label": {
+                  "type": "string",
+                  "enum": [
+                    "page",
+                    "chapter",
+                    "column",
+                    "figure",
+                    "folio",
+                    "issue",
+                    "line",
+                    "note",
+                    "opus",
+                    "paragraph",
+                    "part",
+                    "section",
+                    "sub verbo",
+                    "verse",
+                    "volume",
+                    "book"
+                  ],
+                  "default": "page",
+                  "description": "What the locator counts. Only used when a locator is given."
+                },
+                "prefix": {
+                  "type": "string",
+                  "description": "Text shown before the item inside the citation, e.g. 'see'."
+                },
+                "suffix": {
+                  "type": "string",
+                  "description": "Text shown after the item inside the citation, e.g. 'and references therein'."
+                },
+                "suppressAuthor": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Leave the author out of the citation (author-date styles), e.g. when the text already names them."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "position": {
+            "description": "Where to insert. 'cursor' (default): at the cursor in that document. 'end': at the end of the body. Or {afterText, occurrence}: immediately after that text.",
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cursor",
+                  "end"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "afterText": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 250,
+                    "description": "Text to find in the document body (case-sensitive, a single paragraph). The citation goes right after it."
+                  },
+                  "occurrence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Which occurrence of the text, counting from the start of the document."
+                  }
+                },
+                "required": [
+                  "afterText"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "edit_citation",
+      "title": "Edit a citation",
+      "description": "Replace the items of an existing citation (add or remove items, set locators, prefixes, suffixes). 'items' is the complete new list: items you leave out are removed, and an item's locator/prefix/suffix are what you give here (omitted means none). Identify the citation with 'index' (1-based, from list_citations) or 'fieldId'. Custom citation text and item order set in Zotero are kept. Then the document is reformatted. Items must be in the library; use delete_citation to remove a whole citation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based position of the citation among all citations, from list_citations."
+          },
+          "fieldId": {
+            "type": "string",
+            "description": "fieldId from list_citations. More stable than index."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The complete new item list of the citation.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9]{8}$",
+                  "description": "8-character library item key."
+                },
+                "locator": {
+                  "type": "string",
+                  "description": "Pinpoint such as '45' or '45-47'. Omit for none."
+                },
+                "label": {
+                  "type": "string",
+                  "enum": [
+                    "page",
+                    "chapter",
+                    "column",
+                    "figure",
+                    "folio",
+                    "issue",
+                    "line",
+                    "note",
+                    "opus",
+                    "paragraph",
+                    "part",
+                    "section",
+                    "sub verbo",
+                    "verse",
+                    "volume",
+                    "book"
+                  ],
+                  "default": "page",
+                  "description": "What the locator counts."
+                },
+                "prefix": {
+                  "type": "string",
+                  "description": "Text shown before the item inside the citation."
+                },
+                "suffix": {
+                  "type": "string",
+                  "description": "Text shown after the item inside the citation."
+                },
+                "suppressAuthor": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Leave the author out of the citation."
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "delete_citation",
+      "title": "Delete a citation",
+      "description": "Delete one citation (the whole field and its text) from the document, then reformat so numbering closes up. Identify it with 'index' (1-based, from list_citations) or 'fieldId'. The bibliography is refreshed, so items no longer cited disappear from it. One undo step in Word restores it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based position of the citation among all citations, from list_citations."
+          },
+          "fieldId": {
+            "type": "string",
+            "description": "fieldId from list_citations."
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "insert_bibliography",
+      "title": "Insert or update the bibliography",
+      "description": "If the document has no bibliography, insert one (a Zotero bibliography field) at 'position' and fill it for the document's style. If it already has one, just update it (position is then ignored). Returns whether it was created. The bibliography lists the cited items; entries left out or added in Zotero's bibliography editor are kept.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "description": "Where to insert a new bibliography. 'end' (default): after the last paragraph. 'cursor': at the cursor. Or {afterText, occurrence}: right after that text.",
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cursor",
+                  "end"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "afterText": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 250,
+                    "description": "Text to find in the document body (case-sensitive, a single paragraph)."
+                  },
+                  "occurrence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Which occurrence of the text, from the start of the document."
+                  }
+                },
+                "required": [
+                  "afterText"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_document_prefs",
+      "title": "Get document citation preferences",
+      "description": "Read the document's Zotero preferences: citation style (short id and URL), locale, whether citations are in-text, footnotes or endnotes, whether citations update automatically, and whether it has a bibliography. A document with no citations yet reports configured=false and the defaults a first citation would get.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "set_style",
+      "title": "Change the citation style",
+      "description": "Change the document's citation style (and optionally locale) and reformat every citation and the bibliography. Switching between an in-text style and a note style moves the citations between the text and footnotes. 'styleId' is a short id from search_styles ('apa', 'vancouver', 'nature') or a full style URL. This changes only this document, not the sidebar's default style.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "styleId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Style id from search_styles, e.g. 'apa'."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale such as 'en-GB' or 'fr-FR'. Omit to keep the document's current locale ('' = the style's own default)."
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "required": [
+          "styleId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "set_document_prefs",
+      "title": "Change document citation preferences",
+      "description": "Change document preferences other than the style: 'noteType' (footnotes or endnotes; only has an effect with a note style, and moves the existing citations) and 'automaticUpdates' (false: a new or edited citation is formatted on its own and only refresh updates the rest). Give at least one. Returns the resulting preferences.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "noteType": {
+            "type": "string",
+            "enum": [
+              "footnotes",
+              "endnotes"
+            ],
+            "description": "Where note-style citations go."
+          },
+          "automaticUpdates": {
+            "type": "boolean",
+            "description": "Whether adding or editing a citation reformats the whole document."
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "refresh",
+      "title": "Refresh citations and bibliography",
+      "description": "Re-read every Zotero field, re-fetch the cited items from the library (picking up edits made there), reformat all citations and the bibliography and rewrite what changed. Citations whose text was edited by hand in Word are left alone unless overwriteEditedText is true. Returns counts: citations, updated, bibliographies, missing items, kept hand-edited citations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mergeAdjacent": {
+            "type": "boolean",
+            "default": false,
+            "description": "Fold citations that touch each other into one (what Zotero's Refresh does)."
+          },
+          "overwriteEditedText": {
+            "type": "boolean",
+            "default": false,
+            "description": "Overwrite citations whose displayed text was changed by hand. Default keeps them as they are."
+          },
+          "document": {
+            "type": "string",
+            "description": "Name or full path of an open document (see list_documents). Default: the active document."
+          }
+        },
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

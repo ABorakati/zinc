@@ -27,7 +27,7 @@ export function collectionColor(key: string): string {
 }
 
 /** `dark:brightness-125` on the folder icons. */
-function brighten(hex: string, f: number): string {
+export function brighten(hex: string, f: number): string {
 	const n = parseInt(hex.slice(1), 16);
 	const c = (s: number) => Math.min(255, Math.round(((n >> s) & 255) * f));
 	return `rgb(${c(16)}, ${c(8)}, ${c(0)})`;

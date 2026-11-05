@@ -6,6 +6,7 @@ import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { bytes, call, errMsg, plural } from "../../shell/net";
 import { canPickFolder, pickFolder, revealInFolder } from "../../shell/native";
 import { toast } from "../../ui";
+import { refreshStorage, setStorage as publishStorage, type StorageInfo } from "../../features/storage/state";
 import { Btn, Segmented, TextField, Toggle, Value } from "../controls";
 import { onSettingsShown, registerSection, registerSettings } from "../registry";
 
@@ -16,8 +17,7 @@ registerSection({
 });
 
 interface BaseInfo { mode: "zotero" | "custom" | "none"; configured: string | null; zotero: string | null; effective: string | null; stored: { absolute: number; relative: number } }
-interface StorageInfo { dir: string | null; subfolder: string; linked: boolean; ownDir: string | null; patternHelp: string }
-interface FilesView {
+export interface FilesView {
 	library: { dbPath: string | null; configPath: string | null; sizeBytes: number | null };
 	zotero: { dataDir: string; source: "environment" | "settings" | "zotero"; configured: string | null };
 	baseDir: BaseInfo;
@@ -37,7 +37,7 @@ interface MovePreview {
 interface MoveReport { moved: number; bytes: number; failed: { key: string; from: string; error: string }[]; leftBehind: { key: string; path: string }[]; onlineOnly: number; skipped: number }
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "unknown");
-const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
+export const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
 
 /** "Zotero library: 12,419 items, last modified 30 Oct 2026, 11:15" or why it cannot be read. */
 export function describeDataDir(i: DataDirInfo): string {
@@ -46,14 +46,16 @@ export function describeDataDir(i: DataDirInfo): string {
 	return `Zotero library: ${plural(i.itemCount ?? 0, "item")}, last modified ${when(i.lastModified)}`;
 }
 
-const files = createRoot(() => {
+export const files = createRoot(() => {
 	const [view, setView] = createSignal<FilesView | null>(null);
 	const [error, setError] = createSignal("");
 	const [busy, setBusy] = createSignal(false);
 	const [convert, setConvert] = createSignal<ConvertPreview | null>(null);
 	const refresh = async () => {
 		try {
-			setView(await call<FilesView>("GET", "/api/files/settings"));
+			const v = await call<FilesView>("GET", "/api/files/settings");
+			setView(v);
+			publishStorage(v.storage);
 			setError("");
 			setConvert(await call<ConvertPreview>("POST", "/api/files/base-dir/convert", { direction: "relative" }).catch(() => null));
 		} catch (e) { setError(errMsg(e)); }
@@ -63,19 +65,22 @@ const files = createRoot(() => {
 		setBusy(true);
 		try {
 			const r = await call<T>(method, url, body);
-			if ((r as unknown as FilesView)?.library) setView(r as unknown as FilesView);
+			if ((r as unknown as FilesView)?.library) {
+				setView(r as unknown as FilesView);
+				publishStorage((r as unknown as FilesView).storage); // the item menu reads the same settings
+			}
 			return r;
 		} catch (e) { fail(what, e); return null; } finally { setBusy(false); }
 	};
 	return { view, error, busy, convert, refresh, send };
 });
-onSettingsShown(() => void files.refresh());
+onSettingsShown(() => { void files.refresh(); void refreshStorage(); });
 
-const gone = (): JSX.Element => <Value>{files.error() || "Loading…"}</Value>;
-const Col = (p: { children: JSX.Element; gap?: number }): JSX.Element => <div style={{ ...t("flex flex-col"), gap: p.gap ?? 8, minWidth: 0, flexShrink: 1 }}>{p.children}</div>;
-const Row = (p: { children: JSX.Element }): JSX.Element => <div style={t("flex flex-wrap items-center gap-2")}>{p.children}</div>;
+export const gone = (): JSX.Element => <Value>{files.error() || "Loading…"}</Value>;
+export const Col = (p: { children: JSX.Element; gap?: number }): JSX.Element => <div style={{ ...t("flex flex-col"), gap: p.gap ?? 8, minWidth: 0, flexShrink: 1 }}>{p.children}</div>;
+export const Row = (p: { children: JSX.Element }): JSX.Element => <div style={t("flex flex-wrap items-center gap-2")}>{p.children}</div>;
 /** A path or note on one line: when it does not fit, the start is cut (the end of a path is the informative part). */
-const PathText = (p: { children: string; sub?: boolean }): JSX.Element => (
+export const PathText = (p: { children: string; sub?: boolean }): JSX.Element => (
 	<Txt
 		cls={`text-xs ${p.sub ? "text-muted-foreground" : "text-foreground"}`}
 		style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis-start", minWidth: 0, flexShrink: 1, maxWidth: "100%" }}
@@ -85,7 +90,7 @@ const PathText = (p: { children: string; sub?: boolean }): JSX.Element => (
 );
 
 /** Native folder dialog, then `then(path)` unless cancelled. */
-async function pick(then: (path: string) => unknown): Promise<void> {
+export async function pick(then: (path: string) => unknown): Promise<void> {
 	if (!canPickFolder()) { toast("No folder dialog here", { kind: "info", description: "Type the folder path instead." }); return; }
 	try { const p = await pickFolder(); if (p) await then(p); } catch (e) { fail("Could not open the folder dialog", e); }
 }
@@ -282,8 +287,15 @@ const [movePreview, setMovePreview] = createSignal<MovePreview | null>(null);
 const [moveReport, setMoveReport] = createSignal<MoveReport | null>(null);
 const [moving, setMoving] = createSignal(false);
 
-const putStorage = (patch: Partial<Pick<StorageInfo, "subfolder" | "linked">> & { dir?: string | null }) =>
+export const putStorage = (patch: Record<string, unknown>) =>
 	files.send("PUT", "/api/files/storage", patch, "Could not change the storage location");
+
+/** ZotMoov's own defaults around one folder: automatic move, linked files, named from the item, tagged, pdf/epub/docx/djvu. */
+async function useZotMoovPreset(dir: string) {
+	if (await files.send("POST", "/api/files/storage/preset", { dir }, "Could not apply the ZotMoov settings")) {
+		toast("Attachment storage set up", { kind: "success", description: `New files go to ${dir}. Use "Move existing attachments" below to bring the old ones along.` });
+	}
+}
 
 async function previewMove() {
 	setMoveReport(null);
@@ -305,8 +317,20 @@ function StorageControl(): JSX.Element {
 		<Show when={files.view()} fallback={gone()}>
 			{(v) => {
 				const s = () => v().storage;
+				const suggested = () => s().suggestions.find((d) => d !== s().dir);
 				return (
 					<Col>
+						<Show when={suggested()}>
+							{(d) => (
+								<Note>
+									<NoteText>{`ZotMoov setup: keep attachments in ${d()} as linked files, named from their item, tagged, sorted into no subfolders. Only the file types pdf, epub, docx and djvu are handled.`}</NoteText>
+									<Row>
+										<Btn primary disabled={files.busy()} onClick={() => void useZotMoovPreset(d())}>{`Use ${d()}`}</Btn>
+										<Btn onClick={() => void pick(useZotMoovPreset)}>Another folder with these settings…</Btn>
+									</Row>
+								</Note>
+							)}
+						</Show>
 						<Segmented<"own" | "custom">
 							value={s().dir ? "custom" : "own"}
 							onChange={(m) => (m === "own" ? void putStorage({ dir: null }) : void pick((p) => putStorage({ dir: p })))}
@@ -326,7 +350,10 @@ function StorageControl(): JSX.Element {
 								<Toggle checked={s().linked} onChange={(linked) => void putStorage({ linked })} />
 								<PathText sub>{s().linked ? "New files are linked files in this folder (like ZotMoov)." : "New files are imported files kept in this folder."}</PathText>
 							</Row>
-							<Row><Btn disabled={moving()} onClick={() => void previewMove()}>{moving() ? "Working…" : "Move existing attachments to this folder…"}</Btn></Row>
+							<Row>
+								<Btn disabled={moving()} onClick={() => void previewMove()}>{moving() ? "Working…" : "Move existing attachments to this folder…"}</Btn>
+								<Btn disabled={files.busy()} onClick={() => void useZotMoovPreset(s().dir!)}>Apply ZotMoov defaults</Btn>
+							</Row>
 						</Show>
 						<Show when={movePreview()}>
 							{(p) => (

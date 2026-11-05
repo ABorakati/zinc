@@ -195,7 +195,7 @@ function MenuItems(p: { level: Level; lv: number; active: () => number; onHover:
 				>
 					{hasLead ? (
 						<div style={{ width: 16, height: 16, flexShrink: 0, marginRight: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-							<Show when={it.checked} fallback={it.icon ? <Icon name={it.icon} size={16} color={it.danger ? tok("destructive") : tok("muted-foreground")} /> : undefined}>
+							<Show when={it.checked} fallback={it.icon ? <Icon name={it.icon} size={16} color={it.danger ? tok("destructive") : (it.iconColor ?? tok("muted-foreground"))} /> : undefined}>
 								<Icon name="check" size={16} color={fg()} />
 							</Show>
 						</div>

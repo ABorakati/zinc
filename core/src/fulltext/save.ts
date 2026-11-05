@@ -3,9 +3,11 @@
 
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, renameSync, copyFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ZoteroItemData } from "../api-types";
-import { clearFileCache, deriveColumns, generateKey, nowIso } from "../db";
+import { addTags, clearFileCache, deriveColumns, generateKey, nowIso } from "../db";
+import { storedFormForNewLink } from "../files/paths";
+import { copyVerifiedSync, storageTargetFor } from "../files/storage";
 import type { BodyStore } from "./bodies";
 import { OpError } from "./http";
 import type { BodyRef } from "./proto";
@@ -105,23 +107,42 @@ export function savePdf(deps: SaveDeps, req: SaveReq): { attachment_key: string;
 		}
 		let key = generateKey();
 		while (db.query("SELECT 1 FROM items WHERE key = ?").get(key)) key = generateKey();
-		const filename = `${baseNameFor(parent)}.pdf`;
-		const dir = join(dataDir, "storage", key);
-		const dest = join(dir, filename);
+		// The attachment storage folder (when the user chose one) takes the file like any new attachment: renamed, sorted into
+		// its subfolder, a linked file, tagged. Otherwise it goes to <dataDir>/storage/<KEY>/ like Zotero.
+		const plainName = `${baseNameFor(parent)}.pdf`;
+		const target = storageTargetFor(db, { key, name: plainName, parentKey });
+		const managed = target.custom;
+		const dir = managed ? target.dir : join(dataDir, "storage", key);
+		const dest = managed ? target.path : join(dir, plainName);
+		const filename = basename(dest);
 		mkdirSync(dir, { recursive: true });
-		try {
-			renameSync(info.path, dest);
-		} catch {
-			copyFileSync(info.path, dest);
+		if (managed) {
+			copyVerifiedSync(info.path, dest); // never overwrites: the target name is unique; the staged file goes once the copy is verified
 			rmSync(info.path, { force: true });
+		} else {
+			try {
+				renameSync(info.path, dest);
+			} catch {
+				copyFileSync(info.path, dest);
+				rmSync(info.path, { force: true });
+			}
 		}
+		if (target.copyTo) {
+			try {
+				mkdirSync(target.copyTo.dir, { recursive: true });
+				copyVerifiedSync(dest, target.copyTo.path);
+			} catch (e) {
+				console.error("could not copy the full text PDF to the storage folder:", e instanceof Error ? e.message : e);
+			}
+		}
+		const linked = managed && target.mode === "linked_file";
 		const now = nowIso();
-		const title = TITLES[req.version] ?? TITLES.published;
+		const title = (managed && target.title) || (TITLES[req.version] ?? TITLES.published);
 		const data: ZoteroItemData = {
 			key,
 			itemType: "attachment",
 			parentItem: parentKey,
-			linkMode: "imported_url",
+			linkMode: linked ? "linked_file" : "imported_url",
 			title,
 			accessDate: now,
 			url: req.url_to_store,
@@ -133,18 +154,32 @@ export function savePdf(deps: SaveDeps, req: SaveReq): { attachment_key: string;
 			dateAdded: now,
 			dateModified: now,
 		};
+		if (linked) data.path = dest;
 		const cols = deriveColumns(data);
-		db.transaction(() => {
-			db.query(
-				`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified)
-				 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?)`,
-			).run(key, parentKey, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
-			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, 'imported_url', 'application/pdf', ?, ?)").run(
-				key,
-				dest,
-				req.url_to_store,
-			);
-		})();
+		try {
+			db.transaction(() => {
+				db.query(
+					`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified)
+					 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?)`,
+				).run(key, parentKey, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
+				db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, 'application/pdf', ?, ?)").run(
+					key,
+					linked ? "linked_file" : "imported_url",
+					linked ? storedFormForNewLink(db, dest) : dest,
+					req.url_to_store,
+				);
+			})();
+		} catch (e) {
+			if (managed) rmSync(dest, { force: true });
+			throw e;
+		}
+		if (managed && target.tag) {
+			try {
+				addTags(db, key, [target.tag]);
+			} catch {
+				/* the tag is a convenience */
+			}
+		}
 		clearFileCache();
 		bodies.release(req.body.handle); // the temp dir is empty now; nothing else to keep
 		try {

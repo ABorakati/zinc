@@ -46,6 +46,9 @@ if (packaged) {
 	if (existsSync(join(dir, "docworker-entry.ts"))) set("ZN_DOCWORKER_ENTRY", join(dir, "docworker-entry.ts"));
 	if (existsSync(join(dir, "pdf-worker.ts"))) set("ZN_PDF_WORKER_ENTRY", join(dir, "pdf-worker.ts")); // PDF full-text extraction worker
 	if (existsSync(join(dir, "zn_pdf.dll"))) set("ZN_PDF_DLL", join(dir, "zn_pdf.dll"));
+	// Zotero translators: the pre-bundled worker (jsdom inside) and the framework + translators + schema it reads from disk
+	if (existsSync(join(dir, "translate-worker.js"))) set("ZN_TRANSLATE_WORKER", join(dir, "translate-worker.js"));
+	if (existsSync(join(dir, "vendor", "zotero", "translators"))) set("ZN_ZOTERO_VENDOR", join(dir, "vendor", "zotero"));
 	// the web reader (snapshots, EPUBs) and note editor pages the in-process core serves at /reader-host/ and /note-host/ (src/webview/mounts.ts)
 	if (existsSync(join(dir, "reader-host", "dist", "index.html"))) set("ZN_READER_HOST", join(dir, "reader-host", "dist"));
 	if (existsSync(join(dir, "note-host", "dist", "editor.html"))) set("ZN_NOTE_HOST", join(dir, "note-host", "dist"));

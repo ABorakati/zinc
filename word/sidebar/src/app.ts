@@ -138,6 +138,14 @@ export interface ModifiedCitation {
 
 export type ModifiedChoice = "keep" | "overwrite";
 
+/** Where and how insertCitation puts a new citation. */
+export interface InsertOptions {
+	/** document position (from the host's doc.locate) to insert at instead of the cursor */
+	at?: number;
+	/** the new field's citationID (default: a fresh one), so the caller can find the field again */
+	citationID?: string;
+}
+
 export interface RefreshOptions {
 	/** fold citations that touch each other into the first one (what Zotero does on Refresh). Default false. */
 	merge?: boolean;
@@ -254,8 +262,9 @@ export class App {
 		};
 	}
 
-	async init(): Promise<HostInfo> {
-		this.info = await this.host.call<HostInfo>("host.info");
+	/** `light`: skip the probe of a running zotero-next app (the agent API never needs it). */
+	async init(light = false): Promise<HostInfo> {
+		this.info = await this.host.call<HostInfo>("host.info", light ? { light: true } : {});
 		return this.info;
 	}
 
@@ -340,7 +349,8 @@ export class App {
 
 	// ---- resolving cited items -------------------------------------------------------------------------------
 
-	private async resolveAll(items: CitationItem[]): Promise<Map<CitationItem, Resolved>> {
+	/** Resolve cited items against the library (a merged duplicate is followed through dc:replaces); items gone from it keep their embedded copy. */
+	async resolveAll(items: CitationItem[]): Promise<Map<CitationItem, Resolved>> {
 		const keys = new Set<string>();
 		for (const ci of items) for (const k of keysOfCitationItem(ci)) keys.add(k);
 		const lib = await this.libraryItems([...keys]);
@@ -540,7 +550,7 @@ export class App {
 	}
 
 	/** Insert a citation at the cursor, then format the whole document (or only the new citation when automatic updates are off). */
-	async insertCitation(picks: Pick[]): Promise<RefreshReport> {
+	async insertCitation(picks: Pick[], opts: InsertOptions = {}): Promise<RefreshReport> {
 		if (picks.length === 0) throw new Error("Pick at least one item.");
 		const prefs = await this.ensurePrefs();
 		const f = await this.formatter(styleUrlToId(prefs.styleId), prefs.locale);
@@ -550,16 +560,17 @@ export class App {
 			await this.writePrefs(prefs);
 		}
 		const placement = note ? (prefs.noteType === 2 ? "endnote" : "footnote") : "inline";
-		const data = this.citationDataFromPicks(picks, newCitationID());
+		const data = this.citationDataFromPicks(picks, opts.citationID ?? newCitationID());
+		const where = opts.at === undefined ? {} : { at: { pos: opts.at } };
 		await this.host.call("doc.begin", { name: "Insert citation" });
 		try {
 			if (prefs.delayCitationUpdates) {
 				const p = await this.previewCitation(data, f);
 				data.properties = { ...data.properties, formattedCitation: p.rtf, plainCitation: p.plain, noteIndex: p.noteIndex };
-				await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), runs: p.runs, placement });
+				await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), runs: p.runs, placement, ...where });
 				return { citations: 1, updated: 1, bibliographies: 0, missing: [], style: styleUrlToId(prefs.styleId), changed: ["item#new:preview"] };
 			}
-			await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), text: "…", placement });
+			await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), text: "…", placement, ...where });
 			return await this.refreshAll();
 		} finally {
 			await this.host.call("doc.end");
@@ -699,13 +710,13 @@ export class App {
 	}
 
 	/** Insert the bibliography at the cursor (or refresh it when the document already has one). */
-	async insertBibliography(): Promise<RefreshReport> {
+	async insertBibliography(opts: { at?: number } = {}): Promise<RefreshReport> {
 		const fields = await this.readFields();
 		const prefs = await this.ensurePrefs();
 		if (!fields.some((f) => f.kind === "bibl")) {
 			await this.host.call("doc.begin", { name: "Insert bibliography" });
 			try {
-				await this.host.call("doc.insert", { kind: "bibl", code: buildBiblCode(), text: "…" });
+				await this.host.call("doc.insert", { kind: "bibl", code: buildBiblCode(), text: "…", ...(opts.at === undefined ? {} : { at: { pos: opts.at } }) });
 				prefs.hasBibliography = true;
 				await this.writePrefs(prefs);
 				return await this.refreshAll();
@@ -1111,7 +1122,7 @@ export interface PopupCitation {
 	items: PopupItemView[];
 }
 
-function viewOfCitationItem(ci: CitationItem, r: Resolved | undefined): CitedItemView {
+export function viewOfCitationItem(ci: CitationItem, r: Resolved | undefined): CitedItemView {
 	const csl = (r?.csl ?? ci.itemData ?? {}) as CslItem;
 	const d = r?.data;
 	return {
@@ -1147,7 +1158,7 @@ export function plainReference(v: { authors: string; title: string; journal: str
 	return [v.authors, v.title, [v.journal, v.year].filter(Boolean).join(" ")].filter(Boolean).join(". ").replace(/\.\.+/g, ".") + ".";
 }
 
-interface Resolved {
+export interface Resolved {
 	cslId: string;
 	csl: CslItem;
 	key: string | null;

@@ -29,6 +29,8 @@ export interface CollectionDto {
 	name: string;
 	parentKey: string | null;
 	itemCount: number;
+	dateAdded?: string;
+	dateModified?: string;
 }
 
 /** Query params of GET /api/items (same names the web UI sends). */
@@ -40,6 +42,8 @@ export interface ItemQuery {
 	tag?: string;
 	/** the Unfiled / Trash views of the library */
 	unfiled?: boolean;
+	/** My Publications: regular top-level items flagged inPublications */
+	publications?: boolean;
 	trash?: boolean;
 	/** quick-search mode for `q`: titleCreatorYear (default) | fields | everything */
 	qmode?: string;
@@ -128,7 +132,7 @@ export { request };
 /** Turn the flat collection list into a tree (roots first, siblings sorted by name). */
 export function buildTree(flat: CollectionDto[]): Collection[] {
 	const byKey = new Map<string, Collection>();
-	for (const c of flat) byKey.set(c.key, { key: c.key, name: c.name, parentKey: c.parentKey, itemCount: c.itemCount });
+	for (const c of flat) byKey.set(c.key, { key: c.key, name: c.name, parentKey: c.parentKey, itemCount: c.itemCount, ...(c.dateAdded ? { dateAdded: c.dateAdded } : {}), ...(c.dateModified ? { dateModified: c.dateModified } : {}) });
 	const roots: Collection[] = [];
 	for (const c of byKey.values()) {
 		const parent = c.parentKey ? byKey.get(c.parentKey) : undefined;
@@ -204,6 +208,8 @@ export const api = {
 	removeTags: (key: string, tags: string[]) => request<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),
 	/** Move to / restore from the trash (Zotero convention: data.deleted = 1 | 0). */
 	setDeleted: (key: string, deleted: boolean) => request<ItemDetail>("PATCH", `/items/${key}`, { data: { deleted: deleted ? 1 : 0 } }),
+	/** Add to / remove from My Publications (data.inPublications = true | absent). */
+	setInPublications: (key: string, inPublications: boolean) => request<ItemDetail>("PATCH", `/items/${key}`, { data: { inPublications } }),
 	addToCollection: (collectionKey: string, keys: string[]) => request<{ ok: true }>("POST", `/collections/${collectionKey}/items`, { keys }),
 	removeFromCollection: (collectionKey: string, keys: string[]) => request<{ ok: true }>("DELETE", `/collections/${collectionKey}/items`, { keys }),
 	duplicates: (signal?: AbortSignal) => get<{ sets: DuplicateSet[]; total: number }>("/duplicates?summary=1", signal),

@@ -5,12 +5,14 @@ import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { ago, plural } from "../../shell/net";
 import { syncOwner, syncOwnerNote } from "../../sync/owner";
 import { sync, ZOTERO_LABEL } from "../../sync/state";
+import { webSync } from "../../features/websync/client";
 import { Btn, Kbd, Toggle, Value } from "../controls";
 import { onSettingsShown, registerSection, registerSettings, registerSettingsProvider } from "../registry";
+import { AccountControl, FileCheckControl, FilesControl, OrgStatusControl, PushControl, SourceControl } from "./sync-org";
 
 registerSection({ id: "sync", label: "Sync", icon: "refresh-cw", order: 40, description: "Keeping this library and Zotero's in step.", keywords: ["zotero", "write", "backup"] });
 registerSection({ id: "shortcuts", label: "Shortcuts", icon: "keyboard", order: 80, description: "Keyboard shortcuts of the app.", keywords: ["keyboard", "keys", "hotkeys", "bindings"] });
-onSettingsShown(() => { sync.start(); void sync.refresh(); });
+onSettingsShown(() => { sync.start(); void sync.refresh(); void webSync.refresh(); });
 
 const loading = (): JSX.Element => <Value>{sync.reachable() ? "Loading…" : "Sync is not available."}</Value>;
 
@@ -80,7 +82,41 @@ registerSettings([
 		keywords: ["directory", "path", "location", "zotero.sqlite", "storage", "files and folders"],
 		control: () => <Value>{sync.status()?.dataDir ?? "…"}</Value>,
 	},
-	{ id: "sync.account", section: "sync", label: "Sync with zotero.org", description: "Zotero account sync, data and file sync.", keywords: ["account", "username", "password", "cloud", "webdav", "file syncing"], unavailable: true },
+		{
+			id: "sync.source", section: "sync", label: "Sync source",
+			description: "Where this library gets Zotero's changes from. Only one runs: Zotero already syncs to zotero.org on its own, so using both would pass every change back and forth.",
+			keywords: ["zotero.org", "web api", "cloud", "account", "local zotero", "off", "mode"],
+			control: () => <SourceControl />,
+		},
+		{
+			id: "sync.org.key", section: "sync", label: "zotero.org account", layout: "block",
+			description: "An API key from your zotero.org account. It is kept in the system's secret store, never in the library.",
+			keywords: ["api key", "key", "username", "password", "login", "account", "zotero.org", "connect"],
+			control: () => <AccountControl />,
+		},
+		{
+			id: "sync.org.push", section: "sync", label: "Send changes to zotero.org",
+			description: "Off: zotero.org's changes are read in, nothing is sent. On: edits made here are uploaded.",
+			keywords: ["push", "upload", "write", "zotero.org", "opt in"],
+			control: () => <PushControl />,
+		},
+		{
+			id: "sync.org.files", section: "sync", label: "Attachment files",
+			description: "Whether the files of attachments follow along. Metadata of attachments always syncs.",
+			keywords: ["download", "upload", "pdf", "storage", "zotero.org", "file syncing"],
+			control: () => <FilesControl />,
+		},
+		{
+			id: "sync.org.status", section: "sync", label: "zotero.org status",
+			keywords: ["status", "sync now", "last sync", "conflicts", "pending", "backoff", "error", "zotero.org"],
+			control: () => <OrgStatusControl />,
+		},
+		{
+			id: "sync.org.check", section: "sync", label: "Online-only files", layout: "block",
+			description: "Attachment files that are on zotero.org but not on this computer. Download them before removing them from zotero.org's storage.",
+			keywords: ["check", "missing files", "download missing", "storage", "purge", "zotero.org"],
+			control: () => <FileCheckControl />,
+		},
 	{ id: "sync.auto", section: "sync", label: "Sync automatically", keywords: ["background", "schedule"], unavailable: true },
 
 	{ id: "shortcuts.customise", section: "shortcuts", label: "Change shortcuts", description: "Rebind keys to other combinations.", keywords: ["customise", "customize", "rebind", "remap"], unavailable: true },

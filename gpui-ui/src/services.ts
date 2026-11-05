@@ -144,8 +144,51 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 			mark("zport-started");
 		}
 
+		// Better BibTeX: backfills citation keys, runs the auto-export scheduler, and tells the /better-bibtex endpoints
+		// which items are selected in this window
+		try {
+			const bbt = await import("../../core/src/bbt" as string) as unknown as { startBbt(db: Database): { stop(): void }; setSelectionProvider(f: (() => string[]) | null): void };
+			const running = bbt.startBbt(db);
+			const { store } = await import("./store");
+			bbt.setSelectionProvider(() => [...store.selected()]);
+			stoppers.push({ name: "better-bibtex", run: () => running.stop() });
+		} catch (e) {
+			console.warn("[bbt] not started:", e instanceof Error ? e.message : e);
+		}
+
 		// Two-way sync with the local Zotero library (reading always on, writing opt-in in the UI)
+		// Which route keeps the library in step is a setting (Settings > Sync): the local Zotero (default), zotero.org through its
+		// web API, or none. Exactly one runs, so the two do not echo each other's changes back and forth.
+		type WebSyncModule = {
+			syncMode(db: Database): string;
+			startWebSync(db: Database, o?: Record<string, unknown>): Promise<unknown> | unknown;
+			stopWebSync(db: Database): Promise<void> | void;
+		};
+		let mode = "zotero-local";
+		let webSync: WebSyncModule | undefined;
 		if (process.env.ZN_SYNC !== "0") {
+			try {
+				webSync = await import("../../core/src/websync" as string) as WebSyncModule;
+				mode = webSync.syncMode(db);
+			} catch (e) {
+				console.warn("[websync] sync mode unavailable, using the local Zotero sync:", e instanceof Error ? e.message : e);
+			}
+		}
+		if (process.env.ZN_SYNC === "0") {
+			setSyncOwner("off", "Zotero sync is turned off for this run (ZN_SYNC=0).");
+		} else if (mode === "off") {
+			setSyncOwner("off", "Sync is set to Off (Settings > Sync).");
+		} else if (mode === "zotero-org" && webSync) {
+			try {
+				await webSync.startWebSync(db);
+				stoppers.push({ name: "websync", run: () => webSync!.stopWebSync(db) });
+				mark("websync-started");
+				setSyncOwner("off", "This library is synced with zotero.org (Settings > Sync), so the local Zotero sync is not running.");
+			} catch (e) {
+				console.warn("[websync] not started:", e instanceof Error ? e.message : e);
+				setSyncOwner("off", `zotero.org sync could not start: ${e instanceof Error ? e.message : String(e)}`);
+			}
+		} else {
 			try {
 				const [{ startSyncService, stopSync }, zdb, { configuredZoteroDataDir }] = await Promise.all([
 					import("../../core/src/sync" as string) as Promise<{
@@ -170,8 +213,6 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 				console.warn("[sync] not started:", e instanceof Error ? e.message : e);
 				setSyncOwner("off", `Zotero sync could not start: ${e instanceof Error ? e.message : String(e)}`);
 			}
-		} else {
-			setSyncOwner("off", "Zotero sync is turned off for this run (ZN_SYNC=0).");
 		}
 	}
 

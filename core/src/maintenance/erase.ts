@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import { existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
+import { deleteManagedFiles, managedLinkedFiles } from "../files/cleanup";
 import { indexItem } from "../search";
 
 /** True when `file` is strictly inside `dir` (path comparison only; case-insensitive on Windows). */
@@ -21,6 +22,8 @@ export interface EraseReport {
 	filesRemoved: number;
 	/** Files left alone (outside zotero-next's storage, linked, ...). */
 	filesKept: number;
+	/** Linked files deleted from the attachment storage folder (only with "delete files with their items" on). */
+	linkedFilesRemoved?: number;
 	/** Requested keys that do not exist. */
 	missing: string[];
 }
@@ -67,6 +70,7 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 			else filesKept++;
 		}
 	}
+	const managed = managedLinkedFiles(db, all); // linked files in the storage folder, when the user wants them deleted too
 	const parents = new Set<string>();
 	db.transaction(() => {
 		const inSet = new Set(all);
@@ -129,8 +133,17 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 			/* leave it */
 		}
 	}
+	let linkedFilesRemoved: number | undefined;
+	if (managed?.length) {
+		try {
+			linkedFilesRemoved = deleteManagedFiles(db, managed).removed;
+			filesKept = Math.max(0, filesKept - linkedFilesRemoved);
+		} catch {
+			/* the rows are gone; a file that stays is harmless */
+		}
+	}
 	const topLevel = keys.filter((k) => existing.has(k)).length;
-	return { erased: all.length, topLevel, filesRemoved, filesKept, missing };
+	return { erased: all.length, topLevel, filesRemoved, filesKept, ...(linkedFilesRemoved !== undefined ? { linkedFilesRemoved } : {}), missing };
 }
 
 /** Top-level keys of everything in the trash (optionally only items trashed at least `olderThanDays` ago). */

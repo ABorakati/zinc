@@ -242,10 +242,47 @@ export function TableView(): JSX.Element {
 	// moving the mounted window is a JS commit (a full, uncached frame): at most every 100 ms while scrolling, at once only at the edge
 	const nearEdge = (rows: number) => { const s = untrack(first); return (visA < s + rows && s > 0) || visB > s + WINDOW - rows; };
 	const recentre = throttledCommit(() => { if (nearEdge(14)) setStart(Math.max(0, visA - WINDOW / 4)); }, 100);
+	// The scroll popup (as the cards' one in CardList.tsx): while the table scrolls, a pill beside the scrollbar thumb names where
+	// the view is — the group at the top when the list is grouped, else the top row's value in the main sort column ("2019",
+	// "Smith", "T"). It commits only when its text or 4 px-rounded position changes, at most every 60 ms, and hides 700 ms after
+	// the scroll stops.
+	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
+	let bodyH = 0, quietUntil = 0, hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let want: { label: string; top: number } | null = null;
+	const showBubble = throttledCommit(() => {
+		const cur = untrack(bubble);
+		if (want && (!cur || cur.label !== want.label || cur.top !== want.top)) setBubble(want);
+	}, 60);
+	const pillLabel = (r: number): string | null => {
+		const g = rows.groupAt(r);
+		if (g) return g.label;
+		const it = store.peek(itemAtRow(r));
+		const key = store.sortLevels()[0]?.key;
+		if (!it || !key) return null;
+		const def = untrack(cols).find((c) => c.def.sort === key)?.def ?? getColumn(key);
+		const v = (def?.get(it) ?? "").trim();
+		if (!v) return null;
+		if (/date|year|added|modified/i.test(key)) return v.match(/\d{4}/)?.[0] ?? v.slice(0, 12);
+		if (key === "title") return v[0]!.toUpperCase();
+		return v.length > 28 ? `${v.slice(0, 27)}…` : v;
+	};
+	const trackBubble = (a: number, b: number) => {
+		if (performance.now() < quietUntil || count() < 40 || bodyH < 120) return;
+		const label = pillLabel(a);
+		if (!label) return;
+		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
+		const frac = Math.min(1, a / span);
+		want = { label, top: HEADER + Math.round((14 + frac * (bodyH - 56)) / 4) * 4 };
+		showBubble(false);
+		if (hideTimer) clearTimeout(hideTimer);
+		hideTimer = setTimeout(() => { want = null; setBubble(null); }, 700);
+	};
+	onCleanup(() => { if (hideTimer) clearTimeout(hideTimer); });
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
 		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
+		if (a !== visA) trackBubble(a, b); // the top row moved: a scroll (not the first layout or a resize)
 		visA = a; visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(4)) recentre(true);
@@ -254,6 +291,9 @@ export function TableView(): JSX.Element {
 		stats.visCalls++; stats.visMs += d; stats.visMaxMs = Math.max(stats.visMaxMs, d);
 	};
 	createEffect(on(() => store.listVersion(), () => {
+		quietUntil = performance.now() + 400; // the jump back to the top is not a scroll: no popup for it
+		want = null;
+		setBubble(null);
 		setStart(0);
 		if (list) gpuix?.renderer.scrollToItem?.(list.id, 0);
 	}, { defer: true }));
@@ -374,7 +414,7 @@ export function TableView(): JSX.Element {
 						</Show>
 					</div>
 					{/* body */}
-					<div style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
+					<div onLayout={(e: EventPayload) => { bodyH = e.height ?? bodyH; }} style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
 						<virtual-list
 							ref={(el: { id: number }) => { list = el; }}
 							testId="table-list"
@@ -389,13 +429,23 @@ export function TableView(): JSX.Element {
 						</virtual-list>
 						<Show when={count() === 0 && !store.loading()}>
 							<div style={tw("flex absolute top-12 inset-x-0 justify-center", mode())}>
-								<text style={textStyle("text-muted-foreground", mode())}>{store.view().kind === "publications" ? "My Publications is not available in this library" : "No items"}</text>
+								<text style={textStyle("text-muted-foreground", mode())}>{store.view().kind === "publications" ? "No items in My Publications" : "No items"}</text>
 							</div>
 						</Show>
 					</div>
 				</div>
 			</div>
-			<div style={tw("flex flex-none flex-row items-center gap-1 border-t border-border bg-card px-2 py-0.5", mode())}>
+			{/* outside the panned content, so the pill stays beside the scrollbar when the columns scroll sideways */}
+			<Show when={bubble()}>
+				{(bb) => (
+					<div style={{ ...tw("flex items-center rounded-full bg-primary px-3 py-1 shadow-raised", mode()), position: "absolute", right: 18, top: bb().top, pointerEvents: "none" }}>
+						<text style={{ ...textStyle("select-none font-title text-sm font-semibold", mode()), color: tok("primary-foreground") }}>{bb().label}</text>
+					</div>
+				)}
+			</Show>
+			{/* status strip, tinted like the column header. It reaches down over the list card's 10 px bottom padding (App.tsx) and
+			    carries the card's bottom radii itself, so the tint fills the card's foot instead of leaving a pale band under it. */}
+			<div style={{ ...tw("flex flex-none flex-row items-center gap-1 border-t border-border/70 bg-muted/50", mode()), height: 38, paddingLeft: 10, paddingRight: 10, paddingBottom: 3, marginBottom: -10, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 }}>
 				<text style={textStyle("text-xs text-muted-foreground", mode())}>
 					{`${store.total().toLocaleString("en-GB")} items${store.loading() ? " · loading…" : ""}${store.selected().size > 1 ? ` · ${store.selected().size} selected` : ""}${store.error() ? ` · ${store.error()}` : ""}`}
 				</text>

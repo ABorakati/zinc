@@ -9,7 +9,7 @@ import { openMenu, type Anchor, type MenuItem } from "../ui";
 import { locateFileKey, locateItemFromRow, locateItemOf } from "../locate/item";
 import { locateMenu } from "../locate/menu";
 import {
-	addItemsToCollection, copyDoi, findFullText, getDetail, openItem, openUrl, revealAttachment, trashItems,
+	addItemsToCollection, copyDoi, findFullText, getDetail, isRegular, openItem, openUrl, revealAttachment, setInPublications, trashItems,
 } from "./actions";
 
 /** "Parent / Child" path labels for every collection, in tree order. */
@@ -86,6 +86,13 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 		submenu: all.length ? all.map((c) => ({ label: c.path, onSelect: () => void addItemsToCollection(c.key, c.name, ctx.keys) })) : [{ label: "No collections", disabled: true }],
 	});
 	builtin({ label: "Copy DOI", icon: "quote", onSelect: () => void copyDoi(item.key) });
+	if (view.kind !== "trash" && isRegular(item)) {
+		// the detail may still be loading: inside the My Publications view the item is known to be in it
+		const inPubs = view.kind === "publications" || detail?.data.inPublications === true;
+		builtin(inPubs
+			? { label: "Remove from My Publications", icon: "book-x", onSelect: () => void setInPublications(ctx.keys, false) }
+			: { label: "Show in My Publications", icon: "book-marked", onSelect: () => void setInPublications(ctx.keys, true) });
+	}
 	for (const l of registered(ctx, ["cite", "export", "maintain"])) { sep(); out.push(...l); }
 
 	sep();
