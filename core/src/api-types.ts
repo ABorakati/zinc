@@ -76,6 +76,19 @@
 // PUT    /api/tag-colors                       TagColor[] -> TagColor[]
 //        Starred items use the tag "Starred" (shown as a star, not a badge).
 //
+// Import / export (core/src/io/api.ts):
+// POST   /api/io/import  {text, format?: "auto"|"bibtex"|"ris"|"csljson"|"pubmed-nbib"|"endnote-xml"|"rdf"|"mods",
+//                         collectionName?: string|null, collectionKey?: string, basePath?: string}
+//                        -> {created, skipped, errors, collectionKey, format, collections, attachments}
+//        basePath is the folder the text came from: relative attachment paths (Zotero RDF) resolve against it.
+// POST   /api/io/export  {keys?, collectionKey?, format: "bibtex"|"biblatex"|"ris"|"csljson"|"csv"|"rdf"|"mods",
+//                         includeNotes?, dir?} -> {filename, contentType, text, count, path?, files}
+//        With `dir` the core writes the file there; Zotero RDF also copies attachment files into files/<n>/.
+// GET    /api/io/mendeley -> {databases: MendeleyDatabase[], available: boolean}
+// POST   /api/io/mendeley {path?, collectionName?, collectionKey?, linkFiles?} -> Mendeley import result
+//        Reads a Mendeley Desktop SQLite library (copied first, never modified). The online Mendeley
+//        Reference Manager is not supported.
+//
 // References (core/src/references/api.ts; built-in "Zotero Reference" plugin features):
 // GET    /api/references/:itemKey              -> ReferenceList  (the item's bibliography, resolved;
 //        accepts an attachment key too and uses its parent). ?refresh=1 bypasses the cache.

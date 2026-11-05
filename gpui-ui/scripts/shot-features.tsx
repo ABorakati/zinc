@@ -20,6 +20,7 @@ import { _seedJobs } from "../src/features/fulltext/jobs";
 import { FullTextProgress } from "../src/features/fulltext/Progress";
 import { openFullTextSettings } from "../src/features/fulltext/settings";
 import { openExportDialog } from "../src/features/io/dialogs";
+import { openMendeleyImport } from "../src/features/io/mendeley";
 import { showShortcutHelp } from "../src/features/maintenance/shortcutHelp";
 import { ReferencesPanel } from "../src/features/references/ReferencesPanel";
 
@@ -73,6 +74,7 @@ await shot("identifier", () => openIdentifierDialog("10.1136/bmj-2023-078378\n31
 await shot("newitem", () => openNewItemDialog(), 1500);
 await shot("linkuri", () => openLinkUriDialog(), 600);
 await shot("export", () => openExportDialog({ kind: "items", keys }), 600);
+await shot("mendeley", () => openMendeleyImport(), 1500);
 await shot("bibliography", () => openBibliography("3 selected items", keys), 3500);
 await shot("citesettings", () => openCiteSettings(keys), 4000);
 await shot("duplicates", () => openDuplicates(), 6000);

@@ -1,5 +1,6 @@
 // Client for /api/add/* plus the add-items workflows (shared by dialogs, menus and the retrieve panel).
 // Files are added by absolute path (the core copies them into its storage), so nothing is read into this process.
+import { dirname } from "node:path";
 import { createSignal } from "solid-js";
 import { get, post } from "../http";
 import { getPref } from "../prefs";
@@ -181,7 +182,7 @@ export async function handleFileDrop(paths: string[], target?: { x?: number; y?:
 	for (const p of importerPaths) {
 		try {
 			const text = await Bun.file(p).text();
-			await runImport(text, stripExt(baseName(p)), colKey ?? undefined);
+			await runImport(text, stripExt(baseName(p)), colKey ?? undefined, dirname(p)); // the folder: RDF attachment paths resolve against it
 		} catch (e) {
 			toast(`Could not read ${baseName(p)}`, { kind: "error", description: errMsg(e) });
 		}

@@ -2,10 +2,22 @@
 import type { Creator, ZoteroItemData } from "../api-types";
 import { getSchema } from "../schema-data";
 
+/** A child attachment an importer found: a file next to the import, or a link. */
+export interface ParsedAttachment {
+	title?: string;
+	path?: string; // file path as written in the import; relative paths resolve against the import folder
+	url?: string; // a link instead of a file
+	contentType?: string;
+}
+
 /** What a parser produces: item data (type-specific field names), tags and child notes (HTML). */
 export interface ParsedItem {
 	data: Partial<ZoteroItemData> & { itemType: string };
 	notes: string[];
+	/** Child attachments to create; files are copied into the library's storage. */
+	attachments?: ParsedAttachment[];
+	/** Collection paths ("Parent", "Parent/Child") the item belongs to, for formats that carry collections. */
+	collections?: string[][];
 }
 
 type SchemaType = ReturnType<typeof getSchema>["itemTypes"][number];

@@ -27,6 +27,7 @@ function ExportDialog(p: { target: ExportTarget; close: () => void }): JSX.Eleme
 			</div>
 			<Checkbox checked={notes()} onChange={setNotes} label="Include notes" />
 			<Show when={format() === "csv" && notes()}><Txt class="text-xs text-muted-foreground">Notes go into the Notes column as plain text.</Txt></Show>
+			<Show when={format() === "rdf"}><Txt class="text-xs text-muted-foreground">The folder also gets the attachment files, in files/1, files/2…, the way Zotero writes them.</Txt></Show>
 			<Footer>
 				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
 				<Button variant="primary" size="sm" disabled={busy()} onClick={() => void submit()}>{busy() ? "Exporting…" : "Export…"}</Button>

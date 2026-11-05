@@ -1,11 +1,14 @@
-// Registers import (Tools > Import…, Import from Clipboard) and export (item context menu, collection menu, Settings > Export).
+// Registers import (Tools > Import…, Import from Clipboard, Import from Mendeley Desktop) and export (item context menu,
+// collection menu, Settings > Export).
 import { registerAppAction, registerCollectionAction, registerItemAction, registerSettingsSection } from "../../registry";
 import { importFromClipboard, pickAndImport } from "./client";
 import { ExportSettings, openExportDialog } from "./dialogs";
+import { openMendeleyImport } from "./mendeley";
 
 export function register(): void {
 	registerAppAction({ id: "io.import", label: "Import…", icon: "file-up", menu: "tools", run: () => void pickAndImport() });
 	registerAppAction({ id: "io.importClipboard", label: "Import from Clipboard", icon: "clipboard-paste", menu: "tools", run: () => void importFromClipboard() });
+	registerAppAction({ id: "io.importMendeley", label: "Import from Mendeley Desktop…", icon: "database", menu: "tools", run: () => void openMendeleyImport() });
 
 	registerItemAction({
 		id: "io.export",

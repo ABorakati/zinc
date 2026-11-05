@@ -1,8 +1,8 @@
 // Client for /api/io/* plus the import/export workflows (menus, dialogs). Export writes the file into a folder chosen with the
 // native folder picker (GPUIX has no save-file dialog yet); import reads the chosen files here and posts their text.
 import { createSignal } from "solid-js";
-import { basename, join } from "node:path";
-import { post } from "../http";
+import { basename, dirname, join } from "node:path";
+import { get, post } from "../http";
 import { pickPaths, readClipboardText } from "../platform";
 import { persisted } from "../prefs";
 import { refresh, setView } from "../shared";
@@ -11,7 +11,7 @@ import { toast } from "../../ui";
 import { autoAttachPdfs, autoTag } from "../../settings/generalPrefs";
 import { findFullText } from "../fulltext/jobs";
 
-export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv";
+export type ExportFormat = "bibtex" | "biblatex" | "ris" | "csljson" | "csv" | "rdf" | "mods";
 
 export const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
 	{ id: "bibtex", label: "BibTeX", hint: ".bib, for LaTeX" },
@@ -19,14 +19,41 @@ export const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[]
 	{ id: "ris", label: "RIS", hint: ".ris, EndNote / Mendeley / Zotero" },
 	{ id: "csljson", label: "CSL JSON", hint: ".json, for citation processors" },
 	{ id: "csv", label: "CSV", hint: ".csv, spreadsheet columns as Zotero" },
+	{ id: "rdf", label: "Zotero RDF", hint: ".rdf, items, notes and attachment files" },
+	{ id: "mods", label: "MODS", hint: ".xml, library catalogue format" },
 ];
 
-export interface ExportResult { filename: string; contentType: string; text: string; count: number }
-export interface ImportResult { created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string; itemKeys?: string[] }
+export interface ExportResult { filename: string; contentType: string; text: string; count: number; path?: string; files?: number }
+export interface ImportResult {
+	created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string;
+	collections?: number; attachments?: number; itemKeys?: string[];
+}
+
+export interface MendeleyDatabase {
+	path: string;
+	account: string;
+	sizeBytes: number;
+	modified: string;
+	encrypted: boolean;
+	inUse: boolean;
+}
+export interface MendeleyResult extends ImportResult {
+	format: "mendeley";
+	collections: number;
+	attachments: number;
+	missingFiles: number;
+}
 
 export const ioApi = {
-	export: (b: { keys?: string[]; collectionKey?: string; format: ExportFormat; includeNotes?: boolean }) => post<ExportResult>("/api/io/export", b),
-	import: (b: { text: string; format?: string; collectionName?: string | null; collectionKey?: string; autoTag?: boolean }) => post<ImportResult>("/api/io/import", b),
+	export: (b: { keys?: string[]; collectionKey?: string; format: ExportFormat; includeNotes?: boolean; dir?: string }) =>
+		post<ExportResult>("/api/io/export", b),
+	import: (b: { text: string; format?: string; collectionName?: string | null; collectionKey?: string; autoTag?: boolean; basePath?: string }) =>
+		post<ImportResult>("/api/io/import", b),
+	mendeley: {
+		list: () => get<{ databases: MendeleyDatabase[]; available: boolean }>("/api/io/mendeley"),
+		import: (b: { path?: string; collectionName?: string | null; collectionKey?: string; linkFiles?: boolean }) =>
+			post<MendeleyResult>("/api/io/mendeley", b),
+	},
 };
 
 /** Defaults remembered between exports and edited in Settings > Export. */
@@ -53,11 +80,17 @@ export async function saveTextToFolder(filename: string, text: string): Promise<
 
 export async function runExport(target: ExportTarget, format: ExportFormat, includeNotes: boolean): Promise<boolean> {
 	try {
-		const r = await ioApi.export({
-			...(target.kind === "items" ? { keys: target.keys } : { collectionKey: target.collectionKey }),
-			format,
-			includeNotes,
-		});
+		const scope = target.kind === "items" ? { keys: target.keys } : { collectionKey: target.collectionKey };
+		// Zotero RDF also carries attachment files, so the core writes the file and copies them into the folder
+		if (format === "rdf") {
+			const dir = (await pickPaths({ directories: true, prompt: "Save here" }))?.[0];
+			if (!dir) return false;
+			const r = await ioApi.export({ ...scope, format, includeNotes, dir });
+			setLastDir(dir);
+			toast(`Exported ${plural(r.count, "item")}`, { description: r.files ? `${r.path} (+${plural(r.files, "file")})` : r.path });
+			return true;
+		}
+		const r = await ioApi.export({ ...scope, format, includeNotes });
 		const path = await saveTextToFolder(r.filename, r.text);
 		if (!path) return false;
 		toast(`Exported ${plural(r.count, "item")}`, { kind: "success", description: path });
@@ -69,7 +102,7 @@ export async function runExport(target: ExportTarget, format: ExportFormat, incl
 }
 
 /** Import text (a file's contents or the clipboard). The new collection is named after the file. */
-export async function runImport(text: string, collectionName: string, collectionKey?: string): Promise<ImportResult | null> {
+export async function runImport(text: string, collectionName: string, collectionKey?: string, basePath?: string): Promise<ImportResult | null> {
 	toast("Importing…", { durationMs: 2500 });
 	try {
 		const r = await ioApi.import({
@@ -78,11 +111,15 @@ export async function runImport(text: string, collectionName: string, collection
 			collectionName: collectionKey ? null : collectionName,
 			collectionKey: collectionKey || undefined,
 			autoTag: autoTag(),
+			basePath,
 		});
 		refresh();
 		const parts = [`Imported ${plural(r.created, "item")}`];
 		if (r.skipped) parts.push(`${r.skipped} already in the library`);
-		const description = r.errors.length ? `${plural(r.errors.length, "problem")}: ${r.errors[0]}` : r.collectionKey ? `Added to the collection "${collectionName}"` : undefined;
+		if (r.attachments) parts.push(plural(r.attachments, "attachment"));
+		const description = r.errors.length
+			? `${plural(r.errors.length, "problem")}: ${r.errors[0]}`
+			: r.collectionKey ? `Added to the collection "${collectionName}"` : undefined;
 		if (r.errors.length && r.created === 0 && r.skipped === 0) toast("Nothing imported", { kind: "error", description });
 		else toast(parts.join(", "), { kind: r.errors.length ? "info" : "success", description, durationMs: r.errors.length ? 10_000 : 5000 });
 		if (r.collectionKey && r.created > 0 && !collectionKey) setView({ kind: "collection", key: r.collectionKey });
@@ -96,14 +133,14 @@ export async function runImport(text: string, collectionName: string, collection
 	}
 }
 
-/** Tools > Import…: pick files, read them, send the text. */
+/** Tools > Import…: pick files, read them, send the text. The folder rides along for RDF attachment files. */
 export async function pickAndImport(): Promise<void> {
-	const paths = await pickPaths({ files: true, multiple: true, prompt: "Import" });
+	const paths = await pickPaths({ files: true, multiple: true, prompt: "Import (BibTeX, RIS, CSL JSON, CSV, EndNote XML, RDF, MODS)" });
 	if (!paths) return;
 	for (const p of paths) {
 		let text: string;
 		try { text = await Bun.file(p).text(); } catch (e) { fail(`Could not read ${basename(p)}`, e); continue; }
-		await runImport(text, stripExt(basename(p)));
+		await runImport(text, stripExt(basename(p)), undefined, dirname(p));
 	}
 }
 
@@ -112,4 +149,25 @@ export async function importFromClipboard(): Promise<void> {
 	try { text = await readClipboardText(); } catch (e) { return void fail("Could not read the clipboard", e); }
 	if (!text.trim()) return void toast("The clipboard is empty", { kind: "info" });
 	await runImport(text, `Clipboard import ${new Date().toISOString().slice(0, 10)}`);
+}
+
+/** Tools > Import from Mendeley…: reads a Mendeley Desktop library (never the online Reference Manager). */
+export async function importFromMendeley(path: string): Promise<boolean> {
+	toast("Importing from Mendeley…", { durationMs: 2500 });
+	try {
+		const r = await ioApi.mendeley.import({ path, collectionName: "Mendeley" });
+		refresh();
+		const parts = [`Imported ${plural(r.created, "item")}`];
+		if (r.skipped) parts.push(`${r.skipped} already in the library`);
+		if (r.collections) parts.push(plural(r.collections, "collection"));
+		if (r.attachments) parts.push(plural(r.attachments, "attachment"));
+		if (r.missingFiles) parts.push(`${plural(r.missingFiles, "file")} not found on disk`);
+		const description = r.errors.length ? `${plural(r.errors.length, "problem")}: ${r.errors[0]}` : "Added to the collection \"Mendeley\"";
+		toast(parts.join(", "), { kind: r.errors.length ? "info" : "success", description, durationMs: r.errors.length ? 10_000 : 6000 });
+		if (r.collectionKey) setView({ kind: "collection", key: r.collectionKey });
+		return true;
+	} catch (e) {
+		fail("Mendeley import failed", e);
+		return false;
+	}
 }

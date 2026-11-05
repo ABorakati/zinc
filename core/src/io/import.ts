@@ -1,15 +1,21 @@
 // Import: detect the format, parse to items, create them (skipping DOI duplicates) in a collection.
 import type { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { addFile, addLink } from "../additems/files";
 import { createCollection, createItem, getCollection, HttpError } from "../db";
 import { parseBibtex } from "./bibtex";
 import { normDoi, type ParsedItem } from "./common";
 import { parseCslJson } from "./csljson";
 import { parseEndnoteXml } from "./endnote";
+import { parseMods } from "./mods";
 import { parseNbib } from "./pubmed";
+import { parseZoteroRdf } from "./rdf";
 import { parseRis } from "./ris";
 
-export type ImportFormat = "bibtex" | "ris" | "csljson" | "pubmed-nbib" | "endnote-xml";
-export const IMPORT_FORMATS: ImportFormat[] = ["bibtex", "ris", "csljson", "pubmed-nbib", "endnote-xml"];
+export type ImportFormat = "bibtex" | "ris" | "csljson" | "pubmed-nbib" | "endnote-xml" | "rdf" | "mods";
+export const IMPORT_FORMATS: ImportFormat[] = ["bibtex", "ris", "csljson", "pubmed-nbib", "endnote-xml", "rdf", "mods"];
 
 export interface ImportRequest {
 	text: string;
@@ -17,6 +23,8 @@ export interface ImportRequest {
 	collectionName?: string | null;
 	collectionKey?: string;
 	autoTag?: boolean;
+	/** Folder the text came from: relative attachment paths (Zotero RDF) resolve against it. */
+	basePath?: string;
 }
 export interface ImportResult {
 	created: number;
@@ -25,12 +33,19 @@ export interface ImportResult {
 	collectionKey: string | null;
 	format: ImportFormat;
 	itemKeys?: string[];
+	collections: number; // collections created (formats that carry a tree, e.g. RDF)
+	attachments: number; // child attachments created
 }
 
 export function detectFormat(text: string): ImportFormat | null {
 	const t = text.replace(/^﻿/, "").trimStart();
 	if (!t) return null;
-	if (t.startsWith("<")) return /<records?\b|<xml\b|<ref-type\b/i.test(t.slice(0, 5000)) ? "endnote-xml" : null;
+	if (t.startsWith("<")) {
+		const head = t.slice(0, 5000);
+		if (/<(?:\w+:)?mods(?:Collection)?[\s>]/.test(head) || /loc\.gov\/mods/.test(head)) return "mods";
+		if (/<(?:\w+:)?RDF[\s>]/.test(head) || /rdf-syntax-ns#/.test(head)) return "rdf";
+		return /<records?\b|<xml\b|<ref-type\b/i.test(head) ? "endnote-xml" : null;
+	}
 	if (t.startsWith("[") || t.startsWith("{")) {
 		try {
 			JSON.parse(t);
@@ -52,6 +67,8 @@ function parse(text: string, format: ImportFormat): { items: ParsedItem[]; error
 		case "csljson": return parseCslJson(text);
 		case "pubmed-nbib": return parseNbib(text);
 		case "endnote-xml": return parseEndnoteXml(text);
+		case "rdf": return parseZoteroRdf(text);
+		case "mods": return parseMods(text);
 	}
 }
 
@@ -62,12 +79,28 @@ function existingDois(db: Database): Set<string> {
 	return new Set(rows.map((r) => normDoi(r.doi)).filter(Boolean));
 }
 
+/** A path for an attachment the import mentions: absolute, relative to the import folder, or a file: URL. */
+function attachmentPath(raw: string | undefined, basePath: string | undefined): string | null {
+	const p = (raw ?? "").trim();
+	if (!p) return null;
+	if (p.startsWith("file:")) {
+		try {
+			return fileURLToPath(p);
+		} catch {
+			return null;
+		}
+	}
+	if (isAbsolute(p)) return p;
+	if (!basePath) return null;
+	return resolve(basePath, p.replace(/^\.?[\\/]/, ""));
+}
+
 export function importText(db: Database, req: ImportRequest): ImportResult {
 	if (typeof req.text !== "string" || !req.text.trim()) throw new HttpError(400, "text is required");
 	let format: ImportFormat;
 	if (!req.format || req.format === "auto") {
 		const d = detectFormat(req.text);
-		if (!d) throw new HttpError(400, "could not recognise the format; expected BibTeX, RIS, CSL JSON, PubMed (.nbib) or EndNote XML");
+		if (!d) throw new HttpError(400, "could not recognise the format; expected BibTeX, RIS, CSL JSON, PubMed (.nbib), EndNote XML, Zotero RDF or MODS");
 		format = d;
 	} else if (IMPORT_FORMATS.includes(req.format)) format = req.format;
 	else throw new HttpError(400, `unknown format: ${String(req.format)}`);
@@ -77,6 +110,7 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 		if (!getCollection(db, req.collectionKey)) throw new HttpError(404, "collection not found");
 		collectionKey = req.collectionKey;
 	}
+	const rootCollection = collectionKey;
 
 	const { items, errors } = parse(req.text, format);
 	if (req.autoTag === false) {
@@ -86,28 +120,96 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 	const itemKeys: string[] = [];
 	let created = 0;
 	let skipped = 0;
+	let collections = 0;
+	let attachments = 0;
 	const wantNewCollection = !collectionKey && req.collectionName !== null;
 	const collectionName = (req.collectionName ?? "").trim() || `Imported ${new Date().toISOString().slice(0, 10)}`;
 
+	// collection paths ("Parent/Child") from the file, created once and reused
+	const pathKeys = new Map<string, string>();
+	const collectionFor = (segments: string[]): string | null => {
+		let parent = rootCollection;
+		let createdHere: string | null = null;
+		for (const raw of segments) {
+			const name = raw.trim();
+			if (!name) continue;
+			const cacheKey = `${parent ?? ""}\u0000${name}`;
+			const known = pathKeys.get(cacheKey);
+			if (known) {
+				parent = known;
+				continue;
+			}
+			const existing = db.query("SELECT key FROM collections WHERE name = ? AND parent_key IS ?").get(name, parent) as { key: string } | null;
+			if (existing) parent = existing.key;
+			else {
+				parent = createCollection(db, name, parent).key;
+				collections++;
+			}
+			pathKeys.set(cacheKey, parent!);
+			createdHere ??= parent;
+		}
+		return createdHere ?? parent;
+	};
+
+	const addAttachments = (it: ParsedItem, parentKey: string) => {
+		for (const att of it.attachments ?? []) {
+			try {
+				const url = (att.url ?? "").trim();
+				if (url && /^[a-z][a-z0-9+.-]*:/i.test(url) && !/^file:/i.test(url)) {
+					addLink(db, { parentKey, url, title: att.title });
+					attachments++;
+					continue;
+				}
+				const file = attachmentPath(att.path ?? url, req.basePath);
+				if (!file) {
+					errors.push(`attachment ${att.path ?? url} skipped: give the import folder so relative paths can be found`);
+					continue;
+				}
+				if (!existsSync(file)) {
+					errors.push(`attachment not found: ${file}`);
+					continue;
+				}
+				addFile(db, { mode: "imported_file", path: file, parentKey, name: att.title, contentType: att.contentType });
+				attachments++;
+			} catch (e) {
+				errors.push(`attachment ${att.title ?? att.path ?? att.url}: ${e instanceof Error ? e.message : e}`);
+			}
+		}
+	};
+
 	// one outer transaction: thousands of per-item commits are slow; a failing item rolls back only its own savepoint
 	db.transaction(() => {
-	for (const [i, it] of items.entries()) {
-		const doi = normDoi(typeof it.data.DOI === "string" ? it.data.DOI : "");
-		if (doi && seen.has(doi)) {
-			skipped++;
-			continue;
+		for (const [i, it] of items.entries()) {
+			const doi = normDoi(typeof it.data.DOI === "string" ? it.data.DOI : "");
+			if (doi && seen.has(doi)) {
+				skipped++;
+				continue;
+			}
+			try {
+				let keys: string[] = [];
+				if (it.collections?.length) {
+					for (const path of it.collections) {
+						const key = collectionFor(path);
+						if (!key) continue;
+						keys.push(key);
+						collectionKey ??= key;
+					}
+				}
+				if (!keys.length && !collectionKey && wantNewCollection) {
+					collectionKey = createCollection(db, collectionName).key;
+					keys = [collectionKey];
+				} else if (!keys.length && collectionKey) keys = [collectionKey];
+				const detail = createItem(db, { ...it.data, collections: [...new Set(keys)] });
+				const parentKey = detail.data.key;
+				for (const html of it.notes) createItem(db, { itemType: "note", note: html, parentItem: parentKey });
+				if (it.attachments?.length) addAttachments(it, parentKey);
+				if (doi) seen.add(doi);
+				created++;
+				itemKeys.push(parentKey);
+			} catch (e) {
+				errors.push(`item ${i + 1}${it.data.title ? ` (${String(it.data.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`);
+			}
 		}
-		try {
-			if (!collectionKey && wantNewCollection) collectionKey = createCollection(db, collectionName).key;
-			const detail = createItem(db, { ...it.data, collections: collectionKey ? [collectionKey] : [] });
-			for (const html of it.notes) createItem(db, { itemType: "note", note: html, parentItem: detail.data.key });
-			if (doi) seen.add(doi);
-			created++;
-			itemKeys.push(detail.data.key);
-		} catch (e) {
-			errors.push(`item ${i + 1}${it.data.title ? ` (${String(it.data.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`);
-		}
-	}
 	})();
-	return { created, skipped, errors, collectionKey, format, itemKeys };
+	return { created, skipped, errors, collectionKey, format, collections, attachments, itemKeys };
 }

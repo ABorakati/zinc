@@ -1,47 +1,7 @@
 // EndNote XML import (File > Export > XML).
 import type { Creator, ZoteroItemData } from "../api-types";
-import { appendExtra, creatorTypeFor, decodeEntities, normalizeDate, setBase, setFirst, splitKeywords, textToNoteHtml, type ParsedItem } from "./common";
-
-interface XNode {
-	name: string;
-	attrs: Record<string, string>;
-	children: XNode[];
-	text: string; // direct + descendant text (styles flattened)
-}
-
-/** Minimal XML reader: elements, attributes, text, CDATA. Enough for EndNote exports. */
-function parseXml(xml: string): XNode {
-	const root: XNode = { name: "#root", attrs: {}, children: [], text: "" };
-	const stack: XNode[] = [root];
-	const re = /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!DOCTYPE[^>]*>|<(\/?)([A-Za-z_][\w:.-]*)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
-	let m: RegExpExecArray | null;
-	const addText = (t: string) => {
-		for (const n of stack) n.text += t;
-	};
-	while ((m = re.exec(xml))) {
-		if (m[1] !== undefined) addText(m[1]);
-		else if (m[6] !== undefined) addText(decodeEntities(m[6]));
-		else if (m[3]) {
-			if (m[2]) {
-				if (stack.length > 1) stack.pop();
-			} else {
-				const attrs: Record<string, string> = {};
-				for (const a of m[4]!.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) attrs[a[1]!] = decodeEntities(a[2] ?? a[3] ?? "");
-				const node: XNode = { name: m[3]!, attrs, children: [], text: "" };
-				stack[stack.length - 1]!.children.push(node);
-				if (!m[5]) stack.push(node);
-			}
-		}
-	}
-	return root;
-}
-
-const find = (n: XNode, ...path: string[]): XNode[] => {
-	let cur = [n];
-	for (const p of path) cur = cur.flatMap((c) => c.children.filter((k) => k.name === p));
-	return cur;
-};
-const txt = (n: XNode | undefined) => (n ? n.text.replace(/\s+/g, " ").trim() : "");
+import { appendExtra, creatorTypeFor, normalizeDate, setBase, setFirst, splitKeywords, textToNoteHtml, type ParsedItem } from "./common";
+import { parseXml, path as find, textOf as txt, type XmlNode } from "./xml";
 
 const TYPES: Record<string, string> = {
 	"journal article": "journalArticle", "book": "book", "edited book": "book", "book section": "bookSection",
@@ -57,7 +17,7 @@ const TYPE_BY_NUMBER: Record<string, string> = {
 	"9": "computerProgram", "13": "document", "36": "manuscript", "59": "dataset", "56": "blogPost", "21": "film", "2": "artwork",
 };
 
-function recordToItem(rec: XNode): ParsedItem | null {
+function recordToItem(rec: XmlNode): ParsedItem | null {
 	const rt = find(rec, "ref-type")[0];
 	const typeName = (rt?.attrs.name ?? txt(rt)).toLowerCase();
 	const itemType = TYPES[typeName] ?? TYPE_BY_NUMBER[txt(rt)] ?? "journalArticle";
@@ -138,14 +98,14 @@ function recordToItem(rec: XNode): ParsedItem | null {
 export function parseEndnoteXml(text: string): { items: ParsedItem[]; errors: string[] } {
 	const items: ParsedItem[] = [];
 	const errors: string[] = [];
-	let root: XNode;
+	let root: XmlNode;
 	try {
 		root = parseXml(text.replace(/^﻿/, ""));
 	} catch (e) {
 		return { items, errors: [`invalid XML: ${e instanceof Error ? e.message : e}`] };
 	}
-	const recs: XNode[] = [];
-	const walk = (n: XNode) => {
+	const recs: XmlNode[] = [];
+	const walk = (n: XmlNode) => {
 		for (const c of n.children) {
 			if (c.name === "record") recs.push(c);
 			else walk(c);
