@@ -4,6 +4,7 @@ import type { ItemDetail } from "../api";
 import type { Collection, ItemRow } from "../contracts";
 import { itemActions, type ItemAction, type ItemActionContext } from "../registry";
 import { store } from "../store";
+import { readState } from "../readState";
 import { openMenu, type Anchor, type MenuItem } from "../ui";
 import {
 	addItemsToCollection, copyDoi, findFullText, getDetail, openItem, openUrl, revealAttachment, trashItems,
@@ -65,6 +66,10 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 	sep();
 	builtin({ label: "Find Full Text", icon: "file-search", onSelect: () => void findFullText(ctx.keys) });
 	builtin({ label: "Find Full Text (open access only)", icon: "file-search", onSelect: () => void findFullText(ctx.keys, { openAccessOnly: true }) });
+
+	sep();
+	builtin({ label: "Mark as Read", icon: "check", onSelect: () => readState.markRead(ctx.keys) });
+	builtin({ label: "Mark as Unread", icon: "circle-dot", onSelect: () => readState.markUnread(ctx.keys) });
 
 	sep();
 	const mine = collectionPaths().filter((c) => detail?.collections.includes(c.key));

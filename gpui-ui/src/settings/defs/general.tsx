@@ -4,6 +4,7 @@ import type { GroupBy, ListStore } from "../../contracts";
 import { store } from "../../store";
 import { leftOpen, rightOpen, setLeftOpen, setRightOpen } from "../../shell/layout";
 import { Choice, Segmented, Toggle } from "../controls";
+import { readState } from "../../readState";
 import { registerSection, registerSettings } from "../registry";
 
 registerSection({ id: "general", label: "General", icon: "sliders-horizontal", order: 10, description: "How items open and what the main window shows.", keywords: ["preferences", "options"] });
@@ -59,6 +60,12 @@ registerSettings([
 		description: "Show items grouped (for example by year) in the item list.",
 		keywords: ["grouping", "item list", "year", "item type"],
 		control: () => <Choice<GroupBy> value={ls().groupBy?.() ?? "year"} options={GROUPS} onChange={(g) => ls().setGroupBy?.(g)} width={180} />,
+	},
+	{
+		id: "general.readDots", section: "general", group: "Item list", label: "Show unread dots",
+		description: "Show a small accent dot on items you have not opened yet.",
+		keywords: ["unread", "read", "dots", "status", "indicator", "new"],
+		control: () => <Toggle checked={readState.enabled()} onChange={(v) => readState.setEnabled(v)} />,
 	},
 	{
 		id: "general.attachPdfs", section: "general", group: "Adding items", label: "Automatically attach associated PDFs when adding items",

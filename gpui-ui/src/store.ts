@@ -8,6 +8,7 @@ import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, GroupBy, ItemRow, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
 import { mark } from "./trace";
 import { isWebContent, webBase } from "./webview/config";
+import { readState } from "./readState";
 
 export const PAGE = 100;
 /** Page cache size (LRU by distance): when more pages are cached, the ones farthest from the visible range go (a page is ~100 rows = ~300 KB). */
@@ -576,11 +577,14 @@ function createStore(): AppStore {
 		const openTab = (tab: Tab = { id: attachmentKey, kind: "reader", title, itemKey }) => {
 			if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), tab]);
 			setActiveTab(attachmentKey);
+			if (itemKey) readState.markRead(itemKey);
 		};
 		// PDFs open in the native reader; snapshots and EPUBs in a web tab (Zotero's reader-host in the shared WebView2, src/webview) when
 		// the core serves it, else in their default app.
 		void api.item(attachmentKey).then(
 			(d) => {
+				const parent = itemKey || (d.data && typeof d.data === "object" && "parentItem" in d.data && typeof d.data.parentItem === "string" ? d.data.parentItem : "");
+				if (parent) readState.markRead(parent);
 				const ct = String((d.data as { contentType?: unknown }).contentType ?? "");
 				if (!ct || /pdf/i.test(ct)) return openTab();
 				// a linked URL has no file for the reader (the core opens it in the browser)

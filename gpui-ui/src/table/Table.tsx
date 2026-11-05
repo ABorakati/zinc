@@ -18,6 +18,7 @@ import type { ItemRow } from "../contracts";
 import { attachmentIconName, Icon, itemTypeIconName } from "../icons";
 import { defaultDir, stats, store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
+import { readState } from "../readState";
 import { DropdownMenu, openMenu, type MenuItem } from "../ui";
 import { getColumn, labelOf, loadSchema, MENU_COLUMNS, moreColumns, type Column } from "./defs";
 import { createColumnTable } from "./headless";
@@ -82,6 +83,7 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 	// one-line cell text, cut to the column in JS (clip.ts) instead of textOverflow: ellipsis; the cell's overflow:hidden catches the rest
 	const text = () => clipText(c().get(p.item), p.col.width - 16, 13);
 	const attach = () => (p.item.attachmentCount ?? 0) > 0;
+	const unread = () => readState.isUnread(p.item);
 	return (
 		<Show
 			when={c().id === "title"}
@@ -110,7 +112,23 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 			}
 		>
 			<div style={{ ...base(), gap: 6 }}>
-				<Icon name={itemTypeIconName(p.item.itemType)} size={14} color={tok("muted-foreground")} />
+				<div style={{ position: "relative", width: 14, height: 14, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+					<Icon name={itemTypeIconName(p.item.itemType)} size={14} color={tok("muted-foreground")} />
+					<Show when={unread()}>
+						<div
+							data-testid="table-unread-dot"
+							style={{
+								position: "absolute",
+								top: -2,
+								right: -2,
+								width: 6,
+								height: 6,
+								borderRadius: 9999,
+								backgroundColor: tok("primary"),
+							}}
+						/>
+					</Show>
+				</div>
 				<text style={{ ...textStyle("select-none text-[13px] text-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>{clipText(p.item.title || "(untitled)", p.col.width - 16 - 20, 13)}</text>
 			</div>
 		</Show>

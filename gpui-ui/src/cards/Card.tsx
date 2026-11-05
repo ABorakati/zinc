@@ -7,6 +7,7 @@ import type { ItemRow, Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
+import { readState } from "../readState";
 import { DropdownMenu, type MenuItem } from "../ui";
 import { childIcon, childLabel, copyCitation, findFullText, getDetail, openChild, peekDetail, openUrl, toggleStar } from "./actions";
 import { swallow } from "./click";
@@ -142,6 +143,7 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 	const selected = () => store.selected().has(it().key);
 	const hovered = () => p.hovered;
 	const [citing, setCiting] = createSignal(false);
+	const unread = createMemo(() => readState.isUnread(it()));
 
 	const badges = () => (L().tags ? badgeTags(it()) : []);
 	// creators · publication · year · type as FEW texts as possible (a <text> is a host div + selectable wrapper + canvas underlay):
@@ -220,7 +222,21 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 	return (
 		<div style={rootStyle()}>
 			{/* item-type icon: w-[22px] pt-[3px] text-muted-foreground/80 */}
-			<div style={tw("flex w-[22px] flex-none items-center justify-center pt-[3px]", mode())}>
+			<div style={{ ...tw("flex w-[22px] flex-none items-center justify-center pt-[3px]", mode()), position: "relative" }}>
+				<Show when={unread()}>
+					<div
+						data-testid="unread-dot"
+						style={{
+							position: "absolute",
+							top: 1,
+							right: 0,
+							width: 7,
+							height: 7,
+							borderRadius: 9999,
+							backgroundColor: tok("primary", mode()),
+						}}
+					/>
+				</Show>
 				<Icon name={typeIcon(it().itemType)} size={compact() ? 16 : 18} color={tw("text-muted-foreground/80", mode()).color as string} />
 			</div>
 
