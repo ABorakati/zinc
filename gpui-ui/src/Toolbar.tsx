@@ -34,7 +34,11 @@ export const QUICK_MODES: { mode: SearchMode; label: string; hint: string }[] = 
 ];
 const currentMode = (): SearchMode => (store.fulltext() ? "fulltext" : store.qmode());
 
-/** QuickSearchMode: h-9 max-w-36 rounded-lg border border-input bg-background pl-1.5 pr-6 text-xs text-muted-foreground. */
+/**
+ * QuickSearchMode: what the search box matches, as a quiet prefix INSIDE the search field ("Title, Creator, Year ▾ │ 🔍 Search…"):
+ * no border or fill of its own, a hover wash like the toolbar's other ghost buttons. (The web UI had a separate bordered
+ * select beside the field; a lone white box among the toolbar's grey controls looked out of place.)
+ */
 function QuickSearchMode() {
 	const items = (): MenuItem[] => QUICK_MODES.map((m) => ({
 		label: m.label,
@@ -47,27 +51,28 @@ function QuickSearchMode() {
 	return (
 		<DropdownMenu
 			items={items}
-			width={176}
+			width={200}
+			style={{ flexShrink: 0, marginLeft: 3 }}
 			trigger={
 				<div
 					role="button" aria-label="Quick search mode"
 					style={{
-						...t("relative flex h-9 flex-none items-center justify-between rounded-lg border border-input bg-background pl-2 pr-2"),
-						width: 144,
+						...t("flex h-[30px] flex-none items-center gap-1 rounded-md pl-2.5 pr-1.5"),
 						cursor: "pointer",
+						hover: t("bg-foreground/5"),
 					}}
 				>
-					<text style={{ ...tx("text-xs text-muted-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+					<text style={{ ...tx("text-xs font-medium text-muted-foreground"), whiteSpace: "nowrap" }}>
 						{QUICK_MODES.find((m) => m.mode === currentMode())?.label ?? "Title, Creator, Year"}
 					</text>
-					<Icon name="chevron-down" size={14} color={tok("muted-foreground")} />
+					<Icon name="chevron-down" size={13} color={tok("muted-foreground")} />
 				</div>
 			}
 		/>
 	);
 }
 
-/** Search box: icon at left-3 over a h-9 rounded-lg bg-muted field with pl-9. */
+/** Search box: h-9 rounded-lg bg-muted field; the quick-search mode picker, a divider and the search icon sit inside it, at left. */
 function SearchBox() {
 	const gpuix = useGpuix();
 	let input: { id: number } | undefined;
@@ -75,7 +80,9 @@ function SearchBox() {
 	onCleanup(() => registerSearchFocus(undefined));
 	return (
 		<div style={t("relative flex h-9 min-w-0 flex-1 items-center rounded-lg bg-muted")}>
-			<div style={{ position: "absolute", left: 12, top: 0, bottom: 0, display: "flex", alignItems: "center", pointerEvents: "none" }}>
+			<QuickSearchMode />
+			<div style={{ width: 1, height: 18, flexShrink: 0, marginLeft: 6, marginRight: 10, backgroundColor: tok("border") }} />
+			<div style={{ display: "flex", alignItems: "center", flexShrink: 0, pointerEvents: "none" }}>
 				<Icon name="search" size={15} color={tok("muted-foreground")} />
 			</div>
 			<input
@@ -87,7 +94,7 @@ function SearchBox() {
 					flexGrow: 1,
 					minWidth: 0,
 					height: 36,
-					paddingLeft: 36,
+					paddingLeft: 8,
 					paddingRight: 12,
 					fontSize: 13,
 					fontFamily: "Inter",
@@ -155,7 +162,7 @@ function ActionMenu(p: { menu: "add" | "tools" }) {
 				width={240}
 				trigger={p.menu === "add" ? (
 					/* Add: h-9 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground shadow-primary */
-					<div role="button" aria-label="Add items" style={{ ...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"), boxShadow: shadows[mode()].primary, cursor: "pointer", pointerEvents: "none" /* filled: else it blocks the DropdownMenu's click */ }}>
+					<div role="button" aria-label="Add items" style={{ ...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"), boxShadow: shadows[mode()].primary, cursor: "pointer" }}>
 						<Icon name="plus" size={14} color={tok("primary-foreground")} />
 						<text style={tx("text-[13px] font-medium text-primary-foreground")}>Add</text>
 					</div>
@@ -179,8 +186,6 @@ export function Toolbar() {
 		// cacheRegion "content": drawn by its own cached GPUI view at the height it last painted with (re-measured whenever its
 		// subtree changes), so list scrolling does not rebuild the toolbar every frame.
 		<div style={{ ...t("flex flex-none items-center border-b border-border-soft px-4 pt-3.5 pb-2.5"), width: "100%", ...CONTENT_REGION }}>
-			<QuickSearchMode />
-			<div style={{ width: 10, flexShrink: 0 }} />
 			<SearchBox />
 			<div style={{ width: 10, flexShrink: 0 }} />
 			<ViewToggle />

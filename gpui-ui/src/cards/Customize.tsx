@@ -93,7 +93,7 @@ function CustomizeBody(): JSX.Element {
 					items={addFieldItems}
 					width={200}
 					trigger={
-						<div style={{ ...t("flex flex-row items-center justify-between h-8 w-full rounded-md border border-input bg-background px-2 cursor-pointer"), pointerEvents: "none" /* filled: else it blocks the DropdownMenu's click */ }}>
+						<div style={{ ...t("flex flex-row items-center justify-between h-8 w-full rounded-md border border-input bg-background px-2 cursor-pointer") }}>
 							<text style={tx("text-xs text-muted-foreground")}>Add field…</text>
 							<Icon name="chevron-down" size={14} color={tok("muted-foreground")} />
 						</div>

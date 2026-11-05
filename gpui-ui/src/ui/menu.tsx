@@ -29,9 +29,14 @@ export function DropdownMenu(p: { trigger: JSX.Element; items: MenuItem[] | (() 
 		const b = boundsOf(el);
 		openMenu(b ? { rect: b, align: p.align } : { x: e.x ?? 0, y: e.y ?? 0 }, p.items, { minWidth: p.width });
 	};
+	// The click is taken by a transparent layer OVER the trigger, not by this wrapper: GPUIX lets a filled box block the hit test for
+	// the boxes around it (should_occlude), so a wrapper around a filled trigger (a white button) never got the click. The layer has
+	// pointerEvents "none", which in GPUIX only means "does not block": it still gets the click, and the trigger under it keeps its
+	// hover and its own handlers (e.g. swallow() in a card).
 	return (
-		<div ref={(x: HostElement) => { el = x; }} onClick={open} style={{ display: "flex", flexDirection: "row", ...p.style }}>
+		<div ref={(x: HostElement) => { el = x; }} style={{ display: "flex", flexDirection: "row", ...p.style }}>
 			{p.trigger}
+			<div onClick={open} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" }} />
 		</div>
 	);
 }

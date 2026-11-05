@@ -90,9 +90,7 @@ function CountChip(p: { mode: Mode; compact: boolean; hot: boolean; item: ItemRo
 		<DropdownMenu
 			items={items}
 			trigger={
-				// pointerEvents "none": the filled button would otherwise block the DropdownMenu's click (GPUIX should_occlude);
-				// swallow() keeps the card row behind it from also selecting on this click
-				<div onClick={() => swallow()} onMouseEnter={() => void getDetail(p.item.key).catch(() => {})} style={{ ...box(), pointerEvents: "none" }}>
+				<div onClick={() => swallow()} onMouseEnter={() => void getDetail(p.item.key).catch(() => {})} style={box()}>
 					<Icon name={p.icon} size={15} color={text().color as string} />
 					<text style={{ ...text(), whiteSpace: "nowrap" }}>{p.label}</text>
 				</div>

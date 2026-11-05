@@ -34,10 +34,6 @@ function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kin
 				borderColor: kind() === "tint" ? tok("primary-line") : tok("input"),
 				backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-soft") : tok("background"),
 				cursor: "pointer",
-				// GPUIX: a filled box blocks the hit test for the boxes around it (should_occlude), so the DropdownMenu wrapped
-				// around "More actions" never got the click. "none" only turns that blocking off; the button keeps its own
-				// hover and click. Nothing clickable sits behind these buttons.
-				pointerEvents: "none",
 				...(kind() === "primary" ? { boxShadow: shadows[store.mode()].primary } : {}),
 				hover: { backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-tint") : tok("muted"), opacity: kind() === "primary" ? 0.92 : 1 },
 			}}

@@ -39,11 +39,16 @@ console.log("visible before", before);
 r.nativeSimulateMouseDown(x, b.y + 8, 0);
 await tick();
 const steps = 20, target = b.y + b.height / 2;
-for (let i = 1; i <= steps; i++) { r.nativeSimulateMouseMove(x, b.y + 8 + ((target - b.y - 8) * i) / steps, 0); await tick(30); }
+const { stats } = await import("../src/store"); // relative: an absolute path would load a second copy of the store
+const f0 = stats.fetches;
+for (let i = 1; i <= steps; i++) { r.nativeSimulateMouseMove(x, b.y + 8 + ((target - b.y - 8) * i) / steps, 0); await tick(16); }
+console.log("page fetches started during the drag", stats.fetches - f0);
 r.captureScreenshot(`${prefix}-mid-drag.png`);
 r.nativeSimulateMouseUp(x, target, 0);
-await tick(300);
-console.log("visible after drag", vis);
+const t0 = performance.now();
+// time until the first visible row has its data (the cards are drawn, not skeletons)
+while (performance.now() - t0 < 5000) { await tick(10); if (vis && h.store.peek(vis[0])) break; }
+console.log("visible after drag", vis, "data after", Math.round(performance.now() - t0), "ms");
 r.captureScreenshot(`${prefix}-after-drag.png`);
 // a press on the track near the bottom jumps there
 r.nativeSimulateMouseDown(x, b.y + b.height - 20, 0);

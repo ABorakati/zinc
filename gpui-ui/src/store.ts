@@ -274,7 +274,17 @@ function createStore(): AppStore {
 	let hardCleared = 0;
 	const cache = new Map<number, CachedPage>(); // page -> rows
 	const inflight = new Set<number>();
+	/** Per-page abort, so a fast jump can drop the requests for pages it has left behind (still queued at the core). */
+	const pageAbort = new Map<number, AbortController>();
 	let abort = new AbortController();
+	// Fast moves (dragging the scrollbar thumb, a fling): the visible range jumps several pages between two reports. Fetching every
+	// page passed over queued dozens of requests on the core (in-process: the same thread that draws), and the page the drag
+	// stopped on waited behind them. While the list moves that fast nothing is fetched (rows show skeletons); SETTLE_MS after the
+	// last big jump, the pages then in view load, and requests for pages far from there are aborted.
+	const FAST_JUMP_PAGES = process.env.ZN_NO_SETTLE ? Infinity : 2, SETTLE_MS = 90; // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
+	let fastUntil = 0;
+	let settleTimer: ReturnType<typeof setTimeout> | undefined;
+	let lastRange: [number, number] = [0, 0];
 	let centerPage = 0;
 	let scrollDir = 1; // direction the visible range last moved in (1 = down)
 	let lastVisible = { fp: -1, lp: -1, dir: 0 };
@@ -288,6 +298,10 @@ function createStore(): AppStore {
 	};
 	const touchPage = (p: number) => { const s = pageSigs.get(p); if (s) { stats.pageTouches++; s[1]((n) => n + 1); } };
 	const touchAllPages = () => batch(() => { for (const p of [...pageSigs.keys()]) touchPage(p); });
+	/** Wake the rows of pages [from, to] that have no current rows yet (they re-run itemAt, which fetches). */
+	const touchPagesIn = (from: number, to: number) => batch(() => {
+		for (let p = Math.max(0, from); p <= to; p++) { const e = cache.get(p); if (!e || e.gen !== gen) touchPage(p); }
+	});
 	let dupCache: Promise<ItemRow[]> | null = null;
 
 	/** The duplicate sets as flat rows (one per item, sets adjacent): the core lists sets, not items. */
@@ -323,11 +337,13 @@ function createStore(): AppStore {
 	async function loadPage(p: number, g: number) {
 		if (inflight.has(p) || g !== gen) return;
 		inflight.add(p);
+		const mine = new AbortController();
+		pageAbort.set(p, mine);
 		stats.fetches++;
 		setPending((n) => n + 1);
 		const t0 = performance.now();
 		try {
-			const res = await fetchPage(p, abort.signal);
+			const res = await fetchPage(p, AbortSignal.any([abort.signal, mine.signal]));
 			if (g !== gen) return;
 			const dropped: number[] = [];
 			if (hardCleared < hardGen) { // first page of a new list replaces the old list's rows
@@ -350,8 +366,18 @@ function createStore(): AppStore {
 		} catch (e) {
 			if (g === gen && (e as Error)?.name !== "AbortError") setError(String((e as Error)?.message ?? e));
 		} finally {
-			if (g === gen) inflight.delete(p);
+			// only this request's own bookkeeping: an aborted one may already have been replaced by a new request for the page
+			if (pageAbort.get(p) === mine) { pageAbort.delete(p); if (g === gen) inflight.delete(p); }
 			setPending((n) => n - 1);
+		}
+	}
+	/** Drop the requests for pages outside [from, to] that have not come back yet. */
+	function abortOutside(from: number, to: number) {
+		for (const [p, c] of [...pageAbort]) {
+			if (p >= from && p <= to) continue;
+			c.abort();
+			pageAbort.delete(p);
+			inflight.delete(p);
 		}
 	}
 
@@ -361,6 +387,8 @@ function createStore(): AppStore {
 		abort.abort();
 		abort = new AbortController();
 		inflight.clear();
+		pageAbort.clear();
+		fastUntil = 0;
 		dupCache = null;
 		if (hard) {
 			hardGen = gen;
@@ -397,7 +425,8 @@ function createStore(): AppStore {
 		pageVersion(p); // re-run this row when ITS page arrives (not on every page of the list)
 		listVersion();
 		const e = cache.get(p);
-		if ((!e || e.gen !== gen) && i >= 0 && i < Math.max(untrack(total), 1)) queueMicrotask(() => void loadPage(p, gen));
+		// (not during a fast move: the settle step loads the pages in view; this row re-runs when its page arrives)
+		if ((!e || e.gen !== gen) && i >= 0 && i < Math.max(untrack(total), 1) && performance.now() >= fastUntil) queueMicrotask(() => void loadPage(p, gen));
 		if (!e) stats.skeleton++;
 		return e?.rows[i - p * PAGE]; // a stale row (older generation) is returned meanwhile
 	}
@@ -408,6 +437,26 @@ function createStore(): AppStore {
 	/** The visible item range: re-centres the cache and prefetches the pages ahead in the scroll direction. */
 	function setVisible(first: number, last: number) {
 		const fp = Math.max(0, Math.floor(first / PAGE)), lp = Math.max(fp, Math.floor(last / PAGE));
+		lastRange = [first, last];
+		if (lastVisible.fp >= 0 && Math.abs(fp - lastVisible.fp) > FAST_JUMP_PAGES) {
+			// a big jump: fetch nothing until the range settles (see FAST_JUMP_PAGES)
+			fastUntil = performance.now() + SETTLE_MS;
+			lastVisible = { fp, lp, dir: fp > lastVisible.fp ? 1 : -1 };
+			centerPage = Math.max(0, Math.floor((first + last) / 2 / PAGE));
+			if (settleTimer) clearTimeout(settleTimer);
+			settleTimer = setTimeout(() => {
+				settleTimer = undefined;
+				fastUntil = 0;
+				const [a, b] = lastRange;
+				const sfp = Math.max(0, Math.floor(a / PAGE)), slp = Math.max(sfp, Math.floor(b / PAGE));
+				abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
+				lastVisible = { fp: -1, lp: -1, dir: 0 }; // force the normal path below to load what is in view now
+				setVisible(a, b);
+				touchPagesIn(sfp - 1, slp + 1); // rows that skipped their fetch during the move ask again
+			}, SETTLE_MS);
+			return;
+		}
+		if (performance.now() < fastUntil) { lastVisible = { fp, lp, dir: scrollDir }; return; } // still settling
 		const c = Math.max(0, Math.floor((first + last) / 2 / PAGE));
 		if (c !== centerPage) {
 			scrollDir = c > centerPage ? 1 : -1;
