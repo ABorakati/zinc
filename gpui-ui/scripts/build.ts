@@ -171,6 +171,18 @@ const AOT_PATCHES: [string, string | RegExp, string][] = [
 	[abs("src/reader/structure/load.ts"), 'import(pathToFileURL(join(SDT_DIR, "pack", "reader.js")).href)', 'import("../../../../vendor/reader/structured-document-text/src/pack/reader.js")'],
 	[abs("src/reader/structure/load.ts"), 'import(pathToFileURL(join(SDT_DIR, "version.js")).href)', 'import("../../../../vendor/reader/structured-document-text/src/version.js")'],
 	[abs("src/services.ts"), 'join(buildDir, "worker.js")', 'join(buildDir, "metadata.json")'],
+	// WebAssembly. An AOT exe has no JIT, so a module it builds from bytes at run time is interpreted (Find Full Text's fx_inspect ran ~70x
+	// slower, the structure worker's ONNX model ~4x). Only a `.wasm` the build has seen is compiled to machine code, and `with { type: "file" }`
+	// hides it from the compiler (file loader): the same import without the attribute gives the same path string, plus a compiled copy that
+	// the runtime finds by content, whether the module is later built from Bun.file(path), readFileSync(path) or bytes posted from another
+	// thread. The source keeps the attribute (stable Bun, tests and the bytecode build need it).
+	[abs("../core/src/fulltext/wasm.ts"), 'fulltext.wasm" with { type: "file" };', 'fulltext.wasm";'],
+	// The document worker's wasm (onnxruntime-web, pdf.js's openjpeg and jbig2) reaches it as bytes read from vendor/document-worker/build by
+	// the host (worker.ts FetchWasm/FetchData). Importing the same files here makes the build compile them; those bytes then match at run time.
+	// The files stay on disk (the host still reads them), so the package folder keeps its copy.
+	[abs("src/reader/structure/docworker-entry.ts"), "const g = globalThis as Record<string, unknown>;", [
+		"onnx/ort-wasm-simd-threaded", "wasm/openjpeg", "wasm/jbig2",
+	].map((n) => `// @ts-ignore: a wasm file, imported only so the AOT build compiles it\nimport "../../../../vendor/document-worker/build/${n}.wasm";`).join("\n") + "\nconst g = globalThis as Record<string, unknown>;"],
 	// Zotero translators
 	[abs("../core/src/translate/pool.ts"), "new Worker(WORKER_ENTRY.href, {", `new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.translate))}, {`],
 	[abs("../core/src/translate/runtime/zotero.ts"), 'const rt = (p: string) => req(join(VENDOR_DIR, "translate", "src", p));', staticRequires("rt", "translate/src", TRANSLATE_RT)],
