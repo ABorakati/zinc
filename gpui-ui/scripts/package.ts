@@ -26,7 +26,9 @@
 // (after a one-time backup) and the same services as zotero-next (API on 23120, Zotero port 23119, Zotero sync, PDF extraction;
 // src/services.ts). --zip also writes out/package/zotero-next-gpui-<date>.zip.
 import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { BUILD_VERSION } from "./_version";
+import { signFiles } from "./sign";
 
 const root = resolve(import.meta.dir, "..");
 const repo = resolve(root, "..");
@@ -109,6 +111,10 @@ writeFileSync(join(app, "README.txt"), [
 	"Settings and window state: %APPDATA%\\zotero-next-gpui\\",
 	"",
 ].join("\r\n"));
+
+writeFileSync(join(app, "version.txt"), BUILD_VERSION + "\n"); // the stamp scripts/installer.ts and the updater read
+// Authenticode (scripts/sign.ts): signs the exe and our native DLL when a certificate is configured, else prints "unsigned: ..." and moves on
+signFiles([join(app, "zotero-next-gpui.exe"), join(app, "zn_pdf.dll")]);
 
 const size = (p: string): number => {
 	const s = statSync(p);

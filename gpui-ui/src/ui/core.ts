@@ -98,6 +98,8 @@ export interface ToastItem {
 	kind: "info" | "success" | "error";
 	description?: string;
 	action?: { label: string; run: () => void };
+	/** A row of buttons under the text (the last one is the primary button): for a toast that offers several choices. */
+	actions?: { label: string; run: () => void }[];
 	durationMs: number;
 }
 const [toasts, setToasts] = createSignal<ToastItem[]>([]);

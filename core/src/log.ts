@@ -4,7 +4,7 @@
 //   File    %APPDATA%\zotero-next-gpui\logs\zotero-next-YYYY-MM-DD.log (ZN_LOG_DIR overrides the folder). One JSON object per line:
 //             {"time":"2026-11-06T12:00:00.123Z","level":"error","area":"core","message":"...","stack":"...","version":"dev",
 //              "build":"source","os":"Windows_NT 10.0.26300 x64","ctx":{"method":"GET","path":"/api/items"}}
-//           level: debug|info|warn|error|fatal. area: ui|core|reader|sync|websync|translate|bbt|worker|word.
+//           level: debug|info|warn|error|fatal. area: ui|core|reader|sync|websync|translate|bbt|worker|word|update.
 //   Rotate  one file per local day; files older than 14 days are deleted; a file that would pass ~5 MB is renamed to
 //           zotero-next-YYYY-MM-DD.old.log (replacing an older .old) and a fresh file starts: at most ~10 MB a day.
 //   Writes  queued and appended asynchronously; log() never throws. "fatal" lines are written synchronously (the process may be dying).
@@ -20,7 +20,7 @@ import { basename, join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
-export const LOG_AREAS = ["ui", "core", "reader", "sync", "websync", "translate", "bbt", "worker", "word"] as const;
+export const LOG_AREAS = ["ui", "core", "reader", "sync", "websync", "translate", "bbt", "worker", "word", "update"] as const;
 export type LogArea = (typeof LOG_AREAS)[number];
 
 export interface LogRecord {

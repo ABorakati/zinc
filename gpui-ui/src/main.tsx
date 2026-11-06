@@ -136,3 +136,4 @@ await import("./features").then(
 );
 void openTabsFromEnv(store.openAttachment);
 void import("./features/report/crashToast").then((m) => m.showCrashToast()); // "closed unexpectedly last time", if the crash marker found one
+void import("./update/service").then((m) => m.startUpdates()); // auto-update: timer + install-on-exit hooks; no network unless a feed is configured (src/update/)

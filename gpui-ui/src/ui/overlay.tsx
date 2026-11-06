@@ -138,7 +138,7 @@ function TooltipView() {
 
 // ---------------------------------------------------------------------------------------------------- toasts
 
-export interface ToastOptions { kind?: "info" | "success" | "error"; description?: string; action?: { label: string; run: () => void }; durationMs?: number; id?: string }
+export interface ToastOptions { kind?: "info" | "success" | "error"; description?: string; action?: { label: string; run: () => void }; actions?: { label: string; run: () => void }[]; durationMs?: number; id?: string }
 
 /** Toast messages (solid-sonner in the web UI): bottom-right stack, dismissed after 4 s (6 s for errors), a click dismisses. `id` (addition) replaces a toast with the same id. */
 export function toast(message: string, o?: ToastOptions): void {
@@ -149,7 +149,8 @@ export function toast(message: string, o?: ToastOptions): void {
 		kind,
 		description: o?.description,
 		action: o?.action,
-		durationMs: o?.durationMs ?? (kind === "error" ? 6000 : o?.action ? 8000 : 4000),
+		actions: o?.actions,
+		durationMs: o?.durationMs ?? (kind === "error" ? 6000 : o?.action || o?.actions ? 8000 : 4000),
 	};
 	addToast(item);
 }
@@ -177,6 +178,21 @@ function ToastView(p: { item: ToastItem }) {
 			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0, gap: 2 }}>
 				<text style={tx("text-[13px] font-medium text-foreground")}>{it.message}</text>
 				{it.description ? <text style={tx("text-[13px] text-muted-foreground")}>{it.description}</text> : undefined}
+				{it.actions?.length ? (
+					<div style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+						{it.actions.map((a, i) => {
+							const primary = i === it.actions!.length - 1;
+							return (
+								<div
+									onClick={() => { dismissToast(it.id); a.run(); }}
+									style={{ ...t(primary ? "flex h-6 flex-none items-center rounded-md bg-primary px-2" : "flex h-6 flex-none items-center rounded-md border border-border px-2"), cursor: "pointer" }}
+								>
+									<text style={{ ...tx(primary ? "text-xs font-medium text-primary-foreground" : "text-xs font-medium text-foreground"), whiteSpace: "nowrap" }}>{a.label}</text>
+								</div>
+							);
+						})}
+					</div>
+				) : undefined}
 			</div>
 			{it.action ? (
 				<div

@@ -22,6 +22,16 @@ for (const name of (() => { try { return readdirSync(base); } catch { return [];
 	} catch { /* still in use or already gone */ }
 }
 
+// Older test scratch made outside a run folder (zn-core-*, zn-ft-*, zn-login-*… from runs that skipped this preload, e.g. started from
+// another directory): remove the ones untouched for 6 hours. Thousands of them (7+ GB) once filled the disk.
+for (const name of (() => { try { return readdirSync(base); } catch { return []; } })()) {
+	if (!/^zn[a-z]*-/.test(name) || name.startsWith(PREFIX)) continue;
+	try {
+		const p = join(base, name);
+		if (Date.now() - statSync(p).mtimeMs > 6 * 3600_000) rmSync(p, { recursive: true, force: true });
+	} catch { /* in use or already gone */ }
+}
+
 const run = join(base, `${PREFIX}${process.pid}-${Date.now()}`);
 mkdirSync(run, { recursive: true });
 process.env.TEMP = run;

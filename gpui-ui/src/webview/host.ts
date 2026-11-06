@@ -247,6 +247,9 @@ export class WebHost {
 		this.wv = null; this.hwnd = null; this.navigated = ""; this.placed = ""; this.region = ""; this.shown = false;
 		this.url = null; this.where = null; this.visible = false;
 		try { w?.destroy(); } catch { /* already gone */ }
+		// destroy() only posts WM_CLOSE; with the pump stopped just above, the window would linger and the NEXT view then failed to
+		// create ("the web view created no window": close a web tab, open another within a second or so). Drain the close chain now.
+		if (w) for (let i = 0; i < 3; i++) pump();
 		if (had && appIsForeground()) focusMain();
 		if (this.state() !== "error") this.setState("idle");
 		if (w) this.o.onGone?.();
