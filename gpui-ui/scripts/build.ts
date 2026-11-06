@@ -34,6 +34,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solidPreset from "babel-preset-solid";
 import solidBunPlugin from "@gpuix/solid/bun-plugin";
+import { fixExeIcon } from "./fix-exe-icon";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -310,6 +311,8 @@ for (const v of todo) {
 		throw new Error(`build ${v.id} failed`);
 	}
 	for (const m of result.logs) console.warn(`[${v.id}] ${m.message ?? m}`);
+	// Bun leaves its template's one-image icon group first, pointing at our 16 px image: re-point it (scripts/fix-exe-icon.ts)
+	console.log(`[${v.id}] exe icon: ${fixExeIcon(outfile)}`);
 	console.log(`[${v.id}] ${relative(root, outfile)}  ${sizeMB(outfile)} MB  (${((performance.now() - t0) / 1000).toFixed(1)} s; assets: ${staged.note})`);
 }
 
