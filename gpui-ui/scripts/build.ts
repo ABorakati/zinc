@@ -24,7 +24,9 @@
 //   4. src/core.ts imports the core with a variable specifier (import(dir + "server")), which the bundler cannot follow. The same load
 //      plugin rewrites those three calls to literal specifiers so the core (and its wasm via `with { type: "file" }`, schema.json) is
 //      bundled. Proper fix: make them literal in src/core.ts. The PDF text-extraction Worker (core/src/extract/pool.ts)
-//      is not embedded: package.ts ships pdf-worker.ts and the document-worker build next to the exe and src/services.ts points the pool at them.
+//      is not embedded in the bytecode build: package.ts ships pdf-worker.ts and the document-worker build next to the exe and src/services.ts points the pool at them.
+//   5. aot variant only: the workers (PDF extraction, document structure, Zotero translators) ARE compiled in as extra entry points, with
+//      the vendored code they load from disk made static (see "AOT: workers" below). package.ts --aot ships only data next to that exe.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,11 +128,55 @@ const nativePlugin: Bun.BunPlugin = {
 };
 
 // Set per variant in the build loop. In an AOT exe every module's import.meta.* is its own (compiled-in) location, NOT the entry's, and
-// the embedded tree is laid out differently: the root is the cwd of the build (gpui-ui), compile.assets keep their path relative to it
-// (out/stage/gpui-ui/...), and the core sits under _.._/core. So the rewrite below maps a repo path to the staged assets' location,
-// not to the entry's import.meta.dir (aot variant only; B:/~BUN/root is where a Windows exe embeds its tree).
+// the embedded tree is laid out differently: its root is the common ancestor of the entry points (the repo, since the aot variant's
+// workers include core/ ones; without them it was gpui-ui), and compile.assets keep their path relative to it (gpui-ui/out/stage/gpui-ui/...).
+// So the rewrite below maps a repo path to the staged assets' location, not to the entry's import.meta.dir (aot variant only;
+// B:/~BUN/root is where a Windows exe embeds its tree).
 let currentAot = false;
-const AOT_ROOT = `B:/~BUN/root/${relative(root, join(outDir, "stage")).split(sep).join("/")}`;
+const AOT_ROOT = `B:/~BUN/root/${relative(repo, join(outDir, "stage")).split(sep).join("/")}`;
+
+// ---- AOT: workers and code that used to load from disk ----------------------------------------------------------------------------
+// An AOT exe refuses import()/require()/new Worker() of code that is not in it. The three worker families (PDF text extraction, the
+// document-structure worker, the Zotero translators) and the code they load from disk are therefore compiled in: each worker is an extra
+// entry point, and the sources below are patched (aot variant only; sources and the bytecode build are untouched) so that
+//   * `new Worker(...)` gets the worker's embedded path (an entry point sits at B:/~BUN/root/<path relative to the repo>),
+//   * the runtime import()/createRequire() of vendored code gets a literal specifier the bundler can follow.
+// Data (cmaps, fonts, wasm, models, translators text, schema.json) is read with fs from the package folder as before.
+const AOT_WORKERS = {
+	pdf: "../core/src/extract/pdf-worker.ts",
+	doc: "src/reader/structure/docworker-entry.ts",
+	translate: "../core/src/translate/worker.ts",
+} as const;
+const embeddedPath = (rel: string) => `B:/~BUN/root/${relative(repo, resolve(root, rel)).split(sep).join("/")}`;
+const abs = (rel: string) => join(root, rel);
+
+// Zotero translate framework + utilities: modules the translation runtime require()s by computed path (runtime/zotero.ts rt()/ut()).
+const TRANSLATE_RT = ["promise", "debug", "utilities_translate", "translators", "translator", "translation/translate", "tlds", "proxy", "rdf/init"];
+const TRANSLATE_UT = ["openurl", "date", "utilities", "xregexp-all", "utilities_item", "xregexp-unicode-zotero", "schema.js", "resource/dateFormats.json", "cachedTypes", "resource/zoteroTypeSchemaData"];
+const staticRequires = (fn: string, kind: "translate/src" | "utilities", names: string[]) => {
+	const cases = names.map((n) => `\t\tcase ${JSON.stringify(n)}: return require(${JSON.stringify(`../../../vendor/zotero/${kind}/${n}`)});`).join("\n");
+	return `const ${fn} = (p: string): any => { switch (p) {\n${cases}\n\t\tdefault: throw new Error("zotero module not compiled in: " + p); } };`;
+};
+
+/** [file, from (string or regexp), to] edits applied to repo sources in the aot variant. A miss is an error: the shim has gone stale. */
+const AOT_PATCHES: [string, string | RegExp, string][] = [
+	// PDF text extraction
+	[abs("../core/src/extract/pool.ts"), "this.worker = new Worker(WORKER_ENTRY.href, docWorkerDir ?", `this.worker = new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.pdf))}, false ?`],
+	[abs("../core/src/extract/pdf-worker.ts"), "await import(workerPath);", '// @ts-ignore: an untyped JS bundle\nawait import("../../../vendor/document-worker/build/worker.js");'],
+	// document structure (reading layout)
+	[abs("src/reader/structure/worker.ts"), 'const bundle = join(WORKER_DIR, "worker.js");', 'const bundle = join(WORKER_DIR, "metadata.json"); // the engine itself is compiled in; this only proves the data folder is there'],
+	[abs("src/reader/structure/worker.ts"), "new Worker(entry ? pathToFileURL(entry).href : new URL(\"./docworker-entry.ts\", import.meta.url).href)", `new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.doc))})`],
+	[abs("src/reader/structure/worker.ts"), "if (entry && !existsSync(entry)) throw", "if (false) throw"],
+	[abs("src/reader/structure/docworker-entry.ts"), "await import(`${root}/vendor/document-worker/build/worker.js`);", '// @ts-ignore: an untyped JS bundle\nawait import("../../../../vendor/document-worker/build/worker.js");'],
+	[abs("src/reader/structure/load.ts"), 'import(pathToFileURL(join(SDT_DIR, "pack", "reader.js")).href)', 'import("../../../../vendor/reader/structured-document-text/src/pack/reader.js")'],
+	[abs("src/reader/structure/load.ts"), 'import(pathToFileURL(join(SDT_DIR, "version.js")).href)', 'import("../../../../vendor/reader/structured-document-text/src/version.js")'],
+	[abs("src/services.ts"), 'join(buildDir, "worker.js")', 'join(buildDir, "metadata.json")'],
+	// Zotero translators
+	[abs("../core/src/translate/pool.ts"), "new Worker(WORKER_ENTRY.href, {", `new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.translate))}, {`],
+	[abs("../core/src/translate/runtime/zotero.ts"), 'const rt = (p: string) => req(join(VENDOR_DIR, "translate", "src", p));', staticRequires("rt", "translate/src", TRANSLATE_RT)],
+	[abs("../core/src/translate/runtime/zotero.ts"), 'const ut = (p: string) => req(join(VENDOR_DIR, "utilities", p));', staticRequires("ut", "utilities", TRANSLATE_UT)],
+	[abs("../core/src/translate/runtime/dom.ts"), /\breq\(("jsdom"|"wicked-good-xpath"|"w3c-xmlserializer")\)/g, "require($1)"],
+];
 
 const META = /import\.meta\.(url|dir|path|dirname|filename)\b/g;
 const inRepo = (p: string) => p.startsWith(repo + sep) && !p.includes(`${sep}node_modules${sep}`) && !p.startsWith(join(root, "out") + sep);
@@ -146,6 +192,16 @@ const metaPlugin: Bun.BunPlugin = {
 			// core would not be in the exe (and at run time it would load the loose sources from disk, where bare packages fail to
 			// resolve). Turn each into a literal specifier so it is bundled (still a lazy dynamic import).
 			let shimmed = 0;
+			if (currentAot) {
+				for (const [file, from, to] of AOT_PATCHES) {
+					if (file !== path) continue;
+					const before = src;
+					src = src.replace(from, to);
+					if (src === before) throw new Error(`[zn-aot-patch] ${relative(repo, path)}: pattern not found: ${String(from).slice(0, 70)}`);
+					shimmed++;
+				}
+				if (shimmed) console.log(`[zn-aot-patch] ${relative(repo, path)}: ${shimmed} edit(s)`);
+			}
 			if (path === join(root, "src", "core.ts")) {
 				src = src.replace(/import\(\s*dir\s*\+\s*"([\w./-]+)"\s*\)/g, (_m, n: string) => (shimmed++, `import("../../core/src/${n}")`));
 				if (shimmed) console.log(`[zn-core-shim] src/core.ts: ${shimmed} variable import(dir + ...) -> literal`);
@@ -156,7 +212,7 @@ const metaPlugin: Bun.BunPlugin = {
 			if (currentAot && path === join(root, "src", "prefetch.ts")) {
 				const before = src;
 				const from = 'new Worker(compiled ? "B:/~BUN/root/prefetch-worker.js" : new URL("./prefetch-worker.ts", import.meta.url).href)';
-				src = src.replace(from, 'new Worker("B:/~BUN/root/src/prefetch-worker.ts")');
+				src = src.replace(from, 'new Worker("B:/~BUN/root/gpui-ui/src/prefetch-worker.ts")');
 				if (src !== before) { shimmed++; console.log("[zn-aot-shim] src/prefetch.ts: embedded worker path"); }
 			}
 			META.lastIndex = 0;
@@ -216,12 +272,13 @@ for (const v of todo) {
 	const t0 = performance.now();
 	currentAot = !!v.aot;
 	const result = await Bun.build({
-		entrypoints: [entry, "src/prefetch-worker.ts"], // the worker of src/prefetch.ts is a second entry point: Bun embeds it and `new Worker("./prefetch-worker.ts")` finds it
+		entrypoints: [entry, "src/prefetch-worker.ts", ...(v.aot ? Object.values(AOT_WORKERS) : [])], // the worker of src/prefetch.ts is a second entry point: Bun embeds it and `new Worker("./prefetch-worker.ts")` finds it
 		target: "bun",
 		format: "esm",
 		minify: v.minify,
 		bytecode: v.bytecode && !v.aot, // AOT replaces bytecode
 		sourcemap: "none",
+		external: v.aot ? ["canvas"] : [], // jsdom's optional native peer (try { require("canvas") }): left out, jsdom runs without canvas support
 		plugins: [nativePlugin, metaPlugin, solidBunPlugin],
 		compile: {
 			target: "bun-windows-x64",

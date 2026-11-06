@@ -1,4 +1,11 @@
-// Package the GPUI app: `bun scripts/package.ts [--zip]`
+// Package the GPUI app: `bun scripts/package.ts [--zip] [--aot]`
+//
+// --aot assembles the ahead-of-time compiled exe (Bun canary, compile.aot; see build.ts) into out/package-aot/zotero-next-gpui/ instead.
+// Everything that is code is inside that exe (PDF extraction, document-structure and translation workers, the Zotero translate framework,
+// jsdom, Zotero's document worker, the structured-document-text reader), so the folder has no docworker-entry.ts / pdf-worker.ts /
+// translate-worker.js, no vendor/zotero/{translate,utilities}, no vendor/reader and no document-worker/build/worker.js: only data
+// (cmaps, fonts, wasm, models, translators, schema), the two native DLLs and the web reader / note editor pages. It is never installed
+// anywhere by this script.
 //
 // Builds the compiled exe (bytecode, console hidden, app icon) and assembles a self-contained folder:
 //   out/package/zotero-next-gpui/
@@ -19,11 +26,12 @@
 // (after a one-time backup) and the same services as zotero-next (API on 23120, Zotero port 23119, Zotero sync, PDF extraction;
 // src/services.ts). --zip also writes out/package/zotero-next-gpui-<date>.zip.
 import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const repo = resolve(root, "..");
-const pkgDir = join(root, "out", "package");
+const aot = process.argv.includes("--aot");
+const pkgDir = join(root, "out", aot ? "package-aot" : "package");
 const app = join(pkgDir, "zotero-next-gpui");
 
 const run = (cmd: string[], cwd = root) => {
@@ -46,12 +54,12 @@ if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) run(["bun", join(root, "n
 if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) throw new Error("pdfium.dll missing in " + pdfiumDir);
 
 // 2. the exe
-run(["bun", "scripts/build.ts", "--variant", "bytecode", "--hide-console"]);
-const exe = join(root, "out", "zotero-next-gpui-bytecode.exe");
+run(aot ? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", "--hide-console"] : ["bun", "scripts/build.ts", "--variant", "bytecode", "--hide-console"]);
+const exe = join(root, "out", aot ? "zotero-next-gpui-aot.exe" : "zotero-next-gpui-bytecode.exe");
 
 // 2b. the Zotero translation worker, pre-bundled (jsdom and friends inside; see scripts/translate-worker.ts)
 const translateWorker = join(root, "out", "translate-worker.js");
-run(["bun", "scripts/translate-worker.ts", translateWorker]);
+if (!aot) run(["bun", "scripts/translate-worker.ts", translateWorker]);
 
 // 3. assemble
 rmSync(app, { recursive: true, force: true });
@@ -62,15 +70,18 @@ cpSync(join(repo, "app", "assets", "icon.ico"), join(app, "icon.ico")); // the w
 cpSync(join(pdfiumDir, "bin", "pdfium.dll"), join(app, "pdfium.dll"));
 cpSync(join(pdfiumDir, "licenses"), join(app, "pdfium-licenses"), { recursive: true });
 cpSync(join(pdfiumDir, "LICENSE"), join(app, "pdfium-licenses", "PDFIUM-LICENSE.txt"));
-cpSync(join(root, "src", "reader", "structure", "docworker-entry.ts"), join(app, "docworker-entry.ts"));
-cpSync(join(repo, "core", "src", "extract", "pdf-worker.ts"), join(app, "pdf-worker.ts")); // PDF full-text extraction (the pool's Worker entry)
-cpSync(translateWorker, join(app, "translate-worker.js"));
+if (!aot) {
+	cpSync(join(root, "src", "reader", "structure", "docworker-entry.ts"), join(app, "docworker-entry.ts"));
+	cpSync(join(repo, "core", "src", "extract", "pdf-worker.ts"), join(app, "pdf-worker.ts")); // PDF full-text extraction (the pool's Worker entry)
+	cpSync(translateWorker, join(app, "translate-worker.js"));
+}
 // Zotero translate framework + utilities + schema + translators (core/vendor/zotero; the worker reads them from disk), with their licences
-for (const part of ["translate", "utilities", "zotero-schema", "translators"]) cpSync(join(repo, "core", "vendor", "zotero", part), join(app, "vendor", "zotero", part), { recursive: true });
+for (const part of aot ? ["zotero-schema", "translators"] : ["translate", "utilities", "zotero-schema", "translators"]) cpSync(join(repo, "core", "vendor", "zotero", part), join(app, "vendor", "zotero", part), { recursive: true });
 cpSync(join(repo, "core", "vendor", "zotero", "README.md"), join(app, "vendor", "zotero", "README.md"));
 cpSync(join(repo, "core", "vendor", "zotero", "translation-server", "COPYING"), join(app, "vendor", "zotero", "translation-server", "COPYING"));
-cpSync(join(repo, "vendor", "document-worker", "build"), join(app, "vendor", "document-worker", "build"), { recursive: true });
-cpSync(join(repo, "vendor", "reader", "structured-document-text", "src"), join(app, "vendor", "reader", "structured-document-text", "src"), { recursive: true });
+// aot: worker.js (the engine) and the structured-document-text reader are compiled into the exe; the build folder keeps the data the engine fetches
+cpSync(join(repo, "vendor", "document-worker", "build"), join(app, "vendor", "document-worker", "build"), { recursive: true, filter: (src) => !(aot && basename(src) === "worker.js") });
+if (!aot) cpSync(join(repo, "vendor", "reader", "structured-document-text", "src"), join(app, "vendor", "reader", "structured-document-text", "src"), { recursive: true });
 // the web reader and note editor builds (reader-host/build.sh, note-host/build.sh); without them snapshots/EPUBs open in their default app
 for (const [name, index] of [["reader-host", "index.html"], ["note-host", "editor.html"]] as const) {
 	const dist = join(repo, name, "dist");
