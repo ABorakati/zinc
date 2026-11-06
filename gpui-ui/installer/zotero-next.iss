@@ -4,9 +4,11 @@
 ;   Publisher   Apps & features publisher
 ;   PkgDir      the packaged app folder (bun gpui-ui/scripts/package.ts --aot)
 ;   StampFile   a one-line version.txt holding the build stamp, installed as {app}\version.txt
-;   IconFile    app/assets/icon.ico
+;   IconFile    gpui-ui/assets/icon.ico
 ;   WordDir     staging folder with addin\ (word/build.ps1 -OutDir); leave out for an installer without the Word add-in
 ;   WordScripts word\ folder holding install.ps1 and uninstall.ps1
+;   ConnDir     staging folder with zotero-next-host.exe, install.ps1, uninstall.ps1, connector-howto.html and extension\ (the browser
+;               connector); leave out for an installer without it
 ;   OutDir, OutName   where the setup .exe goes, and its name without ".exe"
 ;   Signed      defined when a certificate is configured: ISCC then runs the "znsign" hook (scripts/sign.ts) on the setup and the uninstaller
 ;   TestMode    a different AppId and name ("Zotero Next (installer test)"), so a test run never touches a real install
@@ -16,7 +18,7 @@
 ; settings and logs" answer at uninstall removes settings and logs, never *.sqlite files).
 ;
 ; Command line (Inno's own switches plus ours):
-;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART [/DIR="..."] [/COMPONENTS="app"|"app,word"] [/TASKS="desktopicon"] [/LOG="file"]
+;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART [/DIR="..."] [/COMPONENTS="app"|"app,word,connector"] [/TASKS="desktopicon"] [/LOG="file"]
 ;   /ZNTESTHIVE="file"   register the Word add-in into a private registry hive file instead of HKCU (tests; also skips the Word-running check)
 ;   /ZNRELAUNCH          start the app after a silent install (what the updater passes; interactive runs offer "Start Zotero Next" instead)
 ;   /ZNAPPDATA="dir"     use this folder instead of %APPDATA% for "remove settings" (tests)
@@ -29,9 +31,12 @@
 #ifdef TestMode
   #define AppName "Zotero Next (installer test)"
   #define AppDirName "Zotero Next (installer test)"
+  ; own native-messaging host name: a test run registers and removes only this one, never the real com.zotero_next.connector_host
+  #define ConnHostName "com.zotero_next.connector_host_test"
 #else
   #define AppName "Zotero Next"
   #define AppDirName "Zotero Next"
+  #define ConnHostName "com.zotero_next.connector_host"
 #endif
 
 [Setup]
@@ -80,6 +85,9 @@ Name: "app"; Description: "Zotero Next"; Types: full app custom; Flags: fixed
 #ifdef WordDir
 Name: "word"; Description: "Microsoft Word add-in (cite from your library inside Word)"; Types: full custom
 #endif
+#ifdef ConnDir
+Name: "connector"; Description: "Browser connector (save from Chrome/Edge without the app open)"; Types: full custom
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; Flags: unchecked
@@ -93,6 +101,10 @@ Type: filesandordirs; Name: "{app}\pdfium-licenses"; Components: app
 #ifdef WordDir
 Type: filesandordirs; Name: "{app}\word"; Components: word; Check: AddinFilesAllowed
 #endif
+#ifdef ConnDir
+; the extension folder is Chrome's to write into (_metadata) once loaded: replace it wholesale
+Type: filesandordirs; Name: "{app}\connector\extension"; Components: connector
+#endif
 
 [Files]
 Source: "{#PkgDir}\*"; DestDir: "{app}"; Components: app; Excludes: "version.txt"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -102,13 +114,30 @@ Source: "{#WordDir}\addin\*"; DestDir: "{app}\word\addin"; Components: word; Che
 Source: "{#WordScripts}\install.ps1"; DestDir: "{app}\word"; Components: word; Check: AddinFilesAllowed; Flags: ignoreversion
 Source: "{#WordScripts}\uninstall.ps1"; DestDir: "{app}\word"; Components: word; Check: AddinFilesAllowed; Flags: ignoreversion
 #endif
+#ifdef ConnDir
+Source: "{#ConnDir}\zotero-next-host.exe"; DestDir: "{app}\connector"; Components: connector; Flags: ignoreversion
+Source: "{#ConnDir}\install.ps1"; DestDir: "{app}\connector"; Components: connector; Flags: ignoreversion
+Source: "{#ConnDir}\uninstall.ps1"; DestDir: "{app}\connector"; Components: connector; Flags: ignoreversion
+Source: "{#ConnDir}\connector-howto.html"; DestDir: "{app}\connector"; Components: connector; Flags: ignoreversion
+Source: "{#ConnDir}\extension\*"; DestDir: "{app}\connector\extension"; Components: connector; Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+
+[UninstallDelete]
+; the generated host manifest, and whatever Chrome wrote into the extension folder (_metadata)
+Type: filesandordirs; Name: "{app}\connector"
 
 [Icons]
 Name: "{userprograms}\{#AppName}"; Filename: "{app}\zotero-next-gpui.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Comment: "Your reference library"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\zotero-next-gpui.exe"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
+#ifdef ConnDir
+Name: "{userprograms}\{#AppName} Connector - how to install"; Filename: "{app}\connector\connector-howto.html"; IconFilename: "{app}\icon.ico"; Comment: "Add the browser extension to Chrome or Edge"; Components: connector
+#endif
 
 [Run]
 Filename: "{app}\zotero-next-gpui.exe"; Description: "Start Zotero Next"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+#ifdef ConnDir
+Filename: "{app}\connector\connector-howto.html"; Description: "Show how to add the browser extension to Chrome or Edge"; Components: connector; Flags: shellexec nowait postinstall skipifsilent
+#endif
 ; the updater (silent upgrade) asks for the app to come back with /ZNRELAUNCH
 Filename: "{app}\zotero-next-gpui.exe"; WorkingDir: "{app}"; Flags: nowait; Check: CmdLineParamExists('/ZNRELAUNCH')
 
@@ -261,6 +290,39 @@ begin
   Result := not WordSkipped;
 end;
 
+// ---- browser connector ----------------------------------------------------------------------------------------------------------
+
+// Chrome/Edge start {app}\connector\zotero-next-host.exe when the extension connects and keep it for as long as the browser runs: it
+// locks the exe, so it is ended before the files are replaced or removed. This is safe: the host keeps its save sessions on disk and
+// each library write is a short transaction; the extension starts a new host on its next call. Only hosts running from {app}.
+procedure StopConnectorHosts(const Dir: string);
+var
+  Pids: TIntArray;
+  i, rc: Integer;
+begin
+  Pids := FindProcesses('zotero-next-host.exe', Dir + '\connector');
+  for i := 0 to GetArrayLength(Pids) - 1 do
+  begin
+    Log('ending connector host process ' + IntToStr(Pids[i]));
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /PID ' + IntToStr(Pids[i]), '', SW_HIDE, ewWaitUntilTerminated, rc);
+  end;
+  if GetArrayLength(Pids) > 0 then Sleep(500);
+end;
+
+// Runs install.ps1 / uninstall.ps1 from {app}\connector (the same scripts connector-host ships) with the manifest folder and host name
+// this installer owns; install.ps1 also gets the installed exe. Returns the exit code.
+function RunConnectorScript(const Script: string): Integer;
+var
+  Dir, Args: string;
+begin
+  Dir := ExpandConstant('{app}\connector');
+  Args := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Dir + '\' + Script + '" -ManifestDir "' + Dir + '" -HostName "{#ConnHostName}"';
+  if Script = 'install.ps1' then Args := Args + ' -HostExe "' + Dir + '\zotero-next-host.exe"';
+  Log('running powershell ' + Args);
+  if not Exec(PowerShell, Args, Dir, SW_HIDE, ewWaitUntilTerminated, Result) then Result := -1;
+  Log('exit code ' + IntToStr(Result));
+end;
+
 // Word loads the add-in dll and reads its registration at start-up: it has to be closed while the add-in changes. A test hive run never
 // touches Word's real registration, so it does not wait for Word.
 function EnsureWordClosed(const Dir: string): Boolean;
@@ -289,6 +351,7 @@ begin
   Dir := ExpandConstant('{app}');
   Result := EnsureAppClosed(Dir);
   if Result <> '' then Exit;
+  StopConnectorHosts(Dir);
   AddinInvolved := FileExists(Dir + '\word\uninstall.ps1');
 #ifdef WordDir
   AddinInvolved := AddinInvolved or WizardIsComponentSelected('word');
@@ -299,20 +362,43 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   rc: Integer;
-  Selected: Boolean;
+  Selected, ConnSelected: Boolean;
 begin
   Selected := False;
+  ConnSelected := False;
 #ifdef WordDir
   Selected := WizardIsComponentSelected('word');
 #endif
+#ifdef ConnDir
+  ConnSelected := WizardIsComponentSelected('connector');
+#endif
   if CurStep = ssInstall then
   begin
+    // upgrade where the browser connector was unticked: unregister it and remove its files
+    if (not ConnSelected) and FileExists(ExpandConstant('{app}\connector\uninstall.ps1')) then
+    begin
+      WizardForm.StatusLabel.Caption := 'Removing the browser connector...';
+      RunConnectorScript('uninstall.ps1');
+      DelTree(ExpandConstant('{app}\connector'), True, True, True);
+    end;
     // upgrade where the Word add-in was unticked: unregister it and remove its files
     if (not Selected) and (not WordSkipped) and FileExists(ExpandConstant('{app}\word\uninstall.ps1')) then
     begin
       WizardForm.StatusLabel.Caption := 'Removing the Word add-in...';
       RunAddinScript('uninstall.ps1', '');
       DelTree(ExpandConstant('{app}\word'), True, True, True);
+    end;
+  end;
+  if (CurStep = ssPostInstall) and ConnSelected then
+  begin
+    WizardForm.StatusLabel.Caption := 'Registering the browser connector...';
+    rc := RunConnectorScript('install.ps1');
+    if rc <> 0 then
+    begin
+      Log('browser connector registration failed (' + IntToStr(rc) + ')');
+      if not WizardSilent then
+        MsgBox('Zotero Next is installed, but the browser connector could not be registered (exit code ' + IntToStr(rc) + ').' + #13#10 +
+               'You can try again with: powershell -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\connector\install.ps1') + '" -ManifestDir "' + ExpandConstant('{app}\connector') + '"', mbError, MB_OK);
     end;
   end;
   if (CurStep = ssPostInstall) and Selected and (not WordSkipped) then
@@ -338,6 +424,7 @@ begin
   Result := False;
   Msg := EnsureAppClosed(ExpandConstant('{app}'));
   if Msg <> '' then begin if not UninstallSilent then MsgBox(Msg, mbError, MB_OK); Exit; end;
+  StopConnectorHosts(ExpandConstant('{app}'));
   if FileExists(ExpandConstant('{app}\word\uninstall.ps1')) and (not EnsureWordClosed(ExpandConstant('{app}'))) then Exit;
   if UninstallSilent then
     RemoveSettings := GetParam('REMOVEDATA') <> ''
@@ -384,6 +471,12 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    // unregister the browser connector (registry values and manifest); the exe is removed with the rest of the files
+    if FileExists(ExpandConstant('{app}\connector\uninstall.ps1')) then
+    begin
+      rc := RunConnectorScript('uninstall.ps1');
+      if rc <> 0 then Log('browser connector unregistration failed (' + IntToStr(rc) + ')');
+    end;
     // unregister the Word add-in while its dll is still there
     if FileExists(ExpandConstant('{app}\word\uninstall.ps1')) and (not WordSkipped) then
     begin

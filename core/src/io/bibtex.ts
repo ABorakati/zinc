@@ -303,9 +303,11 @@ export function bibRecordToItem(r: BibRecord): ParsedItem | null {
 	setBase(data, "shortTitle", clean(f.shorttitle));
 	const doi = clean(f.doi).replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)/i, "");
 	if (!setBase(data, "DOI", doi) && doi) appendExtra(data, `DOI: ${doi}`);
-	let url = clean(f.url);
+	// a "~" in a URL is a tilde, not LaTeX's non-breaking space
+	const urlText = (v: string | undefined) => clean(v?.replace(/~/g, String.raw`\textasciitilde{}`));
+	let url = urlText(f.url);
 	if (!url && f.howpublished) {
-		const m = /https?:\/\/\S+/.exec(clean(f.howpublished));
+		const m = /https?:\/\/\S+/.exec(urlText(f.howpublished));
 		if (m) url = m[0].replace(/[}\s]+$/, "");
 	}
 	if (!url && doi === "" && f.eprint && itemType === "preprint") url = `https://arxiv.org/abs/${clean(f.eprint)}`;

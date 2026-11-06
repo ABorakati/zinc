@@ -39,7 +39,7 @@ function report(r: FullTextSignInResult, quiet: boolean) {
 		case "timeout": toast("Sign-in timed out", { kind: "info", description: `Try "Sign in to ${name}" again.` }); break;
 		case "ca_blocked": toast(`${name} refused the sign-in`, { kind: "error", description: r.caError ? `Conditional Access: ${r.caError}` : "Access policy of your institution." }); break;
 		case "handoff": toast("Opened in your browser", { kind: "info", description: "Sign in there, then run Find Full Text again." }); break;
-		case "unavailable": toast("Institution sign-in needs zotero-next", { kind: "info", description: 'This app has no sign-in window. Sign in with zotero-next, or use "Open" on an item to sign in with your own browser.' }); break;
+		case "unavailable": toast("Sign-in window not available", { kind: "info", description: 'The sign-in window could not be set up on this system. Use "Open" on an item to sign in with your own browser.' }); break;
 		case "no_method": toast(`No sign-in method set up for ${name}`, { kind: "info", action: { label: "Settings", run: () => openSettings() } }); break;
 	}
 }

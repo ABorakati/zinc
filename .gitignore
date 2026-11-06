@@ -1,16 +1,5 @@
-# Upstream Zotero repos, cloned and built by spikes/build-*.sh
+# Upstream Zotero repos, cloned and built by scripts/build-docworker.sh, reader-host/build.sh and note-host/build.sh
 vendor/
-
-# Hutch scratch
-.app.hutch-template.lock
-.cottontail-tmp/
-
-# Spike run output
-spikes/*.log
-spikes/run.err
-spikes/electrobun-result.json
-# Screenshots show personal library contents
-spikes/*.png
 
 node_modules/
 dist/
@@ -20,9 +9,13 @@ dist-*/
 data/
 
 # Agent verification screenshots (mock data)
-ui/*.png
 note-host/*.png
-ui/src/references/*.png
 
 # Build logs
 *.log
+
+# Docs site (website/): dependencies, build output, generated copy of docs/screenshots
+website/node_modules/
+website/dist/
+website/.astro/
+website/public/screenshots/

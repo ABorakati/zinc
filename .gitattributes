@@ -1,0 +1,34 @@
+# GitHub Linguist overrides: what the repository language bar counts.
+# Our own source (TypeScript/TSX in core, gpui-ui, word/sidebar, connector-host; Rust in gpui-ui/native/pdf; C# in word/addin;
+# PowerShell, Inno Setup) is deliberately left alone so it is counted. Only third-party, generated and fixture files are marked.
+# GPUIX (the native UI toolkit) is an npm / git dependency, not source in this repo, so it never shows in the bar.
+
+# Third-party trees (normally git-ignored build inputs, listed so a stray commit of them cannot skew the bar)
+vendor/**                       linguist-vendored
+core/vendor/**                  linguist-vendored
+gpui-ui/native/pdf/vendor/**    linguist-vendored
+
+# Bundled fonts
+gpui-ui/assets/fonts/**         linguist-vendored
+
+# Test fixtures (CSL styles, locale XML)
+core/test/**/fixtures/**        linguist-vendored
+core/test/**/*.sdt.json         linguist-generated
+
+# Data generated or exported from elsewhere
+core/src/schema-data/**         linguist-generated
+
+# Built bundles (git-ignored today; marked in case one is ever committed)
+**/dist/**                      linguist-generated
+gpui-ui/out/**                  linguist-generated
+word/dist/**                    linguist-generated
+connector-host/dist/**          linguist-generated
+
+# Lockfiles
+bun.lock                        linguist-generated
+**/bun.lock                     linguist-generated
+Cargo.lock                      linguist-generated
+**/Cargo.lock                   linguist-generated
+
+# Shipped end-user page, not source
+gpui-ui/installer/connector-howto.html   linguist-documentation

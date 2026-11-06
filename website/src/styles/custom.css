@@ -1,0 +1,35 @@
+:root {
+	--sl-color-accent-low: #3d1215;
+	--sl-color-accent: #d23a41;
+	--sl-color-accent-high: #ffb3b6;
+	--sl-font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+:root[data-theme="light"] {
+	--sl-color-accent-low: #ffd9db;
+	--sl-color-accent: #b4232c;
+	--sl-color-accent-high: #6e1218;
+}
+.sl-markdown-content img { border-radius: 8px; border: 1px solid var(--sl-color-hairline); }
+.sl-markdown-content table { display: table; width: 100%; }
+
+/* landing page */
+.zn-hero { text-align: center; padding: 2.5rem 0 1rem; }
+.zn-hero img.zn-logo { width: 96px; height: 96px; margin: 0 auto 1rem; border: 0; border-radius: 0; }
+.zn-hero h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.1; margin: 0 0 .75rem; }
+.zn-hero p.lede { font-size: 1.2rem; max-width: 42rem; margin: 0 auto 1.5rem; color: var(--sl-color-gray-2); }
+.zn-actions { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; }
+.zn-btn { display: inline-block; padding: .65rem 1.3rem; border-radius: 999px; font-weight: 600; text-decoration: none; border: 1px solid var(--sl-color-accent); color: var(--sl-color-white); }
+.zn-btn.primary { background: var(--sl-color-accent); color: #fff; }
+.zn-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; margin: 2.5rem 0; }
+.zn-card { border: 1px solid var(--sl-color-hairline); border-radius: 12px; padding: 1.1rem 1.2rem; background: var(--sl-color-bg-nav); }
+.zn-card h3 { margin: 0 0 .4rem; font-size: 1.05rem; }
+.zn-card p { margin: 0; color: var(--sl-color-gray-2); font-size: .95rem; }
+.zn-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; margin: 1rem 0 2rem; }
+.zn-shots figure { margin: 0; }
+.zn-shots img { width: 100%; border-radius: 10px; border: 1px solid var(--sl-color-hairline); }
+.zn-shots figcaption { text-align: center; font-size: .85rem; color: var(--sl-color-gray-3); margin-top: .35rem; }
+.zn-h2 { text-align: center; margin-top: 2.5rem; }
+.zn-note { text-align: center; color: var(--sl-color-gray-3); font-size: .9rem; }
+
+/* the landing page draws its own hero; hide the splash template title */
+body:has(.zn-hero) #_top { display: none; }

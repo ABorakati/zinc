@@ -3,6 +3,7 @@
 // Used by both the importer (core/src/import/zotero.ts) and the live reader/writer in this folder.
 import { codePointChar } from "../entity";
 import { zoteroRawPathFilename } from "../import/resolve-files";
+import { strToMultipart } from "./zotero-date";
 
 export const LINK_MODES = ["imported_file", "imported_url", "linked_file", "linked_url"];
 export const ANNOTATION_TYPES: Record<number, string> = {
@@ -81,37 +82,12 @@ export function parseYear(raw: string | undefined): number | null {
 	return m ? Number(m[1]) : null;
 }
 
-const MONTHS = [
-	"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
-];
-
-function monthIndex(s: string): number {
-	return MONTHS.indexOf(s.slice(0, 3).toLowerCase()) + 1;
-}
-
 /**
- * Zotero.Date.multipartToSQL(strToDate(text)): "YYYY-MM-DD <original text>" with 00 for missing parts.
- * Handles the common forms (ISO, y/m/d, "Month d, yyyy", "d Month yyyy", "Month yyyy", "yyyy");
- * anything else keeps "0000-00-00 <text>", as Zotero does for unparseable dates.
+ * Zotero.Date.strToMultipart: "YYYY-MM-DD <original text>" with 00 for missing parts and 0000 when no year is found
+ * (see zotero-date.ts for the port of Zotero's date parser this uses).
  */
 export function dateToMultipart(text: string): string {
-	const t = text.trim();
-	let y = "";
-	let m = "";
-	let d = "";
-	let r: RegExpExecArray | null;
-	const pad = (n: string | number, w = 2) => String(n).padStart(w, "0");
-	if ((r = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(t))) [y, m, d] = [r[1], pad(r[2]), pad(r[3])];
-	else if ((r = /^(\d{4})[-/.](\d{1,2})$/.exec(t))) [y, m] = [r[1], pad(r[2])];
-	else if ((r = /^(\d{4})$/.exec(t))) y = r[1];
-	else if ((r = /^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/.exec(t)) && monthIndex(r[1])) {
-		[y, m, d] = [r[3], pad(monthIndex(r[1])), pad(r[2])];
-	} else if ((r = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})$/.exec(t)) && monthIndex(r[2])) {
-		[y, m, d] = [r[3], pad(monthIndex(r[2])), pad(r[1])];
-	} else if ((r = /^([A-Za-z]{3,9})\.?,?\s+(\d{4})$/.exec(t)) && monthIndex(r[1])) {
-		[y, m] = [r[2], pad(monthIndex(r[1]))];
-	}
-	return `${y || "0000"}-${m || "00"}-${d || "00"} ${text}`;
+	return strToMultipart(text);
 }
 
 // ---------------------------------------------------------------------------------------------

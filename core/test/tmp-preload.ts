@@ -41,3 +41,6 @@ process.env.TMPDIR = run;
 process.on("exit", () => {
 	try { rmSync(run, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch { /* a file still open: next run's sweep removes it */ }
 });
+
+// Tests log through core/src/log.ts; keep that out of the user's real %APPDATA%\zotero-next-gpui\logs (1,700+ test lines once landed there).
+if (!process.env.ZN_LOG_DIR) process.env.ZN_LOG_DIR = join(run, "logs");

@@ -57,7 +57,7 @@ export function cslToItem(c: Record<string, any>): ParsedItem | null {
 	setBase(data, "title", s(c.title));
 	setBase(data, "publicationTitle", s(c["container-title"]));
 	setBase(data, "journalAbbreviation", s(c["container-title-short"]));
-	setBase(data, "shortTitle", s(c["title-short"]));
+	setBase(data, "shortTitle", s(c["title-short"] ?? c.shortTitle)); // shortTitle: the legacy key
 	setFirst(data, ["seriesTitle", "series"], s(c["collection-title"]));
 	setBase(data, "seriesNumber", s(c["collection-number"]));
 	setBase(data, "volume", s(c.volume));

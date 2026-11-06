@@ -1,6 +1,6 @@
 // The window's own icon (title bar, taskbar button, Alt-Tab). GPUI registers its window class without one, so Windows showed its
-// generic icon there; the exe's embedded icon only covers Explorer and shortcuts. Load the app icon (app/assets/icon.ico, all sizes
-// 16-256 px, made by app/scripts/make-icon.ts) at the sizes the window's DPI asks for and set it on the window and its class.
+// generic icon there; the exe's embedded icon only covers Explorer and shortcuts. Load the app icon (gpui-ui/assets/icon.ico, all sizes
+// 16-256 px, made by scripts/make-icon.ts) at the sizes the window's DPI asks for and set it on the window and its class.
 // Windows only; a no-op elsewhere and in the headless renderer (no window).
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { existsSync } from "node:fs";
@@ -14,7 +14,7 @@ const SM_CXICON = 11, SM_CXSMICON = 49;
 function iconPath(): string | null {
 	const candidates = packaged
 		? [join(dirname(process.execPath), "icon.ico")]
-		: [join(import.meta.dir, "..", "..", "..", "app", "assets", "icon.ico")];
+		: [join(import.meta.dir, "..", "..", "assets", "icon.ico")];
 	return candidates.find((p) => existsSync(p)) ?? null;
 }
 

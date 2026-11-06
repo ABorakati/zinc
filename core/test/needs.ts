@@ -10,5 +10,5 @@ import { join } from "node:path";
 const wasm = join(import.meta.dir, "..", "vendor", "fulltext-wasm", "fulltext.wasm");
 export const HAVE_FULLTEXT_WASM = existsSync(wasm) && statSync(wasm).size > 1024;
 
-/** zotero/document-worker, built by spikes/build-docworker.sh into <repo>/vendor/document-worker/build (PDF text extraction, metadata). */
+/** zotero/document-worker, built by scripts/build-docworker.sh into <repo>/vendor/document-worker/build (PDF text extraction, metadata). */
 export const HAVE_DOCUMENT_WORKER = existsSync(join(import.meta.dir, "..", "..", "vendor", "document-worker", "build", "worker.js"));

@@ -1,0 +1,62 @@
+---
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { existsSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+
+const base = import.meta.env.BASE_URL;
+const releases = "https://github.com/ABorakati/zotero-next/releases";
+
+// Screenshots come from docs/screenshots (produced separately); show whatever is there.
+const shotsDir = resolve("../docs/screenshots");
+const shots = existsSync(shotsDir)
+	? readdirSync(shotsDir).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).sort().slice(0, 6)
+	: [];
+const caption = (f: string) => f.replace(/\.[^.]+$/, "").replace(/^\d+[-_ ]?/, "").replace(/[-_]+/g, " ");
+
+const cards = [
+	["Native and fast", "A Bun app drawn by Zed's GPUI. No browser engine for the library, the reader or the settings; the list scrolls at your display's rate."],
+	["Opens your Zotero library", "Import from Zotero on first run, read the Zotero data folder, and sync with the local Zotero or with zotero.org."],
+	["A real PDF reader", "Highlights, notes, ink and eraser, a reading view that reflows the paper, and figure, reference and citation cards."],
+	["Zotero's own translators", "Add by URL or identifier with the same translators Zotero uses, or save from the browser with the connector."],
+	["Citations everywhere", "Word add-in with a sidebar, Quick Copy, Better BibTeX keys and auto-export, bibliographies in any CSL style."],
+	["Ready for AI agents", "A local MCP server for the library and another for the open Word document. Loopback only; the Word one needs a token."],
+];
+---
+
+<StarlightPage frontmatter={{ title: "Zotero Next", description: "A native, Zotero-compatible reference manager for Windows.", template: "splash", pagefind: false, hero: undefined }}>
+	<div class="zn-hero">
+		<img class="zn-logo" src={`${base}icon.svg`} alt="Zotero Next" />
+		<h1>Your Zotero library, native and fast</h1>
+		<p class="lede">Zotero Next is a Zotero-compatible reference manager for Windows. It opens your library, reads your PDFs, and cites into Word.</p>
+		<div class="zn-actions">
+			<a class="zn-btn primary" href={releases}>Download for Windows</a>
+			<a class="zn-btn" href={`${base}user-guide/install/`}>Install guide</a>
+			<a class="zn-btn" href={`${base}overview/`}>Read the docs</a>
+		</div>
+		<p class="zn-note">Per-user installer, no admin rights. Releases are on the GitHub Releases page.</p>
+	</div>
+
+	{shots.length > 0 && (
+		<div class="zn-shots">
+			{shots.map((f) => (
+				<figure>
+					<img src={`${base}screenshots/${f}`} alt={caption(f)} loading="lazy" />
+					<figcaption>{caption(f)}</figcaption>
+				</figure>
+			))}
+		</div>
+	)}
+
+	<h2 class="zn-h2">What you get</h2>
+	<div class="zn-cards">
+		{cards.map(([t, d]) => (
+			<div class="zn-card"><h3>{t}</h3><p>{d}</p></div>
+		))}
+	</div>
+
+	<div class="zn-actions">
+		<a class="zn-btn" href={`${base}user-guide/`}>User guide</a>
+		<a class="zn-btn" href={`${base}developer-guide/`}>Developer guide</a>
+		<a class="zn-btn" href={`${base}user-guide/comparison/`}>Compared with Zotero 10</a>
+	</div>
+</StarlightPage>

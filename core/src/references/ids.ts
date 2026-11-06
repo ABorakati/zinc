@@ -3,16 +3,25 @@ import type { Database } from "bun:sqlite";
 
 export function normalizeDoi(s: unknown): string | null {
 	if (typeof s !== "string") return null;
-	let d = s.trim();
-	try {
-		d = decodeURIComponent(d);
-	} catch {
-		/* keep as is */
+	// Find the DOI in the raw text first (a raw < or > ends it), then decode it: URL-encoded < and > (%3C %3E) belong to old
+	// SICI-style DOIs, as in Zotero.Utilities.cleanDOI.
+	let d = s.trim().toLowerCase().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//, "").replace(/^doi:\s*/, "");
+	if (/^https?%3a%2f%2f/.test(d)) {
+		try {
+			d = decodeURIComponent(d).replace(/^https?:\/\/(dx\.)?doi\.org\//, "");
+		} catch {
+			/* keep as is */
+		}
 	}
-	d = d.toLowerCase().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//, "").replace(/^doi:\s*/, "");
-	const m = d.match(/10\.\d{4,9}\/[^\s"<>]+/);
+	const m = d.match(/10\.\d{4,9}(?:\/|%2f)[^\s"<>]+/);
 	if (!m) return null;
-	let doi = m[0].replace(/[.,;:]+$/, "");
+	let decoded = m[0];
+	try {
+		decoded = decodeURIComponent(decoded);
+	} catch {
+		/* an invalid escape: keep the text as written */
+	}
+	let doi = decoded.replace(/[.,;:]+$/, "");
 	// drop an unbalanced trailing bracket picked up from running text
 	while (/[)\]]$/.test(doi)) {
 		const open = (doi.match(/[([]/g) ?? []).length;

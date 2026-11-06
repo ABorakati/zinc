@@ -16,8 +16,8 @@
 //   * at <wait> s after launch, records PrivateMemorySize64 + WorkingSet64 of the process tree (Get-Process) and, separately,
 //     of the core API process that owns <port> (external mode; in-process mode reports the core as part of the GPUI process),
 //   * closes the window (CloseMainWindow, then kills the tree if it is still alive after 4 s).
-// Then prints a table. For comparison, the Electrobun app measured library-only: ~580 MB private / 710 MB WS total (bun main
-// incl. core ~230 MB + 6 WebView2 processes ~350 MB).
+// Then prints a table. For comparison, the old Electrobun app (since removed from the repo) measured library-only: ~580 MB
+// private / 710 MB WS total (bun main incl. core ~230 MB + 6 WebView2 processes ~350 MB).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";

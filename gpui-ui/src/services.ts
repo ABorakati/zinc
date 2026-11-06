@@ -6,7 +6,8 @@
 //   - the PDF full-text extraction pool (worker + document-worker build shipped next to the exe),
 //   - the native folder dialog for Settings > Files and folders,
 //   - clean shutdown when the window closes (stop zport and sync, stop the extract pool, close the database).
-// Left out: the institution sign-in browser bridge of Find Full Text (Electrobun webviews; the core then reports "no sign-in window").
+//   - the institution sign-in browser of Find Full Text (src/signin: a WebView2 sign-in window in a helper process with a profile of its
+//     own; registered with the core, started only when a sign-in needs it; ZN_SIGNIN=0 leaves it out).
 //
 // Only ONE sync engine may ever run on a library. When the wanted port is held by another zotero-next (core.ts probes it), this core
 // takes another port and starts neither sync nor the Zotero port: the other app keeps doing those. The UI shows it (sync/owner.ts).
@@ -124,6 +125,15 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 	if (ex.buildDir || ex.workerEntry) configureExtractPool(ex);
 	stoppers.push({ name: "extract pool", run: () => shutdownExtractPool() });
 	mark("extract-configured");
+
+	// Find Full Text's institution sign-in window: the core reports embeddedBrowser once this is registered. Nothing starts until used.
+	try {
+		const { registerSigninBridge } = await import("./signin");
+		const signin = registerSigninBridge({ packaged });
+		if (signin) stoppers.push({ name: "signin browser", run: () => signin.dispose() });
+	} catch (e) {
+		console.warn("[signin] not available:", e instanceof Error ? e.message : e);
+	}
 
 	if (!o.primary) {
 		const note = `Another zotero-next is already running${o.wantedPort ? ` (it holds port ${o.wantedPort})` : ""}, so it handles the Zotero sync and the browser Connector port. This window shows the same library; close the other zotero-next and restart this app to take over.`;

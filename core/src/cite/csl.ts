@@ -1,11 +1,26 @@
 // Zotero Web API item JSON (items.data) -> CSL-JSON, following Zotero's own mapping (Zotero.Utilities.Item.itemToCSLJSON).
 import type { ZoteroItemData } from "../api-types";
+import raw from "../schema-data/schema.json" with { type: "json" };
+import { noteToTitle } from "../zotero-db/mapping";
 
 export type CslItem = Record<string, unknown> & { id: string; type: string };
 
+// Zotero's own CSL name mapping (zotero-schema "csl.names"): creator type -> CSL name variable. The item type's
+// primary creator type is the CSL "author" when it has no entry of its own.
+const SCHEMA_NAMES = (raw.csl as { names: Record<string, string> }).names;
+const PRIMARY_CREATOR = new Map<string, string>();
+// itemType -> (field -> base field), so a value stored in a type-specific field (caseName, codePages, format ...)
+// is found under the base field the CSL mapping is written in terms of
+const BASE_FIELDS = new Map<string, [string, string][]>();
+for (const t of raw.itemTypes as { itemType: string; fields: { field: string; baseField?: string }[]; creatorTypes: { creatorType: string; primary?: boolean }[] }[]) {
+	const primary = t.creatorTypes.find((c) => c.primary)?.creatorType;
+	if (primary) PRIMARY_CREATOR.set(t.itemType, primary);
+	BASE_FIELDS.set(t.itemType, t.fields.filter((f) => f.baseField).map((f) => [f.field, f.baseField!]));
+}
+
 export const CSL_TYPE_MAP: Record<string, string> = {
 	artwork: "graphic",
-	attachment: "article",
+	attachment: "document",
 	audioRecording: "song",
 	bill: "bill",
 	blogPost: "post-weblog",
@@ -16,7 +31,7 @@ export const CSL_TYPE_MAP: Record<string, string> = {
 	conferencePaper: "paper-conference",
 	dataset: "dataset",
 	dictionaryEntry: "entry-dictionary",
-	document: "article",
+	document: "document",
 	email: "personal_communication",
 	encyclopediaArticle: "entry-encyclopedia",
 	film: "motion_picture",
@@ -32,7 +47,7 @@ export const CSL_TYPE_MAP: Record<string, string> = {
 	newspaperArticle: "article-newspaper",
 	note: "document",
 	patent: "patent",
-	podcast: "song",
+	podcast: "broadcast",
 	preprint: "article",
 	presentation: "speech",
 	radioBroadcast: "broadcast",
@@ -57,22 +72,30 @@ const TEXT_MAP: Record<string, string[]> = {
 	"collection-number": ["seriesNumber"],
 	"publisher": ["publisher", "distributor", "institution", "university", "studio", "label", "company", "repository"],
 	"publisher-place": ["place"],
-	"event-place": ["place"],
-	"authority": ["court", "legislativeBody", "issuingAuthority"],
+	"authority": ["authority", "court", "legislativeBody", "issuingAuthority"],
 	"page": ["pages"],
-	"volume": ["volume", "codeVolume", "reporterVolume"],
+	"volume": ["volume", "codeNumber", "codeVolume", "reporterVolume"],
 	"issue": ["issue", "priorityNumbers"],
 	"number-of-volumes": ["numberOfVolumes"],
 	"number-of-pages": ["numPages"],
 	"edition": ["edition"],
 	"version": ["versionNumber"],
 	"section": ["section", "committee"],
-	"genre": ["type", "programmingLanguage", "reportType", "thesisType", "letterType", "manuscriptType", "mapType", "presentationType", "websiteType", "postType", "audioRecordingFormat", "videoRecordingFormat", "genre"],
+	"genre": ["type", "programmingLanguage", "reportType", "thesisType", "letterType", "manuscriptType", "mapType", "presentationType", "websiteType", "postType", "genre"],
 	"medium": ["medium", "system", "interviewMedium", "artworkMedium", "audioFileType"],
 	"archive": ["archive"],
 	"archive_location": ["archiveLocation"],
 	"event": ["meetingName", "conferenceName"],
 	"event-title": ["conferenceName", "meetingName"],
+	"original-publisher": ["originalPublisher"],
+	"original-publisher-place": ["originalPlace"],
+	"part-number": ["partNumber"],
+	"part-title": ["partTitle"],
+	"source": ["libraryCatalog"],
+	"license": ["rights"],
+	"citation-key": ["citationKey"],
+	"PMID": ["PMID"],
+	"PMCID": ["PMCID"],
 	"abstract": ["abstractNote"],
 	"URL": ["url"],
 	"DOI": ["DOI"],
@@ -85,33 +108,17 @@ const TEXT_MAP: Record<string, string[]> = {
 	"references": ["history", "references"],
 	"title-short": ["shortTitle"],
 	"container-title-short": ["journalAbbreviation"],
-	"status": ["legalStatus"],
+	"status": ["status", "legalStatus"],
 	"language": ["language"],
-	"dimensions": ["artworkSize"],
+	"dimensions": ["artworkSize", "runningTime"],
 	"scale": ["scale"],
 	"jurisdiction": ["jurisdiction"],
 };
 
-// CSL name variable -> Zotero creator types.
-const NAME_MAP: Record<string, string[]> = {
-	"author": [
-		"author", "artist", "cartographer", "inventor", "programmer", "podcaster", "presenter", "sponsor", "contributor",
-		"interviewee", "performer", "castMember", "wordsBy", "counsel", "attorneyAgent", "commenter", "host",
-	],
-	"editor": ["editor"],
-	"translator": ["translator"],
-	"container-author": ["bookAuthor"],
-	"collection-editor": ["seriesEditor"],
-	"composer": ["composer"],
-	"director": ["director", "scriptwriter"],
-	"interviewer": ["interviewer"],
-	"recipient": ["recipient"],
-	"reviewed-author": ["reviewedAuthor"],
-	"guest": ["guest"],
-	"producer": ["producer"],
-	"narrator": ["narrator"],
-	"illustrator": ["illustrator"],
-};
+/** CSL name variable for a creator type (Zotero's schema mapping; the item type's primary creator type is the author). */
+export function cslNameVariable(itemType: string, creatorType: string): string | undefined {
+	return SCHEMA_NAMES[creatorType] ?? (PRIMARY_CREATOR.get(itemType) === creatorType ? "author" : undefined);
+}
 
 // Zotero field -> CSL date variable
 const DATE_MAP: Record<string, string> = {
@@ -121,6 +128,7 @@ const DATE_MAP: Record<string, string> = {
 	issueDate: "issued",
 	accessDate: "accessed",
 	filingDate: "submitted",
+	originalDate: "original-date",
 };
 
 // Variables a "Name: value" line in the Extra field may set (Zotero.Utilities.Internal.extractExtraFields + CSL spec).
@@ -236,6 +244,16 @@ export function toCslDate(raw: string): Record<string, unknown> | null {
 	return { literal: s };
 }
 
+/** Access dates are UTC timestamps in the Web API; Zotero cites the local calendar day (Zotero.Date.sqlToDate(.., true)). */
+function toCslAccessDate(v: string): Record<string, unknown> | null {
+	const m = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(Z)?$/.exec(v);
+	if (m) {
+		const t = new Date(m[1] ? v : v.replace(" ", "T") + "Z"); // SQL datetimes are UTC too
+		if (!Number.isNaN(t.getTime())) return { "date-parts": [[t.getFullYear(), t.getMonth() + 1, t.getDate()]] };
+	}
+	return toCslDate(v);
+}
+
 // ---------------------------------------------------------------- names
 
 function toCslName(c: { firstName?: string; lastName?: string; name?: string }): Record<string, unknown> | null {
@@ -298,13 +316,30 @@ export function parseExtra(extra: string | undefined): {
 
 const str = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 
+// Item data with every type-specific field also reachable under its base field (caseName -> title, codePages -> pages,
+// format -> medium ...), as Zotero.ItemFields.getFieldIDFromTypeAndBase does for itemToCSLJSON.
+function withBaseFields(data: ZoteroItemData): Record<string, unknown> {
+	const view: Record<string, unknown> = { ...data };
+	for (const [field, base] of BASE_FIELDS.get(data.itemType) ?? []) {
+		if (!str(view[base]).trim() && str(data[field]).trim()) view[base] = data[field];
+	}
+	return view;
+}
+
+// Types whose Place is the event's place, not the publisher's (Zotero hard-codes this until it has migrated the data to eventPlace)
+const EVENT_PLACE_TYPES = new Set(["audioRecording", "presentation", "videoRecording"]);
+const ISBN_FIRST = /^(?:97[89]-?)?(?:\d-?){9}[\dx](?!-)\b/i;
+
 export function itemToCsl(data: ZoteroItemData): CslItem {
 	const extra = parseExtra(str(data.extra));
 	const out: CslItem = { id: data.key, type: extra.type ?? CSL_TYPE_MAP[data.itemType] ?? "document" };
+	const view = withBaseFields(data);
 	for (const [cslVar, fields] of Object.entries(TEXT_MAP)) {
 		for (const f of fields) {
-			const v = str(data[f]).trim();
+			let v = str(view[f]).trim();
 			if (v) {
+				if (f === "ISBN") v = ISBN_FIRST.exec(v)?.[0] ?? v; // CSL-JSON carries one ISBN
+				if (v.length > 1 && v.startsWith('"') && v.indexOf('"', 1) === v.length - 1) v = v.slice(1, -1); // quotes protect case/parsing in Zotero
 				out[cslVar] = v;
 				break;
 			}
@@ -317,26 +352,31 @@ export function itemToCsl(data: ZoteroItemData): CslItem {
 	// Presentation/conference: Zotero puts meetingName in "event"; the CSL "event-title" duplicate is only for conferences
 	if (data.itemType !== "conferencePaper" && data.itemType !== "presentation") delete out["event-title"];
 	if (data.itemType !== "conferencePaper" && data.itemType !== "presentation" && out.event === undefined) delete out.event;
-	// place -> publisher-place only; event-place for conference-like items
-	if (data.itemType === "conferencePaper" || data.itemType === "presentation") {
-		// keep both
-	} else delete out["event-place"];
-	// Names
-	for (const [cslVar, types] of Object.entries(NAME_MAP)) {
-		const list: Record<string, unknown>[] = [];
+	// Place: the publisher's place, except for event-like types (event-place only). eventPlace, when set, is the event-place.
+	const place = str(data.place).trim();
+	const eventPlace = str(data.eventPlace).trim();
+	if (EVENT_PLACE_TYPES.has(data.itemType)) {
+		delete out["publisher-place"];
+		if (place) out["event-place"] = place;
+	} else if (eventPlace) out["event-place"] = eventPlace;
+	else if (data.itemType === "conferencePaper" && place) out["event-place"] = place;
+	// Names (a note or attachment has no creators)
+	if (data.itemType !== "note" && data.itemType !== "attachment") {
 		for (const c of data.creators ?? []) {
-			if (!types.includes(c.creatorType)) continue;
+			const cslVar = cslNameVariable(data.itemType, c.creatorType);
+			if (!cslVar) continue;
 			const n = toCslName(c);
-			if (n) list.push(n);
+			if (!n) continue;
+			const list = (out[cslVar] ??= []) as Record<string, unknown>[];
+			list.push(n);
 		}
-		if (list.length) out[cslVar] = list;
 	}
 	// Dates (the first mapped field with a value wins per CSL variable)
 	for (const [field, cslVar] of Object.entries(DATE_MAP)) {
 		if (out[cslVar] !== undefined) continue;
-		const v = str(data[field]).trim();
+		const v = str(view[field]).trim();
 		if (!v) continue;
-		const d = toCslDate(v);
+		const d = field === "accessDate" ? toCslAccessDate(v) : toCslDate(v);
 		if (d) out[cslVar] = d;
 	}
 	// Extra variables override / add
@@ -351,5 +391,7 @@ export function itemToCsl(data: ZoteroItemData): CslItem {
 	}
 	for (const [k, v] of Object.entries(extra.names)) out[k] = v;
 	if (out["archive-place"] && !out.archive_location) delete out["archive-place"];
+	// A standalone note is cited by its pseudo-title
+	if (data.itemType === "note" && str(data.note)) out.title = noteToTitle(str(data.note));
 	return out;
 }

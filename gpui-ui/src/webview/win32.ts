@@ -28,6 +28,7 @@ interface User32 {
 	SetForegroundWindow(hwnd: H): number;
 	SetWindowRgn(hwnd: H, rgn: H | null, redraw: number): number;
 	GetWindowTextW(hwnd: H, buf: unknown, max: number): number;
+	AllowSetForegroundWindow(pid: number): number;
 }
 interface Gdi32 {
 	CreateRectRgn(l: number, t: number, r: number, b: number): H;
@@ -67,6 +68,7 @@ function user32(): User32 | null {
 			SetForegroundWindow: { args: [p], returns: i },
 			SetWindowRgn: { args: [p, p, i], returns: i },
 			GetWindowTextW: { args: [p, p, i], returns: i },
+			AllowSetForegroundWindow: { args: [u], returns: i },
 		}).symbols as unknown as User32;
 		enumCb = new JSCallback(
 			(h: H) => {
@@ -232,4 +234,28 @@ export function pump(): void {
 		s.TranslateMessage(msg);
 		s.DispatchMessageW(msg);
 	}
+}
+
+// ---- ordinary top-level windows (the sign-in helper's window, signin/helper.ts) ----
+
+/** Show a top-level window normally and bring it to the front. */
+export function showTopLevel(h: H): void {
+	const s = user32();
+	if (!s) return;
+	s.ShowWindow(h, 1); // SW_SHOWNORMAL (also restores a minimised window)
+	s.SetForegroundWindow(h);
+}
+
+/** Hide a top-level window (it keeps running). */
+export function hideTopLevel(h: H): void {
+	user32()?.ShowWindow(h, 0);
+}
+
+export const isShown = (h: H): boolean => { const s = user32(); return !!s && !!s.IsWindowVisible(h); };
+
+/** The foreground process lets `pid` take the foreground (a process started from the click that asked for its window). */
+export function allowForeground(pid: number): void {
+	const s = user32();
+	if (!s) return;
+	try { s.AllowSetForegroundWindow(pid); } catch { /* not available */ }
 }

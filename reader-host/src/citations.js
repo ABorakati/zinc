@@ -12,7 +12,7 @@
 //   Open in browser        -> POST /api/open-url
 //   Add to library         -> POST /api/references/add (409 = already there)
 //   Show in References     -> parent.postMessage({type:'show-references', index})
-import { doiUrl, extractDoi, matchReference, referenceUrl } from '../../ui/src/references/match.ts';
+import { doiUrl, extractDoi, matchReference, referenceUrl } from './match.ts';
 
 const POPUP_SELECTOR = '.view-popup.citation-popup, .view-popup.reference-popup';
 const ROW_SELECTOR = '.reference-row';

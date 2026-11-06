@@ -47,7 +47,7 @@ export function findArxivId(text: string): string | null {
 }
 
 function classify(tok: string): ParsedId | null {
-	const t = tok.trim().replace(/^[<"']+/, "").replace(/[>"',;]+$/, "");
+	const t = tok.trim().replace(/^[<"']+/, "").replace(/[>"',;.]+$/, "");
 	if (!t) return null;
 	const raw = tok.trim();
 

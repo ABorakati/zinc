@@ -12,6 +12,7 @@
 //   After the first page of items: the core and its services, the feature modules, the prefetch hint.
 //
 // Set ZN_TRACE=1 to print the milestones (see src/trace.ts; scripts/startup.ts reads them).
+import "./signin/entry"; // the packaged exe started as the sign-in browser helper (--signin-helper) runs that and never gets past here
 import { startup } from "./packaged"; // first: sets the packaged app's defaults before other modules read the environment
 import { initErrorLog } from "./shell/errorlog"; // local error log + crash marker (shell/errorlog.ts)
 import { render } from "@gpuix/solid";

@@ -26,9 +26,9 @@
 // (after a one-time backup) and the same services as zotero-next (API on 23120, Zotero port 23119, Zotero sync, PDF extraction;
 // src/services.ts). --zip also writes out/package/zotero-next-gpui-<date>.zip.
 import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
-import { BUILD_VERSION } from "./_version";
-import { signFiles } from "./sign";
+import { basename, join, resolve } from "node:path";
+import { BUILD_VERSION } from "./_version";
+import { signFiles } from "./sign";
 
 const root = resolve(import.meta.dir, "..");
 const repo = resolve(root, "..");
@@ -68,7 +68,7 @@ rmSync(app, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 cpSync(exe, join(app, "zotero-next-gpui.exe"));
 cpSync(dll, join(app, "zn_pdf.dll"));
-cpSync(join(repo, "app", "assets", "icon.ico"), join(app, "icon.ico")); // the window's title-bar/taskbar icon (src/shell/windowIcon.ts)
+cpSync(join(root, "assets", "icon.ico"), join(app, "icon.ico")); // the window's title-bar/taskbar icon (src/shell/windowIcon.ts)
 cpSync(join(pdfiumDir, "bin", "pdfium.dll"), join(app, "pdfium.dll"));
 cpSync(join(pdfiumDir, "licenses"), join(app, "pdfium-licenses"), { recursive: true });
 cpSync(join(pdfiumDir, "LICENSE"), join(app, "pdfium-licenses", "PDFIUM-LICENSE.txt"));
@@ -100,7 +100,8 @@ writeFileSync(join(app, "README.txt"), [
 	"",
 	"Do not run it together with zotero-next on the same library for sync: if port 23120 is taken, this app still opens the",
 	"library but leaves Zotero sync and port 23119 to the other app (the sync indicator says so). Institution sign-in for",
-	"Find Full Text needs zotero-next.",
+	"Find Full Text opens a sign-in window of its own (a helper process started from a link to this exe, zotero-next-signin.exe in",
+		"%LOCALAPPDATA%\\zotero-next-gpui\\signin; its WebView2 profile is %APPDATA%\\zotero-next-signin.exe\\EBWebView). ZN_SIGNIN=0 turns it off.",
 	"",
 	"Environment overrides: ZN_LIBRARY, ZN_DB (another database), ZN_URL (use an external core, run nothing here), ZN_PORT,",
 	"ZN_SYNC=0, ZN_ZPORT=0|<port>, ZN_ZOTERO_DIR, ZN_PDF_DLL, ZN_PDFIUM_DLL, ZN_PDF_BACKEND=hayro (render with hayro instead of PDFium), ZN_ROOT, ZN_DOCWORKER_ENTRY, ZN_TRACE=1 (start-up timings).",

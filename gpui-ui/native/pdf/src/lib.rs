@@ -54,6 +54,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+mod drag;
 mod nav;
 mod ops;
 mod pdfium;

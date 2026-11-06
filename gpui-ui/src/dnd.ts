@@ -19,16 +19,26 @@ const [dragPoint, setDragPoint] = createSignal<{ x: number; y: number } | null>(
 /** The active drag, or null. */
 export { dragging, dragPoint };
 
+/**
+ * Observer of the drag's life, installed by features/cite/dragout.ts: when the pointer leaves the window with items held, that file
+ * hands the drag to the OS (Quick Copy text dropped into other apps). In-app drags (onto collections) never involve it.
+ */
+export interface DragHook { start(payload: DragPayload): void; end(): void }
+let hook: DragHook | undefined;
+export const setDragHook = (h: DragHook | undefined): void => { hook = h; };
+
 /** Begin a drag of these item keys (no-op for an empty list). */
 export function startDrag(payload: DragPayload): void {
 	if (payload.keys.length === 0) return;
 	setDragging({ kind: payload.kind, keys: [...payload.keys] });
+	hook?.start(payload);
 }
 
 /** End the drag (drop handled, released over nothing, or cancelled). */
 export function endDrag(): void {
 	setDragging(null);
 	setDragPoint(null);
+	hook?.end();
 }
 
 /** Called by drag sources on every mouse move while dragging. */

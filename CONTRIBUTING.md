@@ -3,6 +3,10 @@
 CI (`.github/workflows/ci.yml`) runs on every push and pull request. Everything it runs works on this machine too.
 Bun 1.4.4 only (no node/npm). Run from the repo root.
 
+This is the short version. The full developer guide (architecture, building, testing, database migrations, releasing) is in
+[`docs/developer-guide/`](docs/developer-guide/README.md), and the user documentation in [`docs/`](docs/README.md). To read the docs with search
+on this machine, run `bun run docs:dev` (or `bun run docs:preview`) from the repo root.
+
 ## One-time setup
 
 ```
@@ -22,7 +26,7 @@ Two other pieces cannot be fetched and are not in CI. Their tests skip when the 
 | Missing piece | Where it comes from | Tests that skip |
 | --- | --- | --- |
 | `core/vendor/fulltext-wasm/fulltext.wasm` | built from `~/zotero-fulltext` (separate private repo) | `core/test/fulltext/*`, which are the Find Full Text engine tests |
-| `vendor/document-worker/build/` | `spikes/build-docworker.sh` (clones zotero/document-worker, webpack) | `core/test/extract`, "retrieve metadata for PDFs" in `core/test/additems` |
+| `vendor/document-worker/build/` | `scripts/build-docworker.sh` (clones zotero/document-worker, webpack) | `core/test/extract`, "retrieve metadata for PDFs" in `core/test/additems` |
 
 `core/src/fulltext/wasm.ts` imports the wasm at load time, so without the file most of the core suite fails to load. CI (and a fresh clone)
 creates an empty placeholder: `mkdir -p core/vendor/fulltext-wasm && : > core/vendor/fulltext-wasm/fulltext.wasm`.

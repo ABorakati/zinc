@@ -1,0 +1,59 @@
+name: Docs
+
+# Builds the documentation site (website/, which renders docs/) to catch broken links, pages and Mermaid/Markdown errors.
+# It does NOT deploy anything: the site is for local use (bun run docs:dev / docs:preview). The built site is kept as a
+# workflow artifact for a few days so it can be downloaded and opened, nothing more.
+on:
+  push:
+    paths:
+      - "docs/**"
+      - "website/**"
+      - "gpui-ui/assets/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "website/**"
+      - "gpui-ui/assets/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+  DOCS_BASE: /
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build (fails on a broken docs link)
+        run: bun run build
+
+      - name: Upload the built site
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: website/dist
+          retention-days: 3
+          if-no-files-found: error

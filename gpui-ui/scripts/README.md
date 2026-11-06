@@ -6,16 +6,13 @@ Everything is Bun only (`bun`, no node/npm/npx). Run from `gpui-ui/`.
 ## Prerequisites
 
 * A core API with a copy of the library, either
-  * **external** (default): a core already running at `ZN_URL` (default `http://127.0.0.1:23160`, also serves the web UI at
-    `/app/`), or
-  * **in-process**: set `ZN_DB=<copy of the library>` and the app runs the core itself (`src/core.ts`, same as the Electrobun
-    app does). `ZN_PORT` (default 23161, falls back to a free port) is its loopback port; `ZN_CORE_DIRECT=1` skips HTTP and
+  * **external** (default): a core already running at `ZN_URL` (default `http://127.0.0.1:23160`, for example another
+    instance of the app), or
+  * **in-process**: set `ZN_DB=<copy of the library>` and the app runs the core itself (`src/core.ts`). `ZN_PORT` (default 23161, falls back to a free port) is its loopback port; `ZN_CORE_DIRECT=1` skips HTTP and
     calls the core's `handleApi` directly. **The core writes to its database: use a `VACUUM INTO` copy, never
     `data/library.sqlite`** (the app refuses that path unless `ZN_ALLOW_REAL_DB=1`; there is no default for `ZN_DB`).
     Make a copy with `bun -e 'import {Database} from "bun:sqlite"; new Database("src.sqlite",{readonly:true}).run("VACUUM INTO \"copy.sqlite\"")'`.
 * `bun install` (adds `@gpuix/*`, `solid-js`, and the harness deps `pngjs` + `pixelmatch`).
-* `agent-browser` on PATH (headless Chrome; used by `compare.ts` only; it never touches your own browser).
-
 ## Run the app
 
 ```
@@ -29,7 +26,7 @@ bun check                                     # typecheck (do not use tsc via bu
 
 ## Which library the packaged app opens, and the first-run screen
 
-No path in the code names a user. The rule is `core/src/library-location.ts` (also used by the Electrobun app and the browser
+No path in the code names a user. The rule is `core/src/library-location.ts` (also used by the browser
 connector host; `word/addin/Settings.cs` mirrors it): `ZN_DB` / `ZN_LIBRARY`, else the library path saved in
 `%APPDATA%\zotero-next-gpui\library.json` (`{"path": "..."}`), else the legacy `<home>\zotero-next\data\library.sqlite` (when it exists it
 is adopted into that file on the first start, so the library keeps opening from there), else `%APPDATA%\zotero-next\library.sqlite`
@@ -57,33 +54,6 @@ bun scripts/shot-item-actions.tsx             # Duplicate Item + Create Parent I
                                               #   item and gives two standalone PDFs a parent)
 bun scripts/scroll-test.tsx                   # headless scroll/frame timing of the card list
 ```
-
-## compare.ts: web UI vs GPUI UI
-
-```
-bun scripts/compare.ts                        # dark, default output dir
-bun scripts/compare.ts --mode light
-bun scripts/compare.ts --out C:/some/dir --wait 4000
-bun scripts/compare.ts --gpui-png existing.png   # skip the GPUI capture, reuse a PNG
-```
-
-What it does:
-
-1. Captures GPUI headlessly: runs `scripts/shot-app.tsx <gpui.png>` if that exists, otherwise calls `createTestRoot()` on
-   `App` from `src/App.tsx` itself, otherwise stops with a message.
-2. Reads the PNG size (about 1440x881) and uses it as the web viewport.
-3. `agent-browser` (own session `zn-gpui-compare`, headless) sets that viewport + `prefers-color-scheme`, opens
-   `http://127.0.0.1:23160/app/`, writes `localStorage["zn.theme"] = {"mode":"dark"}` (what `ui/index.html` / the appearance
-   settings read), reloads, waits, screenshots, and closes the session.
-4. `pixelmatch` (threshold 0.1, anti-aliasing ignored) diffs the two.
-
-Outputs (default
-`C:\Users\abora\AppData\Local\Temp\claude\C--Users-abora-Hecate\0719cea7-1eb3-4344-a1e4-a862c3bde6eb\scratchpad\gpui-shots\compare\`):
-`web.png`, `gpui.png`, `side-by-side.png` (web | gpui | diff), `diff.png` (heatmap, magenta = differing pixel), `summary.json`,
-and the `% different` printed on the last line.
-
-Notes: the web UI groups the list by year and shows live data, so a flat GPUI list will always differ in the list region; the
-number is a progress indicator, not a pass/fail. Lower is better; sub-pixel text anti-aliasing alone usually costs a few percent.
 
 ## memory.ts / startup.ts: memory + startup time of the real GPUI window
 
@@ -131,6 +101,22 @@ Reference: the Electrobun app measured, library only, about 580 MB private / 710
 In external mode the core's own memory is whatever that process has accumulated (it may serve other clients too), so compare
 the "GPUI" columns for the UI cost and treat the core columns as a constant. Numbers on a busy machine vary a lot (run
 `startup.ts` a few times and look at the median, not one run).
+
+## bench-vs-zotero.ts: Zotero Next against the installed Zotero 10
+
+`bun scripts/bench-vs-zotero.ts` launches the installed Zotero 10 and the installed Zotero Next on copies of the same library
+and reports time to window, time to "library ready" (the local data API answers), memory of the whole process tree, warm
+quick-search latency and install size. Options (paths, ports, runs, queries) are listed at the top of the script. It is
+Windows-only, uses `bun:ffi` (CreateProcess with a minimised window, EnumWindows, GetProcessMemoryInfo) and never drives the
+mouse or keyboard.
+
+Isolation: Zotero runs from a new, scratch profile whose `user.js` points the data dir at a copy and turns sync, updates and
+background renaming off (ports 23131 for Zotero; 23191 and 23192 for Zotero Next). Zotero Next gets a `VACUUM INTO` copy and a
+scratch APPDATA/LOCALAPPDATA. The real data dir, the real profile, and anything on 23119/23120 are never touched, and the script
+refuses to start while any `zotero.exe` is running. The copies are deleted at the end (`--keep` keeps them).
+
+Zotero 10 gotcha: its local API answers 500 and then stops answering if it is called before start-up has finished, so the
+script sends the first request only once the main window is titled "... - Zotero".
 
 ## Custom GPUIX native addon (cache regions)
 

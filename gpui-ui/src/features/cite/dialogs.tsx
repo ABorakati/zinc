@@ -7,20 +7,23 @@ import { ErrorLine, Field, Footer, Para, Scroll, SettingRow, SettingsBody, t, Tx
 import { errMsg, htmlToText, plural } from "../text";
 import { bumpCite, citeApi, citeRev, FILE, LOCALES, type CiteFormat, type CiteFormatResult, type CiteMode, type CiteSettings, type CiteStyleInfo } from "./client";
 import { StylePicker } from "./StylePicker";
+import { copiedMessage } from "./logic";
+import { quickCopyContent, quickExport, setQuickExport } from "./quickcopy";
+import { EXPORT_FORMATS } from "../io/client";
 
 const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
 const MODES = [{ value: "bibliography" as CiteMode, label: "Bibliography" }, { value: "citation" as CiteMode, label: "Citations" }];
 const FORMAT_OPTS = (Object.keys(FILE) as CiteFormat[]).map((k) => ({ value: k, label: FILE[k].label }));
 const LOCALE_OPTS = LOCALES.map(([value, label]) => ({ value, label }));
+const QUICK_AS = [{ value: "", label: "Citation style" }, ...EXPORT_FORMATS.map((f) => ({ value: f.id as string, label: f.label, hint: f.hint }))];
 
-/** Quick Copy: format the items in the Quick Copy style and put HTML + plain text on the clipboard. */
+/** Quick Copy: the items in the Quick Copy format (a citation style, or an export format) on the clipboard, HTML + plain text. */
 export async function quickCopy(keys: string[], mode: CiteMode): Promise<void> {
 	if (keys.length === 0) return;
 	try {
-		const s = (await citeApi.settings()).quickCopy;
-		const r = await citeApi.format({ keys, style: s.style, locale: s.locale, mode, format: ["html", "text"] });
-		await copyRich(r.html ?? "", r.text ?? "");
-		toast(`${mode === "citation" ? "Citation" : "Bibliography"} copied (${plural(r.keys.length, "item")}, ${s.style})`, { kind: "success" });
+		const c = await quickCopyContent(keys, { mode });
+		await copyRich(c.html ?? "", c.text);
+		toast(copiedMessage(c.plan, c.count), { kind: "success" });
 	} catch (e) {
 		fail(mode === "citation" ? "Could not copy the citation" : "Could not copy the bibliography", e);
 	}
@@ -182,10 +185,13 @@ export function CiteSettingsSection(): JSX.Element {
 						<SettingRow label="Language" description="Locale for citations, such as en-GB. Empty uses the style's own.">
 							<Select value={s().quickCopy.locale} onChange={(locale) => void put({ locale })} options={LOCALE_OPTS} width={180} />
 						</SettingRow>
-						<SettingRow label="Quick Copy output" description="Preselected in the Create Bibliography dialog.">
+						<SettingRow label="Quick Copy as" description="Copy and drag items as formatted citations or bibliography entries, or as an export (BibTeX, RIS…), which ignores the output choice below.">
+							<Select value={quickExport()} onChange={setQuickExport} options={QUICK_AS} width={220} />
+						</SettingRow>
+						<SettingRow label="Quick Copy output" description="What dragging items out of the window into another app drops (hold Shift for the other one). Also preselected in the Create Bibliography dialog.">
 							<Select value={s().quickCopy.mode} onChange={(mode) => void put({ mode })} options={MODES} width={160} />
 						</SettingRow>
-						<SettingRow label="Quick Copy format" description="Preselected in the Create Bibliography dialog.">
+						<SettingRow label="Quick Copy format" description="HTML (formatted paste into Word and mail) or plain text only. Also preselected in the Create Bibliography dialog.">
 							<Select value={s().quickCopy.format} onChange={(format) => void put({ format })} options={FORMAT_OPTS} width={160} />
 						</SettingRow>
 					</>

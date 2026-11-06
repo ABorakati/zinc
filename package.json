@@ -1,0 +1,9 @@
+{
+  "name": "zotero-next",
+  "private": true,
+  "scripts": {
+    "docs:dev": "cd website && bun run docs:dev",
+    "docs:build": "cd website && bun run docs:build",
+    "docs:preview": "cd website && bun run docs:preview"
+  }
+}

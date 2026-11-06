@@ -52,6 +52,11 @@ const OPS: Record<Kind, Operator[]> = {
 	any: TEXT_OPS,
 };
 
+// Zotero also accepts the text operators on date fields (saved searches use "contains 2021" on a date); they match the stored text
+const TEXT_ON_DATE: Operator[] = ["contains", "doesNotContain", "beginsWith"];
+const allowed = (spec: Spec, op: Operator): boolean =>
+	OPS[spec.kind].includes(op) || ((spec.kind === "date" || spec.kind === "datetime") && TEXT_ON_DATE.includes(op));
+
 const MAX_CONDITIONS = 50;
 const MAX_VALUE = 500;
 
@@ -65,6 +70,14 @@ for (const t of raw.itemTypes as { fields: { field: string; baseField?: string }
 		BASE_MAP.set(f.baseField, l);
 	}
 }
+
+// Date-type fields: the schema's date fields (meta.fields) and every field mapped onto one (dateDecided, dateEnacted, issueDate, priorityDate ...)
+const DATE_FIELDS = new Set<string>(
+	Object.entries((raw.meta as { fields: Record<string, { type?: string }> }).fields)
+		.filter(([, v]) => v.type === "date")
+		.map(([k]) => k),
+);
+for (const [base, fields] of BASE_MAP) if (DATE_FIELDS.has(base)) for (const f of fields) DATE_FIELDS.add(f);
 
 const jsonField = (a: string, f: string) => `json_extract(${a}.data, '$.${f}')`;
 
@@ -104,7 +117,7 @@ export function resolveField(name: string): Spec {
 	if (!field || !/^[A-Za-z][A-Za-z0-9]*$/.test(field)) throw new HttpError(400, `unknown search field: ${n}`);
 	const mapped = [field, ...(BASE_MAP.get(field) ?? [])];
 	const expr = (a: string) => (mapped.length === 1 ? jsonField(a, field) : `COALESCE(${mapped.map((f) => jsonField(a, f)).join(", ")})`);
-	if (/Date$/.test(field)) return { kind: "date", field, yearFallback: false, expr };
+	if (/Date$/.test(field) || DATE_FIELDS.has(field)) return { kind: "date", field, yearFallback: false, expr };
 	return { kind: "text", field, expr };
 }
 
@@ -145,7 +158,7 @@ export function normalizeConditions(input: unknown): SearchCondition[] {
 		const v = String(value ?? "").trim();
 		if (v.length > MAX_VALUE) throw new HttpError(400, `condition ${idx + 1}: value too long`);
 		const spec = resolveField(field);
-		if (!OPS[spec.kind].includes(operator as Operator)) {
+		if (!allowed(spec, operator as Operator)) {
 			throw new HttpError(400, `condition ${idx + 1}: operator ${operator} is not valid for ${spec.field}`);
 		}
 		return { field: spec.field, operator: operator as Operator, value: v };
@@ -372,6 +385,7 @@ function predicate(c: Ctx, spec: Spec, op: Operator, v: string, a: string): stri
 			return yearPred(c, a, op, v);
 		case "date":
 		case "datetime":
+			if (TEXT_ON_DATE.includes(op)) return textMatch(c, spec.kind === "datetime" ? `${a}.${spec.col}` : spec.expr!(a), op, v);
 			return datePred(c, a, spec, op, v);
 		case "itemType":
 			return textMatch(c, `${a}.item_type`, op, v);
@@ -395,7 +409,7 @@ const NO_LIFT = new Set<Kind>(["collection", "creator", "year", ...FAMILY]);
 
 function conditionClause(c: Ctx, cond: SearchCondition): string {
 	const spec = resolveField(cond.field);
-	if (!OPS[spec.kind].includes(cond.operator)) throw new HttpError(400, `operator ${cond.operator} is not valid for ${spec.field}`);
+	if (!allowed(spec, cond.operator)) throw new HttpError(400, `operator ${cond.operator} is not valid for ${spec.field}`);
 	const { op, neg } = positiveOp(cond.operator);
 	const own = predicate(c, spec, op, cond.value, "i");
 	if (neg) return `NOT COALESCE(${own}, 0)`;

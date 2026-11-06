@@ -1,6 +1,6 @@
 // Appearance preferences (Settings > Appearance): light / dark / system, colour scheme, interface font and text size.
-// The colour maths and the scheme list are the web UI's (reader-next/src/viewer/theme.ts, dependency-free), so the schemes
-// match one for one; this module applies the result to the GPUI theme:
+// The colour maths and the scheme list are the web UI's (./schemes.ts, dependency-free, kept from the old web UI so the schemes
+// match one for one); this module applies the result to the GPUI theme:
 //
 //   * colours   -> theme.ts `tokens` / `shadows` are rewritten in place (buildTokens with the scheme's palette), then tw()'s
 //                  memo is dropped and every component that reads store.mode() is poked to re-run;
@@ -12,7 +12,7 @@ import { dlopen, FFIType } from "bun:ffi";
 import {
 	accentFor, cleanFamily, computeVars, DEFAULT_THEME, FONT_SUGGESTIONS, FONTS, sanitizeTheme, SCHEMES, TEXT_SIZES,
 	type FontId, type ThemeMode, type ThemePrefs,
-} from "../../../reader-next/src/viewer/theme";
+} from "./schemes";
 import type { Mode } from "../contracts";
 import { setSansFont } from "../fonts";
 import { buildTokens, parseShadow, setUiScale, shadows, tokens } from "../theme";

@@ -20,9 +20,15 @@ powershell -File .\install.ps1
 ```
 
 `install.ps1` writes `%LOCALAPPDATA%\zotero-next-connector-host\com.zotero_next.connector_host.json` and the registry
-value `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.zotero_next.connector_host` pointing at it
-(`allowed_origins` = the extension id `pakgagonakcalfbmckaolkpidcojacaf`). Nothing else is touched. Remove with
+value `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.zotero_next.connector_host` (and the same under `Microsoft\Edge`)
+pointing at it (`allowed_origins` = the extension id `pakgagonakcalfbmckaolkpidcojacaf`). Nothing else is touched. Remove with
 `uninstall.ps1`. Then load the extension: see `zotero-next-connector\ZOTERO-NEXT.md`.
+
+Both scripts take optional `-ManifestDir <folder>` (where the manifest goes; with it `uninstall.ps1` removes only the manifest file),
+`-HostName <name>` (registry key and manifest name; default `com.zotero_next.connector_host`) and, for `install.ps1`, `-HostExe <path>` and
+`-ExtensionId`. The Windows installer (`gpui-ui/installer`, component "Browser connector") calls them with `-ManifestDir <app>\connector` and
+the installed exe, and ships the built extension next to it; with the defaults nothing changes from the dev setup above. Do not run the dev
+`install.ps1` and the installed component at once: they use the same registry keys, and the last one run wins.
 
 Rebuild the exe after changing anything under `core/src/connector` or `core/src/db.ts` (the exe embeds core);
 re-running `install.ps1` is not needed, the path stays the same. Close Chrome (or reload the extension) so the old
@@ -46,7 +52,7 @@ no word-processor integration.
 ## Library, writes and state
 
 * Database: `ZN_DB`, else `C:/Users/abora/zotero-next/data/library.sqlite` if it exists, else
-  `%LOCALAPPDATA%\dev.zotero-next.app\stable\library.sqlite` (the app's order, `app/src/bun/index.ts`). If none
+  `%LOCALAPPDATA%\dev.zotero-next.app\stable\library.sqlite` (the folder of the old Electrobun app, kept so existing libraries still open). If none
   exists every call answers 500 "library not found".
 * Opened with `openDb()` like the app: WAL, `busy_timeout = 5000`, the sync-outbox triggers. A save is short
   transactions, so it interleaves safely with the running app's writes (tested against `core/src/server.ts`).

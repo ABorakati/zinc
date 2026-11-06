@@ -14,7 +14,7 @@ import { join } from "node:path";
 const { ptr: P, i32: I32, u32: U32, f32: F32, u64: U64, cstring } = FFIType;
 const usize = FFIType.u64; // 64-bit only (Windows x64)
 
-function findDll(): string {
+export function findDll(): string {
 	const env = process.env.ZN_PDF_DLL;
 	const cands = [
 		env,

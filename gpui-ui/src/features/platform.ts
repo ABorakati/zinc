@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeClipboard } from "../shell/clipboard-win";
+import { cfHtml } from "./cfhtml";
 import { clipboard } from "../ui";
 import { post } from "./http";
 
@@ -53,20 +54,7 @@ async function powershell(scriptName: string, script: string, args: string[] = [
 	return out;
 }
 
-/** Wrap an HTML fragment in the Windows "HTML Format" (CF_HTML) envelope with byte offsets. */
-export function cfHtml(fragment: string): string {
-	const pre = "<html><body><!--StartFragment-->";
-	const post = "<!--EndFragment--></body></html>";
-	const head = (a: number, b: number, c: number, d: number) => {
-		const n = (x: number) => String(x).padStart(10, "0");
-		return `Version:0.9\r\nStartHTML:${n(a)}\r\nEndHTML:${n(b)}\r\nStartFragment:${n(c)}\r\nEndFragment:${n(d)}\r\n`;
-	};
-	const len = (s: string) => Buffer.byteLength(s, "utf8");
-	const hl = head(0, 0, 0, 0).length;
-	const startFrag = hl + len(pre);
-	const endFrag = startFrag + len(fragment);
-	return head(hl, endFrag + len(post), startFrag, endFrag) + pre + fragment + post;
-}
+export { cfHtml };
 
 export const copyText = (text: string): Promise<void> => clipboard.writeText(text);
 

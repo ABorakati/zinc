@@ -18,11 +18,21 @@
 
 .PARAMETER HostExe
   The compiled host. Defaults to dist\zotero-next-host.exe next to this script.
+
+.PARAMETER ManifestDir
+  Where the host manifest is written. Defaults to %LOCALAPPDATA%\zotero-next-connector-host. The Windows installer passes
+  its own folder (<app>\connector), so the manifest lives and dies with the installed app.
+
+.PARAMETER HostName
+  The native-messaging host name (registry key name and the manifest's "name"). The extension asks for the default;
+  the installer's test builds pass another one so they never overwrite a real registration.
 #>
 [CmdletBinding()]
 param(
   [string]$ExtensionId = "pakgagonakcalfbmckaolkpidcojacaf",
-  [string]$HostExe
+  [string]$HostExe,
+  [string]$ManifestDir,
+  [string]$HostName = "com.zotero_next.connector_host"
 )
 $ErrorActionPreference = "Stop"
 # Windows PowerShell 5.1 leaves $PSScriptRoot empty in parameter defaults, so resolve paths here
@@ -30,14 +40,15 @@ $here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvoca
 if (-not $HostExe) { $HostExe = Join-Path $here "dist\zotero-next-host.exe" }
 $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [Environment]::GetFolderPath("LocalApplicationData") }
 
-$hostName = "com.zotero_next.connector_host"
+$hostName = $HostName
+if ($hostName -notmatch '^[a-z0-9_]+(\.[a-z0-9_]+)+$') { throw "HostName must be lower-case dotted words (a-z, 0-9, _), as Chrome requires." }
 if ($ExtensionId -notmatch '^[a-p]{32}$') { throw "ExtensionId must be 32 letters a-p (see chrome://extensions)." }
 if (-not (Test-Path -LiteralPath $HostExe)) {
   throw "Host not found: $HostExe`nBuild it first:  cd '$here'; bun run build"
 }
 $HostExe = (Resolve-Path -LiteralPath $HostExe).Path
 
-$dir = Join-Path $localAppData "zotero-next-connector-host"
+$dir = if ($ManifestDir) { $ManifestDir } else { Join-Path $localAppData "zotero-next-connector-host" }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $manifestPath = Join-Path $dir "$hostName.json"
 

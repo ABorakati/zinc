@@ -5,7 +5,7 @@ set -e
 HOST="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HOST/.." && pwd)"
 READER="$ROOT/vendor/reader"
-SHIM="$ROOT/spikes/shims/bun-domain-bind.cjs"
+SHIM="$ROOT/scripts/shims/bun-domain-bind.cjs"
 
 if [ "$1" != "--skip-reader" ]; then
   cd "$READER"
@@ -35,7 +35,7 @@ if [ "$1" != "--skip-reader" ]; then
 fi
 
 [ -f "$READER/build/web/reader.js" ] || { echo "reader web build missing"; exit 1; }
-[ -f "$ROOT/vendor/document-worker/build/worker.js" ] || { echo "document-worker not built: bash spikes/build-docworker.sh"; exit 1; }
+[ -f "$ROOT/vendor/document-worker/build/worker.js" ] || { echo "document-worker not built: bash scripts/build-docworker.sh"; exit 1; }
 
 cd "$HOST"
 rm -rf dist; mkdir -p dist

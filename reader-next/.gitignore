@@ -1,4 +1,0 @@
-# Copied from @embedpdf/pdfium by the prebuild script (too large to commit)
-public/pdfium.wasm
-# Verification screenshots
-*.png

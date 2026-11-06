@@ -4,6 +4,7 @@ import { registerAppAction, registerCollectionAction, registerItemAction, regist
 import { plural } from "../text";
 import { selectedKeys } from "../shared";
 import { CiteSettingsSection, openBibliography, openCiteSettings, quickCopy } from "./dialogs";
+import { installOutDrag } from "./dragout";
 
 async function collectionKeys(collectionKey: string): Promise<string[]> {
 	const keys: string[] = [];
@@ -17,6 +18,8 @@ async function collectionKeys(collectionKey: string): Promise<string[]> {
 }
 
 export function register(): void {
+	// dragging items out of the window drops a Quick Copy citation / bibliography into other apps (Shift: the other of the two)
+	installOutDrag();
 	registerItemAction({ id: "cite.copy-bibliography", label: "Copy Bibliography", icon: "clipboard-copy", group: "cite", shortcut: "Ctrl+Shift+C", run: (ctx) => void quickCopy(ctx.keys, "bibliography") });
 	registerItemAction({ id: "cite.copy-citation", label: "Copy Citation", icon: "quote", group: "cite", shortcut: "Ctrl+Shift+A", run: (ctx) => void quickCopy(ctx.keys, "citation") });
 	registerItemAction({

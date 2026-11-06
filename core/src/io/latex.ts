@@ -75,6 +75,7 @@ export function fromLatex(input: string): string {
 	s = s.replace(/\\(ss|oe|OE|ae|AE|aa|AA|dh|DH|dj|DJ|th|TH|ng|NG|o|O|l|L|i|j)(?![A-Za-z])(?:\{\}|\s)?/g, (_m, c: string) => SPECIAL_CMD[c]!);
 	s = s.replace(/\\(?:textendash)(?:\s*\{\})?/g, "\u2013").replace(/\\(?:textemdash)(?:\s*\{\})?/g, "\u2014");
 	s = s.replace(/\\ldots(?:\s*\{\})?|\\dots(?:\s*\{\})?/g, "\u2026").replace(/\\textquoteright(?:\s*\{\})?/g, "\u2019");
+	s = s.replace(/\\textquotesingle(?:\s*\{\})?/g, "'").replace(/\\textquoteleft(?:\s*\{\})?/g, "‘").replace(/\\textquotedblleft(?:\s*\{\})?/g, "“").replace(/\\textquotedblright(?:\s*\{\})?/g, "”");
 	s = s.replace(/\\(?:textit|textbf|emph|textsc|texttt|textrm|textsf|textnormal|mbox|url|path|mathrm|mathit|text|textsuperscript|textsubscript)\s*\{([^{}]*)\}/g, "$1");
 	s = s.replace(/\\href\s*\{[^{}]*\}\s*\{([^{}]*)\}/g, "$1");
 	s = s.replace(/\\(?:newline|par)\b\s*/g, "\n").replace(/\\[ ,;:!]/g, " ").replace(/\\\\/g, "\n");

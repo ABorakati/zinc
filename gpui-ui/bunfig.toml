@@ -1,1 +1,5 @@
 preload = ["@gpuix/solid/preload"]
+
+[test]
+# keep test logging out of the user's real app log folder
+preload = ["@gpuix/solid/preload", "./test/log-preload.ts"]

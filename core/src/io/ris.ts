@@ -40,7 +40,7 @@ export function parseRisRecords(text: string): RisRecord[] {
 	let cur: RisRecord | null = null;
 	let last: [string, string] | null = null;
 	for (const line of text.replace(/^﻿/, "").split(/\r?\n/)) {
-		const m = /^([A-Z][A-Z0-9])\s{1,2}-(?: ?(.*))?$/.exec(line);
+		const m = /^([A-Z][A-Z0-9])\s{1,2}-(?: ?([^\n]*))?$/.exec(line);
 		if (m) {
 			const tag = m[1]!;
 			const val = (m[2] ?? "").trim();
@@ -97,7 +97,9 @@ export function risRecordToItem(r: RisRecord): ParsedItem | null {
 	for (const [tag, val] of r.lines) {
 		if (!val) continue;
 		const add = (wanted: string, ...fb: string[]) => {
-			const c = parseName(val, creatorTypeFor(itemType, wanted, ...fb));
+			// RIS names are "Last, First" or "Last, First, Suffix" (parseName reads three parts the BibTeX way, "Last, Jr, First"); like Zotero, drop the suffix
+			const parts = val.split(",").map((x) => x.trim());
+			const c = parseName(parts.length >= 3 && parts[1] ? `${parts[0]}, ${parts[1]}` : val, creatorTypeFor(itemType, wanted, ...fb));
 			if (c) creators.push(c);
 		};
 		if (tag === "AU" || tag === "A1") add("author");
@@ -140,7 +142,7 @@ export function risRecordToItem(r: RisRecord): ParsedItem | null {
 	const m3 = first("M3");
 	if (m3) setBase(data, "type", m3);
 	const m1 = first("M1");
-	if (m1) setFirst(data, ["reportNumber", "patentNumber", "number", "seriesNumber"], m1);
+	if (m1) setFirst(data, ["reportNumber", "patentNumber", "number", "seriesNumber", "issue"], m1); // M1 is the issue of a journal article
 	if (first("M2")) appendExtra(data, first("M2"));
 	setBase(data, "shortTitle", first("ST"));
 	setBase(data, "callNumber", first("CN"));
@@ -149,11 +151,13 @@ export function risRecordToItem(r: RisRecord): ParsedItem | null {
 	if (accessed) setBase(data, "accessDate", risIso(accessed));
 
 	// date: DA is full, PY is the year; prefer the fuller one when they agree
-	const py = risDate(first("PY", "Y1"));
+	// Y1 is the deprecated form of PY/DA: it only counts when neither is present
+	const py = risDate(first("PY"));
 	const da = risDate(first("DA"));
-	const date = da && (!py || da.y === py.y) ? da : py ?? da;
+	const y1 = risDate(first("Y1"));
+	const date = da && (!py || da.y === py.y) ? da : py ?? da ?? y1;
 	if (date) setBase(data, "date", risIso(date));
-	else if (first("PY", "Y1", "DA")) setBase(data, "date", first("PY", "Y1", "DA"));
+	else if (first("PY", "DA", "Y1")) setBase(data, "date", first("PY", "DA", "Y1"));
 
 	if (creators.length) data.creators = creators;
 	if (tags.length) data.tags = tags;

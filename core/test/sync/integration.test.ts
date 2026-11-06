@@ -17,8 +17,10 @@ async function loadBackends(dataDir: string): Promise<{ reader: ZoteroReader; wr
 	try {
 		const spec = "../../src/zotero-db/index";
 		const m = (await import(spec)) as Record<string, any>;
-		if (typeof m.createZoteroBackends === "function") return await m.createZoteroBackends(dataDir);
-		if (m.createZoteroReader && m.createZoteroWriter) return { reader: await m.createZoteroReader(dataDir), writer: await m.createZoteroWriter(dataDir) };
+		// The copy is never open in Zotero, even while the real Zotero runs: skip the reader's and writer's own process check too.
+		const opts = { isRunning: async () => false };
+		if (typeof m.createZoteroBackends === "function") return await m.createZoteroBackends(dataDir, opts);
+		if (m.createZoteroReader && m.createZoteroWriter) return { reader: await m.createZoteroReader(dataDir, opts), writer: await m.createZoteroWriter(dataDir, opts) };
 	} catch {
 		// not available yet
 	}

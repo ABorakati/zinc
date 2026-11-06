@@ -45,7 +45,7 @@ pub unsafe extern "C" fn zpdf_page_rotation(doc: *const Doc, page: i32) -> i32 {
 }
 
 /// Run `f` on a thread of its own; its bytes become the job's data (state 1), its error the last error (state -1).
-fn spawn_job(f: impl FnOnce() -> Result<Vec<u8>, String> + Send + 'static) -> *const Job {
+pub(crate) fn spawn_job(f: impl FnOnce() -> Result<Vec<u8>, String> + Send + 'static) -> *const Job {
     let job = Job::new(0.0);
     let j = job.clone();
     let t0 = Instant::now();
