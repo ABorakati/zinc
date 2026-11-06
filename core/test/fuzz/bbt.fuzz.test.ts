@@ -14,7 +14,8 @@ import { describeError, fc, fuzz, messyText, mutated } from "./harness";
 
 // ---------------------------------------------------------------- the formula language, from the source
 
-const src = readFileSync(new URL("../../src/bbt/formula.ts", import.meta.url), "utf8");
+// CRLF on a Windows checkout (git autocrlf, e.g. GitHub's runners): the table pattern below expects LF
+const src = readFileSync(new URL("../../src/bbt/formula.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 function names(table: string): string[] {
 	const m = new RegExp(`^const ${table}[^\\n]*= \\{\\n([\\s\\S]*?)^\\};`, "m").exec(src);
 	return [...(m?.[1] ?? "").matchAll(/^\t([A-Za-z0-9]+): \{/gm)].map((x) => x[1]!);

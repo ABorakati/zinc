@@ -98,11 +98,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-rest-${{ hashFiles('gpui-ui/bun.lock', 'word/sidebar/bun.lock') }}
+          key: bun-${{ runner.os }}-rest-${{ hashFiles('gpui-ui/bun.lock', 'core/bun.lock', 'word/sidebar/bun.lock') }}
           restore-keys: bun-${{ runner.os }}-rest-
 
       - name: Install gpui-ui
         working-directory: gpui-ui
+        run: bun install --frozen-lockfile
+      # word/sidebar's tests import core/src/cite (citeproc and friends come from core's packages)
+      - name: Install core
+        working-directory: core
         run: bun install --frozen-lockfile
       - name: Install word/sidebar
         working-directory: word/sidebar
