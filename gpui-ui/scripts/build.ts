@@ -52,7 +52,7 @@ const iconMode = arg("icons", "used")!; // used | all
 const hideConsole = arg("hide-console") === "true";
 const bytecodeOrder = arg("bytecode-order");
 
-interface Variant { id: string; bytecode: boolean; minify: boolean; bytecodeOrder?: string[] }
+interface Variant { id: string; bytecode: boolean; minify: boolean; bytecodeOrder?: string[]; aot?: boolean }
 const VARIANTS: Variant[] = [
 	{ id: "plain", bytecode: false, minify: false },
 	{ id: "bytecode", bytecode: true, minify: false },
@@ -61,9 +61,22 @@ const VARIANTS: Variant[] = [
 if (bytecodeOrder) VARIANTS.push({ id: "bytecode-min-profile", bytecode: true, minify: true, bytecodeOrder: bytecodeOrder.split(",") });
 const best = arg("best", "bytecode")!; // which variant is copied to out/zotero-next-gpui.exe
 
+// --aot: an extra `aot` variant (compile.aot: true), which only Bun's canary can build (stable 1.4.4 has no AOT compiler). Run under
+// stable Bun, the other variants build in-process and the aot variant is then built by a child run under the canary (env ZN_BUN_CANARY,
+// default C:/Users/abora/zn-ws/_tmp/bun-aot/canary/bun-windows-x64/bun.exe; the global bun is never touched). The child is this same
+// script with --aot-only, so it can also be started by hand with the canary: `<canary>/bun.exe scripts/build.ts --aot-only`.
+// --explain[=report] adds compile.aotExplain (default report "text": the slow-path list). --aot-trim adds compile.trim.
+const aotOnly = process.argv.includes("--aot-only");
+const wantAot = aotOnly || process.argv.includes("--aot");
+const AOT: Variant = { id: "aot", bytecode: false, minify: false, aot: true };
 const wanted = arg("variant");
-const todo = wanted && wanted !== "true" ? VARIANTS.filter((v) => wanted.split(",").includes(v.id)) : VARIANTS;
-if (!todo.length) throw new Error(`unknown --variant ${wanted}; have ${VARIANTS.map((v) => v.id).join(", ")}`);
+const known = wantAot ? [...VARIANTS, AOT] : VARIANTS;
+let todo = wanted && wanted !== "true" ? known.filter((v) => wanted.split(",").includes(v.id)) : [...VARIANTS, ...(wantAot ? [AOT] : [])];
+if (aotOnly) todo = todo.filter((v) => v.aot);
+if (!todo.length) throw new Error(`unknown --variant ${wanted}; have ${known.map((v) => v.id).join(", ")}`);
+const canaryBun = process.env.ZN_BUN_CANARY ?? "C:/Users/abora/zn-ws/_tmp/bun-aot/canary/bun-windows-x64/bun.exe";
+const runAotInChild = !aotOnly && todo.some((v) => v.aot);
+if (runAotInChild) todo = todo.filter((v) => !v.aot);
 
 // ---- staged assets (mirrors the repo tree, so import.meta-relative reads resolve inside the exe) --------------------------------
 function walk(dir: string, out: string[] = []): string[] {
@@ -112,6 +125,13 @@ const nativePlugin: Bun.BunPlugin = {
 	},
 };
 
+// Set per variant in the build loop. In an AOT exe every module's import.meta.* is its own (compiled-in) location, NOT the entry's, and
+// the embedded tree is laid out differently: the root is the cwd of the build (gpui-ui), compile.assets keep their path relative to it
+// (out/stage/gpui-ui/...), and the core sits under _.._/core. So the rewrite below maps a repo path to the staged assets' location,
+// not to the entry's import.meta.dir (aot variant only; B:/~BUN/root is where a Windows exe embeds its tree).
+let currentAot = false;
+const AOT_ROOT = `B:/~BUN/root/${relative(root, join(outDir, "stage")).split(sep).join("/")}`;
+
 const META = /import\.meta\.(url|dir|path|dirname|filename)\b/g;
 const inRepo = (p: string) => p.startsWith(repo + sep) && !p.includes(`${sep}node_modules${sep}`) && !p.startsWith(join(root, "out") + sep);
 
@@ -130,6 +150,15 @@ const metaPlugin: Bun.BunPlugin = {
 				src = src.replace(/import\(\s*dir\s*\+\s*"([\w./-]+)"\s*\)/g, (_m, n: string) => (shimmed++, `import("../../core/src/${n}")`));
 				if (shimmed) console.log(`[zn-core-shim] src/core.ts: ${shimmed} variable import(dir + ...) -> literal`);
 			}
+			// src/prefetch.ts: the worker is started from a hard-coded embedded path ("B:/~BUN/root/prefetch-worker.js", where the bytecode
+			// build puts its second entry point). In an AOT exe the relative forms (`"./x.ts"`, `new URL("./x.ts", import.meta.url)`) did not resolve at run time; the absolute embedded path does (the file is the second entry point).
+			// Proper fix: do that in src/prefetch.ts for compiled and source runs alike.
+			if (currentAot && path === join(root, "src", "prefetch.ts")) {
+				const before = src;
+				const from = 'new Worker(compiled ? "B:/~BUN/root/prefetch-worker.js" : new URL("./prefetch-worker.ts", import.meta.url).href)';
+				src = src.replace(from, 'new Worker("B:/~BUN/root/src/prefetch-worker.ts")');
+				if (src !== before) { shimmed++; console.log("[zn-aot-shim] src/prefetch.ts: embedded worker path"); }
+			}
 			META.lastIndex = 0;
 			if (!META.test(src)) {
 				if (!shimmed) return undefined; // fall through to the default loader / the Solid plugin
@@ -139,6 +168,14 @@ const metaPlugin: Bun.BunPlugin = {
 			const relDir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : ".";
 			// `import.meta.url` inside the replacement is the ENTRY's url at run time (file:///B:/~BUN/root/<exe>)
 			const out = src.replace(META, (_m, k: string) => {
+				if (currentAot) {
+					switch (k) {
+						case "url": return `new URL(${JSON.stringify(rel)}, "file:///${AOT_ROOT}/").href`;
+						case "dir":
+						case "dirname": return JSON.stringify(`${AOT_ROOT}/${relDir}`);
+						default: return JSON.stringify(`${AOT_ROOT}/${rel}`); // path, filename
+					}
+				}
 				switch (k) {
 					case "url": return `new URL(${JSON.stringify(rel)}, import.meta.url).href`;
 					case "dir":
@@ -161,6 +198,13 @@ const metaPlugin: Bun.BunPlugin = {
 	},
 };
 
+const explainArg = process.argv.find((a) => a === "--explain" || a.startsWith("--explain="));
+const aotOptions = {
+	aot: true,
+	...(explainArg ? { aotExplain: [explainArg.includes("=") ? explainArg.split("=")[1]! : "text"] } : {}),
+	...(process.argv.includes("--aot-trim") ? { trim: true } : {}),
+} as Record<string, unknown>; // not yet in bun-types
+
 // ---- build ----------------------------------------------------------------------------------------------------------------
 mkdirSync(outDir, { recursive: true });
 const staged = stageAssets();
@@ -170,12 +214,13 @@ for (const v of todo) {
 	const outfile = join(outDir, `zotero-next-gpui-${v.id}.exe`);
 	rmSync(outfile, { force: true });
 	const t0 = performance.now();
+	currentAot = !!v.aot;
 	const result = await Bun.build({
 		entrypoints: [entry, "src/prefetch-worker.ts"], // the worker of src/prefetch.ts is a second entry point: Bun embeds it and `new Worker("./prefetch-worker.ts")` finds it
 		target: "bun",
 		format: "esm",
 		minify: v.minify,
-		bytecode: v.bytecode,
+		bytecode: v.bytecode && !v.aot, // AOT replaces bytecode
 		sourcemap: "none",
 		plugins: [nativePlugin, metaPlugin, solidBunPlugin],
 		compile: {
@@ -187,6 +232,7 @@ for (const v of todo) {
 			autoloadTsconfig: false,
 			autoloadPackageJson: false,
 			...(v.bytecodeOrder ? { bytecodeOrder: v.bytecodeOrder } : {}),
+			...(v.aot ? aotOptions : {}),
 			windows: { hideConsole, icon: join(root, "..", "app", "assets", "icon.ico"), title: "zotero-next", description: "zotero-next (GPUI)", version: "0.0.1.0" },
 		},
 	});
@@ -199,7 +245,18 @@ for (const v of todo) {
 }
 
 const pick = join(outDir, `zotero-next-gpui-${best}.exe`);
-if (existsSync(pick)) {
+if (!aotOnly && existsSync(pick)) {
 	cpSync(pick, join(outDir, "zotero-next-gpui.exe"));
 	console.log(`out/zotero-next-gpui.exe <- ${best}`);
+}
+
+if (runAotInChild) {
+	// the aot variant needs the canary: re-run this script under it (--aot-only), forwarding the options that matter
+	const fwd: string[] = [];
+	for (const f of ["entry", "out", "icons", "best"]) { const v = arg(f); if (v) fwd.push(`--${f}`, v); }
+	if (hideConsole) fwd.push("--hide-console");
+	for (const a of process.argv.slice(2)) if (a.startsWith("--explain") || a === "--aot-trim") fwd.push(a);
+	console.log(`[aot] building under the canary: ${canaryBun}`);
+	const r = Bun.spawnSync([canaryBun, join(root, "scripts", "build.ts"), "--aot-only", ...fwd], { cwd: root, stdout: "inherit", stderr: "inherit" });
+	if (r.exitCode !== 0) throw new Error(`aot build failed (exit ${r.exitCode})`);
 }

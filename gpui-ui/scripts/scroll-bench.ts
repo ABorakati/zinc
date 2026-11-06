@@ -33,7 +33,9 @@ const q = (xs: number[], p: number) => { if (!xs.length) return 0; const s = [..
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 // ZN_BENCH_BOOT=<module>: boot something other than the whole app (experiments, e.g. the list alone in a window)
-await import(process.env.ZN_BENCH_BOOT ?? "../src/main");
+// (a literal specifier on the default path lets build.ts compile this script into an exe: --entry scripts/scroll-bench.ts [--aot])
+if (process.env.ZN_BENCH_BOOT) await import(process.env.ZN_BENCH_BOOT);
+else await import("../src/main");
 const { store, stats } = await import("../src/store");
 type Native = {
 	getAutomationTree(): string;

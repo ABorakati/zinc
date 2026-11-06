@@ -513,7 +513,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	function Region(r: { page: number; rect: PdfRect; maxW?: number; maxH?: number; zoom?: number }): JSX.Element {
 		const [crop, setCrop] = createSignal<Crop | null>(null);
 		const w = () => Math.min(st().width - 56, r.maxW ?? 9999, Math.round((r.rect[2] - r.rect[0]) * (r.zoom ?? 1.4)));
-		onMount(() => void renderRegion(p.ctx, r.page, pad(r.rect, 3), 1100).then(setCrop));
+		onMount(() => void renderRegion(p.ctx, r.page, pad(r.rect, 3), 1100, true).then(setCrop));
 		return <RegionImage k={k} crop={crop} width={Math.max(60, w())} maxHeight={r.maxH ?? 520} fallbackHeight={Math.round(w() * 0.5)} />;
 	}
 

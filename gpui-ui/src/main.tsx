@@ -18,10 +18,10 @@ import { createComponent, createEffect, createRoot, createSignal, Show, type Com
 import type { Mode, Style } from "./contracts";
 import { startCore } from "./core";
 import { registerFonts } from "./fonts";
-import { applyAppearance, startAppearance } from "./shell/appearance";
+import { applyAppearance, startAppearance, themePrefs } from "./shell/appearance";
 import { bindUiState } from "./shell/prefs";
 import { handleWindowKeyDown } from "./shell/shortcuts";
-import { tw } from "./theme";
+import { tokens, tw } from "./theme";
 import { startCoreOnDemand } from "./api";
 import { saveHint, startPrefetch } from "./prefetch";
 import { mark } from "./trace";
@@ -95,6 +95,13 @@ const { store, uiState } = await storeP;
 bindUiState(uiState); // shell preferences are written by store.ts's ui-state.json writer
 mark("store-ready");
 startAppearance(store); // store.mode follows the stored mode / the OS; colours, font and size follow the preferences
+// the Windows title bar follows the theme too (after startAppearance's effect, so the scheme's tokens are already rewritten)
+void import("./shell/windowFrame").then(({ applyFrameTheme }) => createRoot(() => createEffect(() => {
+	const m = store.mode();
+	themePrefs(); // re-run on a scheme change: applyColours rewrites tokens in place
+	const t = tokens[m];
+	applyFrameTheme(m === "dark", { caption: t.canvas, text: t.foreground, border: t.border });
+})));
 const { App } = await appP;
 setApp(() => App);
 mark("app-mounted");
@@ -114,6 +121,7 @@ await new Promise<void>((resolve) => createRoot((dispose) => {
 await new Promise((r) => setTimeout(r, 16));
 bootCore(); // (a no-op when it already started)
 saveHint();
+void import("./shell/windowIcon").then((m) => m.applyWindowIcon()); // the app icon in the title bar / taskbar (GPUI sets none)
 
 // ---- FEATURES: each feature's register() puts its menu entries, dialogs, sidebar/settings sections and reader plugins in the registry
 // (registered after the first page: the registry is reactive, the menus and sections fill in a few ms later)

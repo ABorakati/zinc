@@ -2,6 +2,7 @@
 //
 //   bun scripts/build.ts                         # first: builds out/zotero-next-gpui-{plain,bytecode,bytecode-min}.exe
 //   bun scripts/aot-bench.ts                     # 3 runs x (sources + each exe) x (external core, in-process core)
+//   bun scripts/aot-bench.ts --variants bytecode,aot   (aot = canary AOT build: bun scripts/build.ts --aot)
 //   bun scripts/aot-bench.ts --runs 3 --wait 15 --modes external,inproc --variants sources,plain,bytecode,bytecode-min
 //   bun scripts/aot-bench.ts --url http://127.0.0.1:23160 --port 23160        (external core, already running)
 //   bun scripts/aot-bench.ts --db-source C:/path/to/lib.sqlite                (library copy the in-process core gets a COPY of)
@@ -48,6 +49,8 @@ const ALL: Variant[] = [
 	{ id: "plain", exe: join(outDir, "zotero-next-gpui-plain.exe"), args: [] },
 	{ id: "bytecode", exe: join(outDir, "zotero-next-gpui-bytecode.exe"), args: [] },
 	{ id: "bytecode-min", exe: join(outDir, "zotero-next-gpui-bytecode-min.exe"), args: [] },
+	// bun canary's ahead-of-time compiler: bun scripts/build.ts --aot (builds out/zotero-next-gpui-aot.exe)
+	{ id: "aot", exe: join(outDir, "zotero-next-gpui-aot.exe"), args: [] },
 	// the installed package (scripts/package.ts output copied to %USERPROFILE%\ZoteroNext\gpui): what the Start-menu shortcut runs
 	{ id: "installed", exe: join(process.env.USERPROFILE ?? "", "ZoteroNext", "gpui", "zotero-next-gpui.exe"), args: [] },
 ];

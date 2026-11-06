@@ -11,7 +11,7 @@ export type Sdt = {
 	content: Node[];
 };
 
-export const CONVERTER_VERSION = 6;
+export const CONVERTER_VERSION = 7;
 
 // ---------------------------------------------------------------- text helpers
 
@@ -384,7 +384,29 @@ export function convertSdt(sdt: Sdt): DocStructure {
 	regionItems.forEach(assign);
 
 	// running heads / page numbers sometimes sit inside a figure's bounding box: crop them off
-	const furniture = live().filter((i) => (i.block.type === "header" || i.block.type === "footer") && i.block.rects[0]);
+	// (only short ones: a tall "header" beside or inside a figure is the figure's own vector drawing / panel text, see widen below)
+	const isTall = (r: PdfRect) => r[3] - r[1] > 40;
+	const furniture = live().filter((i) => (i.block.type === "header" || i.block.type === "footer") && i.block.rects[0] && !isTall(i.block.rects[0]));
+	/** The worker often finds only part of a vector figure as its image region and files the rest (panel text, labels) as a tall header /
+	 *  footer / other block of the page. Those that lie on the figure's rows and between it and its caption are part of it. */
+	// where the running head sits, from the pages that have a plain (short) one
+	const headBottoms = furniture.map((i) => ({ y: i.block.rects[0][1], h: pageHeight(i.block.page) })).filter((x) => x.y > x.h * 0.85).map((x) => x.y).sort((a, b) => a - b);
+	const headBottom = headBottoms.length ? headBottoms[Math.floor(headBottoms.length / 2)]! : undefined;
+	const widen = (page: number, r: PdfRect, cap: PdfRect, owner: Item[]): PdfRect => {
+		let [x1, y1, x2, y2] = r;
+		for (const i of live()) {
+			if (i.block.page !== page || owner.includes(i) || !["header", "footer", "other"].includes(i.block.type)) continue;
+			const q = i.block.rects[0];
+			if (!q || !isTall(q) || claimed.has(i)) continue;
+			const overlap = Math.min(q[3], y2) - Math.max(q[1], y1);
+			if (overlap < 0.5 * Math.min(q[3] - q[1], y2 - y1)) continue;
+			if (q[1] < cap[3] - 2) continue; // not into the caption
+			x1 = Math.min(x1, q[0]); x2 = Math.max(x2, q[2]); y1 = Math.min(y1, q[1]); y2 = Math.max(y2, q[3]);
+		}
+		// the tall block also holds the page's running head: keep the figure below it
+		if (headBottom !== undefined && y2 > headBottom - 9 && y2 - y1 > 80) y2 = Math.max(y1 + 40, headBottom - 9); // (the rule under the head sits a few points below its text)
+		return [x1, y1, x2, y2];
+	};
 	const clip = (page: number, r: PdfRect): PdfRect => {
 		let [x1, y1, x2, y2] = r;
 		for (const fu of furniture) {
@@ -404,7 +426,10 @@ export function convertSdt(sdt: Sdt): DocStructure {
 		const regions = regionItems.filter((r) => claimed.get(r) === c);
 		let primary: Item | undefined = regions[0];
 		let rect: PdfRect | undefined;
-		if (regions.length) rect = unionRect(regions.flatMap((r) => r.block.rects.map((q) => clip(c.block.page, q))));
+		if (regions.length) {
+			rect = unionRect(regions.flatMap((r) => r.block.rects.map((q) => clip(c.block.page, q))));
+			if (c.block.rects[0]) rect = widen(c.block.page, rect, c.block.rects[0], regions);
+		}
 		else {
 			// no detected region: take the open space beside the caption's column (above for figures, below for tables)
 			const cr = c.block.rects[0];
@@ -413,7 +438,18 @@ export function convertSdt(sdt: Sdt): DocStructure {
 				if (lab!.kind === "figure") {
 					const above = bodies.map((b) => b.block.rects[0]).filter((r) => r[1] >= cr[3] - 1).map((r) => r[1]);
 					const top = above.length ? Math.min(...above) : pageHeight(c.block.page) - 36;
-					if (top - cr[3] > 60) rect = [cr[0], cr[3] + 2, cr[2], top - 2];
+					// (the caption can be narrower than the drawing above it: take in the drawing's own blocks)
+					if (top - cr[3] > 60) {
+						rect = [cr[0], cr[3] + 4, cr[2], top - 2]; // (the reading view pads a region by 3)
+						// a caption narrower than the page's text column does not make the drawing narrow: when no body text of the other
+						// column shares the drawing's rows, the drawing spans the page's text
+						const text = live().filter((i) => i.block.page === c.block.page && ["paragraph", "heading", "list"].includes(i.block.type) && i.block.rects[0]).map((i) => i.block.rects[0]);
+						if (text.length > 4 && !text.some((r) => xOverlap(r, cr) <= 20 && Math.min(r[3], rect![3]) - Math.max(r[1], rect![1]) > 10)) {
+							rect[0] = Math.min(rect[0], ...text.map((r) => r[0]));
+							rect[2] = Math.max(rect[2], ...text.map((r) => r[2]));
+						}
+						rect = widen(c.block.page, rect, cr, []);
+					}
 				}
 				else {
 					const below = bodies.map((b) => b.block.rects[0]).filter((r) => r[3] <= cr[1] + 1).map((r) => r[3]);
@@ -433,6 +469,7 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			fig = primary.block;
 			fig.type = kind;
 			fig.rects = regions.flatMap((r) => r.block.rects.map((q) => clip(fig.page, q)));
+			if (rect && (rect[0] < Math.min(...fig.rects.map((q) => q[0])) || rect[2] > Math.max(...fig.rects.map((q) => q[2])))) fig.rects = [rect];
 			for (const r of regions.slice(1)) { r.merged = true; refToId.set(r.key, fig.id); }
 		}
 		else {

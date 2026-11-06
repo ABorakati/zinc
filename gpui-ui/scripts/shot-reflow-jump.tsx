@@ -1,5 +1,5 @@
 // Headless probe of the reading view's jumps and clickable chrome inside the REAL reader core (no window opens; simulated mouse only).
-//   ZN_READING_SETTINGS=<scratch.json> ZN_URL=<core copy> bun scripts/shot-reflow-jump.tsx <attachment key> [--out DIR] [--tag before|after]
+//   ZN_READING_SETTINGS=<scratch.json> ZN_URL=<core copy> bun scripts/shot-reflow-jump.tsx <attachment key> [--out DIR] [--tag before|after] [--no-links]
 // (ZN_READING_SETTINGS is required: the probe changes the reading settings, which would otherwise be the app's own file.)
 // WRITES annotations (it removes the one it makes): run it against a core on a library COPY. Shots: <out>/<tag>-*.png.
 // Every step prints a PASS / FAIL line:
@@ -29,6 +29,7 @@ if (!KEY) { console.error("usage: bun scripts/shot-reflow-jump.tsx <attachment k
 if (!process.env.ZN_READING_SETTINGS) { console.error("set ZN_READING_SETTINGS=<scratch json>: the probe changes the reading settings"); process.exit(2); }
 const OUT = val("out", "C:/Users/abora/zn-ws/_tmp/reflow-jump");
 const TAG = val("tag", "after");
+const NO_LINKS = args.includes("--no-links"); // skip the slow in-text link sweeps
 mkdirSync(OUT, { recursive: true });
 process.env.ZN_READER_STATE = "off";
 process.env.ZN_SIM_MOUSE = "1";
@@ -219,7 +220,7 @@ try {
 	};
 	const clickLink = async (l: NonNullable<Probe["lastLink"]>) => { move(1380, 860); await frame(200); const x = l.x + Math.min(6, l.width / 2), y = l.y + l.height / 2; move(x - 2, y + 20); move(x, y); click(x, y); await frame(900); };
 	// citation -> reference
-	{
+	if (!NO_LINKS) {
 		const l = await findLink("ref");
 		if (!l) check("an in-text citation link", false, "none found");
 		else {
@@ -241,7 +242,7 @@ try {
 		}
 	}
 	// figure mention -> card -> Go to figure
-	{
+	if (!NO_LINKS) {
 		const l = await findLink("fig");
 		if (!l) check("an in-text figure link", false, "none found");
 		else {

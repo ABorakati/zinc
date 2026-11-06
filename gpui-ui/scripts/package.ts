@@ -58,6 +58,7 @@ rmSync(app, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 cpSync(exe, join(app, "zotero-next-gpui.exe"));
 cpSync(dll, join(app, "zn_pdf.dll"));
+cpSync(join(repo, "app", "assets", "icon.ico"), join(app, "icon.ico")); // the window's title-bar/taskbar icon (src/shell/windowIcon.ts)
 cpSync(join(pdfiumDir, "bin", "pdfium.dll"), join(app, "pdfium.dll"));
 cpSync(join(pdfiumDir, "licenses"), join(app, "pdfium-licenses"), { recursive: true });
 cpSync(join(pdfiumDir, "LICENSE"), join(app, "pdfium-licenses", "PDFIUM-LICENSE.txt"));
