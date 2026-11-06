@@ -1,6 +1,7 @@
 // Shared mapping between Zotero's EAV tables and Zotero Web API item JSON, plus the small
 // Zotero utility functions the writer must mimic (date multipart, search normalisation, note title).
 // Used by both the importer (core/src/import/zotero.ts) and the live reader/writer in this folder.
+import { codePointChar } from "../entity";
 import { zoteroRawPathFilename } from "../import/resolve-files";
 
 export const LINK_MODES = ["imported_file", "imported_url", "linked_file", "linked_url"];
@@ -157,7 +158,7 @@ function unescapeHtml(s: string): string {
 		.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
 			if (e[0] === "#") {
 				const code = e[1].toLowerCase() === "x" ? Number.parseInt(e.slice(2), 16) : Number.parseInt(e.slice(1), 10);
-				return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+				return Number.isFinite(code) ? codePointChar(code) : m;
 			}
 			return ENTITIES[e.toLowerCase()] ?? m;
 		});

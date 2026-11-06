@@ -10,6 +10,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { expectEarly, takeRecordedPaths } from "./api";
+import { logError } from "./shell/errorlog";
 import { mark } from "./trace";
 
 const compiled = !/^bun(.exe)?$/i.test(basename(process.execPath));
@@ -55,6 +56,7 @@ export function startPrefetch(): boolean {
 		waiting.delete(m.path);
 	};
 	worker.onerror = (ev) => {
+		logError("worker", (ev as ErrorEvent).error ?? (ev as ErrorEvent).message, "prefetch worker");
 		if (process.env.ZN_TRACE) console.warn("[prefetch] worker error:", (ev as ErrorEvent).message); finish(); void worker.terminate(); };
 	worker.postMessage({ db, paths });
 	mark("prefetch-started");

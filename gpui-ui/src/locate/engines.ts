@@ -8,7 +8,10 @@
 //   {x?}           optional: replaced by "" when the item has no value; without "?" a missing value means no link at all
 // Values are URL-encoded here (Zotero encodes the namespaced ones but pastes the title and the openURL context in raw, which
 // breaks on "&" or "#" in a title).
-import { openUrlParams, type LocateItem } from "./openurl";
+import { openUrlParams, wellFormed, type LocateItem } from "./openurl";
+
+/** encodeURIComponent that accepts any string: a lone surrogate would make the original throw a URIError. */
+const enc = (s: string): string => encodeURIComponent(wellFormed(s));
 
 export interface LocateEngine {
 	name: string;
@@ -122,7 +125,7 @@ const decodeXml = (s: string): string =>
 		if (l === "quot") return '"';
 		if (l === "apos") return "'";
 		const cp = l.startsWith("#x") ? parseInt(l.slice(2), 16) : parseInt(l.slice(1), 10);
-		return Number.isFinite(cp) ? String.fromCodePoint(cp) : "";
+		return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""; // above U+10FFFF fromCodePoint throws
 	});
 
 /** Attributes of a start tag's text (`a="x" b='y'`), entity-decoded. */
@@ -230,7 +233,7 @@ function contextOf(item: LocateItem): { map: Map<string, string[]>; query: strin
 	const pairs = openUrlParams(item);
 	const map = new Map<string, string[]>();
 	for (const [k, v] of pairs) map.set(k, [...(map.get(k) ?? []), v]);
-	return { map, query: pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&") };
+	return { map, query: pairs.map(([k, v]) => `${enc(k)}=${enc(v)}`).join("&") };
 }
 
 const present = (v: string[] | undefined | false): string[] | false => (v && v.length ? v : false);
@@ -239,11 +242,12 @@ const present = (v: string[] | undefined | false): string[] | false => (v && v.l
 function lookupParam(
 	item: LocateItem, ctx: ReturnType<typeof contextOf>, engine: LocateEngine, prefix: string | undefined, param: string,
 ): string[] | false {
-	if (!prefix) return param === "searchTerms" && item.title ? [item.title] : false;
+	const title = typeof item.title === "string" && item.title ? item.title : ""; // item JSON may hold anything in a field
+	if (!prefix) return param === "searchTerms" && title ? [title] : false;
 	const ns = engine.urlNamespaces[prefix];
 	if (!ns) return false;
 	if (OPENURL_ITEM_NS.includes(ns)) {
-		if (param === "title") return item.title ? [item.title] : false;
+		if (param === "title") return title ? [title] : false;
 		return present(ctx.map.get("rft." + param));
 	}
 	if (ns === CTX_NS) {
@@ -269,7 +273,7 @@ export function engineSubmission(engine: LocateEngine, item: LocateItem): Submis
 	let abort = false;
 	let url = engine.urlTemplate.replace(/{(?:([^}:]+):)?([^}:?]+)(\?)?}/g, (_all, prefix: string | undefined, param: string, optional: string | undefined) => {
 		const r = lookupParam(item, ctx, engine, prefix, param);
-		if (r) return encodeURIComponent(r[0]!);
+		if (r) return enc(r[0]!);
 		if (optional) return "";
 		abort = true;
 		return "";
@@ -279,9 +283,9 @@ export function engineSubmission(engine: LocateEngine, item: LocateItem): Submis
 	const add: string[] = [];
 	for (const [name, value] of Object.entries(engine.urlParams)) {
 		const m = /^{(?:([^}:]+):)?([^}:?]+)(\?)?}$/.exec(value);
-		if (!m) { add.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`); continue; }
+		if (!m) { add.push(`${enc(name)}=${enc(value)}`); continue; }
 		const r = lookupParam(item, ctx, engine, m[1], m[2]!);
-		if (r) for (const v of r) add.push(`${encodeURIComponent(name)}=${encodeURIComponent(v)}`);
+		if (r) for (const v of r) add.push(`${enc(name)}=${enc(v)}`);
 		else if (!m[3]) return null;
 	}
 	let postData: string | null = null;
@@ -296,7 +300,13 @@ export function engineSubmission(engine: LocateEngine, item: LocateItem): Submis
 export function engineUrl(engine: LocateEngine, item: LocateItem): string | null {
 	if (engine.method === "POST") return null;
 	const s = engineSubmission(engine, item);
-	return s && /^https?:\/\//i.test(s.url) ? s.url : null;
+	if (!s || !/^https?:\/\//i.test(s.url)) return null;
+	try {
+		new URL(s.url); // a value placed in the host part can leave something that is not a URL ("%3A.example")
+	} catch {
+		return null;
+	}
+	return s.url;
 }
 
 // ---------------------------------------------------------------- list operations (pure)

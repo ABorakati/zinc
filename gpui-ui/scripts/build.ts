@@ -40,6 +40,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const repo = resolve(root, ".."); // C:\Users\abora\zotero-next: the virtual embedded root mirrors this tree
 const repoName = "gpui-ui";
+
+/** "0.1.0+<commit>-<yyyymmdd>": the release number, the repo commit it was built from and the build date (logs, crash reports). */
+const BUILD_VERSION = (() => {
+	const base = process.env.ZN_RELEASE ?? "0.1.0";
+	const run = (cmd: string[]) => { try { const r = Bun.spawnSync(cmd, { cwd: repo, stdout: "pipe", stderr: "ignore" }); return r.exitCode === 0 ? r.stdout.toString().trim() : ""; } catch { return ""; } };
+	const commit = run(["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id.short(8)"]) || run(["git", "rev-parse", "--short=8", "HEAD"]) || "unknown";
+	return `${base}+${commit}-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`;
+})();
 process.chdir(root);
 
 function arg(name: string, fallback: string | null = null): string | null {
@@ -289,6 +297,8 @@ for (const v of todo) {
 		target: "bun",
 		format: "esm",
 		minify: v.minify,
+		// stamp the build into the logs and crash reports (core/src/log.ts reads these; the packaged exe has no env for them)
+		define: { "process.env.ZN_VERSION": JSON.stringify(BUILD_VERSION), "process.env.ZN_BUILD_VARIANT": JSON.stringify(v.aot ? "aot" : "bytecode") },
 		bytecode: v.bytecode && !v.aot, // AOT replaces bytecode
 		sourcemap: "none",
 		external: v.aot ? ["canvas"] : [], // jsdom's optional native peer (try { require("canvas") }): left out, jsdom runs without canvas support

@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { logError } from "../../shell/errorlog";
 
 interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: number) => void }
 interface WorkerMessage {
@@ -39,6 +40,7 @@ export class DocumentWorker {
 			w.addEventListener("error", (ev: ErrorEvent) => {
 				clearTimeout(timer);
 				const msg = ev.message || String(ev);
+				logError("worker", ev.error ?? msg, "document structure worker");
 				console.warn("[structure] document worker failed:", msg);
 				for (const p of this.pending.values()) p.reject(new Error("Document worker unavailable"));
 				this.pending.clear();

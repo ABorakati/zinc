@@ -1,0 +1,130 @@
+name: CI
+
+# Tests, typecheck and the (quick) fuzz suite on every push and pull request.
+# The long fuzz run is fuzz-nightly.yml. How to run the same steps locally: CONTRIBUTING.md.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch / PR cancels the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # core/: the library service. Includes the fuzz suite (core/test/fuzz, ~150 cases per property by default).
+  core:
+    name: core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('core/bun.lock', 'word/sidebar/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      # core/test/fuzz/docfields.fuzz.test.ts imports word/sidebar/src, so the sidebar's packages are installed too.
+      - name: Install core
+        working-directory: core
+        run: bun install --frozen-lockfile
+      - name: Install word/sidebar
+        working-directory: word/sidebar
+        run: bun install --frozen-lockfile
+
+      # core/vendor is git-ignored. The script downloads the commits pinned in its PINS table, so the cache key is the script.
+      - name: Cache vendored Zotero translation code
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: core/vendor/zotero
+          key: zotero-vendor-${{ hashFiles('core/scripts/fetch-zotero-vendor.ts') }}
+      - name: Fetch vendored Zotero translation code
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: bun core/scripts/fetch-zotero-vendor.ts
+
+      # core/src/fulltext/wasm.ts imports core/vendor/fulltext-wasm/fulltext.wasm, which is built in a separate private repo and is
+      # not available here. A zero-byte placeholder lets the module graph resolve; the tests that need the real engine skip
+      # (core/test/needs.ts: HAVE_FULLTEXT_WASM).
+      - name: Placeholder for the fulltext wasm
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          [ -s core/vendor/fulltext-wasm/fulltext.wasm ] || : > core/vendor/fulltext-wasm/fulltext.wasm
+
+      - name: Typecheck (bun check)
+        working-directory: core
+        run: bun check
+
+      # --timeout: a few translator tests copy ~750 files and take longer than bun's 5 s default on a cold Windows runner.
+      - name: Test
+        working-directory: core
+        run: bun test --timeout 30000
+
+  # gpui-ui/ (native app: pure-logic tests only), word/sidebar and word/addin. Windows: the add-in is .NET Framework 4.8 + WinForms.
+  windows-rest:
+    name: gpui-ui, word (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-rest-${{ hashFiles('gpui-ui/bun.lock', 'word/sidebar/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-rest-
+
+      - name: Install gpui-ui
+        working-directory: gpui-ui
+        run: bun install --frozen-lockfile
+      - name: Install word/sidebar
+        working-directory: word/sidebar
+        run: bun install --frozen-lockfile
+
+      # The *.test.ts files under gpui-ui/src are pure logic (they do not open the @gpuix native addon or a window).
+      # The screenshot scripts (gpui-ui/scripts/shot-*.tsx) need a GPU and are not run here.
+      - name: gpui-ui typecheck
+        working-directory: gpui-ui
+        run: bun check
+      - name: gpui-ui test
+        working-directory: gpui-ui
+        run: bun test --timeout 30000
+
+      # The Word end-to-end tests skip themselves when Word is not installed.
+      - name: word/sidebar typecheck
+        working-directory: word/sidebar
+        run: bun check
+      - name: word/sidebar test
+        working-directory: word/sidebar
+        run: bun test
+
+      # Into a temp folder: the project's own OutputPath is word/dist/addin.
+      - name: word/addin build (.NET Framework 4.8)
+        run: dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$RUNNER_TEMP/addin-out"

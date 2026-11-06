@@ -12,11 +12,12 @@
 // ZN_SERVICES=1; ZN_SYNC=0 / ZN_ZPORT=0 turn two of them off.
 //
 // SAFETY: the core WRITES to its database (sync, migrations, WAL). ZN_DB is never defaulted. Point it at a copy
-// (bun:sqlite `VACUUM INTO`); the real library (data/library.sqlite) is refused unless ZN_ALLOW_REAL_DB=1.
+// (bun:sqlite `VACUUM INTO`); the real library (the saved one, see library-location.ts) is refused unless ZN_ALLOW_REAL_DB=1.
 //
 // The core's modules are imported lazily (dynamic import of literal specifiers, which a bundler can follow; `as string` keeps TypeScript out of them): they cost ~400 ms to
 // load, so they must not delay the first frame.
 import type { Database } from "bun:sqlite";
+import { isRealLibrary } from "../../core/src/library-location";
 import { packaged } from "./packaged";
 import { holdRequestsUntil, setBaseUrl, setDirect } from "./api";
 import { onShutdown, portInUse, startServices, servicesWanted } from "./services";
@@ -24,8 +25,6 @@ import { mark } from "./trace";
 import { webMounts } from "./webview/mounts";
 import { setNoteBase, setWebBase } from "./webview/config";
 
-const REAL_LIBRARY = "c:/users/abora/zotero-next/data/library.sqlite";
-const norm = (p: string) => p.replaceAll("\\", "/").toLowerCase();
 
 interface Started { url: string; db: Database; stop(): void }
 
@@ -44,7 +43,8 @@ let core: Promise<Core | null> | undefined;
 export const inProcessDb = (): string | undefined => process.env.ZN_DB || undefined;
 
 async function start(dbPath: string): Promise<Core> {
-	if (norm(dbPath) === REAL_LIBRARY && process.env.ZN_ALLOW_REAL_DB !== "1") {
+	// "the real library": the one saved in %APPDATA%\zotero-next-gpui\library.json, or at the legacy / default location (library-location.ts)
+	if (isRealLibrary(dbPath) && process.env.ZN_ALLOW_REAL_DB !== "1") {
 		throw new Error(`ZN_DB points at the real library (${dbPath}); the core writes to its database. Use a copy, or set ZN_ALLOW_REAL_DB=1.`);
 	}
 	mark("core-start");

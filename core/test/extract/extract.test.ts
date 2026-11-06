@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { openDb } from "../../src/db";
 import { ExtractError, extractFulltext, shutdownExtractPool } from "../../src/extract";
 import { rebuildSearchIndex, search } from "../../src/search";
+import { HAVE_DOCUMENT_WORKER } from "../needs";
 import { insertAttachment, insertItem, tempDir } from "../fixture";
 
 // Smallest useful PDF: one page of Helvetica text, xref offsets computed.
@@ -39,7 +40,7 @@ function setup() {
 
 afterAll(() => shutdownExtractPool());
 
-describe("extractFulltext", () => {
+describe.skipIf(!HAVE_DOCUMENT_WORKER)("extractFulltext", () => {
 	test("extracts PDF text, stores it, and makes the parent item searchable", async () => {
 		const { dir, db } = setup();
 		const pdf = join(dir, "a.pdf");

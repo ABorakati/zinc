@@ -25,6 +25,7 @@ import { handleTranslateApi } from "./translate/api";
 const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi, handleIntegrationsApi, handleTranslateApi, handleBbtApi];
 import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
+import { logError } from "./log";
 import { handleWebSyncApi } from "./websync/api";
 import { indexItem, search } from "./search";
 
@@ -137,6 +138,7 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 		return (await route(req, url, db, parts)) ?? json({ error: "not found" }, 404);
 	} catch (e) {
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
+		logError("core", e, `${req.method} ${url.pathname}`); // the local log (path only: no query string)
 		console.error(e);
 		return json({ error: e instanceof Error ? e.message : "internal error" }, 500);
 	}
@@ -152,7 +154,8 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			if (m === "GET") return json(repo.listCollections(db));
 			if (m === "POST") {
 				const body = await readBody(req);
-				return json(repo.createCollection(db, body?.name, body?.parentKey), 201);
+				if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be an object");
+				return json(repo.createCollection(db, body.name, body.parentKey), 201);
 			}
 			return methodNotAllowed();
 		}
@@ -160,8 +163,9 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			if (m === "PATCH") {
 				const body = await readBody(req);
 				const patch: { name?: string; parentKey?: string | null } = {};
-				if (body && "name" in body) patch.name = body.name;
-				if (body && "parentKey" in body) patch.parentKey = body.parentKey;
+				if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be an object");
+				if ("name" in body) patch.name = body.name;
+				if ("parentKey" in body) patch.parentKey = body.parentKey;
 				return json(repo.updateCollection(db, b, patch));
 			}
 			if (m === "DELETE") {

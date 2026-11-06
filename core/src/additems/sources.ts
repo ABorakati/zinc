@@ -2,6 +2,7 @@
 // Google Books (ISBN). Crossref (DOI) lives in references/add.ts. All network calls go through references/net.ts (mockable).
 import type { Database } from "bun:sqlite";
 import type { ZoteroItemData } from "../api-types";
+import { codePointChar } from "../entity";
 import { crossrefToItem } from "../references/add";
 import { normalizeDoi } from "../references/ids";
 import { NetError, USER_AGENT, getJson, mailtoFor, net, withMailto } from "../references/net";
@@ -37,8 +38,8 @@ export async function getText(url: string, accept = "application/xml, text/xml, 
 
 const decodeEntities = (s: string) =>
 	s
-		.replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
-		.replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+		.replace(/&#x([0-9a-f]+);/gi, (_m, h) => codePointChar(parseInt(h, 16)))
+		.replace(/&#(\d+);/g, (_m, d) => codePointChar(Number(d)))
 		.replace(/&lt;/g, "<")
 		.replace(/&gt;/g, ">")
 		.replace(/&quot;/g, '"')

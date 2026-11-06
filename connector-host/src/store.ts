@@ -4,14 +4,12 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SerializedSession } from "../../core/src/connector/session";
+import { resolveLibrary } from "../../core/src/library-location";
 
-const REPO = "C:/Users/abora/zotero-next";
-
-/** Same order as the app (app/src/bun/index.ts): ZN_DB, else the repo's library, else the app's own data folder. */
+/** Same rule as the apps (core/src/library-location.ts): ZN_DB / ZN_LIBRARY, the saved library path, the legacy <home>/zotero-next/data library, the default one. Read-only: the host never adopts. */
 export function resolveDbPath(env: Record<string, string | undefined> = process.env): string | null {
-	if (env.ZN_DB) return env.ZN_DB;
-	const repoDb = `${REPO}/data/library.sqlite`;
-	if (existsSync(repoDb)) return repoDb;
+	const r = resolveLibrary({ env, adopt: false });
+	if (r.path && (r.exists || r.source === "env")) return r.path;
 	// Electrobun's userData for dev.zotero-next.app on Windows.
 	const local = env.LOCALAPPDATA;
 	if (local) {

@@ -1,0 +1,98 @@
+name: Fuzz (nightly)
+
+# The property-based fuzz suite (core/test/fuzz, fast-check) with 5000 cases per property instead of the default ~150.
+# Seeds are random per run; every failure prints "replay: ZN_FUZZ_SEED=... ZN_FUZZ_PATH=..." and those lines are uploaded.
+on:
+  schedule:
+    - cron: "17 3 * * *" # 03:17 UTC every day
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Cases per property
+        default: "5000"
+      seed:
+        description: Fixed seed (empty = random)
+        default: ""
+
+concurrency:
+  group: fuzz-nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest # cheaper than Windows (1x minutes); the fuzzed code is platform-independent
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('core/bun.lock', 'word/sidebar/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install core
+        working-directory: core
+        run: bun install --frozen-lockfile
+      - name: Install word/sidebar
+        working-directory: word/sidebar
+        run: bun install --frozen-lockfile
+
+      - name: Cache vendored Zotero translation code
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: core/vendor/zotero
+          key: zotero-vendor-${{ hashFiles('core/scripts/fetch-zotero-vendor.ts') }}
+      - name: Fetch vendored Zotero translation code
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: bun core/scripts/fetch-zotero-vendor.ts
+
+      # See ci.yml: placeholder so core/src/fulltext/wasm.ts resolves.
+      - name: Placeholder for the fulltext wasm
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          [ -s core/vendor/fulltext-wasm/fulltext.wasm ] || : > core/vendor/fulltext-wasm/fulltext.wasm
+
+      - name: Fuzz
+        working-directory: core
+        env:
+          ZN_FUZZ_RUNS: ${{ inputs.runs || '5000' }}
+          ZN_FUZZ_SEED: ${{ inputs.seed }}
+        run: |
+          set -o pipefail
+          bun test --timeout 3600000 test/fuzz 2>&1 | tee "$RUNNER_TEMP/fuzz.log"
+
+      # Runs even when the fuzz step failed: the replay lines are the point.
+      - name: Collect failure seeds
+        if: always()
+        run: |
+          mkdir -p fuzz-out
+          cp "$RUNNER_TEMP/fuzz.log" fuzz-out/fuzz.log 2>/dev/null || true
+          { grep -E '^\[fuzz\] FAILED|^ *replay:' fuzz-out/fuzz.log || true; } > fuzz-out/failure-seeds.txt
+          echo "failure seed lines: $(wc -l < fuzz-out/failure-seeds.txt)"
+          cat fuzz-out/failure-seeds.txt
+
+      - name: Upload failure seeds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures-${{ github.run_id }}
+          path: fuzz-out/
+          retention-days: 30
+          if-no-files-found: warn

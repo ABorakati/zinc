@@ -34,7 +34,9 @@ export interface LocateItem {
 	creators?: LocateCreator[];
 }
 
-const text = (v: unknown): string => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
+/** A lone surrogate (it happens in metadata copied from PDFs) makes encodeURI / encodeURIComponent throw a URIError: U+FFFD instead. */
+export const wellFormed = (s: string): string => s.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "�");
+const text = (v: unknown): string => (typeof v === "string" ? wellFormed(v.trim()) : typeof v === "number" ? String(v) : "");
 
 /** Book-format item types (info:ofi/fmt:kev:mtx:book), including chapters and reports; all others use the journal format. */
 const BOOK_TYPES: Record<string, true> = {
@@ -116,14 +118,15 @@ export function hasLookupData(item: LocateItem): boolean {
  */
 export function openUrlParams(item: LocateItem): [string, string][] {
 	const jtitle = text(item.publicationTitle) || text(item.journalAbbreviation) || text(item.proceedingsTitle);
-	const journal = !BOOK_TYPES[item.itemType];
+	// own-property lookups: an item type of "constructor" or "toString" must not find Object.prototype members
+	const journal = !Object.hasOwn(BOOK_TYPES, item.itemType);
 	const out: [string, string][] = [];
 	const put = (k: string, v: string | undefined) => { const s = text(v); if (s) out.push([k, s]); };
 
 	out.push(["url_ver", "Z39.88-2004"]);
 	out.push(["ctx_ver", "Z39.88-2004"]);
 	out.push(["rft_val_fmt", journal ? "info:ofi/fmt:kev:mtx:journal" : "info:ofi/fmt:kev:mtx:book"]);
-	out.push(["rft.genre", GENRE[item.itemType] ?? "document"]);
+	out.push(["rft.genre", Object.hasOwn(GENRE, item.itemType) ? GENRE[item.itemType]! : "document"]);
 
 	// title: article/chapter title in atitle, book title in btitle
 	if (journal) put("rft.atitle", item.title);
@@ -144,7 +147,8 @@ export function openUrlParams(item: LocateItem): [string, string][] {
 	put("rft.issn", item.ISSN);
 	put("rft.isbn", item.ISBN);
 
-	const creator = item.creators?.find((c) => c && (text(c.lastName) || text(c.name))) ?? item.creators?.[0];
+	const creators = Array.isArray(item.creators) ? item.creators.filter((c) => c && typeof c === "object") : [];
+	const creator = creators.find((c) => text(c.lastName) || text(c.name)) ?? creators[0];
 	if (creator) {
 		const last = text(creator.lastName) || text(creator.name);
 		if (last) out.push(["rft.aulast", last]);
@@ -168,6 +172,9 @@ export function buildOpenUrl(item: LocateItem, resolver: string | null | undefin
 	if (!/^https?:\/\/\S+$/i.test(base) || !hasLookupData(item)) return null;
 	const query = new URLSearchParams();
 	for (const [k, v] of openUrlParams(item)) query.append(k, v);
-	const sep = base.includes("?") ? (base.endsWith("?") || base.endsWith("&") ? "" : "&") : "?";
-	return base + sep + query.toString();
+	// the query goes before a #fragment: after it the resolver would never receive it
+	const hash = base.indexOf("#");
+	const head = hash < 0 ? base : base.slice(0, hash);
+	const sep = head.includes("?") ? (head.endsWith("?") || head.endsWith("&") ? "" : "&") : "?";
+	return head + sep + query.toString() + (hash < 0 ? "" : base.slice(hash));
 }

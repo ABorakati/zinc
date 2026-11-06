@@ -5,8 +5,11 @@ import { watchWindowMemory } from "./memory";
 import { applyWindowIcon } from "./windowicon";
 import { installMacMenu } from "./macmenu";
 import { VIEWS_FOLDER } from "electrobun/main/paths";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { resolveLibrary } from "../../../core/src/library-location";
+import { setIntegrationsRepo } from "../../../core/src/integrations/api";
 import { startServer } from "../../../core/src/server";
 import { startZoteroPort } from "../../../core/src/zport";
 import { configureExtractPool } from "../../../core/src/extract";
@@ -23,7 +26,7 @@ const PORT = Number(process.env.ZN_PORT) || 23120; // 23119 is Zotero's own port
 // ZN_ROOT points at the repo instead, to serve fresh builds during development; so does the marker file
 // data/live-dev in the repo, which lets the installed app pick up rebuilt UI/reader code (pages reload
 // themselves when their build folder changes) without reinstalling. Delete the file to go back.
-const REPO = "C:/Users/abora/zotero-next";
+const REPO = process.env.ZN_REPO ?? join(homedir(), "zotero-next").replaceAll("\\", "/");
 const ROOT = process.env.ZN_ROOT ?? (existsSync(`${REPO}/data/live-dev`) ? REPO : undefined);
 const uiDir = ROOT ? `${ROOT}/ui/dist/` : join(VIEWS_FOLDER, "app") + "/";
 const readerDir = ROOT ? `${ROOT}/reader-host/dist/` : join(VIEWS_FOLDER, "reader-host") + "/";
@@ -39,10 +42,13 @@ if (!ROOT) {
 	});
 }
 
-// Library database: ZN_DB, else the library imported into the repo, else the
-// app's own data folder (an empty library).
-const REPO_DB = `${REPO}/data/library.sqlite`;
-const dbPath = process.env.ZN_DB ?? (existsSync(REPO_DB) ? REPO_DB : join(Utils.paths.userData, "library.sqlite"));
+// Library database: the shared rule (core/src/library-location.ts): ZN_DB / ZN_LIBRARY, the library path saved in
+// %APPDATA%\zotero-next-gpui\library.json (the GPUI app and the Word add-in read it too), the legacy <home>\zotero-next\data
+// library (adopted into that setting), this app's own data folder, else a new library at %APPDATA%\zotero-next\library.sqlite.
+const library = resolveLibrary({ alsoLegacy: [join(Utils.paths.userData, "library.sqlite")] });
+const dbPath = library.path ?? library.defaultPath;
+mkdirSync(dirname(dbPath), { recursive: true }); // a new library's folder (openDb creates the file, not the folder)
+if (existsSync(join(REPO, "word", "install.ps1"))) setIntegrationsRepo(REPO); // the Word / connector installers live in the checkout
 
 const core = startServer({
 	dbPath,

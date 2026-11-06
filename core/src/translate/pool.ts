@@ -1,3 +1,5 @@
+import { logError } from "../log";
+
 // Small pool of translation workers. One job at a time per worker; every job has a hard timeout, after which the
 // worker is terminated (translator code cannot be interrupted any other way) and replaced.
 export type JobOp = "web" | "import" | "export";
@@ -46,6 +48,7 @@ function spawn(): Slot {
 			// A stray error from a translator's leftover callbacks is not the current job's failure; the worker's own
 			// handlers swallow those. Anything that still gets here before the worker is ready is fatal for the slot.
 			e.preventDefault?.();
+			logError("translate", e.error ?? e.message, "translation worker", { jobRunning: !!slot.settle });
 			if (!slot.settle) return;
 			const err = new TranslateError("worker", `translation worker error: ${String(e.message ?? "")}`);
 			reject(err);

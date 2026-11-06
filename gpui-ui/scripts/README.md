@@ -27,6 +27,20 @@ bun --hot src/main.tsx                        # hot reload (bun run dev)
 bun check                                     # typecheck (do not use tsc via bunx)
 ```
 
+## Which library the packaged app opens, and the first-run screen
+
+No path in the code names a user. The rule is `core/src/library-location.ts` (also used by the Electrobun app and the browser
+connector host; `word/addin/Settings.cs` mirrors it): `ZN_DB` / `ZN_LIBRARY`, else the library path saved in
+`%APPDATA%\zotero-next-gpui\library.json` (`{"path": "..."}`), else the legacy `<home>\zotero-next\data\library.sqlite` (when it exists it
+is adopted into that file on the first start, so the library keeps opening from there), else `%APPDATA%\zotero-next\library.sqlite`
+when that exists. Nothing found (or the saved file is gone): `startup.firstRun` is set and `main.tsx` shows `src/firstrun/` (Import from
+Zotero with progress, Open an existing library, Start an empty library) before anything opens a database; the choice is saved and
+start-up goes on. Settings > Files and folders > Library location > Change… saves another library file for the next start.
+
+* `ZN_RESOLVE_LIBRARY=1` makes an unpackaged run choose its library like the packaged app. Check the first-run screen without touching
+  your data: `APPDATA=<temp> USERPROFILE=<temp> LOCALAPPDATA=<temp> ZN_RESOLVE_LIBRARY=1 ZN_TRACE=1 bun src/main.tsx` (trace shows `firstrun-shown`).
+* `bun scripts/shot-firstrun.tsx [out-dir] [light|dark]` screenshots the screen against a mock (nothing read or written).
+
 ## Headless screenshots (no window opens)
 
 GPUIX's test renderer (`createTestRoot()` from `@gpuix/solid/testing`, `renderer.captureScreenshot(path)`) renders offscreen.
@@ -124,8 +138,9 @@ The app runs a locally built `@gpuix/native` addon, not the npm 0.11.0 binary. I
 `"content"` for a region sized by its children). Each region is drawn by its own cached GPUI view, so a frame where only the list
 scrolled replays the sidebar, toolbar and item pane instead of rebuilding them (scroll draw p50 ~5.4 -> ~3.3 ms).
 
-* Source: `C:\Users\abora\src\gpuix`, branch `zn-cache` (commit `f5d4383`, on top of the 0.11.0 release `2e31b47`); its `zed`
-  submodule is on a local branch `zn-cache` (commit `17be001`). Neither is pushed.
+* Source: private repo https://github.com/ABorakati/gpuix, branch `zn-cache` (local checkout `C:\Users\abora\src\gpuix`; on top
+  of the 0.11.0 release `2e31b47`). Its `zed` submodule's two commits (`zn-cache`, `17be001`) are kept as patch files in
+  `patches/zed/` on base `f77e5cf` of https://github.com/remorses/zed; `patches/zed/README.md` says how to re-apply them.
 * Build: in `packages/native`, `bun run build` (napi release build with `test-support`).
 * Install: copy `packages/native/gpuix-native.win32-x64-msvc.node` over
   `node_modules/@gpuix/native-win32-x64-msvc/gpuix-native.win32-x64-msvc.node` (the npm original is kept beside it as `.orig`).

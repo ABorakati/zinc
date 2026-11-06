@@ -1,15 +1,20 @@
 // Defaults for the packaged app (out/package, built by scripts/package.ts): when running as the compiled zotero-next-gpui.exe,
 // look for the runtime files next to the exe, and open the library. The packaged app is standalone, it does not need the Electrobun
-// zotero-next: it ALWAYS runs the core inside this process on the library database zotero-next uses (ZN_LIBRARY, default
-// C:/Users/abora/zotero-next/data/library.sqlite), after making ONE backup copy of it the first time (VACUUM INTO, next to the
-// database: library.backup-gpui-<date>.sqlite), and runs the same services as zotero-next's main process (src/services.ts: HTTP API
+// zotero-next: it ALWAYS runs the core inside this process on the library database chosen by core/src/library-location.ts
+// (ZN_DB / ZN_LIBRARY, else the library path saved in %APPDATA%\zotero-next-gpui\library.json, else the legacy
+// <home>\zotero-next\data\library.sqlite, which is then adopted into that setting, else %APPDATA%\zotero-next\library.sqlite),
+// after making ONE backup copy of it the first time (VACUUM INTO, next to the database: library.backup-gpui-<date>.sqlite), and runs the same services as zotero-next's main process (src/services.ts: HTTP API
 // on 23120, Zotero port 23119, Zotero sync, PDF extraction). If 23120 is already taken (zotero-next is running) the core takes another
 // port and leaves sync and the Zotero port to the app that has them.
 // Imported first by main.tsx (top-level await), before any module reads these variables. Explicit environment variables win:
 // ZN_DB (another database, in-process), ZN_URL (an external core, nothing in-process).
+// When no library is configured or found, startup.firstRun is set instead and main.tsx shows the first-run screen (src/firstrun/),
+// which saves the choice and continues the start-up. ZN_RESOLVE_LIBRARY=1 does the library part for an unpackaged run too (tests with
+// a temporary APPDATA).
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { resolveLibrary } from "../../core/src/library-location";
 import { mark } from "./trace";
 
 mark("boot");
@@ -18,12 +23,20 @@ const exe = process.execPath;
 export const packaged = /^zotero-next-gpui.*\.exe$/i.test(basename(exe));
 
 /** What packaged start-up decided, for the UI (e.g. the "no library" message). */
-export const startup: { library: "external" | "in-process" | "none"; url?: string; db?: string; backup?: string; error?: string } = { library: "none" };
-
-const DEFAULT_LIBRARY = "C:\\Users\\abora\\zotero-next\\data\\library.sqlite";
+export const startup: {
+	library: "external" | "in-process" | "none"; url?: string; db?: string; backup?: string; error?: string;
+	/** No usable library: the first-run screen must run before anything opens a database. */
+	firstRun?: boolean;
+	/** Where a new library goes by default (set with firstRun). */
+	defaultPath?: string;
+	/** How the library was chosen (env / setting / legacy / default / none). */
+	source?: string;
+	/** The legacy library was adopted into the saved setting by this start. */
+	adopted?: boolean;
+} = { library: "none" };
 
 /** One backup before this app first writes to the library: skipped when a library.backup-gpui-* file already exists. */
-function backupOnce(db: string): string | undefined {
+export function backupOnce(db: string): string | undefined {
 	const dir = dirname(db);
 	const existing = readdirSync(dir).find((f) => /^library\.backup-gpui-.*\.sqlite$/i.test(f));
 	if (existing) return join(dir, existing);
@@ -37,6 +50,9 @@ function backupOnce(db: string): string | undefined {
 	}
 	return out;
 }
+
+/** The packaged app, or an unpackaged run asked to choose its library like one (ZN_RESOLVE_LIBRARY=1). */
+const chooseLibrary = packaged || process.env.ZN_RESOLVE_LIBRARY === "1";
 
 if (packaged) {
 	const dir = dirname(exe);
@@ -52,15 +68,23 @@ if (packaged) {
 	// the web reader (snapshots, EPUBs) and note editor pages the in-process core serves at /reader-host/ and /note-host/ (src/webview/mounts.ts)
 	if (existsSync(join(dir, "reader-host", "dist", "index.html"))) set("ZN_READER_HOST", join(dir, "reader-host", "dist"));
 	if (existsSync(join(dir, "note-host", "dist", "editor.html"))) set("ZN_NOTE_HOST", join(dir, "note-host", "dist"));
+}
 
+if (chooseLibrary) {
+	const dir = dirname(exe);
 	if (process.env.ZN_DB) startup.library = "in-process";
 	else if (process.env.ZN_URL) Object.assign(startup, { library: "external", url: process.env.ZN_URL });
 	else {
-		const db = process.env.ZN_LIBRARY || DEFAULT_LIBRARY;
-		if (!existsSync(db)) {
-			Object.assign(startup, { library: "none", error: `no library was found at ${db}` });
-			process.env.ZN_URL = "http://127.0.0.1:23120";
+		const loc = resolveLibrary(); // ZN_LIBRARY, the saved path, the legacy library (adopted here, once), the default location
+		Object.assign(startup, { source: loc.source, adopted: loc.adopted });
+		if (!loc.path || !loc.exists) {
+			// nothing configured, or the configured file is gone (moved drive, deleted): ask the user, never create over a path they chose
+			Object.assign(startup, {
+				library: "none", firstRun: true, defaultPath: loc.defaultPath,
+				error: loc.path ? `no library was found at ${loc.path}` : undefined,
+			});
 		} else {
+			const db = loc.path;
 			try {
 				const backup = backupOnce(db);
 				process.env.ZN_DB = db;

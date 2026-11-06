@@ -24,10 +24,11 @@ import { type DecideInput, decide, LoginController } from "../../src/fulltext/lo
 import type { Command, CompletionMsg, Effect, LoginOk, LoginReq, LoginState, StepIn, StepOut } from "../../src/fulltext/proto";
 import { disposeFulltextService, fulltextService } from "../../src/fulltext/service";
 import { WasmHost } from "../../src/fulltext/wasm";
+import { HAVE_FULLTEXT_WASM } from "../needs";
 
 let wasm: WasmHost;
 beforeAll(async () => {
-	wasm = await WasmHost.load();
+	if (HAVE_FULLTEXT_WASM) wasm = await WasmHost.load();
 });
 afterEach(() => setBrowserBridge(null));
 
@@ -177,7 +178,7 @@ const signal = () => new AbortController().signal;
 
 // ---------------------------------------------------------------- decide (pure table)
 
-describe("decide", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("decide", () => {
 	const base: DecideInput = { state: { state: "pending" }, elapsedMs: 0, timeoutMs: 60000, extended: false, windowClosed: false, userAction: null, pdfCaptured: false };
 	const d = (o: Partial<DecideInput>) => decide({ ...base, ...o });
 	test("priority: pdf > closed/skip > handoff > refused > landed > timeout", () => {
@@ -205,7 +206,7 @@ describe("decide", () => {
 
 // ---------------------------------------------------------------- controller
 
-describe("LoginController", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("LoginController", () => {
 	test("landed after N polls: page staged, inspected, window parked", async () => {
 		const bridge = new FakeBridge();
 		bridge.scripts.push(landAfter(4));
@@ -482,7 +483,7 @@ function runner(eng: WasmHost, bridge: BrowserBridge | null, http = new HttpClie
 
 const kick: Command[] = [{ type: "dump_state" }];
 
-describe("Runner: login_window / browser_load / cookies", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: login_window / browser_load / cookies", () => {
 	test("login_window with a bridge drives the window and answers LoginOk", async () => {
 		const bridge = new FakeBridge();
 		bridge.scripts.push(landAfter(2));
@@ -612,7 +613,7 @@ describe("Runner: login_window / browser_load / cookies", () => {
 	});
 });
 
-describe("Runner: institutional fetches after a sign-in go through the browser", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: institutional fetches after a sign-in go through the browser", () => {
 	const httpEff = (op: number, route: "oa" | "inst", url: string, expect: string, retain: "none" | "page" | "pdf", method: "get" | "post" = "get"): Effect => ({
 		type: "http",
 		op,
@@ -812,7 +813,7 @@ describe("institutions and settings", () => {
 	});
 });
 
-describe("Find Full Text API: settings, institutions, sign-in", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions, sign-in", () => {
 	const dbs: ReturnType<typeof openDb>[] = [];
 	afterAll(async () => {
 		for (const db of dbs) {

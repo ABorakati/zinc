@@ -14,6 +14,7 @@ import { SettingsPage } from "./settings";
 import { getCols, leftOpen, panelKey, setCols, SETTINGS_TAB, settingsOpen } from "./shell/layout";
 import { HIDDEN } from "./shell/kit";
 import { setWindowTitle } from "./shell/native";
+import { logBoundary } from "./shell/errorlog";
 import { store } from "./store";
 import { textStyle, tokens, tw } from "./theme";
 import { SortBar, Toolbar } from "./Toolbar";
@@ -45,7 +46,7 @@ function ItemPaneEmpty() {
 
 /** The item pane (src/itempane); the placeholder shows if it throws while rendering. */
 function ItemPaneSlot(): JSX.Element {
-	return <ErrorBoundary fallback={() => <ItemPaneEmpty />}><ItemPane /></ErrorBoundary>;
+	return <ErrorBoundary fallback={(err) => { logBoundary("item pane", err); return <ItemPaneEmpty />; }}><ItemPane /></ErrorBoundary>;
 }
 
 /**
@@ -56,12 +57,15 @@ function ReaderTabView(p: { tab: ReaderTab | WebTab }): JSX.Element {
 	const active = () => store.activeTab() === p.tab.id;
 	return (
 		<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["canvas"], ...(active() ? {} : HIDDEN) }}>
-			<ErrorBoundary fallback={(err) => (
-				<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
-					<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>{`Could not open "${p.tab.title}"`}</text>
-					<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
-				</div>
-			)}>
+			<ErrorBoundary fallback={(err) => {
+				logBoundary(isWebTab(p.tab) ? "web tab" : "reader", err, isWebTab(p.tab) ? "ui" : "reader"); // not the title: it is the user's content
+				return (
+					<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
+						<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>{`Could not open "${p.tab.title}"`}</text>
+						<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
+					</div>
+				);
+			}}>
 				<Show when={isWebTab(p.tab)} fallback={<Reader attachmentKey={p.tab.id} title={p.tab.title} active={active()} />}><WebTabView tab={p.tab as WebTab} /></Show>
 			</ErrorBoundary>
 		</div>
@@ -73,12 +77,15 @@ function SettingsTabView(): JSX.Element {
 	const active = () => store.activeTab() === SETTINGS_TAB;
 	return (
 		<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["background"], ...(active() ? {} : HIDDEN) }}>
-			<ErrorBoundary fallback={(err) => (
-				<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
-					<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>Settings could not be shown</text>
-					<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
-				</div>
-			)}>
+			<ErrorBoundary fallback={(err) => {
+				logBoundary("settings", err);
+				return (
+					<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
+						<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>Settings could not be shown</text>
+						<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
+					</div>
+				);
+			}}>
 				<SettingsPage active={active()} />
 			</ErrorBoundary>
 		</div>

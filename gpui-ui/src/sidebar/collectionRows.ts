@@ -79,7 +79,8 @@ export function buildRows(i: RowInput): Row[] {
 
 	// Pinned: any level, in pin order, as plain rows (their children are not repeated under the copy).
 	const all = flatten(i.collections);
-	const pinned = i.pins.map((k) => all.get(k)).filter((c): c is Collection => !!c);
+	// a repeated key would draw the same pinned row (and row id) twice
+	const pinned = [...new Set(i.pins)].map((k) => all.get(k)).filter((c): c is Collection => !!c);
 	if (pinned.length) {
 		const collapsed = i.collapsed.has("pinned");
 		out.push({ kind: "header", id: "pinned", label: "Pinned", count: pinned.length, collapsed });
@@ -108,9 +109,11 @@ export function buildRows(i: RowInput): Row[] {
 		for (const p of PALETTE) group(`col:${p.id}`, p.name, roots.filter((c) => colourOf(c) === p.id), { color: p.id });
 		group("col-none", "No colour", roots.filter((c) => !colourOf(c)));
 	} else {
-		const sectionOf = (c: Collection) => (i.sections.includes(i.styles[c.key]?.section ?? "") ? i.styles[c.key]!.section! : "");
+		// "" is the default group, not a section (it would list every unsectioned collection twice); repeated names would repeat the group
+		const sections = [...new Set(i.sections.filter((s) => s !== ""))];
+		const sectionOf = (c: Collection) => (sections.includes(i.styles[c.key]?.section ?? "") ? i.styles[c.key]!.section! : "");
 		// a user-made section shows even when empty (otherwise a new one could not be seen); the default group only when used
-		for (const s of i.sections) group(`sec:${s}`, s, roots.filter((c) => sectionOf(c) === s), { section: s }, true);
+		for (const s of sections) group(`sec:${s}`, s, roots.filter((c) => sectionOf(c) === s), { section: s }, true);
 		group("sec-default", "Collections", roots.filter((c) => !sectionOf(c)));
 	}
 	return out;

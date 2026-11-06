@@ -25,6 +25,9 @@ export class FormulaError extends Error {
 	}
 }
 
+const MAX_LENGTH = 2000;
+const MAX_DEPTH = 64;
+
 class Skip extends Error {}
 const skip = (): never => {
 	throw new Skip("skip");
@@ -183,10 +186,23 @@ class Parser {
 			if (after.k !== "end") throw new FormulaError(`unexpected "${after.v}"`, after.at);
 			break;
 		}
-		if (!alts.length) throw new FormulaError("the formula is empty");
+		if (!alts.length) throw new FormulaError("the formula is empty", 0);
 		return alts;
 	}
+	private depth = 0;
+	/** Nesting guard: parentheses, ?: chains and array arguments recurse, and a deep one must not overflow the stack. */
+	private nested<T>(f: () => T): T {
+		if (++this.depth > MAX_DEPTH) throw new FormulaError("the formula is nested too deeply", this.cur.at);
+		try {
+			return f();
+		} finally {
+			this.depth--;
+		}
+	}
 	expression(): Node {
+		return this.nested(() => this.expressionInner());
+	}
+	private expressionInner(): Node {
 		const test = this.orExpr();
 		if (this.isP("?")) {
 			this.i++;
@@ -289,6 +305,9 @@ class Parser {
 		return out;
 	}
 	private argValue(): ArgVal {
+		return this.nested(() => this.argValueInner());
+	}
+	private argValueInner(): ArgVal {
 		const t = this.cur;
 		if (t.k === "num" || t.k === "str" || t.k === "re") {
 			this.i++;
@@ -333,6 +352,8 @@ class Parser {
 
 /** Parse a formula; throws FormulaError (with the character position) when it is not valid. */
 export function compile(source: string): Compiled {
+	// the parser and evaluator recurse over the tree: bound its size so no input can overflow the stack
+	if (source.length > MAX_LENGTH) throw new FormulaError(`the formula is too long (${MAX_LENGTH} characters at most)`, MAX_LENGTH);
 	const alternatives = new Parser(tokenize(source)).formulas();
 	validate(alternatives);
 	return { source, alternatives };
@@ -454,12 +475,16 @@ export class Ctx {
 		this.itemType = String(data.itemType);
 		this.primary = getSchema().itemTypes.find((t) => t.itemType === this.itemType)?.creatorTypes.find((c) => c.primary)?.creatorType ?? "author";
 		this.extra = parseExtra(typeof data.extra === "string" ? data.extra : "");
-		this.creators = ((data.creators ?? []) as Creator[]).map((c) => ({
-			creatorType: c.creatorType,
-			lastName: stripHtml((c.lastName ?? c.name ?? "").replace(/^"(.*)"$/, "$1")).trim(),
-			firstName: stripHtml(c.firstName ?? "").trim(),
-			name: stripHtml(c.name ?? "").trim(),
-		}));
+		// item JSON comes from sync and imports: creators may be missing, not an array, or hold non-string values
+		const text = (v: unknown): string => (typeof v === "string" ? v : "");
+		this.creators = (Array.isArray(data.creators) ? (data.creators as unknown[]) : [])
+			.filter((c): c is Creator => typeof c === "object" && c !== null)
+			.map((c) => ({
+				creatorType: text(c.creatorType),
+				lastName: stripHtml(text(c.lastName ?? c.name).replace(/^"(.*)"$/, "$1")).trim(),
+				firstName: stripHtml(text(c.firstName)).trim(),
+				name: stripHtml(text(c.name)).trim(),
+			}));
 		this.date = parseDate(String(data.date ?? ""), this.extra.kv.originaldate ?? "");
 		this.title = stripHtml(String(data.title ?? ""));
 		this.nameTransliterate = cfg.fold;
@@ -1003,7 +1028,9 @@ export function generate(f: Compiled, data: ZoteroItemData, cfg: FormulaConfig):
 		try {
 			text = evalNode(f.alternatives[i]!, ctx);
 		} catch (e) {
-			if (!(e instanceof Skip)) throw e;
+			if (e instanceof FormulaError) throw e;
+			// a function given an argument of the wrong kind (a regex where a list is expected, ...) is a formula error, not a crash
+			if (!(e instanceof Skip)) throw new FormulaError(`the formula could not be evaluated: ${e instanceof Error ? e.message : String(e)}`);
 			text = "";
 		}
 		if (text.replace(MARK, "").trim()) break;

@@ -73,7 +73,8 @@ function attachmentPath(dataDir: string, key: string, data: ZoteroJson, existing
 	if (linkMode === "linked_file") return ABS_PATH.test(raw) ? raw : existing;
 	let filename = typeof data.filename === "string" ? data.filename : "";
 	if (!filename && raw.startsWith("storage:")) filename = raw.slice("storage:".length);
-	if (filename) {
+	// the name comes from the server: a path separator or ".." would point outside storage/<key>/
+	if (filename && filename !== "." && filename !== ".." && !/[\\/\0]/.test(filename)) {
 		const candidate = join(dataDir, "storage", key, filename);
 		if (existsSync(candidate)) return candidate;
 	}
@@ -88,6 +89,39 @@ interface Ctx {
 	unindex: number[]; // search rowids of removed top-level items
 	batchItems: Set<string>;
 	batchCollections: Set<string>;
+	/** parentItem of each item in this batch (null = top level) */
+	batchParent: Map<string, string | null>;
+}
+
+/** Keys come from the server and end up in file paths and SQL parameters: Zotero keys are 8 letters/digits, allow a little more. */
+const SAFE_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+const validKey = (k: unknown): k is string => typeof k === "string" && SAFE_KEY.test(k);
+
+/** One bad object (wrong types, an unexpected shape) is skipped on its own savepoint; it must not abort the whole pull. */
+function safely(c: Ctx, f: () => void): void {
+	try {
+		c.db.transaction(f)();
+	} catch {
+		c.report.skipped++;
+	}
+}
+
+/** Break parent loops among the collections of this batch: the collection that closes a loop becomes top level. */
+function breakCollectionLoops(c: Ctx): void {
+	const db = c.db;
+	db.run("UPDATE collections SET parent_key = NULL WHERE parent_key IS NOT NULL AND parent_key NOT IN (SELECT key FROM collections)");
+	for (const start of c.batchCollections) {
+		const seen = new Set<string>();
+		let cur: string | null = start;
+		while (cur) {
+			if (seen.has(cur)) {
+				db.query("UPDATE collections SET parent_key = NULL WHERE key = ?").run(start);
+				break;
+			}
+			seen.add(cur);
+			cur = (db.query("SELECT parent_key FROM collections WHERE key = ?").get(cur) as { parent_key: string | null } | null)?.parent_key ?? null;
+		}
+	}
 }
 
 function setBase(db: Database, type: string, key: string, dm: string): void {
@@ -213,6 +247,18 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 		c.report.skipped++; // parent unknown here (e.g. in a group library)
 		return;
 	}
+	// children hang off top-level items only: not off themselves, and not off another child (that also rules out loops)
+	if (parent) {
+		const parentsParent = c.batchParent.has(parent)
+			? c.batchParent.get(parent)
+			: (db.query("SELECT parent_key FROM items WHERE key = ?").get(parent) as { parent_key: string | null } | null)?.parent_key;
+		// an item that already has children cannot become a child itself (their parent would be a child)
+		const hasChildren = !!db.query("SELECT 1 FROM items WHERE parent_key = ? LIMIT 1").get(key);
+		if (parent === key || parentsParent || hasChildren) {
+			c.report.skipped++;
+			return;
+		}
+	}
 	const modified = (typeof data.dateModified === "string" && data.dateModified) || dm || nowIso();
 	const remoteMs = ms(dm || modified);
 	const existing = db.query("SELECT date_modified, version FROM items WHERE key = ?").get(key) as {
@@ -239,7 +285,8 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	for (const [f, v] of Object.entries(itemData)) if (v === "" && f !== "title" && f !== "itemType") delete itemData[f];
 	if (parent) itemData.parentItem = parent;
 	else delete itemData.parentItem;
-	const itemType = String(itemData.itemType ?? "document");
+	const itemType = typeof itemData.itemType === "string" && itemData.itemType ? itemData.itemType : "document";
+	itemData.itemType = itemType;
 	const cols = deriveColumns(itemData as unknown as ZoteroItemData);
 	const deleted = itemData.deleted ? 1 : 0;
 	const added = (typeof data.dateAdded === "string" && data.dateAdded) || nowIso();
@@ -355,8 +402,14 @@ function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 	}
 }
 
-export function applyChanges(db: Database, ch: RemoteChanges, dataDir: string): ApplyReport {
+export function applyChanges(db: Database, changes: RemoteChanges, dataDir: string): ApplyReport {
 	const report: ApplyReport = { applied: 0, skipped: 0, conflicts: 0, deleted: 0 };
+	// objects with a key that is not a plain key never touch the database (the key becomes a folder name for attachments)
+	const ch: RemoteChanges = {
+		upserts: changes.upserts.filter((u) => validKey(u.key) && u.data !== null && typeof u.data === "object"),
+		deletes: changes.deletes.filter((d) => validKey(d.key)),
+	};
+	report.skipped += changes.upserts.length - ch.upserts.length;
 	const c: Ctx = {
 		db,
 		dataDir,
@@ -365,17 +418,25 @@ export function applyChanges(db: Database, ch: RemoteChanges, dataDir: string): 
 		unindex: [],
 		batchItems: new Set(ch.upserts.filter((u) => u.type === "item").map((u) => u.key)),
 		batchCollections: new Set(ch.upserts.filter((u) => u.type === "collection").map((u) => u.key)),
+		batchParent: new Map(ch.upserts.filter((u) => u.type === "item").map((u) => [u.key, typeof u.data.parentItem === "string" && u.data.parentItem ? u.data.parentItem : null])),
 	};
 	db.transaction(() => {
 		db.run("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
 		db.run("PRAGMA defer_foreign_keys = ON");
 		try {
-			for (const u of ch.upserts) if (u.type === "collection") upsertCollection(c, u.key, u.data, u.dateModified);
-			for (const u of ch.upserts) if (u.type === "item") upsertItem(c, u.key, u.data, u.dateModified);
-			for (const u of ch.upserts) if (u.type === "annotation") upsertAnnotation(c, u.key, u.data, u.dateModified);
-			for (const d of ch.deletes) if (d.type === "annotation") deleteRemote(c, d.type, d.key);
-			for (const d of ch.deletes) if (d.type === "item") deleteRemote(c, d.type, d.key);
-			for (const d of ch.deletes) if (d.type === "collection") deleteRemote(c, d.type, d.key);
+			for (const u of ch.upserts) if (u.type === "collection") safely(c, () => upsertCollection(c, u.key, u.data, u.dateModified));
+			breakCollectionLoops(c);
+			for (const u of ch.upserts) if (u.type === "item") safely(c, () => upsertItem(c, u.key, u.data, u.dateModified));
+			// a child whose parent was skipped above must not stay behind with a dangling parent
+			db.run("DELETE FROM items WHERE parent_key IS NOT NULL AND parent_key NOT IN (SELECT key FROM items)");
+			// ... and none may end up under another child (a parent that kept its local state because of a conflict, ...)
+			db.query(
+				"DELETE FROM items WHERE key IN (SELECT value FROM json_each(?)) AND parent_key IN (SELECT key FROM items WHERE parent_key IS NOT NULL)",
+			).run(JSON.stringify([...c.batchItems]));
+			for (const u of ch.upserts) if (u.type === "annotation") safely(c, () => upsertAnnotation(c, u.key, u.data, u.dateModified));
+			for (const d of ch.deletes) if (d.type === "annotation") safely(c, () => deleteRemote(c, d.type, d.key));
+			for (const d of ch.deletes) if (d.type === "item") safely(c, () => deleteRemote(c, d.type, d.key));
+			for (const d of ch.deletes) if (d.type === "collection") safely(c, () => deleteRemote(c, d.type, d.key));
 		} finally {
 			db.run("DELETE FROM sync_flags WHERE name = 'suppress'");
 		}
@@ -383,7 +444,13 @@ export function applyChanges(db: Database, ch: RemoteChanges, dataDir: string): 
 	if (c.unindex.length || c.reindex.size) {
 		db.transaction(() => {
 			for (const r of c.unindex) db.query("DELETE FROM search WHERE rowid = ?").run(r);
-			for (const k of c.reindex) indexItem(db, k);
+			for (const k of c.reindex) {
+				try {
+					indexItem(db, k);
+				} catch {
+					// the item is stored; a search row that cannot be built must not fail the whole pull
+				}
+			}
 		})();
 	}
 	return report;

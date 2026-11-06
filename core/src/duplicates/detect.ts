@@ -8,6 +8,7 @@
 
 import type { Database } from "bun:sqlite";
 import type { Creator } from "../api-types";
+import { codePointChar } from "../entity";
 import schemaSql from "./schema.sql" with { type: "text" };
 
 export type DuplicateReason = "doi" | "isbn" | "title";
@@ -62,7 +63,7 @@ export function normalizeTitle(raw: unknown): string {
 		.replace(/&lt;/gi, "<")
 		.replace(/&gt;/gi, ">")
 		.replace(/&quot;/gi, '"')
-		.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
+		.replace(/&#(\d+);/g, (_, n) => codePointChar(Number(n)));
 	const lower = stripDiacritics(noHtml.toLowerCase());
 	return lower
 		.replace(/['’\u2018\u2019]/g, "")

@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
+import { logError } from "../log";
 import { applyChanges } from "./apply";
 import { buildPush, completePush, pendingCount } from "./build";
 import { type SyncStatus, type ZoteroReader, ZoteroLockedError, type ZoteroWriter } from "./protocol";
@@ -134,6 +135,7 @@ export class SyncService {
 				this.setState("pull_error", null);
 				if (report.applied + report.deleted > 0) this.changeCount++;
 			} catch (e) {
+				logError("sync", e, "pull");
 				this.setState("pull_error", errMsg(e));
 			}
 		});
@@ -162,9 +164,11 @@ export class SyncService {
 				if (done.failed.length > 0) {
 					const f = done.failed[0];
 					this.setState("push_error", `${done.failed.length} change(s) not written; ${f.key}: ${f.error}`);
+					logError("sync", f.error, `push: ${done.failed.length} change(s) not written`, { key: f.key });
 				} else this.setState("push_error", null);
 			} catch (e) {
 				if (e instanceof ZoteroLockedError) return; // Zotero started meanwhile: entries stay queued
+				logError("sync", e, "push (sync paused)");
 				this.setState("push_error", errMsg(e));
 				this.setState("paused", "1");
 			}

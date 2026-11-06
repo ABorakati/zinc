@@ -7,11 +7,12 @@ import { register as fulltext } from "./fulltext/register";
 import { register as io } from "./io/register";
 import { register as maintenance } from "./maintenance/register";
 import { register as references } from "./references/register";
+import { register as report } from "./report/register";
 import { register as storage } from "./storage/register";
 import { register as translate } from "./translate/register";
 
 export function register(): void {
-	for (const f of [cite, additems, duplicates, io, maintenance, fulltext, references, storage, translate, bbt]) f();
+	for (const f of [cite, additems, duplicates, io, maintenance, fulltext, references, storage, translate, bbt, report]) f();
 }
 
 export { ReferencesPanel, openReferences } from "./references/register";

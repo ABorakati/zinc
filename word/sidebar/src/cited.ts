@@ -53,5 +53,6 @@ export function noteChips(v: Pick<CitedItemView, "locator" | "prefix" | "suffix"
 
 /** Height to ask the host for: the content height, rounded up, capped (the page scrolls inside beyond the cap). */
 export function popupHeight(contentHeight: number, cap = 520, min = 80): number {
+	if (Number.isNaN(contentHeight)) return min; // a layout that reports NaN must not send NaN to the host
 	return Math.max(min, Math.min(cap, Math.ceil(contentHeight)));
 }

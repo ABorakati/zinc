@@ -24,6 +24,7 @@ import {
 	toIso,
 } from "../zotero-db/mapping";
 import { venueOf } from "../venue";
+import bundledSchema from "../../schema.sql" with { type: "text" };
 import {
 	buildFileIndex,
 	defaultSearchRoots,
@@ -42,7 +43,8 @@ export interface ImportProgress {
 export interface ImportOptions {
 	zoteroDir: string; // Zotero data directory (contains zotero.sqlite and storage/)
 	targetDbPath: string;
-	schemaPath: string;
+	/** core/schema.sql on disk; default: the copy bundled into the program (a packaged app has no schema.sql file). */
+	schemaPath?: string;
 	replace?: boolean; // replace an existing target DB
 	baseAttachmentPath?: string; // override; default read from the Zotero profile prefs.js
 	// Extra places to look for files missing from their canonical location (by filename / title).
@@ -158,6 +160,8 @@ type Row = Record<string, any>;
 export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 	const started = Date.now();
 	const progress = (p: ImportProgress) => opts.onProgress?.(p);
+	// the work is synchronous SQLite; a caller that draws progress (the first-run screen) needs the thread back now and then
+	const yieldThread = () => new Promise<void>((r) => setTimeout(r, 0));
 	const zoteroDir = resolve(opts.zoteroDir);
 	const target = resolve(opts.targetDbPath);
 	const storageDir = join(zoteroDir, "storage");
@@ -187,6 +191,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 	let failed = false;
 	try {
 		progress({ phase: "snapshot", message: "snapshotting zotero.sqlite" });
+			await yieldThread();
 		const snap = snapshot(zoteroDir, workDir);
 		src = new Database(snap.path);
 		progress({ phase: "snapshot", message: `snapshot via ${snap.method}` });
@@ -225,6 +230,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 
 		// items
 		progress({ phase: "read", message: "reading items" });
+		await yieldThread();
 		const trashed = new Set(
 			(src.query("SELECT itemID FROM deletedItems").all() as Row[]).map((r) => r.itemID as number),
 		);
@@ -355,8 +361,9 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 
 		// build target
 		progress({ phase: "write", message: "creating target database" });
+		await yieldThread();
 		out = new Database(target, { create: true });
-		out.exec(readFileSync(opts.schemaPath, "utf8"));
+		out.exec(opts.schemaPath ? readFileSync(opts.schemaPath, "utf8") : bundledSchema);
 		out.exec("PRAGMA synchronous = OFF");
 		out.exec("BEGIN");
 		out.exec("PRAGMA defer_foreign_keys = ON");
@@ -439,7 +446,10 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		let done = 0;
 		for (const it of items.values()) {
 			done++;
-			if (done % 2000 === 0) progress({ phase: "items", done, total });
+			if (done % 500 === 0) {
+					progress({ phase: "items", done, total });
+					await yieldThread();
+				}
 			const f = fields.get(it.itemID) ?? {};
 			const n = notes.get(it.itemID);
 			const a = atts.get(it.itemID);
@@ -582,6 +592,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 
 		// fulltext caches
 		progress({ phase: "fulltext", total: attachmentKeys.length });
+		await yieldThread();
 		const nowIso = new Date().toISOString();
 		for (const key of attachmentKeys) {
 			if (!storageDirs.has(key)) continue;

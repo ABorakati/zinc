@@ -4,7 +4,9 @@
 import { createRoot, createSignal, For, Show, type JSX } from "solid-js";
 import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { bytes, call, errMsg, plural } from "../../shell/net";
-import { canPickFolder, pickFolder, revealInFolder } from "../../shell/native";
+import { canPickFile, canPickFolder, pickFile, pickFolder, revealInFolder } from "../../shell/native";
+import { readLibrarySetting, saveLibrarySetting } from "../../../../core/src/library-location";
+import { inspectLibraryFile } from "../../firstrun/libraryFile";
 import { toast } from "../../ui";
 import { refreshStorage, setStorage as publishStorage, type StorageInfo } from "../../features/storage/state";
 import { Btn, Segmented, TextField, Toggle, Value } from "../controls";
@@ -97,16 +99,45 @@ export async function pick(then: (path: string) => unknown): Promise<void> {
 
 // ---------------------------------------------------------------- library database (read-only)
 
+const samePath = (a: string, b: string) => a.replaceAll("\\", "/").toLowerCase() === b.replaceAll("\\", "/").toLowerCase();
+/** The library path saved for the next start (%APPDATA%\zotero-next-gpui\library.json); null when none was saved yet. */
+const [savedLibrary, setSavedLibrary] = createSignal<string | null>(readLibrarySetting());
+onSettingsShown(() => setSavedLibrary(readLibrarySetting()));
+
+/** "Change…": pick another zotero-next library file; it is saved and opens at the next start (the open library is left alone). */
+async function changeLibrary(current: string | null) {
+	if (!canPickFile()) { toast("No file dialog here", { kind: "info", description: "Set the library path in %APPDATA%\\zotero-next-gpui\\library.json instead." }); return; }
+	try {
+		const path = await pickFile("Choose a zotero-next library file (library.sqlite)");
+		if (!path) return;
+		if (current && samePath(path, current) && !savedLibrary()) { toast("Already using that library", { kind: "info" }); return; }
+		const info = inspectLibraryFile(path);
+		if (info.kind !== "zotero-next") { toast("That is not a zotero-next library", { kind: "error", description: info.problem }); return; }
+		saveLibrarySetting(path);
+		setSavedLibrary(path);
+		toast("Library location changed", { kind: "success", description: "zotero-next opens it the next time it starts. The library that is open now is not changed or deleted." });
+	} catch (e) { fail("Could not change the library", e); }
+}
+
 function LibraryControl(): JSX.Element {
 	return (
 		<Show when={files.view()} fallback={gone()}>
-			{(v) => (
-				<div style={{ ...t("flex flex-col items-end gap-1"), maxWidth: 420 }}>
-					<PathText>{v().library.dbPath ?? "In memory"}</PathText>
-					<Show when={v().library.sizeBytes}><Value>{bytes(v().library.sizeBytes)}</Value></Show>
-					<Btn disabled={!v().library.dbPath} onClick={() => revealInFolder(v().library.dbPath!)}>Show in folder</Btn>
-				</div>
-			)}
+			{(v) => {
+				const forced = () => process.env.ZN_DB || process.env.ZN_LIBRARY;
+				const pending = () => { const s = savedLibrary(); return s && v().library.dbPath && !samePath(s, v().library.dbPath!) ? s : null; };
+				return (
+					<div style={{ ...t("flex flex-col items-end gap-1"), maxWidth: 420 }}>
+						<PathText>{v().library.dbPath ?? "In memory"}</PathText>
+						<Show when={v().library.sizeBytes}><Value>{bytes(v().library.sizeBytes)}</Value></Show>
+						<Show when={pending()}>{(p) => <PathText sub>{`After a restart: ${p()}`}</PathText>}</Show>
+						<Show when={forced()}><Value>Set by the ZN_DB / ZN_LIBRARY environment variable, which wins over this setting.</Value></Show>
+						<Row>
+							<Btn disabled={!v().library.dbPath} onClick={() => revealInFolder(v().library.dbPath!)}>Show in folder</Btn>
+							<Btn onClick={() => void changeLibrary(v().library.dbPath)}>Change…</Btn>
+						</Row>
+					</div>
+				);
+			}}
 		</Show>
 	);
 }
@@ -391,9 +422,9 @@ function StorageControl(): JSX.Element {
 
 registerSettings([
 	{
-		id: "files.library", section: "files", label: "zotero-next library",
-		description: "The database file this library is kept in.",
-		keywords: ["database", "sqlite", "library.sqlite", "location", "path", "show in folder", "explorer"],
+		id: "files.library", section: "files", label: "Library location",
+		description: "The database file your library is kept in. Change… points zotero-next at another library file; it takes effect after a restart.",
+		keywords: ["zotero-next library", "database", "sqlite", "library.sqlite", "location", "path", "show in folder", "explorer", "change", "move", "open another library"],
 		control: () => <LibraryControl />,
 	},
 	{

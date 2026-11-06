@@ -32,6 +32,9 @@ export async function pickFolder(prompt = "Choose folder"): Promise<string | nul
 	return paths?.[0] ?? null;
 }
 
+/** True when a native file dialog is available (the same dialog serves folders and files). */
+export const canPickFile = canPickFolder;
+
 /** The native file dialog. */
 export async function pickFile(prompt = "Choose file"): Promise<string | null> {
 	const r = renderer();

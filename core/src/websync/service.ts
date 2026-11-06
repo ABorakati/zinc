@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import { dirname, join } from "node:path";
 import { HttpError } from "../db";
+import { logError } from "../log";
 import { dbFileOf } from "../files/config";
 import { pendingCount } from "../sync/build";
 import { PreconditionFailed, WebApiError, ZoteroWebClient } from "./client";
@@ -44,6 +45,12 @@ export interface WebSyncStatus {
 
 function errMsg(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
+}
+
+/** errMsg for web_error, which also writes the error (with its stack) to the local log (core/src/log.ts). */
+function failMsg(e: unknown): string {
+	logError("websync", e);
+	return errMsg(e);
 }
 
 export class WebSyncService {
@@ -152,7 +159,7 @@ export class WebSyncService {
 				setState(this.db, "web_last_pull_at", new Date().toISOString());
 				setState(this.db, "web_error", null);
 			} catch (e) {
-				setState(this.db, "web_error", errMsg(e));
+				setState(this.db, "web_error", failMsg(e));
 			}
 		});
 	}
@@ -179,7 +186,7 @@ export class WebSyncService {
 				setState(this.db, "web_last_push_at", new Date().toISOString());
 				setState(this.db, "web_error", r.error ?? null);
 			} catch (e) {
-				setState(this.db, "web_error", errMsg(e));
+				setState(this.db, "web_error", failMsg(e));
 			}
 		});
 	}
@@ -194,7 +201,7 @@ export class WebSyncService {
 				}
 				this.startJob();
 			} catch (e) {
-				setState(this.db, "web_error", errMsg(e));
+				setState(this.db, "web_error", failMsg(e));
 			}
 		});
 	}
@@ -217,7 +224,7 @@ export class WebSyncService {
 		this.job = job;
 		this.fileJobDone = downloadMissing({ db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir }, job).catch((e) => {
 			job.running = false;
-			setState(this.db, "web_error", errMsg(e));
+			setState(this.db, "web_error", failMsg(e));
 		});
 	}
 

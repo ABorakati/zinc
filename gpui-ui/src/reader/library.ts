@@ -12,6 +12,7 @@
 // Fallback (off by default): ZN_READER_SQLITE=1 resolves "key:ABCD1234" through the library database opened READ-ONLY, for
 // diagnosing a core that is down. It cannot resolve relative ("attachments:...") paths.
 import { existsSync } from "node:fs";
+import { resolveLibrary } from "../../../core/src/library-location";
 import { BASE_URL } from "../api";
 import { startCore } from "../core";
 import { PdfDoc } from "./pdf";
@@ -63,7 +64,9 @@ export const resolvePdf = (spec: string): string => spec;
 function sqlitePath(key: string): string {
 	// lazy so that bun:sqlite is only loaded when the flag is on
 	const { Database } = require("bun:sqlite") as typeof import("bun:sqlite");
-	const db = new Database(process.env.ZN_DB_FILE ?? "C:/Users/abora/zotero-next/data/library.sqlite", { readonly: true });
+	const file = process.env.ZN_DB_FILE ?? process.env.ZN_DB ?? resolveLibrary({ adopt: false }).path;
+	if (!file) throw new PdfLoadError("no library is configured (set ZN_DB_FILE)");
+	const db = new Database(file, { readonly: true });
 	try {
 		const row = db.query("SELECT path FROM attachments WHERE item_key = ?").get(key) as { path: string } | null;
 		if (!row?.path) throw new PdfLoadError(`no path for attachment ${key}`);

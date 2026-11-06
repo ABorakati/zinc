@@ -3,14 +3,11 @@
 
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-// Imported as text so bundlers (Electrobun) embed it instead of reading from disk.
-import schema from "../schema.sql" with { type: "text" };
-import syncSchema from "./sync/schema.sql" with { type: "text" };
-import websyncSchema from "./websync/schema.sql" with { type: "text" };
+import { migrate } from "./migrations";
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
 import { resolveStoredPath } from "./files/paths";
 import { venueOf } from "./venue";
-import { backfillKeys, ensureBbtSchema, ensureKeys } from "./bbt/keys";
+import { backfillKeys, ensureKeys } from "./bbt/keys";
 import { assertQuickMode, compileSearch, quickSearchClause } from "./searches/compile";
 import { ensureSearchSchema, getSavedSearch } from "./searches/store";
 import type { QuickSearchMode, SearchDefinition } from "./searches/types";
@@ -120,54 +117,15 @@ export function deriveColumns(data: ZoteroItemData): DerivedColumns {
 
 export function openDb(path: string): Database {
 	const db = new Database(path, { create: true });
-	db.exec(schema);
-	db.exec(syncSchema);
-	db.exec(websyncSchema);
-	ensureBbtSchema(db);
-	db.exec("PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456;");
-	for (const [name, expr] of [
-		["title", "title COLLATE NOCASE"],
-		["creator", "creators_summary COLLATE NOCASE"],
-		["year", "year"],
-		["added", "date_added"],
-	]) {
-		db.exec(
-			`CREATE INDEX IF NOT EXISTS items_top_${name} ON items(${expr}, key) WHERE parent_key IS NULL AND deleted = 0 AND item_type <> 'annotation'`,
-		);
+	try {
+		// Versioned migrations (core/src/migrations): refuses a newer library, backs up and upgrades an older one.
+		migrate(db, path);
+	} catch (e) {
+		db.close();
+		throw e;
 	}
-	db.run(
-		"INSERT INTO meta(name, value) VALUES('schema_version', '1') ON CONFLICT(name) DO UPDATE SET value = excluded.value",
-	);
-	refreshVenues(db);
+	db.exec("PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456;");
 	return db;
-}
-
-const VENUE_VERSION = "2"; // bump when venueOf (core/src/venue.ts) changes, so stored venues are recomputed once
-
-/**
- * Recompute items.publication once per venue rule version. The column is a derived copy of data (the card's venue line), so
- * this changes no item data: the sync 'suppress' flag is held for the transaction, so nothing is queued for Zotero or
- * zotero.org.
- */
-function refreshVenues(db: Database): void {
-	const cur = db.query("SELECT value FROM meta WHERE name = 'venue_version'").get() as { value: string } | null;
-	if (cur?.value === VENUE_VERSION) return;
-	db.transaction(() => {
-		db.run("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
-		const upd = db.query("UPDATE items SET publication = ? WHERE key = ?");
-		for (const r of db.query("SELECT key, item_type, publication, data FROM items WHERE item_type NOT IN ('note', 'attachment', 'annotation')").all() as { key: string; item_type: string; publication: string | null; data: string }[]) {
-			let data: Record<string, unknown>;
-			try {
-				data = JSON.parse(r.data);
-			} catch {
-				continue;
-			}
-			const v = venueOf(data, r.item_type);
-			if (v !== r.publication) upd.run(v, r.key);
-		}
-		db.run("DELETE FROM sync_flags WHERE name = 'suppress'");
-		db.run("INSERT INTO meta(name, value) VALUES('venue_version', ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value", [VENUE_VERSION]);
-	})();
 }
 
 // ---------------------------------------------------------------- collections
@@ -203,6 +161,8 @@ function collectionExists(db: Database, key: string): boolean {
 }
 
 export function createCollection(db: Database, name: string, parentKey?: string | null): Collection {
+	if (name !== undefined && name !== null && typeof name !== "string") throw new HttpError(400, "name must be a string");
+	if (parentKey !== undefined && parentKey !== null && typeof parentKey !== "string") throw new HttpError(400, "parentKey must be a string or null");
 	name = (name ?? "").trim();
 	if (!name) throw new HttpError(400, "name is required");
 	if (parentKey && !collectionExists(db, parentKey)) throw new HttpError(404, "parent collection not found");
@@ -229,8 +189,10 @@ export function updateCollection(
 	patch: { name?: string; parentKey?: string | null },
 ): Collection {
 	if (!collectionExists(db, key)) throw new HttpError(404, "collection not found");
+	if (patch.name !== undefined && typeof patch.name !== "string") throw new HttpError(400, "name must be a string");
+	if (patch.parentKey !== undefined && patch.parentKey !== null && typeof patch.parentKey !== "string") throw new HttpError(400, "parentKey must be a string or null");
 	if (patch.name !== undefined) {
-		const name = String(patch.name).trim();
+		const name = patch.name.trim();
 		if (!name) throw new HttpError(400, "name must not be empty");
 		db.query("UPDATE collections SET name = ? WHERE key = ?").run(name, key);
 	}
@@ -835,8 +797,46 @@ export function removeRelated(db: Database, key: string, others: string[]): Item
 
 // ---------------------------------------------------------------- create item
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Item JSON from a client (create / patch) must have the shape the rest of the code reads without checks: structured fields
+ * of the right kind, every other field a plain value. Throws a 400 naming the field.
+ */
+export function assertItemShape(d: Record<string, unknown>): void {
+	const bad = (what: string): never => {
+		throw new HttpError(400, what);
+	};
+	for (const [k, v] of Object.entries(d)) {
+		if (v === undefined) continue;
+		switch (k) {
+			case "tags":
+				if (!Array.isArray(v) || v.some((t) => !(typeof t === "string" || (isObject(t) && (t.tag === undefined || typeof t.tag === "string") && (t.type === undefined || typeof t.type === "number"))))) bad("tags must be an array of strings or {tag, type} objects");
+				break;
+			case "collections":
+				if (!Array.isArray(v) || v.some((c) => typeof c !== "string")) bad("collections must be an array of strings");
+				break;
+			case "creators":
+				if (!Array.isArray(v) || v.some((c) => !isObject(c) || typeof c.creatorType !== "string" || ["firstName", "lastName", "name"].some((f) => c[f] !== undefined && typeof c[f] !== "string"))) {
+					bad("creators must be an array of {creatorType, firstName, lastName} or {creatorType, name} objects");
+				}
+				break;
+			case "relations":
+				if (!isObject(v) || Object.values(v).some((x) => typeof x !== "string" && !(Array.isArray(x) && x.every((y) => typeof y === "string")))) bad("relations must be an object of strings or string arrays");
+				break;
+			case "deleted":
+			case "inPublications":
+				if (typeof v !== "number" && typeof v !== "boolean") bad(`${k} must be a number or boolean`);
+				break;
+			default:
+				if (v !== null && typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") bad(`${k} must be a string`);
+		}
+	}
+}
+
 export function createItem(db: Database, input: Partial<ZoteroItemData>): ItemDetail {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new HttpError(400, "data must be an object");
+	assertItemShape(input as Record<string, unknown>);
 	const itemType = input.itemType;
 	if (typeof itemType !== "string" || !itemType) throw new HttpError(400, "data.itemType is required");
 	if (!hasItemType(itemType)) throw new HttpError(400, `unknown itemType: ${itemType}`);
@@ -907,6 +907,9 @@ export function createItem(db: Database, input: Partial<ZoteroItemData>): ItemDe
 
 export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemData>): ItemDetail {
 	if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new HttpError(400, "data must be an object");
+	const { itemType: patchType, ...patchFields } = patch as Record<string, unknown>;
+	assertItemShape(patchFields);
+	if (patchType !== undefined && typeof patchType !== "string") throw new HttpError(400, "itemType must be a string");
 	const row = db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string } | null;
 	if (!row) throw new HttpError(404, "item not found");
 	let data = JSON.parse(row.data) as ZoteroItemData;

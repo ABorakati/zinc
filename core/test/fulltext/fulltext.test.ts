@@ -11,6 +11,7 @@ import { PersistStore } from "../../src/fulltext/host";
 import { type FulltextService, fulltextService, disposeFulltextService } from "../../src/fulltext/service";
 import { WasmHost } from "../../src/fulltext/wasm";
 import { insertAttachment, insertItem } from "../fixture";
+import { HAVE_FULLTEXT_WASM } from "../needs";
 
 const DOI = "10.1371/journal.pmed.1000097";
 const PDF_URL = "https://oa.example.test/paper.pdf";
@@ -47,7 +48,7 @@ interface Env {
 
 let wasm: WasmHost;
 beforeAll(async () => {
-	wasm = await WasmHost.load();
+	if (HAVE_FULLTEXT_WASM) wasm = await WasmHost.load();
 });
 
 const dbs: Database[] = [];
@@ -87,7 +88,7 @@ const openAccessMock: Mock = (url) => {
 	return new Response("not found", { status: 404 });
 };
 
-describe("Find Full Text: open access hit", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text: open access hit", () => {
 	test("attaches the PDF, writes the rows and extracts text", async () => {
 		const e = env(openAccessMock);
 		article(e.db, "ITEM0001", DOI);
@@ -143,7 +144,7 @@ describe("Find Full Text: open access hit", () => {
 	});
 });
 
-describe("Find Full Text: not found", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text: not found", () => {
 	test("no open access copy anywhere", async () => {
 		const e = env(() => new Response("{}", { status: 404 }));
 		article(e.db, "ITEM0010", DOI);
@@ -175,7 +176,7 @@ describe("Find Full Text: not found", () => {
 	});
 });
 
-describe("Find Full Text: institutional hand-off", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text: institutional hand-off", () => {
 	const paywall: Mock = (url) => {
 		if (url.includes("openalex")) return Response.json(OPENALEX_CLOSED);
 		if (url.includes("librarysearch.kcl.ac.uk")) return Response.json({});
@@ -215,7 +216,7 @@ describe("Find Full Text: institutional hand-off", () => {
 	});
 });
 
-describe("Find Full Text: cancel", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text: cancel", () => {
 	test("cancelling aborts the in-flight request", async () => {
 		let aborted = false;
 		let started!: () => void;
@@ -243,7 +244,7 @@ describe("Find Full Text: cancel", () => {
 	});
 });
 
-describe("HTTP routes", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("HTTP routes", () => {
 	const post = (body: unknown) => new Request("http://x/api/fulltext/find", { method: "POST", body: JSON.stringify(body) });
 
 	test("find -> job -> events -> cancel", async () => {
@@ -288,7 +289,7 @@ describe("HTTP routes", () => {
 	});
 });
 
-describe("host pieces", () => {
+describe.skipIf(!HAVE_FULLTEXT_WASM)("host pieces", () => {
 	test("redirects keep cookies and the cookie jar scopes them", async () => {
 		const seen: { url: string; cookie: string | null }[] = [];
 		const client = new HttpClient({

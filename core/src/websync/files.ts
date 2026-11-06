@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { failure, type ZoteroWebClient } from "./client";
-import { isZip, readZip, safeEntryName } from "./zip";
+import { entryTarget, isZip, readZip } from "./zip";
 
 export interface FileJob {
 	done: number;
@@ -167,7 +167,10 @@ async function downloadOne(ctx: FilesContext, a: Att): Promise<number> {
 			}
 		};
 		// zip entry names may be percent-encoded; the item's filename is the decoded form
-		for (const e of entries) put(join(dir, safeEntryName(e.name) ?? e.name), e.data);
+		for (const e of entries) {
+			const file = entryTarget(dir, e.name); // null = the name would leave the attachment's folder
+			if (file) put(file, e.data);
+		}
 		if (!existsSync(target)) {
 			const alt = entries.find((e) => decode(e.name) === a.filename);
 			if (!alt) throw new Error("the snapshot archive does not contain its main file");

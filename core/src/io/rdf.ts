@@ -363,6 +363,8 @@ function itemFromResource(res: RdfResource, graph: RdfGraph, container: RdfResou
 		if (idRes.type === "dcterms:URI") setBase(data, "url", graph.lit(idRes, "rdf:value") || textOf(idRes.node));
 	}
 	setBase(data, "url", graph.lit(res, "bibo:uri", "so:url"));
+	// the exporter (like Zotero's) uses an item's URL as its rdf:about and then omits the dc:identifier: read it back from there
+	if (/^https?:\/\//i.test(res.id)) setBase(data, "url", res.id);
 
 	// call number: a dc:subject that is a call-number resource
 	for (const subj of graph.refs(res, "dc:subject", "dcterms:subject")) {
@@ -691,7 +693,8 @@ export function exportZoteroRdf(items: RdfExportItem[], collections: RdfCollecti
 		if (d.ISBN) idLines.push(`ISBN ${String(d.ISBN)}`);
 		if (d.ISSN) idLines.push(`ISSN ${String(d.ISSN)}`);
 		for (const line of idLines) lines.push(`    <dc:identifier>${xmlEscape(line)}</dc:identifier>`);
-		if (d.url && !used.has(String(d.url))) {
+		// omitted only when this item's own rdf:about already is the URL (another item may have taken it first)
+		if (d.url && uri !== String(d.url).trim()) {
 			lines.push("    <dc:identifier><dcterms:URI><rdf:value>" + xmlEscape(String(d.url)) + "</rdf:value></dcterms:URI></dc:identifier>");
 		}
 		if (d.callNumber) {

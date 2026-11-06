@@ -2,6 +2,7 @@
 
 import type { Database } from "bun:sqlite";
 import type { SearchHit, SearchResult, ZoteroItemData } from "./api-types";
+import { codePointChar } from "./entity";
 
 const NON_INDEXED = "('attachment', 'note', 'annotation')";
 
@@ -13,7 +14,7 @@ export function stripHtml(html: string): string {
 		.replace(/&lt;/g, "<")
 		.replace(/&gt;/g, ">")
 		.replace(/&quot;/g, '"')
-		.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+		.replace(/&#(\d+);/g, (_, n) => codePointChar(Number(n)))
 		.replace(/&amp;/g, "&")
 		.replace(/\s+/g, " ")
 		.trim();
@@ -29,8 +30,11 @@ interface ItemRow {
 
 function insertRow(db: Database, r: ItemRow): void {
 	const data = JSON.parse(r.data) as ZoteroItemData;
-	const creators = (data.creators ?? [])
-		.map((c) => c.name || [c.firstName, c.lastName].filter(Boolean).join(" "))
+	// item JSON can come from sync or imports: a field of the wrong JSON type must not break indexing (SQLite cannot bind objects)
+	const s = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+	const creators = (Array.isArray(data.creators) ? (data.creators as unknown[]) : [])
+		.filter((c): c is Record<string, unknown> => typeof c === "object" && c !== null)
+		.map((c) => s(c.name) || [s(c.firstName), s(c.lastName)].filter(Boolean).join(" "))
 		.filter(Boolean)
 		.join(" ");
 	const tags = (db.query("SELECT tag FROM item_tags WHERE item_key = ?").all(r.key) as { tag: string }[])
@@ -41,7 +45,7 @@ function insertRow(db: Database, r: ItemRow): void {
 			data: string;
 		}[]
 	)
-		.map((n) => stripHtml(String((JSON.parse(n.data) as ZoteroItemData).note ?? "")))
+		.map((n) => stripHtml(s((JSON.parse(n.data) as ZoteroItemData).note)))
 		.join(" ");
 	const fulltext =
 		(
@@ -54,7 +58,7 @@ function insertRow(db: Database, r: ItemRow): void {
 		).t ?? "";
 	db.query(
 		"INSERT INTO search(rowid, title, creators, abstract, publication, tags, notes, fulltext) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-	).run(r.rowid, r.title ?? "", creators, data.abstractNote ?? "", r.publication ?? "", tags, notes, fulltext);
+	).run(r.rowid, r.title ?? "", creators, s(data.abstractNote), r.publication ?? "", tags, notes, fulltext);
 }
 
 export function rebuildSearchIndex(db: Database): void {

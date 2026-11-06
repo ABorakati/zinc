@@ -53,12 +53,13 @@ export function toLatex(input: string): string {
 const LB = "\ue000";
 const RB = "\ue001";
 const BS = "\ue002";
+const TILDE = "\ue003"; // a literal "~" (\textasciitilde): a bare ~ in LaTeX is a non-breaking space and becomes " "
 
 /** LaTeX source -> plain Unicode text (accents, dashes, escapes, braces removed). */
 export function fromLatex(input: string): string {
 	let s = input;
 	s = s.replace(/\\(?:textbackslash|backslash)(?:\s*\{\})?/g, BS);
-	s = s.replace(/\\textasciitilde(?:\s*\{\})?/g, "~").replace(/\\textasciicircum(?:\s*\{\})?/g, "^").replace(/\\\^\{\}/g, "^");
+	s = s.replace(/\\textasciitilde(?:\s*\{\})?/g, TILDE).replace(/\\textasciicircum(?:\s*\{\})?/g, "^").replace(/\\\^\{\}/g, "^");
 	s = s.replace(/\\([&%$#_])/g, "$1");
 	s = s.replace(/\\\{/g, LB).replace(/\\\}/g, RB);
 	// accents: \'e \'{e} \'{\i} {\'e} \"o ...
@@ -80,6 +81,6 @@ export function fromLatex(input: string): string {
 	s = s.replace(/---/g, "\u2014").replace(/--/g, "\u2013").replace(/``/g, "\u201c").replace(/''/g, "\u201d");
 	s = s.replace(/[{}]/g, "");
 	s = s.replace(/~/g, " ");
-	s = s.split(LB).join("{").split(RB).join("}").split(BS).join("\\");
+	s = s.split(LB).join("{").split(RB).join("}").split(BS).join("\\").split(TILDE).join("~");
 	return s.replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
 }

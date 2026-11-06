@@ -3,6 +3,7 @@
 // terminated (pdf.js cannot be interrupted) and replaced.
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { logError } from "../log";
 
 // Defaults point into the repo; a bundled app passes its own copies to configureExtractPool.
 let BUILD_DIR = new URL("../../../vendor/document-worker/build/", import.meta.url);
@@ -52,6 +53,7 @@ class PoolWorker {
 			onFail = rej;
 		});
 		this.worker.onerror = (e: ErrorEvent) => {
+			logError("worker", e.error ?? e.message, "pdf extraction worker");
 			const err = new ExtractError("worker", String(e.message ?? "worker error"));
 			onFail(err);
 			this.fail(err);

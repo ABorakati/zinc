@@ -36,7 +36,10 @@ async function fetchRepo(repo: Repo): Promise<string> {
 	const dir = join(work, repo);
 	mkdirSync(dir);
 	// relative paths: GNU tar (Git Bash) reads "C:\…" as a remote host:path
-	const tar = Bun.spawnSync(["tar", "-xzf", `${repo}.tar.gz`, "-C", repo, "--strip-components=1"], { cwd: work, stderr: "pipe" });
+	// The agent-config folders/symlinks in some upstream repos (.agents/skills, .claude/skills) cannot be created by Windows' bsdtar
+	// without symlink rights and are not used here, so they are skipped.
+	const skip = [".agents", ".claude", "CLAUDE.md", "AGENTS.md"].map((n) => `--exclude=*/${n}`);
+	const tar = Bun.spawnSync(["tar", "-xzf", `${repo}.tar.gz`, "-C", repo, "--strip-components=1", ...skip], { cwd: work, stderr: "pipe" });
 	if (tar.exitCode !== 0) throw new Error(`tar ${repo}: ${tar.stderr.toString()}`);
 	return dir;
 }

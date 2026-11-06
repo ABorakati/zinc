@@ -8,6 +8,7 @@ import { handleApi } from "./api";
 import { createDevReload } from "./devreload";
 import { openDb } from "./db";
 import { handleMcp } from "./mcp/http";
+import { installConsoleMirror, logError } from "./log";
 
 export interface Mount {
 	prefix: string;
@@ -128,6 +129,11 @@ export function startServer(opts: ServerOptions) {
 		hostname: opts.hostname ?? "127.0.0.1",
 		// a PDF that OneDrive keeps online-only can take a while to arrive; the default 10 s cut it off
 		idleTimeout: 255,
+			// anything the handlers did not catch: into the local log, then a plain 500
+			error(err) {
+				logError("core", err, "server");
+				return new Response("internal error", { status: 500 });
+			},
 		async fetch(req, srv) {
 			if (live) {
 				const sse = live.handle(req);
@@ -187,6 +193,7 @@ if (import.meta.main) {
 		console.error("usage: bun core/src/server.ts --db <path> [--port N] [--host H] [--mount /prefix/=dir ...]");
 		process.exit(2);
 	}
-	const s = startServer({ dbPath, port, hostname, mounts });
+	installConsoleMirror("core"); // standalone core: console.error / warn also go to the local log
+		const s = startServer({ dbPath, port, hostname, mounts });
 	console.log(`zotero-next core listening on ${s.url}`);
 }

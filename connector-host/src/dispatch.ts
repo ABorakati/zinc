@@ -3,6 +3,8 @@
 import type { Database } from "bun:sqlite";
 import { hooks } from "../../core/src/additems/files";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { configureExtractPool, extractFulltext } from "../../core/src/extract";
 import { connectorRoutes, runConnectorRoute } from "../../core/src/connector/handlers";
 import { SessionManager } from "../../core/src/connector/session";
@@ -47,9 +49,9 @@ export interface HostEnv {
 
 // Full-text indexing of what was saved. HTML is plain text extraction; PDFs go through zotero-next's Bun Worker
 // pool (Zotero's document-worker), which the compiled host cannot embed, so it runs the worker script and build
-// from the zotero-next checkout when that exists (ZNH_REPO, default C:/Users/abora/zotero-next). Without it PDFs
+// from the zotero-next checkout when that exists (ZNH_REPO, default <home>/zotero-next). Without it PDFs
 // stay un-indexed until something else extracts them. The host waits for running jobs before it exits.
-const REPO = (process.env.ZNH_REPO ?? "C:/Users/abora/zotero-next").replace(/[\\/]+$/, "");
+const REPO = (process.env.ZNH_REPO ?? join(process.env.USERPROFILE ?? homedir(), "zotero-next")).replace(/[\\/]+$/, "");
 const WORKER_ENTRY = `${REPO}/core/src/extract/pdf-worker.ts`;
 const DOC_WORKER = [`${REPO}/vendor/document-worker/build`, `${REPO}/reader-host/dist/document-worker`].find((p) => existsSync(p));
 if (DOC_WORKER && existsSync(WORKER_ENTRY)) configureExtractPool({ buildDir: DOC_WORKER, workerEntry: WORKER_ENTRY, concurrency: 1 });

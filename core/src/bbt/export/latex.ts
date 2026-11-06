@@ -122,7 +122,7 @@ export function protectPieces(text: string, sentenceStart: { v: boolean }): Piec
 			push(m[0], false);
 			rest = rest.slice(m[0].length);
 		} else {
-			const ch = Array.from(rest)[0]!;
+			const ch = String.fromCodePoint(rest.codePointAt(0)!); // not Array.from(rest)[0]: that copies all the remaining text per character
 			push(ch, false);
 			rest = rest.slice(ch.length);
 		}

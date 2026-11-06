@@ -7,6 +7,8 @@
 // Format reference: zotero/zotero chrome/content/zotero/xpcom/integration.js (Zotero.Integration.Session /
 // Citation / Bibliography) and the Word plugin's document-data storage.
 
+import { codePointChar } from "../entity";
+
 export const CITATION_SCHEMA = "https://github.com/citation-style-language/schema/raw/master/csl-citation.json";
 export const ZOTERO_STYLE_PREFIX = "http://www.zotero.org/styles/";
 
@@ -58,6 +60,8 @@ export type ParsedField =
 	| { kind: "bibl"; data: BibliographyData }
 	| null;
 
+const isPlainObject = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
+
 /** Parse the text of a Word field code (with or without the surrounding spaces). Null when it is not a Zotero field or the JSON is bad. */
 export function parseFieldCode(code: string): ParsedField {
 	const c = code.trim();
@@ -65,8 +69,14 @@ export function parseFieldCode(code: string): ParsedField {
 	if (m) {
 		try {
 			const data = JSON.parse(m[1]!.trim()) as CitationData;
-			if (!data || typeof data !== "object" || !Array.isArray(data.citationItems)) return null;
-			data.properties ??= {};
+			if (!isPlainObject(data) || !Array.isArray(data.citationItems)) return null;
+			// a field code is whatever a document holds: later code reads citationItems[].uris and properties.* unguarded
+			if (data.properties === undefined || data.properties === null) data.properties = {};
+			else if (!isPlainObject(data.properties)) return null;
+			for (const ci of data.citationItems) {
+				if (!isPlainObject(ci)) return null;
+				if (ci.uris !== undefined && !Array.isArray(ci.uris)) return null;
+			}
 			return { kind: "item", data };
 		} catch {
 			return null;
@@ -76,9 +86,8 @@ export function parseFieldCode(code: string): ParsedField {
 	if (m) {
 		try {
 			const data = JSON.parse(m[1]!.trim() || "{}") as BibliographyData;
-			data.uncited ??= [];
-			data.omitted ??= [];
-			data.custom ??= [];
+			if (!isPlainObject(data)) return null;
+			for (const k of ["uncited", "omitted", "custom"] as const) if (!Array.isArray(data[k])) data[k] = [];
 			return { kind: "bibl", data };
 		} catch {
 			return null;
@@ -242,7 +251,7 @@ export function parsePrefsXml(xml: string | null | undefined): DocPrefs | null {
 	const prefs: DocPrefs = {
 		styleId: attr(style[1]!, "id") ?? "",
 		locale: attr(style[1]!, "locale") ?? "",
-		sessionId: /<session\b[^>]*\bid="([^"]*)"/.exec(xml)?.[1] ?? randomId(8),
+		sessionId: ((m) => (m ? unXmlAttr(m[1]!) : randomId(8)))(/<session\b[^>]*\bid="([^"]*)"/.exec(xml)),
 		hasBibliography: bool(attr(style[1]!, "hasBibliography")),
 		bibliographyStyleHasBeenSet: bool(attr(style[1]!, "bibliographyStyleHasBeenSet")),
 		fieldType: "Field",
@@ -331,7 +340,7 @@ export function decodeEntities(s: string): string {
 	return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
 		if (e[0] === "#") {
 			const cp = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-			return Number.isFinite(cp) ? String.fromCodePoint(cp) : m;
+			return Number.isFinite(cp) ? codePointChar(cp) : m;
 		}
 		return ENTITIES[e.toLowerCase()] ?? m;
 	});
@@ -429,13 +438,17 @@ export function runsToRtf(runs: Run[]): string {
 
 /** Inverse of runsToRtf, enough to read back what Zotero itself stored (used when we only have formattedCitation). */
 export function rtfToPlain(rtf: string): string {
-	return rtf
-		.replace(/\\uc0\\u(-?\d+)\{\}/g, (_, n: string) => String.fromCharCode(Number(n) < 0 ? Number(n) + 65536 : Number(n)))
-		.replace(/\\(?:super|sub|nosupersub|i|b|scaps)\b ?\{?\}?/g, "")
-		.replace(/\\tab\{\}/g, "\t")
-		.replace(/\\\n/g, "\n")
-		.replace(/\\([\\{}])/g, "$1")
-		.replace(/[{}]/g, "");
+	// one left-to-right pass: an escaped backslash ("\\") must be consumed before a following "i" or "b" can look like \i or \b
+	return rtf.replace(
+		/\\([\\{}])|\\uc0\\u(-?\d+)\{\}|\\(?:super|sub|nosupersub|i|b|scaps)\b ?\{?\}?|\\tab\{\}|\\\n|[{}]/g,
+		(m: string, esc?: string, unit?: string) => {
+			if (esc) return esc;
+			if (unit !== undefined) return String.fromCharCode(Number(unit) < 0 ? Number(unit) + 65536 : Number(unit));
+			if (m === "\\tab{}") return "\t";
+			if (m === "\\\n") return "\n";
+			return "";
+		},
+	);
 }
 
 /**

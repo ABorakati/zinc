@@ -497,7 +497,7 @@ describe("Mendeley Desktop", () => {
 		// trashed documents are left behind; folders become a nested collection tree under the import collection
 		expect(db.query("SELECT count(*) AS n FROM items WHERE title = 'Deleted paper'").get()).toEqual({ n: 0 });
 		const folders = db.query("SELECT name, parent_key FROM collections ORDER BY name").all() as { name: string; parent_key: string | null }[];
-		expect(folders.map((f) => f.name)).toEqual(["Child", "Imported 2026-11-05", "Parent"]);
+		expect(folders.map((f) => f.name)).toEqual(["Child", `Imported ${new Date().toISOString().slice(0, 10)}`, "Parent"]);
 		expect(folders.find((f) => f.name === "Parent")!.parent_key).toMatch(/^[A-Z0-9]{8}$/);
 		expect(folders.find((f) => f.name === "Child")!.parent_key).not.toBeNull();
 		expect(body.collectionKey).toBe(folders.find((f) => f.name === "Parent")!.parent_key);

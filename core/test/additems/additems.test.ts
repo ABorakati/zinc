@@ -9,6 +9,7 @@ import { findArxivId, normalizeIsbn, parseIdentifiers } from "../../src/additems
 import { shutdownExtractPool } from "../../src/extract";
 import { net, setFetch } from "../../src/references/net";
 import { call, insertItem, tempDir } from "../fixture";
+import { HAVE_DOCUMENT_WORKER } from "../needs";
 
 let db: Database;
 let dir: string;
@@ -298,7 +299,7 @@ describe("attachments", () => {
 	});
 });
 
-describe("retrieve metadata for PDFs", () => {
+describe.skipIf(!HAVE_DOCUMENT_WORKER)("retrieve metadata for PDFs", () => {
 	async function importPdf(lines: string[], coll = "COLLAAA1"): Promise<string> {
 		const d = await post<ItemDetail>("/api/add/file", { name: "scan.pdf", dataBase64: Buffer.from(tinyPdf(lines)).toString("base64"), collectionKey: coll }, 201);
 		return d.data.key;

@@ -7,9 +7,18 @@
 // The installers are the per-user scripts in the repo (word/install.ps1, connector-host/install.ps1): HKCU only,
 // no admin rights. Running them from the app (not a sandboxed shell) keeps their files in the real AppData.
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
-let repo = process.env.ZN_REPO ?? "C:/Users/abora/zotero-next";
+// The checkout holding word/ and connector-host/: ZN_REPO, else the checkout this file is in (core/src/integrations -> three levels up),
+// else <home>\zotero-next (a compiled app is not inside a checkout). No user name anywhere; none found = the installers are unavailable.
+function defaultRepo(): string {
+	if (process.env.ZN_REPO) return process.env.ZN_REPO;
+	const here = resolve(import.meta.dir, "..", "..", "..");
+	const home = join(process.env.USERPROFILE ?? homedir(), "zotero-next");
+	return [here, home].find((d) => existsSync(join(d, "word", "install.ps1"))) ?? here;
+}
+let repo = defaultRepo();
 /** The checkout holding word/ and connector-host/ (the app passes its own). */
 export function setIntegrationsRepo(path: string): void {
 	repo = path;

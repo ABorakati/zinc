@@ -12,7 +12,8 @@
 //   After the first page of items: the core and its services, the feature modules, the prefetch hint.
 //
 // Set ZN_TRACE=1 to print the milestones (see src/trace.ts; scripts/startup.ts reads them).
-import "./packaged"; // first: sets the packaged app's defaults before other modules read the environment
+import { startup } from "./packaged"; // first: sets the packaged app's defaults before other modules read the environment
+import { initErrorLog } from "./shell/errorlog"; // local error log + crash marker (shell/errorlog.ts)
 import { render } from "@gpuix/solid";
 import { createComponent, createEffect, createRoot, createSignal, Show, type Component } from "solid-js";
 import type { Mode, Style } from "./contracts";
@@ -26,6 +27,7 @@ import { startCoreOnDemand } from "./api";
 import { saveHint, startPrefetch } from "./prefetch";
 import { mark } from "./trace";
 
+initErrorLog();
 mark("main-start");
 
 // Stored appearance (colour scheme, text size, UI font, light/dark/system) before the first frame, so the splash and the first
@@ -85,6 +87,9 @@ async function openTabsFromEnv(open: (key: string, title: string, itemKey: strin
 // let the splash be presented before the heavy imports occupy the thread
 await new Promise((r) => setTimeout(r, 0));
 
+// No library chosen yet (packaged.ts found none): the first-run screen runs first (src/firstrun/); it saves the choice and sets ZN_DB, and the start-up goes on.
+if (startup.firstRun) await import("./firstrun/run").then((m) => m.runFirstRun((c) => setApp(() => c), MODE));
+
 // The core: at once, unless the prefetch worker is answering the first screen's requests (src/prefetch.ts); then it starts when the
 // first page is in (below) or when a request needs it (api.ts calls this on the first request the worker did not answer).
 const bootCore = () => void startCore().catch((e) => console.error("[core]", e instanceof Error ? e.message : e));
@@ -130,3 +135,4 @@ await import("./features").then(
 	(e) => console.error("[features]", e),
 );
 void openTabsFromEnv(store.openAttachment);
+void import("./features/report/crashToast").then((m) => m.showCrashToast()); // "closed unexpectedly last time", if the crash marker found one

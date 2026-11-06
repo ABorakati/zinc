@@ -43,6 +43,7 @@ test("openDb recomputes stored venues once, without queueing sync writes", () =>
 		raw.run("INSERT INTO items(key, item_type, title, creators_summary, publication, data, date_added, date_modified, deleted) VALUES(?, 'preprint', 'Attention', '', NULL, ?, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 0)", ["PREPRNT1", JSON.stringify(data)]);
 		raw.run("DELETE FROM sync_outbox");
 		raw.run("DELETE FROM meta WHERE name = 'venue_version'"); // as a library written before this rule
+		raw.run("UPDATE meta SET value = '1' WHERE name = 'schema_version'"); // the venue refresh is migration 2
 		raw.close();
 
 		const db = openDb(path);
