@@ -50,6 +50,9 @@ VersionInfoCompany={#Publisher}
 DefaultDirName={userpf}\{#AppDirName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+; a 64-bit Setup and uninstaller (Inno Setup 7): everything they start, PowerShell for the Word add-in included, is 64-bit like the
+; app and like Word, so COM registration lands in the registry view Word reads
+SetupArchitecture=x64
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
@@ -226,9 +229,18 @@ begin
   Result := GetParam('ZNTESTHIVE');
 end;
 
+// Always 64-bit PowerShell: a 32-bit PowerShell's COM registration lands in HKCU\Software\Classes\WOW6432Node, which 64-bit Word
+// never reads (found on the first real install, when Setup was still 32-bit). Setup is 64-bit now (SetupArchitecture=x64);
+// {sys} is the real (64-bit) System32 for a 64-bit Setup; the Sysnative alias only exists for 32-bit processes, so it is used only
+// when it is there (a 32-bit Setup on 64-bit Windows).
 function PowerShell: string;
+var Native: string;
 begin
-  Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  Native := ExpandConstant('{win}\Sysnative\WindowsPowerShell\v1.0\powershell.exe');
+  if FileExists(Native) then
+    Result := Native
+  else
+    Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
 end;
 
 // Runs a bundled add-in script under Windows PowerShell 5.1 (the CLR's COM registration only exists there). Returns the exit code.
