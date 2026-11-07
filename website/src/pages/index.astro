@@ -3,6 +3,7 @@ import Icon from "../components/Icon.astro";
 import Plate from "../components/Plate.astro";
 import Race from "../components/Race.astro";
 import Stack from "../components/Stack.astro";
+import ClosedSlide from "../components/ClosedSlide.astro";
 import Site from "../layouts/Site.astro";
 import { bullets, inline, paragraphs, section } from "../lib/readme";
 
@@ -15,9 +16,9 @@ const closed = bullets(section("### Works with the app closed")).map((b) => {
 });
 const word = paragraphs(section("## The Word add-in"))[0];
 const items = [
-	{ icon: "panel-right", title: "Cite in Word, from a sidebar", lead: true, body: [word, closed[1]?.body ?? ""], tags: ["Word for Windows", "Live citations", "Any CSL style", "App can stay closed"] },
-	{ icon: "globe", title: "Save from Chrome and Edge", body: [closed[0]?.body ?? ""], tags: ["Pages, PDFs, references", "App can stay closed"] },
-	{ icon: "bot", title: "Hand it to an agent", body: [closed[2]?.body ?? "", paragraphs(section("### Built-in MCP for AI agents"))[0]], tags: ["MCP", "Claude Code", "Loopback only"] },
+	{ id: "word" as const, icon: "panel-right", title: "Cite in Word, from a sidebar", lead: true, body: [word, closed[1]?.body ?? ""], tags: ["Word for Windows", "Live citations", "Any CSL style", "App can stay closed"] },
+	{ id: "browser" as const, icon: "globe", title: "Save from Chrome and Edge", body: [closed[0]?.body ?? ""], tags: ["Pages, PDFs, references", "App can stay closed"] },
+	{ id: "agent" as const, icon: "bot", title: "Hand it to an agent", body: [closed[2]?.body ?? "", paragraphs(section("### Built-in MCP for AI agents"))[0]], tags: ["MCP", "Claude Code", "Loopback only"] },
 ];
 const still = paragraphs(section("### Still your Zotero library"));
 ---
@@ -55,19 +56,37 @@ const still = paragraphs(section("### Still your Zotero library"));
 				<h2 class="h2">Works with the app closed</h2>
 				<p>The Word add-in, the browser connector and the agent server each open your library file themselves. Cite, save and ask without starting Zotero Next.</p>
 			</div>
-			<div class="closed-list">
-				{items.map((it) => (
-					<article class:list={["closed-item", { lead: it.lead }]}>
-						<h3><Icon name={it.icon} size={24} />{it.title}</h3>
-						{it.body.filter(Boolean).map((p) => <p set:html={inline(p, base)} />)}
-						<div class="closed-tags">{it.tags.map((t) => <span>{t}</span>)}</div>
-					</article>
-				))}
-			</div>
-			<div class="closed-plate">
-				<Plate n="VII" src="word-sidebar.png" h={839} tilt={0.5} alt="Word with the Zotero Next sidebar open beside a paragraph with six numbered citations and a Vancouver bibliography; the sidebar shows the citation under the cursor" caption="The Word sidebar showing the citation under the cursor, with the app closed." />
+			<div class="closed-show" data-closed-show>
+				<div class="closed-stage" aria-hidden="true">
+					{items.map((it, i) => <div class:list={["closed-slide", { "is-active": i === 0 }]} data-slide={it.id}><ClosedSlide id={it.id} /></div>)}
+					<div class="closed-dots">{items.map((it, i) => <span class:list={{ "is-active": i === 0 }} data-dot={it.id}></span>)}</div>
+				</div>
+				<div class="closed-list">
+					{items.map((it) => (
+						<article class:list={["closed-item", { lead: it.lead }]} data-step={it.id}>
+							<h3><Icon name={it.icon} size={24} />{it.title}</h3>
+							{it.body.filter(Boolean).map((p) => <p set:html={inline(p, base)} />)}
+							<div class="closed-tags">{it.tags.map((t) => <span>{t}</span>)}</div>
+							<div class="closed-inline"><ClosedSlide id={it.id} /></div>
+						</article>
+					))}
+				</div>
 			</div>
 		</div>
+		<script is:inline>
+			(() => {
+				// the stage shows the picture of the item in the middle of the screen
+				const show = document.querySelector("[data-closed-show]");
+				if (!show || !("IntersectionObserver" in window)) return;
+				const set = (id) => {
+					for (const s of show.querySelectorAll("[data-slide]")) s.classList.toggle("is-active", s.dataset.slide === id);
+					for (const d of show.querySelectorAll("[data-dot]")) d.classList.toggle("is-active", d.dataset.dot === id);
+					for (const a of show.querySelectorAll("[data-step]")) a.classList.toggle("is-current", a.dataset.step === id);
+				};
+				const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) set(e.target.dataset.step); }, { rootMargin: "-45% 0px -45% 0px" });
+				for (const a of show.querySelectorAll("[data-step]")) io.observe(a);
+			})();
+		</script>
 	</section>
 
 	<section class="room">
