@@ -11,10 +11,16 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace ZoteroNext.Word
 {
-    /// <summary>WebView2 environment + site folder shared by the sidebar pane and the citation popup (one browser process).</summary>
+    /// <summary>
+    /// WebView2 environments + site folder for the sidebar pane, the citation popup and the agent page.
+    /// One browser process only accepts views whose host windows share a DPI awareness: a second view in a window with
+    /// another awareness fails with 0x8007139F (ERROR_INVALID_STATE). The popup's window is per-monitor-v2 (see
+    /// <see cref="Popup"/>.Create) while Office creates the task pane's window in its own mode, so each awareness gets its
+    /// own environment and user data folder.
+    /// </summary>
     internal static class WebHost
     {
-        static Task<CoreWebView2Environment> _env;
+        static readonly Dictionary<string, Task<CoreWebView2Environment>> _envs = new Dictionary<string, Task<CoreWebView2Environment>>();
         static readonly object L = new object();
 
         public static string SiteDir()
@@ -23,18 +29,44 @@ namespace ZoteroNext.Word
             return Environment.GetEnvironmentVariable("ZN_SIDEBAR_DIR") ?? Path.Combine(dir, "sidebar");
         }
 
-        public static Task<CoreWebView2Environment> EnvAsync()
+        /// <summary>The environment for a WebView2 control, chosen by the DPI awareness of its window (created here if needed).
+        /// Call on the thread, and in the DPI context, that the control's window belongs to.</summary>
+        public static Task<CoreWebView2Environment> EnvAsync(Control web)
         {
+            var key = DpiKey(web.Handle);
             lock (L)
             {
-                if (_env == null || _env.IsFaulted || _env.IsCanceled)
+                Task<CoreWebView2Environment> env;
+                if (!_envs.TryGetValue(key, out env) || env.IsFaulted || env.IsCanceled)
                 {
-                    Directory.CreateDirectory(Path.Combine(Settings.CacheDir, "webview2"));
-                    _env = CoreWebView2Environment.CreateAsync(null, Path.Combine(Settings.CacheDir, "webview2"));
+                    var udf = Path.Combine(Settings.CacheDir, "webview2", key);
+                    Directory.CreateDirectory(udf);
+                    env = CoreWebView2Environment.CreateAsync(null, udf);
+                    _envs[key] = env;
+                    Log.Write("webview2 environment " + key);
                 }
-                return _env;
+                return env;
             }
         }
+
+        static string DpiKey(IntPtr hwnd)
+        {
+            try
+            {
+                var ctx = GetWindowDpiAwarenessContext(hwnd);
+                if (AreDpiAwarenessContextsEqual(ctx, new IntPtr(-4))) return "pmv2";
+                if (AreDpiAwarenessContextsEqual(ctx, new IntPtr(-3))) return "pm";
+                if (AreDpiAwarenessContextsEqual(ctx, new IntPtr(-2))) return "system";
+                if (AreDpiAwarenessContextsEqual(ctx, new IntPtr(-5))) return "gdiscaled";
+                if (AreDpiAwarenessContextsEqual(ctx, new IntPtr(-1))) return "unaware";
+                return "dpi" + GetAwarenessFromDpiAwarenessContext(ctx);
+            }
+            catch { return "default"; }   // Windows before 10 1607: no per-window awareness
+        }
+
+        [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr hwnd);
+        [DllImport("user32.dll")] static extern bool AreDpiAwarenessContextsEqual(IntPtr a, IntPtr b);
+        [DllImport("user32.dll")] static extern int GetAwarenessFromDpiAwarenessContext(IntPtr ctx);
     }
 
     /// <summary>
@@ -218,7 +250,7 @@ namespace ZoteroNext.Word
         {
             try
             {
-                var env = await WebHost.EnvAsync();
+                var env = await WebHost.EnvAsync(_web);
                 await _web.EnsureCoreWebView2Async(env);
                 var core = _web.CoreWebView2;
                 core.Settings.AreDevToolsEnabled = true;

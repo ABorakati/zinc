@@ -60,7 +60,7 @@ namespace ZoteroNext.Word
             try
             {
                 var site = WebHost.SiteDir();
-                var env = await WebHost.EnvAsync();
+                var env = await WebHost.EnvAsync(_web);
                 await _web.EnsureCoreWebView2Async(env);
                 var core = _web.CoreWebView2;
                 core.Settings.AreDevToolsEnabled = true;

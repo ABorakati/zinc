@@ -64,7 +64,7 @@ namespace ZoteroNext.Word
             _form = form; _web = web;
             form.Show();   // creates the window handle (off-screen, not activated); WebView2 needs one
             var site = WebHost.SiteDir();
-            var env = await WebHost.EnvAsync();
+            var env = await WebHost.EnvAsync(web);
             await web.EnsureCoreWebView2Async(env);
             var core = web.CoreWebView2;
             core.Settings.AreDevToolsEnabled = false;
