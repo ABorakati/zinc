@@ -26,6 +26,7 @@ namespace ZoteroNext.Word
         readonly WebView2 _web = new WebView2();
         readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 300 };
         string _lastSig = "";
+        string _theme = "light";
         bool _ready;
         readonly List<string> _pending = new List<string>();
 
@@ -68,12 +69,15 @@ namespace ZoteroNext.Word
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", site, CoreWebView2HostResourceAccessKind.Allow);
                 core.WebMessageReceived += OnMessage;
-                core.NavigationCompleted += (s, e) => { _ready = true; FlushPending(); };
+                core.NavigationCompleted += (s, e) => { _ready = true; OfficeTheme.Apply(core, _theme); FlushPending(); };
                 core.NewWindowRequested += (s, e) =>
                 {
                     e.Handled = true;
                     try { var u = e.Uri; if (u.StartsWith("https://") || u.StartsWith("http://")) System.Diagnostics.Process.Start(u); } catch { }
                 };
+                _theme = OfficeTheme.Current();
+                _web.DefaultBackgroundColor = OfficeTheme.Background(_theme);
+                OfficeTheme.Apply(core, _theme);
                 _web.Source = new Uri("https://zn-sidebar.local/index.html");
                 _timer.Start();
                 Log.Write("pane ready, site " + site);
@@ -119,6 +123,12 @@ namespace ZoteroNext.Word
         void Poll()
         {
             if (!Visible || !_ready) return;
+            var theme = OfficeTheme.Current();
+            if (theme != _theme)
+            {
+                _theme = theme;
+                try { _web.DefaultBackgroundColor = OfficeTheme.Background(theme); OfficeTheme.Apply(_web.CoreWebView2, theme); } catch { }
+            }
             var b = Connect.Shared;
             if (b == null) return;
             try

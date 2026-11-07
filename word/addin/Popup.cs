@@ -119,6 +119,12 @@ namespace ZoteroNext.Word
             _settingsAt = DateTime.Now;
             var v = Settings.Get("citationPopup");
             _enabled = !(v != null && (v.Equals("false", StringComparison.OrdinalIgnoreCase) || v == "0"));
+            var f = _form;
+            if (f != null && !f.IsDisposed && f._ready)
+            {
+                var theme = OfficeTheme.Current();
+                if (theme != f._theme) { f._theme = theme; OfficeTheme.Apply(f._web.CoreWebView2, theme); }
+            }
         }
 
         static void Poll()
@@ -206,6 +212,7 @@ namespace ZoteroNext.Word
 
         readonly WebView2 _web = new WebView2();
         bool _ready, _visible;
+        string _theme = OfficeTheme.Current();
         IntPtr _owner = IntPtr.Zero;
         int _heightCss = InitH;
         int[] _anchor;
@@ -258,12 +265,13 @@ namespace ZoteroNext.Word
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", WebHost.SiteDir(), CoreWebView2HostResourceAccessKind.Allow);
                 core.WebMessageReceived += OnMessage;
-                core.NavigationCompleted += (s, e) => { _ready = true; FlushPending(); };
+                core.NavigationCompleted += (s, e) => { _ready = true; OfficeTheme.Apply(core, _theme); FlushPending(); };
                 core.NewWindowRequested += (s, e) =>
                 {
                     e.Handled = true;
                     try { var u = e.Uri; if (u.StartsWith("https://") || u.StartsWith("http://")) System.Diagnostics.Process.Start(u); } catch { }
                 };
+                OfficeTheme.Apply(core, _theme);
                 _web.Source = new Uri("https://zn-sidebar.local/popup.html");
                 Log.Write("popup ready");
             }
