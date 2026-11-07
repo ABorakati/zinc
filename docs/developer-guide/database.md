@@ -48,6 +48,7 @@ The app's own small state files (`library.json`, `ui-state.json`, `startup.json`
 | `annotations`, `view_state` | Reader annotations and per-attachment view state, in the reader's own JSON shape |
 | `fulltext` | Extracted text per attachment |
 | `search` | FTS5 index (porter, unicode61) over title, creators, abstract, publication, tags, notes and full text; rebuilt by `core/src/search.ts` |
+| `quick_search` | FTS5 trigram index (migration 3) over title, creators, year and citation key of top-level items, for the toolbar search box. `rowid` = `items.rowid`. Triggers on `items` and `bbt_keys` keep it current; terms under 3 characters fall back to `LIKE`. `rebuildSearchIndex` rebuilds it |
 
 Further schema files are applied by the baseline migration: `core/src/sync/schema.sql` (sync state and outbox), `core/src/websync/schema.sql` (zotero.org sync) and `core/src/bbt/schema.sql` (Better BibTeX). `core/src/searches/schema.sql` (saved searches) and the duplicates tables are applied lazily by their modules.
 
@@ -61,7 +62,7 @@ Exactly one sync route runs per library; `sync_state` records which (`zotero-loc
 
 ## Migrations
 
-The code is `core/src/migrations/`: `index.ts` (the runner), `list.ts` (the ordered list), `types.ts`, `baseline.ts` (migration 1) and one file per later migration (`venues.ts` is migration 2). `meta.schema_version` holds the id of the last migration applied. `SCHEMA_HEAD` is the id of the last migration in the list.
+The code is `core/src/migrations/`: `index.ts` (the runner), `list.ts` (the ordered list), `types.ts`, `baseline.ts` (migration 1) and one file per later migration (`venues.ts` is migration 2, `quick-search.ts` is migration 3). `meta.schema_version` holds the id of the last migration applied. `SCHEMA_HEAD` is the id of the last migration in the list.
 
 What `migrate(db, path)` does:
 

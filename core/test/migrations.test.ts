@@ -139,7 +139,7 @@ describe("backups", () => {
 		expect(backups().filter((f) => /^library\.backup-v\d/.test(f))).toEqual([
 			"library.backup-v1-to-v2-20200103-000000-000.sqlite",
 			"library.backup-v1-to-v2-20200104-000000-000.sqlite",
-			expect.stringMatching(/^library\.backup-v1-to-v2-2\d{7}-\d{6}-\d{3}\.sqlite$/),
+			expect.stringMatching(new RegExp(`^library\\.backup-v1-to-v${SCHEMA_HEAD}-2\\d{7}-\\d{6}-\\d{3}\\.sqlite$`)),
 		]);
 		for (const f of ["library.backup-gpui-20241103-1200.sqlite", "library.backup-websync-20250101.sqlite", "library.sqlite.bak"]) {
 			expect(existsSync(join(dir, f))).toBe(true);

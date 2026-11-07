@@ -3,6 +3,7 @@
 import type { Database } from "bun:sqlite";
 import type { SearchHit, SearchResult, ZoteroItemData } from "./api-types";
 import { codePointChar } from "./entity";
+import { rebuildQuickIndex } from "./migrations/quick-search";
 
 const NON_INDEXED = "('attachment', 'note', 'annotation')";
 
@@ -63,6 +64,8 @@ function insertRow(db: Database, r: ItemRow): void {
 
 export function rebuildSearchIndex(db: Database): void {
 	db.transaction(() => {
+		// The trigram index (migration 3) is kept by triggers; rebuilding it here is the recovery path.
+		if (db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quick_search'").get()) rebuildQuickIndex(db);
 		db.run("DELETE FROM search");
 		const rows = db.query(
 			`SELECT rowid, key, title, publication, data FROM items
@@ -144,6 +147,8 @@ function matchedInAll(db: Database, rowids: number[], match: string): Map<number
 }
 
 // rank is FTS5 bm25 (title weighted highest): lower is better, hits are sorted ascending.
+// The page is chosen on rank alone and snippet() runs only for its rows: in one query SQLite can evaluate snippet() for every
+// match before sorting, and on a library with PDF full text that re-reads the large fulltext column once per match.
 export function search(db: Database, q: string, opts: { limit?: number; offset?: number } = {}): SearchResult {
 	const terms = parseQuery(q ?? "");
 	if (terms.length === 0) return { total: 0, hits: [] };
@@ -155,24 +160,39 @@ export function search(db: Database, q: string, opts: { limit?: number; offset?:
 			.query("SELECT count(*) AS n FROM search s JOIN items i ON i.rowid = s.rowid WHERE search MATCH ? AND i.deleted = 0")
 			.get(match) as { n: number }
 	).n;
-	const rows = db
+	const ranked = db
 		.query(
-			`SELECT s.rowid AS rowid, i.key, i.title, i.creators_summary, i.year,
-				bm25(search, 10.0, 5.0, 3.0, 2.0, 2.0, 1.0, 1.0) AS rank,
-				snippet(search, -1, '<mark>', '</mark>', '…', 16) AS snippet
+			`SELECT s.rowid AS rowid, bm25(search, 10.0, 5.0, 3.0, 2.0, 2.0, 1.0, 1.0) AS rank
 			 FROM search s JOIN items i ON i.rowid = s.rowid
 			 WHERE search MATCH ? AND i.deleted = 0
 			 ORDER BY rank LIMIT ? OFFSET ?`,
 		)
-		.all(match, limit, offset) as {
-		rowid: number;
-		key: string;
-		title: string | null;
-		creators_summary: string | null;
-		year: number | null;
-		rank: number;
-		snippet: string;
-	}[];
+		.all(match, limit, offset) as { rowid: number; rank: number }[];
+	const details = new Map(
+		(
+			ranked.length
+				? (db
+						.query(
+							`SELECT s.rowid AS rowid, i.key, i.title, i.creators_summary, i.year,
+								snippet(search, -1, '<mark>', '</mark>', '…', 16) AS snippet
+							 FROM search s JOIN items i ON i.rowid = s.rowid
+							 WHERE search MATCH ?1 AND s.rowid IN (SELECT value FROM json_each(?2))`,
+						)
+						.all(match, JSON.stringify(ranked.map((r) => r.rowid))) as {
+						rowid: number;
+						key: string;
+						title: string | null;
+						creators_summary: string | null;
+						year: number | null;
+						snippet: string;
+					}[])
+				: []
+		).map((r) => [r.rowid, r]),
+	);
+	const rows = ranked.flatMap((r) => {
+		const d = details.get(r.rowid);
+		return d ? [{ ...d, rank: r.rank }] : [];
+	});
 	const matched = rows.length ? matchedInAll(db, rows.map((r) => r.rowid), match) : new Map();
 	const hits: SearchHit[] = rows.map((r) => ({
 		key: r.key,

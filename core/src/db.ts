@@ -319,6 +319,18 @@ function likeEscape(s: string): string {
 	return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+// Whether this connection's library has the trigram table (migration 3). A read-only connection to a library that has not been
+// opened by a current build yet does not; asking sqlite_master once per connection is cheap.
+const quickIndexed = new WeakMap<Database, boolean>();
+function hasQuickIndex(db: Database): boolean {
+	let has = quickIndexed.get(db);
+	if (has === undefined) {
+		has = !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quick_search'").get();
+		quickIndexed.set(db, has);
+	}
+	return has;
+}
+
 function buildFilter(db: Database, opts: ListOptions) {
 	const where: string[] = ["i.parent_key IS NULL", "i.item_type <> 'annotation'", `i.deleted = ${opts.trash ? 1 : 0}`];
 	const params: (string | number)[] = [];
@@ -360,7 +372,15 @@ function buildFilter(db: Database, opts: ListOptions) {
 		where.push(c.sql);
 		params.push(...c.params);
 	} else if (opts.q) {
+		const trigram = hasQuickIndex(db);
 		for (const term of opts.q.split(/\s+/).filter(Boolean)) {
+			if (trigram && [...term].length >= 3) {
+				// Substring match from the trigram index (migration 3). Case folding is wider than LIKE's (non-ASCII letters fold too).
+				where.push("i.rowid IN (SELECT rowid FROM quick_search WHERE quick_search MATCH ?)");
+				params.push(`"${term.replaceAll('"', '""')}"`);
+				continue;
+			}
+			// Terms under 3 characters cannot use a trigram index; a library opened without migration 3 has none.
 			const like = `%${likeEscape(term)}%`;
 			where.push(
 				"(i.title LIKE ? ESCAPE '\\' OR i.creators_summary LIKE ? ESCAPE '\\' OR CAST(i.year AS TEXT) LIKE ? ESCAPE '\\' OR i.key IN (SELECT item_key FROM bbt_keys WHERE key LIKE ? ESCAPE '\\'))",
