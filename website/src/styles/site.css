@@ -107,6 +107,8 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .masthead-nav a { font: 500 0.8125rem/1 var(--f-head); color: var(--ink-3); text-decoration: none; padding: 0.45rem 0.8rem; border-radius: 6px; }
 .masthead-nav a:hover { color: var(--ink); }
 .masthead-nav a[aria-current] { color: var(--ink); background: var(--card); box-shadow: var(--pill-shadow); }
+.masthead-github { color: var(--ink-2); }
+.masthead-github:hover { color: var(--ink); }
 .theme .i-moon, :root[data-theme="dark"] .theme .i-sun { display: none; }
 :root[data-theme="dark"] .theme .i-moon { display: block; }
 
@@ -407,5 +409,7 @@ pre.typed { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card); c
 	.card-line .was { flex-basis: 100%; }
 	.vol-page { grid-template-columns: 2.6rem minmax(0, 1fr); }
 	.vol-spine .spine-title { font-size: 0.62rem; }
+	.masthead-github-label { display: none; } /* the mark alone on phones */
+	.masthead-github { padding-inline: 0.5rem; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
