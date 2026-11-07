@@ -228,6 +228,7 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .closed-item p + p { margin-top: 0.75rem; }
 .closed-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
 .closed-tags span { font: 500 0.75rem/1 var(--f-head); color: var(--ink-2); background: var(--secondary); border-radius: 999px; padding: 0.35rem 0.6rem; }
+.closed-plate { grid-column: 1 / -1; }
 .closed-item.lead h3 { font-size: clamp(1.6rem, 2.9vw, 2.2rem); }
 
 /* ---------- catalogue card ---------- */
