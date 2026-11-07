@@ -1,6 +1,6 @@
 # Zotero Next
 
-**A fast, native, Zotero-compatible reference manager for Windows.** It reads and syncs your Zotero library, runs Zotero's own translators, and draws its whole interface with GPU-rendered native UI instead of a web view.
+**A fast, modern reference manager for Windows that works with your Zotero library.** It opens in half a second, searches a 12,000-item library in tens of milliseconds, uses less than half of Zotero's working memory, and keeps saving references and inserting Word citations when the app is closed. It reads and syncs your Zotero data, runs Zotero's own translators, and has a built-in MCP server for AI agents.
 
 [![CI](https://github.com/ABorakati/zotero-next/actions/workflows/ci.yml/badge.svg)](https://github.com/ABorakati/zotero-next/actions/workflows/ci.yml)
 <!-- The CI badge above only renders for people who have access to this private repository. The badges below are static, so they work for everyone. -->
@@ -14,8 +14,51 @@
 
 Everything in the screenshots on this page comes from a demo library of well-known public papers, made only for these pictures.
 
+## Why Zotero Next
+
+Zotero Next opens the same kind of library as Zotero and speaks the same connector protocol. What differs is the engine underneath. The numbers below compare it with an installed **Zotero 10.0.7** on one Windows 11 x64 machine, using a copy of a real library with about 12.4k top-level items. The full tables, ranges and method are under [Benchmarks](#benchmarks).
+
+### Fast
+
+| | Zotero 10.0.7 | Zotero Next |
+| --- | --- | --- |
+| Window on screen | 1.83 s | 0.49 s |
+| Library ready | 16.3 s | 0.70 s |
+| Search a 12.4k-item library | 1.9 to 2.0 s | 35 to 50 ms |
+
+Start-up is nearly 4 times faster to a window and over 20 times faster to a usable library. Searches answer roughly 40 to 55 times faster, with the same queries against each program's local API. These are typical runs: one Zotero Next window took 3.3 s in the benchmark, so the ranges under [Benchmarks](#benchmarks) matter. Scrolling runs at about 126 to 129 frames per second in Cards view and 68 to 103 in the Classic table in the AOT build (Zotero Next's own figures; scrolling in Zotero was not measured).
+
+### Light
+
+- **One process, no browser engine in the main window.** Zotero Next runs as a single process where Zotero 10 ran three. The library window is drawn directly on the GPU instead of through a web view.
+- **Less than half the memory in use.** Working set is 358 MB against 783 MB for Zotero with the same library open.
+- **Not smaller everywhere.** Private bytes are higher (897 MB against 728 MB), because the core, search and PDF engine live in the one process. The program folder is bigger too (330 MB against 241 MB), and so is the library database (a different layout, so not a like-for-like size).
+
+### Modern
+
+- A native interface drawn by [Zed's GPUI](https://www.gpui.rs): a **Cards** view with authors, venue, tags and one-click actions, and a sortable **Classic** table. Light and dark themes, coloured and pinned collections, your own sections, and grouping and multi-level sorting.
+- A native PDF reader on PDFium with annotations, a **reflowed reading view** that shows figures and tables as cards, and clickable reference and citation cards.
+- Drag files onto the window or a collection to add them, paste identifiers straight into the list, and drag citations into Word, a browser or an email.
+
+### Works with the app closed
+
+- **Save references from Chrome or Edge.** The browser connector fork talks to a small native host, so pages, PDFs and references are saved straight into your library with the app closed. They sync the next time it runs.
+- **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in zotero-next** on a cited item.
+- **Ask an agent.** The library's MCP server also runs over stdio against the library file with the app closed.
+
+### Built-in MCP for AI agents
+
+The library has an MCP server in the core, with no plug-in to install. An agent such as Claude Code can search metadata, notes and PDF full text, read items and annotations, organise collections and tags, and format bibliographies in any CSL style. The Word add-in has its own MCP server, so an agent can also read and edit the citations in an open document. Neither server is reachable from other computers. See [MCP for AI agents](#mcp-for-ai-agents). No MCP server was found in the Zotero 10 install.
+
+### Still your Zotero library
+
+It imports your Zotero data folder (read only), keeps in step with a local Zotero or with zotero.org, runs Zotero's own translators, and works with the official Zotero Connector. Better BibTeX-style citation keys and auto-export, and ZotMoov-style file storage, are built in.
+
+It is not a full replacement yet: Windows only, no plug-ins, no group libraries, no LibreOffice or Google Docs. The [feature comparison](#feature-comparison-with-zotero-10) lists every difference.
+
 ## Contents
 
+- [Why Zotero Next](#why-zotero-next)
 - [What it is](#what-it-is)
 - [Features](#features)
 - [Screenshots](#screenshots)
@@ -206,23 +249,27 @@ The choice is saved. You can pick another library later under Settings, Files an
 
 ## The Word add-in
 
-An add-in for desktop Word (.NET Framework 4.8) with a side panel for your library. It inserts live citation fields and a bibliography using the same citation styles as the app, and it can refresh them. It also runs a small **MCP server** so an AI agent can read the open document and manage its citations. Install it with the installer's "Word add-in" component, or build it from `word/` (see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
+An add-in for desktop Word (.NET Framework 4.8) with a ribbon tab and a side panel for your library. It inserts live, Zotero-compatible citation fields and a bibliography using the same citation styles as the app, and it can refresh them. It can edit a citation (locator, prefix, suffix, several items), split or merge citations, edit the bibliography, and shows the full reference in a popup beside the cursor.
+
+**It works with the app closed.** The add-in reads your library file directly, in read-only mode. The app is only started on demand, when you click **Open in zotero-next** on a cited item.
+
+It also runs a small **MCP server** so an AI agent can read the open document and manage its citations. Install it with the installer's "Word add-in" component, or build it from `word/` (see [`CONTRIBUTING.md`](CONTRIBUTING.md)). Details are in the [Word add-in guide](docs/user-guide/word.md).
 
 ## The browser connector
 
 Two routes put web pages and references into the library:
 
 1. **The Zotero connector port.** While the app runs it answers on port 23119 like Zotero does, so the official Zotero Connector extension works. Only one program can own that port, so close desktop Zotero first.
-2. **The native-messaging fork.** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`).
+2. **The native-messaging fork (Chrome and Edge).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`).
 
 ## MCP for AI agents
 
 The core has an MCP server (search, read items and full text, annotations, collections, tags, bibliographies):
 
 - over HTTP at `/mcp` on the core's loopback address while the app runs, and
-- over stdio with the app closed: `bun core/scripts/mcp-stdio.ts --db <path-to-library.sqlite>`.
+- over stdio with the app closed: `bun core/scripts/mcp-stdio.ts --db <path-to-library.sqlite>` (this runs from a checkout of the source and needs Bun). It opens the library file directly, and the database's write-ahead logging lets it coexist with the running app.
 
-The Word add-in has its own MCP server for the open document. The core's server accepts loopback connections only.
+The Word add-in has its own MCP server for the open document. The core's server accepts loopback connections only. Setup commands for Claude Code and the full tool list are in [MCP for AI agents](docs/user-guide/mcp.md) (user guide) and `core/MCP.md`.
 
 ## Building from source
 
