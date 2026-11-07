@@ -61,7 +61,7 @@ flowchart LR
 | `note-host/` | Host page for Zotero's note editor (`build.sh`, `src/`, `dist/`) |
 | `vendor/` | Upstream Zotero repositories cloned by the build scripts (document-worker, reader, note-editor). Git-ignored |
 | `scripts/` | `build-docworker.sh` and `shims/` |
-| `website/` | Documentation website sources (Astro) |
+| `website/` | Project website sources (Astro): product pages and the docs |
 | `docs/` | Documentation: `user-guide/`, `developer-guide/`, `screenshots/` |
 | `data/` | A local library kept by a developer. Git-ignored; never commit or script against it |
 | `.github/workflows/` | `ci.yml` and `fuzz-nightly.yml` |

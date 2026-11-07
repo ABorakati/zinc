@@ -35,3 +35,4 @@ These pages are plain Markdown. Browse `docs/` on GitHub, or run the documentati
 - Put screenshots in `docs/screenshots/` and embed them with a relative path, for example `![Library](../screenshots/library-cards-light.png)`.
 - Diagrams are Mermaid fences.
 - A new page also needs an entry in the sidebar list in `website/astro.config.mjs`.
+- The site's home, Features, Compare and Download pages (`website/src/pages/`) read their benchmark tables, feature lists and comparison grid from the repository README at build time (`website/src/lib/readme.ts`). Edit the README, not the pages, to change those; keep its headings, since the pages look them up by name.

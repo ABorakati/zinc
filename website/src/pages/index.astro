@@ -1,62 +1,169 @@
 ---
-import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
-import { existsSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import Site from "../layouts/Site.astro";
+import { bullets, inline, paragraphs, section, tables } from "../lib/readme";
 
 const base = import.meta.env.BASE_URL;
-const releases = "https://github.com/ABorakati/zotero-next/releases";
+const shot = (f: string) => `${base}screenshots/${f}`;
 
-// Screenshots come from docs/screenshots (produced separately); show whatever is there.
-const shotsDir = resolve("../docs/screenshots");
-const shots = existsSync(shotsDir)
-	? readdirSync(shotsDir).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).sort().slice(0, 6)
-	: [];
-const caption = (f: string) => f.replace(/\.[^.]+$/, "").replace(/^\d+[-_ ]?/, "").replace(/[-_]+/g, " ");
-
-const cards = [
-	["Native and fast", "A Bun app drawn by Zed's GPUI. No browser engine for the library, the reader or the settings; the list scrolls at your display's rate."],
-	["Opens your Zotero library", "Import from Zotero on first run, read the Zotero data folder, and sync with the local Zotero or with zotero.org."],
-	["A real PDF reader", "Highlights, notes, ink and eraser, a reading view that reflows the paper, and figure, reference and citation cards."],
-	["Zotero's own translators", "Add by URL or identifier with the same translators Zotero uses, or save from the browser with the connector."],
-	["Citations everywhere", "Word add-in with a sidebar, Quick Copy, Better BibTeX keys and auto-export, bibliographies in any CSL style."],
-	["Ready for AI agents", "A local MCP server for the library and another for the open Word document. Loopback only; the Word one needs a token."],
+// Headline numbers, straight from the README's "Fast" table and the benchmark table.
+const fast = tables(section("### Fast"))[0].rows;
+const bench = tables(section("### Zotero Next against Zotero 10"))[0].rows;
+const ws = bench.find((r) => r[0].startsWith("Memory, working set"))!;
+const plain = (v: string) => v.replace(/\s*\(.*\)\s*$/, "").replace(/ to /g, "–");
+const stats = [
+	{ value: plain(fast[0][2]), label: "Window on screen", vs: `Zotero 10: ${plain(fast[0][1])}` },
+	{ value: plain(fast[1][2]), label: "Library ready", vs: `Zotero 10: ${plain(fast[1][1])}` },
+	{ value: plain(fast[2][2]), label: "Search 12.4k items", vs: `Zotero 10: ${plain(fast[2][1])}` },
+	{ value: plain(ws[2]), label: "Memory in use", vs: `Zotero 10: ${plain(ws[1])}` },
 ];
+
+// "Works with the app closed": each README bullet starts with its title in bold.
+const closed = bullets(section("### Works with the app closed")).map((b) => {
+	const m = /^\*\*(.+?)\*\*\s*(.*)$/.exec(b);
+	return { title: m ? m[1].replace(/\.$/, "") : "", body: m ? m[2] : b };
+});
+const mcp = paragraphs(section("### Built-in MCP for AI agents"))[0];
+const still = paragraphs(section("### Still your Zotero library"));
+
+const icons = {
+	browser: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg>',
+	word: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12l1.2 5 1.8-4 1.8 4 1.2-5"/></svg>',
+	agent: '<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9.5 16h5"/></svg>',
+};
+const closedIcons = [icons.browser, icons.word, icons.agent];
 ---
-
-<StarlightPage frontmatter={{ title: "Zotero Next", description: "A native, Zotero-compatible reference manager for Windows.", template: "splash", pagefind: false, hero: undefined }}>
-	<div class="zn-hero">
-		<img class="zn-logo" src={`${base}icon.svg`} alt="Zotero Next" />
-		<h1>Your Zotero library, native and fast</h1>
-		<p class="lede">Zotero Next is a Zotero-compatible reference manager for Windows. It opens your library, reads your PDFs, and cites into Word.</p>
-		<div class="zn-actions">
-			<a class="zn-btn primary" href={releases}>Download for Windows</a>
-			<a class="zn-btn" href={`${base}user-guide/install/`}>Install guide</a>
-			<a class="zn-btn" href={`${base}overview/`}>Read the docs</a>
+<Site page="home">
+	<section class="hero">
+		<div class="wrap">
+			<div class="hero-text">
+				<p class="eyebrow">For Windows · works with your Zotero library</p>
+				<h1>Your Zotero library, <em>native</em> and fast.</h1>
+				<p class="lede">Zotero Next is a reference manager that opens your Zotero library in half a second, searches it in milliseconds, reads your PDFs, and cites into Word, even with the app closed.</p>
+				<div class="actions">
+					<a class="btn btn-primary" href={`${base}download/`}>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.4 4.5v7H3zm8.4-1.1L21 3v8.5h-9.6zM3 12.5h7.4v7L3 18.5zm8.4 0H21V21l-9.6-1.3z"/></svg>
+						Download for Windows
+					</a>
+					<a class="btn" href={`${base}features/`}>See all features</a>
+				</div>
+				<p class="fine">Version 0.1.0 · Windows 10 and 11, 64-bit · per-user installer, no admin rights</p>
+			</div>
+			<div class="hero-shot">
+				<div class="shot">
+					<img class="only-light" src={shot("library-cards-light.png")} alt="The library in Cards view: coloured collections on the left, papers grouped by year in the middle, and the selected paper's details on the right" width="1400" height="857" fetchpriority="high" />
+					<img class="only-dark" src={shot("library-cards-dark.png")} alt="The library in Cards view, dark theme" width="1400" height="857" />
+				</div>
+			</div>
 		</div>
-		<p class="zn-note">Per-user installer, no admin rights. Releases are on the GitHub Releases page.</p>
-	</div>
+	</section>
 
-	{shots.length > 0 && (
-		<div class="zn-shots">
-			{shots.map((f) => (
-				<figure>
-					<img src={`${base}screenshots/${f}`} alt={caption(f)} loading="lazy" />
-					<figcaption>{caption(f)}</figcaption>
-				</figure>
-			))}
+	<section class="section">
+		<div class="wrap">
+			<div class="section-head">
+				<p class="eyebrow">Fast</p>
+				<h2>Measured against Zotero 10, on the same 12,400-item library</h2>
+			</div>
+			<div class="stats">
+				{stats.map((s) => (
+					<div class="stat">
+						<div class="stat-value">{s.value}</div>
+						<div class="stat-label">{s.label}</div>
+						<div class="stat-vs">{s.vs}</div>
+					</div>
+				))}
+			</div>
+			<p class="stats-note">Median of three runs on one Windows 11 machine; Zotero 10.0.7 against the Zotero Next AOT build. "Memory in use" is working set. Zotero Next's private memory is higher. <a href={`${base}compare/`}>Full results, ranges and method</a>.</p>
 		</div>
-	)}
+	</section>
 
-	<h2 class="zn-h2">What you get</h2>
-	<div class="zn-cards">
-		{cards.map(([t, d]) => (
-			<div class="zn-card"><h3>{t}</h3><p>{d}</p></div>
-		))}
-	</div>
+	<section class="section section-alt">
+		<div class="wrap">
+			<div class="feature-row">
+				<div>
+					<p class="eyebrow">Library</p>
+					<h3>Cards when you browse, a table when you sort</h3>
+					<p>The library window is drawn on the GPU by Zed's GPUI, not inside a web page, so it opens quickly and scrolls at your display's rate.</p>
+					<ul class="ticks">
+						<li>Cards with authors, venue, tags and one-click actions, or a sortable Classic table</li>
+						<li>Collections with colours, icons, pins and your own sections</li>
+						<li>Grouping, multi-level sorting, saved searches, duplicate merging</li>
+						<li>Drop files or paste a DOI, PMID or ISBN to add items</li>
+					</ul>
+				</div>
+				<div class="shot"><img src={shot("classic-table-dark.png")} alt="The Classic table view, grouped by year, in the dark theme" loading="lazy" width="1400" height="857" /></div>
+			</div>
 
-	<div class="zn-actions">
-		<a class="zn-btn" href={`${base}user-guide/`}>User guide</a>
-		<a class="zn-btn" href={`${base}developer-guide/`}>Developer guide</a>
-		<a class="zn-btn" href={`${base}user-guide/comparison/`}>Compared with Zotero 10</a>
-	</div>
-</StarlightPage>
+			<div class="feature-row flip">
+				<div>
+					<p class="eyebrow">PDF reader</p>
+					<h3>A native reader with your annotations</h3>
+					<p>Pages are rendered by PDFium through a small Rust library. Annotations are stored in the library, so they sync like everything else.</p>
+					<ul class="ticks">
+						<li>Highlight, underline, note, ink, image and eraser, with colours, tags and comments</li>
+						<li>Thumbnails, outline, search, spreads, rotation, dark and sepia page tints</li>
+						<li>Click an in-text citation to see the reference and add it to your library</li>
+					</ul>
+				</div>
+				<div class="shot">
+					<img class="only-light" src={shot("pdf-reader-annotations-light.png")} alt="The PDF reader with highlights and the annotations panel" loading="lazy" width="1400" height="881" />
+					<img class="only-dark" src={shot("pdf-reader-annotations-dark.png")} alt="The PDF reader with annotations, with a dark page tint" loading="lazy" width="1400" height="881" />
+				</div>
+			</div>
+
+			<div class="feature-row">
+				<div>
+					<p class="eyebrow">Reading view</p>
+					<h3>Read the paper, not the page layout</h3>
+					<p>The reading view reflows an article into one clean column in your own font, size and width. Figures and tables become cards you can open, and references are one click away.</p>
+				</div>
+				<div class="shot"><img src={shot("reading-view-table.png")} alt="The reading view, showing an article's table as a card" loading="lazy" width="1400" height="857" /></div>
+			</div>
+		</div>
+	</section>
+
+	<section class="section">
+		<div class="wrap">
+			<div class="section-head">
+				<p class="eyebrow">Works with the app closed</p>
+				<h2>Save, cite and ask without opening anything</h2>
+				<p>The browser connector, the Word add-in and the agent server each open the library file themselves.</p>
+			</div>
+			<div class="cards">
+				{closed.map((c, i) => (
+					<div class="card">
+						<div class="card-icon" set:html={closedIcons[i % closedIcons.length]} />
+						<h3>{c.title}</h3>
+						<p set:html={inline(c.body, base)} />
+					</div>
+				))}
+			</div>
+		</div>
+	</section>
+
+	<section class="section section-alt">
+		<div class="wrap feature-row">
+			<div>
+				<p class="eyebrow">For AI agents</p>
+				<h3>A built-in MCP server</h3>
+				<p set:html={inline(mcp, base)} />
+				<a href={`${base}user-guide/mcp/`}>Set it up with Claude Code →</a>
+			</div>
+			<div>
+				<p class="eyebrow">Compatible</p>
+				<h3>Still your Zotero library</h3>
+				{still.map((p) => <p set:html={inline(p, base)} />)}
+			</div>
+		</div>
+	</section>
+
+	<section class="section cta">
+		<div class="wrap">
+			<h2>Try it on a copy of your library</h2>
+			<p>The first-run screen imports from your Zotero data folder without changing it. Your Zotero install keeps working alongside.</p>
+			<div class="actions">
+				<a class="btn btn-primary" href={`${base}download/`}>Download for Windows</a>
+				<a class="btn" href={`${base}user-guide/first-run/`}>How first run works</a>
+			</div>
+		</div>
+	</section>
+</Site>

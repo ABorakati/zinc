@@ -1,0 +1,77 @@
+---
+import Site from "../layouts/Site.astro";
+import { bullets, inline, section, subsections } from "../lib/readme";
+
+const base = import.meta.env.BASE_URL;
+const groups = subsections(section("## Features")).map((s) => ({ title: s.title, items: bullets(s.body) }));
+
+// Screenshots and their captions, from the README's screenshot table (image row, then caption row).
+const shotRows = section("## Screenshots").split("\n").filter((l) => l.trim().startsWith("|") && !/^\|\s*(---|\|)/.test(l.trim()));
+const gallery: { file: string; alt: string; caption: string }[] = [];
+for (let i = 0; i + 1 < shotRows.length; i++) {
+	const imgs = [...shotRows[i].matchAll(/!\[([^\]]*)\]\(docs\/screenshots\/([^)]+)\)/g)];
+	if (!imgs.length) continue;
+	const caps = shotRows[i + 1].split("|").map((c) => c.trim()).filter(Boolean);
+	imgs.forEach((m, j) => gallery.push({ file: m[2], alt: m[1], caption: caps[j] ?? m[1] }));
+	i++;
+}
+
+const icons: Record<string, string> = {
+	Library: '<svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 2.5 15-3.5 1z"/></svg>',
+	"PDF reader": '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
+	"Notes and web": '<svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>',
+	"Sync and storage": '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12A8 8 0 0 1 18 6.7"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>',
+	"Getting references in and out": '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>',
+	"Around the app": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>',
+};
+---
+<Site page="features" title="Features" description="Everything Zotero Next does: library, PDF reader, notes, sync, translators, Better BibTeX, the Word add-in, the browser connector and MCP.">
+	<section class="page-head">
+		<div class="wrap">
+			<p class="eyebrow">Features</p>
+			<h1>Everything in Zotero Next</h1>
+			<p>A Zotero-format library with a native window, a native PDF reader and the tools around it. What Zotero has that Zotero Next does not is on the <a href={`${base}compare/#features`}>comparison page</a>.</p>
+		</div>
+	</section>
+
+	<section class="section" style="padding-top: 2rem">
+		<div class="wrap cards">
+			{groups.map((g) => (
+				<div class="card">
+					<div class="card-icon" set:html={icons[g.title] ?? icons["Around the app"]} />
+					<h3>{g.title}</h3>
+					<ul>{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
+				</div>
+			))}
+		</div>
+	</section>
+
+	<section class="section section-alt">
+		<div class="wrap">
+			<div class="section-head">
+				<p class="eyebrow">Screenshots</p>
+				<h2>See it</h2>
+				<p>Taken from a demo library of well-known public papers.</p>
+			</div>
+			<div class="gallery">
+				{gallery.map((g) => (
+					<figure>
+						<div class="shot"><img src={`${base}screenshots/${g.file}`} alt={g.alt} loading="lazy" /></div>
+						<figcaption>{g.caption}</figcaption>
+					</figure>
+				))}
+			</div>
+		</div>
+	</section>
+
+	<section class="section cta">
+		<div class="wrap">
+			<h2>Read how each part works</h2>
+			<p>The user guide covers every feature above, from the first run to the Word add-in and the MCP server.</p>
+			<div class="actions">
+				<a class="btn btn-primary" href={`${base}user-guide/`}>Open the user guide</a>
+				<a class="btn" href={`${base}download/`}>Download</a>
+			</div>
+		</div>
+	</section>
+</Site>

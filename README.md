@@ -322,7 +322,7 @@ Notes:
 | `note-host/` | The page for the note editor |
 | `vendor/` | Upstream Zotero repositories fetched by build scripts (git-ignored) |
 | `scripts/` | Helper scripts, such as building Zotero's document worker |
-| `website/` | The documentation website (Astro). From the repo root: `bun run docs:dev` |
+| `website/` | The project website (Astro): home, features, compare and download pages, plus these docs. Local only; from the repo root: `bun run docs:dev` |
 | `docs/` | User-guide pages (`user-guide/`) and the pictures in this README (`screenshots/`) |
 | `.github/workflows/` | CI and the nightly fuzz run |
 | `CONTRIBUTING.md` | How to run the CI checks locally |

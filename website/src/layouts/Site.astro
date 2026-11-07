@@ -1,0 +1,96 @@
+---
+// Layout of the product pages (home, features, compare, download). The docs keep Starlight's own layout; both share the
+// theme choice through Starlight's localStorage key, so switching theme on one carries over to the other.
+import "../styles/site.css";
+
+interface Props { title?: string; description?: string; page?: "home" | "features" | "compare" | "download" }
+const { title, description = "A fast, native reference manager for Windows that works with your Zotero library.", page } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const nav = [
+	{ id: "features", label: "Features", href: `${base}features/` },
+	{ id: "compare", label: "Compare", href: `${base}compare/` },
+	{ id: "docs", label: "Docs", href: `${base}overview/` },
+];
+const fullTitle = title ? `${title} · Zotero Next` : "Zotero Next: your Zotero library, native and fast";
+---
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>{fullTitle}</title>
+	<meta name="description" content={description} />
+	<link rel="icon" href={`${base}icon.svg`} type="image/svg+xml" />
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" />
+	<script is:inline>
+		(() => {
+			let t = "";
+			try { t = localStorage.getItem("starlight-theme") || ""; } catch {}
+			const dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+			document.documentElement.dataset.theme = dark ? "dark" : "light";
+		})();
+	</script>
+</head>
+<body>
+	<a class="skip" href="#main">Skip to content</a>
+	<header class="top">
+		<div class="wrap top-row">
+			<a class="brand" href={base}>
+				<img src={`${base}icon.svg`} alt="" width="28" height="28" />
+				<span>Zotero Next</span>
+			</a>
+			<nav aria-label="Main">
+				{nav.map((n) => <a href={n.href} aria-current={page === n.id ? "page" : undefined}>{n.label}</a>)}
+			</nav>
+			<div class="top-actions">
+				<button class="theme" type="button" aria-label="Switch light or dark theme" title="Switch theme">
+					<svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></svg>
+					<svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" /></svg>
+				</button>
+				<a class="btn btn-primary btn-sm" href={`${base}download/`} aria-current={page === "download" ? "page" : undefined}>Download</a>
+			</div>
+		</div>
+	</header>
+
+	<main id="main">
+		<slot />
+	</main>
+
+	<footer class="foot">
+		<div class="wrap foot-grid">
+			<div>
+				<a class="brand" href={base}><img src={`${base}icon.svg`} alt="" width="22" height="22" /><span>Zotero Next</span></a>
+				<p class="muted small">A Zotero-compatible reference manager for Windows. Not affiliated with the Zotero project; Zotero is a trademark of the Corporation for Digital Scholarship.</p>
+			</div>
+			<div>
+				<h2 class="foot-h">Product</h2>
+				<a href={`${base}features/`}>Features</a>
+				<a href={`${base}compare/`}>Compare with Zotero</a>
+				<a href={`${base}download/`}>Download</a>
+			</div>
+			<div>
+				<h2 class="foot-h">Docs</h2>
+				<a href={`${base}user-guide/`}>User guide</a>
+				<a href={`${base}developer-guide/`}>Developer guide</a>
+				<a href={`${base}user-guide/troubleshooting/`}>Troubleshooting</a>
+			</div>
+			<div>
+				<h2 class="foot-h">Project</h2>
+				<a href="https://github.com/ABorakati/zotero-next">Source on GitHub</a>
+				<a href="https://github.com/ABorakati/zotero-next/releases">Releases</a>
+				<a href={`${base}developer-guide/contributing/`}>Contributing</a>
+			</div>
+		</div>
+	</footer>
+
+	<script is:inline>
+		document.querySelector(".theme")?.addEventListener("click", () => {
+			const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+			document.documentElement.dataset.theme = next;
+			try { localStorage.setItem("starlight-theme", next); } catch {}
+		});
+	</script>
+</body>
+</html>

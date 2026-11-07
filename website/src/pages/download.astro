@@ -1,0 +1,91 @@
+---
+import Site from "../layouts/Site.astro";
+
+const base = import.meta.env.BASE_URL;
+const latest = "https://github.com/ABorakati/zotero-next/releases/latest";
+---
+<Site page="download" title="Download" description="Download the Zotero Next installer for Windows 10 and 11, and set up the Word add-in and the browser connector.">
+	<section class="page-head">
+		<div class="wrap">
+			<p class="eyebrow">Download</p>
+			<h1>Get Zotero Next for Windows</h1>
+			<p>One installer for the app, the Word add-in and the browser connector. It installs for your user only and never changes your Zotero library.</p>
+		</div>
+	</section>
+
+	<section class="section" style="padding-top: 2rem">
+		<div class="wrap dl">
+			<div class="dl-card">
+				<h2>Zotero Next 0.1.0</h2>
+				<p class="muted">Windows installer, about 145 MB</p>
+				<div class="actions" style="margin-top: 1.25rem">
+					<a class="btn btn-primary" href={latest}>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.4 4.5v7H3zm8.4-1.1L21 3v8.5h-9.6zM3 12.5h7.4v7L3 18.5zm8.4 0H21V21l-9.6-1.3z"/></svg>
+						Download from GitHub Releases
+					</a>
+				</div>
+				<ul class="dl-meta">
+					<li><strong>Needs:</strong> Windows 10 or 11, 64-bit</li>
+					<li><strong>Installs to:</strong> <code>%LOCALAPPDATA%\Programs\Zotero Next</code>, no admin rights</li>
+					<li><strong>Optional parts:</strong> Word add-in, browser connector (both ticked by default)</li>
+					<li><strong>Updates:</strong> signed auto-update, or run a newer installer over the top</li>
+				</ul>
+			</div>
+			<div class="callout">
+				<strong>The repository is private for now.</strong> The download link works when you are signed in to GitHub with access to it.
+				The installer is not code-signed yet, so Windows SmartScreen says the publisher is unknown: click <strong>More info</strong>, then <strong>Run anyway</strong>.
+			</div>
+		</div>
+	</section>
+
+	<section class="section section-alt">
+		<div class="wrap">
+			<div class="section-head">
+				<h2>Install</h2>
+			</div>
+			<ol class="steps">
+				<li><strong>Run the installer</strong><p>Pick the parts you want. The Word add-in needs Word closed while it installs.</p></li>
+				<li><strong>Choose your library</strong><p>On first start, import from your Zotero data folder (it is only read), open an existing Zotero Next library, or start an empty one. <a href={`${base}user-guide/first-run/`}>First run in detail</a>.</p></li>
+				<li><strong>Pick a sync route</strong><p>Keep in step with a local Zotero, or with zotero.org through its Web API, with or without attachments. <a href={`${base}user-guide/sync/`}>Sync</a>.</p></li>
+			</ol>
+			<p class="small muted" style="margin-top: 1.25rem">Silent install, for scripts:</p>
+			<pre class="cmd">ZoteroNext-Setup-0.1.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="app,word,connector"</pre>
+		</div>
+	</section>
+
+	<section class="section" id="connector">
+		<div class="wrap">
+			<div class="section-head">
+				<h2>Set up the browser connector</h2>
+				<p>The installer registers the helper program. Browsers do not let an installer add an extension, so load it once yourself (about thirty seconds).</p>
+			</div>
+			<ol class="steps">
+				<li><strong>Open the extensions page</strong><p><code>chrome://extensions</code> in Chrome, or <code>edge://extensions</code> in Edge.</p></li>
+				<li><strong>Turn on Developer mode</strong><p>Top right in Chrome, left sidebar in Edge.</p></li>
+				<li><strong>Load unpacked</strong><p>Pick <code>%LOCALAPPDATA%\Programs\Zotero Next\connector\extension</code>. The Start menu entry "Zotero Next Connector - how to install" opens a page with the exact path to copy.</p></li>
+				<li><strong>Check the ID</strong><p>It should read <code>pakgagonakcalfbmckaolkpidcojacaf</code>. Pin the button, open an article and click it. It saves even when Zotero Next is closed.</p></li>
+			</ol>
+			<p class="muted" style="margin-top: 1.25rem">The official Zotero Connector also works, but only while the app is open. Keep one connector per browser, or every page shows two Save buttons.</p>
+		</div>
+	</section>
+
+	<section class="section section-alt">
+		<div class="wrap cards">
+			<div class="card">
+				<h3>Word add-in</h3>
+				<p>Insert and edit live citations and a bibliography from a sidebar in Word, even with the app closed.</p>
+				<p style="margin-top: 0.75rem"><a href={`${base}user-guide/word/`}>Word add-in guide →</a></p>
+			</div>
+			<div class="card">
+				<h3>MCP for agents</h3>
+				<p>Connect Claude Code or another MCP client to your library and to the open Word document.</p>
+				<p style="margin-top: 0.75rem"><a href={`${base}user-guide/mcp/`}>MCP setup →</a></p>
+			</div>
+			<div class="card">
+				<h3>Build from source</h3>
+				<p>Bun 1.4.4, Rust for the PDF library, and Inno Setup 7 for the installer. No Node or npm.</p>
+				<p style="margin-top: 0.75rem"><a href={`${base}developer-guide/building/`}>Building guide →</a></p>
+			</div>
+		</div>
+	</section>
+</Site>
