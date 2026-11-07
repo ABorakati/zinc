@@ -1,76 +1,69 @@
 ---
+import Plate from "../components/Plate.astro";
+import Shelf from "../components/Shelf.astro";
 import Site from "../layouts/Site.astro";
 import { bullets, inline, section, subsections } from "../lib/readme";
+import { slug, volumes } from "../lib/shelf";
 
 const base = import.meta.env.BASE_URL;
-const groups = subsections(section("## Features")).map((s) => ({ title: s.title, items: bullets(s.body) }));
+const vols = volumes(base);
+const groups = subsections(section("## Features")).map((s, i) => ({ title: s.title, id: slug(s.title), items: bullets(s.body), cloth: vols[i]?.cloth ?? "green", call: vols[i]?.call ?? "" }));
 
-// Screenshots and their captions, from the README's screenshot table (image row, then caption row).
-const shotRows = section("## Screenshots").split("\n").filter((l) => l.trim().startsWith("|") && !/^\|\s*(---|\|)/.test(l.trim()));
+// Screenshots and captions from the README's screenshot table (image row, then caption row).
+const rows = section("## Screenshots").split("\n").filter((l) => l.trim().startsWith("|") && !/^\|\s*(---|\|)/.test(l.trim()));
 const gallery: { file: string; alt: string; caption: string }[] = [];
-for (let i = 0; i + 1 < shotRows.length; i++) {
-	const imgs = [...shotRows[i].matchAll(/!\[([^\]]*)\]\(docs\/screenshots\/([^)]+)\)/g)];
+for (let i = 0; i + 1 < rows.length; i++) {
+	const imgs = [...rows[i].matchAll(/!\[([^\]]*)\]\(docs\/screenshots\/([^)]+)\)/g)];
 	if (!imgs.length) continue;
-	const caps = shotRows[i + 1].split("|").map((c) => c.trim()).filter(Boolean);
+	const caps = rows[i + 1].split("|").map((c) => c.trim()).filter(Boolean);
 	imgs.forEach((m, j) => gallery.push({ file: m[2], alt: m[1], caption: caps[j] ?? m[1] }));
 	i++;
 }
-
-const icons: Record<string, string> = {
-	Library: '<svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l3.5-1 2.5 15-3.5 1z"/></svg>',
-	"PDF reader": '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>',
-	"Notes and web": '<svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>',
-	"Sync and storage": '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12A8 8 0 0 1 18 6.7"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>',
-	"Getting references in and out": '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>',
-	"Around the app": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>',
-};
+const tall = (f: string) => f.startsWith("pdf-reader");
+// one number per screenshot across the site (the home page uses I to IV): I cards, II classic table, III reader, IV reading view,
+// V settings, VI the reader with its dark page tint
+const PLATE: Record<string, string> = { "library-cards": "I", "classic-table": "II", "pdf-reader-annotations": "III", "pdf-reader-annotations-dark": "VI", "reading-view-table": "IV", "settings-reader": "V" };
+const plateNo = (f: string) => { const k = f.replace(/\.png$/, ""); return PLATE[k] ?? PLATE[k.replace(/-(light|dark)$/, "")] ?? "–"; };
 ---
 <Site page="features" title="Features" description="Everything Zotero Next does: library, PDF reader, notes, sync, translators, Better BibTeX, the Word add-in, the browser connector and MCP.">
-	<section class="page-head">
+	<section class="cloth shelf-room">
 		<div class="wrap">
-			<p class="eyebrow">Features</p>
-			<h1>Everything in Zotero Next</h1>
-			<p>A Zotero-format library with a native window, a native PDF reader and the tools around it. What Zotero has that Zotero Next does not is on the <a href={`${base}compare/#features`}>comparison page</a>.</p>
+			<div class="head">
+				<h1 class="display" style="margin-bottom: 1rem">The collection</h1>
+				<p>Every part of Zotero Next, one volume each. What Zotero has that Zotero Next does not is in the <a href={`${base}compare/#features`}>comparison register</a>.</p>
+			</div>
+			<Shelf label="Jump to a volume" />
 		</div>
 	</section>
 
-	<section class="section" style="padding-top: 2rem">
-		<div class="wrap cards">
+	<section class="room">
+		<div class="wrap">
 			{groups.map((g) => (
-				<div class="card">
-					<div class="card-icon" set:html={icons[g.title] ?? icons["Around the app"]} />
-					<h3>{g.title}</h3>
-					<ul>{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
-				</div>
+				<article class="vol-page" id={g.id}>
+					<div class={`vol-spine c-${g.cloth}`} aria-hidden="true">
+						<span class="spine-band"></span>
+						<span class="spine-title">{g.title}</span>
+						<span class="spine-label">{g.call}</span>
+					</div>
+					<div class="vol-body">
+						<h2 class="h3">{g.title}</h2>
+						<ul>{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
+					</div>
+				</article>
 			))}
 		</div>
 	</section>
 
-	<section class="section section-alt">
+	<section class="room" style="background: var(--ground-2); padding-top: clamp(4rem, 9vw, 7.5rem)">
 		<div class="wrap">
-			<div class="section-head">
-				<p class="eyebrow">Screenshots</p>
-				<h2>See it</h2>
-				<p>Taken from a demo library of well-known public papers.</p>
+			<div class="head">
+				<h2 class="h2">Plates</h2>
+				<p>Screenshots of the app, taken on a demo library of well-known public papers.</p>
 			</div>
-			<div class="gallery">
-				{gallery.map((g) => (
-					<figure>
-						<div class="shot"><img src={`${base}screenshots/${g.file}`} alt={g.alt} loading="lazy" /></div>
-						<figcaption>{g.caption}</figcaption>
-					</figure>
+			<div class="plates">
+				{gallery.map((g, i) => (
+					<Plate n={plateNo(g.file)} src={g.file} alt={g.alt} caption={g.caption} h={tall(g.file) ? 881 : 857} tilt={i % 2 ? 0.7 : -0.7} />
 				))}
-			</div>
-		</div>
-	</section>
-
-	<section class="section cta">
-		<div class="wrap">
-			<h2>Read how each part works</h2>
-			<p>The user guide covers every feature above, from the first run to the Word add-in and the MCP server.</p>
-			<div class="actions">
-				<a class="btn btn-primary" href={`${base}user-guide/`}>Open the user guide</a>
-				<a class="btn" href={`${base}download/`}>Download</a>
 			</div>
 		</div>
 	</section>

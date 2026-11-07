@@ -1,0 +1,88 @@
+---
+// The speed claim as a race run in real time: Zotero 10 and Zotero Next as two lanes, filling over their measured medians
+// (README benchmark table). It starts when it scrolls into view; "Run again" replays it. The HTML shows the finished race, so
+// without JS or with reduced motion the result is still all there.
+import Icon from "./Icon.astro";
+import { section, tables } from "../lib/readme";
+
+const rows = tables(section("### Zotero Next against Zotero 10"))[0].rows;
+const pick = (prefix: string) => rows.find((r) => r[0].startsWith(prefix))!;
+const ms = (v: string) => { const m = /^([\d.,]+)\s*(ms|s)/.exec(v.trim())!; const n = Number(m[1].replace(/,/g, "")); return m[2] === "s" ? n * 1000 : n; };
+const races = [
+	{ id: "ready", label: "Library ready", what: "from launch until the library's items are loaded", row: pick("Library ready") },
+	{ id: "search", label: "Search", what: "one search of the 12,400-item library for a common word", row: pick("Search through the local API, common word") },
+].map((r) => ({ ...r, zotero: ms(r.row[1]), next: ms(r.row[2]) }));
+const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 1 : 2)} s` : `${Math.round(n)} ms`);
+---
+<div class="race" data-race>
+	<div class="race-top">
+		<div class="seg" role="tablist" aria-label="Race">
+			{races.map((r, i) => <button type="button" role="tab" aria-selected={i === 0 ? "true" : "false"} data-tab={r.id}>{r.label}</button>)}
+		</div>
+		<span class="race-clock mono" aria-hidden="true">0.00 s</span>
+		<button type="button" class="btn btn-secondary btn-sm race-again"><Icon name="rotate-ccw" size={14} />Run again</button>
+	</div>
+	{races.map((r, i) => (
+		<div class="race-panel" data-panel={r.id} data-zotero={r.zotero} data-next={r.next} hidden={i !== 0}>
+			<p class="race-what">{r.what}</p>
+			<div class="lane done" data-lane="next" style={`--w:${(r.next / r.zotero) * 100}%`}>
+				<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zotero Next</span>
+				<span class="lane-track"><span class="lane-fill"></span></span>
+				<span class="lane-time mono"><span class="lane-done"><Icon name="check" size={14} /></span><span class="lane-read">{fmt(r.next)}</span></span>
+			</div>
+			<div class="lane lane-zotero done" data-lane="zotero" style="--w:100%">
+				<span class="lane-name"><Icon name="hourglass" size={16} />Zotero 10.0.7</span>
+				<span class="lane-track"><span class="lane-fill"></span></span>
+				<span class="lane-time mono"><span class="lane-done"><Icon name="check" size={14} /></span><span class="lane-read">{fmt(r.zotero)}</span></span>
+			</div>
+		</div>
+	))}
+	<p class="race-note">Run in real time from the measured medians: the same 12,400-item library, three runs each, Windows 11. Not everything is smaller: Zotero Next's private memory is higher. <a href={`${import.meta.env.BASE_URL}compare/`}>Full results and method</a>.</p>
+</div>
+
+<script is:inline>
+	(() => {
+		for (const race of document.querySelectorAll("[data-race]")) {
+			const clock = race.querySelector(".race-clock");
+			const tabs = [...race.querySelectorAll("[data-tab]")];
+			const panels = [...race.querySelectorAll("[data-panel]")];
+			const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 1 : 2) + " s" : Math.round(n) + " ms");
+			const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+			let raf = 0, current = panels[0], started = false;
+			const run = (panel) => {
+				cancelAnimationFrame(raf);
+				const z = +panel.dataset.zotero, n = +panel.dataset.next;
+				const lanes = { next: panel.querySelector('[data-lane="next"]'), zotero: panel.querySelector('[data-lane="zotero"]') };
+				const total = { next: n, zotero: z };
+				if (reduced) { for (const k in lanes) lanes[k].classList.add("done"); clock.textContent = fmt(z); return; }
+				for (const k in lanes) { lanes[k].classList.remove("done"); lanes[k].style.setProperty("--p", "0"); lanes[k].querySelector(".lane-read").textContent = "0 ms"; }
+				race.classList.add("running");
+				const t0 = performance.now();
+				const tick = (now) => {
+					const t = now - t0;
+					clock.textContent = fmt(Math.min(t, z));
+					for (const k in lanes) {
+						const p = Math.min(1, t / total[k]);
+						lanes[k].style.setProperty("--p", String(p));
+						lanes[k].querySelector(".lane-read").textContent = fmt(Math.min(t, total[k]));
+						if (p >= 1) lanes[k].classList.add("done");
+					}
+					if (t < z) raf = requestAnimationFrame(tick); else race.classList.remove("running");
+				};
+				raf = requestAnimationFrame(tick);
+			};
+			for (const tab of tabs) tab.addEventListener("click", () => {
+				for (const t of tabs) t.setAttribute("aria-selected", String(t === tab));
+				for (const p of panels) p.hidden = p.dataset.panel !== tab.dataset.tab;
+				current = panels.find((p) => !p.hidden);
+				run(current);
+			});
+			race.querySelector(".race-again").addEventListener("click", () => run(current));
+			// the finished race is the default; JS starts it from zero when it scrolls into view
+			if (reduced || !("IntersectionObserver" in window)) { for (const l of race.querySelectorAll(".lane")) l.classList.add("done"); clock.textContent = fmt(+current.dataset.zotero); continue; }
+			for (const l of race.querySelectorAll(".lane")) { l.classList.remove("done"); l.style.setProperty("--p", "0"); l.querySelector(".lane-read").textContent = "0 ms"; }
+			const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && !started) { started = true; run(current); io.disconnect(); } }, { threshold: 0.25 });
+			io.observe(race);
+		}
+	})();
+</script>

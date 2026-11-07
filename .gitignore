@@ -19,3 +19,7 @@ website/node_modules/
 website/dist/
 website/.astro/
 website/public/screenshots/
+
+# impeccable design-skill scratch: review screenshots and decision-page state
+.impeccable/review/
+.impeccable/questions/

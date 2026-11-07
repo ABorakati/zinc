@@ -25,7 +25,7 @@ export default defineConfig({
 			description: "A fast, native, Zotero-compatible reference manager for Windows.",
 			logo: { src: "./public/icon.svg", alt: "Zotero Next" },
 			favicon: "/icon.svg",
-			customCss: ["./src/styles/custom.css"],
+			customCss: ["@fontsource-variable/inter/opsz.css", "@fontsource-variable/manrope/wght.css", "./src/styles/custom.css"],
 			editLink: undefined,
 			lastUpdated: false,
 			sidebar: [

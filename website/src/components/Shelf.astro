@@ -1,0 +1,24 @@
+---
+// A shelf of bound volumes, one spine per feature group. Spines slide onto the shelf when it scrolls into view;
+// a hovered or focused spine lifts out of the row. Each spine is a link.
+import { volumes } from "../lib/shelf";
+interface Props { label?: string }
+const { label = "Feature volumes" } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const vols = volumes(base);
+---
+<nav class="shelf" aria-label={label} data-reveal>
+	<ol class="shelf-row">
+		{vols.map((v, i) => (
+			<li style={`--i:${i};--h:${v.height}rem;--w:${v.width}rem`}>
+				<a class={`spine c-${v.cloth}`} href={v.href}>
+					<span class="spine-band" aria-hidden="true"></span>
+					<span class="spine-title">{v.spine}</span>
+					<span class="spine-band" aria-hidden="true"></span>
+					<span class="spine-label" aria-hidden="true">{v.call}</span>
+				</a>
+			</li>
+		))}
+	</ol>
+	<div class="shelf-board" aria-hidden="true"></div>
+</nav>

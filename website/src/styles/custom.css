@@ -1,14 +1,36 @@
-/* Docs (Starlight) theme. The product pages (home, features, compare, download) use src/layouts/Site.astro and src/styles/site.css. */
+/* Docs (Starlight) theme, in the app's "Quiet Paper" palette (gpui-ui/src/theme.ts). The product pages (home, features, compare,
+   download) use src/layouts/Site.astro and src/styles/site.css. */
 :root {
-	--sl-color-accent-low: #3d1215;
-	--sl-color-accent: #d23a41;
-	--sl-color-accent-high: #ffb3b6;
-	--sl-font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+	/* dark */
+	--sl-color-accent-low: #243350;
+	--sl-color-accent: #7BA3E6;
+	--sl-color-accent-high: #A9C4F0;
+	--sl-color-white: #EDEBE6;
+	--sl-color-gray-1: #E4E1DA;
+	--sl-color-gray-2: #CFCBC3;
+	--sl-color-gray-3: #A29E94;
+	--sl-color-gray-4: #6B675F;
+	--sl-color-gray-5: #35332F;
+	--sl-color-gray-6: #1E1D1B;
+	--sl-color-black: #141413;
+	--sl-font: "Inter Variable", "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; /* the app's UI face */
+	--sl-font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
 }
+/* headings in the app's Manrope, as on the product pages */
+.sl-markdown-content :is(h1, h2, h3), h1#_top { font-family: "Manrope Variable", "Manrope", "Inter Variable", sans-serif; font-weight: 750; letter-spacing: -0.025em; }
 :root[data-theme="light"] {
-	--sl-color-accent-low: #ffd9db;
-	--sl-color-accent: #b4232c;
-	--sl-color-accent-high: #6e1218;
+	--sl-color-accent-low: #E3ECF9;
+	--sl-color-accent: #2B5FA8;
+	--sl-color-accent-high: #1D467F;
+	--sl-color-white: #23221F;
+	--sl-color-gray-1: #3B3934;
+	--sl-color-gray-2: #4A4740;
+	--sl-color-gray-3: #6B675F;
+	--sl-color-gray-4: #A29E94;
+	--sl-color-gray-5: #E4E1DA;
+	--sl-color-gray-6: #F1EFEA;
+	--sl-color-gray-7: #F7F6F3;
+	--sl-color-black: #FFFFFF;
 }
 .sl-markdown-content img { border-radius: 8px; border: 1px solid var(--sl-color-hairline); }
 .sl-markdown-content table { display: table; width: 100%; }

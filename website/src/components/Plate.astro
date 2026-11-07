@@ -1,0 +1,18 @@
+---
+// A screenshot of the app, tipped in like a book plate: numbered and captioned. `dark` swaps in the dark-theme screenshot when the
+// site is dark; without one the screenshot is dimmed a little in dark mode. `vol` tabs the plate with its volume's call number and
+// binding colour, so a feature row reads as that volume taken off the shelf.
+import type { Volume } from "../lib/shelf";
+interface Props { n: string; src: string; dark?: string; alt: string; caption: string; tilt?: number; eager?: boolean; w?: number; h?: number; vol?: Volume }
+const { n, src, dark, alt, caption, tilt = 0, eager = false, w = 1400, h = 857, vol } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const url = (f: string) => `${base}screenshots/${f}`;
+---
+<figure class:list={["plate", { "no-dark": !dark }]} style={`--tilt:${tilt}deg`} data-reveal>
+	<div class:list={["plate-mount", vol && `c-${vol.cloth}`]}>
+		{vol && <a class="plate-tab" href={vol.href}>{vol.call} · {vol.spine}</a>}
+		<img class:list={[{ "only-light": !!dark }]} src={url(src)} alt={alt} width={w} height={h} loading={eager ? "eager" : "lazy"} fetchpriority={eager ? "high" : undefined} />
+		{dark && <img class="only-dark" src={url(dark)} alt={alt} width={w} height={h} loading="lazy" />}
+	</div>
+	<figcaption><span class="plate-n">Plate {n}.</span> {caption}</figcaption>
+</figure>
