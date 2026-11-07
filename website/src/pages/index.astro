@@ -2,13 +2,10 @@
 import Icon from "../components/Icon.astro";
 import Plate from "../components/Plate.astro";
 import Race from "../components/Race.astro";
-import Shelf from "../components/Shelf.astro";
 import Site from "../layouts/Site.astro";
 import { bullets, inline, paragraphs, section } from "../lib/readme";
-import { volumes } from "../lib/shelf";
 
 const base = import.meta.env.BASE_URL;
-const vols = volumes(base);
 
 // "Works with the app closed": each README bullet starts with its title in bold; the Word add-in's own README section adds the sidebar.
 const closed = bullets(section("### Works with the app closed")).map((b) => {
@@ -33,7 +30,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 					<a class="btn btn-primary btn-lg" href={`${base}download/`}><Icon name="download" />Download for Windows</a>
 					<a class="btn btn-outline btn-lg" href={`${base}features/`}><Icon name="library" />See the features</a>
 				</div>
-				<p class="fine"><span class="mono">0.1.0</span> · Windows 10 and 11, 64-bit · per-user install, no admin rights</p>
+				<p class="fine"><span class="mono">0.1.1</span> · Windows 10 and 11, 64-bit · per-user install, no admin rights</p>
 			</div>
 			<Plate n="I" src="library-cards-light.png" dark="library-cards-dark.png" tilt={-1.2} eager
 				alt="The library in Cards view: coloured collections on the left, papers grouped by year in the middle, the selected paper's details on the right"
@@ -72,18 +69,12 @@ const still = paragraphs(section("### Still your Zotero library"));
 		</div>
 	</section>
 
-	<section class="cloth shelf-room">
-		<div class="wrap">
-			<div class="head">
-				<h2 class="h2">The whole collection, bound in one app</h2>
-				<p>Library, reader, notes, sync, translators, citation keys, the Word add-in and an agent server. Take a volume off the shelf.</p>
-			</div>
-			<Shelf />
-		</div>
-	</section>
-
 	<section class="room">
 		<div class="wrap">
+			<div class="head">
+				<h2 class="h2">Everything in one app</h2>
+				<p>Library, reader, notes, sync, translators, citation keys, the Word add-in and an agent server. <a href={`${base}features/`}>See every feature</a>.</p>
+			</div>
 			<article class="volume">
 				<div>
 					<h2 class="h2">Cards when you browse, a table when you sort</h2>
@@ -95,7 +86,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 						<li>Drop files on the window, or paste an identifier into the list</li>
 					</ul>
 				</div>
-				<Plate n="II" src="classic-table-dark.png" tilt={0.8} vol={vols[0]} alt="The Classic table, grouped by year, in the dark theme" caption="The Classic table, grouped by year, dark theme." />
+				<Plate n="II" src="classic-table-dark.png" tilt={0.8} alt="The Classic table, grouped by year, in the dark theme" caption="The Classic table, grouped by year, dark theme." />
 			</article>
 
 			<article class="volume flip">
@@ -108,7 +99,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 						<li>Click an in-text citation to see the reference and add it to your library</li>
 					</ul>
 				</div>
-				<Plate n="III" src="pdf-reader-annotations-light.png" dark="pdf-reader-annotations-dark.png" h={881} tilt={-0.9} vol={vols[1]} alt="The PDF reader with highlights and the annotations panel" caption="The PDF reader with the annotations panel." />
+				<Plate n="III" src="pdf-reader-annotations-light.png" dark="pdf-reader-annotations-dark.png" h={881} tilt={-0.9} alt="The PDF reader with highlights and the annotations panel" caption="The PDF reader with the annotations panel." />
 			</article>
 
 			<article class="volume">
@@ -116,31 +107,18 @@ const still = paragraphs(section("### Still your Zotero library"));
 					<h2 class="h2">Read the paper, not the page layout</h2>
 					<div class="prose"><p>The reading view reflows an article into one column in your own font, size and width. Figures and tables become cards you can open, and every reference is one click away.</p></div>
 				</div>
-				<Plate n="IV" src="reading-view-table.png" tilt={0.6} vol={vols[1]} alt="The reading view, showing an article's table as a card" caption="The reading view, with a table set as a card." />
+				<Plate n="IV" src="reading-view-table.png" tilt={0.6} alt="The reading view, showing an article's table as a card" caption="The reading view, with a table set as a card." />
 			</article>
 		</div>
 	</section>
 
 	<section class="room room-alt">
-		<div class="wrap slip-wrap">
-			<div>
-				<h2 class="h2" style="margin-bottom: 1.1rem">Still your Zotero library</h2>
-				<div class="prose" style="margin-bottom: 2rem">{still.map((p) => <p set:html={inline(p, base)} />)}</div>
-				<div class="actions">
-					<a class="btn btn-primary btn-lg" href={`${base}download/`}><Icon name="download" />Download for Windows</a>
-					<a class="btn btn-outline btn-lg" href={`${base}user-guide/first-run/`}><Icon name="book-open" />How first run works</a>
-				</div>
-			</div>
-			<div class="slip" data-reveal>
-				<h3>Date due</h3>
-				<table>
-					<tbody>
-						<tr style="--r:0"><td>Zotero Next 0.1.0</td><td>Windows x64</td></tr>
-						<tr style="--r:1"><td>Installer</td><td>about 145 MB</td></tr>
-						<tr style="--r:2"><td>Your Zotero data</td><td>read only</td></tr>
-						<tr style="--r:3"><td>Released</td><td class="typed-date">7 Nov 2026</td></tr>
-					</tbody>
-				</table>
+		<div class="wrap">
+			<h2 class="h2" style="margin-bottom: 1.1rem">Still your Zotero library</h2>
+			<div class="prose" style="margin-bottom: 2rem">{still.map((p) => <p set:html={inline(p, base)} />)}</div>
+			<div class="actions">
+				<a class="btn btn-primary btn-lg" href={`${base}download/`}><Icon name="download" />Download for Windows</a>
+				<a class="btn btn-outline btn-lg" href={`${base}user-guide/first-run/`}><Icon name="book-open" />How first run works</a>
 			</div>
 		</div>
 	</section>

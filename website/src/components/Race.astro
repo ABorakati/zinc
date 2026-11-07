@@ -1,6 +1,7 @@
 ---
 // The speed claim as a race run in real time: Zotero 10 and Zotero Next as two lanes, filling over their measured medians
-// (README benchmark table). It starts when it scrolls into view; "Run again" replays it. The HTML shows the finished race, so
+// (README benchmark table). It starts when it scrolls into view; "Run again" replays it. The Memory tab is not a race: its bars grow
+// to the measured memory of each app (working set and private bytes), both sides on one scale. The HTML shows the finished state, so
 // without JS or with reduced motion the result is still all there.
 import Icon from "./Icon.astro";
 import { section, tables } from "../lib/readme";
@@ -8,36 +9,65 @@ import { section, tables } from "../lib/readme";
 const rows = tables(section("### Zotero Next against Zotero 10"))[0].rows;
 const pick = (prefix: string) => rows.find((r) => r[0].startsWith(prefix))!;
 const ms = (v: string) => { const m = /^([\d.,]+)\s*(ms|s)/.exec(v.trim())!; const n = Number(m[1].replace(/,/g, "")); return m[2] === "s" ? n * 1000 : n; };
+const mb = (v: string) => Number(/^([\d.,]+)\s*MB/.exec(v.trim())![1].replace(/,/g, ""));
 const races = [
 	{ id: "ready", label: "Library ready", what: "from launch until the library's items are loaded", row: pick("Library ready") },
 	{ id: "search", label: "Search", what: "one search of the 12,400-item library for a common word", row: pick("Search through the local API, common word") },
 ].map((r) => ({ ...r, zotero: ms(r.row[1]), next: ms(r.row[2]) }));
 const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 1 : 2)} s` : `${Math.round(n)} ms`);
+
+const ws = pick("Memory, working set"), pb = pick("Memory, private bytes"), procs = pick("Processes");
+const memory = [
+	{ label: "In use (working set)", zotero: mb(ws[1]), next: mb(ws[2]) },
+	{ label: "Reserved (private bytes)", zotero: mb(pb[1]), next: mb(pb[2]) },
+];
+const memMax = Math.max(...memory.flatMap((m) => [m.zotero, m.next]));
+const pct = (v: number) => `${(v / memMax) * 100}%`;
+const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory", label: "Memory" }];
 ---
 <div class="race" data-race>
 	<div class="race-top">
 		<div class="seg" role="tablist" aria-label="Race">
-			{races.map((r, i) => <button type="button" role="tab" aria-selected={i === 0 ? "true" : "false"} data-tab={r.id}>{r.label}</button>)}
+			{tabs.map((t, i) => <button type="button" role="tab" aria-selected={i === 0 ? "true" : "false"} data-tab={t.id}>{t.label}</button>)}
 		</div>
 		<span class="race-clock mono" aria-hidden="true">0.00 s</span>
 		<button type="button" class="btn btn-secondary btn-sm race-again"><Icon name="rotate-ccw" size={14} />Run again</button>
 	</div>
 	{races.map((r, i) => (
-		<div class="race-panel" data-panel={r.id} data-zotero={r.zotero} data-next={r.next} hidden={i !== 0}>
+		<div class="race-panel" data-panel={r.id} data-kind="time" hidden={i !== 0}>
 			<p class="race-what">{r.what}</p>
-			<div class="lane done" data-lane="next" style={`--w:${(r.next / r.zotero) * 100}%`}>
+			<div class="lane done" data-lane="next" data-v={r.next} style={`--w:${(r.next / r.zotero) * 100}%`}>
 				<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zotero Next</span>
 				<span class="lane-track"><span class="lane-fill"></span></span>
 				<span class="lane-time mono"><span class="lane-done"><Icon name="check" size={14} /></span><span class="lane-read">{fmt(r.next)}</span></span>
 			</div>
-			<div class="lane lane-zotero done" data-lane="zotero" style="--w:100%">
+			<div class="lane lane-zotero done" data-lane="zotero" data-v={r.zotero} style="--w:100%">
 				<span class="lane-name"><Icon name="hourglass" size={16} />Zotero 10.0.7</span>
 				<span class="lane-track"><span class="lane-fill"></span></span>
 				<span class="lane-time mono"><span class="lane-done"><Icon name="check" size={14} /></span><span class="lane-read">{fmt(r.zotero)}</span></span>
 			</div>
 		</div>
 	))}
-	<p class="race-note">Run in real time from the measured medians: the same 12,400-item library, three runs each, Windows 11. Not everything is smaller: Zotero Next's private memory is higher. <a href={`${import.meta.env.BASE_URL}compare/`}>Full results and method</a>.</p>
+	<div class="race-panel" data-panel="memory" data-kind="memory" hidden>
+		<p class="race-what">Memory of the whole app, every process counted, 12 seconds after the library is ready. Zotero Next runs as {procs[2]} process, Zotero as {procs[1]}.</p>
+		{memory.map((m) => (
+			<div class="mem-group">
+				<p class="mem-label">{m.label}</p>
+				<div class="lane done" data-lane="next" data-v={m.next} style={`--w:${pct(m.next)}`}>
+					<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zotero Next</span>
+					<span class="lane-track"><span class="lane-fill"></span></span>
+					<span class="lane-time mono"><span class="lane-read">{m.next} MB</span></span>
+				</div>
+				<div class="lane lane-zotero done" data-lane="zotero" data-v={m.zotero} style={`--w:${pct(m.zotero)}`}>
+					<span class="lane-name"><Icon name="memory-stick" size={16} />Zotero 10.0.7</span>
+					<span class="lane-track"><span class="lane-fill"></span></span>
+					<span class="lane-time mono"><span class="lane-read">{m.zotero} MB</span></span>
+				</div>
+			</div>
+		))}
+		<p class="mem-note">"In use" is the memory the app holds in RAM right now: Zotero Next uses less than half. "Reserved" is what each app has set aside: there Zotero Next is higher, because its library core runs inside its one process.</p>
+	</div>
+	<p class="race-note">Measured medians: the same 12,400-item library, three runs each, Windows 11. Times play in real time. <a href={`${import.meta.env.BASE_URL}compare/`}>Full results and method</a>.</p>
 </div>
 
 <script is:inline>
@@ -48,26 +78,39 @@ const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 1 : 2
 			const panels = [...race.querySelectorAll("[data-panel]")];
 			const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 1 : 2) + " s" : Math.round(n) + " ms");
 			const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+			const GROW = 900; // ms for the memory bars to grow
 			let raf = 0, current = panels[0], started = false;
+			const lanesOf = (panel) => [...panel.querySelectorAll(".lane")];
+			const isMem = (panel) => panel.dataset.kind === "memory";
+			const reset = (panel) => {
+				for (const l of lanesOf(panel)) { l.classList.remove("done"); l.style.setProperty("--p", "0"); l.querySelector(".lane-read").textContent = isMem(panel) ? "0 MB" : "0 ms"; }
+			};
+			const finish = (panel) => {
+				for (const l of lanesOf(panel)) { l.classList.add("done"); l.style.setProperty("--p", "1"); l.querySelector(".lane-read").textContent = isMem(panel) ? l.dataset.v + " MB" : fmt(+l.dataset.v); }
+				clock.hidden = isMem(panel);
+				if (!isMem(panel)) clock.textContent = fmt(Math.max(...lanesOf(panel).map((l) => +l.dataset.v)));
+			};
 			const run = (panel) => {
 				cancelAnimationFrame(raf);
-				const z = +panel.dataset.zotero, n = +panel.dataset.next;
-				const lanes = { next: panel.querySelector('[data-lane="next"]'), zotero: panel.querySelector('[data-lane="zotero"]') };
-				const total = { next: n, zotero: z };
-				if (reduced) { for (const k in lanes) lanes[k].classList.add("done"); clock.textContent = fmt(z); return; }
-				for (const k in lanes) { lanes[k].classList.remove("done"); lanes[k].style.setProperty("--p", "0"); lanes[k].querySelector(".lane-read").textContent = "0 ms"; }
+				const mem = isMem(panel);
+				clock.hidden = mem;
+				if (reduced) { finish(panel); return; }
+				reset(panel);
+				const lanes = lanesOf(panel);
+				const end = mem ? GROW : Math.max(...lanes.map((l) => +l.dataset.v));
 				race.classList.add("running");
 				const t0 = performance.now();
 				const tick = (now) => {
 					const t = now - t0;
-					clock.textContent = fmt(Math.min(t, z));
-					for (const k in lanes) {
-						const p = Math.min(1, t / total[k]);
-						lanes[k].style.setProperty("--p", String(p));
-						lanes[k].querySelector(".lane-read").textContent = fmt(Math.min(t, total[k]));
-						if (p >= 1) lanes[k].classList.add("done");
+					if (!mem) clock.textContent = fmt(Math.min(t, end));
+					for (const l of lanes) {
+						const v = +l.dataset.v;
+						const p = mem ? 1 - Math.pow(1 - Math.min(1, t / GROW), 3) : Math.min(1, t / v);
+						l.style.setProperty("--p", String(p));
+						l.querySelector(".lane-read").textContent = mem ? Math.round(v * p) + " MB" : fmt(Math.min(t, v));
+						if (p >= 1) l.classList.add("done");
 					}
-					if (t < z) raf = requestAnimationFrame(tick); else race.classList.remove("running");
+					if (t < end) raf = requestAnimationFrame(tick); else race.classList.remove("running");
 				};
 				raf = requestAnimationFrame(tick);
 			};
@@ -79,8 +122,8 @@ const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 1 : 2
 			});
 			race.querySelector(".race-again").addEventListener("click", () => run(current));
 			// the finished race is the default; JS starts it from zero when it scrolls into view
-			if (reduced || !("IntersectionObserver" in window)) { for (const l of race.querySelectorAll(".lane")) l.classList.add("done"); clock.textContent = fmt(+current.dataset.zotero); continue; }
-			for (const l of race.querySelectorAll(".lane")) { l.classList.remove("done"); l.style.setProperty("--p", "0"); l.querySelector(".lane-read").textContent = "0 ms"; }
+			if (reduced || !("IntersectionObserver" in window)) { finish(current); continue; }
+			reset(current);
 			const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && !started) { started = true; run(current); io.disconnect(); } }, { threshold: 0.25 });
 			io.observe(race);
 		}

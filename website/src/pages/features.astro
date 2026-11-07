@@ -1,70 +1,55 @@
 ---
+import Icon from "../components/Icon.astro";
 import Plate from "../components/Plate.astro";
-import Shelf from "../components/Shelf.astro";
 import Site from "../layouts/Site.astro";
-import { bullets, inline, section, subsections } from "../lib/readme";
-import { slug, volumes } from "../lib/shelf";
+import { bullets, inline, paragraphs, section, subsections } from "../lib/readme";
+import { slug } from "../lib/shelf";
 
 const base = import.meta.env.BASE_URL;
-const vols = volumes(base);
-const groups = subsections(section("## Features")).map((s, i) => ({ title: s.title, id: slug(s.title), items: bullets(s.body), cloth: vols[i]?.cloth ?? "green", call: vols[i]?.call ?? "" }));
 
-// Screenshots and captions from the README's screenshot table (image row, then caption row).
-const rows = section("## Screenshots").split("\n").filter((l) => l.trim().startsWith("|") && !/^\|\s*(---|\|)/.test(l.trim()));
-const gallery: { file: string; alt: string; caption: string }[] = [];
-for (let i = 0; i + 1 < rows.length; i++) {
-	const imgs = [...rows[i].matchAll(/!\[([^\]]*)\]\(docs\/screenshots\/([^)]+)\)/g)];
-	if (!imgs.length) continue;
-	const caps = rows[i + 1].split("|").map((c) => c.trim()).filter(Boolean);
-	imgs.forEach((m, j) => gallery.push({ file: m[2], alt: m[1], caption: caps[j] ?? m[1] }));
-	i++;
-}
-const tall = (f: string) => f.startsWith("pdf-reader");
-// one number per screenshot across the site (the home page uses I to IV): I cards, II classic table, III reader, IV reading view,
-// V settings, VI the reader with its dark page tint
-const PLATE: Record<string, string> = { "library-cards": "I", "classic-table": "II", "pdf-reader-annotations": "III", "pdf-reader-annotations-dark": "VI", "reading-view-table": "IV", "settings-reader": "V" };
-const plateNo = (f: string) => { const k = f.replace(/\.png$/, ""); return PLATE[k] ?? PLATE[k.replace(/-(light|dark)$/, "")] ?? "–"; };
+// One row per README "## Features" group, then the Word add-in and MCP, each beside its screenshot. A group without a screenshot
+// yet shows its list across the full width.
+interface Shot { src: string; dark?: string; h?: number; n: string; alt: string; caption: string }
+const SHOTS: Record<string, Shot> = {
+	library: { src: "library-cards-light.png", dark: "library-cards-dark.png", n: "I", alt: "The library in Cards view: coloured collections, papers grouped by year, and the item pane", caption: "The library in Cards view." },
+	"pdf-reader": { src: "pdf-reader-annotations-light.png", dark: "pdf-reader-annotations-dark.png", h: 881, n: "III", alt: "The PDF reader with highlights and the annotations panel", caption: "The PDF reader with the annotations panel." },
+	"notes-and-web": { src: "reading-view-table.png", n: "IV", alt: "The reading view, showing an article's table as a card", caption: "The reading view, with a table set as a card." },
+	"around-the-app": { src: "settings-reader-dark.png", n: "V", alt: "Settings, on the reader page, in the dark theme", caption: "Settings, reader page, dark theme." },
+	"word-add-in": { src: "word-sidebar.png", h: 839, n: "VII", alt: "Word with the Zotero Next sidebar beside a paragraph with numbered citations and a bibliography", caption: "The Word sidebar, with the app closed." },
+};
+const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "around-the-app": "settings", "word-add-in": "panel-right", "mcp-for-agents": "bot" };
+
+const groups = [
+	...subsections(section("## Features")).map((s) => ({ title: s.title, id: slug(s.title), items: bullets(s.body), more: "" })),
+	{ title: "Word add-in", id: "word-add-in", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
+	{ title: "MCP for agents", id: "mcp-for-agents", items: [paragraphs(section("### Built-in MCP for AI agents"))[0]], more: `${base}user-guide/mcp/` },
+].map((g) => ({ ...g, shot: SHOTS[g.id], icon: ICONS[g.id] ?? "circle" }));
 ---
 <Site page="features" title="Features" description="Everything Zotero Next does: library, PDF reader, notes, sync, translators, Better BibTeX, the Word add-in, the browser connector and MCP.">
-	<section class="cloth shelf-room">
+	<section class="hero">
 		<div class="wrap">
 			<div class="head">
-				<h1 class="display" style="margin-bottom: 1rem">The collection</h1>
-				<p>Every part of Zotero Next, one volume each. What Zotero has that Zotero Next does not is in the <a href={`${base}compare/#features`}>comparison register</a>.</p>
+				<h1 class="display" style="margin-bottom: 1rem">Everything it does</h1>
+				<p>Every part of Zotero Next. What Zotero has that Zotero Next does not is in the <a href={`${base}compare/#features`}>comparison</a>.</p>
 			</div>
-			<Shelf label="Jump to a volume" />
+			<nav class="feature-index" aria-label="Jump to a feature">
+				{groups.map((g) => <a href={`#${g.id}`}><Icon name={g.icon} size={16} />{g.title}</a>)}
+			</nav>
 		</div>
 	</section>
 
-	<section class="room">
+	<section class="room" style="padding-top: 0">
 		<div class="wrap">
-			{groups.map((g) => (
-				<article class="vol-page" id={g.id}>
-					<div class={`vol-spine c-${g.cloth}`} aria-hidden="true">
-						<span class="spine-band"></span>
-						<span class="spine-title">{g.title}</span>
-						<span class="spine-label">{g.call}</span>
+			{groups.map((g, i) => (
+				<article class:list={["volume", "feature-row", { flip: i % 2 === 1, "no-shot": !g.shot }]} id={g.id}>
+					<div>
+						<h2 class="h2"><Icon name={g.icon} size={26} />{g.title}</h2>
+						<ul class="points">{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
+						{g.more && <p class="feature-more"><a href={g.more}>Read the guide</a></p>}
 					</div>
-					<div class="vol-body">
-						<h2 class="h3">{g.title}</h2>
-						<ul>{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
-					</div>
+					{g.shot && <Plate n={g.shot.n} src={g.shot.src} dark={g.shot.dark} h={g.shot.h ?? 857} tilt={i % 2 ? 0.6 : -0.6} alt={g.shot.alt} caption={g.shot.caption} />}
 				</article>
 			))}
-		</div>
-	</section>
-
-	<section class="room" style="background: var(--ground-2); padding-top: clamp(4rem, 9vw, 7.5rem)">
-		<div class="wrap">
-			<div class="head">
-				<h2 class="h2">Plates</h2>
-				<p>Screenshots of the app, taken on a demo library of well-known public papers.</p>
-			</div>
-			<div class="plates">
-				{gallery.map((g, i) => (
-					<Plate n={plateNo(g.file)} src={g.file} alt={g.alt} caption={g.caption} h={tall(g.file) ? 881 : 857} tilt={i % 2 ? 0.7 : -0.7} />
-				))}
-			</div>
 		</div>
 	</section>
 </Site>
