@@ -1,0 +1,54 @@
+---
+// "Built with": the tech stack in three layers, each part with its logo (Simple Icons, CC0; drawn in the ink colour, brand colour on
+// hover) or, where a project has no logo there, a Lucide icon. Facts follow README "## What it is" and docs/developer-guide/architecture.md.
+import * as si from "simple-icons";
+import Icon from "./Icon.astro";
+
+type Part = { name: string; role: string; logo?: { path: string; hex: string }; icon?: string };
+const L = (k: keyof typeof si) => { const i = si[k] as { path: string; hex: string }; return { path: i.path, hex: i.hex }; };
+const layers: { title: string; parts: Part[] }[] = [
+	{
+		title: "The app",
+		parts: [
+			{ name: "Bun", role: "Runs the app, and compiles it ahead of time into one Windows executable.", logo: L("siBun") },
+			{ name: "TypeScript", role: "The language of the app, the core and the Word sidebar.", logo: L("siTypescript") },
+			{ name: "Solid", role: "The components the interface is built from.", logo: L("siSolid") },
+			{ name: "GPUI", role: "Zed's GPU interface toolkit draws the window, through GPUIX. No browser engine in the main window.", logo: L("siZedindustries") },
+		],
+	},
+	{
+		title: "Your library and papers",
+		parts: [
+			{ name: "SQLite", role: "The library is one Zotero-format SQLite file, read and written in place.", logo: L("siSqlite") },
+			{ name: "Rust", role: "The PDF engine, zn_pdf.dll: PDFium draws the pages, hayro reads text, links and outline.", logo: L("siRust") },
+			{ name: "WebAssembly", role: "The full-text search engine runs as a WebAssembly module.", logo: L("siWebassembly") },
+			{ name: "Zotero's translators", role: "Zotero's own translators for import, export and saving from the web; citeproc-js formats citations.", icon: "languages" },
+		],
+	},
+	{
+		title: "Connections",
+		parts: [
+			{ name: "MCP", role: "MCP servers in the core and in the Word add-in let AI agents search and edit.", logo: L("siModelcontextprotocol") },
+			{ name: ".NET", role: "The Word add-in: C# on .NET Framework 4.8, with a WebView2 sidebar.", logo: L("siDotnet") },
+			{ name: "Chrome and Edge", role: "The browser connector saves through native messaging, with the app closed.", logo: L("siGooglechrome") },
+		],
+	},
+];
+---
+<div class="stack">
+	{layers.map((layer) => (
+		<div class="stack-layer">
+			<h3 class="stack-title">{layer.title}</h3>
+			<ul class="stack-parts">
+				{layer.parts.map((p) => (
+					<li class="stack-part" style={p.logo && p.logo.hex !== "000000" ? `--brand:#${p.logo.hex}` : undefined}>
+						<span class="stack-logo" aria-hidden="true">
+							{p.logo ? <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d={p.logo.path} /></svg> : <Icon name={p.icon!} size={28} />}
+						</span>
+						<span class="stack-text"><strong>{p.name}</strong><span>{p.role}</span></span>
+					</li>
+				))}
+			</ul>
+		</div>
+	))}
+</div>

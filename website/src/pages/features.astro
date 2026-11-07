@@ -17,12 +17,15 @@ const SHOTS: Record<string, Shot> = {
 	"around-the-app": { src: "settings-reader-dark.png", n: "V", alt: "Settings, on the reader page, in the dark theme", caption: "Settings, reader page, dark theme." },
 	"word-add-in": { src: "word-sidebar.png", h: 839, n: "VII", alt: "Word with the Zotero Next sidebar beside a paragraph with numbered citations and a bibliography", caption: "The Word sidebar, with the app closed." },
 };
-const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "around-the-app": "settings", "word-add-in": "panel-right", "mcp-for-agents": "bot" };
+const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "better-bibtex": "braces", "zotmoov-file-storage": "folder-tree", "around-the-app": "settings", "word-add-in": "panel-right", "mcp-for-agents": "bot" };
+const MORE: Record<string, string> = { "pdf-reader": "user-guide/reader/", "better-bibtex": "user-guide/better-bibtex/", "zotmoov-file-storage": "user-guide/zotmoov-storage/", "sync-and-storage": "user-guide/sync/" };
+// a group's own lead line, if the README has one before its bullets ("Built in, no plugin to install:")
+const leadOf = (body: string) => body.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith("-") && !p.startsWith("|")) ?? "";
 
 const groups = [
-	...subsections(section("## Features")).map((s) => ({ title: s.title, id: slug(s.title), items: bullets(s.body), more: "" })),
-	{ title: "Word add-in", id: "word-add-in", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
-	{ title: "MCP for agents", id: "mcp-for-agents", items: [paragraphs(section("### Built-in MCP for AI agents"))[0]], more: `${base}user-guide/mcp/` },
+	...subsections(section("## Features")).map((s) => ({ title: s.title, id: slug(s.title), lead: leadOf(s.body), items: bullets(s.body), more: MORE[slug(s.title)] ? `${base}${MORE[slug(s.title)]}` : "" })),
+	{ title: "Word add-in", id: "word-add-in", lead: "", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
+	{ title: "MCP for agents", id: "mcp-for-agents", lead: "", items: [paragraphs(section("### Built-in MCP for AI agents"))[0]], more: `${base}user-guide/mcp/` },
 ].map((g) => ({ ...g, shot: SHOTS[g.id], icon: ICONS[g.id] ?? "circle" }));
 ---
 <Site page="features" title="Features" description="Everything Zotero Next does: library, PDF reader, notes, sync, translators, Better BibTeX, the Word add-in, the browser connector and MCP.">
@@ -44,6 +47,7 @@ const groups = [
 				<article class:list={["volume", "feature-row", { flip: i % 2 === 1, "no-shot": !g.shot }]} id={g.id}>
 					<div>
 						<h2 class="h2"><Icon name={g.icon} size={26} />{g.title}</h2>
+						{g.lead && <p class="feature-lead" set:html={inline(g.lead, base)} />}
 						<ul class="points">{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
 						{g.more && <p class="feature-more"><a href={g.more}>Read the guide</a></p>}
 					</div>

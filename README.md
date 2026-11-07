@@ -87,17 +87,20 @@ GPUIX is a dependency (the npm package, plus a private fork), not part of this r
 
 ### Library
 
-- Two views: **Cards** (title, authors, venue, tags and one-click actions) and a **Classic** sortable table with column choices.
-- Grouping, multi-level sorting, quick search (title/creator/year, all fields, or full text) and a scroll pill for long lists.
-- Collections and sub-collections with **colours, icons, pins and your own sections**. Saved searches, tags with colours, duplicate detection and merging, trash, and **My Publications**.
-- Better BibTeX-style **citation keys**, with key formulas and pinned keys.
+- Two views: **Cards** (title, authors, venue, tags and one-click actions) and a **Classic** sortable table.
+- **Make the list yours**: choose what each card shows and Comfortable or Compact density, pick the table's columns from Zotero's full list, group the list by year, item type or publication, sort on up to four levels, and hide or show the side panes. Unread items get a dot.
+- **Organise collections your way**: give each collection a **colour** and an **icon** (book, star, flask, microscope and more), **pin** favourites to the top, and **group collections into your own named sections**, or group them by colour.
+- Quick search (title/creator/year, all fields, or full text), Advanced Search and saved searches, coloured tags, duplicate detection and merging, trash, and **My Publications**.
 
 ### PDF reader
 
 - A native reader on PDFium: fit-width, fit-page, spreads, rotate, search, thumbnails and outline, dark and sepia page tints, and printing.
 - **Annotations**: highlight, underline, note, ink, image and eraser, with colours, tags and comments. They are stored in the library, so they sync.
-- **Reading view**: a reflowed article layout built from the PDF, with your own font, size and width. It shows figures and tables as cards.
-- **Reference, figure and citation cards**: click an in-text citation to see the reference, add it to your library or look up a full text.
+- **Hover a citation** such as `[3]` or "Vaswani et al., 2017" to see the reference: title, details and abstract, with **Add to library** (or **Open in library**) and a full-text lookup. Click to pin the card.
+- **Hover "Figure 2" or "Table 3"** to see the figure itself, its caption and its page, with **Go to figure**.
+- **Hover an entry in the bibliography** to see where the paper cites it, with the surrounding sentences.
+- **Side panels** for the paper's **References** (the resolved bibliography, with a filter), **Figures & Tables** (thumbnails; click to jump) and **Supplementary** files, next to Outline, Thumbnails and Annotations.
+- **Reading view**: a reflowed article layout built from the PDF, with your own font, size and width. Figures and tables stay in place as cards, and citations and figure mentions are links, with **Back** to return.
 - Page tools: delete and rotate pages.
 
 ### Notes and web
@@ -108,14 +111,32 @@ GPUIX is a dependency (the npm package, plus a private fork), not part of this r
 ### Sync and storage
 
 - **Two sync routes**, one active at a time: your **local Zotero** data folder, or **zotero.org** through the Web API (API key kept in the Windows credential store, not in the database).
-- **ZotMoov-style** file storage (move or copy attachments into your own folders, rename from metadata), linked and stored files, and "attach newest file from a folder".
+- Linked and stored files, with your own attachment folder (see [ZotMoov file storage](#zotmoov-file-storage)).
 - **Find Full Text** and **Locate** engines, and "Cite" from any row.
 
 ### Getting references in and out
 
 - **Zotero's translators, built in**: add from a URL, import and export in any format a Zotero translator handles. RIS, BibTeX, CSL JSON, EndNote XML, PubMed, Zotero RDF and MODS also have fast native importers.
-- **Better BibTeX** compatibility: citation-key formulas, BibTeX/BibLaTeX/CSL exports, **auto-export** to a file, and the endpoints other tools use.
 - Citation styles through citeproc-js.
+
+### Better BibTeX
+
+Built in, no plugin to install:
+
+- **Citation keys** on every item, made from a key formula in BBT's own language (functions such as `auth`, `year`, `shorttitle`, filters such as `.lower`, alternatives with `|`). Pin a key to keep it; duplicates get a postfix.
+- **Better BibTeX, Better BibLaTeX, Better CSL JSON and Better CSL YAML** exports for an item, a collection or the whole library.
+- **Automatic exports**: a `.bib` or CSL file kept in step with a collection or the library, on change or when idle, written atomically.
+- **BBT's HTTP endpoints** on port 23119 (cite-as-you-write, JSON-RPC, export URLs), so Pandoc filters and citation pickers in Obsidian, VS Code, Emacs and vim keep working.
+
+### ZotMoov file storage
+
+Built in, no plugin to install:
+
+- **Keep attachments in your own folder** (for example in OneDrive), as linked files, with a subfolder pattern in ZotMoov's wildcards such as `{%a}/{%y}`. One click applies ZotMoov's defaults.
+- New files from the browser, imports and Find Full Text **go there automatically**, named `Author - Year - Title` from their item and tagged `zotmoov`.
+- **Move or copy existing attachments** there with a preview first, convert linked files back to stored files, and delete files with their items.
+- **Attach Newest File** from a folder such as Downloads.
+- Moves are safe: each file is copied, checked, recorded, and only then removed; online-only OneDrive files and files in use are skipped.
 
 ### Around the app
 

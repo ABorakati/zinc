@@ -297,6 +297,18 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .feature-row.no-shot { grid-template-columns: minmax(0, 1fr); }
 .feature-row.no-shot .points { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); column-gap: 2.5rem; }
 .feature-more { margin-top: 1.1rem; font-weight: 600; }
+/* built with: the tech stack in layers */
+.stack { display: grid; gap: clamp(1.75rem, 4vw, 2.5rem); }
+.stack-title { font: 600 0.78rem/1 var(--f-head); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.9rem; }
+.stack-parts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)); gap: 0.75rem; }
+.stack-part { display: flex; gap: 0.9rem; align-items: flex-start; padding: 1rem 1.1rem; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; }
+.stack-logo { flex: none; color: var(--ink); transition: color 0.2s var(--ease); line-height: 0; margin-top: 0.1rem; }
+.stack-part:hover .stack-logo { color: var(--brand, var(--ink)); }
+.stack-text { display: grid; gap: 0.25rem; }
+.stack-text strong { font: 650 0.98rem/1.2 var(--f-head); color: var(--ink); }
+.stack-text span { font-size: 0.88rem; line-height: 1.45; color: var(--ink-2); }
+.credits { margin-top: 0.75rem; }
+.feature-lead { color: var(--ink-2); font-size: 1.05rem; margin: -0.3rem 0 1rem; }
 
 /* ---------- ledger rows (works with the app closed) ---------- */
 .ledger { border-top: 3px double var(--rule-top); }
