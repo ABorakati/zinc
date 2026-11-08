@@ -1,8 +1,10 @@
 // `process` and `Bun` for the browser demo: just enough of each for the app's modules to load and run on the demo library.
 // Imported first by web/main.tsx, before any app module reads them.
+import { Buffer } from "buffer"; // Bun's browser polyfill (web/build.ts leaves `buffer` to it)
 import * as fs from "./shims/fs";
 
 const g = globalThis as Record<string, unknown>;
+g.Buffer ??= Buffer; // some of the reader's code uses the global, as under Bun
 const noop = () => {};
 const env: Record<string, string | undefined> = { ZN_WEB_DEMO: "1", APPDATA: "/appdata", LOCALAPPDATA: "/localappdata", USERPROFILE: "/home/demo", HOME: "/home/demo", TEMP: "/tmp" };
 

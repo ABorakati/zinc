@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- The browser demo's PDF (web/demo-article.pdf): a short article written for the demo, printed with
+     chrome --headless --print-to-pdf --generate-pdf-document-outline --no-pdf-header-footer. It cites papers in the demo library
+     (web/demo-library.ts) so the reader's citation, figure and reference features have something to show. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Deep learning in clinical research: a short demo review</title>
+<style>
+	@page { size: A4; margin: 22mm 20mm; }
+	body { font: 10.5pt/1.5 "Georgia", "Times New Roman", serif; color: #111; }
+	h1 { font: 700 19pt/1.2 "Helvetica Neue", Arial, sans-serif; margin: 0 0 6pt; }
+	.meta { font: 9.5pt/1.4 Arial, sans-serif; color: #444; margin-bottom: 14pt; }
+	.abstract { border-top: 1px solid #999; border-bottom: 1px solid #999; padding: 8pt 0; margin-bottom: 14pt; font-size: 9.8pt; }
+	h2 { font: 700 12.5pt/1.3 "Helvetica Neue", Arial, sans-serif; margin: 16pt 0 6pt; }
+	p { margin: 0 0 7pt; text-align: justify; }
+	a.cite { color: #1a4fa0; text-decoration: none; }
+	figure { margin: 12pt 0; text-align: center; page-break-inside: avoid; }
+	figcaption, .tcap { font: 9pt/1.4 Arial, sans-serif; color: #333; text-align: left; margin-top: 4pt; }
+	table { border-collapse: collapse; width: 100%; font: 9pt/1.35 Arial, sans-serif; margin-top: 4pt; page-break-inside: avoid; }
+	th, td { border-bottom: 1px solid #bbb; padding: 3pt 5pt; text-align: left; }
+	th { border-top: 1.5px solid #333; border-bottom: 1px solid #333; }
+	tr:last-child td { border-bottom: 1.5px solid #333; }
+	ol.refs { font-size: 9pt; padding-left: 16pt; }
+	ol.refs li { margin-bottom: 3pt; }
+	.note { font: 8.5pt/1.4 Arial, sans-serif; color: #666; margin-top: 18pt; }
+</style>
+</head>
+<body>
+<h1>Deep learning in clinical research: a short demo review</h1>
+<div class="meta">Zotero Next demo article · written for the browser demo, not a published paper · 2026</div>
+
+<div class="abstract"><b>Abstract.</b> Deep learning now reads medical images, predicts outcomes and processes clinical text. This short review, written for the Zotero Next demo, outlines where the methods came from, where they have been tested in medicine, and which reporting standards apply when they are evaluated. Hover a numbered citation to see its reference, or a figure or table mention to see it.</div>
+
+<h2 id="background">1. Background</h2>
+<p>Deep learning learns layered representations directly from data <a class="cite" href="#r1">[1]</a>. Convolutional networks made the first large gains in image recognition <a class="cite" href="#r2">[2]</a>, and residual connections allowed much deeper networks to be trained <a class="cite" href="#r3">[3]</a>. Practical training relied on stochastic optimisers such as Adam <a class="cite" href="#r4">[4]</a> and on regularisation such as dropout <a class="cite" href="#r5">[5]</a>.</p>
+<p>Attention-based models later replaced recurrence for language tasks <a class="cite" href="#r6">[6]</a>, and pre-trained transformers such as BERT <a class="cite" href="#r7">[7]</a> and large language models <a class="cite" href="#r8">[8]</a> extended them to text in general. Figure 1 sketches the size of these steps.</p>
+
+<figure id="fig1">
+<svg width="420" height="190" viewBox="0 0 420 190" xmlns="http://www.w3.org/2000/svg" font-family="Arial" font-size="10">
+	<line x1="50" y1="160" x2="400" y2="160" stroke="#333" />
+	<line x1="50" y1="15" x2="50" y2="160" stroke="#333" />
+	<text x="12" y="90" transform="rotate(-90 12 90)" text-anchor="middle">Relative scale</text>
+	<rect x="70" y="140" width="40" height="20" fill="#7aa6d6" /><text x="90" y="175" text-anchor="middle">2012</text>
+	<rect x="135" y="118" width="40" height="42" fill="#5b8fc9" /><text x="155" y="175" text-anchor="middle">2015</text>
+	<rect x="200" y="96" width="40" height="64" fill="#3f76b8" /><text x="220" y="175" text-anchor="middle">2017</text>
+	<rect x="265" y="70" width="40" height="90" fill="#2b5fa8" /><text x="285" y="175" text-anchor="middle">2019</text>
+	<rect x="330" y="25" width="40" height="135" fill="#1d4683" /><text x="350" y="175" text-anchor="middle">2020</text>
+</svg>
+<figcaption><b>Figure 1.</b> Illustrative growth in model scale across the papers cited here (schematic, not measured values).</figcaption>
+</figure>
+
+<h2 id="medicine">2. Uses in medicine</h2>
+<p>In imaging, networks have matched specialists at grading diabetic retinopathy from fundus photographs <a class="cite" href="#r9">[9]</a> and at classifying skin lesions <a class="cite" href="#r10">[10]</a>, and U-Net became a standard for segmentation <a class="cite" href="#r11">[11]</a>. Interpretation methods such as SHAP explain individual predictions <a class="cite" href="#r12">[12]</a>. Broader reviews describe the convergence of human and artificial intelligence in care <a class="cite" href="#r13">[13]</a>. Table 1 lists the examples.</p>
+
+<table id="tab1">
+	<tr><th>Area</th><th>Example</th><th>Reference</th></tr>
+	<tr><td>Ophthalmology</td><td>Diabetic retinopathy grading</td><td><a class="cite" href="#r9">[9]</a></td></tr>
+	<tr><td>Dermatology</td><td>Skin lesion classification</td><td><a class="cite" href="#r10">[10]</a></td></tr>
+	<tr><td>Imaging methods</td><td>Biomedical segmentation</td><td><a class="cite" href="#r11">[11]</a></td></tr>
+	<tr><td>Explainability</td><td>Feature attributions</td><td><a class="cite" href="#r12">[12]</a></td></tr>
+</table>
+<div class="tcap"><b>Table 1.</b> Examples of deep learning in medicine discussed in this review.</div>
+
+<h2 id="reporting">3. Reporting standards</h2>
+<p>Evaluations should be reported as carefully as any other clinical study: randomised trials following CONSORT <a class="cite" href="#r14">[14]</a>, prediction models following TRIPOD <a class="cite" href="#r15">[15]</a>, and systematic reviews following PRISMA <a class="cite" href="#r16">[16]</a>. Statistical methods such as the bootstrap <a class="cite" href="#r17">[17]</a> and the wider toolkit of statistical learning <a class="cite" href="#r18">[18]</a> remain central to honest evaluation.</p>
+
+<h2 id="conclusion">4. Conclusion</h2>
+<p>The methods are mature enough to be tested in the clinic; the evidence will be as good as the trials and the reporting behind it.</p>
+
+<h2 id="references">References</h2>
+<ol class="refs">
+	<li id="r1">LeCun Y, Bengio Y, Hinton G. Deep learning. Nature. 2015;521(7553):436–44.</li>
+	<li id="r2">Krizhevsky A, Sutskever I, Hinton GE. ImageNet classification with deep convolutional neural networks. In: Advances in Neural Information Processing Systems. 2012. p. 1097–105.</li>
+	<li id="r3">He K, Zhang X, Ren S, Sun J. Deep residual learning for image recognition. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. 2016. p. 770–8.</li>
+	<li id="r4">Kingma DP, Ba J. Adam: a method for stochastic optimization. In: International Conference on Learning Representations. 2015.</li>
+	<li id="r5">Srivastava N, Hinton G, Krizhevsky A, Sutskever I, Salakhutdinov R. Dropout: a simple way to prevent neural networks from overfitting. J Mach Learn Res. 2014;15(56):1929–58.</li>
+	<li id="r6">Vaswani A, Shazeer N, Parmar N, Uszkoreit J, Jones L, Gomez AN, et al. Attention is all you need. In: Advances in Neural Information Processing Systems. 2017. p. 5998–6008.</li>
+	<li id="r7">Devlin J, Chang MW, Lee K, Toutanova K. BERT: pre-training of deep bidirectional transformers for language understanding. In: Proceedings of NAACL-HLT. 2019. p. 4171–86.</li>
+	<li id="r8">Brown TB, Mann B, Ryder N, Subbiah M, et al. Language models are few-shot learners. In: Advances in Neural Information Processing Systems. 2020. p. 1877–901.</li>
+	<li id="r9">Gulshan V, Peng L, Coram M, et al. Development and validation of a deep learning algorithm for detection of diabetic retinopathy in retinal fundus photographs. JAMA. 2016;316(22):2402–10.</li>
+	<li id="r10">Esteva A, Kuprel B, Novoa RA, Ko J, Swetter SM, Blau HM, et al. Dermatologist-level classification of skin cancer with deep neural networks. Nature. 2017;542(7639):115–8.</li>
+	<li id="r11">Ronneberger O, Fischer P, Brox T. U-Net: convolutional networks for biomedical image segmentation. In: Medical Image Computing and Computer-Assisted Intervention. 2015. p. 234–41.</li>
+	<li id="r12">Lundberg SM, Lee SI. A unified approach to interpreting model predictions. In: Advances in Neural Information Processing Systems. 2017.</li>
+	<li id="r13">Topol EJ. High-performance medicine: the convergence of human and artificial intelligence. Nat Med. 2019;25(1):44–56.</li>
+	<li id="r14">Schulz KF, Altman DG, Moher D. CONSORT 2010 statement: updated guidelines for reporting parallel group randomised trials. BMJ. 2010;340:c332.</li>
+	<li id="r15">Collins GS, Reitsma JB, Altman DG, Moons KGM. Transparent reporting of a multivariable prediction model for individual prognosis or diagnosis (TRIPOD): the TRIPOD statement. Ann Intern Med. 2015;162(1):55–63.</li>
+	<li id="r16">Moher D, Liberati A, Tetzlaff J, Altman DG. Preferred reporting items for systematic reviews and meta-analyses: the PRISMA statement. PLoS Med. 2009;6(7):e1000097.</li>
+	<li id="r17">Efron B, Tibshirani RJ. An introduction to the bootstrap. New York: Chapman &amp; Hall/CRC; 1994.</li>
+	<li id="r18">Hastie T, Tibshirani R, Friedman J. The elements of statistical learning. 2nd ed. New York: Springer; 2009.</li>
+</ol>
+<p class="note">This article was written for the Zotero Next demo. Figure 1 is schematic.</p>
+</body>
+</html>

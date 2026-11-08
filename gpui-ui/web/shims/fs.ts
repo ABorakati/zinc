@@ -107,7 +107,20 @@ export const promises = {
 	unlink: async (p: unknown) => rmSync(p),
 	rm: async (p: unknown) => rmSync(p),
 	access: async (p: unknown) => accessSync(p),
-	open: async (p: unknown) => { const fd = openSync(p); return { write: async (d: unknown) => writeSync(fd, d), close: async () => closeSync(fd), sync: async () => {} }; },
+	open: async (p: unknown, flags?: string) => {
+		// "r": read from the seeded bytes (the core streams attachment files this way); otherwise an append-style handle
+		if (flags === "r" || flags === undefined) {
+			const f = find(p);
+			if (!f) throw enoent("open", p);
+			const data = files.get(f)!;
+			return {
+				read: async (buf: Uint8Array, off: number, len: number, pos: number) => { const part = data.subarray(pos, pos + len); buf.set(part, off); return { bytesRead: part.length, buffer: buf }; },
+				stat: async () => statSync(p), close: async () => {}, sync: async () => {},
+			};
+		}
+		const fd = openSync(p);
+		return { write: async (d: unknown) => writeSync(fd, d), close: async () => closeSync(fd), sync: async () => {} };
+	},
 };
 
 // callback style: (args..., cb(err, value))

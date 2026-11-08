@@ -20,22 +20,32 @@ const bytes = async (f: string) => new Uint8Array(await (await fetch(here(f))).a
 
 // the demo library and the files the app reads from disk (Lucide icons, the collections' colours and icons), fetched before any
 // app module asks for them
-const [lib, styles, icons] = await Promise.all([
+const [lib, styles, icons, stored] = await Promise.all([
 	bytes("library.sqlite"),
 	fetch(here("collection-style.json")).then((r) => (r.ok ? r.text() : "")),
 	fetch(here("icons.json")).then((r) => r.json() as Promise<Record<string, string>>),
+	fetch(here("storage.json")).then((r) => (r.ok ? (r.json() as Promise<string[]>) : [])),
 ]);
 for (const [name, svg] of Object.entries(icons)) seedFile(`/icons/${name}.svg`, svg, true);
+// the library's stored attachments (the demo article's PDF), where the core looks for them: <library folder>/storage/<key>/<file>
+await Promise.all(stored.map(async (rel) => seedFile(`/demo/storage/${rel}`, await bytes(`storage/${rel.split("/").map(encodeURIComponent).join("/")}`))));
 if (styles) seedFile("/appdata/zotero-next-gpui/collection-style.json", styles, true);
 // GPUI's browser build cannot take font files (no registerFont); it has IBM Plex Sans built in, one of the app's own sans choices
 fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
 await initSqlite();
 registerDatabase(DB, lib);
-process.env.ZN_DB = DB;
+// (ZN_DB stays unset: on the desktop it makes src/core.ts start a loopback server; here the core is plugged in with setDirect)
 
 const db = new Database(DB);
 const { handleApi } = await import("../../core/src/api");
 setDirect((req) => handleApi(req, db as never));
+// the reader fetches a PDF's bytes through the core, like src/core.ts wires it; PDFium (web/pdf.ts) loads on the first one
+const { setFileFetcher } = await import("../src/reader/library");
+const { initPdfium } = await import("./pdf");
+setFileFetcher(async (key, signal) => {
+	await initPdfium();
+	return (await handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db as never)) ?? new Response("not found", { status: 404 });
+});
 
 // light or dark from the page that embeds the demo (?theme=, then postMessage({ theme }) when the site's theme changes)
 const theme = new URLSearchParams(location.search).get("theme");
@@ -56,8 +66,13 @@ function Root() {
 render(() => <Root />, { title: "Zotero Next demo", onKeyDown: handleWindowKeyDown });
 
 const { store, uiState } = await import("../src/store");
+(globalThis as Record<string, unknown>).znDemo = { store }; // for automated checks of the demo (e.g. store.openAttachment)
 bindUiState(uiState);
 startAppearance(store);
 const { App } = await import("../src/App");
 setApp(() => App);
 await import("../src/features").catch((e) => console.warn("[demo] features", e));
+// ?open=<attachment key>, or ?open=demo for the demo article: open that PDF in the reader once the list is in (a direct link)
+const openParam = new URLSearchParams(location.search).get("open");
+const open = openParam === "demo" ? stored[0]?.split("/")[0] : openParam;
+if (open && /^[A-Z0-9]{8}$/.test(open)) setTimeout(() => store.openAttachment(open, "Demo review", ""), 400);

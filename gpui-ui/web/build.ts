@@ -4,7 +4,7 @@
 // web/sqlite.ts (bun:sqlite on SQLite WebAssembly); anything else Node-only becomes a stub that throws if it is ever called, with
 // exactly the names the code imports (learned from the bundler's errors). The demo library is copied, never the real one.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import solidPlugin from "@gpuix/solid/bun-plugin";
 
 const here = import.meta.dir;
@@ -26,6 +26,7 @@ const SHIMS: Record<string, string> = {
 const POLYFILLED = /^(node:)?(util|stream|events|buffer|assert|string_decoder|querystring|timers)$/;
 const BUILTIN = /^(node:|bun:|bun$|child_process$|worker_threads$|http$|https$|net$|module$|readline$|tty$|v8$|perf_hooks$|dns$|tls$|process$|vm$|webview-bun$)/;
 const names = new Map<string, Set<string>>();
+const READER_PDF = join(root, "src", "reader", "pdf");
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -48,6 +49,8 @@ for (let pass = 0; pass < 80; pass++) {
 				name: "web-demo-shims",
 				setup(b) {
 					b.onResolve({ filter: /.*/ }, (a) => (SHIMS[a.path] ? { path: join(here, SHIMS[a.path]!) } : undefined));
+					// the reader's PDF engine: zn_pdf.dll over bun:ffi on the desktop, PDFium WebAssembly here (web/pdf.ts)
+					b.onResolve({ filter: /(^|\/)pdf$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === READER_PDF ? { path: join(here, "pdf.ts") } : undefined));
 					b.onResolve({ filter: BUILTIN }, (a) => (POLYFILLED.test(a.path) ? undefined : { path: a.path, namespace: "stub" }));
 					b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => {
 						const list = [...(names.get(a.path) ?? [])];
@@ -86,6 +89,17 @@ writeFileSync(join(out, "icons.json"), JSON.stringify(icons));
 if (db) cpSync(db, join(out, "library.sqlite"));
 // SQLite's WebAssembly binary: its loader fetches sqlite3.wasm next to the chunk that holds it (the output root)
 cpSync(join(root, "node_modules", "@sqlite.org", "sqlite-wasm", "dist", "sqlite3.wasm"), join(out, "sqlite3.wasm"));
+// PDFium's (web/pdf.ts fetches it the first time a PDF is opened)
+cpSync(join(root, "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm"), join(out, "pdfium.wasm"));
+// the demo library's stored attachments (<library folder>/storage), and a list of them for main.tsx to put in its file system
+const storage = db ? join(dirname(db), "storage") : "";
+const stored: string[] = [];
+if (storage && existsSync(storage)) {
+	cpSync(storage, join(out, "storage"), { recursive: true });
+	const walk = (d: string) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else stored.push(relative(storage, p).replaceAll("\\", "/")); } };
+	walk(storage);
+}
+writeFileSync(join(out, "storage.json"), JSON.stringify(stored));
 const styles = arg("styles");
 if (styles && existsSync(styles)) cpSync(styles, join(out, "collection-style.json"));
 // the page: GPUI's canvas fills it (GPUIX appends the canvas to <body>)

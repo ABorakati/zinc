@@ -5,12 +5,14 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as repo from "../../core/src/db";
 import { rebuildSearchIndex } from "../../core/src/search";
+import { addFile } from "../../core/src/additems/files";
 
 const out = resolve(process.argv[2] ?? "out/demo-library");
 if (/zotero-next[\\/]data$/i.test(out)) throw new Error("refusing to write into the real data folder");
 mkdirSync(out, { recursive: true });
 const file = join(out, "library.sqlite");
 for (const s of ["", "-wal", "-shm"]) if (existsSync(file + s)) rmSync(file + s);
+rmSync(join(out, "storage"), { recursive: true, force: true });
 
 const a = (...names: string[]) => names.map((n) => { const [lastName, firstName] = n.split(", "); return { creatorType: "author", lastName, firstName }; });
 type Paper = Record<string, unknown> & { id: string; tags?: string[]; in?: string[] };
@@ -51,6 +53,19 @@ for (const p of papers) {
 	for (const c of cols ?? []) repo.addItemsToCollection(db, C[c as keyof typeof C], [key]);
 }
 repo.createItem(db, { itemType: "note", parentItem: keys.attention, note: "<p>Core claim: attention alone is enough. Compare with the BLEU table in section 6.</p>" } as never);
+// the demo article (web/demo-article.html, printed to web/demo-article.pdf): an item with its PDF stored in <out>/storage, so the
+// browser demo's reader has something to open; it cites the papers above
+const article = repo.createItem(db, {
+	itemType: "report", title: "Deep learning in clinical research: a short demo review", creators: [{ creatorType: "author", name: "Zotero Next demo" }],
+	date: "2026", institution: "Zotero Next", reportType: "Demo article", abstractNote: "A short article written for the Zotero Next browser demo (not a published paper). It cites papers in this library and has a figure and a table.",
+} as never).data.key;
+repo.addTags(db, article, ["demo"]);
+repo.addItemsToCollection(db, C.thesis, [article]);
+repo.addItemsToCollection(db, C.clinical, [article]);
+const pdf = addFile(db, { mode: "imported_file", path: join(import.meta.dir, "demo-article.pdf"), name: "Demo review.pdf", contentType: "application/pdf", parentKey: article, keepName: true }).data.key;
+// addFile stores the absolute path on this computer: store the path the browser demo serves it from instead (web/main.tsx seeds
+// <library folder>/storage there; the library is /demo/library.sqlite), so no local path ends up in the published demo
+db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(`/demo/storage/${pdf}/Demo review.pdf`, pdf);
 repo.setTagColors(db, [
 	{ name: "seminal", color: "#FF6666" }, { name: "transformers", color: "#2EA8E5" },
 	{ name: "medical imaging", color: "#A28AE5" }, { name: "convolutional networks", color: "#5FB236" },
