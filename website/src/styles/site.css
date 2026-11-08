@@ -254,6 +254,7 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .closed-dots span { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--rule); transition: width 0.3s var(--ease), background 0.3s var(--ease); }
 .closed-dots span.is-active { width: 1.5rem; background: var(--primary); }
 .closed-inline { display: none; }
+.demo-link { margin-top: 1rem; }
 .closed-list { display: grid; }
 .closed-item { padding: clamp(1.75rem, 4vw, 3rem) 0; border-top: 1px solid var(--rule); transition: opacity 0.3s var(--ease); }
 .closed-show:has(.is-current) .closed-item:not(.is-current) { opacity: 0.55; }
@@ -487,4 +488,42 @@ pre.typed { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card); c
 	.masthead-github-label { display: none; } /* the mark alone on phones */
 	.masthead-github { padding-inline: 0.5rem; }
 }
+/* ---------- the live Word sidebar demo: a pretend Word window around the real sidebar ---------- */
+.demo-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.6rem; }
+.demo-steps li { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.92rem; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 0.7rem 0.8rem; }
+.demo-steps li > .n { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 999px; background: var(--primary); color: #fff; font: 700 0.72rem/1.4rem var(--f-head); text-align: center; }
+.demo-steps b { color: var(--ink); }
+.word { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-card); background: #f3f3f3; }
+.word-title { display: flex; align-items: center; gap: 0.6rem; height: 2.4rem; padding: 0 0.9rem; background: #185abd; color: #fff; font: 500 0.85rem/1 "Segoe UI", var(--f-text); }
+.word-logo { width: 1.3rem; height: 1.3rem; border-radius: 3px; background: #fff; color: #185abd; display: grid; place-items: center; font: 800 0.75rem/1 "Segoe UI", var(--f-text); }
+.word-ribbon { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; padding: 0.45rem 0.7rem; background: #fff; border-bottom: 1px solid #e1e1e1; font-family: "Segoe UI", var(--f-text); }
+.word-tab { font: 600 0.82rem/1 "Segoe UI", var(--f-text); color: #185abd; border-bottom: 2px solid #185abd; padding: 0.35rem 0.2rem; margin-right: 0.75rem; }
+.word-ribbon button { all: unset; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.55rem; border-radius: 4px; font: 400 0.8rem/1 "Segoe UI", var(--f-text); color: #242424; cursor: pointer; }
+.word-ribbon button:hover { background: #f0f0f0; }
+.word-ribbon button:focus-visible { outline: 2px solid #185abd; }
+.word-ribbon .icon { color: #185abd; }
+.word-body { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; height: 40rem; }
+.word-canvas { overflow: auto; padding: 1.5rem; background: #e9e9e9; }
+.word-page { max-width: 42rem; min-height: 100%; margin: 0 auto; background: #fff; color: #1b1b1b; padding: 2.5rem 3rem; box-shadow: 0 1px 3px rgb(0 0 0 / 15%); font: 400 0.98rem/1.65 "Aptos", "Segoe UI", Calibri, var(--f-text); }
+.word-page h2 { font: 400 1.6rem/1.2 "Aptos Display", "Segoe UI", var(--f-text); color: #0f4761; margin: 0 0 0.9rem; letter-spacing: 0; }
+.word-para { cursor: text; margin: 0; }
+.word-caret { display: inline-block; width: 1.5px; height: 1.15em; margin: 0 -0.75px; vertical-align: -0.2em; background: #1b1b1b; animation: word-blink 1.05s steps(1) infinite; }
+@keyframes word-blink { 50% { opacity: 0; } }
+.word-field { all: unset; cursor: pointer; background: #e6e6e6; border-radius: 2px; padding: 0 1px; }
+.word-field:hover, .word-field.is-active { background: #c9daf3; }
+.word-field sup { font-size: 0.7em; }
+.word-bib { margin-top: 1.2rem; }
+.word-bibl { font-size: 0.92rem; }
+.word-entry { display: grid; grid-template-columns: 2rem minmax(0, 1fr); margin: 0 0 0.45rem; }
+.word-entry.plain { display: block; padding-left: 2rem; text-indent: -2rem; }
+.word-notes { margin: 1rem 0 0; padding: 0.6rem 0 0 1.2rem; border-top: 1px solid #ddd; font-size: 0.82rem; }
+.word-pane { width: 100%; height: 100%; border: 0; border-left: 1px solid #e1e1e1; background: #fcfcfc; }
+:root[data-theme="dark"] .word-pane { background: #262626; border-left-color: #3d3d3d; }
+@media (max-width: 900px) {
+	.word-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 34rem; height: auto; }
+	.word-canvas { padding: 0.75rem; }
+	.word-page { padding: 1.5rem 1.25rem; }
+	.word-pane { border-left: 0; border-top: 1px solid #e1e1e1; }
+}
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

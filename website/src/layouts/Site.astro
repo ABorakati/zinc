@@ -7,11 +7,12 @@ import "@fontsource-variable/manrope/wght.css";
 import Icon from "../components/Icon.astro";
 import "../styles/site.css";
 
-interface Props { title?: string; description?: string; page?: "home" | "features" | "compare" | "download" }
+interface Props { title?: string; description?: string; page?: "home" | "features" | "demo" | "compare" | "download" }
 const { title, description = "A fast, native reference manager for Windows that works with your Zotero library.", page } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const nav = [
 	{ id: "features", label: "Features", href: `${base}features/` },
+	{ id: "demo", label: "Try it", href: `${base}demo/` },
 	{ id: "compare", label: "Compare", href: `${base}compare/` },
 	{ id: "docs", label: "Docs", href: `${base}overview/` },
 ];

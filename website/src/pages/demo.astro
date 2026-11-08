@@ -1,0 +1,126 @@
+---
+// Live demo of the Word add-in's sidebar: the real sidebar code (public/word-demo, built by scripts/sync-assets.ts from
+// word/sidebar/src/demo.ts) in an iframe, on an in-memory demo library, beside a pretend Word page drawn here from the demo host's
+// fields. Click in the page to place the caret; the sidebar inserts citations there, and its bibliography goes at the end.
+import Icon from "../components/Icon.astro";
+import Site from "../layouts/Site.astro";
+const base = import.meta.env.BASE_URL;
+---
+<Site page="demo" title="Try the Word sidebar" description="The Zotero Next Word sidebar, running live in your browser on a demo library: search, cite and add a bibliography.">
+	<section class="hero" style="padding-bottom: 1.5rem">
+		<div class="wrap">
+			<div class="head" style="margin-bottom: 1.5rem">
+				<h1 class="display" style="margin-bottom: 1rem">Try the Word sidebar</h1>
+				<p>This is the add-in's real sidebar, running in your browser on a demo library of 12 well-known papers. The page on the left stands in for Word. Nothing is saved.</p>
+			</div>
+			<ol class="demo-steps">
+				<li><span class="n">1</span><span>Click in the text to put the cursor where a citation should go.</span></li>
+				<li><span class="n">2</span><span>Search the sidebar, for example <b>retinopathy</b>, and click a result to insert it.</span></li>
+				<li><span class="n">3</span><span>Click a citation in the text to see it under <b>Cited here</b>, or change the style in the sidebar's settings.</span></li>
+				<li><span class="n">4</span><span>Add the bibliography from the ribbon.</span></li>
+			</ol>
+		</div>
+	</section>
+
+	<section class="room-tight" style="padding-top: 0">
+		<div class="wrap">
+			<div class="word" data-word-demo>
+				<div class="word-title"><span class="word-logo">W</span>Demo.docx – Word</div>
+				<div class="word-ribbon" role="toolbar" aria-label="Zotero Next ribbon tab">
+					<span class="word-tab">Zotero Next</span>
+					<button type="button" data-cmd="insertCitation"><Icon name="quote" size={16} />Add/Edit Citation</button>
+					<button type="button" data-cmd="insertBibliography"><Icon name="list-ordered" size={16} />Bibliography</button>
+					<button type="button" data-cmd="refresh"><Icon name="refresh-cw" size={16} />Refresh</button>
+				</div>
+				<div class="word-body">
+					<div class="word-canvas">
+						<article class="word-page" data-doc aria-label="Demo document">
+							<h2>Artificial intelligence in clinical research</h2>
+							<p class="word-para" data-para>Loading the sidebar…</p>
+							<div class="word-bib" data-bib></div>
+						</article>
+					</div>
+					<iframe class="word-pane" src={`${base}word-demo/index.html`} title="Zotero Next sidebar (live demo)" data-pane></iframe>
+				</div>
+			</div>
+			<p class="fine" style="margin-top: 1rem">The sidebar is the add-in's own code. Only the document is pretend: in Word the same sidebar writes real Zotero citation fields. Styles here: Vancouver, APA and Nature; in Word, any CSL style.</p>
+		</div>
+	</section>
+</Site>
+
+<script is:inline>
+	(() => {
+		const root = document.querySelector("[data-word-demo]");
+		const frame = root.querySelector("[data-pane]");
+		const para = root.querySelector("[data-para]");
+		const bib = root.querySelector("[data-bib]");
+		const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+		let demo = null, active = -1;
+
+		// the sidebar follows the site's light or dark theme, as it follows Word's Office theme in Word
+		const theme = () => { try { frame.contentDocument.documentElement.dataset.office = document.documentElement.dataset.theme === "dark" ? "black" : "light"; } catch {} };
+		new MutationObserver(theme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+		const render = () => {
+			if (!demo) return;
+			const body = demo.body, fields = demo.host.fields;
+			const cites = fields.map((f, i) => ({ f, i })).filter((x) => x.f.kind === "item");
+			// body text in pieces between citations, each piece remembering where it starts, with the caret drawn in place
+			let html = "", at = 0;
+			const text = (from, to) => {
+				if (demo.cursor >= from && demo.cursor <= to) {
+					return `<span data-from="${from}">${esc(body.slice(from, demo.cursor))}</span><span class="word-caret" aria-hidden="true"></span><span data-from="${demo.cursor}">${esc(body.slice(demo.cursor, to))}</span>`;
+				}
+				return `<span data-from="${from}">${esc(body.slice(from, to))}</span>`;
+			};
+			const placed = cites.filter((c) => c.f.anchor != null).sort((a, b) => a.f.anchor - b.f.anchor);
+			for (const { f, i } of placed) {
+				html += text(at, f.anchor);
+				const label = f.story === "main" ? esc(f.text) : `<sup>${f.note ?? ""}</sup>`;
+				html += `<button type="button" class="word-field${i === active ? " is-active" : ""}" data-field="${i}" title="Zotero citation">${label}</button>`;
+				at = f.anchor;
+			}
+			html += text(at, body.length);
+			para.innerHTML = html;
+			const notes = placed.filter(({ f }) => f.story !== "main");
+			const bibs = fields.filter((f) => f.kind === "bibl");
+			bib.innerHTML =
+				(notes.length ? `<ol class="word-notes">${notes.map(({ f }) => `<li value="${f.note}">${esc(f.text)}</li>`).join("")}</ol>` : "") +
+				bibs.map((f) => `<div class="word-bibl">${f.text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+					const m = /^(\[?\d+[.\]]?)\s+(.*)$/.exec(l);
+					return m ? `<p class="word-entry"><span>${esc(m[1])}</span><span>${esc(m[2])}</span></p>` : `<p class="word-entry plain">${esc(l)}</p>`;
+				}).join("")}</div>`).join("");
+		};
+
+		// a click in the text moves the caret to the end of the word clicked; a click on a citation puts the sidebar's cursor in it
+		para.addEventListener("click", (e) => {
+			if (!demo) return;
+			const field = e.target.closest("[data-field]");
+			if (field) { active = Number(field.dataset.field); demo.enterField(active); render(); return; }
+			active = -1; demo.leaveField();
+			let node = null, off = 0;
+			if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(e.clientX, e.clientY); if (p) { node = p.offsetNode; off = p.offset; } }
+			else if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(e.clientX, e.clientY); if (r) { node = r.startContainer; off = r.startOffset; } }
+			const span = node && (node.nodeType === 3 ? node.parentElement : node).closest("[data-from]");
+			if (!span) return;
+			let pos = Number(span.dataset.from) + off;
+			const m = /^[^\s.,;:]*/.exec(demo.body.slice(pos));
+			pos += m ? m[0].length : 0;
+			demo.setCursor(pos);
+			render();
+		});
+
+		root.querySelectorAll("[data-cmd]").forEach((b) => b.addEventListener("click", () => demo && demo.host.emit("command", { name: b.dataset.cmd })));
+
+		// wait for the sidebar inside the iframe to hand over its demo host
+		const wait = setInterval(() => {
+			const d = frame.contentWindow && frame.contentWindow.__znDemo;
+			if (!d) return;
+			clearInterval(wait);
+			demo = d;
+			theme();
+			frame.contentWindow.addEventListener("zn-demo-change", () => { active = -1; render(); });
+			render();
+		}, 100);
+	})();
+</script>

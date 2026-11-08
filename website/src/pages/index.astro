@@ -67,6 +67,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 							<h3><Icon name={it.icon} size={24} />{it.title}</h3>
 							{it.body.filter(Boolean).map((p) => <p set:html={inline(p, base)} />)}
 							<div class="closed-tags">{it.tags.map((t) => <span>{t}</span>)}</div>
+							{it.id === "word" && <a class="btn btn-secondary btn-sm demo-link" href={`${base}demo/`}><Icon name="mouse-pointer-click" size={14} />Try the sidebar live</a>}
 							<div class="closed-inline"><ClosedSlide id={it.id} /></div>
 						</article>
 					))}
