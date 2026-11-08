@@ -583,7 +583,9 @@ async function unlinkAll(box: HTMLElement) {
 
 async function main() {
 	try {
-		host = new URLSearchParams(location.search).has("mock") ? createMockHost() : createWebViewHost();
+		// a host handed in before this module runs (the website's live demo, src/demo-host.ts), else Word's WebView2 or ?mock
+		const given = (globalThis as { __znHost?: Host }).__znHost;
+		host = given ?? (new URLSearchParams(location.search).has("mock") ? createMockHost() : createWebViewHost());
 	} catch {
 		host = createMockHost();
 		toast("Preview mode: not inside Word, using sample data.");

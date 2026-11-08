@@ -36,14 +36,32 @@
 	}
 }
 /* Word's own Office theme (set by the add-in from Office's "UI Theme"; it also sets prefers-color-scheme to match): neutral
-   greys like Office's task panes, so the sidebar reads as part of Word. Without the attribute (browser, tests) the palette above applies. */
+   greys like Office's task panes, so the sidebar reads as part of Word. Without the attribute (browser, tests) the palette above applies.
+   The attribute decides light or dark on its own (text colours included), so a page that sets it (the website demo) does not depend
+   on the system's colour scheme. */
 html[data-office="light"] {
+	color-scheme: light;
+	--foreground: oklch(0.25 0.01 260);
+	--muted-foreground: oklch(0.52 0.012 260);
+	--success-bg: oklch(0.95 0.05 150);
+	--success-fg: oklch(0.45 0.12 150);
+	--warning-bg: oklch(0.96 0.06 90);
+	--warning-fg: oklch(0.5 0.12 80);
 	--background: #fcfcfc;
 	--card: #ffffff;
 	--muted: #f3f3f3;
 	--accent: #ebebeb;
 	--border: #e0e0e0;
 	--input: #c8c8c8;
+}
+html[data-office="darkgray"], html[data-office="black"] {
+	color-scheme: dark;
+	--foreground: oklch(0.92 0.005 260);
+	--muted-foreground: oklch(0.7 0.012 260);
+	--success-bg: oklch(0.28 0.05 150);
+	--success-fg: oklch(0.82 0.1 150);
+	--warning-bg: oklch(0.3 0.05 90);
+	--warning-fg: oklch(0.85 0.1 90);
 }
 html[data-office="darkgray"] {
 	--background: #3a3a3a;
