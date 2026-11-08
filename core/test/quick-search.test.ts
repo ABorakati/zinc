@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { listItems, openDb } from "../src/db";
+import { SCHEMA_HEAD } from "../src/migrations";
 import { rebuildSearchIndex, search } from "../src/search";
 import { insertItem, tempDir } from "./fixture";
 import type { ZoteroItemData } from "../src/api-types";
@@ -163,7 +164,7 @@ describe("older libraries", () => {
 		raw.run("UPDATE meta SET value = '2' WHERE name = 'schema_version'");
 		raw.close();
 		db = openDb(path);
-		expect(db.query("SELECT value FROM meta WHERE name = 'schema_version'").get()).toEqual({ value: "3" });
+		expect(db.query("SELECT value FROM meta WHERE name = 'schema_version'").get()).toEqual({ value: String(SCHEMA_HEAD) });
 		expect(viaApi("pancreatic")).toEqual(viaLike(["pancreatic"]));
 		expect(viaApi("pancreatic").length).toBeGreaterThan(0);
 	});

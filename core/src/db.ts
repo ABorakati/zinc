@@ -2,6 +2,7 @@
 // Schema contract: core/schema.sql. API contract: core/src/api-types.ts.
 
 import { Database } from "bun:sqlite";
+import { USER_LIBRARY, assertItemWritable, assertWritable, libraryOfCollection, libraryOfItem } from "./libraries";
 import { existsSync } from "node:fs";
 import { migrate } from "./migrations";
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
@@ -134,20 +135,21 @@ interface CollectionRow {
 	key: string;
 	name: string;
 	parent_key: string | null;
+	library_id: number;
 	item_count: number;
 }
 
-const COLLECTION_SQL = `SELECT c.key, c.name, c.parent_key,
+const COLLECTION_SQL = `SELECT c.key, c.name, c.parent_key, c.library_id,
 	(SELECT count(*) FROM collection_items ci JOIN items i ON i.key = ci.item_key
 	 WHERE ci.collection_key = c.key AND i.deleted = 0 AND i.parent_key IS NULL) AS item_count
 	FROM collections c`;
 
 function toCollection(r: CollectionRow): Collection {
-	return { key: r.key, name: r.name, parentKey: r.parent_key, itemCount: r.item_count };
+	return { key: r.key, name: r.name, parentKey: r.parent_key, itemCount: r.item_count, ...(r.library_id !== USER_LIBRARY ? { libraryId: r.library_id } : {}) };
 }
 
-export function listCollections(db: Database): Collection[] {
-	const rows = db.query(`${COLLECTION_SQL} ORDER BY c.name COLLATE NOCASE, c.key`).all() as CollectionRow[];
+export function listCollections(db: Database, libraryId: number = USER_LIBRARY): Collection[] {
+	const rows = db.query(`${COLLECTION_SQL} WHERE c.library_id = ? ORDER BY c.name COLLATE NOCASE, c.key`).all(libraryId) as CollectionRow[];
 	return rows.map(toCollection);
 }
 
@@ -160,15 +162,19 @@ function collectionExists(db: Database, key: string): boolean {
 	return !!db.query("SELECT 1 FROM collections WHERE key = ?").get(key);
 }
 
-export function createCollection(db: Database, name: string, parentKey?: string | null): Collection {
+export function createCollection(db: Database, name: string, parentKey?: string | null, libraryId?: number): Collection {
 	if (name !== undefined && name !== null && typeof name !== "string") throw new HttpError(400, "name must be a string");
 	if (parentKey !== undefined && parentKey !== null && typeof parentKey !== "string") throw new HttpError(400, "parentKey must be a string or null");
 	name = (name ?? "").trim();
 	if (!name) throw new HttpError(400, "name is required");
 	if (parentKey && !collectionExists(db, parentKey)) throw new HttpError(404, "parent collection not found");
+	// A sub-collection lives in its parent's library.
+	const lib = parentKey ? libraryOfCollection(db, parentKey)! : (libraryId ?? USER_LIBRARY);
+	if (parentKey && libraryId !== undefined && libraryId !== lib) throw new HttpError(400, "the parent collection is in another library");
+	assertWritable(db, lib);
 	let key = generateKey();
 	while (collectionExists(db, key)) key = generateKey();
-	db.query("INSERT INTO collections(key, name, parent_key) VALUES(?, ?, ?)").run(key, name, parentKey || null);
+	db.query("INSERT INTO collections(key, name, parent_key, library_id) VALUES(?, ?, ?, ?)").run(key, name, parentKey || null, lib);
 	return getCollection(db, key)!;
 }
 
@@ -189,6 +195,7 @@ export function updateCollection(
 	patch: { name?: string; parentKey?: string | null },
 ): Collection {
 	if (!collectionExists(db, key)) throw new HttpError(404, "collection not found");
+	assertWritable(db, libraryOfCollection(db, key)!);
 	if (patch.name !== undefined && typeof patch.name !== "string") throw new HttpError(400, "name must be a string");
 	if (patch.parentKey !== undefined && patch.parentKey !== null && typeof patch.parentKey !== "string") throw new HttpError(400, "parentKey must be a string or null");
 	if (patch.name !== undefined) {
@@ -200,6 +207,7 @@ export function updateCollection(
 		const parent = patch.parentKey || null;
 		if (parent) {
 			if (!collectionExists(db, parent)) throw new HttpError(404, "parent collection not found");
+			if (libraryOfCollection(db, parent) !== libraryOfCollection(db, key)) throw new HttpError(400, "a collection cannot move to another library");
 			if (descendantKeys(db, key).includes(parent)) throw new HttpError(400, "cannot move a collection into itself");
 		}
 		db.query("UPDATE collections SET parent_key = ? WHERE key = ?").run(parent, key);
@@ -209,6 +217,7 @@ export function updateCollection(
 
 export function deleteCollection(db: Database, key: string): void {
 	if (!collectionExists(db, key)) throw new HttpError(404, "collection not found");
+	assertWritable(db, libraryOfCollection(db, key)!);
 	db.transaction(() => {
 		const keys = descendantKeys(db, key);
 		const itemKeys = new Set<string>();
@@ -238,9 +247,12 @@ function syncDataCollections(db: Database, itemKey: string): void {
 
 export function addItemsToCollection(db: Database, collectionKey: string, itemKeys: string[]): void {
 	if (!collectionExists(db, collectionKey)) throw new HttpError(404, "collection not found");
+	const lib = libraryOfCollection(db, collectionKey)!;
+	assertWritable(db, lib);
 	db.transaction(() => {
 		for (const k of itemKeys) {
 			if (!itemExists(db, k)) throw new HttpError(404, `item not found: ${k}`);
+			if (libraryOfItem(db, k) !== lib) throw new HttpError(400, `item ${k} is in another library than the collection`);
 			db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(collectionKey, k);
 			syncDataCollections(db, k);
 		}
@@ -249,6 +261,7 @@ export function addItemsToCollection(db: Database, collectionKey: string, itemKe
 
 export function removeItemsFromCollection(db: Database, collectionKey: string, itemKeys: string[]): void {
 	if (!collectionExists(db, collectionKey)) throw new HttpError(404, "collection not found");
+	assertWritable(db, libraryOfCollection(db, collectionKey)!);
 	db.transaction(() => {
 		for (const k of itemKeys) {
 			db.query("DELETE FROM collection_items WHERE collection_key = ? AND item_key = ?").run(collectionKey, k);
@@ -260,6 +273,8 @@ export function removeItemsFromCollection(db: Database, collectionKey: string, i
 // ---------------------------------------------------------------- item list
 
 export interface ListOptions {
+	/** Local library id (see libraries.ts); default: the collection's library, else My Library. */
+	library?: number;
 	collection?: string;
 	tag?: string;
 	q?: string;
@@ -332,7 +347,11 @@ function hasQuickIndex(db: Database): boolean {
 }
 
 function buildFilter(db: Database, opts: ListOptions) {
-	const where: string[] = ["i.parent_key IS NULL", "i.item_type <> 'annotation'", `i.deleted = ${opts.trash ? 1 : 0}`];
+	// A collection decides the library when none is named. The id goes into the SQL as a number, not a parameter: the partial
+	// sort indexes of My Library (items_top_*) are only used when the query says `library_id = 1` literally.
+	const library = opts.library ?? (opts.collection ? (libraryOfCollection(db, opts.collection) ?? USER_LIBRARY) : USER_LIBRARY);
+	if (!Number.isInteger(library) || library < 1) throw new HttpError(400, "invalid library");
+	const where: string[] = ["i.parent_key IS NULL", "i.item_type <> 'annotation'", `i.deleted = ${opts.trash ? 1 : 0}`, `i.library_id = ${library}`];
 	const params: (string | number)[] = [];
 	// A collection or tag filter drives the join (CROSS JOIN fixes the loop order), so the
 	// planner never walks all items probing per row.
@@ -389,7 +408,7 @@ function buildFilter(db: Database, opts: ListOptions) {
 		}
 	}
 	const whereSql = where.join(" AND ");
-	const unfiltered = where.length === 3 && !opts.trash && !driver;
+	const unfiltered = where.length === 4 && !opts.trash && !driver && library === USER_LIBRARY;
 	const from = driver ? `${driver} f CROSS JOIN items i ON i.key = f.k` : "items i";
 	const expensive = !!(opts.search || opts.searchDef || (opts.q && opts.qmode && opts.qmode !== "titleCreatorYear"));
 	return { whereSql, from, params: [...driverParams, ...params], driver, unfiltered, expensive };
@@ -854,7 +873,11 @@ export function assertItemShape(d: Record<string, unknown>): void {
 	}
 }
 
-export function createItem(db: Database, input: Partial<ZoteroItemData>): ItemDetail {
+/**
+ * Creates an item. `libraryId` picks the library for a top-level item (default: the library of its collections, else My
+ * Library); a note or attachment always joins its parent's library.
+ */
+export function createItem(db: Database, input: Partial<ZoteroItemData>, libraryId?: number): ItemDetail {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new HttpError(400, "data must be an object");
 	assertItemShape(input as Record<string, unknown>);
 	const itemType = input.itemType;
@@ -887,6 +910,10 @@ export function createItem(db: Database, input: Partial<ZoteroItemData>): ItemDe
 	}
 	const collections = parent ? [] : [...new Set((collsIn ?? []) as string[])];
 	for (const c of collections) if (!collectionExists(db, c)) throw new HttpError(404, `collection not found: ${c}`);
+	const lib = parent ? libraryOfItem(db, parent)! : (libraryId ?? (collections.length ? libraryOfCollection(db, collections[0])! : USER_LIBRARY));
+	if (parent && libraryId !== undefined && libraryId !== lib) throw new HttpError(400, "the parent item is in another library");
+	for (const c of collections) if (libraryOfCollection(db, c) !== lib) throw new HttpError(400, `collection ${c} is in another library than the item`);
+	assertWritable(db, lib);
 	const tags: { tag: string; type?: number }[] = [];
 	const seen = new Set<string>();
 	for (const t of (tagsIn ?? []) as { tag?: unknown; type?: number }[]) {
@@ -908,9 +935,9 @@ export function createItem(db: Database, input: Partial<ZoteroItemData>): ItemDe
 	const cols = deriveColumns(data);
 	db.transaction(() => {
 		db.query(
-			`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted)
-			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-		).run(key, itemType, parent || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
+			`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted, library_id)
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+		).run(key, itemType, parent || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now, lib);
 		for (const t of tags) db.query("INSERT INTO item_tags(item_key, tag, type) VALUES(?, ?, ?)").run(key, t.tag, t.type ?? 0);
 		for (const c of collections) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, key);
 		if (itemType === "attachment") {
@@ -930,8 +957,9 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 	const { itemType: patchType, ...patchFields } = patch as Record<string, unknown>;
 	assertItemShape(patchFields);
 	if (patchType !== undefined && typeof patchType !== "string") throw new HttpError(400, "itemType must be a string");
-	const row = db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string } | null;
+	const row = db.query("SELECT data, library_id FROM items WHERE key = ?").get(key) as { data: string; library_id: number } | null;
 	if (!row) throw new HttpError(404, "item not found");
+	assertWritable(db, row.library_id);
 	let data = JSON.parse(row.data) as ZoteroItemData;
 	const { key: _k, itemType, dateAdded: _a, ...rest } = patch;
 	// Changing the item type remaps fields and creator types first (Zotero's rules);
@@ -967,6 +995,7 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 			const valid: string[] = [];
 			for (const ck of rest.collections ?? []) {
 				if (!collectionExists(db, ck)) continue;
+				if (libraryOfCollection(db, ck) !== row.library_id) throw new HttpError(400, `collection ${ck} is in another library than the item`);
 				db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(ck, key);
 				valid.push(ck);
 			}
@@ -1007,6 +1036,7 @@ function syncDataTags(db: Database, itemKey: string): void {
 
 export function addTags(db: Database, itemKey: string, tags: string[]): void {
 	if (!itemExists(db, itemKey)) throw new HttpError(404, "item not found");
+	assertItemWritable(db, itemKey);
 	db.transaction(() => {
 		for (const raw of tags) {
 			const tag = raw.trim();
@@ -1018,19 +1048,20 @@ export function addTags(db: Database, itemKey: string, tags: string[]): void {
 
 export function removeTags(db: Database, itemKey: string, tags: string[]): void {
 	if (!itemExists(db, itemKey)) throw new HttpError(404, "item not found");
+	assertItemWritable(db, itemKey);
 	db.transaction(() => {
 		for (const tag of tags) db.query("DELETE FROM item_tags WHERE item_key = ? AND tag = ?").run(itemKey, tag);
 		syncDataTags(db, itemKey);
 	})();
 }
 
-export function listTags(db: Database): { tag: string; count: number }[] {
+export function listTags(db: Database, libraryId: number = USER_LIBRARY): { tag: string; count: number }[] {
 	return db
 		.query(
 			`SELECT t.tag, count(*) AS count FROM item_tags t JOIN items i ON i.key = t.item_key
-			 WHERE i.deleted = 0 GROUP BY t.tag ORDER BY t.tag COLLATE NOCASE`,
+			 WHERE i.deleted = 0 AND i.library_id = ? GROUP BY t.tag ORDER BY t.tag COLLATE NOCASE`,
 		)
-		.all() as { tag: string; count: number }[];
+		.all(libraryId) as { tag: string; count: number }[];
 }
 
 // ---------------------------------------------------------------- attachments
@@ -1065,6 +1096,7 @@ export function getAnnotations(db: Database, attachmentKey: string): ReaderAnnot
 
 export function upsertAnnotations(db: Database, attachmentKey: string, anns: ReaderAnnotation[]): void {
 	requireAttachment(db, attachmentKey);
+	assertItemWritable(db, attachmentKey);
 	if (!Array.isArray(anns)) throw new HttpError(400, "body must be an array of annotations");
 	for (const a of anns) if (!a || typeof a.id !== "string" || !a.id) throw new HttpError(400, "annotation id is required");
 	db.transaction(() => {
@@ -1079,6 +1111,7 @@ export function upsertAnnotations(db: Database, attachmentKey: string, anns: Rea
 
 export function deleteAnnotations(db: Database, attachmentKey: string, ids: string[]): void {
 	requireAttachment(db, attachmentKey);
+	assertItemWritable(db, attachmentKey);
 	db.transaction(() => {
 		for (const id of ids) db.query("DELETE FROM annotations WHERE key = ? AND attachment_key = ?").run(id, attachmentKey);
 	})();

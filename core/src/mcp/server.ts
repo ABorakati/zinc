@@ -10,6 +10,8 @@ import * as repo from "../db";
 import { HttpError } from "../db";
 import { resolveStoredPath } from "../files/paths";
 import { indexItem, search, stripHtml } from "../search";
+import { listLibraries, resolveLibrary } from "../libraries";
+import { pendingCount } from "../sync/build";
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
@@ -137,7 +139,8 @@ const PROTECTED_FIELDS: Record<string, string> = {
 };
 
 function collectionNames(db: Database): Map<string, Collection> {
-	return new Map(repo.listCollections(db).map((c) => [c.key, c]));
+	// every library's collections: an item's collection keys can belong to a group
+	return new Map(listLibraries(db).flatMap((l) => repo.listCollections(db, l.id)).map((c) => [c.key, c]));
 }
 
 // ---------------------------------------------------------------- server
@@ -149,12 +152,30 @@ export function createMcpServer(db: Database): McpServer {
 			instructions:
 				"Search and manage a local Zotero-style reference library. Start with search_library (full text + metadata) or list_items, " +
 				"then get_item for details, get_fulltext to read a paper's text, and get_file_path for the PDF on disk. " +
-				"Item keys are 8-character strings. Results are paginated; use offset to page.",
+				"Item keys are 8-character strings. Results are paginated; use offset to page. " +
+				"Tools act on My Library unless you pass library (an id from list_libraries) to work in a group library; some groups are read-only.",
 		},
 	);
 
+	const librarySchema = z.number().int().positive().optional().describe("Library id from list_libraries; omit for My Library");
+
 	const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 	const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+	server.registerTool(
+		"list_libraries",
+		{
+			title: "List libraries",
+			description: "My Library and the group libraries synced from zotero.org, with their ids (pass an id as library to other tools), whether this user can edit them and how many changes await pushing.",
+			inputSchema: {},
+			annotations: readOnly,
+		},
+		guard(() =>
+			jsonResult({
+				libraries: listLibraries(db).map((l) => ({ id: l.id, name: l.name, type: l.type, editable: l.editable, pendingChanges: pendingCount(db, l.id) })),
+			}),
+		),
+	);
 
 	server.registerTool(
 		"search_library",
@@ -167,13 +188,14 @@ export function createMcpServer(db: Database): McpServer {
 				"Use get_item with a key for details.",
 			inputSchema: {
 				query: z.string().min(1).describe("Search words, e.g. normothermic machine perfusion"),
+				library: librarySchema,
 				limit: limitSchema,
 				offset: offsetSchema,
 			},
 			annotations: readOnly,
 		},
-		guard(({ query, limit, offset }) => {
-			const r = search(db, query, { limit: limit ?? DEFAULT_LIMIT, offset });
+		guard(({ query, limit, offset, library }) => {
+			const r = search(db, query, { limit: limit ?? DEFAULT_LIMIT, offset, library: library === undefined ? undefined : resolveLibrary(db, library) });
 			return jsonResult({
 				total: r.total,
 				offset: offset ?? 0,
@@ -199,6 +221,7 @@ export function createMcpServer(db: Database): McpServer {
 				"q only matches title, creators and year. Combine collection (collection key from list_collections), tag (exact tag), " +
 				"unfiled (items in no collection) or trash (items in the trash). Returns total and one page of items.",
 			inputSchema: {
+				library: librarySchema,
 				collection: z.string().optional().describe("Collection key"),
 				tag: z.string().optional().describe("Exact tag name"),
 				unfiled: z.boolean().optional().describe("Only items that are in no collection"),
@@ -212,7 +235,7 @@ export function createMcpServer(db: Database): McpServer {
 			annotations: readOnly,
 		},
 		guard((a) => {
-			const r = repo.listItems(db, { ...a, limit: a.limit ?? DEFAULT_LIMIT });
+			const r = repo.listItems(db, { ...a, library: a.library === undefined ? undefined : resolveLibrary(db, a.library), limit: a.limit ?? DEFAULT_LIMIT });
 			return jsonResult({
 				total: r.total,
 				offset: a.offset ?? 0,
@@ -345,12 +368,12 @@ export function createMcpServer(db: Database): McpServer {
 			description:
 				"All collections as a nested tree with keys, names and item counts (top-level items directly in each collection, not subcollections). " +
 				"Use the keys with list_items, add_to_collection and create_collection.",
-			inputSchema: {},
+			inputSchema: { library: librarySchema },
 			annotations: readOnly,
 		},
-		guard(() => {
+		guard(({ library }) => {
 			type Node = { key: string; name: string; itemCount: number; children: Node[] };
-			const all = repo.listCollections(db);
+			const all = repo.listCollections(db, library === undefined ? 1 : resolveLibrary(db, library));
 			const nodes = new Map<string, Node>(all.map((c) => [c.key, { key: c.key, name: c.name, itemCount: c.itemCount, children: [] }]));
 			const roots: Node[] = [];
 			for (const c of all) {
@@ -369,10 +392,11 @@ export function createMcpServer(db: Database): McpServer {
 			inputSchema: {
 				name: z.string().min(1).describe("Collection name"),
 				parentKey: z.string().optional().describe("Key of the parent collection; omit for top level"),
+				library: librarySchema,
 			},
 			annotations: { ...write, idempotentHint: false },
 		},
-		guard(({ name, parentKey }) => jsonResult(repo.createCollection(db, name, parentKey))),
+		guard(({ name, parentKey, library }) => jsonResult(repo.createCollection(db, name, parentKey, library === undefined ? undefined : resolveLibrary(db, library)))),
 	);
 
 	server.registerTool(

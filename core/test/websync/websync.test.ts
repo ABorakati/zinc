@@ -80,7 +80,7 @@ describe("pull", () => {
 		expect(rows(r, "SELECT key FROM items ORDER BY key").map((x) => x.key)).toEqual(["ITEM0001", "ITEM0002", "ITEM0003"]);
 		const fetches = r.mock.log.filter((l) => l.query.itemKey).map((l) => l.query.itemKey);
 		expect(fetches).toEqual(["ITEM0001,ITEM0003"]);
-		expect(r.mock.log.find((l) => l.query.format === "versions")!.query.since).toBe("3"); // the library version the first pull ended at
+		expect(r.mock.log.find((l) => l.query.format === "versions" && l.path.endsWith("/items"))!.query.since).toBe("3"); // the library version the first pull ended at
 		expect(outbox(r)).toEqual([]); // pulling never queues a push
 	});
 

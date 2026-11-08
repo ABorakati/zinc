@@ -20,6 +20,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../db";
 import { discoverMendeleyDatabases, importMendeley } from "../import/mendeley";
 import { exportItems, type ExportFormat } from "./export";
+import { resolveLibrary } from "../libraries";
 import { importText, type ImportFormat } from "./import";
 
 function json(body: unknown, status = 200): Response {
@@ -67,6 +68,7 @@ export async function handleIoApi(req: Request, db: Database): Promise<Response 
 					collectionKey: optString(b.collectionKey, "collectionKey"),
 					format: b.format as ExportFormat,
 					includeNotes: !!b.includeNotes,
+					library: b.library !== undefined ? resolveLibrary(db, b.library) : undefined,
 					dir: optString(b.dir, "dir"),
 				}),
 			);

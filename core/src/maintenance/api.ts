@@ -12,6 +12,10 @@ import type { Database } from "bun:sqlite";
 import { dirname, join } from "node:path";
 import { HttpError } from "../db";
 import { eraseItems, trashCounts, trashedKeys, withDescendants } from "./erase";
+import { resolveLibrary } from "../libraries";
+
+/** The library a maintenance request is about: the one named, else My Library. */
+const libOf = (db: Database, v: unknown): number => resolveLibrary(db, v);
 import { renameFiles } from "./rename-files";
 import { automaticTags, deleteAutomaticTags, deleteTags, renameTag } from "./tags";
 
@@ -67,11 +71,11 @@ async function dispatch(req: Request, db: Database): Promise<Response> {
 	const route = url.pathname.slice("/api/maintenance/".length).replace(/\/$/, "");
 	const m = req.method;
 
-	if (m === "GET" && route === "trash") return Response.json(trashCounts(db, days(url.searchParams.get("olderThanDays"))));
+	if (m === "GET" && route === "trash") return Response.json(trashCounts(db, days(url.searchParams.get("olderThanDays")), libOf(db, url.searchParams.get("library"))));
 	if (m === "GET" && route === "tags/automatic") return Response.json(automaticTags(db));
 	if (m === "POST" && route === "empty-trash") {
 		const b = await body(req);
-		return Response.json(eraseItems(db, trashedKeys(db, days(b.olderThanDays)), ownStorage(db)));
+		return Response.json(eraseItems(db, trashedKeys(db, days(b.olderThanDays), libOf(db, b.library)), ownStorage(db)));
 	}
 	if (m === "POST" && route === "erase") {
 		const keys = strings((await body(req)).keys, "keys");

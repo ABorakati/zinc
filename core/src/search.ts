@@ -149,25 +149,26 @@ function matchedInAll(db: Database, rowids: number[], match: string): Map<number
 // rank is FTS5 bm25 (title weighted highest): lower is better, hits are sorted ascending.
 // The page is chosen on rank alone and snippet() runs only for its rows: in one query SQLite can evaluate snippet() for every
 // match before sorting, and on a library with PDF full text that re-reads the large fulltext column once per match.
-export function search(db: Database, q: string, opts: { limit?: number; offset?: number } = {}): SearchResult {
+export function search(db: Database, q: string, opts: { limit?: number; offset?: number; library?: number } = {}): SearchResult {
 	const terms = parseQuery(q ?? "");
 	if (terms.length === 0) return { total: 0, hits: [] };
 	const match = terms.map(termToFts).join(" ");
 	const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 20), 1), 200);
 	const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
+	const library = opts.library ?? 1; // My Library unless a library is named
 	const total = (
 		db
-			.query("SELECT count(*) AS n FROM search s JOIN items i ON i.rowid = s.rowid WHERE search MATCH ? AND i.deleted = 0")
-			.get(match) as { n: number }
+			.query("SELECT count(*) AS n FROM search s JOIN items i ON i.rowid = s.rowid WHERE search MATCH ? AND i.deleted = 0 AND i.library_id = ?")
+			.get(match, library) as { n: number }
 	).n;
 	const ranked = db
 		.query(
 			`SELECT s.rowid AS rowid, bm25(search, 10.0, 5.0, 3.0, 2.0, 2.0, 1.0, 1.0) AS rank
 			 FROM search s JOIN items i ON i.rowid = s.rowid
-			 WHERE search MATCH ? AND i.deleted = 0
+			 WHERE search MATCH ? AND i.deleted = 0 AND i.library_id = ?
 			 ORDER BY rank LIMIT ? OFFSET ?`,
 		)
-		.all(match, limit, offset) as { rowid: number; rank: number }[];
+		.all(match, library, limit, offset) as { rowid: number; rank: number }[];
 	const details = new Map(
 		(
 			ranked.length

@@ -7,6 +7,7 @@
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../db";
 import { detectDuplicates, ensureDuplicatesSchema } from "./detect";
+import { resolveLibrary } from "../libraries";
 import { getDuplicateSetDetails, markNotDuplicates, mergeDuplicateItems } from "./merge";
 
 function json(body: unknown, status = 200): Response {
@@ -48,7 +49,7 @@ export async function handleDuplicatesApi(req: Request, db: Database): Promise<R
 		if (parts.length === 0) {
 			if (m === "GET") {
 				const includeSummary = url.searchParams.get("summary") === "1";
-				return json(detectDuplicates(db, { includeSummary }));
+				return json(detectDuplicates(db, { includeSummary, library: url.searchParams.has("library") ? resolveLibrary(db, url.searchParams.get("library")) : undefined }));
 			}
 			throw new HttpError(405, "method not allowed");
 		}

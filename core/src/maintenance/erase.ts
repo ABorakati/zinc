@@ -2,6 +2,7 @@
 // Everything goes through normal table writes, so the sync triggers record the deletes in sync_outbox.
 
 import type { Database } from "bun:sqlite";
+import { assertItemWritable } from "../libraries";
 import { existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import { deleteManagedFiles, managedLinkedFiles } from "../files/cleanup";
@@ -48,6 +49,7 @@ export function withDescendants(db: Database, keys: string[]): string[] {
 
 export function eraseItems(db: Database, requested: string[], ownStorageDir: string | null): EraseReport {
 	const keys = [...new Set(requested)];
+	for (const k of keys) assertItemWritable(db, k); // a read-only library's items are not erased
 	const all = withDescendants(db, keys);
 	const existing = new Set(
 		keys.length ? (db.query(`SELECT key FROM items WHERE key IN (${keys.map(() => "?").join(",")})`).all(...keys) as { key: string }[]).map((r) => r.key) : [],
@@ -147,9 +149,9 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 }
 
 /** Top-level keys of everything in the trash (optionally only items trashed at least `olderThanDays` ago). */
-export function trashedKeys(db: Database, olderThanDays?: number): string[] {
-	const args: unknown[] = [];
-	let where = "deleted = 1";
+export function trashedKeys(db: Database, olderThanDays?: number, libraryId = 1): string[] {
+	const args: unknown[] = [libraryId];
+	let where = "deleted = 1 AND library_id = ?";
 	if (olderThanDays && olderThanDays > 0) {
 		where += " AND date_modified <= ?";
 		args.push(new Date(Date.now() - olderThanDays * 86400_000).toISOString().replace(/\.\d+Z$/, "Z"));
@@ -160,7 +162,7 @@ export function trashedKeys(db: Database, olderThanDays?: number): string[] {
 	return rows.filter((r) => !r.parent_key || !set.has(r.parent_key)).map((r) => r.key);
 }
 
-export function trashCounts(db: Database, olderThanDays?: number): { items: number; total: number } {
-	const keys = trashedKeys(db, olderThanDays);
+export function trashCounts(db: Database, olderThanDays?: number, libraryId = 1): { items: number; total: number } {
+	const keys = trashedKeys(db, olderThanDays, libraryId);
 	return { items: keys.length, total: withDescendants(db, keys).length };
 }

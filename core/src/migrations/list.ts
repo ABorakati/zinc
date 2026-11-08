@@ -14,10 +14,11 @@
 //   5. Add a case to core/test/migrations.test.ts if the migration rewrites data.
 import { baseline } from "./baseline";
 import { quickSearch3 } from "./quick-search";
+import { libraries4 } from "./libraries";
 import { venues2 } from "./venues";
 import type { Migration } from "./types";
 
-export const MIGRATIONS: readonly Migration[] = [baseline, venues2, quickSearch3];
+export const MIGRATIONS: readonly Migration[] = [baseline, venues2, quickSearch3, libraries4];
 
 /** The schema version this build writes and understands. */
 export const SCHEMA_HEAD = MIGRATIONS[MIGRATIONS.length - 1].id;

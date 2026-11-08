@@ -6,7 +6,7 @@ import { applyChanges, type ApplyReport, type RemoteChanges } from "../sync/appl
 import type { EntityType, ZoteroJson } from "../sync/protocol";
 import { failure, libraryVersion, type ZoteroWebClient } from "./client";
 import { annotationFromRemote } from "./convert";
-import { getState, setState } from "./state";
+import { setWebVersions, userRef, webVersions, type LibraryRef } from "./library";
 
 const BATCH = 50;
 const MAX_RESTARTS = 4;
@@ -15,6 +15,8 @@ export interface PullContext {
 	db: Database;
 	client: ZoteroWebClient;
 	userId: number;
+	/** The library to pull (default: My Library, /users/<userId>). A group: groupRef(). */
+	ref?: LibraryRef;
 	/** Folder holding storage/ (the directory of the library database). */
 	dataDir: string;
 }
@@ -62,8 +64,9 @@ async function getJson<T>(ctx: PullContext, path: string, query: Record<string, 
 
 async function attempt(ctx: PullContext): Promise<PullResult> {
 	const { db } = ctx;
-	const since = Number(getState(db, "web_library_version")) || 0;
-	const u = `/users/${ctx.userId}`;
+	const ref = ctx.ref ?? userRef(ctx.userId);
+	const since = webVersions(db, ref.id).pull;
+	const u = ref.prefix;
 	const [iv, cv] = await Promise.all([
 		getJson<Record<string, number>>(ctx, `${u}/items`, { since, format: "versions", includeTrashed: 1 }),
 		getJson<Record<string, number>>(ctx, `${u}/collections`, { since, format: "versions" }),
@@ -122,11 +125,10 @@ async function attempt(ctx: PullContext): Promise<PullResult> {
 	for (const key of deleted.collections ?? []) gone.push({ type: "collection", key });
 	changes.deletes.push(...gone);
 
-	const report = applyChanges(db, changes, ctx.dataDir);
+	const report = applyChanges(db, changes, ctx.dataDir, ref.id);
 	recordVersions(db, versions);
 	forgetVersions(db, gone);
-	setState(db, "web_library_version", String(libV));
-	setState(db, "web_write_version", String(libV));
+	setWebVersions(db, ref.id, { pull: libV, write: libV });
 	return { ...report, libraryVersion: libV, fetched: versions.length };
 }
 

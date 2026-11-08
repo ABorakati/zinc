@@ -106,6 +106,7 @@ export interface Collection {
 	name: string;
 	parentKey: string | null;
 	itemCount: number; // top-level items directly in this collection
+	libraryId?: number; // set for a group library's collection; absent in My Library (see GET /api/libraries)
 }
 
 export interface ItemSummary {

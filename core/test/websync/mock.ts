@@ -21,7 +21,55 @@ export interface Logged {
 	size?: number;
 }
 
-export class MockZotero {
+/** What a library on the mock server holds. MockZotero itself is the user library; a GroupLib is one group. */
+export interface LibState {
+	version: number;
+	objects: Map<string, Obj>;
+	deleted: { type: "item" | "collection"; key: string; version: number }[];
+	files: Map<string, Uint8Array>;
+	canWrite: boolean;
+}
+
+function makeObject(lib: LibState, type: "item" | "collection", key: string, fields: Record<string, any>): number {
+	const v = ++lib.version;
+	const base =
+		type === "item"
+			? { itemType: "journalArticle", title: key, dateAdded: "2026-01-01T00:00:00Z", dateModified: "2026-06-01T10:00:00Z", tags: [], collections: [], relations: {} }
+			: { name: key, parentCollection: false, relations: {} };
+	lib.objects.set(`${type}:${key}`, { version: v, data: { ...base, ...fields, key, version: v } });
+	return v;
+}
+
+/** A group library on the mock: its own version, objects, deletions and files, plus the group record zotero.org lists. */
+export class GroupLib implements LibState {
+	version = 1;
+	objects = new Map<string, Obj>();
+	deleted: { type: "item" | "collection"; key: string; version: number }[] = [];
+	files = new Map<string, Uint8Array>();
+	/** Whether the API key may write to this group (the key's own permission). */
+	canWrite = true;
+	/** The group record's own version (bumped when name or permissions change). */
+	recordVersion = 1;
+	/** Answer every library request for this group with this status (a broken or forbidden group). */
+	failWith: number | null = null;
+	constructor(
+		readonly id: number,
+		public record: Record<string, any>,
+	) {}
+	put(type: "item" | "collection", key: string, fields: Record<string, any>): number {
+		return makeObject(this, type, key, fields);
+	}
+	remove(type: "item" | "collection", key: string): void {
+		const v = ++this.version;
+		this.objects.delete(`${type}:${key}`);
+		this.deleted.push({ type, key, version: v });
+	}
+	item(key: string): Obj | undefined {
+		return this.objects.get(`item:${key}`);
+	}
+}
+
+export class MockZotero implements LibState {
 	version = 1;
 	objects = new Map<string, Obj>(); // "item:KEY" | "collection:KEY"
 	deleted: { type: "item" | "collection"; key: string; version: number }[] = [];
@@ -30,6 +78,10 @@ export class MockZotero {
 	fileStatus = new Map<string, number>();
 	log: Logged[] = [];
 	canWrite = true;
+	/** Groups of the account, by zotero.org group id (see addGroup). */
+	groups = new Map<number, GroupLib>();
+	/** Override the key's group access reported by /keys/current (default: every group, read and write). */
+	groupAccess: Record<string, { library?: boolean; write?: boolean }> | null = null;
 	/** Send a Backoff header (seconds) on the next response. */
 	backoffNext = 0;
 	/** Answer the next n requests with 429 + Retry-After. */
@@ -59,13 +111,30 @@ export class MockZotero {
 
 	/** Create or replace an object as another client would: bumps the library version. */
 	put(type: "item" | "collection", key: string, fields: Record<string, any>): number {
-		const v = ++this.version;
-		const base =
-			type === "item"
-				? { itemType: "journalArticle", title: key, dateAdded: "2026-01-01T00:00:00Z", dateModified: "2026-06-01T10:00:00Z", tags: [], collections: [], relations: {} }
-				: { name: key, parentCollection: false, relations: {} };
-		this.objects.set(`${type}:${key}`, { version: v, data: { ...base, ...fields, key, version: v } });
-		return v;
+		return makeObject(this, type, key, fields);
+	}
+
+	/** Add a group the account belongs to. `record` overrides the group data zotero.org sends (name, libraryEditing, fileEditing, owner, admins, members). */
+	addGroup(id: number, record: Record<string, any> = {}): GroupLib {
+		const g = new GroupLib(id, {
+			id,
+			name: `Group ${id}`,
+			owner: 7,
+			type: "Private",
+			libraryEditing: "members",
+			libraryReading: "members",
+			fileEditing: "members",
+			admins: [],
+			members: [USER_ID],
+			...record,
+		});
+		this.groups.set(id, g);
+		return g;
+	}
+
+	/** The account leaves a group. */
+	leaveGroup(id: number): void {
+		this.groups.delete(id);
 	}
 
 	remove(type: "item" | "collection", key: string): void {
@@ -84,8 +153,8 @@ export class MockZotero {
 
 	// ------------------------------------------------------------ server
 
-	private reply(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
-		const headers: Record<string, string> = { "Last-Modified-Version": String(this.version), ...extra };
+	private reply(body: unknown, status = 200, extra: Record<string, string> = {}, lib: LibState = this): Response {
+		const headers: Record<string, string> = { "Last-Modified-Version": String(lib.version), ...extra };
 		if (this.backoffNext > 0) {
 			headers.Backoff = String(this.backoffNext);
 			this.backoffNext = 0;
@@ -116,7 +185,8 @@ export class MockZotero {
 		// blob host: no API key needed (a real file host never gets the key)
 		if (path.startsWith("/blob/")) {
 			if (req.headers.get("zotero-api-key")) return new Response("key leaked to the file host", { status: 400 });
-			const bytes = this.files.get(path.slice("/blob/".length));
+			const blobKey = path.slice("/blob/".length);
+			const bytes = this.files.get(blobKey) ?? [...this.groups.values()].map((g) => g.files.get(blobKey)).find(Boolean);
 			return bytes ? new Response(Buffer.from(bytes)) :new Response("gone", { status: 404 });
 		}
 		if (path.startsWith("/upload/")) {
@@ -132,52 +202,63 @@ export class MockZotero {
 		}
 
 		if (path === "/keys/current") {
-			return this.reply({ key: "x", userID: USER_ID, username: "tester", access: { user: { library: true, files: true, notes: true, write: this.canWrite } } });
+			return this.reply({ key: "x", userID: USER_ID, username: "tester", access: { user: { library: true, files: true, notes: true, write: this.canWrite }, groups: this.groupAccess ?? { all: { library: true, write: this.canWrite } } } });
 		}
-		const m = path.match(new RegExp(`^/users/${USER_ID}/(items|collections|deleted)(?:/([A-Z0-9]{8})/file)?$`));
+		if (path === `/users/${USER_ID}/groups`) {
+			const list = [...this.groups.values()];
+			if (query.format === "versions") return this.reply(Object.fromEntries(list.map((g) => [String(g.id), g.recordVersion])));
+			return this.reply(list.map((g) => ({ id: g.id, version: g.recordVersion, data: { ...g.record, id: g.id, version: g.recordVersion } })));
+		}
+		const m = path.match(new RegExp(`^/(?:users/${USER_ID}|groups/(\\d+))/(items|collections|deleted)(?:/([A-Z0-9]{8})/file)?$`));
 		if (!m) return new Response("not found", { status: 404 });
-		const [, kind, fileKey] = m;
+		const [, groupId, kind, fileKey] = m;
+		const lib: LibState = groupId ? (this.groups.get(Number(groupId)) ?? null)! : this;
+		if (!lib) return new Response("no such group", { status: 404 });
+		if (lib instanceof GroupLib && lib.failWith) return new Response("broken group", { status: lib.failWith });
+		// the key's write permission for this library: the user library's flag, or the group's own
+		const keyWrites = lib === this ? this.canWrite : lib.canWrite;
+		const r = (body: unknown, status = 200, extra: Record<string, string> = {}) => this.reply(body, status, extra, lib);
 
-		if (fileKey) return this.fileRoute(req, url, fileKey);
+		if (fileKey) return this.fileRoute(req, url, fileKey, lib, r, keyWrites);
 		if (kind === "deleted") {
 			const since = Number(query.since) || 0;
-			const d = this.deleted.filter((x) => x.version > since);
-			return this.reply({ collections: d.filter((x) => x.type === "collection").map((x) => x.key), items: d.filter((x) => x.type === "item").map((x) => x.key), searches: [], tags: [], settings: [] });
+			const d = lib.deleted.filter((x) => x.version > since);
+			return r({ collections: d.filter((x) => x.type === "collection").map((x) => x.key), items: d.filter((x) => x.type === "item").map((x) => x.key), searches: [], tags: [], settings: [] });
 		}
 		const type = kind === "items" ? "item" : "collection";
 
 		if (req.method === "GET") {
 			const since = Number(query.since) || 0;
-			const all = [...this.objects.entries()].filter(([k]) => k.startsWith(`${type}:`)).map(([k, o]) => [k.slice(type.length + 1), o] as const);
+			const all = [...lib.objects.entries()].filter(([k]) => k.startsWith(`${type}:`)).map(([k, o]) => [k.slice(type.length + 1), o] as const);
 			if (query.format === "versions") {
 				const out: Record<string, number> = {};
 				for (const [k, o] of all) if (o.version > since && (type !== "item" || !o.data.deleted || query.includeTrashed === "1")) out[k] = o.version;
-				return this.reply(out);
+				return r(out);
 			}
 			const wanted = (query.itemKey ?? query.collectionKey ?? "").split(",").filter(Boolean);
-			return this.reply(all.filter(([k]) => wanted.includes(k)).map(([k, o]) => ({ key: k, version: o.version, data: o.data })));
+			return r(all.filter(([k]) => wanted.includes(k)).map(([k, o]) => ({ key: k, version: o.version, data: o.data })));
 		}
 
 		// writes
-		if (!this.canWrite) return new Response("read-only key", { status: 403 });
-		if (Number(req.headers.get("if-unmodified-since-version")) !== this.version) return new Response("Library has been modified since specified version", { status: 412, headers: { "Last-Modified-Version": String(this.version) } });
+		if (!keyWrites) return new Response("read-only key", { status: 403 });
+		if (Number(req.headers.get("if-unmodified-since-version")) !== lib.version) return new Response("Library has been modified since specified version", { status: 412, headers: { "Last-Modified-Version": String(lib.version) } });
 		if (req.method === "DELETE") {
 			const keys = (query.itemKey ?? query.collectionKey ?? "").split(",").filter(Boolean);
 			entry.size = keys.length;
-			this.version++;
-			for (const k of keys) if (this.objects.delete(`${type}:${k}`)) this.deleted.push({ type, key: k, version: this.version });
-			return this.reply(null, 204);
+			lib.version++;
+			for (const k of keys) if (lib.objects.delete(`${type}:${k}`)) lib.deleted.push({ type, key: k, version: lib.version });
+			return r(null, 204);
 		}
 		if (req.method === "POST") {
 			const objs = (await req.json()) as Record<string, any>[];
 			entry.size = objs.length;
 			const out: { successful: Record<string, unknown>; success: Record<string, string>; unchanged: Record<string, string>; failed: Record<string, unknown> } = { successful: {}, success: {}, unchanged: {}, failed: {} };
-			const newVersion = this.version + 1;
+			const newVersion = lib.version + 1;
 			let wrote = false;
 			objs.forEach((o, i) => {
 				const key = String(o.key);
 				const id = `${type}:${key}`;
-				const existing = this.objects.get(id);
+				const existing = lib.objects.get(id);
 				const { version, ...rest } = o;
 				if (existing && Number(version) !== existing.version) {
 					out.failed[i] = { key, code: 412, message: `${type} has been modified since specified version` };
@@ -192,36 +273,36 @@ export class MockZotero {
 				}
 				wrote = true;
 				const data = { ...rest, key, version: newVersion };
-				this.objects.set(id, { version: newVersion, data });
+				lib.objects.set(id, { version: newVersion, data });
 				out.successful[i] = { key, version: newVersion, data };
 				out.success[i] = key;
 			});
-			if (wrote) this.version = newVersion;
-			return this.reply(out);
+			if (wrote) lib.version = newVersion;
+			return r(out);
 		}
 		return new Response("method not allowed", { status: 405 });
 	}
 
-	private async fileRoute(req: Request, url: URL, key: string): Promise<Response> {
+	private async fileRoute(req: Request, url: URL, key: string, lib: LibState, r: (body: unknown, status?: number, extra?: Record<string, string>) => Response, keyWrites: boolean): Promise<Response> {
 		if (req.method === "GET") {
 			const forced = this.fileStatus.get(key);
 			if (forced) return new Response("forced", { status: forced });
-			if (!this.files.has(key)) return new Response("no file", { status: 404 });
+			if (!lib.files.has(key)) return new Response("no file", { status: 404 });
 			return new Response(null, { status: 302, headers: { Location: `${url.origin}/blob/${key}` } });
 		}
-		if (!this.canWrite) return new Response("read-only key", { status: 403 });
+		if (!keyWrites) return new Response("read-only key", { status: 403 });
 		const form = new URLSearchParams(await req.text());
 		if (form.has("upload")) {
 			const bytes = this.uploads.get(key);
 			if (!bytes) return new Response("no such upload", { status: 400 });
-			this.files.set(key, bytes);
-			const o = this.objects.get(`item:${key}`)!;
-			const v = ++this.version;
-			this.objects.set(`item:${key}`, { version: v, data: { ...o.data, version: v, md5: createHash("md5").update(bytes).digest("hex"), mtime: Date.now() } });
-			return this.reply(null, 204);
+			lib.files.set(key, bytes);
+			const o = lib.objects.get(`item:${key}`)!;
+			const v = ++lib.version;
+			lib.objects.set(`item:${key}`, { version: v, data: { ...o.data, version: v, md5: createHash("md5").update(bytes).digest("hex"), mtime: Date.now() } });
+			return r(null, 204);
 		}
-		if (this.files.has(key) && createHash("md5").update(this.files.get(key)!).digest("hex") === form.get("md5")) return this.reply({ exists: 1 });
-		return this.reply({ url: `${url.origin}/upload/${key}`, contentType: "application/octet-stream", prefix: "", suffix: "", uploadKey: `UP-${key}` });
+		if (lib.files.has(key) && createHash("md5").update(lib.files.get(key)!).digest("hex") === form.get("md5")) return r({ exists: 1 });
+		return r({ url: `${url.origin}/upload/${key}`, contentType: "application/octet-stream", prefix: "", suffix: "", uploadKey: `UP-${key}` });
 	}
 }
 

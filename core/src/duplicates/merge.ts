@@ -1,6 +1,7 @@
 // Duplicate set inspection, merging (Zotero semantics), and "not duplicates" exclusion storage.
 
 import type { Database } from "bun:sqlite";
+import { assertWritable, libraryOfItem } from "../libraries";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
 import { addRelated, generateKey, getItemDetail, HttpError, nowIso, patchItem } from "../db";
 import { convertItemType } from "../schema-data";
@@ -143,6 +144,10 @@ export function mergeDuplicateItems(db: Database, input: MergeDuplicatesInput): 
 	const otherDetails = otherKeys.map((k) => validateTopLevelItem(db, k));
 	const allDetails = [masterDetail, ...otherDetails];
 	const validKeySet = new Set(allDetails.map((d) => d.data.key));
+	// items of two libraries are never merged, and nothing is merged in a library that is read-only for this user
+	const libs = new Set(allDetails.map((d) => libraryOfItem(db, d.data.key)));
+	if (libs.size !== 1) throw new HttpError(400, "items of different libraries cannot be merged");
+	assertWritable(db, [...libs][0]!);
 
 	const fieldChoices = input.fieldChoices ?? {};
 	if (typeof fieldChoices !== "object" || Array.isArray(fieldChoices)) {

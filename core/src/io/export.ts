@@ -32,6 +32,8 @@ export interface ExportRequest {
 	collectionKey?: string;
 	format: ExportFormat;
 	includeNotes?: boolean;
+	/** For "the whole library" (no keys, no collection): which library, by local id. Default: My Library. */
+	library?: number;
 	/** Folder to write the file (and, for RDF, the attachment files) into. Without it only the text is returned. */
 	dir?: string;
 }
@@ -84,7 +86,7 @@ function selectKeys(db: Database, req: ExportRequest): string[] {
 		).map((r) => r.key);
 	}
 	return (
-		db.query(`SELECT i.key FROM items i WHERE i.deleted = 0 AND i.parent_key IS NULL AND ${REGULAR} ORDER BY i.date_added, i.key`).all() as {
+		db.query(`SELECT i.key FROM items i WHERE i.deleted = 0 AND i.parent_key IS NULL AND i.library_id = ? AND ${REGULAR} ORDER BY i.date_added, i.key`).all(req.library ?? 1) as {
 			key: string;
 		}[]
 	).map((r) => r.key);

@@ -7,7 +7,7 @@ import { buildPush, completePush, type PushPlan } from "../sync/build";
 import { failure, libraryVersion, type ZoteroWebClient } from "./client";
 import { annotationToRemote } from "./convert";
 import { forgetVersions, knownVersions, recordVersions } from "./pull";
-import { getState, setState } from "./state";
+import { setWebVersions, userRef, webVersions, type LibraryRef } from "./library";
 
 const BATCH = 50;
 
@@ -15,6 +15,8 @@ export interface PushContext {
 	db: Database;
 	client: ZoteroWebClient;
 	userId: number;
+	/** The library to push (default: My Library). Only that library's queued changes are sent. */
+	ref?: LibraryRef;
 	dataDir: string;
 	ownStorageDir: string | null;
 }
@@ -78,8 +80,9 @@ function setServerVersions(db: Database, items: Map<string, number>, collections
 /** Push everything queued. Throws PreconditionFailed (412) when the library moved: pull, then call again. */
 export async function pushOnce(ctx: PushContext): Promise<PushResult> {
 	const { db, client } = ctx;
+	const ref = ctx.ref ?? userRef(ctx.userId);
 	const out: PushResult = { pushed: 0, failed: 0, conflicted: false };
-	const plan = buildPush(db, ctx.dataDir);
+	const plan = buildPush(db, ctx.dataDir, ref.id);
 	// created and erased before ever reaching zotero.org: nothing to send
 	completePush(db, { ...plan, writes: [], groups: [], base: new Map(), baseRemove: new Set(), files: new Map() }, [], null);
 
@@ -99,8 +102,8 @@ export async function pushOnce(ctx: PushContext): Promise<PushResult> {
 	}
 	if (collUp.length + itemUp.length + itemDel.length + collDel.length === 0) return out;
 
-	let v = Number(getState(db, "web_write_version") ?? getState(db, "web_library_version")) || 0;
-	const u = `/users/${ctx.userId}`;
+	let v = webVersions(db, ref.id).write;
+	const u = ref.prefix;
 	const finish = (keys: string[], failed: Map<string, string>): void => {
 		const results: ZoteroWriteResult[] = keys.map((key) => (failed.has(key) ? { key, ok: false, error: failed.get(key) } : { key, ok: true }));
 		const done = completePush(db, subPlan(plan, new Set(keys)), results, ctx.ownStorageDir);
@@ -121,7 +124,7 @@ export async function pushOnce(ctx: PushContext): Promise<PushResult> {
 			});
 			if (!res.ok) throw await failure(res);
 			v = libraryVersion(res) ?? v;
-			setState(db, "web_write_version", String(v));
+			setWebVersions(db, ref.id, { write: v });
 			const body = (await res.json()) as {
 				successful?: Record<string, { key?: string; version?: number; data?: { version?: number } }>;
 				unchanged?: Record<string, unknown>;
@@ -166,7 +169,7 @@ export async function pushOnce(ctx: PushContext): Promise<PushResult> {
 			});
 			if (!res.ok && res.status !== 404) throw await failure(res);
 			v = libraryVersion(res) ?? v;
-			setState(db, "web_write_version", String(v));
+			setWebVersions(db, ref.id, { write: v });
 			const types: EntityType[] = kind === "collections" ? ["collection"] : ["item", "annotation"];
 			forgetVersions(
 				db,

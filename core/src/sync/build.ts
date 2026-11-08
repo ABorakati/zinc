@@ -23,8 +23,9 @@ export interface PushPlan {
 	files: Map<string, string>; // attachment key -> local path that was handed to the writer
 }
 
-export function readGroups(db: Database): Group[] {
-	const rows = db.query("SELECT seq, type, key, op FROM sync_outbox ORDER BY seq").all() as {
+/** The queued changes of one library (My Library by default: the local-Zotero sync never sees a group's changes). */
+export function readGroups(db: Database, libraryId = 1): Group[] {
+	const rows = db.query("SELECT seq, type, key, op FROM sync_outbox WHERE library_id = ? ORDER BY seq").all(libraryId) as {
 		seq: number;
 		type: EntityType;
 		key: string;
@@ -41,8 +42,8 @@ export function readGroups(db: Database): Group[] {
 	return [...map.values()];
 }
 
-export function pendingCount(db: Database): number {
-	return (db.query("SELECT count(*) AS n FROM (SELECT 1 FROM sync_outbox GROUP BY type, key)").get() as { n: number }).n;
+export function pendingCount(db: Database, libraryId = 1): number {
+	return (db.query("SELECT count(*) AS n FROM (SELECT 1 FROM sync_outbox WHERE library_id = ? GROUP BY type, key)").get(libraryId) as { n: number }).n;
 }
 
 export function isInside(file: string, dir: string): boolean {
@@ -70,14 +71,14 @@ function depth(db: Database, table: "items" | "collections", key: string): numbe
 	return d;
 }
 
-export function buildPush(db: Database, dataDir: string): PushPlan {
+export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPlan {
 	const plan: PushPlan = { writes: [], groups: [], dropped: [], base: new Map(), baseRemove: new Set(), files: new Map() };
 	const storageDir = join(dataDir, "storage");
 	const hasBase = db.query("SELECT 1 FROM sync_base WHERE type = ? AND key = ?");
 	const upserts: { rank: number; sort: number; writes: ZoteroWrite[] }[] = [];
 	const erases: { rank: number; sort: number; write: ZoteroWrite }[] = [];
 
-	for (const g of readGroups(db)) {
+	for (const g of readGroups(db, libraryId)) {
 		const id = `${g.type}:${g.key}`;
 		if (g.type === "item") {
 			const row = db.query("SELECT key, parent_key, item_type, data, date_modified, deleted FROM items WHERE key = ?").get(g.key) as ItemRow | null;

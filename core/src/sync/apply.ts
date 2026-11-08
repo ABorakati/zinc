@@ -20,6 +20,8 @@ export interface ApplyReport {
 	skipped: number;
 	conflicts: number;
 	deleted: number;
+	/** Objects whose key is already used by another library in this file (skipped, never merged). Absent when none. */
+	collisions?: number;
 }
 
 /** Milliseconds for Zotero's "YYYY-MM-DD HH:MM:SS" (UTC) and ISO timestamps; 0 when unparseable. */
@@ -83,6 +85,8 @@ function attachmentPath(dataDir: string, key: string, data: ZoteroJson, existing
 
 interface Ctx {
 	db: Database;
+	/** The library every object of this batch belongs to (1 = My Library). */
+	libraryId: number;
 	dataDir: string;
 	report: ApplyReport;
 	reindex: Set<string>; // top-level item keys to re-index
@@ -104,6 +108,18 @@ function safely(c: Ctx, f: () => void): void {
 	} catch {
 		c.report.skipped++;
 	}
+}
+
+/**
+ * Keys are unique across the whole file (every table points at items by key alone). A pull that meets a key which another
+ * library already uses skips that object and counts it, so one library can never overwrite another's data.
+ */
+function collides(c: Ctx, table: "items" | "collections", key: string): boolean {
+	const r = c.db.query(`SELECT library_id AS lib FROM ${table} WHERE key = ?`).get(key) as { lib: number } | null;
+	if (!r || r.lib === c.libraryId) return false;
+	c.report.skipped++;
+	c.report.collisions = (c.report.collisions ?? 0) + 1;
+	return true;
 }
 
 /** Break parent loops among the collections of this batch: the collection that closes a loop becomes top level. */
@@ -221,6 +237,7 @@ function refreshCollectionsJson(db: Database, itemKey: string): void {
 
 function upsertCollection(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	const db = c.db;
+	if (collides(c, "collections", key)) return;
 	const remoteMs = ms(dm);
 	if (decide(c, "collection", key, data, remoteMs) === "skip") {
 		c.report.skipped++;
@@ -229,22 +246,23 @@ function upsertCollection(c: Ctx, key: string, data: ZoteroJson, dm: string): vo
 	}
 	const name = typeof data.name === "string" ? data.name : "";
 	let parent = typeof data.parentCollection === "string" && data.parentCollection ? data.parentCollection : null;
-	if (parent && parent !== key && !c.batchCollections.has(parent) && !db.query("SELECT 1 FROM collections WHERE key = ?").get(parent)) parent = null;
+	if (parent && parent !== key && !c.batchCollections.has(parent) && !db.query("SELECT 1 FROM collections WHERE key = ? AND library_id = ?").get(parent, c.libraryId)) parent = null;
 	if (parent === key) parent = null;
 	const version = typeof data.version === "number" ? data.version : 0;
 	db.query(
-		`INSERT INTO collections(key, name, parent_key, version) VALUES(?, ?, ?, ?)
+		`INSERT INTO collections(key, name, parent_key, version, library_id) VALUES(?, ?, ?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET name = excluded.name, parent_key = excluded.parent_key, version = excluded.version`,
-	).run(key, name, parent, version);
+	).run(key, name, parent, version, c.libraryId);
 	setBase(db, "collection", key, dm || nowIso());
 	c.report.applied++;
 }
 
 function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	const db = c.db;
+	if (collides(c, "items", key)) return;
 	const parent = typeof data.parentItem === "string" && data.parentItem ? data.parentItem : null;
-	if (parent && !c.batchItems.has(parent) && !db.query("SELECT 1 FROM items WHERE key = ?").get(parent)) {
-		c.report.skipped++; // parent unknown here (e.g. in a group library)
+	if (parent && !c.batchItems.has(parent) && !db.query("SELECT 1 FROM items WHERE key = ? AND library_id = ?").get(parent, c.libraryId)) {
+		c.report.skipped++; // parent unknown in this library
 		return;
 	}
 	// children hang off top-level items only: not off themselves, and not off another child (that also rules out loops)
@@ -293,13 +311,13 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	const version = Number(data.version) || 0;
 	itemData.dateModified = modified;
 	db.query(
-		`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, version, deleted)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, version, deleted, library_id)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET item_type = excluded.item_type, parent_key = excluded.parent_key, title = excluded.title,
 			creators_summary = excluded.creators_summary, year = excluded.year, publication = excluded.publication,
 			data = excluded.data, date_added = excluded.date_added, date_modified = excluded.date_modified,
 			version = excluded.version, deleted = excluded.deleted`,
-	).run(key, itemType, parent, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(itemData), added, modified, version, deleted);
+	).run(key, itemType, parent, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(itemData), added, modified, version, deleted, c.libraryId);
 
 	// tags
 	db.query("DELETE FROM item_tags WHERE item_key = ?").run(key);
@@ -312,9 +330,9 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	db.query("DELETE FROM collection_items WHERE item_key = ?").run(key);
 	if (!parent && Array.isArray(data.collections)) {
 		const insC = db.query(
-			"INSERT OR IGNORE INTO collection_items(collection_key, item_key) SELECT key, ? FROM collections WHERE key = ?",
+			"INSERT OR IGNORE INTO collection_items(collection_key, item_key) SELECT key, ? FROM collections WHERE key = ? AND library_id = ?",
 		);
-		for (const ck of data.collections) if (typeof ck === "string") insC.run(key, ck);
+		for (const ck of data.collections) if (typeof ck === "string") insC.run(key, ck, c.libraryId);
 		refreshCollectionsJson(db, key);
 	}
 	// attachment row
@@ -368,6 +386,8 @@ function upsertAnnotation(c: Ctx, key: string, data: ZoteroJson, dm: string): vo
 
 function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 	const db = c.db;
+	// an erase in one library never touches an object of another that happens to share the key
+	if (type !== "annotation" && (db.query(`SELECT 1 FROM ${type === "item" ? "items" : "collections"} WHERE key = ? AND library_id <> ?`).get(key, c.libraryId))) return;
 	if (hasOutbox(db, type, key)) {
 		// edited here while erased there: keep our version (it is written back on the next push)
 		const local = localSnapshot(db, type, key);
@@ -396,13 +416,14 @@ function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 				 SELECT DISTINCT ci.item_key FROM collection_items ci JOIN d ON d.key = ci.collection_key`,
 			)
 			.all(key) as { item_key: string }[];
-		if (!db.query("DELETE FROM collections WHERE key = ?").run(key).changes) return;
+		if (!db.query("DELETE FROM collections WHERE key = ? AND library_id = ?").run(key, c.libraryId).changes) return;
 		for (const a of affected) refreshCollectionsJson(db, a.item_key);
 		c.report.deleted++;
 	}
 }
 
-export function applyChanges(db: Database, changes: RemoteChanges, dataDir: string): ApplyReport {
+/** Applies changes read from Zotero (or zotero.org) to one library (default: My Library). */
+export function applyChanges(db: Database, changes: RemoteChanges, dataDir: string, libraryId = 1): ApplyReport {
 	const report: ApplyReport = { applied: 0, skipped: 0, conflicts: 0, deleted: 0 };
 	// objects with a key that is not a plain key never touch the database (the key becomes a folder name for attachments)
 	const ch: RemoteChanges = {
@@ -412,6 +433,7 @@ export function applyChanges(db: Database, changes: RemoteChanges, dataDir: stri
 	report.skipped += changes.upserts.length - ch.upserts.length;
 	const c: Ctx = {
 		db,
+		libraryId,
 		dataDir,
 		report,
 		reindex: new Set(),

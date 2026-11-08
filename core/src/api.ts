@@ -27,6 +27,8 @@ import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
 import { logError } from "./log";
 import { handleWebSyncApi } from "./websync/api";
+import { listLibraries, resolveLibrary, USER_LIBRARY } from "./libraries";
+import { pendingCount } from "./sync/build";
 import { indexItem, search } from "./search";
 
 function json(body: unknown, status = 200): Response {
@@ -148,14 +150,21 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 	const m = req.method;
 	const [a, b, c] = parts;
 	const n = parts.length;
+	// ?library=<id> (a local library id, see GET /api/libraries); absent = the collection's library, else My Library
+	const libParam = (p: URLSearchParams): number | undefined => (p.has("library") ? resolveLibrary(db, p.get("library")) : undefined);
+
+	if (a === "libraries" && n === 1) {
+		if (m !== "GET") return methodNotAllowed();
+		return json({ libraries: listLibraries(db).map((l) => ({ ...l, pending: pendingCount(db, l.id) })) });
+	}
 
 	if (a === "collections") {
 		if (n === 1) {
-			if (m === "GET") return json(repo.listCollections(db));
+			if (m === "GET") return json(repo.listCollections(db, libParam(url.searchParams) ?? USER_LIBRARY));
 			if (m === "POST") {
 				const body = await readBody(req);
 				if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be an object");
-				return json(repo.createCollection(db, body.name, body.parentKey), 201);
+				return json(repo.createCollection(db, body.name, body.parentKey, body.library !== undefined ? resolveLibrary(db, body.library) : undefined), 201);
 			}
 			return methodNotAllowed();
 		}
@@ -187,9 +196,9 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 	if (a === "items") {
 		if (n === 1) {
 			if (m === "POST") {
-				const body = await readBody<{ data?: Partial<ZoteroItemData> }>(req);
+				const body = await readBody<{ data?: Partial<ZoteroItemData>; library?: unknown }>(req);
 				if (!body || typeof body.data !== "object" || body.data === null) throw new HttpError(400, "data is required");
-				const detail = repo.createItem(db, body.data);
+				const detail = repo.createItem(db, body.data, body.library !== undefined ? resolveLibrary(db, body.library) : undefined);
 				indexItem(db, detail.data.key);
 				return json(detail, 201);
 			}
@@ -197,6 +206,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			const p = url.searchParams;
 			return json(
 				repo.listItems(db, {
+					library: libParam(p),
 					collection: p.get("collection") || undefined,
 					tag: p.get("tag") || undefined,
 					q: p.get("q") || undefined,
@@ -220,6 +230,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			const p = url.searchParams;
 			return json(
 				repo.listItemGroups(db, p.get("by") ?? "", p.get("dir") || undefined, {
+					library: libParam(p),
 					collection: p.get("collection") || undefined,
 					tag: p.get("tag") || undefined,
 					q: p.get("q") || undefined,
@@ -279,7 +290,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 
 	if (a === "tags" && n === 1) {
 		if (m !== "GET") return methodNotAllowed();
-		return json(repo.listTags(db));
+		return json(repo.listTags(db, libParam(url.searchParams) ?? USER_LIBRARY));
 	}
 
 	if (a === "tag-colors" && n === 1) {
@@ -329,7 +340,7 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 	if (a === "search" && n === 1) {
 		if (m !== "GET") return methodNotAllowed();
 		const p = url.searchParams;
-		return json(search(db, p.get("q") ?? "", { limit: intParam(p.get("limit")), offset: intParam(p.get("offset")) }));
+		return json(search(db, p.get("q") ?? "", { limit: intParam(p.get("limit")), offset: intParam(p.get("offset")), library: libParam(p) }));
 	}
 
 	return null;

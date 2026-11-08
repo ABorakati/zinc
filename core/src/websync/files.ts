@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { failure, type ZoteroWebClient } from "./client";
+import { userRef, type LibraryRef } from "./library";
 import { entryTarget, isZip, readZip } from "./zip";
 
 export interface FileJob {
@@ -31,9 +32,13 @@ export interface FilesContext {
 	db: Database;
 	client: ZoteroWebClient;
 	userId: number;
+	/** The library whose files are handled (default: My Library). */
+	ref?: LibraryRef;
 	/** <db dir>/storage */
 	storageDir: string;
 }
+
+const refOf = (ctx: FilesContext): LibraryRef => ctx.ref ?? userRef(ctx.userId);
 
 interface Att {
 	key: string;
@@ -55,14 +60,14 @@ function safeName(name: string, fallback: string): string {
 }
 
 /** Imported attachments (files and web snapshots) with their expected local name. */
-export function importedAttachments(db: Database): Att[] {
+export function importedAttachments(db: Database, libraryId = 1): Att[] {
 	const rows = db
 		.query(
 			`SELECT a.item_key AS key, a.link_mode, a.content_type, a.path, i.title, i.data
 			 FROM attachments a JOIN items i ON i.key = a.item_key
-			 WHERE a.link_mode IN ('imported_file', 'imported_url') ORDER BY a.item_key`,
+			 WHERE a.link_mode IN ('imported_file', 'imported_url') AND i.library_id = ? ORDER BY a.item_key`,
 		)
-		.all() as { key: string; link_mode: string; content_type: string | null; path: string | null; title: string | null; data: string }[];
+		.all(libraryId) as { key: string; link_mode: string; content_type: string | null; path: string | null; title: string | null; data: string }[];
 	const out: Att[] = [];
 	for (const r of rows) {
 		const snapshot = r.link_mode === "imported_url" && /^(text\/html|application\/xhtml)/i.test(r.content_type ?? "");
@@ -78,14 +83,14 @@ export function importedAttachments(db: Database): Att[] {
 	return out;
 }
 
-export function missingLocally(db: Database): Att[] {
-	return importedAttachments(db).filter((a) => !a.path || !existsSync(a.path));
+export function missingLocally(db: Database, libraryId = 1): Att[] {
+	return importedAttachments(db, libraryId).filter((a) => !a.path || !existsSync(a.path));
 }
 
 /** Does zotero.org hold the file? 302 (redirect to the file) means yes; the redirect itself is never followed. */
 async function onServer(ctx: FilesContext, key: string): Promise<boolean | null> {
 	try {
-		const res = await ctx.client.request("GET", `/users/${ctx.userId}/items/${key}/file`, { redirect: "manual" });
+		const res = await ctx.client.request("GET", `${refOf(ctx).prefix}/items/${key}/file`, { redirect: "manual" });
 		await res.body?.cancel();
 		if (res.status === 302 || res.status === 301 || res.status === 303 || res.status === 307 || res.status === 200) return true;
 		if (res.status === 404) return false;
@@ -105,9 +110,9 @@ async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<void>): Prom
 }
 
 export async function checkFiles(ctx: FilesContext): Promise<FilesCheck> {
-	const all = importedAttachments(ctx.db);
+	const all = importedAttachments(ctx.db, refOf(ctx).id);
 	const imported = all.length;
-	const missing = missingLocally(ctx.db);
+	const missing = missingLocally(ctx.db, refOf(ctx).id);
 	const state = new Map<string, boolean | null>();
 	await pool(missing, 4, async (a) => void state.set(a.key, await onServer(ctx, a.key)));
 	const out: FilesCheck = {
@@ -131,7 +136,7 @@ export async function checkFiles(ctx: FilesContext): Promise<FilesCheck> {
 }
 
 async function downloadOne(ctx: FilesContext, a: Att): Promise<number> {
-	const res = await ctx.client.request("GET", `/users/${ctx.userId}/items/${a.key}/file`, { redirect: "manual" });
+	const res = await ctx.client.request("GET", `${refOf(ctx).prefix}/items/${a.key}/file`, { redirect: "manual" });
 	let bytes: Uint8Array;
 	if (res.status >= 300 && res.status < 400) {
 		const loc = res.headers.get("location");
@@ -194,7 +199,7 @@ async function downloadOne(ctx: FilesContext, a: Att): Promise<number> {
 
 /** Download every imported attachment whose file is missing locally. `job` is updated as it goes. */
 export async function downloadMissing(ctx: FilesContext, job: FileJob): Promise<void> {
-	const todo = missingLocally(ctx.db);
+	const todo = missingLocally(ctx.db, refOf(ctx).id);
 	job.total = todo.length;
 	job.done = 0;
 	job.failed = 0;
@@ -223,14 +228,14 @@ export async function uploadMissing(ctx: FilesContext): Promise<{ uploaded: numb
 	const { db, client } = ctx;
 	const known = db.query("SELECT key FROM websync_versions WHERE type = 'item'").all() as { key: string }[];
 	const onServerItems = new Set(known.map((k) => k.key));
-	const todo = importedAttachments(db).filter((a) => a.linkMode === "imported_file" && !a.md5 && a.path && existsSync(a.path) && onServerItems.has(a.key));
+	const todo = importedAttachments(db, refOf(ctx).id).filter((a) => a.linkMode === "imported_file" && !a.md5 && a.path && existsSync(a.path) && onServerItems.has(a.key));
 	let uploaded = 0;
 	let failed = 0;
 	for (const a of todo) {
 		try {
 			const bytes = readFileSync(a.path!);
 			const md5 = createHash("md5").update(bytes).digest("hex");
-			const auth = await client.request("POST", `/users/${ctx.userId}/items/${a.key}/file`, {
+			const auth = await client.request("POST", `${refOf(ctx).prefix}/items/${a.key}/file`, {
 				headers: { "Content-Type": "application/x-www-form-urlencoded", "If-None-Match": "*" },
 				body: new URLSearchParams({ md5, filename: basename(a.path!), filesize: String(bytes.length), mtime: String(Math.floor(statSync(a.path!).mtimeMs)) }).toString(),
 			});
@@ -247,7 +252,7 @@ export async function uploadMissing(ctx: FilesContext): Promise<{ uploaded: numb
 				body: new Blob([j.prefix ?? "", bytes, j.suffix ?? ""]),
 			});
 			if (!put.ok) throw new Error(`file upload answered ${put.status}`);
-			const reg = await client.request("POST", `/users/${ctx.userId}/items/${a.key}/file`, {
+			const reg = await client.request("POST", `${refOf(ctx).prefix}/items/${a.key}/file`, {
 				headers: { "Content-Type": "application/x-www-form-urlencoded", "If-None-Match": "*" },
 				body: new URLSearchParams({ upload: j.uploadKey }).toString(),
 			});

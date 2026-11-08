@@ -3,6 +3,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { handleMcp } from "../../src/mcp/http";
 import { createMcpServer } from "../../src/mcp/server";
+import { createItem } from "../../src/db";
+import { upsertGroupLibrary } from "../../src/libraries";
+import { rebuildSearchIndex } from "../../src/search";
 import { buildFixture, type Fixture } from "../fixture";
 
 let fx: Fixture;
@@ -41,7 +44,7 @@ describe("tools/list", () => {
 		expect(names).toEqual(
 			[
 				"add_tags", "add_to_collection", "create_collection", "format_bibliography", "get_annotations", "get_file_path", "get_fulltext",
-				"get_item", "list_collections", "list_items", "remove_from_collection", "remove_tags", "restore_item",
+				"get_item", "list_collections", "list_items", "list_libraries", "remove_from_collection", "remove_tags", "restore_item",
 				"search_library", "trash_item", "update_item",
 			].sort(),
 		);
@@ -208,7 +211,7 @@ describe("HTTP endpoint", () => {
 		expect(((await init!.json()) as any).result.serverInfo.name).toBe("zotero-next");
 
 		const list = await handleMcp(rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }), fx.db);
-		expect(((await list!.json()) as any).result.tools.length).toBe(16);
+		expect(((await list!.json()) as any).result.tools.length).toBe(17);
 
 		const call = await handleMcp(
 			rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_collections", arguments: {} } }),
@@ -234,5 +237,31 @@ describe("HTTP endpoint", () => {
 		const get = await handleMcp(new Request("http://127.0.0.1:23120/mcp", { headers: { Host: "127.0.0.1:23120" } }), fx.db);
 		expect(get!.status).toBe(405);
 		expect(await handleMcp(new Request("http://127.0.0.1:23120/api/items"), fx.db)).toBeNull();
+	});
+});
+
+describe("group libraries", () => {
+	test("list_libraries, and library on the other tools, reach a group; a read-only group refuses writes", async () => {
+		const g = upsertGroupLibrary(fx.db, { groupId: 100, name: "Lab", editable: true, filesEditable: true, version: 1 });
+		const ro = upsertGroupLibrary(fx.db, { groupId: 200, name: "Journal club", editable: true, filesEditable: true, version: 1 });
+		const made = createItem(fx.db, { itemType: "journalArticle", title: "Pancreatic group paper" }, g.id);
+		createItem(fx.db, { itemType: "journalArticle", title: "Pancreatic read-only paper" }, ro.id);
+		upsertGroupLibrary(fx.db, { groupId: 200, name: "Journal club", editable: false, filesEditable: false, version: 2 }); // the group stops letting this user edit
+		rebuildSearchIndex(fx.db);
+		const libs = await tool("list_libraries", {});
+		expect(libs.json.libraries.map((l: any) => [l.name, l.type, l.editable])).toEqual([
+			["My Library", "user", true],
+			["Journal club", "group", false],
+			["Lab", "group", true],
+		]);
+		expect((await tool("list_items", { library: g.id })).json.items.map((i: any) => i.title)).toEqual(["Pancreatic group paper"]);
+		expect((await tool("list_items", {})).json.items.map((i: any) => i.title)).not.toContain("Pancreatic group paper");
+		expect((await tool("search_library", { query: "pancreatic", library: g.id })).json.hits.map((h: any) => h.key)).toEqual([made.data.key]);
+		const c = await tool("create_collection", { name: "In the group", library: g.id });
+		expect(c.json.libraryId).toBe(g.id);
+		expect((await tool("list_collections", { library: g.id })).json.collections.map((x: any) => x.name)).toEqual(["In the group"]);
+		const denied = await tool("create_collection", { name: "Nope", library: ro.id });
+		expect(denied.isError).toBe(true);
+		expect(String(denied.text)).toContain("read-only");
 	});
 });

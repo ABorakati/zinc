@@ -46,7 +46,7 @@ function loadData(db: Database, key: string): ZoteroItemData | null {
 
 /** Regular, non-deleted top-level item keys. */
 function regularKeys(db: Database): string[] {
-	return (db.query("SELECT key FROM items WHERE deleted = 0 AND parent_key IS NULL AND item_type NOT IN ('note','attachment','annotation') ORDER BY date_added, key").all() as { key: string }[]).map((r) => r.key);
+	return (db.query("SELECT key FROM items WHERE deleted = 0 AND parent_key IS NULL AND library_id = 1 AND item_type NOT IN ('note','attachment','annotation') ORDER BY date_added, key").all() as { key: string }[]).map((r) => r.key);
 }
 
 function cslFor(db: Database, key: string): Record<string, unknown> | null {
@@ -201,7 +201,7 @@ const METHODS: Record<string, Method> = {
 			id: 1,
 			name: LIBRARY,
 			collections: includeCollections
-				? (db.query("SELECT key FROM collections ORDER BY name").all() as { key: string }[]).map((c) => collectionJson(db, c.key, false))
+				? (db.query("SELECT key FROM collections WHERE library_id = 1 ORDER BY name").all() as { key: string }[]).map((c) => collectionJson(db, c.key, false))
 				: null,
 		},
 	],

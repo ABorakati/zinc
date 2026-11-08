@@ -218,7 +218,8 @@ const REASON_PRIORITY: Record<DuplicateReason, number> = {
 	title: 1,
 };
 
-export function detectDuplicates(db: Database, opts: { includeSummary?: boolean } = {}): DuplicateList {
+/** Duplicate sets within one library (My Library unless `library` is given): items of different libraries are never candidates. */
+export function detectDuplicates(db: Database, opts: { includeSummary?: boolean; library?: number } = {}): DuplicateList {
 	ensureDuplicatesSchema(db);
 
 	const exclRows = db.query("SELECT key_a, key_b FROM duplicate_exclusions").all() as {
@@ -246,9 +247,10 @@ export function detectDuplicates(db: Database, opts: { includeSummary?: boolean 
 			 FROM items
 			 WHERE parent_key IS NULL
 			   AND deleted = 0
+			   AND library_id = ?
 			   AND item_type NOT IN ('attachment', 'note', 'annotation')`,
 		)
-		.all() as CandidateRow[];
+		.all(opts.library ?? 1) as CandidateRow[];
 
 	const n = rows.length;
 	if (n < 2) return { sets: [], total: 0 };

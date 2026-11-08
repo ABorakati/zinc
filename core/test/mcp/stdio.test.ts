@@ -16,7 +16,7 @@ test("stdio server opens the db directly and answers tool calls", async () => {
 	await client.connect(transport);
 	try {
 		const { tools } = await client.listTools();
-		expect(tools.length).toBe(16);
+		expect(tools.length).toBe(17);
 		const r = (await client.callTool({ name: "search_library", arguments: { query: "zebra" } })) as {
 			content: { text: string }[];
 		};
