@@ -1,18 +1,62 @@
 ---
-// A screenshot of the app, tipped in like a book plate: numbered and captioned. `dark` swaps in the dark-theme screenshot when the
-// site is dark; without one the screenshot is dimmed a little in dark mode. `vol` tabs the plate with its volume's call number and
-// binding colour, so a feature row reads as that volume taken off the shelf.
-import type { Volume } from "../lib/shelf";
-interface Props { n: string; src: string; dark?: string; alt: string; caption: string; tilt?: number; eager?: boolean; w?: number; h?: number; vol?: Volume }
-const { n, src, dark, alt, caption, tilt = 0, eager = false, w = 1400, h = 857, vol } = Astro.props;
+// A screenshot of the app: numbered and captioned. `dark` swaps in the dark-theme screenshot when the site is dark; without one the
+// screenshot is dimmed a little in dark mode. When the screenshot has hotspots (lib/spots.ts), numbered dots sit on it and a list
+// under it explains each one; hovering, focusing or tapping a dot or a list entry zooms the screenshot towards that part.
+import { spotsFor } from "../lib/spots";
+interface Props { n: string; src: string; dark?: string; alt: string; caption: string; tilt?: number; eager?: boolean; w?: number; h?: number }
+const { n, src, dark, alt, caption, tilt = 0, eager = false, w = 1400, h = 857 } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const url = (f: string) => `${base}screenshots/${f}`;
+const spots = spotsFor(src);
 ---
-<figure class:list={["plate", { "no-dark": !dark }]} style={`--tilt:${tilt}deg`} data-reveal>
-	<div class:list={["plate-mount", vol && `c-${vol.cloth}`]}>
-		{vol && <a class="plate-tab" href={vol.href}>{vol.call} · {vol.spine}</a>}
-		<img class:list={[{ "only-light": !!dark }]} src={url(src)} alt={alt} width={w} height={h} loading={eager ? "eager" : "lazy"} fetchpriority={eager ? "high" : undefined} />
-		{dark && <img class="only-dark" src={url(dark)} alt={alt} width={w} height={h} loading="lazy" />}
+<figure class:list={["plate", { "no-dark": !dark, "has-spots": spots.length > 0 }]} style={`--tilt:${tilt}deg`} data-reveal data-spots={spots.length > 0 ? "" : undefined}>
+	<div class="plate-mount">
+		<div class="plate-view">
+			<div class="plate-zoom">
+				<img class:list={[{ "only-light": !!dark }]} src={url(src)} alt={alt} width={w} height={h} loading={eager ? "eager" : "lazy"} fetchpriority={eager ? "high" : undefined} />
+				{dark && <img class="only-dark" src={url(dark)} alt={alt} width={w} height={h} loading="lazy" />}
+				{spots.map((s, i) => (
+					<button type="button" class="spot" style={`left:${s.x}%;top:${s.y}%`} data-spot={i} data-x={s.x} data-y={s.y} aria-label={`${i + 1}. ${s.title}`}>{i + 1}</button>
+				))}
+			</div>
+		</div>
 	</div>
-	<figcaption><span class="plate-n">Plate {n}.</span> {caption}</figcaption>
+	{spots.length > 0 && (
+		<ol class="spot-list">
+			{spots.map((s, i) => (
+				<li><button type="button" data-spot={i}><span class="spot-n">{i + 1}</span><span class="spot-body"><strong>{s.title}</strong><span>{s.text}</span></span></button></li>
+			))}
+		</ol>
+	)}
+	<figcaption><span class="plate-n">Plate {n}.</span> {caption}{spots.length > 0 && <span class="spot-hint"> Hover or tap the numbers.</span>}</figcaption>
 </figure>
+
+<script>
+	// One handler for every plate with hotspots: the active spot zooms the screenshot towards it and highlights its entry.
+	const ZOOM = 1.8;
+	for (const fig of document.querySelectorAll<HTMLElement>("[data-spots]")) {
+		const zoom = fig.querySelector<HTMLElement>(".plate-zoom")!;
+		const dots = [...fig.querySelectorAll<HTMLElement>(".spot")];
+		const rows = [...fig.querySelectorAll<HTMLElement>(".spot-list [data-spot]")];
+		let pinned = -1;
+		const set = (i: number) => {
+			fig.classList.toggle("is-zoomed", i >= 0);
+			if (i >= 0) {
+				const d = dots[i];
+				zoom.style.transformOrigin = `${d.dataset.x}% ${d.dataset.y}%`;
+				zoom.style.setProperty("--z", String(ZOOM));
+			} else zoom.style.setProperty("--z", "1");
+			dots.forEach((d, j) => d.classList.toggle("is-active", j === i));
+			rows.forEach((r, j) => r.classList.toggle("is-active", j === i));
+		};
+		for (const el of [...dots, ...rows]) {
+			const i = Number(el.dataset.spot);
+			el.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") set(i); });
+			el.addEventListener("focus", () => set(i));
+			el.addEventListener("click", () => { pinned = pinned === i ? -1 : i; set(pinned); });
+		}
+		fig.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") set(pinned); });
+		fig.addEventListener("focusout", (e) => { if (!fig.contains(e.relatedTarget as Node)) set(pinned); });
+		fig.addEventListener("keydown", (e) => { if (e.key === "Escape") { pinned = -1; set(-1); } });
+	}
+</script>

@@ -167,6 +167,27 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .plate-tab { position: absolute; top: -0.7rem; left: 1.25rem; z-index: 1; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.55rem; border-radius: 4px; background: var(--c, var(--c-blue)); color: #fff; font: 600 0.72rem/1 var(--f-type); text-decoration: none; box-shadow: 0 2px 6px -2px rgb(0 0 0 / 35%); }
 .plate-tab:hover { color: #fff; filter: brightness(1.1); }
 :root[data-theme="dark"] .plate.no-dark img { filter: brightness(0.86); } /* screenshots with no dark capture glare less */
+/* hotspots: dots on the screenshot, a numbered list under it; the active one zooms the screenshot towards itself */
+.plate-view { position: relative; overflow: hidden; border-radius: 2px; }
+.plate-zoom { position: relative; --z: 1; transform: scale(var(--z)); transition: transform 0.7s var(--ease); will-change: transform; }
+.spot { position: absolute; z-index: 1; width: 1.6rem; height: 1.6rem; margin: 0; padding: 0; border: 2px solid #fff; border-radius: 999px; background: var(--primary); color: #fff; font: 700 0.75rem/1 var(--f-head); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / 30%); transform: translate(-50%, -50%) scale(calc(1 / var(--z, 1))); transition: transform 0.7s var(--ease), background 0.2s; }
+.spot::after { content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 2px solid var(--primary); opacity: 0; }
+.motion .spot::after { animation: spot-pulse 2.4s var(--ease) infinite; }
+.spot.is-active { background: var(--ink); }
+.is-zoomed .spot:not(.is-active) { opacity: 0.35; }
+.spot:focus-visible { outline: 3px solid var(--ring, var(--primary)); outline-offset: 3px; }
+@keyframes spot-pulse { 0% { opacity: 0.7; transform: scale(0.8); } 70%, 100% { opacity: 0; transform: scale(1.5); } }
+.spot-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 0.35rem 0.75rem; }
+.spot-list button { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.5rem 0.6rem; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+.spot-list button:hover, .spot-list button.is-active { background: var(--secondary); }
+.spot-list button:focus-visible { outline: 2px solid var(--primary); }
+.spot-n { flex: none; width: 1.35rem; height: 1.35rem; border-radius: 999px; background: var(--primary); color: #fff; font: 700 0.7rem/1.35rem var(--f-head); text-align: center; margin-top: 0.05rem; }
+.spot-list .is-active .spot-n { background: var(--ink); color: var(--card); }
+.spot-body { display: grid; gap: 0.1rem; }
+.spot-body strong { font: 650 0.88rem/1.3 var(--f-head); color: var(--ink); }
+.spot-body span { font-size: 0.82rem; line-height: 1.4; color: var(--ink-2); }
+.spot-hint { color: var(--ink-3); }
+@media (prefers-reduced-motion: reduce) { .plate-zoom { transition: none; } }
 
 /* ---------- the shelf: spines bound in the app's collection colours ---------- */
 .shelf-room { padding-block: clamp(2rem, 4vw, 3rem) 0; }
