@@ -24,7 +24,7 @@ const leadOf = (body: string) => body.split(/\n\s*\n/).map((p) => p.trim()).find
 
 const groups = [
 	...subsections(section("## Features")).map((s) => ({ title: s.title, id: slug(s.title), lead: leadOf(s.body), items: bullets(s.body), more: MORE[slug(s.title)] ? `${base}${MORE[slug(s.title)]}` : "" })),
-	{ title: "Word add-in", id: "word-add-in", lead: "", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
+	{ title: "Word add-in", id: "word-add-in", lead: "**Zotero Next does not need to be open.** The add-in reads your library file itself, so you can search, cite and build a bibliography with the app closed.", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
 	{ title: "MCP for agents", id: "mcp-for-agents", lead: "", items: [paragraphs(section("### Built-in MCP for AI agents"))[0]], more: `${base}user-guide/mcp/` },
 ].map((g) => ({ ...g, shot: SHOTS[g.id], icon: ICONS[g.id] ?? "circle" }));
 ---
