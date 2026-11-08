@@ -18,7 +18,7 @@ const SHOTS: Record<string, Shot> = {
 	"word-add-in": { src: "word-sidebar.png", h: 839, n: "VII", alt: "Word with the Zotero Next sidebar beside a paragraph with numbered citations and a bibliography", caption: "The Word sidebar, with the app closed." },
 };
 const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "better-bibtex": "braces", "zotmoov-file-storage": "folder-tree", "around-the-app": "settings", "word-add-in": "panel-right", "mcp-for-agents": "bot" };
-const MORE: Record<string, string> = { "pdf-reader": "user-guide/reader/", "better-bibtex": "user-guide/better-bibtex/", "zotmoov-file-storage": "user-guide/zotmoov-storage/", "sync-and-storage": "user-guide/sync/" };
+const MORE: Record<string, string> = { library: "user-guide/library/", "pdf-reader": "user-guide/reader/", "better-bibtex": "user-guide/better-bibtex/", "zotmoov-file-storage": "user-guide/zotmoov-storage/", "sync-and-storage": "user-guide/sync/" };
 // a group's own lead line, if the README has one before its bullets ("Built in, no plugin to install:")
 const leadOf = (body: string) => body.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith("-") && !p.startsWith("|")) ?? "";
 
@@ -49,7 +49,7 @@ const groups = [
 						<h2 class="h2"><Icon name={g.icon} size={26} />{g.title}</h2>
 						{g.lead && <p class="feature-lead" set:html={inline(g.lead, base)} />}
 						<ul class="points">{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
-						{g.more && <p class="feature-more"><a href={g.more}>Read the guide</a>{g.id === "word-add-in" && <> · <a href={`${base}demo/`}>Try the sidebar live</a></>}</p>}
+						{g.more && <p class="feature-more"><a href={g.more}>Read the guide</a>{g.id === "word-add-in" && <> · <a href={`${base}demo/#word`}>Try the sidebar live</a></>}{g.id === "library" && <> · <a href={`${base}demo/`}>Try the library live</a></>}</p>}
 					</div>
 					{g.shot && <Plate n={g.shot.n} src={g.shot.src} dark={g.shot.dark} h={g.shot.h ?? 857} tilt={i % 2 ? 0.6 : -0.6} alt={g.shot.alt} caption={g.shot.caption} />}
 				</article>

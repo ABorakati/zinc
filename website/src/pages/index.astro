@@ -30,7 +30,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 				<p class="lede">Opens in half a second and searches 12,000 items in milliseconds. Save from your browser and cite from a sidebar in Word, even with the app closed, and let AI agents work with your library.</p>
 				<div class="actions">
 					<a class="btn btn-primary btn-lg" href={`${base}download/`}><Icon name="download" />Download for Windows</a>
-					<a class="btn btn-outline btn-lg" href={`${base}features/`}><Icon name="library" />See the features</a>
+					<a class="btn btn-outline btn-lg" href={`${base}demo/`}><Icon name="mouse-pointer-click" />Try it in your browser</a>
 				</div>
 				<p class="fine"><span class="mono">0.1.1</span> · Windows 10 and 11, 64-bit · per-user install, no admin rights</p>
 			</div>
@@ -67,7 +67,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 							<h3><Icon name={it.icon} size={24} />{it.title}</h3>
 							{it.body.filter(Boolean).map((p) => <p set:html={inline(p, base)} />)}
 							<div class="closed-tags">{it.tags.map((t) => <span>{t}</span>)}</div>
-							{it.id === "word" && <a class="btn btn-secondary btn-sm demo-link" href={`${base}demo/`}><Icon name="mouse-pointer-click" size={14} />Try the sidebar live</a>}
+							{it.id === "word" && <a class="btn btn-secondary btn-sm demo-link" href={`${base}demo/#word`}><Icon name="mouse-pointer-click" size={14} />Try the sidebar live</a>}
 							<div class="closed-inline"><ClosedSlide id={it.id} /></div>
 						</article>
 					))}

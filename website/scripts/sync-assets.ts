@@ -38,4 +38,22 @@ for (const dir of [join(repo, "gpui-ui", "assets"), join(repo, "app", "assets")]
 	cpSync(join(site, "word-demo", "styles"), join(demo, "styles"), { recursive: true });
 	cpSync(join(site, "word-demo", "locales"), join(demo, "locales"), { recursive: true });
 }
+// The app demo (pages/demo.astro, "The app"): the GPUI app built for the browser by gpui-ui/web/build.ts on a demo library made by
+// gpui-ui/web/demo-library.ts. Needs gpui-ui's dependencies (bun install there); skipped with a note when they are missing, or
+// when ZN_SKIP_APP_DEMO=1 (it takes a minute and is ~24 MB).
+{
+	const gpui = join(repo, "gpui-ui");
+	const demo = join(site, "public", "app-demo");
+	if (process.env.ZN_SKIP_APP_DEMO === "1") console.log("[docs] app demo skipped (ZN_SKIP_APP_DEMO=1)");
+	else if (!existsSync(join(gpui, "node_modules", "@gpuix", "native", "wasm"))) console.log("[docs] app demo skipped: run `bun install` in gpui-ui first");
+	else {
+		const lib = join(gpui, "out", "demo-library");
+		const run = (args: string[]) => {
+			const p = Bun.spawnSync(["bun", ...args], { cwd: gpui, stdout: "inherit", stderr: "inherit" });
+			if (p.exitCode !== 0) throw new Error(`app demo: bun ${args.join(" ")} failed`);
+		};
+		run(["web/demo-library.ts", lib]);
+		run(["web/build.ts", "--out", demo, "--db", join(lib, "library.sqlite"), "--styles", join(lib, "collection-style.json")]);
+	}
+}
 console.log("[docs] assets synced");

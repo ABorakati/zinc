@@ -6,25 +6,46 @@ import Icon from "../components/Icon.astro";
 import Site from "../layouts/Site.astro";
 const base = import.meta.env.BASE_URL;
 ---
-<Site page="demo" title="Try the Word sidebar" description="The Zotero Next Word sidebar, running live in your browser on a demo library: search, cite and add a bibliography.">
+<Site page="demo" title="Try it" description="Zotero Next running live in your browser on a demo library: the app's library window, and the Word sidebar.">
 	<section class="hero" style="padding-bottom: 1.5rem">
 		<div class="wrap">
 			<div class="head" style="margin-bottom: 1.5rem">
-				<h1 class="display" style="margin-bottom: 1rem">Try the Word sidebar</h1>
-				<p>This is the add-in's real sidebar, running in your browser on a demo library of 12 well-known papers. The page on the left stands in for Word. Nothing is saved.</p>
+				<h1 class="display" style="margin-bottom: 1rem">Try it in your browser</h1>
+				<p>Both demos run the real code on a demo library of well-known papers. Nothing is installed and nothing is saved.</p>
 			</div>
+			<div class="seg demo-tabs" role="tablist" aria-label="Demo">
+				<button type="button" role="tab" aria-selected="true" data-demo-tab="app">The app</button>
+				<button type="button" role="tab" aria-selected="false" data-demo-tab="word">Word sidebar</button>
+			</div>
+		</div>
+	</section>
+
+	<section class="room-tight" style="padding-top: 0" data-demo-panel="app">
+		<div class="wrap">
+			<p class="demo-intro">The library window of the desktop app: the same interface code, drawn by GPUI compiled to WebAssembly, on the same core reading the library through SQLite compiled to WebAssembly. Browse collections, switch between Cards and Classic, group, sort, search and open an item's details.</p>
+			<div class="app-demo" data-app-demo>
+				<iframe title="Zotero Next (live demo)" data-app-frame hidden></iframe>
+				<div class="app-start" data-app-start>
+					<img src={`${base}screenshots/library-cards-light.png`} alt="" width="1400" height="857" class="only-light" />
+					<img src={`${base}screenshots/library-cards-dark.png`} alt="" width="1400" height="857" class="only-dark" />
+					<button type="button" class="btn btn-primary btn-lg" data-app-go><Icon name="play" size={18} />Start the demo</button>
+					<p class="app-start-note">About 24 MB, mostly the GPUI engine. Works best on a computer, in a recent Chrome, Edge, Firefox or Safari.</p>
+				</div>
+			</div>
+			<p class="fine" style="margin-top: 1rem">Not in the browser demo: the PDF reader, web tabs, sync, importing files and anything that needs your disk. Those need the desktop app. Changes you make stay in this tab and are gone when you leave.</p>
+		</div>
+	</section>
+
+	<section class="room-tight" style="padding-top: 0" data-demo-panel="word" hidden>
+		<div class="wrap">
+			<p class="demo-intro">The add-in's real sidebar on the demo library. The page on the left stands in for Word.</p>
 			<ol class="demo-steps">
 				<li><span class="n">1</span><span>Click in the text to put the cursor where a citation should go.</span></li>
 				<li><span class="n">2</span><span>Search the sidebar, for example <b>retinopathy</b>, and click a result to insert it.</span></li>
 				<li><span class="n">3</span><span>Click a citation in the text to see it under <b>Cited here</b>, or change the style in the sidebar's settings.</span></li>
 				<li><span class="n">4</span><span>Add the bibliography from the ribbon.</span></li>
 			</ol>
-		</div>
-	</section>
-
-	<section class="room-tight" style="padding-top: 0">
-		<div class="wrap">
-			<div class="word" data-word-demo>
+			<div class="word" data-word-demo style="margin-top: 1.5rem">
 				<div class="word-title"><span class="word-logo">W</span>Demo.docx – Word</div>
 				<div class="word-ribbon" role="toolbar" aria-label="Zotero Next ribbon tab">
 					<span class="word-tab">Zotero Next</span>
@@ -48,7 +69,31 @@ const base = import.meta.env.BASE_URL;
 	</section>
 </Site>
 
-<script is:inline>
+<script is:inline define:vars={{ appSrc: `${base}app-demo/index.html` }}>
+	(() => {
+		// tabs: the app demo or the Word sidebar demo (#word opens the second)
+		const tabs = [...document.querySelectorAll("[data-demo-tab]")];
+		const panels = [...document.querySelectorAll("[data-demo-panel]")];
+		const show = (id) => {
+			for (const t of tabs) t.setAttribute("aria-selected", String(t.dataset.demoTab === id));
+			for (const p of panels) p.hidden = p.dataset.demoPanel !== id;
+		};
+		for (const t of tabs) t.addEventListener("click", () => { show(t.dataset.demoTab); history.replaceState(null, "", t.dataset.demoTab === "word" ? "#word" : location.pathname); });
+		if (location.hash === "#word") show("word");
+
+		// the app demo loads only on request (it is ~24 MB); it follows the site's light or dark theme
+		const frame = document.querySelector("[data-app-frame]");
+		const start = document.querySelector("[data-app-start]");
+		const dark = () => document.documentElement.dataset.theme === "dark";
+		document.querySelector("[data-app-go]").addEventListener("click", () => {
+			frame.src = `${appSrc}?theme=${dark() ? "dark" : "light"}`;
+			frame.hidden = false;
+			start.hidden = true;
+			frame.focus();
+		});
+		new MutationObserver(() => { if (!frame.hidden) frame.contentWindow?.postMessage({ theme: dark() ? "dark" : "light" }, "*"); })
+			.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+	})();
 	(() => {
 		const root = document.querySelector("[data-word-demo]");
 		const frame = root.querySelector("[data-pane]");
