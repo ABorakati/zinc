@@ -26,6 +26,8 @@ export default defineConfig({
 			logo: { src: "./public/icon.svg", alt: "Zotero Next" },
 			favicon: "/icon.svg",
 			customCss: ["@fontsource-variable/inter/opsz.css", "@fontsource-variable/manrope/wght.css", "./src/styles/custom.css"],
+			// the docs use the product pages' top bar (with Starlight's search in it), so the menu stays the same everywhere
+			components: { Header: "./src/components/DocsHeader.astro" },
 			editLink: undefined,
 			lastUpdated: false,
 			sidebar: [

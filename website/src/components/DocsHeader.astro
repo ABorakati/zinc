@@ -1,0 +1,9 @@
+---
+// Starlight's Header override (astro.config.mjs `components.Header`): the docs get the site's own top bar (Masthead), with
+// Starlight's search box in it, so moving between the product pages and the docs keeps the same menu.
+import Search from "@astrojs/starlight/components/Search.astro";
+import Masthead from "./Masthead.astro";
+---
+<Masthead page="docs" docs>
+	<Search slot="search" />
+</Masthead>
