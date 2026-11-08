@@ -23,16 +23,16 @@ const base = import.meta.env.BASE_URL;
 	<section class="room-tight" style="padding-top: 0" data-demo-panel="app">
 		<div class="wrap">
 			<p class="demo-intro">The desktop app's own interface code, drawn by GPUI compiled to WebAssembly, on the same core reading the library through SQLite compiled to WebAssembly, with PDF pages drawn by PDFium compiled to WebAssembly. Browse collections, switch between Cards and Classic, group, sort, search, open an item's details, and open the demo article in the PDF reader.</p>
-			<div class="app-demo" data-app-demo>
-				<iframe title="Zotero Next (live demo)" data-app-frame hidden></iframe>
-				<div class="app-start" data-app-start>
+			<div class="app-demo">
+				<div class="app-start">
 					<img src={`${base}screenshots/library-cards-light.png`} alt="" width="1400" height="857" class="only-light" />
 					<img src={`${base}screenshots/library-cards-dark.png`} alt="" width="1400" height="857" class="only-dark" />
 					<div class="app-start-actions">
-						<button type="button" class="btn btn-primary btn-lg" data-app-go><Icon name="play" size={18} />Start the demo</button>
-						<button type="button" class="btn btn-secondary btn-lg" data-app-go="demo"><Icon name="file-text" size={18} />Open a PDF in the reader</button>
+						<a class="btn btn-primary btn-lg" href={`${base}app-demo/index.html`} data-app-go><Icon name="play" size={18} />Start the demo</a>
+						<a class="btn btn-secondary btn-lg" href={`${base}app-demo/index.html?open=demo`} data-app-go="open=demo"><Icon name="file-text" size={18} />Open a PDF in the reader</a>
+						<a class="btn btn-secondary btn-lg" href={`${base}app-demo/index.html?open=demo&view=reading`} data-app-go="open=demo&view=reading"><Icon name="book-open" size={18} />Reading view</a>
 					</div>
-					<p class="app-start-note">About 24 MB, mostly the GPUI engine. Works best on a computer, in a recent Chrome, Edge, Firefox or Safari.</p>
+					<p class="app-start-note">Opens the app full page in this tab; your browser's Back button returns here. About 24 MB, mostly the GPUI engine. Works best on a computer, in a recent Chrome, Edge, Firefox or Safari.</p>
 				</div>
 			</div>
 			<p class="fine" style="margin-top: 1rem">In the reader, hover a citation or a figure mention for its card, and try the References panel and the Reading view: Zotero's layout analysis runs in your browser too (about 30 MB more, loaded when you open a PDF). Not in the browser demo: web tabs, sync, importing files and anything else that needs your disk. Changes you make stay in this tab and are gone when you leave.</p>
@@ -84,19 +84,13 @@ const base = import.meta.env.BASE_URL;
 		for (const t of tabs) t.addEventListener("click", () => { show(t.dataset.demoTab); history.replaceState(null, "", t.dataset.demoTab === "word" ? "#word" : location.pathname); });
 		if (location.hash === "#word") show("word");
 
-		// the app demo loads only on request (it is ~24 MB); it follows the site's light or dark theme
-		const frame = document.querySelector("[data-app-frame]");
-		const start = document.querySelector("[data-app-start]");
+		// the app opens full page in this tab (only on request: it is ~24 MB), in the site's light or dark theme;
+		// data-app-go carries the extra parameters (open=demo: the demo article in the reader; view=reading: its reading view)
 		const dark = () => document.documentElement.dataset.theme === "dark";
-		for (const go of document.querySelectorAll("[data-app-go]")) go.addEventListener("click", () => {
-			// data-app-go="demo": open the demo article in the reader at once
-			frame.src = `${appSrc}?theme=${dark() ? "dark" : "light"}${go.dataset.appGo ? `&open=${go.dataset.appGo}` : ""}`;
-			frame.hidden = false;
-			start.hidden = true;
-			frame.focus();
+		for (const go of document.querySelectorAll("[data-app-go]")) go.addEventListener("click", (e) => {
+			e.preventDefault();
+			location.href = `${appSrc}?theme=${dark() ? "dark" : "light"}${go.dataset.appGo ? `&${go.dataset.appGo}` : ""}`;
 		});
-		new MutationObserver(() => { if (!frame.hidden) frame.contentWindow?.postMessage({ theme: dark() ? "dark" : "light" }, "*"); })
-			.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 	})();
 	(() => {
 		const root = document.querySelector("[data-word-demo]");

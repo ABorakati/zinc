@@ -31,6 +31,16 @@ Useful extras: `/COMPONENTS="app"` or `"app,word"`, `/TASKS="desktopicon"`, `/DI
 
 Use **Apps & features**, or `unins000.exe /VERYSILENT /SUPPRESSMSGBOXES` from the install folder. The uninstaller removes the program files and its registry entries (and the Word add-in's registration). It then asks **Also remove settings and logs?** (the default is No). Answering yes removes `%APPDATA%\zotero-next-gpui` apart from any `*.sqlite` and `*.db` files, the web tabs' WebView2 profile, and the Word add-in's own data folders. A library is never removed.
 
+## Linux and macOS: the browser edition
+
+Each release also has `ZoteroNext-Web-<version>.zip`: the same interface and core built for the browser, with GPUI, SQLite and PDFium compiled to WebAssembly and Zotero's layout analysis for the reader. It runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows.
+
+1. Download `ZoteroNext-Web-<version>.zip` from the **Releases** page and unzip it.
+2. In the unzipped folder, start a static web server, for example `python3 -m http.server 8080`. Browsers only run WebAssembly and workers over `http://`, so opening `index.html` from disk does not work.
+3. Open `http://localhost:8080`. Add `?open=demo` to open the demo article in the PDF reader, and `&view=reading` for its reading view.
+
+For now the browser edition opens a demo library of well-known papers and keeps changes only until you close the tab. Web tabs, sync, importing files and anything else that needs your disk are in the Windows app only. The same build runs on the website's Demo page.
+
 ## Notes
 
 - The app is built for 64-bit Windows. Web tabs and the rich note editor use WebView2; see [Troubleshooting](troubleshooting.md) if they do not appear.

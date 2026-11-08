@@ -4,6 +4,8 @@ import Site from "../layouts/Site.astro";
 
 const base = import.meta.env.BASE_URL;
 const latest = "https://github.com/ABorakati/zotero-next/releases/latest";
+// the browser edition (gpui-ui/web, attached to releases by .github/workflows/web.yml)
+const webZip = "https://github.com/ABorakati/zotero-next/releases/download/v0.1.1/ZoteroNext-Web-v0.1.1.zip";
 ---
 <Site page="download" title="Download" description="Download the Zotero Next installer for Windows 10 and 11, and set up the Word add-in and the browser connector.">
 	<section class="hero">
@@ -22,6 +24,7 @@ const latest = "https://github.com/ABorakati/zotero-next/releases/latest";
 				<table>
 					<tbody>
 						<tr style="--r:0"><td>Needs</td><td>Windows 10 or 11, 64-bit</td></tr>
+						<tr style="--r:0"><td>Linux, macOS</td><td><a href="#browser">browser edition</a></td></tr>
 						<tr style="--r:1"><td>Installs to</td><td>your user, no admin</td></tr>
 						<tr style="--r:2"><td>Size</td><td>about 145 MB</td></tr>
 						<tr style="--r:3"><td>Updates</td><td>signed auto-update</td></tr>
@@ -73,7 +76,29 @@ const latest = "https://github.com/ABorakati/zotero-next/releases/latest";
 		</div>
 	</section>
 
-	<section class="room" style="background: var(--ground-2)">
+	<section class="room" id="browser" style="background: var(--ground-2)">
+		<div class="wrap volume" style="align-items: start">
+			<div class="prose">
+				<h2 class="h2" style="margin-bottom: 1.1rem">Linux and macOS: the browser edition</h2>
+				<p>The same interface and core, built for the browser: GPUI, SQLite and PDFium compiled to WebAssembly, with Zotero's layout analysis for the reader. It runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows.</p>
+				<p>For now it opens a demo library of well-known papers and a demo article, and keeps changes only until you close the tab. Web tabs, sync and anything that needs your disk are desktop only. <a href={`${base}demo/`}>Try it here first</a>, nothing to download.</p>
+				<div class="actions" style="margin-top: 1.5rem">
+					<a class="btn btn-primary" href={webZip}><Icon name="download" />Download the browser edition (zip)</a>
+					<a class="btn btn-outline" href={`${base}demo/`}><Icon name="mouse-pointer-click" />Open the demo</a>
+				</div>
+			</div>
+			<div class="card">
+				<div class="card-head"><span>ZN 0.1.1</span><span>Browser</span></div>
+				<ol class="card-steps">
+					<li><div><strong>Unzip it.</strong><p><code>ZoteroNext-Web-v0.1.1.zip</code>, about 60 MB unpacked.</p></div></li>
+					<li><div><strong>Serve the folder.</strong><p>In the folder: <code>python3 -m http.server 8080</code>, or any static file server. Browsers only run WebAssembly over http://, not from a file opened on disk.</p></div></li>
+					<li><div><strong>Open it.</strong><p><code>http://localhost:8080</code>. Add <code>?open=demo</code> to open the demo article in the reader.</p></div></li>
+				</ol>
+			</div>
+		</div>
+	</section>
+
+	<section class="room">
 		<div class="wrap">
 			<div class="ledger">
 				<div class="ledger-row">
