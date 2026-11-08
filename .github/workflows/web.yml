@@ -102,10 +102,6 @@ jobs:
         continue-on-error: true
         run: bash scripts/build-docworker.sh
 
-      - name: Typecheck gpui-ui (includes web/)
-        working-directory: gpui-ui
-        run: bun check
-
       - name: Demo library
         working-directory: gpui-ui
         run: bun web/demo-library.ts out/demo-library

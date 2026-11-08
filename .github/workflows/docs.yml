@@ -10,6 +10,7 @@ on:
       - "website/**"
       - "gpui-ui/assets/**"
       - "word/sidebar/**"
+      - "core/src/cite/**"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -49,11 +50,13 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      # the asset sync builds the Word sidebar demo from word/sidebar (citeproc). The app demo needs gpui-ui and is built by
-      # web.yml; here the sync skips it.
-      - name: Install word/sidebar
-        working-directory: word/sidebar
-        run: bun install --frozen-lockfile
+      # the asset sync builds the Word sidebar demo from word/sidebar, which pulls in core's citation code (citeproc from
+      # core/node_modules). The app demo needs gpui-ui and is built by web.yml; here the sync skips it.
+      - name: Install core and word/sidebar
+        working-directory: .
+        run: |
+          (cd core && bun install --frozen-lockfile)
+          (cd word/sidebar && bun install --frozen-lockfile)
 
       - name: Build (fails on a broken docs link)
         run: bun run build
