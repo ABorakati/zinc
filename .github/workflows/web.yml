@@ -6,7 +6,8 @@ name: Browser build
 #   - every run: the browser build (artifact "zotero-next-web") and the website with it in /app-demo/ (artifact "website"),
 #     kept for a few days to download. Nothing is deployed: the website stays private.
 #   - a published release: also attaches ZoteroNext-Web-<tag>.zip to it, the browser build to run on Linux and macOS (README.txt
-#     inside says how: serve the folder over HTTP and open it in a browser).
+#     inside says how: serve the folder over HTTP and open it in a browser). For a release that already exists, run the workflow
+#     by hand with release_tag (gh workflow run web.yml -f release_tag=v0.1.1).
 on:
   push:
     paths:
@@ -27,6 +28,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Attach the browser zip to this existing release (e.g. v0.1.1); empty: build only"
+        required: false
+        default: ""
 
 concurrency:
   group: web-${{ github.ref }}
@@ -137,10 +143,10 @@ jobs:
           if-no-files-found: error
 
       - name: Attach the browser build to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: |
           (cd gpui-ui/out && mv web-demo "ZoteroNext-Web-$TAG" && zip -qr "ZoteroNext-Web-$TAG.zip" "ZoteroNext-Web-$TAG")
           gh release upload "$TAG" "gpui-ui/out/ZoteroNext-Web-$TAG.zip" --clobber
