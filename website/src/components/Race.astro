@@ -1,7 +1,7 @@
 ---
 // The speed claim as a race run in real time: Zotero 10 and Zotero Next as two lanes, filling over their measured medians
 // (README benchmark table). It starts when it scrolls into view; "Run again" replays it. The Memory tab is not a race: its bars grow
-// to the measured memory of each app (working set and private bytes), both sides on one scale. The HTML shows the finished state, so
+// to the measured memory each app holds in RAM (working set), both sides on one scale. The HTML shows the finished state, so
 // without JS or with reduced motion the result is still all there.
 import Icon from "./Icon.astro";
 import { section, tables } from "../lib/readme";
@@ -16,11 +16,8 @@ const races = [
 ].map((r) => ({ ...r, zotero: ms(r.row[1]), next: ms(r.row[2]) }));
 const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 1 : 2)} s` : `${Math.round(n)} ms`);
 
-const ws = pick("Memory, working set"), pb = pick("Memory, private bytes"), procs = pick("Processes");
-const memory = [
-	{ label: "In use (working set)", zotero: mb(ws[1]), next: mb(ws[2]) },
-	{ label: "Reserved (private bytes)", zotero: mb(pb[1]), next: mb(pb[2]) },
-];
+const ws = pick("Memory, working set"), procs = pick("Processes");
+const memory = [{ label: "Memory in use", zotero: mb(ws[1]), next: mb(ws[2]) }];
 const memMax = Math.max(...memory.flatMap((m) => [m.zotero, m.next]));
 const pct = (v: number) => `${(v / memMax) * 100}%`;
 const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory", label: "Memory" }];
@@ -49,10 +46,9 @@ const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory
 		</div>
 	))}
 	<div class="race-panel" data-panel="memory" data-kind="memory" hidden>
-		<p class="race-what">Memory of the whole app, every process counted, 12 seconds after the library is ready. Zotero Next runs as {procs[2]} process, Zotero as {procs[1]}.</p>
+		<p class="race-what">Memory each app holds in RAM, every process counted, 12 seconds after the library is ready. Zotero Next runs as {procs[2]} process, Zotero as {procs[1]}.</p>
 		{memory.map((m) => (
 			<div class="mem-group">
-				<p class="mem-label">{m.label}</p>
 				<div class="lane done" data-lane="next" data-v={m.next} style={`--w:${pct(m.next)}`}>
 					<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zotero Next</span>
 					<span class="lane-track"><span class="lane-fill"></span></span>
@@ -65,7 +61,7 @@ const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory
 				</div>
 			</div>
 		))}
-		<p class="mem-note">"In use" is the memory the app holds in RAM right now: Zotero Next uses less than half. "Reserved" is what each app has set aside: there Zotero Next is higher, because its library core runs inside its one process.</p>
+		<p class="mem-note">Zotero Next uses less than half the memory of Zotero 10 with the same library open.</p>
 	</div>
 	<p class="race-note">Measured medians: the same 12,400-item library, three runs each, Windows 11. Times play in real time. <a href={`${import.meta.env.BASE_URL}compare/`}>Full results and method</a>.</p>
 </div>

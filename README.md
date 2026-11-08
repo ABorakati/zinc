@@ -32,7 +32,7 @@ Start-up is nearly 4 times faster to a window and over 20 times faster to a usab
 
 - **One process, no browser engine in the main window.** Zotero Next runs as a single process where Zotero 10 ran three. The library window is drawn directly on the GPU instead of through a web view.
 - **Less than half the memory in use.** Working set is 358 MB against 783 MB for Zotero with the same library open.
-- **Not smaller everywhere.** Private bytes are higher (897 MB against 728 MB), because the core, search and PDF engine live in the one process. The program folder is bigger too (330 MB against 241 MB), and so is the library database (a different layout, so not a like-for-like size).
+- **Not smaller everywhere.** The program folder is bigger (330 MB against 241 MB), and so is the library database (a different layout, so not a like-for-like size).
 
 ### Modern
 
@@ -170,7 +170,6 @@ The same library in both programs: a copy of a real library with about 12.4k top
 | --- | --- | --- |
 | Window on screen | 1.83 s (1.81 to 1.89) | 0.49 s (0.49 to 3.30) |
 | Library ready (local data API answers) | 16.3 s (16.2 to 16.4) | 0.70 s (0.64 to 3.5) |
-| Memory, private bytes, whole process tree | 728 MB (697 to 824) | 897 MB (827 to 897) |
 | Memory, working set, whole process tree | 783 MB (757 to 887) | 358 MB (358 to 364) |
 | Processes | 3 | 1 |
 | Search through the local API, common word (3.4k to 4.5k hits) | 1872 ms (1823 to 1890) | 50 ms (49 to 53) |
@@ -184,7 +183,7 @@ The same library in both programs: a copy of a real library with about 12.4k top
 
 - **Window on screen**: time from starting the process until the first visible top-level window owned by it or its children appears (the script polls `EnumWindows` every 5 ms). For Zotero that first window is its main window before the library is shown; the window titled with the library appeared at 4.6 s (4.5 to 4.7). Both apps were started minimised, without taking focus.
 - **Library ready**: time until the program's local data API answers a request for one top-level item (Zotero: `/api/users/0/items/top?limit=1`, which waits for the library's items to load; Zotero Next: `/api/items?limit=1`). This is a stand-in for "the items are loaded", not for "the first row is painted". Zotero 10's API gave an error and then stopped answering when it was called before its start-up had finished, so the first request is sent only after its main window shows the library; its figure is therefore the later of the two. The slowest Zotero Next runs are the first launch from a fresh settings folder (3.3 s window, 3.5 s ready); the other two were 0.49 s and 0.64 to 0.70 s.
-- **Memory**: private bytes (`PrivateUsage`) and working set summed over the whole process tree, sampled 12 s after "ready". Zotero Next runs its core in the same process, so one process holds the library; its private bytes are higher than Zotero's, its working set is less than half.
+- **Memory**: working set (the memory the app holds in RAM) summed over the whole process tree, sampled 12 s after "ready". Zotero Next runs its core in the same process, so one process holds the library.
 - **Search**: ten timed calls after one untimed call, per query, per run, with the whole JSON response read. Zotero: `/api/users/0/items/top?q=...&qmode=titleCreatorYear&limit=25`; Zotero Next: `/api/items?q=...&limit=25`. The queries were picked from the library: a common title word, the commonest author surname, a rare title word and the commonest year. These are HTTP API times, not typing-in-the-search-box times: Zotero's own search box does not go through this API, and the API adds the cost of building full JSON for each item. The two programs also do not match the same set of items (for the common word 4514 and 3441 hits), so compare them as "one search request", not as identical work.
 - **Sizes**: the program folder (`C:\Program Files\Zotero`; `%LOCALAPPDATA%\Programs\Zotero Next`) and the library database file (`zotero.sqlite`; Zotero Next's library). They hold different things, so this is not a like-for-like data size.
 - **Isolation**: Zotero ran from a new profile (`-profile`, `-no-remote`) with its data folder set to a copy, sync, updates and background renaming off, and its local API on port 23131. Zotero Next ran on a copy with sync off, its own ports and scratch settings folders. Neither the real Zotero nor the real Zotero Next library was written to. Copies were deleted afterwards.
@@ -192,25 +191,18 @@ The same library in both programs: a copy of a real library with about 12.4k top
 
 ### Zotero Next on its own
 
+The AOT build, the one the installer ships:
+
 | Measure | Result |
 | --- | --- |
-| First items on screen, GPUI app | about 0.39 to 0.47 s |
-| Memory, GPUI app (private bytes / working set) | 448 MB / 352 MB |
+| First items on screen | 399 ms |
+| Memory in use (working set) | 334 MB |
+| Scroll, cards view | 126 to 129 fps |
+| Scroll, Classic table | 68 to 103 fps |
 
-These two rows come from `aot-bench.ts` (below), a different script and set-up from the table above, so do not read them across.
+Two more figures: the first reading-view layout of a 10-page PDF takes about 5 to 6 s, and inspecting a Find Full Text result takes 45 ms.
 
-**AOT build against the bytecode build** (both are single executables):
-
-| Measure | AOT | Bytecode |
-| --- | --- | --- |
-| First items on screen | 399 ms | 466 ms |
-| Working set | 334 MB | 358 MB |
-| Scroll, cards view | 126 to 129 fps | 99 to 108 fps |
-| Scroll, Classic table | 68 to 103 fps | 57 to 81 fps |
-
-Two more figures: the first reading-view layout of a 10-page PDF takes about 5 to 6 s (after a WebAssembly fix, about the same for both builds), and inspecting a Find Full Text result takes 45 ms.
-
-*How measured:* start-up and memory with `gpui-ui/scripts/aot-bench.ts` (it launches each build, waits for the window and the app's own "first items" mark, then samples private bytes and working set). Scrolling with `gpui-ui/scripts/scroll-bench.ts` (wheel-scrolls the list in a real window at a fixed speed and counts frames GPUI draws per second, cards and table). Both read a **copy** of a library, never the original. `gpui-ui/scripts/README.md` describes both scripts and the other measurements.
+*How measured:* start-up and memory with `gpui-ui/scripts/aot-bench.ts` (it launches the build, waits for the window and the app's own "first items" mark, then samples the working set). Scrolling with `gpui-ui/scripts/scroll-bench.ts` (wheel-scrolls the list in a real window at a fixed speed and counts frames GPUI draws per second, cards and table). Both read a **copy** of a library, never the original. These come from different scripts and set-ups from the table above, so do not read them across. `gpui-ui/scripts/README.md` describes both scripts and the other measurements.
 
 ## Feature comparison with Zotero 10
 

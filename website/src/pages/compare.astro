@@ -26,6 +26,7 @@ const better = (row: string[]) => {
 
 const ownBody = section("### Zotero Next on its own");
 const own = tables(ownBody);
+const ownParas = paragraphs(ownBody);
 
 const gridBody = section("## Feature comparison with Zotero 10");
 const grid = tables(gridBody)[0];
@@ -72,8 +73,9 @@ const gridIntro = paragraphs(gridBody).map((p) => p.replace(/^✅ yes, ⚠️ pa
 
 			{own.length > 0 && (
 				<div style="margin-top: 4rem">
-					<h2 class="h3" style="margin-bottom: 1.25rem">Zotero Next on its own</h2>
-					<div class="pair">
+					<h2 class="h3" style="margin-bottom: 0.75rem">Zotero Next on its own</h2>
+					{ownParas[0] && <p style="margin-bottom: 1.25rem; color: var(--ink-2)" set:html={inline(ownParas[0], base)} />}
+					<div class:list={{ pair: own.length > 1 }} style={own.length > 1 ? undefined : "max-width: 40rem"}>
 						{own.map((t) => (
 							<div class="register" data-reveal>
 								<table>
@@ -84,7 +86,7 @@ const gridIntro = paragraphs(gridBody).map((p) => p.replace(/^✅ yes, ⚠️ pa
 						))}
 					</div>
 					<div class="prose" style="margin-top: 1.25rem; max-width: 52rem">
-						{paragraphs(ownBody).map((p) => <p style="font-size: 0.95rem" set:html={inline(p, base)} />)}
+						{ownParas.slice(1).map((p) => <p style="font-size: 0.95rem" set:html={inline(p, base)} />)}
 					</div>
 				</div>
 			)}
