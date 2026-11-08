@@ -1,7 +1,8 @@
 ---
 // One picture for the "Works with the app closed" slideshow: the Word sidebar screenshot, how a browser save reaches the library
-// (a diagram, not a screenshot), or the MCP calls an agent made through the Word add-in in the demo document (real calls and results,
-// the ones that built the Word screenshot).
+// (a diagram, not a screenshot), or an example agent chat over the core's MCP server: the question and answer are written for the
+// page, the three tool calls and their results are real (run on a copy of the demo library). The chat plays message by message when
+// its slide becomes active.
 import Icon from "./Icon.astro";
 interface Props { id: "word" | "browser" | "agent" }
 const { id } = Astro.props;
@@ -27,20 +28,24 @@ const base = import.meta.env.BASE_URL;
 	</figure>
 )}
 {id === "agent" && (
-	<figure class="slide-term">
-		<div class="term" role="img" aria-label="Three MCP tool calls to the Word add-in and their results">
-			<div class="term-bar"><span></span><span></span><span></span><em>MCP · Word add-in · 127.0.0.1:23125</em></div>
-			<pre><span class="t-call">search_library</span> <span class="t-arg">{`{ "query": "Gulshan" }`}</span>
-<span class="t-out">→ 5YM8PXR3  Development and Validation of a Deep Learning
-  Algorithm for Detection of Diabetic Retinopathy… (JAMA, 2016)</span>
-
-<span class="t-call">insert_citation</span> <span class="t-arg">{`{ "items": [{ "key": "5YM8PXR3" }],
-  "position": { "afterText": "grading diabetic retinopathy" } }`}</span>
-<span class="t-out">→ inserted citation 2: "(2)"</span>
-
-<span class="t-call">insert_bibliography</span> <span class="t-arg">{`{ "position": "end" }`}</span>
-<span class="t-out">→ created: 1. LeCun Y, Bengio Y, Hinton G. Deep learning…</span></pre>
+	<figure class="slide-chat">
+		<div class="chat" role="img" aria-label="An example chat: someone asks an agent for their deep learning papers; the agent searches the library, reads an item and returns a Vancouver reference list">
+			<div class="chat-bar"><Icon name="bot" size={15} /><span>Agent</span><em>zotero-next MCP · your library</em></div>
+			<div class="chat-body">
+				<p class="msg msg-user" style="--i:0">Which papers in my library are about deep learning? Give me a Vancouver reference list.</p>
+				<p class="msg msg-tool" style="--i:1"><Icon name="search" size={13} /><code>search_library</code> "deep learning" <span>→ 3 items</span></p>
+				<p class="msg msg-tool" style="--i:2"><Icon name="file-text" size={13} /><code>get_item</code> ARTILGX9 <span>→ Nature 521(7553), DOI 10.1038/nature14539</span></p>
+				<p class="msg msg-tool" style="--i:3"><Icon name="list-ordered" size={13} /><code>format_bibliography</code> vancouver <span>→ 3 references</span></p>
+				<div class="msg msg-agent" style="--i:4">
+					<p>You have three: LeCun et al. in <i>Nature</i> (2015), Gulshan et al. in <i>JAMA</i> (2016) and He et al. at CVPR (2016).</p>
+					<ol>
+						<li>LeCun Y, Bengio Y, Hinton G. Deep learning. Nature. 2015;521(7553):436–44.</li>
+						<li>Gulshan V, Peng L, Coram M. Development and Validation of a Deep Learning Algorithm for Detection of Diabetic Retinopathy in Retinal Fundus Photographs. JAMA. 2016;316(22):2402–10.</li>
+						<li>He K, Zhang X, Ren S, Sun J. Deep Residual Learning for Image Recognition. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. 2016. p. 770–8.</li>
+					</ol>
+				</div>
+			</div>
 		</div>
-		<figcaption>Real calls an agent made through the Word add-in's MCP server to build the demo document, results shortened.</figcaption>
+		<figcaption>An example chat. The tool calls and their results are real, run on the demo library; DOIs left out of the list for space.</figcaption>
 	</figure>
 )}
