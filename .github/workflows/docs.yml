@@ -9,12 +9,14 @@ on:
       - "docs/**"
       - "website/**"
       - "gpui-ui/assets/**"
+      - "word/sidebar/**"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "docs/**"
       - "website/**"
       - "gpui-ui/assets/**"
+      - "word/sidebar/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -45,6 +47,12 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Install
+        run: bun install --frozen-lockfile
+
+      # the asset sync builds the Word sidebar demo from word/sidebar (citeproc). The app demo needs gpui-ui and is built by
+      # web.yml; here the sync skips it.
+      - name: Install word/sidebar
+        working-directory: word/sidebar
         run: bun install --frozen-lockfile
 
       - name: Build (fails on a broken docs link)

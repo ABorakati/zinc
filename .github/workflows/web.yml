@@ -1,0 +1,150 @@
+name: Browser build
+
+# Builds the app for the browser (gpui-ui/web): the real interface on GPUI WebAssembly, the core on SQLite WebAssembly, PDFs on
+# PDFium WebAssembly and the reader's layout analysis on Zotero's document worker, with the demo library (gpui-ui/web/demo-library.ts).
+# It runs whenever the app, the core or the website changes, so the demo on the website always matches the app:
+#   - every run: the browser build (artifact "zotero-next-web") and the website with it in /app-demo/ (artifact "website"),
+#     kept for a few days to download. Nothing is deployed: the website stays private.
+#   - a published release: also attaches ZoteroNext-Web-<tag>.zip to it, the browser build to run on Linux and macOS (README.txt
+#     inside says how: serve the folder over HTTP and open it in a browser).
+on:
+  push:
+    paths:
+      - "gpui-ui/**"
+      - "core/**"
+      - "website/**"
+      - "docs/**"
+      - "scripts/build-docworker.sh"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "gpui-ui/**"
+      - "core/**"
+      - "website/**"
+      - "docs/**"
+      - "scripts/build-docworker.sh"
+      - ".github/workflows/web.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+  DOCS_BASE: /
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # only used on a release, to attach the zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-web-${{ runner.os }}-${{ hashFiles('core/bun.lock', 'gpui-ui/bun.lock', 'word/sidebar/bun.lock', 'website/bun.lock') }}
+          restore-keys: bun-web-${{ runner.os }}-
+
+      # word/sidebar: the website's Word sidebar demo is built from it (citeproc)
+      - name: Install core, gpui-ui, word/sidebar and website
+        run: |
+          (cd core && bun install --frozen-lockfile)
+          (cd gpui-ui && bun install --frozen-lockfile)
+          (cd word/sidebar && bun install --frozen-lockfile)
+          (cd website && bun install --frozen-lockfile)
+
+      # core/vendor is git-ignored; same pinned download as ci.yml.
+      - name: Cache vendored Zotero translation code
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: core/vendor/zotero
+          key: zotero-vendor-${{ hashFiles('core/scripts/fetch-zotero-vendor.ts') }}
+      - name: Fetch vendored Zotero translation code
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: bun core/scripts/fetch-zotero-vendor.ts
+
+      # The full-text engine is built in a separate private repo (see ci.yml): a placeholder lets the build resolve; searching
+      # inside PDF text is then not in this build (searching titles, authors and other metadata is).
+      - name: Placeholder for the fulltext wasm
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          [ -s core/vendor/fulltext-wasm/fulltext.wasm ] || : > core/vendor/fulltext-wasm/fulltext.wasm
+
+      # Zotero's document worker (the reader's layout analysis: citation and figure cards, References panel, reading view).
+      # Optional: if it cannot be built, the browser build leaves layout analysis out and the reader says so.
+      - name: Cache Zotero's document worker
+        id: docworker
+        uses: actions/cache@v4
+        with:
+          path: vendor/document-worker
+          key: docworker-${{ hashFiles('scripts/build-docworker.sh') }}
+      - name: Build Zotero's document worker
+        if: steps.docworker.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: bash scripts/build-docworker.sh
+
+      - name: Typecheck gpui-ui (includes web/)
+        working-directory: gpui-ui
+        run: bun check
+
+      - name: Demo library
+        working-directory: gpui-ui
+        run: bun web/demo-library.ts out/demo-library
+
+      - name: Browser build
+        working-directory: gpui-ui
+        run: bun web/build.ts --out out/web-demo --db out/demo-library/library.sqlite --styles out/demo-library/collection-style.json
+
+      - name: Upload the browser build
+        uses: actions/upload-artifact@v4
+        with:
+          name: zotero-next-web
+          path: gpui-ui/out/web-demo
+          retention-days: 7
+          if-no-files-found: error
+
+      # The website with this exact build as its demo (the asset sync's own app build is skipped and this one copied in).
+      - name: Website
+        working-directory: website
+        env:
+          ZN_SKIP_APP_DEMO: "1"
+        run: |
+          bun scripts/sync-assets.ts
+          rm -rf public/app-demo && cp -r ../gpui-ui/out/web-demo public/app-demo
+          bun --bun astro build
+
+      - name: Upload the website
+        uses: actions/upload-artifact@v4
+        with:
+          name: website
+          path: website/dist
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Attach the browser build to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          (cd gpui-ui/out && mv web-demo "ZoteroNext-Web-$TAG" && zip -qr "ZoteroNext-Web-$TAG.zip" "ZoteroNext-Web-$TAG")
+          gh release upload "$TAG" "gpui-ui/out/ZoteroNext-Web-$TAG.zip" --clobber
