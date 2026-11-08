@@ -66,12 +66,30 @@ function Root() {
 render(() => <Root />, { title: "Zotero Next demo", onKeyDown: handleWindowKeyDown });
 
 const { store, uiState } = await import("../src/store");
-(globalThis as Record<string, unknown>).znDemo = { store }; // for automated checks of the demo (e.g. store.openAttachment)
+// for automated checks of the demo: store.openAttachment, and the layout analysis of the demo article (counts of what it found)
+(globalThis as Record<string, unknown>).znDemo = {
+	store,
+	async analyse() {
+		const key = stored[0]?.split("/")[0];
+		if (!key) return null;
+		const { loadStructure } = await import("../src/reader/structure/load");
+		const bytes = new Uint8Array(await (await handleApi(new Request(`http://127.0.0.1/api/attachments/${key}/file`), db as never))!.arrayBuffer());
+		const s = await loadStructure(key, bytes) as unknown as Record<string, unknown>;
+		return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Array.isArray(v) ? v.length : typeof v]));
+	},
+};
 bindUiState(uiState);
 startAppearance(store);
 const { App } = await import("../src/App");
 setApp(() => App);
 await import("../src/features").catch((e) => console.warn("[demo] features", e));
+// The reading view's fonts (Source Serif 4, Georgia, ...) are not in GPUI's browser build: draw them all in IBM Plex Sans, which is
+// (a monospace fallback would make the reflowed text hard to read). ?view=reading opens PDFs straight in the reading view.
+{
+	const { FONTS } = await import("../src/reader/reflow/settings");
+	for (const f of FONTS as readonly { family: string }[]) (f as { family: string }).family = "IBM Plex Sans";
+	if (new URLSearchParams(location.search).get("view") === "reading") (await import("../src/reader/reflow/state")).setReflowSettings({ openByDefault: true });
+}
 // ?open=<attachment key>, or ?open=demo for the demo article: open that PDF in the reader once the list is in (a direct link)
 const openParam = new URLSearchParams(location.search).get("open");
 const open = openParam === "demo" ? stored[0]?.split("/")[0] : openParam;

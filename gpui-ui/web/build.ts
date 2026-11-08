@@ -27,6 +27,10 @@ const POLYFILLED = /^(node:)?(util|stream|events|buffer|assert|string_decoder|qu
 const BUILTIN = /^(node:|bun:|bun$|child_process$|worker_threads$|http$|https$|net$|module$|readline$|tty$|v8$|perf_hooks$|dns$|tls$|process$|vm$|webview-bun$)/;
 const names = new Map<string, Set<string>>();
 const READER_PDF = join(root, "src", "reader", "pdf");
+const STRUCTURE_LOAD = join(root, "src", "reader", "structure", "load");
+// layout analysis needs Zotero's document worker: its build (bash scripts/build-docworker.sh) and its structured-document-text source
+const DOCWORKER = join(root, "..", "vendor", "document-worker");
+const HAVE_STRUCTURE = existsSync(join(DOCWORKER, "build", "worker.js")) && existsSync(join(DOCWORKER, "structured-document-text", "src", "pack", "reader.js"));
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -51,6 +55,8 @@ for (let pass = 0; pass < 80; pass++) {
 					b.onResolve({ filter: /.*/ }, (a) => (SHIMS[a.path] ? { path: join(here, SHIMS[a.path]!) } : undefined));
 					// the reader's PDF engine: zn_pdf.dll over bun:ffi on the desktop, PDFium WebAssembly here (web/pdf.ts)
 					b.onResolve({ filter: /(^|\/)pdf$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === READER_PDF ? { path: join(here, "pdf.ts") } : undefined));
+					// the reader's layout analysis: Zotero's document worker in a Bun Worker on the desktop, a Web Worker here (web/structure-load.ts)
+					b.onResolve({ filter: /(^|\/)load$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === STRUCTURE_LOAD ? { path: join(here, HAVE_STRUCTURE ? "structure-load.ts" : "structure-stub.ts") } : undefined));
 					b.onResolve({ filter: BUILTIN }, (a) => (POLYFILLED.test(a.path) ? undefined : { path: a.path, namespace: "stub" }));
 					b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => {
 						const list = [...(names.get(a.path) ?? [])];
@@ -91,6 +97,12 @@ if (db) cpSync(db, join(out, "library.sqlite"));
 cpSync(join(root, "node_modules", "@sqlite.org", "sqlite-wasm", "dist", "sqlite3.wasm"), join(out, "sqlite3.wasm"));
 // PDFium's (web/pdf.ts fetches it the first time a PDF is opened)
 cpSync(join(root, "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm"), join(out, "pdfium.wasm"));
+// Zotero's document worker (layout analysis; web/structure-load.ts starts docworker/boot.js the first time a PDF is analysed).
+// Optional: without vendor/document-worker the reader works and says layout analysis is unavailable.
+if (HAVE_STRUCTURE) {
+	cpSync(join(DOCWORKER, "build"), join(out, "docworker"), { recursive: true });
+	writeFileSync(join(out, "docworker", "boot.js"), `// Starts Zotero's document worker (a UMD bundle for a Web Worker) and tells the page it is ready (web/structure-load.ts).\nimportScripts("worker.js");\npostMessage({ __ready: true });\n`);
+} else console.log("web demo: vendor/document-worker not found, layout analysis left out");
 // the demo library's stored attachments (<library folder>/storage), and a list of them for main.tsx to put in its file system
 const storage = db ? join(dirname(db), "storage") : "";
 const stored: string[] = [];
@@ -116,6 +128,24 @@ writeFileSync(join(out, "index.html"), `<!doctype html>
 <script type="module" src="main.js"></script>
 </body>
 </html>
+`);
+// how to run a downloaded copy (the release zip): WebAssembly and workers need http://, not a file opened from disk
+writeFileSync(join(out, "README.txt"), `Zotero Next in the browser
+==========================
+
+The desktop app's interface and core, built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), with a demo
+library of well-known papers and a demo article. It runs on Linux, macOS and Windows in a recent Chrome, Edge, Firefox or Safari.
+Everything happens in the browser tab: nothing is sent anywhere, and changes are gone when the tab closes.
+
+Run it: serve this folder over HTTP and open the address it prints, for example
+
+    python3 -m http.server 8080        then open http://localhost:8080
+    bunx serve .                       (or any static file server)
+
+Opening index.html straight from disk does not work: browsers only load WebAssembly and workers over http://.
+
+Add ?open=demo to open the demo article in the PDF reader, &view=reading for its reading view, ?theme=dark or ?theme=light.
+Not in the browser build: web tabs, sync, importing files and anything else that needs your disk.
 `);
 const size = result.outputs.reduce((n, o) => n + o.size, 0);
 console.log(`web demo -> ${out} (${result.outputs.length} files, ${(size / 2 ** 20).toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
