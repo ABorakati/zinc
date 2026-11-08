@@ -100,7 +100,7 @@ jobs:
       - name: Build Zotero's document worker
         if: steps.docworker.outputs.cache-hit != 'true'
         continue-on-error: true
-        run: bash scripts/build-docworker.sh
+        run: mkdir -p vendor && bash scripts/build-docworker.sh # vendor/ is git-ignored, so a fresh checkout has none
 
       - name: Demo library
         working-directory: gpui-ui
