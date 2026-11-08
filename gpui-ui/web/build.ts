@@ -3,7 +3,7 @@
 // Node and Bun built-ins map to the browser stand-ins in web/shims (an in-memory file system, path, os, url, a hash) and to
 // web/sqlite.ts (bun:sqlite on SQLite WebAssembly); anything else Node-only becomes a stub that throws if it is ever called, with
 // exactly the names the code imports (learned from the bundler's errors). The demo library is copied, never the real one.
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import solidPlugin from "@gpuix/solid/bun-plugin";
 
@@ -114,21 +114,47 @@ if (storage && existsSync(storage)) {
 writeFileSync(join(out, "storage.json"), JSON.stringify(stored));
 const styles = arg("styles");
 if (styles && existsSync(styles)) cpSync(styles, join(out, "collection-style.json"));
-// the page: GPUI's canvas fills it (GPUIX appends the canvas to <body>)
+// the page: GPUI's canvas fills it (GPUIX appends the canvas to <body>). It is an installable web app (PWA): manifest.webmanifest,
+// icons, and sw.js (written last, below) so an installed copy starts offline.
 writeFileSync(join(out, "index.html"), `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Zotero Next demo</title>
+<title>Zotero Next</title>
+<meta name="description" content="Zotero Next in the browser: the desktop app's interface and core, compiled to WebAssembly." />
+<meta name="theme-color" content="#F1EFEA" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1A1917" media="(prefers-color-scheme: dark)" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
 <style>html, body { margin: 0; height: 100%; overflow: hidden; background: #F7F6F3; } @media (prefers-color-scheme: dark) { html, body { background: #141413; } }</style>
 </head>
 <body>
 <script type="module" src="globals.js"></script>
 <script type="module" src="main.js"></script>
+<script>if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>
 `);
+mkdirSync(join(out, "icons"), { recursive: true });
+for (const s of [192, 512]) cpSync(join(here, "icons", `icon-${s}.png`), join(out, "icons", `icon-${s}.png`));
+writeFileSync(join(out, "manifest.webmanifest"), JSON.stringify({
+	name: "Zotero Next",
+	short_name: "Zotero Next",
+	description: "The Zotero Next desktop app's interface and core, compiled to WebAssembly, on a demo library.",
+	id: "./",
+	start_url: "./",
+	scope: "./",
+	display: "standalone",
+	background_color: "#F7F6F3",
+	theme_color: "#F1EFEA",
+	categories: ["education", "productivity"],
+	icons: [
+		{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+		{ src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+	],
+}, null, 2));
 // how to run a downloaded copy (the release zip): WebAssembly and workers need http://, not a file opened from disk
 writeFileSync(join(out, "README.txt"), `Zotero Next in the browser
 ==========================
@@ -144,8 +170,51 @@ Run it: serve this folder over HTTP and open the address it prints, for example
 
 Opening index.html straight from disk does not work: browsers only load WebAssembly and workers over http://.
 
+It is an installable web app: in Chrome or Edge, use the install button in the address bar (Safari on macOS: File > Add to
+Dock). The installed app opens in its own window and starts without a network connection.
+
 Add ?open=demo to open the demo article in the PDF reader, &view=reading for its reading view, ?theme=dark or ?theme=light.
 Not in the browser build: web tabs, sync, importing files and anything else that needs your disk.
 `);
+// the service worker: every file of the build except Zotero's document worker is stored when the app is installed (or first
+// visited), so it starts offline; the document worker (~30 MB) is stored the first time a PDF is analysed. A new build has a
+// new cache name, and the old cache is dropped when it takes over.
+{
+	const precache: string[] = [];
+	const walk = (d: string) => {
+		for (const f of readdirSync(d, { withFileTypes: true })) {
+			const p = join(d, f.name);
+			const rel = relative(out, p).replaceAll("\\", "/");
+			if (f.isDirectory()) { if (rel !== "docworker") walk(p); }
+			else if (rel !== "sw.js" && rel !== "README.txt") precache.push(rel.split("/").map(encodeURIComponent).join("/"));
+		}
+	};
+	walk(out);
+	precache.sort();
+	const id = Bun.hash(precache.map((p) => `${p}:${statSync(join(out, decodeURIComponent(p))).size}`).join("|")).toString(36);
+	writeFileSync(join(out, "sw.js"), `// Zotero Next (browser build) service worker, written by gpui-ui/web/build.ts.
+const CACHE = "zn-web-${id}";
+const PRECACHE = ${JSON.stringify(["./", ...precache])};
+self.addEventListener("install", (e) => {
+	e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+});
+self.addEventListener("activate", (e) => {
+	e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("zn-web-") && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+});
+// same-origin GETs: from the cache, else the network (and keep a copy: the document worker's files arrive this way)
+self.addEventListener("fetch", (e) => {
+	const req = e.request;
+	if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
+	e.respondWith((async () => {
+		const cache = await caches.open(CACHE);
+		const hit = await cache.match(req, { ignoreSearch: req.mode === "navigate" });
+		if (hit) return hit;
+		const res = await fetch(req);
+		if (res.ok && res.type === "basic") cache.put(req, res.clone());
+		return res;
+	})());
+});
+`);
+}
 const size = result.outputs.reduce((n, o) => n + o.size, 0);
 console.log(`web demo -> ${out} (${result.outputs.length} files, ${(size / 2 ** 20).toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
