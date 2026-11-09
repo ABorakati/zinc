@@ -15,8 +15,9 @@ const spots = spotsFor(src);
 			<div class="plate-zoom">
 				<img class:list={[{ "only-light": !!dark }]} src={url(src)} alt={alt} width={w} height={h} loading={eager ? "eager" : "lazy"} fetchpriority={eager ? "high" : undefined} />
 				{dark && <img class="only-dark" src={url(dark)} alt={alt} width={w} height={h} loading="lazy" />}
+				{spots.map((s, i) => s.shows && <img class="plate-after" data-after={i} src={url(s.shows)} alt={`After clicking ${s.title}`} width={w} height={h} loading="lazy" />)}
 				{spots.map((s, i) => (
-					<button type="button" class="spot" style={`left:${s.x}%;top:${s.y}%`} data-spot={i} data-x={s.x} data-y={s.y} aria-label={`${i + 1}. ${s.title}`}>{i + 1}</button>
+					<button type="button" class="spot" style={`left:${s.x}%;top:${s.y}%`} data-spot={i} data-x={s.x} data-y={s.y} data-shows={s.shows ? "" : undefined} aria-label={`${i + 1}. ${s.title}`}>{i + 1}</button>
 				))}
 			</div>
 		</div>
@@ -28,7 +29,7 @@ const spots = spotsFor(src);
 			))}
 		</ol>
 	)}
-	<figcaption><span class="plate-n">Plate {n}.</span> {caption}{spots.length > 0 && <span class="spot-hint"> Hover or tap the numbers.</span>}</figcaption>
+	<figcaption><span class="plate-n">Plate {n}.</span> {caption}{spots.length > 0 && <span class="spot-hint"> Click a number to zoom in.</span>}</figcaption>
 </figure>
 
 <script>
@@ -39,9 +40,14 @@ const spots = spotsFor(src);
 		const dots = [...fig.querySelectorAll<HTMLElement>(".spot")];
 		const rows = [...fig.querySelectorAll<HTMLElement>(".spot-list [data-spot]")];
 		let pinned = -1;
+		const afters = [...fig.querySelectorAll<HTMLElement>("[data-after]")];
 		const set = (i: number) => {
-			fig.classList.toggle("is-zoomed", i >= 0);
-			if (i >= 0) {
+			// a control with an "after" screenshot shows the app after that click; any other spot zooms in on its part
+			const swap = i >= 0 && dots[i].dataset.shows !== undefined;
+			afters.forEach((a) => a.classList.toggle("is-shown", swap && a.dataset.after === String(i)));
+			fig.classList.toggle("is-swapped", swap);
+			fig.classList.toggle("is-zoomed", i >= 0 && !swap);
+			if (i >= 0 && !swap) {
 				const d = dots[i];
 				zoom.style.transformOrigin = `${d.dataset.x}% ${d.dataset.y}%`;
 				zoom.style.setProperty("--z", String(ZOOM));
@@ -51,12 +57,9 @@ const spots = spotsFor(src);
 		};
 		for (const el of [...dots, ...rows]) {
 			const i = Number(el.dataset.spot);
-			el.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") set(i); });
-			el.addEventListener("focus", () => set(i));
+			// zoom only when a number is selected (clicked or tapped); clicking it again zooms back out
 			el.addEventListener("click", () => { pinned = pinned === i ? -1 : i; set(pinned); });
 		}
-		fig.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") set(pinned); });
-		fig.addEventListener("focusout", (e) => { if (!fig.contains(e.relatedTarget as Node)) set(pinned); });
 		fig.addEventListener("keydown", (e) => { if (e.key === "Escape") { pinned = -1; set(-1); } });
 	}
 </script>

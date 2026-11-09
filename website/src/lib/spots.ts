@@ -2,12 +2,13 @@
 // what it does. Keyed by the screenshot's base name (without -light/-dark: both captures share one layout). x and y are percentages
 // of the image. Wording follows the user guide (docs/user-guide/*.md).
 
-export interface Spot { x: number; y: number; title: string; text: string }
+/** `shows`: a screenshot of the app after that control is clicked; selecting the spot swaps to it instead of zooming. */
+export interface Spot { x: number; y: number; title: string; text: string; shows?: string }
 
 export const SPOTS: Record<string, Spot[]> = {
 	"library-cards": [
 		{ x: 8.6, y: 49, title: "Collections your way", text: "Give collections colours and icons, pin favourites, and group them into sections you name: here Pinned, Projects and Topics." },
-		{ x: 61.4, y: 9.6, title: "Cards or Classic", text: "Switch between cards and a sortable table at any time." },
+		{ x: 61.4, y: 9.6, title: "Cards or Classic", text: "Switch between cards and a sortable table at any time.", shows: "classic-table-dark.png" },
 		{ x: 40, y: 15, title: "Group and sort", text: "Group by year, item type or publication, and sort on up to four levels." },
 		{ x: 65.7, y: 15, title: "Customise", text: "Choose what each card shows, and Comfortable or Compact density." },
 		{ x: 24.3, y: 27.5, title: "Coloured tags", text: "Tags with a colour show as badges on the card." },
@@ -27,14 +28,14 @@ export const SPOTS: Record<string, Spot[]> = {
 		{ x: 57.9, y: 90.5, title: "Highlights", text: "Highlight, underline, note, ink, image and eraser, in colours. They are stored in the library, so they sync." },
 		{ x: 77.9, y: 91, title: "Hover to preview", text: "Hover a figure mention or a citation to see the figure or the reference. Click to pin the card." },
 		{ x: 85, y: 3, title: "Annotation tools", text: "Pick a tool and colour, then mark up the page." },
-		{ x: 95, y: 3, title: "Reading view", text: "Reflow the paper into one column in your own font, size and width." },
+		{ x: 95, y: 3, title: "Reading view", text: "Reflow the paper into one column in your own font, size and width.", shows: "reading-view-table.png" },
 	],
 	"reading-view-table": [
 		{ x: 50, y: 35, title: "Tables as cards", text: "Figures and tables stay in place as cards you can open." },
 		{ x: 33.2, y: 72.6, title: "Linked mentions", text: "\"Table 3\" and in-text citations are links. Back returns you to where you were." },
 		{ x: 97.2, y: 6.9, title: "Your typography", text: "Font, text size, line spacing and text width." },
 		{ x: 8.6, y: 6.9, title: "Contents", text: "Jump to any section of the paper." },
-		{ x: 2.6, y: 6.9, title: "Back to the PDF", text: "Return to the original pages, at the same place." },
+		{ x: 2.6, y: 6.9, title: "Back to the PDF", text: "Return to the original pages, at the same place.", shows: "pdf-reader-annotations-light.png" },
 	],
 	"settings-reader": [
 		{ x: 35.7, y: 7.2, title: "Search settings", text: "Type to find any setting." },
