@@ -62,15 +62,25 @@ export function ContextMenu(p: { items: () => MenuItem[]; children: JSX.Element;
 interface Level { items: MenuItem[]; pos: Pos; minWidth?: number }
 
 const isSelectable = (it: MenuItem | undefined): boolean => !!it && !it.separator && it.heading === undefined && !it.disabled && (it.label !== undefined || !!it.submenu);
-const ROW_H = 32;
+/** A list longer than this gets compact rows (long pickers such as Add to collection). */
+const COMPACT_AFTER = 12;
+const isCompact = (items: MenuItem[]) => items.length > COMPACT_AFTER;
+/** Panel height caps: a submenu, and a long list at the top level; shorter menus keep their natural height (up to the window). */
+const SUB_MAX_H = 420;
+const LONG_MAX_H = 520;
+/** Labels longer than this are cut with an ellipsis, so one long collection name does not widen the whole panel. */
+const LABEL_MAX_W = 320;
+const rowH = (items: MenuItem[]) => (isCompact(items) ? 26 : 32);
 const estimateHeight = (items: MenuItem[]) =>
-	8 + 2 + items.reduce((h, it) => h + (it.separator ? 9 : it.heading !== undefined ? 28 : ROW_H), 0);
+	8 + 2 + items.reduce((h, it) => h + (it.separator ? 9 : it.heading !== undefined ? 28 : rowH(items)), 0);
+const maxHeightFor = (items: MenuItem[], lv: number) =>
+	Math.min(windowSize().height - 16, lv > 0 ? SUB_MAX_H : isCompact(items) ? LONG_MAX_H : Number.POSITIVE_INFINITY);
 
 /** One open menu: the root panel plus its open submenus, a transparent click-away backdrop, and the key handling for all of them. */
 export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 	const layer = p.layer;
 	const rootItems = layer.items();
-	const [levels, setLevels] = createSignal<Level[]>([{ items: rootItems, pos: placeAt(layer.at, estimateHeight(rootItems)), minWidth: layer.minWidth }]);
+	const [levels, setLevels] = createSignal<Level[]>([{ items: rootItems, pos: placeAt(layer.at, Math.min(estimateHeight(rootItems), maxHeightFor(rootItems, 0))), minWidth: layer.minWidth }]);
 	const [active, setActive] = createSignal<number[]>([-1]);
 	const rows = new Map<string, HostElement>();
 	const key = (lv: number, i: number) => `${lv}:${i}`;
@@ -156,13 +166,13 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 						style={{
 							...t("flex flex-col rounded-md border bg-popover p-1 shadow-md"),
 							minWidth: Math.max(128, level.minWidth ?? 0),
-							maxHeight: windowSize().height - 16,
-							overflowY: "scroll",
-							scrollbarColor: tok("input"),
-							scrollbarWidth: 6,
 						}}
 					>
-						<MenuItems level={level} lv={lv()} active={() => active()[lv()] ?? -1} onHover={(i) => hover(lv(), i)} onSelect={(i) => select(lv(), i)} onRow={(i, el) => rows.set(key(lv(), i), el)} />
+						{/* the scrolling box sits inside the positioned panel, with its own height cap: GPUI scrolls a plain box with a
+						    max height reliably, which the anchored panel itself did not do for submenus */}
+						<div style={{ display: "flex", flexDirection: "column", minHeight: 0, maxHeight: maxHeightFor(level.items, lv()) - 10, overflowY: "scroll", scrollbarColor: tok("input"), scrollbarWidth: 6 }}>
+							<MenuItems level={level} lv={lv()} active={() => active()[lv()] ?? -1} onHover={(i) => hover(lv(), i)} onSelect={(i) => select(lv(), i)} onRow={(i, el) => rows.set(key(lv(), i), el)} />
+						</div>
 					</anchored>
 				)}</For>
 			</div>
@@ -174,6 +184,8 @@ function MenuItems(p: { level: Level; lv: number; active: () => number; onHover:
 	const items = p.level.items;
 	const hasChecks = items.some((it) => it.checked !== undefined);
 	const hasLead = hasChecks || items.some((it) => !!it.icon);
+	const compact = isCompact(items);
+	const iconSize = compact ? 14 : 16;
 	return (
 		<For each={items}>{(it, i) => {
 			if (it.separator) return <div style={{ ...t("-mx-1 my-1 h-px bg-border"), flexShrink: 0 }} />;
@@ -186,7 +198,7 @@ function MenuItems(p: { level: Level; lv: number; active: () => number; onHover:
 					onMouseEnter={() => p.onHover(i())}
 					onClick={() => p.onSelect(i())}
 					style={{
-						...t("flex items-center rounded-sm px-2 py-1.5"),
+						...t(compact ? "flex items-center rounded-sm px-2 py-1" : "flex items-center rounded-sm px-2 py-1.5"),
 						flexShrink: 0,
 						cursor: "default",
 						backgroundColor: on() ? (it.danger ? withAlpha(tok("destructive"), 0.12) : tok("accent")) : "transparent",
@@ -194,13 +206,13 @@ function MenuItems(p: { level: Level; lv: number; active: () => number; onHover:
 					}}
 				>
 					{hasLead ? (
-						<div style={{ width: 16, height: 16, flexShrink: 0, marginRight: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-							<Show when={it.checked} fallback={it.icon ? <Icon name={it.icon} size={16} color={it.danger ? tok("destructive") : (it.iconColor ?? tok("muted-foreground"))} /> : undefined}>
-								<Icon name="check" size={16} color={fg()} />
+						<div style={{ width: iconSize, height: iconSize, flexShrink: 0, marginRight: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+							<Show when={it.checked} fallback={it.icon ? <Icon name={it.icon} size={iconSize} color={it.danger ? tok("destructive") : (it.iconColor ?? tok("muted-foreground"))} /> : undefined}>
+								<Icon name="check" size={iconSize} color={fg()} />
 							</Show>
 						</div>
 					) : undefined}
-					<text style={{ ...tx("text-sm"), color: fg(), flexGrow: 1, whiteSpace: "nowrap" }}>{it.label ?? ""}</text>
+					<text style={{ ...tx(compact ? "text-[13px]" : "text-sm"), color: fg(), flexGrow: 1, minWidth: 0, maxWidth: LABEL_MAX_W, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.label ?? ""}</text>
 					{it.shortcut ? <text style={{ ...tx("text-xs"), color: fg(), opacity: 0.6, marginLeft: 24, whiteSpace: "nowrap" }}>{it.shortcut}</text> : undefined}
 					{it.submenu ? <Icon name="chevron-right" size={16} color={fg()} style={{ marginLeft: 16 }} /> : undefined}
 				</div>
