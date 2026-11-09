@@ -77,14 +77,20 @@ export const GROUP_BY: { id: GroupBy; label: string }[] = [
 	{ id: "year", label: "Year" },
 	{ id: "itemType", label: "Item type" },
 	{ id: "publication", label: "Publication" },
+	{ id: "firstAuthor", label: "First author" },
+	{ id: "dateAdded", label: "Date added" },
+	{ id: "dateModified", label: "Date modified" },
+	{ id: "hasPdf", label: "Has PDF" },
+	{ id: "language", label: "Language" },
+	{ id: "publisher", label: "Publisher" },
 ];
 
 const isLevel = (s: unknown): s is SortLevel =>
 	!!s && typeof (s as SortLevel).key === "string" && /^[A-Za-z][A-Za-z0-9]*$/.test((s as SortLevel).key) &&
 	((s as SortLevel).dir === "asc" || (s as SortLevel).dir === "desc");
 
-/** Direction a group field sorts in by default (years newest first). */
-const groupDir = (g: GroupBy): "asc" | "desc" => (g === "year" ? "desc" : "asc");
+/** Direction a group field sorts in by default (years and months newest first, names A-Z, PDF before other files). */
+const groupDir = (g: GroupBy): "asc" | "desc" => (g === "year" || g === "dateAdded" || g === "dateModified" ? "desc" : "asc");
 /** Default direction when a sort key is picked. */
 export const defaultDir = (key: string): "asc" | "desc" => (/^(year|dateAdded|dateModified|accessDate)$/.test(key) ? "desc" : "asc");
 
@@ -259,7 +265,7 @@ function createStore(): AppStore {
 	// ---- sort / group / view mode (persisted) ----
 	const savedSort = uiState.get<{ levels?: unknown; groupBy?: unknown } | null>("sort", null);
 	const initGroup = ((): GroupBy => {
-		const g = savedSort?.groupBy;
+		const g = savedSort?.groupBy === "creator" ? "firstAuthor" : savedSort?.groupBy; // "creator" was the settings page's old name for it
 		return GROUP_BY.some((x) => x.id === g) ? (g as GroupBy) : "year";
 	})();
 	const normalise = (levels: SortLevel[], g: GroupBy): SortLevel[] => {

@@ -8,8 +8,20 @@ export type Row = { kind: "header"; group: Group } | { kind: "item"; index: numb
 
 const typeLabel = (t: string) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
 /** Group header text (ui/src/groups.ts label): depends on what the list is grouped by. */
-const label = (by: string, v: string | null) =>
-	v === null || v === "" ? (by === "year" ? "No date" : by === "publication" ? "No publication" : "Other") : by === "itemType" ? typeLabel(v) : v;
+const NONE_LABEL: Record<string, string> = {
+	year: "No date", publication: "No publication", firstAuthor: "No author", hasPdf: "No file", language: "No language", publisher: "No publisher",
+	dateAdded: "Unknown", dateModified: "Unknown",
+};
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2024-03" -> "Mar 2024" (the core's month groups). */
+const monthLabel = (v: string) => { const m = /^(\d{4})-(\d{2})$/.exec(v); return m ? `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : v; };
+const label = (by: string, v: string | null) => {
+	if (v === null || v === "") return NONE_LABEL[by] ?? "Other";
+	if (by === "itemType") return typeLabel(v);
+	if (by === "dateAdded" || by === "dateModified") return monthLabel(v);
+	if (by === "hasPdf") return v === "0" ? "Has PDF" : "Other file";
+	return v;
+};
 const keyOf = (g: Group) => String(g.value);
 
 export function createRows() {

@@ -114,9 +114,11 @@ export const SORT_OPTIONS = [
 	{ key: "dateModified", label: "Date Modified" },
 	{ key: "itemType", label: "Item Type" },
 	{ key: "publication", label: "Publication" },
+	{ key: "firstAuthor", label: "First author" },
+	{ key: "hasPdf", label: "Has PDF" },
 	{ key: "noteCount", label: "Notes" },
 	{ key: "attachmentCount", label: "Attachments" },
 ];
 export const sortLabel = (key: string) => SORT_OPTIONS.find((o) => o.key === key)?.label ?? labelOf(key);
 /** Numeric / date keys read as arrows; text keys read "A-Z / Z-A". */
-export const isNumericKey = (key: string) => /^(year|dateAdded|dateModified|accessDate|noteCount|attachmentCount)$/.test(key);
+export const isNumericKey = (key: string) => /^(year|dateAdded|dateModified|accessDate|noteCount|attachmentCount|hasPdf)$/.test(key);

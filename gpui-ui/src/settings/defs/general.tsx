@@ -1,7 +1,7 @@
 // General: how the window starts and what the item list does by default. Settings that live in another feature's code are read
 // through the shared store loosely (the list owner may rename them), and the ones the GPUI window cannot do yet say so.
 import type { GroupBy, ListStore } from "../../contracts";
-import { store } from "../../store";
+import { GROUP_BY, store } from "../../store";
 import { leftOpen, rightOpen, setLeftOpen, setRightOpen } from "../../shell/layout";
 import { Choice, Segmented, TextField, Toggle } from "../controls";
 import { readState } from "../../readState";
@@ -17,14 +17,7 @@ const QUICK: { value: QMode; label: string; hint: string }[] = [
 	{ value: "fields", label: "All Fields & Tags", hint: "Match any field, creator or tag" },
 	{ value: "everything", label: "Everything", hint: "Also match notes and attachment full text" },
 ];
-const GROUPS: { value: GroupBy; label: string }[] = [
-	{ value: "none", label: "No grouping" },
-	{ value: "year", label: "Year" },
-	{ value: "itemType", label: "Item type" },
-	{ value: "creator", label: "First creator" },
-	{ value: "publication", label: "Publication" },
-	{ value: "dateAdded", label: "Date added" },
-];
+const GROUPS: { value: GroupBy; label: string }[] = GROUP_BY.map((g) => ({ value: g.id, label: g.id === "none" ? "No grouping" : g.label }));
 
 /** The store as the list owner extends it (all optional: only what exists is used). */
 type Loose = Partial<ListStore> & { qmode?: () => QMode; setQMode?: (m: QMode) => void };

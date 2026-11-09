@@ -6,23 +6,58 @@ import { itemActions, type ItemAction, type ItemActionContext } from "../registr
 import { store } from "../store";
 import { readState } from "../readState";
 import { openMenu, type Anchor, type MenuItem } from "../ui";
+import { collectionStyle, paletteHex } from "../sidebar/collectionStyle";
 import { locateFileKey, locateItemFromRow, locateItemOf } from "../locate/item";
 import { locateMenu } from "../locate/menu";
 import {
 	addItemsToCollection, copyDoi, findFullText, getDetail, isRegular, openItem, openUrl, revealAttachment, setInPublications, trashItems,
 } from "./actions";
 
-/** "Parent / Child" path labels for every collection, in tree order. */
+/** The collections of the library on screen (My Library or the selected group). */
+const libraryCollections = (): Collection[] => (store.libraryId() === 1 ? store.collections() : (store.groupCollections()[store.libraryId()] ?? []));
+
+/** "Parent › Child" path labels for every collection, in tree order. */
 export function collectionPaths(): { key: string; path: string; name: string }[] {
 	const out: { key: string; path: string; name: string }[] = [];
 	const walk = (l: Collection[], prefix: string) => {
 		for (const c of l) {
 			out.push({ key: c.key, path: prefix + c.name, name: c.name });
-			if (c.children) walk(c.children, prefix + c.name + " / ");
+			if (c.children) walk(c.children, prefix + c.name + " › ");
 		}
 	};
-	// the collections of the library on screen
-	walk(store.libraryId() === 1 ? store.collections() : (store.groupCollections()[store.libraryId()] ?? []), "");
+	walk(libraryCollections(), "");
+	return out;
+}
+
+/** A collection's look in the sidebar (its icon and colour), so menus show it the same way. */
+function collectionLook(key: string): { icon: string; iconColor?: string } {
+	const s = collectionStyle.get().styles[key];
+	return { icon: s?.icon ?? "folder", iconColor: paletteHex(s?.color) };
+}
+
+const byName = (a: Collection, b: Collection) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * The library's collections as a menu tree, like Zotero's "Add to Collection": a collection with subcollections opens a
+ * submenu that starts with the collection itself, so names stay short instead of long "A / B / C" paths. Pinned collections
+ * come first, as in the sidebar. Collections in `has` (the item is already in them) are ticked and cannot be picked again.
+ */
+export function collectionTreeMenu(pick: (c: Collection) => void, has: ReadonlySet<string> = new Set()): MenuItem[] {
+	const roots = libraryCollections();
+	const self = (c: Collection): MenuItem => ({
+		label: c.name, ...collectionLook(c.key), checked: has.has(c.key) || undefined, disabled: has.has(c.key), onSelect: () => pick(c),
+	});
+	const entry = (c: Collection): MenuItem => {
+		const kids = [...(c.children ?? [])].sort(byName);
+		return kids.length ? { label: c.name, ...collectionLook(c.key), submenu: [self(c), { separator: true }, ...kids.map(entry)] } : self(c);
+	};
+	const byKey = new Map<string, Collection>();
+	const walk = (l: Collection[]) => { for (const c of l) { byKey.set(c.key, c); if (c.children) walk(c.children); } };
+	walk(roots);
+	const out: MenuItem[] = [];
+	const pinned = collectionStyle.get().pins.map((k) => byKey.get(k)).filter((c): c is Collection => !!c);
+	if (pinned.length) out.push({ heading: "Pinned" }, ...pinned.map(self), { separator: true });
+	out.push(...[...roots].sort(byName).map(entry));
 	return out;
 }
 
@@ -78,15 +113,19 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 	builtin({ label: "Mark as Unread", icon: "circle-dot", onSelect: () => readState.markUnread(ctx.keys) });
 
 	sep();
+	// the item's collections by name; the parent path only when two of them share a name
 	const mine = collectionPaths().filter((c) => detail?.collections.includes(c.key));
+	const dupName = (n: string) => mine.filter((c) => c.name === n).length > 1;
 	out.push({
 		label: "Show in collection…", icon: "folder-search", disabled: !mine.length,
-		submenu: mine.map((c) => ({ label: c.path, onSelect: () => store.setView({ kind: "collection", key: c.key }) })),
+		submenu: mine.map((c) => ({ label: dupName(c.name) ? c.path : c.name, ...collectionLook(c.key), onSelect: () => store.setView({ kind: "collection", key: c.key }) })),
 	});
-	const all = collectionPaths().sort((a, b) => a.path.localeCompare(b.path));
+	// a single item shows which collections it is already in (ticked); for several items every collection can be picked
+	const already = new Set(ctx.keys.length === 1 ? (detail?.collections ?? []) : []);
+	const tree = collectionTreeMenu((c) => void addItemsToCollection(c.key, c.name, ctx.keys), already);
 	out.push({
 		label: "Add to collection", icon: "folder-input", disabled: view.kind === "trash" || !store.canEdit(),
-		submenu: all.length ? all.map((c) => ({ label: c.path, onSelect: () => void addItemsToCollection(c.key, c.name, ctx.keys) })) : [{ label: "No collections", disabled: true }],
+		submenu: tree.length ? tree : [{ label: "No collections", disabled: true }],
 	});
 	builtin({ label: "Copy DOI", icon: "quote", onSelect: () => void copyDoi(item.key) });
 	if (view.kind !== "trash" && isRegular(item) && store.libraryId() === 1) { // My Publications is My Library's

@@ -79,7 +79,8 @@ export type View =
 
 /** Sort level as in the web UI's SortBar (up to 4); while grouped, level 1 is the group field. */
 export interface SortLevel { key: string; dir: "asc" | "desc" }
-export type GroupBy = "none" | "year" | "itemType" | "creator" | "publication" | "dateAdded";
+/** Grouping keys; each is also the sort key of level 1 while grouped (the core's GET /items/groups?by=). */
+export type GroupBy = "none" | "year" | "itemType" | "publication" | "firstAuthor" | "dateAdded" | "dateModified" | "hasPdf" | "language" | "publisher";
 
 /**
  * Library-list state added for parity (implemented in store.ts by the list/table owner; other features use it).

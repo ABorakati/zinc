@@ -303,6 +303,26 @@ interface SummaryRow {
 	date_added: string;
 }
 
+// First author's last name (or single-field name): the first creator of type author with a name, else the first creator with one.
+// Same rule as creatorsSummary, without the "and" / "et al." suffix so every first author is one group.
+const creatorNameSql = (alias: string) =>
+	`COALESCE(NULLIF(trim(json_extract(${alias}.value, '$.lastName')), ''), NULLIF(trim(json_extract(${alias}.value, '$.name')), ''), NULLIF(trim(json_extract(${alias}.value, '$.firstName')), ''))`;
+// Fast path first: most items list an author first, which one cheap extraction settles (about half the cost on 30k items).
+const FIRST_AUTHOR_SQL = `COALESCE(
+	CASE WHEN json_extract(i.data, '$.creators[0].creatorType') = 'author'
+		THEN COALESCE(NULLIF(trim(json_extract(i.data, '$.creators[0].lastName')), ''), NULLIF(trim(json_extract(i.data, '$.creators[0].name')), ''), NULLIF(trim(json_extract(i.data, '$.creators[0].firstName')), '')) END,
+	(SELECT ${creatorNameSql("c")} AS n FROM json_each(i.data, '$.creators') c WHERE json_extract(c.value, '$.creatorType') = 'author' AND n IS NOT NULL ORDER BY c.key LIMIT 1),
+	(SELECT ${creatorNameSql("c")} AS n FROM json_each(i.data, '$.creators') c WHERE n IS NOT NULL ORDER BY c.key LIMIT 1))`;
+
+// 0 = has a PDF (a live child attachment, or the item is itself a PDF attachment), 1 = a file attachment of another type (not a
+// bare link), NULL = no file. Whether the file is still on disk is not checked (that is a filesystem call, not SQL).
+const ATT_OF = (cond: string) =>
+	`(EXISTS (SELECT 1 FROM items c JOIN attachments a ON a.item_key = c.key WHERE c.parent_key = i.key AND c.deleted = 0 AND ${cond})
+	  OR EXISTS (SELECT 1 FROM attachments a WHERE a.item_key = i.key AND ${cond}))`;
+const PDF_STATE_SQL = `CASE WHEN ${ATT_OF("a.content_type = 'application/pdf'")} THEN 0 WHEN ${ATT_OF("a.link_mode <> 'linked_url'")} THEN 1 END`;
+
+const NULLS_LAST_SORTS = new Set(["publication", "firstAuthor", "hasPdf"]);
+
 const SORT_EXPR: Record<string, string> = {
 	title: "i.title COLLATE NOCASE",
 	creator: "i.creators_summary COLLATE NOCASE",
@@ -315,6 +335,8 @@ const EXTRA_SORT_EXPR: Record<string, string> = {
 	itemType: "i.item_type COLLATE NOCASE",
 	dateModified: "i.date_modified",
 	publication: "i.publication COLLATE NOCASE",
+	firstAuthor: `${FIRST_AUTHOR_SQL} COLLATE NOCASE`,
+	hasPdf: PDF_STATE_SQL,
 	noteCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'note' AND c.deleted = 0)",
 	citationKey: "COALESCE(NULLIF(json_extract(i.data, '$.citationKey'), ''), (SELECT k.key FROM bbt_keys k WHERE k.item_key = i.key)) COLLATE NOCASE",
 	attachmentCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'attachment' AND c.deleted = 0)",
@@ -324,7 +346,7 @@ const EXTRA_SORT_EXPR: Record<string, string> = {
 // Field names are matched against the schema whitelist, so the interpolated JSON path is safe.
 function resolveSort(sort: string): { expr: string; nullsLast: boolean } | null {
 	if (SORT_EXPR[sort]) return { expr: SORT_EXPR[sort], nullsLast: false };
-	if (EXTRA_SORT_EXPR[sort]) return { expr: EXTRA_SORT_EXPR[sort], nullsLast: sort === "publication" };
+	if (EXTRA_SORT_EXPR[sort]) return { expr: EXTRA_SORT_EXPR[sort], nullsLast: NULLS_LAST_SORTS.has(sort) };
 	const field = canonicalField(sort);
 	if (!field) return null;
 	return { expr: `NULLIF(json_extract(i.data, '$.${field}'), '') COLLATE NOCASE`, nullsLast: true };
@@ -435,10 +457,32 @@ function parseThen(then: string | undefined): string[] {
 	});
 }
 
-const GROUP_EXPR: Record<string, { sel: string; spec: { expr: string; nullsLast: boolean } }> = {
-	year: { sel: "i.year", spec: { expr: "i.year", nullsLast: false } },
-	itemType: { sel: "MIN(i.item_type)", spec: { expr: "i.item_type COLLATE NOCASE", nullsLast: false } },
-	publication: { sel: "MIN(i.publication)", spec: { expr: "i.publication COLLATE NOCASE", nullsLast: true } },
+// Grouping works by sorting: the UI makes the group key sort level 1, so the list comes back with the groups contiguous, and
+// GET /items/groups returns the counts in that same order (the UI lays headers out by cumulative count; no per-group paging).
+// A grouping key therefore needs (a) a sort expression that makes every group contiguous (resolveSort(by), or a monotone one such
+// as date_added for month groups) and (b) the group value expression below, computed in SQL per item. `nocase` merges groups that
+// differ in case only; `nullsLast` puts the "no value" group last in both directions (years: NULL sorts like in the list).
+// The first four are plain columns (year, item_type, publication) or an existing index; the rest are expressions over data JSON or
+// child rows, evaluated once per item in the inner query (a few ms to ~100 ms on 30k items; no extra index needed).
+interface GroupSpec {
+	expr: string;
+	nocase: boolean;
+	nullsLast: boolean;
+}
+
+const dataField = (f: string) => `NULLIF(json_extract(i.data, '$.${f}'), '')`;
+
+const GROUP_EXPR: Record<string, GroupSpec> = {
+	year: { expr: "i.year", nocase: false, nullsLast: false },
+	itemType: { expr: "i.item_type", nocase: true, nullsLast: false },
+	publication: { expr: "i.publication", nocase: true, nullsLast: true },
+	firstAuthor: { expr: FIRST_AUTHOR_SQL, nocase: true, nullsLast: true },
+	// Months ("2024-03"): the list sorts on the full timestamp, which is monotone in the month, so groups stay contiguous.
+	dateAdded: { expr: "substr(i.date_added, 1, 7)", nocase: false, nullsLast: false },
+	dateModified: { expr: "substr(i.date_modified, 1, 7)", nocase: false, nullsLast: false },
+	hasPdf: { expr: PDF_STATE_SQL, nocase: false, nullsLast: true },
+	language: { expr: dataField("language"), nocase: true, nullsLast: true },
+	publisher: { expr: dataField("publisher"), nocase: true, nullsLast: true },
 };
 
 export interface ItemGroup {
@@ -453,10 +497,11 @@ export function listItemGroups(db: Database, by: string, dirIn: string | undefin
 	const dir = (dirIn ?? "desc").toLowerCase();
 	if (dir !== "asc" && dir !== "desc") throw new HttpError(400, `invalid dir: ${dirIn}`);
 	const f = buildFilter(db, opts);
+	const key = g.nocase ? "gk COLLATE NOCASE" : "gk";
 	const rows = db
 		.query(
-			`SELECT ${g.sel} AS v, count(*) AS n FROM ${f.from} WHERE ${f.whereSql}
-			 GROUP BY ${g.spec.expr} ORDER BY ${orderTerm(g.spec, dir)}`,
+			`SELECT MIN(gk) AS v, count(*) AS n FROM (SELECT ${g.expr} AS gk FROM ${f.from} WHERE ${f.whereSql})
+			 GROUP BY ${key} ORDER BY ${g.nullsLast ? "(gk IS NULL), " : ""}${key} ${dir}`,
 		)
 		.all(...f.params) as { v: string | number | null; n: number }[];
 	return { groups: rows.map((r) => ({ value: r.v === null ? null : String(r.v), count: r.n })) };
