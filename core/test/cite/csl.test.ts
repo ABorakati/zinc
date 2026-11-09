@@ -5,6 +5,12 @@ import { itemToCsl, parseExtra, toCslDate } from "../../src/cite/csl";
 const d = (x: Partial<ZoteroItemData> & { itemType: string }): ZoteroItemData => ({ key: "ABCD2345", ...x });
 
 describe("itemToCsl", () => {
+	test("a statute's code number is its volume, not also its number (Zotero's schema mapping)", () => {
+		const c = itemToCsl(d({ itemType: "statute", nameOfAct: "Data Protection Act", code: "c.", codeNumber: "12" } as never));
+		expect(c.volume).toBe("12");
+		expect(c.number).toBeUndefined();
+	});
+
 	test("journal article", () => {
 		const c = itemToCsl(
 			d({

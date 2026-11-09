@@ -103,7 +103,8 @@ const TEXT_MAP: Record<string, string[]> = {
 	"ISSN": ["ISSN"],
 	"call-number": ["callNumber", "applicationNumber"],
 	"note": ["extra"],
-	"number": ["number", "patentNumber", "reportNumber", "billNumber", "docketNumber", "documentNumber", "publicLawNumber", "episodeNumber", "codeNumber", "archiveID", "identifier", "issueNumber"],
+	// codeNumber is a statute's volume only (Zotero's schema: volume <- volume, codeNumber), never also its number
+	"number": ["number", "patentNumber", "reportNumber", "billNumber", "docketNumber", "documentNumber", "publicLawNumber", "episodeNumber", "archiveID", "identifier", "issueNumber"],
 	"chapter-number": ["session"],
 	"references": ["history", "references"],
 	"title-short": ["shortTitle"],
