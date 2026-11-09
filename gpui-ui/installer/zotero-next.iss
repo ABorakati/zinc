@@ -483,11 +483,19 @@ end;
 procedure LoadLibraryProtection(const SettingsDir: string);
 var
   Json, Path: string;
+  Lines: TArrayOfString;
+  K: Integer;
+  Loaded: Boolean;
 begin
   ProtectedLibDir := '';
   ProtectAllFolders := False;
   if not FileExists(SettingsDir + '\library.json') then Exit;
-  if (not LoadStringFromFile(SettingsDir + '\library.json', Json)) or (not ReadLibraryJsonPath(Json, Path)) then
+  // LoadStringsFromFile reads the file as Unicode text (LoadStringFromFile only fills an AnsiString), so non-ASCII paths survive
+  Loaded := LoadStringsFromFile(SettingsDir + '\library.json', Lines);
+  Json := '';
+  if Loaded then
+    for K := 0 to GetArrayLength(Lines) - 1 do Json := Json + Lines[K] + #10;
+  if (not Loaded) or (not ReadLibraryJsonPath(Json, Path)) then
   begin
     ProtectAllFolders := True;
     Exit;
