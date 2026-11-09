@@ -152,7 +152,7 @@ By default `installer.ts` also builds the Word add-in into `out/installer/word-s
 | `--no-connector`, `--reuse-connector` | Leave the connector out, or reuse the staged build |
 | `--test` | A differently identified installer (own AppId, file name ending `-TEST`) for sandbox runs |
 
-The connector component needs the extension sources in a sibling checkout `zotero-next-connector` (branch `zotero-next`), built with its own Bun build; set `ZN_CONNECTOR_DIR` if it is elsewhere, or pass `--no-connector`. What the installer does and its command lines are in `gpui-ui/installer/README.md` and [Releasing](releasing.md).
+The connector component needs the extension sources in a sibling checkout `zotero-next-connector` (branch `zotero-next`), built with its own Bun build. Clone it with `git clone -b zotero-next https://github.com/ABorakati/zinc-connector.git zotero-next-connector` next to this repository; set `ZN_CONNECTOR_DIR` if it is elsewhere, or pass `--no-connector`. What the installer does and its command lines are in `gpui-ui/installer/README.md` and [Releasing](releasing.md).
 
 ## The Word add-in
 

@@ -45,12 +45,15 @@ import {
 	styleIdToUrl,
 	styleUrlToId,
 } from "../cite/docfields";
-import { CslFormatter, type DocCitation, type StyleSource } from "../cite/docformat";
+import { CslFormatter, resolveStyle, type DocCitation, type StyleSource } from "../cite/docformat";
 import { registerZRoute } from "./routes";
 
 // ---------------------------------------------------------------------------------------------------------------- protocol
 
 // Dialog constants (must match the plugins, see integration.js)
+/** Session.documentFormatter's formatters by document, style and locale, least recently used first. */
+const docFormatters = new Map<string, Promise<CslFormatter>>();
+const DOC_FORMATTERS_MAX = 8;
 const ICON_STOP = 0;
 const ICON_WARNING = 1;
 const ICON_CAUTION = 2;
@@ -400,6 +403,31 @@ class Session {
 		return f;
 	}
 
+	/**
+	 * formatter() for formatting the whole document, kept between commands for this document, style and locale, so its
+	 * formatDocument() keeps its citeproc engine (a Session lasts one command). Rebuilt when the style file changed.
+	 */
+	async documentFormatter(): Promise<CslFormatter> {
+		const id = styleUrlToId(this.prefs.styleId);
+		if (!this.doc.id) return this.formatter();
+		const k = `${this.doc.id}|${id}|${this.prefs.locale}`;
+		const cached = docFormatters.get(k);
+		if (cached) {
+			const f = await cached.catch(() => null);
+			const xml = f && (await resolveStyle(this.styles, id).then((s) => s.xml, () => null));
+			docFormatters.delete(k);
+			if (f && xml === f.style.xml) {
+				docFormatters.set(k, cached); // most recently used last
+				return f;
+			}
+		}
+		const f = CslFormatter.create(this.styles, id, this.prefs.locale || undefined);
+		f.catch(() => docFormatters.delete(k));
+		docFormatters.set(k, f);
+		while (docFormatters.size > DOC_FORMATTERS_MAX) docFormatters.delete(docFormatters.keys().next().value!);
+		return f;
+	}
+
 	// ---- document data
 
 	async load() {
@@ -485,7 +513,7 @@ class Session {
 
 	/** Items, bibliography edits and formatter input for the fields (shared by update() and the bibliography editor). */
 	async prepare(items: ParsedField[], bd: BibliographyData | undefined, missing: string[]) {
-		const fmt = await this.formatter();
+		const fmt = await this.documentFormatter();
 		const isNote = fmt.style.xclass === "note";
 		const cslById = new Map<string, CslItem>();
 		const docCitations: DocCitation[] = [];
@@ -516,7 +544,7 @@ class Session {
 			const id = idOf(uriList(c[0]));
 			if (id) custom.set(id, richToRuns(c[1]));
 		}
-		const out = fmt.format(docCitations, cslById, uncited, true, { omitted, custom });
+		const out = fmt.formatDocument(docCitations, cslById, uncited, true, { omitted, custom });
 		return { fmt, out, docCitations, uncited };
 	}
 

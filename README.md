@@ -286,7 +286,7 @@ It also runs a small **MCP server** so an AI agent can read the open document an
 Two routes put web pages and references into the library:
 
 1. **The Zotero connector port.** While the app runs it answers on port 23119 like Zotero does, so the official Zotero Connector extension works. Only one program can own that port, so close desktop Zotero first.
-2. **The native-messaging fork (Chrome and Edge).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`).
+2. **The native-messaging fork (Chrome and Edge).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`). The extension's source is its own repository, [ABorakati/zinc-connector](https://github.com/ABorakati/zinc-connector) (branch `zotero-next`), a fork of [zotero/zotero-connectors](https://github.com/zotero/zotero-connectors) under the same AGPL-3.0 licence.
 
 ## MCP for AI agents
 

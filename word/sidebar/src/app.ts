@@ -875,7 +875,8 @@ export class App {
 				if (id && runs.length) custom.set(id, runs);
 			}
 		}
-		const out = fmt.format(docCitations, cslById, uncitedIds, opts.wantBib ?? bibls.length > 0, { omitted, custom });
+		// formatDocument keeps the citeproc engine between refreshes of this document (one sidebar = one document)
+		const out = fmt.formatDocument(docCitations, cslById, uncitedIds, opts.wantBib ?? bibls.length > 0, { omitted, custom });
 		return { ...base, resolved, docCitations, engineIds, probeIds, fmt, out, cslUris, uncitedIds: new Set(uncitedIds) };
 	}
 

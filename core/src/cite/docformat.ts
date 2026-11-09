@@ -138,13 +138,7 @@ export class CslFormatter {
 	 * items: CSL item by CSL id. A citation item whose id is missing from `items` is skipped.
 	 */
 	format(citations: DocCitation[], items: Map<string, CslItem>, uncited: string[] = [], wantBibliography = true, edits: BibliographyEdits = {}): FormatResult {
-		const sys = {
-			retrieveLocale: (l: string) => this.locales.get(l) ?? this.locales.get(l.split("-")[0]!) ?? this.locales.get("en-US") ?? false,
-			retrieveItem: (id: string) => items.get(id),
-		};
-		const engine = new CSL.Engine(sys, this.style.xml, this.lang, false);
-		engine.setOutputFormat("html");
-		const out = new Map<string, CitationOut>();
+		const engine = this.newEngine((id) => items.get(id));
 		const latest = new Map<string, string>();
 		const pre: [string, number][] = [];
 		for (const c of citations) {
@@ -153,56 +147,190 @@ export class CslFormatter {
 				pre.push([c.citationID, c.noteIndex]);
 				continue;
 			}
-			const [, changed] = engine.processCitationCluster(
-				{ citationID: c.citationID, citationItems, properties: c.unsorted ? { noteIndex: c.noteIndex, unsorted: true } : { noteIndex: c.noteIndex } },
-				pre.slice(),
-				[],
-			);
+			const [, changed] = engine.processCitationCluster(cluster(c, citationItems), pre.slice(), []);
 			for (const [, text, cid] of changed) latest.set(cid, text);
 			pre.push([c.citationID, c.noteIndex]);
 		}
-		for (const [cid, html] of latest) {
-			const runs = htmlToRuns(html);
-			out.set(cid, { runs, plain: runsToPlain(runs), rtf: runsToRtf(runs) });
-		}
-		let bibliography: BibliographyOut | null = null;
-		if (wantBibliography && this.style.hasBibliography) {
-			const ids = uncited.filter((id) => items.has(id));
-			if (ids.length) engine.updateUncitedItems(ids);
-			const bib = engine.makeBibliography();
-			if (bib) {
-				const [params, entries] = bib;
-				const omitted = new Set([...(edits.omitted ?? [])].map(String));
-				const entryIds = ((params as { entry_ids?: unknown }).entry_ids ?? []) as unknown[];
-				const runs: Run[] = [];
-				const plain: string[] = [];
-				const all: BibEntry[] = [];
-				entries.forEach((e, i) => {
-					const defaultRuns = htmlToRuns(e);
-					const ids = ((entryIds[i] ?? []) as unknown[]).map(String);
-					// like Zotero: a custom text only applies to an entry of a single item
-					const customRuns = ids.length === 1 ? edits.custom?.get(ids[0]!) : undefined;
-					const isOmitted = ids.length > 0 && ids.every((id) => omitted.has(id));
-					all.push({ ids, runs: customRuns ?? defaultRuns, defaultRuns, omitted: isOmitted, custom: !!customRuns });
-				});
-				for (const en of all) {
-					if (en.omitted) continue;
-					if (runs.length) runs.push({ t: "\r" });
-					runs.push(...en.runs);
-					plain.push(runsToPlain(en.runs));
-				}
-				bibliography = {
-					runs: mergeRuns(runs),
-					entries: plain,
-					all,
-					hanging: !!params.hangingindent,
-					secondFieldAlign: !!params["second-field-align"],
-					entrySpacing: Number(params.entryspacing ?? 1),
-				};
-			}
-		}
-		return { citations: out, bibliography };
+		const out = new Map<string, CitationOut>();
+		for (const [cid, html] of latest) out.set(cid, citationOut(html));
+		const ids = uncited.filter((id) => items.has(id));
+		if (wantBibliography && this.style.hasBibliography && ids.length) engine.updateUncitedItems(ids);
+		return { citations: out, bibliography: wantBibliography ? this.bibliography(engine, edits) : null };
 	}
+
+	/** The engine and what it was last given for formatDocument (one document per formatter; see there). */
+	private doc: DocState | null = null;
+
+	/**
+	 * format() for repeated refreshes of one document. The citeproc engine is kept between calls (building one parses the
+	 * style, about 0.7 s for APA), and when the citations changed only a little since the last call, just the inserted,
+	 * edited and deleted ones go through citeproc, with the rest of the document as context, the way Zotero updates a
+	 * document after an edit. Only for un-numbered in-text styles (author-date: the ones whose engine is slow to build).
+	 * Anything else (numbered and note styles, item data changed, citations moved, a citation with no resolvable items,
+	 * many changes) is formatted from scratch on a new engine, exactly as format() does. Returns the same result as
+	 * format() would for the same arguments.
+	 * Use it only for a formatter that serves one document; one-off previews keep using format().
+	 */
+	formatDocument(citations: DocCitation[], items: Map<string, CslItem>, uncited: string[] = [], wantBibliography = true, edits: BibliographyEdits = {}): FormatResult {
+		const itemSig = new Map<string, string>();
+		for (const [id, it] of items) itemSig.set(id, JSON.stringify(it));
+		const sig = new Map<string, string>();
+		for (const c of citations) sig.set(c.citationID, citationSig(c));
+		const resolvable = (c: DocCitation) => c.items.filter((i) => items.has(i.id));
+
+		const incremental = !!this.doc && this.doc.order.length > 0 && this.canUpdate(this.doc, citations, itemSig, sig, resolvable);
+		const st = incremental ? this.doc! : this.rebuild(citations, items, resolvable);
+		if (incremental) {
+			// incremental: process the new and edited citations in document order; deleted ones drop out of the context lists
+			st.items = items;
+			const known = new Set(st.order);
+			const todo = citations.filter((c) => !known.has(c.citationID) || st.sig.get(c.citationID) !== sig.get(c.citationID));
+			const pending = new Set(todo.filter((c) => !known.has(c.citationID)).map((c) => c.citationID));
+			const deleted = st.order.filter((cid) => !sig.has(cid));
+			// a document that only lost citations: reprocess the one after the first deletion so citeproc drops them
+			if (!todo.length && deleted.length) {
+				const at = Math.min(...deleted.map((cid) => st.order.indexOf(cid)));
+				const keep = st.order.filter((cid) => sig.has(cid));
+				const next = keep.find((cid) => st.order.indexOf(cid) > at) ?? keep[keep.length - 1];
+				const c = citations.find((x) => x.citationID === next);
+				if (c) todo.push(c);
+			}
+			for (const c of todo) {
+				const i = citations.indexOf(c);
+				const pre = citations.slice(0, i).map((x) => [x.citationID, x.noteIndex] as [string, number]);
+				const post = citations.slice(i + 1).filter((x) => !pending.has(x.citationID)).map((x) => [x.citationID, x.noteIndex] as [string, number]);
+				const [, changed] = st.engine.processCitationCluster(cluster(c, resolvable(c)), pre, post);
+				for (const [, text, cid] of changed) st.html.set(cid, text);
+				pending.delete(c.citationID);
+			}
+			for (const cid of deleted) st.html.delete(cid);
+			st.order = citations.map((c) => c.citationID);
+			st.sig = sig;
+		}
+		st.itemSig = itemSig;
+		this.doc = st;
+
+		const out = new Map<string, CitationOut>();
+		for (const c of citations) {
+			const html = st.html.get(c.citationID);
+			if (html !== undefined) out.set(c.citationID, citationOut(html));
+		}
+		// uncited items are always set (an empty list clears the previous call's)
+		if (wantBibliography && this.style.hasBibliography) st.engine.updateUncitedItems(uncited.filter((id) => items.has(id)));
+		return { citations: out, bibliography: wantBibliography ? this.bibliography(st.engine, edits) : null };
+	}
+
+	/** Whether the kept engine can take this call incrementally: same item data, citations only inserted, edited or deleted. */
+	private canUpdate(st: DocState, citations: DocCitation[], itemSig: Map<string, string>, sig: Map<string, string>, resolvable: (c: DocCitation) => DocCitationItem[]): boolean {
+		// only author-date and other un-numbered in-text styles: after some edits a kept engine numbers a numeric style's items in
+		// the wrong order, and note styles' ibid./subsequent forms were not tested. Both are cheap to rebuild (10-20 ms).
+		if (this.numbered || this.style.xclass === "note") return false;
+		for (const [id, s] of itemSig) if (st.itemSig.has(id) && st.itemSig.get(id) !== s) return false;
+		if (citations.some((c) => resolvable(c).length === 0)) return false;
+		if (sig.size !== citations.length) return false; // a repeated citationID
+		const known = new Set(st.order);
+		const common = citations.filter((c) => known.has(c.citationID)).map((c) => c.citationID);
+		const before = st.order.filter((cid) => sig.has(cid));
+		if (common.length !== before.length || common.some((cid, i) => cid !== before[i])) return false; // moved
+		const changes = citations.filter((c) => !known.has(c.citationID) || st.sig.get(c.citationID) !== sig.get(c.citationID)).length + (st.order.length - common.length);
+		if (changes > Math.max(5, Math.floor(citations.length / 4))) return false;
+		return true;
+	}
+
+	/** The style numbers its citations (citation-number), so the order of first citation decides the numbering. */
+	private get numbered(): boolean {
+		return /\bcitation-number\b/.test(this.style.xml);
+	}
+
+	/** A new engine with every citation processed in document order: format()'s way. */
+	private rebuild(citations: DocCitation[], items: Map<string, CslItem>, resolvable: (c: DocCitation) => DocCitationItem[]): DocState {
+		const st = { items } as DocState;
+		st.engine = this.newEngine((id) => st.items.get(id));
+		st.html = new Map();
+		const pre: [string, number][] = [];
+		for (const c of citations) {
+			const citationItems = resolvable(c);
+			if (citationItems.length) {
+				const [, changed] = st.engine.processCitationCluster(cluster(c, citationItems), pre.slice(), []);
+				for (const [, text, cid] of changed) st.html.set(cid, text);
+			}
+			pre.push([c.citationID, c.noteIndex]);
+		}
+		st.order = citations.map((c) => c.citationID);
+		st.sig = new Map(citations.map((c) => [c.citationID, citationSig(c)]));
+		st.itemSig = new Map();
+		return st;
+	}
+
+	private newEngine(retrieveItem: (id: string) => CslItem | undefined): CiteprocEngine {
+		const sys = {
+			retrieveLocale: (l: string) => this.locales.get(l) ?? this.locales.get(l.split("-")[0]!) ?? this.locales.get("en-US") ?? false,
+			retrieveItem,
+		};
+		const engine = new CSL.Engine(sys, this.style.xml, this.lang, false);
+		engine.setOutputFormat("html");
+		return engine;
+	}
+
+	/** The bibliography of everything the engine has cited plus its uncited items, with the bibliography editor's edits. */
+	private bibliography(engine: CiteprocEngine, edits: BibliographyEdits): BibliographyOut | null {
+		if (!this.style.hasBibliography) return null;
+		const bib = engine.makeBibliography();
+		if (!bib) return null;
+		const [params, entries] = bib;
+		const omitted = new Set([...(edits.omitted ?? [])].map(String));
+		const entryIds = ((params as { entry_ids?: unknown }).entry_ids ?? []) as unknown[];
+		const runs: Run[] = [];
+		const plain: string[] = [];
+		const all: BibEntry[] = [];
+		entries.forEach((e, i) => {
+			const defaultRuns = htmlToRuns(e);
+			const ids = ((entryIds[i] ?? []) as unknown[]).map(String);
+			// like Zotero: a custom text only applies to an entry of a single item
+			const customRuns = ids.length === 1 ? edits.custom?.get(ids[0]!) : undefined;
+			const isOmitted = ids.length > 0 && ids.every((id) => omitted.has(id));
+			all.push({ ids, runs: customRuns ?? defaultRuns, defaultRuns, omitted: isOmitted, custom: !!customRuns });
+		});
+		for (const en of all) {
+			if (en.omitted) continue;
+			if (runs.length) runs.push({ t: "\r" });
+			runs.push(...en.runs);
+			plain.push(runsToPlain(en.runs));
+		}
+		return {
+			runs: mergeRuns(runs),
+			entries: plain,
+			all,
+			hanging: !!params.hangingindent,
+			secondFieldAlign: !!params["second-field-align"],
+			entrySpacing: Number(params.entryspacing ?? 1),
+		};
+	}
+}
+
+type CiteprocEngine = InstanceType<typeof CSL.Engine>;
+interface DocState {
+	engine: CiteprocEngine;
+	/** what the engine's retrieveItem reads; replaced on every call */
+	items: Map<string, CslItem>;
+	/** citation ids in document order, and each one's content signature, as of the last call */
+	order: string[];
+	sig: Map<string, string>;
+	/** CSL item JSON by id as of the last call */
+	itemSig: Map<string, string>;
+	/** latest HTML per citation id */
+	html: Map<string, string>;
+}
+
+function cluster(c: DocCitation, citationItems: DocCitationItem[]) {
+	return { citationID: c.citationID, citationItems, properties: c.unsorted ? { noteIndex: c.noteIndex, unsorted: true } : { noteIndex: c.noteIndex } };
+}
+function citationSig(c: DocCitation): string {
+	return JSON.stringify([c.noteIndex, !!c.unsorted, c.items]);
+}
+function citationOut(html: string): CitationOut {
+	const runs = htmlToRuns(html);
+	return { runs, plain: runsToPlain(runs), rtf: runsToRtf(runs) };
 }
 
 function mergeRuns(runs: Run[]): Run[] {
