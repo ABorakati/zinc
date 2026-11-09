@@ -24,6 +24,23 @@ const better = (row: string[]) => {
 	return a < b ? 1 : 2;
 };
 
+// "0.49 s (0.49 to 3.30)" -> the median and its range, shown apart
+const split = (v: string) => {
+	const m = /^(.*?)\s*\((.+)\)$/.exec(v.trim());
+	if (!m) return { v, rng: "" };
+	const unit = /\s(ms|s|MB)$/.exec(m[1])?.[1];
+	return { v: m[1], rng: `range ${m[2].replace(/\s+to\s+/, "–")}${unit ? " " + unit : ""}` };
+};
+// how much better Zotero Next is, when it is: "3.7× faster" for times, "54% less" for sizes
+const gain = (row: string[]) => {
+	const a = num(row[1]), b = num(row[2]);
+	if (a == null || b == null || b >= a || b === 0) return "";
+	if (/MB/.test(row[2])) return `${Math.round((1 - b / a) * 100)}% less`;
+	if (!/\d\s*(ms|s)\b/.test(row[2])) return "";
+	const x = a / b;
+	return `${x >= 10 ? Math.round(x) : x.toFixed(1)}× faster`;
+};
+
 const ownBody = section("### Zotero Next on its own");
 const own = tables(ownBody);
 const ownParas = paragraphs(ownBody);
@@ -47,24 +64,25 @@ const gridIntro = paragraphs(gridBody).map((p) => p.replace(/^✅ yes, ⚠️ pa
 				<h2 class="h2">The speed register</h2>
 				<p set:html={inline(vsIntro, base)} />
 			</div>
-			<div class="register" data-reveal>
+			<div class="register stack" data-reveal>
 				<table>
-					<thead><tr>{vs.head.map((h) => <th>{h}</th>)}</tr></thead>
+					<thead><tr>{vs.head.map((h, j) => <th class:list={{ ours: j === 2 }}>{h}</th>)}</tr></thead>
 					<tbody>
 						{vs.rows.map((r, i) => {
 							const w = better(r);
+							const a = split(r[1]), b = split(r[2]), g = gain(r);
 							return (
 								<tr style={`--r:${i}`}>
 									<td>{r[0]}</td>
-									<td class:list={["num", { better: w === 1 }]}>{r[1]}</td>
-									<td class:list={["num", { better: w === 2 }]}>{r[2]}</td>
+									<td class:list={["num", { better: w === 1 }]} data-label={vs.head[1]}><span class="v">{a.v}</span>{a.rng && <span class="rng">{a.rng}</span>}</td>
+									<td class:list={["num", "ours", { better: w === 2 }]} data-label={vs.head[2]}><span class="v">{b.v}</span>{g && <span class="gain">{g}</span>}{b.rng && <span class="rng">{b.rng}</span>}</td>
 								</tr>
 							);
 						})}
 					</tbody>
 				</table>
 			</div>
-			<p class="register-caption">Bold marks the lower figure, which is the better one in every row. Median, with the range of three runs in brackets.</p>
+			<p class="register-caption">Lower is better in every row. Each figure is the median of three runs, with their range underneath; the green note shows how far ahead Zotero Next is where it leads.</p>
 
 			<details class="method" style="margin-top: 2rem">
 				<summary class="h3" style="font-size: 1.15rem; cursor: pointer">How this was measured</summary>

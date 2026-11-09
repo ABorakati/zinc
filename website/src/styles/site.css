@@ -160,21 +160,21 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 
 /* ---------- plates (screenshots) ---------- */
 .plate { margin: 0; } /* plates rest square: a rotated screenshot resamples and blurs; the tilt is only in the settle */
-.plate-mount { position: relative; background: var(--card); padding: clamp(0.5rem, 1.2vw, 0.9rem); box-shadow: var(--shadow-plate); border-radius: 4px; }
-.plate img { width: 100%; border-radius: 2px; outline: 1px solid var(--rule); }
+.plate-mount { position: relative; }
+.plate img { width: 100%; display: block; }
 .plate figcaption { margin-top: 0.9rem; font: 400 0.92rem/1.45 var(--f-text); color: var(--ink-3); max-width: 40rem; }
 .plate-n { font: 700 0.8rem var(--f-type); font-style: normal; letter-spacing: 0.04em; color: var(--ink); margin-right: 0.3rem; }
 .plate-tab { position: absolute; top: -0.7rem; left: 1.25rem; z-index: 1; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.55rem; border-radius: 4px; background: var(--c, var(--c-blue)); color: #fff; font: 600 0.72rem/1 var(--f-type); text-decoration: none; box-shadow: 0 2px 6px -2px rgb(0 0 0 / 35%); }
 .plate-tab:hover { color: #fff; filter: brightness(1.1); }
 :root[data-theme="dark"] .plate.no-dark img { filter: brightness(0.86); } /* screenshots with no dark capture glare less */
 /* hotspots: dots on the screenshot, a numbered list under it; the active one zooms the screenshot towards itself */
-.plate-view { position: relative; overflow: hidden; border-radius: 2px; }
+.plate-view { position: relative; overflow: hidden; border-radius: 8px; border: 1px solid var(--rule); box-shadow: var(--shadow-card); }
 .plate-zoom { position: relative; --z: 1; transform: scale(var(--z)); transition: transform 0.7s var(--ease); will-change: transform; }
 .spot { position: absolute; z-index: 1; width: 1.6rem; height: 1.6rem; margin: 0; padding: 0; border: 2px solid #fff; border-radius: 999px; background: var(--primary); color: #fff; font: 700 0.75rem/1 var(--f-head); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / 30%); transform: translate(-50%, -50%) scale(calc(1 / var(--z, 1))); transition: transform 0.7s var(--ease), background 0.2s; }
 .spot::after { content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 2px solid var(--primary); opacity: 0; }
 .motion .spot::after { animation: spot-pulse 2.4s var(--ease) infinite; }
 .spot.is-active { background: var(--ink); }
-.is-zoomed .spot:not(.is-active) { opacity: 0.35; }
+
 .spot:focus-visible { outline: 3px solid var(--ring, var(--primary)); outline-offset: 3px; }
 @keyframes spot-pulse { 0% { opacity: 0.7; transform: scale(0.8); } 70%, 100% { opacity: 0; transform: scale(1.5); } }
 .spot-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 0.35rem 0.75rem; }
@@ -303,16 +303,8 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .closed-item.lead h3 { font-size: clamp(1.6rem, 2.9vw, 2.2rem); }
 
 /* ---------- catalogue card ---------- */
-.card {
-	position: relative; background: var(--card); color: var(--card-ink); box-shadow: var(--shadow-card);
-	padding: 2.4rem clamp(1.2rem, 3vw, 2.2rem) 3rem; font: 400 0.98rem/1.9rem var(--f-type);
-	background-image: linear-gradient(var(--card), var(--card)), repeating-linear-gradient(transparent 0 calc(1.9rem - 1px), var(--rule-ruling) calc(1.9rem - 1px) 1.9rem);
-	background-size: 100% 2.4rem, 100% 100%; background-repeat: no-repeat, repeat; background-position: 0 0, 0 2.4rem;
-	border-radius: 4px;
-}
-.card::before { content: ""; position: absolute; left: 0; right: 0; top: 2.3rem; height: 2px; background: var(--rule-top); }
-.card::after { /* the rod hole */ content: ""; position: absolute; left: 50%; bottom: 0.9rem; width: 0.9rem; height: 0.9rem; margin-left: -0.45rem; border-radius: 50%; background: var(--ground); box-shadow: inset 0 1px 2px rgb(0 0 0 / 30%); }
-.card-head { display: flex; justify-content: space-between; gap: 1rem; position: absolute; top: 0.55rem; left: clamp(1.2rem, 3vw, 2.2rem); right: clamp(1.2rem, 3vw, 2.2rem); font-weight: 700; }
+.card { position: relative; color: var(--ink); font: 400 0.98rem/1.6 var(--f-text); }
+.card-head { display: none; }
 .card-line { display: flex; gap: 0.5rem; white-space: nowrap; overflow: hidden; }
 .card-line .dots { flex: 1; overflow: hidden; color: var(--card-ink-2); opacity: 0.6; }
 .card-line .dots::before { content: "................................................................................................"; }
@@ -321,15 +313,22 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .card-note { white-space: normal; color: var(--card-ink-2); }
 
 /* ---------- the accession register (tables) ---------- */
-.register { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; box-shadow: var(--shadow-card); overflow-x: auto; }
-.register table { width: 100%; border-collapse: collapse; font-size: 0.97rem; }
-.register th, .register td { text-align: left; padding: 0.85rem 1.05rem; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
-.register thead th { font: 600 0.6875rem/1.2 var(--f-head); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); background: var(--page); border-bottom: 3px double var(--rule-top); white-space: nowrap; }
-.register td + td, .register th + th { border-left: 1px solid var(--rule-soft); }
+/* data tables: a rounded card, a soft header, hairline rows, the app's own face for numbers; the Zotero Next column is tinted */
+.register { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-card); overflow-x: auto; }
+.register table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.95rem; }
+.register th, .register td { text-align: left; padding: 0.95rem 1.25rem; border-bottom: 1px solid var(--rule-soft); vertical-align: middle; }
+.register thead th { font: 600 0.8rem/1.2 var(--f-head); color: var(--ink-3); background: var(--ground-2); border-bottom: 1px solid var(--rule); white-space: nowrap; }
 .register tbody tr:last-child td { border-bottom: 0; }
-.register tbody tr:hover td { background: var(--primary-soft); }
-.register td.num { font: 0.92rem/1.5 var(--f-type); white-space: nowrap; }
-.register td.better { font-weight: 700; color: var(--primary); }
+.register tbody tr { transition: background-color 0.15s; }
+.register tbody tr:hover { background: color-mix(in srgb, var(--ground-2) 60%, transparent); }
+.register td:first-child { color: var(--ink); font-weight: 500; }
+.register td.num { white-space: nowrap; }
+.register .v { font: 600 1rem/1.3 var(--f-head); color: var(--ink); font-variant-numeric: tabular-nums; }
+.register .rng { display: block; margin-top: 0.15rem; font: 400 0.78rem/1.3 var(--f-head); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.register td.ours { background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.register th.ours { color: var(--primary); }
+.register td.better .v { color: var(--primary); }
+.register .gain { display: inline-flex; margin-left: 0.5rem; vertical-align: 0.1em; font: 600 0.72rem/1 var(--f-head); color: var(--success-ink); background: var(--success); border-radius: 999px; padding: 0.22rem 0.5rem; }
 .register .center { text-align: center; }
 .register td.note { color: var(--ink-2); font-size: 0.92rem; min-width: 18rem; }
 .register-caption { margin-top: 0.8rem; font: 0.86rem/1.5 var(--f-text); color: var(--ink-3); }
@@ -376,12 +375,15 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .feature-lead { color: var(--ink-2); font-size: 1.05rem; margin: -0.3rem 0 1rem; }
 
 /* ---------- ledger rows (works with the app closed) ---------- */
-.ledger { border-top: 3px double var(--rule-top); }
-.ledger-row { display: grid; grid-template-columns: minmax(0, 3.5fr) minmax(0, 6fr) minmax(0, 2.5fr); gap: clamp(1rem, 3vw, 2.5rem); padding: 1.6rem 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
-.ledger-row h3 { font-weight: 700; font-size: 1.35rem; display: flex; align-items: center; gap: 0.6rem; }
-.row-icon { flex: none; display: inline-flex; color: var(--ink-3); }
-.ledger-row p { color: var(--ink-2); }
-.ledger-row .fine { text-align: right; }
+/* link cards: one card per topic (icon, title, a line, a link at the foot) */
+.ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+.ledger-row { display: flex; flex-direction: column; gap: 0.6rem; padding: 1.4rem 1.4rem 1.2rem; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-card); transition: border-color 0.15s, transform 0.2s var(--ease); }
+.ledger-row:hover { border-color: color-mix(in srgb, var(--primary) 35%, var(--rule)); transform: translateY(-2px); }
+.ledger-row h3 { font-weight: 700; font-size: 1.15rem; display: flex; align-items: center; gap: 0.6rem; }
+.row-icon { flex: none; display: inline-grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 8px; background: color-mix(in srgb, var(--primary) 10%, transparent); color: var(--primary); }
+.ledger-row p { color: var(--ink-2); flex: 1; }
+.ledger-row .btn { align-self: flex-start; margin-left: -0.625rem; }
+.ledger-row .fine { text-align: left; }
 
 /* ---------- the volume page (features) ---------- */
 .vol-page { display: grid; grid-template-columns: 4.2rem minmax(0, 1fr); background: var(--card); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow-card); scroll-margin-top: 6rem; }
@@ -399,19 +401,23 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 
 /* ---------- download slip ---------- */
 .slip-wrap { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(2rem, 5vw, 4rem); align-items: center; }
-.slip { position: relative; background: var(--card); color: var(--card-ink); box-shadow: var(--shadow-card); border-radius: 4px; padding: 1.6rem 1.6rem 1.9rem; font: 0.92rem/1.6 var(--f-type); max-width: 26rem; justify-self: end; width: 100%; }
-.slip h3 { font: 600 0.75rem/1 var(--f-head); letter-spacing: 0.12em; text-transform: uppercase; text-align: center; padding-bottom: 0.9rem; border-bottom: 2px solid var(--card-ink); margin-bottom: 0.4rem; }
+.slip { position: relative; color: var(--ink); font: 0.95rem/1.5 var(--f-text); max-width: 26rem; justify-self: end; width: 100%; }
+.slip h3 { font: 600 0.75rem/1 var(--f-head); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.6rem; }
 .slip table { width: 100%; border-collapse: collapse; }
-.slip td { border-bottom: 1px solid var(--rule-ruling); padding: 0.4rem 0.2rem; height: 2.3rem; }
-.slip td + td { border-left: 1px solid var(--rule-ruling); text-align: right; }
-.slip td.typed-date { color: var(--primary); font-weight: 700; }
+.slip td { padding: 0.45rem 0; border-bottom: 1px solid var(--rule-soft); }
+.slip td:first-child { color: var(--ink-3); }
+.slip td + td { text-align: right; }
+.slip td.typed-date { color: var(--ink); }
 
 /* ---------- steps on a card (download) ---------- */
+/* numbered circles joined by a line */
 .card-steps { counter-reset: s; list-style: none; margin: 0; padding: 0; }
-.card-steps li { counter-increment: s; display: grid; grid-template-columns: 2.4rem 1fr; padding: 0; }
-.card-steps li::before { content: counter(s) "."; font-weight: 700; color: var(--primary); }
-.card-steps strong { font-weight: 700; }
-.card-steps p { margin: 0; color: var(--card-ink-2); }
+.card-steps li { counter-increment: s; position: relative; display: grid; grid-template-columns: 2rem 1fr; gap: 0.9rem; padding-bottom: 1.4rem; }
+.card-steps li:last-child { padding-bottom: 0; }
+.card-steps li::before { content: counter(s); width: 2rem; height: 2rem; border-radius: 999px; background: var(--primary); color: var(--on-primary); font: 700 0.85rem/2rem var(--f-head); text-align: center; position: relative; z-index: 1; }
+.card-steps li:not(:last-child)::after { content: ""; position: absolute; left: calc(1rem - 1px); top: 2rem; bottom: 0; width: 2px; background: color-mix(in srgb, var(--primary) 35%, transparent); }
+.card-steps strong { font: 650 1rem/2rem var(--f-head); }
+.card-steps p { margin: 0; color: var(--ink-2); }
 pre.typed { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; overflow-x: auto; font: 0.85rem/1.5 var(--f-type); }
 
 /* ---------- colophon ---------- */
@@ -463,12 +469,19 @@ pre.typed { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card); c
 	.slip { justify-self: start; }
 	.colophon-grid { grid-template-columns: 1fr 1fr; }
 	.colophon-about { grid-column: 1 / -1; }
-	.ledger-row { grid-template-columns: minmax(0, 1fr); gap: 0.4rem; }
-	.ledger-row .fine { text-align: left; }
 	.plates, .pair { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
 	.wrap { width: calc(100% - 2rem); }
+	/* the speed table becomes one block per measure: its name, then the two figures side by side */
+	.register.stack thead { display: none; }
+	.register.stack tr { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--rule-soft); }
+	.register.stack tbody tr:last-child { border-bottom: 0; }
+	.register.stack td { border: 0; padding: 0.7rem 1rem; white-space: normal; }
+	.register.stack td:first-child { grid-column: 1 / -1; padding-bottom: 0; }
+	.register.stack td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 0.2rem; font: 600 0.72rem/1.2 var(--f-head); color: var(--ink-3); }
+	.register.stack td.ours::before { color: var(--primary); }
+	.register.stack .gain { margin: 0.3rem 0 0; display: flex; width: max-content; }
 	.masthead-row { gap: 0.4rem; }
 	.brand-name { display: none; }
 	.masthead-nav { margin-left: 0.2rem; }
@@ -501,9 +514,16 @@ pre.typed { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card); c
 :root[data-theme="dark"] .app-start .only-light, :root:not([data-theme="dark"]) .app-start .only-dark { display: none; }
 
 /* ---------- the live Word sidebar demo: a pretend Word window around the real sidebar ---------- */
-.demo-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.6rem; }
-.demo-steps li { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.92rem; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 0.7rem 0.8rem; }
-.demo-steps li > .n { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 999px; background: var(--primary); color: #fff; font: 700 0.72rem/1.4rem var(--f-head); text-align: center; }
+/* numbered circles joined by a line, left to right (top to bottom on phones) */
+.demo-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.2rem; }
+.demo-steps li { position: relative; display: grid; gap: 0.6rem; font-size: 0.92rem; color: var(--ink-2); }
+.demo-steps li > .n { position: relative; z-index: 1; width: 2rem; height: 2rem; border-radius: 999px; background: var(--primary); color: var(--on-primary); font: 700 0.85rem/2rem var(--f-head); text-align: center; }
+.demo-steps li:not(:last-child)::after { content: ""; position: absolute; top: calc(1rem - 1px); left: 2rem; right: -1.2rem; height: 2px; background: color-mix(in srgb, var(--primary) 35%, transparent); }
+@media (max-width: 760px) {
+	.demo-steps { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+	.demo-steps li { grid-template-columns: 2rem 1fr; gap: 0.9rem; }
+	.demo-steps li:not(:last-child)::after { top: 2rem; bottom: -1rem; left: calc(1rem - 1px); right: auto; width: 2px; height: auto; }
+}
 .demo-steps b { color: var(--ink); }
 .word { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-card); background: #f3f3f3; }
 .word-title { display: flex; align-items: center; gap: 0.6rem; height: 2.4rem; padding: 0 0.9rem; background: #185abd; color: #fff; font: 500 0.85rem/1 "Segoe UI", var(--f-text); }
@@ -539,3 +559,9 @@ pre.typed { margin: 0.6rem 0 0; padding: 0.8rem 1rem; background: var(--card); c
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* hotspot with an "after" screenshot: cross-fade to the app after that click; other dots hide (they belong to the first view) */
+.plate-after { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; transition: opacity 0.35s ease; }
+.plate-after.is-shown { opacity: 1; }
+.is-swapped .spot:not(.is-active) { opacity: 0; pointer-events: none; }
+.spot { transition: opacity 0.25s ease; }

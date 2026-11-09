@@ -84,6 +84,12 @@ if (!flag("no-connector")) {
 		mkdirSync(connStage, { recursive: true });
 		run(["bun", "build", "--compile", "src/main.ts", "--outfile", stagedExe], hostDir); // embeds core/src/connector
 		run(["bun", "run", "build"], connDir); // -> zotero-next-connector/build/manifestv3
+		// the same command as connector-host's `bun run build`, but straight into the staging folder: connector-host/dist/zotero-next-host.exe is
+		// the exe a browser may be running right now (the dev registration points there), and a running exe cannot be overwritten
+		rmSync(connStage, { recursive: true, force: true });
+		mkdirSync(connStage, { recursive: true });
+		run(["bun", "build", "--compile", "src/main.ts", "--outfile", stagedExe], hostDir); // embeds core/src/connector
+		run(["bun", "run", "build"], connDir); // -> zotero-next-connector/build/manifestv3
 		for (const f of ["install.ps1", "uninstall.ps1"]) copyFileSync(join(hostDir, f), join(connStage, f));
 		copyFileSync(join(root, "installer", "connector-howto.html"), join(connStage, "connector-howto.html"));
 		// _metadata is written by Chrome into a folder it loads (generated_indexed_rulesets); Chrome also rejects other "_" names, so it is not shipped
