@@ -4,6 +4,7 @@ import Plate from "../components/Plate.astro";
 import Race from "../components/Race.astro";
 import Stack from "../components/Stack.astro";
 import ClosedSlide from "../components/ClosedSlide.astro";
+import HeroShow from "../components/HeroShow.astro";
 import Site from "../layouts/Site.astro";
 import { bullets, inline, paragraphs, section } from "../lib/readme";
 
@@ -35,9 +36,7 @@ const why = bullets(section("## Why Zinc"));
 				</div>
 				<p class="fine"><span class="mono">0.1.3</span> · Windows 10 and 11, 64-bit · per-user install, no admin rights</p>
 			</div>
-			<Plate n="I" src="library-cards-light.png" dark="library-cards-dark.png" tilt={-1.2} eager
-				alt="The library in Cards view: coloured collections on the left, papers grouped by year in the middle, the selected paper's details on the right"
-				caption="The library in Cards view, with coloured and pinned collections, grouped by year." />
+			<HeroShow />
 		</div>
 	</section>
 
