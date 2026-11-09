@@ -372,9 +372,8 @@ namespace ZoteroNext.Word
 
         /// <summary>
         /// Move a citation to another place: inline text, a footnote or an endnote (what Zotero does when the note type or
-        /// the style class changes). The old field is deleted (with its whole note when the note holds nothing else) and a
-        /// new one with the same code and the same visible text is created where the field, or the note's reference mark,
-        /// was. The caller refreshes afterwards. p = {ref:{story,idx,kind,cid}, target: inline|footnote|endnote, code?}.
+        /// the style class changes). A new field with the same code and the same visible text is created where the field, or the note's reference mark,
+        /// was, and only then the old one is deleted (with its whole note when the note holds nothing else). The caller refreshes afterwards. p = {ref:{story,idx,kind,cid}, target: inline|footnote|endnote, code?}.
         /// </summary>
         public object ConvertField(Dictionary<string, object> p)
         {
@@ -411,15 +410,26 @@ namespace ZoteroNext.Word
                 // a note holding only this citation (plus its leading space) goes away with it; any other text keeps the note
                 wholeNote = ((int)note.Range.End - (int)note.Range.Start) - (fEnd - fStart) <= 2;
             }
-            if (fromStory != "main" && wholeNote) note.Delete(); else f.Delete();
+            // the replacement is created first and the original removed only once it exists, so a failure here never loses the citation
             dynamic range = d.Range(anchor, anchor);
-            if (target != "inline")
+            dynamic newNote = null;
+            try
             {
-                dynamic nt2 = target == "footnote" ? d.Footnotes.Add(range) : d.Endnotes.Add(range);
-                range = nt2.Range;
-                range.Collapse(1);
+                if (target != "inline")
+                {
+                    newNote = target == "footnote" ? d.Footnotes.Add(range) : d.Endnotes.Add(range);
+                    range = newNote.Range;
+                    range.Collapse(1);
+                }
+                NewField(range, code, new object[] { Json.Map("t", text) });
             }
-            NewField(range, code, new object[] { Json.Map("t", text) });
+            catch
+            {
+                // undo the half-made replacement; the original is still untouched
+                try { if (newNote != null) newNote.Delete(); } catch { }
+                throw;
+            }
+            if (fromStory != "main" && wholeNote) note.Delete(); else f.Delete();
             return Json.Map("ok", true, "story", targetStory);
         }
 

@@ -106,7 +106,7 @@ export interface ListStore {
 /** The permanent first tab: the library (sidebar | list | item pane). */
 export interface LibraryTab { id: "library" }
 /** A PDF reader tab; its id is the attachment key. */
-export interface ReaderTab { id: string; kind: "reader"; title: string; itemKey: string }
+export interface ReaderTab { id: string; kind: "reader"; title: string; itemKey: string; /** the library the attachment was opened from (absent: My Library) */ library?: number }
 /** A web reader tab (HTML snapshots, EPUBs): Zotero's reader-host page in the shared WebView2 (src/webview); its id is the attachment key. */
 export interface WebTab { id: string; kind: "web"; title: string; itemKey: string; attachmentKey: string; contentType: string }
 export type Tab = LibraryTab | ReaderTab | WebTab;

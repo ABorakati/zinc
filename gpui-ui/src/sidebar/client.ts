@@ -24,10 +24,11 @@ export const sidebarApi = {
 	tags: (library?: number) => A.api.tags(library),
 	tagColors: () => request<TagColor[]>("GET", "/tag-colors"),
 	putTagColors: (colors: TagColor[]) => request<TagColor[]>("PUT", "/tag-colors", colors),
-	automaticTags: () => request<{ tag: string; count: number }[]>("GET", "/maintenance/tags/automatic"),
-	renameTag: (from: string, to: string) => request<{ items: number; merged: boolean }>("POST", "/maintenance/tags/rename", { from, to }),
-	deleteTags: (tags: string[]) => request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete", { tags }),
-	deleteAutomaticTags: () => request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete-automatic", {}),
+	// tag maintenance acts on one library (`library`, default My Library: core/src/maintenance/api.ts)
+	automaticTags: (library = 1) => request<{ tag: string; count: number }[]>("GET", "/maintenance/tags/automatic?library=" + library),
+	renameTag: (from: string, to: string, library = 1) => request<{ items: number; merged: boolean }>("POST", "/maintenance/tags/rename", { from, to, library }),
+	deleteTags: (tags: string[], library = 1) => request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete", { tags, library }),
+	deleteAutomaticTags: (library = 1) => request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete-automatic", { library }),
 	// saved searches
 	savedSearches: () => request<SavedSearch[]>("GET", "/searches"),
 	createSavedSearch: (name: string, conditions: SearchCondition[], options: SearchOptions) => request<SavedSearch>("POST", "/searches", { name, conditions, options }),

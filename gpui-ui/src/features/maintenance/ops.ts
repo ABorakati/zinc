@@ -2,7 +2,7 @@
 import { confirm, toast } from "../../ui";
 import { get, call, post } from "../http";
 import { promptText } from "../kit";
-import { currentView, refresh, selectOnly, selectedKeys } from "../shared";
+import { currentView, libraryId, refresh, selectOnly, selectedKeys } from "../shared";
 import { errMsg, plural } from "../text";
 import type { ItemDetail } from "../types";
 
@@ -14,10 +14,11 @@ export const maintenance = {
 	erasePreview: (keys: string[]) => post<{ items: number; total: number }>("/api/maintenance/erase/preview", { keys }),
 	erase: (keys: string[]) => post<EraseReport>("/api/maintenance/erase", { keys }),
 	emptyTrash: (olderThanDays?: number) => post<EraseReport>("/api/maintenance/empty-trash", { olderThanDays }),
-	renameTag: (from: string, to: string) => post<{ items: number; merged: boolean }>("/api/maintenance/tags/rename", { from, to }),
-	deleteTags: (tags: string[]) => post<{ tags: number; items: number }>("/api/maintenance/tags/delete", { tags }),
-	automaticTags: () => get<{ tag: string; count: number }[]>("/api/maintenance/tags/automatic"),
-	deleteAutomaticTags: () => post<{ tags: number; items: number }>("/api/maintenance/tags/delete-automatic", {}),
+	// tag routes act on one library (core/src/maintenance/api.ts: `library`, default My Library; 403 for a read-only group)
+	renameTag: (from: string, to: string, library = 1) => post<{ items: number; merged: boolean }>("/api/maintenance/tags/rename", { from, to, library }),
+	deleteTags: (tags: string[], library = 1) => post<{ tags: number; items: number }>("/api/maintenance/tags/delete", { tags, library }),
+	automaticTags: (library = 1) => get<{ tag: string; count: number }[]>("/api/maintenance/tags/automatic?library=" + library),
+	deleteAutomaticTags: (library = 1) => post<{ tags: number; items: number }>("/api/maintenance/tags/delete-automatic", { library }),
 	renameFiles: (attachmentKeys: string[]) => post<{ results: RenameFileResult[] }>("/api/maintenance/rename-files", { attachmentKeys }),
 };
 
@@ -106,7 +107,7 @@ export async function renameTag(tag: string): Promise<void> {
 	const to = await promptText({ title: "Rename tag", description: "If a tag with the new name exists, the two are merged.", initial: tag, confirmLabel: "Rename" });
 	if (!to || to === tag) return;
 	try {
-		const r = await maintenance.renameTag(tag, to);
+		const r = await maintenance.renameTag(tag, to, libraryId());
 		refresh();
 		toast(r.merged ? `Merged "${tag}" into "${to}"` : `Renamed "${tag}" to "${to}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
 	} catch (e) {
@@ -123,7 +124,7 @@ export async function deleteTag(tag: string, count?: number): Promise<void> {
 	});
 	if (!ok) return;
 	try {
-		const r = await maintenance.deleteTags([tag]);
+		const r = await maintenance.deleteTags([tag], libraryId());
 		refresh();
 		toast(`Deleted tag "${tag}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
 	} catch (e) {
@@ -133,7 +134,7 @@ export async function deleteTag(tag: string, count?: number): Promise<void> {
 
 export async function deleteAutomaticTags(): Promise<void> {
 	try {
-		const auto = await maintenance.automaticTags();
+		const auto = await maintenance.automaticTags(libraryId());
 		if (!auto.length) return void toast("There are no automatic tags in this library", { kind: "info" });
 		const ok = await confirm({
 			title: "Delete automatic tags?",
@@ -142,7 +143,7 @@ export async function deleteAutomaticTags(): Promise<void> {
 			danger: true,
 		});
 		if (!ok) return;
-		const r = await maintenance.deleteAutomaticTags();
+		const r = await maintenance.deleteAutomaticTags(libraryId());
 		refresh();
 		toast(`Deleted ${plural(r.tags, "automatic tag")}`, { kind: "success", description: plural(r.items, "item") + " updated" });
 	} catch (e) {

@@ -1,9 +1,9 @@
 // Duplicate set inspection, merging (Zotero semantics), and "not duplicates" exclusion storage.
 
 import type { Database } from "bun:sqlite";
-import { assertWritable, libraryOfItem } from "../libraries";
+import { assertWritable, libraryOfItem, libraryUriBases } from "../libraries";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
-import { addRelated, generateKey, getItemDetail, HttpError, nowIso, patchItem } from "../db";
+import { addRelated, getItemDetail, HttpError, itemsRelatingTo, nowIso, patchItem, removeRelated } from "../db";
 import { convertItemType } from "../schema-data";
 import { indexItem } from "../search";
 import { ensureDuplicatesSchema } from "./detect";
@@ -51,14 +51,6 @@ function relationUris(data: ZoteroItemData, predicate: string): string[] {
 
 function uriKey(uri: string): string | null {
 	return /\/items\/([A-Z0-9]{8})$/.exec(uri)?.[1] ?? null;
-}
-
-function libraryKey(db: Database): string {
-	const row = db.query("SELECT value FROM meta WHERE name = 'library_key'").get() as { value: string } | null;
-	if (row) return row.value;
-	const key = generateKey();
-	db.query("INSERT INTO meta(name, value) VALUES('library_key', ?)").run(key);
-	return key;
 }
 
 function validateTopLevelItem(db: Database, key: string): ItemDetail {
@@ -252,9 +244,10 @@ export function mergeDuplicateItems(db: Database, input: MergeDuplicatesInput): 
 	}
 
 	db.transaction(() => {
-		const lib = libraryKey(db);
+		// the merged-away item's real identity in its own library (group or personal; every personal alias a document may hold)
+		const bases = libraryUriBases(db, [...libs][0]!);
 		for (const ok of otherKeys) {
-			replacesUris.add(`http://zotero.org/users/local/${lib}/items/${ok}`);
+			for (const b of bases) replacesUris.add(`${b}/items/${ok}`);
 		}
 		const repList = [...replacesUris];
 		if (repList.length > 0) {
@@ -277,6 +270,14 @@ export function mergeDuplicateItems(db: Database, input: MergeDuplicatesInput): 
 		);
 		if (existingRelatedInDb.length > 0) {
 			addRelated(db, masterKey, existingRelatedInDb);
+		}
+
+		// 2b. Nothing may keep a "related" link to a merged-away item (it goes to the trash and will be erased)
+		for (const ok of otherKeys) {
+			for (const r of itemsRelatingTo(db, ok)) {
+				if (r !== masterKey && validKeySet.has(r)) continue;
+				removeRelated(db, r, [ok]);
+			}
 		}
 
 		// 3. Move all non-deleted child notes and attachments of otherKeys under masterKey

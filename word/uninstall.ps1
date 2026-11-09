@@ -56,6 +56,7 @@ $null = [AppDomain]::CurrentDomain.add_AssemblyResolve({
 })
 
 $root.DeleteSubKeyTree('Software\Microsoft\Office\Word\Addins\ZoteroNext.WordAddIn', $false)
+$root.DeleteSubKeyTree('Software\ZoteroNextWord', $false)
 
 $classes = $root.CreateSubKey('Software\Classes')
 try {

@@ -1,7 +1,7 @@
 // The native-messaging loop: frames in -> connector handlers -> frames out.
 import type { Database } from "bun:sqlite";
 import { openDb } from "../../core/src/db";
-import { HOST_VERSION, ZOTERO_VERSION_HEADER, extractions, handleRequest, type HostEnv, type WireRequest } from "./dispatch";
+import { HOST_VERSION, ZOTERO_VERSION_HEADER, extractions, handleRequest, uploadIdsOf, type HostEnv, type WireRequest } from "./dispatch";
 import { FrameReader, encodeFrame, responseFrames } from "./frames";
 import { resolveDbPath } from "./store";
 
@@ -15,25 +15,34 @@ export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffe
 	const dbPath = opts.dbPath === undefined ? resolveDbPath() : opts.dbPath;
 	const appPort = opts.appPort ?? (process.env.ZNH_APP_PORT !== undefined ? Number(process.env.ZNH_APP_PORT) || 0 : Number(process.env.ZN_PORT) || 23120);
 	let db: Database | null = null;
-	let dbError: string | null = null;
-	const open = (): Database | null => {
+	// Opened on the first call that needs it: ping and the translator calls are answered without the library.
+	const getDb = (): Database => {
 		if (db) return db;
-		if (!dbPath) {
-			dbError = "Zinc library not found (set ZN_DB or open the app once)";
-			return null;
-		}
+		if (!dbPath) throw new Error("Zinc library not found (set ZN_DB or open the app once)");
 		try {
 			db = openDb(dbPath);
 			return db;
 		} catch (e) {
-			dbError = `cannot open ${dbPath}: ${e instanceof Error ? e.message : e}`;
-			return null;
+			throw new Error(`cannot open ${dbPath}: ${e instanceof Error ? e.message : e}`);
 		}
 	};
 
 	const reader = new FrameReader();
 	const partial = new Map<string, Buffer[]>();
 	const uploads = new Map<string, Uint8Array>();
+	// An upload nobody claims (the extension timed out, the request failed first) is dropped after this long.
+	const UPLOAD_TTL_MS = 10 * 60_000;
+	const touched = new Map<string, number>();
+	const forget = (uid: string) => {
+		partial.delete(uid);
+		uploads.delete(uid);
+		touched.delete(uid);
+	};
+	const sweep = setInterval(() => {
+		const cutoff = Date.now() - UPLOAD_TTL_MS;
+		for (const [uid, at] of touched) if (at < cutoff) forget(uid);
+	}, 60_000);
+	sweep.unref?.();
 	const inflight = new Set<Promise<void>>();
 
 	const reply = (id: string | number, status: number, headers: Record<string, string>, body: Uint8Array) => write(responseFrames(id, status, headers, body));
@@ -41,15 +50,16 @@ export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffe
 		reply(id, status, { "Content-Type": "application/json", "X-Zotero-Version": ZOTERO_VERSION_HEADER }, Buffer.from(JSON.stringify({ error })));
 
 	const onRequest = async (msg: WireRequest) => {
-		const d = open();
-		if (!d || !dbPath) return fail(msg.id, 500, dbError ?? "no library");
-		const env: HostEnv = { db: d, dbPath, appPort };
+		const env: HostEnv = { getDb, dbPath, appPort };
 		try {
 			const r = await handleRequest(env, msg, uploads);
 			reply(msg.id, r.status, r.headers, r.body);
 		} catch (e) {
 			console.error("[host] request failed:", e);
 			fail(msg.id, 500, e instanceof Error ? e.message : String(e));
+		} finally {
+			// whatever upload this request did not consume (it failed before reading its body) is not kept
+			for (const uid of uploadIdsOf(msg.body)) forget(uid);
 		}
 	};
 
@@ -57,22 +67,23 @@ export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffe
 		for (const m of reader.push(chunk) as Record<string, any>[]) {
 			switch (m?.t) {
 				case "hello":
-					write(encodeFrame({ t: "hello", id: m.id, version: HOST_VERSION, db: dbPath, pid: process.pid }));
+					write(encodeFrame({ t: "hello", id: m.id, version: HOST_VERSION, db: dbPath, pid: process.pid, proto: 2 }));
 					break;
 				case "up": {
 					const uid = String(m.uid);
 					const list = partial.get(uid) ?? [];
 					list.push(Buffer.from(String(m.data), "base64"));
 					partial.set(uid, list);
+					touched.set(uid, Date.now());
 					if (m.last) {
-						uploads.set(uid, Buffer.concat(list));
+						// one chunk (the usual case) is used as it is, without a copy
+						uploads.set(uid, list.length === 1 ? list[0]! : Buffer.concat(list));
 						partial.delete(uid);
 					}
 					break;
 				}
 				case "drop":
-					partial.delete(String(m.uid));
-					uploads.delete(String(m.uid));
+					forget(String(m.uid));
 					break;
 				case "req": {
 					const p = onRequest(m as WireRequest).finally(() => inflight.delete(p));
@@ -82,6 +93,7 @@ export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffe
 			}
 		}
 	}
+	clearInterval(sweep);
 	await Promise.allSettled([...inflight]);
 	// Let running full-text extractions finish (bounded: Chrome may stop waiting for us).
 	await Promise.race([Promise.allSettled([...extractions]), Bun.sleep(45_000)]);

@@ -3,25 +3,46 @@
 import type { Database } from "bun:sqlite";
 import type { Collection } from "../api-types";
 import { getCollection, listCollections, listTags } from "../db";
+import { getLibrary, libraryOfCollection, USER_LIBRARY } from "../libraries";
 import { getSelection, recentTargetIds } from "./state";
 
 export const LIBRARY_ID = 1;
 export const LIBRARY_TARGET = "L1";
 export const LIBRARY_NAME = "My Library";
 
-/** The collection the UI currently has selected, or null (library / unfiled / trash / saved search / gone). */
+/**
+ * The collection the UI currently has selected, or null (library / unfiled / trash / saved search / gone). A collection of a
+ * group library is not a save target (the connector saves into My Library only, and a read-only group takes no writes): the
+ * save goes to My Library instead, see `groupSelection`.
+ */
 export function selectedCollection(db: Database): Collection | null {
 	const s = getSelection();
-	return s.kind === "collection" && s.key ? getCollection(db, s.key) : null;
+	if (s.kind !== "collection" || !s.key) return null;
+	const lib = libraryOfCollection(db, s.key);
+	return lib !== null && lib !== USER_LIBRARY ? null : getCollection(db, s.key);
 }
 
-export type ResolvedTarget = { ok: true; collectionKey: string | null } | { ok: false; error: "COLLECTION_NOT_FOUND" | "INVALID_TARGET" };
+/** The name of the group library the UI has open when that is why saves go to My Library, else null. */
+export function groupSelection(db: Database): string | null {
+	const s = getSelection();
+	if (s.kind !== "collection" || !s.key) return null;
+	const lib = libraryOfCollection(db, s.key);
+	return lib !== null && lib !== USER_LIBRARY ? (getLibrary(db, lib)?.name ?? "a group library") : null;
+}
+
+export type ResolvedTarget = { ok: true; collectionKey: string | null; redirected?: boolean } | { ok: false; error: "COLLECTION_NOT_FOUND" | "INVALID_TARGET" };
 
 /** Parse a target ID ("L1", "C<key>") sent by the extension. */
 export function resolveTarget(db: Database, id: unknown): ResolvedTarget {
 	if (typeof id !== "string" || id.length < 2) return { ok: false, error: "INVALID_TARGET" };
 	if (id[0] === "L") return id === LIBRARY_TARGET ? { ok: true, collectionKey: null } : { ok: false, error: "INVALID_TARGET" };
-	if (id[0] === "C") return getCollection(db, id.slice(1)) ? { ok: true, collectionKey: id.slice(1) } : { ok: false, error: "COLLECTION_NOT_FOUND" };
+	if (id[0] === "C") {
+		const key = id.slice(1);
+		if (!getCollection(db, key)) return { ok: false, error: "COLLECTION_NOT_FOUND" };
+		// A group collection (e.g. one the UI had open): save to My Library rather than fail.
+		const lib = libraryOfCollection(db, key);
+		return lib !== null && lib !== USER_LIBRARY ? { ok: true, collectionKey: null, redirected: true } : { ok: true, collectionKey: key };
+	}
 	return { ok: false, error: "INVALID_TARGET" };
 }
 
@@ -50,7 +71,9 @@ export function selectedCollectionResponse(db: Database) {
 		}
 	};
 	walk(null, 1, new Set());
+	const group = groupSelection(db);
 	return {
+		...(group ? { notice: `"${group}" is a group library: items are saved to ${LIBRARY_NAME}.` } : {}),
 		libraryID: LIBRARY_ID,
 		libraryName: LIBRARY_NAME,
 		libraryEditable: true,

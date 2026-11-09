@@ -3,7 +3,8 @@
 import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { Select } from "../ui";
-import { Block, BoxInput, Field, IconBtn, MiniSelect, Row, SectionHead, TextBtn, isCollapsed, labelW, t, tok, tx, type Entry } from "./kit";
+import { Block, BoxInput, Field, IconBtn, MiniSelect, Row, SectionHead, TextBtn, isCollapsed, labelW, locked, t, tok, tx, type Entry } from "./kit";
+import { gatedHover } from "../cards/scrolling";
 import { usePane } from "./model";
 import { clearTitleEdit, titleEditWanted } from "./focus";
 import { openLink } from "./actions";
@@ -75,8 +76,8 @@ function DateParts(p: { value: string; onChange: (v: string) => void }): JSX.Ele
 				fallback={<Field value={p.value} placeholder="e.g. Spring 2020, in press" onSave={(v) => p.onChange(v.trim())} />}
 			>
 				<BoxInput value={y()} width={52} placeholder="Year" numeric onInput={(v) => setY(v)} onCommit={(v) => commit(v)} />
-				<Select value={m()} options={monthOpts} onChange={(v) => commit(y(), v, d())} width={80} />
-				<Select value={d()} options={dayOpts()} onChange={(v) => commit(y(), m(), v)} width={64} />
+				<Select value={m()} options={monthOpts} onChange={(v) => commit(y(), v, d())} width={80} disabled={locked()} />
+				<Select value={d()} options={dayOpts()} onChange={(v) => commit(y(), m(), v)} width={64} disabled={locked()} />
 			</Show>
 			<IconBtn icon={textMode() ? "calendar-days" : "type"} title={textMode() ? "Pick year, month and day" : "Edit as text"} box={24} onClick={() => setTextMode(!textMode())} />
 		</div>
@@ -137,8 +138,14 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 
 	const creatorRow = (i: number): JSX.Element => {
 		const c = () => creators()[i] ?? NO_CREATOR;
+		// the five action icons float over the row's right edge while the pointer is on it or one of its fields is being edited, so they
+		// do not take ~100 px from the names the rest of the time
+		const [hot, setHot] = createSignal(false);
+		const [editing, setEditing] = createSignal(false);
+		const hover = gatedHover(setHot);
+		const actions = () => !locked() && (hot() || editing());
 		return (
-			<div style={{ ...t("flex items-start gap-x-3 py-[2px] w-full") }}>
+			<div onMouseEnter={hover.enter} onMouseLeave={hover.leave} style={{ ...t("flex items-start gap-x-3 py-[2px] w-full"), position: "relative" }}>
 				<div style={{ width: labelW(), flexShrink: 0, paddingTop: 1 }}>
 					<MiniSelect
 						value={c().creatorType}
@@ -151,20 +158,22 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 					<div style={{ ...t("flex items-start"), flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0 }}>
 						<Show
 							when={c().name === undefined}
-							fallback={<Field nowrap value={c().name ?? ""} placeholder="Name" onSave={(v) => patchAt(i, { name: v })} />}
+							fallback={<Field nowrap value={c().name ?? ""} placeholder="Name" onEditing={setEditing} onSave={(v) => patchAt(i, { name: v })} />}
 						>
-							<Field nowrap value={c().lastName ?? ""} placeholder="Last" rootStyle={{ width: "auto", flexGrow: 1.2, flexBasis: 0, minWidth: 40 }} onSave={(v) => patchAt(i, { lastName: v })} />
+							<Field nowrap value={c().lastName ?? ""} placeholder="Last" onEditing={setEditing} rootStyle={{ width: "auto", flexGrow: 1.2, flexBasis: 0, minWidth: 40 }} onSave={(v) => patchAt(i, { lastName: v })} />
 							<text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 2, paddingRight: 2, paddingTop: 3 }}>,</text>
-							<Field nowrap value={c().firstName ?? ""} placeholder="First" rootStyle={{ width: "auto", flexGrow: 1, flexBasis: 0, minWidth: 36 }} onSave={(v) => patchAt(i, { firstName: v })} />
+							<Field nowrap value={c().firstName ?? ""} placeholder="First" onEditing={setEditing} rootStyle={{ width: "auto", flexGrow: 1, flexBasis: 0, minWidth: 36 }} onSave={(v) => patchAt(i, { firstName: v })} />
 						</Show>
 					</div>
-					<div style={{ ...t("flex flex-none items-center"), paddingTop: 2 }}>
+					<Show when={actions()}>
+					<div style={{ ...t("flex items-center rounded-md border shadow-sm"), position: "absolute", right: 0, top: 0, paddingLeft: 2, paddingRight: 2, backgroundColor: tok("card"), borderColor: tok("border-soft") }}>
 						<IconBtn icon="replace" size={13} title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"} onClick={() => toggleMode(i)} />
 						<IconBtn icon="arrow-up" size={13} title="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
 						<IconBtn icon="arrow-down" size={13} title="Move down" disabled={i === count() - 1} onClick={() => move(i, 1)} />
 						<IconBtn icon="minus" size={13} title="Remove creator" onClick={() => remove(i)} />
 						<IconBtn icon="plus" size={13} title="Add creator" onClick={() => insertAfter(i)} />
 					</div>
+					</Show>
 				</div>
 			</div>
 		);
@@ -176,7 +185,7 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 			out.push(entry("c:add", () => (
 				<Block>
 					<Row label={labelOf(defaultType())}>
-						<TextBtn icon="plus" label="Add" title="Add creator" onClick={() => void commit([{ creatorType: defaultType(), lastName: "", firstName: "" }])} />
+						<Show when={!locked()}><TextBtn icon="plus" label="Add" title="Add creator" onClick={() => void commit([{ creatorType: defaultType(), lastName: "", firstName: "" }])} /></Show>
 					</Row>
 				</Block>
 			)));
@@ -286,7 +295,7 @@ export function useInfoEntries(): () => Entry[] {
 	const itemType = entry("type", () => (
 		<Block first>
 			<Row label="Item Type">
-				<Select value={pending()?.to.itemType ?? data().itemType} options={typeOptions()} onChange={changeType} />
+				<Select value={pending()?.to.itemType ?? data().itemType} options={typeOptions()} onChange={changeType} disabled={locked()} />
 			</Row>
 		</Block>
 	));

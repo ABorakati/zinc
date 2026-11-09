@@ -11,7 +11,7 @@
 //     file is unchanged, and a MigrationError naming the backup is raised.
 import type { Database } from "bun:sqlite";
 import { existsSync, readdirSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { MIGRATIONS, SCHEMA_HEAD } from "./list";
 import { LibraryTooNewError, MigrationError } from "./types";
 import type { MigrateOptions, MigrateResult, Migration } from "./types";
@@ -20,8 +20,23 @@ export { MIGRATIONS, SCHEMA_HEAD };
 export { LibraryTooNewError, MigrationError };
 export type { MigrateOptions, MigrateResult, Migration };
 
-const BACKUP_RE = /^library\.backup-v(\d+)-to-v(\d+)-(\d{8}-\d{6}-\d{3})\.sqlite$/;
 const DEFAULT_KEEP = 3;
+
+/**
+ * Backups are named after the database file they come from: <stem>.backup-v<from>-to-v<to>-<time>.sqlite. The default
+ * library.sqlite gives the long-standing library.backup-v... names. Rotation only looks at the same stem, so several library
+ * files in one folder never delete each other's backups.
+ */
+function backupStem(path: string): string {
+	const base = basename(path).replace(/\.(sqlite3?|db)$/i, "");
+	const safe = base.replace(/[^A-Za-z0-9._ -]/g, "_").trim();
+	return safe && safe !== "." && safe !== ".." ? safe : "library";
+}
+
+function backupRe(stem: string): RegExp {
+	const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`^${esc}\\.backup-v(\\d+)-to-v(\\d+)-(\\d{8}-\\d{6}-\\d{3}(?:-\\d+)?)\\.sqlite$`);
+}
 
 /** meta.schema_version of an open library; 0 when there is none (a new file). */
 export function readSchemaVersion(db: Database): number {
@@ -58,9 +73,10 @@ function stamp(d: Date): string {
 }
 
 /** Keeps the newest `keep` library.backup-v*-to-v*-*.sqlite files in `dir`; deletes only files of exactly that shape. */
-function rotateBackups(dir: string, keep: number): void {
+function rotateBackups(dir: string, keep: number, stem: string): void {
+	const re = backupRe(stem);
 	const found = readdirSync(dir)
-		.map((f) => ({ f, m: BACKUP_RE.exec(f) }))
+		.map((f) => ({ f, m: re.exec(f) }))
 		.filter((x): x is { f: string; m: RegExpExecArray } => !!x.m)
 		.sort((a, b) => (a.m[3] < b.m[3] ? 1 : a.m[3] > b.m[3] ? -1 : 0));
 	for (const old of found.slice(Math.max(keep, 1))) {
@@ -74,12 +90,15 @@ function rotateBackups(dir: string, keep: number): void {
 
 function backup(db: Database, path: string, from: number, to: number, now: Date, keep: number): string {
 	const dir = dirname(path);
-	const out = join(dir, `library.backup-v${from}-to-v${to}-${stamp(now)}.sqlite`);
+	const stem = backupStem(path);
+	// never reuse (and so never delete) the name of a backup that already exists
+	let out = join(dir, `${stem}.backup-v${from}-to-v${to}-${stamp(now)}.sqlite`);
+	for (let n = 2; existsSync(out); n++) out = join(dir, `${stem}.backup-v${from}-to-v${to}-${stamp(now)}-${n}.sqlite`);
 	try {
 		db.run("VACUUM INTO ?", [out]);
 	} catch (e) {
 		try {
-			rmSync(out, { force: true });
+			rmSync(out, { force: true }); // only a partial file this call may have created: the name was free above
 		} catch {
 			// nothing to clean up
 		}
@@ -90,7 +109,7 @@ function backup(db: Database, path: string, from: number, to: number, now: Date,
 			{ cause: e },
 		);
 	}
-	rotateBackups(dir, keep);
+	rotateBackups(dir, keep, stem);
 	return out;
 }
 

@@ -1,10 +1,11 @@
 // Import: detect the format, parse to items, create them (skipping DOI duplicates) in a collection.
 import type { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addFile, addLink } from "../additems/files";
 import { createCollection, createItem, getCollection, HttpError } from "../db";
+import { relativeUnder } from "../files/paths";
 import { parseBibtex } from "./bibtex";
 import { normDoi, type ParsedItem } from "./common";
 import { parseCslJson } from "./csljson";
@@ -95,6 +96,23 @@ function attachmentPath(raw: string | undefined, basePath: string | undefined): 
 	return resolve(basePath, p.replace(/^\.?[\\/]/, ""));
 }
 
+/**
+ * Attachment paths come from the file being imported, which may be from anyone ("file = {C:/Users/me/.ssh/id_rsa}"). Only
+ * files inside the folder the import file came from (basePath) are copied; absolute paths elsewhere, UNC / device paths and
+ * links that resolve outside the folder are refused. Returns an error message, or null when the file is acceptable.
+ */
+function attachmentRefusal(file: string, basePath: string | undefined): string | null {
+	if (/^[\\/]{2}/.test(file)) return "network and device paths are not imported";
+	if (!basePath) return "give the import folder so attachments next to the file can be found";
+	if (relativeUnder(file, basePath) === null) return "it is outside the folder the import file came from";
+	try {
+		if (existsSync(file) && relativeUnder(realpathSync(file), realpathSync(basePath)) === null) return "it links to a file outside the import folder";
+	} catch {
+		return "it could not be checked";
+	}
+	return null;
+}
+
 export function importText(db: Database, req: ImportRequest): ImportResult {
 	if (typeof req.text !== "string" || !req.text.trim()) throw new HttpError(400, "text is required");
 	let format: ImportFormat;
@@ -163,6 +181,11 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 				const file = attachmentPath(att.path ?? url, req.basePath);
 				if (!file) {
 					errors.push(`attachment ${att.path ?? url} skipped: give the import folder so relative paths can be found`);
+					continue;
+				}
+				const refusal = attachmentRefusal(file, req.basePath);
+				if (refusal) {
+					errors.push(`attachment ${att.path ?? url} skipped: ${refusal}`);
 					continue;
 				}
 				if (!existsSync(file)) {

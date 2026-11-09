@@ -36,12 +36,13 @@ export function SearchResults(): JSX.Element {
 
 	createEffect(() => {
 		const q = store.filter().trim();
+		const lib = store.libraryId(); // read here, not in the timer: the search re-runs when the library on screen changes
 		const id = ++n;
 		if (!q) { setHits([]); setTotal(0); setBusy(false); return; }
 		setBusy(true);
 		const timer = setTimeout(async () => {
 			try {
-				const r = await api.search(q, 200, 0, undefined, store.libraryId());
+				const r = await api.search(q, 200, 0, undefined, lib);
 				if (id !== n) return;
 				setHits(r.hits); setTotal(r.total); setErr(null);
 			} catch (e) {

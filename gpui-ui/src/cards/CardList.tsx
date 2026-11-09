@@ -11,11 +11,13 @@ import { stats, store } from "../store";
 import { TableView } from "../table/Table";
 import { loadSchema } from "../table/defs";
 import { textStyle, tw } from "../theme";
+import { Button } from "../ui";
 import { openItem } from "./actions";
 import { Card, tok } from "./Card";
 import { modsOf, swallowed } from "./click";
 import { listFocused, listKeyHandler, setListFocused } from "./keys";
 import { cardLayout, cardListWidth as cardListWidthNow, setCardListWidth } from "./layout";
+import { ListRetry } from "./ListRetry";
 import { loadTagColors } from "./logic";
 import { openItemMenu } from "./menus";
 import { createRows, type Group, type Rows } from "./rows";
@@ -239,11 +241,13 @@ export function CardsView(): JSX.Element {
 					</div>
 				)}
 			</Show>
+			<ListRetry />
 			<Show when={count() === 0 && !store.loading()}>
-				<div style={tw("flex flex-col absolute top-10 inset-x-0 items-center gap-1", store.mode())}>
+			<div style={tw("flex flex-col absolute top-10 inset-x-0 items-center gap-1", store.mode())}>
 					<text style={textStyle("text-muted-foreground", store.mode())}>{store.view().kind === "publications" ? "No items in My Publications" : "No items"}</text>
 					<Show when={store.error()}>
-						<text style={textStyle("text-xs text-destructive", store.mode())}>{store.error() ?? ""}</text>
+					<text style={textStyle("text-xs text-destructive", store.mode())}>{store.error() ?? ""}</text>
+					<Button size="sm" variant="outline" onClick={() => store.retryFailed()}>Retry</Button>
 					</Show>
 				</div>
 			</Show>

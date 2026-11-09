@@ -29,7 +29,15 @@ export interface ZoteroWrite {
 	data?: ZoteroJson;
 	// Attachments created in zotero-next: the file to copy into storage/<key>/ (imported_url/imported_file).
 	file?: { path: string; filename: string; contentType: string };
+	/**
+	 * Zotero's dateModified (ISO) of this object as last read by a pull (sync_base). A writer that finds the object in Zotero
+	 * modified after this point must not overwrite it: it fails the write with a BASELINE_CHANGED error instead.
+	 */
+	baseline?: string;
 }
+
+/** Error text of a write refused because Zotero's object changed after the baseline; completePush records a conflict for it. */
+export const BASELINE_CHANGED = "changed in Zotero since the last sync";
 
 export interface ZoteroWriteResult {
 	key: string;

@@ -1,5 +1,5 @@
 // The TAGS pane at the bottom of the sidebar (ui/src/Tags.tsx): filter box, tag pills with colour dots, click to filter the
-// list (several tags AND together), right-click for colour / rename / delete, "..." menu for Show Automatic.
+// list (one tag at a time), right-click for colour / rename / delete, "..." menu for Show Automatic.
 import { createEffect, createMemo, createSignal, For, Index, on, onCleanup, Show, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import type { Rect } from "../ui/core";
@@ -40,7 +40,7 @@ async function renameTag(tag: string) {
 	const to = await promptText({ title: "Rename tag", description: "If a tag with the new name exists, the two are merged.", initial: tag, confirmLabel: "Rename" });
 	if (!to || to === tag) return;
 	try {
-		const r = await sidebarApi.renameTag(tag, to);
+		const r = await sidebarApi.renameTag(tag, to, store.libraryId());
 		if (tagFilter().includes(tag)) setTagFilter(tagFilter().map((x) => (x === tag ? to : x)));
 		reload();
 		toast(r.merged ? `Merged "${tag}" into "${to}"` : `Renamed "${tag}" to "${to}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
@@ -56,7 +56,7 @@ async function deleteTag(tag: string, count?: number) {
 	});
 	if (!ok) return;
 	try {
-		const r = await sidebarApi.deleteTags([tag]);
+		const r = await sidebarApi.deleteTags([tag], store.libraryId());
 		setTagFilter(tagFilter().filter((x) => x !== tag));
 		reload();
 		toast(`Deleted tag "${tag}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
@@ -65,7 +65,7 @@ async function deleteTag(tag: string, count?: number) {
 
 async function deleteAutomaticTags() {
 	try {
-		const auto = await sidebarApi.automaticTags();
+		const auto = await sidebarApi.automaticTags(store.libraryId());
 		if (!auto.length) return void toast("There are no automatic tags in this library");
 		const ok = await confirm({
 			title: "Delete automatic tags?",
@@ -74,7 +74,7 @@ async function deleteAutomaticTags() {
 			danger: true,
 		});
 		if (!ok) return;
-		const r = await sidebarApi.deleteAutomaticTags();
+		const r = await sidebarApi.deleteAutomaticTags(store.libraryId());
 		const names = new Set(auto.map((a) => a.tag));
 		setTagFilter(tagFilter().filter((x) => !names.has(x)));
 		reload();
@@ -189,6 +189,7 @@ export function TagList(): JSX.Element {
 	const [filter, setFilter] = createSignal("");
 	// load while open; refresh at most every 30 s when the list was reset (items edited elsewhere), and when "Show Automatic" flips
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let revTimer: ReturnType<typeof setTimeout> | undefined;
 	onCleanup(() => clearTimeout(timer));
 	createEffect(on(tagsOpen, (open) => {
 		if (open && (!tagsLoaded() || tagsAge() > 30_000)) void loadTags({ wantAutomatic: !showAutoTags() });
@@ -198,6 +199,13 @@ export function TagList(): JSX.Element {
 		if (!tagsOpen() || !tagsLoaded() || tagsAge() < 30_000) return;
 		timer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
 	}, { defer: true }));
+	// an edit in the item pane (tags added or removed) changes the counts: reload shortly after, whatever the age of the list
+	createEffect(on(() => store.itemsRev(), () => {
+	clearTimeout(revTimer);
+	if (!tagsOpen() || !tagsLoaded()) return;
+	revTimer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
+	}, { defer: true }));
+	onCleanup(() => clearTimeout(revTimer));
 	// another library has other tags
 	createEffect(on(() => store.libraryId(), () => void loadTags({ wantAutomatic: !showAutoTags() }), { defer: true }));
 	createEffect(on(showAutoTags, (show) => { if (!show && tagsOpen() && tagsLoaded()) void loadTags({ wantAutomatic: true }); }, { defer: true }));

@@ -21,6 +21,7 @@ import { baseNameFor } from "../maintenance/rename-files";
 import { indexItem } from "../search";
 import { pruneEmptyDirs } from "./cleanup";
 import { readConfig, updateConfig, type StorageConfig } from "./config";
+import { assertFilesWritable, USER_LIBRARY } from "../libraries";
 import { ownStorageDir, resolveStoredPath, storedFormForNewLink } from "./paths";
 import { cleanSegment, expandPattern, metaOfItem, PATTERN_HELP, stripAccents, validatePattern, type PatternMeta } from "./pattern";
 
@@ -462,12 +463,12 @@ export function planRelocate(db: Database, opts: RelocateOptions = {}): MovePlan
 	const wanted = opts.keys ? new Set(opts.keys) : null;
 	const rows = db
 		.query(
-			`SELECT a.item_key AS key, a.link_mode, a.path, a.content_type, i.parent_key
+			`SELECT a.item_key AS key, a.link_mode, a.path, a.content_type, i.parent_key, i.library_id
 			 FROM attachments a JOIN items i ON i.key = a.item_key
 			 WHERE i.deleted = 0 AND a.link_mode IN ('imported_file', 'imported_url', 'linked_file') AND a.path IS NOT NULL
 			 ORDER BY i.date_added, i.key`,
 		)
-		.all() as { key: string; link_mode: string; path: string; content_type: string | null; parent_key: string | null }[];
+		.all() as { key: string; link_mode: string; path: string; content_type: string | null; parent_key: string | null; library_id: number }[];
 	const plan: MovePlan = {
 		target: { dir: toOwn ? (own as string) : (dest as string), subfolder, linked },
 		items: [],
@@ -497,6 +498,19 @@ export function planRelocate(db: Database, opts: RelocateOptions = {}): MovePlan
 		if (!existsSync(from)) {
 			skip("file is missing");
 			continue;
+		}
+		// copying a file out changes nothing; every other command rewrites the attachment, which a group may forbid
+		if (!copy) {
+			try {
+				assertFilesWritable(db, r.library_id);
+			} catch (e) {
+				skip(e instanceof Error ? e.message : "this library does not allow file changes");
+				continue;
+			}
+			if (r.library_id !== USER_LIBRARY) {
+				skip("group library file: Zinc leaves it where sync keeps it");
+				continue;
+			}
 		}
 		const imported = r.link_mode !== "linked_file";
 		if (toOwn && imported) {
@@ -677,6 +691,9 @@ export async function runMove(db: Database, plan: MovePlan = planMove(db), hooks
 					report.skipped.push({ key: item.key, path: item.from, reason: "the file is open in another program", locked: true });
 					continue;
 				}
+				// what the original looked like before it was copied: if it differs when the database is updated, a program saved to it meanwhile
+				const before = statSync(item.from);
+				const source = { size: before.size, mtimeMs: before.mtimeMs };
 				const placed = await placeCopy(item.from, item.to);
 				const to = placed.to;
 				if (placed.created) created = to;
@@ -686,7 +703,7 @@ export async function runMove(db: Database, plan: MovePlan = planMove(db), hooks
 					continue;
 				}
 				await hooks.afterCopy?.(item);
-				commitMove(db, item, to, hooks);
+				commitMove(db, item, to, hooks, item.copyOnly ? undefined : source);
 				report.moved++;
 				report.bytes += item.size;
 				// the database now points at the copy: the original can go
@@ -719,9 +736,10 @@ function removeIfEmpty(dir: string): void {
 	pruneEmptyDirs(dir, dirname(dir));
 }
 
-function commitMove(db: Database, item: MoveItem, to: string, hooks: MoveHooks): void {
-	const row = db.query("SELECT data FROM items WHERE key = ?").get(item.key) as { data: string } | null;
+function commitMove(db: Database, item: MoveItem, to: string, hooks: MoveHooks, source?: { size: number; mtimeMs: number }): void {
+	const row = db.query("SELECT data, library_id FROM items WHERE key = ?").get(item.key) as { data: string; library_id: number } | null;
 	if (!row) throw new Error("the attachment was removed while moving");
+	assertFilesWritable(db, row.library_id);
 	const data = JSON.parse(row.data) as Record<string, unknown>;
 	const now = nowIso();
 	const linked = !item.toOwn && (item.kind === "linked" || item.becomesLinked);
@@ -734,6 +752,24 @@ function commitMove(db: Database, item: MoveItem, to: string, hooks: MoveHooks):
 	data.dateModified = now;
 	const stored = linked ? storedFormForNewLink(db, to) : to;
 	db.transaction(() => {
+		// the attachment must still be the one that was planned: same path and mode, and the original unchanged since it was copied
+		const cur = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(item.key) as { path: string | null; link_mode: string } | null;
+		const curPath = cur ? resolveStoredPath(db, cur.path) : null;
+		if (!cur || cur.link_mode !== item.fromMode || !curPath || resolve(curPath).toLowerCase() !== resolve(item.from).toLowerCase()) {
+			throw new Error("the attachment changed while it was being moved; the original was kept");
+		}
+		if (source) {
+			let now2: { size: number; mtimeMs: number } | null = null;
+			try {
+				const st = statSync(item.from);
+				now2 = { size: st.size, mtimeMs: st.mtimeMs };
+			} catch {
+				// gone
+			}
+			if (!now2 || now2.size !== source.size || now2.mtimeMs !== source.mtimeMs) {
+				throw new Error("the file was changed while it was being moved; the original was kept");
+			}
+		}
 		db.query("UPDATE attachments SET path = ?, link_mode = ? WHERE item_key = ?").run(stored, linkMode, item.key);
 		if (item.title) {
 			db.query("UPDATE items SET data = ?, title = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), deriveColumns(data as never).title, now, item.key);

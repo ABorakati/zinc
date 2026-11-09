@@ -73,6 +73,7 @@ namespace ZoteroNext.Word
             core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", site, CoreWebView2HostResourceAccessKind.Allow);
             core.WebMessageReceived += OnMessage;
             core.NewWindowRequested += (s, e) => { e.Handled = true; };
+            core.NavigationStarting += (s, e) => { if (!PaneControl.IsSidebarUri(e.Uri)) e.Cancel = true; };
             core.NavigationCompleted += (s, e) =>
             {
                 if (!e.IsSuccess || e.HttpStatusCode >= 400)
@@ -130,6 +131,7 @@ namespace ZoteroNext.Word
 
         void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            if (!PaneControl.IsSidebarUri(e.Source)) return;
             string msg;
             try { msg = e.TryGetWebMessageAsString(); } catch { return; }
             if (string.IsNullOrEmpty(msg)) return;

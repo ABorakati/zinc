@@ -12,7 +12,7 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
 	if (!res.ok) {
 		let msg = res.statusText;
 		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* keep status text */ }
-		throw new Error(msg);
+		throw Object.assign(new Error(msg), { status: res.status }); // callers tell a refusal (e.g. 409) from a failure
 	}
 	return (await res.json()) as T;
 }

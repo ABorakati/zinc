@@ -234,11 +234,11 @@ describe("native host: a full save", () => {
 		expect(content).toContain("pangolin");
 	}, 60_000);
 
-	test("errors look like Zotero's; unknown methods are 404 so the extension falls back to the repo", async () => {
+	test("errors look like Zotero's; methods the host does not know are 404", async () => {
 		const s = await h.call("updateSession", { json: { sessionID: "nope", target: "L1" } });
 		expect(s.status).toBe(400);
 		expect(s.json.error).toBe("SESSION_NOT_FOUND");
-		const t = await h.call("getTranslators", { json: {} });
+		const t = await h.call("document/getActiveDocument", { json: {} });
 		expect(t.status).toBe(404);
 		expect(t.headers["X-Zotero-Version"]).toBeTruthy();
 		const old = await h.call("saveItems", { json: { sessionID: "S9", items: [] }, headers: { "X-Zotero-Connector-API-Version": "2" } });
@@ -258,6 +258,61 @@ describe("native host: a full save", () => {
 		expect(sel.bytes.length).toBeGreaterThan(1_000_000);
 		expect(sel.json.tags.L1.length).toBeGreaterThan(30000);
 		expect(h.maxFrame).toBeLessThanOrEqual(1_000_000);
+	});
+});
+
+describe("native host: translators and library-free calls", () => {
+	test("ping, getClientHostnames and the translators are answered without opening the library", async () => {
+		const dir = join(ROOT, "cold");
+		rmSync(dir, { recursive: true, force: true });
+		mkdirSync(dir, { recursive: true });
+		const dbPath = join(dir, "library.sqlite"); // never created: the host must not need it
+		const h = new HostClient({ ZN_DB: dbPath });
+		try {
+			expect((await h.call("ping", { http: "GET" })).status).toBe(200);
+			expect((await h.call("ping", { json: {} })).json.prefs.supportsAttachmentUpload).toBe(true);
+			expect((await h.call("getClientHostnames", { json: {} })).json).toEqual([]);
+			const meta = await h.call("getTranslators", { json: {} });
+			expect(meta.status).toBe(200);
+			expect(Array.isArray(meta.json)).toBe(true);
+			expect(meta.json.length).toBeGreaterThan(100);
+			expect(meta.json[0].translatorID).toBeTruthy();
+			expect(meta.json[0].fileName).toBeUndefined();
+			const web = meta.json.find((x: any) => x.label === "Embedded Metadata");
+			expect(web).toBeTruthy();
+			const code = await h.call("getTranslatorCode", { json: { translatorID: web.translatorID } });
+			expect(code.status).toBe(200);
+			expect(code.headers["Content-Type"]).toContain("text/plain");
+			expect(code.text).toContain(web.translatorID);
+			expect(code.text).toContain("function detectWeb");
+			expect((await h.call("getTranslatorCode", { json: { translatorID: "nope" } })).status).toBe(404);
+			expect(existsSync(dbPath)).toBe(false);
+			// a call that needs the library opens it
+			expect((await h.call("getSelectedCollection", { json: {} })).status).toBe(200);
+			expect(existsSync(dbPath)).toBe(true);
+		} finally {
+			await h.close();
+		}
+	});
+
+	test("a multipart form whose fields arrive as upload frames saves a snapshot", async () => {
+		const dbPath = makeLibrary("formup");
+		const h = new HostClient({ ZN_DB: dbPath });
+		try {
+			const item = article("form1");
+			expect((await h.call("saveItems", { json: { sessionID: "SF1", uri: item.url, items: [item] } })).status).toBe(201);
+			const html = "<html><body>" + "x".repeat(5 * 1024 * 1024) + "</body></html>"; // > 1 upload chunk
+			const r = await h.call("saveSingleFile", {
+				form: { sessionID: "SF1", url: item.url, title: "Snapshot", items: JSON.stringify([item]), snapshotContent: html },
+				formUploads: true,
+			});
+			expect(r.status).toBe(201);
+			const db = openDb(dbPath);
+			expect(count(db, "SELECT COUNT(*) n FROM attachments WHERE content_type = 'text/html'")).toBeGreaterThan(0);
+			db.close(true);
+		} finally {
+			await h.close();
+		}
 	});
 });
 

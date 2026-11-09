@@ -1,7 +1,7 @@
 // Attachments: imported files (copied into <db dir>/storage/<KEY>/<name>, same layout as Zotero), linked files
 // (absolute path kept as is) and linked URLs; plus moving a standalone attachment under a parent item.
 import type { Database } from "bun:sqlite";
-import { assertWritable, libraryOfCollection, libraryOfItem } from "../libraries";
+import { assertFilesWritable, assertItemWritable, assertWritable, libraryOfCollection, libraryOfItem } from "../libraries";
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
@@ -62,9 +62,11 @@ export function safeFileName(s: string): string {
 		.replace(/^\.+/, "")
 		.replace(/[. ]+$/, "");
 	if (!cleaned) return "file";
-	if (cleaned.length <= 120) return cleaned;
-	const ext = extname(cleaned);
-	return cleaned.slice(0, 120 - ext.length) + ext;
+	// Windows reserves these device names, with or without an extension ("CON", "nul.pdf"): such a file cannot be created
+	const safe = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(cleaned) ? `_${cleaned}` : cleaned;
+	if (safe.length <= 120) return safe;
+	const ext = extname(safe);
+	return safe.slice(0, 120 - ext.length) + ext;
 }
 
 function checkParent(db: Database, parentKey: string): void {
@@ -105,6 +107,7 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	const lib = req.parentKey ? (libraryOfItem(db, req.parentKey) ?? 1) : collectionKey ? (libraryOfCollection(db, collectionKey) ?? 1) : (req.libraryId ?? 1);
 	if (!req.parentKey && collectionKey && req.libraryId !== undefined && req.libraryId !== lib) throw new HttpError(400, "the collection is in another library");
 	assertWritable(db, lib);
+	assertFilesWritable(db, lib); // a group can allow metadata edits yet forbid files
 
 	let source: string | undefined;
 	if (req.path !== undefined) {
@@ -243,6 +246,9 @@ export function addLink(db: Database, req: { parentKey?: string; url?: string; t
 /** Move a standalone attachment or note under a top-level parent item (it leaves any collections, like Zotero child items). */
 export function reparentItem(db: Database, itemKey: string, parentKey: string): void {
 	checkParent(db, parentKey);
+	const itemLib = libraryOfItem(db, itemKey);
+	if (itemLib !== null && itemLib !== libraryOfItem(db, parentKey)) throw new HttpError(400, "the item and its new parent are in different libraries");
+	assertItemWritable(db, itemKey);
 	const row = db.query("SELECT data, parent_key, item_type FROM items WHERE key = ?").get(itemKey) as { data: string; parent_key: string | null; item_type: string } | null;
 	if (!row || (row.item_type !== "attachment" && row.item_type !== "note")) throw new HttpError(404, "standalone attachment or note not found");
 	if (row.parent_key) throw new HttpError(400, "the item already has a parent");

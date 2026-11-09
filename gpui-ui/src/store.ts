@@ -20,6 +20,10 @@ const MAX_PREFETCH_INFLIGHT = 3;
 const FILTER_DEBOUNCE_MS = 200;
 export const MAX_LEVELS = 4;
 
+/** Data fields whose edit can change which items are duplicates (title, DOI / ISBN, creators, year, type): the duplicate scan is redone for them. */
+const DUPLICATE_FIELDS = new Set(["title", "DOI", "ISBN", "creators", "date", "year", "itemType", "deleted", "parentItem"]);
+export const affectsDuplicates = (fields: string[]): boolean => fields.some((f) => DUPLICATE_FIELDS.has(f));
+
 /** Counters for scripts/scroll-bench.ts (plain increments, no reactivity): row evaluations, skeleton evaluations, page fetches. */
 export const stats = { itemAt: 0, skeleton: 0, fetches: 0, evictions: 0, visCalls: 0, visMs: 0, visMaxMs: 0, fetchMs: 0, fetchMaxMs: 0, prefetches: 0, pageTouches: 0 };
 
@@ -101,8 +105,20 @@ export interface AppStore extends Store, ListStore {
 	libraryEditable(id: number): boolean;
 	/** `libraryEditable` for the library being shown. */
 	canEdit: () => boolean;
+	/** May this user change the files of a library (false for a group that forbids it, and for any read-only group)? */
+	libraryFilesEditable(id: number): boolean;
 	/** Re-read the library list and the group collection trees (the sync service adds and renames groups in the background). */
 	reloadLibraries(): Promise<void>;
+	/**
+	 * After an edit of an item's own fields (the item pane): refetch the list pages in place and the group sizes, nothing else (no
+	 * collection or library requests). `fields` = the data fields that changed; the duplicate scan is dropped only when one of them
+	 * can change which items are duplicates.
+	 */
+	refreshItems(fields?: string[]): void;
+	/** Page numbers whose last request failed (the rows show skeletons until retried): 0 when every page is fine. */
+	failedPages: () => number;
+	/** Request the failed pages again (the list's Retry button). */
+	retryFailed(): void;
 	qmode: () => QMode;
 	setQMode(m: QMode): void;
 	/** "Full text" quick-search mode: the list is replaced by search results with snippets (SearchResults). */
@@ -168,11 +184,18 @@ function createStore(): AppStore {
 	const [libraries, setLibraries] = createSignal<Library[]>([]);
 	const [groupCollections, setGroupCollections] = createSignal<Record<number, Collection[]>>({});
 	const [libraryId, setLibraryId] = createSignal(1);
+	let libSeq = 0; // only the newest reload may write: a slow older answer must not undo a newer one
 	async function reloadLibraries() {
+		const my = ++libSeq;
 		try {
 			const list = await api.libraries();
+			const groupLibs = list.filter((l) => l.id !== 1);
+			// one failing group keeps its previous tree instead of dropping every group's
+			const answers = await Promise.allSettled(groupLibs.map((l) => api.collections(l.id)));
+			if (my !== libSeq) return;
+			const before = untrack(groupCollections);
 			const trees: Record<number, Collection[]> = {};
-			await Promise.all(list.filter((l) => l.id !== 1).map(async (l) => { trees[l.id] = await api.collections(l.id); }));
+			groupLibs.forEach((l, i) => { const a = answers[i]!; trees[l.id] = a.status === "fulfilled" ? a.value : before[l.id] ?? []; });
 			batch(() => {
 				setLibraries(list);
 				setGroupCollections(trees);
@@ -191,6 +214,7 @@ function createStore(): AppStore {
 	};
 	const libraryEditable = (id: number): boolean => libraries().find((l) => l.id === id)?.editable !== false;
 	const canEdit = () => libraryEditable(libraryId());
+	const libraryFilesEditable = (id: number): boolean => { const l = libraries().find((x) => x.id === id); return l?.editable !== false && l?.filesEditable !== false; };
 
 	// ---- view / tag filter ----
 	const [view, setViewSig] = createSignal<View>({ kind: "library" });
@@ -367,6 +391,11 @@ function createStore(): AppStore {
 		for (let p = Math.max(0, from); p <= to; p++) { const e = cache.get(p); if (!e || e.gen !== gen) touchPage(p); }
 	});
 	let dupCache: Promise<ItemRow[]> | null = null;
+	// Pages whose request failed: they stay skeletons, so the list says so and offers Retry (a failed page is not asked for again by
+	// the rows re-running, only by retryFailed() or a reset).
+	const failed = new Set<number>();
+	const [failedCount, setFailedCount] = createSignal(0);
+	const syncFailed = () => setFailedCount(failed.size);
 
 	/** The duplicate sets as flat rows (one per item, sets adjacent): the core lists sets, not items. */
 	function duplicateRows(signal: AbortSignal): Promise<ItemRow[]> {
@@ -414,20 +443,25 @@ function createStore(): AppStore {
 				hardCleared = hardGen;
 			}
 			cache.set(p, { gen: g, rows: res.items });
+			failed.delete(p);
 			evict();
 			const ms = performance.now() - t0;
 			stats.fetchMs += ms;
 			stats.fetchMaxMs = Math.max(stats.fetchMaxMs, ms);
 			batch(() => {
 				setTotal(res.total);
-				setError(null);
+				syncFailed();
+				if (failed.size === 0) setError(null);
 				setPagesLoaded((n) => n + 1);
 				touchPage(p);
 				for (const k of dropped) touchPage(k); // rows still showing the old list's page go to skeleton / refetch
 			});
 			mark("items-loaded");
 		} catch (e) {
-			if (g === gen && (e as Error)?.name !== "AbortError") setError(String((e as Error)?.message ?? e));
+			if (g === gen && (e as Error)?.name !== "AbortError") {
+			failed.add(p);
+			batch(() => { syncFailed(); setError(String((e as Error)?.message ?? e)); });
+			}
 		} finally {
 			// only this request's own bookkeeping: an aborted one may already have been replaced by a new request for the page
 			if (pageAbort.get(p) === mine) { pageAbort.delete(p); if (g === gen) inflight.delete(p); }
@@ -445,14 +479,15 @@ function createStore(): AppStore {
 	}
 
 	/** Start over with the current query. `hard`: a different list (selection cleared, views scroll to the top); else refetch in place. */
-	function reset(hard: boolean) {
+	function reset(hard: boolean, keepDuplicates = false) {
 		gen++;
 		abort.abort();
 		abort = new AbortController();
 		inflight.clear();
 		pageAbort.clear();
 		fastUntil = 0;
-		dupCache = null;
+		if (!keepDuplicates) dupCache = null;
+		if (failed.size) { failed.clear(); syncFailed(); setErrorRaw(null); }
 		if (hard) {
 			hardGen = gen;
 			centerPage = 0;
@@ -481,6 +516,15 @@ function createStore(): AppStore {
 		if (writesOff) return;
 		void api.postSelection(v.kind === "collection" || v.kind === "savedSearch" ? { kind: v.kind === "savedSearch" ? "search" : "collection", key: v.key } : { kind: v.kind }).catch(() => {});
 	}, { defer: true }));
+
+	/** Ask again for the pages that failed: their rows wake up (itemAt) and the requests go out. */
+	function retryFailed() {
+		const pages = [...failed];
+		if (!pages.length) return;
+		failed.clear();
+		batch(() => { syncFailed(); setErrorRaw(null); for (const p of pages) touchPage(p); });
+		for (const p of pages) void loadPage(p, gen);
+	}
 
 	function itemAt(i: number): ItemRow | undefined {
 		stats.itemAt++;
@@ -553,9 +597,12 @@ function createStore(): AppStore {
 
 	/** Re-fetch collections + the list (after edits, imports, trash...). Selection and scroll stay. */
 	function refresh() {
-		void loadCollections();
-		void reloadLibraries();
-		batch(() => { setItemsRev((n) => n + 1); reset(false); });
+	void loadCollections();
+	void reloadLibraries();
+	batch(() => { setItemsRev((n) => n + 1); reset(false); });
+	}
+	function refreshItems(fields?: string[]) {
+	batch(() => { setItemsRev((n) => n + 1); reset(false, !fields || !affectsDuplicates(fields)); });
 	}
 
 	// ---- selection ----
@@ -582,7 +629,8 @@ function createStore(): AppStore {
 		await Promise.all(need.map((p) => loadPage(p, g)));
 	}
 	function selectClick(index: number, mods: Mods) {
-		const it = peek(index);
+	const it = peek(index);
+	const view0 = hardGen; // the list this click belongs to: an async completion for another list is dropped
 		if (!it) return;
 		const sel = new Set(selected());
 		if (mods.shift && anchor() >= 0) {
@@ -591,7 +639,7 @@ function createStore(): AppStore {
 			for (const k of rangeKeys(a, b)) sel.add(k);
 			setFocusIndex(index);
 			// a range spanning pages that are not cached: fetch them and complete the selection
-			if (b - a >= PAGE) void loadRange(a, b).then(() => { const s2 = new Set(untrack(selected)); for (const k of rangeKeys(a, b)) s2.add(k); setSelectedSig(s2); });
+			if (b - a >= PAGE) void loadRange(a, b).then(() => { if (view0 !== hardGen) return; const s2 = new Set(untrack(selected)); for (const k of rangeKeys(a, b)) s2.add(k); setSelectedSig(s2); });
 		} else if (mods.ctrl) {
 			if (!sel.delete(it.key)) sel.add(it.key);
 			batch(() => { setAnchor(index); setFocusIndex(index); });
@@ -613,22 +661,23 @@ function createStore(): AppStore {
 	function selectAll() {
 		const n = untrack(total);
 		if (n === 0) return;
+		const view0 = hardGen; // dropped when the list changes (another view, filter or sort) before the keys arrive
 		const v = untrack(view);
 		if (v.kind === "duplicates" || n <= PAGE) {
-			void loadRange(0, n - 1).then(() => setSelectedSig(new Set(rangeKeys(0, n - 1))));
+			void loadRange(0, n - 1).then(() => { if (view0 === hardGen) setSelectedSig(new Set(rangeKeys(0, n - 1))); });
 			return;
 		}
 		// the whole list: keys only, 1000 per request
-		const g = gen, q = { ...untrack(baseQuery), fields: undefined, include: undefined } as ItemQuery;
+		const q = { ...untrack(baseQuery), fields: undefined, include: undefined } as ItemQuery;
 		void (async () => {
 			const keys = new Set<string>();
 			for (let off = 0; off < Math.min(n, 50_000); off += 1000) {
 				const r = await api.items(q, off, 1000);
-				if (g !== gen) return;
+				if (view0 !== hardGen) return;
 				r.items.forEach((x) => keys.add(x.key));
-			}
-			setSelectedSig(keys);
-		})().catch((e) => setError(String(e?.message ?? e)));
+				}
+				if (view0 === hardGen) setSelectedSig(keys);
+		})().catch((e) => { if (view0 === hardGen) setError(String(e?.message ?? e)); });
 	}
 	const keysFor = (key: string): string[] => (selected().has(key) ? [...selected()] : [key]);
 
@@ -637,7 +686,8 @@ function createStore(): AppStore {
 	const [activeTab, setActiveTab] = createSignal("library");
 	function openAttachment(attachmentKey: string, title: string, itemKey: string) {
 		if (tabs().some((t) => t.id === attachmentKey)) return void setActiveTab(attachmentKey);
-		const openTab = (tab: Tab = { id: attachmentKey, kind: "reader", title, itemKey }) => {
+		const library = untrack(libraryId); // the reader follows this library's read-only state
+		const openTab = (tab: Tab = { id: attachmentKey, kind: "reader", title, itemKey, library }) => {
 			if (!tabs().some((t) => t.id === attachmentKey)) setTabs([...tabs(), tab]);
 			setActiveTab(attachmentKey);
 			if (itemKey) readState.markRead(itemKey);
@@ -653,7 +703,8 @@ function createStore(): AppStore {
 				// a linked URL has no file for the reader (the core opens it in the browser)
 				const linked = (d.data as { linkMode?: unknown }).linkMode === "linked_url";
 				if (isWebContent(ct) && !linked && webBase()) return openTab({ id: attachmentKey, kind: "web", title, itemKey, attachmentKey, contentType: ct });
-				return apiRequest("POST", `/attachments/${encodeURIComponent(attachmentKey)}/open-external`).catch(() => openTab());
+				// program/script files ask for confirmation first (ui/openExternal); loaded lazily to keep ui out of the store's imports
+				return import("./ui/openExternal").then((m) => m.openAttachmentExternally(attachmentKey)).catch(() => openTab());
 			},
 			() => openTab(), // unknown: let the reader try and report
 		);
@@ -672,7 +723,8 @@ function createStore(): AppStore {
 		tabs, activeTab, setActiveTab, openAttachment, closeTab,
 		mode, setMode,
 		collections,
-		libraries, libraryId, selectLibrary, groupCollections, libraryOfCollection, libraryEditable, canEdit, reloadLibraries,
+		libraries, libraryId, selectLibrary, groupCollections, libraryOfCollection, libraryEditable, canEdit, libraryFilesEditable, reloadLibraries,
+		refreshItems, failedPages: failedCount, retryFailed,
 		selectedCollection,
 		selectCollection,
 		filter, setFilter,

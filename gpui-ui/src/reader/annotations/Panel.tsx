@@ -129,7 +129,7 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 	const filtered = () => !!(query().trim() || colors().length || tag());
 	const total = () => s.store.list().length;
 	const count = () => (filtered() ? `${shown().length} of ${total()}` : `${total()} annotation${total() === 1 ? "" : "s"}`);
-	const status = () => (s.store.status() === "saved" ? "Saved" : s.store.status() === "saving" ? "Saving..." : "Not saved, retrying");
+	const status = () => (s.store.readOnly() ? "Read-only library" : s.store.status() === "saved" ? "Saved" : s.store.status() === "saving" ? "Saving..." : s.store.retrying() ? "Not saved, retrying" : "Not saved");
 	let tagBtnEl: HostElement | undefined;
 	const openTagPicker = (e: EventPayload) => {
 		const b = boundsOf(tagBtnEl);
@@ -197,10 +197,15 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 						</div>
 					</Show>
 					<div style={{ flexGrow: 1 }} />
-					<text style={{ ...k.tx(`text-[11px] ${s.store.status() === "error" ? "text-destructive" : "text-muted-foreground"}`), whiteSpace: "nowrap" }}>{status()}</text>
+					<text style={{ ...k.tx(`text-[11px] ${s.store.status() === "error" && !s.store.readOnly() ? "text-destructive" : "text-muted-foreground"}`), whiteSpace: "nowrap" }}>{status()}</text>
+					<Show when={s.store.status() === "error" && !s.store.retrying() && !s.store.readOnly()}>
+					<div role="button" aria-label="Retry saving" onClick={() => void s.store.retry()} style={{ cursor: "pointer" }}>
+					<text style={{ ...k.tx("text-[11px] text-foreground"), textDecoration: "underline" }}>Retry</text>
+					</div>
+					</Show>
 				</div>
 				<Button
-					variant="outline" size="sm" icon="file-plus" disabled={!p.ctx.itemKey || total() === 0}
+					variant="outline" size="sm" icon="file-plus" mode={p.ctx.mode} disabled={!p.ctx.itemKey || total() === 0}
 					onClick={() => void s.act.noteFromAnnotations(s.store.list().filter((a) => shown().includes(a.id)))}
 					style={{ width: "100%", justifyContent: "flex-start" }}
 				>

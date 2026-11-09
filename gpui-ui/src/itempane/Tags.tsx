@@ -2,6 +2,7 @@
 // library's tags. Port of ui/src/itempane/Tags.tsx.
 import { For, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
+import { store } from "../store";
 import { withAlpha } from "../theme";
 import { IconBtn, locked, Picker, Section, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
@@ -12,7 +13,7 @@ export function createTagSource() {
 	return async (q: string, exclude: string[] = []): Promise<string[]> => {
 		const needle = q.trim().toLowerCase();
 		if (!needle) return [];
-		const all = await ipApi.tags().catch(() => []);
+		const all = await ipApi.tags(store.libraryId()).catch(() => []);
 		return all.filter((x) => x.tag.toLowerCase().includes(needle) && !exclude.includes(x.tag)).slice(0, 12).map((x) => x.tag);
 	};
 }

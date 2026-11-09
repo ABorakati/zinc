@@ -480,17 +480,31 @@ namespace ZoteroNext.Word
             return Json.Map("content", new List<object> { Json.Map("type", "text", "text", text) }, "isError", isError);
         }
 
-        /// <summary>Run one tool on Word's UI thread; the tool's own failures come back as an MCP tool error (isError), not a protocol error.</summary>
+        /// <summary>
+        /// Run one tool on Word's UI thread; the tool's own failures come back as an MCP tool error (isError), not a protocol error.
+        /// A call that never started before the deadline is cancelled (the queued action checks it and does nothing), so it cannot run later
+        /// behind a retry. A call that already started keeps the serialization gate until it really finishes, and the caller is told the outcome is unknown.
+        /// </summary>
         Dictionary<string, object> CallTool(string name, Dictionary<string, object> args)
         {
             int timeout = TimeoutMs();
             if (!_gate.Wait(timeout)) return ToolResult("Error: another tool call is still running (waited " + (timeout / 1000) + " s). Try again.", true);
+            bool keepGate = false;
             try
             {
                 Log.Write("mcp: tools/call " + name);
-                var run = OnUi(() => _agent.CallAsync(name, args, timeout));
+                var state = new CallState();
+                var run = OnUi(state, () => _agent.CallAsync(name, args, timeout));
                 // the UI thread can be blocked (a modal dialog in Word): do not wait forever
-                if (!run.Wait(timeout + 40000)) return ToolResult("Error: Word did not respond (is a dialog open in Word?). Close it and try again.", true);
+                if (!run.Wait(timeout + 40000))
+                {
+                    if (state.TryCancel())
+                        return ToolResult("Error: Word did not respond (is a dialog open in Word?). The request was cancelled before it started, so nothing was changed. Close the dialog and try again.", true);
+                    // already running: it may still change the document. Hold the gate until it ends so no second call overlaps it.
+                    keepGate = true;
+                    run.ContinueWith(t => { var _ = t.Exception; _gate.Release(); Log.Write("mcp: " + name + " finished after the deadline"); });
+                    return ToolResult("Error: outcome unknown. " + name + " started in Word but did not finish in time (is a dialog open in Word?). It may still complete; check the document before repeating it.", true);
+                }
                 var r = run.Result;
                 if (Json.Bool(r, "ok")) return ToolResult(Json.Str(r, "json", "null"), false);
                 return ToolResult("Error: " + Json.Str(r, "error", "the tool failed"), true);
@@ -502,16 +516,25 @@ namespace ZoteroNext.Word
                 Log.Write("mcp: " + name + " failed: " + inner.GetType().Name + ": " + inner.Message);
                 return ToolResult("Error: " + inner.Message, true);
             }
-            finally { _gate.Release(); }
+            finally { if (!keepGate) _gate.Release(); }
         }
 
-        Task<T> OnUi<T>(Func<Task<T>> f)
+        /// <summary>queued (0) -> started (1) or cancelled (2); whichever transition happens first wins.</summary>
+        sealed class CallState
+        {
+            int _phase;
+            public bool TryStart() { return System.Threading.Interlocked.CompareExchange(ref _phase, 1, 0) == 0; }
+            public bool TryCancel() { return System.Threading.Interlocked.CompareExchange(ref _phase, 2, 0) == 0; }
+        }
+
+        Task<T> OnUi<T>(CallState state, Func<Task<T>> f)
         {
             var tcs = new TaskCompletionSource<T>();
             try
             {
                 _ui.BeginInvoke((Action)(async () =>
                 {
+                    if (!state.TryStart()) { tcs.TrySetCanceled(); return; }
                     try { tcs.TrySetResult(await f()); }
                     catch (Exception e) { tcs.TrySetException(e); }
                 }));

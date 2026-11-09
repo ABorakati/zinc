@@ -9,6 +9,7 @@ import { HIDDEN } from "../shell/kit";
 import { store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
 import { overlayLayers, type Rect } from "../ui/core";
+import { openAttachmentExternally } from "../ui/openExternal";
 import { webTabUrl } from "./config";
 import { hide, hostError, hostState, onPageMessage, release, setBackground, show, type PageMessage } from "./host";
 
@@ -44,7 +45,7 @@ export function WebTabView(p: { tab: WebTab }): JSX.Element {
 	const active = () => store.activeTab() === p.tab.id;
 	onCleanup(() => setRects((r) => { const { [p.tab.id]: _gone, ...rest } = r; return rest; }));
 	const failed = () => hostState() === "error";
-	const openExternal = () => void apiRequest("POST", `/attachments/${encodeURIComponent(p.tab.attachmentKey)}/open-external`).catch(() => {});
+	const openExternal = () => void openAttachmentExternally(p.tab.attachmentKey).catch(() => {});
 	return (
 		<div
 			onLayout={(e: EventPayload) => {

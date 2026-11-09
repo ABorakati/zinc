@@ -33,7 +33,10 @@ const qs = (o: Record<string, string | number | undefined>) => {
 };
 
 let schemaP: Promise<ZoteroSchema> | null = null;
-let tagsP: { at: number; p: Promise<{ tag: string; count: number }[]> } | null = null;
+/** The tag list per library (id 1 = My Library): a group's tags are not My Library's. */
+const tagsP = new Map<number, { at: number; p: Promise<{ tag: string; count: number }[]> }>();
+/** `library` query parameter for a non-default library. */
+const libQ = (library?: number): { library?: number } => (library && library > 1 ? { library } : {});
 
 export const ipApi = {
 	/** Cached for the life of the process; retried if the first load failed. */
@@ -44,20 +47,20 @@ export const ipApi = {
 	createChild: (data: Partial<ZoteroItemData>) => req<ItemDetail>("POST", "/items", { data }),
 	addTags: (key: string, tags: string[]) => req<{ ok: true }>("POST", `/items/${key}/tags`, { tags }),
 	removeTags: (key: string, tags: string[]) => req<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),
-	/** The library's tag list (large: fetched at most once a minute). */
-	tags: () => {
-		if (!tagsP || Date.now() - tagsP.at > 60_000) {
-			const p = req<{ tag: string; count: number }[]>("GET", "/tags");
-			p.catch(() => { if (tagsP?.p === p) tagsP = null; });
-			tagsP = { at: Date.now(), p };
-		}
-		return tagsP.p;
+	/** A library's tag list (large: fetched at most once a minute per library). */
+	tags: (library = 1) => {
+	const cur = tagsP.get(library);
+	if (cur && Date.now() - cur.at <= 60_000) return cur.p;
+	const p = req<{ tag: string; count: number }[]>("GET", "/tags" + (library > 1 ? `?library=${library}` : ""));
+	p.catch(() => { if (tagsP.get(library)?.p === p) tagsP.delete(library); });
+	tagsP.set(library, { at: Date.now(), p });
+	return p;
 	},
-	invalidateTags: () => { tagsP = null; },
+	invalidateTags: () => { tagsP.clear(); },
 	tagColors: () => req<TagColor[]>("GET", "/tag-colors"),
 	addRelated: (key: string, keys: string[]) => req<ItemDetail>("POST", `/items/${key}/related`, { keys }),
 	removeRelated: (key: string, keys: string[]) => req<ItemDetail>("DELETE", `/items/${key}/related`, { keys }),
-	searchItems: (q: string, limit = 15) => req<ItemList>("GET", "/items?" + qs({ q, sort: "title", dir: "asc", limit, offset: 0 })),
+	searchItems: (q: string, limit = 15, library = 1) => req<ItemList>("GET", "/items?" + qs({ q, sort: "title", dir: "asc", limit, offset: 0, ...libQ(library) })),
 	addToCollection: (coll: string, keys: string[]) => req<{ ok: true }>("POST", `/collections/${coll}/items`, { keys }),
 	removeFromCollection: (coll: string, keys: string[]) => req<{ ok: true }>("DELETE", `/collections/${coll}/items`, { keys }),
 	reveal: (attachmentKey: string) => req<{ ok: true }>("POST", `/attachments/${attachmentKey}/reveal`),

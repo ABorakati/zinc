@@ -118,10 +118,19 @@ export const newCitationID = (): string => randomId(8);
 
 // ---------------------------------------------------------------- merging, splitting and editing citations
 
-/** Identity of a cited item for de-duplication: its first item URI (else the embedded id). */
-const citedItemKey = (ci: CitationItem): string => (ci.uris ?? [])[0] ?? `id:${String(ci.id)}`;
+/** Identity of a cited item for de-duplication: its first item URI (else the embedded id) plus every per-citation modifier, so two cites of one work at different pages stay separate. */
+const citedItemKey = (ci: CitationItem): string =>
+	JSON.stringify([
+		(ci.uris ?? [])[0] ?? `id:${String(ci.id)}`,
+		ci.locator ?? "",
+		ci.label ?? "",
+		ci.prefix ?? "",
+		ci.suffix ?? "",
+		!!ci["suppress-author"],
+		!!ci["author-only"],
+	]);
 
-/** Zotero's Citation.mergeCitation: the items of `others` appended in order, duplicates (same item) dropped, the first one's properties kept. */
+/** Zotero's Citation.mergeCitation: the items of `others` appended in order, exact duplicates (same item, same locator/prefix/suffix/author flags) dropped, the first one's properties kept. Items that differ in any modifier are all kept so no locator is lost. */
 export function mergeCitationData(first: CitationData, others: CitationData[]): CitationData {
 	const seen = new Set<string>();
 	const items: CitationItem[] = [];

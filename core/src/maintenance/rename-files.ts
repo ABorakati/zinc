@@ -7,6 +7,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { nowIso } from "../db";
 import { readConfig } from "../files/config";
 import { RELATIVE_PREFIX, resolveStoredPath, toStoredPath } from "../files/paths";
+import { assertFilesWritable, libraryOfItem, USER_LIBRARY } from "../libraries";
 import { indexItem } from "../search";
 import { isInside } from "./erase";
 
@@ -60,6 +61,13 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 			.get(key) as { link_mode: string; path: string | null; parent_key: string | null; data: string } | null;
 		if (!att) {
 			skip("not an attachment");
+			continue;
+		}
+		const lib = libraryOfItem(db, key) ?? USER_LIBRARY;
+		try {
+			assertFilesWritable(db, lib);
+		} catch (e) {
+			skip(e instanceof Error ? e.message : "library does not allow file changes");
 			continue;
 		}
 		if (!att.parent_key) {
@@ -118,6 +126,7 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 		}
 		const data = JSON.parse(att.data) as Record<string, unknown>;
 		const now = nowIso();
+		try {
 		db.transaction(() => {
 			db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(wasRelative ? toStoredPath(db, target) : target, key);
 			if (linked) data.path = target; // sync hands Zotero the absolute path
@@ -126,6 +135,12 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 			db.query("UPDATE items SET data = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), now, key);
 			indexItem(db, key);
 		})();
+		} catch (e) {
+			// the database refused: put the file back so the path in the library still points at it
+			try { renameSync(target, current); } catch { /* ignore */ }
+			skip(`could not update the library: ${e instanceof Error ? e.message : String(e)}`);
+			continue;
+		}
 		out.push({ key, status: "renamed", path: target });
 	}
 	return out;

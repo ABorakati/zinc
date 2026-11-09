@@ -31,15 +31,17 @@ function SelectionPopup(p: { ctx: ReaderContext }): JSX.Element {
 		</div>
 	);
 	return (
-		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 4, userSelect: "none" }}>
-			<div style={{ width: 1, height: 18, backgroundColor: k.tok("border"), marginLeft: 2, marginRight: 4 }} />
+	<Show when={!p.ctx.readOnly}>
+	<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 4, userSelect: "none" }}>
+	<div style={{ width: 1, height: 18, backgroundColor: k.tok("border"), marginLeft: 2, marginRight: 4 }} />
 			<Swatches k={k} colors={COLORS} value={s.ui.color()} size={16} onPick={(c) => make("highlight", c)} />
 			<div style={{ width: 1, height: 18, backgroundColor: k.tok("border"), marginLeft: 4, marginRight: 2 }} />
 			{action("Highlight", "highlighter", () => make("highlight"))}
 			{action("Underline", "underline", () => make("underline"))}
 			{action(undefined, "message-square-plus", () => make("highlight", s.ui.color(), true))}
-		</div>
-	);
+			</div>
+			</Show>
+			);
 }
 
 function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
@@ -68,8 +70,9 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 	};
 	const label = (text: string) => <text style={{ ...k.tx("text-xs font-medium text-muted-foreground"), whiteSpace: "nowrap" }}>{text}</text>;
 	return (
-		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 0 }}>
-			{tools.map((t) => (
+	<Show when={!p.ctx.readOnly} fallback={<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 }}><Icon name="lock" size={13} color={k.tok("muted-foreground")} /><text style={{ ...k.tx("text-xs text-muted-foreground"), whiteSpace: "nowrap" }}>Read-only library</text></div>}>
+	<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 2, flexShrink: 0 }}>
+	{tools.map((t) => (
 				<IconButton k={k} icon={t.icon} title={t.title} on={s.ui.tool() === t.id} onClick={() => s.ui.setTool(s.ui.tool() === t.id ? null : t.id)} />
 			))}
 			<Show when={hasOptions()}>
@@ -115,12 +118,13 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 						</Show>
 					</div>
 				</Popover>
-			</Show>
-		</div>
-	);
-}
+				</Show>
+				</div>
+				</Show>
+				);
+				}
 
-export const annotationsPlugin: ReaderPlugin = {
+				export const annotationsPlugin: ReaderPlugin = {
 	id: "annotations",
 	toolbar: (ctx) => <Toolbar ctx={ctx} />,
 	sidePanel: { id: "annotations", label: "Annotations", icon: "highlighter", render: (ctx) => <AnnotationsPanel ctx={ctx} /> },

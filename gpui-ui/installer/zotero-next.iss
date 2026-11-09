@@ -441,7 +441,94 @@ begin
   Result := True;
 end;
 
+var
+  // the configured library's folder (lowercase, no trailing backslash): its files, its storage\ tree and everything below it are never touched
+  ProtectedLibDir: string;
+  // library.json exists but its path could not be read: every folder except logs\ is left alone rather than guessed at
+  ProtectAllFolders: Boolean;
+
+// The "path" value of a library.json {"path": "..."}; False when it cannot be read with certainty (no value, or a \u escape).
+function ReadLibraryJsonPath(const Json: string; var Path: string): Boolean;
+var
+  I, N: Integer;
+  C: Char;
+begin
+  Result := False;
+  Path := '';
+  I := Pos('"path"', Json);
+  if I = 0 then Exit;
+  I := I + 6;
+  N := Length(Json);
+  while (I <= N) and (Json[I] <> '"') and (Json[I] <> 'n') and (Json[I] <> '{') and (Json[I] <> '}') do I := I + 1;
+  if (I > N) or (Json[I] <> '"') then Exit;
+  I := I + 1;
+  while I <= N do
+  begin
+    C := Json[I];
+    if C = '"' then begin Result := Path <> ''; Exit; end;
+    if C = '\' then
+    begin
+      I := I + 1;
+      if I > N then Exit;
+      C := Json[I];
+      if C = 'u' then begin Path := ''; Exit; end;
+    end;
+    Path := Path + C;
+    I := I + 1;
+  end;
+  Path := '';
+end;
+
+// Reads the saved library path from <SettingsDir>\library.json, so DeleteSettingsTree can leave that library's folder (database and storage) alone.
+procedure LoadLibraryProtection(const SettingsDir: string);
+var
+  Json, Path: string;
+begin
+  ProtectedLibDir := '';
+  ProtectAllFolders := False;
+  if not FileExists(SettingsDir + '\library.json') then Exit;
+  if (not LoadStringFromFile(SettingsDir + '\library.json', Json)) or (not ReadLibraryJsonPath(Json, Path)) then
+  begin
+    ProtectAllFolders := True;
+    Exit;
+  end;
+  StringChangeEx(Path, '/', '\', True);
+  ProtectedLibDir := Lowercase(RemoveBackslashUnlessRoot(ExtractFileDir(Path)));
+end;
+
+// True when Dir holds a library database itself: a folder like that is a library folder whatever library.json says.
+function HoldsLibraryDatabase(const Dir: string): Boolean;
+var
+  FR: TFindRec;
+begin
+  Result := False;
+  if FindFirst(Dir + '\*', FR) then
+  begin
+    try
+      repeat
+        if (FR.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+          if (Pos('.sqlite', Lowercase(FR.Name)) > 0) or (Lowercase(ExtractFileExt(FR.Name)) = '.db') then begin Result := True; Break; end;
+      until not FindNext(FR);
+    finally
+      FindClose(FR);
+    end;
+  end;
+end;
+
+// A folder DeleteSettingsTree must skip completely (it, its storage\ tree and everything below).
+function IsProtectedFolder(const Dir: string): Boolean;
+var
+  L: string;
+begin
+  L := Lowercase(Dir);
+  Result := False;
+  if ProtectAllFolders then Result := ExtractFileName(L) <> 'logs'
+  else if (ProtectedLibDir <> '') and ((L = ProtectedLibDir) or (Pos(ProtectedLibDir + '\', L) = 1)) then Result := True
+  else if HoldsLibraryDatabase(Dir) then Result := True;
+end;
+
 // Deletes every file below Dir except library databases (*.sqlite, *.sqlite-wal, *.sqlite-shm, *.db), then the folders that end up empty.
+// Never descends into the configured library's folder or any folder that holds a library database (a library's storage\ attachments live there).
 procedure DeleteSettingsTree(const Dir: string);
 var
   FR: TFindRec;
@@ -456,11 +543,12 @@ begin
         P := Dir + '\' + FR.Name;
         if (FR.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
         begin
-          if (FR.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) = 0 then DeleteSettingsTree(P);
+          if ((FR.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) = 0) and (not IsProtectedFolder(P)) then DeleteSettingsTree(P);
         end else
         begin
           L := Lowercase(FR.Name);
-          if (Pos('.sqlite', L) = 0) and (Pos('.db', L) = 0) then DeleteFile(P);
+          // library.json stays while it points at a library: deleting it would leave that library unfindable after a reinstall
+          if (Pos('.sqlite', L) = 0) and (Pos('.db', L) = 0) and not ((L = 'library.json') and (ProtectedLibDir <> '')) then DeleteFile(P);
         end;
       until not FindNext(FR);
     finally
@@ -497,6 +585,7 @@ begin
   begin
     Base := GetParam('ZNAPPDATA');
     if Base = '' then Base := ExpandConstant('{userappdata}');
+    LoadLibraryProtection(Base + '\zotero-next-gpui');      // a library saved under this folder keeps its whole folder, storage\ included
     DeleteSettingsTree(Base + '\zotero-next-gpui');         // ui-state.json, library.json (the saved library path), logs\
     DelTree(Base + '\zotero-next-gpui.exe', True, True, True); // the web tabs' WebView2 profile
   end;

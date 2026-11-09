@@ -22,7 +22,9 @@ import { logInfo, logWarn } from "../../../core/src/log";
 import { downloadsDir, signinProfileDir } from "./paths";
 import type { BannerView, Driver, HelperEvent, RawCookie } from "./protocol";
 
-export const IDLE_MS = 10 * 60_000;
+// The browser exposes a DevTools port on loopback while it runs (WebView2 has no pipe transport), so it is not kept around long:
+// a sign-in or capture that finds it gone starts it again in a few seconds.
+export const IDLE_MS = 2 * 60_000;
 const MAX_PAGE_HTML = 256 * 1024;
 const FALLBACK_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";

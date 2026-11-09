@@ -3,10 +3,12 @@
 //   1. pending annotation edits are saved first (annotations/store.ts), so nothing stale is written after the change;
 //   2. the current file is read again and edited by PDFium (pdf.ts editPdf: /Rotate += quarter turns, FPDFPage_Delete, then
 //      FPDF_SaveAsCopy writes the whole document anew);
-//   3. the new bytes replace the file atomically: PUT /api/attachments/:key/file ({dataBase64}), where the core writes a temporary file in the same
-//      folder, flushes it and renames it over the original (core/src/files/replace.ts). A script that opened a file path directly
-//      gets the same temp + rename here;
-//   4. Delete only: the attachment's annotations follow their pages, as in Zotero (Zotero.PDFWorker.deletePages): annotations on a
+//   3. the new bytes replace the file atomically: PUT /api/attachments/:key/file ({dataBase64, deletedPages?}), where the core writes a temporary
+//      file in the same folder, flushes it and renames it over the original (core/src/files/replace.ts). A script that opened a file
+//      path directly gets the same temp + rename here;
+//   4. Delete only: the attachment's annotations follow their pages in the SAME core request (deletedPages), atomically with the file,
+//      as in Zotero (Zotero.PDFWorker.deletePages; the rule lives in core/src/files/pageops.ts, shiftAnnotations here is the same
+//      rule kept for the reader's own tests): annotations on a
 //      deleted page are deleted, those on later pages move up by the number of deleted pages before them (sort index and a plain
 //      numeric page label follow), and a highlight's continuation on a deleted next page is dropped. Rotation needs nothing:
 //      positions are stored in PDF user space, which a page's /Rotate does not change (annotations/store.ts converts for display);
@@ -98,13 +100,13 @@ async function apply(t: PageOpsTarget, edit: PdfEdit, map: (page: number) => num
 		const bytes = await t.read();
 		const next = await editPdf(bytes, edit);
 		if (t.path) replaceFileAtomic(t.path, next);
-		else await apiRequest("PUT", `/attachments/${encodeURIComponent(t.attachmentKey)}/file`, { dataBase64: Buffer.from(next).toString("base64") });
-		if (real && edit.delete?.length) {
-			const path = `/attachments/${encodeURIComponent(t.attachmentKey)}/annotations`;
-			const anns = await apiRequest<WireAnnotation[]>("GET", path);
-			const { changed, removed } = shiftAnnotations(Array.isArray(anns) ? anns : [], edit.delete);
-			if (changed.length) await apiRequest("PUT", path, changed);
-			if (removed.length) await apiRequest("DELETE", path, { ids: removed });
+		else {
+			// ONE request: the core swaps the file and moves/removes the annotations in a single step, keeping the original until both
+			// succeeded (core/src/files/replace.ts), so a failure cannot leave a shortened file with annotations on the wrong pages
+			await apiRequest("PUT", `/attachments/${encodeURIComponent(t.attachmentKey)}/file`, {
+				dataBase64: Buffer.from(next).toString("base64"),
+				...(real && edit.delete?.length ? { deletedPages: edit.delete } : {}),
+			});
 		}
 		await t.reopen(map);
 	} finally {

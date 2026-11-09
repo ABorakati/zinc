@@ -119,7 +119,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
 	if (!res.ok) {
 		let msg = res.statusText;
 		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch {}
-		throw new Error(msg);
+		throw Object.assign(new Error(msg), { status: res.status }); // callers that must tell a refusal (4xx) from a hiccup read .status
 	}
 	const text = await res.text();
 	return (text ? JSON.parse(text) : {}) as T;

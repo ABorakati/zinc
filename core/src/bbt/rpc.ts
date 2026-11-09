@@ -335,6 +335,7 @@ const METHODS: Record<string, Method> = {
 
 	"collection.scanAUX": (db, [collection, aux]) => {
 		if (typeof collection !== "string" || typeof aux !== "string") invalid("collection and aux must be strings");
+		if (!/\.aux$/i.test(aux as string) || /^(\\|\/\/)/.test(aux as string)) invalid("aux must be a local .aux file");
 		if (!existsSync(aux as string)) throw new RpcError(INVALID_PARAMETERS, `${aux} does not exist`);
 		const text = readFileSync(aux as string, "utf8");
 		const cited = new Set<string>();
@@ -368,13 +369,24 @@ const METHODS: Record<string, Method> = {
 // BBT exposes the item methods under both item.* and items.*
 for (const name of Object.keys(METHODS)) if (name.startsWith("item.")) METHODS[`items.${name.slice(5)}`] = METHODS[name]!;
 
-async function handleOne(db: Database, req: unknown): Promise<Record<string, unknown>> {
+/** JSON-RPC methods that change the library or write files. Only POST may call them (see http.ts). */
+const STATE_CHANGING = new Set(["autoexport.add", "collection.scanAUX", "item.regenerate_key", "items.regenerate_key"]);
+
+export function hasStateChangingMethod(body: unknown): boolean {
+	const one = (r: unknown) => !!r && typeof r === "object" && typeof (r as { method?: unknown }).method === "string" && STATE_CHANGING.has((r as { method: string }).method);
+	return Array.isArray(body) ? body.some(one) : one(body);
+}
+
+async function handleOne(db: Database, req: unknown, readOnly = false): Promise<Record<string, unknown>> {
 	const r = req as { jsonrpc?: unknown; method?: unknown; params?: unknown; id?: unknown } | null;
 	const id = r && typeof r === "object" ? ((r.id as string | number | null | undefined) ?? null) : null;
 	if (!r || typeof r !== "object" || r.jsonrpc !== "2.0" || typeof r.method !== "string") {
 		return { jsonrpc: "2.0", error: { code: INVALID_REQUEST, message: "Invalid Request" }, id: null };
 	}
 	const method = METHODS[r.method];
+	if (readOnly && STATE_CHANGING.has(r.method)) {
+		return { jsonrpc: "2.0", error: { code: INVALID_REQUEST, message: `${r.method} changes data and must be sent with POST` }, id };
+	}
 	if (!method) return { jsonrpc: "2.0", error: { code: METHOD_NOT_FOUND, message: `Method not found: ${r.method}` }, id };
 	let params: unknown[] = [];
 	if (Array.isArray(r.params)) params = r.params;
@@ -413,9 +425,9 @@ const PARAM_NAMES: Record<string, string[]> = {
 for (const [name, names] of Object.entries({ ...PARAM_NAMES })) if (name.startsWith("item.")) PARAM_NAMES[`items.${name.slice(5)}`] = names;
 
 /** Handle a parsed JSON-RPC request or batch. */
-export async function handleRpc(db: Database, body: unknown): Promise<unknown> {
-	if (Array.isArray(body)) return Promise.all(body.map((r) => handleOne(db, r)));
-	return handleOne(db, body);
+export async function handleRpc(db: Database, body: unknown, opts: { readOnly?: boolean } = {}): Promise<unknown> {
+	if (Array.isArray(body)) return Promise.all(body.map((r) => handleOne(db, r, opts.readOnly)));
+	return handleOne(db, body, opts.readOnly);
 }
 
 export const rpcParseError = (message: string) => ({ jsonrpc: "2.0", error: { code: PARSE_ERROR, message: `Parse error: ${message}` }, id: null });

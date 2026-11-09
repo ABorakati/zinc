@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { hooks } from "../../src/additems/files";
 import { reparentItem } from "../../src/additems/files";
 import { getItemDetail } from "../../src/db";
+import { upsertGroupLibrary } from "../../src/libraries";
 import { deps } from "../../src/connector/handlers";
 import { SessionManager } from "../../src/connector/session";
 import { getRev, resetConnectorState, setSelection } from "../../src/connector/state";
@@ -137,6 +138,27 @@ describe("getSelectedCollection", () => {
 		await call(db, "POST", "/api/ui/selection", { kind: "trash" });
 		expect((await zjson("/connector/getSelectedCollection", {})).json.id).toBeNull();
 		expect(await (await call(db, "GET", "/api/ui/selection")).json()).toMatchObject({ selection: { kind: "trash" } });
+	});
+});
+
+describe("a group library is not a save target", () => {
+	test("when the UI has a (read-only) group collection open, saves go to My Library with a notice instead of failing", async () => {
+		const lib = upsertGroupLibrary(db, { groupId: 777, name: "Read-only group", editable: false, filesEditable: false, version: 1 });
+		db.run("INSERT INTO collections(key, name, library_id) VALUES('GROUPCOL1', 'Group coll', ?)", [lib.id]);
+		await call(db, "POST", "/api/ui/selection", { kind: "collection", key: "GROUPCOL1" });
+		const sel = await zjson("/connector/getSelectedCollection", {});
+		expect(sel.status).toBe(200);
+		expect(sel.json).toMatchObject({ id: null, name: "My Library", editable: true });
+		expect(sel.json.notice).toContain("Read-only group");
+		expect(sel.json.targets.some((t: any) => t.id === "CGROUPCOL1")).toBe(false);
+		const saved = await zjson("/connector/saveItems", saveBody([article()], "G1"));
+		expect(saved.status).toBe(201);
+		const it = topByTitle(String(article().title))!;
+		expect(it.collections).toEqual([]);
+		// a target id of that collection (an extension with a stale picker) falls back too
+		const upd = await zjson("/connector/updateSession", { sessionID: "G1", target: "CGROUPCOL1", tags: [] });
+		expect(upd.status).toBe(200);
+		expect(getItemDetail(db, it.data.key)!.collections).toEqual([]);
 	});
 });
 
@@ -289,14 +311,28 @@ describe("attachments", () => {
 	test("saveSingleFile after saveItems finds the item by data.items[0].id; empty content falls back to fetching the page", async () => {
 		const it = await saveOne("S4");
 		deps.fetch = async () => new Response("<html><body>fetched</body></html>");
-		const sf = await zjson("/connector/saveSingleFile", { sessionID: "S4", snapshotContent: "", url: "https://www.bmj.com/content/383", title: "Snapshot", items: [{ id: "item1" }] });
+		const sf = await zjson("/connector/saveSingleFile", { sessionID: "S4", snapshotContent: "", url: "https://www.bmj.com/content/383/bmj-2023-078378", title: "Snapshot", items: [{ id: "item1" }] });
 		expect(sf.status).toBe(201);
 		const snapshot = children(it.data.key).find((k) => k.d.contentType === "text/html" && k.d.linkMode === "imported_url")!;
 		const row = db.query("SELECT path FROM attachments WHERE item_key = ?").get(snapshot.key) as any;
 		expect(readFileSync(row.path, "utf8")).toContain("fetched");
 		deps.fetch = async () => new Response("no", { status: 500 });
-		const fail = await z("/connector/saveSingleFile", { json: { sessionID: "S4", snapshotContent: "", url: "https://www.bmj.com/content/383", items: [{ id: "item1" }] } });
+		const fail = await z("/connector/saveSingleFile", { json: { sessionID: "S4", snapshotContent: "", url: "https://www.bmj.com/content/383/bmj-2023-078378", items: [{ id: "item1" }] } });
 		expect(fail.status).toBe(500);
+	});
+
+	test("the empty-snapshot fallback only fetches the saved page itself", async () => {
+		await saveOne("S5");
+		let fetched: string[] = [];
+		deps.fetch = async (u) => (fetched.push(String(u)), new Response("<html>x</html>"));
+		for (const url of ["http://127.0.0.1:23119/connector/ping", "file:///C:/Windows/win.ini", "https://evil.example/"]) {
+			const r = await z("/connector/saveSingleFile", { json: { sessionID: "S5", snapshotContent: "", url, items: [{ id: "item1" }] } });
+			expect(r.status).toBe(500);
+		}
+		expect(fetched).toEqual([]);
+		const ok = await zjson("/connector/saveSingleFile", { sessionID: "S5", snapshotContent: "", url: "https://www.bmj.com/content/383/bmj-2023-078378#section", items: [{ id: "item1" }] });
+		expect(ok.status).toBe(201);
+		expect(fetched).toEqual(["https://www.bmj.com/content/383/bmj-2023-078378#section"]);
 	});
 
 	test("saveStandaloneAttachment (PDF tab) lands in the selected collection; getRecognizedItem follows the recognized parent", async () => {

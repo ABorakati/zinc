@@ -2,7 +2,8 @@
 import { dirname, join } from "node:path";
 import { FrameReader, MAX_OUT_FRAME } from "../src/frames";
 
-export const HOST_EXE = join(dirname(import.meta.dir), "dist", "zotero-next-host.exe");
+// ZNH_EXE points the tests and the benchmark at another build (e.g. one compiled to a temp path)
+export const HOST_EXE = process.env.ZNH_EXE ?? join(dirname(import.meta.dir), "dist", "zotero-next-host.exe");
 export const UPLOAD_CHUNK = 4 * 1024 * 1024;
 
 export interface Reply {
@@ -21,6 +22,10 @@ export interface CallOpts {
 	text?: string;
 	bytes?: Uint8Array;
 	form?: Record<string, string | { bytes: Uint8Array; type?: string }>;
+	/** send form fields as `up` frames (protocol 2) instead of inline base64 */
+	formUploads?: boolean;
+	/** the body was sent earlier with uploadBytes(): refer to it */
+	uploadUid?: string;
 }
 
 export class HostClient {
@@ -93,6 +98,15 @@ export class HostClient {
 		});
 	}
 
+	/** Sends `bytes` as up frames of `chunk` raw bytes; `interleave` yields to the event loop between frames (what the extension does). */
+	async uploadBytes(uid: string, bytes: Uint8Array, chunk = UPLOAD_CHUNK, interleave = false): Promise<void> {
+		const n = Math.max(1, Math.ceil(bytes.length / chunk));
+		for (let i = 0; i < n; i++) {
+			this.send({ t: "up", uid, seq: i, last: i === n - 1, data: Buffer.from(bytes.subarray(i * chunk, (i + 1) * chunk)).toString("base64") });
+			if (interleave) await Bun.sleep(0);
+		}
+	}
+
 	call(method: string, o: CallOpts = {}): Promise<Reply> {
 		const id = this.nextId++;
 		const headers: Record<string, string> = { "X-Zotero-Connector-API-Version": "3", "X-Zotero-Version": "5.0.0", ...o.headers };
@@ -101,6 +115,7 @@ export class HostClient {
 			headers["Content-Type"] = "application/json";
 			body = { kind: "text", text: JSON.stringify(o.json) };
 		} else if (o.text !== undefined) body = { kind: "text", text: o.text };
+		else if (o.uploadUid) body = { kind: "upload", uid: o.uploadUid };
 		else if (o.bytes) {
 			const uid = `u${id}`;
 			const n = Math.max(1, Math.ceil(o.bytes.length / UPLOAD_CHUNK));
@@ -110,7 +125,16 @@ export class HostClient {
 			body = { kind: "upload", uid };
 		} else if (o.form) {
 			const fields: Record<string, unknown> = {};
-			for (const [k, v] of Object.entries(o.form)) fields[k] = typeof v === "string" ? { text: v } : { b64: Buffer.from(v.bytes).toString("base64"), type: v.type };
+			for (const [k, v] of Object.entries(o.form)) {
+				if (!o.formUploads) fields[k] = typeof v === "string" ? { text: v } : { b64: Buffer.from(v.bytes).toString("base64"), type: v.type };
+				else {
+					const uid = `f${id}-${k}`;
+					const bytes = typeof v === "string" ? new TextEncoder().encode(v) : v.bytes;
+					const n = Math.max(1, Math.ceil(bytes.length / UPLOAD_CHUNK));
+					for (let i = 0; i < n; i++) this.send({ t: "up", uid, seq: i, last: i === n - 1, data: Buffer.from(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)).toString("base64") });
+					fields[k] = typeof v === "string" ? { upload: uid, asText: true } : { upload: uid, type: v.type };
+				}
+			}
 			headers["Content-Type"] = "multipart/form-data";
 			body = { kind: "form", fields };
 		}

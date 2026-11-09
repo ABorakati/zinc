@@ -2,12 +2,28 @@
 // checkbox.tsx; Switch and Tabs follow the Toolbar's view toggle). Colours come from the tokens in theme.ts.
 import { createSignal, For, Show, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
-import type { EventPayload } from "@gpuix/native";
-import type { Style } from "../contracts";
+import type { EventPayload } from "@gpuix/solid";
+import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
-import { shadows, tw, type BoxShadow } from "../theme";
+import { shadows, textStyle, tokens, tw, type BoxShadow } from "../theme";
 import { boundsOf, mode, t, tok, tx, type MenuItem } from "./core";
 import { openMenu } from "./menu";
+
+// ---------------------------------------------------------------------------------------------------- keyboard / focus
+
+type KeyEvent = EventPayload & { preventDefault?: () => void; stopPropagation?: () => void };
+/** Enter and Space activate a focused control (the keys a native button answers to). */
+export const isActivateKey = (e: { key?: string }): boolean => { const k = (e.key ?? "").toLowerCase(); return k === "enter" || k === "space" || k === " "; };
+/** onKeyDown handler running `fn` on Enter / Space (and swallowing the key so a parent list does not also act on it). */
+export const onActivate = (fn: () => void, disabled?: () => boolean | undefined) => (e: KeyEvent) => {
+	if (!isActivateKey(e)) return;
+	e.preventDefault?.(); e.stopPropagation?.();
+	if (!e.isHeld && !disabled?.()) fn();
+};
+/** Ring drawn while a control has keyboard focus (GPUIX `focusVisible` style: keyboard focus, not a pointer click). */
+export const focusRing = (): Style => ({
+	focusVisible: { borderColor: tok("ring"), boxShadow: [{ offsetX: 0, offsetY: 0, blurRadius: 0, spreadRadius: 2, color: tw("bg-ring/50", mode()).backgroundColor as string } satisfies BoxShadow] },
+});
 
 // ---------------------------------------------------------------------------------------------------- Button
 
@@ -25,26 +41,35 @@ const BUTTON_VARIANT = {
 	destructive: { box: "bg-destructive hover:bg-destructive/90", fg: "destructive-foreground" },
 } as const;
 
-export function Button(p: { children?: JSX.Element; onClick?: () => void; variant?: "default" | "primary" | "ghost" | "outline" | "destructive"; size?: "sm" | "md" | "icon"; disabled?: boolean; icon?: string; style?: Style }): JSX.Element {
+export function Button(p: { children?: JSX.Element; onClick?: () => void; variant?: "default" | "primary" | "ghost" | "outline" | "destructive"; size?: "sm" | "md" | "icon"; disabled?: boolean; icon?: string; style?: Style;
+	/** Colour mode to paint in when it is not the app's (the PDF reader follows its own mode accessor). */
+	mode?: () => Mode }): JSX.Element {
 	const size = () => BUTTON_SIZE[p.size ?? "md"];
 	const variant = () => BUTTON_VARIANT[p.variant ?? "default"];
-	const fg = () => tok(variant().fg);
+	const m = (): Mode => p.mode?.() ?? mode();
+	const fg = () => tokens[m()][variant().fg] ?? "#888888";
 	const isText = () => typeof p.children === "string" || typeof p.children === "number";
 	return (
 		<div
+			role="button"
+			tabIndex={p.disabled ? undefined : 0}
+			aria-disabled={p.disabled ? true : undefined}
 			onClick={() => { if (!p.disabled) p.onClick?.(); }}
+			onKeyDown={onActivate(() => p.onClick?.(), () => p.disabled)}
 			style={{
-				...t(`flex flex-none items-center justify-center rounded-md ${size().box} ${variant().box}`),
+				...tw(`flex flex-none items-center justify-center rounded-md ${size().box} ${variant().box}`, m()),
+				keyboardFocusDim: false,
+				...focusRing(),
 				cursor: p.disabled ? "default" : "pointer",
 				opacity: p.disabled ? 0.5 : 1,
 				...(p.disabled ? { hover: {} } : {}),
-				...(p.variant === "primary" && p.size !== "icon" ? { boxShadow: shadows[mode()].primary } : {}),
+				...(p.variant === "primary" && p.size !== "icon" ? { boxShadow: shadows[m()].primary } : {}),
 				...p.style,
 			}}
 		>
 			{p.icon ? <Icon name={p.icon} size={size().icon} color={fg()} style={{ marginRight: p.children !== undefined && p.size !== "icon" ? 6 : 0 }} /> : undefined}
 			<Show when={isText()} fallback={p.children}>
-				<text style={{ ...tx(size().text), color: fg(), whiteSpace: "nowrap" }}>{String(p.children)}</text>
+				<text style={{ ...textStyle(size().text, m()), color: fg(), whiteSpace: "nowrap" }}>{String(p.children)}</text>
 			</Show>
 		</div>
 	);
@@ -112,25 +137,36 @@ export function TextInput(p: { value: string; onInput: (v: string) => void; plac
 // ---------------------------------------------------------------------------------------------------- Select
 
 /** A trigger styled like the input that opens a menu of the options (checked = current); `hint` shows muted on the right. */
-export function Select<T extends string>(p: { value: T; options: { value: T; label: string; hint?: string }[]; onChange: (v: T) => void; width?: number }): JSX.Element {
+export function Select<T extends string>(p: { value: T; options: { value: T; label: string; hint?: string }[]; onChange: (v: T) => void; width?: number; disabled?: boolean }): JSX.Element {
 	let el: HostElement | undefined;
 	const current = () => p.options.find((o) => o.value === p.value)?.label ?? "";
-	const open = (e: EventPayload) => {
+	const open = (e?: EventPayload) => {
+	if (p.disabled) return;
 		const items: MenuItem[] = p.options.map((o) => ({ label: o.label, shortcut: o.hint, checked: o.value === p.value, onSelect: () => p.onChange(o.value) }));
 		const b = boundsOf(el);
-		openMenu(b ? { rect: b } : { x: e.x ?? 0, y: e.y ?? 0 }, items, { minWidth: p.width ?? b?.width });
+		openMenu(b ? { rect: b } : { x: e?.x ?? 0, y: e?.y ?? 0 }, items, { minWidth: p.width ?? b?.width });
 	};
 	return (
 		<div
 			ref={(x: HostElement) => { el = x; }}
+			role="combobox"
+			tabIndex={p.disabled ? undefined : 0}
+			aria-disabled={p.disabled ? true : undefined}
 			onClick={open}
+			onKeyDown={(e) => {
+				const k = (e.key ?? "").toLowerCase();
+				if (isActivateKey(e) || k === "down" || k === "up") { e.preventDefault?.(); e.stopPropagation?.(); if (!e.isHeld) open(); }
+			}}
 			style={{
 				...t("flex h-7 min-w-0 items-center justify-between rounded-md border border-input bg-transparent px-2 shadow-xs"),
+				keyboardFocusDim: false,
+				...focusRing(),
 				width: p.width ?? "100%",
-				cursor: "pointer",
-			}}
-		>
-			<text style={{ ...tx("text-[13px] text-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{current()}</text>
+				cursor: p.disabled ? "default" : "pointer",
+				opacity: p.disabled ? 0.6 : 1,
+				}}
+				>
+				<text style={{ ...tx("text-[13px] text-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{current()}</text>
 			<Icon name="chevrons-up-down" size={14} color={tok("muted-foreground")} style={{ marginLeft: 8 }} />
 		</div>
 	);
@@ -141,7 +177,12 @@ export function Select<T extends string>(p: { value: T; options: { value: T; lab
 /** ui/checkbox.tsx: size-4 rounded-[4px] border border-input bg-background, checked: border-primary bg-primary + a white check. */
 export function Checkbox(p: { checked: boolean; onChange: (v: boolean) => void; label?: string }): JSX.Element {
 	return (
-		<div onClick={() => p.onChange(!p.checked)} style={{ ...t("flex flex-none items-center"), cursor: "pointer", alignSelf: "flex-start" }}>
+		<div
+			role="checkbox" aria-checked={p.checked} aria-label={p.label} tabIndex={0}
+			onClick={() => p.onChange(!p.checked)}
+			onKeyDown={onActivate(() => p.onChange(!p.checked))}
+			style={{ ...t("flex flex-none items-center rounded-[4px]"), keyboardFocusDim: false, ...focusRing(), cursor: "pointer", alignSelf: "flex-start" }}
+		>
 			<div
 				style={{
 					...t("flex size-4 flex-none items-center justify-center rounded-[4px] border"),
@@ -163,7 +204,12 @@ export function Checkbox(p: { checked: boolean; onChange: (v: boolean) => void; 
 /** shadcn switch: h-[18px] w-8 rounded-full, bg-input off / bg-primary on, 14px thumb. */
 export function Switch(p: { checked: boolean; onChange: (v: boolean) => void; label?: string }): JSX.Element {
 	return (
-		<div onClick={() => p.onChange(!p.checked)} style={{ ...t("flex flex-none items-center"), cursor: "pointer", alignSelf: "flex-start" }}>
+		<div
+			role="switch" aria-checked={p.checked} aria-label={p.label} tabIndex={0}
+			onClick={() => p.onChange(!p.checked)}
+			onKeyDown={onActivate(() => p.onChange(!p.checked))}
+			style={{ ...t("flex flex-none items-center rounded-full"), keyboardFocusDim: false, ...focusRing(), cursor: "pointer", alignSelf: "flex-start" }}
+		>
 			<div
 				style={{
 					...t("flex h-[18px] w-8 flex-none items-center rounded-full p-0.5"),
@@ -190,9 +236,15 @@ export function Tabs<T extends string>(p: { value: T; tabs: { value: T; label: s
 				const on = () => p.value === tab.value;
 				return (
 					<div
+						role="tab"
+						aria-selected={on()}
+						tabIndex={0}
 						onClick={() => p.onChange(tab.value)}
+						onKeyDown={onActivate(() => p.onChange(tab.value))}
 						style={{
 							...t("flex h-[30px] items-center rounded-md px-2.5"),
+							keyboardFocusDim: false,
+							...focusRing(),
 							cursor: "pointer",
 							...(on() ? { backgroundColor: tok("background"), boxShadow: tw("shadow-sm", mode()).boxShadow as BoxShadow[] } : {}),
 						}}

@@ -7,7 +7,7 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseFieldCode, parsePrefsXml } from "../../src/cite/docfields";
 import { startZoteroPort } from "../../src/zport";
-import { type IntegrationUI, setIntegrationUI } from "../../src/zport/integration";
+import { type IntegrationUI, integrationOptions, setIntegrationUI } from "../../src/zport/integration";
 import { buildFixture, type Fixture } from "../fixture";
 
 const PORT = 23291;
@@ -343,18 +343,43 @@ describe("dialog queue over HTTP", () => {
 		// a UI client appears: poll once (marks it present), start a command, answer its dialog
 		await fetch(`${URL0}/zotero-next/integration/dialogs`);
 		const running = word.run("addEditCitation");
-		let dlg: { id: string; kind: string; payload: any } | undefined;
+		let dlg: { id: string; kind: string; payload: any; secret: string } | undefined;
 		for (let i = 0; i < 50 && !dlg; i++) {
-			const r = (await (await fetch(`${URL0}/zotero-next/integration/dialogs`)).json()) as { pending: { id: string; kind: string; payload: any }[] };
+			const r = (await (await fetch(`${URL0}/zotero-next/integration/dialogs`)).json()) as { pending: { id: string; kind: string; payload: any; secret: string }[] };
 			dlg = r.pending[0];
 			if (!dlg) await Bun.sleep(40);
 		}
 		expect(dlg?.kind).toBe("citation");
 		expect(dlg!.payload.isNote).toBe(false);
-		const ok = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result: { items: [{ key: "BBBBBBB2" }] } }) });
+		expect(dlg!.secret.length).toBeGreaterThan(16);
+		// an answer without (or with a wrong) secret is refused and leaves the dialog open
+		for (const bad of [{}, { secret: "nope" }]) {
+			const r = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...bad, result: { items: [{ key: "AAAAAAA1" }] } }) });
+			expect(r.status).toBe(403);
+		}
+		const ok = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secret: dlg!.secret, result: { items: [{ key: "BBBBBBB2" }] } }) });
 		expect(ok.status).toBe(200);
 		await running;
 		expect(word.fields[0]!.text).toBe("(1)");
 		expect((await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, { method: "POST", body: "{}" })).status).toBe(404);
+	});
+});
+
+describe("abandoned transactions", () => {
+	test("a client that never answers its first command loses the transaction after the deadline", async () => {
+		const was = integrationOptions.clientAnswerTimeoutMs;
+		integrationOptions.clientAnswerTimeoutMs = 300;
+		try {
+			const first = await fetch(`${URL0}/connector/document/execCommand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: "refresh", docId: "doc1" }) });
+			expect(((await first.json()) as { command: string }).command).toBe("Application.getActiveDocument");
+			// the page now sits on the lock without answering
+			expect((await new FakeWord().run("refresh")).status).toBe(503);
+			await Bun.sleep(700);
+			setIntegrationUI(null);
+			const again = new FakeWord();
+			expect((await again.run("refresh")).status).toBe(200); // the lock was released
+		} finally {
+			integrationOptions.clientAnswerTimeoutMs = was;
+		}
 	});
 });

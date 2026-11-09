@@ -12,6 +12,7 @@ import { handleAddItemsApi } from "./additems/api";
 import { duplicateItem } from "./additems/duplicate";
 import { handleDuplicatesApi } from "./duplicates/api";
 import { handleIoApi } from "./io/api";
+import { isExecutableName } from "./io/dangerous";
 import { handleSearchesApi } from "./searches/api";
 import { handleMaintenanceApi } from "./maintenance/api";
 import { handleFilesApi } from "./files/api";
@@ -36,6 +37,16 @@ function json(body: unknown, status = 200): Response {
 		status,
 		headers: { "Content-Type": "application/json; charset=utf-8" },
 	});
+}
+
+/** The explicit "open anyway" flag of an open-external request: {"confirm": true} in the body, or ?confirm=1. */
+async function openConfirmed(req: Request): Promise<boolean> {
+	if (/^(1|true|yes)$/i.test(new URL(req.url).searchParams.get("confirm") ?? "")) return true;
+	try {
+		return (await req.json())?.confirm === true;
+	} catch {
+		return false;
+	}
 }
 
 async function readBody<T = any>(req: Request): Promise<T> {
@@ -309,7 +320,13 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			if (m !== "POST") return methodNotAllowed();
 			const path = attachmentFilePath(db, b);
 			if (c === "reveal") opener.reveal(path);
-			else opener.openFile(path);
+			else {
+				// Explorer would run an executable / script. Only an explicit confirm (body {"confirm": true} or ?confirm=1) opens one.
+				if (isExecutableName(path) && !(await openConfirmed(req))) {
+					throw new HttpError(409, "this file type can run code; it was not opened. Reveal it in the folder instead, or confirm to open it anyway");
+				}
+				opener.openFile(path);
+			}
 			return json({ ok: true });
 		}
 		if (c === "annotations") {

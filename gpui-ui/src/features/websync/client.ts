@@ -54,6 +54,8 @@ export const webSyncApi = {
 	setMode: (mode: WebSyncMode) => call<WebSyncStatus>("POST", `${BASE}/mode`, { mode }),
 	setOptions: (o: { push?: boolean; files?: WebSyncFiles }) => call<WebSyncStatus>("POST", `${BASE}/options`, o),
 	syncNow: () => call<WebSyncStatus>("POST", `${BASE}/now`),
+	/** Unlink the zotero.org account (versions, watermarks, retry lists); library data stays. Needed before a key of another account. */
+	resetAccount: () => call<WebSyncStatus>("POST", `${BASE}/account/reset`, { confirm: true }),
 	checkFiles: () => call<FilesCheck>("POST", `${BASE}/files/check`),
 	downloadMissing: () => call<WebSyncStatus>("POST", `${BASE}/files/download-missing`),
 };
@@ -67,6 +69,8 @@ function create() {
 	const [error, setError] = createSignal("");
 	const [check, setCheck] = createSignal<FilesCheck | null>(null);
 	const [reachable, setReachable] = createSignal(true);
+	/** the last key was refused because the library is linked to another zotero.org account (HTTP 409) */
+	const [otherAccount, setOtherAccount] = createSignal(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
 	const jobRunning = () => !!status()?.fileJob?.running;
@@ -86,14 +90,17 @@ function create() {
 	async function run(fn: () => Promise<WebSyncStatus>): Promise<boolean> {
 		setWorking(true);
 		setError("");
-		try { apply(await fn()); return true; } catch (e) { setError(errMsg(e)); return false; } finally { setWorking(false); }
+		setOtherAccount(false);
+		try { apply(await fn()); return true; } catch (e) { setError(errMsg(e)); setOtherAccount((e as { status?: number }).status === 409); return false; } finally { setWorking(false); }
 	}
 
 	return {
-		status, working, error, check, reachable, jobRunning,
+		status, working, error, check, reachable, jobRunning, otherAccount,
 		refresh,
 		clearError: () => setError(""),
 		setKey: (apiKey: string) => run(() => webSyncApi.setKey(apiKey)),
+		/** Unlink the current account, then connect this key (another zotero.org account). */
+		switchAccount: (apiKey: string) => run(async () => { await webSyncApi.resetAccount(); return webSyncApi.setKey(apiKey); }),
 		removeKey: () => run(() => webSyncApi.removeKey()),
 		setMode: (mode: WebSyncMode) => run(() => webSyncApi.setMode(mode)),
 		setOptions: (o: { push?: boolean; files?: WebSyncFiles }) => run(() => webSyncApi.setOptions(o)),

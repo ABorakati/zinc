@@ -48,10 +48,12 @@ function AnnotationPopup(p: { k: Kit; s: Session; a: Annotation; box: Accessor<{
 				boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 14, spreadRadius: -2, color: "rgba(0, 0, 0, 0.28)" }],
 			}}
 		>
+			<Show when={!store.readOnly()}>
 			<div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-				<Swatches k={p.k} colors={COLORS} value={p.a.color} size={16} onPick={(c) => { p.s.ui.setColor(c); store.update(p.a.id, { color: c }); }} />
-				<IconButton k={p.k} icon="trash-2" title="Delete" size={14} box={24} onClick={() => act.remove([p.a.id])} />
+			<Swatches k={p.k} colors={COLORS} value={p.a.color} size={16} onPick={(c) => { p.s.ui.setColor(c); store.update(p.a.id, { color: c }); }} />
+			<IconButton k={p.k} icon="trash-2" title="Delete" size={14} box={24} onClick={() => act.remove([p.a.id])} />
 			</div>
+			</Show>
 			<Show when={p.a.text}>
 				<div style={{ ...p.k.t("flex border-l-2 pl-2"), borderColor: p.a.color }}>
 					<text style={{ ...p.k.tx("text-[11.5px] text-muted-foreground"), lineClamp: 3 }}>{p.a.text}</text>

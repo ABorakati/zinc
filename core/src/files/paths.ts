@@ -71,13 +71,15 @@ export function relativeUnder(file: string, dir: string): string | null {
 	return f.slice(d.length + 1);
 }
 
-/** The file-system path a stored attachments.path value points at (null: no path, or the base directory is unset). */
+/** The file-system path a stored attachments.path value points at (null: no path, the base directory is unset, or the relative path would leave it). */
 export function resolveStoredPath(db: Database, raw: string | null | undefined, base?: string | null): string | null {
 	if (!raw) return null;
 	if (!raw.startsWith(RELATIVE_PREFIX)) return raw;
 	const b = base === undefined ? effectiveBaseDir(db) : base;
 	if (!b) return null;
-	return join(b, raw.slice(RELATIVE_PREFIX.length).replaceAll("\\", "/"));
+	const full = join(b, raw.slice(RELATIVE_PREFIX.length).replaceAll("\\", "/"));
+	// "attachments:../x" must not climb out of the base directory
+	return relativeUnder(full, b) === null ? null : full;
 }
 
 /** How a linked file's absolute path should be stored: relative to the base directory when it is inside it. */

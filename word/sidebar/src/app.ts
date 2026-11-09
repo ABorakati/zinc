@@ -300,11 +300,17 @@ export class App {
 		return this.host.call("lib.search", buildSearchArgs(q, limit));
 	}
 
-	async libraryItems(keys: string[]): Promise<Map<string, { data: ZoteroItemData; trashed: boolean; itemKey: string }>> {
-		const out = new Map<string, { data: ZoteroItemData; trashed: boolean; itemKey: string }>();
+	/** The item URI for a library item: groups/<id>/items/<key> for a group item, else the account (or local) URI base. */
+	uriForItem(key: string, groupId?: number | null): string {
+		return groupId ? itemUri(`http://zotero.org/groups/${groupId}`, key) : itemUri(this.uriBase, key);
+	}
+
+	async libraryItems(keys: string[]): Promise<Map<string, LibraryHit>> {
+		const out = new Map<string, LibraryHit>();
 		if (keys.length === 0) return out;
-		const rows = await this.host.call<{ key: string; found: boolean; trashed?: boolean; itemKey?: string; data?: ZoteroItemData }[]>("lib.items", { keys });
-		for (const r of rows) if (r.found && r.data) out.set(r.key, { data: { ...r.data, key: r.itemKey ?? r.key }, trashed: !!r.trashed, itemKey: r.itemKey ?? r.key });
+		const rows = await this.host.call<{ key: string; found: boolean; trashed?: boolean; itemKey?: string; data?: ZoteroItemData; groupId?: number | null }[]>("lib.items", { keys });
+		for (const r of rows)
+			if (r.found && r.data) out.set(r.key, { data: { ...r.data, key: r.itemKey ?? r.key }, trashed: !!r.trashed, itemKey: r.itemKey ?? r.key, groupId: r.groupId ?? null });
 		return out;
 	}
 
@@ -318,7 +324,7 @@ export class App {
 			key: it.itemKey,
 			cslId: it.itemKey,
 			csl,
-			uris: [itemUri(this.uriBase, it.itemKey)],
+			uris: [this.uriForItem(it.itemKey, it.groupId)],
 			inLibrary: true,
 			title: String(csl.title ?? ""),
 			creators: authorsOf(csl, 3),
@@ -362,7 +368,7 @@ export class App {
 		const extra = await this.libraryItems([...new Set(Object.values(replaced))]);
 		const out = new Map<CitationItem, Resolved>();
 		for (const ci of items) {
-			let hit: { data: ZoteroItemData; trashed: boolean; itemKey: string } | undefined;
+			let hit: LibraryHit | undefined;
 			let replacedFrom: string | undefined;
 			for (const k of keysOfCitationItem(ci)) {
 				if (lib.has(k)) {
@@ -388,6 +394,7 @@ export class App {
 					inLibrary: true,
 					trashed: hit.trashed,
 					data: hit.data,
+					groupId: hit.groupId,
 					replacedFrom,
 				});
 			} else if (ci.itemData) {
@@ -476,7 +483,8 @@ export class App {
 				key: r.key,
 				cslId: r.cslId,
 				csl: r.csl,
-				uris: r.key ? [itemUri(this.uriBase, r.key)] : ci.uris ?? [],
+				// the citation keeps the URIs it was written with (they may name a group library or another account); only an item without any gets a new one
+					uris: ci.uris?.length ? ci.uris : r.key ? [this.uriForItem(r.key, r.groupId)] : [],
 				inLibrary: r.inLibrary,
 				title: String(r.csl.title ?? ""),
 				creators: authorsOf(r.csl, 3),
@@ -606,17 +614,34 @@ export class App {
 	}
 
 	/** A multi-item citation becomes one citation per item, one after another (locator, prefix and suffix stay with their item). */
-	async splitCitation(ref: { story: string; idx: number }, citationID: string): Promise<RefreshReport> {
+	async splitCitation(ref: { story: string; idx: number }, citationID: string, opts: { allowProtected?: boolean } = {}): Promise<RefreshReport> {
 		const cur = (await this.readFields()).find((f) => f.story === ref.story && f.idx === ref.idx);
 		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID) throw new Error("The document changed under the sidebar. Refresh and try again.");
 		if (cur.parsed.data.citationItems.length < 2) throw new Error("This citation has only one item.");
+		const pr = cur.parsed.data.properties;
+		if (!opts.allowProtected && (pr.custom || pr.dontUpdate || isHandEdited(pr, cur.text))) {
+			throw new Error("This citation has custom or hand-edited text that a split would replace. Confirm the split first.");
+		}
 		const parts = splitCitationData(cur.parsed.data);
 		await this.host.call("doc.begin", { name: "Split citation" });
 		try {
-			await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(parts[0]!) });
-			// each new field goes straight after the first one, last item first, so they end up in the original order
-			for (let i = parts.length - 1; i >= 1; i--) {
-				await this.host.call("doc.insert", { kind: "item", code: buildItemCode(parts[i]!), text: "…", after: { story: ref.story, idx: ref.idx } });
+			// the new fields are inserted first and the original is rewritten last, so until the very end the original is intact
+			let inserted = 0;
+			try {
+				// each new field goes straight after the original, last item first, so they end up in the original order
+				for (let i = parts.length - 1; i >= 1; i--) {
+					await this.host.call("doc.insert", { kind: "item", code: buildItemCode(parts[i]!), text: "…", after: { story: ref.story, idx: ref.idx } });
+					inserted++;
+				}
+				await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(parts[0]!) });
+			} catch (e) {
+				const why = e instanceof Error ? e.message : String(e);
+				try {
+					await this.removeInsertedParts(ref, parts.slice(parts.length - inserted));
+				} catch {
+					throw new Error(`The split failed (${why}) and could not be fully undone. Press Ctrl+Z in Word to restore the citation.`);
+				}
+				throw new Error(`The split failed (${why}). The original citation is unchanged.`);
 			}
 			return await this.refreshAll();
 		} finally {
@@ -624,11 +649,20 @@ export class App {
 		}
 	}
 
+	/** Rollback of a failed split: delete the fields just inserted after `ref` (matched by their citation IDs, highest index first). */
+	private async removeInsertedParts(ref: { story: string; idx: number }, made: CitationData[]): Promise<void> {
+		if (!made.length) return;
+		const ids = new Set(made.map((m) => m.citationID));
+		const doomed = (await this.readFields()).filter((f) => f.story === ref.story && f.parsed?.kind === "item" && ids.has(f.parsed.data.citationID));
+		doomed.sort((a, b) => b.idx - a.idx);
+		for (const f of doomed) await this.host.call("doc.delete", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed?.kind === "item" ? f.parsed.data.citationID : undefined } });
+	}
+
 	/** Fold citations that touch each other into the first of them (Zotero's merge on Refresh). Returns how many fields were removed. */
 	private async mergeAdjacent(): Promise<number> {
 		const fields = await this.readFields();
 		const mergeable = (f: DocField): f is ItemField =>
-			f.parsed?.kind === "item" && !f.parsed.data.properties.dontUpdate && !isHandEdited(f.parsed.data.properties, f.text);
+			f.parsed?.kind === "item" && !f.parsed.data.properties.dontUpdate && !f.parsed.data.properties.custom && !isHandEdited(f.parsed.data.properties, f.text);
 		const groups: ItemField[][] = [];
 		let cur: ItemField[] = [];
 		for (const f of fields) {
@@ -644,16 +678,24 @@ export class App {
 		await this.host.call("doc.begin", { name: "Merge citations" });
 		try {
 			const doomed: ItemField[] = [];
-			for (const g of groups) {
-				const [first, ...rest] = g as [ItemField, ...ItemField[]];
-				const merged = mergeCitationData(first.parsed.data, rest.map((r) => r.parsed.data));
-				merged.properties = prepareForEditing(merged.properties);
-				await this.host.call("doc.set", { ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID }, code: buildItemCode(merged) });
-				doomed.push(...rest);
+			const rewritten: ItemField[] = [];
+			try {
+				for (const g of groups) {
+					const [first, ...rest] = g as [ItemField, ...ItemField[]];
+					const merged = mergeCitationData(first.parsed.data, rest.map((r) => r.parsed.data));
+					merged.properties = prepareForEditing(merged.properties);
+					await this.host.call("doc.set", { ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID }, code: buildItemCode(merged) });
+					rewritten.push(first);
+					doomed.push(...rest);
+				}
+				// deletions last, highest index first, so no pending index moves
+				doomed.sort((a, b) => b.idx - a.idx);
+				for (const f of doomed) await this.host.call("doc.delete", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID } });
+			} catch (e) {
+				// put the first citation of each group back as it was: nothing is lost, the touching citations simply stay separate
+				for (const first of rewritten) await this.host.call("doc.set", { ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID }, code: first.code }).catch(() => {});
+				throw new Error(`Merging adjacent citations failed (${e instanceof Error ? e.message : String(e)}); the citations were left as they were. Ctrl+Z in Word undoes anything partial.`);
 			}
-			// deletions last, highest index first, so no pending index moves
-			doomed.sort((a, b) => b.idx - a.idx);
-			for (const f of doomed) await this.host.call("doc.delete", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID } });
 			return doomed.length;
 		} finally {
 			await this.host.call("doc.end");
@@ -689,9 +731,16 @@ export class App {
 		await this.host.call("doc.begin", { name: "Convert citations" });
 		try {
 			// last first: converting a citation only renumbers fields after it, never the ones still waiting
+			let done = 0;
 			for (const f of [...todo].reverse()) {
 				const cid = f.parsed?.kind === "item" ? f.parsed.data.citationID : undefined;
-				await this.host.call("doc.convert", { ref: { story: f.story, idx: f.idx, kind: "item", cid }, target, code: f.code });
+				try {
+					// the add-in creates the replacement first and removes the original only then, so a failure leaves this citation as it was
+					await this.host.call("doc.convert", { ref: { story: f.story, idx: f.idx, kind: "item", cid }, target, code: f.code });
+				} catch (e) {
+					throw new Error(`Moving citations failed after ${done} of ${todo.length} (${e instanceof Error ? e.message : String(e)}). The failing citation was not changed; Ctrl+Z in Word undoes the ones already moved.`);
+				}
+				done++;
 			}
 		} finally {
 			await this.host.call("doc.end");
@@ -964,7 +1013,7 @@ export class App {
 						const nid = typeof ci.id === "number" ? ci.id : numericId(r.key);
 						ci.id = nid;
 						ci.itemData = { ...r.csl, id: nid };
-						if (r.replacedFrom) ci.uris = [itemUri(this.uriBase, r.key)];
+						if (r.replacedFrom) ci.uris = [this.uriForItem(r.key, r.groupId)];
 					}
 				}
 				const code = buildItemCode(data);
@@ -1159,6 +1208,14 @@ export function plainReference(v: { authors: string; title: string; journal: str
 	return [v.authors, v.title, [v.journal, v.year].filter(Boolean).join(" ")].filter(Boolean).join(". ").replace(/\.\.+/g, ".") + ".";
 }
 
+/** A library row as the add-in returns it (groupId: the zotero.org group of a group-library item, else null). */
+export interface LibraryHit {
+	data: ZoteroItemData;
+	trashed: boolean;
+	itemKey: string;
+	groupId: number | null;
+}
+
 export interface Resolved {
 	cslId: string;
 	csl: CslItem;
@@ -1167,6 +1224,7 @@ export interface Resolved {
 	trashed: boolean;
 	data?: ZoteroItemData;
 	replacedFrom?: string;
+	groupId?: number | null;
 }
 
 export { uriToKey };

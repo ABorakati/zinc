@@ -14,8 +14,8 @@
 //
 // Dialogs (citation picker, bibliography editor, document preferences) are zotero-next UI, not the word processor's. They are
 // described as plain JSON requests and answered by a UI client over
-//   GET  /zotero-next/integration/dialogs        -> {pending: [{id, kind, payload}]}
-//   POST /zotero-next/integration/dialogs/<id>   {result} (or {result: null} to cancel)
+//   GET  /zotero-next/integration/dialogs        -> {pending: [{id, kind, payload, secret}]}
+//   POST /zotero-next/integration/dialogs/<id>   {secret, result} (or {result: null} to cancel)
 // With no UI client polling, document preferences fall back to the Quick Copy style and the other dialogs cancel with a message
 // shown in the word processor. Tests (and the app, in-process) can install a UI with setIntegrationUI().
 import type { Database } from "bun:sqlite";
@@ -32,11 +32,13 @@ import {
 	CITATION_SCHEMA,
 	buildPrefsXml,
 	defaultPrefs,
+	isHandEdited,
 	itemUri,
 	keysOfCitationItem,
 	newCitationID,
 	numericId,
 	parseFieldCode,
+	randomId,
 	parsePrefsXml,
 	richToRuns,
 	runsToHtml,
@@ -75,11 +77,29 @@ class Transaction {
 	hold(): Promise<Response> {
 		return new Promise((resolve) => (this.release = resolve));
 	}
-	/** Send a command to the client and wait for its answer. */
+	/** Set once the client stopped answering: every later call fails at once so cleanup cannot stall again. */
+	private abandoned: Error | null = null;
+	/** Send a command to the client and wait for its answer; gives up after integrationOptions.clientAnswerTimeoutMs. */
 	call(command: string, args: Json[] = []): Promise<Json> {
+		if (this.abandoned) return Promise.reject(this.abandoned);
 		return new Promise((resolve, reject) => {
-			this.waiting = { resolve, reject };
-			this.send({ command, arguments: args });
+			const t = setTimeout(() => {
+				if (this.waiting?.reject !== fail) return;
+				this.waiting = null;
+				this.abandoned = new Error(`the word processor did not answer "${command}" in time; the transaction was abandoned`);
+				reject(this.abandoned);
+			}, integrationOptions.clientAnswerTimeoutMs);
+			const done = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
+				clearTimeout(t);
+				f(...a);
+			};
+			const fail = done(reject);
+			this.waiting = { resolve: done(resolve), reject: fail };
+			try {
+				this.send({ command, arguments: args });
+			} catch (e) {
+				fail(e instanceof Error ? e : new Error(String(e)));
+			}
 		});
 	}
 	private send(body: unknown) {
@@ -163,6 +183,8 @@ interface Pending {
 	id: string;
 	kind: DialogKind;
 	payload: unknown;
+	/** per-dialog secret: only a client that fetched the dialog listing can answer it */
+	secret: string;
 	resolve: (v: any) => void;
 }
 const pending = new Map<string, Pending>();
@@ -173,6 +195,8 @@ export const integrationOptions = {
 	uiPollWindowMs: 60_000,
 	/** give up on an unanswered dialog (treated as cancel) */
 	dialogTimeoutMs: 15 * 60_000,
+	/** give up on a word-processor client that holds a transaction without answering a command (alerts wait for a person, so this is generous) */
+	clientAnswerTimeoutMs: 10 * 60_000,
 };
 
 /** Install the in-process UI (tests, or the app); null goes back to the HTTP dialog queue. */
@@ -191,6 +215,7 @@ function ask<T>(kind: DialogKind, payload: unknown): Promise<T | null> {
 			id,
 			kind,
 			payload,
+			secret: randomId(24),
 			resolve: (v) => {
 				clearTimeout(t);
 				resolve((v ?? null) as T | null);
@@ -611,7 +636,7 @@ class Session {
 			const data = structuredClone(f.cite!) as CitationData;
 			const props = data.properties;
 			// citation text edited by hand: ask, "yes" freezes it (dontUpdate)
-			const edited = !!props.plainCitation && f.wire.text !== props.plainCitation && !props.dontUpdate;
+			const edited = isHandEdited(props, f.wire.text) && !props.dontUpdate;
 			if (edited && mode !== "reset" && !opts.ignoreEdits) {
 				await this.doc.select(f.wire).catch(() => {});
 				const keep = await this.doc.alert(`The citation was edited since Zotero created it. Do you want to keep your changes?\n\nOriginal: ${props.plainCitation}\nModified: ${f.wire.text}`, ICON_CAUTION, BTN_YES_NO);
@@ -776,7 +801,7 @@ async function cite(s: Session, field: WireField | null, opts: { note?: boolean 
 		await doc.setCode(field, "TEMP");
 		isNew = true;
 	}
-	if (old && (old.properties.dontUpdate || (old.properties.plainCitation && field.text !== old.properties.plainCitation))) {
+	if (old && (old.properties.dontUpdate || isHandEdited(old.properties, field.text))) {
 		const ok = await doc.alert(`The citation was edited since Zotero created it. Editing it will discard those changes.\n\nOriginal: ${old.properties.plainCitation ?? ""}\nModified: ${field.text}`, ICON_WARNING, BTN_OK_CANCEL);
 		if (!ok) throw new UserCancelled("editing citation");
 	}
@@ -1016,7 +1041,7 @@ registerZRoute("POST", "/connector/document/respond", async (req) => {
 
 registerZRoute("GET", "/zotero-next/integration/dialogs", () => {
 	lastPoll = Date.now();
-	return Response.json({ pending: [...pending.values()].map(({ id, kind, payload }) => ({ id, kind, payload })), inProgress: !!current });
+	return Response.json({ pending: [...pending.values()].map(({ id, kind, payload, secret }) => ({ id, kind, payload, secret })), inProgress: !!current });
 });
 
 registerZRoute("POST", /^\/zotero-next\/integration\/dialogs\/[A-Za-z0-9]+$/, async (req, { url }) => {
@@ -1024,7 +1049,9 @@ registerZRoute("POST", /^\/zotero-next\/integration\/dialogs\/[A-Za-z0-9]+$/, as
 	const id = url.pathname.split("/").pop()!;
 	const p = pending.get(id);
 	if (!p) return Response.json({ error: "no such dialog" }, { status: 404 });
-	const body = (await jsonBody(req)) as { result?: unknown } | null;
+	const body = (await jsonBody(req)) as { result?: unknown; secret?: unknown } | null;
+	const given = req.headers.get("x-zinc-dialog-secret") ?? (typeof body?.secret === "string" ? body.secret : "");
+	if (given !== p.secret) return Response.json({ error: "missing or wrong dialog secret" }, { status: 403 });
 	pending.delete(id);
 	p.resolve(body?.result ?? null);
 	return Response.json({ ok: true });

@@ -75,6 +75,12 @@ export async function handleWebSyncApi(req: Request, db: Database): Promise<Resp
 				if (typeof b.apiKey !== "string") throw new HttpError(400, "apiKey must be a string");
 				return json(await svc.setKey(b.apiKey));
 			}
+			case "account/reset": {
+				need("POST");
+				const b = await body(req);
+				if (b.confirm !== true) throw new HttpError(400, "confirm must be true: this unlinks the zotero.org account (no library data is deleted)");
+				return json(await svc.resetAccount());
+			}
 			case "mode": {
 				need("POST");
 				const b = await body(req);

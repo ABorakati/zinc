@@ -36,7 +36,7 @@ export async function loadTags(opts: { wantAutomatic: boolean }): Promise<void> 
 		const [list, cols, auto] = await Promise.all([
 			sidebarApi.tags(store.libraryId()),
 			sidebarApi.tagColors().catch(() => [] as TagColor[]),
-			opts.wantAutomatic ? sidebarApi.automaticTags().catch(() => []) : Promise.resolve(null),
+			opts.wantAutomatic ? sidebarApi.automaticTags(store.libraryId()).catch(() => []) : Promise.resolve(null),
 		]);
 		if (my !== tagSeq) return;
 		setTags(list);
@@ -74,8 +74,11 @@ export async function setTagColor(name: string, color: string | null): Promise<v
 	}
 }
 
-/** Select / deselect a tag in the filter (several tags AND together). */
+/**
+ * Select / deselect a tag in the filter. One tag at a time: the core's item query takes a single `tag`, so picking another tag
+ * replaces the selection instead of showing several highlighted tags of which only the first filters.
+ */
 export function toggleTag(tag: string): void {
 	const cur = tagFilter();
-	setTagFilter(cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]);
+	setTagFilter(cur.includes(tag) ? [] : [tag]);
 }

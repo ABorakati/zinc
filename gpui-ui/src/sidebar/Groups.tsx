@@ -46,7 +46,7 @@ function LibraryRow(p: { lib: Library; hasCollections: boolean }): JSX.Element {
 					if (!e.isRightClick) return;
 					openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, [
 						{ label: "New Collection…", icon: "folder-plus", disabled: !p.lib.editable, onSelect: () => void newCollection(p.lib) },
-						{ label: "Refresh", icon: "refresh-cw", onSelect: () => void store.reloadLibraries().then(() => store.refresh()) },
+						{ label: "Refresh", icon: "refresh-cw", onSelect: () => store.refresh() }, // refresh() re-reads the libraries too
 					]);
 				}}
 				onMouseEnter={() => setHov(true)}

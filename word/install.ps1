@@ -88,6 +88,16 @@ try {
   $key.SetValue('Description', 'Citations from your Zinc library, in a sidebar', 'String')
   $key.SetValue('LoadBehavior', 3, 'DWord')
   $key.Close()
+
+  # "Open in Zinc": the installed app sits two folders above the add-in ({app}\word\addin). Register its exe so the add-in can start
+  # it with Zinc closed, wherever the install folder is. A dev checkout has no such exe: nothing is written and the add-in probes
+  # the default install folders instead.
+  $appExe = [IO.Path]::GetFullPath((Join-Path $AddinDir '..\..\zotero-next-gpui.exe'))
+  if (Test-Path -LiteralPath $appExe) {
+    $zk = $root.CreateSubKey('Software\ZoteroNextWord')
+    $zk.SetValue('Launcher', $appExe, 'String')
+    $zk.Close()
+  }
 } finally {
   $classes.Close()
 }

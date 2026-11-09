@@ -7,6 +7,7 @@ import type { EntityType, ZoteroJson } from "../sync/protocol";
 import { failure, libraryVersion, type ZoteroWebClient } from "./client";
 import { annotationFromRemote } from "./convert";
 import { setWebVersions, userRef, webVersions, type LibraryRef } from "./library";
+import { getState, setState } from "./state";
 
 const BATCH = 50;
 const MAX_RESTARTS = 4;
@@ -33,6 +34,31 @@ function chunk<T>(a: T[], n: number): T[][] {
 	const out: T[][] = [];
 	for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n));
 	return out;
+}
+
+/** sync_state name of a library's retry list (objects that could not be applied and are fetched again by key). */
+const retryName = (libraryId: number): string => (libraryId === 1 ? "web_retry" : `web_retry_lib${libraryId}`);
+
+export function retryKeys(db: Database, libraryId: number): { type: EntityType; key: string }[] {
+	try {
+		const v = JSON.parse(getState(db, retryName(libraryId)) ?? "[]") as { type?: unknown; key?: unknown }[];
+		return v.filter((r): r is { type: EntityType; key: string } => (r.type === "item" || r.type === "annotation" || r.type === "collection") && typeof r.key === "string");
+	} catch {
+		return [];
+	}
+}
+
+function setRetry(db: Database, libraryId: number, list: { type: EntityType; key: string }[]): void {
+	setState(db, retryName(libraryId), list.length ? JSON.stringify(list) : null);
+}
+
+/** Where an object lives: the library of its row ('none': no row at all). Keys are unique across the whole file. */
+function libraryOf(db: Database, type: EntityType, key: string): number | "none" {
+	const r =
+		type === "annotation"
+			? (db.query("SELECT i.library_id AS lib FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ?").get(key) as { lib: number } | null)
+			: (db.query(`SELECT library_id AS lib FROM ${type === "item" ? "items" : "collections"} WHERE key = ?`).get(key) as { lib: number } | null);
+	return r ? r.lib : "none";
 }
 
 export function knownVersions(db: Database, type: EntityType): Map<string, number> {
@@ -80,21 +106,28 @@ async function attempt(ctx: PullContext): Promise<PullResult> {
 	const knownAnn = knownVersions(db, "annotation");
 	const knownColl = knownVersions(db, "collection");
 	// versions we already hold (our own pushes come back in the list) need no fetch
-	const itemKeys = Object.entries(iv.body)
-		.filter(([k, v]) => (knownItems.get(k) ?? knownAnn.get(k) ?? -1) < v)
-		.map(([k]) => k);
-	const collKeys = Object.entries(cv.body)
-		.filter(([k, v]) => (knownColl.get(k) ?? -1) < v)
-		.map(([k]) => k);
+	const retry = retryKeys(db, ref.id);
+	const itemKeys = new Set(
+		Object.entries(iv.body)
+			.filter(([k, v]) => (knownItems.get(k) ?? knownAnn.get(k) ?? -1) < v)
+			.map(([k]) => k),
+	);
+	const collKeys = new Set(
+		Object.entries(cv.body)
+			.filter(([k, v]) => (knownColl.get(k) ?? -1) < v)
+			.map(([k]) => k),
+	);
+	// objects an earlier pull could not apply: fetched again by key whatever the watermark says
+	for (const r of retry) (r.type === "collection" ? collKeys : itemKeys).add(r.key);
 
 	const fetched = await Promise.all([
-		...chunk(itemKeys, BATCH).map((keys) => getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/items`, { itemKey: keys.join(","), includeTrashed: 1 }, libV)),
-		...chunk(collKeys, BATCH).map((keys) => getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/collections`, { collectionKey: keys.join(",") }, libV)),
+		...chunk([...itemKeys], BATCH).map((keys) => getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/items`, { itemKey: keys.join(","), includeTrashed: 1 }, libV)),
+		...chunk([...collKeys], BATCH).map((keys) => getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/collections`, { collectionKey: keys.join(",") }, libV)),
 	]);
 
 	const changes: RemoteChanges = { upserts: [], deletes: [] };
 	const versions: { type: EntityType; key: string; version: number }[] = [];
-	const itemBatches = Math.ceil(itemKeys.length / BATCH);
+	const itemBatches = Math.ceil(itemKeys.size / BATCH);
 	fetched.forEach((f, i) => {
 		const isItems = i < itemBatches;
 		for (const o of f.body) {
@@ -119,15 +152,30 @@ async function attempt(ctx: PullContext): Promise<PullResult> {
 
 	const gone: { type: EntityType; key: string }[] = [];
 	for (const key of deleted.items ?? []) {
-		const isAnn = !!db.query("SELECT 1 FROM annotations WHERE key = ?").get(key);
+		// only this library's annotations: a deleted key that is an annotation of another library is not ours to remove
+		const isAnn = libraryOf(db, "annotation", key) === ref.id;
 		gone.push({ type: isAnn ? "annotation" : "item", key });
 	}
 	for (const key of deleted.collections ?? []) gone.push({ type: "collection", key });
 	changes.deletes.push(...gone);
 
 	const report = applyChanges(db, changes, ctx.dataDir, ref.id);
-	recordVersions(db, versions);
-	forgetVersions(db, gone);
+	// A version is recorded only for an object that is stored in this library: an object that failed to apply must stay
+	// "unknown" so it is fetched again, and one that collided with another library's key must not overwrite that library's version.
+	const failed = new Set((report.failed ?? []).map((f) => `${f.type}:${f.key}`));
+	recordVersions(
+		db,
+		versions.filter((v) => !failed.has(`${v.type}:${v.key}`) && libraryOf(db, v.type, v.key) === ref.id),
+	);
+	// Forget what the server erased, unless the key now belongs to a different library (it was never ours).
+	forgetVersions(
+		db,
+		gone.filter((g) => {
+			const lib = libraryOf(db, g.type, g.key);
+			return lib === "none" || lib === ref.id;
+		}),
+	);
+	setRetry(db, ref.id, report.failed ?? []);
 	setWebVersions(db, ref.id, { pull: libV, write: libV });
 	return { ...report, libraryVersion: libV, fetched: versions.length };
 }

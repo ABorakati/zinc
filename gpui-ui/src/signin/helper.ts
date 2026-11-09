@@ -324,6 +324,8 @@ function sweepDownloads(dir: string): void {
 
 export async function main(): Promise<void> {
 	// the browser's DevTools endpoint (loopback, a port the browser chooses, announced in the profile's DevToolsActivePort file)
+	// (--remote-allow-origins is left unset: the browser then refuses DevTools WebSocket connections that carry a web page's Origin.
+	// Other local accounts can still reach the port; the browser therefore runs only for IDLE_MS after its last use, see bridge.ts.)
 	process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=0";
 	({ Webview } = (await import("webview-bun" as string)) as unknown as { Webview: typeof Webview });
 	process.on("disconnect", shutdown);

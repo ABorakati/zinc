@@ -87,9 +87,11 @@ body {
 	font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
 	-webkit-font-smoothing: antialiased;
 }
-#app { display: flex; flex-direction: column; gap: 10px; padding: 10px; height: 100%; overflow-y: auto; }
+#app { display: flex; flex-direction: column; gap: 10px; padding: 10px; height: 100%; min-height: 0; overflow-y: auto; }
+/* the "Cited here" card is capped, so the search box and its results stay visible below it and only one scrollbar (the results list) shows */
+#cited { flex: none; max-height: 45vh; overflow-y: auto; }
 /* the search section takes the height left over, so the results list reaches the bottom of the pane */
-#add { flex: 1 0 auto; min-height: 14rem; display: flex; flex-direction: column; }
+#add { flex: 1 1 auto; min-height: 10rem; display: flex; flex-direction: column; }
 /* picked items and "Insert citation" stay under the search box; the list (which fills the rest) goes last */
 #add > #tray-actions { margin-top: 8px; }
 #add > #tray { order: 1; }
@@ -154,7 +156,10 @@ textarea { resize: vertical; min-height: 44px; }
 .cite-item .abs.open { max-height: none; }
 .cite-item .abs.clamped::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2.4em; background: linear-gradient(transparent, var(--card)); }
 .cite-item .abs.open::after { display: none; }
-.cite-item .acts { margin-top: 6px; }
+.cite-item .acts { margin-top: 6px; gap: 4px; }
+/* compact actions: "Open in Zinc", "DOI" and "Fetch abstract" fit on one row instead of stacking */
+#cited button { padding: 3px 8px; font-size: 12px; }
+#cited .row { gap: 4px; }
 
 .settings-grid { display: grid; gap: 10px; }
 .settings-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted-foreground); }

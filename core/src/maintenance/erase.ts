@@ -2,6 +2,7 @@
 // Everything goes through normal table writes, so the sync triggers record the deletes in sync_outbox.
 
 import type { Database } from "bun:sqlite";
+import { itemsRelatingTo, removeRelated } from "../db";
 import { assertItemWritable } from "../libraries";
 import { existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
@@ -76,6 +77,17 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 	const parents = new Set<string>();
 	db.transaction(() => {
 		const inSet = new Set(all);
+		// no item keeps a "related" link to something that is gone for good
+		for (const k of all) {
+			const back = itemsRelatingTo(db, k).filter((r) => !inSet.has(r));
+			for (const r of back) {
+				try {
+					removeRelated(db, r, [k]);
+				} catch {
+					// a read-only library's item is left as it is
+				}
+			}
+		}
 		for (let i = 0; i < all.length; i += 500) {
 			const chunk = all.slice(i, i + 500);
 			const p = ph(chunk.length);

@@ -5,6 +5,7 @@ import type { ItemRow } from "../contracts";
 import { copyRich } from "../features/platform";
 import { store } from "../store";
 import { toast } from "../ui";
+import { openAttachmentExternally } from "../ui/openExternal";
 import { doiUrl, isRegular, plural, STAR_TAG, webUrl } from "./logic";
 import { fieldOf } from "../table/defs";
 
@@ -63,7 +64,7 @@ export async function openUrl(url: string): Promise<void> {
 	try { await api.openUrl(url); } catch (e) { fail("Could not open link", e); }
 }
 export async function openExternal(attachmentKey: string): Promise<void> {
-	try { await api.openExternal(attachmentKey); } catch (e) { fail("Could not open file", e); }
+	try { await openAttachmentExternally(attachmentKey); } catch (e) { fail("Could not open file", e); }
 }
 export async function revealAttachment(attachmentKey: string): Promise<void> {
 	try { await api.reveal(attachmentKey); } catch (e) { fail("Could not show file", e); }
@@ -165,6 +166,7 @@ export async function findFullText(keys: string[], opts: { openAccessOnly?: bool
 
 /** Add/remove the Starred tag with an optimistic update of the cached row. */
 export async function toggleStar(it: ItemRow): Promise<void> {
+	if (!store.canEdit()) return void toast("This library is read-only", { description: "Items in it cannot be starred." });
 	const was = !!it.tags?.some((t) => t.tag === STAR_TAG);
 	const before = it.tags ?? [];
 	store.patchItem(it.key, { tags: was ? before.filter((t) => t.tag !== STAR_TAG) : [...before, { tag: STAR_TAG, type: 0 }] });

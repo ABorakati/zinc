@@ -9,14 +9,14 @@
 //   /better-bibtex/export?/library;id:1/My%20Library.bibtex   (the URL BBT shows for "Download Better BibTeX export")
 // Request and response shapes follow BBT's documentation (https://retorque.re/zotero-better-bibtex/), MIT; see NOTICE.
 import type { Database } from "bun:sqlite";
-import { registerZRoute } from "../zport/routes";
+import { hostIsLoopback, registerZRoute } from "../zport/routes";
 import { gatherItems } from "../io/export";
 import { itemToCsl } from "../cite/csl";
 import { cawyOutput, translatorFormat, type Pick } from "./cite";
 import { exportBetterFormat } from "./export";
 import { copyToClipboard, hasPicker, pickInteractively, selectedItemKeys } from "./hooks";
 import { getKeyInfos, itemsForCitekey } from "./keys";
-import { resolveCollection, handleRpc, rpcParseError } from "./rpc";
+import { resolveCollection, handleRpc, hasStateChangingMethod, rpcParseError } from "./rpc";
 import type { BbtExportFormat } from "./types";
 
 const text = (body: string, status = 200, extra: Record<string, string> = {}) =>
@@ -44,12 +44,16 @@ export function queryParams(url: URL): { params: Record<string, string>; bare: s
 
 const isOn = (v: string | undefined) => v !== undefined && !/^(0|false|no|off|n)$/i.test(v);
 
-/** Browsers must not reach the library through these endpoints (CSRF / DNS rebinding); editors and CLIs send no Origin. */
-function browserRejected(req: Request): boolean {
-	const origin = req.headers.get("origin");
-	if (origin && /^https?:\/\//i.test(origin)) return true;
-	const host = (req.headers.get("host") ?? "").replace(/:\d+$/, "").toLowerCase();
-	return !!host && !["127.0.0.1", "localhost", "[::1]"].includes(host);
+/**
+ * Browsers must not reach the library through these endpoints (CSRF / DNS rebinding / sandboxed frames). Editors, CLIs and
+ * Pandoc send no Origin. Any Origin at all is refused, including "null" (sandboxed iframes and data: URLs) and extension
+ * origins; so is a cross-site / same-site fetch that carries none (an <img> or <script> tag).
+ */
+export function browserRejected(req: Request): boolean {
+	if (req.headers.get("origin") !== null) return true;
+	const site = (req.headers.get("sec-fetch-site") ?? "").toLowerCase();
+	if (site === "cross-site" || site === "same-site") return true;
+	return !hostIsLoopback(req);
 }
 
 function register(path: string | RegExp, handler: (req: Request, db: Database, url: URL) => Promise<Response>): void {
@@ -117,7 +121,13 @@ register("/better-bibtex/json-rpc", async (req, db, url) => {
 	} catch (e) {
 		return Response.json(rpcParseError(e instanceof Error ? e.message : String(e)));
 	}
-	return Response.json(await handleRpc(db, body));
+	const isGet = req.method === "GET";
+	// Methods that change data or write files are POST-only with a JSON body: a GET (an <img> tag, a link) must never run them.
+	if (!isGet && hasStateChangingMethod(body)) {
+		const type = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+		if (!/(^|[/+])json(-rpc)?$/.test(type)) return Response.json({ jsonrpc: "2.0", error: { code: -32600, message: "state-changing methods need Content-Type: application/json" }, id: null }, { status: 415 });
+	}
+	return Response.json(await handleRpc(db, body, { readOnly: isGet }));
 });
 
 // ---------------------------------------------------------------- pull exports

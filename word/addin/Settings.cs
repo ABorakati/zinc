@@ -41,6 +41,22 @@ namespace ZoteroNext.Word
             }
         }
 
+        /// <summary>Keys the sidebar page may change. Everything else (the launcher path, apiBase, the MCP switches) is never writable from page script.</summary>
+        static readonly HashSet<string> PageKeys = new HashSet<string> { "style", "locale", "noteType", "autoUpdate", "dbPath", "userId" };
+
+        /// <summary>settings.set from the WebView: only whitelisted keys, plain strings/numbers/booleans.</summary>
+        public static Dictionary<string, object> PatchFromPage(Dictionary<string, object> patch)
+        {
+            foreach (var kv in patch)
+            {
+                if (!PageKeys.Contains(kv.Key)) throw new ArgumentException("setting not changeable from the sidebar: " + kv.Key);
+                var v = kv.Value;
+                if (!(v == null || v is string || v is bool || v is int || v is long || v is double || v is decimal))
+                    throw new ArgumentException("setting " + kv.Key + " must be a string, number or boolean");
+            }
+            return Patch(patch);
+        }
+
         public static string Get(string key, string def = null) { return Json.Str(Load(), key, def); }
 
         /// <summary>The library path the zotero-next apps share: %APPDATA%\zotero-next-gpui\library.json {"path": "..."}. Tests point this at a scratch file.</summary>
@@ -97,9 +113,56 @@ namespace ZoteroNext.Word
 
         public static string ApiBase() { return (Get("apiBase") ?? Environment.GetEnvironmentVariable("ZN_API") ?? "http://127.0.0.1:23120").TrimEnd('/'); }
 
+        /// <summary>The registry key the installer's add-in registration (install.ps1) writes the Zinc executable path to (value "Launcher").</summary>
+        public const string RegistryKey = @"Software\ZoteroNextWord";
+
+        /// <summary>
+        /// The Zinc executable to start for "Open in Zinc": ZN_LAUNCHER, the path install.ps1 registered, a "launcher" entry a person put in settings.json
+        /// (page script cannot write it), then the places the installer puts it (per-user Programs\Zinc and Programs\Zotero Next), the uninstall entries'
+        /// InstallLocation, and last the old Electrobun launcher. Returns the first that exists, else the first candidate (so the message names it).
+        /// </summary>
         public static string LauncherPath()
         {
-            return Get("launcher") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "dev.zotero-next.app", "stable", "app", "bin", "launcher.exe");
+            var cands = LauncherCandidates();
+            foreach (var c in cands) if (File.Exists(c)) return c;
+            return cands[0];
+        }
+
+        internal static List<string> LauncherCandidates()
+        {
+            var list = new List<string>();
+            Action<string> add = p => { if (!string.IsNullOrWhiteSpace(p) && !list.Contains(p)) list.Add(p); };
+            add(Environment.GetEnvironmentVariable("ZN_LAUNCHER"));
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RegistryKey))
+                    if (k != null) add(k.GetValue("Launcher") as string);
+            }
+            catch { }
+            add(Get("launcher"));
+            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            foreach (var dir in new[] { "Zinc", "Zotero Next" })
+                add(Path.Combine(local, "Programs", dir, "zotero-next-gpui.exe"));
+            try
+            {
+                // the installer's uninstall entries (Inno Setup: <AppId>_is1), per user
+                using (var u = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall"))
+                    if (u != null)
+                        foreach (var name in u.GetSubKeyNames())
+                        {
+                            if (!name.EndsWith("_is1", StringComparison.OrdinalIgnoreCase)) continue;
+                            using (var e = u.OpenSubKey(name))
+                            {
+                                var loc = e == null ? null : e.GetValue("InstallLocation") as string;
+                                if (string.IsNullOrEmpty(loc)) continue;
+                                var exe = Path.Combine(loc, "zotero-next-gpui.exe");
+                                if (File.Exists(exe)) add(exe);
+                            }
+                        }
+            }
+            catch { }
+            add(Path.Combine(local, "dev.zotero-next.app", "stable", "app", "bin", "launcher.exe"));
+            return list;
         }
     }
 }

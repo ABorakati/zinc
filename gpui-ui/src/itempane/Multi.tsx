@@ -1,6 +1,7 @@
 // Multi-selection summary: "N items selected" with bulk editing capabilities:
 // Add/remove tags, add/remove collections, set or clear fields, Find Full Text, move to Trash with confirmation.
 import { createMemo, createSignal, Show, type JSX } from "solid-js";
+import type { Collection } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { Button, confirm, Select, toast } from "../ui";
@@ -31,6 +32,16 @@ export const COMMON_FIELDS = [
 	{ value: "libraryCatalog", label: "Library Catalog" },
 ];
 
+/** A collection by key in a tree (roots with children). */
+function findCollection(tree: Collection[], key: string): Collection | null {
+	for (const c of tree) {
+		if (c.key === key) return c;
+		const inner = c.children ? findCollection(c.children, key) : null;
+		if (inner) return inner;
+	}
+	return null;
+}
+
 interface ProgressState {
 	current: number;
 	total: number;
@@ -44,12 +55,16 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 	const [fieldVal, setFieldVal] = createSignal("");
 	const [busy, setBusy] = createSignal(false);
 	const [progress, setProgress] = createSignal<ProgressState | null>(null);
+		/** a read-only group: every bulk action would fail one request per item, so none is offered */
+		const locked = () => !store.canEdit();
 
 	const inCollection = createMemo(() => store.view().kind === "collection");
 	const currentColl = createMemo(() => {
 		const v = store.view();
 		if (v.kind !== "collection") return null;
-		return store.collections().find((c) => c.key === v.key) ?? null;
+		// My Library's tree first, then the group libraries' (a group's collection is not in store.collections())
+		if (store.libraryId() === 1) return findCollection(store.collections(), v.key);
+		return findCollection(store.groupCollections()[store.libraryId()] ?? [], v.key);
 	});
 
 	async function runBatched<T>(
@@ -264,8 +279,12 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 				</div>
 			</Show>
 
+			<Show when={locked()}>
+			<text style={{ ...tx("text-xs text-muted-foreground"), textAlign: "center" }}>This library is read-only: the items cannot be changed.</text>
+			</Show>
+			<Show when={!locked()}>
 			<div style={{ ...t("flex flex-col gap-3 w-full"), maxWidth: 260 }}>
-				{/* Tags */}
+			{/* Tags */}
 				<div style={{ ...t("flex flex-col gap-1") }}>
 					<text style={{ ...tx("text-xs text-muted-foreground") }}>Add tag to all</text>
 					<Picker<string> placeholder="Tag name…" query={(q) => suggest(q)} label={(x) => x} icon={() => "tag"} onPick={(x) => void addTag(x)} onSubmitText={(x) => void addTag(x)} />
@@ -307,9 +326,10 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 							<Icon name="trash-2" size={14} color="#fff" />
 							<text style={{ ...tx("text-xs font-medium"), color: "#fff" }}>Move to Trash</text>
 						</Button>
-					</div>
-				</div>
-			</div>
-		</div>
-	);
-}
+						</div>
+						</div>
+						</div>
+						</Show>
+						</div>
+						);
+						}

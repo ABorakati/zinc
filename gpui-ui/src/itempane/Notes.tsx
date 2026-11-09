@@ -84,7 +84,8 @@ export function NoteEditor(p: NoteEditorProps): JSX.Element {
 export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 	const pane = usePane();
 	const [html, setHtml] = createSignal<string | null>(null);
-	const [mode, setMode] = createSignal<"edit" | "preview">(p.startEditing ? "edit" : "preview");
+	const [modeSig, setMode] = createSignal<"edit" | "preview">(p.startEditing && !locked() ? "edit" : "preview");
+	const mode = () => (locked() ? "preview" : modeSig()); // a read-only library: the note can be read, not edited
 	const [status, setStatus] = createSignal<"" | "Saving…" | "Saved">("");
 	let draft = "";
 	let dirty = false;
@@ -143,7 +144,8 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 	return (
 		<div style={{ ...t("flex flex-col w-full overflow-hidden rounded-md border"), backgroundColor: tok("background"), borderColor: tok("border") }}>
 			<div style={{ ...t("flex h-8 items-center gap-2 border-b px-2"), backgroundColor: withMuted(), borderColor: tok("border") }}>
-				<Segmented value={mode()} onChange={(m) => void switchTo(m)} />
+				<Show when={!locked()}><Segmented value={mode()} onChange={(m) => void switchTo(m)} /></Show>
+				<Show when={locked()}><text style={{ ...tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Read-only</text></Show>
 				<Show when={!simple()}>
 					<text style={{ ...tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>HTML</text>
 				</Show>

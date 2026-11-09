@@ -3,10 +3,11 @@
 // POST /empty-trash {olderThanDays?}
 // POST /erase {keys[]}
 // POST /erase/preview {keys[]}     -> {items, total}
-// GET  /tags/automatic             -> [{tag, count}]
-// POST /tags/rename {from, to}     (merges when `to` exists)
-// POST /tags/delete {tags[]}
-// POST /tags/delete-automatic
+// GET  /tags/automatic?library=    -> [{tag, count}]
+// POST /tags/rename {from, to, library?}     (merges when `to` exists)
+// POST /tags/delete {tags[], library?}
+// POST /tags/delete-automatic {library?}
+// Tag routes act on one library (the `library` id, default My Library) and answer 403 for a read-only one.
 // POST /rename-files {attachmentKeys[]}
 import type { Database } from "bun:sqlite";
 import { dirname, join } from "node:path";
@@ -72,7 +73,7 @@ async function dispatch(req: Request, db: Database): Promise<Response> {
 	const m = req.method;
 
 	if (m === "GET" && route === "trash") return Response.json(trashCounts(db, days(url.searchParams.get("olderThanDays")), libOf(db, url.searchParams.get("library"))));
-	if (m === "GET" && route === "tags/automatic") return Response.json(automaticTags(db));
+	if (m === "GET" && route === "tags/automatic") return Response.json(automaticTags(db, libOf(db, url.searchParams.get("library"))));
 	if (m === "POST" && route === "empty-trash") {
 		const b = await body(req);
 		return Response.json(eraseItems(db, trashedKeys(db, days(b.olderThanDays), libOf(db, b.library)), ownStorage(db)));
@@ -87,10 +88,13 @@ async function dispatch(req: Request, db: Database): Promise<Response> {
 	}
 	if (m === "POST" && route === "tags/rename") {
 		const b = await body(req);
-		return Response.json(renameTag(db, b.from, b.to));
+		return Response.json(renameTag(db, b.from, b.to, libOf(db, b.library)));
 	}
-	if (m === "POST" && route === "tags/delete") return Response.json(deleteTags(db, (await body(req)).tags));
-	if (m === "POST" && route === "tags/delete-automatic") return Response.json(deleteAutomaticTags(db));
+	if (m === "POST" && route === "tags/delete") {
+		const b = await body(req);
+		return Response.json(deleteTags(db, b.tags, libOf(db, b.library)));
+	}
+	if (m === "POST" && route === "tags/delete-automatic") return Response.json(deleteAutomaticTags(db, libOf(db, (await body(req)).library)));
 	if (m === "POST" && route === "rename-files") {
 		const keys = strings((await body(req)).attachmentKeys, "attachmentKeys");
 		return Response.json({ results: renameFiles(db, keys, ownStorage(db)) });

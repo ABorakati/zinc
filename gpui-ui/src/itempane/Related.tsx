@@ -38,7 +38,7 @@ export function RelatedSection(): JSX.Element {
 
 	async function search(q: string): Promise<Found[]> {
 		if (!q.trim()) return [];
-		const r = await ipApi.searchItems(q.trim(), 15);
+		const r = await ipApi.searchItems(q.trim(), 15, store.libraryId());
 		const have = new Set([pane.detail()?.data.key, ...related().map((x) => x.key)]);
 		return r.items.filter((i) => !have.has(i.key));
 	}

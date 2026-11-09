@@ -8,7 +8,8 @@ import { normalizeDoi } from "../references/ids";
 import { mailtoFor } from "../references/net";
 import { crossrefQuery } from "../references/sources";
 import { renameFiles } from "../maintenance/rename-files";
-import { addOne, loadKnown } from "./add";
+import { assertFilesWritable, assertWritable, libraryOfItem, USER_LIBRARY } from "../libraries";
+import { addOne, loadKnown, type Known } from "./add";
 import { reparentItem, storageRoot } from "./files";
 import { findArxivId, type ParsedId } from "./identifiers";
 
@@ -67,7 +68,7 @@ async function resolve(db: Database, text: string): Promise<{ id: ParsedId; via:
 	return out;
 }
 
-export async function retrieveOne(db: Database, attachmentKey: string, known = loadKnown(db), opts: RetrieveOptions = {}): Promise<{ result: RetrieveResult; item?: ItemDetail }> {
+export async function retrieveOne(db: Database, attachmentKey: string, known?: Known, opts: RetrieveOptions = {}): Promise<{ result: RetrieveResult; item?: ItemDetail }> {
 	const fail = (error: string): { result: RetrieveResult } => ({ result: { attachmentKey, status: "failed", error } });
 	const row = db.query("SELECT i.parent_key, i.deleted, a.content_type, a.path FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.key = ?").get(attachmentKey) as
 		| { parent_key: string | null; deleted: number; content_type: string | null; path: string | null }
@@ -76,6 +77,15 @@ export async function retrieveOne(db: Database, attachmentKey: string, known = l
 	if (row.parent_key) return fail("the attachment already has a parent item");
 	if (!/pdf/i.test(row.content_type ?? "") && !/\.pdf$/i.test(row.path ?? "")) return fail("not a PDF");
 	if (!row.path) return fail("the attachment has no file");
+	// the parent is made in the attachment's own library (a standalone PDF in a group must not get a My Library parent)
+	const lib = libraryOfItem(db, attachmentKey) ?? USER_LIBRARY;
+	try {
+		assertWritable(db, lib);
+		assertFilesWritable(db, lib); // renaming the file from the parent changes it
+	} catch (e) {
+		return fail(e instanceof Error ? e.message : String(e));
+	}
+	known ??= loadKnown(db, lib);
 
 	try {
 		await extractFulltext(db, attachmentKey);
@@ -91,7 +101,7 @@ export async function retrieveOne(db: Database, attachmentKey: string, known = l
 	let lastError = "no DOI, arXiv ID or matching title found in the PDF";
 
 	const tryId = async (p: ParsedId, via: "doi" | "arxiv" | "title") => {
-		const r = await addOne(db, p, known, colls[0], opts.autoTag !== false);
+		const r = await addOne(db, p, known!, colls[0], opts.autoTag !== false, lib);
 		const parent = r.added?.data.key ?? r.existing!;
 		reparentItem(db, attachmentKey, parent);
 		if (r.added) {
@@ -134,10 +144,13 @@ export async function retrieveMetadata(db: Database, attachmentKeys: unknown, op
 	if (!Array.isArray(attachmentKeys) || attachmentKeys.length === 0 || attachmentKeys.some((k) => typeof k !== "string")) {
 		throw new HttpError(400, "attachmentKeys must be a non-empty array of strings");
 	}
-	const known = loadKnown(db);
+	const knownByLibrary = new Map<number, Known>(); // the same paper in two libraries is not a duplicate
 	const results: RetrieveResult[] = [];
 	const items: ItemDetail[] = [];
 	for (const key of attachmentKeys as string[]) {
+		const lib = libraryOfItem(db, key) ?? USER_LIBRARY;
+		let known = knownByLibrary.get(lib);
+		if (!known) knownByLibrary.set(lib, (known = loadKnown(db, lib)));
 		const { result, item } = await retrieveOne(db, key, known, opts);
 		results.push(result);
 		if (item && !items.some((i) => i.data.key === item.data.key)) items.push(item);

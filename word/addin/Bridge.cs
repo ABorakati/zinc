@@ -43,7 +43,7 @@ namespace ZoteroNext.Word
                     return Json.Map("version", "0.1.0", "library", Library.Info(), "uri", Library.UriBase(), "settings", Settings.Load(),
                         "zn", Json.Bool(p, "light") ? Json.Map("up", false, "api", Settings.ApiBase(), "launcher", "", "launcherExists", false) : ZnClient.Status());
                 case "settings.get": return Settings.Load();
-                case "settings.set": return Settings.Patch(p);
+                case "settings.set": return Settings.PatchFromPage(p);
 
                 case "lib.search": return Library.Search(p);
                 case "lib.items": return Library.Items(p);

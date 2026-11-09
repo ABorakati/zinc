@@ -25,10 +25,12 @@ import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
+	renameSync,
 	rmSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+	BASELINE_CHANGED,
 	type ZoteroJson,
 	ZoteroLockedError,
 	type ZoteroWrite,
@@ -97,6 +99,13 @@ function sameJson(a: unknown, b: unknown): boolean {
 	return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Refuse to overwrite an object that Zotero modified after the baseline the write was built from. */
+function checkBaseline(w: ZoteroWrite, curDateModified: string | undefined): void {
+	if (!w.baseline || !curDateModified) return;
+	const base = isoToSql(w.baseline);
+	if (base && curDateModified > base) throw new ZoteroWriteError(`${BASELINE_CHANGED} (${w.key}); not overwritten`);
+}
+
 function rank(w: ZoteroWrite): number {
 	if (w.op === "erase") return 6;
 	if (w.op === "trash" || w.op === "restore") return 5;
@@ -117,6 +126,8 @@ class Session {
 	readonly now = sqlNow();
 	private fileUndo: FileUndo[] = [];
 	readonly afterCommit: (() => void)[] = [];
+	/** Attachment files copied next to their target as <name>.zn-stage; renamed into place only after COMMIT. */
+	staged: { stage: string; dest: string }[] = [];
 	private userURIBase: string | null = null;
 
 	constructor(
@@ -139,7 +150,35 @@ class Session {
 		return this.db.query(sql).run(...(p as never[]));
 	}
 
+	stageMark(): number {
+		return this.staged.length;
+	}
+
+	/** Forget (and delete) files staged by a write that was rolled back. */
+	dropStaged(mark: number): void {
+		for (const s of this.staged.splice(mark)) rmSync(s.stage, { force: true });
+	}
+
+	/** After COMMIT: put the staged files in place. An existing file is replaced atomically, never half-written. */
+	commitStaged(): void {
+		for (const s of this.staged) {
+			try {
+				renameSync(s.stage, s.dest);
+			} catch {
+				try {
+					copyFileSync(s.stage, s.dest);
+					rmSync(s.stage, { force: true });
+				} catch {
+					// the staged copy stays beside the target (<name>.zn-stage) rather than being lost
+				}
+			}
+		}
+		this.staged = [];
+	}
+
 	rollbackFiles(): void {
+		for (const s of this.staged) rmSync(s.stage, { force: true });
+		this.staged = [];
 		for (const u of this.fileUndo.reverse()) {
 			try {
 				if (u.createdDir) rmSync(u.dir, { recursive: true, force: true });
@@ -483,6 +522,7 @@ class Session {
 		}
 
 		// ---- write ----
+		checkBaseline(w, cur?.dateModified);
 		let itemID: number;
 		let dm: string;
 		if (!cur) {
@@ -589,9 +629,11 @@ class Session {
 		if (!existsSync(src)) throw new ZoteroWriteError(`attachment file not found: ${src}`);
 		const dir = join(this.dataDir, "storage", key);
 		const dest = join(dir, filename);
-		this.fileUndo.push({ dir, createdDir: !existsSync(dir), file: dest, hadFile: existsSync(dest) });
+		const stage = `${dest}.zn-stage`;
+		this.fileUndo.push({ dir, createdDir: !existsSync(dir), file: stage, hadFile: false });
 		mkdirSync(dir, { recursive: true });
-		copyFileSync(src, dest);
+		copyFileSync(src, stage); // the existing file (if any) is untouched until the transaction has committed
+		this.staged.push({ stage, dest });
 	}
 
 	private setDeleted(itemID: number, deleted: boolean): void {
@@ -737,6 +779,7 @@ class Session {
 				(data.deleted === undefined || !!data.deleted === cur.deleted);
 			if (same) return { changed: false, dateModified: cur.dateModified };
 		}
+		checkBaseline(w, cur?.dateModified);
 		let itemID: number;
 		let dm: string;
 		if (!cur) {
@@ -964,13 +1007,15 @@ export class ZoteroDbWriter implements ZoteroWriter {
 			for (const i of order) {
 				const w = writes[i];
 				db.exec("SAVEPOINT w");
+				const mark = session.stageMark();
 				try {
-					const r = this.applyOne(session, w);
+					const r =this.applyOne(session, w);
 					db.exec("RELEASE w");
 					results[i] = { key: w.key, ok: true, ...r };
 				} catch (e) {
 					if (!(e instanceof ZoteroWriteError)) throw e;
 					db.exec("ROLLBACK TO w");
+					session.dropStaged(mark);
 					db.exec("RELEASE w");
 					results[i] = { key: w.key, ok: false, error: e.message };
 				}
@@ -986,7 +1031,8 @@ export class ZoteroDbWriter implements ZoteroWriter {
 
 			db.exec("COMMIT");
 			inTx = false;
-			for (const f of session.afterCommit) {
+			session.commitStaged();
+				for (const f of session.afterCommit) {
 				try {
 					f();
 				} catch {

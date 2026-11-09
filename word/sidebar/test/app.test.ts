@@ -564,3 +564,50 @@ describe("manual edits, custom text and unsorted items", () => {
 		await expect(app.updateCitation({ story: "main", idx: 1 }, "nope", picks)).rejects.toThrow();
 	});
 });
+
+describe("failure safety (split, edit URIs)", () => {
+	test("a split that fails halfway leaves the original citation and no stray fields", async () => {
+		const { app, host } = setup();
+		await app.init();
+		const [a, b, c] = await pickAll(app, "AAAA1111", "BBBB2222", "CCCC3333");
+		await app.insertCitation([a!, b!, c!]);
+		const before = host.fields[0].code;
+		const id = citeData(before).citationID;
+		const real = host.call.bind(host);
+		let inserts = 0;
+		host.call = (async (method: string, params?: Record<string, unknown>) => {
+			if (method === "doc.insert" && ++inserts === 2) throw new Error("Word refused");
+			return real(method, params);
+		}) as typeof host.call;
+		await expect(app.splitCitation({ story: "main", idx: 1 }, id)).rejects.toThrow(/original citation is unchanged/);
+		host.call = real;
+		expect(host.fields.length).toBe(1);
+		expect(host.fields[0].code).toBe(before);
+	});
+
+	test("a citation with custom text is not split without the confirmed flag", async () => {
+		const { app, host } = setup();
+		await app.init();
+		const [a, b] = await pickAll(app, "AAAA1111", "BBBB2222");
+		await app.insertCitation([a!, b!]);
+		const data = citeData(host.fields[0].code);
+		data.properties.custom = "my own wording";
+		host.fields[0].code = buildItemCode(data);
+		await expect(app.splitCitation({ story: "main", idx: 1 }, data.citationID)).rejects.toThrow(/Confirm the split/);
+		expect(host.fields.length).toBe(1);
+		await app.splitCitation({ story: "main", idx: 1 }, data.citationID, { allowProtected: true });
+		expect(host.fields.length).toBe(2);
+	});
+
+	test("editing a citation keeps the URIs it was written with (a group item stays in its group)", async () => {
+		const { app, host } = setup();
+		await app.init();
+		const [a] = await pickAll(app, "AAAA1111");
+		await app.insertCitation([a!]);
+		const data = citeData(host.fields[0].code);
+		data.citationItems[0]!.uris = ["http://zotero.org/groups/777/items/AAAA1111"];
+		host.fields[0].code = buildItemCode(data);
+		const res = await app.picksFromCitation(host.fields[0].code);
+		expect(res!.picks[0]!.uris).toEqual(["http://zotero.org/groups/777/items/AAAA1111"]);
+	});
+});

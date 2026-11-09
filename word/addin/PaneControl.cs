@@ -64,11 +64,18 @@ namespace ZoteroNext.Word
                 var env = await WebHost.EnvAsync(_web);
                 await _web.EnsureCoreWebView2Async(env);
                 var core = _web.CoreWebView2;
-                core.Settings.AreDevToolsEnabled = true;
+                core.Settings.AreDevToolsEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", site, CoreWebView2HostResourceAccessKind.Allow);
                 core.WebMessageReceived += OnMessage;
+                // the page may only ever be the sidebar's own site: anything else is opened in the browser, never inside the pane
+                core.NavigationStarting += (s, e) =>
+                {
+                    if (IsSidebarUri(e.Uri)) return;
+                    e.Cancel = true;
+                    try { if (e.Uri.StartsWith("https://") || e.Uri.StartsWith("http://")) System.Diagnostics.Process.Start(e.Uri); } catch { }
+                };
                 core.NavigationCompleted += (s, e) => { _ready = true; OfficeTheme.Apply(core, _theme); FlushPending(); };
                 core.NewWindowRequested += (s, e) =>
                 {
@@ -100,8 +107,16 @@ namespace ZoteroNext.Word
             try { _web.CoreWebView2.PostWebMessageAsString(json); } catch (Exception e) { Log.Error("post failed", e); }
         }
 
+        /// <summary>The sidebar's own origin (the virtual host mapped to the bundled site).</summary>
+        internal static bool IsSidebarUri(string uri)
+        {
+            Uri u;
+            return Uri.TryCreate(uri, UriKind.Absolute, out u) && u.Scheme == "https" && string.Equals(u.Host, "zn-sidebar.local", StringComparison.OrdinalIgnoreCase);
+        }
+
         void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            if (!IsSidebarUri(e.Source)) { Log.Write("pane: message from foreign origin ignored: " + e.Source); return; }
             string msg;
             try { msg = e.TryGetWebMessageAsString(); } catch { return; }
             if (string.IsNullOrEmpty(msg)) return;

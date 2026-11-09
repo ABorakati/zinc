@@ -87,24 +87,65 @@ namespace ZoteroNext.Word
                     if (r != null && r[1] != null) r = db.Query("SELECT key, parent_key, item_type, deleted, data FROM items WHERE key = ?", r[1]).FirstOrDefault();
                     if (r == null) { outList.Add(Json.Map("key", k, "found", false)); continue; }
                     var data = Json.Obj(Json.Parse(r[4]));
-                    outList.Add(Json.Map("key", k, "found", true, "itemKey", r[0], "trashed", r[3] == "1", "itemType", r[2], "data", data));
+                    outList.Add(Json.Map("key", k, "found", true, "itemKey", r[0], "trashed", r[3] == "1", "itemType", r[2], "data", data, "groupId", GroupIdOf(db, r[0])));
                 }
             }
             return outList;
         }
 
-        /// <summary>For URIs whose key is not in the library: the item that replaced it (merged duplicate, dc:replaces relation).</summary>
+        /// <summary>The zotero.org id of the group library an item belongs to (null for My Library, or a database without a libraries table).</summary>
+        static object GroupIdOf(SqliteReader db, string itemKey)
+        {
+            try
+            {
+                var g = db.Query("SELECT l.group_id FROM items i JOIN libraries l ON l.id = i.library_id WHERE i.key = ?", itemKey).FirstOrDefault();
+                int id;
+                return g != null && g[0] != null && int.TryParse(g[0], out id) ? (object)id : null;
+            }
+            catch { return null; }
+        }
+
+        static readonly Regex UriRx = new Regex(@"^https?://(?:www\.)?zotero\.org/(users/(?:local/)?[A-Za-z0-9_-]+|groups/\d+)/items/([A-Za-z0-9]{1,32})/?$");
+
+        /// <summary>
+        /// The URIs under which a cited item may be recorded in another item's dc:replaces relation. A personal-library URI is one item with several
+        /// spellings (users/local/&lt;library key&gt;, users/&lt;account id&gt;, the cited one); a group item has only its own groups/&lt;id&gt; URI.
+        /// </summary>
+        internal static List<string> IdentityAliases(string uri, string libraryKey, string userId)
+        {
+            var m = UriRx.Match(uri);
+            var list = new List<string>();
+            if (!m.Success) return list;
+            string scope = m.Groups[1].Value, key = m.Groups[2].Value;
+            Action<string> add = u => { if (!list.Contains(u)) list.Add(u); };
+            add("http://zotero.org/" + scope + "/items/" + key);
+            if (scope.StartsWith("users/"))
+            {
+                if (!string.IsNullOrEmpty(libraryKey)) add("http://zotero.org/users/local/" + libraryKey + "/items/" + key);
+                if (!string.IsNullOrEmpty(userId)) add("http://zotero.org/users/" + userId + "/items/" + key);
+            }
+            return list;
+        }
+
+        /// <summary>For URIs whose key is not in the library: the item that replaced it (merged duplicate, dc:replaces relation), matched against every identity alias of the cited URI.</summary>
         public static object ByUri(Dictionary<string, object> p)
         {
             var uris = Json.Arr(Json.Get(p, "uris")).Select(x => Convert.ToString(x)).Take(50).ToList();
             var map = new Dictionary<string, object>();
             using (var db = Open())
+            {
+                var lk = db.Query("SELECT value FROM meta WHERE name = 'library_key'").Select(r => r[0]).FirstOrDefault();
+                var uid = Settings.Get("userId") ?? Settings.Get("detectedUserId") ?? Environment.GetEnvironmentVariable("ZN_USER_ID");
                 foreach (var u in uris)
                 {
-                    if (!Regex.IsMatch(u, @"^https?://zotero\.org/[A-Za-z0-9/._-]+$")) continue;
-                    var r = db.Query("SELECT key FROM items WHERE deleted = 0 AND parent_key IS NULL AND data LIKE ? LIMIT 1", "%\"dc:replaces\":%" + u + "%").FirstOrDefault();
-                    if (r != null) map[u] = r[0];
+                    foreach (var alias in IdentityAliases(u, lk, uid))
+                    {
+                        // the closing quote ends the URI inside the relation's JSON, so a longer key cannot match
+                        var r = db.Query("SELECT key FROM items WHERE deleted = 0 AND parent_key IS NULL AND data LIKE ? LIMIT 1", "%\"dc:replaces\":%" + alias + "\"%").FirstOrDefault();
+                        if (r != null) { map[u] = r[0]; break; }
+                    }
                 }
+            }
             return map;
         }
 

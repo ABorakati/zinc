@@ -243,7 +243,9 @@ describe("importZotero", () => {
 			source: "zotero-cache",
 		});
 		expect((db.query("SELECT value FROM meta WHERE name='zotero_import_at'").get() as any).value).toMatch(/^\d{4}-/);
-		expect((db.query("SELECT COUNT(*) c FROM search").get() as any).c).toBe(0);
+		// the full-text index is built by the import (it has no triggers): one row per top-level item
+		expect((db.query("SELECT COUNT(*) c FROM search").get() as any).c).toBe((db.query("SELECT COUNT(*) c FROM items WHERE parent_key IS NULL AND item_type NOT IN ('attachment','note','annotation')").get() as any).c);
+		expect((db.query("SELECT COUNT(*) c FROM search WHERE search MATCH 'hello'").get() as any).c).toBeGreaterThan(0);
 	});
 
 	test("coloured tags imported from syncedSettings (user library only, deduped)", () => {
@@ -268,5 +270,20 @@ describe("importZotero", () => {
 			replace: true,
 		});
 		expect(again.counts.items).toBe(6);
+	});
+
+	test("replace validates the source first: a bad source leaves the existing library untouched, and no half-built file stays", async () => {
+		const { readFileSync, readdirSync, mkdirSync: mk } = await import("node:fs");
+		const before = readFileSync(target);
+		const empty = join(root, "no-zotero-here");
+		mk(empty, { recursive: true });
+		await expect(
+			importZotero({ zoteroDir: empty, targetDbPath: target, schemaPath, baseAttachmentPath: base, searchRoots: false, replace: true }),
+		).rejects.toThrow(/zotero\.sqlite/);
+		expect(readFileSync(target).equals(before)).toBe(true);
+		expect(readdirSync(join(root, "out")).filter((f) => f.includes("importing"))).toEqual([]);
+		// and a good replace leaves no -wal/-shm/aside files behind
+		await importZotero({ zoteroDir: zdir, targetDbPath: target, schemaPath, baseAttachmentPath: base, searchRoots: [base], replace: true });
+		expect(readdirSync(join(root, "out")).filter((f) => /importing|replaced/.test(f))).toEqual([]);
 	});
 });

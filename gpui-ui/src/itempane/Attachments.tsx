@@ -8,6 +8,7 @@ import { findFullText, openLink } from "./actions";
 import { Empty, Field, IconBtn, locked, Section, TextBtn, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { ipApi, type ChildSummary } from "./net";
+import { openAttachmentExternally } from "../ui/openExternal";
 
 function iconFor(c: ChildSummary): { name: string; color: string } {
 	const ct = c.contentType ?? "";
@@ -98,7 +99,7 @@ function AttachmentRow(p: { c: ChildSummary }): JSX.Element {
 					</Show>
 					<Show when={c().hasFile}>
 						<IconBtn icon="folder-open" title="Show File" onClick={() => void guard("Could not show file", () => ipApi.reveal(c().key))} />
-						<IconBtn icon="external-link" title="Open in default app" onClick={() => void guard("Could not open file", () => ipApi.openExternal(c().key))} />
+						<IconBtn icon="external-link" title="Open in default app" onClick={() => void guard("Could not open file", () => openAttachmentExternally(c().key))} />
 					</Show>
 					<DropdownMenu align="end" width={240} items={menu} trigger={<IconBtn icon="ellipsis" title="More" />} />
 				</div>

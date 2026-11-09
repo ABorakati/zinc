@@ -79,3 +79,37 @@ describe("field codes", () => {
 		expect(parseFieldCode("ADDIN ZOTERO_ITEM CSL_CITATION {bad json")).toBeNull();
 	});
 });
+
+describe("merging citations", () => {
+	const cite = (id: string, ...items: Record<string, unknown>[]) => ({
+		citationID: id,
+		properties: { formattedCitation: "", plainCitation: "", noteIndex: 0 },
+		citationItems: items.map((i) => ({ id: 1, uris: ["http://zotero.org/users/1/items/AAAAAAA1"], ...i })),
+		schema: "x",
+	});
+
+	test("the same work at different pages keeps both locators", async () => {
+		const { mergeCitationData } = await import("../../src/cite/docfields");
+		const merged = mergeCitationData(cite("a", { locator: "5", label: "page" }) as never, [cite("b", { locator: "9", label: "page" }) as never]);
+		expect(merged.citationItems.map((i) => i.locator)).toEqual(["5", "9"]);
+	});
+
+	test("prefix, suffix and author flags also keep citations apart; exact duplicates collapse", async () => {
+		const { mergeCitationData } = await import("../../src/cite/docfields");
+		const a = cite("a", {}) as never;
+		expect(mergeCitationData(a, [cite("b", { prefix: "see" }) as never]).citationItems).toHaveLength(2);
+		expect(mergeCitationData(a, [cite("b", { suffix: "ff." }) as never]).citationItems).toHaveLength(2);
+		expect(mergeCitationData(a, [cite("b", { "suppress-author": true }) as never]).citationItems).toHaveLength(2);
+		expect(mergeCitationData(a, [cite("b", {}) as never]).citationItems).toHaveLength(1);
+	});
+});
+
+describe("hand-edit detection", () => {
+	test("line endings written by Word do not count as an edit", async () => {
+		const { isHandEdited } = await import("../../src/cite/docfields");
+		const props = { formattedCitation: "", plainCitation: "(Smith 2020;\nJones 2021)", noteIndex: 0 };
+		expect(isHandEdited(props, "(Smith 2020;\rJones 2021)")).toBe(false);
+		expect(isHandEdited(props, "(Smith 2020;\r\nJones 2021)")).toBe(false);
+		expect(isHandEdited(props, "(Smith 2020; Jones 2022)")).toBe(true);
+	});
+});

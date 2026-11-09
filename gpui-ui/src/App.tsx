@@ -20,7 +20,7 @@ import { textStyle, tokens, tw } from "./theme";
 import { SortBar, Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
 import { WebTabView } from "./webview/WebTabView";
-import { OverlayHost, Resizable } from "./ui";
+import { OverlayHost, Resizable, toast } from "./ui";
 import { handleFileDrop } from "./features/additems/client";
 
 const mode = (): Mode => store.mode();
@@ -66,7 +66,7 @@ function ReaderTabView(p: { tab: ReaderTab | WebTab }): JSX.Element {
 					</div>
 				);
 			}}>
-				<Show when={isWebTab(p.tab)} fallback={<Reader attachmentKey={p.tab.id} title={p.tab.title} active={active()} />}><WebTabView tab={p.tab as WebTab} /></Show>
+				<Show when={isWebTab(p.tab)} fallback={<Reader attachmentKey={p.tab.id} title={p.tab.title} itemKey={(p.tab as ReaderTab).itemKey} editable={store.libraryEditable((p.tab as ReaderTab).library ?? 1)} filesEditable={store.libraryFilesEditable((p.tab as ReaderTab).library ?? 1)} active={active()} />}><WebTabView tab={p.tab as WebTab} /></Show>
 			</ErrorBoundary>
 		</div>
 	);
@@ -149,7 +149,7 @@ export function App() {
 	});
 
 	return (
-		<div style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }} onFileDrop={(e) => void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y })}>
+		<div style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }} onFileDrop={(e) => { if (store.canEdit()) void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y }); else toast("This library is read-only", { description: "Files cannot be added to it." }); }}>
 			<TopBar />
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
 			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}

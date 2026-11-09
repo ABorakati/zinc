@@ -5,6 +5,7 @@ import { ago, bytes, plural } from "../../shell/net";
 import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { webSync, type WebSyncFiles, type WebSyncMode } from "../../features/websync/client";
 import { TextInput } from "../../ui";
+import { confirm } from "../../ui/dialogs";
 import { Btn, Choice, Toggle, Value } from "../controls";
 
 const KEYS_URL = "https://www.zotero.org/settings/keys";
@@ -69,6 +70,18 @@ export function AccountControl(): JSX.Element {
 		if (!k) return;
 		if (await webSync.setKey(k)) setDraft("");
 	};
+	// the key belongs to another zotero.org account: unlinking the old one is a deliberate step
+	const switchAccount = async () => {
+		const k = draft().trim();
+		if (!k) return;
+		const ok = await confirm({
+			title: "Switch to another zotero.org account?",
+			body: "This library will stop syncing with the account it is linked to and start fresh with the new one. Nothing in the library is deleted, but changes not yet sent to the old account will be sent to the new account as new items.",
+			confirmLabel: "Switch account",
+			danger: true,
+		});
+		if (ok && (await webSync.switchAccount(k))) setDraft("");
+	};
 	return (
 		<Show when={webSync.status()} fallback={loading()}>
 			{(s) => (
@@ -98,6 +111,11 @@ export function AccountControl(): JSX.Element {
 						<Btn primary disabled={webSync.working() || !draft().trim()} onClick={() => void connect()}>{s().account.keySet ? "Replace key" : "Connect"}</Btn>
 					</div>
 					<ErrorLine />
+					<Show when={webSync.otherAccount() && draft().trim()}>
+						<div style={t("flex items-center gap-2")}>
+							<Btn disabled={webSync.working()} onClick={() => void switchAccount()}>Switch to this account…</Btn>
+						</div>
+					</Show>
 					<Txt cls="text-xs text-muted-foreground">{`Create a key at ${KEYS_URL} with library read/write access and file access.`}</Txt>
 				</div>
 			)}

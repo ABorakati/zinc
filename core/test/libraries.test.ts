@@ -52,7 +52,7 @@ describe("migration 4 on an existing library", () => {
 		expect(r.from).toBe(SCHEMA_HEAD - 1);
 		expect(r.to).toBe(SCHEMA_HEAD);
 		expect(r.backup && existsSync(r.backup)).toBe(true);
-		expect(readdirSync(dir).some((f) => new RegExp(`^library\\.backup-v${SCHEMA_HEAD - 1}-to-v${SCHEMA_HEAD}-`).test(f))).toBe(true);
+		expect(readdirSync(dir).some((f) => new RegExp(`^old\\.backup-v${SCHEMA_HEAD - 1}-to-v${SCHEMA_HEAD}-`).test(f))).toBe(true);
 		const n = (sql: string) => (up.query(sql).get() as { n: number }).n;
 		expect(n("SELECT count(*) AS n FROM items")).toBe(20);
 		expect(n("SELECT count(*) AS n FROM items WHERE library_id = 1")).toBe(20);

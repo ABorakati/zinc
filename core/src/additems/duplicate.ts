@@ -2,7 +2,9 @@
 // (no attachments, notes or annotations), as Zotero's Duplicate Item. A standalone attachment's copy keeps the file (copied
 // for an imported file, the same path for a link, the same URL for a snapshot).
 import type { Database } from "bun:sqlite";
-import { libraryOfItem } from "../libraries";
+import { libraryOfItem, USER_LIBRARY } from "../libraries";
+import { ownStorageDir, resolveStoredPath } from "../files/paths";
+import { eraseItems } from "../maintenance/erase";
 import { basename } from "node:path";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
 import { HttpError, createItem, getItemDetail, patchItem } from "../db";
@@ -43,15 +45,21 @@ export function duplicateItem(db: Database, key: string): ItemDetail {
 	if (row.item_type === "attachment") {
 		const title = typeof data.title === "string" ? data.title : "";
 		let copy: ItemDetail;
+		// the copy stays in the original's library (a standalone attachment in a group collection must not land in My Library)
+		const libraryId = libraryOfItem(db, key) ?? USER_LIBRARY;
 		if (row.link_mode === "linked_url") {
-			copy = addLink(db, { url: row.url ?? String(data.url ?? ""), title: title || undefined });
+			copy = addLink(db, { url: row.url ?? String(data.url ?? ""), title: title || undefined, libraryId });
 		} else {
 			if (!row.path) throw new HttpError(400, "the attachment has no file");
+			// a stored path can be "attachments:<relative>": addFile wants the absolute one
+			const abs = resolveStoredPath(db, row.path);
+			if (!abs) throw new HttpError(400, "the attachment's file location cannot be resolved (is the base directory set?)");
 			copy = addFile(db, {
 				mode: row.link_mode === "linked_file" ? "linked_file" : "imported_file",
-				path: row.path,
+				path: abs,
 				contentType: row.content_type ?? undefined,
-				name: basename(row.path),
+				name: basename(abs),
+				libraryId,
 			});
 		}
 		const patch: Partial<ZoteroItemData> = {};
@@ -59,7 +67,19 @@ export function duplicateItem(db: Database, key: string): ItemDetail {
 		if (tags.length) patch.tags = tags;
 		if (Object.keys(relations).length) patch.relations = relations;
 		if (title && title !== copy.data.title) patch.title = title;
-		if (Object.keys(patch).length) copy = patchItem(db, copy.data.key, patch);
+		if (Object.keys(patch).length) {
+			try {
+				copy = patchItem(db, copy.data.key, patch);
+			} catch (e) {
+				// no half-made duplicate is left behind
+				try {
+					eraseItems(db, [copy.data.key], ownStorageDir(db));
+				} catch {
+					/* keep the original error */
+				}
+				throw e;
+			}
+		}
 		return copy;
 	}
 

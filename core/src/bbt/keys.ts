@@ -11,6 +11,7 @@
 import type { Database } from "bun:sqlite";
 import type { ZoteroItemData } from "../api-types";
 import * as repo from "../db";
+import { USER_LIBRARY } from "../libraries";
 import schemaSql from "./schema.sql" with { type: "text" };
 import { compile, formatPostfix, FormulaError, generate, MARK, validPostfix, type Compiled, type FormulaConfig } from "./formula";
 import { getSettings } from "./settings";
@@ -92,7 +93,10 @@ export function generateKeyText(db: Database, d: ZoteroItemData, settings = getS
 
 function taken(db: Database, candidate: string, self: string, s: BbtSettings): boolean {
 	const rows = db
-		.query("SELECT k.key FROM bbt_keys k JOIN items i ON i.key = k.item_key WHERE k.key = ?1 COLLATE NOCASE AND k.item_key <> ?2 AND i.deleted = 0")
+		.query(
+			// duplicates only matter inside the item's own library (the same paper in a group library is not a clash)
+			"SELECT k.key FROM bbt_keys k JOIN items i ON i.key = k.item_key WHERE k.key = ?1 COLLATE NOCASE AND k.item_key <> ?2 AND i.deleted = 0 AND i.library_id = COALESCE((SELECT library_id FROM items WHERE key = ?2), 1)",
+		)
 		.all(candidate, self) as { key: string }[];
 	return s.keyCaseInsensitive ? rows.length > 0 : rows.some((r) => r.key === candidate);
 }
@@ -156,26 +160,43 @@ function syncOne(db: Database, itemKey: string, s: BbtSettings, fv: string, forc
 	upsert(db, itemKey, key, false, fv, hash);
 }
 
+/** A connection that cannot write (opened read-only, or PRAGMA query_only): key rows must not be generated through it. */
+function cannotWrite(db: Database): boolean {
+	try {
+		return (db.query("PRAGMA query_only").get() as { query_only: number } | null)?.query_only === 1;
+	} catch {
+		return false;
+	}
+}
+
+const isReadonlyError = (e: unknown) => /readonly|read-only|SQLITE_READONLY/i.test(String((e as { code?: string })?.code ?? "") + String((e as Error)?.message ?? ""));
+
 /** Drain the dirty set (items written since the last call). Cheap when nothing changed. */
 export function flushDirty(db: Database): number {
+	if (cannotWrite(db)) return 0;
 	const dirty = db.query("SELECT d.item_key FROM bbt_dirty d LEFT JOIN items i ON i.key = d.item_key ORDER BY i.date_added, i.rowid, d.item_key").all() as { item_key: string }[];
 	if (!dirty.length) return 0;
 	const s = getSettings(db);
 	const fv = formulaVersion(s);
 	let n = 0;
-	db.transaction(() => {
-		for (const { item_key } of dirty) {
-			try {
-				syncOne(db, item_key, s, fv);
-				n++;
-			} catch (e) {
-				if (!(e instanceof FormulaError)) throw e;
-				// an invalid formula (cannot happen via the API, which validates): leave the item dirty for later
-				return;
+	try {
+		db.transaction(() => {
+			for (const { item_key } of dirty) {
+				try {
+					syncOne(db, item_key, s, fv);
+					n++;
+				} catch (e) {
+					if (!(e instanceof FormulaError)) throw e;
+					// an invalid formula (cannot happen via the API, which validates): leave the item dirty for later
+					return;
+				}
+				db.query("DELETE FROM bbt_dirty WHERE item_key = ?").run(item_key);
 			}
-			db.query("DELETE FROM bbt_dirty WHERE item_key = ?").run(item_key);
-		}
-	})();
+		})();
+	} catch (e) {
+		if (!isReadonlyError(e)) throw e;
+		return 0; // a read-only connection: the writer process drains the dirty set
+	}
 	return n;
 }
 
@@ -187,12 +208,16 @@ export function ensureKeys(db: Database, itemKeys: string[]): void {
 		(db.query("SELECT item_key FROM bbt_keys WHERE item_key IN (SELECT value FROM json_each(?))").all(JSON.stringify(itemKeys)) as { item_key: string }[]).map((r) => r.item_key),
 	);
 	const missing = itemKeys.filter((k) => !have.has(k));
-	if (!missing.length) return;
+	if (!missing.length || cannotWrite(db)) return;
 	const s = getSettings(db);
 	const fv = formulaVersion(s);
-	db.transaction(() => {
-		for (const k of missing) syncOne(db, k, s, fv);
-	})();
+	try {
+		db.transaction(() => {
+			for (const k of missing) syncOne(db, k, s, fv);
+		})();
+	} catch (e) {
+		if (!isReadonlyError(e)) throw e;
+	}
 }
 
 export function getKeyInfo(db: Database, itemKey: string): KeyInfo | null {
@@ -225,12 +250,12 @@ export function keyMap(db: Database, itemKeys: string[]): Map<string, string> {
 }
 
 /** Item keys (Zotero keys) whose citation key is `citekey`, pinned ones first. */
-export function itemsForCitekey(db: Database, citekey: string): string[] {
+export function itemsForCitekey(db: Database, citekey: string, libraryId: number = USER_LIBRARY): string[] {
 	flushDirty(db);
 	return (
 		db
-			.query("SELECT k.item_key FROM bbt_keys k JOIN items i ON i.key = k.item_key WHERE k.key = ? COLLATE NOCASE AND i.deleted = 0 ORDER BY k.pinned DESC, i.date_added")
-			.all(citekey) as { item_key: string }[]
+			.query("SELECT k.item_key FROM bbt_keys k JOIN items i ON i.key = k.item_key WHERE k.key = ? COLLATE NOCASE AND i.deleted = 0 AND i.library_id = ? ORDER BY k.pinned DESC, i.date_added")
+			.all(citekey, libraryId) as { item_key: string }[]
 	).map((r) => r.item_key);
 }
 
@@ -340,6 +365,7 @@ export function previewFormula(db: Database, formula: string, itemKey?: string):
 
 /** Generate keys for every regular item that has none yet, so the Citation Key column and search see them all. */
 export function backfillKeys(db: Database): number {
+	if (cannotWrite(db)) return 0;
 	flushDirty(db);
 	const missing = (
 		db

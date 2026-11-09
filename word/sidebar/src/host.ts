@@ -12,8 +12,11 @@ interface WebViewApi {
 	addEventListener(type: "message", cb: (e: { data: unknown }) => void): void;
 }
 
+/** A request the add-in never answers (a modal dialog in Word, a dropped message) fails after this long instead of locking the sidebar for good. */
+export const CALL_TIMEOUT_MS = 120_000;
+
 /** Host backed by window.chrome.webview. Throws when the page is not inside the add-in. */
-export function createWebViewHost(): Host {
+export function createWebViewHost(timeoutMs = CALL_TIMEOUT_MS): Host {
 	const wv = (window as unknown as { chrome?: { webview?: WebViewApi } }).chrome?.webview;
 	if (!wv) throw new Error("not running inside the Word add-in");
 	let seq = 0;
@@ -40,7 +43,14 @@ export function createWebViewHost(): Host {
 		call(method, params = {}) {
 			const id = ++seq;
 			return new Promise((resolve, reject) => {
-				pending.set(id, { resolve, reject });
+				const timer = setTimeout(() => {
+					pending.delete(id);
+					reject(new Error(`Word did not answer "${method}" in ${Math.round(timeoutMs / 1000)} s (is a dialog open in Word?). Close it and try again; the action may still have completed, so check the document.`));
+				}, timeoutMs);
+				pending.set(id, {
+					resolve: (v) => (clearTimeout(timer), resolve(v)),
+					reject: (e) => (clearTimeout(timer), reject(e)),
+				});
 				wv.postMessage(JSON.stringify({ id, method, params }));
 			});
 		},

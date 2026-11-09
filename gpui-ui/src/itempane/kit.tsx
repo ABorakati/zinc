@@ -186,12 +186,17 @@ const [labelW, setLabelW] = createSignal(100);
 export { labelW, setLabelW };
 
 export function Row(p: { label: string; icon?: string; children: JSX.Element; id?: string }): JSX.Element {
-	const tight = () => p.label.length * 6.6 > labelW() - (p.icon ? 20 : 0);
+// a label that does not fit beside its icon gives the icon's 20 px to the text; one that still does not fit is cut with an ellipsis and
+// shows in full in a tooltip
+const showIcon = () => !!p.icon && p.label.length * 6.6 <= labelW() - 20;
+const tight = () => p.label.length * 6.6 > labelW() - (showIcon() ? 20 : 0);
 	return (
 		<div style={{ ...t("flex items-start gap-x-3 py-[2px] w-full"), }}>
 			<div style={{ width: labelW(), flexShrink: 0, ...t("flex items-center gap-1.5"), paddingTop: 5 }}>
-				<Show when={p.icon}><Icon name={p.icon!} size={14} color={tok("muted-foreground")} /></Show>
-				<text style={{ ...tx("text-xs text-muted-foreground"), ...(tight() ? TRUNC : { whiteSpace: "nowrap" }) }}>{p.label}</text>
+				<Show when={showIcon()}><Icon name={p.icon!} size={14} color={tok("muted-foreground")} /></Show>
+				<Show when={tight()} fallback={<text style={{ ...tx("text-xs text-muted-foreground"), whiteSpace: "nowrap" }}>{p.label}</text>}>
+				<Tooltip label={p.label} style={{ minWidth: 0, flexShrink: 1 }}><text style={{ ...tx("text-xs text-muted-foreground"), ...TRUNC }}>{p.label}</text></Tooltip>
+				</Show>
 			</div>
 			<div style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, flexBasis: 0 }}>{p.children}</div>
 		</div>

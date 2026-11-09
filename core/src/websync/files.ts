@@ -4,7 +4,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { failure, type ZoteroWebClient } from "./client";
 import { userRef, type LibraryRef } from "./library";
 import { entryTarget, isZip, readZip } from "./zip";
@@ -135,7 +135,44 @@ export async function checkFiles(ctx: FilesContext): Promise<FilesCheck> {
 	return out;
 }
 
-async function downloadOne(ctx: FilesContext, a: Att): Promise<number> {
+/** What was last synchronised for an attachment file: its content hash and the file's mtime/size then (to skip re-hashing). */
+interface FileBase {
+	md5: string;
+	mtime: number;
+	size: number;
+}
+
+const baseName = (key: string): string => `web_file_md5:${key}`;
+
+function getFileBase(db: Database, key: string): FileBase | null {
+	const r = db.query("SELECT value FROM sync_state WHERE name = ?").get(baseName(key)) as { value: string } | null;
+	if (!r) return null;
+	try {
+		const v = JSON.parse(r.value) as Partial<FileBase>;
+		return typeof v.md5 === "string" ? { md5: v.md5, mtime: Number(v.mtime) || 0, size: Number(v.size) || 0 } : null;
+	} catch {
+		return null;
+	}
+}
+
+function setFileBase(db: Database, key: string, path: string, md5: string): void {
+	let mtime = 0;
+	let size = 0;
+	try {
+		const st = statSync(path);
+		mtime = Math.floor(st.mtimeMs);
+		size = st.size;
+	} catch {
+		// the file vanished: the hash alone is still the baseline
+	}
+	db.query("INSERT INTO sync_state(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(
+		baseName(key),
+		JSON.stringify({ md5: md5.toLowerCase(), mtime, size }),
+	);
+}
+
+/** @param conflictCopy write the server's file here instead of over the attachment's file (a divergence is never overwritten) */
+async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: string): Promise<number> {
 	const res = await ctx.client.request("GET", `${refOf(ctx).prefix}/items/${a.key}/file`, { redirect: "manual" });
 	let bytes: Uint8Array;
 	if (res.status >= 300 && res.status < 400) {
@@ -152,7 +189,7 @@ async function downloadOne(ctx: FilesContext, a: Att): Promise<number> {
 		throw await failure(res);
 	}
 	const dir = join(ctx.storageDir, a.key);
-	const target = join(dir, a.filename);
+	const target = conflictCopy ?? join(dir, a.filename);
 	const put = (file: string, data: Uint8Array) => {
 		mkdirSync(dirname(file), { recursive: true });
 		const part = `${file}.part`;
@@ -184,7 +221,9 @@ async function downloadOne(ctx: FilesContext, a: Att): Promise<number> {
 	} else {
 		if (a.md5 && createHash("md5").update(bytes).digest("hex") !== a.md5.toLowerCase()) throw new Error("downloaded file does not match its checksum");
 		put(target, bytes);
+		if (!conflictCopy && !a.snapshot) setFileBase(ctx.db, a.key, target, createHash("md5").update(bytes).digest("hex"));
 	}
+	if (conflictCopy) return bytes.length;
 	// the attachment row is part of the item for sync: this local fact must not queue a push
 	ctx.db.transaction(() => {
 		ctx.db.run("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
@@ -233,34 +272,129 @@ export async function uploadMissing(ctx: FilesContext): Promise<{ uploaded: numb
 	let failed = 0;
 	for (const a of todo) {
 		try {
-			const bytes = readFileSync(a.path!);
-			const md5 = createHash("md5").update(bytes).digest("hex");
-			const auth = await client.request("POST", `${refOf(ctx).prefix}/items/${a.key}/file`, {
-				headers: { "Content-Type": "application/x-www-form-urlencoded", "If-None-Match": "*" },
-				body: new URLSearchParams({ md5, filename: basename(a.path!), filesize: String(bytes.length), mtime: String(Math.floor(statSync(a.path!).mtimeMs)) }).toString(),
-			});
-			if (!auth.ok) throw await failure(auth);
-			const j = (await auth.json()) as { exists?: number; url?: string; contentType?: string; prefix?: string; suffix?: string; uploadKey?: string };
-			if (j.exists) {
-				uploaded++;
-				continue;
-			}
-			if (!j.url || !j.uploadKey) throw new Error("unexpected upload authorization");
-			const put = await fetch(j.url, {
-				method: "POST",
-				headers: { "Content-Type": j.contentType ?? "application/octet-stream" },
-				body: new Blob([j.prefix ?? "", bytes, j.suffix ?? ""]),
-			});
-			if (!put.ok) throw new Error(`file upload answered ${put.status}`);
-			const reg = await client.request("POST", `${refOf(ctx).prefix}/items/${a.key}/file`, {
-				headers: { "Content-Type": "application/x-www-form-urlencoded", "If-None-Match": "*" },
-				body: new URLSearchParams({ upload: j.uploadKey }).toString(),
-			});
-			if (!reg.ok && reg.status !== 204) throw await failure(reg);
+			await uploadFile(ctx, a, null);
 			uploaded++;
 		} catch {
 			failed++;
 		}
 	}
 	return { uploaded, failed };
+}
+
+/**
+ * Upload a.path. `replaces` is the md5 the server holds now (a changed file: If-Match makes the server refuse when someone
+ * replaced it meanwhile); null for a file the server has none of (If-None-Match: *).
+ */
+async function uploadFile(ctx: FilesContext, a: Att, replaces: string | null): Promise<void> {
+	const { db, client } = ctx;
+	const bytes = readFileSync(a.path!);
+	const md5 = createHash("md5").update(bytes).digest("hex");
+	const mtime = Math.floor(statSync(a.path!).mtimeMs);
+	const cond: Record<string, string> = replaces ? { "If-Match": replaces } : { "If-None-Match": "*" };
+	const auth = await client.request("POST", `${refOf(ctx).prefix}/items/${a.key}/file`, {
+		headers: { "Content-Type": "application/x-www-form-urlencoded", ...cond },
+		body: new URLSearchParams({ md5, filename: basename(a.path!), filesize: String(bytes.length), mtime: String(mtime) }).toString(),
+	});
+	if (!auth.ok) throw await failure(auth);
+	const j = (await auth.json()) as { exists?: number; url?: string; contentType?: string; prefix?: string; suffix?: string; uploadKey?: string };
+	if (!j.exists) {
+		if (!j.url || !j.uploadKey) throw new Error("unexpected upload authorization");
+		const put = await fetch(j.url, {
+			method: "POST",
+			headers: { "Content-Type": j.contentType ?? "application/octet-stream" },
+			body: new Blob([j.prefix ?? "", bytes, j.suffix ?? ""]),
+		});
+		if (!put.ok) throw new Error(`file upload answered ${put.status}`);
+		const reg = await client.request("POST", `${refOf(ctx).prefix}/items/${a.key}/file`, {
+			headers: { "Content-Type": "application/x-www-form-urlencoded", ...cond },
+			body: new URLSearchParams({ upload: j.uploadKey }).toString(),
+		});
+		if (!reg.ok && reg.status !== 204) throw await failure(reg);
+	}
+	// Remember what is on the server now, here and in the item's metadata (until the next pull brings the server's own copy of
+	// the metadata): a later comparison must not take our own upload for a remote replacement.
+	setFileBase(db, a.key, a.path!, md5);
+	db.transaction(() => {
+		db.run("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
+		try {
+			db.query("UPDATE items SET data = json_set(data, '$.md5', ?, '$.mtime', ?) WHERE key = ?").run(md5, mtime, a.key);
+		} finally {
+			db.run("DELETE FROM sync_flags WHERE name = 'suppress'");
+		}
+	})();
+}
+
+export interface ReconcileResult {
+	/** Local file unchanged, server's replaced: the server's file now replaces the local one. */
+	downloaded: number;
+	/** Local file changed, server's unchanged: uploaded. */
+	uploaded: number;
+	/** Both changed (or no common baseline and they differ): nothing overwritten; recorded in sync_conflicts. */
+	conflicts: number;
+	failed: number;
+}
+
+function conflictOnce(db: Database, key: string, localMd5: string, remoteMd5: string, extra: Record<string, unknown>): boolean {
+	const dup = db.query("SELECT 1 FROM sync_conflicts WHERE type = 'item' AND key = ? AND remote LIKE ? LIMIT 1").get(key, `%"fileMd5":"${remoteMd5}"%`);
+	if (dup) return false;
+	db.query("INSERT INTO sync_conflicts(type, key, local, remote, resolved) VALUES('item', ?, ?, ?, 'local')").run(
+		key,
+		JSON.stringify({ title: "attachment file", fileMd5: localMd5 }),
+		JSON.stringify({ title: "attachment file", fileMd5: remoteMd5, ...extra }),
+	);
+	return true;
+}
+
+/**
+ * Attachments that already have a local file and a server checksum: compare both with the hash that was last synchronised.
+ * Only the server changed: take its file. Only the local file changed: upload it (when allowed), guarded by If-Match. Both
+ * changed, or no baseline and they differ: keep the local file, save the server's beside it as <name>.conflict-<md5>, and
+ * record a conflict. Nothing is overwritten without a known-unchanged baseline.
+ */
+export async function reconcileFiles(ctx: FilesContext, opts: { upload: boolean }): Promise<ReconcileResult> {
+	const { db } = ctx;
+	const out: ReconcileResult = { downloaded: 0, uploaded: 0, conflicts: 0, failed: 0 };
+	const todo = importedAttachments(db, refOf(ctx).id).filter((a) => a.linkMode === "imported_file" && a.md5 && a.path && existsSync(a.path));
+	for (const a of todo) {
+		try {
+			const path = a.path!;
+			const remote = a.md5!.toLowerCase();
+			const base = getFileBase(db, a.key);
+			const st = statSync(path);
+			let local: string;
+			if (base && base.mtime === Math.floor(st.mtimeMs) && base.size === st.size) local = base.md5;
+			else {
+				local = createHash("md5").update(readFileSync(path)).digest("hex");
+				if (base && local === base.md5) setFileBase(db, a.key, path, local); // touched, not changed
+			}
+			if (local === remote) {
+				if (!base || base.md5 !== local) setFileBase(db, a.key, path, local);
+				continue;
+			}
+			if (!base) {
+				// never synchronised since this feature: nobody can say which side changed
+				if (conflictOnce(db, a.key, local, remote, { note: "the file here differs from the one on zotero.org; neither was replaced" })) out.conflicts++;
+				continue;
+			}
+			const localChanged = local !== base.md5;
+			const remoteChanged = remote !== base.md5;
+			if (remoteChanged && !localChanged) {
+				await downloadOne(ctx, a); // verifies the checksum, replaces atomically, moves the baseline
+				out.downloaded++;
+			} else if (localChanged && !remoteChanged) {
+				if (!opts.upload) continue;
+				await uploadFile(ctx, a, remote);
+				out.uploaded++;
+			} else {
+				const ext = extname(path);
+				const copy = join(dirname(path), `${basename(path, ext)}.conflict-${remote.slice(0, 8)}${ext}`);
+				if (!existsSync(copy)) await downloadOne(ctx, a, copy);
+				if (conflictOnce(db, a.key, local, remote, { conflictCopy: copy })) out.conflicts++;
+			}
+		} catch {
+			out.failed++;
+			rmSync(`${join(ctx.storageDir, a.key, a.filename)}.part`, { force: true });
+		}
+	}
+	return out;
 }

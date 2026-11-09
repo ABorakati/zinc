@@ -130,7 +130,14 @@ export class SyncService {
 				const since = this.getState("last_pull_at") ?? null;
 				const ch = await this.opts.reader.changesSince(since);
 				const report = applyChanges(this.db, ch, this.opts.dataDir);
-				this.setState("last_pull_at", ch.at);
+				if (report.failed?.length) {
+					// Objects that could not be applied (a parent that is not here yet, ...): keep the checkpoint where it was, so the
+					// next pull reads them again instead of losing them behind the watermark. What did apply is idempotent.
+					this.setState("pull_incomplete", `${report.failed.length} object(s) not applied yet; first: ${report.failed[0].type} ${report.failed[0].key}`);
+				} else {
+					this.setState("last_pull_at", ch.at);
+					this.setState("pull_incomplete", null);
+				}
 				this.setState("last_pull_ok_at", new Date().toISOString());
 				this.setState("pull_error", null);
 				if (report.applied + report.deleted > 0) this.changeCount++;
@@ -149,6 +156,8 @@ export class SyncService {
 			this.lastPushAttempt = Date.now();
 			if (!this.enabled || this.getState("paused") === "1") return;
 			if (pendingCount(this.db) === 0) return;
+			// Never write into Zotero on top of a state we failed to read: queued edits may be stale against what Zotero holds now.
+			if (this.getState("pull_error")) return;
 			let plan;
 			try {
 				if (!(await this.opts.writer.canWrite())) return;

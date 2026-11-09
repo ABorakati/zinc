@@ -5,7 +5,7 @@ import { existsSync, rmdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { nowIso } from "../db";
 import { resolveStoredPath } from "../files/paths";
-import type { EntityType, ZoteroJson, ZoteroWrite, ZoteroWriteResult } from "./protocol";
+import { BASELINE_CHANGED, type EntityType, type ZoteroJson, type ZoteroWrite, type ZoteroWriteResult } from "./protocol";
 
 export interface Group {
 	type: EntityType;
@@ -75,6 +75,8 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 	const plan: PushPlan = { writes: [], groups: [], dropped: [], base: new Map(), baseRemove: new Set(), files: new Map() };
 	const storageDir = join(dataDir, "storage");
 	const hasBase = db.query("SELECT 1 FROM sync_base WHERE type = ? AND key = ?");
+	const baseQ = db.query("SELECT date_modified FROM sync_base WHERE type = ? AND key = ?");
+	const baseOf = (type: string, key: string): string | undefined => (baseQ.get(type, key) as { date_modified: string } | null)?.date_modified || undefined;
 	const upserts: { rank: number; sort: number; writes: ZoteroWrite[] }[] = [];
 	const erases: { rank: number; sort: number; write: ZoteroWrite }[] = [];
 
@@ -111,6 +113,8 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 			if (row.deleted) data.deleted = 1;
 			else delete data.deleted;
 			const write: ZoteroWrite = { type: "item", op: "upsert", key: row.key, data };
+			const base = baseOf("item", row.key);
+			if (base) write.baseline = base;
 			if (row.item_type === "attachment") {
 				const att = db.query("SELECT link_mode, content_type, path FROM attachments WHERE item_key = ?").get(row.key) as {
 					link_mode: string;
@@ -175,7 +179,8 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 				continue;
 			}
 			const data = { ...(JSON.parse(row.data) as ZoteroJson), key: row.key, parentItem: row.attachment_key };
-			upserts.push({ rank: 2, sort: 0, writes: [{ type: "annotation", op: "upsert", key: row.key, data }] });
+			const annBase = baseOf("annotation", row.key);
+			upserts.push({ rank: 2, sort: 0, writes: [{ type: "annotation", op: "upsert", key: row.key, data, ...(annBase ? { baseline: annBase } : {}) }] });
 			plan.groups.push(g);
 			plan.base.set(id, row.date_modified);
 		}
@@ -210,6 +215,17 @@ export function completePush(db: Database, plan: PushPlan, results: ZoteroWriteR
 				const err = failedKeys.get(g.key);
 				if (err !== undefined) {
 					out.failed.push({ key: g.key, error: err });
+					if (err.startsWith(BASELINE_CHANGED)) {
+						// Zotero's copy was left alone: the local change stays queued, and the user can see what was held back
+						const t = g.type === "item" ? "items" : g.type === "annotation" ? "annotations" : null;
+						const r = t ? (db.query(`SELECT data FROM ${t} WHERE key = ?`).get(g.key) as { data: string } | null) : null;
+						db.query("INSERT INTO sync_conflicts(type, key, local, remote, resolved) VALUES(?, ?, ?, ?, 'remote')").run(
+							g.type,
+							g.key,
+							r ? r.data : null,
+							JSON.stringify({ note: "Zotero changed this after the last sync; the local change was not written" }),
+						);
+					}
 					continue;
 				}
 				db.query("DELETE FROM sync_outbox WHERE type = ? AND key = ? AND seq <= ?").run(g.type, g.key, g.maxSeq);

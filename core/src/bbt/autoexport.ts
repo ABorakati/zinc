@@ -6,7 +6,7 @@
 // (temp file in the same folder, then rename) only when the text actually changed.
 import type { Database } from "bun:sqlite";
 import { mkdirSync, renameSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { HttpError } from "../db";
 import { gatherItems } from "../io/export";
 import { exportBetterFormat, isBbtFormat } from "./export";
@@ -59,13 +59,48 @@ function getRow(db: Database, id: number): Row {
 	return r;
 }
 
+/** File types an auto-export may write: bibliography formats only, never a script, shortcut, config or document. */
+const EXPORT_EXTENSIONS = new Set([".bib", ".bibtex", ".biblatex", ".json", ".yaml", ".yml", ".csl", ".txt", ".ris"]);
+
+/** Folders no export may be written into (system and autostart locations). Compared case-insensitively on the normalised path. */
+const PROTECTED_DIRS = [
+	"c:/windows", "c:/program files", "c:/program files (x86)", "c:/programdata", "c:/system volume information",
+	"/etc", "/bin", "/sbin", "/usr", "/boot", "/lib", "/lib64", "/proc", "/sys", "/dev", "/system", "/library", "/private/etc",
+];
+const PROTECTED_FRAGMENTS = ["/start menu/", "/startup/", "/appdata/roaming/microsoft/", "/.ssh/", "/.gnupg/", "/.config/autostart/"];
+
+/** Refuse export targets that could damage the system or turn an export into code: UNC / device paths, odd extensions, system folders. */
+export function checkExportTarget(path: string): string {
+	if (typeof path !== "string" || !path.trim()) throw new HttpError(400, "path is required");
+	if (!isAbsolute(path)) throw new HttpError(400, "path must be an absolute file path");
+	if (/^[\\/]{2}/.test(path)) throw new HttpError(400, "network and device paths are not allowed as export targets");
+	if (/[\x00-\x1f]/.test(path) || /:/.test(path.slice(2))) throw new HttpError(400, "invalid export path");
+	const full = resolve(path);
+	const ext = extname(full).toLowerCase();
+	if (!EXPORT_EXTENSIONS.has(ext)) throw new HttpError(400, `export files must end in ${[...EXPORT_EXTENSIONS].join(", ")}`);
+	const norm = full.replace(/\\/g, "/").toLowerCase();
+	if (PROTECTED_DIRS.some((d) => norm === d || norm.startsWith(d + "/")) || PROTECTED_FRAGMENTS.some((p) => (norm + "/").includes(p))) {
+		throw new HttpError(400, "exports cannot be written into system or startup folders");
+	}
+	return full;
+}
+
+/** Whether an existing file looks like a bibliography export (or is empty), so overwriting it with an export is plausible. */
+function looksLikeExport(file: string): boolean {
+	try {
+		const head = readFileSync(file, "utf8").slice(0, 4096).trimStart();
+		return head === "" || /^(@|%|\[|\{|---|#|references:|\*\s*Better)/i.test(head);
+	} catch {
+		return false;
+	}
+}
+
 export function addAutoExport(
 	db: Database,
 	a: { path: string; format: string; scope: AutoExportScope; trigger?: "change" | "idle"; options?: AutoExportOptions },
 ): AutoExport {
 	if (!isBbtFormat(a.format)) throw new HttpError(400, "format must be betterbibtex, betterbiblatex, bettercsljson or bettercslyaml");
-	if (typeof a.path !== "string" || !a.path.trim()) throw new HttpError(400, "path is required");
-	if (!isAbsolute(a.path)) throw new HttpError(400, "path must be an absolute file path");
+	checkExportTarget(a.path);
 	const scope = a.scope ?? { type: "library" };
 	if (scope.type !== "library" && scope.type !== "collection") throw new HttpError(400, "scope.type must be library or collection");
 	if (scope.type === "collection") {
@@ -109,7 +144,11 @@ export function runAutoExport(db: Database, id: number): AutoExport {
 		const items = gatherItems(db, { format: "bibtex", includeNotes: !!opts.includeNotes, ...scope });
 		const text = exportBetterFormat(db, r.format as BbtExportFormat, items, { ascii: opts.ascii, includeNotes: opts.includeNotes });
 		const hash = Bun.hash(text).toString(36);
-		if (hash !== r.hash || !existsSync(r.path) || readFileSync(r.path, "utf8") !== text) writeFileAtomic(r.path, text);
+		checkExportTarget(r.path);
+		const exists = existsSync(r.path);
+		// a file Zinc never wrote (no recorded hash) is only replaced when it already looks like a bibliography export
+		if (exists && r.hash === null && !looksLikeExport(r.path)) throw new Error("refusing to overwrite an existing file that is not a bibliography export");
+		if (hash !== r.hash || !exists || readFileSync(r.path, "utf8") !== text) writeFileAtomic(r.path, text);
 		db.query("UPDATE bbt_autoexport SET status = 'done', error = NULL, last_export = ?, count = ?, hash = ? WHERE id = ?").run(nowIso(), items.length, hash, id);
 	} catch (e) {
 		db.query("UPDATE bbt_autoexport SET status = 'error', error = ? WHERE id = ?").run(e instanceof Error ? e.message : String(e), id);

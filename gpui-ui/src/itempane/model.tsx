@@ -40,6 +40,13 @@ export function refreshStore(): void {
 	(store as unknown as { refresh?: () => void }).refresh?.();
 }
 
+/** After an edit of the item's own fields: refetch the list pages only (no collection / library requests). */
+export function refreshItemsStore(fields: string[]): void {
+	// membership / trash changes move collection counts: those still refresh everything
+	if (fields.some((f) => f === "collections" || f === "deleted" || f === "parentItem")) store.refresh();
+	else store.refreshItems(fields);
+}
+
 export function createPaneModel(key: Accessor<string | null>): PaneModel {
 	const gp = useGpuix();
 	const [detail, setDetailSig] = createSignal<ItemDetail | undefined>(undefined);
@@ -78,8 +85,8 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 			try {
 				const r = await ipApi.patchItem(k, patch);
 				if (detail()?.data.key === k) setDetailSig(r);
-				refreshStore();
-			} catch (e) {
+				refreshItemsStore(Object.keys(patch)); // an edit of the item's own fields: the list refetches, nothing else
+				} catch (e) {
 				const cur = detail();
 				if (cur?.data.key === k) setDetailSig({ ...cur, data: { ...cur.data, ...prev } });
 				fail("Could not save changes", e);

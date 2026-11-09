@@ -26,6 +26,8 @@ export interface PageCmdHost {
 	read(): Promise<Uint8Array>;
 	/** false when the reader shows a document it does not own (a script's PdfDoc) */
 	canEdit(): boolean;
+	/** true when the attachment's library does not let this user change files (a read-only group) */
+	filesLocked?(): boolean;
 	reopen(map: (page: number) => number): Promise<void>;
 }
 
@@ -48,7 +50,7 @@ export function createPageCommands(h: PageCmdHost) {
 	/** what Rotate / Delete act on: the given pages, else the pages picked in the thumbnails, else the current page */
 	const targets = (pages?: number[]): number[] => (pages?.length ? pages : h.selected().length ? h.selected() : [h.curPage()]);
 	/** why the file cannot be changed now (null: it can) */
-	const editBlocked = (): string | null => (!h.doc() ? "No document is open." : !h.canEdit() ? "This document was opened by a script and cannot be changed." : pdfOpsUnavailable());
+	const editBlocked = (): string | null => (!h.doc() ? "No document is open." : !h.canEdit() ? "This document was opened by a script and cannot be changed." : h.filesLocked?.() ? "This library is read-only, so its files cannot be changed." : pdfOpsUnavailable());
 	const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: e instanceof Error ? e.message : String(e) });
 	const target = () => ({
 		attachmentKey: h.attachmentKey(), path: h.path(), pageCount: h.doc()?.pageCount ?? 0,

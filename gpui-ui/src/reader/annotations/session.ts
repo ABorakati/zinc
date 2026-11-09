@@ -18,7 +18,7 @@ export type Tool = "highlight" | "underline" | "note" | "ink" | "eraser";
 let rememberedColor: string = DEFAULT_COLOR;
 
 export function createSession(ctx: ReaderContext) {
-	const store = createStore(ctx.attachmentKey);
+	const store = createStore(ctx.attachmentKey, { readOnly: () => !!ctx.readOnly });
 	const [tool, setToolRaw] = createSignal<Tool | null>(null);
 	const [color, setColorRaw] = createSignal<string>(rememberedColor);
 	const [selectedId, select] = createSignal<string | null>(null);
@@ -49,6 +49,7 @@ export function createSession(ctx: ReaderContext) {
 
 	async function create(type: AnnotationType, col: string, position: Position, extra: { text?: string; comment?: string } = {}): Promise<Annotation> {
 		const a = makeAnnotation({ type, color: col, position, sortIndex: await sortIndex(position), pageLabel: label(position.pageIndex), ...extra });
+		if (ctx.readOnly) ui.notify("This library is read-only: annotations cannot be added.");
 		store.add(a);
 		return a;
 	}
@@ -139,6 +140,6 @@ export function sessionFor(ctx: ReaderContext): Session {
 export function closeSession(attachmentKey: string): void {
 	const s = sessions.get(attachmentKey);
 	if (!s) return;
-	void s.store.flush();
+	s.store.dispose();
 	sessions.delete(attachmentKey);
 }

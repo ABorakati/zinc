@@ -2,7 +2,7 @@
 // Schema contract: core/schema.sql. API contract: core/src/api-types.ts.
 
 import { Database } from "bun:sqlite";
-import { USER_LIBRARY, assertItemWritable, assertWritable, libraryOfCollection, libraryOfItem } from "./libraries";
+import { USER_LIBRARY, assertItemWritable, assertWritable, itemUri, libraryOfCollection, libraryOfItem } from "./libraries";
 import { existsSync } from "node:fs";
 import { migrate } from "./migrations";
 import { canonicalField, convertItemType, hasItemType } from "./schema-data";
@@ -804,26 +804,45 @@ function setRelations(db: Database, key: string, uris: string[]): void {
 
 function changeRelated(db: Database, key: string, others: string[], add: boolean): ItemDetail {
 	if (!itemExists(db, key)) throw new HttpError(404, "item not found");
+	const lib = libraryOfItem(db, key) ?? USER_LIBRARY;
+	assertWritable(db, lib);
 	for (const k of others) {
 		if (k === key) throw new HttpError(400, "an item cannot be related to itself");
 		if (add && !itemExists(db, k)) throw new HttpError(404, `item not found: ${k}`);
+		// relations stay inside one library (the other side would be a different library's item)
+		if (add && libraryOfItem(db, k) !== lib) throw new HttpError(400, `item ${k} is in another library`);
 	}
 	db.transaction(() => {
-		const lib = libraryKey(db);
 		const apply = (from: string, to: string) => {
 			const row = db.query("SELECT data FROM items WHERE key = ?").get(from) as { data: string } | null;
 			if (!row) return;
 			const uris = relationUris(JSON.parse(row.data) as ZoteroItemData);
 			const has = uris.some((u) => uriKey(u) === to);
-			if (add && !has) setRelations(db, from, [...uris, `http://zotero.org/users/local/${lib}/items/${to}`]);
+			if (add && !has) setRelations(db, from, [...uris, itemUri(db, lib, to)]);
 			else if (!add && has) setRelations(db, from, uris.filter((u) => uriKey(u) !== to));
 		};
 		for (const k of others) {
 			apply(key, k);
-			apply(k, key);
+			// the other side is only touched when it is in this library (removing a stray cross-library link from this side is enough)
+			if (libraryOfItem(db, k) === lib) apply(k, key);
 		}
 	})();
 	return getItemDetail(db, key)!;
+}
+
+/** Keys of the items of the same library whose dc:relation names `key` (what is left dangling when `key` is merged away or erased). */
+export function itemsRelatingTo(db: Database, key: string): string[] {
+	const lib = libraryOfItem(db, key) ?? USER_LIBRARY;
+	const rows = db.query("SELECT key, data FROM items WHERE library_id = ? AND key <> ? AND instr(data, ?) > 0").all(lib, key, `/items/${key}`) as { key: string; data: string }[];
+	const out: string[] = [];
+	for (const r of rows) {
+		try {
+			if (relationUris(JSON.parse(r.data) as ZoteroItemData).some((u) => uriKey(u) === key)) out.push(r.key);
+		} catch {
+			// unreadable data: leave it
+		}
+	}
+	return out;
 }
 
 export function addRelated(db: Database, key: string, others: string[]): ItemDetail {
@@ -961,7 +980,8 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 	if (!row) throw new HttpError(404, "item not found");
 	assertWritable(db, row.library_id);
 	let data = JSON.parse(row.data) as ZoteroItemData;
-	const { key: _k, itemType, dateAdded: _a, ...rest } = patch;
+	// parentItem and version are not patchable: items.parent_key and the sync version are the truth, data must not drift from them
+	const { key: _k, itemType, dateAdded: _a, parentItem: _p, version: _v, ...rest } = patch;
 	// Changing the item type remaps fields and creator types first (Zotero's rules);
 	// any other fields in the same patch then apply to the new type.
 	if (itemType !== undefined && itemType !== data.itemType) {

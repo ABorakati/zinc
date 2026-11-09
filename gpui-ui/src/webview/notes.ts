@@ -206,7 +206,7 @@ function onMessage(m: PageMessage): void {
 function openInPage(c: Current): void {
 	if (!pageReady()) return;
 	setShownKey(null);
-	host.eval(`window.__zn&&__zn.open(${js({ instanceID: c.instanceID, value: c.pending ?? c.saved, readOnly: false, disableDrag: false, isAttachmentNote: false, colorScheme: store.mode() })})`);
+	host.eval(`window.__zn&&__zn.open(${js({ instanceID: c.instanceID, value: c.pending ?? c.saved, readOnly: !store.canEdit(), disableDrag: false, isAttachmentNote: false, colorScheme: store.mode() })})`);
 }
 
 /** Save the note's pending HTML (one save at a time per note). */

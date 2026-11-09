@@ -24,6 +24,11 @@ export function selectMany(keys: string[]): void {
 	store.selectItem(keys.length === 1 ? keys[0]! : null);
 }
 
+/** The library on screen (1 = My Library): tag maintenance acts on it. */
+export function libraryId(): number {
+	return store.libraryId();
+}
+
 /** Re-fetch collections and the item list after a change (imports, trash, merges…). */
 export function refresh(): void {
 	ls().refresh?.();

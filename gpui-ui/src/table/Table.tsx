@@ -8,6 +8,7 @@ import { childMenu } from "../cards/Card";
 import { modsOf, swallow, swallowed } from "../cards/click";
 import { openItem } from "../cards/actions";
 import { listFocused, listKeyHandler, setListFocused } from "../cards/keys";
+import { ListRetry } from "../cards/ListRetry";
 import { openItemMenu } from "../cards/menus";
 import { createRows, type Group, type Rows } from "../cards/rows";
 import { mix } from "../cards/logic";
@@ -394,7 +395,7 @@ export function TableView(): JSX.Element {
 										...(c.def.align === "right" ? { justifyContent: "flex-end" } : c.def.align === "center" ? { justifyContent: "center" } : {}),
 									}}
 								>
-									<Show when={c.def.icon} fallback={<text style={{ ...textStyle("select-none text-xs font-medium text-muted-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>{clipText(c.def.label, c.width - 16 - (mark() ? 24 : 0), 12, 500)}</text>}>
+									<Show when={c.def.icon} fallback={<text style={{ ...textStyle("select-none text-xs font-medium text-muted-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>{clipText(c.def.label, c.width - 16 - (mark() ? 18 : 0), 12, 500)}</text>}>
 										<Icon name={c.def.icon === "attachments" ? "paperclip" : "sticky-note"} size={14} color={tok("muted-foreground")} />
 									</Show>
 									<Show when={mark()}>
@@ -427,8 +428,9 @@ export function TableView(): JSX.Element {
 						>
 							<For each={indices()}>{(i) => <RowView row={i} rows={rows} cols={cols} total={total} />}</For>
 						</virtual-list>
+						<ListRetry />
 						<Show when={count() === 0 && !store.loading()}>
-							<div style={tw("flex absolute top-12 inset-x-0 justify-center", mode())}>
+						<div style={tw("flex absolute top-12 inset-x-0 justify-center", mode())}>
 								<text style={textStyle("text-muted-foreground", mode())}>{store.view().kind === "publications" ? "No items in My Publications" : "No items"}</text>
 							</div>
 						</Show>

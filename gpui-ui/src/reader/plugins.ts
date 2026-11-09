@@ -10,6 +10,8 @@ export interface Word { t: string; x: number; y: number; w: number; h: number; l
 export interface ReaderContext {
 	attachmentKey: string;
 	itemKey: string;
+	/** true when the attachment's library cannot be edited by this user (a read-only group): the annotation tools and edits are off */
+	readOnly?: boolean;
 	pageCount: Accessor<number>;
 	/** page size in PDF points */
 	pageSize(i: number): { w: number; h: number };

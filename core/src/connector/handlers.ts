@@ -16,6 +16,7 @@ import { parseRis } from "../io/ris";
 import type { ParsedItem } from "../io/common";
 import { itemDoi } from "../references/ids";
 import { indexItem } from "../search";
+import { isExtensionOrigin, isIntegrationOrigin, isWebRequest } from "../zport/routes";
 import { storeWebAttachment } from "./attachments";
 import { proxyFrom, toProper } from "./proxy";
 import { convertTags, saveTranslatedItem } from "./items";
@@ -69,6 +70,14 @@ class Bad extends Error {
 	}
 }
 
+/** SQLite refused the write because another process (the app, a second host) holds the library. */
+export const isBusyError = (e: unknown): boolean => /SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(String((e as { code?: unknown })?.code ?? "") + " " + (e instanceof Error ? e.message : String(e)));
+
+/** What a failed save answers: 503 (the extension may retry) when the library is busy, else Zotero's plain 500. */
+function failure(e: unknown): Response {
+	return isBusyError(e) ? errorReply(503, "The Zinc library is busy (another program is writing to it). Try again in a moment.") : reply(500);
+}
+
 const mediaType = (req: Request) => (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
 
 async function readJson(req: Request): Promise<Record<string, any>> {
@@ -112,11 +121,22 @@ function metadata(req: Request): Record<string, any> {
 	throw new Bad(reply(400, "text/plain", "Invalid X-Metadata\n"));
 }
 
-/** Zotero refuses version-less browser requests (a web page cannot add items). Returns a response to refuse with. */
+/**
+ * Web pages must not drive the connector. Port 23119 answers CORS preflights only for extension origins (zport/index.ts), but
+ * this guard does not rely on that: a request from a web page (an http(s) or "null" Origin, or a cross-site fetch without
+ * one) is refused whatever headers it carries, because any page can set "X-Zotero-Connector-API-Version" itself. The
+ * Connector extension calls from chrome-extension:// | moz-extension:// | safari-web-extension:// origins; programs send no
+ * Origin. Zotero's /connector/ping stays open to a navigation and to the word-processor add-in origins.
+ */
 export function browserGuard(req: Request, url: URL): Response | null {
 	const h = req.headers;
-	const isBrowser = (h.get("user-agent") ?? "").startsWith("Mozilla/") || h.has("origin");
-	if (!isBrowser || h.has("x-zotero-connector-api-version") || h.has("zotero-allowed-request")) return null;
+	if (isWebRequest(req)) {
+		if (url.pathname === "/connector/ping" && (h.get("sec-fetch-mode") === "navigate" || isIntegrationOrigin(h.get("origin")))) return null;
+		return new Response(null, { status: 403 });
+	}
+	// a browser-looking client with no extension origin and no connector header: Zotero refuses it as well
+	const isBrowser = (h.get("user-agent") ?? "").startsWith("Mozilla/");
+	if (!isBrowser || h.has("x-zotero-connector-api-version") || h.has("zotero-allowed-request") || isExtensionOrigin(h.get("origin"))) return null;
 	if (url.pathname === "/connector/ping" && h.get("sec-fetch-mode") === "navigate") return null;
 	return new Response(null, { status: 403 });
 }
@@ -192,7 +212,7 @@ export const saveItems: Handler = async (req, { db }) => {
 	} catch (e) {
 		console.error("[connector] saveItems failed:", e);
 		SessionManager.remove(session.id);
-		return reply(500);
+		return failure(e);
 	}
 };
 
@@ -219,9 +239,26 @@ export const saveSnapshot: Handler = async (req, { db }) => {
 		return reply(201, "application/json");
 	} catch (e) {
 		console.error("[connector] saveSnapshot failed:", e);
-		return reply(500);
+		return failure(e);
 	}
 };
+
+/** The fallback download may only fetch the saved page itself: an http(s) URL equal (but for the fragment) to the saved item's URL. */
+function isPageUrl(db: Database, parentKey: string, url: unknown): boolean {
+	if (typeof url !== "string") return false;
+	try {
+		const wanted = new URL(url);
+		if (wanted.protocol !== "http:" && wanted.protocol !== "https:") return false;
+		const own = getItemDetail(db, parentKey)?.data.url;
+		if (typeof own !== "string") return false;
+		const have = new URL(own);
+		wanted.hash = "";
+		have.hash = "";
+		return wanted.href === have.href;
+	} catch {
+		return false;
+	}
+}
 
 export const saveSingleFile: Handler = async (req, { db }) => {
 	let data: Record<string, any>;
@@ -245,7 +282,7 @@ export const saveSingleFile: Handler = async (req, { db }) => {
 	if (!parentKey) return s.action === "saveSnapshot" || s.action === "saveItems" ? errorReply(400, "PARENT_ITEM_NOT_FOUND") : reply(201);
 
 	let html: string = typeof data.snapshotContent === "string" ? data.snapshotContent : "";
-	if (!html.trim() && /^https?:\/\//i.test(String(data.url ?? ""))) {
+	if (!html.trim() && isPageUrl(db, parentKey, data.url)) {
 		// "If snapshotContent is empty, the save failed in the Connector and we fall back to saving in Zotero."
 		try {
 			const res = await deps.fetch(String(data.url), { headers: { "User-Agent": "zinc" } });
@@ -267,7 +304,7 @@ export const saveSingleFile: Handler = async (req, { db }) => {
 		return reply(201);
 	} catch (e) {
 		console.error("[connector] saveSingleFile failed:", e);
-		return reply(500);
+		return failure(e);
 	}
 };
 
@@ -292,7 +329,7 @@ export const saveAttachment: Handler = async (req, { db, url }) => {
 		return reply(201);
 	} catch (e) {
 		console.error("[connector] saveAttachment failed:", e);
-		return reply(500);
+		return failure(e);
 	}
 };
 
@@ -326,7 +363,7 @@ export const saveStandaloneAttachment: Handler = async (req, { db, url }) => {
 	} catch (e) {
 		console.error("[connector] saveStandaloneAttachment failed:", e);
 		SessionManager.remove(session.id);
-		return reply(500);
+		return failure(e);
 	}
 };
 
@@ -417,7 +454,7 @@ export const importHandler: Handler = async (req, { db, url }) => {
 	} catch (e) {
 		console.error("[connector] import failed:", e);
 		SessionManager.remove(session.id);
-		return reply(500);
+		return failure(e);
 	}
 };
 

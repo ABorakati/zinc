@@ -8,6 +8,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +25,7 @@ import {
 	toIso,
 } from "../zotero-db/mapping";
 import { venueOf } from "../venue";
+import { rebuildSearchIndex } from "../search";
 import bundledSchema from "../../schema.sql" with { type: "text" };
 import {
 	buildFileIndex,
@@ -157,6 +159,26 @@ function snapshot(zoteroDir: string, workDir: string): { path: string; method: "
 
 type Row = Record<string, any>;
 
+/**
+ * Put the finished import at `target`. An existing library is renamed aside first and removed only after the new file is in
+ * place; if the rename of the new file fails, the old one is put back. A stale -wal/-shm of the old file never meets the new one.
+ */
+function swapIntoPlace(building: string, target: string): void {
+	for (const ext of ["-wal", "-shm", "-journal"]) rmSync(building + ext, { force: true });
+	const aside = `${target}.replaced-${process.pid}-${Date.now()}`;
+	const had = existsSync(target);
+	if (had) {
+		for (const ext of ["", "-wal", "-shm", "-journal"]) if (existsSync(target + ext)) renameSync(target + ext, aside + ext);
+	}
+	try {
+		renameSync(building, target);
+	} catch (e) {
+		if (had) for (const ext of ["", "-wal", "-shm", "-journal"]) if (existsSync(aside + ext)) renameSync(aside + ext, target + ext);
+		throw e;
+	}
+	if (had) for (const ext of ["", "-wal", "-shm", "-journal"]) rmSync(aside + ext, { force: true });
+}
+
 export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 	const started = Date.now();
 	const progress = (p: ImportProgress) => opts.onProgress?.(p);
@@ -170,8 +192,10 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		if (!opts.replace) {
 			throw new Error(`${target} already exists; pass replace: true to overwrite`);
 		}
-		for (const ext of ["", "-wal", "-shm"]) rmSync(target + ext, { force: true });
+		// The existing library stays untouched until the new one is complete (see the swap below).
 	}
+	// The import is built here and only moved over the target when everything succeeded.
+	const building = `${target}.importing-${process.pid}-${Date.now()}`;
 	mkdirSync(dirname(target), { recursive: true });
 
 	const appData = process.env.APPDATA ?? join(process.env.USERPROFILE ?? "", "AppData", "Roaming");
@@ -362,7 +386,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		// build target
 		progress({ phase: "write", message: "creating target database" });
 		await yieldThread();
-		out = new Database(target, { create: true });
+		out = new Database(building, { create: true });
 		out.exec(opts.schemaPath ? readFileSync(opts.schemaPath, "utf8") : bundledSchema);
 		out.exec("PRAGMA synchronous = OFF");
 		out.exec("BEGIN");
@@ -622,7 +646,14 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		out.exec("COMMIT");
 		const fk = out.query("PRAGMA foreign_key_check").all();
 		if (fk.length) skip(`foreign key violations (${fk.length})`);
+		// the search index has no triggers: build it for every imported item (quick_search, when the schema has it, is rebuilt too)
+		rebuildSearchIndex(out);
+		const integrity = out.query("PRAGMA integrity_check").all() as { integrity_check: string }[];
+		if (integrity.length !== 1 || integrity[0].integrity_check !== "ok") throw new Error("the imported database failed its integrity check; the existing library was not touched");
 		out.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+		out.close(true);
+		out = null;
+		swapIntoPlace(building, target);
 
 		return {
 			snapshotMethod: snap.method,
@@ -646,7 +677,8 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			// ignore
 		}
 		src?.close(true);
-		if (failed) for (const ext of ["", "-wal", "-shm"]) rmSync(target + ext, { force: true });
+		// only the half-built file goes; the library that was there before is never removed on failure
+		if (failed) for (const ext of ["", "-wal", "-shm", "-journal"]) rmSync(building + ext, { force: true });
 		rmSync(workDir, { recursive: true, force: true });
 	}
 }

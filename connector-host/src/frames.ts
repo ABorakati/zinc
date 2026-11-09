@@ -20,22 +20,51 @@ export function encodeFrame(msg: unknown): Buffer {
 
 /** Incremental decoder: feed it stdin chunks, get back the complete messages. */
 export class FrameReader {
-	private buf = Buffer.alloc(0);
+	// Pieces not yet decoded. A big frame arrives in many small pipe reads: collecting them and joining once keeps
+	// this linear (re-joining the whole buffer on every read is quadratic, and starves everything behind a PDF).
+	private parts: Buffer[] = [];
+	private have = 0;
 	/** largest frame length seen (tests check it against the 1 MB limit) */
 	maxLen = 0;
 
+	/** the first n bytes, joined (and consumed from the pieces) */
+	private take(n: number): Buffer {
+		const first = this.parts[0]!;
+		if (first.length >= n) {
+			this.parts[0] = first.subarray(n);
+			if (!this.parts[0]!.length) this.parts.shift();
+			this.have -= n;
+			return first.subarray(0, n);
+		}
+		const out = Buffer.allocUnsafe(n);
+		let at = 0;
+		while (at < n) {
+			const p = this.parts[0]!;
+			const k = Math.min(p.length, n - at);
+			p.copy(out, at, 0, k);
+			at += k;
+			if (k === p.length) this.parts.shift();
+			else this.parts[0] = p.subarray(k);
+		}
+		this.have -= n;
+		return out;
+	}
+
 	push(chunk: Uint8Array): unknown[] {
-		this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : Buffer.from(chunk);
+		if (chunk.length) {
+			this.parts.push(Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+			this.have += chunk.length;
+		}
 		const out: unknown[] = [];
 		for (;;) {
-			if (this.buf.length < 4) break;
-			const len = this.buf.readUInt32LE(0);
+			if (this.have < 4) break;
+			// the length prefix may itself be split across reads
+			const len = this.parts[0]!.length >= 4 ? this.parts[0]!.readUInt32LE(0) : Buffer.concat(this.parts).readUInt32LE(0);
 			this.maxLen = Math.max(this.maxLen, len);
 			if (len > MAX_IN_FRAME) throw new Error(`incoming frame of ${len} bytes exceeds the 64 MB limit`);
-			if (this.buf.length < 4 + len) break;
-			const json = this.buf.subarray(4, 4 + len).toString("utf8");
-			this.buf = this.buf.subarray(4 + len);
-			out.push(JSON.parse(json));
+			if (this.have < 4 + len) break;
+			this.take(4);
+			out.push(JSON.parse(this.take(len).toString("utf8")));
 		}
 		return out;
 	}

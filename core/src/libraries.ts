@@ -2,7 +2,7 @@
 // carries a library_id; the functions here read the registry and guard writes to a read-only library.
 
 import type { Database } from "bun:sqlite";
-import { HttpError } from "./db";
+import { generateKey, HttpError } from "./db";
 
 /** My Library. Exists in every library file; rows that predate groups belong to it. */
 export const USER_LIBRARY = 1;
@@ -88,11 +88,61 @@ export function assertWritable(db: Database, libraryId: number): void {
 	if (!l.editable) throw new HttpError(403, `"${l.name}" is a read-only library`);
 }
 
+/** Throws 403 when this user may not change files in the library (a group can allow metadata edits but forbid file edits). */
+export function assertFilesWritable(db: Database, libraryId: number): void {
+	if (libraryId === USER_LIBRARY) return;
+	assertWritable(db, libraryId);
+	const l = getLibrary(db, libraryId)!;
+	if (!l.filesEditable) throw new HttpError(403, `"${l.name}" does not allow file changes`);
+}
+
+/** assertFilesWritable for the library an item lives in (a missing item is left for the caller's own 404). */
+export function assertItemFilesWritable(db: Database, itemKey: string): void {
+	const lib = libraryOfItem(db, itemKey);
+	if (lib !== null) assertFilesWritable(db, lib);
+}
+
 /** assertWritable for the library an item lives in (a missing item is left for the caller's own 404). */
 export function assertItemWritable(db: Database, itemKey: string): void {
 	const lib = libraryOfItem(db, itemKey);
 	if (lib !== null) assertWritable(db, lib);
 }
+
+/**
+ * The URI prefix Zotero uses for items of a library in relations and citations: groups/<groupId> for a group, users/<userId>
+ * for My Library once an account is linked, else users/local/<library key>. Add "/items/<KEY>" for an item.
+ */
+export function libraryUriBase(db: Database, libraryId: number): string {
+	if (libraryId !== USER_LIBRARY) {
+		const g = getLibrary(db, libraryId)?.groupId;
+		if (g !== undefined) return `http://zotero.org/groups/${g}`;
+	}
+	try {
+		const uid = (db.query("SELECT value FROM sync_state WHERE name = 'web_user_id'").get() as { value: string } | null)?.value;
+		if (uid && /^\d+$/.test(uid)) return `http://zotero.org/users/${uid}`;
+	} catch {
+		// no sync state table: not linked
+	}
+	return localUriBase(db);
+}
+
+function localUriBase(db: Database): string {
+	let key = (db.query("SELECT value FROM meta WHERE name = 'library_key'").get() as { value: string } | null)?.value;
+	if (!key) {
+		key = generateKey();
+		db.query("INSERT INTO meta(name, value) VALUES('library_key', ?)").run(key);
+	}
+	return `http://zotero.org/users/local/${key}`;
+}
+
+/** Every URI prefix an item of this library can be cited or related by (the canonical one first). */
+export function libraryUriBases(db: Database, libraryId: number): string[] {
+	const out = [libraryUriBase(db, libraryId)];
+	if (libraryId === USER_LIBRARY) out.push(localUriBase(db));
+	return [...new Set(out)];
+}
+
+export const itemUri = (db: Database, libraryId: number, key: string): string => `${libraryUriBase(db, libraryId)}/items/${key}`;
 
 export interface GroupInfo {
 	groupId: number;

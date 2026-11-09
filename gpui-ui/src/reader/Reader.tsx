@@ -122,6 +122,10 @@ export interface ReaderProps {
 	title?: string;
 	/** the parent item's key (plugins get it as ctx.itemKey; looked up from the open tabs when omitted) */
 	itemKey?: string;
+	/** false: the attachment's library is read-only for this user (a group): annotating is off (default true) */
+	editable?: boolean;
+	/** false: the library does not let this user change files (a group): Rotate / Delete Pages are off (default true) */
+	filesEditable?: boolean;
 	/** false: stay mounted but free the page bitmaps and stop rendering (default true) */
 	active?: boolean;
 
@@ -784,6 +788,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		selected: () => (sbOpen() && sbTab() === "thumbs" ? selPages() : []),
 		read: async () => (props.path ? new Uint8Array(await Bun.file(props.path).arrayBuffer()) : fetchAttachment(props.attachmentKey)),
 		canEdit: () => !props.doc,
+		filesLocked: () => props.filesEditable === false || props.editable === false,
 		reopen: async (map) => {
 			const a = list ? anchor() : saved;
 			let page = a[0];
@@ -1109,6 +1114,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 		return {
 			attachmentKey: key(),
 			itemKey: props.itemKey ?? itemKeyLookup(key()),
+			get readOnly() { return props.editable === false; },
 			pageCount: count,
 			pageSize: (i) => { const s = d.sizes[i] ?? [612, 792]; return { w: s[0], h: s[1] }; },
 			textLayer: async (i) => {

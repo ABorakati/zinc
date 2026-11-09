@@ -9,7 +9,7 @@ import { dbFileOf } from "../files/config";
 import { listLibraries, markGroupsRemoved, upsertGroupLibrary, USER_LIBRARY, type Library } from "../libraries";
 import { pendingCount } from "../sync/build";
 import { failure, PreconditionFailed, WebApiError, ZoteroWebClient } from "./client";
-import { checkFiles, downloadMissing, uploadMissing, type FileJob, type FilesCheck } from "./files";
+import { checkFiles, downloadMissing, reconcileFiles, uploadMissing, type FileJob, type FilesCheck } from "./files";
 import { bunKeyStore, type KeyStore } from "./keystore";
 import { pullOnce } from "./pull";
 import { pushOnce, type PushResult } from "./push";
@@ -176,7 +176,17 @@ export class WebSyncService {
 			throw new HttpError(400, `could not reach zotero.org: ${errMsg(e)}`);
 		}
 		if (!info.userID) throw new HttpError(400, "that API key has no user library");
+		// Versions, baselines and queued writes belong to one zotero.org account. A key of another account is refused until the
+		// user resets the account link on purpose (resetAccount): it would inherit the old watermark and push the old queue.
+		const bound = this.num("web_bound_user_id") ?? this.num("web_user_id");
+		if (bound && bound !== info.userID) {
+			throw new HttpError(
+				409,
+				`this library is linked to zotero.org user ${bound}, and that API key belongs to user ${info.userID}. Reset the account link first (nothing in the library is deleted).`,
+			);
+		}
 		await this.keyStore.set(key);
+		setState(this.db, "web_bound_user_id", String(info.userID));
 		const a = info.access?.user;
 		setState(this.db, "web_user_id", String(info.userID));
 		setState(this.db, "web_username", info.username ?? null);
@@ -186,6 +196,28 @@ export class WebSyncService {
 		// the key's access decides what is editable: re-read every group's permissions on the next pull
 		this.db.run("UPDATE libraries SET group_version = 0 WHERE type = 'group'");
 		setState(this.db, "web_error", null);
+		return this.status();
+	}
+
+	/**
+	 * Unlink this library from its zotero.org account so a key of a different account can be set. Nothing in the library is
+	 * deleted: items, files, queued changes and conflicts stay. What goes is everything that was only true for the old
+	 * account: the per-object versions, the pull watermarks and retry lists, the group libraries' versions and the bound user id.
+	 * Queued local changes will be sent to the new account as new objects.
+	 */
+	async resetAccount(): Promise<WebSyncStatus> {
+		await this.exclusive(async () => {
+			this.db.transaction(() => {
+				this.db.run("DELETE FROM websync_versions");
+				this.db.run("UPDATE libraries SET web_version = 0, web_write_version = 0, group_version = 0");
+				for (const n of [
+					"web_bound_user_id", "web_user_id", "web_username", "web_can_write", "web_files_access", "web_groups_access", "web_error",
+					"web_library_version", "web_write_version", "web_retry", "web_last_pull_at", "web_last_push_at",
+				]) setState(this.db, n, null);
+				this.db.run("DELETE FROM sync_state WHERE name LIKE 'web!_%!_lib%' ESCAPE '!' OR name LIKE 'web!_file!_md5:%' ESCAPE '!'");
+			})();
+		});
+		await this.keyStore.delete();
 		return this.status();
 	}
 
@@ -354,6 +386,21 @@ export class WebSyncService {
 						} catch (e) {
 							setState(this.db, this.stateName("web_error", g.id), failMsg(e));
 						}
+					}
+				}
+				// attachments that changed after their last sync (the server's file replaced, or the local one edited)
+				const upload = mode === "sync" && getState(this.db, "web_files_access") === "1";
+				const base = { db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir };
+				try {
+					await reconcileFiles(base, { upload: upload && this.canWrite });
+				} catch (e) {
+					setState(this.db, "web_error", failMsg(e));
+				}
+				for (const g of this.groupLibraries()) {
+					try {
+						await reconcileFiles({ ...base, ref: this.refFor(g) }, { upload: upload && g.filesEditable });
+					} catch (e) {
+						setState(this.db, this.stateName("web_error", g.id), failMsg(e));
 					}
 				}
 				this.startJob();

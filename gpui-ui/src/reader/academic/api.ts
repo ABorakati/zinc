@@ -73,7 +73,7 @@ export function createApi(attachmentKey: string, itemKey: string | null): Academ
 			}
 		},
 		async openUrl(url) { await apiRequest("POST", "/open-url", { url }); },
-		async openExternal(key) { await apiRequest("POST", `/attachments/${encodeURIComponent(key)}/open-external`, {}); },
+		async openExternal(key) { await (await import("../../ui/openExternal")).openAttachmentExternally(key); },
 		item(key) { return apiRequest<ItemDetail>("GET", `/items/${encodeURIComponent(key)}`); },
 		async children() {
 			if (!itemKey) return [];

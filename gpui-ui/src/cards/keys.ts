@@ -56,7 +56,7 @@ export function listKeyHandler(ops: ListKeyOps) {
 		let handled = true;
 		if (ctrl && k === "a") store.selectAll();
 		else if (ctrl && k === "f") focusSearch();
-		else if (ctrl && k === "v") handled = tryPasteIdentifiers();
+		else if (ctrl && k === "v") handled = store.canEdit() && tryPasteIdentifiers(); // a read-only library takes no new items
 		else if (ctrl || m.alt) handled = false;
 		else if (k === "down") ops.move(1, !!m.shift);
 		else if (k === "up") ops.move(-1, !!m.shift);
@@ -67,7 +67,7 @@ export function listKeyHandler(ops: ListKeyOps) {
 		else if (k === "space" || k === " ") ops.toggle();
 		else if (k === "enter") ops.open();
 		else if (k === "escape") store.selectOnly(null);
-		else if (k === "delete") void deleteSelected(!!m.shift); // Delete: to the Trash (permanently in the Trash view); Shift+Delete: permanently
+		else if (k === "delete") { if (store.canEdit()) void deleteSelected(!!m.shift); } // Delete: to the Trash (permanently in the Trash view); Shift+Delete: permanently
 		else handled = ops.extra?.(k, e) ?? false;
 		if (handled) { e.preventDefault?.(); e.stopPropagation?.(); }
 	};

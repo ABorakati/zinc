@@ -22,6 +22,11 @@ export interface ApplyReport {
 	deleted: number;
 	/** Objects whose key is already used by another library in this file (skipped, never merged). Absent when none. */
 	collisions?: number;
+	/**
+	 * Objects that could not be applied and are not in the database at all afterwards (a parent that is not here yet, an
+	 * object that threw). Callers keep them out of their checkpoint and fetch them again. Absent when none.
+	 */
+	failed?: { type: EntityType; key: string }[];
 }
 
 /** Milliseconds for Zotero's "YYYY-MM-DD HH:MM:SS" (UTC) and ISO timestamps; 0 when unparseable. */
@@ -363,8 +368,14 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 function upsertAnnotation(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	const db = c.db;
 	const att = typeof data.parentItem === "string" ? data.parentItem : "";
-	if (!att || !db.query("SELECT 1 FROM items WHERE key = ?").get(att)) {
+	// the attachment must be in this library, and the annotation key must not already belong to another library's attachment
+	if (!att || !db.query("SELECT 1 FROM items WHERE key = ? AND library_id = ?").get(att, c.libraryId)) {
 		c.report.skipped++;
+		return;
+	}
+	if (db.query("SELECT 1 FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ? AND i.library_id <> ?").get(key, c.libraryId)) {
+		c.report.skipped++;
+		c.report.collisions = (c.report.collisions ?? 0) + 1;
 		return;
 	}
 	const modified = (typeof data.dateModified === "string" && data.dateModified) || dm || nowIso();
@@ -384,10 +395,38 @@ function upsertAnnotation(c: Ctx, key: string, data: ZoteroJson, dm: string): vo
 	c.report.applied++;
 }
 
+/**
+ * Deleting an item removes its notes, attachments and annotations with it. When any of those (anywhere in the descendant
+ * tree) still has an unsent local change, the deletion is not applied: the whole tree stays, one conflict is recorded for
+ * the item, and the item is queued again so a push re-creates it for the surviving children. Returns true when blocked.
+ */
+function deletionBlockedByChildren(c: Ctx, key: string): boolean {
+	const db = c.db;
+	const row = db.query("SELECT 1 FROM items WHERE key = ? AND library_id = ?").get(key, c.libraryId);
+	if (!row) return false;
+	const kids = (db.query("SELECT key FROM items WHERE parent_key = ?").all(key) as { key: string }[]).map((r) => r.key);
+	const pendingKids = kids.filter((k) => hasOutbox(db, "item", k));
+	const owners = [key, ...kids];
+	const anns = db
+		.query(`SELECT key FROM annotations WHERE attachment_key IN (SELECT value FROM json_each(?))`)
+		.all(JSON.stringify(owners)) as { key: string }[];
+	const pendingAnns = anns.filter((a) => hasOutbox(db, "annotation", a.key));
+	if (pendingKids.length === 0 && pendingAnns.length === 0) return false;
+	const local = localSnapshot(db, "item", key);
+	recordConflict(db, "item", key, { ...((local?.json as object) ?? {}), pendingChildren: [...pendingKids, ...pendingAnns.map((a) => a.key)] }, null, "local");
+	c.report.conflicts++;
+	db.query("DELETE FROM sync_base WHERE type = 'item' AND key = ?").run(key);
+	db.query("INSERT INTO sync_outbox(type, key, op, library_id) VALUES('item', ?, 'upsert', ?) ON CONFLICT(type, key, op) DO NOTHING").run(key, c.libraryId);
+	return true;
+}
+
 function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 	const db = c.db;
 	// an erase in one library never touches an object of another that happens to share the key
 	if (type !== "annotation" && (db.query(`SELECT 1 FROM ${type === "item" ? "items" : "collections"} WHERE key = ? AND library_id <> ?`).get(key, c.libraryId))) return;
+	// an annotation is only ever removed through its own library: its attachment must be in this library
+	if (type === "annotation" && !db.query("SELECT 1 FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ? AND i.library_id = ?").get(key, c.libraryId)) return;
+	if (type === "item" && deletionBlockedByChildren(c, key)) return;
 	if (hasOutbox(db, type, key)) {
 		// edited here while erased there: keep our version (it is written back on the next push)
 		const local = localSnapshot(db, type, key);
@@ -463,6 +502,17 @@ export function applyChanges(db: Database, changes: RemoteChanges, dataDir: stri
 			db.run("DELETE FROM sync_flags WHERE name = 'suppress'");
 		}
 	})();
+	// what is not stored anywhere (no row in any library, nothing queued about it) was not applied: report it for a retry
+	const failed: { type: EntityType; key: string }[] = [];
+	const exists: Record<EntityType, string> = { item: "items", collection: "collections", annotation: "annotations" };
+	const erased = new Set(ch.deletes.map((d) => `${d.type}:${d.key}`));
+	for (const u of ch.upserts) {
+		if (erased.has(`${u.type}:${u.key}`)) continue;
+		if (db.query(`SELECT 1 FROM ${exists[u.type]} WHERE key = ?`).get(u.key)) continue;
+		if (hasOutbox(db, u.type, u.key)) continue;
+		failed.push({ type: u.type, key: u.key });
+	}
+	if (failed.length) report.failed = failed;
 	if (c.unindex.length || c.reindex.size) {
 		db.transaction(() => {
 			for (const r of c.unindex) db.query("DELETE FROM search WHERE rowid = ?").run(r);

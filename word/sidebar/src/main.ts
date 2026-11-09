@@ -42,9 +42,24 @@ function toast(msg: string, err = false, ms = 4500) {
 	setTimeout(() => t.remove(), ms);
 }
 
+/** True while a busy() action runs: a second click, Enter or list click while it runs is ignored (it would insert twice). */
+let isBusy = false;
+
+function lockButtons(root: ParentNode = document) {
+	root.querySelectorAll<HTMLButtonElement>("button:not([data-busy])").forEach((b) => {
+		if (b.disabled) return;
+		b.disabled = true;
+		b.dataset.busy = "1";
+	});
+}
+
 async function busy<T>(label: string, fn: () => Promise<T>): Promise<T | undefined> {
-	const btns = [...document.querySelectorAll<HTMLButtonElement>("button")];
-	btns.forEach((b) => (b.disabled = true));
+	if (isBusy) {
+		toast("Still working on the previous action.");
+		return undefined;
+	}
+	isBusy = true;
+	lockButtons();
 	$("status").textContent = label;
 	try {
 		return await fn();
@@ -52,7 +67,12 @@ async function busy<T>(label: string, fn: () => Promise<T>): Promise<T | undefin
 		toast(e instanceof Error ? e.message : String(e), true, 8000);
 		return undefined;
 	} finally {
-		btns.forEach((b) => (b.disabled = false));
+		isBusy = false;
+		// includes buttons the sidebar drew while the action ran (the cursor moves, so the "Cited here" card is rebuilt)
+		document.querySelectorAll<HTMLButtonElement>("button[data-busy]").forEach((b) => {
+			b.disabled = false;
+			delete b.dataset.busy;
+		});
 		$("status").textContent = "";
 	}
 }
@@ -294,6 +314,7 @@ function renderCited() {
 			h("button", { class: "ghost", onclick: () => void deleteCited() }, "Delete"),
 		),
 	);
+	if (isBusy) lockButtons(box);
 }
 
 async function openInApp(key: string) {
@@ -337,7 +358,19 @@ async function editCitationAtCursor() {
 async function splitCited() {
 	const v = cursorView;
 	if (!v) return;
-	const r = await busy("Splitting citation…", () => app.splitCitation(v.ref, v.citationID));
+	// custom or hand-edited text cannot survive a split: say so first, and show what would be replaced
+	const cur = (await app.readFields().catch(() => [])).find((f) => f.story === v.ref.story && f.idx === v.ref.idx);
+	const props = cur?.parsed?.kind === "item" ? cur.parsed.data.properties : null;
+	if (props && (props.custom || props.dontUpdate || isHandEdited(props, String(cur?.text ?? "")))) {
+		const was = String(cur?.text ?? props.plainCitation ?? "");
+		const ok = window.confirm(`This citation has custom or hand-edited text:
+
+${was}
+
+Splitting replaces it with one formatted citation per item. Ctrl+Z in Word brings the original back. Split anyway?`);
+		if (!ok) return;
+	}
+	const r = await busy("Splitting citation…", () => app.splitCitation(v.ref, v.citationID, { allowProtected: true }));
 	if (r) toast("Split into " + v.items.length + " citations (Refresh joins touching citations again). " + fmtReport(r));
 	cursorView = null;
 	renderCited();
@@ -353,7 +386,9 @@ async function deleteCited() {
 	renderCited();
 }
 
+let cursorSeq = 0;
 async function onCursor(c: any) {
+	const seq = ++cursorSeq;
 	if (!c?.hasDoc) {
 		docName = "";
 		cursorView = null;
@@ -363,11 +398,14 @@ async function onCursor(c: any) {
 	}
 	const name = String(c.doc ?? "").split(/[\\/]/).pop() ?? "";
 	if (name !== docName) void refreshDocState();
+	let view: CitationView | null = null;
 	try {
-		cursorView = c.inField && c.kind === "item" ? await app.describeCitation(c) : null;
+		view = c.inField && c.kind === "item" ? await app.describeCitation(c) : null;
 	} catch {
-		cursorView = null;
+		view = null;
 	}
+	if (seq !== cursorSeq) return; // a later cursor event arrived first
+	cursorView = view;
 	renderCited();
 }
 
@@ -505,8 +543,11 @@ async function openSettings() {
 	let styleQ = "";
 	const list = h("ul", { class: "styles" });
 	const loc = h("select", {}, ...LOCALES.map((l) => h("option", { value: l, selected: l === localeNow }, l || "Style default")));
+	let styleSeq = 0;
 	async function loadStyles() {
+		const seq = ++styleSeq;
 		const rows = await host.call<any[]>("style.search", { q: styleQ, limit: 40 });
+		if (seq !== styleSeq) return; // a newer search is in flight
 		list.replaceChildren(
 			...rows.map((s) =>
 				h("li", { class: s.id === styleNow ? "current" : "", title: s.id, onclick: async () => {
