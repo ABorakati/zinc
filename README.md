@@ -52,7 +52,7 @@ Start-up is nearly 4 times faster to a window and over 20 times faster to a usab
 ### Works with the app closed
 
 - **Save references from Chrome or Edge.** The browser connector fork talks to a small native host, so pages, PDFs and references are saved straight into your library with the app closed. They sync the next time it runs.
-- **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in zotero-next** on a cited item.
+- **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in Zinc** on a cited item.
 - **Ask an agent.** The library's MCP server also runs over stdio against the library file with the app closed.
 
 ### Built-in MCP for AI agents
@@ -67,7 +67,7 @@ It is not a full replacement yet: Windows only, no plug-ins, no LibreOffice or G
 
 ## Contents
 
-- [Why Zinc](#why-zotero-next)
+- [Why Zinc](#why-zinc)
 - [What it is](#what-it-is)
 - [Features](#features)
 - [Screenshots](#screenshots)
@@ -277,7 +277,7 @@ The choice is saved. You can pick another library later under Settings, Files an
 
 An add-in for desktop Word (.NET Framework 4.8) with a ribbon tab and a side panel for your library. It inserts live, Zotero-compatible citation fields and a bibliography using the same citation styles as the app, and it can refresh them. It can edit a citation (locator, prefix, suffix, several items), split or merge citations, edit the bibliography, and shows the full reference in a popup beside the cursor.
 
-**It works with the app closed.** The add-in reads your library file directly, in read-only mode. The app is only started on demand, when you click **Open in zotero-next** on a cited item.
+**It works with the app closed.** The add-in reads your library file directly, in read-only mode. The app is only started on demand, when you click **Open in Zinc** on a cited item.
 
 It also runs a small **MCP server** so an AI agent can read the open document and manage its citations. Install it with the installer's "Word add-in" component, or build it from `word/` (see [`CONTRIBUTING.md`](CONTRIBUTING.md)). Details are in the [Word add-in guide](docs/user-guide/word.md).
 

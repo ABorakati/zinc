@@ -27,7 +27,7 @@ The ZotMoov setup (also reachable later with **Apply ZotMoov defaults**) sets:
 
 ## The storage folder
 
-**Attachment storage location** is a choice between **zotero-next's folder** (the built-in layout, `storage/<KEY>/` next to the library file) and **Choose folder...**. When you choose your own folder you can also set:
+**Attachment storage location** is a choice between **Zinc's folder** (the built-in layout, `storage/<KEY>/` next to the library file) and **Choose folder...**. When you choose your own folder you can also set:
 
 - **Subfolder pattern**: sorts files into subfolders inside the storage folder. Empty means no subfolders. Patterns use ZotMoov's wildcards in braces, for example `{%a}/{%y}` for a folder per first author and then per year. Common wildcards: `%a` author, `%y` year, `%t` title, `%j` publication, `%T` item type, `%c` collection path, `%b` citation key, `%I` author initials, `%p` publisher, `%v` volume, `%e` issue, and `%Y`/`%M`/`%R` for the year/month/day the item was added. `{%b | %a}` uses the first value that is not empty, and `{-%M}` adds text only when the value exists. The settings page lists the full set. A pattern must be relative to the storage folder; absolute paths and unknown wildcards are rejected, and the result can never leave the folder.
 - A switch for whether new files are **linked files** in that folder (like ZotMoov) or imported files kept in that folder.

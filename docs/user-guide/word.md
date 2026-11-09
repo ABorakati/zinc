@@ -2,7 +2,7 @@
 
 The Zinc Word add-in lets you cite from your library while you write in Microsoft Word. It adds a **Zinc** tab to the ribbon and a sidebar where you search your library, insert citations, and build and refresh a bibliography. Citations are stored in the document as Zotero-compatible fields, so a document written with Zotero's own Word plug-in can be opened and refreshed with this one, and the other way round.
 
-The add-in reads your library file directly, in read-only mode, so it works whether or not the Zinc app is open. The app is only started on demand when you click **Open in zotero-next** on a cited item.
+The add-in reads your library file directly, in read-only mode, so it works whether or not the Zinc app is open. The app is only started on demand when you click **Open in Zinc** on a cited item.
 
 **Not supported:** LibreOffice and Google Docs. Settings > Integrations lists "LibreOffice and Google Docs" as a cite-while-you-write integration that is not available yet. Only Microsoft Word on Windows is supported.
 
@@ -54,7 +54,7 @@ Put the cursor inside a citation. A **Cited here** card appears in the sidebar s
 - **Edit citation**: loads the citation's items into the tray; change them and click **Update citation** (or **Cancel edit**);
 - **Split**: turns a multi-item citation into one citation per item (**Refresh** joins touching citations again);
 - **Delete**: removes the citation. There is no prompt; Ctrl+Z in Word undoes it;
-- per item, **Open in zotero-next**, **DOI** (opens doi.org) and **Fetch abstract** when none is on record.
+- per item, **Open in Zinc**, **DOI** (opens doi.org) and **Fetch abstract** when none is on record.
 
 If you typed into a citation by hand, editing it warns you first, because editing replaces your changes.
 
