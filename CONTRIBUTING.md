@@ -1,4 +1,16 @@
-# Contributing: running the CI checks locally
+# Contributing
+
+## Please read this first
+
+Zinc is a fun side project that solved some of my own pain points. It is not run like a traditional open-source project:
+
+- **I probably won't have time to maintain it in the usual way.** I may not be able to review every issue or pull request, or reply to them quickly, or at all.
+- **There is no warranty.** I can't guarantee anyone's library, attachments or citations, and I can't offer support. Zinc writes to your Zotero data, so keep backups and test on a copy first. The licence ([AGPL-3.0](LICENSE)) says the same in legal terms: the software is provided "as is", without warranty of any kind.
+- **Want to take it further?** If you are interested in taking Zinc forward and maintaining it properly as a true open-source project, please contact me through my GitHub profile, [@ABorakati](https://github.com/ABorakati).
+
+Contributions are licensed under the AGPL-3.0, like the rest of the project.
+
+## Running the CI checks locally
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request. Everything it runs works on this machine too.
 Bun 1.4.4 only (no node/npm). Run from the repo root.

@@ -166,7 +166,7 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 		<div style={{ ...t("flex flex-col items-center justify-center bg-canvas"), width: "100%", height: "100%" }}>
 			<div style={{ ...t("flex flex-col gap-5"), width: "100%", maxWidth: 660, padding: 24 }}>
 				<div style={t("flex flex-col gap-1.5")}>
-					<Txt cls="text-[26px] font-semibold text-foreground" style={{ fontFamily: "Source Serif 4" }}>Welcome to zotero-next</Txt>
+					<Txt cls="text-[26px] font-semibold text-foreground" style={{ fontFamily: "Source Serif 4" }}>Welcome to Zinc</Txt>
 					<Txt cls="text-sm text-muted-foreground">Choose where your library comes from. You can change this later in Settings, under Files and folders.</Txt>
 				</div>
 
@@ -180,13 +180,13 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 					<div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>
 						<Choice
 							icon="import" title="Import from Zotero" primary action="Import"
-							text="Copy your Zotero library into a new zotero-next library. Zotero is only read, never changed."
+							text="Copy your Zotero library into a new Zinc library. Zotero is only read, never changed."
 							detail={zoteroDetail} path={zoteroPath} detailTone={() => (zotero() && canImport(zotero() ?? null) ? "ok" : "warn")}
 							onClick={() => void onImport()}
 						/>
 						<Choice
 							icon="folder-open" title="Open an existing library…" action="Browse…"
-							text="Use a zotero-next library file you already have, on this computer or on a drive you moved it to."
+							text="Use a Zinc library file you already have, on this computer or on a drive you moved it to."
 							onClick={() => void onOpen()}
 						/>
 						<Choice

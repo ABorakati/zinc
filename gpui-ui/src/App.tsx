@@ -145,7 +145,7 @@ export function App() {
 	createEffect(() => {
 		const id = store.activeTab();
 		const reader = store.tabs().filter(isDocTab).find((x) => x.id === id);
-		setWindowTitle(reader ? `${reader.title || "Reader"} - zotero-next` : id === SETTINGS_TAB ? "Settings - zotero-next" : "zotero-next");
+		setWindowTitle(reader ? `${reader.title || "Reader"} - Zinc` : id === SETTINGS_TAB ? "Settings - Zinc" : "Zinc");
 	});
 
 	return (

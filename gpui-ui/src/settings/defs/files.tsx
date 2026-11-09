@@ -108,14 +108,14 @@ onSettingsShown(() => setSavedLibrary(readLibrarySetting()));
 async function changeLibrary(current: string | null) {
 	if (!canPickFile()) { toast("No file dialog here", { kind: "info", description: "Set the library path in %APPDATA%\\zotero-next-gpui\\library.json instead." }); return; }
 	try {
-		const path = await pickFile("Choose a zotero-next library file (library.sqlite)");
+		const path = await pickFile("Choose a Zinc library file (library.sqlite)");
 		if (!path) return;
 		if (current && samePath(path, current) && !savedLibrary()) { toast("Already using that library", { kind: "info" }); return; }
 		const info = inspectLibraryFile(path);
-		if (info.kind !== "zotero-next") { toast("That is not a zotero-next library", { kind: "error", description: info.problem }); return; }
+		if (info.kind !== "zotero-next") { toast("That is not a Zinc library", { kind: "error", description: info.problem }); return; }
 		saveLibrarySetting(path);
 		setSavedLibrary(path);
-		toast("Library location changed", { kind: "success", description: "zotero-next opens it the next time it starts. The library that is open now is not changed or deleted." });
+		toast("Library location changed", { kind: "success", description: "Zinc opens it the next time it starts. The library that is open now is not changed or deleted." });
 	} catch (e) { fail("Could not change the library", e); }
 }
 
@@ -284,7 +284,7 @@ function BaseDirControl(): JSX.Element {
 						<Show when={confirmConvert() === "relative" && rel()}>
 							{(p) => (
 								<Note tone="warn">
-									<NoteText tone="warn">{`Rewrite ${plural(p().count, "path")} as relative to ${b().effective}. Only zotero-next's database changes; no file is touched. ${p().outside ? `${plural(p().outside, "linked file")} outside the folder stay as they are.` : ""}`}</NoteText>
+									<NoteText tone="warn">{`Rewrite ${plural(p().count, "path")} as relative to ${b().effective}. Only Zinc's database changes; no file is touched. ${p().outside ? `${plural(p().outside, "linked file")} outside the folder stay as they are.` : ""}`}</NoteText>
 									<Sample list={p().sample} />
 									<Row><Btn onClick={() => setConfirmConvert(null)}>Cancel</Btn><Btn primary disabled={files.busy()} onClick={() => void doConvert("relative")}>{`Convert ${p().count.toLocaleString()} paths`}</Btn></Row>
 								</Note>
@@ -365,7 +365,7 @@ function StorageControl(): JSX.Element {
 						<Segmented<"own" | "custom">
 							value={s().dir ? "custom" : "own"}
 							onChange={(m) => (m === "own" ? void putStorage({ dir: null }) : void pick((p) => putStorage({ dir: p })))}
-							options={[{ value: "own", label: "zotero-next's folder" }, { value: "custom", label: "Choose folder…" }]}
+							options={[{ value: "own", label: "Zinc's folder" }, { value: "custom", label: "Choose folder…" }]}
 						/>
 						<Row>
 							<PathText>{s().dir ?? s().ownDir ?? "In memory"}</PathText>
@@ -423,13 +423,13 @@ function StorageControl(): JSX.Element {
 registerSettings([
 	{
 		id: "files.library", section: "files", label: "Library location",
-		description: "The database file your library is kept in. Change… points zotero-next at another library file; it takes effect after a restart.",
-		keywords: ["zotero-next library", "database", "sqlite", "library.sqlite", "location", "path", "show in folder", "explorer", "change", "move", "open another library"],
+		description: "The database file your library is kept in. Change… points Zinc at another library file; it takes effect after a restart.",
+		keywords: ["Zinc library", "database", "sqlite", "library.sqlite", "location", "path", "show in folder", "explorer", "change", "move", "open another library"],
 		control: () => <LibraryControl />,
 	},
 	{
 		id: "files.zoteroDir", section: "files", label: "Zotero data folder", layout: "block",
-		description: "The Zotero library zotero-next syncs with and imports from. Find Zotero looks for it in Zotero's settings and the usual places.",
+		description: "The Zotero library Zinc syncs with and imports from. Find Zotero looks for it in Zotero's settings and the usual places.",
 		keywords: ["find zotero", "locate", "existing library", "zotero.sqlite", "database", "profile", "data directory", "browse", "validate", "import"],
 		control: () => <ZoteroFolderControl />,
 	},

@@ -53,11 +53,11 @@ export async function copyReport(r: Report): Promise<void> {
 
 const stamp = (d = new Date()) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
 
-/** Ask for a folder (the native dialog) and write zotero-next-report-<date>.zip (report.txt inside) there. Returns the path, null if cancelled. */
+/** Ask for a folder (the native dialog) and write zinc-report-<date>.zip (report.txt inside) there. Returns the path, null if cancelled. */
 export async function saveReportZip(r: Report, folder?: string): Promise<string | null> {
 	const dir = folder ?? (await pickFolder("Save the report in this folder"));
 	if (!dir) return null;
-	const file = join(dir, `zotero-next-report-${stamp()}.zip`);
+	const file = join(dir, `zinc-report-${stamp()}.zip`);
 	writeFileSync(file, makeZip([{ name: "report.txt", data: r.text }]));
 	return file;
 }

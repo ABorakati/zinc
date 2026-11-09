@@ -404,7 +404,7 @@ class Session {
 
 	async load() {
 		const raw = await this.doc.getDocumentData();
-		if (raw === "ZOTERO_TRANSFER_DOCUMENT") throw new Alert("This document was exported for transfer between word processors. Importing it is not supported by zotero-next.");
+		if (raw === "ZOTERO_TRANSFER_DOCUMENT") throw new Alert("This document was exported for transfer between word processors. Importing it is not supported by Zinc.");
 		const p = parsePrefsXml(raw);
 		this.isNew = !p || !p.fieldType;
 		this.prefs = p ?? defaultPrefs("vancouver", "");
@@ -754,7 +754,7 @@ async function cite(s: Session, field: WireField | null, opts: { note?: boolean 
 	}
 	let choice: CitationChoice | null = null;
 	if (uiAvailable()) choice = await ui.citation({ isNote: !!opts.note, items: s.dialogItems(old), unsorted: !!old?.properties.unsorted, style: styleUrlToId(s.prefs.styleId) });
-	else await doc.alert("zotero-next is not showing its citation dialog. Open zotero-next and try again.", ICON_STOP, BTN_OK);
+	else await doc.alert("Zinc is not showing its citation dialog. Open Zinc and try again.", ICON_STOP, BTN_OK);
 	if (!choice || !choice.items.length) {
 		if (isNew) await doc.del(field).catch(() => {});
 		throw new UserCancelled("inserting citation");
@@ -803,7 +803,7 @@ async function editBibliography(s: Session, bf: ParsedField): Promise<void> {
 	}));
 	let choice: BibliographyChoice | null = null;
 	if (uiAvailable()) choice = await ui.bibliography({ entries });
-	else await s.doc.alert("zotero-next is not showing its bibliography editor. Open zotero-next and try again.", ICON_STOP, BTN_OK);
+	else await s.doc.alert("Zinc is not showing its bibliography editor. Open Zinc and try again.", ICON_STOP, BTN_OK);
 	if (!choice) throw new UserCancelled("bibliography editing");
 	const uriOf = (key: string) => (s.lib.get(key) ? [itemUri(s.lib.uriBase, key)] : null);
 	const next: BibliographyData = { uncited: [], omitted: [], custom: [] };
@@ -927,7 +927,7 @@ async function dispatch(s: Session, command: string): Promise<void> {
 			break;
 		}
 		default:
-			throw new Alert(`The command "${command}" is not supported by zotero-next.`);
+			throw new Alert(`The command "${command}" is not supported by Zinc.`);
 	}
 }
 
@@ -940,7 +940,7 @@ async function execute(command: string, tx: Transaction, db: Database): Promise<
 		await runCommand(command, doc, db);
 	} catch (e) {
 		if (!(e instanceof UserCancelled)) {
-			const msg = e instanceof Alert ? e.message : "zotero-next could not complete the command. " + (e instanceof Error ? e.message : String(e));
+			const msg = e instanceof Alert ? e.message : "Zinc could not complete the command. " + (e instanceof Error ? e.message : String(e));
 			if (!(e instanceof Alert)) console.error(`[zport] integration ${command} failed:`, e);
 			if (opened) await doc.alert(msg, ICON_STOP, BTN_OK).catch(() => {});
 		}

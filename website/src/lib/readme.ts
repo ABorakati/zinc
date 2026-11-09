@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const REPO = "https://github.com/ABorakati/zotero-next";
+const REPO = "https://github.com/ABorakati/zinc";
 const text = readFileSync(resolve("../README.md"), "utf8").replace(/\r\n/g, "\n");
 const lines = text.split("\n");
 

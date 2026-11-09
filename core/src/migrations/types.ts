@@ -28,8 +28,8 @@ export class LibraryTooNewError extends Error {
 		public readonly supported: number,
 	) {
 		super(
-			`This library was opened by a newer version of zotero-next (its schema is version ${found}; this build understands up to version ${supported}). ` +
-				"Update zotero-next to open it. The library has not been changed.",
+			`This library was opened by a newer version of Zinc (its schema is version ${found}; this build understands up to version ${supported}). ` +
+				"Update Zinc to open it. The library has not been changed.",
 		);
 		this.name = "LibraryTooNewError";
 	}

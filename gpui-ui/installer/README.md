@@ -1,6 +1,6 @@
-# Zotero Next installer
+# Zinc installer
 
-`bun gpui-ui/scripts/installer.ts` builds `gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe` (and a `.json` with version, size and
+`bun gpui-ui/scripts/installer.ts` builds `gpui-ui/out/installer/Zinc-Setup-<version>.exe` (and a `.json` with version, size and
 sha256) from the packaged AOT folder (`bun gpui-ui/scripts/package.ts --aot`). It does not rebuild the package.
 
 Tool: Inno Setup 7 (`zotero-next.iss`). Found via `ZN_ISCC`, `C:/Users/abora/zn-ws/_tmp/installer/inno/ISCC.exe`,
@@ -9,7 +9,7 @@ https://github.com/jrsoftware/issrc/releases and run it with `/VERYSILENT /CURRE
 
 ## What it does
 
-- Per user, no admin: `%LOCALAPPDATA%\Programs\Zotero Next`; Start-menu shortcut (app icon); optional desktop shortcut; Apps & features
+- Per user, no admin: `%LOCALAPPDATA%\Programs\Zinc`; Start-menu shortcut (app icon); optional desktop shortcut; Apps & features
   entry under HKCU (publisher, version = the full build stamp, icon, size, uninstall and quiet-uninstall commands).
 - Optional component "Word add-in", ticked by default: the add-in (built by `word/build.ps1 -OutDir`, never into `word/dist`) is copied to
   `<app>\word\addin` and registered per user by the bundled `install.ps1` (HKCU only); the uninstaller runs `uninstall.ps1` first.
@@ -26,11 +26,11 @@ https://github.com/jrsoftware/issrc/releases and run it with `/VERYSILENT /CURRE
 
 Two ways to save from the browser into the library:
 
-- **Zotero Next Connector** (this component): a fork of the Zotero Connector (`C:\Users\abora\zotero-next-connector`, branch
+- **Zinc Connector** (this component): a fork of the Zotero Connector (`C:\Users\abora\zotero-next-connector`, branch
   `zotero-next`) that talks to `zotero-next-host.exe` over Chrome native messaging. Saves go straight into the library database, **with
   the app closed**. Works in Chrome and Edge.
 - **The official Zotero Connector** from the Chrome Web Store or the Edge Add-ons store: needs nothing from this installer, but only works
-  **while Zotero Next is open**, because the app itself answers on Zotero's connector port 23119 (the Zotero-compatible server; the
+  **while Zinc is open**, because the app itself answers on Zotero's connector port 23119 (the Zotero-compatible server; the
   app's own API is on 23120). Install only one of the two connectors per browser, or pages show two Save buttons.
 
 What the component installs, in `<app>\connector`:
@@ -40,7 +40,7 @@ What the component installs, in `<app>\connector`:
 | `zotero-next-host.exe`, `install.ps1`, `uninstall.ps1` | the native-messaging host and the scripts from `connector-host/` |
 | `com.zotero_next.connector_host.json` | the host manifest, written at install time: `path` = the installed exe, `allowed_origins` = the extension id |
 | `extension\` | the built Chrome MV3 extension (unpacked), id `pakgagonakcalfbmckaolkpidcojacaf` (pinned by the manifest `key`) |
-| `connector-howto.html` | the page the finish screen and the Start-menu shortcut "Zotero Next Connector - how to install" open |
+| `connector-howto.html` | the page the finish screen and the Start-menu shortcut "Zinc Connector - how to install" open |
 
 Registration is per user (HKCU, no admin) and done by the bundled `install.ps1 -ManifestDir <app>\connector -HostExe <app>\connector\zotero-next-host.exe`
 under 64-bit Windows PowerShell, like the Word add-in: `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.zotero_next.connector_host` and the

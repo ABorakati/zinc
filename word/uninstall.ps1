@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Removes the per-user registration made by install.ps1. Leaves your documents and your zotero-next library alone.
+  Removes the per-user registration made by install.ps1. Leaves your documents and your Zinc library alone.
 .DESCRIPTION
   -RemoveData also deletes %APPDATA%\ZoteroNextWord (settings) and %LOCALAPPDATA%\ZoteroNextWord (WebView2 profile,
   downloaded styles, log).
@@ -92,4 +92,4 @@ if ($TestHive) {
 if ($RemoveData) {
   foreach ($d in "$env:APPDATA\ZoteroNextWord", "$env:LOCALAPPDATA\ZoteroNextWord") { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
 }
-Write-Host 'Zotero Next Word add-in unregistered.'
+Write-Host 'Zinc Word add-in unregistered.'

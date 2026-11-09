@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Per-user install of the Zotero Next Word add-in (no admin rights).
+  Per-user install of the Zinc Word add-in (no admin rights).
 
 .DESCRIPTION
   Registers the add-in's two COM classes under HKCU\Software\Classes (what regasm /codebase would do under HKLM)
@@ -84,8 +84,8 @@ try {
 
   # the add-in registration Word looks at
   $key = $root.CreateSubKey("Software\Microsoft\Office\Word\Addins\$progIdAddin")
-  $key.SetValue('FriendlyName', 'Zotero Next', 'String')
-  $key.SetValue('Description', 'Citations from your zotero-next library, in a sidebar', 'String')
+  $key.SetValue('FriendlyName', 'Zinc', 'String')
+  $key.SetValue('Description', 'Citations from your Zinc library, in a sidebar', 'String')
   $key.SetValue('LoadBehavior', 3, 'DWord')
   $key.Close()
 } finally {
@@ -117,6 +117,6 @@ $wv = @(
 ) | Where-Object { Test-Path $_ }
 if (-not $wv) { Write-Warning 'WebView2 runtime not found. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ (Evergreen runtime).' }
 
-Write-Host "Installed for $env:USERNAME. Start Word: a 'Zotero Next' tab appears in the ribbon (Sidebar button)."
-Write-Host "If Word does not show it: File > Options > Add-ins > Manage: COM Add-ins > Go..., and tick 'Zotero Next'."
+Write-Host "Installed for $env:USERNAME. Start Word: a 'Zinc' tab appears in the ribbon (Sidebar button)."
+Write-Host "If Word does not show it: File > Options > Add-ins > Manage: COM Add-ins > Go..., and tick 'Zinc'."
 Write-Host "Log: $env:LOCALAPPDATA\ZoteroNextWord\addin.log"

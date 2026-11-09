@@ -8,11 +8,11 @@ web (the project website in `website/`; the product itself is a native Windows d
 
 ## Users
 
-For now the website has one reader: the author, a researcher and clinician who uses Zotero daily and built Zotero Next as their own replacement. It is a private showcase and documentation hub, run locally; it is not published. The product's own users are researchers who already keep a Zotero library and cite in Word.
+For now the website has one reader: the author, a researcher and clinician who uses Zotero daily and built Zinc as their own replacement. It is a private showcase and documentation hub, run locally; it is not published. The product's own users are researchers who already keep a Zotero library and cite in Word.
 
 ## Product Purpose
 
-Zotero Next is a fast, native Windows reference manager that works with an existing Zotero library: it imports or syncs the library, reads and annotates PDFs, saves from the browser, and cites into Word. It exists because Zotero is slow to start and search on a large library. Success is daily use in place of Zotero without losing data or Zotero compatibility.
+Zinc is a fast, native Windows reference manager that works with an existing Zotero library: it imports or syncs the library, reads and annotates PDFs, saves from the browser, and cites into Word. It exists because Zotero is slow to start and search on a large library. Success is daily use in place of Zotero without losing data or Zotero compatibility.
 
 ## Positioning
 
@@ -31,8 +31,8 @@ Windows 10/11 x64 desktop. Works alongside desktop Zotero (local sync) or zotero
 
 ## Brand Commitments
 
-- Name "Zotero Next"; app icon in `gpui-ui/assets/icon.svg` (red "Z" mark). Must state it is not affiliated with the Zotero project.
-- Voice: plain, factual, honest about limits (the README states where Zotero Next is worse, e.g. private memory, program size).
+- Name "Zinc"; app icon in `gpui-ui/assets/icon.svg` (red "Z" mark). Must state it is not affiliated with the Zotero project.
+- Voice: plain, factual, honest about limits (the README states where Zinc is worse, e.g. private memory, program size).
 
 ## Evidence on Hand
 
@@ -43,6 +43,6 @@ Windows 10/11 x64 desktop. Works alongside desktop Zotero (local sync) or zotero
 ## Product Principles
 
 1. Numbers over adjectives: every speed or memory claim comes from the README's measured tables.
-2. Honest about trade-offs: show where Zotero is better as plainly as where Zotero Next is.
+2. Honest about trade-offs: show where Zotero is better as plainly as where Zinc is.
 3. Zotero-compatible first: never imply the user must leave Zotero or lose data.
 4. One source of truth: site content that duplicates the README is generated from it.

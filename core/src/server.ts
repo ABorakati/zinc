@@ -195,5 +195,5 @@ if (import.meta.main) {
 	}
 	installConsoleMirror("core"); // standalone core: console.error / warn also go to the local log
 		const s = startServer({ dbPath, port, hostname, mounts });
-	console.log(`zotero-next core listening on ${s.url}`);
+	console.log(`Zinc core listening on ${s.url}`);
 }

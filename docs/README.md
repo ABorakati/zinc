@@ -1,6 +1,6 @@
-# Zotero Next documentation
+# Zinc documentation
 
-Zotero Next is a native, Zotero-compatible reference manager for Windows. It opens a Zotero library, reads PDFs, adds items from the web, and cites into Word.
+Zinc is a native, Zotero-compatible reference manager for Windows. It opens a Zotero library, reads PDFs, adds items from the web, and cites into Word.
 
 These pages are plain Markdown. Browse `docs/` on GitHub, or run the documentation site locally (see [Viewing these docs](#viewing-these-docs)).
 

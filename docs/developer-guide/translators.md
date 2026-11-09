@@ -1,6 +1,6 @@
 # Translators
 
-Zotero Next runs Zotero's own translators, the ones Zotero and translation-server use, without a browser. They power "Add from URL", the import formats the app does not read natively, and the export formats. This page describes the runtime in `core/src/translate/` and the vendored Zotero code it runs.
+Zinc runs Zotero's own translators, the ones Zotero and translation-server use, without a browser. They power "Add from URL", the import formats the app does not read natively, and the export formats. This page describes the runtime in `core/src/translate/` and the vendored Zotero code it runs.
 
 ## What it does
 
@@ -91,4 +91,4 @@ Tests are in `core/test/translate/` (`translate.test.ts` calls the API; `update.
 
 The translators and the translate and utilities frameworks vendored in `core/vendor/zotero/` are part of Zotero and are licensed under the GNU Affero General Public License v3 (https://www.gnu.org/licenses/agpl-3.0.html). Zotero is Copyright (c) Corporation for Digital Scholarship, Vienna, Virginia, USA, and the Center for History and New Media, George Mason University. Individual translators carry their own authors and the AGPL header in each file. The `translators/` repository has no licence file of its own; the `COPYING` copied next to it is the AGPL text from `zotero/translate`.
 
-The runtime in `core/src/translate/runtime/` is derived from `zotero/translation-server`, also AGPL-3.0. The vendored files are unmodified copies; Zotero Next's own glue code lives in `core/src/translate/` and is not part of the vendored sources. Distributing Zotero Next together with these files means complying with the AGPL for them, including source availability for network use and for the combined work. The packaged app ships the licence files and `vendor/zotero/README.md` for this reason.
+The runtime in `core/src/translate/runtime/` is derived from `zotero/translation-server`, also AGPL-3.0. The vendored files are unmodified copies; Zinc's own glue code lives in `core/src/translate/` and is not part of the vendored sources. Distributing Zinc together with these files means complying with the AGPL for them, including source availability for network use and for the combined work. The packaged app ships the licence files and `vendor/zotero/README.md` for this reason.

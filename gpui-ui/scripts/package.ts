@@ -91,14 +91,14 @@ for (const [name, index] of [["reader-host", "index.html"], ["note-host", "edito
 	else console.warn(`package: ${name}/dist not built (bash ${name}/build.sh); web tabs will be off`);
 }
 writeFileSync(join(app, "README.txt"), [
-	"zotero-next (GPUI)",
+	"Zinc (GPUI)",
 	"",
-	"Start zotero-next-gpui.exe. It does not need zotero-next: it opens the library itself (ZN_LIBRARY, default",
+	"Start zotero-next-gpui.exe. It does not need another Zinc: it opens the library itself (ZN_LIBRARY, default",
 	"C:/Users/abora/zotero-next/data/library.sqlite), after making one backup copy (library.backup-gpui-*.sqlite next to it), and runs",
 	"the same services: HTTP API on 127.0.0.1:23120 (Word add-in, MCP), Zotero Connector port 23119, two-way sync with",
 	"Zotero (reading always, writing opt-in) and PDF full-text extraction.",
 	"",
-	"Do not run it together with zotero-next on the same library for sync: if port 23120 is taken, this app still opens the",
+	"Do not run it together with another Zinc on the same library for sync: if port 23120 is taken, this app still opens the",
 	"library but leaves Zotero sync and port 23119 to the other app (the sync indicator says so). Institution sign-in for",
 	"Find Full Text opens a sign-in window of its own (a helper process started from a link to this exe, zotero-next-signin.exe in",
 		"%LOCALAPPDATA%\\zotero-next-gpui\\signin; its WebView2 profile is %APPDATA%\\zotero-next-signin.exe\\EBWebView). ZN_SIGNIN=0 turns it off.",

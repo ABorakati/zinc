@@ -5,10 +5,10 @@ primary_target: "website/src/pages/index.astro"
 related_targets: ["website/src/pages/features.astro","website/src/pages/compare.astro","website/src/pages/download.astro"]
 ---
 
-# Surface: Zotero Next website (home, features, compare, download)
+# Surface: Zinc website (home, features, compare, download)
 
 Mode: Persuade (home, features, compare, download); the docs pages stay Read in Starlight.
-Audience: the author, privately; later possibly fellow researchers. Job: see what Zotero Next is, trust the measured speed claim, download it, find the docs.
+Audience: the author, privately; later possibly fellow researchers. Job: see what Zinc is, trust the measured speed claim, download it, find the docs.
 Constraints: content from README.md via website/src/lib/readme.ts; no invented claims; light and dark; phone width; local only.
 
 ## Direction contract

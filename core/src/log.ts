@@ -449,7 +449,7 @@ export function summarizeErrors(lines: string[], recent = 5): ErrorSummary {
 /** The text of a problem report: a header of facts, the error summary, then the log lines. Everything is redacted here. */
 export function formatReport(facts: Record<string, string | number | undefined>, lines: string[], total = lines.length): string {
 	const sum = summarizeErrors(lines);
-	const out: string[] = ["Zotero Next problem report", ""];
+	const out: string[] = ["Zinc problem report", ""];
 	for (const [k, v] of Object.entries(facts)) out.push(`${k}: ${v ?? "unknown"}`);
 	out.push("");
 	out.push(`Errors in this log: ${sum.errors} error, ${sum.fatal} fatal, ${sum.warnings} warning`);

@@ -1,4 +1,4 @@
-// Build the Windows installer: `bun gpui-ui/scripts/installer.ts` -> gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe
+// Build the Windows installer: `bun gpui-ui/scripts/installer.ts` -> gpui-ui/out/installer/Zinc-Setup-<version>.exe
 //
 // Inno Setup 7 (installer/zotero-next.iss) over the packaged AOT folder (bun gpui-ui/scripts/package.ts --aot). Per user, no admin.
 // See installer/README.md for what the installer does, the silent commands and the signing setup.
@@ -10,7 +10,7 @@
 //   --reuse-word       use the add-in already in out/installer/word-stage instead of rebuilding it
 //   --no-connector     leave the browser connector out (default: build connector-host and the extension and stage them in out/installer/connector-stage)
 //   --reuse-connector  use the staged connector (and its already built host and extension) instead of rebuilding
-//   --test             a differently identified installer ("Zotero Next (installer test)", own AppId), file name ending -TEST: for sandbox runs
+//   --test             a differently identified installer ("Zinc (installer test)", own AppId), file name ending -TEST: for sandbox runs
 //
 // Inno Setup is found via ZN_ISCC, then C:/Users/abora/zn-ws/_tmp/installer/inno, %LOCALAPPDATA%/Programs/Inno Setup 7, Program Files, PATH.
 // Signing (scripts/sign.ts): with a certificate configured the add-in dll, the setup and the uninstaller are signed through ISCC's
@@ -35,7 +35,7 @@ if (!existsSync(join(pkg, "zotero-next-gpui.exe"))) throw new Error(`no packaged
 const stampFile = join(pkg, "version.txt");
 const version = arg("version") ?? (existsSync(stampFile) ? readFileSync(stampFile, "utf8").trim() : BUILD_VERSION);
 const numeric = numericVersion(version);
-const outName = `ZoteroNext-Setup-${version.replace("+", "-")}${test ? "-TEST" : ""}`;
+const outName = `Zinc-Setup-${version.replace("+", "-")}${test ? "-TEST" : ""}`;
 
 const run = (cmd: string[], cwd = root) => {
 	const r = Bun.spawnSync(cmd, { cwd, stdout: "inherit", stderr: "inherit" });

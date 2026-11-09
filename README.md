@@ -1,8 +1,10 @@
-# Zotero Next
+<p align="center"><img src="gpui-ui/assets/icon.svg" width="96" alt="Zinc logo"></p>
 
-**A fast, modern reference manager for Windows that works with your Zotero library.** It opens in half a second, searches a 12,000-item library in tens of milliseconds, uses less than half of Zotero's working memory, and keeps saving references and inserting Word citations when the app is closed. It reads and syncs your Zotero data, runs Zotero's own translators, and has a built-in MCP server for AI agents.
+<h1 align="center">Zinc</h1>
 
-[![CI](https://github.com/ABorakati/zotero-next/actions/workflows/ci.yml/badge.svg)](https://github.com/ABorakati/zotero-next/actions/workflows/ci.yml)
+**Zinc is a fast, modern, Zotero-compatible reference manager for Windows. It reads and writes your Zotero library.** It opens in half a second, searches a 12,000-item library in tens of milliseconds, uses less than half of Zotero's working memory, and keeps saving references and inserting Word citations when the app is closed. It reads and syncs your Zotero data, runs Zotero's own translators, and has a built-in MCP server for AI agents.
+
+[![CI](https://github.com/ABorakati/zinc/actions/workflows/ci.yml/badge.svg)](https://github.com/ABorakati/zinc/actions/workflows/ci.yml)
 <!-- The CI badge above only renders for people who have access to this private repository. The badges below are static, so they work for everyone. -->
 ![Platform: Windows 10/11 x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?logo=windows11&logoColor=white)
 ![Zotero-compatible](https://img.shields.io/badge/Zotero-compatible-CC2936?logo=zotero&logoColor=white)
@@ -14,23 +16,30 @@
 
 Everything in the screenshots on this page comes from a demo library of well-known public papers, made only for these pictures.
 
-## Why Zotero Next
+## Why Zinc
 
-Zotero Next opens the same kind of library as Zotero and speaks the same connector protocol. What differs is the engine underneath. The numbers below compare it with an installed **Zotero 10.0.7** on one Windows 11 x64 machine, using a copy of a real library with about 12.4k top-level items. The full tables, ranges and method are under [Benchmarks](#benchmarks).
+- **A name of its own.** The project was called Zotero Next. Zotero is a trademark of the Corporation for Digital Scholarship, so the app needed a name that is not Zotero's.
+- **Zn.** Zn is the chemical symbol for zinc, and ZN was already the project's short name. It still is, in its settings and environment variables.
+- **Zinc keeps iron from rusting.** It is the metal used to galvanise iron. The interface runs on GPUI, a Rust UI framework, and the app's job is to keep your library in good shape.
+- **It keeps the Z.** The name still sits next to Zotero.
+
+## What is different
+
+Zinc opens the same kind of library as Zotero and speaks the same connector protocol. What differs is the engine underneath. The numbers below compare it with an installed **Zotero 10.0.7** on one Windows 11 x64 machine, using a copy of a real library with about 12.4k top-level items. The full tables, ranges and method are under [Benchmarks](#benchmarks).
 
 ### Fast
 
-| | Zotero 10.0.7 | Zotero Next |
+| | Zotero 10.0.7 | Zinc |
 | --- | --- | --- |
 | Window on screen | 1.83 s | 0.49 s |
 | Library ready | 16.3 s | 0.70 s |
 | Search a 12.4k-item library | 1.9 to 2.0 s | 35 to 50 ms |
 
-Start-up is nearly 4 times faster to a window and over 20 times faster to a usable library. Searches answer roughly 40 to 55 times faster, with the same queries against each program's local API. These are typical runs: one Zotero Next window took 3.3 s in the benchmark, so the ranges under [Benchmarks](#benchmarks) matter. Scrolling runs at about 126 to 129 frames per second in Cards view and 68 to 103 in the Classic table in the AOT build (Zotero Next's own figures; scrolling in Zotero was not measured).
+Start-up is nearly 4 times faster to a window and over 20 times faster to a usable library. Searches answer roughly 40 to 55 times faster, with the same queries against each program's local API. These are typical runs: one Zinc window took 3.3 s in the benchmark, so the ranges under [Benchmarks](#benchmarks) matter. Scrolling runs at about 126 to 129 frames per second in Cards view and 68 to 103 in the Classic table in the AOT build (Zinc's own figures; scrolling in Zotero was not measured).
 
 ### Light
 
-- **One process, no browser engine in the main window.** Zotero Next runs as a single process where Zotero 10 ran three. The library window is drawn directly on the GPU instead of through a web view.
+- **One process, no browser engine in the main window.** Zinc runs as a single process where Zotero 10 ran three. The library window is drawn directly on the GPU instead of through a web view.
 - **Less than half the memory in use.** Working set is 358 MB against 783 MB for Zotero with the same library open.
 - **Not smaller everywhere.** The program folder is bigger (330 MB against 241 MB), and so is the library database (a different layout, so not a like-for-like size).
 
@@ -58,7 +67,7 @@ It is not a full replacement yet: Windows only, no plug-ins, no LibreOffice or G
 
 ## Contents
 
-- [Why Zotero Next](#why-zotero-next)
+- [Why Zinc](#why-zotero-next)
 - [What it is](#what-it-is)
 - [Features](#features)
 - [Screenshots](#screenshots)
@@ -75,7 +84,7 @@ It is not a full replacement yet: Windows only, no plug-ins, no LibreOffice or G
 
 ## What it is
 
-Zotero Next keeps a Zotero-format library (items, collections, tags, notes, annotations) in a local SQLite file and gives you a new way to work with it.
+Zinc keeps a Zotero-format library (items, collections, tags, notes, annotations) in a local SQLite file and gives you a new way to work with it.
 
 - **The app** is `gpui-ui/`. It is TypeScript on [Bun](https://bun.sh) with Solid components, drawn by [Zed's GPUI](https://www.gpui.rs) through [GPUIX](https://github.com/remorses/gpuix). There is no browser engine in the main window. It ships as a single executable built with Bun's ahead-of-time (AOT) compiler.
 - **The core** is `core/`. It is a local HTTP and MCP server that owns the database, sync, import and export, citation styles and the Zotero translators. The app runs it in the same process.
@@ -162,11 +171,11 @@ The sidebar in the first screenshot shows coloured collections with icons, a pin
 
 Start-up, memory and search speed, measured on one Windows 11 x64 machine. Numbers move from run to run on a busy machine (the ranges below show by how much), so read them as a guide, not a promise.
 
-### Zotero Next against Zotero 10
+### Zinc against Zotero 10
 
-The same library in both programs: a copy of a real library with about 12.4k top-level items (28.5k counting attachments and notes). Zotero is the installed **Zotero 10.0.7** (Windows x64) on a copy of its own data folder; Zotero Next is the installed AOT build on a copy of the same library. Three runs of each, the app closed between runs, results shown as **median (range)**.
+The same library in both programs: a copy of a real library with about 12.4k top-level items (28.5k counting attachments and notes). Zotero is the installed **Zotero 10.0.7** (Windows x64) on a copy of its own data folder; Zinc is the installed AOT build on a copy of the same library. Three runs of each, the app closed between runs, results shown as **median (range)**.
 
-| Measure | Zotero 10.0.7 | Zotero Next |
+| Measure | Zotero 10.0.7 | Zinc |
 | --- | --- | --- |
 | Window on screen | 1.83 s (1.81 to 1.89) | 0.49 s (0.49 to 3.30) |
 | Library ready (local data API answers) | 16.3 s (16.2 to 16.4) | 0.70 s (0.64 to 3.5) |
@@ -182,14 +191,14 @@ The same library in both programs: a copy of a real library with about 12.4k top
 *How measured* (script: `gpui-ui/scripts/bench-vs-zotero.ts`; it needs only Bun and launches both apps itself):
 
 - **Window on screen**: time from starting the process until the first visible top-level window owned by it or its children appears (the script polls `EnumWindows` every 5 ms). For Zotero that first window is its main window before the library is shown; the window titled with the library appeared at 4.6 s (4.5 to 4.7). Both apps were started minimised, without taking focus.
-- **Library ready**: time until the program's local data API answers a request for one top-level item (Zotero: `/api/users/0/items/top?limit=1`, which waits for the library's items to load; Zotero Next: `/api/items?limit=1`). This is a stand-in for "the items are loaded", not for "the first row is painted". Zotero 10's API gave an error and then stopped answering when it was called before its start-up had finished, so the first request is sent only after its main window shows the library; its figure is therefore the later of the two. The slowest Zotero Next runs are the first launch from a fresh settings folder (3.3 s window, 3.5 s ready); the other two were 0.49 s and 0.64 to 0.70 s.
-- **Memory**: working set (the memory the app holds in RAM) summed over the whole process tree, sampled 12 s after "ready". Zotero Next runs its core in the same process, so one process holds the library.
-- **Search**: ten timed calls after one untimed call, per query, per run, with the whole JSON response read. Zotero: `/api/users/0/items/top?q=...&qmode=titleCreatorYear&limit=25`; Zotero Next: `/api/items?q=...&limit=25`. The queries were picked from the library: a common title word, the commonest author surname, a rare title word and the commonest year. These are HTTP API times, not typing-in-the-search-box times: Zotero's own search box does not go through this API, and the API adds the cost of building full JSON for each item. The two programs also do not match the same set of items (for the common word 4514 and 3441 hits), so compare them as "one search request", not as identical work.
-- **Sizes**: the program folder (`C:\Program Files\Zotero`; `%LOCALAPPDATA%\Programs\Zotero Next`) and the library database file (`zotero.sqlite`; Zotero Next's library). They hold different things, so this is not a like-for-like data size.
-- **Isolation**: Zotero ran from a new profile (`-profile`, `-no-remote`) with its data folder set to a copy, sync, updates and background renaming off, and its local API on port 23131. Zotero Next ran on a copy with sync off, its own ports and scratch settings folders. Neither the real Zotero nor the real Zotero Next library was written to. Copies were deleted afterwards.
-- **Not measured**: opening a PDF (it cannot be timed fairly without driving the mouse or keyboard); typing speed and scrolling in Zotero (the scroll figures below are Zotero Next only). A first launch of a new Zotero profile (not counted) took 1.25 s to a window, 5.5 s to the library title and 17.0 s to ready.
+- **Library ready**: time until the program's local data API answers a request for one top-level item (Zotero: `/api/users/0/items/top?limit=1`, which waits for the library's items to load; Zinc: `/api/items?limit=1`). This is a stand-in for "the items are loaded", not for "the first row is painted". Zotero 10's API gave an error and then stopped answering when it was called before its start-up had finished, so the first request is sent only after its main window shows the library; its figure is therefore the later of the two. The slowest Zinc runs are the first launch from a fresh settings folder (3.3 s window, 3.5 s ready); the other two were 0.49 s and 0.64 to 0.70 s.
+- **Memory**: working set (the memory the app holds in RAM) summed over the whole process tree, sampled 12 s after "ready". Zinc runs its core in the same process, so one process holds the library.
+- **Search**: ten timed calls after one untimed call, per query, per run, with the whole JSON response read. Zotero: `/api/users/0/items/top?q=...&qmode=titleCreatorYear&limit=25`; Zinc: `/api/items?q=...&limit=25`. The queries were picked from the library: a common title word, the commonest author surname, a rare title word and the commonest year. These are HTTP API times, not typing-in-the-search-box times: Zotero's own search box does not go through this API, and the API adds the cost of building full JSON for each item. The two programs also do not match the same set of items (for the common word 4514 and 3441 hits), so compare them as "one search request", not as identical work.
+- **Sizes**: the program folder (`C:\Program Files\Zotero`; `%LOCALAPPDATA%\Programs\Zinc`) and the library database file (`zotero.sqlite`; Zinc's library). They hold different things, so this is not a like-for-like data size.
+- **Isolation**: Zotero ran from a new profile (`-profile`, `-no-remote`) with its data folder set to a copy, sync, updates and background renaming off, and its local API on port 23131. Zinc ran on a copy with sync off, its own ports and scratch settings folders. Neither the real Zotero nor the real Zinc library was written to. Copies were deleted afterwards.
+- **Not measured**: opening a PDF (it cannot be timed fairly without driving the mouse or keyboard); typing speed and scrolling in Zotero (the scroll figures below are Zinc only). A first launch of a new Zotero profile (not counted) took 1.25 s to a window, 5.5 s to the library title and 17.0 s to ready.
 
-### Zotero Next on its own
+### Zinc on its own
 
 The AOT build, the one the installer ships:
 
@@ -208,7 +217,7 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 
 ✅ yes, ⚠️ partly, ❌ no. "Zotero 10" means the desktop app (checked against version 10.0.7) with no extra plugins unless noted. The Zotero column was checked against the files of an installed Zotero 10.0.7 (its interface strings, preferences and code). "Unverified" means the install could not confirm the point.
 
-| Area | Zotero 10 | Zotero Next | Notes |
+| Area | Zotero 10 | Zinc | Notes |
 | --- | :---: | :---: | --- |
 | Library, collections and sub-collections | ✅ | ✅ | Collection colours, icons, pins and sections are extras, kept locally and not synced. |
 | Saved searches | ✅ | ⚠️ | Work locally and import from Zotero. They do not sync to zotero.org. |
@@ -243,8 +252,8 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 
 ## Install
 
-1. Open the **Releases** page of this repository and download `ZoteroNext-Setup-<version>.exe`.
-2. Run it. It installs **per user**, into `%LOCALAPPDATA%\Programs\Zotero Next`. It does not need administrator rights and does not touch your library.
+1. Open the **Releases** page of this repository and download `Zinc-Setup-<version>.exe`. (Releases up to 0.1.2 name it `ZoteroNext-Setup-<version>.exe`.)
+2. Run it. It installs **per user**, into `%LOCALAPPDATA%\Programs\Zinc`. It does not need administrator rights and does not touch your library.
 3. Windows SmartScreen will warn that the publisher is unknown, because the installer is not code-signed yet. Click **More info**, then **Run anyway**.
 4. The Setup wizard has an optional **Word add-in** component (ticked by default). You can also tick a desktop shortcut.
 
@@ -252,14 +261,14 @@ Updating is the same: run a newer installer over the top, or let the app's signe
 
 ### Linux and macOS: the browser edition
 
-Each release also has `ZoteroNext-Web-<version>.zip`: the same interface and core built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), which runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows. Unzip it, serve the folder over HTTP (for example `python3 -m http.server 8080` in it) and open `http://localhost:8080`; browsers do not run WebAssembly from a file opened on disk. For now it opens a demo library and keeps changes only until the tab closes; web tabs, sync and anything that needs your disk are desktop only. It is built by [`gpui-ui/web/build.ts`](gpui-ui/web/build.ts) in the [Browser build](.github/workflows/web.yml) workflow.
+Each release also has `Zinc-Web-<tag>.zip` (`ZoteroNext-Web-<tag>.zip` up to 0.1.2): the same interface and core built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), which runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows. Unzip it, serve the folder over HTTP (for example `python3 -m http.server 8080` in it) and open `http://localhost:8080`; browsers do not run WebAssembly from a file opened on disk. For now it opens a demo library and keeps changes only until the tab closes; web tabs, sync and anything that needs your disk are desktop only. It is built by [`gpui-ui/web/build.ts`](gpui-ui/web/build.ts) in the [Browser build](.github/workflows/web.yml) workflow.
 
 ## First run
 
 On a new machine the app shows a short first-run screen with three choices:
 
-- **Import from Zotero**: copies your Zotero library into a Zotero Next library, with progress. Your Zotero data is only read.
-- **Open an existing library**: pick a Zotero Next library file.
+- **Import from Zotero**: copies your Zotero library into a Zinc library, with progress. Your Zotero data is only read.
+- **Open an existing library**: pick a Zinc library file.
 - **Start an empty library**.
 
 The choice is saved. You can pick another library later under Settings, Files and folders, Library location.
@@ -317,7 +326,7 @@ Package and build the installer:
 
 ```
 bun gpui-ui/scripts/package.ts --aot     # the AOT build, assembled into gpui-ui/out/package-aot/
-bun gpui-ui/scripts/installer.ts         # gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe
+bun gpui-ui/scripts/installer.ts         # gpui-ui/out/installer/Zinc-Setup-<version>.exe
 ```
 
 Notes:
@@ -346,7 +355,7 @@ Notes:
 
 ## Acknowledgements
 
-Zotero Next stands on other people's work.
+Zinc stands on other people's work.
 
 - **[Zotero](https://www.zotero.org)**: the data model and schema, the translators and translation framework, the connector protocol, the web reader and note editor, and the document worker. Zotero is a project of the Corporation for Digital Scholarship.
 - **[Zed](https://zed.dev) GPUI** and **[GPUIX](https://github.com/remorses/gpuix)**: the UI toolkit and its Solid adapter.
@@ -355,6 +364,12 @@ Zotero Next stands on other people's work.
 - **[citeproc-js](https://github.com/Juris-M/citeproc-js)**: citation styles.
 - [Bun](https://bun.sh), [Solid](https://www.solidjs.com), [jsdom](https://github.com/jsdom/jsdom) and the other open-source packages in the lockfiles.
 
-Zotero's code that is vendored here (translators, translate framework, utilities, schema) is licensed under the **AGPL**, and distributing Zotero Next together with it means following the AGPL for those files. See [`core/vendor/zotero/README.md`](core/vendor/zotero/README.md) (the folder is created by `bun core/scripts/fetch-zotero-vendor.ts`). Fuller notices travel with each vendored folder.
-
 This is an independent project and is not affiliated with or endorsed by Zotero.
+
+## Licence
+
+Zinc is licensed under the **GNU Affero General Public License, version 3 or later** ([`LICENSE`](LICENSE)), the same licence as Zotero. The Zotero code that is built into it (translators, translate framework, utilities, schema, document worker, web reader and note editor) is AGPL-3.0 as well. See [`core/vendor/zotero/README.md`](core/vendor/zotero/README.md) (the folder is created by `bun core/scripts/fetch-zotero-vendor.ts`); fuller notices travel with each vendored folder. Code adapted from MIT-licensed projects, such as Better BibTeX in `core/src/bbt/`, keeps its own notice.
+
+## A side project, with no warranty
+
+Zinc is a personal side project, built for fun to fix my own pain points with reference management. I probably won't have time to maintain it in the usual way or to review every issue and pull request. It comes with **no warranty of any kind**: I can't guarantee the safety of anyone's library or the correctness of their citations, so keep backups. If you would like to take it forward and maintain it properly as an open-source project, please get in touch. See [`CONTRIBUTING.md`](CONTRIBUTING.md).

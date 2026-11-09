@@ -121,8 +121,8 @@ writeFileSync(join(out, "index.html"), `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Zotero Next</title>
-<meta name="description" content="Zotero Next in the browser: the desktop app's interface and core, compiled to WebAssembly." />
+<title>Zinc</title>
+<meta name="description" content="Zinc in the browser: the desktop app's interface and core, compiled to WebAssembly." />
 <meta name="theme-color" content="#F1EFEA" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#1A1917" media="(prefers-color-scheme: dark)" />
 <link rel="manifest" href="manifest.webmanifest" />
@@ -140,9 +140,9 @@ writeFileSync(join(out, "index.html"), `<!doctype html>
 mkdirSync(join(out, "icons"), { recursive: true });
 for (const s of [192, 512]) cpSync(join(here, "icons", `icon-${s}.png`), join(out, "icons", `icon-${s}.png`));
 writeFileSync(join(out, "manifest.webmanifest"), JSON.stringify({
-	name: "Zotero Next",
-	short_name: "Zotero Next",
-	description: "The Zotero Next desktop app's interface and core, compiled to WebAssembly, on a demo library.",
+	name: "Zinc",
+	short_name: "Zinc",
+	description: "The Zinc desktop app's interface and core, compiled to WebAssembly, on a demo library.",
 	id: "./",
 	start_url: "./",
 	scope: "./",
@@ -156,7 +156,7 @@ writeFileSync(join(out, "manifest.webmanifest"), JSON.stringify({
 	],
 }, null, 2));
 // how to run a downloaded copy (the release zip): WebAssembly and workers need http://, not a file opened from disk
-writeFileSync(join(out, "README.txt"), `Zotero Next in the browser
+writeFileSync(join(out, "README.txt"), `Zinc in the browser
 ==========================
 
 The desktop app's interface and core, built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), with a demo
@@ -192,7 +192,7 @@ Not in the browser build: web tabs, sync, importing files and anything else that
 	walk(out);
 	precache.sort();
 	const id = Bun.hash(precache.map((p) => `${p}:${statSync(join(out, decodeURIComponent(p))).size}`).join("|")).toString(36);
-	writeFileSync(join(out, "sw.js"), `// Zotero Next (browser build) service worker, written by gpui-ui/web/build.ts.
+	writeFileSync(join(out, "sw.js"), `// Zinc (browser build) service worker, written by gpui-ui/web/build.ts.
 const CACHE = "zn-web-${id}";
 const PRECACHE = ${JSON.stringify(["./", ...precache])};
 self.addEventListener("install", (e) => {

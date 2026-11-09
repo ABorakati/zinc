@@ -168,7 +168,7 @@ export async function cawyOutput(db: Database, picks: Pick[], params: CawyParams
 			return text(exportBetterFormat(db, translator, items, { includeNotes }));
 		}
 		case "eta":
-			throw new HttpError(400, "the eta CAYW format is not supported by zotero-next (use json and format it yourself)");
+			throw new HttpError(400, "the eta CAYW format is not supported by Zinc (use json and format it yourself)");
 		default:
 			return text(formatPicks(picks, params));
 	}

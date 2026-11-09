@@ -15,7 +15,7 @@ const SHOTS: Record<string, Shot> = {
 	"pdf-reader": { src: "pdf-reader-annotations-light.png", dark: "pdf-reader-annotations-dark.png", h: 881, n: "III", alt: "The PDF reader with highlights and the annotations panel", caption: "The PDF reader with the annotations panel." },
 	"notes-and-web": { src: "reading-view-table.png", n: "IV", alt: "The reading view, showing an article's table as a card", caption: "The reading view, with a table set as a card." },
 	"around-the-app": { src: "settings-reader-dark.png", n: "V", alt: "Settings, on the reader page, in the dark theme", caption: "Settings, reader page, dark theme." },
-	"word-add-in": { src: "word-sidebar.png", h: 839, n: "VII", alt: "Word with the Zotero Next sidebar beside a paragraph with numbered citations and a bibliography", caption: "The Word sidebar, with the app closed." },
+	"word-add-in": { src: "word-sidebar.png", h: 839, n: "VII", alt: "Word with the Zinc sidebar beside a paragraph with numbered citations and a bibliography", caption: "The Word sidebar, with the app closed." },
 };
 const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "better-bibtex": "braces", "zotmoov-file-storage": "folder-tree", "around-the-app": "settings", "word-add-in": "panel-right", "mcp-for-agents": "bot" };
 const MORE: Record<string, string> = { library: "user-guide/library/", "pdf-reader": "user-guide/reader/", "better-bibtex": "user-guide/better-bibtex/", "zotmoov-file-storage": "user-guide/zotmoov-storage/", "sync-and-storage": "user-guide/sync/" };
@@ -24,16 +24,16 @@ const leadOf = (body: string) => body.split(/\n\s*\n/).map((p) => p.trim()).find
 
 const groups = [
 	...subsections(section("## Features")).map((s) => ({ title: s.title, id: slug(s.title), lead: leadOf(s.body), items: bullets(s.body), more: MORE[slug(s.title)] ? `${base}${MORE[slug(s.title)]}` : "" })),
-	{ title: "Word add-in", id: "word-add-in", lead: "**Zotero Next does not need to be open.** The add-in reads your library file itself, so you can search, cite and build a bibliography with the app closed.", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
+	{ title: "Word add-in", id: "word-add-in", lead: "**Zinc does not need to be open.** The add-in reads your library file itself, so you can search, cite and build a bibliography with the app closed.", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
 	{ title: "MCP for agents", id: "mcp-for-agents", lead: "", items: [paragraphs(section("### Built-in MCP for AI agents"))[0]], more: `${base}user-guide/mcp/` },
 ].map((g) => ({ ...g, shot: SHOTS[g.id], icon: ICONS[g.id] ?? "circle" }));
 ---
-<Site page="features" title="Features" description="Everything Zotero Next does: library, PDF reader, notes, sync, translators, Better BibTeX, the Word add-in, the browser connector and MCP.">
+<Site page="features" title="Features" description="Everything Zinc does: library, PDF reader, notes, sync, translators, Better BibTeX, the Word add-in, the browser connector and MCP.">
 	<section class="hero">
 		<div class="wrap">
 			<div class="head">
 				<h1 class="display" style="margin-bottom: 1rem">Everything it does</h1>
-				<p>Every part of Zotero Next. What Zotero has that Zotero Next does not is in the <a href={`${base}compare/#features`}>comparison</a>.</p>
+				<p>Every part of Zinc. What Zotero has that Zinc does not is in the <a href={`${base}compare/#features`}>comparison</a>.</p>
 			</div>
 			<nav class="feature-index" aria-label="Jump to a feature">
 				{groups.map((g) => <a href={`#${g.id}`}><Icon name={g.icon} size={16} />{g.title}</a>)}

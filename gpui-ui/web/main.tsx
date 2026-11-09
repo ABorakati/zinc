@@ -63,7 +63,7 @@ function Root() {
 		</div>
 	);
 }
-render(() => <Root />, { title: "Zotero Next demo", onKeyDown: handleWindowKeyDown });
+render(() => <Root />, { title: "Zinc demo", onKeyDown: handleWindowKeyDown });
 
 const { store, uiState } = await import("../src/store");
 // for automated checks of the demo: store.openAttachment, and the layout analysis of the demo article (counts of what it found)

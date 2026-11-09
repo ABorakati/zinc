@@ -262,7 +262,7 @@ d("sidebar controller driving an invisible Word", () => {
 		const card = await ev("document.getElementById('cited').innerText");
 		expect(card.toLowerCase()).toContain("cited here"); // the heading is upper-cased by CSS
 		expect(card).toContain("In library");
-		expect(card).toContain("Open in zotero-next");
+		expect(card).toContain("Open in Zinc");
 		await h.call("h.close");
 	}, 180_000);
 });

@@ -1,4 +1,4 @@
-// The update prompts, on the app's own toast and dialog helpers: a non-blocking toast "Zotero Next <ver> is available" with What's new /
+// The update prompts, on the app's own toast and dialog helpers: a non-blocking toast "Zinc <ver> is available" with What's new /
 // Install on exit / Install now, and the "What's new" dialog (release notes + the same choices). Never modal on its own.
 import { For, Show, type JSX } from "solid-js";
 import type { Manifest } from "../../../core/src/update/manifest";
@@ -17,9 +17,9 @@ const when = (m: Manifest) => {
 	return Number.isNaN(d.getTime()) ? "" : `Released ${d.toLocaleDateString()}`;
 };
 
-/** "Zotero Next 0.2.0 is available" (or "is ready to install" once downloaded). Stays ~20 s, pauses while the pointer is over it. */
+/** "Zinc 0.2.0 is available" (or "is ready to install" once downloaded). Stays ~20 s, pauses while the pointer is over it. */
 export function showUpdateToast(m: Manifest, a: UpdateActions, o: { ready?: boolean } = {}): void {
-	toast(`Zotero Next ${displayVersion(m.version)} ${o.ready ? "is ready to install" : "is available"}`, {
+	toast(`Zinc ${displayVersion(m.version)} ${o.ready ? "is ready to install" : "is available"}`, {
 		id: "update-available",
 		description: when(m) || undefined,
 		actions: [
@@ -57,5 +57,5 @@ let open = false;
 export function openWhatsNew(m: Manifest, a: UpdateActions, o: { manualOnly?: boolean } = {}): void {
 	if (open) return;
 	open = true;
-	void openDialog<void>((close) => <WhatsNew m={m} a={a} close={() => close()} manualOnly={o.manualOnly} />, { title: `Zotero Next ${displayVersion(m.version)}`, width: 520 }).finally(() => { open = false; });
+	void openDialog<void>((close) => <WhatsNew m={m} a={a} close={() => close()} manualOnly={o.manualOnly} />, { title: `Zinc ${displayVersion(m.version)}`, width: 520 }).finally(() => { open = false; });
 }

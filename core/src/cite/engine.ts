@@ -99,7 +99,7 @@ export class StyleStore {
 	}
 
 	private async get(url: string): Promise<string> {
-		const res = await this.fetchFn(url, { headers: { "User-Agent": "zotero-next" } });
+		const res = await this.fetchFn(url, { headers: { "User-Agent": "zinc" } });
 		if (!res.ok) {
 			if (res.status === 404) throw new HttpError(404, `not found: ${url}`);
 			throw new HttpError(502, `fetching ${url} failed: HTTP ${res.status}`);

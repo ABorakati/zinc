@@ -1,5 +1,5 @@
 ---
-name: Zotero Next
+name: Zinc
 description: The project website for a fast, native Windows reference manager, laid out as a library's journal room in the app's own Quiet Paper palette.
 colors:
   ground: "#F7F6F3"
@@ -218,7 +218,7 @@ components:
     width: "26rem"
 ---
 
-# Design System: Zotero Next
+# Design System: Zinc
 
 ## Overview
 
@@ -353,7 +353,7 @@ A white, 6px, hairline-bordered table with the Card shadow. Caps-label headers o
 A narrow (max 26rem) white slip with a caps heading over a 2px ink rule, two-column rows ruled in Blue Ruling, and the release date typed in bold blue. Rows fill in on reveal (120ms stagger). The download page's numbered install steps (card steps) and typed command blocks share its typed voice.
 
 ### The Speed Race (signature, home)
-The speed claim shown, not listed (src/components/Race.astro). A white 10px panel with the Card shadow: the app's segmented toggle ("Library ready" | "Search"), a Cascadia clock that counts up, and a secondary "Run again" button. Two lanes, Zotero Next (app icon, Library Blue fill with the primary shadow) and Zotero 10.0.7 (hourglass, slate fill at 55%), each a 1.6rem track in Secondary with the time readout on the right; the track length is the slower time, so Zotero Next's bar is proportionally short. It runs in real time over the README's measured medians when 25% of it scrolls into view; a finished lane shows a green check and a bold readout. The markup is the finished race, so without JS or with reduced motion the result is static and complete. On phones the track drops under its label. The panel always carries the honest note (private memory is higher) and a link to the full method.
+The speed claim shown, not listed (src/components/Race.astro). A white 10px panel with the Card shadow: the app's segmented toggle ("Library ready" | "Search"), a Cascadia clock that counts up, and a secondary "Run again" button. Two lanes, Zinc (app icon, Library Blue fill with the primary shadow) and Zotero 10.0.7 (hourglass, slate fill at 55%), each a 1.6rem track in Secondary with the time readout on the right; the track length is the slower time, so Zinc's bar is proportionally short. It runs in real time over the README's measured medians when 25% of it scrolls into view; a finished lane shows a green check and a bold readout. The markup is the finished race, so without JS or with reduced motion the result is static and complete. On phones the track drops under its label. The panel always carries the honest note (private memory is higher) and a link to the full method.
 
 ### Works With the App Closed (home)
 A two-column feature list (5/7): a sticky heading and lead paragraph on the left; on the right, rows divided by hairlines, each a Manrope h3 with a 24px Library Blue Lucide icon, body text from the README, and Secondary pill tags. The Word sidebar row leads and is set larger. Not cards and not icon tiles.

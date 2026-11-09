@@ -1,6 +1,6 @@
 # Updates
 
-Zotero Next can check a signed feed, download the installer, verify it and run it silently. It only does so if the build you installed has a feed address and an update public key built in. A build without a key never updates, and you can always install a newer `ZoteroNext-Setup-<version>.exe` over the top by hand ([Install](install.md)).
+Zinc can check a signed feed, download the installer, verify it and run it silently. It only does so if the build you installed has a feed address and an update public key built in. A build without a key never updates, and you can always install a newer `Zinc-Setup-<version>.exe` over the top by hand ([Install](install.md)).
 
 ## Settings
 
@@ -18,7 +18,7 @@ A development build (run from source) is never offered an update.
 
 ## What you see
 
-When a newer version exists a toast says **Zotero Next X is available** with three actions: **What's new** (the release notes), **Install on exit** and **Install now**.
+When a newer version exists a toast says **Zinc X is available** with three actions: **What's new** (the release notes), **Install on exit** and **Install now**.
 
 - **Install now** waits for pending writes, closes the database, starts the installer silently and exits.
 - **Install on exit** does the same the next time you quit normally. A crash installs nothing.

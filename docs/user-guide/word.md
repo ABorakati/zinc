@@ -1,8 +1,8 @@
 # Word add-in
 
-The Zotero Next Word add-in lets you cite from your library while you write in Microsoft Word. It adds a **Zotero Next** tab to the ribbon and a sidebar where you search your library, insert citations, and build and refresh a bibliography. Citations are stored in the document as Zotero-compatible fields, so a document written with Zotero's own Word plug-in can be opened and refreshed with this one, and the other way round.
+The Zinc Word add-in lets you cite from your library while you write in Microsoft Word. It adds a **Zinc** tab to the ribbon and a sidebar where you search your library, insert citations, and build and refresh a bibliography. Citations are stored in the document as Zotero-compatible fields, so a document written with Zotero's own Word plug-in can be opened and refreshed with this one, and the other way round.
 
-The add-in reads your library file directly, in read-only mode, so it works whether or not the Zotero Next app is open. The app is only started on demand when you click **Open in zotero-next** on a cited item.
+The add-in reads your library file directly, in read-only mode, so it works whether or not the Zinc app is open. The app is only started on demand when you click **Open in zotero-next** on a cited item.
 
 **Not supported:** LibreOffice and Google Docs. Settings > Integrations lists "LibreOffice and Google Docs" as a cite-while-you-write integration that is not available yet. Only Microsoft Word on Windows is supported.
 
@@ -10,19 +10,19 @@ The add-in reads your library file directly, in read-only mode, so it works whet
 
 There are two ways to install the add-in. Both install it for your Windows user only, with no administrator rights, and neither changes any machine-wide setting.
 
-**With the Zotero Next installer.** The installer has an optional component, **Word add-in**, which is ticked by default. Leave it ticked and the add-in is copied into the app folder (`word\addin` inside the install folder) and registered for your user. Untick it to skip. If Word is open while you install, the add-in is left as it is; close Word and install again.
+**With the Zinc installer.** The installer has an optional component, **Word add-in**, which is ticked by default. Leave it ticked and the add-in is copied into the app folder (`word\addin` inside the install folder) and registered for your user. Untick it to skip. If Word is open while you install, the add-in is left as it is; close Word and install again.
 
-**From the app.** Go to **Settings > Integrations** (see [Settings reference](settings.md#integrations)), find **Microsoft Word add-in** under Word processors and click **Install Microsoft Word add-in**. The row then shows **Installed** with **Reinstall** and **Uninstall** buttons. Close Word before installing or removing; the row reminds you. When it finishes you are told to open Word and look for the **Zotero Next** tab.
+**From the app.** Go to **Settings > Integrations** (see [Settings reference](settings.md#integrations)), find **Microsoft Word add-in** under Word processors and click **Install Microsoft Word add-in**. The row then shows **Installed** with **Reinstall** and **Uninstall** buttons. Close Word before installing or removing; the row reminds you. When it finishes you are told to open Word and look for the **Zinc** tab.
 
 Uninstalling the app removes the add-in too. Your library and documents are never touched.
 
 ## The ribbon tab
 
-The **Zotero Next** tab has a **Citations** group with four buttons:
+The **Zinc** tab has a **Citations** group with four buttons:
 
 | Button | What it does |
 | --- | --- |
-| **Sidebar** | Shows or hides the Zotero Next sidebar (docked on the right, 400 pixels wide) |
+| **Sidebar** | Shows or hides the Zinc sidebar (docked on the right, 400 pixels wide) |
 | **Add/Edit Citation** | Opens the sidebar with the search box focused, ready to insert a citation at the cursor |
 | **Bibliography** | Inserts or updates the bibliography |
 | **Refresh** | Re-formats every citation and the bibliography |

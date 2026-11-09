@@ -68,7 +68,7 @@ function Root() {
 const earlyData = startPrefetch(); // a worker answers the first screen's requests while render() below blocks this thread (src/prefetch.ts)
 mark("pre-render");
 // onKeyDown is the window-level key handler: global shortcuts of the registry's appActions (shell/shortcuts.ts).
-render(() => <Root />, { title: "zotero-next", width: 1400, height: 900, onKeyDown: handleWindowKeyDown });
+render(() => <Root />, { title: "Zinc", width: 1400, height: 900, onKeyDown: handleWindowKeyDown });
 mark("render-returned");
 
 // Fonts now, while the tree has no text: registering is ~10-30 ms per file then, but ~250 ms per file once a laid-out app is on

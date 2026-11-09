@@ -1,4 +1,4 @@
-// Zotero Next vs Zotero 10 on the same library: start-up, "library ready", memory, quick-search latency, install size.
+// Zinc vs Zotero 10 on the same library: start-up, "library ready", memory, quick-search latency, install size.
 //
 //   bun gpui-ui/scripts/bench-vs-zotero.ts                     # all defaults: makes its own copies, 3 runs each, cleans up
 //   bun gpui-ui/scripts/bench-vs-zotero.ts --runs 3 --work C:/scratch/bench --keep
@@ -6,20 +6,20 @@
 // Options (all optional):
 //   --zotero-exe   C:/Program Files/Zotero/zotero.exe           installed Zotero 10
 //   --zotero-data  <real Zotero data dir>                       default %USERPROFILE%/Zotero (only READ, to make the copy)
-//   --next-exe     %LOCALAPPDATA%/Programs/Zotero Next/zotero-next-gpui.exe
-//   --next-lib     <real Zotero Next library .sqlite>           default <repo>/data/library.sqlite (opened read-only; VACUUM INTO a copy)
+//   --next-exe     %LOCALAPPDATA%/Programs/Zinc/zotero-next-gpui.exe (or Programs/Zotero Next for an install made before the rename)
+//   --next-lib     <real Zinc library .sqlite>           default <repo>/data/library.sqlite (opened read-only; VACUUM INTO a copy)
 //   --work         scratch dir for the copies and profiles      default <tmp>/zn-bench-vs-zotero (deleted at the end unless --keep)
-//   --zotero-port 23131  --next-port 23191  --next-zport 23192   must differ from 23119/23120 (a running Zotero Next uses them)
+//   --zotero-port 23131  --next-port 23191  --next-zport 23192   must differ from 23119/23120 (a running Zinc uses them)
 //   --runs 3  --settle 12 (seconds after "ready" before sampling memory)  --calls 10 (timed calls per search query)
 //   --queries "word,author,rare,year"                           default: picked from the library copy
 //   --no-warmup   skip the unmeasured first Zotero launch (a new profile does one-off set-up work on its first start)
 //   --visible     launch with a normal window instead of SW_SHOWMINNOACTIVE
 //   --keep        keep the work dir
 //
-// ISOLATION. The real Zotero (profile in %APPDATA%/Zotero, data dir, sync, login) and the real Zotero Next library/settings are never
+// ISOLATION. The real Zotero (profile in %APPDATA%/Zotero, data dir, sync, login) and the real Zinc library/settings are never
 // written. Zotero 10 runs from a NEW profile (-profile <scratch> -no-remote) whose user.js points extensions.zotero.dataDir at a
 // COPY (zotero.sqlite + -wal/-shm, styles/, translators/; no storage/), and turns off sync, updates, translator/style updates,
-// first-run pages, telemetry, auto-rename/-recognize. Zotero Next runs on a VACUUM INTO copy with APPDATA/LOCALAPPDATA pointed at
+// first-run pages, telemetry, auto-rename/-recognize. Zinc runs on a VACUUM INTO copy with APPDATA/LOCALAPPDATA pointed at
 // a scratch folder and ZN_SYNC=0. The script refuses to start if a zotero.exe is running (it never closes one it did not start).
 //
 // MEASURED (per run, a fresh process each time; windows are launched minimised without activation):
@@ -47,7 +47,7 @@ const fwd = (p: string) => p.replaceAll("\\", "/");
 
 const zExe = opt("zotero-exe", "C:/Program Files/Zotero/zotero.exe");
 const zData = opt("zotero-data", join(homedir(), "Zotero"));
-const nExe = opt("next-exe", join(process.env.LOCALAPPDATA ?? "", "Programs/Zotero Next/zotero-next-gpui.exe"));
+const nExe = opt("next-exe", ["Zinc", "Zotero Next"].map((d) => join(process.env.LOCALAPPDATA ?? "", "Programs", d, "zotero-next-gpui.exe")).find((f) => existsSync(f)) ?? join(process.env.LOCALAPPDATA ?? "", "Programs/Zinc/zotero-next-gpui.exe")); // installs made before the rename keep the "Zotero Next" folder
 const nLibSrc = opt("next-lib", join(repo, "data/library.sqlite"));
 const work = resolve(opt("work", join(tmpdir(), "zn-bench-vs-zotero")));
 const zPort = Number(opt("zotero-port", "23131"));
@@ -232,14 +232,14 @@ function prepare() {
 	};
 	writeFileSync(join(zProfile, "user.js"), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join("\n") + "\n");
 
-	// Zotero Next library copy (source opened read-only), switched to WAL like the real one.
+	// Zinc library copy (source opened read-only), switched to WAL like the real one.
 	if (/zotero-next[\\/]data[\\/]/i.test(nLib)) throw new Error("copy would land in the real data dir");
 	const src = new Database(nLibSrc, { readonly: true });
 	try { src.run(`VACUUM INTO '${fwd(nLib).replaceAll("'", "''")}'`); } finally { src.close(); }
 	const c = new Database(nLib);
 	c.run("PRAGMA journal_mode = WAL");
 	c.close();
-	console.log(`copies: Zotero data ${mb(dirSize(zCopy))} MB, Zotero Next library ${mb(statSync(nLib).size)} MB, in ${work}`);
+	console.log(`copies: Zotero data ${mb(dirSize(zCopy))} MB, Zinc library ${mb(statSync(nLib).size)} MB, in ${work}`);
 }
 
 // ---- queries from the library copy ----------------------------------------------------------------------------------------------
@@ -384,7 +384,7 @@ async function zoteroVersion(): Promise<string> {
 async function main() {
 	if (zoteroRunning().length) { console.error("zotero.exe is running; close it yourself and re-run. Nothing was changed."); process.exit(2); }
 	const zv = await zoteroVersion();
-	console.log(`Zotero ${zv} (${zExe}); Zotero Next ${nExe}; runs=${runs}, settle=${settleS}s, calls=${calls}`);
+	console.log(`Zotero ${zv} (${zExe}); Zinc ${nExe}; runs=${runs}, settle=${settleS}s, calls=${calls}`);
 	prepare();
 	const queries = pickQueries();
 	console.log("queries:", queries.map((x) => `${x.label}=${x.q}`).join(", "));

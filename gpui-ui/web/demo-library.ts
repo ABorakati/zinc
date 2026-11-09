@@ -56,8 +56,8 @@ repo.createItem(db, { itemType: "note", parentItem: keys.attention, note: "<p>Co
 // the demo article (web/demo-article.html, printed to web/demo-article.pdf): an item with its PDF stored in <out>/storage, so the
 // browser demo's reader has something to open; it cites the papers above
 const article = repo.createItem(db, {
-	itemType: "report", title: "Deep learning in clinical research: a short demo review", creators: [{ creatorType: "author", name: "Zotero Next demo" }],
-	date: "2026", institution: "Zotero Next", reportType: "Demo article", abstractNote: "A short article written for the Zotero Next browser demo (not a published paper). It cites papers in this library and has a figure and a table.",
+	itemType: "report", title: "Deep learning in clinical research: a short demo review", creators: [{ creatorType: "author", name: "Zinc demo" }],
+	date: "2026", institution: "Zinc", reportType: "Demo article", abstractNote: "A short article written for the Zinc browser demo (not a published paper). It cites papers in this library and has a figure and a table.",
 } as never).data.key;
 repo.addTags(db, article, ["demo"]);
 repo.addItemsToCollection(db, C.thesis, [article]);

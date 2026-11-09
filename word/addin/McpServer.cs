@@ -447,7 +447,7 @@ namespace ZoteroNext.Word
                             return Rpc(id, Json.Map(
                                 "protocolVersion", version,
                                 "capabilities", Json.Map("tools", Json.Map("listChanged", false)),
-                                "serverInfo", Json.Map("name", "zotero-next-word", "title", "Zotero Next for Word", "version", "0.1.0"),
+                                "serverInfo", Json.Map("name", "zotero-next-word", "title", "Zinc for Word", "version", "0.1.0"),
                                 "instructions", Json.Str(Spec.Value, "instructions", "")), null);
                         }
                     case "ping":

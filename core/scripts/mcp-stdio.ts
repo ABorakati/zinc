@@ -30,7 +30,7 @@ const db = openDb(dbPath);
 db.run("PRAGMA journal_mode = WAL");
 const server = createMcpServer(db);
 await server.connect(new StdioServerTransport());
-console.error(`zotero-next MCP (stdio) ready, db=${dbPath}`);
+console.error(`Zinc MCP (stdio) ready, db=${dbPath}`);
 
 const shutdown = () => {
 	try {

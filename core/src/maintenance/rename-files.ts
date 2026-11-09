@@ -80,11 +80,11 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 			continue;
 		}
 		if (linked && !(managedDir && isInside(current, managedDir))) {
-			skip("linked file outside the attachment storage folder (not managed by zotero-next)");
+			skip("linked file outside the attachment storage folder (not managed by Zinc)");
 			continue;
 		}
 		if (!linked && (!ownStorageDir || !isInside(current, ownStorageDir))) {
-			skip("file is not in zotero-next's own storage (Zotero-owned files are renamed later via sync)");
+			skip("file is not in Zinc's own storage (Zotero-owned files are renamed later via sync)");
 			continue;
 		}
 		const parent = db.query("SELECT creators_summary, year, title FROM items WHERE key = ?").get(att.parent_key) as {

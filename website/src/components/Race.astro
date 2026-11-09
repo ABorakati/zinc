@@ -1,12 +1,12 @@
 ---
-// The speed claim as a race run in real time: Zotero 10 and Zotero Next as two lanes, filling over their measured medians
+// The speed claim as a race run in real time: Zotero 10 and Zinc as two lanes, filling over their measured medians
 // (README benchmark table). It starts when it scrolls into view; "Run again" replays it. The Memory tab is not a race: its bars grow
 // to the measured memory each app holds in RAM (working set), both sides on one scale. The HTML shows the finished state, so
 // without JS or with reduced motion the result is still all there.
 import Icon from "./Icon.astro";
 import { section, tables } from "../lib/readme";
 
-const rows = tables(section("### Zotero Next against Zotero 10"))[0].rows;
+const rows = tables(section("### Zinc against Zotero 10"))[0].rows;
 const pick = (prefix: string) => rows.find((r) => r[0].startsWith(prefix))!;
 const ms = (v: string) => { const m = /^([\d.,]+)\s*(ms|s)/.exec(v.trim())!; const n = Number(m[1].replace(/,/g, "")); return m[2] === "s" ? n * 1000 : n; };
 const mb = (v: string) => Number(/^([\d.,]+)\s*MB/.exec(v.trim())![1].replace(/,/g, ""));
@@ -34,7 +34,7 @@ const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory
 		<div class="race-panel" data-panel={r.id} data-kind="time" hidden={i !== 0}>
 			<p class="race-what">{r.what}</p>
 			<div class="lane done" data-lane="next" data-v={r.next} style={`--w:${(r.next / r.zotero) * 100}%`}>
-				<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zotero Next</span>
+				<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zinc</span>
 				<span class="lane-track"><span class="lane-fill"></span></span>
 				<span class="lane-time mono"><span class="lane-done"><Icon name="check" size={14} /></span><span class="lane-read">{fmt(r.next)}</span></span>
 			</div>
@@ -46,11 +46,11 @@ const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory
 		</div>
 	))}
 	<div class="race-panel" data-panel="memory" data-kind="memory" hidden>
-		<p class="race-what">Memory each app holds in RAM, every process counted, 12 seconds after the library is ready. Zotero Next runs as {procs[2]} process, Zotero as {procs[1]}.</p>
+		<p class="race-what">Memory each app holds in RAM, every process counted, 12 seconds after the library is ready. Zinc runs as {procs[2]} process, Zotero as {procs[1]}.</p>
 		{memory.map((m) => (
 			<div class="mem-group">
 				<div class="lane done" data-lane="next" data-v={m.next} style={`--w:${pct(m.next)}`}>
-					<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zotero Next</span>
+					<span class="lane-name"><img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" width="16" height="16" />Zinc</span>
 					<span class="lane-track"><span class="lane-fill"></span></span>
 					<span class="lane-time mono"><span class="lane-read">{m.next} MB</span></span>
 				</div>
@@ -61,7 +61,7 @@ const tabs = [...races.map((r) => ({ id: r.id, label: r.label })), { id: "memory
 				</div>
 			</div>
 		))}
-		<p class="mem-note">Zotero Next uses less than half the memory of Zotero 10 with the same library open.</p>
+		<p class="mem-note">Zinc uses less than half the memory of Zotero 10 with the same library open.</p>
 	</div>
 	<p class="race-note">Measured medians: the same 12,400-item library, three runs each, Windows 11. Times play in real time. <a href={`${import.meta.env.BASE_URL}compare/`}>Full results and method</a>.</p>
 </div>

@@ -6,7 +6,7 @@ import Icon from "../components/Icon.astro";
 import Site from "../layouts/Site.astro";
 const base = import.meta.env.BASE_URL;
 ---
-<Site page="demo" title="Demo" description="Zotero Next running live in your browser on a demo library: the app's library window, and the Word sidebar.">
+<Site page="demo" title="Demo" description="Zinc running live in your browser on a demo library: the app's library window, and the Word sidebar.">
 	<section class="hero" style="padding-bottom: 1.5rem">
 		<div class="wrap">
 			<div class="head" style="margin-bottom: 1.5rem">
@@ -50,8 +50,8 @@ const base = import.meta.env.BASE_URL;
 			</ol>
 			<div class="word" data-word-demo style="margin-top: 1.5rem">
 				<div class="word-title"><span class="word-logo">W</span>Demo.docx – Word</div>
-				<div class="word-ribbon" role="toolbar" aria-label="Zotero Next ribbon tab">
-					<span class="word-tab">Zotero Next</span>
+				<div class="word-ribbon" role="toolbar" aria-label="Zinc ribbon tab">
+					<span class="word-tab">Zinc</span>
 					<button type="button" data-cmd="insertCitation"><Icon name="quote" size={16} />Add/Edit Citation</button>
 					<button type="button" data-cmd="insertBibliography"><Icon name="list-ordered" size={16} />Bibliography</button>
 					<button type="button" data-cmd="refresh"><Icon name="refresh-cw" size={16} />Refresh</button>
@@ -64,7 +64,7 @@ const base = import.meta.env.BASE_URL;
 							<div class="word-bib" data-bib></div>
 						</article>
 					</div>
-					<iframe class="word-pane" src={`${base}word-demo/index.html`} title="Zotero Next sidebar (live demo)" data-pane></iframe>
+					<iframe class="word-pane" src={`${base}word-demo/index.html`} title="Zinc sidebar (live demo)" data-pane></iframe>
 				</div>
 			</div>
 			<p class="fine" style="margin-top: 1rem">The sidebar is the add-in's own code. Only the document is pretend: in Word the same sidebar writes real Zotero citation fields. Styles here: Vancouver, APA and Nature; in Word, any CSL style.</p>

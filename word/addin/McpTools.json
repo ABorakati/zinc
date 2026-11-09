@@ -1,5 +1,5 @@
 {
-  "instructions": "Manage Zotero citations and the bibliography in the Word document that is open in the user's Word, using the zotero-next library. Citations are real Zotero fields (ADDIN ZOTERO_ITEM / ZOTERO_BIBL plus document preferences), so desktop Zotero can still refresh and edit them. Typical flow: search_library to find item keys, insert_citation to cite them (at the cursor, at the end, or right after some text), insert_bibliography once, then refresh after changing the library or the style. Every tool that changes the document is one undo step in Word (Ctrl+Z). All positions in lists are 1-based. Every document tool takes an optional 'document' (name or path from list_documents); the default is the active document.",
+  "instructions": "Manage Zotero citations and the bibliography in the Word document that is open in the user's Word, using the Zinc library. Citations are real Zotero fields (ADDIN ZOTERO_ITEM / ZOTERO_BIBL plus document preferences), so desktop Zotero can still refresh and edit them. Typical flow: search_library to find item keys, insert_citation to cite them (at the cursor, at the end, or right after some text), insert_bibliography once, then refresh after changing the library or the style. Every tool that changes the document is one undo step in Word (Ctrl+Z). All positions in lists are 1-based. Every document tool takes an optional 'document' (name or path from list_documents); the default is the active document.",
   "tools": [
     {
       "name": "list_documents",
@@ -19,7 +19,7 @@
     {
       "name": "search_library",
       "title": "Search the Zotero library",
-      "description": "Search the user's zotero-next library (title, creators, abstract, publication, tags; a DOI or a 4-digit year in the query also works). Returns up to 'limit' items with the 8-character item 'key' that insert_citation and edit_citation take. Does not touch any document. An empty query returns the most recently added items.",
+      "description": "Search the user's Zinc library (title, creators, abstract, publication, tags; a DOI or a 4-digit year in the query also works). Returns up to 'limit' items with the 8-character item 'key' that insert_citation and edit_citation take. Does not touch any document. An empty query returns the most recently added items.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -1,6 +1,6 @@
 # Citations and bibliographies
 
-Zotero Next formats citations and bibliographies with the CSL engine (citeproc-js). You can copy a formatted citation straight from the library (Quick Copy), build a bibliography from selected items or a whole collection, or insert live citations into a Word document with the [Word add-in](word.md).
+Zinc formats citations and bibliographies with the CSL engine (citeproc-js). You can copy a formatted citation straight from the library (Quick Copy), build a bibliography from selected items or a whole collection, or insert live citations into a Word document with the [Word add-in](word.md).
 
 ## Citation styles
 

@@ -215,15 +215,15 @@ describe("documents and undo records", () => {
 		await expect(agent.call("list_citations", { document: "missing.docx" })).rejects.toThrow(/No open document matches 'missing.docx'/);
 	});
 
-	test("each document-changing tool is one undo record named 'Zotero Next: <tool>'; reads open none", async () => {
+	test("each document-changing tool is one undo record named 'Zinc: <tool>'; reads open none", async () => {
 		const { agent, log } = setup();
 		await agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: "end" });
 		await agent.call("list_citations", {});
 		await agent.call("refresh", {});
 		await agent.call("set_style", { styleId: "apa" });
 		const begins = log.filter((c) => c.method === "doc.begin");
-		const outer = begins.filter((c) => (c.params.name as string).startsWith("Zotero Next: ")).map((c) => c.params.name);
-		expect(outer).toEqual(["Zotero Next: insert_citation", "Zotero Next: refresh", "Zotero Next: set_style"]);
+		const outer = begins.filter((c) => (c.params.name as string).startsWith("Zinc: ")).map((c) => c.params.name);
+		expect(outer).toEqual(["Zinc: insert_citation", "Zinc: refresh", "Zinc: set_style"]);
 		// begin/end stay balanced even when a tool fails
 		await expect(agent.call("delete_citation", { index: 99 })).rejects.toThrow();
 		await expect(agent.call("insert_citation", { items: [{ key: "ZZZZ9999" }] })).rejects.toThrow();

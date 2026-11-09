@@ -1,6 +1,6 @@
 # Architecture
 
-Zotero Next is a Windows desktop reference manager that reads and writes a Zotero-format library kept in one SQLite file. The user interface, the core service that owns the database, and most background work run inside a single Bun process. A few things live outside that process: the Word add-in, the browser-connector host, and the WebView2 pages used for web content.
+Zinc is a Windows desktop reference manager that reads and writes a Zotero-format library kept in one SQLite file. The user interface, the core service that owns the database, and most background work run inside a single Bun process. A few things live outside that process: the Word add-in, the browser-connector host, and the WebView2 pages used for web content.
 
 This page is the map. Details are in [Building](building.md), [Testing](testing.md), [Database](database.md), [HTTP API](http-api.md) and [Translators](translators.md).
 
@@ -45,7 +45,7 @@ flowchart LR
   word -->|"optional HTTP"| api
   agents["AI agents"] -->|"MCP on 23125"| word
   host["connector-host : zotero-next-host.exe"]
-  ext["Zotero Next Connector extension"] -->|"native messaging"| host
+  ext["Zinc Connector extension"] -->|"native messaging"| host
   host -->|"embeds core/src/connector"| db
 ```
 
@@ -153,4 +153,4 @@ The add-in finds the library with the same rule as `core/src/library-location.ts
 
 ## Browser connector host: `connector-host/`
 
-`zotero-next-host.exe` is a Bun-compiled native-messaging host started by Chrome or Edge for the Zotero Next Connector extension (a fork kept in a separate repository). It embeds `core/src/connector` and runs the same connector handlers as port 23119 directly against the library database, so saving works with the app closed. It is registered per user in HKCU by `connector-host/install.ps1`. Protocol framing is in `connector-host/src/frames.ts`.
+`zotero-next-host.exe` is a Bun-compiled native-messaging host started by Chrome or Edge for the Zinc Connector extension (a fork kept in a separate repository). It embeds `core/src/connector` and runs the same connector handlers as port 23119 directly against the library database, so saving works with the app closed. It is registered per user in HKCU by `connector-host/install.ps1`. Protocol framing is in `connector-host/src/frames.ts`.

@@ -635,7 +635,7 @@ namespace ZoteroNext.Word
                 try { _app.ScreenUpdating = false; } catch { }
                 if (trace) Log.Write("begin: undo record");
                 if (Environment.GetEnvironmentVariable("ZN_NO_UNDO") != "1")
-                    try { _undo = _app.UndoRecord; _undo.StartCustomRecord(Json.Str(p, "name", "Zotero Next")); } catch { _undo = null; }
+                    try { _undo = _app.UndoRecord; _undo.StartCustomRecord(Json.Str(p, "name", "Zinc")); } catch { _undo = null; }
                 if (trace) Log.Write("begin: done");
             }
             return Json.Map("ok", true);

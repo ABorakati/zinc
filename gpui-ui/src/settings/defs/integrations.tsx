@@ -52,7 +52,7 @@ function WordControl(): JSX.Element {
 						<Show
 							when={s().word.installed}
 							fallback={
-								<Btn primary disabled={!s().word.available || !!busy()} onClick={() => void act("word", "install", "Word add-in installed: open Word and look for the Zotero Next tab")}>
+								<Btn primary disabled={!s().word.available || !!busy()} onClick={() => void act("word", "install", "Word add-in installed: open Word and look for the Zinc tab")}>
 									{busy() === "word.install" ? "Installing…" : "Install Microsoft Word add-in"}
 								</Btn>
 							}
@@ -114,7 +114,7 @@ function ChromeControl(): JSX.Element {
 registerSettings([
 	{
 		id: "integrations.word", section: "integrations", group: "Word processors", label: "Microsoft Word add-in",
-		description: "A Zotero Next sidebar in Word: search, insert citations and a bibliography (Zotero-compatible). Works without the app open.",
+		description: "A Zinc sidebar in Word: search, insert citations and a bibliography (Zotero-compatible). Works without the app open.",
 		keywords: ["word", "office", "plugin", "add-in", "addin", "cite while you write", "sidebar", "citations", "install"],
 		control: () => <WordControl />,
 	},

@@ -1,6 +1,6 @@
 # Import and export
 
-Zotero Next reads and writes the common reference formats itself, and can use Zotero's own translators for many more. This page lists what is supported and where to find it in the app.
+Zinc reads and writes the common reference formats itself, and can use Zotero's own translators for many more. This page lists what is supported and where to find it in the app.
 
 Importing your existing Zotero library when you first start the app is a separate, one-off step; see [First run](first-run.md). To keep a library in step with Zotero continuously, see [Sync](sync.md).
 
@@ -32,7 +32,7 @@ For Zotero RDF, relative attachment paths are resolved against the folder the fi
 
 ### More formats through Zotero translators
 
-If none of the native readers recognises the text (or they find nothing in it), Zotero Next hands it to Zotero's import translators. These are the same translators Zotero uses, vendored with the app and updatable (see [Translators](../developer-guide/translators.md)). They cover many formats not listed above, for example MARC, Refer/BibIX and CSV, provided the matching translator is present in your translators folder. Which formats are available therefore depends on the translators installed; a file the translators cannot recognise gives an "unrecognised format" error.
+If none of the native readers recognises the text (or they find nothing in it), Zinc hands it to Zotero's import translators. These are the same translators Zotero uses, vendored with the app and updatable (see [Translators](../developer-guide/translators.md)). They cover many formats not listed above, for example MARC, Refer/BibIX and CSV, provided the matching translator is present in your translators folder. Which formats are available therefore depends on the translators installed; a file the translators cannot recognise gives an "unrecognised format" error.
 
 ### What happens on import
 

@@ -94,7 +94,7 @@ register("/better-bibtex/cayw", async (req, db, url) => {
 		picks = keys.filter((k) => infos[k]).map((k) => ({ itemKey: k, citationKey: infos[k]!.key }));
 		if (!picks.length) return text("", 200);
 	} else {
-		if (!hasPicker()) return text("no citation picker is available in this zotero-next window; pass ?selected=1 or ?items=<citekey,...>", 503);
+		if (!hasPicker()) return text("no citation picker is available in this Zinc window; pass ?selected=1 or ?items=<citekey,...>", 503);
 		const r = await pickInteractively({ format: params.format || "cite", params });
 		if (!r || !r.length) return text("");
 		const infos = getKeyInfos(db, r.map((p) => p.itemKey));
@@ -219,7 +219,7 @@ register("/better-bibtex/export", async (_req, db, url) => {
 	path = path.slice(0, -ext[0].length);
 	const lib = path.match(/^(group|library);(id|name):([^/]+)[/]/);
 	if (lib) {
-		if (lib[1] === "group") throw new HttpFail(404, `Could not export bibliography: group ${lib[3]} does not exist (zotero-next has a single library)`);
+		if (lib[1] === "group") throw new HttpFail(404, `Could not export bibliography: group ${lib[3]} does not exist (Zinc has a single library)`);
 		path = path.slice(lib[0].length);
 	}
 	const coll = path.match(/^collection(?:;(id|key):(.+?)[/])?/);

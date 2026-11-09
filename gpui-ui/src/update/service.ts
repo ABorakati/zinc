@@ -49,12 +49,12 @@ let lastSaved = "";
 const actions: UpdateActions = {
 	installNow() {
 		const k = updateModel().state.kind;
-		toast(k === "available" || k === "downloading" ? "Downloading the update…" : "Installing the update…", { id: "update-progress", description: "Zotero Next will close and start again when it is done.", durationMs: 8000 });
+		toast(k === "available" || k === "downloading" ? "Downloading the update…" : "Installing the update…", { id: "update-progress", description: "Zinc will close and start again when it is done.", durationMs: 8000 });
 		void updater?.installNow().catch((e) => logError("update", e, "install now"));
 	},
 	installOnExit() {
 		void updater?.setInstallOnExit(true).then((m) => {
-			if (m.installOnExit) toast.success("The update will be installed when you quit Zotero Next", { id: "update-progress" });
+			if (m.installOnExit) toast.success("The update will be installed when you quit Zinc", { id: "update-progress" });
 		}).catch((e) => logError("update", e, "install on exit"));
 	},
 };

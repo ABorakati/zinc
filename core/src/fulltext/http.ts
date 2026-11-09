@@ -32,7 +32,7 @@ const MAX_REDIRECTS = 10;
 
 const FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 export const UA_PLAIN = FIREFOX;
-export const UA_DEFAULT = `${FIREFOX} zotero-next/0.1`;
+export const UA_DEFAULT = `${FIREFOX} zinc/0.1`;
 
 /** An error that maps onto proto.rs OpErr. */
 export class OpError extends Error {

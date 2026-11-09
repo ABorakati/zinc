@@ -5,9 +5,9 @@
 //       <folder>/release-key.public.txt (embed in builds: ZN_UPDATE_PUBKEY_FILE=<that file>, or save it as gpui-ui/update-pubkey.txt).
 //
 //   ZN_UPDATE_KEY=<path to release-key.private.json> \
-//   bun gpui-ui/scripts/release.ts --installer <ZoteroNext-Setup-....exe> [options]
+//   bun gpui-ui/scripts/release.ts --installer <Zinc-Setup-....exe> (ZoteroNext-Setup-....exe also accepted) [options]
 //       --version <stamp>      "0.2.0+1a2b3c4d-20261201" (default: parsed from the installer's file name, else the package's version.txt)
-//       --notes <file|text>    release notes, Markdown (a file path, or the text itself; default "Zotero Next <version>")
+//       --notes <file|text>    release notes, Markdown (a file path, or the text itself; default "Zinc <version>")
 //       --url <https url>      where users download the installer (default with --publish: the GitHub release asset URL)
 //       --min-version <v>      older installs cannot update in place and are told to install by hand
 //       --out <dir>            where latest.json goes (default gpui-ui/out/release)
@@ -71,7 +71,7 @@ if (!built) console.warn("release: note - no public key is configured for builds
 const version = (() => {
 	const v = arg("version");
 	if (v) return v;
-	const m = /^ZoteroNext-Setup-(\d+(?:\.\d+)*)-([0-9a-f]{8})-(\d{8})(?:-TEST)?\.exe$/i.exec(basename(installer));
+	const m = /^(?:Zinc|ZoteroNext)-Setup-(\d+(?:\.\d+)*)-([0-9a-f]{8})-(\d{8})(?:-TEST)?\.exe$/i.exec(basename(installer));
 	if (m) return `${m[1]}+${m[2]}-${m[3]}`;
 	const stamp = join(root, "out", "package-aot", "zotero-next-gpui", "version.txt");
 	return existsSync(stamp) ? readFileSync(stamp, "utf8").trim() : die("cannot tell the version: pass --version <stamp>");
@@ -81,7 +81,7 @@ const minVersion = arg("min-version");
 if (minVersion && !parseVersion(minVersion)) die(`not a version: ${minVersion}`);
 
 const notesArg = arg("notes");
-const notes = notesArg === undefined ? `Zotero Next ${version}` : existsSync(notesArg) ? readFileSync(notesArg, "utf8") : notesArg;
+const notes = notesArg === undefined ? `Zinc ${version}` : existsSync(notesArg) ? readFileSync(notesArg, "utf8") : notesArg;
 
 const publishRepo = arg("publish");
 const tag = arg("tag") ?? `v${version}`;
@@ -109,7 +109,7 @@ console.log(`  version ${version}\n  installer ${file}  ${size} bytes  sha256 ${
 if (publishRepo) {
 	const notesFile = join(out, "release-notes.md");
 	writeFileSync(notesFile, notes.endsWith("\n") ? notes : notes + "\n");
-	const cmd = ["gh", "release", "create", tag, resolve(installer), latest, "--repo", publishRepo, "--title", `Zotero Next ${version}`, "--notes-file", notesFile, "--latest"];
+	const cmd = ["gh", "release", "create", tag, resolve(installer), latest, "--repo", publishRepo, "--title", `Zinc ${version}`, "--notes-file", notesFile, "--latest"];
 	if (flag("dry-run")) {
 		console.log(`dry run, not publishing. Would run:\n  ${cmd.map((c) => (/\s/.test(c) ? `"${c}"` : c)).join(" ")}`);
 	} else {

@@ -136,7 +136,7 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 	}
 
 	if (!o.primary) {
-		const note = `Another zotero-next is already running${o.wantedPort ? ` (it holds port ${o.wantedPort})` : ""}, so it handles the Zotero sync and the browser Connector port. This window shows the same library; close the other zotero-next and restart this app to take over.`;
+		const note = `Another Zinc is already running${o.wantedPort ? ` (it holds port ${o.wantedPort})` : ""}, so it handles the Zotero sync and the browser Connector port. This window shows the same library; close the other Zinc and restart this app to take over.`;
 		console.warn(`[services] ${note}`);
 		setSyncOwner("other", note);
 	} else {

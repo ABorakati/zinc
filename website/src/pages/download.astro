@@ -3,11 +3,11 @@ import Icon from "../components/Icon.astro";
 import Site from "../layouts/Site.astro";
 
 const base = import.meta.env.BASE_URL;
-const latest = "https://github.com/ABorakati/zotero-next/releases/latest";
+const latest = "https://github.com/ABorakati/zinc/releases/latest";
 // the browser edition (gpui-ui/web, attached to releases by .github/workflows/web.yml)
-const webZip = "https://github.com/ABorakati/zotero-next/releases/download/v0.1.2/ZoteroNext-Web-v0.1.2.zip";
+const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.2/ZoteroNext-Web-v0.1.2.zip";
 ---
-<Site page="download" title="Download" description="Download the Zotero Next installer for Windows 10 and 11, and set up the Word add-in and the browser connector.">
+<Site page="download" title="Download" description="Download the Zinc installer for Windows 10 and 11, and set up the Word add-in and the browser connector.">
 	<section class="hero">
 		<div class="wrap slip-wrap">
 			<div>
@@ -40,13 +40,13 @@ const webZip = "https://github.com/ABorakati/zotero-next/releases/download/v0.1.
 			<div class="prose">
 				<h2 class="h2" style="margin-bottom: 1.1rem">Install</h2>
 				<p>The installer is not code-signed yet, so Windows SmartScreen says the publisher is unknown. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
-				<p>Your installed copy lives in <code>%LOCALAPPDATA%\Programs\Zotero Next</code>. Uninstalling removes the program, never a library.</p>
+				<p>Your installed copy lives in <code>%LOCALAPPDATA%\Programs\Zinc</code>. Uninstalling removes the program, never a library.</p>
 			</div>
 			<div class="card">
 				<div class="card-head"><span>ZN 0.1.2</span><span>Installing</span></div>
 				<ol class="card-steps">
 					<li><div><strong>Run the installer.</strong><p>Pick the parts you want. Close Word first if you install the add-in.</p></div></li>
-					<li><div><strong>Choose a library.</strong><p>Import from Zotero (only read), open a Zotero Next library, or start empty. <a href={`${base}user-guide/first-run/`}>First run</a>.</p></div></li>
+					<li><div><strong>Choose a library.</strong><p>Import from Zotero (only read), open a Zinc library, or start empty. <a href={`${base}user-guide/first-run/`}>First run</a>.</p></div></li>
 					<li><div><strong>Pick a sync route.</strong><p>A local Zotero, or zotero.org with or without attachments. <a href={`${base}user-guide/sync/`}>Sync</a>.</p></div></li>
 				</ol>
 			</div>
@@ -61,7 +61,7 @@ const webZip = "https://github.com/ABorakati/zotero-next/releases/download/v0.1.
 		<div class="wrap volume" style="align-items: start">
 			<div class="prose">
 				<h2 class="h2" style="margin-bottom: 1.1rem">The browser connector</h2>
-				<p>The installer registers the helper program. Browsers do not let an installer add an extension, so load it once yourself. It takes about thirty seconds, and afterwards pages save even when Zotero Next is closed.</p>
+				<p>The installer registers the helper program. Browsers do not let an installer add an extension, so load it once yourself. It takes about thirty seconds, and afterwards pages save even when Zinc is closed.</p>
 				<p>The official Zotero Connector also works, but only while the app is open. Keep one connector per browser, or every page shows two Save buttons.</p>
 			</div>
 			<div class="card">
@@ -69,7 +69,7 @@ const webZip = "https://github.com/ABorakati/zotero-next/releases/download/v0.1.
 				<ol class="card-steps">
 					<li><div><strong>Open the extensions page.</strong><p><code>chrome://extensions</code> or <code>edge://extensions</code>.</p></div></li>
 					<li><div><strong>Turn on Developer mode.</strong></div></li>
-					<li><div><strong>Load unpacked.</strong><p>Pick <code>%LOCALAPPDATA%\Programs\Zotero Next\connector\extension</code>.</p></div></li>
+					<li><div><strong>Load unpacked.</strong><p>Pick <code>%LOCALAPPDATA%\Programs\Zinc\connector\extension</code>.</p></div></li>
 					<li><div><strong>Check the ID.</strong><p><code>pakgagonakcalfbmckaolkpidcojacaf</code>, then pin the button.</p></div></li>
 				</ol>
 			</div>

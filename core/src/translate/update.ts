@@ -59,7 +59,7 @@ async function loadSource(source: string): Promise<{ files: Map<string, Uint8Arr
 		}
 		return { files, commit: null };
 	}
-	const res = await fetch(source, { headers: { "User-Agent": "zotero-next", Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(120_000) });
+	const res = await fetch(source, { headers: { "User-Agent": "zinc", Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(120_000) });
 	if (!res.ok) throw new Error(`download failed: HTTP ${res.status} from ${source}`);
 	const tar = gunzipSync(new Uint8Array(await res.arrayBuffer()));
 	let commit: string | null = null;

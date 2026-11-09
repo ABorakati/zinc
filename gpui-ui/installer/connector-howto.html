@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Zotero Next Connector - how to install</title>
+<title>Zinc Connector - how to install</title>
 <style>
   body { font: 16px/1.5 "Segoe UI", system-ui, sans-serif; max-width: 46rem; margin: 2.5rem auto; padding: 0 1.25rem; color: #1d2428; }
   h1 { font-size: 1.5rem; margin-bottom: .25rem; }
@@ -16,8 +16,8 @@
 </style>
 </head>
 <body>
-<h1>Zotero Next Connector</h1>
-<p class="lead">Save web pages, PDFs and references into your Zotero Next library from Chrome or Edge, with or without the app open.</p>
+<h1>Zinc Connector</h1>
+<p class="lead">Save web pages, PDFs and references into your Zinc library from Chrome or Edge, with or without the app open.</p>
 
 <p>Setup has already registered the helper program the extension talks to. The browser itself does not let an installer add an
 extension, so do this once (about thirty seconds):</p>
@@ -26,22 +26,22 @@ extension, so do this once (about thirty seconds):</p>
   <li>Open <code>chrome://extensions</code> in Chrome (or <code>edge://extensions</code> in Edge).</li>
   <li>Turn on <b>Developer mode</b> (top right in Chrome, left sidebar in Edge).</li>
   <li>Click <b>Load unpacked</b> and pick this folder:
-    <span class="path" id="path">the <b>extension</b> folder next to this page (inside the <b>connector</b> folder of your Zotero Next installation)</span>
+    <span class="path" id="path">the <b>extension</b> folder next to this page (inside the <b>connector</b> folder of your Zinc installation)</span>
     <button id="copy" type="button" hidden>Copy folder path</button></li>
   <li>Check the extension's ID reads <code>pakgagonakcalfbmckaolkpidcojacaf</code>. It is fixed, and it is the ID Setup allowed
     to talk to the helper. Pin the toolbar button if you like, then open any article and click it.</li>
 </ol>
 
 <div class="note">
-  Keep the folder where it is: the browser loads the extension from it every time it starts. After a Zotero Next update, open the
+  Keep the folder where it is: the browser loads the extension from it every time it starts. After a Zinc update, open the
   extensions page and click the reload arrow on the extension to pick up the new version.
 </div>
 
-<p>Prefer the official Zotero Connector from the Chrome Web Store or the Edge Add-ons store? It works too, but only while Zotero Next
+<p>Prefer the official Zotero Connector from the Chrome Web Store or the Edge Add-ons store? It works too, but only while Zinc
 is open (the app answers on Zotero's port 23119). Keep just one of the two connectors on a browser, or every page shows two Save
 buttons.</p>
 
-<p><small>Remove it: delete the extension in the extensions page, and untick or remove the connector in Zotero Next's uninstaller.</small></p>
+<p><small>Remove it: delete the extension in the extensions page, and untick or remove the connector in Zinc's uninstaller.</small></p>
 
 <script>
 (function () {

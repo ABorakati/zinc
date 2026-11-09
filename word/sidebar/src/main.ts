@@ -255,7 +255,7 @@ function renderCited() {
 		...v.items.map((it) => {
 			const abs = h("div", { class: "abs" }, it.abstract || "");
 			const acts = h("div", { class: "acts row" });
-			if (it.key && it.inLibrary) acts.append(h("button", { onclick: () => void openInApp(it.key!) }, "Open in zotero-next"));
+			if (it.key && it.inLibrary) acts.append(h("button", { onclick: () => void openInApp(it.key!) }, "Open in Zinc"));
 			if (it.doi) acts.append(h("button", { class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch((e) => toast(String(e.message ?? e), true)) }, "DOI"));
 			if (!it.abstract && it.doi && app.info?.zn.up) {
 				acts.append(
@@ -297,8 +297,8 @@ function renderCited() {
 }
 
 async function openInApp(key: string) {
-	const r = await busy("Opening in zotero-next…", () => app.reveal(key));
-	if (r && !r.ok) toast(r.error ?? "Could not open zotero-next.", true, 9000);
+	const r = await busy("Opening in Zinc…", () => app.reveal(key));
+	if (r && !r.ok) toast(r.error ?? "Could not open Zinc.", true, 9000);
 }
 
 async function startEdit() {
@@ -547,7 +547,7 @@ async function openSettings() {
 			h("label", {}, "Database path (optional override)", dbIn),
 			h("label", {}, "zotero.org user id (for citation links)", uidIn),
 			h("div", { class: "small muted" }, `Citation links use ${info.uri.base} (${info.uri.source}).`),
-			h("div", { class: "small muted" }, info.zn.up ? "zotero-next is running." : "zotero-next is not running (not needed; it is started on demand for Open)."),
+			h("div", { class: "small muted" }, info.zn.up ? "Zinc is running." : "Zinc is not running (not needed; it is started on demand for Open)."),
 			h("div", { class: "row" },
 				h("button", { class: "primary", onclick: async () => {
 					await host.call("settings.set", { dbPath: (dbIn as HTMLInputElement).value.trim(), userId: (uidIn as HTMLInputElement).value.trim() });

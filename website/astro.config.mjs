@@ -6,7 +6,7 @@ import { unified } from "@astrojs/markdown-remark";
 import { normalizeBase, remarkDocs } from "./plugins/docs-markdown.mjs";
 
 // The docs are for local use and for browsing docs/ on GitHub; nothing here publishes them.
-//   DOCS_BASE  path prefix the site is served under (default "/"; e.g. "/zotero-next/" behind a path)
+//   DOCS_BASE  path prefix the site is served under (default "/"; e.g. "/zinc/" behind a path)
 //   DOCS_SITE  absolute origin, only needed for a sitemap/canonical URLs (default: none)
 const base = normalizeBase(process.env.DOCS_BASE);
 const site = process.env.DOCS_SITE || undefined;
@@ -21,9 +21,9 @@ export default defineConfig({
 	integrations: [
 		mermaid({ theme: "default", autoTheme: true }),
 		starlight({
-			title: "Zotero Next",
+			title: "Zinc",
 			description: "A fast, native, Zotero-compatible reference manager for Windows.",
-			logo: { src: "./public/icon.svg", alt: "Zotero Next" },
+			logo: { src: "./public/icon.svg", alt: "Zinc" },
 			favicon: "/icon.svg",
 			customCss: ["@fontsource-variable/inter/opsz.css", "@fontsource-variable/manrope/wght.css", "./src/styles/custom.css"],
 			// the docs use the product pages' top bar (with Starlight's search in it), so the menu stays the same everywhere

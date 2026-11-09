@@ -248,7 +248,7 @@ export const saveSingleFile: Handler = async (req, { db }) => {
 	if (!html.trim() && /^https?:\/\//i.test(String(data.url ?? ""))) {
 		// "If snapshotContent is empty, the save failed in the Connector and we fall back to saving in Zotero."
 		try {
-			const res = await deps.fetch(String(data.url), { headers: { "User-Agent": "zotero-next" } });
+			const res = await deps.fetch(String(data.url), { headers: { "User-Agent": "zinc" } });
 			if (res.ok) html = await res.text();
 		} catch {
 			/* reported below */

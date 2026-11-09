@@ -21,6 +21,7 @@ const items = [
 	{ id: "agent" as const, icon: "bot", title: "Hand it to an agent", body: [closed[2]?.body ?? "", paragraphs(section("### Built-in MCP for AI agents"))[0]], tags: ["MCP", "Claude Code", "Loopback only"] },
 ];
 const still = paragraphs(section("### Still your Zotero library"));
+const why = bullets(section("## Why Zinc"));
 ---
 <Site page="home">
 	<section class="hero">
@@ -44,7 +45,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 		<div class="wrap volume" style="align-items: center">
 			<div class="prose">
 				<h2 class="h2" style="margin-bottom: 1.1rem">Feel the difference</h2>
-				<p>The same 12,400-item library in Zotero 10 and Zotero Next, raced in real time. Zotero Next has your library ready before Zotero 10 has drawn it, and answers a search before you lift your finger.</p>
+				<p>The same 12,400-item library in Zotero 10 and Zinc, raced in real time. Zinc has your library ready before Zotero 10 has drawn it, and answers a search before you lift your finger.</p>
 			</div>
 			<Race />
 		</div>
@@ -54,7 +55,7 @@ const still = paragraphs(section("### Still your Zotero library"));
 		<div class="wrap closed">
 			<div class="closed-head">
 				<h2 class="h2">Works with the app closed</h2>
-				<p>The Word add-in, the browser connector and the agent server each open your library file themselves. Cite, save and ask without starting Zotero Next.</p>
+				<p>The Word add-in, the browser connector and the agent server each open your library file themselves. Cite, save and ask without starting Zinc.</p>
 			</div>
 			<div class="closed-show" data-closed-show>
 				<div class="closed-stage" aria-hidden="true">
@@ -137,13 +138,25 @@ const still = paragraphs(section("### Still your Zotero library"));
 		<div class="wrap">
 			<div class="head">
 				<h2 class="h2">Built with</h2>
-				<p>What Zotero Next is made of, and which part does what. The full map is in the <a href={`${base}developer-guide/architecture/`}>architecture guide</a>.</p>
+				<p>What Zinc is made of, and which part does what. The full map is in the <a href={`${base}developer-guide/architecture/`}>architecture guide</a>.</p>
 			</div>
 			<Stack />
 		</div>
 	</section>
 
 	<section class="room">
+		<div class="wrap">
+			<div class="head">
+				<h2 class="h2">Why Zinc</h2>
+				<p>The name, and where it comes from.</p>
+			</div>
+			<ul class="points why-zinc">
+				{why.map((b) => <li set:html={inline(b, base)} />)}
+			</ul>
+		</div>
+	</section>
+
+	<section class="room room-alt">
 		<div class="wrap">
 			<h2 class="h2" style="margin-bottom: 1.1rem">Still your Zotero library</h2>
 			<div class="prose" style="margin-bottom: 2rem">{still.map((p) => <p set:html={inline(p, base)} />)}</div>

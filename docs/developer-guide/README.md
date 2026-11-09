@@ -1,6 +1,6 @@
 # Developer guide
 
-How Zotero Next is built, tested and released.
+How Zinc is built, tested and released.
 
 - [Architecture](architecture.md): the pieces, the ports, and how they talk
 - [Building from source](building.md)

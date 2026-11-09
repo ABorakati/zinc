@@ -1,6 +1,6 @@
 # Better BibTeX
 
-Zotero Next has Better BibTeX (BBT) built in. It gives every item a stable citation key, adds Better BibTeX and Better BibLaTeX export formats, keeps `.bib` files up to date automatically, and answers the local HTTP endpoints that Pandoc filters and editor plug-ins already know how to talk to. There is nothing to install.
+Zinc has Better BibTeX (BBT) built in. It gives every item a stable citation key, adds Better BibTeX and Better BibLaTeX export formats, keeps `.bib` files up to date automatically, and answers the local HTTP endpoints that Pandoc filters and editor plug-ins already know how to talk to. There is nothing to install.
 
 **Credit and scope.** This is a re-implementation of the behaviour of [Better BibTeX for Zotero](https://github.com/retorquere/zotero-better-bibtex) by Emiliano Heyns (MIT licence), written from its documented behaviour. No BBT source was copied; the attribution is in `core/src/bbt/NOTICE`. Some things are not ported: eta templates, Juris-M fields, jieba/kuromoji/pinyin transliteration, TeXstudio push, the BBT JSON (jzon) debug format and group libraries. The Unicode-to-LaTeX tables are a small hand-written subset, so unusual characters may be exported differently from the original plug-in.
 
@@ -63,11 +63,11 @@ To add one, go to **Settings > Better BibTeX > Automatic exports**:
 
 Each entry in the list shows its path, format, scope, trigger, status ("Up to date", "Waiting to export", "Exporting..." or an error), when it last ran and how many items it wrote. **Export now** runs it at once; **Remove** deletes the entry (the file on disk is left alone).
 
-On change waits for the **Auto-export delay (seconds)** after the last edit; When idle waits for **Auto-export idle time (seconds)** of quiet. Auto-exports are run by the app, so they only update while Zotero Next is running.
+On change waits for the **Auto-export delay (seconds)** after the last edit; When idle waits for **Auto-export idle time (seconds)** of quiet. Auto-exports are run by the app, so they only update while Zinc is running.
 
 ## HTTP endpoints
 
-For tools built for BBT (Pandoc filters, citation pickers in Obsidian, VS Code, Emacs and vim, zotxt-style tools), the app serves BBT's endpoints on the Zotero-compatible port **23119** on `127.0.0.1`. Zotero Next only listens on that port while the real Zotero is not running; if Zotero is open it answers instead. Browsers are refused (a request with a web `Origin`, or a non-local `Host`, gets HTTP 403); command-line tools and editors, which send no `Origin`, work.
+For tools built for BBT (Pandoc filters, citation pickers in Obsidian, VS Code, Emacs and vim, zotxt-style tools), the app serves BBT's endpoints on the Zotero-compatible port **23119** on `127.0.0.1`. Zinc only listens on that port while the real Zotero is not running; if Zotero is open it answers instead. Browsers are refused (a request with a web `Origin`, or a non-local `Host`, gets HTTP 403); command-line tools and editors, which send no `Origin`, work.
 
 | Path | What it does |
 | --- | --- |
@@ -83,7 +83,7 @@ The export extensions understood are `bibtex`, `biblatex`, `bib`, `json`, `csljs
 
 `format=` values for CAYW: `cite` (the default; also `latex`, `natbib`, `citep`, `citet`), `biblatex`, `key`, `pandoc`, `mmd`, `textcite`, `asciidoctor-bibtex`, `typst`, `org-mode`, `jupyter`, and the data formats (`json` and formatted output). Use `command=` to change the LaTeX command and `brackets=1` for Pandoc brackets.
 
-JSON-RPC methods: `api.ready`, `user.groups`, `item.search`, `item.citationkey`, `item.attachments`, `item.collections`, `item.notes`, `item.bibliography`, `item.regenerate_key`, `item.export`, `item.pandoc_filter` and `autoexport.add`. The `item.*` methods are also reachable as `items.*`. Zotero Next has a single library, so the library arguments accept "My Library", `0`, `1` or `*`; groups do not exist.
+JSON-RPC methods: `api.ready`, `user.groups`, `item.search`, `item.citationkey`, `item.attachments`, `item.collections`, `item.notes`, `item.bibliography`, `item.regenerate_key`, `item.export`, `item.pandoc_filter` and `autoexport.add`. The `item.*` methods are also reachable as `items.*`. Zinc has a single library, so the library arguments accept "My Library", `0`, `1` or `*`; groups do not exist.
 
 Example, with the app running and Zotero closed:
 

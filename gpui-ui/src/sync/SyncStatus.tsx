@@ -34,7 +34,7 @@ function ConflictCard(p: { c: SyncConflict }): JSX.Element {
 			</div>
 			<Txt cls="text-xs text-muted-foreground">{`${p.c.type}, ${ago(p.c.at)}: ${p.c.resolved === "remote" ? "Zotero's version kept" : "your version kept"}`}</Txt>
 			<div style={t("flex gap-2")}>
-				{side("Zotero-next", p.c.resolved === "local", p.c.local)}
+				{side("Zinc", p.c.resolved === "local", p.c.local)}
 				{side("Zotero", p.c.resolved === "remote", p.c.remote)}
 			</div>
 		</div>
@@ -152,7 +152,7 @@ export function SyncStatus(p: { onChanged?: () => void }): JSX.Element {
 	createEffect(() => sync.watchConflicts(open()));
 	const st = () => sync.status();
 	const problem = () => syncOwner() === "self" && (!!st()?.lastError || st()?.zotero === "error");
-	const label = () => (syncOwner() === "other" ? "Sync: zotero-next" : syncOwner() === "off" ? "Sync off" : st() ? ZOTERO_LABEL[st()!.zotero] : "Zotero");
+	const label = () => (syncOwner() === "other" ? "Sync: Zinc" : syncOwner() === "off" ? "Sync off" : st() ? ZOTERO_LABEL[st()!.zotero] : "Zotero");
 	return (
 		<>
 			<div

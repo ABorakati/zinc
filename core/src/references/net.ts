@@ -6,7 +6,7 @@ import { loadSettings } from "../fulltext/config";
 
 export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
-export const USER_AGENT = "zotero-next/0.1 (local reference manager)";
+export const USER_AGENT = "zinc/0.1 (local reference manager)";
 
 export const net = {
 	fetch: ((input: string, init?: RequestInit) => fetch(input, init)) as FetchFn,

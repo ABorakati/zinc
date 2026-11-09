@@ -1,6 +1,6 @@
 # Auto-update
 
-Zotero Next checks a signed feed, downloads the installer, verifies it and runs it silently. Nothing happens
+Zinc checks a signed feed, downloads the installer, verifies it and runs it silently. Nothing happens
 until you publish a feed and embed a public key in the build.
 
 ## How it works
@@ -10,7 +10,7 @@ until you publish a feed and embed a public key in the build.
   Settings > System > Updates has "Check automatically" (on), "Download automatically" (off), "Check now", the version, the last result
   and the feed URL. With "Check automatically" off nothing is requested (Check now still works, being an explicit action).
   With no feed URL configured nothing is ever requested.
-- **Found**: a toast, "Zotero Next X is available", with *What's new* (release notes dialog), *Install on exit* and *Install now*.
+- **Found**: a toast, "Zinc X is available", with *What's new* (release notes dialog), *Install on exit* and *Install now*.
   Versions compare by the numeric release part, then pre-release tag, then the build date suffix (`0.1.0+b7cd9fc4-20261106`; the commit id is not ordered).
   A development build (`ZN_VERSION` unset) is never offered an update.
 - **Download**: `%LOCALAPPDATA%\zotero-next-gpui\updates\zotero-next-<version>-setup.exe`, resumable (`.part` + HTTP Range). Size and SHA-256 must match
@@ -27,7 +27,7 @@ until you publish a feed and embed a public key in the build.
   "version": "0.2.0+1a2b3c4d-20261201",
   "releasedAt": "2026-12-01T09:00:00Z",
   "notes": "# 0.2.0\n- ...markdown...",
-  "url": "https://.../ZoteroNext-Setup-0.2.0-1a2b3c4d-20261201.exe",
+  "url": "https://.../Zinc-Setup-0.2.0-1a2b3c4d-20261201.exe",
   "sha256": "<64 hex>",
   "size": 123456789,
   "minVersion": "0.1.0",
@@ -51,7 +51,7 @@ Code: `core/src/update/` (`version.ts`, `manifest.ts`, `machine.ts` state machin
 
 ## Where to host the feed
 
-The repo `ABorakati/zotero-next` is private, so its release assets cannot be downloaded anonymously. Options:
+The repo `ABorakati/zinc` is private, so its release assets cannot be downloaded anonymously. Options:
 
 1. **A public `zotero-next-releases` repo** (recommended): publish installer + `latest.json` as release assets there. Feed URL:
    `https://github.com/<owner>/zotero-next-releases/releases/latest/download/latest.json`. The installer URL in the manifest points at the same release.
@@ -68,7 +68,7 @@ Set the default feed at build time with `ZN_UPDATE_URL=<url>` (baked in), or per
 bun gpui-ui/scripts/package.ts --aot
 bun gpui-ui/scripts/installer.ts
 set ZN_UPDATE_KEY=C:\path\outside\repo\update-key\release-key.private.json
-bun gpui-ui/scripts/release.ts --installer gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe --notes notes.md --publish <owner>/zotero-next-releases --dry-run
+bun gpui-ui/scripts/release.ts --installer gpui-ui/out/installer/Zinc-Setup-<version>.exe --notes notes.md --publish <owner>/zotero-next-releases --dry-run
 bun gpui-ui/scripts/release.ts --installer ... --notes notes.md --publish <owner>/zotero-next-releases
 ```
 

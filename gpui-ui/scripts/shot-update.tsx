@@ -23,9 +23,9 @@ const suffix = mode === "light" ? "-light" : "";
 const kp = await generateKeyPair();
 const installer = new Uint8Array(3_000_000).map((_, i) => (i * 31) % 251);
 const manifest = await signManifest({
-	version: "0.2.0+1a2b3c4d-20261201", releasedAt: "2026-12-01T09:00:00Z", url: "https://updates.example.org/ZoteroNext-Setup-0.2.0-1a2b3c4d-20261201.exe",
+	version: "0.2.0+1a2b3c4d-20261201", releasedAt: "2026-12-01T09:00:00Z", url: "https://updates.example.org/Zinc-Setup-0.2.0-1a2b3c4d-20261201.exe",
 	sha256: createHash("sha256").update(installer).digest("hex"), size: installer.length,
-	notes: "# Zotero Next 0.2.0\n\n- Automatic updates: signed, verified, installed when you choose\n- Faster start-up with large libraries\n- The reader remembers your zoom per document\n\n## Fixes\n\n- Duplicate detection no longer stalls on very large libraries\n- Word add-in reconnects after Word restarts",
+	notes: "# Zinc 0.2.0\n\n- Automatic updates: signed, verified, installed when you choose\n- Faster start-up with large libraries\n- The reader remembers your zoom per document\n\n## Fixes\n\n- Duplicate detection no longer stalls on very large libraries\n- Word add-in reconnects after Word restarts",
 }, kp.privateJwk);
 const files = new Map<string, Uint8Array>();
 let release!: () => void;

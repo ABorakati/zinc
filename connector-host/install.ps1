@@ -7,7 +7,7 @@
     HKCU\Software\Google\Chrome\NativeMessagingHosts\com.zotero_next.connector_host
   whose default value is the path of a host-manifest JSON. This script
     1. checks that the compiled host exists (build it with `bun run build` in this folder),
-    2. writes the host manifest (allowed_origins = the Zotero Next Connector extension id) to
+    2. writes the host manifest (allowed_origins = the Zinc Connector extension id) to
        %LOCALAPPDATA%\zotero-next-connector-host\,
     3. creates the registry value above.
   It changes nothing else: no Chrome profile, no machine-wide key. Undo with uninstall.ps1.
@@ -54,7 +54,7 @@ $manifestPath = Join-Path $dir "$hostName.json"
 
 $manifest = [ordered]@{
   name            = $hostName
-  description     = "Zotero Next Connector host: saves from the browser extension into the zotero-next library"
+  description     = "Zinc Connector host: saves from the browser extension into the Zinc library"
   path            = $HostExe
   type            = "stdio"
   allowed_origins = @("chrome-extension://$ExtensionId/")

@@ -128,12 +128,12 @@ function renderItem(it: PopupItemView): HTMLElement {
 	if (!it.pending && it.key && it.inLibrary) {
 		const open = h("button", { class: "primary", onclick: async () => {
 			open.disabled = true;
-			open.textContent = "Opening zotero-next…";
+			open.textContent = "Opening Zinc…";
 			err.hidden = true;
 			try {
 				const r = await app.reveal(it.key!);
 				if (r && !r.ok) {
-					err.textContent = r.error ?? "Could not open zotero-next.";
+					err.textContent = r.error ?? "Could not open Zinc.";
 					err.hidden = false;
 				}
 			} catch (e) {
@@ -141,9 +141,9 @@ function renderItem(it: PopupItemView): HTMLElement {
 				err.hidden = false;
 			}
 			open.disabled = false;
-			open.textContent = "Open in zotero-next";
+			open.textContent = "Open in Zinc";
 			reportSize();
-		} }, "Open in zotero-next");
+		} }, "Open in Zinc");
 		acts.append(open);
 	}
 	if (!it.pending && it.doi) acts.append(h("button", { class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch(() => {}) }, "DOI"));

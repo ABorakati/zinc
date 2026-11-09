@@ -17,7 +17,7 @@
 //                       for a pfx). "none" signs without a timestamp (the signature then dies with the certificate).
 //   ZN_SIGN_TOOL        path of signtool.exe (pfx) or of `sign` (Azure). Default: newest signtool under C:\Program Files (x86)\Windows Kits\10\bin\*\x64,
 //                       and `sign` from PATH (dotnet tool install --global sign --prerelease).
-//   ZN_SIGN_DESCRIPTION text shown by UAC / SmartScreen (default "Zotero Next")
+//   ZN_SIGN_DESCRIPTION text shown by UAC / SmartScreen (default "Zinc")
 // With nothing configured it prints "unsigned: no certificate configured" and returns. A configured but failing signature is an error
 // (never a silently unsigned release). The certificate and its password are never written anywhere by this script and are not
 // imported into any Windows certificate store: signtool reads the .pfx directly.
@@ -68,7 +68,7 @@ export function signFiles(files: string[], env: Record<string, string | undefine
 	const existing = files.filter((f) => existsSync(f));
 	if (existing.length !== files.length) throw new Error(`sign: missing ${files.filter((f) => !existsSync(f)).join(", ")}`);
 	if (!files.length) return true;
-	const desc = env.ZN_SIGN_DESCRIPTION || "Zotero Next";
+	const desc = env.ZN_SIGN_DESCRIPTION || "Zinc";
 	const tsRaw = env.ZN_SIGN_TIMESTAMP;
 	if (cfg.kind === "pfx") {
 		const tool = findSigntool(env);

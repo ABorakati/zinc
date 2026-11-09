@@ -1,6 +1,6 @@
 # zotero-next host
 
-Native-messaging host for the **Zotero Next Connector** browser extension (the fork in
+Native-messaging host for the **Zinc Connector** browser extension (the fork in
 `C:\Users\abora\zotero-next-connector`). It lets the extension save web pages, PDFs and references straight into the
 zotero-next library **while neither zotero-next nor Zotero is running**.
 

@@ -102,16 +102,16 @@ In external mode the core's own memory is whatever that process has accumulated 
 the "GPUI" columns for the UI cost and treat the core columns as a constant. Numbers on a busy machine vary a lot (run
 `startup.ts` a few times and look at the median, not one run).
 
-## bench-vs-zotero.ts: Zotero Next against the installed Zotero 10
+## bench-vs-zotero.ts: Zinc against the installed Zotero 10
 
-`bun scripts/bench-vs-zotero.ts` launches the installed Zotero 10 and the installed Zotero Next on copies of the same library
+`bun scripts/bench-vs-zotero.ts` launches the installed Zotero 10 and the installed Zinc on copies of the same library
 and reports time to window, time to "library ready" (the local data API answers), memory of the whole process tree, warm
 quick-search latency and install size. Options (paths, ports, runs, queries) are listed at the top of the script. It is
 Windows-only, uses `bun:ffi` (CreateProcess with a minimised window, EnumWindows, GetProcessMemoryInfo) and never drives the
 mouse or keyboard.
 
 Isolation: Zotero runs from a new, scratch profile whose `user.js` points the data dir at a copy and turns sync, updates and
-background renaming off (ports 23131 for Zotero; 23191 and 23192 for Zotero Next). Zotero Next gets a `VACUUM INTO` copy and a
+background renaming off (ports 23131 for Zotero; 23191 and 23192 for Zinc). Zinc gets a `VACUUM INTO` copy and a
 scratch APPDATA/LOCALAPPDATA. The real data dir, the real profile, and anything on 23119/23120 are never touched, and the script
 refuses to start while any `zotero.exe` is running. The copies are deleted at the end (`--keep` keeps them).
 

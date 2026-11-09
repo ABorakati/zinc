@@ -508,7 +508,7 @@ export function planRelocate(db: Database, opts: RelocateOptions = {}): MovePlan
 			continue;
 		}
 		if (!copy && !toOwn && imported && !(own && isInside(from, own))) {
-			skip("stored in Zotero's own folder; zotero-next leaves it where Zotero keeps it");
+			skip("stored in Zotero's own folder; Zinc leaves it where Zotero keeps it");
 			continue;
 		}
 		if (!copy && (uses.get(from.replaceAll("\\", "/").toLowerCase()) ?? 0) > 1) {

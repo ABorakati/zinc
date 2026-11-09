@@ -6,7 +6,7 @@ How a build becomes an installer, and how an installer becomes an update that in
 
 ```
 bun gpui-ui/scripts/package.ts --aot       # gpui-ui/out/package-aot/zotero-next-gpui/
-bun gpui-ui/scripts/installer.ts           # gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe
+bun gpui-ui/scripts/installer.ts           # gpui-ui/out/installer/Zinc-Setup-<version>.exe
 bun gpui-ui/scripts/release.ts --installer <that exe> --notes <file> ...   # signs latest.json, optionally publishes
 ```
 
@@ -48,7 +48,7 @@ Version comparison (`core/src/update/version.ts`): the numeric release part firs
 
 ## The installer
 
-`bun gpui-ui/scripts/installer.ts` writes `gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe` (the `+` in the stamp becomes `-`) and `ZoteroNext-Setup-<version>.json` with the version, size and SHA-256. It uses Inno Setup 7 and `gpui-ui/installer/zotero-next.iss`. Options and how Inno Setup is found are in [Building](building.md). In short, it is a per-user install with no admin rights into `%LOCALAPPDATA%\Programs\Zotero Next`, with optional components for the Word add-in and the browser connector, and it upgrades in place (same AppId). It never touches the library, logs or settings; the uninstaller asks before removing settings and logs.
+`bun gpui-ui/scripts/installer.ts` writes `gpui-ui/out/installer/Zinc-Setup-<version>.exe` (the `+` in the stamp becomes `-`) and `Zinc-Setup-<version>.json` with the version, size and SHA-256. It uses Inno Setup 7 and `gpui-ui/installer/zotero-next.iss`. Options and how Inno Setup is found are in [Building](building.md). In short, it is a per-user install with no admin rights into `%LOCALAPPDATA%\Programs\Zinc`, with optional components for the Word add-in and the browser connector, and it upgrades in place (same AppId). It never touches the library, logs or settings; the uninstaller asks before removing settings and logs.
 
 ### Command lines
 
@@ -90,13 +90,13 @@ The default feed URL is baked in at build time with `ZN_UPDATE_URL=<https url of
 
 ```
 ZN_UPDATE_KEY=<path to release-key.private.json> \
-bun gpui-ui/scripts/release.ts --installer <ZoteroNext-Setup-....exe> [options]
+bun gpui-ui/scripts/release.ts --installer <Zinc-Setup-....exe> [options]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--version <stamp>` | Default: parsed from the installer's file name, else the package's `version.txt` |
-| `--notes <file or text>` | Release notes, Markdown (default `Zotero Next <version>`) |
+| `--notes <file or text>` | Release notes, Markdown (default `Zinc <version>`) |
 | `--url <https url>` | Where users download the installer (required unless `--publish`, which implies the GitHub release asset URL) |
 | `--min-version <v>` | Older installs cannot update in place and are told to install by hand |
 | `--out <dir>` | Where `latest.json` goes (default `gpui-ui/out/release`) |
@@ -111,7 +111,7 @@ It hashes the installer, signs the manifest, verifies its own output, and refuse
 bun gpui-ui/scripts/release.ts --installer <setup.exe> --notes notes.md --publish <owner>/<releases-repo> --dry-run
 ```
 
-With `--publish` it runs `gh release create <tag> <installer> <latest.json> --repo <owner>/<repo> --title "Zotero Next <version>" --notes-file <notes> --latest`, so `gh` must be installed and logged in. Publishing is a deliberate act; do not run it from automation without a human decision.
+With `--publish` it runs `gh release create <tag> <installer> <latest.json> --repo <owner>/<repo> --title "Zinc <version>" --notes-file <notes> --latest`, so `gh` must be installed and logged in. Publishing is a deliberate act; do not run it from automation without a human decision.
 
 ## `latest.json`
 
@@ -120,7 +120,7 @@ With `--publish` it runs `gh release create <tag> <installer> <latest.json> --re
   "version": "0.2.0+1a2b3c4d-20261201",
   "releasedAt": "2026-12-01T09:00:00Z",
   "notes": "# 0.2.0\n- ...markdown...",
-  "url": "https://<host>/<path>/ZoteroNext-Setup-0.2.0-1a2b3c4d-20261201.exe",
+  "url": "https://<host>/<path>/Zinc-Setup-0.2.0-1a2b3c4d-20261201.exe",
   "sha256": "<64 hex characters>",
   "size": 123456789,
   "minVersion": "0.1.0",

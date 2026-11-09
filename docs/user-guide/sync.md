@@ -1,6 +1,6 @@
 # Sync
 
-Zotero Next can keep its library in step with your Zotero library in two different ways, and you choose one of them (or neither). Both are set up in **Settings > Sync** (see the [settings reference](settings.md#sync)).
+Zinc can keep its library in step with your Zotero library in two different ways, and you choose one of them (or neither). Both are set up in **Settings > Sync** (see the [settings reference](settings.md#sync)).
 
 | Sync source | What it is | Needs |
 | --- | --- | --- |
@@ -14,18 +14,18 @@ The **Sync source** row in Settings > Sync has the three-way choice: Local Zoter
 
 ## Local Zotero
 
-With the source set to Local Zotero, Zotero Next reads your Zotero library from its data folder. There is no Zotero plug-in and no account involved.
+With the source set to Local Zotero, Zinc reads your Zotero library from its data folder. There is no Zotero plug-in and no account involved.
 
-- **Reading is always on.** Changes made in Zotero appear in Zotero Next. While Zotero is running, Zotero Next reads from a snapshot copy of its database, so it never disturbs Zotero.
-- **Writing is opt-in.** The **Write changes into Zotero** switch starts off. Turned on, edits made in Zotero Next are written directly into Zotero's database and storage folder, but only while Zotero is closed. While Zotero is open, your changes wait in a queue ("changes waiting to write") and are written the next time Zotero is closed and Zotero Next syncs.
-- **Backups.** Before every write session Zotero Next makes a backup of `zotero.sqlite` in a `zotero-next-backups` folder inside the Zotero data folder, and keeps the last five. When you turn writing on you are asked to confirm that you have a backup ("I have a backup, turn on"); a backup of the whole Zotero data folder of your own is still sensible.
+- **Reading is always on.** Changes made in Zotero appear in Zinc. While Zotero is running, Zinc reads from a snapshot copy of its database, so it never disturbs Zotero.
+- **Writing is opt-in.** The **Write changes into Zotero** switch starts off. Turned on, edits made in Zinc are written directly into Zotero's database and storage folder, but only while Zotero is closed. While Zotero is open, your changes wait in a queue ("changes waiting to write") and are written the next time Zotero is closed and Zinc syncs.
+- **Backups.** Before every write session Zinc makes a backup of `zotero.sqlite` in a `zotero-next-backups` folder inside the Zotero data folder, and keeps the last five. When you turn writing on you are asked to confirm that you have a backup ("I have a backup, turn on"); a backup of the whole Zotero data folder of your own is still sensible.
 - **Checks.** After a write session the database is checked for integrity, and on any error the changes are rolled back and sync pauses with a visible error.
 
 The **Zotero library** row in Settings shows the state of the data folder, when it was last read, how many changes are waiting and how many conflicts there are, and has a **Sync now** button. The **Zotero data folder** row shows which folder is in use; change it under [Files and folders](settings.md#files-and-folders) (**Find Zotero**, **Browse...**, **Validate**).
 
 The same status and a **Sync now** button are in the sync indicator in the top bar, which also lists conflicts.
 
-If another Zotero Next window (or a setting that turns sync off) owns the sync, the sync rows tell you so instead of showing a status.
+If another Zinc window (or a setting that turns sync off) owns the sync, the sync rows tell you so instead of showing a status.
 
 ## zotero.org
 
@@ -41,7 +41,7 @@ To sync straight with zotero.org:
 ### Reading and sending
 
 - zotero.org's changes are always read in while this source is running.
-- **Send changes to zotero.org** is the push switch and is **off by default**. Off: nothing is sent. On: edits made in Zotero Next are uploaded.
+- **Send changes to zotero.org** is the push switch and is **off by default**. Off: nothing is sent. On: edits made in Zinc are uploaded.
 
 ### Attachment files
 
@@ -53,7 +53,7 @@ The **Attachment files** row has three choices:
 | **Download only** | Files of imported attachments that are missing on this computer are downloaded. |
 | **Download and upload** | Files are downloaded, and files you add are uploaded. |
 
-Downloaded files go to Zotero Next's own storage folder (`storage/<KEY>/` next to the library file). The attachment metadata always syncs whatever you choose here.
+Downloaded files go to Zinc's own storage folder (`storage/<KEY>/` next to the library file). The attachment metadata always syncs whatever you choose here.
 
 ### Online-only files check
 
@@ -64,11 +64,11 @@ Some attachments exist on zotero.org but not on this computer. Before you free u
 3. If any are missing locally, click **Download missing files**. Progress is shown ("Downloaded X of Y files...").
 4. Check again until none are left that are only on zotero.org. Only then clear the zotero.org storage.
 
-Zotero Next never deletes files from zotero.org storage itself. The check only reports.
+Zinc never deletes files from zotero.org storage itself. The check only reports.
 
 ### Group libraries
 
-Zotero Next finds the groups you belong to and syncs each one next to your personal library, in the same Sync now run. Each group shows up in the sidebar under **Group Libraries** (see [Group libraries](library.md#group-libraries)).
+Zinc finds the groups you belong to and syncs each one next to your personal library, in the same Sync now run. Each group shows up in the sidebar under **Group Libraries** (see [Group libraries](library.md#group-libraries)).
 
 - **What your key allows.** The API key needs access to the groups, which you choose when you create it on zotero.org (all groups, or specific ones). The **Group libraries** row under zotero.org sync lists every group with its status. A group the key cannot read is listed as such and skipped.
 - **Read-only groups never upload.** If you are only a member without editing rights (or the group's library editing is limited to admins), changes are pulled but nothing is pushed, and editing is turned off in the interface. Files follow the group's own file setting: a group that does not allow file editing for you does not receive uploads.
@@ -76,15 +76,15 @@ Zotero Next finds the groups you belong to and syncs each one next to your perso
 - **Errors are per group.** One failing group (for example, no access) does not stop the others or your personal library; its error is shown on its own line.
 - **Local Zotero route.** Sync through a local Zotero data folder still covers My Library only.
 
-Keys are unique across the whole Zotero Next library. In the rare case that an item or collection in a group has the same key as one in another library here, Zotero Next skips that object and counts it in the sync result instead of overwriting anything.
+Keys are unique across the whole Zinc library. In the rare case that an item or collection in a group has the same key as one in another library here, Zinc skips that object and counts it in the sync result instead of overwriting anything.
 
 ### Status, rate limits and errors
 
-The **zotero.org status** row shows the last sync time, the number of changes waiting to be sent, and the number of conflicts. zotero.org may ask clients to slow down; Zotero Next then pauses and shows "zotero.org asked us to wait; resuming at <time>". The last error, if any, is shown in red.
+The **zotero.org status** row shows the last sync time, the number of changes waiting to be sent, and the number of conflicts. zotero.org may ask clients to slow down; Zinc then pauses and shows "zotero.org asked us to wait; resuming at <time>". The last error, if any, is shown in red.
 
 ## Conflicts
 
-A conflict happens when the same item or collection was changed both here and on the other side since the last sync. Zotero Next keeps one version and records the other:
+A conflict happens when the same item or collection was changed both here and on the other side since the last sync. Zinc keeps one version and records the other:
 
 - If only one side changed, that change wins.
 - If both changed, the version with the newer modification date is kept, and the losing version is saved as a conflict.

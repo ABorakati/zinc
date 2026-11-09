@@ -1,6 +1,6 @@
 # User guide
 
-How to install and use Zotero Next.
+How to install and use Zinc.
 
 ## Getting started
 

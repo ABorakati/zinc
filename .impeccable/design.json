@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-11-07T17:42:49.399Z",
-  "title": "Design System: Zotero Next",
+  "title": "Design System: Zinc",
   "extensions": {
     "colorMeta": {
       "ground": {
@@ -766,7 +766,7 @@
       "kind": "custom",
       "refersTo": "register",
       "description": "Ruled accession-register table: caps heads over a rust double rule, blue-wash row hover, typed numerals.",
-      "html": "<div class=\"ds-reg\"><table><thead><tr><th>Measure</th><th>Zotero 10</th><th>Zotero Next</th></tr></thead><tbody><tr><td>Library ready</td><td class=\"ds-num\">16.3 s</td><td class=\"ds-num ds-better\">0.70 s</td></tr><tr><td>Search</td><td class=\"ds-num\">~2 s</td><td class=\"ds-num ds-better\">35–50 ms</td></tr></tbody></table></div>",
+      "html": "<div class=\"ds-reg\"><table><thead><tr><th>Measure</th><th>Zotero 10</th><th>Zinc</th></tr></thead><tbody><tr><td>Library ready</td><td class=\"ds-num\">16.3 s</td><td class=\"ds-num ds-better\">0.70 s</td></tr><tr><td>Search</td><td class=\"ds-num\">~2 s</td><td class=\"ds-num ds-better\">35–50 ms</td></tr></tbody></table></div>",
       "css": ".ds-reg{background:#fff;border:1px solid #E4E1DA;border-radius:6px;box-shadow:0 0 0 1px rgba(35,34,31,.05),0 2px 4px rgba(35,34,31,.04),0 12px 32px rgba(35,34,31,.08);overflow:hidden}.ds-reg table{width:100%;border-collapse:collapse;font:0.95rem/1.5 'Inter Variable',Inter,'Segoe UI',system-ui,sans-serif;color:#23221F;font-variant-numeric:tabular-nums lining-nums}.ds-reg th,.ds-reg td{text-align:left;padding:0.85rem 1.05rem;border-bottom:1px solid #ECE9E3}.ds-reg td+td,.ds-reg th+th{border-left:1px solid #ECE9E3}.ds-reg thead th{font:600 0.6875rem/1.2 'Inter Variable',Inter,'Segoe UI',system-ui,sans-serif;letter-spacing:0.06em;text-transform:uppercase;color:#6B675F;background:#FBFAF8;border-bottom:3px double #C0532E}.ds-reg tbody tr:last-child td{border-bottom:0}.ds-reg tbody tr:hover td{background:#EEF3FA}.ds-num{font:0.92rem/1.5 'Cascadia Mono','Cascadia Code',Consolas,ui-monospace,monospace}.ds-better{font-weight:700;color:#2B5FA8}"
     },
     {

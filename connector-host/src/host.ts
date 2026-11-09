@@ -19,7 +19,7 @@ export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffe
 	const open = (): Database | null => {
 		if (db) return db;
 		if (!dbPath) {
-			dbError = "zotero-next library not found (set ZN_DB or open the app once)";
+			dbError = "Zinc library not found (set ZN_DB or open the app once)";
 			return null;
 		}
 		try {

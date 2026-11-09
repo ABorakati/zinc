@@ -82,7 +82,7 @@ function MendeleyDialog(p: { close: () => void }): JSX.Element {
 					{busy() ? "Importing…" : "Import"}
 				</Button>
 			</Footer>
-			<Txt class="text-xs text-muted-foreground">The library file is opened read-only; zotero-next copies nothing back into Mendeley.</Txt>
+			<Txt class="text-xs text-muted-foreground">The library file is opened read-only; Zinc copies nothing back into Mendeley.</Txt>
 		</div>
 	);
 }

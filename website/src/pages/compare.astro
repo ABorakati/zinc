@@ -5,7 +5,7 @@ import { bullets, inline, mark, paragraphs, section, tables } from "../lib/readm
 
 const base = import.meta.env.BASE_URL;
 
-const vsBody = section("### Zotero Next against Zotero 10");
+const vsBody = section("### Zinc against Zotero 10");
 const vs = tables(vsBody)[0];
 const vsIntro = paragraphs(vsBody)[0];
 const vsMethod = bullets(vsBody);
@@ -31,7 +31,7 @@ const split = (v: string) => {
 	const unit = /\s(ms|s|MB)$/.exec(m[1])?.[1];
 	return { v: m[1], rng: `range ${m[2].replace(/\s+to\s+/, "–")}${unit ? " " + unit : ""}` };
 };
-// how much better Zotero Next is, when it is: "3.7× faster" for times, "54% less" for sizes
+// how much better Zinc is, when it is: "3.7× faster" for times, "54% less" for sizes
 const gain = (row: string[]) => {
 	const a = num(row[1]), b = num(row[2]);
 	if (a == null || b == null || b >= a || b === 0) return "";
@@ -41,7 +41,7 @@ const gain = (row: string[]) => {
 	return `${x >= 10 ? Math.round(x) : x.toFixed(1)}× faster`;
 };
 
-const ownBody = section("### Zotero Next on its own");
+const ownBody = section("### Zinc on its own");
 const own = tables(ownBody);
 const ownParas = paragraphs(ownBody);
 
@@ -53,7 +53,7 @@ const gridIntro = paragraphs(gridBody).map((p) => p.replace(/^✅ yes, ⚠️ pa
 <Site page="compare" title="Compare with Zotero 10" description="Start-up, memory and search benchmarks against Zotero 10.0.7, and a feature-by-feature comparison.">
 	<section class="hero" style="padding-bottom: 2rem">
 		<div class="wrap">
-			<h1 class="display" style="margin-bottom: 1.5rem">Zotero Next and Zotero 10, side by side</h1>
+			<h1 class="display" style="margin-bottom: 1.5rem">Zinc and Zotero 10, side by side</h1>
 			<p class="lede" set:html={inline(benchIntro, base)} />
 		</div>
 	</section>
@@ -82,7 +82,7 @@ const gridIntro = paragraphs(gridBody).map((p) => p.replace(/^✅ yes, ⚠️ pa
 					</tbody>
 				</table>
 			</div>
-			<p class="register-caption">Lower is better in every row. Each figure is the median of three runs, with their range underneath; the green note shows how far ahead Zotero Next is where it leads.</p>
+			<p class="register-caption">Lower is better in every row. Each figure is the median of three runs, with their range underneath; the green note shows how far ahead Zinc is where it leads.</p>
 
 			<details class="method" style="margin-top: 2rem">
 				<summary class="h3" style="font-size: 1.15rem; cursor: pointer">How this was measured</summary>
@@ -91,7 +91,7 @@ const gridIntro = paragraphs(gridBody).map((p) => p.replace(/^✅ yes, ⚠️ pa
 
 			{own.length > 0 && (
 				<div style="margin-top: 4rem">
-					<h2 class="h3" style="margin-bottom: 0.75rem">Zotero Next on its own</h2>
+					<h2 class="h3" style="margin-bottom: 0.75rem">Zinc on its own</h2>
 					{ownParas[0] && <p style="margin-bottom: 1.25rem; color: var(--ink-2)" set:html={inline(ownParas[0], base)} />}
 					<div class:list={{ pair: own.length > 1 }} style={own.length > 1 ? undefined : "max-width: 40rem"}>
 						{own.map((t) => (

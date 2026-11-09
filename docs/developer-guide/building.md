@@ -1,6 +1,6 @@
 # Building from source
 
-This page covers building and running Zotero Next from a checkout, and producing the installer. To run the same checks as CI, see [Testing](testing.md). For publishing a build, see [Releasing](releasing.md).
+This page covers building and running Zinc from a checkout, and producing the installer. To run the same checks as CI, see [Testing](testing.md). For publishing a build, see [Releasing](releasing.md).
 
 ## Requirements
 
@@ -141,7 +141,7 @@ The folder is self-contained: the exe finds its files next to itself (`gpui-ui/s
 bun gpui-ui/scripts/installer.ts
 ```
 
-This builds `gpui-ui/out/installer/ZoteroNext-Setup-<version>.exe` and a `.json` with version, size and SHA-256 from the packaged AOT folder; it does not rebuild the package. Inno Setup 7 is found through `ZN_ISCC`, then known install folders and `PATH`. To get it without admin rights, download the Inno Setup 7 installer from the `jrsoftware/issrc` releases and run it with `/VERYSILENT /CURRENTUSER /PORTABLE=1 /NOICONS /DIR=<folder>`, then set `ZN_ISCC=<folder>\ISCC.exe`.
+This builds `gpui-ui/out/installer/Zinc-Setup-<version>.exe` and a `.json` with version, size and SHA-256 from the packaged AOT folder; it does not rebuild the package. Inno Setup 7 is found through `ZN_ISCC`, then known install folders and `PATH`. To get it without admin rights, download the Inno Setup 7 installer from the `jrsoftware/issrc` releases and run it with `/VERYSILENT /CURRENTUSER /PORTABLE=1 /NOICONS /DIR=<folder>`, then set `ZN_ISCC=<folder>\ISCC.exe`.
 
 By default `installer.ts` also builds the Word add-in into `out/installer/word-stage` and the browser connector into `out/installer/connector-stage`. Options:
 

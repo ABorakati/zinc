@@ -25,9 +25,9 @@ export function inspectLibraryFile(path: string): LibraryFileInfo {
 			return { kind: "zotero-next", items };
 		}
 		if (tables.has("itemTypes") && tables.has("libraries")) {
-			return { kind: "zotero", problem: "That is Zotero's own database (zotero.sqlite). Use \"Import from Zotero\" to bring its items into a new zotero-next library." };
+			return { kind: "zotero", problem: "That is Zotero's own database (zotero.sqlite). Use \"Import from Zotero\" to bring its items into a new Zinc library." };
 		}
-		return { kind: "unknown", problem: "That file is not a zotero-next library." };
+		return { kind: "unknown", problem: "That file is not a Zinc library." };
 	} catch (e) {
 		return { kind: "unreadable", problem: `That file could not be opened (${e instanceof Error ? e.message : String(e)}).` };
 	} finally {

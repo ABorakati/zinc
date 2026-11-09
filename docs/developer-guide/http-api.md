@@ -69,7 +69,7 @@ The Word add-in has a separate MCP server on port 23125; it is not part of the c
 
 ## The Zotero port: 23119
 
-`core/src/zport/index.ts` runs a second server on `127.0.0.1:23119`, where the Zotero Connector extension and word-processor plugins expect Zotero. Zotero Next answers only while the port is free (Zotero itself not running). Route files register their routes with `registerZRoute(method, path, handler)` from `core/src/zport/routes.ts`. Every response gets Zotero's CORS headers and `X-Zotero-Version: 7.0.0`; an unknown path answers `404 No endpoint found`.
+`core/src/zport/index.ts` runs a second server on `127.0.0.1:23119`, where the Zotero Connector extension and word-processor plugins expect Zotero. Zinc answers only while the port is free (Zotero itself not running). Route files register their routes with `registerZRoute(method, path, handler)` from `core/src/zport/routes.ts`. Every response gets Zotero's CORS headers and `X-Zotero-Version: 7.0.0`; an unknown path answers `404 No endpoint found`.
 
 | Path | Module | What |
 | --- | --- | --- |

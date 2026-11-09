@@ -86,7 +86,7 @@ The same port serves the Word add-in; see [Word](word.md).
 
 ### Route 2: the native-messaging connector (works with the app closed)
 
-A fork of the connector, **Zotero Next Connector** (Chrome and Edge, Manifest V3), talks to a small helper program that the browser starts on demand. The helper, `zotero-next-host.exe`, runs the same connector handlers against the same library database, so what lands in the library is exactly what a save through route 1 would create: items, stored files, collections, tags, notes, and the queued changes that the next [sync](sync.md) pushes to Zotero. It works whether or not the app (or Zotero) is running.
+A fork of the connector, **Zinc Connector** (Chrome and Edge, Manifest V3), talks to a small helper program that the browser starts on demand. The helper, `zotero-next-host.exe`, runs the same connector handlers against the same library database, so what lands in the library is exactly what a save through route 1 would create: items, stored files, collections, tags, notes, and the queued changes that the next [sync](sync.md) pushes to Zotero. It works whether or not the app (or Zotero) is running.
 
 To set it up, open **Settings > Integrations** and use **Browser connector (Edge / Chrome)**:
 

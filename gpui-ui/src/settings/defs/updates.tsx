@@ -54,7 +54,7 @@ function CheckControl(): JSX.Element {
 registerSettings([
 	{
 		id: "update.version", section: "system", group: "Updates", label: "Version",
-		description: "The version and build of this Zotero Next.",
+		description: "The version and build of this Zinc.",
 		keywords: ["update", "upgrade", "release", "build", "about"],
 		control: () => <VersionControl />,
 	},
@@ -67,7 +67,7 @@ registerSettings([
 	},
 	{
 		id: "update.auto", section: "system", group: "Updates", label: "Check automatically",
-		description: "Look for a new version when Zotero Next starts and once a day. When this is off, nothing is requested from the internet unless you press Check now.",
+		description: "Look for a new version when Zinc starts and once a day. When this is off, nothing is requested from the internet unless you press Check now.",
 		keywords: ["update", "upgrade", "automatic", "daily", "network", "offline"],
 		control: () => <Toggle checked={updateAuto()} onChange={setUpdateAuto} />,
 	},

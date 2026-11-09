@@ -191,8 +191,8 @@ Where the library, Zotero's data and the attachments live. The storage rows are 
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Library location | The database file your library is kept in, with its size. **Show in folder** opens it; **Change...** points Zotero Next at another library file, taking effect after a restart (the open library is left alone). The `ZN_DB` / `ZN_LIBRARY` environment variables win over this setting. | `%APPDATA%\zotero-next\library.sqlite` unless you chose another |
-| Zotero data folder | The Zotero library Zotero Next syncs with and imports from. **Find Zotero** looks in Zotero's settings and the usual places; **Browse...**, a path box, **Validate**, **Use this folder**, **Use automatic**, **Show in folder**. | Found automatically from Zotero's settings |
+| Library location | The database file your library is kept in, with its size. **Show in folder** opens it; **Change...** points Zinc at another library file, taking effect after a restart (the open library is left alone). The `ZN_DB` / `ZN_LIBRARY` environment variables win over this setting. | `%APPDATA%\zotero-next\library.sqlite` unless you chose another |
+| Zotero data folder | The Zotero library Zinc syncs with and imports from. **Find Zotero** looks in Zotero's settings and the usual places; **Browse...**, a path box, **Validate**, **Use this folder**, **Use automatic**, **Show in folder**. | Found automatically from Zotero's settings |
 | Linked attachment base directory | Store linked file paths relative to a folder so they survive a move. Offers conversion of existing linked paths to relative ones and back, with a preview; only the database changes, no file is touched. | **Zotero's setting**, Choose folder..., None |
 | Attachment storage location | Where imported files are kept: **zotero-next's folder** or **Choose folder...**. With your own folder: subfolder pattern, linked files switch, **Move existing attachments to this folder...** and **Apply ZotMoov defaults**. May suggest a OneDrive `Zotero Library` folder. | zotero-next's own folder |
 | Place new files in the storage folder automatically | Files you add, save from the browser, import or fetch go straight to the storage folder. Off: only the Attachment Files commands use it. | On (once a folder is chosen) |
@@ -211,7 +211,7 @@ Word, and saving from your browser. Both are installed per user.
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Microsoft Word add-in | A Zotero Next sidebar in Word: search, insert citations and a bibliography (Zotero-compatible). Works without the app open. Buttons: **Install Microsoft Word add-in**, then **Reinstall** and **Uninstall**. Close Word first. See [Word add-in](word.md). | Installed if you kept the installer's Word component |
+| Microsoft Word add-in | A Zinc sidebar in Word: search, insert citations and a bibliography (Zotero-compatible). Works without the app open. Buttons: **Install Microsoft Word add-in**, then **Reinstall** and **Uninstall**. Close Word first. See [Word add-in](word.md). | Installed if you kept the installer's Word component |
 | LibreOffice and Google Docs | Cite-while-you-write for LibreOffice and Google Docs. Not available yet. | |
 | Browser connector (Edge / Chrome) | Save papers and PDFs from Edge or Chrome into this library, even when the app is closed. **Install browser connector** installs the helper and opens the browser's extensions page; you then turn on Developer mode and choose Load unpacked yourself. Afterwards: **Add to Edge...** / **Add to Chrome...** and **Uninstall**. See [Adding items](adding-items.md). | |
 
@@ -233,8 +233,8 @@ Settings under System > Updates. See [Updates](updates.md).
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Version | The version and build of this Zotero Next. | |
+| Version | The version and build of this Zinc. | |
 | Check for updates | Status of the last check, with **Check now**, and when an update is found **What's new**, **Install on exit** and **Install now**. Updates are signed; a download that does not match its signature, size and checksum is never run. | |
-| Check automatically | Look for a new version when Zotero Next starts and once a day. When off, nothing is requested from the internet unless you press Check now. | On |
+| Check automatically | Look for a new version when Zinc starts and once a day. When off, nothing is requested from the internet unless you press Check now. | On |
 | Download automatically | Fetch the installer in the background as soon as a new version is found. It is installed only when you choose Install now or Install on exit. | Off |
 | Update feed | The https address of the signed `latest.json`. Empty uses the address built into this version, if any. | Empty |

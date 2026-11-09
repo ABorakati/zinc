@@ -16,7 +16,7 @@ The Better BibTeX endpoints are also served on 23119, so they have the same limi
 
 ## Port 23120 is busy
 
-The core API normally uses 23120. If another copy of Zotero Next already holds it, the new process takes another free port.
+The core API normally uses 23120. If another copy of Zinc already holds it, the new process takes another free port.
 
 ## Web tabs or rich notes do not appear
 
@@ -50,6 +50,6 @@ A build run from source, a build without an update key, or one with no feed addr
 
 **Can I use it on macOS or Linux?** No. It is built for Windows.
 
-**Can I use it with the official Zotero Connector?** The app implements the connector protocol on port 23119, so the official connector can talk to it while Zotero is closed. The dedicated Zotero Next connector also works with neither program running ([Adding items](adding-items.md)).
+**Can I use it with the official Zotero Connector?** The app implements the connector protocol on port 23119, so the official connector can talk to it while Zotero is closed. The dedicated Zinc connector also works with neither program running ([Adding items](adding-items.md)).
 
 **How do I report a bug?** [Logs and Report a problem](logs-and-reports.md).

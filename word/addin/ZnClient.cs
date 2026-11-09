@@ -53,12 +53,12 @@ namespace ZoteroNext.Word
             if (!IsUp())
             {
                 var exe = Settings.LauncherPath();
-                if (!File.Exists(exe)) return Json.Map("ok", false, "error", "zotero-next is not running and its launcher was not found: " + exe);
+                if (!File.Exists(exe)) return Json.Map("ok", false, "error", "Zinc is not running and its launcher was not found: " + exe);
                 try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) }); started = true; }
-                catch (Exception e) { return Json.Map("ok", false, "error", "could not start zotero-next: " + e.Message); }
+                catch (Exception e) { return Json.Map("ok", false, "error", "could not start Zinc: " + e.Message); }
                 var until = DateTime.UtcNow.AddSeconds(40);
                 while (DateTime.UtcNow < until && !IsUp(1000)) Thread.Sleep(500);
-                if (!IsUp()) return Json.Map("ok", false, "started", true, "error", "zotero-next was started but its API did not answer in time");
+                if (!IsUp()) return Json.Map("ok", false, "started", true, "error", "Zinc was started but its API did not answer in time");
                 Thread.Sleep(1500); // let the window load its page and start polling
             }
             try
@@ -70,7 +70,7 @@ namespace ZoteroNext.Word
                     if (!r.IsSuccessStatusCode)
                     {
                         string err = text; try { err = Json.Str(Json.Obj(Json.Parse(text)), "error", text); } catch { }
-                        if (err == "not found") err = "the running zotero-next is too old to reveal items (update/restart it)";
+                        if (err == "not found") err = "the running Zinc is too old to reveal items (update/restart it)";
                         return Json.Map("ok", false, "started", started, "error", err);
                     }
                 }
@@ -99,13 +99,13 @@ namespace ZoteroNext.Word
                 {
                     if (!IsWindowVisible(h)) return true;
                     var t = new StringBuilder(64); GetWindowText(h, t, 64);
-                    if (t.ToString() != "zotero-next") return true;
+                    var title = t.ToString(); if (title != "Zinc" && title != "zotero-next") return true;
                     var c = new StringBuilder(64); GetClassName(h, c, 64);
                     if (c.ToString() != "BasicWindowClass") return true;
                     uint pid; GetWindowThreadProcessId(h, out pid);
                     string name = "";
                     try { name = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant(); } catch { }
-                    if (name != "bun" && name != "launcher" && name != "zotero-next") return true;
+                    if (name != "bun" && name != "launcher" && name != "zotero-next" && name != "zotero-next-gpui") return true;
                     if (IsIconic(h)) ShowWindow(h, 9);
                     SetForegroundWindow(h);
                     return false;

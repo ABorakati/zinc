@@ -64,7 +64,7 @@ export interface UpdaterDeps {
 
 /**
  * Silent installer command line: the Inno Setup switches of gpui-ui/installer/zotero-next.iss (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART;
- * the installer closes a running Zotero Next itself, and our process is already gone or going), plus "/ZNRELAUNCH" for "Install now":
+ * the installer closes a running Zinc itself, and our process is already gone or going), plus "/ZNRELAUNCH" for "Install now":
  * start the app again when done. TODO(installer): the .iss [Run] entry has "skipifsilent" and does not know /ZNRELAUNCH yet; add
  * `Filename: "{app}zotero-next-gpui.exe"; Flags: nowait; Check: RelaunchRequested` (true when CmdLineParamExists('/ZNRELAUNCH')) so a
  * silent update restarts the app. Install-on-exit never passes it (the user quit on purpose). ZN_INSTALLER_ARGS (a JSON array, may use

@@ -1,4 +1,4 @@
-; Zotero Next (GPUI) installer: Inno Setup 7. Built by scripts/installer.ts, which passes these defines on the ISCC command line:
+; Zinc (GPUI) installer: Inno Setup 7. Built by scripts/installer.ts, which passes these defines on the ISCC command line:
 ;   AppVer      full build stamp, "0.1.0+<commit>-<yyyymmdd>" (Apps & features shows it)
 ;   NumVer      "0.1.<n>.0" for the exe's version resource
 ;   Publisher   Apps & features publisher
@@ -11,16 +11,16 @@
 ;               connector); leave out for an installer without it
 ;   OutDir, OutName   where the setup .exe goes, and its name without ".exe"
 ;   Signed      defined when a certificate is configured: ISCC then runs the "znsign" hook (scripts/sign.ts) on the setup and the uninstaller
-;   TestMode    a different AppId and name ("Zotero Next (installer test)"), so a test run never touches a real install
+;   TestMode    a different AppId and name ("Zinc (installer test)"), so a test run never touches a real install
 ;
-; Per user, no admin: {userpf}\Zotero Next = %LOCALAPPDATA%\Programs\Zotero Next, HKCU only, Start-menu shortcut (+ optional desktop one).
+; Per user, no admin: {userpf}\Zinc = %LOCALAPPDATA%\Programs\Zinc, HKCU only, Start-menu shortcut (+ optional desktop one).
 ; Never touched by install, upgrade or uninstall: %APPDATA%\zotero-next*, the library, logs, settings (only the optional "also remove
 ; settings and logs" answer at uninstall removes settings and logs, never *.sqlite files).
 ;
 ; Command line (Inno's own switches plus ours):
 ;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART [/DIR="..."] [/COMPONENTS="app"|"app,word,connector"] [/TASKS="desktopicon"] [/LOG="file"]
 ;   /ZNTESTHIVE="file"   register the Word add-in into a private registry hive file instead of HKCU (tests; also skips the Word-running check)
-;   /ZNRELAUNCH          start the app after a silent install (what the updater passes; interactive runs offer "Start Zotero Next" instead)
+;   /ZNRELAUNCH          start the app after a silent install (what the updater passes; interactive runs offer "Start Zinc" instead)
 ;   /ZNAPPDATA="dir"     use this folder instead of %APPDATA% for "remove settings" (tests)
 ;   uninstaller: /VERYSILENT [/REMOVEDATA]   /REMOVEDATA also removes settings and logs (silent runs keep them otherwise)
 
@@ -29,13 +29,13 @@
 #endif
 
 #ifdef TestMode
-  #define AppName "Zotero Next (installer test)"
-  #define AppDirName "Zotero Next (installer test)"
+  #define AppName "Zinc (installer test)"
+  #define AppDirName "Zinc (installer test)"
   ; own native-messaging host name: a test run registers and removes only this one, never the real com.zotero_next.connector_host
   #define ConnHostName "com.zotero_next.connector_host_test"
 #else
-  #define AppName "Zotero Next"
-  #define AppDirName "Zotero Next"
+  #define AppName "Zinc"
+  #define AppDirName "Zinc"
   #define ConnHostName "com.zotero_next.connector_host"
 #endif
 
@@ -81,7 +81,7 @@ Name: "app"; Description: "Application only"
 Name: "custom"; Description: "Custom installation"; Flags: iscustom
 
 [Components]
-Name: "app"; Description: "Zotero Next"; Types: full app custom; Flags: fixed
+Name: "app"; Description: "Zinc"; Types: full app custom; Flags: fixed
 #ifdef WordDir
 Name: "word"; Description: "Microsoft Word add-in (cite from your library inside Word)"; Types: full custom
 #endif
@@ -98,6 +98,12 @@ Type: filesandordirs; Name: "{app}\vendor"; Components: app
 Type: filesandordirs; Name: "{app}\reader-host"; Components: app
 Type: filesandordirs; Name: "{app}\note-host"; Components: app
 Type: filesandordirs; Name: "{app}\pdfium-licenses"; Components: app
+#ifndef TestMode
+; the product was called "Zotero Next" before the rename to Zinc: an in-place upgrade removes the old shortcuts so only the Zinc ones remain
+Type: files; Name: "{userprograms}\Zotero Next.lnk"
+Type: files; Name: "{userdesktop}\Zotero Next.lnk"
+Type: files; Name: "{userprograms}\Zotero Next Connector - how to install.lnk"
+#endif
 #ifdef WordDir
 Type: filesandordirs; Name: "{app}\word"; Components: word; Check: AddinFilesAllowed
 #endif
@@ -134,7 +140,7 @@ Name: "{userprograms}\{#AppName} Connector - how to install"; Filename: "{app}\c
 #endif
 
 [Run]
-Filename: "{app}\zotero-next-gpui.exe"; Description: "Start Zotero Next"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\zotero-next-gpui.exe"; Description: "Start Zinc"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
 #ifdef ConnDir
 Filename: "{app}\connector\connector-howto.html"; Description: "Show how to add the browser extension to Chrome or Edge"; Components: connector; Flags: shellexec nowait postinstall skipifsilent
 #endif
@@ -241,12 +247,12 @@ begin
     if IsSilentRun then
     begin
       CloseAppGracefully(Dir);
-      if AppRunning(Dir) then Result := 'Zotero Next is running and did not close. Close it and run this again.';
+      if AppRunning(Dir) then Result := 'Zinc is running and did not close. Close it and run this again.';
       Exit;
     end;
-    if MsgBox('Zotero Next is running.' + #13#10#13#10 + 'Click OK to close it now (or close it yourself first), Cancel to stop.', mbConfirmation, MB_OKCANCEL) <> IDOK then
+    if MsgBox('Zinc is running.' + #13#10#13#10 + 'Click OK to close it now (or close it yourself first), Cancel to stop.', mbConfirmation, MB_OKCANCEL) <> IDOK then
     begin
-      Result := 'Zotero Next is running. Close it and run this again.';
+      Result := 'Zinc is running. Close it and run this again.';
       Exit;
     end;
     CloseAppGracefully(Dir);
@@ -397,7 +403,7 @@ begin
     begin
       Log('browser connector registration failed (' + IntToStr(rc) + ')');
       if not WizardSilent then
-        MsgBox('Zotero Next is installed, but the browser connector could not be registered (exit code ' + IntToStr(rc) + ').' + #13#10 +
+        MsgBox('Zinc is installed, but the browser connector could not be registered (exit code ' + IntToStr(rc) + ').' + #13#10 +
                'You can try again with: powershell -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\connector\install.ps1') + '" -ManifestDir "' + ExpandConstant('{app}\connector') + '"', mbError, MB_OK);
     end;
   end;
@@ -409,7 +415,7 @@ begin
     begin
       Log('Word add-in registration failed (' + IntToStr(rc) + ')');
       if not WizardSilent then
-        MsgBox('Zotero Next is installed, but the Word add-in could not be registered (exit code ' + IntToStr(rc) + ').' + #13#10 +
+        MsgBox('Zinc is installed, but the Word add-in could not be registered (exit code ' + IntToStr(rc) + ').' + #13#10 +
                'You can try again with: powershell -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\word\install.ps1') + '" -AddinDir "' + ExpandConstant('{app}\word\addin') + '"', mbError, MB_OK);
     end;
   end;
@@ -429,7 +435,7 @@ begin
   if UninstallSilent then
     RemoveSettings := GetParam('REMOVEDATA') <> ''
   else
-    RemoveSettings := MsgBox('Also remove your Zotero Next settings and logs?' + #13#10#13#10 +
+    RemoveSettings := MsgBox('Also remove your Zinc settings and logs?' + #13#10#13#10 +
                              'Your library is never removed. Choose No to keep everything (settings and logs stay if you install again).',
                              mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   Result := True;

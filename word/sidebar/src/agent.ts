@@ -154,7 +154,7 @@ export class Agent {
 
 	/**
 	 * Run one tool. Calls are queued one after another (two agents must not interleave edits of one document). A tool that
-	 * changes the document runs inside one Word undo record named "Zotero Next: <tool>".
+	 * changes the document runs inside one Word undo record named "Zinc: <tool>".
 	 */
 	call(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
 		const def = this.tools.get(name);
@@ -179,7 +179,7 @@ export class Agent {
 		const writes = def.annotations?.readOnlyHint === false;
 		if (!writes) return handler(this, args);
 		if (st.readOnly) throw new Error(`The document ${st.name ?? ""} is read-only.`);
-		await this.host.call("doc.begin", { name: "Zotero Next: " + name });
+		await this.host.call("doc.begin", { name: "Zinc: " + name });
 		try {
 			return await handler(this, args);
 		} finally {

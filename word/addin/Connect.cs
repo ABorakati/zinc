@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 namespace ZoteroNext.Word
 {
     /// <summary>
-    /// The Word COM add-in: IDTExtensibility2 (lifetime), IRibbonExtensibility (the "Zotero Next" tab) and
+    /// The Word COM add-in: IDTExtensibility2 (lifetime), IRibbonExtensibility (the "Zinc" tab) and
     /// ICustomTaskPaneConsumer (the sidebar). Registered per user by install.ps1 under HKCU.
     /// </summary>
     [ComVisible(true)]
@@ -106,7 +106,7 @@ namespace ZoteroNext.Word
                 try { var _ = (bool)pane.Visible; return pane; } catch { _panes.Remove(h); }
             }
             if (!create) return null;
-            pane = _factory.CreateCTP(PaneProgId, "Zotero Next", win);
+            pane = _factory.CreateCTP(PaneProgId, "Zinc", win);
             try { pane.DockPosition = 2; } catch { }   // msoCTPDockPositionRight
             try { pane.Width = 400; } catch { }
             _panes[h] = pane;
@@ -142,9 +142,9 @@ namespace ZoteroNext.Word
         // ---- IRibbonExtensibility ------------------------------------------------------------------------------
         public const string RibbonXml =
             "<customUI xmlns=\"http://schemas.microsoft.com/office/2009/07/customui\">" +
-            "<ribbon><tabs><tab id=\"znTab\" label=\"Zotero Next\">" +
+            "<ribbon><tabs><tab id=\"znTab\" label=\"Zinc\">" +
             "<group id=\"znMain\" label=\"Citations\">" +
-            "<button id=\"znPane\" label=\"Sidebar\" size=\"large\" imageMso=\"FootnoteInsert\" screentip=\"Show or hide the Zotero Next sidebar\" onAction=\"OnTogglePane\"/>" +
+            "<button id=\"znPane\" label=\"Sidebar\" size=\"large\" imageMso=\"FootnoteInsert\" screentip=\"Show or hide the Zinc sidebar\" onAction=\"OnTogglePane\"/>" +
             "<button id=\"znInsert\" label=\"Add/Edit Citation\" size=\"large\" imageMso=\"CitationInsertGallery\" screentip=\"Search your library and insert a citation at the cursor\" onAction=\"OnInsertCitation\"/>" +
             "<button id=\"znBib\" label=\"Bibliography\" size=\"large\" imageMso=\"BibliographyGallery\" screentip=\"Insert or update the bibliography\" onAction=\"OnInsertBibliography\"/>" +
             "<button id=\"znRefresh\" label=\"Refresh\" size=\"large\" imageMso=\"Refresh\" screentip=\"Re-format all citations and the bibliography\" onAction=\"OnRefresh\"/>" +

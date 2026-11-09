@@ -33,7 +33,7 @@ export interface RealEnvOptions {
 export function createRealEnv(o: RealEnvOptions = {}): UpdateEnv {
 	const updatesDir = (o.updatesDir ?? defaultUpdatesDir()).replaceAll("\\", "/");
 	const headers = (url: string, extra: Record<string, string> = {}): Record<string, string> => {
-		const h: Record<string, string> = { "User-Agent": "zotero-next-updater", ...extra };
+		const h: Record<string, string> = { "User-Agent": "zinc-updater", ...extra };
 		try { const origin = typeof o.tokenOrigin === "function" ? o.tokenOrigin() : o.tokenOrigin;
 			if (o.token && origin && new URL(url).origin === origin) h.Authorization = `Bearer ${o.token}`; } catch { /* no token */ }
 		return h;

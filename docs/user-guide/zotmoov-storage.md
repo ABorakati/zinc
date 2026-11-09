@@ -1,6 +1,6 @@
 # Attachment storage (ZotMoov-style)
 
-By default Zotero Next keeps attachment files in its own storage folder, one subfolder per item, next to the library database. If you would rather keep your PDFs in a folder you choose (a OneDrive folder, a project folder, a shared drive), sorted and named in a readable way, use the attachment storage settings. They follow the approach of the Zotero add-on ZotMoov: files are placed in a folder of your choice, usually as **linked files**, and are named from their item.
+By default Zinc keeps attachment files in its own storage folder, one subfolder per item, next to the library database. If you would rather keep your PDFs in a folder you choose (a OneDrive folder, a project folder, a shared drive), sorted and named in a readable way, use the attachment storage settings. They follow the approach of the Zotero add-on ZotMoov: files are placed in a folder of your choice, usually as **linked files**, and are named from their item.
 
 All of this lives in **Settings > Files and folders** (see the [settings reference](settings.md#files-and-folders)).
 

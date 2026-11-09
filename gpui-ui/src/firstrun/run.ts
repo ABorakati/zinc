@@ -51,10 +51,10 @@ export function realFirstRunApi(target: string = freshLibraryPath()): FirstRunAp
 			return target;
 		},
 		async pickLibrary() {
-			const path = await pickFile("Choose a zotero-next library file (library.sqlite)");
+			const path = await pickFile("Choose a Zinc library file (library.sqlite)");
 			if (!path) return null;
 			const info = inspectLibraryFile(path);
-			if (info.kind !== "zotero-next") return { problem: info.problem ?? "That file is not a zotero-next library." };
+			if (info.kind !== "zotero-next") return { problem: info.problem ?? "That file is not a Zinc library." };
 			try { backupOnce(path); } catch (e) { return { problem: `Could not make a backup copy of that library before opening it: ${(e as Error).message}` }; }
 			return { path };
 		},

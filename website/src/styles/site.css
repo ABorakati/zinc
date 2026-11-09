@@ -313,7 +313,7 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .card-note { white-space: normal; color: var(--card-ink-2); }
 
 /* ---------- the accession register (tables) ---------- */
-/* data tables: a rounded card, a soft header, hairline rows, the app's own face for numbers; the Zotero Next column is tinted */
+/* data tables: a rounded card, a soft header, hairline rows, the app's own face for numbers; the Zinc column is tinted */
 .register { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-card); overflow-x: auto; }
 .register table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.95rem; }
 .register th, .register td { text-align: left; padding: 0.95rem 1.25rem; border-bottom: 1px solid var(--rule-soft); vertical-align: middle; }
@@ -359,6 +359,7 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .feature-row .h2 { display: flex; align-items: center; gap: 0.7rem; }
 .feature-row .h2 .icon { color: var(--primary); flex: none; }
 .feature-row.no-shot { grid-template-columns: minmax(0, 1fr); }
+.why-zinc { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); column-gap: 2.5rem; gap: 1rem 2.5rem; }
 .feature-row.no-shot .points { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); column-gap: 2.5rem; }
 .feature-more { margin-top: 1.1rem; font-weight: 600; }
 /* built with: the tech stack in layers */

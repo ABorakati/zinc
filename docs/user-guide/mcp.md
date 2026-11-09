@@ -1,6 +1,6 @@
 # MCP for AI agents
 
-Zotero Next has two separate [Model Context Protocol](https://modelcontextprotocol.io) servers, so an AI agent such as Claude Code can work with your references:
+Zinc has two separate [Model Context Protocol](https://modelcontextprotocol.io) servers, so an AI agent such as Claude Code can work with your references:
 
 | Server | What an agent can do | Where it runs |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ claude mcp add --transport http zotero-next-http --scope user http://127.0.0.1:2
 claude mcp add zotero-next --scope user -- bun <repo>/core/scripts/mcp-stdio.ts --db <path-to>/library.sqlite
 ```
 
-Replace `<repo>` with your checkout of the Zotero Next source and `<path-to>/library.sqlite` with your library file (by default `%APPDATA%\zotero-next\library.sqlite`; **Settings > Files and folders > Library location** shows the real path). Use the full path to `bun` if it is not on your `PATH`. Register only one of the two under a given name.
+Replace `<repo>` with your checkout of the Zinc source and `<path-to>/library.sqlite` with your library file (by default `%APPDATA%\zotero-next\library.sqlite`; **Settings > Files and folders > Library location** shows the real path). Use the full path to `bun` if it is not on your `PATH`. Register only one of the two under a given name.
 
 The HTTP endpoint is stateless (JSON responses, POST only; a GET answers 405). It accepts only loopback `Host` headers and rejects any request with a browser `Origin` that is not its own, as a guard against DNS rebinding. Non-browser clients send no `Origin` and are fine. There is no token on this server, so anything on your computer that can reach port 23120 can use it.
 
@@ -106,7 +106,7 @@ Tools that touch a document take an optional `document` argument (a name or path
 | Tool | Purpose |
 | --- | --- |
 | `list_documents` | List the documents open in Word: name, path, whether active, saved, read-only |
-| `search_library` | Search your Zotero Next library (title, creators, abstract, publication, tags; a DOI or a year also works). Returns item keys for the citation tools. Does not touch a document |
+| `search_library` | Search your Zinc library (title, creators, abstract, publication, tags; a DOI or a year also works). Returns item keys for the citation tools. Does not touch a document |
 | `search_styles` | Find citation styles by name; returns the style `id` for `set_style` and whether it is installed |
 | `list_citations` | List every citation in the document in order (body, footnotes, endnotes) with a stable `fieldId`, the rendered text and the cited items, plus the document's style and whether it has a bibliography |
 | `insert_citation` | Insert a citation citing one or more library items at the cursor, at the end, or after a given piece of text; then reformat numbering |
