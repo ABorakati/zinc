@@ -8,7 +8,7 @@ import { sync, ZOTERO_LABEL } from "../../sync/state";
 import { webSync } from "../../features/websync/client";
 import { Btn, Kbd, Toggle, Value } from "../controls";
 import { onSettingsShown, registerSection, registerSettings, registerSettingsProvider } from "../registry";
-import { AccountControl, FileCheckControl, FilesControl, OrgStatusControl, PushControl, SourceControl } from "./sync-org";
+import { AccountControl, FileCheckControl, FilesControl, GroupsControl, OrgStatusControl, PushControl, SourceControl } from "./sync-org";
 
 registerSection({ id: "sync", label: "Sync", icon: "refresh-cw", order: 40, description: "Keeping this library and Zotero's in step.", keywords: ["zotero", "write", "backup"] });
 registerSection({ id: "shortcuts", label: "Shortcuts", icon: "keyboard", order: 80, description: "Keyboard shortcuts of the app.", keywords: ["keyboard", "keys", "hotkeys", "bindings"] });
@@ -105,6 +105,12 @@ registerSettings([
 			description: "Whether the files of attachments follow along. Metadata of attachments always syncs.",
 			keywords: ["download", "upload", "pdf", "storage", "zotero.org", "file syncing"],
 			control: () => <FilesControl />,
+		},
+		{
+			id: "sync.org.groups", section: "sync", label: "Group libraries", layout: "block",
+			description: "Groups of the connected account are synced with it. A group you may not edit is read-only here, and nothing is ever sent to it.",
+			keywords: ["groups", "group libraries", "shared", "read-only", "zotero.org"],
+			control: () => <GroupsControl />,
 		},
 		{
 			id: "sync.org.status", section: "sync", label: "zotero.org status",

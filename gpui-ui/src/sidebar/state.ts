@@ -20,6 +20,7 @@ export const [sidebarWidth, setSidebarWidth] = createSignal(0);
 /** Sections (ui/src/sidebar.tsx sectionOpen): Library and Collections open, Tags closed. */
 export const [libraryOpen, setLibraryOpen] = persisted("sidebar.library", true, isBool);
 export const [collectionsOpen, setCollectionsOpen] = persisted("sidebar.collections", true, isBool);
+export const [groupsOpen, setGroupsOpen] = persisted("sidebar.groups", true, isBool);
 export const [tagsOpen, setTagsOpen] = persisted("sidebar.tags", false, isBool);
 /** Expanded collection keys. */
 export const [expandedKeys, setExpandedKeys] = persisted<string[]>("sidebar.expanded", [], isStrings);

@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
 import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
-import type { Collection, GroupBy, ItemRow, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
+import type { Collection, GroupBy, ItemRow, Library, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
 import { mark } from "./trace";
 import { isWebContent, webBase } from "./webview/config";
 import { readState } from "./readState";
@@ -87,6 +87,22 @@ export const defaultDir = (key: string): "asc" | "desc" => (/^(year|dateAdded|da
 export interface Mods { shift: boolean; ctrl: boolean }
 
 export interface AppStore extends Store, ListStore {
+	/** My Library first, then the account's group libraries. */
+	libraries: () => Library[];
+	/** The library the list shows (1 = My Library). */
+	libraryId: () => number;
+	/** Show a library's items (its top level, no collection). */
+	selectLibrary(id: number): void;
+	/** The collection trees of the group libraries, by library id. */
+	groupCollections: () => Record<number, Collection[]>;
+	/** Which library a collection key belongs to. */
+	libraryOfCollection(key: string): number;
+	/** Can this library be edited by this user? (false for a read-only group) */
+	libraryEditable(id: number): boolean;
+	/** `libraryEditable` for the library being shown. */
+	canEdit: () => boolean;
+	/** Re-read the library list and the group collection trees (the sync service adds and renames groups in the background). */
+	reloadLibraries(): Promise<void>;
 	qmode: () => QMode;
 	setQMode(m: QMode): void;
 	/** "Full text" quick-search mode: the list is replaced by search results with snippets (SearchResults). */
@@ -132,6 +148,12 @@ export interface AppStore extends Store, ListStore {
 	itemsRev: () => number;
 }
 
+/** Every collection key in a tree (roots with children). */
+function flattenKeys(tree: Collection[], out = new Set<string>()): Set<string> {
+	for (const c of tree) { out.add(c.key); if (c.children) flattenKeys(c.children, out); }
+	return out;
+}
+
 interface CachedPage { gen: number; rows: ItemRow[] }
 
 function createStore(): AppStore {
@@ -142,6 +164,34 @@ function createStore(): AppStore {
 	const loadCollections = () => api.collections().then((c) => { setCollections(c); mark("collections-loaded"); }).catch((e) => setError(String(e?.message ?? e)));
 	void loadCollections();
 
+	// ---- libraries: My Library plus the group libraries zotero.org sync brought in ----
+	const [libraries, setLibraries] = createSignal<Library[]>([]);
+	const [groupCollections, setGroupCollections] = createSignal<Record<number, Collection[]>>({});
+	const [libraryId, setLibraryId] = createSignal(1);
+	async function reloadLibraries() {
+		try {
+			const list = await api.libraries();
+			const trees: Record<number, Collection[]> = {};
+			await Promise.all(list.filter((l) => l.id !== 1).map(async (l) => { trees[l.id] = await api.collections(l.id); }));
+			batch(() => {
+				setLibraries(list);
+				setGroupCollections(trees);
+				// the library on screen left the account (or an old core without groups answered): fall back to My Library
+				if (!list.some((l) => l.id === untrack(libraryId))) { setLibraryId(1); setViewSig({ kind: "library" }); }
+			});
+		} catch { /* a core without groups (404) or a transient error: My Library alone */ }
+	}
+	// after the first screen: a library list is not needed to paint it. The sync service adds and renames groups in the background, so poll lightly.
+	const libraryStart = setTimeout(() => void reloadLibraries(), 800);
+	const libraryPoll = setInterval(() => void reloadLibraries(), 30_000);
+	onCleanup(() => { clearTimeout(libraryStart); clearInterval(libraryPoll); });
+	const libraryOfCollection = (key: string): number => {
+		for (const [id, tree] of Object.entries(groupCollections())) if (flattenKeys(tree).has(key)) return Number(id);
+		return 1;
+	};
+	const libraryEditable = (id: number): boolean => libraries().find((l) => l.id === id)?.editable !== false;
+	const canEdit = () => libraryEditable(libraryId());
+
 	// ---- view / tag filter ----
 	const [view, setViewSig] = createSignal<View>({ kind: "library" });
 	const [tagFilter, setTagFilter] = createSignal<string[]>([]);
@@ -150,8 +200,19 @@ function createStore(): AppStore {
 		return v.kind === "collection" ? v.key : v.kind === "unfiled" ? "unfiled" : v.kind === "trash" ? "trash" : null;
 	};
 	const setView = (v: View) => {
-		if (JSON.stringify(untrack(view)) !== JSON.stringify(v)) setViewSig(v);
+		// a collection decides the library (a group's collection opens that group); every other view is My Library's
+		const lib = v.kind === "collection" ? libraryOfCollection(v.key) : 1;
+		batch(() => {
+			if (untrack(libraryId) !== lib) { setLibraryId(lib); setTagFilter([]); } // tags belong to one library
+			if (JSON.stringify(untrack(view)) !== JSON.stringify(v)) setViewSig(v);
+		});
 	};
+	/** Show a library's items: My Library or a group, no collection. */
+	const selectLibrary = (id: number) => batch(() => {
+		if (untrack(libraryId) !== id) setTagFilter([]);
+		setLibraryId(id);
+		setViewSig({ kind: "library" });
+	});
 	/** Sidebar compat: null = My Library; "unfiled" / "trash" are library views; any other string is a collection key. */
 	const selectCollection = (key: string | null) =>
 		setView(key === null ? { kind: "library" } : key === "unfiled" ? { kind: "unfiled" } : key === "trash" ? { kind: "trash" } : { kind: "collection", key });
@@ -215,6 +276,7 @@ function createStore(): AppStore {
 		const ls = sortLevels();
 		const first = ls[0]!;
 		return {
+			library: libraryId() !== 1 ? libraryId() : undefined,
 			collection: v.kind === "collection" ? v.key : undefined,
 			search: v.kind === "savedSearch" ? v.key : undefined,
 			unfiled: v.kind === "unfiled" || undefined,
@@ -492,6 +554,7 @@ function createStore(): AppStore {
 	/** Re-fetch collections + the list (after edits, imports, trash...). Selection and scroll stay. */
 	function refresh() {
 		void loadCollections();
+		void reloadLibraries();
 		batch(() => { setItemsRev((n) => n + 1); reset(false); });
 	}
 
@@ -609,6 +672,7 @@ function createStore(): AppStore {
 		tabs, activeTab, setActiveTab, openAttachment, closeTab,
 		mode, setMode,
 		collections,
+		libraries, libraryId, selectLibrary, groupCollections, libraryOfCollection, libraryEditable, canEdit, reloadLibraries,
 		selectedCollection,
 		selectCollection,
 		filter, setFilter,

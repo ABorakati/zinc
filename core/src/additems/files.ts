@@ -1,6 +1,7 @@
 // Attachments: imported files (copied into <db dir>/storage/<KEY>/<name>, same layout as Zotero), linked files
 // (absolute path kept as is) and linked URLs; plus moving a standalone attachment under a parent item.
 import type { Database } from "bun:sqlite";
+import { assertWritable, libraryOfCollection, libraryOfItem } from "../libraries";
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join } from "node:path";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
@@ -86,6 +87,8 @@ export interface AddFileRequest {
 	path?: string;
 	parentKey?: string;
 	collectionKey?: string;
+	/** Library for a top-level attachment with no collection (default: the collection's library, else My Library). */
+	libraryId?: number;
 	/** Place the file in the attachment storage folder even when automatic placement is off (explicit commands such as "attach newest file"). */
 	forceStorage?: boolean;
 	/** `name` is the final file name in the storage folder (not renamed from the parent item). */
@@ -98,6 +101,10 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	if (req.parentKey) checkParent(db, req.parentKey);
 	const collectionKey = req.parentKey ? undefined : req.collectionKey || undefined;
 	if (collectionKey) checkCollection(db, collectionKey);
+	// a child joins its parent's library, a filed attachment its collection's; nothing is added to a read-only library
+	const lib = req.parentKey ? (libraryOfItem(db, req.parentKey) ?? 1) : collectionKey ? (libraryOfCollection(db, collectionKey) ?? 1) : (req.libraryId ?? 1);
+	if (!req.parentKey && collectionKey && req.libraryId !== undefined && req.libraryId !== lib) throw new HttpError(400, "the collection is in another library");
+	assertWritable(db, lib);
 
 	let source: string | undefined;
 	if (req.path !== undefined) {
@@ -179,9 +186,9 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	try {
 		db.transaction(() => {
 			db.query(
-				`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted)
-				 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			).run(key, req.parentKey || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now);
+				`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted, library_id)
+				 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+			).run(key, req.parentKey || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now, lib);
 			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(key, finalMode, contentType, dbPath);
 			if (collectionKey) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(collectionKey, key);
 		})();
@@ -208,7 +215,7 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	return getItemDetail(db, key)!;
 }
 
-export function addLink(db: Database, req: { parentKey?: string; url?: string; title?: string; collectionKey?: string }): ItemDetail {
+export function addLink(db: Database, req: { parentKey?: string; url?: string; title?: string; collectionKey?: string; libraryId?: number }): ItemDetail {
 	const raw = typeof req.url === "string" ? req.url.trim() : "";
 	if (!raw) throw new HttpError(400, "url is required");
 	let url: URL;
@@ -228,7 +235,7 @@ export function addLink(db: Database, req: { parentKey?: string; url?: string; t
 		accessDate: nowIso(),
 		contentType: "",
 		...(req.parentKey ? { parentItem: req.parentKey } : req.collectionKey ? { collections: [req.collectionKey] } : {}),
-	});
+	}, req.parentKey ? undefined : req.libraryId);
 	indexItem(db, detail.data.key);
 	return detail;
 }

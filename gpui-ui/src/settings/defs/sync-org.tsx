@@ -126,6 +126,34 @@ export function FilesControl(): JSX.Element {
 	);
 }
 
+/** The account's group libraries: name, whether this user may edit it, what waits to be sent, and the group's own error. */
+export function GroupsControl(): JSX.Element {
+	return (
+		<Show when={webSync.status()} fallback={loading()}>
+			{(s) => (
+				<Show when={s().groups?.length} fallback={<Value>{s().account.keySet ? "This account has no group libraries." : "Connect a zotero.org account to see its groups."}</Value>}>
+					<div style={{ ...t("flex flex-col gap-1.5"), width: "100%" }}>
+						<For each={s().groups}>
+							{(g) => (
+								<div style={t("flex flex-col")}>
+									<Txt cls="text-xs text-foreground">
+										{`${g.name}: ${g.editable ? "you can edit" : "read-only"}${g.editable && !g.filesEditable ? ", files read-only" : ""}; ${
+											g.pending ? `${plural(g.pending, "change")} waiting to send` : "nothing waiting to send"
+										}${g.lastPullAt ? `; last sync ${ago(g.lastPullAt)}` : "; not synced yet"}`}
+									</Txt>
+									<Show when={g.lastError}>
+										<Txt cls="text-xs text-destructive">{g.lastError ?? ""}</Txt>
+									</Show>
+								</div>
+							)}
+						</For>
+					</div>
+				</Show>
+			)}
+		</Show>
+	);
+}
+
 const clock = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 export function OrgStatusControl(): JSX.Element {

@@ -100,6 +100,16 @@ The top group of the sidebar, **Library**, holds fixed views:
 | **Trash** | Deleted items. |
 | **Duplicate Items** | Opens the duplicate merge dialog. |
 
+### Group libraries
+
+If you belong to Zotero groups and [sync with zotero.org](sync.md#group-libraries), a **Group Libraries** heading appears in the sidebar below **My Library** and your collections. Each group is a row with its own collections; click it to list its items, click a collection to list only that collection. Search, tags, the item pane and every view setting work within the selected library, and new items (Add by identifier, from a file, from a link, new item or note) are added to the library you are looking at.
+
+Groups where you cannot edit are read-only. Edit actions are hidden or disabled, and fields are locked in the item pane. Anything that still reaches the library, such as a keyboard shortcut, is refused with "is a read-only library".
+
+The **Duplicate Items** merge works inside one library; items are never merged across libraries. Whole-library export and the MCP server accept a library choice too.
+
+**Upgrading.** The first time the app (or the MCP server) opens an existing library after this change, the library file is upgraded. The change only adds: a Libraries table and a library column on items and collections, with your current data marked as My Library. Before it runs, a backup is written next to your library as `library.backup-v3-to-v4-<date>.sqlite`.
+
 ### My Publications
 
 Right-click an item and choose **Show in My Publications** to add it, or **Remove from My Publications** to take it out. Only regular top-level items can be added (not attachments, notes or annotations). The view is a filter over your library, so removing an item from it does not delete the item.

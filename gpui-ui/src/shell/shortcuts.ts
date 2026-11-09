@@ -74,6 +74,7 @@ export function handleWindowKeyDown(e: KeyEvent): void {
 	for (const a of appActions()) {
 		if (a.shortcut && matchesChord(a.shortcut, e)) {
 			e.preventDefault();
+			if (a.when && !a.when()) return;
 			try { a.run(); } catch (err) { console.error(`[shortcut] ${a.id} failed:`, err instanceof Error ? err.message : err); }
 			return;
 		}

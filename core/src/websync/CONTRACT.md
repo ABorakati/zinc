@@ -2,7 +2,7 @@
 
 Two-way sync between a zotero-next library and the user's zotero.org library through the Zotero Web API v3
 (https://www.zotero.org/support/dev/web_api/v3/syncing, /write_requests, /file_upload). Written in TypeScript on Bun
-(network-bound: no Rust). User library only for now (groups later).
+(network-bound: no Rust). User library and group libraries (each synced through `/groups/<id>/...`; read-only groups never push).
 
 ## Sync source (one route per library)
 

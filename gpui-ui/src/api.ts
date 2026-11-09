@@ -1,5 +1,5 @@
 // Typed fetch client for the core API (the subset the library window needs).
-import type { Collection, ItemRow } from "./contracts";
+import type { Collection, ItemRow, Library } from "./contracts";
 
 const trim = (u: string) => u.replace(/\/+$/, "");
 
@@ -35,6 +35,8 @@ export interface CollectionDto {
 
 /** Query params of GET /api/items (same names the web UI sends). */
 export interface ItemQuery {
+	/** Local library id (GET /api/libraries); absent = My Library (a collection also decides it). */
+	library?: number;
 	collection?: string;
 	/** list a saved search's results */
 	search?: string;
@@ -191,7 +193,11 @@ export interface FullTextJob {
 }
 
 export const api = {
-	collections: async () => buildTree(await get<CollectionDto[]>("/collections")),
+	collections: async (library?: number) => buildTree(await get<CollectionDto[]>("/collections" + (library && library > 1 ? `?library=${library}` : ""))),
+	/** My Library and the account's group libraries. */
+	libraries: async () => (await get<{ libraries: Library[] }>("/libraries")).libraries,
+	/** Tags of one library with their counts. */
+	tags: (library?: number) => get<{ tag: string; count: number }[]>("/tags" + (library && library > 1 ? `?library=${library}` : "")),
 	items: (q: ItemQuery, offset: number, limit: number, signal?: AbortSignal) =>
 		get<ItemPage>("/items?" + qs({ ...q, limit, offset }), signal),
 	/** Group sizes for a query, in list order (the first sort level must be `by`). */
@@ -202,7 +208,7 @@ export const api = {
 	schema: (signal?: AbortSignal) => get<ZoteroSchema>("/schema", signal),
 	item: (key: string, signal?: AbortSignal) => get<ItemDetail>(`/items/${key}`, signal),
 	/** Full-text + metadata search with snippets (the "Full text" quick-search mode). */
-	search: (q: string, limit = 200, offset = 0, signal?: AbortSignal) => get<SearchResult>("/search?" + qs({ q, limit, offset }), signal),
+	search: (q: string, limit = 200, offset = 0, signal?: AbortSignal, library?: number) => get<SearchResult>("/search?" + qs({ q, limit, offset, library: library && library > 1 ? library : undefined }), signal),
 	tagColors: (signal?: AbortSignal) => get<TagColor[]>("/tag-colors", signal),
 	addTags: (key: string, tags: string[]) => request<{ ok: true }>("POST", `/items/${key}/tags`, { tags }),
 	removeTags: (key: string, tags: string[]) => request<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),

@@ -2,7 +2,7 @@
 import { createSignal, For, Show, type JSX } from "solid-js";
 import { Icon, itemTypeIconName } from "../icons";
 import { store } from "../store";
-import { Empty, IconBtn, Picker, Section, TRUNC, t, tok, tx } from "./kit";
+import { Empty, IconBtn, locked, Picker, Section, TRUNC, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { ipApi } from "./net";
 
@@ -10,7 +10,7 @@ const sub = (c: string | undefined, y: number | null | undefined) => [c, y].filt
 
 interface Found { key: string; title: string; creatorsSummary?: string; year?: number | null }
 
-function RelatedRow(p: { r: { key: string; itemType: string; title: string; creatorsSummary: string; year: number | null }; onRemove: () => void }): JSX.Element {
+function RelatedRow(p: { r: { key: string; itemType: string; title: string; creatorsSummary: string; year: number | null }; onRemove?: () => void }): JSX.Element {
 	const [hover, setHover] = createSignal(false);
 	return (
 		<div
@@ -24,7 +24,7 @@ function RelatedRow(p: { r: { key: string; itemType: string; title: string; crea
 			<text style={{ ...tx("text-[11px] text-muted-foreground"), ...TRUNC, flexShrink: 2, maxWidth: 110 }}>{sub(p.r.creatorsSummary, p.r.year)}</text>
 			<Show when={hover()}>
 				<div onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}>
-					<IconBtn icon="minus" title="Remove relation" onClick={p.onRemove} />
+					<Show when={p.onRemove}><IconBtn icon="minus" title="Remove relation" onClick={p.onRemove} /></Show>
 				</div>
 			</Show>
 		</div>
@@ -65,9 +65,9 @@ export function RelatedSection(): JSX.Element {
 	}
 
 	return (
-		<Section id="related" title="Related" icon="link-2" count={related().length} actions={<IconBtn icon="plus" title="Add related item" onClick={() => setAdding(!adding())} />}>
+		<Section id="related" title="Related" icon="link-2" count={related().length} actions={<Show when={!locked()}><IconBtn icon="plus" title="Add related item" onClick={() => setAdding(!adding())} /></Show>}>
 			<Show when={related().length === 0 && !adding()}><Empty text="No related items" /></Show>
-			<For each={related()}>{(r) => <RelatedRow r={r} onRemove={() => void remove(r.key)} />}</For>
+			<For each={related()}>{(r) => <RelatedRow r={r} onRemove={locked() ? undefined : () => void remove(r.key)} />}</For>
 			<Show when={adding()}>
 				<div style={{ marginTop: 6, width: "100%" }}>
 					<Picker<Found>

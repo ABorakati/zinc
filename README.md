@@ -54,7 +54,7 @@ The library has an MCP server in the core, with no plug-in to install. An agent 
 
 It imports your Zotero data folder (read only), keeps in step with a local Zotero or with zotero.org, runs Zotero's own translators, and works with the official Zotero Connector. Better BibTeX-style citation keys and auto-export, and ZotMoov-style file storage, are built in.
 
-It is not a full replacement yet: Windows only, no plug-ins, no group libraries, no LibreOffice or Google Docs. The [feature comparison](#feature-comparison-with-zotero-10) lists every difference.
+It is not a full replacement yet: Windows only, no plug-ins, no LibreOffice or Google Docs. The [feature comparison](#feature-comparison-with-zotero-10) lists every difference.
 
 ## Contents
 
@@ -110,7 +110,7 @@ GPUIX is a dependency (the npm package, plus a private fork), not part of this r
 
 ### Sync and storage
 
-- **Two sync routes**, one active at a time: your **local Zotero** data folder, or **zotero.org** through the Web API (API key kept in the Windows credential store, not in the database).
+- **Two sync routes**, one active at a time: your **local Zotero** data folder, or **zotero.org** through the Web API (API key kept in the Windows credential store, not in the database). zotero.org sync includes **group libraries**: groups appear under *Group Libraries* in the sidebar, with their collections, and read-only groups are never edited or uploaded to.
 - Linked and stored files, with your own attachment folder (see [ZotMoov file storage](#zotmoov-file-storage)).
 - **Find Full Text** and **Locate** engines, and "Cite" from any row.
 
@@ -218,7 +218,7 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 | Read Aloud | ✅ | ❌ | Zotero 10: text-to-speech with local voices; its online voices need a Zotero login. |
 | Notes | ✅ | ✅ | Rich editor, child and standalone notes. |
 | Snapshots and EPUB | ✅ | ✅ | Opened in web tabs. |
-| Sync with zotero.org | ✅ | ⚠️ | Items, collections, tags, notes, annotations and files. Your own library only; group libraries are not synced. |
+| Sync with zotero.org | ✅ | ⚠️ | Items, collections, tags, notes, annotations and files. Your own library and your group libraries (read-only groups never upload). |
 | Sync through a local Zotero | n/a | ✅ | Reads and writes the Zotero data folder. |
 | Word plugin | ✅ | ✅ | Word only, with a sidebar. |
 | LibreOffice plugin | ✅ | ❌ | Zotero 10 ships the LibreOffice extension. Not planned for Next. |
@@ -234,7 +234,7 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 | Locate engines | ✅ | ✅ | Zotero calls them Lookup Engines. |
 | Duplicate detection and merge | ✅ | ✅ | |
 | My Publications | ✅ | ✅ | |
-| Group libraries | ✅ | ❌ | The web sync does not pull or push groups. |
+| Group libraries | ✅ | ⚠️ | Synced through zotero.org: sidebar section, collections, items, tags and adding items. Not yet for group Trash, saved searches or a local-Zotero route. |
 | Plugins and extensions | ✅ | ❌ | Existing Zotero plugins cannot run. Features register through an internal registry instead. |
 | macOS and Linux | ✅ | ❌ | Windows 10/11 x64 only. For Zotero 10 this is unverified: the install checked here is the Windows build. |
 | Mobile apps | ✅ | ❌ | Unverified for Zotero 10 (a desktop install cannot show it). Sync through zotero.org and use Zotero's own mobile apps. |

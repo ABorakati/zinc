@@ -7,7 +7,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { openLink } from "./actions";
-import { Empty, IconBtn, Section, TextBtn, goToSection, inputTheme, t, tok, tx } from "./kit";
+import { Empty, IconBtn, locked, Section, TextBtn, goToSection, inputTheme, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { htmlToMarkdown, isSimpleNoteHtml, markdownToHtml, noteWrapper } from "./noteHtml";
 import { ipApi } from "./net";
@@ -230,8 +230,8 @@ export function NotesSection(): JSX.Element {
 	}
 
 	return (
-		<Section id="notes" title="Notes" icon="sticky-note" count={notes().length} actions={<IconBtn icon="plus" title="Add Note" disabled={adding()} onClick={() => void addNote()} />}>
-			<Show when={notes().length} fallback={<Empty text="No notes"><TextBtn icon="plus" label="Add Note" disabled={adding()} onClick={() => void addNote()} /></Empty>}>
+		<Section id="notes" title="Notes" icon="sticky-note" count={notes().length} actions={<Show when={!locked()}><IconBtn icon="plus" title="Add Note" disabled={adding()} onClick={() => void addNote()} /></Show>}>
+			<Show when={notes().length} fallback={<Empty text="No notes"><Show when={!locked()}><TextBtn icon="plus" label="Add Note" disabled={adding()} onClick={() => void addNote()} /></Show></Empty>}>
 				<For each={noteKeys()}>
 					{(nk) => { const n = { get key() { return nk; }, get title() { return notes().find((x) => x.key === nk)?.title ?? ""; } }; return (
 						<div style={{ ...t("flex flex-col w-full") }}>
@@ -245,14 +245,16 @@ export function NotesSection(): JSX.Element {
 								<text style={{ ...tx("text-[13px]"), flexGrow: 1, flexShrink: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.title || "Untitled note"}</text>
 								<Show when={hover() === n.key}>
 									<div onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()} style={{ ...t("flex flex-none items-center") }}>
-										<IconBtn icon="pencil" title="Edit note" onClick={() => { setEditing(true); setOpenKey(n.key); }} />
-										<IconBtn icon="trash-2" title="Move note to Trash" onClick={() => void trash(n.key)} />
+										<Show when={!locked()}>
+											<IconBtn icon="pencil" title="Edit note" onClick={() => { setEditing(true); setOpenKey(n.key); }} />
+											<IconBtn icon="trash-2" title="Move note to Trash" onClick={() => void trash(n.key)} />
+										</Show>
 									</div>
 								</Show>
 							</div>
 							<Show when={openKey() === n.key}>
 								<div style={{ marginTop: 4, marginBottom: 6, width: "100%" }}>
-									<NoteEditor noteKey={n.key} startEditing={editing()} onClose={() => setOpenKey(null)} onSaved={() => void pane.reload()} />
+									<NoteEditor noteKey={n.key} startEditing={editing() && !locked()} onClose={() => setOpenKey(null)} onSaved={() => void pane.reload()} />
 								</div>
 							</Show>
 						</div>

@@ -22,6 +22,21 @@ export type Mode = "light" | "dark";
 /** A GPUIX style object (what <div style={...}> takes). */
 export type Style = Record<string, unknown>;
 
+/** A library: My Library (id 1) or a group library synced from zotero.org (GET /api/libraries). */
+export interface Library {
+	/** Local id, the `library` query parameter. */
+	id: number;
+	type: "user" | "group";
+	/** The group's id on zotero.org. */
+	groupId?: number;
+	name: string;
+	/** False: read-only for this user (the app disables editing, nothing is pushed). */
+	editable: boolean;
+	filesEditable: boolean;
+	/** Changes waiting to be pushed to zotero.org. */
+	pending?: number;
+}
+
 export interface Collection {
 	key: string;
 	name: string;

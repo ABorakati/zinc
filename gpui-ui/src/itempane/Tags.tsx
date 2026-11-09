@@ -3,7 +3,7 @@
 import { For, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { withAlpha } from "../theme";
-import { IconBtn, Picker, Section, t, tok, tx } from "./kit";
+import { IconBtn, locked, Picker, Section, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { ipApi } from "./net";
 
@@ -75,18 +75,20 @@ export function TagsSection(): JSX.Element {
 		<Section id="tags" title="Tags" icon="tag" count={pane.detail()?.tags.length ?? 0}>
 			<Show when={tags().length}>
 				<div style={{ ...t("flex flex-wrap gap-1"), marginBottom: 6, width: "100%" }}>
-					<For each={tags()}>{(x) => <TagChip tag={x.tag} automatic={x.type === 1} color={pane.tagColors().get(x.tag)} onRemove={() => void remove(x.tag)} />}</For>
+					<For each={tags()}>{(x) => <TagChip tag={x.tag} automatic={x.type === 1} color={pane.tagColors().get(x.tag)} onRemove={locked() ? undefined : () => void remove(x.tag)} />}</For>
 				</div>
 			</Show>
-			<Picker<string>
-				placeholder="Add tag…"
-				keepOpen
-				query={(q) => suggest(q, (pane.detail()?.tags ?? []).map((x) => x.tag))}
-				label={(x) => x}
-				icon={() => "tag"}
-				onPick={(x) => void add(x)}
-				onSubmitText={(x) => void add(x)}
-			/>
+			<Show when={!locked()}>
+				<Picker<string>
+					placeholder="Add tag…"
+					keepOpen
+					query={(q) => suggest(q, (pane.detail()?.tags ?? []).map((x) => x.tag))}
+					label={(x) => x}
+					icon={() => "tag"}
+					onPick={(x) => void add(x)}
+					onSubmitText={(x) => void add(x)}
+				/>
+			</Show>
 		</Section>
 	);
 }

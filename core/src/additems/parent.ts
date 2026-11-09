@@ -1,6 +1,7 @@
 // "Create Parent Item" for a standalone attachment or note: create the parent from an identifier (the add-by-identifier
 // code) or empty of a chosen item type, then move the attachment / note under it. Zotero's dialog does the same.
 import type { Database } from "bun:sqlite";
+import { assertWritable, libraryOfItem } from "../libraries";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
 import { HttpError, addItemsToCollection, createItem, getItemDetail } from "../db";
 import { indexItem } from "../search";
@@ -39,6 +40,9 @@ export async function createParent(db: Database, req: Partial<CreateParentReques
 		db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(itemKey) as { collection_key: string }[]
 	).map((r) => r.collection_key);
 
+	// the new parent lives in the same library as the item it adopts
+	const lib = libraryOfItem(db, itemKey) ?? 1;
+	assertWritable(db, lib);
 	let parentKey: string;
 	const text = typeof req.text === "string" ? req.text.trim() : "";
 	if (text) {
@@ -47,7 +51,7 @@ export async function createParent(db: Database, req: Partial<CreateParentReques
 			throw new HttpError(400, unknown.length ? `${unknown[0]} is not a recognised identifier (DOI, PMID, PMCID, arXiv ID or ISBN)` : "no identifier found");
 		}
 		if (ids.length > 1) throw new HttpError(400, "enter one identifier");
-		const r = await addOne(db, ids[0]!, loadKnown(db), collections[0]);
+		const r = await addOne(db, ids[0]!, loadKnown(db, lib), collections[0], true, lib);
 		parentKey = r.added?.data.key ?? r.existing!;
 		if (r.added) {
 			for (const c of collections.slice(1)) db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parentKey);
@@ -60,7 +64,7 @@ export async function createParent(db: Database, req: Partial<CreateParentReques
 		const itemType = typeof req.itemType === "string" ? req.itemType : "";
 		if (!itemType) throw new HttpError(400, "itemType is required when no identifier is given");
 		if (CHILD_TYPE[itemType]) throw new HttpError(400, `a ${itemType} cannot be a parent item`);
-		const detail = createItem(db, { itemType, collections } as Partial<ZoteroItemData>);
+		const detail = createItem(db, { itemType, collections } as Partial<ZoteroItemData>, lib);
 		indexItem(db, detail.data.key);
 		parentKey = detail.data.key;
 	}

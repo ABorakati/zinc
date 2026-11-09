@@ -66,6 +66,18 @@ Some attachments exist on zotero.org but not on this computer. Before you free u
 
 Zotero Next never deletes files from zotero.org storage itself. The check only reports.
 
+### Group libraries
+
+Zotero Next finds the groups you belong to and syncs each one next to your personal library, in the same Sync now run. Each group shows up in the sidebar under **Group Libraries** (see [Group libraries](library.md#group-libraries)).
+
+- **What your key allows.** The API key needs access to the groups, which you choose when you create it on zotero.org (all groups, or specific ones). The **Group libraries** row under zotero.org sync lists every group with its status. A group the key cannot read is listed as such and skipped.
+- **Read-only groups never upload.** If you are only a member without editing rights (or the group's library editing is limited to admins), changes are pulled but nothing is pushed, and editing is turned off in the interface. Files follow the group's own file setting: a group that does not allow file editing for you does not receive uploads.
+- **Leaving or losing a group.** If you leave a group, or it is deleted, the library is marked as removed. It stays on this computer until you remove it yourself; it is no longer synced.
+- **Errors are per group.** One failing group (for example, no access) does not stop the others or your personal library; its error is shown on its own line.
+- **Local Zotero route.** Sync through a local Zotero data folder still covers My Library only.
+
+Keys are unique across the whole Zotero Next library. In the rare case that an item or collection in a group has the same key as one in another library here, Zotero Next skips that object and counts it in the sync result instead of overwriting anything.
+
 ### Status, rate limits and errors
 
 The **zotero.org status** row shows the last sync time, the number of changes waiting to be sent, and the number of conflicts. zotero.org may ask clients to slow down; Zotero Next then pauses and shows "zotero.org asked us to wait; resuming at <time>". The last error, if any, is shown in red.
@@ -82,7 +94,8 @@ Conflicts are counted in the status rows. The sync indicator in the top bar list
 ## Not available yet
 
 - **Sync automatically** is listed in Settings as not yet available.
-- Group libraries are not synced; only your personal library is.
+- Group sync with a local Zotero data folder: only My Library is shared.
+- Trash, saved searches and drag-and-drop between libraries are not handled for group libraries yet.
 
 ## Related
 

@@ -21,15 +21,18 @@ export function collectionPaths(): { key: string; path: string; name: string }[]
 			if (c.children) walk(c.children, prefix + c.name + " / ");
 		}
 	};
-	walk(store.collections(), "");
+	// the collections of the library on screen
+	walk(store.libraryId() === 1 ? store.collections() : (store.groupCollections()[store.libraryId()] ?? []), "");
 	return out;
 }
 
 /** Entries features registered for the given groups; actions sharing a `submenu` label nest under one submenu. */
 function registered(ctx: ItemActionContext, groups: readonly string[]): MenuItem[][] {
 	const label = (a: ItemAction) => (typeof a.label === "function" ? a.label(ctx) : a.label);
+	// a read-only library offers nothing that changes items
+	const readOnly = !store.canEdit();
 	const lists = groups
-		.map((g) => itemActions().filter((a) => (a.group ?? "edit") === g && (a.visible?.(ctx) ?? true)))
+		.map((g) => itemActions().filter((a) => (a.group ?? "edit") === g && !(readOnly && (g === "edit" || g === "maintain")) && (a.visible?.(ctx) ?? true)))
 		.filter((l) => l.length);
 	return lists.map((list) => {
 		const out: MenuItem[] = [];
@@ -82,11 +85,11 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 	});
 	const all = collectionPaths().sort((a, b) => a.path.localeCompare(b.path));
 	out.push({
-		label: "Add to collection", icon: "folder-input", disabled: view.kind === "trash",
+		label: "Add to collection", icon: "folder-input", disabled: view.kind === "trash" || !store.canEdit(),
 		submenu: all.length ? all.map((c) => ({ label: c.path, onSelect: () => void addItemsToCollection(c.key, c.name, ctx.keys) })) : [{ label: "No collections", disabled: true }],
 	});
 	builtin({ label: "Copy DOI", icon: "quote", onSelect: () => void copyDoi(item.key) });
-	if (view.kind !== "trash" && isRegular(item)) {
+	if (view.kind !== "trash" && isRegular(item) && store.libraryId() === 1) { // My Publications is My Library's
 		// the detail may still be loading: inside the My Publications view the item is known to be in it
 		const inPubs = view.kind === "publications" || detail?.data.inPublications === true;
 		builtin(inPubs
@@ -98,7 +101,7 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 	sep();
 	const n = ctx.keys.length > 1 ? ` (${ctx.keys.length})` : "";
 	if (view.kind === "trash") out.push({ label: `Restore${n}`, icon: "rotate-ccw", onSelect: () => void trashItems(ctx.keys, false) });
-	else out.push({ label: `Move to Trash${n}`, icon: "trash-2", danger: true, onSelect: () => void trashItems(ctx.keys, true) });
+	else out.push({ label: `Move to Trash${n}`, icon: "trash-2", danger: true, disabled: !store.canEdit(), onSelect: () => void trashItems(ctx.keys, true) });
 	return out;
 }
 

@@ -37,6 +37,8 @@ export interface AppAction {
 	icon?: string;
 	menu: "add" | "tools" | "none";
 	shortcut?: string; // e.g. "Ctrl+Shift+N" ("Ctrl" = Cmd on macOS)
+	/** Left out of its menu and not bound to its shortcut while this returns false (adding to a read-only library). */
+	when?: () => boolean;
 	run: () => void;
 }
 

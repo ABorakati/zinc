@@ -41,7 +41,7 @@ export function SearchResults(): JSX.Element {
 		setBusy(true);
 		const timer = setTimeout(async () => {
 			try {
-				const r = await api.search(q, 200);
+				const r = await api.search(q, 200, 0, undefined, store.libraryId());
 				if (id !== n) return;
 				setHits(r.hits); setTotal(r.total); setErr(null);
 			} catch (e) {

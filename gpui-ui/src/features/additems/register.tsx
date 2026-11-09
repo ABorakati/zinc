@@ -2,23 +2,26 @@
 // linked file / link), notes, Duplicate Item, Retrieve Metadata for PDF, Create Parent Item. Window-level file drops and Ctrl+V
 // "paste an identifier" in the list are handled directly by handleFileDrop and listKeyHandler.
 import { registerAppAction, registerItemAction, registerOverlay } from "../../registry";
+import { store } from "../../store";
 import { createNote, duplicateItems, pickAndImport, retrieveMetadata } from "./client";
 import { openIdentifierDialog, openLinkFileDialog, openLinkUriDialog, openNewItemDialog } from "./dialogs";
 import { openCreateParentDialog } from "./parent";
 import { RetrievePanel } from "./RetrievePanel";
 
 const isRegular = (t: string) => t !== "attachment" && t !== "note" && t !== "annotation";
+/** Nothing can be added to a read-only library (a group the user may not edit). */
+const canAdd = () => store.canEdit();
 const single = (ctx: { keys: string[]; item: { itemType: string } }) => ctx.keys.length === 1 && isRegular(ctx.item.itemType);
 
 export function register(): void {
 	registerOverlay("additems-retrieve-panel", () => <RetrievePanel />);
 
-	registerAppAction({ id: "add.identifier", label: "Add Item by Identifier…", icon: "wand-sparkles", menu: "add", shortcut: "Ctrl+Shift+I", run: () => void openIdentifierDialog() });
-	registerAppAction({ id: "add.newItem", label: "New Item…", icon: "file-plus", menu: "add", shortcut: "Ctrl+Shift+N", run: () => void openNewItemDialog() });
-	registerAppAction({ id: "add.note", label: "New Standalone Note", icon: "sticky-note", menu: "add", run: () => void createNote() });
-	registerAppAction({ id: "add.storedFile", label: "Add Attachment: Stored File…", icon: "paperclip", menu: "add", run: () => void pickAndImport() });
-	registerAppAction({ id: "add.linkFile", label: "Add Attachment: Link to File…", icon: "link", menu: "add", run: () => void openLinkFileDialog() });
-	registerAppAction({ id: "add.linkUri", label: "Add Attachment: Link to URI…", icon: "link", menu: "add", run: () => void openLinkUriDialog() });
+	registerAppAction({ id: "add.identifier", label: "Add Item by Identifier…", icon: "wand-sparkles", menu: "add", when: canAdd, shortcut: "Ctrl+Shift+I", run: () => void openIdentifierDialog() });
+	registerAppAction({ id: "add.newItem", label: "New Item…", icon: "file-plus", menu: "add", when: canAdd, shortcut: "Ctrl+Shift+N", run: () => void openNewItemDialog() });
+	registerAppAction({ id: "add.note", label: "New Standalone Note", icon: "sticky-note", menu: "add", when: canAdd, run: () => void createNote() });
+	registerAppAction({ id: "add.storedFile", label: "Add Attachment: Stored File…", icon: "paperclip", menu: "add", when: canAdd, run: () => void pickAndImport() });
+	registerAppAction({ id: "add.linkFile", label: "Add Attachment: Link to File…", icon: "link", menu: "add", when: canAdd, run: () => void openLinkFileDialog() });
+	registerAppAction({ id: "add.linkUri", label: "Add Attachment: Link to URI…", icon: "link", menu: "add", when: canAdd, run: () => void openLinkUriDialog() });
 
 	registerItemAction({ id: "add.childNote", label: "Add Note", icon: "sticky-note", group: "edit", visible: single, run: (ctx) => void createNote(ctx.item.key) });
 	registerItemAction({ id: "add.attachFile", label: "Stored File…", submenu: "Add Attachment", icon: "paperclip", group: "edit", visible: single, run: (ctx) => void pickAndImport(ctx.item.key) });

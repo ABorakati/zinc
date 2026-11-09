@@ -1,6 +1,7 @@
 // Tag data for the Tags pane: the library's tags with counts, Zotero tag colours, and which tags are only automatic
 // (ui/src/Tags.tsx + ui/src/cards/tags.ts). The big lists (tens of thousands of tags) load only once the pane is open.
 import { createMemo, createRoot, createSignal } from "solid-js";
+import { store } from "../store";
 import { errMsg, sidebarApi, type TagColor } from "../sidebar/client";
 import { toast } from "../ui";
 import { setTagFilter, tagFilter } from "../sidebar/bridge";
@@ -33,7 +34,7 @@ export async function loadTags(opts: { wantAutomatic: boolean }): Promise<void> 
 	setLoading(true);
 	try {
 		const [list, cols, auto] = await Promise.all([
-			sidebarApi.tags(),
+			sidebarApi.tags(store.libraryId()),
 			sidebarApi.tagColors().catch(() => [] as TagColor[]),
 			opts.wantAutomatic ? sidebarApi.automaticTags().catch(() => []) : Promise.resolve(null),
 		]);

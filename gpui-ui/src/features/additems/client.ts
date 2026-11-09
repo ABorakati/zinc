@@ -9,6 +9,7 @@ import { currentCollection, refresh, selectMany, selectOnly } from "../shared";
 import { baseName, errMsg, plural, stripExt } from "../text";
 import type { ItemDetail } from "../types";
 import { toast } from "../../ui";
+import { store } from "../../store";
 import { focusTitle } from "../../itempane/focus";
 import { autoAttachPdfs, autoTag, setAutoAttachPdfs, setAutoTag } from "../../settings/generalPrefs";
 import { collectionAt } from "../../sidebar/Collections";
@@ -34,13 +35,16 @@ export interface CreateParentResult {
 	item: ItemDetail;
 }
 
+/** The library on screen when it is a group (My Library is the core's default): new top-level items go there. */
+const library = (): number | undefined => (store.libraryId() > 1 ? store.libraryId() : undefined);
+
 export const addApi = {
-	identifier: (text: string, collectionKey?: string, autoTag?: boolean) => post<IdentifierResult>("/api/add/identifier", { text, collectionKey, autoTag }),
+	identifier: (text: string, collectionKey?: string, autoTag?: boolean) => post<IdentifierResult>("/api/add/identifier", { text, collectionKey, autoTag, library: library() }),
 	file: (b: { name?: string; contentType?: string; path: string; mode?: "imported_file" | "linked_file"; parentKey?: string; collectionKey?: string }) =>
-		post<ItemDetail>("/api/add/file", { name: "", ...b }),
-	link: (b: { url: string; title?: string; parentKey?: string; collectionKey?: string }) => post<ItemDetail>("/api/add/link", b),
+		post<ItemDetail>("/api/add/file", { name: "", library: library(), ...b }),
+	link: (b: { url: string; title?: string; parentKey?: string; collectionKey?: string }) => post<ItemDetail>("/api/add/link", { library: library(), ...b }),
 	retrieve: (attachmentKeys: string[], opts?: { rename?: boolean; autoTag?: boolean }) => post<{ results: RetrieveResult[]; items: ItemDetail[] }>("/api/add/retrieve-metadata", { attachmentKeys, ...opts }),
-	createItem: (data: Record<string, unknown>) => post<ItemDetail>("/api/items", { data }),
+	createItem: (data: Record<string, unknown>) => post<ItemDetail>("/api/items", { data, library: data.parentItem ? undefined : library() }),
 	duplicate: (key: string) => post<ItemDetail>(`/api/items/${encodeURIComponent(key)}/duplicate`, {}),
 	createParent: (b: { itemKey: string; text?: string; itemType?: string }) => post<CreateParentResult>("/api/add/create-parent", b),
 };

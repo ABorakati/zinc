@@ -20,6 +20,21 @@ export interface WebSyncStatus {
 	busy: boolean;
 	backoffUntil?: string;
 	fileJob?: { done: number; total: number; failed: number; bytes: number; running: boolean };
+	/** The account's group libraries (a core without group support leaves it out). */
+	groups?: GroupStatus[];
+}
+
+export interface GroupStatus {
+	libraryId: number;
+	groupId: number;
+	name: string;
+	/** false: read-only for this user, nothing is sent */
+	editable: boolean;
+	filesEditable: boolean;
+	libraryVersion?: number;
+	pending: number;
+	lastPullAt?: string;
+	lastError?: string;
 }
 
 export interface FilesCheck {

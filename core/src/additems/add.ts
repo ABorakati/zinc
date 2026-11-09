@@ -1,5 +1,6 @@
 // "Add item by identifier": DOI / PMID / PMCID / arXiv ID / ISBN -> metadata -> new library item (skipping duplicates).
 import type { Database } from "bun:sqlite";
+import { assertWritable, libraryOfCollection } from "../libraries";
 import type { ItemDetail } from "../api-types";
 import { HttpError, createItem } from "../db";
 import { itemDoi } from "../references/ids";
@@ -41,14 +42,15 @@ export function identifiersOf(data: Record<string, unknown>): { doi?: string; pm
 	return { doi, pmid, pmcid, isbns, arxiv };
 }
 
-export function loadKnown(db: Database): Known {
+/** The identifiers already in one library (My Library by default): the same paper in two libraries is not a duplicate. */
+export function loadKnown(db: Database, libraryId = 1): Known {
 	const k: Known = { doi: new Map(), pmid: new Map(), pmcid: new Map(), isbn: new Map(), arxiv: new Map() };
 	const rows = db
 		.query(
 			`SELECT key, data FROM items
-			 WHERE parent_key IS NULL AND deleted = 0 AND item_type NOT IN ('attachment','note','annotation')`,
+			 WHERE parent_key IS NULL AND deleted = 0 AND library_id = ? AND item_type NOT IN ('attachment','note','annotation')`,
 		)
-		.all() as { key: string; data: string }[];
+		.all(libraryId) as { key: string; data: string }[];
 	for (const r of rows) {
 		let d: Record<string, unknown>;
 		try {
@@ -115,7 +117,7 @@ export async function fetchByIdentifier(db: Database, p: ParsedId): Promise<Item
 const KIND_LABEL = { doi: "DOI", pmid: "PMID", pmcid: "PMCID", arxiv: "arXiv ID", isbn: "ISBN" } as const;
 
 /** Resolve a single identifier to a new item, or to the existing item that already has it. */
-export async function addOne(db: Database, p: ParsedId, known: Known, collectionKey?: string, autoTag = true): Promise<{ added?: ItemDetail; existing?: string }> {
+export async function addOne(db: Database, p: ParsedId, known: Known, collectionKey?: string, autoTag = true, libraryId?: number): Promise<{ added?: ItemDetail; existing?: string }> {
 	const have = knownFor(known, p);
 	if (have) return { existing: have };
 	const data = await fetchByIdentifier(db, p);
@@ -124,22 +126,25 @@ export async function addOne(db: Database, p: ParsedId, known: Known, collection
 	if (dup) return { existing: dup };
 	if (collectionKey) data.collections = [collectionKey];
 	if (!autoTag && data.tags) delete data.tags;
-	const detail = createItem(db, data);
+	const detail = createItem(db, data, libraryId);
 	indexItem(db, detail.data.key);
 	register(known, detail.data.key, detail.data as Record<string, unknown>);
 	return { added: detail };
 }
 
-export async function addByIdentifier(db: Database, text: unknown, collectionKey?: string, autoTag = true): Promise<AddByIdentifierResult> {
+export async function addByIdentifier(db: Database, text: unknown, collectionKey?: string, autoTag = true, libraryId?: number): Promise<AddByIdentifierResult> {
 	if (typeof text !== "string" || !text.trim()) throw new HttpError(400, "text is required");
 	if (collectionKey !== undefined && collectionKey !== null && typeof collectionKey !== "string") throw new HttpError(400, "collectionKey must be a string");
 	const { ids, unknown } = parseIdentifiers(text);
 	const result: AddByIdentifierResult = { added: [], failed: unknown.map((id) => ({ id, error: "not a recognised identifier (DOI, PMID, PMCID, arXiv ID or ISBN)" })), existing: [] };
 	if (ids.length === 0 && unknown.length === 0) throw new HttpError(400, "no identifiers found");
-	const known = loadKnown(db);
+	// the library: the one named, else the collection's, else My Library
+	const lib = libraryId ?? (collectionKey ? (libraryOfCollection(db, collectionKey) ?? 1) : 1);
+	assertWritable(db, lib);
+	const known = loadKnown(db, lib);
 	const outcomes = await mapLimit(ids, 3, async (p) => {
 		try {
-			return { p, ...(await addOne(db, p, known, collectionKey || undefined, autoTag)) };
+			return { p, ...(await addOne(db, p, known, collectionKey || undefined, autoTag, lib)) };
 		} catch (e) {
 			return { p, error: e instanceof Error ? e.message : String(e) };
 		}

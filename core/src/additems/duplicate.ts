@@ -2,6 +2,7 @@
 // (no attachments, notes or annotations), as Zotero's Duplicate Item. A standalone attachment's copy keeps the file (copied
 // for an imported file, the same path for a link, the same URL for a snapshot).
 import type { Database } from "bun:sqlite";
+import { libraryOfItem } from "../libraries";
 import { basename } from "node:path";
 import type { ItemDetail, ZoteroItemData } from "../api-types";
 import { HttpError, createItem, getItemDetail, patchItem } from "../db";
@@ -68,7 +69,8 @@ export function duplicateItem(db: Database, key: string): ItemDetail {
 		key: _k, version: _v, dateAdded: _a, dateModified: _m, deleted: _d, parentItem: _p,
 		tags: _t, collections: _c, relations: _r, itemType: _it, ...fields
 	} = data;
-	const detail = createItem(db, { ...fields, itemType: row.item_type, tags, collections, relations } as Partial<ZoteroItemData>);
+	// a copy stays in the original's library (the duplicate button never moves an item between libraries)
+	const detail = createItem(db, { ...fields, itemType: row.item_type, tags, collections, relations } as Partial<ZoteroItemData>, libraryOfItem(db, key) ?? undefined);
 	indexItem(db, detail.data.key);
 	return getItemDetail(db, detail.data.key)!;
 }

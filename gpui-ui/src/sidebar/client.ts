@@ -15,13 +15,13 @@ export const errMsg = (e: unknown): string => (e instanceof Error ? e.message : 
 
 export const sidebarApi = {
 	// collections
-	collections: () => request<{ key: string; name: string; parentKey: string | null; itemCount: number }[]>("GET", "/collections").then(A.buildTree),
-	createCollection: (name: string, parentKey?: string | null) => request<Collection>("POST", "/collections", { name, parentKey: parentKey ?? undefined }),
+	collections: (library?: number) => A.api.collections(library),
+	createCollection: (name: string, parentKey?: string | null, library?: number) => request<Collection>("POST", "/collections", { name, parentKey: parentKey ?? undefined, library: library && library > 1 ? library : undefined }),
 	patchCollection: (key: string, patch: { name?: string; parentKey?: string | null }) => request<Collection>("PATCH", `/collections/${key}`, patch),
 	deleteCollection: (key: string) => request<{ ok: true }>("DELETE", `/collections/${key}`),
 	addToCollection: (key: string, keys: string[]) => request<{ ok: true }>("POST", `/collections/${key}/items`, { keys }),
 	// tags
-	tags: () => request<{ tag: string; count: number }[]>("GET", "/tags"),
+	tags: (library?: number) => A.api.tags(library),
 	tagColors: () => request<TagColor[]>("GET", "/tag-colors"),
 	putTagColors: (colors: TagColor[]) => request<TagColor[]>("PUT", "/tag-colors", colors),
 	automaticTags: () => request<{ tag: string; count: number }[]>("GET", "/maintenance/tags/automatic"),

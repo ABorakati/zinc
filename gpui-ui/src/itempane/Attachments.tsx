@@ -5,7 +5,7 @@ import { Icon } from "../icons";
 import { store } from "../store";
 import { DropdownMenu, toast, type MenuItem } from "../ui";
 import { findFullText, openLink } from "./actions";
-import { Empty, Field, IconBtn, Section, TextBtn, t, tok, tx } from "./kit";
+import { Empty, Field, IconBtn, locked, Section, TextBtn, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { ipApi, type ChildSummary } from "./net";
 
@@ -51,10 +51,10 @@ function AttachmentRow(p: { c: ChildSummary }): JSX.Element {
 		});
 
 	const menu = (): MenuItem[] => [
-		{ label: "Rename", icon: "pencil", onSelect: () => setRenaming(true) },
-		{ label: "Rename file from parent metadata", icon: "file-pen", disabled: !c().hasFile, onSelect: renameFile },
+		{ label: "Rename", icon: "pencil", disabled: locked(), onSelect: () => setRenaming(true) },
+		{ label: "Rename file from parent metadata", icon: "file-pen", disabled: !c().hasFile || locked(), onSelect: renameFile },
 		{ separator: true },
-		{ label: "Move Attachment to Trash", icon: "trash-2", danger: true, onSelect: trash },
+		{ label: "Move Attachment to Trash", icon: "trash-2", danger: true, disabled: locked(), onSelect: trash },
 	];
 	const ic = () => iconFor(c());
 
@@ -116,7 +116,7 @@ export function AttachmentsSection(): JSX.Element {
 			title="Attachments"
 			icon="paperclip"
 			count={atts().length}
-			actions={<TextBtn icon="file-search" label="Find Full Text" title="Find an open-access or institutional PDF and attach it" onClick={() => void findFullText([pane.detail()!.data.key], () => void pane.reload())} />}
+			actions={<Show when={!locked()}><TextBtn icon="file-search" label="Find Full Text" title="Find an open-access or institutional PDF and attach it" onClick={() => void findFullText([pane.detail()!.data.key], () => void pane.reload())} /></Show>}
 		>
 			<Show when={atts().length} fallback={<Empty text="No attachments" />}>
 				<For each={atts()}>{(c) => <AttachmentRow c={c} />}</For>

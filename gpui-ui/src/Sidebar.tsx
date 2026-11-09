@@ -13,6 +13,7 @@ import { ensureSavedSearches } from "./searches/state";
 import { currentView, setView } from "./sidebar/bridge";
 import { errMsg, sidebarApi } from "./sidebar/client";
 import { collectionEntries, creating, onBeforeCreate, reloadCollections, setCollectionsPane } from "./sidebar/Collections";
+import { groupEntries } from "./sidebar/Groups";
 import { CountBadge, type Entry, labelCls, ListItem, pill, ROW_HOVER, SectionHeader, SPECIAL_STATIC, t, tok, tx } from "./sidebar/parts";
 import { collectionsFraction, libraryOpen, setCollectionsFraction, setLibraryOpen, setSidebarWidth, sidebarWidth, tagsOpen } from "./sidebar/state";
 import { clipText, textWidth } from "./clip";
@@ -119,6 +120,7 @@ export function Sidebar(): JSX.Element {
 		}
 		// 16px (`gap-4`) between the groups; the Library block ends in a row with no bottom gap when open
 		out.push(...collectionEntries(open ? 16 : 15));
+		out.push(...groupEntries(16)); // Zotero's "Group Libraries" heading, under My Library and its collections
 		out.push({ id: "end", render: () => <div style={{ height: 4, width: "100%" }} /> }); // the old `pb-1`
 		return out;
 	});

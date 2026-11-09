@@ -147,7 +147,7 @@ function ViewToggle() {
 
 /** Registered app actions of a toolbar menu ("tools" wrench / "add" +). Collapsed while the menu has no entries. */
 function ActionMenu(p: { menu: "add" | "tools" }) {
-	const list = createMemo(() => appActions().filter((a) => a.menu === p.menu));
+	const list = createMemo(() => appActions().filter((a) => a.menu === p.menu && (a.when?.() ?? true)));
 	const items = (): MenuItem[] => list().map((a) => ({
 		label: typeof a.label === "function" ? a.label() : a.label,
 		icon: a.icon,

@@ -214,3 +214,43 @@ describe("the sync outbox knows each change's library", () => {
 		expect(outbox()).toContainEqual({ type: "item", key: it.data.key, op: "delete", lib: g.id });
 	});
 });
+
+describe("adding items to a library", () => {
+	test("links, files, copies and new parents go into the library they were asked for, and a read-only one refuses", async () => {
+		const { addLink, addFile } = await import("../src/additems/files");
+		const { duplicateItem } = await import("../src/additems/duplicate");
+		const { createParent } = await import("../src/additems/parent");
+		const g = group(100);
+		const coll = createCollection(db, "Group papers", null, g.id);
+		const libOf = (key: string) => (db.query("SELECT library_id AS l FROM items WHERE key = ?").get(key) as { l: number }).l;
+
+		const link = addLink(db, { url: "https://example.org/a", libraryId: g.id });
+		expect(libOf(link.data.key)).toBe(g.id);
+		const mine = addLink(db, { url: "https://example.org/b" });
+		expect(libOf(mine.data.key)).toBe(USER_LIBRARY);
+
+		const file = addFile(db, { name: "paper.pdf", contentType: "application/pdf", dataBase64: Buffer.from("%PDF-1.4 test").toString("base64"), collectionKey: coll.key });
+		expect(libOf(file.data.key)).toBe(g.id); // filed in a group collection: it is the group's
+		expect(db.query("SELECT collection_key FROM collection_items WHERE item_key = ?").all(file.data.key)).toEqual([{ collection_key: coll.key }]);
+		expect(status(() => addFile(db, { name: "x.pdf", dataBase64: Buffer.from("x").toString("base64"), collectionKey: coll.key, libraryId: USER_LIBRARY }))).toBe(400);
+
+		const lone = createItem(db, { itemType: "journalArticle", title: "Lonely group item" }, g.id);
+		const child = addFile(db, { name: "child.pdf", contentType: "application/pdf", dataBase64: Buffer.from("%PDF child").toString("base64"), parentKey: lone.data.key });
+		expect(libOf(child.data.key)).toBe(g.id);
+
+		const copy = duplicateItem(db, lone.data.key);
+		expect(libOf(copy.data.key)).toBe(g.id);
+		expect(libOf(duplicateItem(db, lone.data.key).data.key)).toBe(g.id);
+
+		const orphan = addLink(db, { url: "https://example.org/c", libraryId: g.id });
+		const adopted = await createParent(db, { itemKey: orphan.data.key, itemType: "webpage" });
+		expect(libOf(adopted.parent.data.key)).toBe(g.id);
+		expect(libOf(orphan.data.key)).toBe(g.id);
+
+		upsertGroupLibrary(db, { groupId: 100, name: "Group 100", editable: false, filesEditable: false, version: 3 });
+		expect(status(() => addLink(db, { url: "https://example.org/d", libraryId: g.id }))).toBe(403);
+		expect(status(() => addFile(db, { name: "n.pdf", dataBase64: Buffer.from("n").toString("base64"), collectionKey: coll.key }))).toBe(403);
+		expect(status(() => duplicateItem(db, lone.data.key))).toBe(403);
+		expect(status(() => addLink(db, { url: "https://example.org/e" }))).toBeUndefined(); // My Library is unaffected
+	});
+});

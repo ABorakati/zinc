@@ -198,6 +198,8 @@ export function TagList(): JSX.Element {
 		if (!tagsOpen() || !tagsLoaded() || tagsAge() < 30_000) return;
 		timer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
 	}, { defer: true }));
+	// another library has other tags
+	createEffect(on(() => store.libraryId(), () => void loadTags({ wantAutomatic: !showAutoTags() }), { defer: true }));
 	createEffect(on(showAutoTags, (show) => { if (!show && tagsOpen() && tagsLoaded()) void loadTags({ wantAutomatic: true }); }, { defer: true }));
 
 	const lower = createMemo(() => tags().map((x) => x.tag.toLowerCase()));

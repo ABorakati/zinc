@@ -2,13 +2,14 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { store } from "../store";
-import { IconBtn, Picker, Section, TRUNC, t, tok, tx } from "./kit";
+import { IconBtn, locked, Picker, Section, TRUNC, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { ipApi } from "./net";
 import { flattenCollections, type FlatCollection } from "./util";
 
 /** All collections flattened with their name chains (recomputed when the sidebar's tree changes). */
-export const useFlatCollections = () => createMemo(() => flattenCollections(store.collections()));
+export const useFlatCollections = () =>
+	createMemo(() => flattenCollections(store.libraryId() === 1 ? store.collections() : (store.groupCollections()[store.libraryId()] ?? [])));
 
 function CollectionRow(p: { path: string[]; onRemove: () => void }): JSX.Element {
 	const [hover, setHover] = createSignal(false);
@@ -29,7 +30,7 @@ function CollectionRow(p: { path: string[]; onRemove: () => void }): JSX.Element
 					)}
 				</For>
 			</div>
-			<Show when={hover()}>
+			<Show when={hover() && !locked()}>
 				<IconBtn icon="minus" title="Remove from collection" onClick={p.onRemove} />
 			</Show>
 		</div>
@@ -74,10 +75,10 @@ export function CollectionsSection(): JSX.Element {
 	};
 
 	return (
-		<Section id="collections" title="Libraries and Collections" icon="library" count={mine().length} actions={<IconBtn icon="plus" title="Add to Collection" onClick={() => setAdding(!adding())} />}>
+		<Section id="collections" title="Libraries and Collections" icon="library" count={mine().length} actions={<Show when={!locked()}><IconBtn icon="plus" title="Add to Collection" onClick={() => setAdding(!adding())} /></Show>}>
 			<div style={{ ...t("flex items-center gap-1.5 px-1.5 py-[3px]") }}>
 				<Icon name="library" size={16} color={tok("muted-foreground")} />
-				<text style={{ ...tx("text-[13px]") }}>My Library</text>
+				<text style={{ ...tx("text-[13px]") }}>{store.libraries().find((l) => l.id === store.libraryId())?.name ?? "My Library"}</text>
 			</div>
 			<For each={mine()}>{(k) => <CollectionRow path={byKey().get(k)?.path ?? [k]} onRemove={() => void remove(k)} />}</For>
 			<Show when={adding()}>

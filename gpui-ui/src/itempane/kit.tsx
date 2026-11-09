@@ -12,6 +12,8 @@ import { boundsOf, hideTooltip, showTooltip } from "../ui/core";
 import { gatedHover } from "../cards/scrolling";
 
 export const mode = (): Mode => store.mode();
+/** The library on screen is read-only for this user (a group they may not edit): the pane shows its data but changes nothing. */
+export const locked = (): boolean => !store.canEdit();
 export const tok = (name: string): string => tokens[mode()][name] ?? "#888";
 export const t = (cls: string): Style => tw(cls, mode());
 export const tx = (cls: string): Style => textStyle(cls, mode());
@@ -236,7 +238,7 @@ export function Field(p: {
 	const setEditing = (v: boolean) => { setEditingRaw(v); p.onEditing?.(v); };
 	let draft = p.value;
 	let cancelled = false;
-	const start = () => { draft = p.value; cancelled = false; setEditing(true); };
+	const start = () => { if (locked()) return; draft = p.value; cancelled = false; setEditing(true); };
 	// startEditing may turn true after this row was built (the pane is a cached virtual list): open the editor then.
 	createEffect(on(() => p.startEditing, (v) => { if (v && !editing()) start(); }));
 	const commit = () => {
@@ -316,7 +318,7 @@ export function Field(p: {
 export function BoxInput(p: { value: string; placeholder?: string; width?: number | string; onCommit: (v: string) => void; onInput?: (v: string) => void; onKey?: (key: string) => void; autoFocus?: boolean; numeric?: boolean; style?: Style }): JSX.Element {
 	let draft = p.value;
 	let done = p.value;
-	const commit = () => { if (draft !== done) { done = draft; p.onCommit(draft); } };
+	const commit = () => { if (locked()) return; if (draft !== done) { done = draft; p.onCommit(draft); } };
 	return (
 		<input
 			autoFocus={p.autoFocus}
@@ -452,6 +454,7 @@ export function MiniSelect<T extends string>(p: { value: T; options: { value: T;
 	let el: { id: number } | undefined;
 	const current = () => p.options.find((o) => o.value === p.value)?.label ?? p.value;
 	const open = (e: { x?: number; y?: number }) => {
+		if (locked()) return;
 		const items: MenuItem[] = p.options.map((o) => ({ label: o.label, checked: o.value === p.value, onSelect: () => p.onChange(o.value) }));
 		const b = el ? gp?.renderer.getElementBounds?.(el.id) : null;
 		openMenu(b ? { rect: b } : { x: e.x ?? 0, y: e.y ?? 0 }, items, { minWidth: Math.max(120, p.width ?? 0) });

@@ -9,6 +9,7 @@
 //                                    the attachment or note becomes its child.
 // Notes are plain POST /api/items with itemType "note" (+ parentItem for a child note).
 import type { Database } from "bun:sqlite";
+import { resolveLibrary } from "../libraries";
 import { HttpError } from "../db";
 import { addByIdentifier } from "./add";
 import { addFile, addLink } from "./files";
@@ -40,10 +41,13 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 
 		if (route === "identifier") {
 			const b = await readJson(req);
-			return json(await addByIdentifier(db, b.text, b.collectionKey, b.autoTag !== false));
+			return json(await addByIdentifier(db, b.text, b.collectionKey, b.autoTag !== false, b.library !== undefined ? resolveLibrary(db, b.library) : undefined));
 		}
 		if (route === "create-parent") return json(await createParent(db, await readJson(req)), 201);
-		if (route === "link") return json(addLink(db, await readJson(req)), 201);
+		if (route === "link") {
+			const b = await readJson(req);
+			return json(addLink(db, { ...b, libraryId: b.library !== undefined ? resolveLibrary(db, b.library) : undefined }), 201);
+		}
 		if (route === "retrieve-metadata") {
 			const b = await readJson(req);
 			return json(await retrieveMetadata(db, b.attachmentKeys, { rename: b.rename !== false, autoTag: b.autoTag !== false }));
@@ -55,13 +59,14 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 			const form = await req.formData();
 			const f = form.get("file");
 			const str = (k: string) => (typeof form.get(k) === "string" && form.get(k) ? (form.get(k) as string) : undefined);
-			const opts = { mode: str("mode") as any, parentKey: str("parentKey"), collectionKey: str("collectionKey"), path: str("path") };
+			const opts = { mode: str("mode") as any, parentKey: str("parentKey"), collectionKey: str("collectionKey"), path: str("path"), libraryId: str("library") ? resolveLibrary(db, str("library")) : undefined };
 			if (f && typeof f !== "string") {
 				return json(addFile(db, { ...opts, name: (f as File).name, contentType: (f as File).type }, new Uint8Array(await (f as File).arrayBuffer())), 201);
 			}
 			return json(addFile(db, opts), 201);
 		}
-		return json(addFile(db, await readJson(req)), 201);
+		const fb = await readJson(req);
+		return json(addFile(db, { ...fb, libraryId: fb.library !== undefined ? resolveLibrary(db, fb.library) : undefined }), 201);
 	} catch (e) {
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
 		console.error(e);
