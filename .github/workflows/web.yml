@@ -35,7 +35,8 @@ on:
         default: ""
 
 concurrency:
-  group: web-${{ github.ref }}
+  # per event: a tag's push run must not cancel the release run of the same tag (which attaches the zip)
+  group: web-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
