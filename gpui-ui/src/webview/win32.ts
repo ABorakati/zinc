@@ -74,9 +74,9 @@ function user32(): User32 | null {
 			(h: H) => {
 				const s = u32!;
 				s.GetWindowThreadProcessId(h, pidBuf);
-				// this process's visible top-level windows that have no owner (our own popup is owned, so it is skipped), except the
+				// this process's visible top-level windows that have no owner, other than our own popups (makeOwnedPopup), except the
 				// headless test renderer's window, which is never really on screen (a popup placed over it would be)
-				if (pidBuf[0] === process.pid && s.IsWindowVisible(h) && !s.GetWindow(h, 4)) {
+				if (pidBuf[0] === process.pid && s.IsWindowVisible(h) && !s.GetWindow(h, 4) && !isPopup(h)) {
 					const n = s.GetWindowTextW(h, titleBuf, titleBuf.length);
 					if (String.fromCharCode(...titleBuf.subarray(0, Math.max(0, n))) !== "GPUIX Test") found.push(h);
 				}
@@ -137,15 +137,49 @@ const WS_POPUP = 0x80000000n, WS_CLIPCHILDREN = 0x02000000n;
 const WS_EX_TOOLWINDOW = 0x80n, WS_EX_NOACTIVATE = 0x08000000n;
 const SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
 
-/** Turn a freshly created (top-level, framed) webview window into a frameless popup owned by the main window; it starts hidden. */
-export function makeOwnedPopup(h: H, owner: H | null): void {
+/** Our web view popups (never mistaken for the main window, which is found as this process's un-owned top-level window). */
+const popups = new Set<bigint>();
+const isPopup = (h: H): boolean => popups.has(BigInt(h));
+
+/**
+ * Turn a freshly created (top-level, framed) webview window into a frameless popup; it starts hidden.
+ *
+ * It is NOT owned by the main window. The popup lives on the JS thread and the GPUI window on GPUI's thread, and an owner
+ * relation across threads makes Windows send messages between them synchronously: when the GPUI thread waited on the popup
+ * while the JS thread waited on GPUI (a GPUIX call), both stalled for seconds ("not responding" on opening a web snapshot and
+ * on closing the app; in the AOT build 3 runs in 14, none in 8 without the owner). What ownership gave is done by hand
+ * instead: keepAbove() keeps the popup over the main window while this app is in front, place() hides it while the main window
+ * is minimised, and WS_EX_TOOLWINDOW keeps it off the taskbar and Alt-Tab. `owner` is accepted for the call sites and ignored.
+ */
+export function makeOwnedPopup(h: H, _owner: H | null): void {
 	const s = user32();
 	if (!s) return;
+	popups.add(BigInt(h));
 	s.ShowWindow(h, 0);
 	s.SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | WS_CLIPCHILDREN);
 	s.SetWindowLongPtrW(h, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
-	if (owner != null) s.SetWindowLongPtrW(h, GWLP_HWNDPARENT, BigInt(owner)); // GWLP_HWNDPARENT on a top-level window sets its OWNER
 	s.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
+/** The popup is gone (destroyed): forget it. */
+export function forgetPopup(h: H): void { popups.delete(BigInt(h)); }
+
+/**
+ * Keep the popup directly over the main window while this app is in front (an owned window got that for free): when the user
+ * brings the main window forward it covers the popup, so the popup is raised again (without taking focus). Cheap: it walks the
+ * z-order below the popup looking for the main window, at most a few dozen windows.
+ */
+export function keepAbove(h: H): void {
+	const s = user32(), w = mainWindow();
+	if (!s || w == null || !appIsForeground()) return;
+	const target = BigInt(w);
+	let cur: H = h;
+	for (let i = 0; i < 64; i++) {
+		cur = s.GetWindow(cur, 2); // GW_HWNDNEXT: the window below
+		if (!cur) break;
+		if (BigInt(cur) === target) return; // already above the main window
+	}
+	s.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); // HWND_TOP (null), no move or size
 }
 
 /** Place the popup at a screen rectangle (physical px) and show it, without taking focus. */

@@ -14,8 +14,8 @@
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { Rect } from "../ui/core";
 import {
-	appIsForeground, clientOnScreen, clipPopup, dpr, focusMain, focusPopup, hidePopup, isWindow, mainWindow, makeOwnedPopup, placePopup,
-	popupHasFocus, pump, win32Available,
+	appIsForeground, clientOnScreen, clipPopup, dpr, focusMain, focusPopup, forgetPopup, hidePopup, isWindow, keepAbove, mainWindow, makeOwnedPopup,
+	placePopup, popupHasFocus, pump, win32Available,
 } from "./win32";
 
 type H = number | bigint;
@@ -54,11 +54,16 @@ export const webViewHeadless = (): boolean => process.env.ZN_WEBVIEW_HEADLESS ==
 // one message pump for every live view
 const live = new Set<WebHost>();
 let pumpTimer: ReturnType<typeof setInterval> | undefined;
+// ZN_WEBVIEW_TRACE=1: log every pump round that takes longer than 30 ms, split into message pumping and placement
+const TRACE = typeof process !== "undefined" && process.env.ZN_WEBVIEW_TRACE === "1";
 function startPump(h: WebHost): void {
 	live.add(h);
 	pumpTimer ??= setInterval(() => {
+		const t0 = TRACE ? performance.now() : 0;
 		pump();
+		const t1 = TRACE ? performance.now() : 0;
 		for (const x of [...live]) x.tick();
+		if (TRACE) { const t2 = performance.now(); if (t2 - t0 > 30) console.log(`[webview trace] round ${(t2 - t0).toFixed(0)} ms: pump ${(t1 - t0).toFixed(0)} ms, tick ${(t2 - t1).toFixed(0)} ms`); }
 	}, 10);
 }
 function stopPump(h: WebHost): void {
@@ -144,6 +149,14 @@ export class WebHost {
 	/** The shared pump calls this every 10 ms while the view exists. */
 	tick(): void {
 		if (!this.wv || this.hwnd == null) return;
+		if (TRACE) {
+			const t0 = performance.now();
+			const p = typeof this.where === "function" ? this.where() : null;
+			const t1 = performance.now();
+			clientOnScreen(); dpr();
+			const t2 = performance.now();
+			if (t2 - t0 > 20) console.log(`[webview trace] tick: placement callback ${(t1 - t0).toFixed(0)} ms, window queries ${(t2 - t1).toFixed(0)} ms (rect ${p ? "yes" : "no"})`);
+		}
 		if (!isWindow(this.hwnd)) { // closed behind our back (Alt+F4 while the page had focus): start over if the page is still wanted
 			const url = this.url, where = this.where, visible = this.visible;
 			this.teardown();
@@ -182,15 +195,19 @@ export class WebHost {
 			if (this.background) process.env.WEBVIEW2_DEFAULT_BACKGROUND_COLOR = `FF${this.background}`;
 			// literal specifier cast to string: bundled by Bun.build, but keeps TypeScript out of the package's .ts sources (they do not type-check under bun-types 1.4)
 			const { Webview } = await import("webview-bun" as string) as unknown as { Webview: new (debug: boolean) => WebviewLike };
+			const tc = TRACE ? performance.now() : 0;
 			const w = new Webview(false);
+			if (TRACE) console.log(`[webview trace] new Webview: ${(performance.now() - tc).toFixed(0)} ms`);
 			const h = w.unsafeWindowHandle;
 			if (h == null) throw new Error("the web view created no window");
 			w.bind("znMsg", (json) => {
+				const tm = TRACE ? performance.now() : 0;
 				try { this.o.onMessage?.(JSON.parse(String(json)) as PageMessage); } catch (e) { console.error("[webview] message:", e); }
+				if (TRACE) { const d = performance.now() - tm; if (d > 20) console.log(`[webview trace] page message handled in ${d.toFixed(0)} ms: ${String(json).slice(0, 80)}`); }
 				return null;
 			});
 			w.init(this.o.init);
-			makeOwnedPopup(h, owner);
+			makeOwnedPopup(h, owner); // not actually owned: see makeOwnedPopup (cross-thread ownership hung the app)
 			this.wv = w; this.hwnd = h; this.navigated = ""; this.placed = ""; this.region = ""; this.shown = false; this.ticks = 0;
 			startPump(this);
 			this.setState("ready");
@@ -233,9 +250,10 @@ export class WebHost {
 		const holes = (p.holes ?? []).filter((q) => overlaps(q, r)).map(px);
 		const region = keep || holes.length ? JSON.stringify([keep, holes]) : "";
 		const key = `${x},${y},${w},${h}`;
-		if (this.shown && key === this.placed && region === this.region) return;
+		if (this.shown && key === this.placed && region === this.region) { keepAbove(hwnd); return; }
 		if (region !== this.region) { clipPopup(hwnd, keep, holes); this.region = region; }
 		placePopup(hwnd, { x, y, width: w, height: h });
+		keepAbove(hwnd);
 		this.shown = true;
 		this.placed = key;
 	}
@@ -244,6 +262,7 @@ export class WebHost {
 		stopPump(this);
 		if (this.releaseTimer) { clearTimeout(this.releaseTimer); this.releaseTimer = undefined; }
 		const w = this.wv, had = this.hwnd != null && this.shown && popupHasFocus(this.hwnd);
+		if (this.hwnd != null) forgetPopup(this.hwnd);
 		this.wv = null; this.hwnd = null; this.navigated = ""; this.placed = ""; this.region = ""; this.shown = false;
 		this.url = null; this.where = null; this.visible = false;
 		try { w?.destroy(); } catch { /* already gone */ }
