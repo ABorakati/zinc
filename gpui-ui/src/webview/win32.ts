@@ -19,7 +19,7 @@ interface User32 {
 	ClientToScreen(hwnd: H, pt: unknown): number;
 	GetClientRect(hwnd: H, rect: unknown): number;
 	SetWindowLongPtrW(hwnd: H, index: number, value: bigint): bigint;
-	SetWindowPos(hwnd: H, after: H | null, x: number, y: number, w: number, h: number, flags: number): number;
+	SetWindowPos(hwnd: H, after: number | bigint, x: number, y: number, w: number, h: number, flags: number): number;
 	ShowWindow(hwnd: H, cmd: number): number;
 	PeekMessageW(msg: unknown, hwnd: null, min: number, max: number, remove: number): number;
 	TranslateMessage(msg: unknown): number;
@@ -59,7 +59,7 @@ function user32(): User32 | null {
 			ClientToScreen: { args: [p, p], returns: i },
 			GetClientRect: { args: [p, p], returns: i },
 			SetWindowLongPtrW: { args: [p, i, FFIType.i64], returns: FFIType.i64 },
-			SetWindowPos: { args: [p, p, i, i, i, i, u], returns: i },
+			SetWindowPos: { args: [p, FFIType.i64, i, i, i, i, u], returns: i },
 			ShowWindow: { args: [p, i], returns: i },
 			PeekMessageW: { args: [p, p, u, u, u], returns: i },
 			TranslateMessage: { args: [p], returns: i },
@@ -135,6 +135,7 @@ export const isWindow = (h: H): boolean => { const s = user32(); return !!s && !
 const GWL_STYLE = -16, GWL_EXSTYLE = -20, GWLP_HWNDPARENT = -8;
 const WS_POPUP = 0x80000000n, WS_CLIPCHILDREN = 0x02000000n;
 const WS_EX_TOOLWINDOW = 0x80n, WS_EX_NOACTIVATE = 0x08000000n;
+const HWND_TOPMOST = -1, HWND_NOTOPMOST = -2;
 const SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
 
 /** Our web view popups (never mistaken for the main window, which is found as this process's un-owned top-level window). */
@@ -158,7 +159,7 @@ export function makeOwnedPopup(h: H, _owner: H | null): void {
 	s.ShowWindow(h, 0);
 	s.SetWindowLongPtrW(h, GWL_STYLE, WS_POPUP | WS_CLIPCHILDREN);
 	s.SetWindowLongPtrW(h, GWL_EXSTYLE, WS_EX_TOOLWINDOW);
-	s.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+	s.SetWindowPos(h, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 /** The popup is gone (destroyed): forget it. */
@@ -179,16 +180,20 @@ export function keepAbove(h: H): void {
 		if (!cur) break;
 		if (BigInt(cur) === target) return; // already above the main window
 	}
-	s.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); // HWND_TOP (null), no move or size
+	// a plain HWND_TOP is refused here: this JS thread does not own the foreground window (the GPUI thread does), so the popup
+	// stayed behind the main window after a restore ("Opening..." showing). Briefly making it topmost and then not topmost is
+	// allowed from any thread and leaves it at the top of the ordinary windows, i.e. above the main window.
+	s.SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	s.SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
 /** Place the popup at a screen rectangle (physical px) and show it, without taking focus. */
 export function placePopup(h: H, r: { x: number; y: number; width: number; height: number }): void {
-	user32()?.SetWindowPos(h, null, r.x, r.y, r.width, r.height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+	user32()?.SetWindowPos(h, 0, r.x, r.y, r.width, r.height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 export function hidePopup(h: H): void {
-	user32()?.SetWindowPos(h, null, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+	user32()?.SetWindowPos(h, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
 }
 
 function gdi32(): Gdi32 | null {

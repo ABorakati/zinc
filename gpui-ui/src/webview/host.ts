@@ -102,6 +102,8 @@ export class WebHost {
 	get alive(): boolean { return this.wv != null; }
 	/** The popup is on screen. */
 	get onScreen(): boolean { return this.shown; }
+	/** The popup's window handle (diagnostics). */
+	get handle(): H | null { return this.hwnd; }
 
 	/** Create the view if needed and load `url` in it (hidden until show()). */
 	load(url: string): void {
@@ -294,6 +296,8 @@ const webTabs = new WebHost({
 });
 
 export const hostState: Accessor<HostState> = webTabs.state;
+/** The web tabs' popup window handle, or null (diagnostics: scripts/webtab-hang-probe.tsx). */
+export const webTabHandle = (): H | null => webTabs.handle;
 export const hostError: Accessor<string> = webTabs.error;
 
 /** Called by the tab view: the page to show and where (window-relative logical px). Creates the view on first use. */
