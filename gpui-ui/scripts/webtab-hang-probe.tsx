@@ -21,7 +21,16 @@ const t0 = performance.now();
 const log = (m: string) => console.log(`${(performance.now() - t0).toFixed(0).padStart(6)} ms  ${m}`);
 await import("../src/main");
 const { store } = await import("../src/store");
-const { hostState, hostError, webTabHandle } = await import("../src/webview/host");
+const { hostState, hostError, webTabHandle, evalInPage, onPageMessage } = await import("../src/webview/host");
+/** Did the page reload? A marker set in the page survives anything but a reload; the page reports it back. */
+let stampReply: unknown = undefined;
+async function pageStamp(label: string): Promise<void> {
+	stampReply = undefined;
+	onPageMessage((m) => { if (m.type === "probe") stampReply = m; });
+	evalInPage("window.znMsg(JSON.stringify({ type: 'probe', stamp: window.__znProbe || null, href: location.href.slice(-40), visible: document.visibilityState }))");
+	for (let i = 0; i < 40 && stampReply === undefined; i++) await sleep(50);
+	log(`[page] ${label}: ${stampReply === undefined ? "no answer" : JSON.stringify(stampReply)}`);
+}
 /** Is the web tab's popup visible, and is it above the main window in the z-order (what the user sees)? */
 function popupReport(label: string): void {
 	const p = webTabHandle(), w = mainWindow();
@@ -50,12 +59,17 @@ if (mode === "minimize") {
 	// minimise and restore, then resize, as a user does: is the snapshot still shown over its tab?
 	const m = mainWindow();
 	popupReport("after opening");
+	evalInPage("window.__znProbe = 'set-' + Date.now()");
+	await pageStamp("after opening (marker set)");
 	if (m != null) {
 		u.symbols.ShowWindow(m as never, 6); log("minimised"); await sleep(2000); popupReport("while minimised");
+		{ const { clientOnScreen, appIsForeground } = await import("../src/webview/win32"); log(`[win] while minimised: clientOnScreen=${JSON.stringify(clientOnScreen())} appForeground=${appIsForeground()}`); }
 		u.symbols.ShowWindow(m as never, 9); u.symbols.SetForegroundWindow(m as never); log("restored"); await sleep(2000); popupReport("after restore");
+		await pageStamp("after restore");
 		const r = new Int32Array(4); u.symbols.GetWindowRect(m as never, r as never);
 		u.symbols.SetWindowPos(m as never, null as never, r[0]! + 40, r[1]! + 30, r[2]! - r[0]! - 200, r[3]! - r[1]! - 120, 0x4 | 0x10);
 		log("resized"); await sleep(2000); popupReport("after resize");
+		await pageStamp("after resize");
 		u.symbols.SetForegroundWindow(m as never); await sleep(1500); popupReport("after bringing the app forward again");
 	}
 }
