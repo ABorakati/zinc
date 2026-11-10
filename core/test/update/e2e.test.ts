@@ -45,7 +45,8 @@ function setup(name: string, feed: Feed, settings: Partial<UpdateSettings> = {})
 	return { u, dir, updatesDir, marker, exits, trace };
 }
 
-describe("update e2e (local feed)", () => {
+// The stub installer is a Windows .cmd file, and the updater runs the Windows installer: nothing to run elsewhere.
+describe.skipIf(process.platform !== "win32")("update e2e (local feed)", () => {
 	test("detect -> download -> verify -> apply with the silent arguments", async () => {
 		const installer = stubInstaller("full");
 		const feed = await startFeed({ version: NEXT, installer, notes: "# 0.2.0\n- auto-update" });

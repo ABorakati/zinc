@@ -7,6 +7,8 @@ dist-*/
 
 # Local library database (imported from Zotero)
 data/
+# ...except the Zotero compatibility tests' upstream fixture
+!core/test/zotero-compat/data/
 
 # Agent verification screenshots (mock data)
 note-host/*.png

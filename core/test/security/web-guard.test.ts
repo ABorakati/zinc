@@ -133,7 +133,8 @@ describe("Better BibTeX endpoints", () => {
 
 describe("auto-export targets", () => {
 	const w = (s: string) => s.replaceAll("/", String.fromCharCode(92));
-	test("system folders, UNC and device paths, odd extensions and streams are refused", () => {
+	// The target rules are Windows path rules (drive letters, UNC, device names, streams); other platforms read these strings as relative names.
+	test.skipIf(process.platform !== "win32")("system folders, UNC and device paths, odd extensions and streams are refused", () => {
 		expect(() => checkExportTarget(w("C:/Windows/System32/refs.bib"))).toThrow("system");
 		expect(() => checkExportTarget(w("C:/Users/x/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/r.bib"))).toThrow("startup");
 		expect(() => checkExportTarget(w("//server/share/refs.bib"))).toThrow("network");

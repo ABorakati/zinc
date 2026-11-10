@@ -5,7 +5,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const { Resvg } = (await import(join(process.cwd(), "node_modules", "@resvg", "resvg-js", "index.js"))) as typeof import("@resvg/resvg-js");
+// The renderer is not installed with the repo, so `bun check` cannot resolve its types: only the part used here is typed.
+type ResvgCtor = new (svg: string, opts: { fitTo: { mode: "width"; value: number }; shapeRendering: number }) => { render(): { asPng(): Uint8Array } };
+const { Resvg } = (await import(join(process.cwd(), "node_modules", "@resvg", "resvg-js", "index.js"))) as { Resvg: ResvgCtor };
 const assets = join(import.meta.dir, "..", "assets");
 const svg = readFileSync(join(assets, "icon.svg"), "utf8");
 const SIZES = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256];

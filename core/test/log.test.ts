@@ -116,8 +116,11 @@ describe("log lines", () => {
 			console.warn = keep.warn;
 			(console as unknown as { __znMirror?: boolean }).__znMirror = false;
 		}
-		expect(printed).toHaveLength(2);
-		const rows = lines(listLogFiles(dir)[0]!.file);
+		// Background work from earlier tests (a failed full-text extraction, say) can also log while this runs: look only at our two lines.
+		const ours = (m: unknown) => typeof m === "string" && (m.startsWith("[sync] pull failed") || m === "plain warning");
+		expect(printed.filter((a) => ours(a[0]))).toHaveLength(2);
+		const rows = lines(listLogFiles(dir)[0]!.file).filter((r) => ours(r.message) || /pull failed/.test(String(r.message)));
+		expect(rows).toHaveLength(2);
 		expect(rows[0]).toMatchObject({ level: "error", area: "sync" });
 		expect(rows[0].stack).toContain("nope");
 		expect(rows[1]).toMatchObject({ level: "warn", area: "ui", message: "plain warning" });
