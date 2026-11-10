@@ -5,7 +5,7 @@ import Site from "../layouts/Site.astro";
 const base = import.meta.env.BASE_URL;
 const latest = "https://github.com/ABorakati/zinc/releases/latest";
 // the browser edition (gpui-ui/web, attached to releases by .github/workflows/web.yml)
-const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.7/Zinc-Web-v0.1.7.zip";
+const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.8/Zinc-Web-v0.1.8.zip";
 ---
 <Site page="download" title="Download" description="Download the Zinc installer for Windows 10 and 11, and set up the Word add-in and the browser connector.">
 	<section class="hero">
@@ -14,7 +14,7 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.7/Zinc-
 				<h1 class="display" style="margin-bottom: 1.5rem">Take it home</h1>
 				<p class="lede" style="margin-bottom: 2rem">One installer for the app, the Word add-in and the browser connector. It installs for your Windows user only and never changes your Zotero library.</p>
 				<div class="actions">
-					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.7 from GitHub</a>
+					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.8 from GitHub</a>
 					<a class="btn btn-outline btn-lg" href={`${base}user-guide/install/`}><Icon name="book-open" />Install guide</a>
 				</div>
 				<p class="fine" style="margin-top: 1.25rem">The repository is private: the link works when you are signed in to GitHub with access to it.</p>
@@ -43,7 +43,7 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.7/Zinc-
 				<p>Your installed copy lives in <code>%LOCALAPPDATA%\Programs\Zinc</code>. Uninstalling removes the program, never a library.</p>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1.7</span><span>Installing</span></div>
+				<div class="card-head"><span>ZN 0.1.8</span><span>Installing</span></div>
 				<ol class="card-steps">
 					<li><div><strong>Run the installer.</strong><p>Pick the parts you want. Close Word first if you install the add-in.</p></div></li>
 					<li><div><strong>Choose a library.</strong><p>Import from Zotero (only read), open a Zinc library, or start empty. <a href={`${base}user-guide/first-run/`}>First run</a>.</p></div></li>
@@ -53,7 +53,7 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.7/Zinc-
 		</div>
 		<div class="wrap" style="margin-top: 2.5rem">
 			<p class="fine">Silent install, for scripts:</p>
-			<pre class="typed">Zinc-Setup-0.1.7.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="app,word,connector"</pre>
+			<pre class="typed">Zinc-Setup-0.1.8.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="app,word,connector"</pre>
 		</div>
 	</section>
 
@@ -65,7 +65,7 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.7/Zinc-
 				<p>The official Zotero Connector also works, but only while the app is open. Keep one connector per browser, or every page shows two Save buttons.</p>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1.7</span><span>Connector</span></div>
+				<div class="card-head"><span>ZN 0.1.8</span><span>Connector</span></div>
 				<ol class="card-steps">
 					<li><div><strong>Open the extensions page.</strong><p><code>chrome://extensions</code> or <code>edge://extensions</code>.</p></div></li>
 					<li><div><strong>Turn on Developer mode.</strong></div></li>
@@ -88,9 +88,9 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.7/Zinc-
 				</div>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1.7</span><span>Browser</span></div>
+				<div class="card-head"><span>ZN 0.1.8</span><span>Browser</span></div>
 				<ol class="card-steps">
-					<li><div><strong>Unzip it.</strong><p><code>Zinc-Web-v0.1.7.zip</code>, about 60 MB unpacked.</p></div></li>
+					<li><div><strong>Unzip it.</strong><p><code>Zinc-Web-v0.1.8.zip</code>, about 60 MB unpacked.</p></div></li>
 					<li><div><strong>Serve the folder.</strong><p>In the folder: <code>python3 -m http.server 8080</code>, or any static file server. Browsers only run WebAssembly over http://, not from a file opened on disk.</p></div></li>
 					<li><div><strong>Open it.</strong><p><code>http://localhost:8080</code>. Add <code>?open=demo</code> to open the demo article in the reader.</p></div></li>
 				</ol>
