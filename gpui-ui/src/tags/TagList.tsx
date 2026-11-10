@@ -7,7 +7,7 @@ import { Icon } from "../icons";
 import { refreshStore, setTagFilter, tagFilter } from "../sidebar/bridge";
 import { errMsg, sidebarApi } from "../sidebar/client";
 import { promptText } from "../sidebar/dialogs";
-import { IconButton, mode, muted, SectionHeader, t, tok, tx } from "../sidebar/parts";
+import { IconButton, mode, muted, SCROLLBAR_GUTTER, SectionHeader, t, tok, tx } from "../sidebar/parts";
 import { collectionsFraction, setShowAutoTags, setTagsOpen, showAutoTags, tagsOpen } from "../sidebar/state";
 import { store } from "../store";
 import { Button, confirm, openDialog, openMenu, toast, type MenuItem } from "../ui";
@@ -261,11 +261,12 @@ export function TagList(): JSX.Element {
 				open={tagsOpen()}
 				onToggle={() => setTagsOpen(!tagsOpen())}
 				icon="tag"
+				inset={SCROLLBAR_GUTTER + 8}
 				actions={<IconButton name="ellipsis" box={20} icon={14} label="Tag menu" onClick={(e) => paneMenu(e.x ?? 0, e.y ?? 0)} />}
 			/>
 			<Show when={tagsOpen()}>
 				{/* a white field with a visible edge, so the filter reads as an input against the sidebar */}
-				<div style={{ ...t("mx-2.5 mb-2 flex h-7 flex-none items-center gap-1.5 rounded-lg bg-background pl-2.5 ring-1 ring-input"), position: "relative" }}>
+				<div style={{ ...t("mb-2 flex h-7 flex-none items-center gap-1.5 rounded-lg bg-background pl-2.5 ring-1 ring-input"), marginRight: SCROLLBAR_GUTTER + 8, position: "relative" }}>
 					<Icon name="search" size={13} color={muted()} />
 					<input
 						value={filter()}

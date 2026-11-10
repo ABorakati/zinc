@@ -54,8 +54,10 @@ export function folderSvg(open: boolean): string {
 export const HEADER_ROW = "flex flex-none items-center justify-between pr-1";
 export const HEADER_BTN = "flex min-w-0 items-center gap-1.5 rounded-md px-2.5 pt-0.5 pb-1.5 text-left";
 export const HEADER_TEXT = "text-[11px] font-semibold text-muted-foreground";
-/** The section header's label on its accent band. */
-export const HEADER_TEXT_BAND = "text-[11px] font-semibold text-primary-deep";
+/** The section header's label on its grey band. */
+export const HEADER_TEXT_BAND = "text-[11px] font-semibold text-muted-foreground";
+/** The section header's band: faded grey, the radius of a selected row (ROW is rounded-lg). */
+export const HEADER_BAND = "mb-1 min-h-[26px] rounded-lg bg-border-soft";
 export const ROW = "relative flex min-h-7 items-center gap-1.5 rounded-lg pr-2 hover:bg-foreground/5";
 export const SPECIAL = "relative flex min-h-7 cursor-pointer items-center gap-1 rounded-lg pl-6 pr-2 hover:bg-foreground/5";
 // The same rows without the native `hover:` refinement: each refinement costs frame time on every visible row, so the rows keep
@@ -113,10 +115,13 @@ export function SectionHeader(p: {
 	icon?: string;
 	actions?: JSX.Element;
 	onContextMenu?: (x: number, y: number) => void;
+	/** Right margin, for a header outside the virtual list (whose rows keep a scrollbar gutter on the right). */
+	inset?: number;
 }): JSX.Element {
-	// a tinted band in the accent colour, so each section (Library, Collections, Group Libraries, Tags) stands apart from its rows
+	// a faded grey band, so each section (Library, Collections, Group Libraries, Tags) stands apart from its rows; same width and
+	// corner radius as a selected row's pill (ROW: rounded-lg), so the two line up
 	return (
-		<div style={{ ...t(HEADER_ROW), ...t("mx-1 mb-1 min-h-[26px] rounded-md bg-primary-tint") }}>
+		<div style={{ ...t(HEADER_ROW), ...t(HEADER_BAND), ...(p.inset ? { marginRight: p.inset } : {}) }}>
 			<div
 				role="button"
 				aria-expanded={p.open}
@@ -125,9 +130,9 @@ export function SectionHeader(p: {
 				onAuxClick={(e) => { if (e.isRightClick && p.onContextMenu) p.onContextMenu(e.x ?? 0, e.y ?? 0); }}
 				style={{ ...t(HEADER_BTN), ...t("py-1"), flexGrow: 1, cursor: "pointer" }}
 			>
-				<Icon name={p.open ? "chevron-down" : "chevron-right"} size={12} color={tok("primary")} />
+				<Icon name={p.open ? "chevron-down" : "chevron-right"} size={12} color={muted()} />
 				<Show when={p.icon}>
-					<Icon name={p.icon!} size={12} color={tok("primary")} />
+					<Icon name={p.icon!} size={12} color={muted()} />
 				</Show>
 				<text style={tx(HEADER_TEXT_BAND)}>{tracked(p.label)}</text>
 			</div>

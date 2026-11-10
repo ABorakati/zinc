@@ -5,7 +5,7 @@ import { Icon } from "../icons";
 import { currentView, refreshStore, setView } from "../sidebar/bridge";
 import { errMsg, sidebarApi, type SavedSearch } from "../sidebar/client";
 import { NameInput } from "../sidebar/NameInput";
-import { type Entry, HEADER_TEXT_BAND, IconButton, labelCls, ListItem, pill, SPECIAL, t, tok, TRUNCATE, tracked, tx } from "../sidebar/parts";
+import { type Entry, HEADER_BAND, HEADER_TEXT_BAND, IconButton, labelCls, ListItem, pill, SPECIAL, t, tok, TRUNCATE, tracked, tx } from "../sidebar/parts";
 import { confirm, openMenu, toast } from "../ui";
 import { openAdvancedSearch } from "./AdvancedSearch";
 import { refreshSavedSearches, savedSearches } from "./state";
@@ -97,7 +97,7 @@ export function savedSearchEntries(): Entry[] {
 		render: () => (
 			<ListItem gap={0}>
 				{/* the same accent band as the sidebar's section headers (SectionHeader) */}
-				<div style={t("mx-1 mt-2 mb-1 flex min-h-[26px] items-center justify-between rounded-md bg-primary-tint pl-2.5 pr-1")}>
+				<div style={{ ...t("mt-2 flex items-center justify-between pl-2.5 pr-1"), ...t(HEADER_BAND) }}>
 					<text style={tx(HEADER_TEXT_BAND)}>{tracked("Saved Searches")}</text>
 					<IconButton name="plus" box={20} icon={14} label="Advanced search" onClick={() => void openAdvancedSearch()} />
 				</div>
