@@ -264,15 +264,17 @@ export function TagList(): JSX.Element {
 				actions={<IconButton name="ellipsis" box={20} icon={14} label="Tag menu" onClick={(e) => paneMenu(e.x ?? 0, e.y ?? 0)} />}
 			/>
 			<Show when={tagsOpen()}>
-				<div style={{ ...t("mx-2.5 mb-2 flex h-7 flex-none items-center rounded-lg bg-muted"), position: "relative" }}>
+				{/* a white field with a visible edge, so the filter reads as an input against the sidebar */}
+				<div style={{ ...t("mx-2.5 mb-2 flex h-7 flex-none items-center gap-1.5 rounded-lg bg-background pl-2.5 ring-1 ring-input"), position: "relative" }}>
+					<Icon name="search" size={13} color={muted()} />
 					<input
 						value={filter()}
 						placeholder="Filter tags"
 						onChange={(e) => setFilter((e as { value?: string }).value ?? "")}
-						style={{ flexGrow: 1, minWidth: 0, height: 28, paddingLeft: 10, paddingRight: 10, fontSize: 13, fontFamily: "Inter", color: tok("foreground") }}
+						style={{ flexGrow: 1, minWidth: 0, height: 26, paddingLeft: 0, paddingRight: 10, fontSize: 13, fontFamily: "Inter", color: tok("foreground") }}
 						theme={{
 							appearance: mode(),
-							bg: tok("muted"),
+							bg: tok("background"),
 							text: tok("foreground"),
 							textMuted: tok("muted-foreground"),
 							textFaint: tok("muted-foreground"),
