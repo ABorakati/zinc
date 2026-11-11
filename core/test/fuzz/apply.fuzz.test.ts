@@ -172,6 +172,21 @@ describe("sync apply (Web API / local Zotero pull)", () => {
 		applyChanges(f.db, { upserts: [it("AAAAAAA1", "AAAAAAA1"), it("BBBBBBB2", "CCCCCCC3"), it("CCCCCCC3", "BBBBBBB2")], deletes: [] }, f.dir);
 		expectHealthy(f.db);
 	});
+	// found by the nightly fuzz: the path of a linked file was kept when the same attachment came again as a stored file
+	test("regression: a linked file that becomes a stored attachment does not keep its outside path", () => {
+		const f = freshDb();
+		applyChanges(f.db, {
+			upserts: [
+				{ type: "item", key: "AAAAAAA1", data: { itemType: "attachment", linkMode: "linked_file", path: "/etc/passwd" }, dateModified: "2020-05-17T10:00:00Z" },
+				{ type: "item", key: "AAAAAAA1", data: { itemType: "attachment" }, dateModified: "0000-00-00" },
+			],
+			deletes: [],
+		} as unknown as RemoteChanges, f.dir);
+		const r = f.db.query("SELECT link_mode, path FROM attachments WHERE item_key = 'AAAAAAA1'").get() as { link_mode: string; path: string | null } | null;
+		expect(r?.link_mode).toBe("imported_file");
+		expect(r?.path ?? null).toBeNull();
+		expectHealthy(f.db);
+	});
 	test("regression: an unsafe key or filename from the server never reaches the file system", () => {
 		const f = freshDb();
 		applyChanges(f.db, {

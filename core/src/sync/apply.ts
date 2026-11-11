@@ -3,7 +3,7 @@
 
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ZoteroItemData } from "../api-types";
 import { deriveColumns, nowIso } from "../db";
 import { storedFormForNewLink } from "../files/paths";
@@ -73,11 +73,20 @@ function localInPublications(db: Database, key: string): boolean {
 	return !!r?.p;
 }
 
+/** True when `p` lies inside <dataDir>/storage, the only place a stored (imported) attachment's file can be. */
+function inStorage(dataDir: string, p: string): boolean {
+	const rel = relative(resolve(dataDir, "storage"), resolve(p));
+	return rel !== "" && rel.split(sep)[0] !== ".." && !isAbsolute(rel);
+}
+
 function attachmentPath(dataDir: string, key: string, data: ZoteroJson, existing: string | null): string | null {
 	const linkMode = String(data.linkMode ?? "");
 	if (linkMode === "linked_url") return null;
 	const raw = typeof data.path === "string" ? data.path : "";
 	if (linkMode === "linked_file") return ABS_PATH.test(raw) ? raw : existing;
+	// a stored attachment keeps its old path only when that path is in storage: an attachment that WAS a linked file (any path on
+	// disk, "/etc/passwd" from a hostile server) and is now stored must not carry that path over (found by the nightly fuzz)
+	if (existing && !inStorage(dataDir, existing)) existing = null;
 	let filename = typeof data.filename === "string" ? data.filename : "";
 	if (!filename && raw.startsWith("storage:")) filename = raw.slice("storage:".length);
 	// the name comes from the server: a path separator or ".." would point outside storage/<key>/

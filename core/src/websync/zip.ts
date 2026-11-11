@@ -60,13 +60,18 @@ export function safeEntryName(raw: string): string | null {
 	// characters Windows cannot have in a file name would make the write fail; they become "_" like attachment file names do
 	const n = raw.replaceAll("\\", "/").replace(/[<>"|?*]/g, "_");
 	if (unsafeParts(n)) return null;
-	// compatibility forms (fullwidth dots and slashes, ...) must not turn into a traversal on a file system that normalises them
-	const k = n.normalize("NFKC").replaceAll("\\", "/");
-	if (k !== n && unsafeParts(k)) return null;
-	return n
+	const clean = n
 		.split("/")
 		.filter((p) => p !== "" && p !== ".")
 		.join("/");
+	// compatibility forms (fullwidth dots and slashes, ...) must not turn into a traversal on a file system that normalises them. The
+	// name handed back is checked too, not only the raw one: "./／/x" passes as raw, but once "./" is dropped it starts with a fullwidth
+	// slash, which NFKC turns into "/" (an absolute path; found by the nightly fuzz)
+	for (const form of [n, clean]) {
+		const k = form.normalize("NFKC").replaceAll("\\", "/");
+		if (k !== form && unsafeParts(k)) return null;
+	}
+	return clean;
 }
 
 /**

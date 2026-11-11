@@ -77,7 +77,7 @@ describe("entry names", () => {
 
 	test.each([
 		"../evil", "..\\evil", "a/../../evil", "/abs", "\\abs", "C:\\x", "c:/x", "C:x", "\\\\server\\share\\x", "//server/share/x", "a\0b", ".. /x", "... /x", "a/.. /x",
-		"con", "NUL.txt", "dir/aux.html", "x.html:stream", "\uff0e\uff0e/x", "..\uff0fx", "\u2025/x",
+		"con", "NUL.txt", "dir/aux.html", "x.html:stream", "\uff0e\uff0e/x", "..\uff0fx", "\u2025/x", "./\uff0f/!",
 	])("regression: %j is refused", (raw) => {
 		expect(safeEntryName(raw)).toBeNull();
 	});
