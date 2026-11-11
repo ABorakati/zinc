@@ -9,6 +9,9 @@ import { failure, type ZoteroWebClient } from "./client";
 import { userRef, type LibraryRef } from "./library";
 import { entryTarget, isZip, readZip } from "./zip";
 
+/** Errors a file system gives for a name it cannot store (macOS refuses unassigned Unicode code points with EILSEQ). */
+export const UNSTORABLE_NAME = new Set(["EILSEQ", "ENAMETOOLONG", "EINVAL"]);
+
 export interface FileJob {
 	done: number;
 	total: number;
@@ -191,6 +194,7 @@ async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: string): Pr
 	const dir = join(ctx.storageDir, a.key);
 	const target = conflictCopy ?? join(dir, a.filename);
 	const put = (file: string, data: Uint8Array) => {
+		// (a .part file is written and renamed, so a failed write leaves no half file under the real name)
 		mkdirSync(dirname(file), { recursive: true });
 		const part = `${file}.part`;
 		writeFileSync(part, data);
@@ -211,7 +215,14 @@ async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: string): Pr
 		// zip entry names may be percent-encoded; the item's filename is the decoded form
 		for (const e of entries) {
 			const file = entryTarget(dir, e.name); // null = the name would leave the attachment's folder
-			if (file) put(file, e.data);
+			if (!file) continue;
+			try {
+				put(file, e.data);
+			} catch (err) {
+				// a page resource whose name this file system refuses (macOS: a code point Unicode has not assigned yet, EILSEQ; an
+				// over-long name) is left out instead of failing the whole snapshot; the main file is still required below
+				if (!UNSTORABLE_NAME.has((err as NodeJS.ErrnoException).code ?? "")) throw err;
+			}
 		}
 		if (!existsSync(target)) {
 			const alt = entries.find((e) => decode(e.name) === a.filename);

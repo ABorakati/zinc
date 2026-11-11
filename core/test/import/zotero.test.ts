@@ -123,7 +123,9 @@ describe("importZotero", () => {
 			baseAttachmentPath: base,
 			searchRoots: [base], // never crawl the real home dir from tests
 		});
-		db = new Database(target, { readonly: true });
+		// not { readonly: true }: the library is a WAL database and Bun on macOS uses Apple's SQLite, which cannot open one read-only
+		// before its -shm exists ("unable to open database file"; found by the macOS CI job). The tests only read.
+		db = new Database(target);
 	});
 
 	const item = (key: string) => {

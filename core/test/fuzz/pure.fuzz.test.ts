@@ -111,9 +111,13 @@ describe("saved-search compiler", () => {
 	fuzz("unknown or injected field names are refused", [fc.constantFrom("x'); DROP TABLE items;--", "title' OR '1'='1", "a b", "", "  ", "$.title", "title\0", "../x", "tit-le", "1title", "__proto__", "constructor")], (f) => {
 		expect(() => resolveField(f)).toThrow(HttpError);
 	});
+	// found by the nightly fuzz: the test's own String(f) threw a TypeError for this; resolveField now refuses non-strings with a 400
+	test("regression: a field name that is not a string is an HttpError", () => {
+		for (const f of [{ toString: 0 }, null, 3, ["title"]]) expect(() => resolveField(f as never)).toThrow(HttpError);
+	});
 
 	fuzz("operatorsFor, parseDateValue, parseInTheLast are total (HttpError or a value)", [field, text, fc.date({ noInvalidDate: true })], (f, v, now) => {
-		for (const fn of [() => operatorsFor(String(f)), () => parseDateValue(v), () => parseInTheLast(v, now)]) {
+		for (const fn of [() => operatorsFor(f as string), () => parseDateValue(v), () => parseInTheLast(v, now)]) {
 			try {
 				fn();
 			} catch (e) {

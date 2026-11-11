@@ -1,7 +1,7 @@
 // Push side: turn the outbox into ZoteroWrite[] from the current zotero-next state.
 
 import type { Database } from "bun:sqlite";
-import { existsSync, rmdirSync, rmSync } from "node:fs";
+import { existsSync, realpathSync, rmdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { nowIso } from "../db";
 import { resolveStoredPath } from "../files/paths";
@@ -46,8 +46,22 @@ export function pendingCount(db: Database, libraryId = 1): number {
 	return (db.query("SELECT count(*) AS n FROM (SELECT 1 FROM sync_outbox WHERE library_id = ? GROUP BY type, key)").get(libraryId) as { n: number }).n;
 }
 
+/** A path with its symbolic links resolved when it exists, else as given (resolved). */
+const real = (p: string): string => {
+	try {
+		return realpathSync(p);
+	} catch {
+		return resolve(p);
+	}
+};
+
+/**
+ * True when `file` lies inside `dir`, compared as real paths: on macOS the temp folder /var/... is /private/var/..., and SQLite reports
+ * the second form, so a plain resolve() took Zinc's own stored copy for a file outside storage and kept it (found by the macOS CI job).
+ * A link inside `dir` that points outside it is outside.
+ */
 export function isInside(file: string, dir: string): boolean {
-	const rel = relative(resolve(dir), resolve(file));
+	const rel = relative(real(dir), real(file));
 	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 

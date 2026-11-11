@@ -82,7 +82,9 @@ for (const [base, fields] of BASE_MAP) if (DATE_FIELDS.has(base)) for (const f o
 const jsonField = (a: string, f: string) => `json_extract(${a}.data, '$.${f}')`;
 
 export function resolveField(name: string): Spec {
-	const n = String(name).trim();
+	// the name can come from JSON: String() of an object whose toString is not a function throws a TypeError, not a 400
+	if (typeof name !== "string") throw new HttpError(400, "the search field must be a string");
+	const n = name.trim();
 	switch (n.toLowerCase()) {
 		case "title": {
 			const mapped = BASE_MAP.get("title") ?? [];

@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writ
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
+import { UNSTORABLE_NAME } from "../../src/websync/files";
 import { entryTarget, readZip, safeEntryName, ZipError } from "../../src/websync/zip";
 import { zipOf } from "../websync/zip";
 import { describeError, fc, fuzz, messyText, mutatedBytes } from "./harness";
@@ -107,8 +108,10 @@ function extractLikeDownloader(dir: string, zip: Uint8Array): void {
 			mkdirSync(path.dirname(file), { recursive: true });
 			writeFileSync(file, e.data);
 		} catch (err) {
-			// a file and a folder of one name in the same archive: the download of that attachment fails, which is fine
-			if (!["EEXIST", "ENOTDIR", "EISDIR"].includes((err as NodeJS.ErrnoException).code ?? "")) throw err;
+			// a file and a folder of one name in the same archive: the download of that attachment fails, which is fine; a name the file
+			// system cannot store (macOS: EILSEQ for an unassigned code point) is skipped by downloadOne
+			const code = (err as NodeJS.ErrnoException).code ?? "";
+			if (!["EEXIST", "ENOTDIR", "EISDIR"].includes(code) && !UNSTORABLE_NAME.has(code)) throw err;
 		}
 	}
 }
