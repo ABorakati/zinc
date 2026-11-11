@@ -8,6 +8,7 @@
 // Coordinates: host.ts places popups in window pixels; here clientOnScreen() is the content area at (0, 0) and dpr() is 1, so they arrive
 // in GPUI's logical pixels = AppKit points. GPUI's view may not be flipped, in which case y counts from the bottom.
 // Holes (toasts drawn over the page) are not cut on macOS: the page stays above them.
+import { CString } from "bun:ffi";
 import { hostRenderer } from "../shell/native";
 import { objc, runLoopOnce, type Id } from "../shell/objc";
 
@@ -183,7 +184,12 @@ export function pump(): void {
 	if (popups.size) runLoopOnce();
 }
 
-/** For diagnostics (the macOS smoke run): where the container is, as AppKit has it. */
-export function debugPopups(): { shown: boolean; rect: Rect | null; keep: Rect | null }[] {
-	return [...popups.values()].map((p) => ({ shown: p.shown, rect: p.rect, keep: p.keep }));
+/** For diagnostics (the macOS smoke run): where the container is, and the page's title as WebKit has it (a channel to the page that
+ * does not depend on the script-message bridge). */
+export function debugPopups(): { shown: boolean; rect: Rect | null; keep: Rect | null; title: string }[] {
+	const r = objc();
+	return [...popups.values()].map((p) => {
+		const t = r ? r.send.m0(r.send.m0(p.web, r.sel("title")), r.sel("UTF8String")) : null;
+		return { shown: p.shown, rect: p.rect, keep: p.keep, title: t ? new CString(t as never).toString() : "" };
+	});
 }

@@ -109,10 +109,10 @@ if (process.platform !== "win32") {
 		<div style="height:50vh;background:#e8483b;color:white;padding:24px;box-sizing:border-box">bottom half (red): hidden when clipped</div>`;
 	// served over http on loopback, as the app serves Zotero's reader and note pages; the page reports when it has loaded
 	const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } }) });
-	let loaded = "";
+	let loaded = "", pinged = false;
 	const host = new WebHost({
 		init: "window.addEventListener('load', () => window.znMsg(JSON.stringify({ type: 'loaded', width: innerWidth, height: innerHeight })));",
-		onMessage: (m) => { if (m.type === "loaded") loaded = `${m.width}x${m.height}`; },
+		onMessage: (m) => { if (m.type === "loaded") loaded = `${m.width}x${m.height}`; if (m.type === "ping") pinged = true; },
 	});
 	const box = { x: 240, y: 120, width: 560, height: 360 };
 	let clip: typeof box | null = null;
@@ -120,8 +120,13 @@ if (process.platform !== "win32") {
 	host.show(`http://127.0.0.1:${server.port}/`, () => ({ rect: box, clip }));
 	for (let i = 0; i < 150 && host.state() !== "ready" && host.state() !== "error"; i++) await sleep(100);
 	step(`4 web view: ${host.state()}`);
-	for (let i = 0; i < 80 && !loaded; i++) await sleep(100);
+	for (let i = 0; i < 150 && !loaded; i++) await sleep(100);
+	// the bridge, from the app's side: a message sent by a script the app runs in the page
+	host.eval("window.znMsg && window.znMsg(JSON.stringify({ type: 'ping' }))");
+	// what the page sees, through its title (read back via WebKit, not via the bridge)
+	host.eval("document.title = ['znMsg:' + typeof window.znMsg, 'handler:' + typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.__webview__), 'ready:' + document.readyState].join(' ')");
 	await sleep(1500);
+	summary.webPinged = pinged;
 	summary.webState = host.state();
 	if (host.error()) summary.webError = host.error();
 	summary.webOnScreen = host.onScreen;
