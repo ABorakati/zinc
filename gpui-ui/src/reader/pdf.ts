@@ -12,18 +12,21 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 const { ptr: P, i32: I32, u32: U32, f32: F32, u64: U64, cstring } = FFIType;
-const usize = FFIType.u64; // 64-bit only (Windows x64)
+const usize = FFIType.u64; // 64-bit only
+
+/** The file cargo builds native/pdf into on this OS: zn_pdf.dll, libzn_pdf.so or libzn_pdf.dylib. */
+export const ZN_PDF_LIB = process.platform === "win32" ? "zn_pdf.dll" : process.platform === "darwin" ? "libzn_pdf.dylib" : "libzn_pdf.so";
 
 export function findDll(): string {
 	const env = process.env.ZN_PDF_DLL;
 	const cands = [
 		env,
-		process.env.CARGO_TARGET_DIR && join(process.env.CARGO_TARGET_DIR, "release", "zn_pdf.dll"),
-		"C:/dev/cache/cargo-target/release/zn_pdf.dll",
-		join(import.meta.dir, "../../native/pdf/target/release/zn_pdf.dll"),
+		process.env.CARGO_TARGET_DIR && join(process.env.CARGO_TARGET_DIR, "release", ZN_PDF_LIB),
+		process.platform === "win32" && "C:/dev/cache/cargo-target/release/zn_pdf.dll",
+		join(import.meta.dir, "../../native/pdf/target/release", ZN_PDF_LIB),
 	].filter(Boolean) as string[];
 	for (const c of cands) if (existsSync(c)) return c;
-	throw new Error(`zn_pdf.dll not found (tried ${cands.join(", ")}); build it: cd native/pdf && cargo build --release`);
+	throw new Error(`${ZN_PDF_LIB} not found (tried ${cands.join(", ")}); build it: cd native/pdf && cargo build --release`);
 }
 
 let lib: ReturnType<typeof open> | undefined;

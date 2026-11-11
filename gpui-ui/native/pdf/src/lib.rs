@@ -54,10 +54,53 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
 mod drag;
 mod nav;
 mod ops;
 mod pdfium;
+#[cfg(windows)]
+mod print;
+
+/// Dragging text out (Windows OLE, src/drag.rs) and printing (Windows GDI, src/print.rs) are Windows only. Elsewhere the same symbols
+/// exist, so bun:ffi binds the library unchanged, and report that the feature is not there.
+#[cfg(not(windows))]
+mod unsupported {
+    use std::ffi::c_char;
+
+    use crate::{Job, set_error};
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn zn_drag_available() -> i32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn zn_drag_begin(_hwnd: isize, _text: *const u8, _text_len: usize, _html: *const u8, _html_len: usize) -> *const Job {
+        set_error("dragging out is only available on Windows");
+        std::ptr::null()
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn zpdf_print_begin(_data: *const u8, _len: usize, _title: *const c_char, _current: i32) -> *const Job {
+        set_error("printing is only available on Windows");
+        std::ptr::null()
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn zpdf_print_to_begin(
+        _data: *const u8,
+        _len: usize,
+        _title: *const c_char,
+        _printer: *const c_char,
+        _output: *const c_char,
+        _first: i32,
+        _last: i32,
+    ) -> *const Job {
+        set_error("printing is only available on Windows");
+        std::ptr::null()
+    }
+}
 
 use hayro::hayro_interpret::font::{Glyph, GlyphRun};
 use hayro::hayro_interpret::hayro_cmap::BfString;
@@ -279,6 +322,7 @@ fn pool_size(pdfium: bool) -> usize {
 /// Margin / background work yields to the UI and JS threads when the machine is busy; a job the screen is waiting for (the reader's
 /// priority band 0: tiles that touch the viewport, and the previews of visible pages) runs at normal priority, else a loaded machine
 /// (a build running next to the app) starves the render threads for hundreds of ms while the page they draw is already on screen.
+#[cfg_attr(not(windows), allow(unused_variables))]
 fn set_thread_priority(urgent: bool) {
     #[cfg(windows)]
     unsafe {

@@ -1,5 +1,8 @@
 # Upstream Zotero repos, cloned and built by scripts/build-docworker.sh, reader-host/build.sh and note-host/build.sh
 vendor/
+# ...except native/pdf/vendor: the PDFium fetch script and PDFium's licence files are committed (the fetched library itself is
+# ignored by gpui-ui/native/pdf/.gitignore)
+!gpui-ui/native/pdf/vendor/
 
 node_modules/
 dist/

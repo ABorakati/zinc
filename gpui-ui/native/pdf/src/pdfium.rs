@@ -6,22 +6,111 @@
 //! PDFium render. Pages stay loaded (parsed) in a small per-document LRU, so the tiles of one page - and a page that is scrolled back
 //! to - do not parse its content again.
 //!
-//! Look-up order for the dll: `ZN_PDFIUM_DLL`, next to zn_pdf.dll, next to the exe, `vendor/pdfium/bin` of the source tree this was
-//! built from. `ZN_PDF_BACKEND=hayro` turns PDFium off.
+//! Look-up order for the library (pdfium.dll / libpdfium.so / libpdfium.dylib): `ZN_PDFIUM_DLL`, next to zn_pdf itself, next to the
+//! exe, `vendor/pdfium/{bin,lib}` of the source tree this was built from. `ZN_PDF_BACKEND=hayro` turns PDFium off.
 
-use std::ffi::{OsStr, c_char, c_int, c_void};
-use std::os::windows::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::ffi::{c_char, c_int, c_void};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
 type Ptr = *mut c_void;
 
-unsafe extern "system" {
-    fn LoadLibraryExW(name: *const u16, file: isize, flags: u32) -> isize;
-    fn GetProcAddress(module: isize, name: *const u8) -> *const c_void;
-    fn GetModuleHandleExW(flags: u32, addr: *const c_void, out: *mut isize) -> i32;
-    fn GetModuleFileNameW(module: isize, buf: *mut u16, len: u32) -> u32;
+/// PDFium's file name on this system, as bblanchon/pdfium-binaries ships it.
+#[cfg(windows)]
+const PDFIUM: &str = "pdfium.dll";
+#[cfg(target_os = "macos")]
+const PDFIUM: &str = "libpdfium.dylib";
+#[cfg(all(unix, not(target_os = "macos")))]
+const PDFIUM: &str = "libpdfium.so";
+/// The folder of the pdfium-binaries archive that holds it.
+const PDFIUM_SUBDIR: &str = if cfg!(windows) { "bin" } else { "lib" };
+
+/// Loading a shared library and finding its functions: LoadLibraryExW / GetProcAddress on Windows, dlopen / dlsym elsewhere.
+#[cfg(windows)]
+mod os {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Path, PathBuf};
+
+    unsafe extern "system" {
+        fn LoadLibraryExW(name: *const u16, file: isize, flags: u32) -> isize;
+        fn GetProcAddress(module: isize, name: *const u8) -> *const c_void;
+        fn GetModuleHandleExW(flags: u32, addr: *const c_void, out: *mut isize) -> i32;
+        fn GetModuleFileNameW(module: isize, buf: *mut u16, len: u32) -> u32;
+    }
+
+    /// Load the library at `path`; 0 when it cannot be loaded.
+    pub fn open(path: &Path) -> isize {
+        let w: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+        // LOAD_WITH_ALTERED_SEARCH_PATH: dependencies are looked for next to the dll
+        unsafe { LoadLibraryExW(w.as_ptr(), 0, 0x8) }
+    }
+
+    /// The address of the NUL-terminated function `name` in `module`, or null.
+    pub fn sym(module: isize, name: &[u8]) -> *const c_void {
+        unsafe { GetProcAddress(module, name.as_ptr()) }
+    }
+
+    /// The file this code was loaded from (zn_pdf.dll).
+    pub fn own_path() -> Option<PathBuf> {
+        unsafe {
+            let mut h: isize = 0;
+            // FROM_ADDRESS | UNCHANGED_REFCOUNT
+            if GetModuleHandleExW(0x4 | 0x2, own_path as *const c_void, &mut h) == 0 {
+                return None;
+            }
+            let mut buf = [0u16; 1024];
+            let n = GetModuleFileNameW(h, buf.as_mut_ptr(), buf.len() as u32) as usize;
+            if n == 0 || n >= buf.len() {
+                return None;
+            }
+            Some(PathBuf::from(String::from_utf16_lossy(&buf[..n])))
+        }
+    }
+}
+
+#[cfg(unix)]
+mod os {
+    use std::ffi::{CStr, CString, c_char, c_int, c_void};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::{Path, PathBuf};
+
+    #[repr(C)]
+    struct DlInfo {
+        fname: *const c_char,
+        fbase: *mut c_void,
+        sname: *const c_char,
+        saddr: *mut c_void,
+    }
+
+    unsafe extern "C" {
+        fn dlopen(file: *const c_char, mode: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
+        fn dladdr(addr: *const c_void, info: *mut DlInfo) -> c_int;
+    }
+    const RTLD_NOW: c_int = 2;
+
+    /// Load the library at `path`; 0 when it cannot be loaded.
+    pub fn open(path: &Path) -> isize {
+        let Ok(c) = CString::new(path.as_os_str().as_bytes()) else { return 0 };
+        unsafe { dlopen(c.as_ptr(), RTLD_NOW) as isize }
+    }
+
+    /// The address of the NUL-terminated function `name` in `module`, or null.
+    pub fn sym(module: isize, name: &[u8]) -> *const c_void {
+        unsafe { dlsym(module as *mut c_void, name.as_ptr().cast()) }
+    }
+
+    /// The file this code was loaded from (libzn_pdf.so / .dylib).
+    pub fn own_path() -> Option<PathBuf> {
+        let mut info = DlInfo { fname: std::ptr::null(), fbase: std::ptr::null_mut(), sname: std::ptr::null(), saddr: std::ptr::null_mut() };
+        if unsafe { dladdr(own_path as *const c_void, &mut info) } == 0 || info.fname.is_null() {
+            return None;
+        }
+        let name = unsafe { CStr::from_ptr(info.fname) };
+        Some(PathBuf::from(std::ffi::OsStr::from_bytes(name.to_bytes())))
+    }
 }
 
 #[repr(C)]
@@ -68,7 +157,8 @@ struct Extra {
     set_rotation: unsafe extern "C" fn(Ptr, c_int),
     delete_page: unsafe extern "C" fn(Ptr, c_int),
     save_as_copy: unsafe extern "C" fn(Ptr, *mut FileWrite, u32) -> c_int,
-    /// FPDF_RenderPage: draws into a Windows device context (a printer's)
+    /// FPDF_RenderPage: draws into a Windows device context (a printer's); only Windows builds of PDFium have it
+    #[cfg(windows)]
     render_dc: unsafe extern "C" fn(isize, Ptr, c_int, c_int, c_int, c_int, c_int, c_int),
 }
 
@@ -90,39 +180,18 @@ fn lock(wait: Option<Duration>) -> Result<MutexGuard<'static, ()>, ()> {
 }
 static API: OnceLock<Result<Api, String>> = OnceLock::new();
 
-fn wide(s: &OsStr) -> Vec<u16> {
-    s.encode_wide().chain(Some(0)).collect()
-}
-
-/// Directory of zn_pdf.dll itself.
-fn own_dir() -> Option<PathBuf> {
-    unsafe {
-        let mut h: isize = 0;
-        // FROM_ADDRESS | UNCHANGED_REFCOUNT
-        if GetModuleHandleExW(0x4 | 0x2, own_dir as *const c_void, &mut h) == 0 {
-            return None;
-        }
-        let mut buf = [0u16; 1024];
-        let n = GetModuleFileNameW(h, buf.as_mut_ptr(), buf.len() as u32) as usize;
-        if n == 0 || n >= buf.len() {
-            return None;
-        }
-        PathBuf::from(String::from_utf16_lossy(&buf[..n])).parent().map(|p| p.to_path_buf())
-    }
-}
-
 fn candidates() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(p) = std::env::var_os("ZN_PDFIUM_DLL") {
         v.push(PathBuf::from(p));
     }
-    if let Some(d) = own_dir() {
-        v.push(d.join("pdfium.dll"));
+    if let Some(d) = os::own_path().as_deref().and_then(Path::parent) {
+        v.push(d.join(PDFIUM));
     }
     if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
-        v.push(d.join("pdfium.dll"));
+        v.push(d.join(PDFIUM));
     }
-    v.push(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/vendor/pdfium/bin/pdfium.dll")));
+    v.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("vendor").join("pdfium").join(PDFIUM_SUBDIR).join(PDFIUM));
     v
 }
 
@@ -136,15 +205,14 @@ fn load() -> Result<Api, String> {
             tried.push(format!("{} (missing)", path.display()));
             continue;
         }
-        // LOAD_WITH_ALTERED_SEARCH_PATH: dependencies are looked for next to the dll
-        let m = unsafe { LoadLibraryExW(wide(path.as_os_str()).as_ptr(), 0, 0x8) };
+        let m = os::open(&path);
         if m == 0 {
             tried.push(format!("{} (cannot load)", path.display()));
             continue;
         }
         macro_rules! f {
             ($n:literal) => {{
-                let p = unsafe { GetProcAddress(m, concat!($n, "\0").as_ptr()) };
+                let p = os::sym(m, concat!($n, "\0").as_bytes());
                 if p.is_null() {
                     tried.push(format!("{} (no {})", path.display(), $n));
                     continue;
@@ -169,7 +237,7 @@ fn load() -> Result<Api, String> {
         };
         macro_rules! opt {
             ($n:literal) => {{
-                let p = unsafe { GetProcAddress(m, concat!($n, "\0").as_ptr()) };
+                let p = os::sym(m, concat!($n, "\0").as_bytes());
                 if p.is_null() { None } else { Some(unsafe { std::mem::transmute(p) }) }
             }};
         }
@@ -179,6 +247,7 @@ fn load() -> Result<Api, String> {
                 set_rotation: opt!("FPDFPage_SetRotation")?,
                 delete_page: opt!("FPDFPage_Delete")?,
                 save_as_copy: opt!("FPDF_SaveAsCopy")?,
+                #[cfg(windows)]
                 render_dc: opt!("FPDF_RenderPage")?,
             })
         })();
@@ -186,7 +255,7 @@ fn load() -> Result<Api, String> {
         unsafe { init() };
         return Ok(api);
     }
-    Err(format!("pdfium.dll not found or unusable: {}", tried.join("; ")))
+    Err(format!("{PDFIUM} not found or unusable: {}", tried.join("; ")))
 }
 
 fn api() -> Result<&'static Api, &'static str> {
@@ -324,6 +393,7 @@ impl Drop for PdfiumDoc {
 /// FPDF_NO_INCREMENTAL: the saved file is written anew (no update section appended to the old one)
 const SAVE_FULL: u32 = 2;
 /// FPDF_ANNOT | FPDF_PRINTING (annotation appearances, and the print variant of them)
+#[cfg(windows)]
 const PRINT_FLAGS: c_int = 0x01 | 0x800;
 
 fn extra_api() -> Result<(&'static Api, &'static Extra), String> {
@@ -359,12 +429,14 @@ impl OwnedDoc {
         Ok(OwnedDoc { api, ex, doc, _bytes: bytes })
     }
 
+    #[cfg(windows)]
     pub fn page_count(&self) -> usize {
         let _g = lock(None).unwrap();
         unsafe { (self.api.page_count)(self.doc) }.max(0) as usize
     }
 
     /// Page size in points, the page's own rotation applied.
+    #[cfg(windows)]
     pub fn page_size(&self, page: usize) -> (f32, f32) {
         let _g = lock(None).unwrap();
         let mut s = SizeF::default();
@@ -423,6 +495,7 @@ impl OwnedDoc {
     /// Draw `page` into the device context `hdc` (a printer's) at the device-unit rect (x, y, w, h). `turn`: a quarter turn to fit
     /// the paper's orientation, anticlockwise (the usual landscape print, and what undoes a /Rotate of 90), clockwise for a page
     /// whose /Rotate is 270 (so a page turned by a rotation prints upright again).
+    #[cfg(windows)]
     #[allow(clippy::too_many_arguments)]
     pub fn render_dc(&self, hdc: isize, page: usize, x: i32, y: i32, w: i32, h: i32, turn: bool) -> Result<(), String> {
         let _g = lock(None).unwrap();
