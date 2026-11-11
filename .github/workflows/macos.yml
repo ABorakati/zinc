@@ -1,0 +1,122 @@
+name: macOS
+
+# Zinc on macOS (Apple Silicon): core's tests, the app's typecheck and logic tests, the native PDF library (native/pdf as a .dylib with
+# PDFium), and a smoke run of the real app window (gpui-ui/scripts/smoke-native.ts) whose screenshots are kept as an artifact.
+# macOS runner minutes cost several times Linux ones on a private repository, so this runs on demand and when the code that differs per
+# operating system changes on main, not on every push.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/macos.yml"
+      - "gpui-ui/native/**"
+      - "gpui-ui/src/webview/**"
+      - "gpui-ui/src/shell/**"
+      - "gpui-ui/src/reader/pdf.ts"
+      - "gpui-ui/src/reader/printGtk.ts"
+      - "gpui-ui/scripts/smoke-native.ts"
+      - "gpui-ui/package.json"
+      - "gpui-ui/bun.lock"
+      - "core/src/platform-dirs.ts"
+      - "core/src/library-location.ts"
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('core/bun.lock', 'gpui-ui/bun.lock', 'word/sidebar/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install core
+        working-directory: core
+        run: bun install --frozen-lockfile
+      - name: Install gpui-ui
+        working-directory: gpui-ui
+        run: bun install --frozen-lockfile
+      # core/test/fuzz/docfields.fuzz.test.ts imports word/sidebar/src
+      - name: Install word/sidebar
+        working-directory: word/sidebar
+        run: bun install --frozen-lockfile
+
+      # See ci.yml for both.
+      - name: Cache vendored Zotero translation code
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: core/vendor/zotero
+          key: zotero-vendor-${{ hashFiles('core/scripts/fetch-zotero-vendor.ts') }}
+      - name: Fetch vendored Zotero translation code
+        if: steps.vendor.outputs.cache-hit != 'true'
+        run: bun core/scripts/fetch-zotero-vendor.ts
+      - name: Placeholder for the fulltext wasm
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          [ -s core/vendor/fulltext-wasm/fulltext.wasm ] || : > core/vendor/fulltext-wasm/fulltext.wasm
+
+      - name: core typecheck
+        working-directory: core
+        run: bun check
+      - name: core test
+        working-directory: core
+        run: bun test --timeout 30000
+
+      - name: gpui-ui typecheck
+        working-directory: gpui-ui
+        run: bun check
+      - name: gpui-ui test
+        working-directory: gpui-ui
+        run: bun test --timeout 30000
+
+      # native/pdf: libzn_pdf.dylib, and the pinned PDFium build for macOS arm64 (sha256-checked by the script)
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gpui-ui/native/pdf/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('gpui-ui/native/pdf/Cargo.lock', 'gpui-ui/native/pdf/src/**') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: Build native/pdf
+        working-directory: gpui-ui/native/pdf
+        run: cargo build --release
+      - name: Fetch PDFium
+        run: bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts
+
+      # The real window: the library list, then the demo PDF in a reader tab. Fails when either does not come up.
+      - name: Smoke run of the app
+        working-directory: gpui-ui
+        run: bun scripts/smoke-native.ts "$RUNNER_TEMP/smoke"
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: warn
