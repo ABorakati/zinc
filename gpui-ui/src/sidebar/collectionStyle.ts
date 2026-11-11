@@ -4,8 +4,8 @@
 // The store is a plain object with an injectable path / clock / change hook, so tests use a temp dir and no Solid; the singleton at the
 // bottom wires it to a Solid signal so reads are reactive.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configDir } from "../../../core/src/platform-dirs";
 import { createSignal } from "solid-js";
 
 export type SortKey = "name-asc" | "name-desc" | "created" | "modified" | "items";
@@ -58,7 +58,7 @@ export function collectionStylePath(): string | null {
 	const env = process.env.ZN_COLLECTION_STYLE;
 	if (env === "off") return null;
 	if (env) return env;
-	return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "zotero-next-gpui", "collection-style.json");
+	return join(configDir(), "zotero-next-gpui", "collection-style.json");
 }
 
 const empty = (): StyleData => ({ sort: "name-asc", group: "none", sections: [], collapsed: [], pins: [], styles: {}, stamps: {}, stampsSeeded: false });

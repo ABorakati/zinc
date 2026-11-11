@@ -24,6 +24,7 @@ import {
 	parseYear,
 	toIso,
 } from "../zotero-db/mapping";
+import { zoteroProfilesDir } from "../platform-dirs";
 import { venueOf } from "../venue";
 import { rebuildSearchIndex } from "../search";
 import bundledSchema from "../../schema.sql" with { type: "text" };
@@ -198,10 +199,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 	const building = `${target}.importing-${process.pid}-${Date.now()}`;
 	mkdirSync(dirname(target), { recursive: true });
 
-	const appData = process.env.APPDATA ?? join(process.env.USERPROFILE ?? "", "AppData", "Roaming");
-	const baseAttach =
-		opts.baseAttachmentPath ??
-		findBaseAttachmentPath(opts.profilesDir ?? join(appData, "Zotero", "Zotero", "Profiles"));
+	const baseAttach = opts.baseAttachmentPath ?? findBaseAttachmentPath(opts.profilesDir ?? zoteroProfilesDir());
 
 	const workDir = join(tmpdir(), `zotero-next-import-${process.pid}-${Date.now()}`);
 	mkdirSync(workDir, { recursive: true });

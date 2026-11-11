@@ -1,8 +1,8 @@
 // App state for the library window (Solid signals). Implements Store + ListStore from contracts.ts (ui/src/store.ts), plus the
 // quick-search mode, the sparse page cache of the item list, multi-selection and the persisted list preferences.
 import { mkdirSync, readFileSync, writeFile } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configDir } from "../../core/src/platform-dirs";
 import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
 import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, GroupBy, ItemRow, Library, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
@@ -36,8 +36,7 @@ export const stats = { itemAt: 0, skeleton: 0, fetches: 0, evictions: 0, visCall
 const STATE_FILE = (() => {
 	const env = typeof process !== "undefined" ? process.env.ZN_UI_STATE : undefined;
 	if (env) return env === "off" ? null : env;
-	const base = (typeof process !== "undefined" ? process.env.APPDATA : undefined) ?? join(homedir(), "AppData", "Roaming");
-	return join(base, "zotero-next-gpui", "ui-state.json");
+	return join(configDir(), "zotero-next-gpui", "ui-state.json");
 })();
 let stateData: Record<string, unknown> = {};
 try { if (STATE_FILE) stateData = JSON.parse(readFileSync(STATE_FILE, "utf8")) ?? {}; } catch { /* first run / unreadable: defaults */ }

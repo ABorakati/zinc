@@ -5,6 +5,7 @@ import type { Database } from "bun:sqlite";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import { dirname, join } from "node:path";
 import { logError } from "../log";
+import { isZoteroProcessRunning } from "../zotero-db/env";
 import { applyChanges } from "./apply";
 import { buildPush, completePush, pendingCount } from "./build";
 import { type SyncStatus, type ZoteroReader, ZoteroLockedError, type ZoteroWriter } from "./protocol";
@@ -14,7 +15,7 @@ export interface SyncOptions {
 	dataDir: string;
 	reader: ZoteroReader;
 	writer: ZoteroWriter;
-	/** True while the Zotero application is running. Default: process list check for zotero.exe. */
+	/** True while the Zotero application is running. Default: process list check (zotero.exe on Windows, pgrep elsewhere). */
 	isZoteroRunning?: () => Promise<boolean>;
 	/** zotero-next's own attachment storage (files here are removed after Zotero took them over). Default: <db dir>/storage. */
 	ownStorageDir?: string | null;
@@ -44,18 +45,6 @@ export interface SyncConflict {
 	remote: unknown;
 	resolved: string;
 	at: string;
-}
-
-async function tasklistHasZotero(): Promise<boolean> {
-	if (process.platform !== "win32") return false;
-	try {
-		const p = Bun.spawn(["tasklist", "/FI", "IMAGENAME eq zotero.exe", "/NH", "/FO", "CSV"], { stdout: "pipe", stderr: "ignore", stdin: "ignore", windowsHide: true });
-		const out = await new Response(p.stdout).text();
-		await p.exited;
-		return /"zotero\.exe"/i.test(out);
-	} catch {
-		return false;
-	}
 }
 
 function errMsg(e: unknown): string {
@@ -102,7 +91,7 @@ export class SyncService {
 	}
 
 	private async zoteroRunning(): Promise<boolean> {
-		return (this.opts.isZoteroRunning ?? tasklistHasZotero)();
+		return (this.opts.isZoteroRunning ?? isZoteroProcessRunning)();
 	}
 
 	// ------------------------------------------------------------ serialisation

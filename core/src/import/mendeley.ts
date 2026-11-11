@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { addFile, addLink } from "../additems/files";
 import type { Creator, ZoteroItemData } from "../api-types";
 import { appendExtra, hasField } from "../io/common";
+import { mendeleyDataDirs } from "../platform-dirs";
 import { createCollection, createItem, getCollection, HttpError } from "../db";
 
 // ---------------------------------------------------------------- discovery
@@ -31,12 +32,7 @@ export interface MendeleyDatabase {
 }
 
 function mendeleyDirs(): string[] {
-	const local = process.env.LOCALAPPDATA ?? (process.platform === "win32" ? join(process.env.USERPROFILE ?? "", "AppData", "Local") : "");
-	const candidates = [
-		join(local, "Mendeley Ltd", "Mendeley Desktop"),
-		join(local, "Mendeley Ltd.", "Mendeley Desktop"),
-	];
-	return candidates.filter((d) => existsSync(d));
+	return mendeleyDataDirs().filter((d) => existsSync(d));
 }
 
 /** True when the database file is encrypted (no SQLite header, 12 reserved bytes per page). */

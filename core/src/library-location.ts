@@ -12,18 +12,20 @@
 //
 // Pure node:fs / node:path, so the GPUI app can import it before anything else; every input is injectable for tests.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configDir, dataDir, homeDir } from "./platform-dirs";
 
 export type LibrarySource = "env" | "setting" | "legacy" | "default" | "none";
 
 export interface LocationInput {
 	/** Default: process.env. */
 	env?: Record<string, string | undefined>;
-	/** The user's home folder. Default: %USERPROFILE%, else os.homedir(). */
+	/** The user's home folder. Default: %USERPROFILE% on Windows, $HOME elsewhere, else os.homedir(). */
 	home?: string;
-	/** Default: %APPDATA%, else <home>\AppData\Roaming. */
+	/** Replaces the config and data folders. Default: %APPDATA% if set, else the OS standard folder (platform-dirs.ts). */
 	appData?: string;
+	/** Default: process.platform. */
+	platform?: NodeJS.Platform;
 	/** Default: fs.existsSync. */
 	exists?: (path: string) => boolean;
 }
@@ -40,16 +42,18 @@ export interface ResolvedLibrary {
 	defaultPath: string;
 }
 
-const homeOf = (o: LocationInput): string => o.home ?? o.env?.USERPROFILE ?? process.env.USERPROFILE ?? homedir();
-const appDataOf = (o: LocationInput): string => o.appData ?? o.env?.APPDATA ?? process.env.APPDATA ?? join(homeOf(o), "AppData", "Roaming");
+const homeOf = (o: LocationInput): string => homeDir(o);
+// Settings live in the OS config folder, the default library in the OS data folder (the same folder on Windows and macOS).
+const configOf = (o: LocationInput): string => configDir(o);
+const dataOf = (o: LocationInput): string => dataDir(o);
 const existsOf = (o: LocationInput) => o.exists ?? existsSync;
 
 /** The folder the GPUI app keeps its small state files in (ui-state.json, startup.json, library.json). */
-export const settingsDir = (o: LocationInput = {}): string => join(appDataOf(o), "zotero-next-gpui");
+export const settingsDir = (o: LocationInput = {}): string => join(configOf(o), "zotero-next-gpui");
 /** The shared "library path" setting; the Word add-in reads the same file. */
 export const settingsFile = (o: LocationInput = {}): string => join(settingsDir(o), "library.json");
 /** Where a new library is created when the user has not chosen a place. */
-export const defaultLibraryPath = (o: LocationInput = {}): string => join(appDataOf(o), "zotero-next", "library.sqlite");
+export const defaultLibraryPath = (o: LocationInput = {}): string => join(dataOf(o), "zotero-next", "library.sqlite");
 /** Where the library lived while zotero-next was a checkout in the home folder (<home>\zotero-next\data\library.sqlite). */
 export const legacyLibraryPath = (o: LocationInput = {}): string => join(homeOf(o), "zotero-next", "data", "library.sqlite");
 

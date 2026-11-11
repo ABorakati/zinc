@@ -2,8 +2,8 @@
 // Persisted in a sidecar JSON file (%APPDATA%\zotero-next-gpui\read-state.json).
 // Fast in-memory Solid store so row scrolling does zero file reads and one reactive lookup.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configDir } from "../../core/src/platform-dirs";
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
@@ -19,7 +19,7 @@ export function readStatePath(): string | null {
 	const env = process.env.ZN_READ_STATE;
 	if (env === "off") return null;
 	if (env) return env;
-	return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "zotero-next-gpui", "read-state.json");
+	return join(configDir(), "zotero-next-gpui", "read-state.json");
 }
 
 function parseDateMs(str: string | undefined | null): number {

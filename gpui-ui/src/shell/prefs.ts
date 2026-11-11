@@ -8,8 +8,8 @@
 //
 // ZN_UI_STATE=<file> redirects the file, ZN_UI_STATE=off keeps everything in memory (same switches as store.ts).
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { configDir } from "../../../core/src/platform-dirs";
 import { createSignal, type Accessor } from "solid-js";
 
 /** Where the preferences live (null: persistence is off). */
@@ -17,7 +17,7 @@ export function prefsPath(): string | null {
 	const env = process.env.ZN_UI_STATE;
 	if (env === "off") return null;
 	if (env) return env;
-	return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "zotero-next-gpui", "ui-state.json");
+	return join(configDir(), "zotero-next-gpui", "ui-state.json");
 }
 
 let data: Record<string, unknown> | undefined;

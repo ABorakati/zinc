@@ -17,6 +17,7 @@ import { appendFileSync, closeSync, mkdirSync, openSync, readdirSync, readFileSy
 import { appendFile, mkdir } from "node:fs/promises";
 import { arch, homedir, release, type as osType } from "node:os";
 import { basename, join } from "node:path";
+import { configDir } from "./platform-dirs";
 import { deflateRawSync } from "node:zlib";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
@@ -80,7 +81,7 @@ export function resetLog(): void {
 export function logDir(): string {
 	if (cfg.dir) return cfg.dir;
 	if (process.env.ZN_LOG_DIR) return process.env.ZN_LOG_DIR;
-	return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "zotero-next-gpui", "logs");
+	return join(configDir(), "zotero-next-gpui", "logs");
 }
 
 export function appVersion(): string {

@@ -6,16 +6,16 @@
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readdir, rename, stat, truncate, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { localDataDir } from "../platform-dirs";
 import { UpdateError, assertSecureUrl } from "./manifest";
 import type { UpdateEnv } from "./updater";
 
 /** %LOCALAPPDATA%\zotero-next-gpui\updates (ZN_UPDATE_DIR overrides, for tests). */
 export function defaultUpdatesDir(): string {
 	if (process.env.ZN_UPDATE_DIR) return process.env.ZN_UPDATE_DIR;
-	return join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "zotero-next-gpui", "updates");
+	return join(localDataDir(), "zotero-next-gpui", "updates");
 }
 
 export interface RealEnvOptions {

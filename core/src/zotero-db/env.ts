@@ -3,11 +3,12 @@ import { Database } from "bun:sqlite";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { zoteroProfilesDir } from "../platform-dirs";
 
 export interface ZoteroDbOptions {
 	/** Zotero data directory (contains zotero.sqlite and storage/). Default: prefs.js dataDir, else ~/Zotero. */
 	dataDir?: string;
-	/** Override %APPDATA%\Zotero\Zotero\Profiles (for tests). */
+	/** Override the Zotero profiles folder (%APPDATA%\Zotero\Zotero\Profiles on Windows; for tests). */
 	profilesDir?: string;
 	/** Override the zotero.exe process check (tests that work on database copies). */
 	isRunning?: () => Promise<boolean>;
@@ -20,8 +21,7 @@ export interface ZoteroDbOptions {
 }
 
 export function defaultProfilesDir(): string {
-	const appData = process.env.APPDATA ?? join(process.env.USERPROFILE ?? homedir(), "AppData", "Roaming");
-	return join(appData, "Zotero", "Zotero", "Profiles");
+	return zoteroProfilesDir();
 }
 
 /** Value of one `user_pref("name", value)` line of a prefs.js text; null when absent or malformed. */

@@ -3,8 +3,8 @@
 // /api/attachments/:key/view-state; the GPUI spike keeps it beside the app instead so it never touches the library).
 // Writes are debounced and atomic (temp file + rename); a corrupt or missing file is just an empty state.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configDir } from "../../../../core/src/platform-dirs";
 
 export type ZoomMode = "width" | "page" | "custom";
 
@@ -35,7 +35,7 @@ const MAX_DOCS = 300;
 const defaults = (): Persisted => ({ v: 1, docs: {}, appearance: { mode: "normal", custom: "#e8f0e0" }, sidebar: { open: true, tab: "thumbs", width: 232 } });
 
 export function stateFile(): string {
-	return process.env.ZN_READER_STATE ?? join(process.env.APPDATA ?? join(homedir(), ".config"), "zotero-next-gpui", "reader-state.json");
+	return process.env.ZN_READER_STATE ?? join(configDir(), "zotero-next-gpui", "reader-state.json");
 }
 
 let data: Persisted | undefined;

@@ -15,6 +15,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { resolveLibrary } from "../../core/src/library-location";
+import { configDir } from "../../core/src/platform-dirs";
 import { mark } from "./trace";
 
 mark("boot");
@@ -91,7 +92,7 @@ if (chooseLibrary) {
 				process.env.ZN_ALLOW_REAL_DB = "1"; // the user agreed (2026-11-03): the packaged app may open the real library, after a backup
 				Object.assign(startup, { library: "in-process", db, backup });
 				try {
-					const logDir = join(process.env.APPDATA ?? dir, "zotero-next-gpui");
+					const logDir = join(configDir(), "zotero-next-gpui");
 					mkdirSync(logDir, { recursive: true });
 					writeFileSync(join(logDir, "startup.json"), JSON.stringify({ at: new Date().toISOString(), ...startup }, null, 1));
 				} catch { /* best effort */ }

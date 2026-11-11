@@ -1,8 +1,8 @@
 // Reading view settings: typography + theme (reader-next/src/reflow/settings.ts). Pure helpers plus a small JSON file for
 // persistence (the web reader keeps these in localStorage; here they live next to the app's other per-user data).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configDir } from "../../../../core/src/platform-dirs";
 
 export type ThemeKind = "light" | "sepia" | "dark" | "custom";
 
@@ -67,7 +67,7 @@ export function sanitize(v: unknown): ReadingSettings {
 	};
 }
 
-export const SETTINGS_FILE = process.env.ZN_READING_SETTINGS ?? join(process.env.APPDATA ?? join(homedir(), ".config"), "zotero-next-gpui", "reading-settings.json");
+export const SETTINGS_FILE = process.env.ZN_READING_SETTINGS ?? join(configDir(), "zotero-next-gpui", "reading-settings.json");
 
 export function loadSettings(file = SETTINGS_FILE): ReadingSettings {
 	try { return sanitize(JSON.parse(readFileSync(file, "utf8"))); } catch { return { ...DEFAULT_SETTINGS }; }

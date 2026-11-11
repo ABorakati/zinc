@@ -9,6 +9,7 @@
 // back to the normal path, so this can only make the first screen faster, never different.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { configDir } from "../../core/src/platform-dirs";
 import { expectEarly, takeRecordedPaths } from "./api";
 import { logError } from "./shell/errorlog";
 import { mark } from "./trace";
@@ -17,7 +18,7 @@ const compiled = !/^bun(.exe)?$/i.test(basename(process.execPath));
 
 interface Hint { paths: string[] }
 
-const hintFile = (): string => join(process.env.APPDATA ?? process.env.TEMP ?? ".", "zotero-next-gpui", "prefetch-hint.json");
+const hintFile = (): string => join(configDir(), "zotero-next-gpui", "prefetch-hint.json");
 
 /** The paths the last run asked for. They do not depend on the library (the worker answers them from whichever one is open now). */
 function readHint(): string[] {
