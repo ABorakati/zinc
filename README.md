@@ -11,6 +11,8 @@
 ![UI: Zed GPUI via GPUIX](https://img.shields.io/badge/UI-Zed%20GPUI%20%2B%20GPUIX-084CCF?logo=zedindustries&logoColor=white)
 ![Runtime: Bun AOT](https://img.shields.io/badge/runtime-Bun%20AOT-000000?logo=bun&logoColor=white)
 ![Native PDF: Rust + PDFium](https://img.shields.io/badge/native%20PDF-Rust%20%2B%20PDFium-B7410E?logo=rust&logoColor=white)
+[![Licence: AGPL-3.0-or-later](https://img.shields.io/badge/licence-AGPL--3.0--or--later-A42E2B?logo=gnu&logoColor=white)](LICENSE)
+![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-D97757?logo=claude&logoColor=white)
 
 ![The library window in cards view, with collections on the left and the item pane on the right](docs/screenshots/library-cards-light.png)
 
