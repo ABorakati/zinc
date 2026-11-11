@@ -84,6 +84,27 @@ export function objc() {
 	return rt;
 }
 
+let cf: { run(mode: Id, seconds: number, once: number): number; mode: Id } | null | undefined;
+/**
+ * Run the main run loop once without waiting (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true)): WebKit talks to its web content
+ * process through run-loop sources, which only fire while the loop runs.
+ */
+export function runLoopOnce(): void {
+	if (cf === undefined) {
+		const r = objc();
+		try {
+			const lib = r && dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
+				CFRunLoopRunInMode: { args: [P, F64, I32], returns: I32 },
+			}).symbols;
+			const mode = r?.sym("kCFRunLoopDefaultMode") ?? null;
+			cf = lib && mode ? { run: lib.CFRunLoopRunInMode as never, mode } : null;
+		} catch {
+			cf = null;
+		}
+	}
+	cf?.run(cf.mode, 0, 1);
+}
+
 /** An autoreleased NSString for `s`. */
 export function nsString(s: string): Id {
 	const r = objc();

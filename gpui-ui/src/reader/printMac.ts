@@ -2,6 +2,7 @@
 // print panel (printer, pages, copies, "Save as PDF"). runOperation is modal: it runs AppKit's loop for the panel and returns when the
 // user has printed or cancelled, so the app waits meanwhile, like any Mac app showing a print panel. Windows prints through PDFium into
 // the printer (native/pdf/src/print.rs), Linux through GTK's dialog (printGtk.ts).
+import { CString } from "bun:ffi";
 import { rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,31 +53,45 @@ export function printWithMacPanel(bytes: Uint8Array, title: string): "printed" |
 	});
 }
 
+/** The names of the printers macOS knows. */
+function printerNames(): string[] {
+	const r = objc();
+	if (!r) return [];
+	const { send: s, sel } = r;
+	const list = s.m0(r.cls("NSPrinter"), sel("printerNames"));
+	const n = Number(s.m0(list, sel("count")) ?? 0);
+	const out: string[] = [];
+	for (let i = 0; i < n; i++) {
+		const name = s.m0(s.mu(list, sel("objectAtIndex:"), i), sel("UTF8String"));
+		if (name) out.push(new CString(name as never).toString());
+	}
+	return out;
+}
+
 /**
- * Print without a panel: to the default printer, or into the PDF file `output` when given (an NSPrintSaveJob, which is how the macOS
- * CI job tests the print path). The caller has already cut the PDF to the wanted pages.
+ * Print without a panel: to `printer` or the default one; or, with `output`, the PDF (already cut to the wanted pages by the caller) is
+ * written to that file. A file needs no print system: a "save" print job still needs a printer, and with none macOS fails the job
+ * and shows an alert nobody can dismiss in a test run (the macOS CI smoke run hung there).
  */
 export function printWithMacNoPanel(bytes: Uint8Array, o: { title: string; printer?: string; output?: string }): string {
+	if (o.output) { writeFileSync(o.output, bytes); return "file"; }
+	const printers = printerNames();
+	if (!printers.length) throw new Error("there is no printer");
+	if (o.printer && !printers.includes(o.printer)) throw new Error(`there is no printer "${o.printer}"`);
 	return withFile(bytes, (file) => {
 		const r = objc()!;
 		const { send: s, sel } = r;
 		const { op, info } = operation(file);
-		if (o.printer && !o.output) {
-			const printer = s.m1(r.cls("NSPrinter"), sel("printerWithName:"), nsString(o.printer));
-			if (!printer) throw new Error(`there is no printer "${o.printer}"`);
-			s.m1(info, sel("setPrinter:"), printer);
-		}
-		if (o.output) {
-			const dict = s.m0(info, sel("dictionary"));
-			const disposition = r.sym("NSPrintJobDisposition"), saveJob = r.sym("NSPrintSaveJob"), savingUrl = r.sym("NSPrintJobSavingURL");
-			if (!dict || !disposition || !saveJob || !savingUrl) throw new Error("the print-to-file settings are not available");
-			s.m2(dict, sel("setObject:forKey:"), saveJob, disposition);
-			s.m2(dict, sel("setObject:forKey:"), s.m1(r.cls("NSURL"), sel("fileURLWithPath:"), nsString(o.output)), savingUrl);
-		}
+		if (o.printer) s.m1(info, sel("setPrinter:"), s.m1(r.cls("NSPrinter"), sel("printerWithName:"), nsString(o.printer)));
 		s.mi(op, sel("setShowsPrintPanel:"), 0);
 		s.mi(op, sel("setShowsProgressPanel:"), 0);
 		s.m1(op, sel("setJobTitle:"), nsString(o.title || "PDF"));
 		if (!s.b0(op, sel("runOperation"))) throw new Error("the print job failed");
-		return o.output ? "file" : o.printer || "the default printer";
+		return o.printer || "the default printer";
 	});
+}
+
+/** Tests: PDFKit can open `bytes` and build a print operation for it (nothing is printed). */
+export function canPrepareMacPrint(bytes: Uint8Array): boolean {
+	return withFile(bytes, (file) => !!operation(file).op);
 }

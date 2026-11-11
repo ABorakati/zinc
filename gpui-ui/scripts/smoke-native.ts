@@ -107,18 +107,27 @@ if (process.platform !== "win32") {
 	const page = `<!doctype html><meta charset="utf-8"><body style="margin:0;font:28px system-ui;background:#fff6d6">
 		<div style="height:50vh;background:#2a7de1;color:white;padding:24px;box-sizing:border-box">Web view: top half (blue)</div>
 		<div style="height:50vh;background:#e8483b;color:white;padding:24px;box-sizing:border-box">bottom half (red): hidden when clipped</div>`;
-	const host = new WebHost({ init: "" });
+	// served over http on loopback, as the app serves Zotero's reader and note pages; the page reports when it has loaded
+	const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } }) });
+	let loaded = "";
+	const host = new WebHost({
+		init: "window.addEventListener('load', () => window.znMsg(JSON.stringify({ type: 'loaded', width: innerWidth, height: innerHeight })));",
+		onMessage: (m) => { if (m.type === "loaded") loaded = `${m.width}x${m.height}`; },
+	});
 	const box = { x: 240, y: 120, width: 560, height: 360 };
 	let clip: typeof box | null = null;
 	step("4 web view: creating");
-	host.show(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`, () => ({ rect: box, clip }));
+	host.show(`http://127.0.0.1:${server.port}/`, () => ({ rect: box, clip }));
 	for (let i = 0; i < 150 && host.state() !== "ready" && host.state() !== "error"; i++) await sleep(100);
 	step(`4 web view: ${host.state()}`);
-	await sleep(3000);
+	for (let i = 0; i < 80 && !loaded; i++) await sleep(100);
+	await sleep(1500);
 	summary.webState = host.state();
 	if (host.error()) summary.webError = host.error();
 	summary.webOnScreen = host.onScreen;
+	summary.webPageLoaded = loaded || "no";
 	if (host.state() !== "ready" || !host.onScreen) fail(`the web view did not come up (${host.state()} ${host.error()})`);
+	else if (!loaded) fail("the web view came up but its page never reported it had loaded");
 	summary.webShot = await shot("webview");
 	clip = { x: box.x, y: box.y, width: box.width, height: box.height / 2 };
 	await sleep(1500);
@@ -126,6 +135,7 @@ if (process.platform !== "win32") {
 	if (process.platform === "darwin") summary.webPopups = (await import("../src/webview/cocoa")).debugPopups();
 	host.release(0);
 	await sleep(500);
+	server.stop(true);
 }
 
 // ---- 5. printing without a dialog: pages 2-3 of the 3-page demo into a PDF file (macOS: PDFKit's save job; Linux: the cut file)
@@ -140,6 +150,15 @@ if (process.platform !== "win32") {
 		if (pages !== 2) fail(`printing pages 2-3 to a file gave ${pages} pages`);
 	} catch (e) {
 		fail(`printing to a file failed: ${e instanceof Error ? e.message : String(e)}`);
+	}
+	// macOS: the print panel itself cannot be driven in CI (and runners have no printer); check PDFKit builds the print job
+	if (process.platform === "darwin") {
+		try {
+			summary.macPrintJob = (await import("../src/reader/printMac")).canPrepareMacPrint(new Uint8Array(await Bun.file(pdf).arrayBuffer()));
+			if (!summary.macPrintJob) fail("PDFKit could not prepare a print job");
+		} catch (e) {
+			fail(`PDFKit could not prepare a print job: ${e instanceof Error ? e.message : String(e)}`);
+		}
 	}
 }
 

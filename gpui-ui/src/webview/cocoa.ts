@@ -9,7 +9,7 @@
 // in GPUI's logical pixels = AppKit points. GPUI's view may not be flipped, in which case y counts from the bottom.
 // Holes (toasts drawn over the page) are not cut on macOS: the page stays above them.
 import { hostRenderer } from "../shell/native";
-import { objc, type Id } from "../shell/objc";
+import { objc, runLoopOnce, type Id } from "../shell/objc";
 
 type H = number | bigint;
 interface Popup { win: Id; web: Id; box: Id; rect: Rect | null; keep: Rect | null; shown: boolean }
@@ -178,8 +178,10 @@ export function appIsForeground(): boolean {
 	return !!r && r.send.b0(r.send.m0(r.cls("NSApplication"), r.sel("sharedApplication")), r.sel("isActive"));
 }
 
-/** GPUIX's tick() already pumps AppKit on this thread. */
-export function pump(): void {}
+/** GPUIX's tick() pumps AppKit's events; this also lets the run loop service WebKit's sources (see objc.runLoopOnce). */
+export function pump(): void {
+	if (popups.size) runLoopOnce();
+}
 
 /** For diagnostics (the macOS smoke run): where the container is, as AppKit has it. */
 export function debugPopups(): { shown: boolean; rect: Rect | null; keep: Rect | null }[] {
