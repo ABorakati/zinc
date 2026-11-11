@@ -193,7 +193,7 @@ export class WebHost {
 		this.setError("");
 		await new Promise((r) => setTimeout(r, 0)); // let the placeholder paint before the ~0.4 s creation
 		try {
-			if (!popupsAvailable()) throw new Error(process.platform === "linux" ? "the web view needs X11 (it is off with ZN_WAYLAND=1) and GTK 4" : "the web view needs Windows or Linux");
+			if (!popupsAvailable()) throw new Error(process.platform === "linux" ? "the web view needs X11 (it is off with ZN_WAYLAND=1) and GTK 4" : "the web view is not available on this system");
 			const owner = mainWindow();
 			if (owner == null && !webViewHeadless()) throw new Error("no application window to attach the web view to");
 			// WebView2's profile: the webview library picks %APPDATA%/<exe name>/EBWebView (bun.exe unpackaged, zotero-next-gpui.exe packaged); it ignores WEBVIEW2_USER_DATA_FOLDER
