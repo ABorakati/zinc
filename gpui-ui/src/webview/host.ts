@@ -199,9 +199,11 @@ export class WebHost {
 			// WebView2's profile: the webview library picks %APPDATA%/<exe name>/EBWebView (bun.exe unpackaged, zotero-next-gpui.exe packaged); it ignores WEBVIEW2_USER_DATA_FOLDER
 			if (this.background) process.env.WEBVIEW2_DEFAULT_BACKGROUND_COLOR = `FF${this.background}`;
 			// literal specifier cast to string: bundled by Bun.build, but keeps TypeScript out of the package's .ts sources (they do not type-check under bun-types 1.4)
-			const { Webview } = await import("webview-bun" as string) as unknown as { Webview: new (debug: boolean) => WebviewLike };
+			const { Webview } = await import("webview-bun" as string) as unknown as { Webview: new (debug: boolean, size?: unknown, window?: unknown) => WebviewLike };
 			const tc = TRACE ? performance.now() : 0;
-			const w = new Webview(false);
+			// macOS: the page goes into a window made here (cocoa.newWebviewWindow says why the library must not make its own)
+			const parent = process.platform === "darwin" ? (await import("./cocoa")).newWebviewWindow() : null;
+			const w = parent ? new Webview(false, undefined, parent) : new Webview(false);
 			if (TRACE) console.log(`[webview trace] new Webview: ${(performance.now() - tc).toFixed(0)} ms`);
 			const h = w.unsafeWindowHandle;
 			if (h == null) throw new Error("the web view created no window");

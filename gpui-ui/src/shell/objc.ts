@@ -27,6 +27,8 @@ interface Send {
 	mpip(o: Id, s: Id, a: Id, n: number | bigint, b: Id): Id;
 	/** [o sel:a i:(NSInteger)n i:(BOOL)m] -> id (printOperationForPrintInfo:scalingMode:autoRotate:) */
 	mpii(o: Id, s: Id, a: Id, n: number | bigint, m: number): Id;
+	/** [o sel:(NSRect) n:(NSUInteger) n:(NSUInteger) b:(BOOL)] -> id (initWithContentRect:styleMask:backing:defer:) */
+	mwin(o: Id, s: Id, x: number, y: number, w: number, h: number, style: number, backing: number, defer: number): Id;
 	/** [o sel] -> BOOL */
 	b0(o: Id, s: Id): boolean;
 	/** [o sel:a] -> BOOL */
@@ -61,6 +63,7 @@ export function objc() {
 			mrect: { ptr, args: [P, P, F64, F64, F64, F64], returns: P },
 			mpip: { ptr, args: [P, P, P, I64, P], returns: P },
 			mpii: { ptr, args: [P, P, P, I64, I32], returns: P },
+			mwin: { ptr, args: [P, P, F64, F64, F64, F64, U64, U64, I32], returns: P },
 			b0: { ptr, args: [P, P], returns: B },
 			b1: { ptr, args: [P, P, P], returns: B },
 		}).symbols as unknown as Send;

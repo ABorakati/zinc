@@ -113,6 +113,7 @@ jobs:
       # The real window: the library list, then the demo PDF in a reader tab. Fails when either does not come up.
       - name: Smoke run of the app
         working-directory: gpui-ui
+        timeout-minutes: 6 # a hang (a modal loop, a blocked native call) must not burn the job's 40 minutes
         run: bun scripts/smoke-native.ts "$RUNNER_TEMP/smoke"
       - name: Keep the screenshots
         if: always()

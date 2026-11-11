@@ -21,6 +21,11 @@ const root = mkdtempSync(join(tmpdir(), "zn-smoke-"));
 const pdf = resolve(import.meta.dir, "..", "web", "demo-article.pdf");
 const summary: Record<string, unknown> = { platform: `${process.platform} ${process.arch}`, bun: Bun.version };
 const fail = (why: string) => { summary.failure = why; console.error(`[smoke] FAIL: ${why}`); };
+/** Say which step starts and keep what is known so far: a step that hangs (CI cancels it) still leaves its trail. */
+const step = (name: string) => {
+	console.log(`[smoke] ${new Date().toISOString().slice(11, 19)} ${name}`);
+	try { writeFileSync(join(out, "summary.json"), JSON.stringify({ ...summary, step: name }, null, 1)); } catch { /* best effort */ }
+};
 
 // ---- 1. the library
 const dbPath = join(root, "library.sqlite");
@@ -80,6 +85,7 @@ await sleep(1500);
 summary.libraryShot = await shot("library");
 
 // ---- 3. the PDF library and the reader tab
+step("3 PDF library and reader tab");
 try {
 	const { findDll, nativeVersion, pdfiumStatus } = await import("../src/reader/pdf");
 	summary.znPdf = findDll();
@@ -104,8 +110,10 @@ if (process.platform !== "win32") {
 	const host = new WebHost({ init: "" });
 	const box = { x: 240, y: 120, width: 560, height: 360 };
 	let clip: typeof box | null = null;
+	step("4 web view: creating");
 	host.show(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`, () => ({ rect: box, clip }));
 	for (let i = 0; i < 150 && host.state() !== "ready" && host.state() !== "error"; i++) await sleep(100);
+	step(`4 web view: ${host.state()}`);
 	await sleep(3000);
 	summary.webState = host.state();
 	if (host.error()) summary.webError = host.error();
@@ -124,6 +132,7 @@ if (process.platform !== "win32") {
 if (process.platform !== "win32") {
 	const { printPdfTo, PdfDoc } = await import("../src/reader/pdf");
 	const output = join(out, "print-2-3.pdf");
+	step("5 print to file");
 	try {
 		summary.print = await printPdfTo(new Uint8Array(await Bun.file(pdf).arrayBuffer()), { title: "smoke", output, first: 2, last: 3 });
 		const pages = existsSync(output) ? PdfDoc.openBytes(new Uint8Array(await Bun.file(output).arrayBuffer())).pageCount : 0;

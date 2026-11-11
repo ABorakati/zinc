@@ -53,12 +53,43 @@ export function clientOnScreen(): { x: number; y: number; width: number; height:
 
 export const isWindow = (h: H): boolean => popups.has(key(h));
 
+/**
+ * A hidden borderless window to hand to webview_create. When the webview library makes its OWN window on macOS it also sets up an app
+ * delegate and runs [NSApp run] until "did finish launching", which GPUI's app sent long ago: the call never returned (the macOS CI
+ * smoke run hung there). Given a window, the library only embeds the page in it.
+ */
+export function newWebviewWindow(): Id {
+	const r = objc();
+	if (!r) return null;
+	const { send: s, sel } = r;
+	const win = s.mwin(s.m0(r.cls("NSWindow"), sel("alloc")), sel("initWithContentRect:styleMask:backing:defer:"), 0, 0, 800, 600, 0 /* borderless */, 2 /* buffered */, 1);
+	if (win) s.mi(win, sel("setReleasedWhenClosed:"), 0);
+	return win;
+}
+
+/** The WKWebView the library put into `h`: its content view, or (embedded) a view inside it. */
+function webViewOf(h: H): Id {
+	const r = objc()!;
+	const { send: s, sel } = r;
+	const wk = r.cls("WKWebView");
+	const content = s.m0(h, sel("contentView"));
+	if (!content || !wk) return content;
+	if (s.b1(content, sel("isKindOfClass:"), wk)) return content;
+	const subs = s.m0(content, sel("subviews"));
+	const n = Number(s.m0(subs, sel("count")) ?? 0);
+	for (let i = 0; i < n; i++) {
+		const v = s.mu(subs, sel("objectAtIndex:"), i);
+		if (v && s.b1(v, sel("isKindOfClass:"), wk)) return v;
+	}
+	return null;
+}
+
 /** Move the webview library's WKWebView into a clipping container on GPUI's content view; the library's own window is hidden. */
 export function makeOwnedPopup(h: H, _owner: H | null): void {
 	const r = objc(), view = contentView();
 	if (!r || view == null) return;
 	const { send: s, sel } = r;
-	const web = s.m0(h, sel("contentView"));
+	const web = webViewOf(h);
 	if (!web) return;
 	s.m0(web, sel("retain"));
 	// the window gets an empty view, so the WKWebView is not its content any more (releasing the old content view leaves ours)
