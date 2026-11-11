@@ -99,7 +99,8 @@ export function createPageCommands(h: PageCmdHost) {
 		setBusy("print");
 		try {
 			const r = await printPdf(await h.read(), { title: h.title() || "PDF", currentPage: h.curPage() });
-			if (r.result === "printed") toast(`Sent ${r.pages} page${r.pages === 1 ? "" : "s"} to ${r.printer || "the printer"}`, { kind: "success" });
+			// Linux's print dialog does not say which pages or printer were chosen (pages 0)
+			if (r.result === "printed") toast(r.pages ? `Sent ${r.pages} page${r.pages === 1 ? "" : "s"} to ${r.printer || "the printer"}` : `Sent to ${r.printer || "the printer"}`, { kind: "success" });
 		} catch (e) { fail("The document could not be printed", e); } finally { setBusy(null); }
 	}
 

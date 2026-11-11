@@ -12,6 +12,7 @@
 //   After the first page of items: the core and its services, the feature modules, the prefetch hint.
 //
 // Set ZN_TRACE=1 to print the milestones (see src/trace.ts; scripts/startup.ts reads them).
+import "./shell/linuxDisplay"; // Linux: X11 for GPUI and GTK (the web view needs it), before either loads (shell/linuxDisplay.ts)
 import "./uvpool"; // before anything can start libuv's thread pool: 2 workers, not 4 (src/uvpool.ts)
 import "./signin/entry"; // the packaged exe started as the sign-in browser helper (--signin-helper) runs that and never gets past here
 import { startup } from "./packaged"; // first: sets the packaged app's defaults before other modules read the environment

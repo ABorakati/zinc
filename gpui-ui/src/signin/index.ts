@@ -13,7 +13,8 @@ import { migrateOldProfile } from "./migrate";
 import { signinProfileDir } from "./paths";
 
 export function registerSigninBridge(o: { packaged: boolean }): SigninBridge | null {
-	if (process.env.ZN_SIGNIN === "0" || !webViewSupported()) return null;
+	// the helper drives WebView2 through the DevTools protocol, which WebKitGTK does not have: Windows only for now
+	if (process.env.ZN_SIGNIN === "0" || process.platform !== "win32" || !webViewSupported()) return null;
 	// the old app's sign-in, copied once (a few MB, in the background); the first start of the browser waits for it
 	const migrated = Promise.resolve().then(() => {
 		const r = migrateOldProfile();

@@ -15,8 +15,8 @@ import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { Rect } from "../ui/core";
 import {
 	appIsForeground, clientOnScreen, clipPopup, dpr, focusMain, focusPopup, forgetPopup, hidePopup, isWindow, keepAbove, mainWindow, makeOwnedPopup,
-	placePopup, popupHasFocus, pump, win32Available,
-} from "./win32";
+	placePopup, popupHasFocus, popupsAvailable, pump,
+} from "./popup";
 
 type H = number | bigint;
 type WebviewLike = {
@@ -46,8 +46,11 @@ export interface WebHostOptions {
 	follow?: boolean;
 }
 
-/** True when a web view can be shown at all (Windows with user32). Whether WebView2 itself starts is only known when it is created. */
-export const webViewSupported = (): boolean => win32Available();
+/**
+ * True when a web view can be shown at all: Windows with user32, or Linux on X11 / XWayland with GTK 4 (webview/x11.ts). Whether the
+ * engine itself (WebView2, WebKitGTK) starts is only known when it is created.
+ */
+export const webViewSupported = (): boolean => popupsAvailable();
 /** Tests: create views without a GPUI window (hidden, never placed), so a page can be driven headlessly. */
 export const webViewHeadless = (): boolean => process.env.ZN_WEBVIEW_HEADLESS === "1";
 
@@ -190,7 +193,7 @@ export class WebHost {
 		this.setError("");
 		await new Promise((r) => setTimeout(r, 0)); // let the placeholder paint before the ~0.4 s creation
 		try {
-			if (!win32Available()) throw new Error("the web view needs Windows");
+			if (!popupsAvailable()) throw new Error(process.platform === "linux" ? "the web view needs X11 (it is off with ZN_WAYLAND=1) and GTK 4" : "the web view needs Windows or Linux");
 			const owner = mainWindow();
 			if (owner == null && !webViewHeadless()) throw new Error("no application window to attach the web view to");
 			// WebView2's profile: the webview library picks %APPDATA%/<exe name>/EBWebView (bun.exe unpackaged, zotero-next-gpui.exe packaged); it ignores WEBVIEW2_USER_DATA_FOLDER
@@ -254,6 +257,7 @@ export class WebHost {
 		const key = `${x},${y},${w},${h}`;
 		if (this.shown && key === this.placed && region === this.region) { keepAbove(hwnd); return; }
 		if (region !== this.region) { clipPopup(hwnd, keep, holes); this.region = region; }
+		if (TRACE) console.log(`[webview trace] place: placeholder ${JSON.stringify(r)} client ${JSON.stringify(c)} dpr ${k} -> ${key} region ${region || "-"}`);
 		placePopup(hwnd, { x, y, width: w, height: h });
 		keepAbove(hwnd);
 		this.shown = true;
@@ -281,6 +285,18 @@ export class WebHost {
 
 /** Everything the bridge needs in the page: reader-host talks to window.parent (the Electrobun shell's iframe parent); a top-level web view has no parent, so a stub receives the messages. */
 const BRIDGE = `(() => {
+	// WebKitGTK is often built without speech synthesis, and the reader calls speechSynthesis.getVoices() while it starts (read
+	// aloud): without this stand-in the whole page fails. Where the real one exists it is left alone.
+	if (!window.speechSynthesis) {
+		try {
+			const noop = () => {};
+			Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
+				getVoices: () => [], speak: noop, cancel: noop, pause: noop, resume: noop, speaking: false, pending: false, paused: false,
+				onvoiceschanged: null, addEventListener: noop, removeEventListener: noop,
+			} });
+			if (!window.SpeechSynthesisUtterance) window.SpeechSynthesisUtterance = function (text) { this.text = text; };
+		} catch (e) {}
+	}
 	if (window.top !== window) return;
 	try {
 		Object.defineProperty(window, "parent", { configurable: true, value: { postMessage(m) { try { window.znMsg(JSON.stringify(m)); } catch (e) {} } } });

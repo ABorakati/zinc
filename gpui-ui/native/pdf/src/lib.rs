@@ -63,7 +63,8 @@ mod pdfium;
 mod print;
 
 /// Dragging text out (Windows OLE, src/drag.rs) and printing (Windows GDI, src/print.rs) are Windows only. Elsewhere the same symbols
-/// exist, so bun:ffi binds the library unchanged, and report that the feature is not there.
+/// exist, so bun:ffi binds the library unchanged, and report that the feature is not there. (Linux prints without them: the app hands
+/// the PDF to GTK's print dialog or to CUPS, gpui-ui/src/reader/printGtk.ts.)
 #[cfg(not(windows))]
 mod unsupported {
     use std::ffi::c_char;

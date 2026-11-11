@@ -25,7 +25,7 @@ import { floatingRects, toast } from "../ui/overlay";
 import { noteBase, noteEditorUrl } from "./config";
 import { WebHost, webViewHeadless, type PageMessage, type Placement } from "./host";
 import { handleNoteAction } from "./noteLinks";
-import { focusMain, mainWindow } from "./win32";
+import { focusMain, mainWindow } from "./popup";
 
 const SAVE_DELAY = 600; // note-host/src/host.js
 const IDLE_MS = 3 * 60_000;

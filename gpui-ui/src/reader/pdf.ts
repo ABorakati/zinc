@@ -10,6 +10,7 @@
 import { CString, dlopen, FFIType, ptr, toBuffer } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { printWithGtkDialog, printWithLp } from "./printGtk";
 
 const { ptr: P, i32: I32, u32: U32, f32: F32, u64: U64, cstring } = FFIType;
 const usize = FFIType.u64; // 64-bit only
@@ -119,8 +120,13 @@ export async function editPdf(bytes: Uint8Array, e: PdfEdit): Promise<Uint8Array
 
 export interface PrintResult { result: "printed" | "cancelled"; pages: number; printer: string }
 
-/** Show the system print dialog (owned by this app's window) and print the chosen pages through PDFium. `currentPage` (0-based) enables "Current page". */
+/**
+ * Show the system print dialog and print. Windows: the dialog is owned by this app's window and PDFium draws the chosen pages into the
+ * printer (`currentPage`, 0-based, enables "Current page"). Linux: GTK's print dialog sends the PDF file to the printer (printGtk.ts);
+ * it does not report the pages or printer chosen, so `pages` is 0 and `printer` empty.
+ */
 export async function printPdf(bytes: Uint8Array, o: { title: string; currentPage?: number }): Promise<PrintResult> {
+	if (process.platform === "linux") return { result: await printWithGtkDialog(bytes, o.title), pages: 0, printer: "" };
 	const f = ops();
 	if (!f) throw new Error(pdfOpsUnavailable()!);
 	const job = f.zpdf_print_begin(ptr(bytes), bytes.byteLength, ptr(cstr(o.title)), o.currentPage === undefined ? 0 : o.currentPage + 1);
@@ -129,6 +135,17 @@ export async function printPdf(bytes: Uint8Array, o: { title: string; currentPag
 
 /** Print without a dialog: pages first..last (1-based; last 0 = to the end) on `printer` (default printer when omitted), into the file `output` when given (tests: "Microsoft Print to PDF"). */
 export async function printPdfTo(bytes: Uint8Array, o: { title: string; printer?: string; output?: string; first?: number; last?: number }): Promise<PrintResult> {
+	if (process.platform === "linux") {
+		// the page range is applied by cutting the other pages out (PDFium), then CUPS prints the file (printGtk.ts printWithLp)
+		const doc = PdfDoc.openBytes(bytes);
+		const n = doc.pageCount;
+		doc.close();
+		const a = Math.min(Math.max(o.first ?? 1, 1), Math.max(n, 1)), b = !o.last || o.last <= 0 ? n : Math.min(o.last, n);
+		const drop = [...Array(n).keys()].filter((i) => i < a - 1 || i > b - 1);
+		const cut = drop.length ? await editPdf(bytes, { delete: drop }) : bytes;
+		const printer = await printWithLp(cut, o);
+		return { result: "printed", pages: Math.max(0, b - a + 1), printer };
+	}
 	const f = ops();
 	if (!f) throw new Error(pdfOpsUnavailable()!);
 	const job = f.zpdf_print_to_begin(ptr(bytes), bytes.byteLength, ptr(cstr(o.title)), o.printer ? ptr(cstr(o.printer)) : null, o.output ? ptr(cstr(o.output)) : null, o.first ?? 1, o.last ?? 0);
