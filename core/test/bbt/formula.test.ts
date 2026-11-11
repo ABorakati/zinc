@@ -206,6 +206,19 @@ describe("postfix", () => {
 		expect(validPostfix("%(a)s%(n)s")).toBe(false);
 		expect(validPostfix("x")).toBe(false);
 	});
+	// found by the nightly fuzz (fc.double()): Infinity looped forever and the runner was killed when it ran out of memory
+	test("regression: a non-finite, negative or fractional index counts as the first duplicate, and does not hang", () => {
+		for (const bad of [Infinity, -Infinity, NaN, -1, -1e9]) {
+			expect(formatPostfix("%(a)s", bad)).toBe("a");
+			expect(formatPostfix("%(n)s", bad)).toBe("1");
+		}
+		expect(formatPostfix("%(a)s", 1.9)).toBe("b");
+		expect(formatPostfix("%(n)s", Number.MAX_VALUE)).toBe(String(Number.MAX_SAFE_INTEGER + 1));
+	});
+	test("regression: a huge zero-padding width is capped (it allocated a gigabyte string)", () => {
+		expect(formatPostfix("%(n)999999999d", 0)).toBe("1".padStart(16, "0"));
+		expect(formatPostfix("%(n)03d", 4)).toBe("005");
+	});
 	test("postfix() and infix() set the template and the position", () => {
 		const g = generate(compile("auth.lower + postfix('-%(n)s') + year"), { key: "X", itemType: "book", creators: [{ creatorType: "author", lastName: "Li" }], date: "2000" } as ZoteroItemData, cfg);
 		expect(g.postfix.template).toBe("-%(n)s");

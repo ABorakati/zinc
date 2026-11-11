@@ -1043,8 +1043,16 @@ export function generate(f: Compiled, data: ZoteroItemData, cfg: FormulaConfig):
 	return { text, postfix: ctx.postfix };
 }
 
-/** Format a duplicate postfix: `%(a)s` letters (a, b, ... aa), `%(A)s` capitals, `%(n)s` numbers (1-based). */
-export function formatPostfix(template: string, index: number): string {
+/** The widest zero-padded number a `%(n)0Wd` postfix gets: `%(n)999999999d` would otherwise build a gigabyte string. */
+const MAX_POSTFIX_WIDTH = 16;
+
+/**
+ * Format a duplicate postfix: `%(a)s` letters (a, b, ... aa), `%(A)s` capitals, `%(n)s` numbers (1-based). `index` is the 0-based
+ * duplicate counter; anything else (negative, NaN, Infinity) counts as the first, and a fraction is rounded down. Infinity used to
+ * loop forever (the letters loop never reached 0), growing the string until the machine ran out of memory.
+ */
+export function formatPostfix(template: string, rawIndex: number): string {
+	const index = Number.isFinite(rawIndex) && rawIndex > 0 ? Math.min(Math.floor(rawIndex), Number.MAX_SAFE_INTEGER) : 0;
 	const alpha = (n: number) => {
 		let s = "";
 		let x = n;
@@ -1057,7 +1065,7 @@ export function formatPostfix(template: string, index: number): string {
 	return template
 		.replace(/%\(a\)s/g, alpha(index))
 		.replace(/%\(A\)s/g, alpha(index).toUpperCase())
-		.replace(/%\(n\)(?:0?(\d+)d|s)/g, (_m, w?: string) => String(index + 1).padStart(w ? Number(w) : 0, "0"));
+		.replace(/%\(n\)(?:0?(\d+)d|s)/g, (_m, w?: string) => String(index + 1).padStart(w ? Math.min(Number(w), MAX_POSTFIX_WIDTH) : 0, "0"));
 }
 
 /** Check a postfix template: it needs exactly one of %(a)s, %(A)s, %(n)s. */
