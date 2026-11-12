@@ -10,6 +10,7 @@ import { connectorRoutes, decodeRFC2047, isBusyError, runConnectorRoute } from "
 import { SessionManager } from "../../core/src/connector/session";
 import { setSelection } from "../../core/src/connector/state";
 import { resolveTarget } from "../../core/src/connector/targets";
+import { forwardApi } from "./api";
 import { revealInApp } from "./reveal";
 import { mergeSessions, readState, writeState } from "./store";
 import { translatorCode, translatorMetadata } from "./translators";
@@ -33,7 +34,10 @@ export interface WireRequest {
 	id: string | number;
 	/** connector method name, e.g. "saveItems" (no "connector/" prefix) */
 	method: string;
-	http?: "GET" | "POST";
+	/** "GET" | "POST" for connector methods; for `api` any HTTP method (the allow-list in api.ts decides) */
+	http?: string;
+	/** `api` only: the app's request path, "/api/..." with its query string */
+	path?: string;
 	query?: string;
 	headers?: Record<string, string>;
 	body?: WireBody;
@@ -191,6 +195,20 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 	const method = String(msg.method ?? "");
 	const http = msg.http === "GET" ? "GET" : "POST";
 	const path = `/connector/${method}`;
+
+	// The library page (library.html): the app's own /api/* requests, through the allow-list in api.ts.
+	if (method === "api") {
+		const headers = new Headers();
+		for (const [k, v] of Object.entries(msg.headers ?? {})) headers.set(k, String(v));
+		let init: { body?: BodyInit };
+		try {
+			init = bodyToInit(msg.body, uploads);
+			if (msg.body?.kind === "form") headers.delete("content-type");
+		} catch (e) {
+			return done(400, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+		}
+		return forwardApi(env.getDb, { http: String(msg.http ?? "GET"), path: String(msg.path ?? ""), headers, body: init.body });
+	}
 
 	// "Open in Zinc": not a Zotero connector method; asks the running app (started if needed) to show an item (reveal.ts).
 	if (method === "revealInApp") {

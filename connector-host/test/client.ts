@@ -53,8 +53,11 @@ export interface Reply {
 }
 
 export interface CallOpts {
-	http?: "GET" | "POST";
+	/** "GET" | "POST" for connector methods; any HTTP method for `api` */
+	http?: string;
 	query?: string;
+	/** `api` calls: the app's request path ("/api/...") */
+	path?: string;
 	headers?: Record<string, string>;
 	json?: unknown;
 	text?: string;
@@ -178,7 +181,7 @@ export class HostClient {
 		}
 		return new Promise((resolve, reject) => {
 			this.pending.set(id, { resolve, reject, chunks: [] });
-			this.send({ t: "req", id, method, http: o.http ?? "POST", query: o.query, headers, body });
+			this.send({ t: "req", id, method, http: o.http ?? "POST", query: o.query, path: o.path, headers, body });
 		});
 	}
 
