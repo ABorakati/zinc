@@ -1,0 +1,31 @@
+gpui-ui/src/settings/defs/sync-org.tsx
+  s_e8244edae027cb::t_17ba40cebdefdc 19-20
+  s_e8244edae027cb::t_02f3db099403f5 41
+  s_e8244edae027cb::t_2626f4f43c4eec 7
+gpui-ui/src/settings/defs/sync.tsx
+  s_e8244edae027cb::t_091821435c886c 94-99
+  s_e8244edae027cb::t_d083e7b69b54bf 9
+gpui-ui/src/shell/libraryMode.ts
+  s_e8244edae027cb::t_050f65d9e07fa9 1-14
+gpui-ui/src/shell/libraryMode.test.ts
+  s_e8244edae027cb::t_1ec41f029fd5be 1-10
+gpui-ui/web/extension.tsx
+  s_e8244edae027cb::t_b4b01651dc86d7 32
+  s_e8244edae027cb::t_8b8d221752c736 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8fb1078d25c7348c469efdb3c511c002c1471a4",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
