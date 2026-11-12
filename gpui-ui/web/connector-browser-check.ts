@@ -219,10 +219,10 @@ try {
 	};
 	const itemsOf = async (query = ""): Promise<any[]> => (await api("GET", `/api/items?limit=200${query}`)).json?.items ?? [];
 
-	// ---- 1. first run, no host: the setting
-	let stored: any = null;
-	for (const end = Date.now() + 30_000; Date.now() < end && !stored?.saveTarget; await sleep(250)) stored = await evalIn(sw, `chrome.storage.local.get(${q(LIB_KEY)}).then((r) => r[${q(LIB_KEY)}])`);
-	check("first run with no host: zincBrowserLibrary = {saveTarget: browser, firstRunDone: true}", stored?.saveTarget === "browser" && stored?.firstRunDone === true && Object.keys(stored).length === 2, JSON.stringify(stored));
+	// ---- 1. no host: the target is the browser library (one library per computer; nothing about it is stored)
+	const target = await evalIn<{ target: string; hostError: string | null }>(sw, "Zotero.NativeHost.refreshTarget()");
+	const stored: any = await evalIn(sw, `chrome.storage.local.get(${q(LIB_KEY)}).then((r) => r[${q(LIB_KEY)}])`);
+	check("no host: the target is the browser library, and no save target is stored", target.target === "browser" && target.hostError === null && !JSON.stringify(stored ?? {}).includes("saveTarget"), `${JSON.stringify(target)}; ${LIB_KEY} = ${JSON.stringify(stored)}`);
 
 	// translators: the profile has none, and repo.zotero.org cannot be reached from here. Point the repository at the local mock.
 	await evalIn(sw, `ZOTERO_CONFIG.REPOSITORY_URL = ${q(`${base}/repo/`)}`);
