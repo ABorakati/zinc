@@ -1,0 +1,30 @@
+docs/design/web-connector-wasm.md
+  s_e8244edae027cb::t_1217024e30dc55 149
+  s_e8244edae027cb::t_72923926f60133 169-204
+gpui-ui/web/popup-check.ts
+  s_e8244edae027cb::t_1561c0b06727a4 174-175
+  s_e8244edae027cb::t_2d16818de4d4cb 142,176-177
+  s_e8244edae027cb::t_215751bee22ee6 287,291
+  s_e8244edae027cb::t_4053c6717d309b 288-290
+  s_e8244edae027cb::t_1b6ecb2473e8ee 1-95,97-141,143-173,178-286,292-308
+  s_e8244edae027cb::t_85fb9b195b8380 96
+gpui-ui/web/extension-check.ts
+  s_e8244edae027cb::t_c30a7dbd57bf4f 24-27
+  s_e8244edae027cb::t_e3c966211df2e3 5-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69c340d24064e38ae07d79b4e2cff5446d8b7684",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
