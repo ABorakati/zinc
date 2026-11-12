@@ -20,6 +20,7 @@
 // runs, pointing at a host compiled to <work>/host with a fixture library (ZN_DB) and no app port (ZNH_APP_PORT=0). Nothing leaves this
 // machine: no proxy, every name except 127.0.0.1 is unresolvable. Only processes this run started are stopped, by PID.
 import { spawn, spawnSync } from "node:child_process";
+import { assertSafeToStart, makeConnectorTestCopy } from "./check-safety";
 import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -63,11 +64,8 @@ const load = spawnSync("powershell", ["-NoProfile", "-Command", "(Get-CimInstanc
 if (Number(load.stdout.trim()) > 85) throw new Error(`CPU load is ${load.stdout.trim()}%: wait`);
 rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 const EXT = join(WORK, "ext");
-cpSync(EXT_BUILD, EXT, { recursive: true });
-const nhPath = join(EXT, "nativeHost.js");
-const nh = readFileSync(nhPath, "utf8");
-if (!nh.includes("const HOST_NAME = 'com.zotero_next.connector_host';")) throw new Error("nativeHost.js: HOST_NAME line not found");
-writeFileSync(nhPath, nh.replace("const HOST_NAME = 'com.zotero_next.connector_host';", `const HOST_NAME = '${HOST_NAME}';`));
+// a copy of the build whose real host name is replaced, in every script, by this check's own (web/check-safety.ts)
+makeConnectorTestCopy(EXT_BUILD, EXT, HOST_NAME);
 for (const d of ["host", "shots", "norepo"]) mkdirSync(join(WORK, d), { recursive: true });
 
 // ---- the app's library (a fixture), the host, and the pages to save
@@ -146,7 +144,8 @@ const server = Bun.serve({
 	},
 });
 
-// ---- Chrome
+// ---- Chrome: only if nothing it loads can reach a host registered for the user's browser (web/check-safety.ts)
+assertSafeToStart({ extDir: EXT, hostNames: [HOST_NAME] });
 const profile = join(WORK, "profile");
 const chrome = spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`,
