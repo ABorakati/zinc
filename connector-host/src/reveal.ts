@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 export interface RevealResult {
 	status: number;
-	body: { ok: boolean; started: boolean; error?: string; seq?: number };
+	body: { ok: boolean; started: boolean; error?: string; seq?: number; opened?: string | null };
 }
 
 export interface RevealOptions {
@@ -21,6 +21,8 @@ export interface RevealOptions {
 	/** How long to wait for a started app's API (default 40 s, like the Word add-in). */
 	waitMs?: number;
 	exists?: (path: string) => boolean;
+	/** also open the item's PDF / EPUB / snapshot in the app's reader ({open: true} in /api/ui/reveal) */
+	open?: boolean;
 }
 
 const KEY = /^[A-Za-z0-9]{1,32}$/;
@@ -75,12 +77,12 @@ export async function revealInApp(appPort: number, key: unknown, opts: RevealOpt
 		const r = await fetch(`${base}/api/ui/reveal`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ key }),
+			body: JSON.stringify(opts.open ? { key, open: true } : { key }),
 			signal: AbortSignal.timeout(5000),
 		});
-		const j = (await r.json().catch(() => ({}))) as { error?: string; seq?: number };
+		const j = (await r.json().catch(() => ({}))) as { error?: string; seq?: number; opened?: string | null };
 		if (!r.ok) return { status: r.status, body: { ok: false, started, error: j.error ?? r.statusText } };
-		return { status: 200, body: { ok: true, started, seq: j.seq } };
+		return { status: 200, body: { ok: true, started, seq: j.seq, ...(opts.open ? { opened: j.opened ?? null } : {}) } };
 	} catch (e) {
 		return { status: 502, body: { ok: false, started, error: e instanceof Error ? e.message : String(e) } };
 	}

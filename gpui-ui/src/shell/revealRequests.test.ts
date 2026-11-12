@@ -30,3 +30,13 @@ test("startRevealPolling shows each new request once", async () => {
 	stop();
 	expect(shown).toEqual(["KEY00001", "KEY00002"]);
 });
+
+test("startRevealPolling passes the attachment to open", async () => {
+	const reveal: RevealRequest = { ...req(7, Date.now(), "PARENT01"), open: { key: "PDFKEY01", title: "Full Text PDF" } };
+	setDirect((r) => (new URL(r.url).pathname === "/api/ui/selection" ? Response.json({ selection: { kind: "library" }, rev: 1, reveal }) : null));
+	const shown: unknown[] = [];
+	const stop = startRevealPolling((k, open) => shown.push([k, open]), 20);
+	await Bun.sleep(60);
+	stop();
+	expect(shown).toEqual([["PARENT01", { key: "PDFKEY01", title: "Full Text PDF" }]]);
+});

@@ -72,6 +72,8 @@ export interface RevealRequest {
 	seq: number;
 	/** Date.now() when requested; a UI that starts later still acts on a recent one. */
 	at: number;
+	/** also open this attachment of the item in the reader ("Open item" in the connector's popup) */
+	open?: { key: string; title: string };
 }
 let reveal: RevealRequest | null = null;
 let revealSeq = 0;
@@ -81,8 +83,8 @@ export function getReveal(): RevealRequest | null {
 }
 
 /** Ask the UI to show an item (any change moves `rev` too, so a UI that only watches `rev` reloads). */
-export function requestReveal(key: string, title: string): RevealRequest {
-	reveal = { key, title, seq: ++revealSeq, at: Date.now() };
+export function requestReveal(key: string, title: string, open?: { key: string; title: string }): RevealRequest {
+	reveal = { key, title, seq: ++revealSeq, at: Date.now(), ...(open ? { open } : {}) };
 	bumpRev();
 	return reveal;
 }

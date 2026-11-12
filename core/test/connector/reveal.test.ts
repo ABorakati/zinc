@@ -65,6 +65,30 @@ describe("/api/ui/reveal", () => {
 		expect((await ui("/api/ui/reveal", "POST", { key: "ZZZZZZZZ" })).headers.get("content-type")).toContain("json");
 	});
 
+	test("open: true picks the item's PDF (or the attachment asked for); without a readable file it only selects", async () => {
+		const { createItem } = await import("../../src/db");
+		const parent = createItem(db, { itemType: "journalArticle", title: "Reveal with open" } as never).data.key;
+		const html = createItem(db, { itemType: "attachment", parentItem: parent, title: "Snapshot", linkMode: "imported_url", contentType: "text/html" } as never).data.key;
+		const pdf = createItem(db, { itemType: "attachment", parentItem: parent, title: "Full Text PDF", linkMode: "imported_file", contentType: "application/pdf" } as never).data.key;
+		const bare = createItem(db, { itemType: "book", title: "No files" } as never).data.key;
+		type Sel = { reveal: { key: string; open?: { key: string; title: string } } };
+		const sel = async () => ((await (await ui("/api/ui/selection")).json()) as Sel).reveal;
+
+		const a = (await (await ui("/api/ui/reveal", "POST", { key: parent, open: true })).json()) as { opened: string | null };
+		expect(a.opened).toBe(pdf);
+		expect(await sel()).toMatchObject({ key: parent, open: { key: pdf, title: "Full Text PDF" } });
+
+		await ui("/api/ui/reveal", "POST", { key: html, open: true });
+		expect(await sel()).toMatchObject({ key: parent, open: { key: html } });
+
+		const c = (await (await ui("/api/ui/reveal", "POST", { key: bare, open: true })).json()) as { opened: string | null };
+		expect(c.opened).toBeNull();
+		expect((await sel()).open).toBeUndefined();
+
+		await ui("/api/ui/reveal", "POST", { key: parent });
+		expect((await sel()).open).toBeUndefined();
+	});
+
 	test("selection POST still works", async () => {
 		expect((await ui("/api/ui/selection", "POST", { kind: "trash" })).status).toBe(200);
 		expect((await ui("/api/ui/selection", "POST", { kind: "bogus" })).status).toBe(400);

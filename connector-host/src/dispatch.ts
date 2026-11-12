@@ -12,6 +12,7 @@ import { setSelection } from "../../core/src/connector/state";
 import { resolveTarget } from "../../core/src/connector/targets";
 import { forwardApi } from "./api";
 import { revealInApp } from "./reveal";
+import { cancelSession, isCancelled, sessionItems, trashSession } from "./sessions";
 import { mergeSessions, readState, writeState } from "./store";
 import { translatorCode, translatorMetadata } from "./translators";
 
@@ -109,6 +110,8 @@ const TRANSLATOR_METHODS = new Set(["getTranslators", "getTranslatorCode"]);
 const SESSION_MUTATING = new Set(["saveItems", "saveSnapshot", "saveSingleFile", "saveAttachment", "saveStandaloneAttachment", "saveAttachmentFromResolver", "updateSession", "import"]);
 // Methods that look an existing session up (and so may need the persisted copy, after a host restart). The ones that
 // start a session (saveItems, saveSnapshot, saveStandaloneAttachment, import) name a new id: nothing to load.
+// The save popup's own methods (sessions.ts): not Zotero connector methods.
+const SESSION_ACTIONS = new Set(["sessionItems", "trashSession", "cancelSession"]);
 const SESSION_READING = new Set(["saveSingleFile", "saveAttachment", "saveAttachmentFromResolver", "updateSession", "getRecognizedItem"]);
 
 /** The save session id a call refers to (query, X-Metadata header or JSON body), if any. */
@@ -212,14 +215,29 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 
 	// "Open in Zinc": not a Zotero connector method; asks the running app (started if needed) to show an item (reveal.ts).
 	if (method === "revealInApp") {
-		let key: unknown;
+		let b: { key?: unknown; open?: unknown } = {};
 		try {
-			key = JSON.parse(msg.body?.kind === "text" ? msg.body.text : "{}").key;
+			b = JSON.parse(msg.body?.kind === "text" ? msg.body.text : "{}") ?? {};
 		} catch {
 			/* no key: 400 below */
 		}
-		const r = await revealInApp(env.appPort, key);
+		const r = await revealInApp(env.appPort, b.key, { open: b.open === true });
 		return done(r.status, JSON.stringify(r.body));
+	}
+
+	// The save popup: list, trash or cancel what one save session created (sessions.ts). Body {sessionID}.
+	if (SESSION_ACTIONS.has(method)) {
+		const id = sessionIdOf(msg);
+		if (!id) return done(400, JSON.stringify({ error: "sessionID required" }));
+		try {
+			const db = env.getDb();
+			loadSessionsFor(env, msg);
+			const r = method === "sessionItems" ? sessionItems(db, id) : method === "trashSession" ? trashSession(db, id) : cancelSession(db, id);
+			return done(r.status, JSON.stringify(r.body));
+		} catch (e) {
+			if (isBusyError(e)) return done(503, JSON.stringify({ error: BUSY_MESSAGE }));
+			throw e;
+		}
 	}
 
 	// The translators come from the bundled copy (offline, instant): the extension asks "the client" for them
@@ -247,6 +265,10 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 	const route = connectorRoutes.find((r) => r.path === path && r.methods.includes(http));
 	// document/* belongs to the Zotero client (Word / LibreOffice integration): unknown here, no integration UI.
 	if (!route) return done(404, JSON.stringify({ error: "NOT_IMPLEMENTED", method }));
+
+	// A save the user cancelled in the popup: its remaining calls (attachments, snapshot, target changes) are refused.
+	const sid = SESSION_MUTATING.has(method) ? sessionIdOf(msg) : undefined;
+	if (isCancelled(sid)) return done(409, JSON.stringify({ error: "SESSION_CANCELLED", sessionID: sid }));
 
 	const headers = new Headers();
 	for (const [k, v] of Object.entries(msg.headers ?? {})) headers.set(k, String(v));
@@ -285,6 +307,8 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 		const t = resolveTarget(env.getDb(), target);
 		if (t.ok) writeState(dbPath, (cur) => ({ ...cur, lastTarget: t.collectionKey ? `C${t.collectionKey}` : "L1" }));
 	}
+	// cancelled while this call ran (the popup's Cancel raced a saveItems): what it just created goes to the Trash too
+	if (isCancelled(sid)) trashSession(env.getDb(), sid!);
 	if (SESSION_MUTATING.has(method)) saveSessions(env);
 
 	const out = new Uint8Array(await res.arrayBuffer());

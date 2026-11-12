@@ -16,7 +16,11 @@ import { fontFamilyNames, tw } from "../src/theme";
 import { HOST_NAME, nativeApiTransport, type NativePort } from "./native-host";
 
 declare const chrome: {
-	runtime: { connectNative(name: string): NativePort; lastError?: { message?: string } };
+	runtime: {
+		connectNative(name: string): NativePort;
+		lastError?: { message?: string };
+		onMessage: { addListener(f: (msg: unknown) => void): void };
+	};
 };
 
 const here = (f: string) => new URL(f, import.meta.url).href;
@@ -88,3 +92,15 @@ startOutsideChangeWatch(() => {
 	probe.outsideChanges++;
 	store.refresh();
 });
+
+// "Open library" in the connector's popup: show the item just saved. ?select=<key> when the popup opens this page, a
+// {zincLibrarySelect: key} message when the page is already open (the save is new, so the lists are reloaded first).
+const showItem = (key: unknown) => {
+	if (typeof key !== "string" || !/^[A-Z0-9]{8}$/.test(key)) return;
+	store.setActiveTab("library");
+	store.selectCollection(null);
+	store.refresh();
+	store.selectItem(key);
+};
+showItem(new URLSearchParams(location.search).get("select"));
+chrome.runtime.onMessage.addListener((m) => showItem((m as { zincLibrarySelect?: unknown } | null)?.zincLibrarySelect));

@@ -49,6 +49,24 @@ describe("revealInApp", () => {
 		expect(app.reveals).toEqual(["ABCD2345"]);
 	});
 
+	test("open: true is passed to the app, and its choice of attachment comes back", async () => {
+		const bodies: unknown[] = [];
+		const s = Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			async fetch(req) {
+				const { pathname } = new URL(req.url);
+				if (pathname === "/api/ui/selection") return Response.json({ rev: 1, reveal: null });
+				bodies.push(await req.json());
+				return Response.json({ ok: true, seq: 1, opened: "PDFKEY01" });
+			},
+		});
+		servers.push(s);
+		const r = await revealInApp(s.port!, "ABCD2345", { open: true });
+		expect(r).toEqual({ status: 200, body: { ok: true, started: false, seq: 1, opened: "PDFKEY01" } });
+		expect(bodies).toEqual([{ key: "ABCD2345", open: true }]);
+	});
+
 	test("the app's 404 for an unknown item comes back as is", async () => {
 		const app = fakeApp(0, new Set(["NOPE0000"]));
 		const r = await revealInApp(app.port, "NOPE0000");

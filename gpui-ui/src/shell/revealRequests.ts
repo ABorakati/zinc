@@ -5,7 +5,14 @@
 // happened. Raising the window is left to the caller that asked (the Word add-in does it; see docs/design/web-connector-wasm.md).
 import { apiRequest } from "../api";
 
-export interface RevealRequest { key: string; title: string; seq: number; at: number }
+export interface RevealRequest {
+	key: string;
+	title: string;
+	seq: number;
+	at: number;
+	/** also open this attachment in the reader (the connector popup's "Open item") */
+	open?: { key: string; title: string };
+}
 
 /** A request older than this when the app first sees it is not acted on (an external core may hold one from before). */
 const FRESH_MS = 60_000;
@@ -19,7 +26,7 @@ export function pendingReveal(last: number | null, r: RevealRequest | null | und
 }
 
 /** Poll every `intervalMs`; `show` gets the item key of each new request. Returns a stop function. */
-export function startRevealPolling(show: (key: string) => void, intervalMs = 1500): () => void {
+export function startRevealPolling(show: (key: string, open?: { key: string; title: string }) => void, intervalMs = 1500): () => void {
 	let last: number | null = null;
 	let busy = false;
 	const tick = async () => {
@@ -30,7 +37,7 @@ export function startRevealPolling(show: (key: string) => void, intervalMs = 150
 			const r = pendingReveal(last, s.reveal);
 			if (s.reveal && typeof s.reveal.seq === "number") last = s.reveal.seq;
 			else if (last === null) last = 0;
-			if (r) show(r.key);
+			if (r) show(r.key, r.open);
 		} catch {
 			/* core not up yet, or an older core: try again next tick */
 		} finally {
