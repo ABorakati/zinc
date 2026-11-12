@@ -485,7 +485,9 @@ try {
 	check("no page, offscreen or worker errors, and no CSP violations", errs.length === 0, errs.slice(0, 8).join(" | ") || "none");
 } finally {
 	server.stop(true);
-	if (chrome?.pid) spawnSync("taskkill", ["/PID", String(chrome.pid), "/T", "/F"], { stdio: "ignore" });
+	// (assigned inside callbacks, so TypeScript narrows it to null here: read it through its declared type)
+	const running = chrome as ChildProcess | null;
+	if (running?.pid) spawnSync("taskkill", ["/PID", String(running.pid), "/T", "/F"], { stdio: "ignore" });
 	await sleep(1500);
 	// the link only: never the build it points to
 	spawnSync("cmd", ["/c", "rmdir", join(ext, "library")], { stdio: "ignore" });
