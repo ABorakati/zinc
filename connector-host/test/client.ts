@@ -1,9 +1,47 @@
 // A minimal stand-in for the extension side of the native-messaging protocol, used by the tests.
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { FrameReader, MAX_OUT_FRAME } from "../src/frames";
 
-// ZNH_EXE points the tests and the benchmark at another build (e.g. one compiled to a temp path)
-export const HOST_EXE = process.env.ZNH_EXE ?? join(dirname(import.meta.dir), "dist", "zotero-next-host.exe");
+const PKG = dirname(import.meta.dir);
+
+/** Newest modification time of the sources compiled into the host (its own and the core's). */
+function newestSource(): number {
+	let newest = 0;
+	const walk = (d: string) => {
+		for (const e of readdirSync(d, { withFileTypes: true })) {
+			const p = join(d, e.name);
+			if (e.isDirectory()) { if (e.name !== "node_modules" && e.name !== "vendor") walk(p); }
+			else if (/\.(ts|tsx|js|json)$/.test(e.name)) newest = Math.max(newest, statSync(p).mtimeMs);
+		}
+	};
+	walk(join(PKG, "src"));
+	walk(join(PKG, "..", "core", "src"));
+	return newest;
+}
+
+/**
+ * The host the tests run. ZNH_EXE picks a build (e.g. one compiled to a temp path). Otherwise dist/zotero-next-host.exe when it
+ * is newer than the sources; when it is older (nobody ran `bun run build` after a change: the tests then tested old code and
+ * failed for reasons the sources no longer have), the sources are compiled to a temp exe first, which leaves dist (possibly in
+ * use by the browser) alone.
+ */
+function hostExe(): string {
+	if (process.env.ZNH_EXE) return process.env.ZNH_EXE;
+	const dist = join(PKG, "dist", "zotero-next-host.exe");
+	const src = newestSource();
+	if (existsSync(dist) && statSync(dist).mtimeMs >= src) return dist;
+	const dir = join(tmpdir(), "znh-test-host");
+	const out = join(dir, "zotero-next-host.exe");
+	if (existsSync(out) && statSync(out).mtimeMs >= src) return out;
+	mkdirSync(dir, { recursive: true });
+	console.warn(`[host tests] ${existsSync(dist) ? "dist/zotero-next-host.exe is older than the sources" : "no dist/zotero-next-host.exe"}: compiling the sources to ${out}`);
+	const r = Bun.spawnSync(["bun", "build", "--compile", join(PKG, "src", "main.ts"), "--outfile", out], { stdout: "pipe", stderr: "pipe" });
+	if (!r.success) throw new Error(`compiling the host failed:\n${r.stderr.toString()}`);
+	return out;
+}
+export const HOST_EXE = hostExe();
 export const UPLOAD_CHUNK = 4 * 1024 * 1024;
 
 export interface Reply {

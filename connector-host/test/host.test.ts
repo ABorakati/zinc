@@ -293,7 +293,7 @@ describe("native host: translators and library-free calls", () => {
 		} finally {
 			await h.close();
 		}
-	});
+	}, 30_000); // the first getTranslators reads ~750 translator files: over 5 s on a cold start (new exe, empty file cache)
 
 	test("a multipart form whose fields arrive as upload frames saves a snapshot", async () => {
 		const dbPath = makeLibrary("formup");
