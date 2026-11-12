@@ -3,6 +3,14 @@
 //
 //   installDurableFs(createBlobBackend(db))   // paths under /opfs/ now live in `db`
 //
+// Case: paths are looked up case-insensitively (as on Windows and macOS), but names keep the case they were first written with.
+// `path` is the lower-cased lookup key and the primary key; `name` is the same path in its original case. The shim passes both
+// (k = key, o = original); lookups, ranges and prefixes use `path`, and readdir answers with the last segment of `name`. An existing
+// entry keeps its name when it is overwritten, as a file system does; a rename (including one that only changes case) sets the new name.
+// A database made before `name` existed gets the column added on open, with `path` as the name (it was lower-case then).
+// Names are assumed to be as long as their keys (true for every character but a few exotic ones such as U+0130), which lets a
+// directory rename rewrite `name` with the same substr offsets as `path`.
+//
 // Costs (measured with bun:sqlite, in memory; see blobfs.test.ts "timings"): a whole-file write or read moves the bytes once
 // across the JS/wasm boundary (20 MB: ~70 ms write, ~50 ms read). A range read uses substr(data, pos+1, len): only the slice
 // crosses into JS, though SQLite itself loads the blob's pages to compute it (256 KB from the middle of 20 MB: ~20 ms).
@@ -21,24 +29,33 @@ export interface BlobDb {
 }
 
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS dirs (path TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL, name TEXT);
+CREATE TABLE IF NOT EXISTS dirs (path TEXT PRIMARY KEY, name TEXT);
 `;
 
 const EMPTY = new Uint8Array(0);
 const bytesOf = (v: unknown): Uint8Array => (v instanceof Uint8Array ? (v.constructor === Uint8Array ? v : new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) : v == null ? EMPTY : typeof v === "string" ? new TextEncoder().encode(v) : new Uint8Array(v as ArrayBuffer));
-const ancestors = (k: string): string[] => { const out: string[] = []; for (let i = k.indexOf("/", 1); i !== -1; i = k.indexOf("/", i + 1)) out.push(k.slice(0, i)); return out; };
+/** The proper ancestors of an original-case path as [key, name] pairs ("/a/B/c" gives ["/a", "/a"], ["/a/b", "/a/B"]). */
+const ancestors = (o: string): [string, string][] => { const out: [string, string][] = []; for (let i = o.indexOf("/", 1); i !== -1; i = o.indexOf("/", i + 1)) { const n = o.slice(0, i); out.push([n.toLowerCase(), n]); } return out; };
+const lastPart = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
 export function createBlobBackend(db: BlobDb): DurableBackend {
 	db.exec(SCHEMA);
 	const q = (sql: string) => db.query(sql);
+	// a database from before `name` existed: add the column, and the lower-cased path is the best name there is
+	for (const table of ["files", "dirs"]) {
+		let has = true;
+		try { q(`SELECT name FROM ${table} LIMIT 0`).all(); } catch { has = false; }
+		if (!has) db.transaction(() => { db.exec(`ALTER TABLE ${table} ADD COLUMN name TEXT`); q(`UPDATE ${table} SET name = path WHERE name IS NULL`).run(); })();
+	}
 	// directories known to exist in the dirs table, so a write does not re-insert its parents every time
 	const known = new Set<string>();
-	const ensureDirs = (k: string, self = false) => {
-		const list = self ? [...ancestors(k), k] : ancestors(k);
-		for (const d of list) {
+	/** Make the ancestors of `o` (and `o` itself when `self`) exist; a directory that exists keeps its name. */
+	const ensureDirs = (o: string, self = false) => {
+		const list = self ? [...ancestors(o), [o.toLowerCase(), o] as [string, string]] : ancestors(o);
+		for (const [d, name] of list) {
 			if (known.has(d)) continue;
-			q("INSERT OR IGNORE INTO dirs(path) VALUES (?)").run(d);
+			q("INSERT OR IGNORE INTO dirs(path, name) VALUES (?, ?)").run(d, name);
 			known.add(d);
 		}
 	};
@@ -53,49 +70,57 @@ export function createBlobBackend(db: BlobDb): DurableBackend {
 		if (q("SELECT 1 AS x FROM dirs WHERE path = ?").get(k)) return { size: 0, mtimeMs: 0, isDir: true };
 		return undefined;
 	};
-	const write = db.transaction((k: string, data: Uint8Array) => {
-		ensureDirs(k);
-		q("INSERT INTO files(path, data, mtime) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET data = excluded.data, mtime = excluded.mtime").run(k, data, now());
+	const write = db.transaction((k: string, data: Uint8Array, o: string) => {
+		ensureDirs(o);
+		q("INSERT INTO files(path, data, mtime, name) VALUES (?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET data = excluded.data, mtime = excluded.mtime").run(k, data, now(), o);
 	});
-	const append = db.transaction((k: string, data: Uint8Array) => {
+	const append = db.transaction((k: string, data: Uint8Array, o: string) => {
 		// `||` on blobs gives TEXT (length() would stop at a NUL byte); CAST back to BLOB keeps every byte
 		const r: any = q("UPDATE files SET data = CAST(data || ? AS BLOB), mtime = ? WHERE path = ?").run(data, now(), k);
-		if (!r.changes) write(k, data);
+		if (!r.changes) write(k, data, o);
 	});
 	const rm = db.transaction((k: string) => {
 		q("DELETE FROM files WHERE path = ? OR (path > ? AND path < ?)").run(k, lo(k), hi(k));
 		q("DELETE FROM dirs WHERE path = ? OR (path > ? AND path < ?)").run(k, lo(k), hi(k));
 		known.clear();
 	});
-	const rename = db.transaction((from: string, to: string): boolean => {
-		if (from === to) return !!stat(from);
-		const f = q("SELECT 1 AS x FROM files WHERE path = ?").get(from);
-		if (f) {
-			rm(to);
-			ensureDirs(to);
-			q("UPDATE files SET path = ?, mtime = mtime WHERE path = ?").run(to, from);
+	const rename = db.transaction((from: string, to: string, toName: string): boolean => {
+		const isFile = !!q("SELECT 1 AS x FROM files WHERE path = ?").get(from);
+		const isDir = !isFile && !!q("SELECT 1 AS x FROM dirs WHERE path = ?").get(from);
+		if (!isFile && !isDir) return false;
+		const cut = from.length + 1; // substr is 1-based: keep from the character at index from.length
+		if (from === to) {
+			// only the case changes: the key stays, the names are rewritten
+			if (isFile) { q("UPDATE files SET name = ? WHERE path = ?").run(toName, from); return true; }
+			q("UPDATE dirs SET name = ? WHERE path = ?").run(toName, from);
+			q("UPDATE files SET name = ? || substr(name, ?) WHERE path > ? AND path < ?").run(toName, cut, lo(from), hi(from));
+			q("UPDATE dirs SET name = ? || substr(name, ?) WHERE path > ? AND path < ?").run(toName, cut, lo(from), hi(from));
 			return true;
 		}
-		if (!q("SELECT 1 AS x FROM dirs WHERE path = ?").get(from)) return false;
+		if (isFile) {
+			rm(to);
+			ensureDirs(toName);
+			q("UPDATE files SET path = ?, name = ?, mtime = mtime WHERE path = ?").run(to, toName, from);
+			return true;
+		}
 		rm(to);
-		ensureDirs(to, true);
-		const cut = from.length + 1; // substr is 1-based: keep from the character at index from.length
-		q("UPDATE files SET path = ? || substr(path, ?) WHERE path > ? AND path < ?").run(to, cut, lo(from), hi(from));
-		q("INSERT OR IGNORE INTO dirs(path) SELECT ? || substr(path, ?) FROM dirs WHERE path > ? AND path < ?").run(to, cut, lo(from), hi(from));
+		ensureDirs(toName, true);
+		q("UPDATE files SET path = ? || substr(path, ?), name = ? || substr(name, ?) WHERE path > ? AND path < ?").run(to, cut, toName, cut, lo(from), hi(from));
+		q("INSERT OR IGNORE INTO dirs(path, name) SELECT ? || substr(path, ?), ? || substr(name, ?) FROM dirs WHERE path > ? AND path < ?").run(to, cut, toName, cut, lo(from), hi(from));
 		q("DELETE FROM dirs WHERE path = ? OR (path > ? AND path < ?)").run(from, lo(from), hi(from));
 		known.clear();
 		return true;
 	});
-	const copy = db.transaction((from: string, to: string): boolean => {
+	const copy = db.transaction((from: string, to: string, toName: string): boolean => {
 		if (!q("SELECT 1 AS x FROM files WHERE path = ?").get(from)) return false;
 		if (from === to) return true;
-		ensureDirs(to);
-		q("INSERT INTO files(path, data, mtime) SELECT ?, data, ? FROM files WHERE path = ? ON CONFLICT(path) DO UPDATE SET data = excluded.data, mtime = excluded.mtime").run(to, now(), from);
+		ensureDirs(toName);
+		q("INSERT INTO files(path, data, mtime, name) SELECT ?, data, ?, ? FROM files WHERE path = ? ON CONFLICT(path) DO UPDATE SET data = excluded.data, mtime = excluded.mtime").run(to, now(), toName, from);
 		return true;
 	});
-	const truncate = db.transaction((k: string, len: number) => {
+	const truncate = db.transaction((k: string, len: number, o: string) => {
 		const st = q("SELECT length(data) AS size FROM files WHERE path = ?").get(k);
-		if (!st) { write(k, new Uint8Array(len)); return; }
+		if (!st) { write(k, new Uint8Array(len), o); return; }
 		const size = Number(st.size);
 		if (len === size) return;
 		if (len < size) q("UPDATE files SET data = substr(data, 1, ?), mtime = ? WHERE path = ?").run(len, now(), k);
@@ -117,19 +142,19 @@ export function createBlobBackend(db: BlobDb): DurableBackend {
 				: q("SELECT substr(data, ?, ?) AS d FROM files WHERE path = ?").get(start + 1, len, k);
 			return r ? bytesOf(r.d) : undefined;
 		},
-		write(k, data) { write(k, data); },
-		append(k, data) { append(k, data); },
-		truncate(k, len) { truncate(k, len); },
-		mkdir(k) { if (k !== "/") db.transaction(() => ensureDirs(k, true))(); },
+		write(k, data, o) { write(k, data, o ?? k); },
+		append(k, data, o) { append(k, data, o ?? k); },
+		truncate(k, len, o) { truncate(k, len, o ?? k); },
+		mkdir(k, o) { if (k !== "/") db.transaction(() => ensureDirs(o ?? k, true))(); },
 		readdir(k) {
 			if (!q("SELECT 1 AS x FROM dirs WHERE path = ?").get(k)) return undefined;
 			const from = k.length + 2; // the first character after "<k>/"
-			const direct = (table: string) => q(`SELECT substr(path, ?) AS name FROM ${table} WHERE path > ? AND path < ? AND instr(substr(path, ?), '/') = 0`).all(from, lo(k), hi(k), from) as { name: string }[];
-			return [...direct("dirs").map((r) => ({ name: r.name, isDir: true })), ...direct("files").map((r) => ({ name: r.name, isDir: false }))];
+			const direct = (table: string) => q(`SELECT COALESCE(name, path) AS name FROM ${table} WHERE path > ? AND path < ? AND instr(substr(path, ?), '/') = 0`).all(lo(k), hi(k), from) as { name: string }[];
+			return [...direct("dirs").map((r) => ({ name: lastPart(r.name), isDir: true })), ...direct("files").map((r) => ({ name: lastPart(r.name), isDir: false }))];
 		},
 		rm(k) { rm(k); },
-		rename(from, to) { return rename(from, to); },
-		copy(from, to) { return copy(from, to); },
+		rename(from, to, o) { return rename(from, to, o ?? to); },
+		copy(from, to, o) { return copy(from, to, o ?? to); },
 		utimes(k, mtimeMs) { q("UPDATE files SET mtime = ? WHERE path = ?").run(Math.floor(mtimeMs), k); },
 	};
 }

@@ -10,7 +10,8 @@ const dirs = new Set<string>(["/"]);
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-/** What a durable backend answers for a path. `k` is always the shim's normalised key (lower-case, forward slashes, no trailing slash). */
+/** What a durable backend answers for a path. `k` is always the shim's normalised key (lower-case, forward slashes, no trailing slash).
+ * Methods that can create a name also get `o`: the same path with the caller's case kept, for the backend to remember and list. */
 export interface DurableStat { size: number; mtimeMs: number; isDir: boolean }
 export interface DurableBackend {
 	/** undefined when nothing is there */
@@ -18,21 +19,21 @@ export interface DurableBackend {
 	/** The bytes of a file (all of them, or `len` bytes from `pos`); undefined when there is no such file. Past the end gives fewer bytes. */
 	read(k: string, pos?: number, len?: number): Uint8Array | undefined;
 	/** Create or replace a file; the parent directories are implied. */
-	write(k: string, data: Uint8Array): void;
+	write(k: string, data: Uint8Array, o?: string): void;
 	/** Add to the end of a file (created when missing). */
-	append(k: string, data: Uint8Array): void;
+	append(k: string, data: Uint8Array, o?: string): void;
 	/** Cut a file to `len` bytes, or extend it with zeros (created when missing). */
-	truncate(k: string, len: number): void;
+	truncate(k: string, len: number, o?: string): void;
 	/** Create a directory and its parents. */
-	mkdir(k: string): void;
+	mkdir(k: string, o?: string): void;
 	/** The direct children, or undefined when `k` is not a directory. */
 	readdir(k: string): { name: string; isDir: boolean }[] | undefined;
 	/** Remove a file, or a directory with everything under it. Nothing there is not an error. */
 	rm(k: string): void;
 	/** Move a file or a directory (with everything under it), replacing what is at `to`. Returns false when `from` does not exist. */
-	rename(from: string, to: string): boolean;
+	rename(from: string, to: string, o?: string): boolean;
 	/** Copy one file, replacing what is at `to`. Returns false when `from` is not a file. */
-	copy(from: string, to: string): boolean;
+	copy(from: string, to: string, o?: string): boolean;
 	utimes(k: string, mtimeMs: number): void;
 }
 let backend: DurableBackend | null = null;
@@ -47,12 +48,15 @@ export function installDurableFs(be: DurableBackend | null, pfx = "/opfs/"): voi
 }
 const dur = (k: string): DurableBackend | null => (backend && (k.startsWith(prefix) || k === prefixBare) ? backend : null);
 
-const key = (p: unknown): string => {
+// norm(): forward slashes, no trailing slash, case kept (what durable files are listed and exported as).
+// key(): norm() lower-cased, for every lookup (memory paths, and the durable backend's primary key).
+const norm = (p: unknown): string => {
 	let s = p instanceof URL ? decodeURIComponent(p.pathname) : String(p);
 	if (s.startsWith("file:")) s = decodeURIComponent(new URL(s).pathname);
-	s = s.replace(/\\/g, "/").replace(/^\/([a-zA-Z]:)/, "$1").toLowerCase();
+	s = s.replace(/\\/g, "/").replace(/^\/([a-zA-Z]:)/, "$1");
 	return s.length > 1 ? s.replace(/\/+$/, "") : s;
 };
+const key = (p: unknown): string => norm(p).toLowerCase();
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 const find = (p: unknown): string | undefined => {
 	const k = key(p);
@@ -115,7 +119,7 @@ export function writeFileSync(p: unknown, data: unknown, o?: unknown): void {
 		const st = d.stat(k);
 		if (st?.isDir) throw eisdir("open", p);
 		if (flag === "wx" && st) throw eexist("open", p);
-		if (flag?.startsWith("a")) d.append(k, toBytes(data)); else d.write(k, toBytes(data));
+		if (flag?.startsWith("a")) d.append(k, toBytes(data), norm(p)); else d.write(k, toBytes(data), norm(p));
 		return;
 	}
 	if (flag === "wx" && files.has(k)) throw eexist("open", p);
@@ -126,7 +130,7 @@ export function writeFileSync(p: unknown, data: unknown, o?: unknown): void {
 export function appendFileSync(p: unknown, data: unknown): void {
 	const k = key(p);
 	const d = dur(k);
-	if (d) { if (d.stat(k)?.isDir) throw eisdir("open", p); d.append(k, toBytes(data)); return; }
+	if (d) { if (d.stat(k)?.isDir) throw eisdir("open", p); d.append(k, toBytes(data), norm(p)); return; }
 	const prev = files.get(k) ?? new Uint8Array();
 	const add = toBytes(data);
 	const n = new Uint8Array(prev.length + add.length);
@@ -135,7 +139,7 @@ export function appendFileSync(p: unknown, data: unknown): void {
 	files.set(k, n);
 	mkdirs(parentOf(k));
 }
-export function mkdirSync(p: unknown, _o?: unknown): undefined { const k = key(p); const d = dur(k); if (d) d.mkdir(k); else mkdirs(k); return undefined; }
+export function mkdirSync(p: unknown, _o?: unknown): undefined { const k = key(p); const d = dur(k); if (d) d.mkdir(k, norm(p)); else mkdirs(k); return undefined; }
 export function mkdtempSync(prefixStr: unknown): string { const p = `${String(prefixStr)}${Math.random().toString(36).slice(2, 8)}`; mkdirSync(p); return p; }
 export function readdirSync(p: unknown, o?: { withFileTypes?: boolean }): any[] {
 	const k = key(p);
@@ -193,7 +197,7 @@ export function renameSync(a: unknown, b: unknown): void {
 	const kb = key(b);
 	const da = dur(ka);
 	const db = dur(kb);
-	if (da && db) { if (!da.rename(ka, kb)) throw enoent("rename", a); return; }
+	if (da && db) { if (!da.rename(ka, kb, norm(b))) throw enoent("rename", a); return; }
 	if (da || db) {
 		// across the boundary: copy the bytes, then remove the source
 		cpSync(a, b, { recursive: true });
@@ -215,7 +219,7 @@ export function copyFileSync(a: unknown, b: unknown): void {
 	const kb = key(b);
 	const da = dur(ka);
 	const db = dur(kb);
-	if (da && db) { if (!da.copy(ka, kb)) throw enoent("copyfile", a); return; }
+	if (da && db) { if (!da.copy(ka, kb, norm(b))) throw enoent("copyfile", a); return; }
 	if (da) { const bytes = da.read(ka); if (!bytes || da.stat(ka)?.isDir) throw enoent("copyfile", a); writeFileSync(b, bytes); return; }
 	const f = find(a);
 	if (!f) throw enoent("copyfile", a);
@@ -232,7 +236,7 @@ export function utimesSync(p?: unknown, _atime?: unknown, mtime?: unknown): void
 export function fsyncSync(): void {}
 
 // file descriptors: open, positional or sequential read, append-style write, close. Memory and durable paths alike.
-interface Fd { k: string; flags: string; pos: number }
+interface Fd { k: string; o: string; flags: string; pos: number }
 const fds = new Map<number, Fd>();
 let nextFd = 10;
 export function openSync(p: unknown, flags: unknown = "r"): number {
@@ -245,7 +249,7 @@ export function openSync(p: unknown, flags: unknown = "r"): number {
 		if (st?.isDir && !reading) throw eisdir("open", p);
 		if (reading && (!st || st.isDir)) throw st ? eisdir("read", p) : enoent("open", p);
 		if (fl.includes("x") && st) throw eexist("open", p);
-		if (fl.startsWith("w") || (!st && !reading)) d.write(k, new Uint8Array());
+		if (fl.startsWith("w") || (!st && !reading)) d.write(k, new Uint8Array(), norm(p));
 	} else if (reading) {
 		if (!find(p)) throw enoent("open", p);
 	} else {
@@ -253,7 +257,7 @@ export function openSync(p: unknown, flags: unknown = "r"): number {
 		if (fl.startsWith("w") || !files.has(k)) writeFileSync(p, "");
 	}
 	const fd = nextFd++;
-	fds.set(fd, { k: reading && !d ? find(p)! : k, flags: fl, pos: 0 });
+	fds.set(fd, { k: reading && !d ? find(p)! : k, o: norm(p), flags: fl, pos: 0 });
 	return fd;
 }
 const badFd = (op: string) => err("EBADF", -9, "bad file descriptor", op, "");
@@ -278,10 +282,10 @@ export function writeSync(fd: number, data: unknown, a?: unknown, b?: unknown, c
 		const merged = new Uint8Array(Math.max(size, at + bytes.length));
 		merged.set(cur);
 		merged.set(bytes, at);
-		if (d) d.write(f.k, merged); else files.set(f.k, merged);
+		if (d) d.write(f.k, merged, f.o); else files.set(f.k, merged);
 	} else {
-		if (at !== null && at > size) { const pad = new Uint8Array(at - size); if (d) d.append(f.k, pad); else appendFileSync(f.k, pad); }
-		if (d) d.append(f.k, bytes); else appendFileSync(f.k, bytes);
+		if (at !== null && at > size) { const pad = new Uint8Array(at - size); if (d) d.append(f.k, pad, f.o); else appendFileSync(f.k, pad); }
+		if (d) d.append(f.k, bytes, f.o); else appendFileSync(f.k, bytes);
 	}
 	f.pos = (at ?? size) + bytes.length;
 	return bytes.length;
@@ -305,7 +309,7 @@ export function fstatSync(fd: number) { return statSync(fds.get(fd)?.k ?? "/"); 
 export function truncateSync(p: unknown, len = 0): void {
 	const k = key(p);
 	const d = dur(k);
-	if (d) { if (d.stat(k)?.isDir) throw eisdir("open", p); d.truncate(k, len); return; }
+	if (d) { if (d.stat(k)?.isDir) throw eisdir("open", p); d.truncate(k, len, norm(p)); return; }
 	const cur = files.get(k) ?? new Uint8Array();
 	const n = new Uint8Array(len);
 	n.set(cur.subarray(0, len));
@@ -411,7 +415,7 @@ export function cpSync(a: unknown, b: unknown, o?: { recursive?: boolean }): voi
 	if (!st.isDirectory()) { copyFileSync(a, b); return; }
 	if (!o?.recursive) throw err("ERR_FS_EISDIR", -21, "Recursive option is required to copy a directory", "cp", a);
 	mkdirSync(b);
-	for (const name of readdirSync(a) as string[]) cpSync(`${key(a)}/${name}`, `${key(b)}/${name}`, o);
+	for (const name of readdirSync(a) as string[]) cpSync(`${norm(a)}/${name}`, `${norm(b)}/${name}`, o);
 }
 export function opendirSync(p: unknown) { const list = readdirSync(p, { withFileTypes: true }); let i = 0; return { readSync: () => list[i++] ?? null, closeSync() {}, close: async () => {} }; }
 

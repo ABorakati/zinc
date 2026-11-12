@@ -50,6 +50,64 @@ describe("durable files", () => {
 		expect(fs.readFileSync("/opfs/mixed/case.txt", "utf8")).toBe("a");
 		expect(db.query("SELECT path FROM files").all()).toEqual([{ path: "/opfs/mixed/case.txt" }]);
 	});
+	test("names keep their case, lookups do not care about it", () => {
+		fs.writeFileSync("/opfs/zinc/storage/ABCD1234/My Paper.PDF", "pdf");
+		fs.writeFileSync("/opfs/zinc/storage/ABCD1234/Notes/Sub.TXT", "t");
+		expect(fs.readFileSync("/opfs/zinc/storage/abcd1234/my paper.pdf", "utf8")).toBe("pdf");
+		expect(fs.readFileSync("/OPFS/ZINC/STORAGE/ABCD1234/MY PAPER.PDF", "utf8")).toBe("pdf");
+		expect(fs.existsSync("/opfs/zinc/storage/abcd1234")).toBe(true);
+		expect(fs.readdirSync("/opfs/zinc/storage")).toEqual(["ABCD1234"]);
+		expect(fs.readdirSync("/opfs/zinc/storage/abcd1234")).toEqual(["My Paper.PDF", "Notes"]);
+		const t = fs.readdirSync("/opfs/zinc/storage/Abcd1234", { withFileTypes: true });
+		expect(t.map((e: any) => [e.name, e.isFile(), e.isDirectory()])).toEqual([["My Paper.PDF", true, false], ["Notes", false, true]]);
+		expect(fs.readdirSync("/opfs/zinc/storage/abcd1234/NOTES")).toEqual(["Sub.TXT"]);
+		// stat through either case
+		expect(fs.statSync("/opfs/zinc/storage/ABCD1234/My Paper.PDF").size).toBe(3);
+		expect(fs.statSync("/opfs/zinc/storage/abcd1234/my paper.pdf").size).toBe(3);
+		expect(fs.statSync("/opfs/zinc/storage/abcd1234").isDirectory()).toBe(true);
+		// the first spelling wins: an overwrite or a write through another case keeps the name, and no second row appears
+		fs.writeFileSync("/opfs/zinc/storage/abcd1234/MY PAPER.PDF", "pdf2");
+		fs.appendFileSync("/opfs/zinc/storage/abcd1234/my paper.pdf", "!");
+		expect(fs.readdirSync("/opfs/zinc/storage/ABCD1234")).toEqual(["My Paper.PDF", "Notes"]);
+		expect(fs.readFileSync("/opfs/zinc/storage/ABCD1234/My Paper.PDF", "utf8")).toBe("pdf2!");
+		// copy takes the case of its destination, cpSync keeps the names
+		fs.copyFileSync("/opfs/zinc/storage/abcd1234/my paper.pdf", "/opfs/zinc/storage/EFGH9999/Copy.PDF");
+		fs.cpSync("/opfs/zinc/storage/ABCD1234", "/opfs/zinc/storage/IJKL0000", { recursive: true });
+		expect(fs.readdirSync("/opfs/zinc/storage/efgh9999")).toEqual(["Copy.PDF"]);
+		expect(fs.readdirSync("/opfs/zinc/storage")).toEqual(["ABCD1234", "EFGH9999", "IJKL0000"]);
+		expect(fs.readdirSync("/opfs/zinc/storage/ijkl0000")).toEqual(["My Paper.PDF", "Notes"]);
+		expect(fs.readdirSync("/opfs/zinc/storage/ijkl0000/notes")).toEqual(["Sub.TXT"]);
+		// a descriptor opened by a name creates a file with that name
+		const fd = fs.openSync("/opfs/zinc/storage/ABCD1234/Log.TXT", "a");
+		fs.writeSync(fd, "x");
+		fs.closeSync(fd);
+		expect(fs.readdirSync("/opfs/zinc/storage/abcd1234")).toEqual(["Log.TXT", "My Paper.PDF", "Notes"]);
+		fs.rmSync("/opfs/zinc/storage/abcd1234/NOTES", { recursive: true });
+		expect(fs.readdirSync("/opfs/zinc/storage/abcd1234")).toEqual(["Log.TXT", "My Paper.PDF"]);
+	});
+	test("a rename that only changes case, for a file and for a directory", () => {
+		fs.writeFileSync("/opfs/r/a.pdf", "A");
+		fs.renameSync("/opfs/r/a.pdf", "/opfs/r/A.pdf");
+		expect(fs.readdirSync("/opfs/r")).toEqual(["A.pdf"]);
+		expect(fs.readFileSync("/opfs/r/a.pdf", "utf8")).toBe("A");
+		expect(fs.statSync("/opfs/r/A.PDF").size).toBe(1);
+		fs.writeFileSync("/opfs/r/dir/x/inner.txt", "i");
+		fs.writeFileSync("/opfs/r/dir/File.txt", "f");
+		fs.renameSync("/opfs/r/dir", "/opfs/r/DIR");
+		expect(fs.readdirSync("/opfs/r")).toEqual(["A.pdf", "DIR"]);
+		expect(fs.readdirSync("/opfs/r/dir")).toEqual(["File.txt", "x"]);
+		expect(fs.readFileSync("/opfs/r/dir/x/inner.txt", "utf8")).toBe("i");
+		expect(() => fs.renameSync("/opfs/r/none", "/opfs/r/NONE")).toThrow(/ENOENT/);
+		// renaming a directory to another name carries the original-case names of what is inside
+		fs.renameSync("/opfs/r/DIR", "/opfs/r/Moved");
+		expect(fs.readdirSync("/opfs/r")).toEqual(["A.pdf", "Moved"]);
+		expect(fs.readdirSync("/opfs/r/moved")).toEqual(["File.txt", "x"]);
+		expect(db.query("SELECT path, name FROM files ORDER BY path").all()).toEqual([
+			{ path: "/opfs/r/a.pdf", name: "/opfs/r/A.pdf" },
+			{ path: "/opfs/r/moved/file.txt", name: "/opfs/r/Moved/File.txt" },
+			{ path: "/opfs/r/moved/x/inner.txt", name: "/opfs/r/Moved/x/inner.txt" },
+		]);
+	});
 	test("directories: mkdir recursive, parents implied, readdir with types", () => {
 		fs.mkdirSync("/opfs/a/b/c", { recursive: true });
 		expect(fs.statSync("/opfs/a/b").isDirectory()).toBe(true);
@@ -85,7 +143,7 @@ describe("durable files", () => {
 		expect(fs.readFileSync("/opfs/s/K1/renamed.pdf", "utf8")).toBe("A");
 		fs.renameSync("/opfs/s/K1", "/opfs/s/K2");
 		expect(fs.existsSync("/opfs/s/K1")).toBe(false);
-		expect(fs.readdirSync("/opfs/s")).toEqual(["k2"]);
+		expect(fs.readdirSync("/opfs/s")).toEqual(["K2"]);
 		expect(fs.readdirSync("/opfs/s/K2")).toEqual(["empty", "renamed.pdf", "sub"]);
 		expect(fs.readFileSync("/opfs/s/K2/sub/b.pdf", "utf8")).toBe("B");
 		// replace an existing file
@@ -270,14 +328,39 @@ describe("persistence", () => {
 		expect(back.length).toBe(5003);
 		expect([...back.subarray(0, 5000)]).toEqual([...bytes(5000, 3)]);
 		expect(fs.statSync("/opfs/zinc/storage/K/a.pdf").mtimeMs).toBe(mtime);
-		expect(fs.readdirSync("/opfs/zinc/storage")).toEqual(["empty", "k"]);
+		expect(fs.readdirSync("/opfs/zinc/storage")).toEqual(["EMPTY", "K"]);
 		db.close();
 	});
 	test("the tables are the contract's schema, and creating them twice is harmless", () => {
 		createBlobBackend(db as unknown as BlobDb);
 		const cols = (t: string) => (db.query(`PRAGMA table_info(${t})`).all() as any[]).map((c) => `${c.name}:${c.type}`);
-		expect(cols("files")).toEqual(["path:TEXT", "data:BLOB", "mtime:INTEGER"]);
-		expect(cols("dirs")).toEqual(["path:TEXT"]);
+		expect(cols("files")).toEqual(["path:TEXT", "data:BLOB", "mtime:INTEGER", "name:TEXT"]);
+		expect(cols("dirs")).toEqual(["path:TEXT", "name:TEXT"]);
+	});
+	test("a database made by the schema without `name` is migrated and keeps working", () => {
+		const file = join(scratch, "old.sqlite");
+		const old = new Database(file);
+		old.exec("CREATE TABLE files (path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL); CREATE TABLE dirs (path TEXT PRIMARY KEY);");
+		old.query("INSERT INTO files(path, data, mtime) VALUES (?, ?, ?)").run("/opfs/zinc/storage/abcd1234/old paper.pdf", new TextEncoder().encode("OLD"), 42);
+		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs/zinc/storage");
+		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs/zinc/storage/abcd1234");
+		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs/zinc");
+		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs");
+		old.close();
+		fresh(file);
+		// old rows: lower-case names (all that was kept), still readable by any case
+		expect(fs.readdirSync("/opfs/zinc/storage/ABCD1234")).toEqual(["old paper.pdf"]);
+		expect(fs.readFileSync("/opfs/zinc/storage/ABCD1234/Old Paper.PDF", "utf8")).toBe("OLD");
+		expect(fs.statSync("/opfs/zinc/storage/abcd1234/old paper.pdf").mtimeMs).toBe(42);
+		// new rows next to them keep their case
+		fs.writeFileSync("/opfs/zinc/storage/WXYZ5678/New Paper.PDF", "NEW");
+		expect(fs.readdirSync("/opfs/zinc/storage")).toEqual(["WXYZ5678", "abcd1234"]);
+		expect(fs.readdirSync("/opfs/zinc/storage/wxyz5678")).toEqual(["New Paper.PDF"]);
+		// opening it again does not touch the migrated column
+		db.close();
+		fresh(file);
+		expect(fs.readdirSync("/opfs/zinc/storage/WXYZ5678")).toEqual(["New Paper.PDF"]);
+		db.close();
 	});
 });
 
