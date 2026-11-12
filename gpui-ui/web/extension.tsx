@@ -50,13 +50,20 @@ setDirect(async (req) => {
 		throw e;
 	}
 });
-// PDFs (phase 3, not tested yet): the reader fetches the bytes through the same path; PDFium loads on the first one
+// PDFs: the reader fetches the bytes through the same path (the host sends them in chunks under 1 MB); PDFium and its render workers
+// (web/pdf.ts) load on the first one. Each fetch is timed for the headless check (globalThis.znPdfStats.fetches).
 const { setFileFetcher } = await import("../src/reader/library");
-const { initPdfium } = await import("./pdf");
+const { initPdfium, pdfStats } = await import("./pdf");
 const { apiFetch } = await import("../src/api");
+const fetches: { key: string; bytes: number; ms: number }[] = [];
+Object.assign(pdfStats, { fetches });
 setFileFetcher(async (key, signal) => {
-	await initPdfium();
-	return apiFetch(`/attachments/${encodeURIComponent(key)}/file`, { signal });
+	const t0 = performance.now();
+	const [, res] = await Promise.all([initPdfium(), apiFetch(`/attachments/${encodeURIComponent(key)}/file`, { signal })]);
+	if (!res.ok) return res;
+	const bytes = await res.arrayBuffer();
+	fetches.push({ key, bytes: bytes.byteLength, ms: performance.now() - t0 });
+	return new Response(bytes, { status: res.status, headers: res.headers });
 });
 
 const theme = new URLSearchParams(location.search).get("theme");
@@ -75,7 +82,30 @@ render(() => <Root />, { title: "Zinc library", onKeyDown: handleWindowKeyDown }
 
 const { store, uiState } = await import("../src/store");
 // for automated checks (the connector's headless test): the store, and how many outside changes were seen
-const probe = { store, outsideChanges: 0, requests, hostName };
+const probe = {
+	store, outsideChanges: 0, requests, hostName,
+	/** ids of the annotations the reader has loaded for an open PDF */
+	async annotationIds(attachmentKey: string): Promise<string[]> {
+		const { sessionOf } = await import("../src/reader/annotations/session");
+		return sessionOf(attachmentKey)?.store.list().map((a) => a.id) ?? [];
+	},
+	/** light / dark, as Settings > Appearance does */
+	setTheme: (mode: "light" | "dark") => setThemePrefs({ mode }),
+	/** Highlight the first `n` words of a page of an open PDF through the reader's own annotation session (the same create
+	 *  and save path as the toolbar); resolves to the annotation's id, or null when the document is not open. */
+	async highlight(attachmentKey: string, page = 0, n = 4): Promise<string | null> {
+		const { sessionOf } = await import("../src/reader/annotations/session");
+		const { textPosition } = await import("../src/reader/annotations/model");
+		const s = sessionOf(attachmentKey);
+		if (!s) return null;
+		const size = s.ctx.pageSize(page);
+		const words = (await s.ctx.textLayer(page)).words.filter((w) => w.l === 0).slice(0, n);
+		if (!words.length) return null;
+		const rects = words.map((w) => [w.x * size.w, (1 - w.y - w.h) * size.h, (w.x + w.w) * size.w, (1 - w.y) * size.h] as [number, number, number, number]);
+		const a = await s.act.create("highlight", "#ffd400", textPosition(page, rects), { text: words.map((w) => w.t).join(" ") });
+		return a.id;
+	},
+};
 (globalThis as Record<string, unknown>).znLibrary = probe;
 bindUiState(uiState);
 startAppearance(store);

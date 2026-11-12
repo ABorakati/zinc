@@ -43,6 +43,25 @@ const HAVE_STRUCTURE = existsSync(join(DOCWORKER, "build", "worker.js")) && exis
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
+const shims: import("bun").BunPlugin = {
+	name: "web-demo-shims",
+	setup(b) {
+		b.onResolve({ filter: /.*/ }, (a) => (SHIMS[a.path] ? { path: join(here, SHIMS[a.path]!) } : undefined));
+		// the reader's PDF engine: zn_pdf.dll over bun:ffi on the desktop, PDFium WebAssembly here (web/pdf.ts)
+		b.onResolve({ filter: /(^|\/)pdf$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === READER_PDF ? { path: join(here, "pdf.ts") } : undefined));
+		// the reader's layout analysis: Zotero's document worker in a Bun Worker on the desktop, a Web Worker here (web/structure-load.ts)
+		b.onResolve({ filter: /(^|\/)load$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === STRUCTURE_LOAD ? { path: join(here, HAVE_STRUCTURE ? "structure-load.ts" : "structure-stub.ts") } : undefined));
+		b.onResolve({ filter: BUILTIN }, (a) => (POLYFILLED.test(a.path) ? undefined : { path: a.path, namespace: "stub" }));
+		b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => {
+			const list = [...(names.get(a.path) ?? [])];
+			const body = list.map((n) => `export const ${n} = __stub(${JSON.stringify(`${a.path} ${n}`)});`).join("\n");
+			return {
+				contents: `const __stub = (n) => new Proxy(function () { throw new Error("not available in the browser demo: " + n); }, { get: (t, k) => (k === "prototype" ? {} : undefined) });\n${body}\nexport default {};`,
+				loader: "js",
+			};
+		});
+	},
+};
 let result: Awaited<ReturnType<typeof Bun.build>> | undefined;
 for (let pass = 0; pass < 80; pass++) {
 	result = await Bun.build({
@@ -56,28 +75,7 @@ for (let pass = 0; pass < 80; pass++) {
 		throw: false,
 		naming: { entry: "[name].js", chunk: "chunk-[hash].js", asset: "[name]-[hash].[ext]" },
 		define: { "process.env.NODE_ENV": '"production"' },
-		plugins: [
-			solidPlugin,
-			{
-				name: "web-demo-shims",
-				setup(b) {
-					b.onResolve({ filter: /.*/ }, (a) => (SHIMS[a.path] ? { path: join(here, SHIMS[a.path]!) } : undefined));
-					// the reader's PDF engine: zn_pdf.dll over bun:ffi on the desktop, PDFium WebAssembly here (web/pdf.ts)
-					b.onResolve({ filter: /(^|\/)pdf$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === READER_PDF ? { path: join(here, "pdf.ts") } : undefined));
-					// the reader's layout analysis: Zotero's document worker in a Bun Worker on the desktop, a Web Worker here (web/structure-load.ts)
-					b.onResolve({ filter: /(^|\/)load$/ }, (a) => (a.importer && resolve(dirname(a.importer), a.path) === STRUCTURE_LOAD ? { path: join(here, HAVE_STRUCTURE ? "structure-load.ts" : "structure-stub.ts") } : undefined));
-					b.onResolve({ filter: BUILTIN }, (a) => (POLYFILLED.test(a.path) ? undefined : { path: a.path, namespace: "stub" }));
-					b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => {
-						const list = [...(names.get(a.path) ?? [])];
-						const body = list.map((n) => `export const ${n} = __stub(${JSON.stringify(`${a.path} ${n}`)});`).join("\n");
-						return {
-							contents: `const __stub = (n) => new Proxy(function () { throw new Error("not available in the browser demo: " + n); }, { get: (t, k) => (k === "prototype" ? {} : undefined) });\n${body}\nexport default {};`,
-							loader: "js",
-						};
-					});
-				},
-			},
-		],
+		plugins: [solidPlugin, shims],
 	});
 	if (result.success) break;
 	let learned = 0;
@@ -93,6 +91,25 @@ for (let pass = 0; pass < 80; pass++) {
 if (!result?.success) {
 	for (const l of result?.logs ?? []) console.error(String(l).slice(0, 400));
 	throw new Error("web demo build failed");
+}
+// the PDF render worker (web/pdf-worker.ts, started by web/pdf.ts): a classic worker script of its own, in one file (no shared
+// chunks to import), next to pdfium.wasm which it loads itself
+{
+	const worker = await Bun.build({
+		entrypoints: [join(here, "pdf-worker.ts")],
+		outdir: out,
+		target: "browser",
+		format: "iife",
+		minify: !process.argv.includes("--debug"),
+		throw: false,
+		naming: { entry: "[name].js", asset: "[name]-[hash].[ext]" },
+		define: { "process.env.NODE_ENV": '"production"' },
+		plugins: [shims],
+	});
+	if (!worker.success) {
+		for (const l of worker.logs) console.error(String(l).slice(0, 400));
+		throw new Error("PDF worker build failed");
+	}
 }
 
 // what main.tsx fetches next to the bundle: the demo library, the Lucide icons (src/icons.tsx reads them from disk), the collection

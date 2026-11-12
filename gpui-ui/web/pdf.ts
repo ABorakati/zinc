@@ -1,44 +1,49 @@
-// src/reader/pdf.ts for the browser demo: the same PdfDoc interface, on PDFium compiled to WebAssembly (@embedpdf/pdfium) instead
-// of zn_pdf.dll. web/build.ts maps the reader's `./pdf` imports here. It follows zn_pdf's contract (native/pdf/src/lib.rs, nav.rs):
-// sizes in points with the page rotation applied, BGRA bitmaps sized like geometry() there, the same page-appearance recolouring
-// (to_bgra), and a text layer / links / outline with fractions of the page, origin top-left. Rendering runs on the main thread
-// (one page at a time, behind a timer so the UI keeps drawing); there is no page editing or printing in the browser.
+// src/reader/pdf.ts for the browser builds: the same PdfDoc interface, on PDFium compiled to WebAssembly (web/pdf-engine.ts) instead
+// of zn_pdf.dll. web/build.ts maps the reader's `./pdf` imports here. There is no page editing or printing in the browser.
 //
-// initPdfium() must have finished before a document is opened (web/main.tsx awaits it in the reader's file fetcher).
-import { init } from "@embedpdf/pdfium";
+// Where the work runs: the page keeps one copy of PDFium for the calls the reader makes synchronously (open, page sizes, rotation,
+// links, outline: all cheap), and renders pages and text layers in Web Workers (web/pdf-worker.ts), each holding its own copy of
+// the document, so a long or image-heavy PDF scrolls without blocking the interface. Number of workers: ?pdfworkers=N in the page's
+// address (0 = render on the main thread, the old behaviour, kept for comparison and as the fallback when workers cannot start),
+// default 2 (1 on a machine with fewer than 4 cores). Timings go to globalThis.znPdfStats for the headless checks.
+//
+// initPdfium() must have finished before a document is opened (the reader's file fetcher awaits it).
+import { closeDoc, drawPage, engineReady, fn, free, geometry, heap, initEngine, malloc, openDoc, pageText, withPage, type DocHandle, type DrawOpts, type Look, type TextLayer, type TextWord } from "./pdf-engine";
 
-type Mod = Awaited<ReturnType<typeof init>>;
-let mod: Mod | null = null;
+export type { Look, TextLayer, TextWord };
+
+/** Timings of this page's PDF work (read by gpui-ui/web/library-pdf-check.ts). */
+export const pdfStats = {
+	mode: "main" as string,
+	opens: [] as { bytes: number; ms: number }[],
+	renders: 0,
+	renderMs: [] as number[],
+	/** request -> pixels back, including the time in the queue */
+	latencyMs: [] as number[],
+	texts: 0,
+};
+(globalThis as Record<string, unknown>).znPdfStats = pdfStats;
+
 let loading: Promise<void> | null = null;
-
-/** Load PDFium (pdfium.wasm next to the bundle) once; later calls return the same promise. */
+/** Load PDFium (pdfium.wasm next to the bundle) once, and start the render workers; later calls return the same promise. */
 export function initPdfium(bytes?: ArrayBuffer): Promise<void> {
 	loading ??= (async () => {
-		const wasmBinary = bytes ?? await (await fetch(new URL("pdfium.wasm", import.meta.url))).arrayBuffer();
-		mod = await init({ wasmBinary });
-		mod.PDFiumExt_Init();
+		startPool();
+		await initEngine(bytes ?? new URL("pdfium.wasm", import.meta.url).href);
 	})();
 	return loading;
 }
-const M = (): Mod => { if (!mod) throw new Error("PDFium is still loading"); return mod; };
-const raw = () => M().pdfium as unknown as { HEAPU8: Uint8Array; HEAPF32: Float32Array; HEAPF64: Float64Array; HEAP32: Int32Array; wasmExports: { malloc(n: number): number; free(p: number): void }; UTF16ToString(p: number, max?: number): string; UTF8ToString(p: number): string };
-const fn = (name: string) => (M() as unknown as Record<string, (...a: unknown[]) => number>)[name]!;
-const malloc = (n: number) => raw().wasmExports.malloc(n);
-const free = (p: number) => raw().wasmExports.free(p);
 
 export const findDll = (): string => "pdfium.wasm";
 export const pdfOpsUnavailable = (): string | null => "Page editing and printing need the desktop app.";
 export const nativeVersion = (): string => "pdfium-wasm";
-export const pdfiumStatus = (): string => (mod ? "PDFium (WebAssembly)" : "PDFium (WebAssembly) not loaded yet");
+export const pdfiumStatus = (): string => (engineReady() ? `PDFium (WebAssembly, ${pdfStats.mode})` : "PDFium (WebAssembly) not loaded yet");
 export interface PdfEdit { rotate?: { page: number; turns: number }[]; delete?: number[] }
 export async function editPdf(_bytes: Uint8Array, _e: PdfEdit): Promise<Uint8Array> { throw new Error("Page editing needs the desktop app."); }
 export interface PrintResult { result: "printed" | "cancelled"; pages: number; printer: string }
 export async function printPdf(): Promise<PrintResult> { throw new Error("Printing needs the desktop app."); }
 export async function printPdfTo(): Promise<PrintResult> { throw new Error("Printing needs the desktop app."); }
 
-export interface TextWord { t: string; x: number; y: number; w: number; h: number; l: number }
-export interface TextLayer { pw: number; ph: number; words: TextWord[] }
-export interface Look { mode: 0 | 1 | 2 | 3 | 4; c0?: number; c1?: number }
 export const PRIO_BACKGROUND = 4e6;
 export interface RenderOpts { rot?: number; region?: { x: number; y: number; w: number; h: number }; look?: Look; prio?: number }
 export interface OutlineEntry { t: string; l: number; p: number; y: number }
@@ -46,42 +51,14 @@ export type PdfLink = { x: number; y: number; w: number; h: number } & ({ k: "pa
 export interface Rendered { width: number; height: number; pixels: Uint8Array; renderMs: number; slice(y: number, h: number): Uint8Array; release(): void }
 export interface RenderTask { promise: Promise<Rendered | null>; cancel(): void; setPrio(prio: number): void }
 
-const MAX_SIDE = 16384;
-function geometry(pw: number, ph: number, scale: number, rot: number, region?: RenderOpts["region"]) {
-	const r = ((rot % 360) + 360) % 360;
-	const [bw, bh] = r % 180 === 0 ? [pw, ph] : [ph, pw];
-	let s = Number.isFinite(scale) && scale > 0 ? scale : 1;
-	const side = Math.max(bw, bh) * s;
-	if (side > MAX_SIDE) s = (s * MAX_SIDE) / side;
-	const fw = Math.max(1, Math.trunc(bw * s) & 0xffff), fh = Math.max(1, Math.trunc(bh * s) & 0xffff);
-	if (!region || !region.w || !region.h) return { r, fw, fh, rx: 0, ry: 0, rw: fw, rh: fh };
-	const rx = Math.min(region.x, fw - 1), ry = Math.min(region.y, fh - 1);
-	return { r, fw, fh, rx, ry, rw: Math.min(region.w, fw - rx), rh: Math.min(region.h, fh - ry) };
-}
+const asRendered = (width: number, height: number, pixels: Uint8Array, renderMs: number): Rendered => ({
+	width, height, pixels, renderMs,
+	slice: (y, h) => pixels.subarray(y * width * 4, (y + Math.min(h, height - y)) * width * 4),
+	release: () => {},
+});
+const drawOpts = (o: RenderOpts): DrawOpts => ({ rot: o.rot, region: o.region, look: o.look });
 
-/** zn_pdf's to_bgra for looks 1..4, on BGRA pixels in place. */
-function recolour(buf: Uint8Array, look: Look): void {
-	if (!look.mode) return;
-	const rgb = (c = 0) => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
-	const k0 = rgb(look.c0), k1 = rgb(look.c1);
-	const dark = (r0: number, g0: number, b0: number, a: number) => {
-		const inv = (c: number) => a * (1 - c) + (1 - a) * c;
-		const r = inv(r0), g = inv(g0), b = inv(b0);
-		const cl = (v: number) => Math.min(1, Math.max(0, v));
-		return [cl(-0.574 * r + 1.43 * g + 0.144 * b), cl(0.426 * r + 0.43 * g + 0.144 * b), cl(0.426 * r + 1.43 * g - 0.856 * b)];
-	};
-	for (let i = 0; i < buf.length; i += 4) {
-		const r = buf[i + 2]! / 255, g = buf[i + 1]! / 255, b = buf[i]! / 255;
-		let o: number[];
-		if (look.mode === 1) o = dark(r, g, b, 0.92);
-		else if (look.mode === 2) o = [r * k0[0]!, g * k0[1]!, b * k0[2]!];
-		else if (look.mode === 3) { const d = dark(r, g, b, 1); o = [1 - (1 - d[0]!) * (1 - k0[0]!), 1 - (1 - d[1]!) * (1 - k0[1]!), 1 - (1 - d[2]!) * (1 - k0[2]!)]; }
-		else { const l = 0.2126 * r + 0.7152 * g + 0.0722 * b; o = [k0[0]! + (k1[0]! - k0[0]!) * l, k0[1]! + (k1[1]! - k0[1]!) * l, k0[2]! + (k1[2]! - k0[2]!) * l]; }
-		buf[i] = (o[2]! * 255 + 0.5) | 0; buf[i + 1] = (o[1]! * 255 + 0.5) | 0; buf[i + 2] = (o[0]! * 255 + 0.5) | 0; buf[i + 3] = 255;
-	}
-}
-
-// one job at a time, lowest priority first, behind a timer so frames keep painting between pages
+// ---- main-thread queue (no workers): one job at a time, lowest priority first, behind a timer so frames keep painting
 interface Job { prio: number; run: () => void; cancelled: boolean; done: boolean }
 const queue: Job[] = [];
 let ticking = false;
@@ -99,40 +76,114 @@ function enqueue(prio: number, run: () => void): Job {
 	return job;
 }
 
+// ---- the worker pool
+interface PoolJob { resolve: (v: any) => void; reject: (e: Error) => void; worker: Slot; t0: number; retry: () => void }
+interface Slot { w: Worker; docs: Set<number>; inflight: number; ready: boolean }
+let pool: { slots: Slot[]; jobs: Map<number, PoolJob> } | null = null;
+let nextJob = 1;
+
+function workerCount(): number {
+	let asked: string | null = null;
+	try { asked = new URLSearchParams(globalThis.location?.search ?? "").get("pdfworkers"); } catch { /* no location */ }
+	if (asked !== null && /^\d+$/.test(asked)) return Math.min(4, Number(asked));
+	const cores = globalThis.navigator?.hardwareConcurrency ?? 4;
+	return cores >= 4 ? 2 : 1;
+}
+
+/** The pool broke (a worker could not start): what was in flight runs on the main thread, and so does everything after. */
+function dropPool(why: string): void {
+	if (!pool) return;
+	console.warn("[pdf] render workers unavailable, rendering on the main thread:", why);
+	const p = pool;
+	pool = null;
+	pdfStats.mode = "main (workers failed)";
+	for (const s of p.slots) s.w.terminate();
+	for (const j of p.jobs.values()) j.retry();
+	p.jobs.clear();
+}
+
+function startPool(): void {
+	const n = workerCount();
+	if (!n || typeof Worker === "undefined") { pdfStats.mode = "main"; return; }
+	try {
+		const slots: Slot[] = [];
+		const jobs = new Map<number, PoolJob>();
+		for (let i = 0; i < n; i++) {
+			const w = new Worker(new URL("pdf-worker.js", import.meta.url));
+			const slot: Slot = { w, docs: new Set(), inflight: 0, ready: false };
+			w.onmessage = (e: MessageEvent) => {
+				const m = e.data as { t: string; job?: number; [k: string]: unknown };
+				if (m.t === "ready") { slot.ready = true; return; }
+				if (m.t === "failed") return dropPool(String(m.error));
+				if (m.t === "openfailed") return;
+				const j = m.job !== undefined ? jobs.get(m.job) : undefined;
+				if (!j) return;
+				jobs.delete(m.job!);
+				slot.inflight--;
+				if (m.t === "rendered") {
+					pdfStats.renders++;
+					pdfStats.renderMs.push(m.renderMs as number);
+					pdfStats.latencyMs.push(performance.now() - j.t0);
+					j.resolve(asRendered(m.width as number, m.height as number, new Uint8Array(m.pixels as ArrayBuffer), m.renderMs as number));
+				} else if (m.t === "text") { pdfStats.texts++; j.resolve(m.layer); }
+				else if (m.t === "cancelled") j.resolve(null);
+				else j.reject(new Error(String(m.error)));
+			};
+			w.onerror = (e) => { e.preventDefault?.(); dropPool(e.message || "worker error"); };
+			slots.push(slot);
+		}
+		pool = { slots, jobs };
+		pdfStats.mode = `${n} worker${n === 1 ? "" : "s"}`;
+	} catch (e) {
+		pool = null;
+		pdfStats.mode = "main (workers failed)";
+		console.warn("[pdf] render workers could not start:", e);
+	}
+}
+
+/** Send a job to the least busy worker, opening the document there first if needed. */
+function poolSend<T>(doc: PdfDoc, msg: Record<string, unknown>, retry: (res: (v: T) => void, rej: (e: Error) => void) => void): { promise: Promise<T>; job: number; slot: Slot } | null {
+	if (!pool) return null;
+	const p = pool;
+	const slot = p.slots.reduce((a, b) => (b.inflight < a.inflight ? b : a));
+	if (!slot.docs.has(doc.id)) {
+		const copy = doc.bytes.slice().buffer;
+		slot.w.postMessage({ t: "open", doc: doc.id, bytes: copy }, [copy]);
+		slot.docs.add(doc.id);
+	}
+	const job = nextJob++;
+	slot.inflight++;
+	const promise = new Promise<T>((resolve, reject) => {
+		p.jobs.set(job, { resolve, reject, worker: slot, t0: performance.now(), retry: () => retry(resolve, reject) });
+		slot.w.postMessage({ ...msg, job, doc: doc.id });
+	});
+	return { promise, job, slot };
+}
+
+let nextDocId = 1;
+
 export class PdfDoc {
 	readonly pageCount: number;
 	readonly sizes: [number, number][];
-	private doc: number;
-	private dataPtr: number;
+	readonly id = nextDocId++;
+	/** the file's bytes, sent to each worker that renders this document */
+	readonly bytes: Uint8Array;
+	private h: DocHandle;
 
-	private constructor(doc: number, dataPtr: number) {
-		this.doc = doc;
-		this.dataPtr = dataPtr;
-		this.pageCount = fn("FPDF_GetPageCount")(doc);
-		this.sizes = [];
-		const out = malloc(16);
-		for (let i = 0; i < this.pageCount; i++) {
-			fn("FPDF_GetPageSizeByIndexF")(doc, i, out);
-			const f = raw().HEAPF32;
-			this.sizes.push([f[out >> 2]!, f[(out >> 2) + 1]!]);
-		}
-		free(out);
+	private constructor(h: DocHandle, bytes: Uint8Array) {
+		this.h = h;
+		this.bytes = bytes;
+		this.pageCount = h.pageCount;
+		this.sizes = h.sizes;
 	}
 
-	static open(path: string): PdfDoc { throw new Error(`no file system in the browser demo: ${path}`); }
+	static open(path: string): PdfDoc { throw new Error(`no file system in the browser: ${path}`); }
 
 	static openBytes(data: Uint8Array): PdfDoc {
-		const p = malloc(data.byteLength);
-		raw().HEAPU8.set(data, p);
-		const doc = fn("FPDF_LoadMemDocument")(p, data.byteLength, "");
-		if (!doc) { free(p); throw new Error(`PDFium could not open the PDF (error ${fn("FPDF_GetLastError")()})`); }
-		return new PdfDoc(doc, p);
-	}
-
-	private withPage<T>(i: number, f: (page: number) => T): T {
-		const page = fn("FPDF_LoadPage")(this.doc, i);
-		if (!page) throw new Error(`cannot load page ${i + 1}`);
-		try { return f(page); } finally { fn("FPDF_ClosePage")(page); }
+		const t0 = performance.now();
+		const d = new PdfDoc(openDoc(data), data);
+		pdfStats.opens.push({ bytes: data.byteLength, ms: performance.now() - t0 });
+		return d;
 	}
 
 	renderSize(page: number, scale: number): [number, number] { return this.renderSize2(page, scale, 0); }
@@ -142,127 +193,99 @@ export class PdfDoc {
 		return [g.fw, g.fh];
 	}
 
-	private draw(page: number, scale: number, o: RenderOpts): Rendered {
+	private drawHere(page: number, scale: number, o: RenderOpts): Rendered {
+		const d = drawPage(this.h, page, scale, drawOpts(o));
+		pdfStats.renders++;
+		pdfStats.renderMs.push(d.renderMs);
+		return asRendered(d.width, d.height, d.pixels, d.renderMs);
+	}
+
+	private renderHere(page: number, scale: number, o: RenderOpts, res: (r: Rendered | null) => void, rej: (e: Error) => void): Job {
 		const t0 = performance.now();
-		const [pw, ph] = this.sizes[page] ?? [612, 792];
-		const g = geometry(pw, ph, scale, o.rot ?? 0, o.region);
-		const bmp = fn("FPDFBitmap_Create")(g.rw, g.rh, 0);
-		fn("FPDFBitmap_FillRect")(bmp, 0, 0, g.rw, g.rh, 0xffffffff);
-		// FPDF_ANNOT | FPDF_LCD_TEXT off | FPDF_REVERSE_BYTE_ORDER off: BGRA, annotations drawn like the desktop
-		this.withPage(page, (p) => fn("FPDF_RenderPageBitmap")(bmp, p, -g.rx, -g.ry, g.fw, g.fh, g.r / 90, 0x01));
-		const buf = fn("FPDFBitmap_GetBuffer")(bmp);
-		const stride = fn("FPDFBitmap_GetStride")(bmp);
-		const pixels = new Uint8Array(g.rw * g.rh * 4);
-		const heap = raw().HEAPU8;
-		for (let y = 0; y < g.rh; y++) pixels.set(heap.subarray(buf + y * stride, buf + y * stride + g.rw * 4), y * g.rw * 4);
-		fn("FPDFBitmap_Destroy")(bmp);
-		for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
-		if (o.look) recolour(pixels, o.look);
-		const width = g.rw, height = g.rh;
-		return {
-			width, height, pixels, renderMs: performance.now() - t0,
-			slice: (y, h) => pixels.subarray(y * width * 4, (y + Math.min(h, height - y)) * width * 4),
-			release: () => {},
-		};
+		return enqueue(o.prio ?? PRIO_BACKGROUND, () => {
+			try { const r = this.drawHere(page, scale, o); pdfStats.latencyMs.push(performance.now() - t0); res(r); } catch (e) { rej(e as Error); }
+		});
 	}
 
 	render(page: number, scale: number): RenderTask { return this.render3(page, scale, {}); }
 	render2(page: number, scale: number, o: RenderOpts = {}): RenderTask { return this.render3(page, scale, o); }
 	render3(page: number, scale: number, o: RenderOpts = {}): RenderTask {
+		const prio = o.prio ?? PRIO_BACKGROUND;
+		const sent = poolSend<Rendered | null>(this, { t: "render", page, scale, opts: drawOpts(o), prio }, (res, rej) => { this.renderHere(page, scale, o, res, rej); });
+		if (sent) {
+			let settled = false;
+			let resolveNull: () => void = () => {};
+			const promise = new Promise<Rendered | null>((res, rej) => {
+				resolveNull = () => res(null);
+				sent.promise.then((r) => { settled = true; res(r); }, (e) => { settled = true; rej(e); });
+			});
+			return {
+				promise,
+				cancel: () => { if (settled) return; settled = true; sent.slot.w.postMessage({ t: "cancel", job: sent.job }); resolveNull(); },
+				setPrio: (p) => { if (!settled) sent.slot.w.postMessage({ t: "prio", job: sent.job, prio: p }); },
+			};
+		}
 		let job!: Job;
+		let resolveNull: () => void = () => {};
 		const promise = new Promise<Rendered | null>((res, rej) => {
-			job = enqueue(o.prio ?? PRIO_BACKGROUND, () => { try { res(this.draw(page, scale, o)); } catch (e) { rej(e); } });
-			const cancel = job;
-			(job as Job & { resolveNull?: () => void }).resolveNull = () => { if (!cancel.done) { cancel.cancelled = true; res(null); } };
+			job = this.renderHere(page, scale, o, res, rej);
+			resolveNull = () => { if (!job.done) { job.cancelled = true; res(null); } };
 		});
-		return {
-			promise,
-			cancel: () => (job as Job & { resolveNull?: () => void }).resolveNull?.(),
-			setPrio: (p) => { if (!job.done) job.prio = p; },
-		};
+		return { promise, cancel: () => resolveNull(), setPrio: (p) => { if (!job.done) job.prio = p; } };
 	}
 	renderAsync(page: number, scale: number): Promise<Rendered | null> { return this.render(page, scale).promise; }
-	renderSync(page: number, scale: number): Rendered { return this.draw(page, scale, {}); }
+	renderSync(page: number, scale: number): Rendered { return this.drawHere(page, scale, {}); }
 
-	pageRotation(page: number): number { return this.withPage(page, (p) => (fn("FPDFPage_GetRotation")(p) % 4) * 90); }
+	pageRotation(page: number): number { return withPage(this.h, page, (p) => (fn("FPDFPage_GetRotation")(p) % 4) * 90); }
 	backend(): "pdfium" | "hayro" { return "pdfium"; }
-	poolSize(): number { return 1; }
+	poolSize(): number { return pool ? pool.slots.length : 1; }
 
-	textLayer(page: number): TextLayer {
-		const [pw, ph] = this.sizes[page] ?? [612, 792];
-		return this.withPage(page, (p) => {
-			const tp = fn("FPDFText_LoadPage")(p);
-			const n = fn("FPDFText_CountChars")(tp);
-			const box = malloc(32);
-			const words: TextWord[] = [];
-			let cur: { t: string; l: number; r: number; b: number; tp: number } | null = null;
-			let line = 0, lastMid = Number.NaN, lastRight = -Infinity, lastH = 0;
-			const flush = () => {
-				if (cur && cur.t.trim()) words.push({ t: cur.t, x: cur.l / pw, y: (ph - cur.tp) / ph, w: (cur.r - cur.l) / pw, h: (cur.tp - cur.b) / ph, l: line });
-				cur = null;
-			};
-			for (let i = 0; i < n; i++) {
-				const c = fn("FPDFText_GetUnicode")(tp, i);
-				if (c === 10 || c === 13) { flush(); if (c === 10) { line++; lastMid = Number.NaN; } continue; }
-				if (c === 32 || c === 9 || c === 0xa0 || c === 0xfffe || c === 2) { flush(); continue; }
-				if (!fn("FPDFText_GetCharBox")(tp, i, box, box + 8, box + 16, box + 24)) continue;
-				const d = raw().HEAPF64;
-				const l = d[box >> 3]!, r = d[(box >> 3) + 1]!, b = d[(box >> 3) + 2]!, t = d[(box >> 3) + 3]!;
-				const mid = (t + b) / 2, h = Math.max(t - b, 0.1);
-				// a new line: the baseline moved by more than half a glyph, or the text jumped back to the left
-				if (!Number.isNaN(lastMid) && (Math.abs(mid - lastMid) > Math.max(h, lastH) * 0.6 || l < lastRight - Math.max(h, lastH) * 2)) { flush(); line++; }
-				lastMid = mid; lastRight = r; lastH = h;
-				const ch = String.fromCodePoint(c);
-				if (!cur) cur = { t: ch, l, r, b, tp: t };
-				else { cur.t += ch; cur.l = Math.min(cur.l, l); cur.r = Math.max(cur.r, r); cur.b = Math.min(cur.b, b); cur.tp = Math.max(cur.tp, t); }
-			}
-			flush();
-			free(box);
-			fn("FPDFText_ClosePage")(tp);
-			return { pw, ph, words };
-		});
+	textLayer(page: number): TextLayer { return pageText(this.h, page); }
+	textLayerAsync(page: number): Promise<TextLayer> {
+		const here = (res: (v: TextLayer) => void, rej: (e: Error) => void) => { enqueue(PRIO_BACKGROUND / 2, () => { try { pdfStats.texts++; res(this.textLayer(page)); } catch (e) { rej(e as Error); } }); };
+		const sent = poolSend<TextLayer>(this, { t: "text", page, prio: PRIO_BACKGROUND / 2 }, here);
+		return sent ? sent.promise : new Promise(here);
 	}
-	textLayerAsync(page: number): Promise<TextLayer> { return new Promise((res, rej) => enqueue(PRIO_BACKGROUND / 2, () => { try { res(this.textLayer(page)); } catch (e) { rej(e); } })); }
 
 	private destOf(dest: number): { p: number; y: number } {
-		const p = dest ? fn("FPDFDest_GetDestPageIndex")(this.doc, dest) : -1;
+		const p = dest ? fn("FPDFDest_GetDestPageIndex")(this.h.doc, dest) : -1;
 		if (p < 0) return { p: -1, y: -1 };
 		const has = malloc(12), xy = malloc(24);
 		let y = -1;
-		if (fn("FPDFDest_GetLocationInPage")(dest, has, has + 4, has + 8, xy, xy + 4, xy + 8) && raw().HEAP32[(has >> 2) + 1]) {
+		if (fn("FPDFDest_GetLocationInPage")(dest, has, has + 4, has + 8, xy, xy + 4, xy + 8) && heap().HEAP32[(has >> 2) + 1]) {
 			const ph = this.sizes[p]?.[1] ?? 792;
-			y = Math.min(1, Math.max(0, (ph - raw().HEAPF32[(xy >> 2) + 1]!) / ph));
+			y = Math.min(1, Math.max(0, (ph - heap().HEAPF32[(xy >> 2) + 1]!) / ph));
 		}
 		free(has); free(xy);
 		return { p, y };
 	}
 
 	linksAsync(page: number): Promise<PdfLink[]> {
-		return Promise.resolve().then(() => this.withPage(page, (p) => {
+		return Promise.resolve().then(() => withPage(this.h, page, (p) => {
 			const [pw, ph] = this.sizes[page] ?? [612, 792];
 			const pos = malloc(4), link = malloc(4), rect = malloc(16);
-			raw().HEAP32[pos >> 2] = 0;
+			heap().HEAP32[pos >> 2] = 0;
 			const out: PdfLink[] = [];
 			while (fn("FPDFLink_Enumerate")(p, pos, link)) {
-				const l = raw().HEAP32[link >> 2]!;
+				const l = heap().HEAP32[link >> 2]!;
 				if (!fn("FPDFLink_GetAnnotRect")(l, rect)) continue;
-				const f = raw().HEAPF32, i = rect >> 2;
+				const f = heap().HEAPF32, i = rect >> 2;
 				const left = f[i]!, top = f[i + 1]!, right = f[i + 2]!, bottom = f[i + 3]!;
 				const box = { x: Math.min(left, right) / pw, y: (ph - Math.max(top, bottom)) / ph, w: Math.abs(right - left) / pw, h: Math.abs(top - bottom) / ph };
-				let dest = fn("FPDFLink_GetDest")(this.doc, l);
+				let dest = fn("FPDFLink_GetDest")(this.h.doc, l);
 				const action = fn("FPDFLink_GetAction")(l);
 				if (!dest && action) {
 					const type = fn("FPDFAction_GetType")(action);
 					if (type === 3) { // URI
-						const n = fn("FPDFAction_GetURIPath")(this.doc, action, 0, 0);
+						const n = fn("FPDFAction_GetURIPath")(this.h.doc, action, 0, 0);
 						const b = malloc(n);
-						fn("FPDFAction_GetURIPath")(this.doc, action, b, n);
-						const u = raw().UTF8ToString(b);
+						fn("FPDFAction_GetURIPath")(this.h.doc, action, b, n);
+						const u = heap().UTF8ToString(b);
 						free(b);
 						if (u) out.push({ ...box, k: "uri", u });
 						continue;
 					}
-					if (type === 1) dest = fn("FPDFAction_GetDest")(this.doc, action);
+					if (type === 1) dest = fn("FPDFAction_GetDest")(this.h.doc, action);
 				}
 				if (dest) { const d = this.destOf(dest); if (d.p >= 0) out.push({ ...box, k: "page", p: d.p, ty: d.y }); }
 			}
@@ -275,29 +298,28 @@ export class PdfDoc {
 		return Promise.resolve().then(() => {
 			const out: OutlineEntry[] = [];
 			const walk = (bm: number, level: number) => {
-				for (let b = bm; b; b = fn("FPDFBookmark_GetNextSibling")(this.doc, b)) {
+				for (let b = bm; b; b = fn("FPDFBookmark_GetNextSibling")(this.h.doc, b)) {
 					const n = fn("FPDFBookmark_GetTitle")(b, 0, 0);
 					const buf = malloc(n);
 					fn("FPDFBookmark_GetTitle")(b, buf, n);
-					const t = raw().UTF16ToString(buf);
+					const t = heap().UTF16ToString(buf);
 					free(buf);
-					let dest = fn("FPDFBookmark_GetDest")(this.doc, b);
-					if (!dest) { const a = fn("FPDFBookmark_GetAction")(b); if (a && fn("FPDFAction_GetType")(a) === 1) dest = fn("FPDFAction_GetDest")(this.doc, a); }
+					let dest = fn("FPDFBookmark_GetDest")(this.h.doc, b);
+					if (!dest) { const a = fn("FPDFBookmark_GetAction")(b); if (a && fn("FPDFAction_GetType")(a) === 1) dest = fn("FPDFAction_GetDest")(this.h.doc, a); }
 					const d = this.destOf(dest);
 					out.push({ t, l: level, p: d.p, y: d.y });
-					walk(fn("FPDFBookmark_GetFirstChild")(this.doc, b), level + 1);
+					walk(fn("FPDFBookmark_GetFirstChild")(this.h.doc, b), level + 1);
 				}
 			};
-			walk(fn("FPDFBookmark_GetFirstChild")(this.doc, 0), 0);
+			walk(fn("FPDFBookmark_GetFirstChild")(this.h.doc, 0), 0);
 			return out;
 		});
 	}
 
 	clearCache(): void {}
 	close(): void {
-		if (!this.doc) return;
-		fn("FPDF_CloseDocument")(this.doc);
-		free(this.dataPtr);
-		this.doc = 0;
+		if (!this.h.doc) return;
+		closeDoc(this.h);
+		if (pool) for (const s of pool.slots) if (s.docs.delete(this.id)) s.w.postMessage({ t: "close", doc: this.id });
 	}
 }
