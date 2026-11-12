@@ -1,0 +1,52 @@
+gpui-ui/web/shims/path.test.ts
+  s_e8244edae027cb::t_24b238b7041cdf 17
+  s_e8244edae027cb::t_d773aee84b032b 1-16,18-20
+gpui-ui/web/browser-db/offscreen.ts
+  s_e8244edae027cb::t_fb42e852f9a266 6
+  s_e8244edae027cb::t_3fa919471266cb 5
+  s_e8244edae027cb::t_f1f79311fe2568 27-28
+gpui-ui/web/browser-db/sync.ts
+  s_e8244edae027cb::t_02c8260f503337 1-2,5-6
+  s_e8244edae027cb::t_8c184b1ec6ce7e 3-4,7-33
+gpui-ui/web/browser-db/db-worker.ts
+  s_e8244edae027cb::t_4b672bc1721220 14-15
+  s_e8244edae027cb::t_187a28b4d9548d 49-55
+  s_e8244edae027cb::t_b0abdbaf7eeeca 73
+  s_e8244edae027cb::t_64816647d0dd6f 107
+  s_e8244edae027cb::t_7d49fafb68f335 37-40
+gpui-ui/web/browser-db/sync-test-background.js
+  s_e8244edae027cb::t_68a154a7a812be 1-34
+gpui-ui/web/browser-sync-check.ts
+  s_e8244edae027cb::t_776f33d252e90a 294-295
+  s_e8244edae027cb::t_1a0fd7f854efeb 261
+  s_e8244edae027cb::t_5812a3e7f18528 293
+  s_e8244edae027cb::t_2d59250010251f 1-260,262-287,296-320
+  s_e8244edae027cb::t_2a506e2f00cb85 288-292
+gpui-ui/web/browser-db/sync-storage.test.ts
+  s_e8244edae027cb::t_3cb85773e4a76d 1-38
+gpui-ui/web/browser-db/sync-storage.ts
+  s_e8244edae027cb::t_57a49f274bb6de 1-81
+gpui-ui/web/shims/path.ts
+  s_e8244edae027cb::t_9f09be1653f380 31-32
+  s_e8244edae027cb::t_b466c7a4d2590b 1-4
+  s_e8244edae027cb::t_b4f14ca5b6a607 19
+gpui-ui/web/browser-db/CONTRACT.md
+  s_e8244edae027cb::t_612d7bfbb83e00 67-75
+  s_e8244edae027cb::t_48f8775dab192b 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0ab8507b0e7925f733d2ea943bbe4f8a771cd78",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
