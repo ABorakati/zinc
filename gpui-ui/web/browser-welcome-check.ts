@@ -16,6 +16,7 @@
 //      counts must equal what the core's importer produces for the same folder when run in Bun.
 // The folder dialog (showDirectoryPicker) cannot be driven headless: the check gives the import a real FileSystemDirectoryHandle on a
 // folder in the page's own OPFS instead, which exercises everything but the dialog.
+import { assertSafeToStart, testManifest } from "./check-safety";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -30,7 +31,7 @@ const DIST = resolve(arg("dist") ?? join(ROOT, "gpui-ui", "dist-extension"));
 const WORK = resolve(arg("work") ?? join(tmpdir(), "zinc-w2-w"));
 const KEEP = process.argv.includes("--keep");
 const SHOTS_ONLY = process.argv.includes("--shots-only");
-const CDP_PORT = 9355;
+const CDP_PORT = Number(arg("port") ?? 9355);
 const FIXTURE_PORT = 9356;
 
 // the extension's own key and id: generated here, so nothing is read from the connector's folder
@@ -68,11 +69,11 @@ if (existsSync(join(ext, "library"))) spawnSync("cmd", ["/c", "rmdir", join(ext,
 rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 for (const d of ["shots", "ext", "downloads", "fixtures", "export"]) mkdirSync(join(WORK, d), { recursive: true });
 copyFileSync(join(import.meta.dir, "browser-db", "test-background.js"), join(ext, "test-background.js"));
-writeFileSync(join(ext, "manifest.json"), JSON.stringify({
+writeFileSync(join(ext, "manifest.json"), JSON.stringify(testManifest({
 	name: "Zinc browser welcome check", manifest_version: 3, version: "1.0", key: KEY,
 	permissions: ["offscreen", "unlimitedStorage", "storage"], background: { service_worker: "test-background.js" },
 	content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
-}, null, 2));
+}), null, 2));
 spawnSync("cmd", ["/c", "mklink", "/J", join(ext, "library"), DIST], { stdio: "ignore" });
 if (!existsSync(join(ext, "library", "library.html"))) throw new Error("could not link library/ to the build");
 
@@ -168,11 +169,11 @@ function countsOf(path: string) {
 
 // ---- Chrome and the DevTools protocol (as in browser-library-check.ts)
 let chrome: ChildProcess | null = null;
-const launch = (profile: string): ChildProcess => spawn(findChrome(), [
+const launch = (profile: string): ChildProcess => (assertSafeToStart({ extDir: ext }), spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${join(WORK, profile)}`,
 	`--load-extension=${ext}`, `--disable-extensions-except=${ext}`,
 	"--no-first-run", "--no-default-browser-check", "--enable-unsafe-swiftshader", "--window-size=1400,900", "about:blank",
-], { stdio: "ignore" });
+], { stdio: "ignore" }));
 
 class Cdp {
 	ws!: WebSocket;

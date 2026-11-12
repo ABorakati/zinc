@@ -8,6 +8,7 @@
 // headers it receives. The test extension has the declarativeNetRequest ruleset of web/browser-db/dnr-rules.json (with 127.0.0.1 added
 // next to api.zotero.org as "the API host"), host permissions for 127.0.0.1 and localhost, and web/browser-db/test-background.js as
 // its service worker. Chrome for Testing, its own profile, CDP port 9354. Nothing of the user's browser is touched.
+import { assertSafeToStart, testManifest } from "./check-safety";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -19,7 +20,7 @@ const ROOT = resolve(import.meta.dir, "..", "..");
 const DIST = resolve(arg("dist") ?? join(ROOT, "gpui-ui", "dist-extension"));
 const WORK = resolve(arg("work") ?? join(tmpdir(), "zinc-browser-sync-check"));
 const KEEP = process.argv.includes("--keep");
-const CDP_PORT = 9354;
+const CDP_PORT = Number(arg("port") ?? 9354);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const results: { check: string; ok: boolean; detail: string }[] = [];
@@ -76,24 +77,24 @@ const rules = JSON.parse(readFileSync(join(import.meta.dir, "browser-db", "dnr-r
 rules[0]!.condition.excludedRequestDomains.push("127.0.0.1"); // "the API host" of this check
 writeFileSync(join(ext, "dnr-rules.json"), JSON.stringify(rules, null, 2));
 writeFileSync(join(ext, "blank.html"), `<!doctype html><html><head><meta charset="utf-8"></head><body>zinc sync check</body></html>\n`);
-writeFileSync(join(ext, "manifest.json"), JSON.stringify({
+writeFileSync(join(ext, "manifest.json"), JSON.stringify(testManifest({
 	name: "Zinc browser sync check", manifest_version: 3, version: "1.0",
 	permissions: ["offscreen", "unlimitedStorage", "storage", "declarativeNetRequest"],
 	host_permissions: ["http://127.0.0.1/*", "http://localhost/*"],
 	declarative_net_request: { rule_resources: [{ id: "zinc-sync", enabled: true, path: "dnr-rules.json" }] },
 	background: { service_worker: "test-background.js" },
 	content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
-}, null, 2));
+}), null, 2));
 spawnSync("cmd", ["/c", "mklink", "/J", join(ext, "library"), DIST], { stdio: "ignore" });
 if (!existsSync(join(ext, "library", "library.html"))) throw new Error("could not link library/ to the build");
 
 // ---- Chrome and the DevTools protocol
 let chrome: ChildProcess | null = null;
-const launch = (): ChildProcess => spawn(findChrome(), [
+const launch = (): ChildProcess => (assertSafeToStart({ extDir: ext }), spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${join(WORK, "profile")}`,
 	`--load-extension=${ext}`, `--disable-extensions-except=${ext}`,
 	"--no-first-run", "--no-default-browser-check", "--enable-unsafe-swiftshader", "--window-size=1400,900", "about:blank",
-], { stdio: "ignore" });
+], { stdio: "ignore" }));
 
 class Cdp {
 	ws!: WebSocket;

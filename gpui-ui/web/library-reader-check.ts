@@ -11,6 +11,7 @@
 // It opens each attachment from the library tab, reads the text the reader drew in its frames, adds a highlight through the reader's own
 // annotation manager and finds it in the fixture database, takes screenshots in light and dark, and looks for page errors and CSP
 // violations. One snapshot carries scripts: none of them may run (they would run with the extension's privileges).
+import { assertSafeToStart, testManifest } from "./check-safety";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -28,7 +29,7 @@ const KEY_FILE = arg("key-file") ?? join(homedir(), "zotero-next-connector", "ex
 const HOST_NAME = "com.zotero_next.connector_host_e2e_a";
 const REG_KEY = `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`;
 const EXT_ID = "pakgagonakcalfbmckaolkpidcojacaf";
-const CDP_PORT = 9351;
+const CDP_PORT = Number(arg("port") ?? 9351);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const results: { check: string; ok: boolean; detail: string }[] = [];
@@ -106,14 +107,15 @@ if (!hostExe) {
 }
 const manifestPath = join(WORK, "host", `${HOST_NAME}.json`);
 writeFileSync(manifestPath, JSON.stringify({ name: HOST_NAME, description: "Zinc host (library reader check, fixture library)", path: hostExe, type: "stdio", allowed_origins: [`chrome-extension://${EXT_ID}/`] }, null, 2));
-run(["reg", "add", REG_KEY, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], WORK);
 const ext = join(WORK, "ext");
-writeFileSync(join(ext, "manifest.json"), JSON.stringify({
+writeFileSync(join(ext, "manifest.json"), JSON.stringify(testManifest({
 	name: "Zinc reader check", manifest_version: 3, version: "1.0", key: readFileSync(KEY_FILE, "utf8").trim(),
 	permissions: ["nativeMessaging"], content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
-}, null, 2));
+}), null, 2));
 run(["cmd", "/c", "mklink", "/J", join(ext, "library"), DIST], WORK);
 
+assertSafeToStart({ extDir: ext, hostNames: [HOST_NAME] });
+run(["reg", "add", REG_KEY, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], WORK); // the test host, under the Chromium key only
 const chrome = spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${join(WORK, "profile")}`,
 	`--load-extension=${ext}`, `--disable-extensions-except=${ext}`, "--disk-cache-size=1048576", "--disable-gpu-shader-disk-cache",

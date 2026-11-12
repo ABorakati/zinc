@@ -10,13 +10,15 @@
 // pointed at it through CDP in the background); the pages saved are local fixtures with citation_* metadata and a PDF.
 //
 // IMPORTANT: Chrome for Testing reads HKCU\Software\Google\Chrome\NativeMessagingHosts too, so on a machine with Zinc installed it
-// would start the installed host under the real name. So the check loads a COPY of the build (<work>/ext) in which only the host
-// name in nativeHost.js is changed to one that is registered nowhere: "no native host". Nothing in the registry is touched.
+// would start the installed host under the real name. So the check loads a COPY of the build (<work>/ext) in which the real host
+// name is replaced by one that is registered nowhere: "no native host" (web/check-safety.ts, which also refuses to start Chrome if
+// anything loaded could reach a Google-registered name). Nothing in the registry is touched.
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appendFileSync } from "node:fs";
+import { assertSafeToStart, makeConnectorTestCopy } from "./check-safety";
 
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1] : undefined; };
 const EXT_BUILD = resolve(arg("ext") ?? join(homedir(), "zotero-next-connector-library", "build", "manifestv3"));
@@ -49,10 +51,7 @@ const check = (name: string, ok: boolean, detail: string) => { results.push({ ch
 if (!existsSync(join(EXT_BUILD, "popup", "popup.html")) || !existsSync(join(EXT_BUILD, "library", "library.html"))) throw new Error(`${EXT_BUILD} is not a connector build with popup/ and library/ (build with --library)`);
 rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 const EXT = join(WORK, "ext");
-cpSync(EXT_BUILD, EXT, { recursive: true });
-const nh = readFileSync(join(EXT, "nativeHost.js"), "utf8");
-if (!nh.includes("const HOST_NAME = 'com.zotero_next.connector_host';")) throw new Error("nativeHost.js: HOST_NAME line not found");
-writeFileSync(join(EXT, "nativeHost.js"), nh.replace("const HOST_NAME = 'com.zotero_next.connector_host';", "const HOST_NAME = 'com.zotero_next.connector_host_unregistered_check';"));
+makeConnectorTestCopy(EXT_BUILD, EXT); // no native host: the real name is replaced
 for (const d of ["host", SHOTS]) mkdirSync(d.includes(":") ? d : join(WORK, d), { recursive: true });
 
 // ---- the pages to save, the repository mock, the header echo
@@ -133,6 +132,7 @@ const server = Bun.serve({
 
 // ---- Chrome
 const profile = join(WORK, "profile");
+assertSafeToStart({ extDir: EXT });
 const chrome = spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`,
 	`--load-extension=${EXT}`, `--disable-extensions-except=${EXT}`,

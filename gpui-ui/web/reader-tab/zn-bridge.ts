@@ -3,14 +3,13 @@
 // native-messaging transport the library tab uses (web/native-host.ts, method "api"), so the reader reads the file and saves
 // annotations through the connector's host. ?host=<name> picks another registration of the host (the headless check registers
 // its own); anything that does not look like a Zinc host name falls back to the default.
-import { HOST_NAME, nativeApiTransport, type NativePort } from "../native-host";
+import { nativeApiTransport, resolveHostName, type NativePort } from "../native-host";
 
 declare const chrome: {
-	runtime: { connectNative(name: string): NativePort; lastError?: { message?: string } };
+	runtime: { connectNative(name: string): NativePort; getManifest(): { zinc_test?: boolean }; lastError?: { message?: string } };
 };
 
-const param = new URLSearchParams(location.search).get("host");
-const hostName = param && /^com\.zotero_next\.[a-z0-9_.]+$/.test(param) ? param : HOST_NAME;
+const hostName = resolveHostName(location.search, chrome.runtime.getManifest().zinc_test === true);
 const transport = nativeApiTransport(() => chrome.runtime.connectNative(hostName), () => chrome.runtime.lastError?.message);
 
 (globalThis as Record<string, unknown>).znApiFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>

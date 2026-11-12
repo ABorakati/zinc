@@ -11,6 +11,7 @@
 // is quit and started again on the same profile (and after it is killed); an item made in one tab shows in a second tab within
 // 1 s; a connector save (saveItems over a "zinc-db" port) lands in the library; the policy (/api/sync, /api/integrations: 403);
 // journal mode and migrations on the sahpool VFS; screenshots in light and dark; no page errors and no CSP violations.
+import { assertSafeToStart, testManifest } from "./check-safety";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -23,7 +24,7 @@ const WORK = resolve(arg("work") ?? join(tmpdir(), "zinc-browser-library-check")
 const KEEP = process.argv.includes("--keep");
 const KEY_FILE = arg("key-file") ?? join(homedir(), "zotero-next-connector", "extension-key.txt");
 const EXT_ID = "pakgagonakcalfbmckaolkpidcojacaf";
-const CDP_PORT = 9352;
+const CDP_PORT = Number(arg("port") ?? 9352);
 const PAGE = `chrome-extension://${EXT_ID}/library/library.html?mode=browser`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -54,21 +55,21 @@ const IFRAME = process.argv.includes("--iframe");
 const background = readFileSync(join(import.meta.dir, "browser-db", "test-background.js"), "utf8");
 writeFileSync(join(ext, "test-background.js"), IFRAME ? `self.ZINC_TEST_OFFSCREEN = "test-offscreen.html";\n${background}` : background);
 if (IFRAME) writeFileSync(join(ext, "test-offscreen.html"), `<!doctype html><html><head><meta charset="utf-8"></head><body><iframe src="library/offscreen.html" style="display:none"></iframe></body></html>\n`);
-writeFileSync(join(ext, "manifest.json"), JSON.stringify({
+writeFileSync(join(ext, "manifest.json"), JSON.stringify(testManifest({
 	name: "Zinc browser library check", manifest_version: 3, version: "1.0", key: readFileSync(KEY_FILE, "utf8").trim(),
 	permissions: ["offscreen", "unlimitedStorage", "storage"], background: { service_worker: "test-background.js" },
 	content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
-}, null, 2));
+}), null, 2));
 spawnSync("cmd", ["/c", "mklink", "/J", join(ext, "library"), DIST], { stdio: "ignore" });
 if (!existsSync(join(ext, "library", "library.html"))) throw new Error("could not link library/ to the build");
 
 // ---- Chrome and the DevTools protocol
 let chrome: ChildProcess | null = null;
-const launch = (): ChildProcess => spawn(findChrome(), [
+const launch = (): ChildProcess => (assertSafeToStart({ extDir: ext }), spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${join(WORK, "profile")}`,
 	`--load-extension=${ext}`, `--disable-extensions-except=${ext}`,
 	"--no-first-run", "--no-default-browser-check", "--enable-unsafe-swiftshader", "--window-size=1400,900", "about:blank",
-], { stdio: "ignore" });
+], { stdio: "ignore" }));
 
 class Cdp {
 	ws!: WebSocket;
