@@ -1,0 +1,30 @@
+gpui-ui/web/connector-browser-check.ts
+  s_e8244edae027cb::t_336020057d0025 63-66
+  s_00b059baaa94f7::t_f9f419f584e278 86,102,104,208-210,214,304-305,381
+gpui-ui/web/browser-db/dispatch.ts
+  s_e8244edae027cb::t_38c83c7e68a1af 17-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29f9f0650938aa3135ab28bd07a3a5e65b732681",
+  "prompts": {},
+  "sessions": {
+    "s_00b059baaa94f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab67455ab7c6f5f9a",
+        "model": "unknown"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    },
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
