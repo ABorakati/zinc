@@ -1,0 +1,36 @@
+gpui-ui/web/shims/fs.ts
+  s_e8244edae027cb::t_4a5d3f5600b864 179
+  s_e8244edae027cb::t_97dbf6ba2eb4dd 297
+  s_e8244edae027cb::t_6e6d22cc966d6a 422
+  s_e8244edae027cb::t_fc539e2a9416ba 431
+  s_e8244edae027cb::t_6bf8c35c216f4f 138
+  s_e8244edae027cb::t_65a6994a8bf3bf 1,4-6,13-49,65-71,77-78,80-85,95-137,139,142-148,158-164,167,171-177,180-231,233-236,238-296,298-301,303-396,407-415,420,423,425,427-428,432,434-457,480
+  s_e8244edae027cb::t_259fb4175cc465 170
+gpui-ui/web/browser-db/blobfs.test.ts
+  s_e8244edae027cb::t_2de388633944d1 1-11,13-30,32-357
+  s_e8244edae027cb::t_90acc2ef8894bc 31
+  s_e8244edae027cb::t_25e5012628e122 12
+gpui-ui/web/shims/fs-promises.ts
+  s_e8244edae027cb::t_b81a5df167f103 1,3
+gpui-ui/web/browser-db/blobfs.ts
+  s_e8244edae027cb::t_7394a270115a76 1-5,14-60,63-101,103-135
+  s_e8244edae027cb::t_51e222296c195e 6-13
+  s_e8244edae027cb::t_76aec3bb9a35f3 61-62
+  s_e8244edae027cb::t_daf76bc6dffb8c 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bd40b0c223811c478a7eaac0a8a47e436e26b76",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
