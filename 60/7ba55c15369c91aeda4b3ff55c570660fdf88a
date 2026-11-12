@@ -1,0 +1,32 @@
+gpui-ui/web/shims/small.test.ts
+  s_e8244edae027cb::t_169f672121a9ac 3
+  s_e8244edae027cb::t_6a928a4d3e3d21 1-2,4-101
+gpui-ui/web/shims/zlib.ts
+  s_e8244edae027cb::t_1119fc4d77b97a 13-14,17-22,25-26,33-34,37-38,41-43,45-47,49-50
+  s_e8244edae027cb::t_b625cee54e6866 1-12,15-16,23-24,27-32,35-36,39-40,44,48,51
+gpui-ui/web/build.ts
+  s_e8244edae027cb::t_81da4f8138c9a4 31,34-35
+gpui-ui/web/shims/zlib.test.ts
+  s_e8244edae027cb::t_5e8193e052067e 58,60
+  s_e8244edae027cb::t_37416f514cbaf7 1-2,4-57,59,61-62
+  s_e8244edae027cb::t_ae23ccbcda0727 3
+gpui-ui/web/shims/small.ts
+  s_e8244edae027cb::t_c55f9b9abe27b0 1-2
+  s_e8244edae027cb::t_11f84b2b897bb5 17-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "607ba55c15369c91aeda4b3ff55c570660fdf88a",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
