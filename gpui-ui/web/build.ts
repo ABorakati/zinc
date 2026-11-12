@@ -169,7 +169,7 @@ if (EXT) {
 	const files: string[] = [];
 	const walk = (d: string) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else files.push(p); } };
 	walk(out);
-	const mb =files.reduce((n, f) => n + statSync(f).size, 0) / 2 ** 20;
+	const mb = files.reduce((n, f) => n + statSync(f).size, 0) / 2 ** 20;
 	console.log(`extension library page -> ${out} (${files.length} files, ${mb.toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
 	process.exit(0);
 }
