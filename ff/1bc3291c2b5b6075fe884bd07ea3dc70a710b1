@@ -1,0 +1,61 @@
+gpui-ui/web/browser-sync-check.ts
+  s_e8244edae027cb::t_feacadabfa5be3 23,80,87,93,97
+  s_e8244edae027cb::t_770499ef91e512 11
+gpui-ui/web/native-host.ts
+  s_e8244edae027cb::t_99c806873fb588 12-23
+gpui-ui/web/library-reader-check.ts
+  s_e8244edae027cb::t_feacadabfa5be3 32,111,114,117
+  s_e8244edae027cb::t_770499ef91e512 14,118
+gpui-ui/web/popup-check.ts
+  s_e8244edae027cb::t_feacadabfa5be3 4-9,19,22,28,48,51-52,124,181,183
+  s_e8244edae027cb::t_770499ef91e512 125
+gpui-ui/web/connector-browser-check.ts
+  s_e8244edae027cb::t_bb083feb65f1d3 13-15,21,54,129
+gpui-ui/web/browser-welcome-check.ts
+  s_e8244edae027cb::t_770499ef91e512 19
+  s_e8244edae027cb::t_bb083feb65f1d3 172,176
+  s_e8244edae027cb::t_feacadabfa5be3 34,72,76
+docs/design/web-connector-wasm.md
+  s_e8244edae027cb::t_8dc6a27da6db95 149
+gpui-ui/web/browser-db/CONTRACT.md
+  s_e8244edae027cb::t_8dc6a27da6db95 84
+gpui-ui/web/check-safety.ts
+  s_e8244edae027cb::t_cad4efd63c9a5b 20
+  s_e8244edae027cb::t_c8db28f9672629 1-19,21-32,39-90,92,98,100-102
+  s_e8244edae027cb::t_e32e0b7c5dece8 33-38
+  s_e8244edae027cb::t_341b0fc667e6fc 93
+  s_e8244edae027cb::t_4cb1c565fae0e1 94-97,99
+  s_e8244edae027cb::t_411d65b78aea56 91
+gpui-ui/web/extension.tsx
+  s_e8244edae027cb::t_619312ff346deb 17
+  s_e8244edae027cb::t_ab86dbfd2ba1aa 53
+  s_e8244edae027cb::t_ae7f416e8dd851 23
+gpui-ui/web/reader-tab/zn-bridge.ts
+  s_e8244edae027cb::t_0fc233eb9f53bf 6,9
+  s_e8244edae027cb::t_00b83d1c9c2540 12
+gpui-ui/web/extension-check.ts
+  s_e8244edae027cb::t_feacadabfa5be3 5-9,19,22,27,29,45,49-50,77
+  s_e8244edae027cb::t_770499ef91e512 78
+gpui-ui/web/library-pdf-check.ts
+  s_e8244edae027cb::t_770499ef91e512 14,141
+  s_e8244edae027cb::t_feacadabfa5be3 32,134,137,140
+gpui-ui/web/browser-library-check.ts
+  s_e8244edae027cb::t_feacadabfa5be3 27,58,62,68,72
+  s_e8244edae027cb::t_770499ef91e512 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff1bc3291c2b5b6075fe884bd07ea3dc70a710b1",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
