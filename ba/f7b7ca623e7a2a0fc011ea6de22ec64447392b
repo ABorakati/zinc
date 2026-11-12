@@ -1,0 +1,58 @@
+core/src/websync/index.ts
+  s_e8244edae027cb::t_89973248a37194 11
+core/test/websync/browser.test.ts
+  s_e8244edae027cb::t_31638eec0ff552 8
+  s_e8244edae027cb::t_679b42728fa7d9 34-36
+  s_e8244edae027cb::t_60dea5e4679f4d 1-7,9-33,37-131,137-224
+  s_e8244edae027cb::t_49d1df08707a19 132-136
+gpui-ui/web/browser-db/keystore-chrome.test.ts
+  s_e8244edae027cb::t_ade0140abd44fd 1-34
+core/src/websync/client.ts
+  s_e8244edae027cb::t_680e84b7b9fe68 26-28
+  s_e8244edae027cb::t_2d0b1a22ccaf7e 69
+  s_e8244edae027cb::t_52a0f9a036c670 111-118
+  s_e8244edae027cb::t_973d47e96aef73 75-76
+core/src/websync/CONTRACT.md
+  s_e8244edae027cb::t_0f93fc678b2d7a 82-90
+gpui-ui/web/browser-db/keystore-chrome.ts
+  s_e8244edae027cb::t_94a36a483402a8 1-43
+gpui-ui/web/browser-db/dnr-rules.json
+  s_e8244edae027cb::t_ed14050fae8e30 1-14
+core/src/websync/files.ts
+  s_e8244edae027cb::t_78e18018245c32 42-52,55-60
+  s_e8244edae027cb::t_bd97bfb72aa004 197
+  s_e8244edae027cb::t_0fe8403a3a502b 198,200-203
+  s_e8244edae027cb::t_5a591d6815d5f8 208
+  s_e8244edae027cb::t_215e4609b400ca 335-336
+  s_e8244edae027cb::t_b29c6ba887fc35 115-116
+core/src/websync/service.ts
+  s_e8244edae027cb::t_11093fd275aa0c 144
+  s_e8244edae027cb::t_e7b5e6f13aa269 146
+  s_e8244edae027cb::t_d1d5e63f79f9fe 30-48
+  s_e8244edae027cb::t_7cf323c6e758fd 401
+  s_e8244edae027cb::t_93b725f58b44b0 49-52
+  s_e8244edae027cb::t_397755fa3393b5 13
+  s_e8244edae027cb::t_81830845408363 407
+  s_e8244edae027cb::t_5db53cd02d4b80 12
+  s_e8244edae027cb::t_3ef5e1ecec85b4 415
+  s_e8244edae027cb::t_d28f0ac1855571 446
+  s_e8244edae027cb::t_d653eda1e0db25 454
+core/src/websync/keystore.ts
+  s_e8244edae027cb::t_226c2910ac5221 24-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "baf7b7ca623e7a2a0fc011ea6de22ec64447392b",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
