@@ -28,10 +28,11 @@ const SHIMS: Record<string, string> = {
 	"node:fs/promises": "shims/fs-promises.ts", "fs/promises": "shims/fs-promises.ts",
 	"node:path": "shims/path.ts", path: "shims/path.ts", "node:path/win32": "shims/path.ts", "node:path/posix": "shims/path.ts",
 	"node:os": "shims/small.ts", os: "shims/small.ts", "node:url": "shims/small.ts", url: "shims/small.ts", "node:crypto": "shims/small.ts", crypto: "shims/small.ts",
+	"node:zlib": "shims/zlib.ts", zlib: "shims/zlib.ts",
 	"bun:sqlite": "sqlite.ts",
 };
-// util, stream, events, buffer, assert, string_decoder, querystring and timers are left to Bun's own browser polyfills (its zlib
-// polyfill lacks the *Sync functions the core imports, so zlib stays a stub)
+// util, stream, events, buffer, assert, string_decoder, querystring and timers are left to Bun's own browser polyfills. zlib is not:
+// Bun's polyfill lacks the *Sync functions the core imports, so zlib maps to shims/zlib.ts (on fflate)
 const POLYFILLED = /^(node:)?(util|stream|events|buffer|assert|string_decoder|querystring|timers)$/;
 const BUILTIN = /^(node:|bun:|bun$|child_process$|worker_threads$|http$|https$|net$|module$|readline$|tty$|v8$|perf_hooks$|dns$|tls$|process$|vm$|webview-bun$)/;
 const names = new Map<string, Set<string>>();
