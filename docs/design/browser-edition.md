@@ -109,18 +109,17 @@ In browser mode the same calls go to the DB worker, which runs the same `connect
 - The connector's `browserGuard` and header checks are skipped: the call never leaves the extension.
 - Full-text indexing of saved PDFs: the core extracts text with Zotero's document worker (`core/src/extract`), which the browser build leaves out. The DB worker uses PDFium's page text instead (`gpui-ui/web/pdf-engine.ts`, `pageText`), through a small adapter.
 
-## 6. Living next to the desktop app
+## 6. Living next to the desktop app: one library per computer
 
-On a machine with the desktop app and the native host, there are two libraries: the file on disk and the one in the browser.
+Decided by the user (2026-11-12): a computer has one Zinc library. There is no second library to keep in step, and no direct sync between a browser library and the app's library.
 
-- **Which library a save goes to**: a setting with two values, **Zinc app** and **This browser**. The first run picks it:
-  - if the native host answers `ping`: **Zinc app** (as today)
-  - otherwise: **This browser**
-
-  It never switches by itself. If the app is chosen but the host stops answering, the popup says so and offers **Save to this browser instead** for this save. The popup always shows the target ("Saving to: Zinc app" / "Saving to: This browser").
-- **Open library** opens the browser library tab in browser mode. In app mode it opens the native-host tab (phases 2 and 3). The tab's title bar shows which library it is.
-- **Open in Zinc** (desktop) is offered only in app mode.
-- **Both synced to the same zotero.org account**: the two libraries meet through zotero.org, so either target is safe. Without sync they stay separate. Settings offers **Copy browser library into the Zinc app** (a one-way import through the host's `api` method, items and files) for users who start in the browser and install the app later.
+- **The app is installed** (its native host is registered): the extension always uses the app's library, through the host. That covers saves, the library tab (`library.html` without `mode`), PDFs and the reader. There is no "This browser" choice on such a computer.
+- **No app** (the host is not registered: Chrome answers "Specified native messaging host not found"): the extension uses the browser library (`library.html?mode=browser`). It creates the library, empty, the first time it is needed.
+- **The target is re-checked** when the browser starts and before each save. It is not a stored choice. Installing the app switches the extension to the app's library. Uninstalling the app switches it back to the browser library (which may hold older items).
+- **The app is installed but its host fails** (it is registered but crashes or the library is busy): the save fails with the host's message and a **Try again** button. Nothing is saved to the browser library, so no second library appears.
+- **Moving a browser library into the app**: when the extension finds the app installed and the browser library not empty, the popup and the library tab offer **Move your browser library into Zinc**. It copies items, collections, notes, annotations and files into the app's library through a host method (an import of the exported library, the same zip as **Export library**, merged into the app's library). When the copy succeeds, the browser library is emptied. If both libraries were synced with the same zotero.org account, the move skips items that the app already has (same key).
+- **Across computers** the link stays zotero.org sync, in both editions.
+- **Open in Zinc** is offered only when the app is installed.
 
 ## 7. What happens to the browser-edition zip
 
@@ -157,7 +156,7 @@ Not planned: Firefox (no offscreen documents; it would need a different owner fo
 ## Decisions for the user
 
 1. **Sign-in**: paste an API key in version 1 (recommended; works now), or "Log in with zotero.org" through OAuth (needs an app registered with Zotero; later).
-2. **Save target on a machine with both**: pick once at first run (the app if its host answers), shown in the popup, never switched silently (recommended). The other choice is to save to both. That would mean two copies of every item until sync merges them, so it is not recommended.
+2. **Save target on a machine with both**: decided: one library per computer (section 6). The app's library whenever the app is installed; the browser library only without it.
 3. **The Zinc-Web zip**: stop publishing it, so the extension is the browser option (recommended).
 4. **Uninstall risk**: is "sync plus Export library, with a warning at first run" enough (recommended)? The other way is a library file in a folder the user picks, through the File System Access API. The browser asks again for permission to that folder after a restart, and SQLite cannot use such a file the way it uses OPFS, so it would need a copy in OPFS anyway. Not recommended.
 5. **Store distribution**: whether the extension will go to the Chrome Web Store and Edge Add-ons (review of the WebAssembly, the `unlimitedStorage` and `<all_urls>` reasons) or stay a private unpacked or self-hosted install. This changes nothing in the build. It affects the review text and the install docs.
