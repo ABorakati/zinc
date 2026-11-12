@@ -10,7 +10,7 @@ Where settings are stored:
 
 | Kind | Stored in |
 | --- | --- |
-| Window and interface choices (Appearance, General, Reader, updates, the Locate address) | `ui-state.json` in `%APPDATA%\zotero-next-gpui`. **System** shows the exact path. |
+| Window and interface choices (Appearance, General, Reader, updates, the Locate address) | `ui-state.json` in the settings folder (see [Folders](first-run.md#folders)). **System** shows the exact path. |
 | Reading view typography | `reading-settings.json` next to `ui-state.json` |
 | Quick Copy style | `cite-settings.json` next to the library database |
 | Attachment storage and the Zotero data folder | `zotero-next.config.json` next to the library database |
@@ -25,7 +25,7 @@ Applied live.
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Theme | Light, dark, or follow Windows. | Light, Dark, **System** |
+| Theme | Light, dark, or follow the system. | Light, Dark, **System** |
 | Colour scheme | The accent used for buttons, selection and focus rings, in light and dark. Button text colour is chosen automatically for at least 4.5:1 contrast. Choose Custom to type a `#rrggbb` colour. | **Quiet Paper**, Blue, Teal, Violet, Rose, Amber, Graphite, Custom |
 | Interface font | The font for menus, lists and panels. Item titles keep their serif. Other lets you type the name of any installed font. | Manrope, System font, **Inter**, IBM Plex Sans, Source Sans 3, Other... |
 | Text size | Base size of interface text. | 12 px, **13 px**, 14 px, 15 px |
@@ -119,7 +119,7 @@ Settings for the Find Full Text command. See [Find Full Text](find-full-text.md)
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Institution | The library whose subscriptions are used to find PDFs. **Change...** opens a dialog with a search box for your institution, the OpenAthens domain, Shibboleth entityID, library proxy address, and how to sign in (Automatic, In a window here, Link for my own browser). | The built-in default institution |
+| Institution | The library whose subscriptions are used to find PDFs. **Change...** opens a dialog with a search box for your institution, the OpenAthens domain, Shibboleth entityID, library proxy address, and how to sign in (Automatic, In a window here, Link for my own browser). **In a window here** is Windows only; on Linux and macOS the link opens in your own browser. | The built-in default institution |
 | Use institutional access | Off: open-access sources only. | On |
 | Unpaywall email | Sent to Unpaywall with each lookup, as their terms ask. Stays on your computer. Click **Save** to apply. | Empty |
 | Items fetched at once | More is faster but harder on publisher sites. | 1 to 8; **4** |
@@ -191,7 +191,7 @@ Where the library, Zotero's data and the attachments live. The storage rows are 
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Library location | The database file your library is kept in, with its size. **Show in folder** opens it; **Change...** points Zinc at another library file, taking effect after a restart (the open library is left alone). The `ZN_DB` / `ZN_LIBRARY` environment variables win over this setting. | `%APPDATA%\zotero-next\library.sqlite` unless you chose another |
+| Library location | The database file your library is kept in, with its size. **Show in folder** opens it; **Change...** points Zinc at another library file, taking effect after a restart (the open library is left alone). The `ZN_DB` / `ZN_LIBRARY` environment variables win over this setting. | The default library file (see [Folders](first-run.md#folders)) unless you chose another |
 | Zotero data folder | The Zotero library Zinc syncs with and imports from. **Find Zotero** looks in Zotero's settings and the usual places; **Browse...**, a path box, **Validate**, **Use this folder**, **Use automatic**, **Show in folder**. | Found automatically from Zotero's settings |
 | Linked attachment base directory | Store linked file paths relative to a folder so they survive a move. Offers conversion of existing linked paths to relative ones and back, with a preview; only the database changes, no file is touched. | **Zotero's setting**, Choose folder..., None |
 | Attachment storage location | Where imported files are kept: **Zinc's folder** or **Choose folder...**. With your own folder: subfolder pattern, linked files switch, **Move existing attachments to this folder...** and **Apply ZotMoov defaults**. May suggest a OneDrive `Zotero Library` folder. | Zinc's own folder |
@@ -207,7 +207,7 @@ Where the library, Zotero's data and the attachments live. The storage rows are 
 
 ## Integrations
 
-Word, and saving from your browser. Both are installed per user.
+Word, and saving from your browser. Both are Windows only and are installed per user. On Linux and macOS, save from your browser with the official Zotero Connector (see [Adding items](adding-items.md#the-browser-connector)).
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
@@ -229,7 +229,7 @@ The core connection, saved interface state and about.
 
 ### Updates
 
-Settings under System > Updates. See [Updates](updates.md).
+Settings under System > Updates. See [Updates](updates.md). Updating in the app is Windows only; on Linux and macOS you download a newer release by hand and the updater does not start.
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |

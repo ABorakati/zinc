@@ -14,7 +14,7 @@ The same commands run in CI (`.github/workflows/ci.yml`). Set up first as descri
 | `word/addin` | `dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$TEMP/addin-out"` | `-o` keeps the build out of `word/dist` |
 | `connector-host` | `cd connector-host && bun run build && bun test` | Not in CI; the test needs the compiled exe |
 
-The `--timeout 30000` matters on a cold Windows machine: a few translator tests copy about 750 files and exceed Bun's 5 s default.
+The same commands work on Linux and macOS, apart from the `word/addin` and `connector-host` rows, which are Windows only. The `--timeout 30000` matters on a cold Windows machine: a few translator tests copy about 750 files and exceed Bun's 5 s default.
 
 `core/package.json` still has a `typecheck` script that calls `bunx tsc --noEmit`; use `bun check` instead, as CI does.
 
@@ -115,6 +115,14 @@ The harness refuses to start while any `WINWORD.EXE` is running. `mcp-e2e.test.t
 | `core` | `windows-latest` and `ubuntu-latest` (matrix, no fail-fast), 20 min timeout | install `core` and `word/sidebar`; fetch the vendored Zotero code (cached on the hash of `fetch-zotero-vendor.ts`); create the empty fulltext placeholder; `bun check`; `bun test --timeout 30000` |
 | `windows-rest` ("gpui-ui, word") | `windows-latest`, 20 min timeout | install `gpui-ui`, `core`, `word/sidebar`; `gpui-ui` `bun check` and `bun test --timeout 30000`; `word/sidebar` `bun check` and `bun test`; build the add-in with `dotnet build ... -o "$RUNNER_TEMP/addin-out"` |
 
-CI never builds the Rust library, the executable, the installer or the connector host, and it never runs the screenshot scripts.
+`ci.yml` never builds the Rust library, the executable, the installer or the connector host, and it never runs the screenshot scripts. The `core` job runs on Linux as well as Windows, so path and platform code in `core` must work on both (`core/src/platform-dirs.ts` takes the platform and environment as arguments so tests can resolve Linux and macOS paths from Windows).
+
+`macos.yml` runs on `macos-15` (Apple Silicon), by hand and on pushes to `main` that touch code that differs per OS (`gpui-ui/native/`, `gpui-ui/src/webview/`, `gpui-ui/src/shell/`, the PDF binding, the two print modules, `platform-dirs.ts`, `library-location.ts`, `gpui-ui/package.json` and its lock file). It runs `bun check` and `bun test --timeout 30000` in `core` and `gpui-ui`, builds `native/pdf` as a dylib, fetches PDFium, and runs `gpui-ui/scripts/smoke-native.ts`. It keeps the screenshots as the artifact `macos-smoke`.
+
+`desktop-packages.yml` builds the AppImage and the disk image; see [Releasing](releasing.md#linux-and-macos-packages).
+
+### Native smoke test
+
+`bun gpui-ui/scripts/smoke-native.ts [outDir]` starts the real app window on the machine it runs on (macOS in CI; it also works on Linux and Windows) against a throw-away library with its own `APPDATA`. It opens a demo PDF in a reader tab and saves `library.png`, `reader.png` and `summary.json`. On Linux and macOS it also shows a test page in the web view, clips it, and prints pages 2 and 3 of the PDF to a file without a dialog (the file must have two pages). It exits 1 if the list did not load, the PDF library could not be used, the reader tab did not open, the web view did not come up or the print is wrong. It opens a visible window; do not click in it.
 
 `fuzz-nightly.yml` runs at 03:17 UTC every day and on manual dispatch (inputs: cases per property, default 5000, and an optional fixed seed). It runs on `ubuntu-latest` with a 120 minute timeout, installs `core` and `word/sidebar`, fetches the vendored code, creates the placeholder, and runs `bun test --timeout 3600000 test/fuzz` in `core/` with `ZN_FUZZ_RUNS` and `ZN_FUZZ_SEED` set. Whether or not it fails, it extracts the `[fuzz] FAILED` and `replay:` lines into `failure-seeds.txt` and uploads the log and that file as the artifact `fuzz-failures-<run id>` for 30 days. To reproduce a nightly failure, take the replay line from the artifact.

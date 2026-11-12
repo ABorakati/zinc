@@ -1,10 +1,10 @@
 # User guide
 
-How to install and use Zinc.
+How to install and use Zinc. Zinc runs on Windows, Linux and macOS; where a feature is Windows only, the page says so. Shortcuts are written with **Ctrl**: on a Mac, use **Cmd** instead.
 
 ## Getting started
 
-- [Install](install.md): the installer, SmartScreen, per-user install, uninstall
+- [Install](install.md): the Windows installer, the Linux AppImage, the macOS disk image, uninstall, and install with an AI agent
 - [First run](first-run.md): import from Zotero, open an existing library, or start empty
 
 ## Your library

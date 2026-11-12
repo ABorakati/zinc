@@ -43,7 +43,7 @@ If none of the native readers recognises the text (or they find nothing in it), 
 
 ### Mendeley
 
-The Mendeley import reads a **Mendeley Desktop** library file from `%LOCALAPPDATA%\Mendeley Ltd\Mendeley Desktop`. The file is copied before it is read and the original is never modified. It brings in references, collections and attachments, and reports files it could not find on disk. Encrypted databases cannot be read. The online Mendeley Reference Manager is a different product and is not supported.
+The Mendeley import reads a **Mendeley Desktop** library file from Mendeley's data folder (see [Folders](first-run.md#folders)). The file is copied before it is read and the original is never modified. It brings in references, collections and attachments, and reports files it could not find on disk. Encrypted databases cannot be read. The online Mendeley Reference Manager is a different product and is not supported.
 
 ## Export
 

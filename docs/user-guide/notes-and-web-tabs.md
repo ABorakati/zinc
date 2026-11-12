@@ -28,7 +28,7 @@ Links inside a note work as follows:
 - on a citation inside a note, **Show Item** selects the cited item and **Show on Page** opens its PDF at the cited page;
 - on an annotation highlight, **Show on Page** opens the PDF at that annotation.
 
-**Markdown fallback.** If the rich editor cannot be used (for example when Microsoft WebView2 is not available, or the note editor files are missing), the app falls back to a simpler editor. It shows the note formatted, with an **Edit** / **Preview** toggle, and you write in Markdown (`# heading`, `**bold**`, `*italic*`, `- list`, `[text](url)`). It saves as you type and shows "Saving…" then "Saved". Notes that use formatting Markdown cannot hold (tables, images, citations, annotation highlights, superscripts) are edited there as raw HTML.
+**Markdown fallback.** If the rich editor cannot be used (for example when the web view is not available, or the note editor files are missing), the app falls back to a simpler editor. It shows the note formatted, with an **Edit** / **Preview** toggle, and you write in Markdown (`# heading`, `**bold**`, `*italic*`, `- list`, `[text](url)`). It saves as you type and shows "Saving…" then "Saved". Notes that use formatting Markdown cannot hold (tables, images, citations, annotation highlights, superscripts) are edited there as raw HTML.
 
 ### Deleting notes
 
@@ -40,10 +40,11 @@ PDFs open in the native [reader](reader.md). Web page snapshots and EPUB files o
 
 - A web tab is a normal tab beside the library; close it with `Ctrl+W`.
 - Links in the document open in your browser. The popup on a citation can open the cited item in the library when it is already there.
-- The web view uses Microsoft Edge WebView2. It is created only when you open a web tab and released when the last web tab closes, because it uses noticeable memory while it exists.
+- The web view is Microsoft Edge WebView2 on Windows (preinstalled on Windows 11) and the system's WKWebView on macOS, so there is nothing to install on either. On Linux it is WebKitGTK 6 with GTK 4 (Debian and Ubuntu package `libwebkitgtk-6.0-4`). Without them, snapshots and EPUBs open in the default app instead. Zinc runs on X11, or on XWayland under a Wayland desktop; setting `ZN_WAYLAND=1` keeps native Wayland but turns the web view off.
+- The web view is created only when you open a web tab and released when the last web tab closes, because it uses noticeable memory while it exists.
 - The web view floats over the tab area, so it is hidden while a menu, dialog or popover is open and while another tab is active.
 
-If a web tab cannot be shown (WebView2 missing, or the reader files unavailable), the tab says "Could not show … in the web view" with the reason, and an **Open in default app** button opens the file with whatever your system uses for it. When the web reader is not available at all, snapshots and EPUBs open in their default app straight away.
+If a web tab cannot be shown (web view missing, or the reader files unavailable), the tab says "Could not show … in the web view" with the reason, and an **Open in default app** button opens the file with whatever your system uses for it. When the web reader is not available at all, snapshots and EPUBs open in their default app straight away.
 
 Snapshots come from the [browser connector](adding-items.md#the-browser-connector), which can store a snapshot of the page you save.
 

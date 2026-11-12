@@ -23,7 +23,7 @@ export default defineConfig({
 		mermaid({ theme: "default", autoTheme: true }),
 		starlight({
 			title: "Zinc",
-			description: "A fast, native, Zotero-compatible reference manager for Windows.",
+			description: "A fast, native, Zotero-compatible reference manager for Windows, Linux and macOS.",
 			logo: { src: "./public/icon.svg", alt: "Zinc" },
 			favicon: "/icon.svg",
 			customCss: ["@fontsource-variable/inter/opsz.css", "@fontsource-variable/manrope/wght.css", "./src/styles/custom.css"],

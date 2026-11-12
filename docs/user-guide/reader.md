@@ -70,7 +70,7 @@ The View menu and the right-click menu of a thumbnail offer **Rotate Page Left**
 
 ### Print
 
-**Print…** (`Ctrl+P`) opens the system print dialog and prints the PDF. A message reports how many pages were sent to which printer.
+**Print…** (`Ctrl+P`) opens the system print dialog and prints the PDF: the Windows print dialog, the standard macOS print panel, or GTK's print dialog with CUPS on Linux. A message reports how many pages were sent to which printer.
 
 ### Page appearance
 

@@ -4,7 +4,7 @@ Errors and crashes are written to a log on your computer. Nothing is uploaded. I
 
 ## The log
 
-- Folder: `%APPDATA%\zotero-next-gpui\logs`. Set `ZN_LOG_DIR` to put it somewhere else.
+- Folder: the `logs` subfolder of the settings folder (see [Folders](first-run.md#folders)), for example `%APPDATA%\zotero-next-gpui\logs` on Windows. Set `ZN_LOG_DIR` to put it somewhere else.
 - Open it from **Settings > System > Diagnostics > Error log > Open logs folder**.
 - One file per day, `zotero-next-YYYY-MM-DD.log`, with one JSON object per line: time, level (`debug`, `info`, `warn`, `error`, `fatal`), area (`ui`, `core`, `reader`, `sync`, `websync`, `translate`, `bbt`, `worker`, `word`, `update`), message, stack, version, OS and a little context.
 - Files older than 14 days are deleted. A file that would pass about 5 MB is renamed to `.old.log` and a new one starts, so a day takes at most about 10 MB.
@@ -15,7 +15,7 @@ Errors and crashes are written to a log on your computer. Nothing is uploaded. I
 
 Choose **Tools > Report a problem...**, or **Settings > System > Diagnostics > Report a problem**. A dialog shows one block of text:
 
-- the app version and build, Windows version, Bun version;
+- the app version and build, operating system version, Bun version;
 - the number of library items and the sync mode;
 - the log folder;
 - the last two days of the log, redacted, capped at the newest 400 lines.

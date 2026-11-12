@@ -50,11 +50,11 @@ The other Find Full Text settings:
 
 ### Signing in
 
-Institution sign-in uses **a sign-in window in the app**. **Sign in to Institution…** (in the **Tools** menu, and in the progress panel as **Sign in to** your institution) opens it. Items that ended as "Sign-in needed" can be retried from the panel after you sign in, one by one with **Sign in**, or together with a single "sign in and retry" link.
+On Windows, institution sign-in uses **a sign-in window in the app**. On Linux and macOS there is no such window: the sign-in link opens in your own browser (see the last point below). **Sign in to Institution…** (in the **Tools** menu, and in the progress panel as **Sign in to** your institution) opens it. Items that ended as "Sign-in needed" can be retried from the panel after you sign in, one by one with **Sign in**, or together with a single "sign in and retry" link.
 
 The sign-in window is an ordinary resizable window. Its title shows the real address of the page (with "(not secure)" for a plain-http page), and a bar at the bottom says what it is signing in for, with **Keep waiting**, **Open in browser** and **Skip**. Close the window to cancel. Your institution's own sign-in page appears in it the first time, and again only when that sign-in expires; the session is kept between runs. A PDF is captured whether the publisher downloads it or shows it in the browser's viewer.
 
-- The sign-in browser keeps its own profile in `%APPDATA%\zotero-next-signin.exe\EBWebView`, separate from the notes and web tabs. On first use, a sign-in from the older Electrobun build (then called Zotero Next) is copied into it once, so you normally do not have to sign in again.
+- On Windows, the sign-in browser keeps its own profile in `%APPDATA%\zotero-next-signin.exe\EBWebView`, separate from the notes and web tabs. On first use, a sign-in from the older Electrobun build (then called Zotero Next) is copied into it once, so you normally do not have to sign in again.
 - Cookies are never written to the app's logs; logs record only the host and path of each page.
 - With **Link for my own browser** (or `ZN_SIGNIN=0`, or outside Windows) there is no window: items end with an **Open** button, which opens the publisher link in your own browser, where you can sign in and download the PDF yourself, then run Find Full Text again.
 

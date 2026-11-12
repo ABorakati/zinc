@@ -6,16 +6,22 @@ const base = import.meta.env.BASE_URL;
 const latest = "https://github.com/ABorakati/zinc/releases/latest";
 // the browser edition (gpui-ui/web, attached to releases by .github/workflows/web.yml)
 const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.9/Zinc-Web-v0.1.9.zip";
+// the AppImage and the disk image (gpui-ui/scripts/appimage.ts, dmg.ts) are attached to releases by .github/workflows/desktop-packages.yml
+const releases = "https://github.com/ABorakati/zinc/releases";
+// what to paste into an agent; the page's address is filled in by the script below (the site has no fixed origin)
+const agentGuide = `${base}user-guide/install.md`;
+const agentPrompt = (url: string) => `Install Zinc on this computer for me. Follow the steps under "Install with an AI agent" in ${url} . Ask me before anything that needs my choice, and do not change any security settings.`;
 ---
-<Site page="download" title="Download" description="Download the Zinc installer for Windows 10 and 11, and set up the Word add-in and the browser connector.">
+<Site page="download" title="Download" description="Download Zinc for Windows, Linux and macOS, set up the Word add-in and the browser connector, or let an AI agent install it.">
 	<section class="hero">
 		<div class="wrap slip-wrap">
 			<div>
 				<h1 class="display" style="margin-bottom: 1.5rem">Take it home</h1>
-				<p class="lede" style="margin-bottom: 2rem">One installer for the app, the Word add-in and the browser connector. It installs for your Windows user only and never changes your Zotero library.</p>
+				<p class="lede" style="margin-bottom: 2rem">On Windows, one installer for the app, the Word add-in and the browser connector. On Linux an AppImage, on a Mac a disk image. None of them needs administrator rights, and none changes your Zotero library.</p>
 				<div class="actions">
-					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.9 from GitHub</a>
-					<a class="btn btn-outline btn-lg" href={`${base}user-guide/install/`}><Icon name="book-open" />Install guide</a>
+					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.9 for Windows</a>
+					<a class="btn btn-outline btn-lg" href="#linux-mac"><Icon name="laptop" />Linux and macOS</a>
+					<a class="btn btn-ghost btn-lg" href="#agent"><Icon name="bot" />Install with an agent</a>
 				</div>
 				<p class="fine" style="margin-top: 1.25rem">The repository is private: the link works when you are signed in to GitHub with access to it.</p>
 			</div>
@@ -23,10 +29,11 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.9/Zinc-
 				<h3>At a glance</h3>
 				<table>
 					<tbody>
-						<tr style="--r:0"><td>Needs</td><td>Windows 10 or 11, 64-bit</td></tr>
-						<tr style="--r:0"><td>Linux, macOS</td><td><a href="#browser">browser edition</a></td></tr>
+						<tr style="--r:0"><td>Windows</td><td>10 or 11, 64-bit</td></tr>
+						<tr style="--r:0"><td>Linux</td><td><a href="#linux-mac">AppImage</a>, x86-64</td></tr>
+						<tr style="--r:1"><td>macOS</td><td><a href="#linux-mac">13 or later</a>, Apple Silicon</td></tr>
 						<tr style="--r:1"><td>Installs to</td><td>your user, no admin</td></tr>
-						<tr style="--r:2"><td>Size</td><td>about 145 MB</td></tr>
+						<tr style="--r:2"><td>Size</td><td>about 100 to 145 MB</td></tr>
 						<tr style="--r:3"><td>Updates</td><td>signed auto-update</td></tr>
 						<tr style="--r:4"><td>Released</td><td class="typed-date">9 Nov 2026</td></tr>
 					</tbody>
@@ -61,7 +68,7 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.9/Zinc-
 		<div class="wrap volume" style="align-items: start">
 			<div class="prose">
 				<h2 class="h2" style="margin-bottom: 1.1rem">The browser connector</h2>
-				<p>The installer registers the helper program. Browsers do not let an installer add an extension, so load it once yourself. It takes about thirty seconds, and afterwards pages save even when Zinc is closed.</p>
+				<p>On Windows, the installer registers the helper program. Browsers do not let an installer add an extension, so load it once yourself. It takes about thirty seconds, and afterwards pages save even when Zinc is closed.</p>
 				<p>Click the button to save. A popup opens under it, where you choose the collection, cancel or remove the save, or open the item in Zinc. Right-click the button and choose <strong>Open Zinc library</strong> to browse your library in a browser tab (read-only for now).</p>
 				<figure class="slide-popup-shot" style="max-width: 300px; margin: 1.25rem 0">
 					<img src={`${base}screenshots/connector-popup-picker-light.png`} width="720" height="916" loading="lazy" alt="The save popup with the collection search open: My Library and its collections, with a search field" />
@@ -80,12 +87,52 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.9/Zinc-
 		</div>
 	</section>
 
+	<section class="room" id="linux-mac" style="background: var(--ground-2)">
+		<div class="wrap volume" style="align-items: start">
+			<div class="prose">
+				<h2 class="h2" style="margin-bottom: 1.1rem">Linux and macOS</h2>
+				<p>The same native app, drawn on the GPU, with the same library, PDF reader, reading view and sync. Each release has an AppImage for 64-bit Linux and a disk image for Apple Silicon Macs.</p>
+				<p>The Word add-in, the closed-app browser connector and the Find Full Text sign-in window are Windows only for now. Save from the browser with the official Zotero Connector while Zinc is open. Zinc updates itself: the AppImage replaces its own file, and Zinc.app replaces itself once it is in Applications.</p>
+				<div class="actions" style="margin-top: 1.5rem">
+					<a class="btn btn-primary" href={releases}><Icon name="download" />AppImage and disk image on GitHub</a>
+					<a class="btn btn-outline" href={`${base}user-guide/install/#linux`}><Icon name="book-open" />Install guide</a>
+				</div>
+			</div>
+			<div class="card">
+				<div class="card-head"><span>ZN 0.1</span><span>Linux and macOS</span></div>
+				<ol class="card-steps">
+					<li><div><strong>Linux: make it executable.</strong><p><code>chmod +x Zinc-&lt;version&gt;-x86_64.AppImage</code>, then run it. Snapshots, EPUBs and the note editor need WebKitGTK 6 (<code>libwebkitgtk-6.0-4</code>).</p></div></li>
+					<li><div><strong>macOS: drag it to Applications.</strong><p>Open <code>Zinc-&lt;version&gt;-arm64.dmg</code> and drag Zinc into Applications.</p></div></li>
+					<li><div><strong>macOS: open it once by hand.</strong><p>It is not notarised yet: right-click Zinc, choose Open, then Open again.</p></div></li>
+				</ol>
+			</div>
+		</div>
+	</section>
+
+	<section class="room" id="agent">
+		<div class="wrap volume" style="align-items: start">
+			<div class="prose">
+				<h2 class="h2" style="margin-bottom: 1.1rem">Install with an agent</h2>
+				<p>An AI agent with a shell, such as Claude Code, can install Zinc for you on Windows, Linux or macOS. It downloads the right release with the GitHub CLI, installs it, checks it, and hands back the steps that need you: choosing a library, and on Windows loading the browser extension.</p>
+				<p>Copy the prompt and paste it into the agent. The steps it follows are written out at the end of the <a href={`${base}user-guide/install/#install-with-an-ai-agent`}>install guide</a>, so you can read exactly what it will do first.</p>
+			</div>
+			<div class="card">
+				<div class="card-head"><span>Prompt</span><span>Any agent</span></div>
+				<pre class="typed agent-prompt" data-guide={agentGuide}>{agentPrompt(agentGuide)}</pre>
+				<div class="actions" style="margin-top: 1rem">
+					<button type="button" class="btn btn-primary btn-sm agent-copy"><Icon name="copy" size={14} /><span data-label>Copy the prompt</span></button>
+					<a class="btn btn-ghost btn-sm" href={agentGuide}><Icon name="file-text" size={14} />The steps as Markdown</a>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<section class="room" id="browser" style="background: var(--ground-2)">
 		<div class="wrap volume" style="align-items: start">
 			<div class="prose">
-				<h2 class="h2" style="margin-bottom: 1.1rem">Linux and macOS: the browser edition</h2>
-				<p>The same interface and core, built for the browser: GPUI, SQLite and PDFium compiled to WebAssembly, with Zotero's layout analysis for the reader. It runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows.</p>
-				<p>For now it opens a demo library of well-known papers and a demo article, and keeps changes only until you close the tab. Web tabs, sync and anything that needs your disk are desktop only. <a href={`${base}demo/`}>Try it here first</a>, nothing to download.</p>
+				<h2 class="h2" style="margin-bottom: 1.1rem">The browser edition</h2>
+				<p>The same interface and core, built for the browser: GPUI, SQLite and PDFium compiled to WebAssembly, with Zotero's layout analysis for the reader. It runs in a recent Chrome, Edge, Firefox or Safari on any system, with nothing to install.</p>
+				<p>For now it opens a demo library of well-known papers and a demo article, and keeps changes only until you close the tab. Web tabs, sync and anything that needs your disk are in the desktop app only. <a href={`${base}demo/`}>Try it here first</a>, nothing to download.</p>
 				<div class="actions" style="margin-top: 1.5rem">
 					<a class="btn btn-primary" href={webZip}><Icon name="download" />Download the browser edition (zip)</a>
 					<a class="btn btn-outline" href={`${base}demo/`}><Icon name="mouse-pointer-click" />Open the demo</a>
@@ -107,7 +154,7 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.9/Zinc-
 			<div class="ledger">
 				<div class="ledger-row">
 					<h3><span class="row-icon"><Icon name="file-text" size={18} /></span>Word add-in</h3>
-					<p>Insert and edit live citations and a bibliography from a sidebar, even with the app closed.</p>
+					<p>Insert and edit live citations and a bibliography from a sidebar, even with the app closed. Windows, desktop Word.</p>
 					<a class="btn btn-ghost btn-sm" href={`${base}user-guide/word/`}>Word add-in guide<Icon name="arrow-right" size={14} /></a>
 				</div>
 				<div class="ledger-row">
@@ -117,10 +164,34 @@ const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.9/Zinc-
 				</div>
 				<div class="ledger-row">
 					<h3><span class="row-icon"><Icon name="hammer" size={18} /></span>Build from source</h3>
-					<p>Bun 1.4.4, Rust for the PDF library, and Inno Setup 7 for the installer. No Node or npm.</p>
+					<p>Bun 1.4.4 and Rust on Windows, Linux or macOS; Inno Setup 7 for the Windows installer. No Node or npm.</p>
 					<a class="btn btn-ghost btn-sm" href={`${base}developer-guide/building/`}>Building guide<Icon name="arrow-right" size={14} /></a>
 				</div>
 			</div>
 		</div>
 	</section>
+
+	<script is:inline>
+		// The prompt names the install guide's full address: the site has no fixed origin, so it is taken from this page.
+		(() => {
+			const pre = document.querySelector(".agent-prompt");
+			const btn = document.querySelector(".agent-copy");
+			if (!pre || !btn) return;
+			const guide = new URL(pre.dataset.guide, location.href).href;
+			pre.textContent = pre.textContent.replace(pre.dataset.guide, guide);
+			const label = btn.querySelector("[data-label]");
+			btn.addEventListener("click", async () => {
+				try {
+					await navigator.clipboard.writeText(pre.textContent.trim());
+					label.textContent = "Copied";
+				} catch {
+					label.textContent = "Select the text to copy it";
+				}
+				setTimeout(() => { label.textContent = "Copy the prompt"; }, 2200);
+			});
+		})();
+	</script>
+	<style>
+		.agent-prompt { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+	</style>
 </Site>

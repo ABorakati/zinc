@@ -1,6 +1,8 @@
 # Architecture
 
-Zinc is a Windows desktop reference manager that reads and writes a Zotero-format library kept in one SQLite file. The user interface, the core service that owns the database, and most background work run inside a single Bun process. A few things live outside that process: the Word add-in, the browser-connector host, and the WebView2 pages used for web content.
+Zinc is a desktop reference manager for Windows, Linux and macOS (Apple Silicon) that reads and writes a Zotero-format library kept in one SQLite file. The user interface, the core service that owns the database, and most background work run inside a single Bun process. A few things live outside that process: the Word add-in, the browser-connector host, and the web views used for web content. The Word add-in, the connector host and the sign-in helper are Windows only.
+
+The diagram below shows the Windows build. On Linux and macOS the executable has no `.exe`, the PDF library is `libzn_pdf.so` or `libzn_pdf.dylib`, and the web views are GTK 4 with WebKitGTK 6 or `WKWebView` instead of WebView2.
 
 This page is the map. Details are in [Building](building.md), [Testing](testing.md), [Database](database.md), [HTTP API](http-api.md) and [Translators](translators.md).
 
@@ -53,7 +55,7 @@ flowchart LR
 
 | Path | What is in it |
 | --- | --- |
-| `gpui-ui/` | The app: `src/` (UI), `native/pdf/` (Rust PDF library), `scripts/` (build, package, release, screenshot and benchmark scripts), `installer/` (Inno Setup), `UPDATES.md` |
+| `gpui-ui/` | The app: `src/` (UI), `native/pdf/` (Rust PDF library), `scripts/` (build, package, AppImage, disk image, release, screenshot and benchmark scripts), `installer/` (Inno Setup), `UPDATES.md` |
 | `core/` | The core service: `src/` (database, migrations, HTTP API, MCP, sync, import and export, translators, citations), `schema.sql`, `scripts/`, `test/`, `vendor/` (git-ignored) |
 | `word/` | `addin/` (C# COM add-in, .NET Framework 4.8), `sidebar/` (TypeScript sidebar and agent API), `harness/` (test harness), `build.ps1`, `install.ps1`, `uninstall.ps1` |
 | `connector-host/` | Native-messaging host for the browser connector (`src/`, `test/`, `install.ps1`, `uninstall.ps1`) |
@@ -64,7 +66,7 @@ flowchart LR
 | `website/` | Project website sources (Astro): product pages and the docs |
 | `docs/` | Documentation: `user-guide/`, `developer-guide/`, `screenshots/` |
 | `data/` | A local library kept by a developer. Git-ignored; never commit or script against it |
-| `.github/workflows/` | `ci.yml` and `fuzz-nightly.yml` |
+| `.github/workflows/` | `ci.yml`, `fuzz-nightly.yml`, `macos.yml` and `desktop-packages.yml` |
 
 The old Electrobun app (`app/`, `ui/`) is not part of this documentation.
 
@@ -84,6 +86,8 @@ The UI is TypeScript with Solid components. GPUIX (a Solid adapter for Zed's GPU
 | `ZN_DB` plus `ZN_CORE_DIRECT=1` | No HTTP at all. `gpui-ui/src/api.ts` calls the core's `handleApi(Request, db)` directly. Nothing else (MCP, connector, a browser) can reach the core, and web tabs and the web note editor are off. |
 | neither | An external core at `ZN_URL` (default `http://127.0.0.1:23160`). |
 | packaged exe | Always runs the core in-process. The database comes from `core/src/library-location.ts` (see [Database](database.md)). |
+
+Settings, state files and the default library go in per-OS folders chosen by `core/src/platform-dirs.ts`: `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, and on Linux `$XDG_CONFIG_HOME` (`~/.config`) for settings and `$XDG_DATA_HOME` (`~/.local/share`) for data. An explicit `APPDATA` wins on every OS, which tests rely on.
 
 The core writes to its database. An unpackaged run refuses the real library path unless `ZN_ALLOW_REAL_DB=1`; use a `VACUUM INTO` copy for development.
 
@@ -112,11 +116,17 @@ Details of the routes are in [HTTP API](http-api.md).
 
 ## PDF rendering: `gpui-ui/native/pdf`
 
-A Rust cdylib (`zn_pdf`) that renders pages with PDFium (loaded at run time from `pdfium.dll`) and uses the pure-Rust `hayro` crate for the text layer, links and outline. `hayro` also renders when PDFium cannot be loaded (`ZN_PDF_BACKEND=hayro` forces it). The app loads `zn_pdf.dll` through `bun:ffi` in `gpui-ui/src/reader/pdf.ts`; rendering jobs run on Rust worker threads and are polled from JS so the UI thread is never blocked. See [Building](building.md) for how the DLL is built.
+A Rust cdylib (`zn_pdf`) that renders pages with PDFium (loaded at run time from `pdfium.dll`, `libpdfium.so` or `libpdfium.dylib`) and uses the pure-Rust `hayro` crate for the text layer, links and outline. `hayro` also renders when PDFium cannot be loaded (`ZN_PDF_BACKEND=hayro` forces it). The app loads `zn_pdf.dll` (`libzn_pdf.so`, `libzn_pdf.dylib`) through `bun:ffi` in `gpui-ui/src/reader/pdf.ts`; rendering jobs run on Rust worker threads and are polled from JS so the UI thread is never blocked. See [Building](building.md) for how the DLL is built.
 
-## WebView2 pages
+## Web view pages
 
-GPUIX has no web-view element, so the few places that need web content use WebView2 through `webview-bun`. `gpui-ui/src/webview/host.ts` creates each WebView2 in a frameless popup window owned by the main window and keeps it positioned over a placeholder element. Nothing is created until first use and it is destroyed on release, because the WebView2 processes cost roughly 100 to 200 MB.
+GPUIX has no web-view element, so the few places that need web content use a native web view through `webview-bun`: WebView2 on Windows, WebKitGTK 6 on Linux and `WKWebView` on macOS. `gpui-ui/src/webview/host.ts` creates each web view in a popup window owned by the main window (a frameless one on Windows) and keeps it positioned over a placeholder element. Nothing is created until first use and it is destroyed on release, because the WebView2 processes cost roughly 100 to 200 MB.
+
+The OS calls for placing the popup are picked once in `gpui-ui/src/webview/popup.ts`: `win32.ts` on Windows, `x11.ts` on Linux and `cocoa.ts` on macOS. Each loads its libraries lazily.
+
+- **Linux.** The web view is a GTK 4 window over the app window, which only works when both are X11 windows. `gpui-ui/src/shell/linuxDisplay.ts` runs first in `main.tsx` and moves the app to X11 (XWayland on a Wayland desktop) before GPUIX loads. `ZN_WAYLAND=1` keeps native Wayland, with no web view. The same file turns off GTK's desktop portal for printing outside Flatpak, because the portal can hang where it has no dialog to show (WSLg).
+- **macOS.** The `WKWebView` is reparented into GPUI's own view (`cocoa.ts`, with Objective-C calls through `gpui-ui/src/shell/objc.ts`).
+- **Printing.** Linux prints through the GTK dialog and CUPS (`gpui-ui/src/reader/printGtk.ts`), macOS through PDFKit (`gpui-ui/src/reader/printMac.ts`).
 
 | Page | Directory | Served at | Used for |
 | --- | --- | --- | --- |
@@ -139,9 +149,11 @@ One SQLite file in WAL mode holds items (as Zotero Web API JSON plus query colum
 
 ## The GPUIX fork
 
-The app runs a locally built `@gpuix/native` addon instead of the npm 0.11.0 binary. It adds a `cacheRegion` style key so that unchanged regions (sidebar, toolbar, item pane) are replayed instead of rebuilt when only the list scrolls. The source is the private repository `ABorakati/gpuix`, branch `zn-cache`. The addon is copied over the npm binary by hand after every `bun install`; without it the app still works with whole-window redraws. Instructions are in `gpui-ui/scripts/README.md` ("Custom GPUIX native addon") and summarised in [Building](building.md).
+On Windows the app runs a locally built `@gpuix/native` addon instead of the npm 0.11.0 binary. (Linux and macOS use the npm binary.) It adds a `cacheRegion` style key so that unchanged regions (sidebar, toolbar, item pane) are replayed instead of rebuilt when only the list scrolls. The source is the private repository `ABorakati/gpuix`, branch `zn-cache`. The addon is copied over the npm binary by hand after every `bun install`; without it the app still works with whole-window redraws. Instructions are in `gpui-ui/scripts/README.md` ("Custom GPUIX native addon") and summarised in [Building](building.md).
 
 ## Word add-in: `word/`
+
+Windows only.
 
 | Part | Technology | Role |
 | --- | --- | --- |
@@ -152,5 +164,7 @@ The app runs a locally built `@gpuix/native` addon instead of the npm 0.11.0 bin
 The add-in finds the library with the same rule as `core/src/library-location.ts` (`word/addin/Settings.cs` mirrors it). The link to a running app is optional (`ZnClient.cs`, default `http://127.0.0.1:23120`). The MCP server requires a bearer token stored per user and refuses requests that carry an `Origin` header.
 
 ## Browser connector host: `connector-host/`
+
+Windows only.
 
 `zotero-next-host.exe` is a Bun-compiled native-messaging host started by Chrome or Edge for the Zinc Connector extension (a fork kept in a separate repository). It embeds `core/src/connector` and runs the same connector handlers as port 23119 directly against the library database, so saving works with the app closed. It is registered per user in HKCU by `connector-host/install.ps1`. Protocol framing is in `connector-host/src/frames.ts`.

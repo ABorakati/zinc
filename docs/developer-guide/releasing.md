@@ -1,6 +1,6 @@
 # Releasing
 
-How a build becomes an installer, and how an installer becomes an update that installed copies pick up. Building each piece is covered in [Building](building.md); the user-facing side of updates is in [Updates](../user-guide/updates.md).
+How a build becomes an installer, and how an installer becomes an update that installed copies pick up. Building each piece is covered in [Building](building.md); the user-facing side of updates is in [Updates](../user-guide/updates.md). Installers, signing and the update feed are Windows only; the Linux AppImage and the macOS disk image are described in [Linux and macOS packages](#linux-and-macos-packages).
 
 ## Overview
 
@@ -146,10 +146,38 @@ What the app does (`core/src/update/`, `gpui-ui/src/update/`):
 
 ## Release checklist
 
+This is the Windows installer. The Linux and macOS packages follow [the section below](#linux-and-macos-packages).
+
 1. Check `main` is green in CI and run the checks in [Testing](testing.md).
 2. Decide the release number (`ZN_RELEASE`) and build with `bun gpui-ui/scripts/package.ts --aot` using a build environment that has the update public key and `ZN_UPDATE_URL` set.
 3. Build the installer with `bun gpui-ui/scripts/installer.ts`. Install it on a clean machine or in a sandbox (`--test`) and check a silent upgrade over the previous version.
 4. Run `release.ts` with `--dry-run`, read the command, then publish.
 5. Check that an installed older build offers the update and installs it.
+
+## Linux and macOS packages
+
+The AppImage (`gpui-ui/scripts/appimage.ts`) and the macOS app (`gpui-ui/scripts/dmg.ts`, which also writes `Zinc-<release>-arm64.app.zip` for updates) update themselves from their own signed feeds, `latest-linux-x64.json` and `latest-darwin-arm64.json`, next to the Windows `latest.json`. Publish all three with one `release.ts` run (`--installer`, `--appimage`, `--mac-app`); the feed format and the self-replacement are in `gpui-ui/UPDATES.md`. The disk image itself is only for first installs (`--attach`). How each package is built is in [Building](building.md#linux-and-macos).
+
+`.github/workflows/desktop-packages.yml` builds both and attaches them to a release. It runs when a release is published, and by hand. Jobs:
+
+| Job | Runner | What it does |
+| --- | --- | --- |
+| `web-parts` | `ubuntu-24.04` | Builds the parts that are the same on every OS, once: Zotero's document worker, the reader page (`reader-host/dist`, from `zotero/reader` at the commit in `ZOTERO_READER_COMMIT`) and the note editor page (`note-host/dist`). Passes them on as one artifact |
+| `appimage` | `ubuntu-24.04` | Unpacks the parts, installs `core` and `gpui-ui`, fetches the vendored Zotero code, makes the empty fulltext placeholder, runs `bun scripts/appimage.ts` |
+| `dmg` | `macos-15` | The same steps, then `bun scripts/dmg.ts` |
+
+The version comes from the tag: the workflow sets `ZN_RELEASE` to the tag without its leading `v` (`v0.1.10` gives `0.1.10`), or `0.1.0` when there is no tag. The files are named `Zinc-<version>-x86_64.AppImage` and `Zinc-<version>-arm64.dmg`, each with a `.sha256` file. Both jobs also keep the files as the artifacts `zinc-appimage` and `zinc-dmg`.
+
+To attach the packages to a release that exists already:
+
+```
+gh workflow run desktop-packages.yml -f release_tag=v0.1.10
+```
+
+With an empty `release_tag` a manual run only builds and keeps the artifacts. Pinning a new `zotero/reader` commit means changing `ZOTERO_READER_COMMIT` in the workflow; the reader cache key includes it.
+
+The workflow does not run on every push, because macOS minutes cost several times the Linux ones on a private repository. A separate workflow, `macos.yml`, runs the tests, builds the native PDF library and smoke-tests the app window on `macos-15`; it runs by hand and when code that differs per OS changes on `main`.
+
+The disk image is signed ad hoc and not notarised, and the AppImage is not signed. GitHub Actions is blocked at present by an account billing problem, so no workflow runs, including this one, until that is fixed.
 
 The repository is private and this documentation is not published anywhere; no step above publishes documentation.

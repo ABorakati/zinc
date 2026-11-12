@@ -10,7 +10,7 @@ First look at the [log](logs-and-reports.md). **Tools > Report a problem...** ga
 
 ## The browser connector says Zotero is not running
 
-The app answers the Zotero connector on port 23119, but only while the real Zotero is not running, because Zotero holds that port itself. The app retries every 30 seconds. Quit Zotero, or use the native-messaging connector host, which does not need either program running ([Adding items](adding-items.md)).
+The app answers the Zotero connector on port 23119, but only while the real Zotero is not running, because Zotero holds that port itself. The app retries every 30 seconds. Quit Zotero. On Windows you can also use the native-messaging connector host, which does not need either program running ([Adding items](adding-items.md)).
 
 The Better BibTeX endpoints are also served on 23119, so they have the same limit ([Better BibTeX](better-bibtex.md)).
 
@@ -20,13 +20,19 @@ The core API normally uses 23120. If another copy of Zinc already holds it, the 
 
 ## Web tabs or rich notes do not appear
 
-They use WebView2 and the note editor build. When the note editor is not available, notes fall back to a plainer Markdown editor ([Notes and web tabs](notes-and-web-tabs.md)).
+They use the system web view and the note editor build. When the note editor is not available, notes fall back to a plainer Markdown editor ([Notes and web tabs](notes-and-web-tabs.md)).
+
+- **Windows.** The web view is Microsoft Edge WebView2, preinstalled on Windows 11.
+- **macOS.** It is the system's WKWebView. There is nothing to install.
+- **Linux.** It needs GTK 4 and WebKitGTK 6 (Debian and Ubuntu package `libwebkitgtk-6.0-4`). Without them, snapshots and EPUBs open in the default app. `ZN_WAYLAND=1` keeps native Wayland but turns the web view off; leave it unset to run on X11 or XWayland.
 
 ## Find Full Text, or add from URL, finds nothing
 
 Add from URL runs Zotero's translators and falls back to a plain webpage item when none matches. A translator is limited to 60 seconds and 25 HTTP requests ([translators](../developer-guide/translators.md)). Some publishers need your institution's sign-in for full text ([Find Full Text](find-full-text.md)).
 
 ## Word
+
+The Word add-in and the Word MCP server are Windows only.
 
 - **The sidebar does not appear.** Check that the **Word add-in** component was installed ([Install](install.md)) and see [The Word add-in](word.md).
 - **An agent gets 401 from the Word MCP.** It needs the bearer token from the add-in's token file, and requests from a browser (with an `Origin` header) are refused ([MCP](mcp.md)).
@@ -38,7 +44,7 @@ Add from URL runs Zotero's translators and falls back to a plain webpage item wh
 
 ## Updates are not offered
 
-A build run from source, a build without an update key, or one with no feed address never updates ([Updates](updates.md)).
+A build run from source, a build without an update key, or one with no feed address never updates ([Updates](updates.md)). Updating in the app is Windows only; on Linux and macOS download a newer release by hand ([Install](install.md)).
 
 ## FAQ
 
@@ -48,8 +54,8 @@ A build run from source, a build without an update key, or one with no feed addr
 
 **Is anything sent over the network without my asking?** Logs stay on your computer. The app contacts the update feed only if one is configured, sync services only when you turn them on, and sites you add items from.
 
-**Can I use it on macOS or Linux?** No. It is built for Windows.
+**Can I use it on macOS or Linux?** Yes. There is a Linux x64 AppImage and a macOS disk image for Apple Silicon (macOS 13 or later). See [Install](install.md). The Word add-in, auto-update and the Zinc browser connector's helper are Windows only.
 
-**Can I use it with the official Zotero Connector?** The app implements the connector protocol on port 23119, so the official connector can talk to it while Zotero is closed. The dedicated Zinc connector also works with neither program running ([Adding items](adding-items.md)).
+**Can I use it with the official Zotero Connector?** The app implements the connector protocol on port 23119, so the official connector can talk to it while Zotero is closed. On Windows the dedicated Zinc connector also works with neither program running ([Adding items](adding-items.md)).
 
 **How do I report a bug?** [Logs and Report a problem](logs-and-reports.md).

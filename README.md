@@ -2,11 +2,11 @@
 
 <h1 align="center">Zinc</h1>
 
-**Zinc is a fast, modern, Zotero-compatible reference manager for Windows. It reads and writes your Zotero library.** It opens in half a second, searches a 12,000-item library in tens of milliseconds, uses less than half of Zotero's working memory, and keeps saving references and inserting Word citations when the app is closed. It reads and syncs your Zotero data, runs Zotero's own translators, and has a built-in MCP server for AI agents.
+**Zinc is a fast, modern, Zotero-compatible reference manager for Windows, Linux and macOS. It reads and writes your Zotero library.** It opens in half a second, searches a 12,000-item library in tens of milliseconds, uses less than half of Zotero's working memory, and keeps saving references and inserting Word citations when the app is closed. It reads and syncs your Zotero data, runs Zotero's own translators, and has a built-in MCP server for AI agents.
 
 [![CI](https://github.com/ABorakati/zinc/actions/workflows/ci.yml/badge.svg)](https://github.com/ABorakati/zinc/actions/workflows/ci.yml)
 <!-- The CI badge above only renders for people who have access to this private repository. The badges below are static, so they work for everyone. -->
-![Platform: Windows 10/11 x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D4?logo=windows11&logoColor=white)
+![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-0078D4)
 ![Zotero-compatible](https://img.shields.io/badge/Zotero-compatible-CC2936?logo=zotero&logoColor=white)
 ![UI: Zed GPUI via GPUIX](https://img.shields.io/badge/UI-Zed%20GPUI%20%2B%20GPUIX-084CCF?logo=zedindustries&logoColor=white)
 ![Runtime: Bun AOT](https://img.shields.io/badge/runtime-Bun%20AOT-000000?logo=bun&logoColor=white)
@@ -66,7 +66,7 @@ The library has an MCP server in the core, with no plug-in to install. An agent 
 
 It imports your Zotero data folder (read only), keeps in step with a local Zotero or with zotero.org, runs Zotero's own translators, and works with the official Zotero Connector. Better BibTeX-style citation keys and auto-export, and ZotMoov-style file storage, are built in.
 
-It is not a full replacement yet: Windows only, no plug-ins, no LibreOffice or Google Docs. The [feature comparison](#feature-comparison-with-zotero-10) lists every difference.
+It is not a full replacement yet: no plug-ins, no LibreOffice or Google Docs, and on Linux and macOS no Word add-in or closed-app connector yet. The [feature comparison](#feature-comparison-with-zotero-10) lists every difference.
 
 ## Contents
 
@@ -122,7 +122,7 @@ GPUIX is a dependency (the npm package, plus a private fork), not part of this r
 
 ### Sync and storage
 
-- **Two sync routes**, one active at a time: your **local Zotero** data folder, or **zotero.org** through the Web API (API key kept in the Windows credential store, not in the database). zotero.org sync includes **group libraries**: groups appear under *Group Libraries* in the sidebar, with their collections, and read-only groups are never edited or uploaded to.
+- **Two sync routes**, one active at a time: your **local Zotero** data folder, or **zotero.org** through the Web API (API key kept in the system's credential store: Windows Credential Manager, the macOS Keychain or the Secret Service on Linux; never in the database). zotero.org sync includes **group libraries**: groups appear under *Group Libraries* in the sidebar, with their collections, and read-only groups are never edited or uploaded to.
 - Linked and stored files, with your own attachment folder (see [ZotMoov file storage](#zotmoov-file-storage)).
 - **Find Full Text** and **Locate** engines, and "Cite" from any row.
 
@@ -155,7 +155,7 @@ Built in, no plugin to install:
 - **Word add-in** with a sidebar and its own MCP server.
 - **Browser connector**: the Zotero connector port (23119), or a native-messaging fork of the connector that works even when the app is closed, with a save popup and your library in a browser tab.
 - **MCP server** in the core, so AI agents can search and manage the library.
-- A per-user **Windows installer**, **signed auto-update**, crash logging and versioned database migrations.
+- A per-user **Windows installer** with **signed auto-update**, an **AppImage** for Linux and a **disk image** for Apple Silicon Macs, crash logging and versioned database migrations.
 
 ## Screenshots
 
@@ -248,21 +248,37 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 | My Publications | ✅ | ✅ | |
 | Group libraries | ✅ | ⚠️ | Synced through zotero.org: sidebar section, collections, items, tags and adding items. Not yet for group Trash, saved searches or a local-Zotero route. |
 | Plugins and extensions | ✅ | ❌ | Existing Zotero plugins cannot run. Features register through an internal registry instead. |
-| macOS and Linux | ✅ | ❌ | Windows 10/11 x64 only. For Zotero 10 this is unverified: the install checked here is the Windows build. |
+| macOS and Linux | ✅ | ⚠️ | Linux x86-64 (AppImage) and Apple Silicon Macs (disk image). The Word add-in, the closed-app connector, auto-update and the Find Full Text sign-in window are Windows only. For Zotero 10 this is unverified: the install checked here is the Windows build. |
 | Mobile apps | ✅ | ❌ | Unverified for Zotero 10 (a desktop install cannot show it). Sync through zotero.org and use Zotero's own mobile apps. |
 | Local API for other programs | ✅ | ✅ | Zotero 10: an HTTP API on the Zotero Connector port, off by default (a preference turns it on). Next: the core's HTTP API. |
 | MCP server for AI agents | ❌ | ✅ | In the core, and in the Word add-in. No MCP server was found in the Zotero 10 install. |
 
 ## Install
 
+### Windows
+
 1. Open the **Releases** page of this repository and download `Zinc-Setup-<version>.exe`. (Releases up to 0.1.2 name it `ZoteroNext-Setup-<version>.exe`.)
 2. Run it. It installs **per user**, into `%LOCALAPPDATA%\Programs\Zinc`. It does not need administrator rights and does not touch your library.
 3. Windows SmartScreen will warn that the publisher is unknown, because the installer is not code-signed yet. Click **More info**, then **Run anyway**.
-4. The Setup wizard has an optional **Word add-in** component (ticked by default). You can also tick a desktop shortcut.
+4. The Setup wizard has optional **Word add-in** and **Browser connector** components (both ticked by default). You can also tick a desktop shortcut.
 
 Updating is the same: run a newer installer over the top, or let the app's signed auto-update do it. Uninstalling removes the program files only, and asks before removing settings and logs. It never removes a library. Details, silent-install switches and signing are in [`gpui-ui/installer/README.md`](gpui-ui/installer/README.md); the update feed is described in [`gpui-ui/UPDATES.md`](gpui-ui/UPDATES.md).
 
-### Linux and macOS: the browser edition
+### Linux
+
+Download `Zinc-<version>-x86_64.AppImage`, make it executable (`chmod +x`) and run it. It runs on X11, and on Wayland through XWayland. Snapshots, EPUBs and the rich note editor need GTK 4 and WebKitGTK 6 (`libwebkitgtk-6.0-4` on Debian and Ubuntu); without them those open in their default app. To update, replace the file with a newer one.
+
+### macOS
+
+Download `Zinc-<version>-arm64.dmg` (Apple Silicon, macOS 13 or later), open it and drag Zinc to Applications. It is not notarised yet, so open it the first time with right-click > **Open**. To update, drag a newer Zinc over it.
+
+On Linux and macOS the Word add-in, the closed-app browser connector, auto-update and the Find Full Text sign-in window are not available yet. The official Zotero Connector works while Zinc is open. Both packages are built by [`appimage.ts`](gpui-ui/scripts/appimage.ts) and [`dmg.ts`](gpui-ui/scripts/dmg.ts) in the [Desktop packages](.github/workflows/desktop-packages.yml) workflow.
+
+### With an AI agent
+
+An agent with a shell, such as Claude Code, can install Zinc on any of the three: point it at the "Install with an AI agent" steps in the [install guide](docs/user-guide/install.md#install-with-an-ai-agent). It downloads the release with the GitHub CLI, installs and checks it, and leaves the steps that need you (choosing a library, loading the browser extension) to you.
+
+### The browser edition
 
 Each release also has `Zinc-Web-<tag>.zip` (`ZoteroNext-Web-<tag>.zip` up to 0.1.2): the same interface and core built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), which runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows. Unzip it, serve the folder over HTTP (for example `python3 -m http.server 8080` in it) and open `http://localhost:8080`; browsers do not run WebAssembly from a file opened on disk. For now it opens a demo library and keeps changes only until the tab closes; web tabs, sync and anything that needs your disk are desktop only. It is built by [`gpui-ui/web/build.ts`](gpui-ui/web/build.ts) in the [Browser build](.github/workflows/web.yml) workflow.
 
@@ -289,7 +305,7 @@ It also runs a small **MCP server** so an AI agent can read the open document an
 Two routes put web pages and references into the library:
 
 1. **The Zotero connector port.** While the app runs it answers on port 23119 like Zotero does, so the official Zotero Connector extension works. Only one program can own that port, so close desktop Zotero first.
-2. **The native-messaging fork (Chrome and Edge).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`). The extension's source is its own repository, [ABorakati/zinc-connector](https://github.com/ABorakati/zinc-connector) (branch `zotero-next`), a fork of [zotero/zotero-connectors](https://github.com/zotero/zotero-connectors) under the same AGPL-3.0 licence.
+2. **The native-messaging fork (Chrome and Edge, Windows).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`). The extension's source is its own repository, [ABorakati/zinc-connector](https://github.com/ABorakati/zinc-connector) (branch `zotero-next`), a fork of [zotero/zotero-connectors](https://github.com/zotero/zotero-connectors) under the same AGPL-3.0 licence.
 
    With the fork, clicking the toolbar button saves the page and opens a popup under the button: choose or search the target collection, **Cancel** or **Remove** the save (to the Trash), or **Open PDF**, **Open in Zinc** and **Open library**. Right-click the button and choose **Open Zinc library** to browse your library in a browser tab, read-only for now. See [Adding items](docs/user-guide/adding-items.md#the-browser-connector).
 
@@ -304,7 +320,7 @@ The Word add-in has its own MCP server for the open document. The core's server 
 
 ## Building from source
 
-You need Windows 10/11 x64, [Bun](https://bun.sh) 1.4.4 (CI uses it; no Node or npm), the Rust toolchain for the PDF library, and, for the installer, Inno Setup 7. Full instructions to run the same checks as CI are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+You need Windows 10/11 x64, Linux x86-64 or an Apple Silicon Mac, [Bun](https://bun.sh) 1.4.4 (CI uses it; no Node or npm) and the Rust toolchain for the PDF library. The Windows installer needs Inno Setup 7, and the Word add-in the .NET SDK (both Windows only). Full instructions to run the same checks as CI are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ```
 # one-time setup

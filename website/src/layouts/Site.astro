@@ -8,7 +8,7 @@ import Masthead from "../components/Masthead.astro";
 import "../styles/site.css";
 
 interface Props { title?: string; description?: string; page?: "home" | "features" | "demo" | "compare" | "download" }
-const { title, description = "A fast, native reference manager for Windows that works with your Zotero library.", page } = Astro.props;
+const { title, description = "A fast, native reference manager for Windows, Linux and macOS that works with your Zotero library.", page } = Astro.props;
 const base = import.meta.env.BASE_URL;
 const fullTitle = title ? `${title} · Zinc` : "Zinc: your Zotero library, at native speed";
 ---
@@ -46,7 +46,7 @@ const fullTitle = title ? `${title} · Zinc` : "Zinc: your Zotero library, at na
 		<div class="wrap colophon-grid">
 			<div class="colophon-about">
 				<a class="brand" href={base}><img src={`${base}icon.svg`} alt="" width="24" height="24" /><span class="brand-name">Zinc</span></a>
-				<p>A Zotero-compatible reference manager for Windows. Not affiliated with the Zotero project; Zotero is a trademark of the Corporation for Digital Scholarship.</p>
+				<p>A Zotero-compatible reference manager for Windows, Linux and macOS. Not affiliated with the Zotero project; Zotero is a trademark of the Corporation for Digital Scholarship.</p>
 				<p class="credits">Proudly coded with vibes and Claude. Thanks to <a href="https://www.zotero.org">Zotero</a>, <a href="https://bun.sh">Bun</a>, <a href="https://www.gpui.rs">GPUI</a>, <a href="https://github.com/remorses/gpuix">GPUIX</a> and <a href="https://www.solidjs.com">Solid</a>, and to Mendeley and Papers for the inspiration.</p>
 			</div>
 			<div>

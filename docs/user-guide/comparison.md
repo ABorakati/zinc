@@ -10,8 +10,8 @@ It is checked against an installed Zotero 10, so this page does not repeat the g
 
 ## Where the two differ in approach
 
-- **Native interface.** Zinc draws its windows natively (GPUI) rather than in a browser engine. Web tabs (snapshots, EPUBs) and the rich note editor use WebView2. See [Architecture](../developer-guide/architecture.md).
+- **Native interface.** Zinc draws its windows natively (GPUI) rather than in a browser engine. Web tabs (snapshots, EPUBs) and the rich note editor use the system web view: WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux. See [Architecture](../developer-guide/architecture.md).
 - **Same data, same ports.** It can import a Zotero data folder ([First run](first-run.md)), keep in step with the local Zotero database or zotero.org ([Sync](sync.md)), and answer the Zotero connector on port 23119 while Zotero itself is not running ([Adding items](adding-items.md)).
 - **Zotero's own translators.** The web, import and export translators are Zotero's ([translators runtime](../developer-guide/translators.md)).
 - **Agents.** A built-in MCP server for the library and another for Word ([MCP](mcp.md)).
-- **Windows only.** There is no macOS or Linux build.
+- **Platforms.** Windows 10 and 11 (x64), Linux (x64) and macOS (Apple Silicon). The Word add-in and Word MCP server, auto-update, the Zinc browser connector's helper, and the built-in institution sign-in window are Windows only.

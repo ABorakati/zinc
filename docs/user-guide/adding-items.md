@@ -70,7 +70,7 @@ This is on by default. You can run it yourself on a standalone PDF with **Retrie
 
 ## The browser connector
 
-To save from a web page with the browser's own button, install a connector extension. There are two routes, and they can be used side by side.
+To save from a web page with the browser's own button, install a connector extension. On Windows there are two routes, and they can be used side by side. On Linux and macOS only the first route is available.
 
 ### Route 1: the Zotero port (23119)
 
@@ -85,6 +85,8 @@ Limits of this route:
 The same port serves the Word add-in; see [Word](word.md).
 
 ### Route 2: the native-messaging connector (works with the app closed)
+
+Windows only. On Linux and macOS use Route 1 with the official Zotero Connector, with Zinc open.
 
 A fork of the connector, **Zinc Connector** (Chrome and Edge, Manifest V3), talks to a small helper program that the browser starts on demand. The helper, `zotero-next-host.exe`, runs the same connector handlers against the same library database, so what lands in the library is exactly what a save through route 1 would create: items, stored files, collections, tags, notes, and the queued changes that the next [sync](sync.md) pushes to Zotero. It works whether or not the app (or Zotero) is running.
 

@@ -5,9 +5,9 @@ Zinc has two separate [Model Context Protocol](https://modelcontextprotocol.io) 
 | Server | What an agent can do | Where it runs |
 | --- | --- | --- |
 | **Library MCP** (core) | Search and read items, full text and annotations; organise collections and tags; format bibliographies | `http://127.0.0.1:23120/mcp` while the app is running, or over stdio with the app closed |
-| **Word MCP** (add-in) | Read and edit citations and the bibliography in a document open in Word | `http://127.0.0.1:23125/mcp` while Word is running with the add-in |
+| **Word MCP** (add-in, Windows only) | Read and edit citations and the bibliography in a document open in Word | `http://127.0.0.1:23125/mcp` while Word is running with the add-in |
 
-Both listen on the loopback address only. Neither is reachable from other computers, and both refuse requests that come from a web page.
+The library server works on Windows, Linux and macOS. The Word server is Windows only. Both listen on the loopback address only. Neither is reachable from other computers, and both refuse requests that come from a web page.
 
 Use agents with care. They can edit and trash items (the library server) or rewrite citations in your document (the Word server). Trash is recoverable and Word has undo, but keep a backup of your library.
 
@@ -27,7 +27,7 @@ claude mcp add --transport http zotero-next-http --scope user http://127.0.0.1:2
 claude mcp add zotero-next --scope user -- bun <repo>/core/scripts/mcp-stdio.ts --db <path-to>/library.sqlite
 ```
 
-Replace `<repo>` with your checkout of the Zinc source and `<path-to>/library.sqlite` with your library file (by default `%APPDATA%\zotero-next\library.sqlite`; **Settings > Files and folders > Library location** shows the real path). Use the full path to `bun` if it is not on your `PATH`. Register only one of the two under a given name.
+Replace `<repo>` with your checkout of the Zinc source and `<path-to>/library.sqlite` with your library file (by default the file listed under [Folders](first-run.md#folders); **Settings > Files and folders > Library location** shows the real path). Use the full path to `bun` if it is not on your `PATH`. Register only one of the two under a given name.
 
 The HTTP endpoint is stateless (JSON responses, POST only; a GET answers 405). It accepts only loopback `Host` headers and rejects any request with a browser `Origin` that is not its own, as a guard against DNS rebinding. Non-browser clients send no `Origin` and are fine. There is no token on this server, so anything on your computer that can reach port 23120 can use it.
 

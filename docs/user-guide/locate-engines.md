@@ -1,6 +1,6 @@
 # Locate engines
 
-**Locate** is the submenu that takes an item to somewhere else: its web page, your library's catalogue, a search engine, or its file in Explorer. It is the app's version of Zotero's Locate menu.
+**Locate** is the submenu that takes an item to somewhere else: its web page, your library's catalogue, a search engine, or its file in your file manager. It is the app's version of Zotero's Locate menu.
 
 ## Where the Locate menu is
 
@@ -16,7 +16,7 @@ The first four entries are always there. An entry that does not apply to the sel
 | **View Online** | The item's URL (web addresses only), or else `https://doi.org/` followed by its DOI. | The item has neither a URL nor a DOI. |
 | **Library Lookup** | Your library's OpenURL resolver with the item's details (see below). | No resolver is set, or the item has too little to look up (no title, standard number or identifier). |
 | **Search Google Scholar** | A Google Scholar search for the item's title. | The item has no title. |
-| **Show File** | The item's attachment in Explorer. | The item has no attachment file to show. |
+| **Show File** | The item's attachment in your file manager. | The item has no attachment file to show. |
 
 After a divider come your own **engines**, one entry per enabled engine, in the order you set. An engine entry is greyed out if the item cannot fill in the engine's search address (for example, no title). Links open in your browser.
 
@@ -35,7 +35,7 @@ Open **Settings > General** and find the **Locate** group:
 
 Notes:
 
-- The app only reads Zotero's `locate/engines.json`. It never changes it, and your engines are kept separately in the app's own settings (`%APPDATA%\zotero-next-gpui\ui-state.json`).
+- The app only reads Zotero's `locate/engines.json`. It never changes it, and your engines are kept separately in the app's own settings (`ui-state.json` in the settings folder, see [Folders](first-run.md#folders)).
 - Engines that use the POST method are listed but marked "POST: not supported" and do not work from the menu.
 - With no engines at all, the list says "No engines. Add one below or restore the defaults."
 

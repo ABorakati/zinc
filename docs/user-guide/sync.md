@@ -4,7 +4,7 @@ Zinc can keep its library in step with your Zotero library in two different ways
 
 | Sync source | What it is | Needs |
 | --- | --- | --- |
-| **Local Zotero** (default) | Reads the Zotero data folder on this computer (`zotero.sqlite` and `storage/`). Can optionally write your changes back. | Zotero installed on this computer. No account. |
+| **Local Zotero** (default) | Reads the Zotero data folder on this computer (`zotero.sqlite` and `storage/`), found through Zotero's profile (see [Folders](first-run.md#folders)). Can optionally write your changes back. | Zotero installed on this computer. No account. |
 | **zotero.org** | Talks to your zotero.org library directly over the Zotero Web API. | A zotero.org API key. |
 | **Off** | No sync. | Nothing. |
 
@@ -36,7 +36,7 @@ To sync straight with zotero.org:
 3. In the **zotero.org account** row, paste the key and click **Connect**. The key is checked with zotero.org, and the row then shows "Connected as <username> (user <id>)". The paste field masks what you type.
 4. The first sync starts. **Sync now** in the **zotero.org status** row runs one on demand.
 
-**Where the key is kept.** The API key is stored in the operating system's secret store (through Bun's secrets support, service `zotero-next`), never in the library database, logs or the app's API responses. After you click Connect the field is cleared and the key is never shown again. **Remove key** forgets it; **Replace key** swaps it for a different one. If the key is read-only the row says so (sending changes needs write access); if it has no file access, attachment files cannot be synced.
+**Where the key is kept.** The API key is stored in the operating system's secret store (through Bun's secrets support, service `zotero-next`): Windows Credential Manager, the macOS Keychain, or the Secret Service on Linux (libsecret, for example GNOME Keyring or KWallet). It is never kept in in the library database, logs or the app's API responses. After you click Connect the field is cleared and the key is never shown again. **Remove key** forgets it; **Replace key** swaps it for a different one. If the key is read-only the row says so (sending changes needs write access); if it has no file access, attachment files cannot be synced.
 
 ### Reading and sending
 

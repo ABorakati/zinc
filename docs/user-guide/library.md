@@ -54,7 +54,7 @@ Press `Ctrl+F` to search the library. For multi-condition searches use [Advanced
 
 ### Unread dots
 
-A small accent dot marks items you have not opened. Turn it off with **Settings > General > Show unread dots**. Use **Mark as Read** or **Mark as Unread** in the item menu. This state is stored only on this computer (in `%APPDATA%\zotero-next-gpui\read-state.json`) and is not synced.
+A small accent dot marks items you have not opened. Turn it off with **Settings > General > Show unread dots**. Use **Mark as Read** or **Mark as Unread** in the item menu. This state is stored only on this computer (in `read-state.json` in the settings folder, see [Folders](first-run.md#folders)) and is not synced.
 
 ### The item menu
 
@@ -150,7 +150,7 @@ The **⋯** menu of the Collections header sets how the list is arranged:
 
 A section is a heading you make yourself. Use **Move to section > New section…** on a collection, then group the list **By section** to see them. Right-click a section header to **Rename section** or **Delete section**.
 
-**Local only.** Colours, icons, sections and pins are presentation settings stored on this computer (in `%APPDATA%\zotero-next-gpui\collection-style.json`). They are not part of your Zotero library and are not synced.
+**Local only.** Colours, icons, sections and pins are presentation settings stored on this computer (in `collection-style.json` in the settings folder, see [Folders](first-run.md#folders)). They are not part of your Zotero library and are not synced.
 
 ## Tags
 

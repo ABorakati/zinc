@@ -80,6 +80,6 @@ export function summaryOf(md: string): string {
 	return "";
 }
 
-export const SUMMARY = "Zinc is a fast, native, Zotero-compatible reference manager for Windows: a GPU-drawn library and PDF reader on your Zotero data, Zotero's own translators and sync, a Word add-in and a browser connector that work with the app closed, and a built-in MCP server for AI agents.";
+export const SUMMARY = "Zinc is a fast, native, Zotero-compatible reference manager for Windows, Linux and macOS: a GPU-drawn library and PDF reader on your Zotero data, Zotero's own translators and sync, a Word add-in and a browser connector that work with the app closed (Windows), and a built-in MCP server for AI agents.";
 
 export const textResponse = (body: string, type: string) => new Response(body, { headers: { "content-type": `${type}; charset=utf-8` } });

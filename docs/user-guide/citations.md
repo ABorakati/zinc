@@ -71,7 +71,7 @@ You can drag items (one or several) from the item list, in both the card view an
 - **Out of the window**, into Word, a browser text box, an email or any app that accepts dropped text: the drop inserts a formatted reference, as in Zotero. The text comes from Quick Copy (its style or export format, language, and HTML or plain text). By default the drop is a bibliography entry; hold **Shift** as the pointer leaves the window to drop an in-text citation instead. Hold **Alt** when you start the drag to go straight to the outside drag.
 - The text is prepared while you drag. For a very large selection it may not be ready in time; if you release the button first, or the system drag cannot start, the text is put on the clipboard instead and a message says so. Paste it with Ctrl+V.
 
-Drag-out is Windows only. To see why a drag fell back to the clipboard, start the app with `ZN_DRAG_DEBUG=1` and look in the [log](logs-and-reports.md).
+Dragging out of the window is Windows only. On Linux and macOS you can still drag items onto a collection; use Quick Copy to put a reference on the clipboard. To see why a drag fell back to the clipboard, start the app with `ZN_DRAG_DEBUG=1` and look in the [log](logs-and-reports.md).
 
 For live, editable citations, use the [Word add-in](word.md) instead of dropped text.
 

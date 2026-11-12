@@ -7,9 +7,9 @@ All user data lives in one SQLite file, opened by `openDb(path)` in `core/src/db
 `core/src/library-location.ts` is the single rule. The app, the connector host (read-only, it never adopts a legacy path) and the Word add-in (`word/addin/Settings.cs` mirrors it in C#) all use it. Nothing in the rule names a user. The order in `resolveLibrary()` is:
 
 1. `ZN_DB`, then `ZN_LIBRARY` (environment).
-2. The saved setting: `%APPDATA%\zotero-next-gpui\library.json`, `{"path": "<library.sqlite>"}`.
+2. The saved setting: `<config>\zotero-next-gpui\library.json`, `{"path": "<library.sqlite>"}`.
 3. The legacy location `<home>\zotero-next\data\library.sqlite`, if it exists. It is adopted: written to the saved setting, so the library keeps opening from there.
-4. The default `%APPDATA%\zotero-next\library.sqlite`, if it exists.
+4. The default `<data>\zotero-next\library.sqlite`, if it exists.
 5. Nothing found: `path` is null and the app shows the first-run screen (`gpui-ui/src/firstrun/`). A new library goes to the default path, or `library-2.sqlite`, `library-3.sqlite` and so on beside it when the name is taken; an existing file is never overwritten.
 
 `isRealLibrary(path)` is true for the saved, legacy and default paths. The in-process core refuses them unless `ZN_ALLOW_REAL_DB=1`, so a development run does not open your real library by accident. Use a copy:
@@ -28,7 +28,17 @@ Files next to the database file:
 | `library.backup-gpui-<date>.sqlite` | One backup made by the packaged app before it first writes to a library (skipped if one exists) |
 | `connector-host-state.json` | Connector-host state: the last chosen collection and in-flight save sessions |
 
-The app's own small state files (`library.json`, `ui-state.json`, `startup.json`, `prefetch-hint.json`) and logs live in `%APPDATA%\zotero-next-gpui\`, not beside the library.
+The app's own small state files (`library.json`, `ui-state.json`, `startup.json`, `prefetch-hint.json`) and logs live in `<config>\zotero-next-gpui\`, not beside the library.
+
+`<config>` and `<data>` come from `core/src/platform-dirs.ts`:
+
+| | `<config>` (settings, logs) | `<data>` (default library) |
+| --- | --- | --- |
+| Windows | `%APPDATA%` | `%APPDATA%` |
+| macOS | `~/Library/Application Support` | `~/Library/Application Support` |
+| Linux | `$XDG_CONFIG_HOME` (`~/.config`) | `$XDG_DATA_HOME` (`~/.local/share`) |
+
+An explicit `APPDATA` in the environment wins on every OS, so tests and isolated runs can point both at a scratch folder.
 
 ## Connection settings
 

@@ -1,6 +1,6 @@
 # Word add-in
 
-The Zinc Word add-in lets you cite from your library while you write in Microsoft Word. It adds a **Zinc** tab to the ribbon and a sidebar where you search your library, insert citations, and build and refresh a bibliography. Citations are stored in the document as Zotero-compatible fields, so a document written with Zotero's own Word plug-in can be opened and refreshed with this one, and the other way round.
+The Zinc Word add-in is Windows only. It lets you cite from your library while you write in Microsoft Word. It adds a **Zinc** tab to the ribbon and a sidebar where you search your library, insert citations, and build and refresh a bibliography. Citations are stored in the document as Zotero-compatible fields, so a document written with Zotero's own Word plug-in can be opened and refreshed with this one, and the other way round.
 
 The add-in reads your library file directly, in read-only mode, so it works whether or not the Zinc app is open. The app is only started on demand when you click **Open in Zinc** on a cited item.
 

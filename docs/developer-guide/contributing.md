@@ -51,7 +51,7 @@ These are what the code does today; there is no formatter or linter configuratio
 - Bun for everything: `bun:sqlite` for SQLite, `Bun.serve` for HTTP, `bun test` for tests, `bun check` for types.
 - Files start with a comment saying what the file is for and any non-obvious constraint; follow that.
 - GPUIX facts the UI code relies on (from `gpui-ui/src/features/kit.tsx`): every `<text>` has an explicit colour (use `Txt`), a `<text>` has one child (pass a template string), and there is no `display: none`. Icons are lucide kebab-case names.
-- Do not hard-code a user name or a home folder. Locations come from `%APPDATA%`, the home folder or an environment variable (`core/src/library-location.ts` is the model).
+- Do not hard-code a user name or a home folder. Locations come from the per-OS folders in `core/src/platform-dirs.ts` (do not assume `%APPDATA%`), the home folder or an environment variable (`core/src/library-location.ts` is the model). Code must also run on Linux and macOS: `core` is tested on Linux in CI, and a `process.platform` branch needs both sides.
 - Do not add personal data, tokens or keys. The update private key lives outside the repository and the release script refuses a path inside it.
 - Tests use temporary folders and libraries and never your real library or the network.
 
@@ -68,7 +68,8 @@ These are what the code does today; there is no formatter or linter configuratio
 | Citations | `core/src/cite/` |
 | Sync | `core/src/sync/` (local Zotero), `core/src/websync/` (zotero.org) |
 | PDF rendering | `gpui-ui/native/pdf/` and `gpui-ui/src/reader/pdf.ts` |
-| Build, package, release | `gpui-ui/scripts/`, `gpui-ui/installer/`; see [Building](building.md), [Releasing](releasing.md) |
+| Per-OS code (web view, display, printing) | `gpui-ui/src/webview/` (`win32.ts`, `x11.ts`, `cocoa.ts`), `gpui-ui/src/shell/`, `gpui-ui/src/reader/printGtk.ts`, `printMac.ts`; see [Architecture](architecture.md) |
+| Build, package, release | `gpui-ui/scripts/` (including `appimage.ts` and `dmg.ts`), `gpui-ui/installer/`, `.github/workflows/`; see [Building](building.md), [Releasing](releasing.md) |
 | The Word add-in | `word/addin/` (C#), `word/sidebar/` (TypeScript) |
 | Documentation | `docs/user-guide/`, `docs/developer-guide/` |
 

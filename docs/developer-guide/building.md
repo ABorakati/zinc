@@ -1,16 +1,17 @@
 # Building from source
 
-This page covers building and running Zinc from a checkout, and producing the installer. To run the same checks as CI, see [Testing](testing.md). For publishing a build, see [Releasing](releasing.md).
+This page covers building and running Zinc from a checkout, and producing the Windows installer, the Linux AppImage and the macOS disk image. To run the same checks as CI, see [Testing](testing.md). For publishing a build, see [Releasing](releasing.md). Linux and macOS have their own section, [Linux and macOS](#linux-and-macos). The rest of the page describes Windows unless it says otherwise.
 
 ## Requirements
 
-- Windows 10 or 11, x64.
+- Windows 10 or 11 (x64), Linux (x64) or macOS 13 or later on Apple Silicon (arm64). The app runs from source on all three. Only Windows has the installer, the Word add-in, the connector host and auto-update.
 - Bun 1.4.4. Use Bun for everything: no Node, npm or npx.
 - The Rust toolchain (`cargo`) for the PDF library.
-- The .NET SDK (`dotnet`) with .NET Framework 4.8 targeting, for the Word add-in. The project pulls `Microsoft.NETFramework.ReferenceAssemblies` from NuGet.
-- PowerShell 7 (`pwsh`): `word/build.ps1` and `package.ts --zip` are run through it.
-- For the installer: Inno Setup 7.
-- For `--aot` builds: a Bun canary build (see below).
+- Windows only: the .NET SDK (`dotnet`) with .NET Framework 4.8 targeting, for the Word add-in. The project pulls `Microsoft.NETFramework.ReferenceAssemblies` from NuGet.
+- Windows only: PowerShell 7 (`pwsh`): `word/build.ps1` and `package.ts --zip` are run through it.
+- Windows only, for the installer: Inno Setup 7.
+- Windows only, for `--aot` builds: a Bun canary build (see below).
+- Linux and macOS: the system libraries and tools in [Linux and macOS](#linux-and-macos).
 
 ## One-time setup
 
@@ -81,7 +82,7 @@ Useful variables (from `gpui-ui/scripts/README.md` and `gpui-ui/src/core.ts`):
 
 `bun --hot src/main.tsx` (`bun run dev`) reloads on change. Typecheck with `bun check`, not `tsc`.
 
-For the PDF reader from source you need `zn_pdf.dll` (next section).
+For the PDF reader from source you need the native PDF library: `zn_pdf.dll` on Windows, `libzn_pdf.so` on Linux, `libzn_pdf.dylib` on macOS (next section).
 
 ## The native PDF library
 
@@ -91,13 +92,21 @@ For the PDF reader from source you need `zn_pdf.dll` (next section).
 cd gpui-ui/native/pdf && cargo build --release
 ```
 
-`gpui-ui/scripts/package.ts` runs this command itself, so a packaged build needs nothing extra. At run time the app (`gpui-ui/src/reader/pdf.ts`) looks for the DLL in this order: `ZN_PDF_DLL`, `%CARGO_TARGET_DIR%\release\zn_pdf.dll`, a fixed shared-target path, then `gpui-ui/native/pdf/target/release/zn_pdf.dll`. If you use a shared cargo target directory, set `CARGO_TARGET_DIR` and both `package.ts` and the app find the DLL there.
+`gpui-ui/scripts/package.ts` runs this command itself, so a packaged build needs nothing extra. At run time the app (`gpui-ui/src/reader/pdf.ts`) looks for the library in this order: `ZN_PDF_DLL`, `%CARGO_TARGET_DIR%\release\zn_pdf.dll` (`$CARGO_TARGET_DIR/release/libzn_pdf.so` or `.dylib` elsewhere), a fixed shared-target path (Windows only), then `gpui-ui/native/pdf/target/release/<library>`. If you use a shared cargo target directory, set `CARGO_TARGET_DIR` and both `package.ts` and the app find the library there.
 
-PDFium is not built. `bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts` downloads a pinned `pdfium-win-x64.tgz` from bblanchon/pdfium-binaries (release `chromium/8125`), checks its SHA-256, and extracts `pdfium.dll` into `gpui-ui/native/pdf/vendor/pdfium/bin/`. `package.ts` calls it if the DLL is missing. `zn_pdf.dll` loads `pdfium.dll` from its own folder, so the two ship together; without PDFium the library renders with `hayro`.
+PDFium is not built. `bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts` downloads a pinned archive from bblanchon/pdfium-binaries (release `chromium/8125`) for the OS and CPU it runs on, checks its SHA-256, and extracts the library into `gpui-ui/native/pdf/vendor/pdfium/`:
+
+| Platform | Archive | Library |
+| --- | --- | --- |
+| Windows x64 | `pdfium-win-x64.tgz` | `bin/pdfium.dll` |
+| Linux x64 or arm64 | `pdfium-linux-<cpu>.tgz` | `lib/libpdfium.so` |
+| macOS arm64 or x64 | `pdfium-mac-<cpu>.tgz` | `lib/libpdfium.dylib` |
+
+`package.ts` calls the script if the library is missing; `--force` fetches again. The PDF library loads PDFium from its own folder, so the two ship together; without PDFium it renders with `hayro`.
 
 ## The custom GPUIX addon
 
-The app uses a locally built `@gpuix/native` addon with cache regions. After every `bun install` in `gpui-ui` you must copy it over the npm binary again:
+Windows only. The app uses a locally built `@gpuix/native` addon with cache regions. On Linux and macOS the npm binary is used as it is and the app works with whole-window redraws. On Windows, after every `bun install` in `gpui-ui` you must copy the custom addon over the npm binary again:
 
 1. Build it from `ABorakati/gpuix`, branch `zn-cache` (private): in `packages/native` run `bun run build` (a napi release build with `test-support`).
 2. Copy `packages/native/gpuix-native.win32-x64-msvc.node` over `gpui-ui/node_modules/@gpuix/native-win32-x64-msvc/gpuix-native.win32-x64-msvc.node`. The npm original is kept beside it as `.orig`.
@@ -107,33 +116,43 @@ Without the custom addon, `cacheRegion` is ignored and the app works with whole-
 
 ## Compiling the executable
 
-`bun gpui-ui/scripts/build.ts` compiles the app to a single Windows executable with `Bun.build`. (The `bun build --compile` command cannot run the Solid Babel plugin, hence the script.) It writes into `gpui-ui/out/`:
+`bun gpui-ui/scripts/build.ts` compiles the app to a single executable with `Bun.build`, for the OS and CPU it runs on (target `bun-windows-x64`, `bun-linux-x64` or `bun-darwin-arm64`). (The `bun build --compile` command cannot run the Solid Babel plugin, hence the script.) It writes into `gpui-ui/out/`. The names below are the Windows ones; on Linux and macOS the files have no `.exe`.
 
 | Variant | Output | Notes |
 | --- | --- | --- |
 | `plain` | `zotero-next-gpui-plain.exe` | No bytecode, no minify |
 | `bytecode` | `zotero-next-gpui-bytecode.exe` | Copied to `out/zotero-next-gpui.exe` as the default |
 | `bytecode-min` | `zotero-next-gpui-bytecode-min.exe` | Bytecode plus minify |
-| `aot` | `zotero-next-gpui-aot.exe` | Only with `--aot`; needs the canary |
+| `aot` | `zotero-next-gpui-aot.exe` | Only with `--aot`; needs the canary; Windows only |
 
-Options: `--variant <list>`, `--icons all` (embed every lucide icon instead of the ones `src/` mentions), `--hide-console`, `--entry`, `--out`. The version stamp and the update public key are baked in (see [Releasing](releasing.md)).
+Options: `--variant <list>`, `--icons all` (embed every lucide icon instead of the ones `src/` mentions), `--hide-console` (Windows only), `--entry`, `--out`. The `aot` variant, the exe icon fix and `--hide-console` are Windows only. The version stamp and the update public key are baked in (see [Releasing](releasing.md)).
 
 ### The AOT canary
 
-Stable Bun 1.4.4 has no ahead-of-time compiler. The `aot` variant uses the `compile.aot` option, which exists only in a Bun canary build. `build.ts` runs the other variants in the current Bun and then re-runs itself as `<canary>/bun.exe scripts/build.ts --aot-only` to build the AOT variant. Point it at the canary with `ZN_BUN_CANARY=<path to the canary bun.exe>`; the global Bun is never touched. How to obtain the canary is not documented in the repository.
+Windows only. Stable Bun 1.4.4 has no ahead-of-time compiler. The `aot` variant uses the `compile.aot` option, which exists only in a Bun canary build. `build.ts` runs the other variants in the current Bun and then re-runs itself as `<canary>/bun.exe scripts/build.ts --aot-only` to build the AOT variant. Point it at the canary with `ZN_BUN_CANARY=<path to the canary bun.exe>`; the global Bun is never touched. How to obtain the canary is not documented in the repository.
 
 In an AOT executable the workers (PDF extraction, document structure, Zotero translators) and the vendored code they load are compiled in. `build.ts` applies a list of source patches for this in the AOT variant only and fails if one no longer matches, so a change to those worker entry points can break the AOT build while leaving the others working. `gpui-ui/scripts/aot-bench.ts` is not part of the build: it benchmarks start-up and memory of running from sources against the compiled variants (`bun gpui-ui/scripts/aot-bench.ts --variants bytecode,aot`).
 
 ## Packaging
 
 ```
-bun gpui-ui/scripts/package.ts --aot     # gpui-ui/out/package-aot/zotero-next-gpui/
+bun gpui-ui/scripts/package.ts --aot     # Windows only: gpui-ui/out/package-aot/zotero-next-gpui/
 bun gpui-ui/scripts/package.ts           # bytecode build into gpui-ui/out/package/zotero-next-gpui/
 ```
 
-Add `--zip` to also write a zip. `package.ts` runs the steps in order: `cargo build --release` for `zn_pdf.dll`, the PDFium fetch if needed, `scripts/build.ts` (with `--hide-console`), the pre-bundled translate worker (non-AOT only, `scripts/translate-worker.ts`), then assembles the folder: the exe, `zn_pdf.dll`, `pdfium.dll` with its licences, `icon.ico`, `vendor/zotero` (translators, schema, and for non-AOT the framework), `vendor/document-worker/build`, `reader-host/dist` and `note-host/dist` when built (otherwise it warns that web tabs will be off), `README.txt` and `version.txt`. It then calls the signing hook, which does nothing unless configured (see [Releasing](releasing.md)).
+Add `--zip` to also write a zip (through `pwsh` on Windows, through `zip` elsewhere). `package.ts` runs the steps in order: `cargo build --release` for the PDF library, the PDFium fetch if needed, `scripts/build.ts` (with `--hide-console` on Windows), the pre-bundled translate worker (non-AOT only, `scripts/translate-worker.ts`), then assembles the folder: the exe, the PDF library, PDFium with its licences, the icon, `vendor/zotero` (translators, schema, and for non-AOT the framework), `vendor/document-worker/build`, `reader-host/dist` and `note-host/dist` when built (otherwise it warns that web tabs will be off), `README.txt` and `version.txt`. On Windows it then calls the signing hook, which does nothing unless configured (see [Releasing](releasing.md)).
 
-The folder is self-contained: the exe finds its files next to itself (`gpui-ui/src/packaged.ts`).
+Per OS, the files differ:
+
+| | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| Executable | `zotero-next-gpui.exe` | `zotero-next-gpui` | `zotero-next-gpui` |
+| PDF library | `zn_pdf.dll` | `libzn_pdf.so` | `libzn_pdf.dylib` |
+| PDFium | `pdfium.dll` | `libpdfium.so` | `libpdfium.dylib` |
+| Icon | `icon.ico` | `icon.png` | `icon.png` |
+| `--aot` and signing | yes | no | no |
+
+The folder is self-contained: the exe finds its files next to itself (`gpui-ui/src/packaged.ts`). Inside a macOS app bundle the code sits in `Contents/MacOS` and the data in `Contents/Resources`; `packageDataDir()` in `packaged.ts` finds it there.
 
 ## The installer
 
@@ -173,6 +192,73 @@ bun run build           # bun build --compile src/main.ts --outfile dist/zotero-
 ```
 
 The executable embeds `core/src/connector` and `core/src/db.ts`, so rebuild it after changing them. `install.ps1` and `uninstall.ps1` register and remove the native-messaging manifest in HKCU for Chrome and Edge. Do not run the development registration and the installed component together: they use the same registry keys.
+
+## Linux and macOS
+
+Linux (x64) and macOS (Apple Silicon) run Zinc from source and have a packaged build. The Word add-in (.NET), the installer (Inno Setup), the connector host and the sign-in helper (WebView2) are Windows only, and so is auto-update: the AppImage and the disk image are replaced by downloading a new release.
+
+### Requirements
+
+Both: Bun 1.4.4, `cargo`, and the one-time setup above (the document worker, reader and note editor builds use `bash`). The custom GPUIX addon is not used; the npm binary is.
+
+Linux:
+
+- `libxkbcommon-x11-0` and `libxcb-xkb1`. Without them the GPUIX addon does not load. Minimal systems such as WSL2 often lack them.
+- For snapshots, EPUBs and the note editor: GTK 4 and WebKitGTK 6 (`libwebkitgtk-6.0-4`). Without them those open in the default app; the library, the PDF reader and sync do not need them.
+- For printing: the GTK print dialog and CUPS (`gpui-ui/src/reader/printGtk.ts`).
+- The web view is a GTK window over the app window, so the app runs on X11. On a Wayland desktop it runs under XWayland (`gpui-ui/src/shell/linuxDisplay.ts` switches it before GPUIX loads). `ZN_WAYLAND=1` keeps native Wayland, with no web view.
+
+macOS:
+
+- Apple Silicon only, because the GPUIX addon ships for arm64.
+- The web view is a `WKWebView` placed into GPUI's view (`gpui-ui/src/webview/cocoa.ts`). Printing goes through PDFKit (`gpui-ui/src/reader/printMac.ts`).
+- Xcode command line tools (for `cargo` and the system tools below).
+
+### Running from source
+
+The steps are the ones in [Running from source](#running-from-source), with `cargo build --release` in `gpui-ui/native/pdf` and `bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts` for the PDF reader (the script picks the archive for your OS and CPU):
+
+```
+cd gpui-ui
+ZN_DB=/path/to/library-COPY.sqlite bun src/main.tsx
+```
+
+Settings, state files and logs go in per-OS folders (`core/src/platform-dirs.ts`):
+
+| | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Settings, logs | `%APPDATA%` | `~/Library/Application Support` | `$XDG_CONFIG_HOME` (`~/.config`) |
+| Default library | `%APPDATA%` | `~/Library/Application Support` | `$XDG_DATA_HOME` (`~/.local/share`) |
+
+An explicit `APPDATA` in the environment wins on every OS. Tests use that to point a run at a scratch folder.
+
+### Packaging
+
+```
+bun gpui-ui/scripts/package.ts           # gpui-ui/out/package/zotero-next-gpui/
+bun gpui-ui/scripts/appimage.ts          # Linux x64: gpui-ui/out/appimage/Zinc-<version>-x86_64.AppImage
+bun gpui-ui/scripts/dmg.ts               # macOS: gpui-ui/out/dmg/Zinc-<version>-<arch>.dmg
+```
+
+`appimage.ts` and `dmg.ts` run `package.ts` first. Pass `--no-package` to reuse the existing folder, `--package <dir>` to wrap another folder, and `--out <dir>` to write elsewhere. The web parts (document worker, reader host, note host) must be built before either script, as for any package.
+
+**AppImage** (`appimage.ts`, Linux x64 only):
+
+- It builds an AppDir (`AppRun`, a `.desktop` file, the icon, and the package folder under `usr/lib/zinc/`) and runs appimagetool 1.9.1 with the type2-runtime 20251108.
+- Both tools are pinned, checked against SHA-256 and downloaded once into `out/appimage/tools`. `ZN_APPIMAGETOOL` points at another appimagetool.
+- appimagetool runs with `--appimage-extract-and-run`, so building needs no FUSE (WSL2 and containers work).
+- It bundles `libxkbcommon-x11.so.0` and `libxcb-xkb.so.1` as a fallback in `usr/lib/zinc/lib`. `AppRun` puts that folder after the system's, so a system copy wins. The script finds the libraries with `ldconfig`, or in the folders of `ZN_APPIMAGE_LIB_DIRS` (a colon-separated list). It warns if it finds neither.
+- It does not bundle glibc, X11, Vulkan, fontconfig, GTK 4 or WebKitGTK. It does not add itself to the desktop menu; AppImageLauncher or Gear Lever do that.
+- Output: `Zinc-<version>-x86_64.AppImage` and a `.sha256` file. It has been built and smoke-tested in WSL2 (Ubuntu 26.04).
+
+**Disk image** (`dmg.ts`, macOS only):
+
+- It builds `Zinc.app`: code (the exe and the two dylibs) in `Contents/MacOS`, everything else in `Contents/Resources`, an `Info.plist`, and `Zinc.icns` made from `assets/icon.png` with `sips` and `iconutil`.
+- It signs the bundle ad hoc (`codesign --sign -`), because Apple Silicon runs no unsigned code. With `ZN_MAC_SIGN_IDENTITY` set to a "Developer ID Application: ..." identity, it signs with that identity and the hardened runtime instead. It does not notarise. An ad-hoc signed app needs right-click, Open (or System Settings, Privacy and Security, Open Anyway) on first start.
+- It writes a compressed UDZO image with `hdiutil`, holding `Zinc.app` and a link to Applications.
+- Output: `Zinc-<version>-<arm64|x64>.dmg` and a `.sha256` file. It has not been run on a Mac yet; the first run will be the CI job (see [Releasing](releasing.md)).
+
+`<version>` is the release part of the version stamp (see [Releasing](releasing.md)), so set `ZN_RELEASE` to name a release build.
 
 ## Windows notes
 
