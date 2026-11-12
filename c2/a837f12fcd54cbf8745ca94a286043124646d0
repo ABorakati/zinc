@@ -1,0 +1,27 @@
+gpui-ui/web/browser-sync-check.ts
+  s_e8244edae027cb::t_c4f09919d9252b 74
+  s_e8244edae027cb::t_2cc4f4d77222cc 9
+gpui-ui/web/browser-library-check.ts
+  s_e8244edae027cb::t_66099c4397404d 54-55
+  s_e8244edae027cb::t_716fcb0813b524 59
+gpui-ui/web/browser-db/CONTRACT.md
+  s_e8244edae027cb::t_1bd1c53a8f90f9 52,71
+gpui-ui/web/browser-db/test-background.js
+  s_e8244edae027cb::t_a8b3dd27ffa5d1 1-10,15,21-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2a837f12fcd54cbf8745ca94a286043124646d0",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
