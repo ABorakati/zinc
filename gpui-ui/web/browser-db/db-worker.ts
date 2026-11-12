@@ -11,6 +11,8 @@ import { Database, installPool } from "../sqlite";
 import { installDurableFs } from "../shims/fs";
 import { createBlobBackend } from "./blobfs";
 import { handleRequest, uploadIdsOf, ZOTERO_VERSION_HEADER, type WireRequest } from "./dispatch";
+import { startBrowserSync, type BrowserSyncHandle } from "./sync";
+import { storageClient } from "./sync-storage";
 
 const LIBRARY = "/opfs/zinc/library.sqlite";
 const FILES = "/opfs/zinc/files.sqlite";
@@ -32,6 +34,10 @@ const getDb = (): CoreDb => {
 	return db;
 };
 
+// worker -> offscreen -> chrome.storage (a worker has no `chrome`): see sync.ts
+const storage = storageClient((m) => post(m));
+let syncInfo: BrowserSyncHandle | null = null;
+
 async function open(): Promise<void> {
 	await installPool();
 	// durable files: everything the core writes under /opfs/ goes to /opfs/zinc/files.sqlite (the same pool), before the core runs
@@ -40,6 +46,13 @@ async function open(): Promise<void> {
 	installDurableFs(createBlobBackend(filesDb as never), "/opfs/");
 	const { openDb } = await import("../../../core/src/db");
 	db = openDb(LIBRARY);
+	// zotero.org sync: the key store and options are set up now; the service starts when the library's sync mode is zotero.org. A sync that
+	// cannot start must not stop the library from opening.
+	try {
+		syncInfo = await startBrowserSync(db, storage);
+	} catch (e) {
+		console.error("[browser-db] zotero.org sync not started:", e instanceof Error ? e.message : e);
+	}
 }
 
 const ready = open().then(
@@ -57,7 +70,7 @@ const portState = (p: number) => {
 };
 
 // for automated checks (web/browser-library-check.ts reads the journal mode and schema version through the DevTools protocol)
-(globalThis as Record<string, unknown>).znDb = { get db() { return db; } };
+(globalThis as Record<string, unknown>).znDb = { get db() { return db; }, get sync() { return syncInfo; }, hasChrome: typeof (globalThis as { chrome?: unknown }).chrome !== "undefined" };
 
 let announced = 0;
 /** After a request: rows changed since the last notice? (SQLite's total_changes() counts this connection's writes, which are all of them.) */
@@ -91,6 +104,7 @@ async function serve(p: number, msg: WireRequest): Promise<void> {
 }
 
 self.onmessage = (e: MessageEvent) => {
+	if ((e.data as { t?: string })?.t === "storage-res") { storage.onReply(e.data); return; }
 	const { p, m, gone } = e.data as { p: number; m?: Record<string, any>; gone?: boolean };
 	if (gone) { uploadsOf.delete(p); return; }
 	switch (m?.t) {

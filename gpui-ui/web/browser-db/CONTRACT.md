@@ -64,11 +64,21 @@ Frames on the port, besides the native host's: the offscreen document sends `{t:
 - Settings that are not in the library: `chrome.storage.local`, key `zincBrowserLibrary`, holds `{saveTarget: "app" | "browser", firstRunDone: boolean}`.
 - The zotero.org API key: `chrome.storage.local` key `zincZoteroApiKey`. It is read only in the offscreen document or worker, never sent to a tab.
 
+## zotero.org sync (WP S)
+
+`db-worker.ts` calls `startBrowserSync` (`sync.ts`) after `openDb`: `setDefaultKeyStore(chromeKeyStore(...))`, then the sync options `{ fileRedirect: "follow", apiBase }`. The service starts at once when the library's sync mode (`syncMode(db)`) is `zotero-org`; otherwise the options are only registered, so Settings > Sync > "zotero.org" (`POST /api/websync/mode`) starts it later. Settings > Sync talks to `/api/websync/*` through the normal `api` frames; nothing else is needed.
+
+- **The key never leaves the worker side.** A worker has no `chrome`, and an offscreen document has only `chrome.runtime` (no `chrome.storage`; measured by the check). So the key store is `chromeKeyStore(area)` with a proxy area (`sync-storage.ts`): worker -> offscreen `{t:"storage", rid, op, name, value}`, answered `{t:"storage-res", rid, value|error}` (`offscreen.ts`). The offscreen page uses `chrome.storage.local` when it has it; otherwise it asks the extension's service worker: `chrome.runtime.sendMessage({zincStorage: {op: "get"|"set"|"remove", name, value}})`, answered `{ok: true, value}` or `{ok: false, error}`. **The connector's background must implement that handler.** Reference: `sync-test-background.js`. It must accept the message only from the library's offscreen document (`sender.id === chrome.runtime.id` and `sender.url` = `.../library/offscreen.html`), only for the names `zincZoteroApiKey` and `zincTestZoteroApiBase`, and only write the key. The offscreen page refuses any other name and any write to the override.
+- **Test-only API base.** The API base is `https://api.zotero.org`. `chrome.storage.local` key `zincTestZoteroApiBase` replaces it only when its value matches `^http://127\.0\.0\.1:\d+$` (nothing else, not even `localhost`); it is read once when the worker starts. Only an extension page can set it, and the product never does. `web/browser-sync-check.ts` uses it to reach a local mock.
+- **Manifest.** `host_permissions` for the file hosts (`<all_urls>` or the storage hosts), `declarativeNetRequest` with `browser-db/dnr-rules.json` as a static ruleset (it removes `Zotero-API-Key` from every request except those to `api.zotero.org`), and `storage`.
+- `node:path` in the browser build (`web/shims/path.ts`) follows POSIX rules for `/`-rooted paths (case-sensitive); drive-letter and UNC paths keep their Windows reading.
+
 ## Checks
 
 The checks use Chrome for Testing (`~/.cache/puppeteer/chrome/win64-*`) with a fresh profile under the agent's own work folder, and these CDP ports:
 - A: 9351
 - D: 9352
 - E: 9353
+- S (`web/browser-sync-check.ts`): 9354
 
 A native-host registration in a check uses the name `com.zotero_next.connector_host_e2e_<wp>`, under `HKCU\Software\Chromium` only, and is removed at the end. Never touch `Software\Google\Chrome`, the installed host, the user's browser or `data/library.sqlite`.

@@ -2,6 +2,8 @@
 // CONTRACT.md). It owns the one database worker and is the extension's only door to it: the library tab and the connector connect a
 // port named "zinc-db" (chrome.runtime.connect) and speak the native host's frames over it; this page forwards each frame to the
 // worker (db-worker.ts) and each reply back to the port it belongs to, and sends `changed` notices to every port.
+import { answerStorage } from "./sync-storage";
+
 declare const chrome: {
 	runtime: {
 		onConnect: { addListener(f: (port: Port) => void): void };
@@ -22,6 +24,8 @@ let lastChanged: unknown = null;
 const worker = new Worker(new URL("db-worker.js", location.href), { type: "module" });
 worker.onmessage = (e: MessageEvent) => {
 	const d = e.data as { p?: number; m?: unknown; t?: string; error?: string };
+	// the worker has no `chrome`: it asks this page for the few storage values sync needs (sync.ts)
+	if (d.t === "storage") { void answerStorage(chrome as never, d as never).then((r) => worker.postMessage(r)); return; }
 	if (d.p !== undefined) { ports.get(d.p)?.postMessage(d.m); return; }
 	if (d.t === "ready") state = { t: "ready" };
 	else if (d.t === "failed") state = { t: "failed", error: String(d.error) };
