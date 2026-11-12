@@ -8,9 +8,12 @@
 // Built by web/build.ts as one self-contained module worker script next to sqlite3.wasm (no shared chunks, no blob: URLs).
 import "../globals";
 import { Database, installPool } from "../sqlite";
+import { installDurableFs } from "../shims/fs";
+import { createBlobBackend } from "./blobfs";
 import { handleRequest, uploadIdsOf, ZOTERO_VERSION_HEADER, type WireRequest } from "./dispatch";
 
 const LIBRARY = "/opfs/zinc/library.sqlite";
+const FILES = "/opfs/zinc/files.sqlite";
 /** Raw bytes per response chunk (connector-host/src/frames.ts RESPONSE_CHUNK_BYTES): base64 makes it 4/3 larger, under Chrome's 1 MB. */
 const CHUNK = 600_000;
 
@@ -29,11 +32,10 @@ const getDb = (): Database => {
 
 async function open(): Promise<void> {
 	await installPool();
-	// ---- integration point (package C: durable files) ---------------------------------------------------------------------------
-	// Here, after the pool exists and before the core runs: install the durable file store (shims/fs.ts installDurableFs over
-	// browser-db/blobfs.ts, a file store in /opfs/zinc/files.sqlite: `new Database("/opfs/zinc/files.sqlite")` opens it in the same
-	// pool). Until then files the core writes under /opfs/ stay in memory, as in the demo.
-	// ------------------------------------------------------------------------------------------------------------------------------
+	// durable files: everything the core writes under /opfs/ goes to /opfs/zinc/files.sqlite (the same pool), before the core runs
+	const filesDb = new Database(FILES);
+	filesDb.exec("PRAGMA synchronous = NORMAL");
+	installDurableFs(createBlobBackend(filesDb as never), "/opfs/");
 	const { openDb } = await import("../../../core/src/db");
 	db = openDb(LIBRARY);
 }

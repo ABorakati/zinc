@@ -111,10 +111,13 @@ const probe = {
 	/** browser mode: when each `changed` notice arrived (performance.now()) and its dataVersion */
 	notices: [] as { at: number; dataVersion?: number }[],
 	/** browser mode: one /api call as the page makes it (for the headless check); resolves to {status, json} */
-	async api(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+	async api(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown; text: string }> {
 		const { apiFetch } = await import("../src/api");
 		const res = await apiFetch(path, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-		return { status: res.status, json: await res.json().catch(() => null) };
+		const text = await res.text();
+		let json: unknown = null;
+		try { json = JSON.parse(text); } catch { /* a file, not JSON */ }
+		return { status: res.status, json, text };
 	},
 	/** ids of the annotations the reader has loaded for an open PDF */
 	async annotationIds(attachmentKey: string): Promise<string[]> {

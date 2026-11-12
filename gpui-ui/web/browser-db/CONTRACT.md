@@ -41,6 +41,18 @@ Pages and URLs inside the build (`gpui-ui/dist-extension`, copied by the connect
 
 The offscreen document posts `{t:"changed", dataVersion}` to every connected port after a write commits. The library tab refreshes on it, in place of polling.
 
+## `{zincEnsureDb: true}`: getting the database owner started
+
+Whoever needs the database (the library tab with `?mode=browser`, the connector's save code) first sends `chrome.runtime.sendMessage({zincEnsureDb: true})`. The extension's service worker answers it:
+- if there is no offscreen document, it creates one: `chrome.offscreen.createDocument({url: "library/offscreen.html", reasons: ["WORKERS"], justification: "Zinc library database"})`. An "already exists" / "only a single offscreen document" error means it is there: not a failure. Concurrent messages share one `createDocument` call.
+- it replies `{ok: true}` once the document exists (the database inside may still be opening: requests sent on the port wait for it), or `{ok: false, error}`.
+
+Then connect `chrome.runtime.connect({name: "zinc-db"})`. If the port disconnects (the browser closed the offscreen document), send `{zincEnsureDb: true}` again and reconnect. The manifest needs the permissions `offscreen` and `unlimitedStorage`. A reference implementation is `test-background.js` (used by the check).
+
+`library/offscreen.html` does not assume it is a top-level offscreen document. Chrome allows one offscreen document per extension, so in the real extension the connector's own offscreen page loads it as a hidden iframe (`<iframe src="library/offscreen.html">`); it listens with `chrome.runtime.onConnect` and starts its worker from there, and works the same either way. `browser-library-check.ts --iframe` runs the whole check that way (`test-background-iframe.js`). In that case the service worker's `{zincEnsureDb}` handler creates the connector's offscreen document, which must contain the iframe.
+
+Frames on the port, besides the native host's: the offscreen document sends `{t:"changed", dataVersion}` unprompted (no `id`). Uploads (`up` frames) belong to the port that sent them. A `hello` frame is answered with `{t:"hello", id, version, db, pid: 0, proto: 2}`.
+
 ## Storage (OPFS, extension origin)
 
 - Database: `@sqlite.org/sqlite-wasm`, VFS `opfs-sahpool` (pool directory `.zinc-sahpool`), database name `/zinc/library.sqlite`. The core sees `db.filename === "/opfs/zinc/library.sqlite"`, so `storageRoot()` is `/opfs/zinc/storage`.

@@ -24,6 +24,9 @@ export async function initSqlite(): Promise<void> {
  * time: right after a reload the previous owner may still hold it, so a failed install is retried for a few seconds.
  */
 export async function installPool(directory = ".zinc-sahpool"): Promise<void> {
+	// the module tries its "opfs" and "opfs-wl" VFSs first when SharedArrayBuffer exists, and logs errors when their async worker
+	// cannot start (an extension page is not cross-origin isolated). This uses the sahpool VFS, which needs none of that.
+	(globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = undefined;
 	await initSqlite();
 	let last: unknown;
 	for (let i = 0; i < 40; i++) {
@@ -61,6 +64,8 @@ export class Statement {
 	get columnNames(): string[] { return this.stmt.getColumnNames(); }
 	private bind(params: Params): void {
 		this.stmt.reset(true);
+		// bun's db.run(sql, [a, b]) / stmt.run([a, b]): one array is the positional list
+		if (params.length === 1 && Array.isArray(params[0])) params = params[0] as Value[];
 		if (params.length === 0) return;
 		const one = params[0];
 		if (params.length === 1 && one !== null && typeof one === "object" && !(one instanceof Uint8Array)) {
@@ -149,6 +154,7 @@ export class Database {
 	run(sql: string, ...params: Params): { changes: number; lastInsertRowid: number } {
 		// the core's migrations ask for WAL; a sahpool database keeps its rollback journal
 		if (this.walless) sql = sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL\s*;?/gi, "");
+		if (!sql.trim()) return { changes: 0, lastInsertRowid: 0 };
 		if (params.length) return this.prepare(sql).run(...params);
 		this.raw.exec(sql);
 		return { changes: this.raw.changes(), lastInsertRowid: Number(lib().capi.sqlite3_last_insert_rowid(this.raw.pointer)) };
