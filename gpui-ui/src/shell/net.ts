@@ -1,9 +1,12 @@
 // JSON calls to the core API for the shell's own screens (Settings, sync). api.ts only has the list queries; this is the generic
-// request. It goes over HTTP to BASE_URL, which is the external core or the in-process core's loopback server (it cannot reach
-// the ZN_CORE_DIRECT shortcut, which has no HTTP: Settings then shows "Loading…" for server-side settings).
-import { BASE_URL } from "../api";
+// request. An /api path goes through api.ts's request(), like every other call of the UI: the external core, the in-process
+// core's loopback server, the ZN_CORE_DIRECT shortcut, or the browser build's in-page core (setDirect). Before, it always
+// fetched BASE_URL: with the shortcut Settings showed "Loading…", and the browser build polled http://127.0.0.1:23160 (whatever
+// listened there) every few seconds.
+import { apiRequest, BASE_URL } from "../api";
 
 export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+	if (path === "/api" || path.startsWith("/api/") || path.startsWith("/api?")) return apiRequest<T>(method, path.slice(4), body);
 	const res = await fetch(BASE_URL + path, {
 		method,
 		headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,

@@ -5,15 +5,15 @@
 // HTTP route. So the reader fetches the bytes and hands them to the cdylib (zpdf_open_bytes: one copy into the worker, which
 // is the same single in-memory copy the path-based open makes with fs::read).
 //
-// Where the request goes: api.ts's BASE_URL (an external core at ZN_URL, or the in-process core's loopback server when ZN_DB
-// is set; startCore() is awaited first so a starting in-process core is waited for). In ZN_CORE_DIRECT=1 mode the core has no
-// socket and api.ts keeps its direct handler private, so the app must wire it: `setFileFetcher((key) => handleApi(...))`.
+// Where the request goes: api.ts's apiFetch, the route of every UI call (the direct handler in ZN_CORE_DIRECT=1 mode and in the
+// browser build, else BASE_URL: an external core at ZN_URL, or the in-process core's loopback server when ZN_DB is set);
+// startCore() is awaited first so a starting in-process core is waited for. setFileFetcher() still overrides it (tests).
 //
 // Fallback (off by default): ZN_READER_SQLITE=1 resolves "key:ABCD1234" through the library database opened READ-ONLY, for
 // diagnosing a core that is down. It cannot resolve relative ("attachments:...") paths.
 import { existsSync } from "node:fs";
 import { resolveLibrary } from "../../../core/src/library-location";
-import { BASE_URL } from "../api";
+import { apiFetch, BASE_URL } from "../api";
 import { startCore } from "../core";
 import { PdfDoc } from "./pdf";
 
@@ -26,12 +26,10 @@ export class PdfLoadError extends Error {}
 
 /** Fetch an attachment's PDF bytes from the core. */
 export async function fetchAttachment(key: string, signal?: AbortSignal): Promise<Uint8Array> {
-	const core = await startCore();
+	await startCore();
 	let res: Response;
 	try {
-		if (fetcher) res = await fetcher(key, signal);
-		else if (core?.direct) throw new PdfLoadError("the core runs in direct mode (ZN_CORE_DIRECT=1): the app must call setFileFetcher() from reader/library.ts");
-		else res = await fetch(`${BASE_URL}/api/attachments/${encodeURIComponent(key)}/file`, { signal });
+		res = fetcher ? await fetcher(key, signal) : await apiFetch(`/attachments/${encodeURIComponent(key)}/file`, { signal });
 	} catch (e) {
 		if (e instanceof PdfLoadError || (e as Error).name === "AbortError") throw e;
 		throw new PdfLoadError(`cannot reach the core (${BASE_URL}): ${(e as Error).message}`);

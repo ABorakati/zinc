@@ -94,6 +94,20 @@ export function takeRecordedPaths(): string[] {
 	return r;
 }
 
+/**
+ * A raw /api request (the Response itself: headers, bytes, Range) by the route every UI call takes: the direct handler when one is
+ * set (ZN_CORE_DIRECT, the browser build's in-page core), else BASE_URL. Waits for a starting in-process core. `path` is relative
+ * to /api. Use it instead of fetch(BASE_URL + ...), which misses the direct handler.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+	if (onDemand) { const start = onDemand; onDemand = null; start(); } // the in-process core was left to start lazily (main.tsx): now it is needed
+	await gate;
+	init.signal?.throwIfAborted();
+	return direct
+		? ((await direct(new Request("http://127.0.0.1/api" + path, init))) ?? new Response('{"error":"not found"}', { status: 404 }))
+		: await fetch(BASE_URL + "/api" + path, init);
+}
+
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
 	if (method === "GET") {
 		if (recorded && PREFETCHABLE.test(path) && !recorded.includes(path) && recorded.length < 8) recorded.push(path);
@@ -104,18 +118,12 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
 			if (text != null) { try { return JSON.parse(text) as T; } catch { /* fall through to the core */ } }
 		}
 	}
-	if (onDemand) { const start = onDemand; onDemand = null; start(); } // the in-process core was left to start lazily (main.tsx): now it is needed
-	await gate;
-	signal?.throwIfAborted();
-	const init: RequestInit = {
+	const res = await apiFetch(path, {
 		method,
 		signal,
 		headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
 		body: body !== undefined ? JSON.stringify(body) : undefined,
-	};
-	const res = direct
-		? (await direct(new Request("http://127.0.0.1/api" + path, init))) ?? new Response('{"error":"not found"}', { status: 404 })
-		: await fetch(BASE_URL + "/api" + path, init);
+	});
 	if (!res.ok) {
 		let msg = res.statusText;
 		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch {}

@@ -211,7 +211,7 @@ export function SuppRow(p: { s: AcademicSession; item: SuppItem }): JSX.Element 
 	const [size, setSize] = createSignal<number | null>(null);
 	onMount(() => {
 		if (!p.item.hasFile || p.item.kind === "link") return;
-		void import("../../api").then(({ BASE_URL }) => fetch(`${BASE_URL}/api/attachments/${encodeURIComponent(p.item.key)}/file`, { method: "HEAD" }))
+		void import("../../api").then(({ apiFetch }) => apiFetch(`/attachments/${encodeURIComponent(p.item.key)}/file`, { method: "HEAD" }))
 			.then((r) => { const n = Number(r.headers.get("content-length")); if (r.ok && n > 0) setSize(n); }).catch(() => {});
 	});
 	return (
