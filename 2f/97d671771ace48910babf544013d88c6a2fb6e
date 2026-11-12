@@ -1,0 +1,36 @@
+gpui-ui/web/extension.tsx
+  s_e8244edae027cb::t_352fb66fac12c0 1-72
+gpui-ui/web/native-host.test.ts
+  s_e8244edae027cb::t_0c3c5569d51e10 1-74
+gpui-ui/src/shell/outsideChanges.test.ts
+  s_e8244edae027cb::t_0264dde7ee97ba 1-29
+gpui-ui/web/native-host.ts
+  s_e8244edae027cb::t_22b71a31d71fc5 1-98,101-108
+  s_e8244edae027cb::t_6a82d0df7cf161 99-100
+gpui-ui/src/shell/outsideChanges.ts
+  s_e8244edae027cb::t_fad56b6390bf53 1-34
+gpui-ui/web/build.ts
+  s_e8244edae027cb::t_81505cbee887f3 15-23
+  s_e8244edae027cb::t_3606906394cac9 50
+  s_e8244edae027cb::t_6693fdee63e912 3-4
+  s_e8244edae027cb::t_0331b53e701f7e 110-112
+  s_e8244edae027cb::t_004db30e6ec2bd 116-138
+gpui-ui/.gitignore
+  s_e8244edae027cb::t_55c9d553c2e001 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f97d671771ace48910babf544013d88c6a2fb6e",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
