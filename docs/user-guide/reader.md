@@ -112,7 +112,7 @@ In the Reading view you can:
 - select text and highlight, underline or comment, as in the PDF view;
 - click **Annotations** to show the side panel;
 - follow citations and figure mentions; **Back** returns you afterwards;
-- click **Aa** to change the **Font** (Source Serif 4, Georgia, Palatino Linotype, Cambria, Inter, Segoe UI or Verdana), **Text size**, **Line spacing**, **Text width** and **Theme** (Light, Sepia, Dark). **Reset** restores the defaults.
+- click **Aa** to change the **Font** (Source Serif 4, Literata, Georgia, Palatino Linotype, Cambria, Inter, System or Verdana, each button shown in its own font; **Custom…** takes any font installed on your computer: type its name or pick it from the matching fonts listed), **Text size**, **Line spacing**, **Text width** and **Theme** (Light, Sepia, Dark, each button painted in that theme's colours). **Reset** restores the defaults.
 
 The same options, and **Open PDFs in the reading view by default**, are in **Settings > Reader** under "Reading view". If no readable text is found (a scanned PDF without OCR, for example) the view says so.
 

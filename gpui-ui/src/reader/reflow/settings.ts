@@ -3,28 +3,35 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { configDir } from "../../../../core/src/platform-dirs";
+import { cleanFamily } from "../../shell/schemes";
 
 export type ThemeKind = "light" | "sepia" | "dark" | "custom";
 
 /**
- * Reading fonts. The text is drawn by GPUIX, which resolves a family by name: the app's own registered fonts ("Source Serif 4",
- * "Inter") and fonts installed on this computer (Georgia, Palatino Linotype, Cambria, Segoe UI, Verdana, ...).
+ * Reading fonts. The text is drawn by GPUIX, which resolves a family by name: the app's own bundled fonts ("Source Serif 4",
+ * "Literata", "Inter"; fonts.ts registers them), fonts installed on this computer (Georgia, Palatino Linotype, Cambria, Verdana,
+ * ...) and ".SystemUIFont", GPUI's name for the operating system's interface font (Segoe UI on Windows, San Francisco on macOS).
+ * "custom" is any installed family the user names (`customFont`).
  */
 export const FONTS = [
 	{ id: "source-serif", label: "Source Serif 4", group: "serif", family: "Source Serif 4" },
+	{ id: "literata", label: "Literata", group: "serif", family: "Literata" },
 	{ id: "georgia", label: "Georgia", group: "serif", family: "Georgia" },
 	{ id: "palatino", label: "Palatino Linotype", group: "serif", family: "Palatino Linotype" },
 	{ id: "cambria", label: "Cambria", group: "serif", family: "Cambria" },
 	{ id: "inter", label: "Inter", group: "sans", family: "Inter" },
-	{ id: "segoe", label: "Segoe UI", group: "sans", family: "Segoe UI" },
+	{ id: "system", label: "System", group: "sans", family: ".SystemUIFont" },
 	{ id: "verdana", label: "Verdana", group: "sans", family: "Verdana" },
 ] as const satisfies readonly { id: string; label: string; group: "serif" | "sans"; family: string }[];
 
-export type FontKind = (typeof FONTS)[number]["id"];
-const FONT_IDS = new Set<string>(FONTS.map((f) => f.id));
+export type FontKind = (typeof FONTS)[number]["id"] | "custom";
+const FONT_IDS = new Set<string>([...FONTS.map((f) => f.id), "custom"]);
+/** Ids of earlier versions: "segoe" was Segoe UI, which is the system font on Windows (and missing elsewhere). */
+const OLD_FONT_IDS: Record<string, FontKind> = { segoe: "system" };
 
 export interface ReadingSettings {
 	font: FontKind;
+	customFont: string; // installed family, used when font === "custom"
 	size: number; // px
 	lineHeight: number; // unitless
 	width: number; // max text column width, px
@@ -35,6 +42,7 @@ export interface ReadingSettings {
 
 export const DEFAULT_SETTINGS: ReadingSettings = {
 	font: "source-serif",
+	customFont: "",
 	size: 17,
 	lineHeight: 1.6,
 	width: 680,
@@ -57,7 +65,8 @@ export function sanitize(v: unknown): ReadingSettings {
 	const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
 	const d = DEFAULT_SETTINGS;
 	return {
-		font: typeof o.font === "string" && FONT_IDS.has(o.font) ? (o.font as FontKind) : d.font,
+		font: typeof o.font !== "string" ? d.font : FONT_IDS.has(o.font) ? (o.font as FontKind) : (OLD_FONT_IDS[o.font] ?? d.font),
+		customFont: typeof o.customFont === "string" ? cleanFamily(o.customFont) : d.customFont,
 		size: clamp(o.size, LIMITS.size, d.size),
 		lineHeight: clamp(o.lineHeight, LIMITS.lineHeight, d.lineHeight),
 		width: clamp(o.width, LIMITS.width, d.width),
@@ -129,4 +138,12 @@ export function palette(s: ReadingSettings): Palette {
 	};
 }
 
-export const fontFamilyOf = (s: ReadingSettings): string => (FONTS.find((f) => f.id === s.font) ?? FONTS[0]).family;
+/** The family the reading text is drawn with (a custom font without a name falls back to the default). */
+export const fontFamilyOf = (s: ReadingSettings): string =>
+	s.font === "custom" && s.customFont ? s.customFont : (FONTS.find((f) => f.id === s.font) ?? FONTS[0]).family;
+
+/** Background and text colour of each preset theme (the custom one is computed from `customBg`). */
+export const themeColors = (theme: ThemeKind, customBg = DEFAULT_SETTINGS.customBg): { bg: string; fg: string } => {
+	const p = palette({ ...DEFAULT_SETTINGS, theme, customBg });
+	return { bg: p.bg, fg: p.fg };
+};

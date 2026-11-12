@@ -35,7 +35,22 @@ const FILE_OF: Record<string, string[]> = {
 	Manrope: ["Manrope-Variable.ttf"],
 	"IBM Plex Sans": ["IBMPlexSans-Variable.ttf"],
 	"Source Sans 3": ["SourceSans3-Variable.ttf"],
+	// reading view only (reader/reflow/settings.ts FONTS): registered when it is chosen or its preview is on screen
+	Literata: ["Literata-Variable.ttf", "Literata-Italic-Variable.ttf"],
 };
+
+/**
+ * Make a bundled family usable now, if it is one (Literata for the reading view): its files are registered on first use. False
+ * when fonts are not set up yet or the family is not bundled (an installed font needs nothing). Blocks ~150 ms the first time.
+ */
+export function ensureFamily(family: string): boolean {
+	const files = FILE_OF[family];
+	if (!files || !host) return false;
+	for (const f of files) registerFile(host, f);
+	return true;
+}
+/** True when `family` is bundled with the app and not registered yet (ensureFamily would do work). */
+export const needsRegistering = (family: string): boolean => !!FILE_OF[family]?.some((f) => !registered.has(f));
 
 interface FontHost { registerFont?: (bytes: Buffer) => void }
 const RENDER_HOST = Symbol.for("@gpuix/solid/render-host");

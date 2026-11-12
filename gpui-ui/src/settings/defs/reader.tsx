@@ -1,6 +1,8 @@
 // Reader: defaults of the native PDF viewer, and of its reflowed "Reading view" (the article view of the web reader: the toolbar's
 // "Reading view" button; font, size, spacing, width and theme are also in the view's own "Aa" panel).
-import { Btn, Choice, Toggle } from "../controls";
+import { Show } from "solid-js";
+import { cleanFamily } from "../../shell/schemes";
+import { Btn, Choice, TextField, Toggle } from "../controls";
 import { READING_FONTS, readerPrefs, readingView, ZOOM_CHOICES, zoomLabel, type PageAppearance, type ReadingTheme, type ScrollModePref, type SidebarStart, type SpreadModePref } from "../readerPrefs";
 import { registerSection, registerSettings } from "../registry";
 
@@ -85,9 +87,17 @@ registerSettings([
 	},
 	{
 		id: "reader.readingView.font", section: "reader", group: "Reading view", label: "Font",
-		keywords: ["typography", "typeface", "serif", "sans"],
+		keywords: ["typography", "typeface", "serif", "sans", "literata", "system font", "custom font"],
 		control: () => (
-			<Choice<string> value={readingView.settings().font} onChange={(v) => readingView.set({ font: v as never })} options={READING_FONTS.map((f) => ({ value: f.id, label: f.label }))} width={200} />
+			<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+				<Choice<string>
+					value={readingView.settings().font} onChange={(v) => readingView.set({ font: v as never })} width={200}
+					options={[...READING_FONTS.map((f) => ({ value: f.id as string, label: f.label })), { value: "custom", label: "Other installed font…" }]}
+				/>
+				<Show when={readingView.settings().font === "custom"}>
+					<TextField value={readingView.settings().customFont} placeholder="Installed font, e.g. Aptos" width={200} onCommit={(v) => readingView.set({ customFont: cleanFamily(v) })} />
+				</Show>
+			</div>
 		),
 	},
 	{

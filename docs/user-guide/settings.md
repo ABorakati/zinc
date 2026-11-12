@@ -89,7 +89,7 @@ The reflowed article view of a PDF (the **Reading view** button in the reader's 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
 | Open PDFs in the reading view by default | Open the reflowed view instead of the PDF pages. | Off |
-| Font | Typeface of the reading text. | **Source Serif 4**, Georgia, Palatino Linotype, Cambria, Inter, Segoe UI, Verdana |
+| Font | Typeface of the reading text. | **Source Serif 4**, Literata, Georgia, Palatino Linotype, Cambria, Inter, System (the operating system's font), Verdana, or Other installed font… (type its name) |
 | Text size | Size of the reading text. | 14, 16, **17**, 18, 20, 22, 24, 28 px (the view's panel allows 12 to 30) |
 | Line spacing | Space between lines. | 1.30, 1.45, **1.60**, 1.80, 2.00 |
 | Text width | Widest the text column gets. | 520, 600, **680**, 760, 880, 1000 px |

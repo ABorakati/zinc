@@ -28,7 +28,9 @@ import type { Block, DocStructure, PdfRect } from "../structure/types";
 import { buildUnit, byPage, glyphsOfRunRange, locateRun, rangesFor, touches, type Glyph, type PageRects, type Unit } from "./anchor";
 import { bestTarget, buildItems, firstItemOnPage, tocEntries, type ReflowItem } from "./build";
 import { htmlText, htmlToMarkdown, htmlToMarkedMarkdown, htmlToPlain } from "./html";
-import { FONTS, fontFamilyOf, LIMITS, palette, type Palette, type ReadingSettings, type ThemeKind } from "./settings";
+import { ensureFamily } from "../../fonts";
+import { fontFamilyOf, palette, type Palette, type ReadingSettings } from "./settings";
+import { makeChip, SettingsPanel } from "./SettingsPanel";
 
 export type LoadState =
 	| { phase: "loading"; pct: number }
@@ -440,7 +442,8 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	};
 
 	// ---- rendering of the items
-	const family = () => fontFamilyOf(st());
+	/** the reading family; a bundled one (Literata) is registered before the text names it */
+	const family = () => { const f = fontFamilyOf(st()); ensureFamily(f); return f; };
 	const base = () => ({ color: pal().fg, fontFamily: family(), fontSize: st().size, lineHeight: Math.round(st().size * st().lineHeight * 10) / 10 });
 
 	function Row(r: { id: string; gap?: number; children: JSX.Element }): JSX.Element {
@@ -585,55 +588,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	/** GPUIX only hit-tests a box that paints something: a "transparent" (or unfilled) clickable never gets its click. A fill of
 	 *  almost no alpha is invisible and still counts. */
 	const hitFill = () => withAlpha(pal().bg, 0.02);
-	function Chip(c: { label?: string; icon?: string; on?: boolean; onClick: () => void; w?: number; disabled?: boolean; refEl?: (el: { id: number }) => void }): JSX.Element {
-		return (
-			<div
-				ref={(el: { id: number }) => c.refEl?.(el)}
-				onClick={() => { if (!c.disabled) c.onClick(); }}
-				style={{
-					display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, height: 26, paddingLeft: 9, paddingRight: 9, borderRadius: 6, flexShrink: 0,
-					borderWidth: 1, borderColor: c.on ? pal().fg : pal().rule, backgroundColor: c.on ? pal().panel : hitFill(), cursor: c.disabled ? "default" : "pointer",
-					opacity: c.disabled ? 0.45 : 1, ...(c.w ? { width: c.w } : {}),
-				}}
-			>
-				<Show when={c.icon}><Icon name={c.icon!} size={13} color={pal().fg} /></Show>
-				<Show when={c.label}><text style={{ color: pal().fg, fontFamily: "Inter", fontSize: 12, whiteSpace: "nowrap" }}>{c.label!}</text></Show>
-			</div>
-		);
-	}
-	const label = (t: string): JSX.Element => <text style={{ color: pal().muted, fontFamily: "Inter", fontSize: 11, width: 74, flexShrink: 0 }}>{t}</text>;
-	function Stepper(c: { name: string; value: string; dec(): void; inc(): void }): JSX.Element {
-		return (
-			<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
-				{label(c.name)}
-				<Chip icon="minus" onClick={c.dec} />
-				<div style={{ width: 52, display: "flex", justifyContent: "center" }}><text style={{ color: pal().fg, fontFamily: "Inter", fontSize: 12 }}>{c.value}</text></div>
-				<Chip icon="plus" onClick={c.inc} />
-			</div>
-		);
-	}
-	const step = (v: number, d: number, [lo, hi]: readonly [number, number], dp = 0) => Math.min(hi, Math.max(lo, Math.round((v + d) * 10 ** dp) / 10 ** dp));
-	const THEMES: { id: ThemeKind; label: string }[] = [{ id: "light", label: "Light" }, { id: "sepia", label: "Sepia" }, { id: "dark", label: "Dark" }];
-
-	const settingsPanel = (): JSX.Element => (
-		<div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderBottomWidth: 1, borderColor: pal().rule, backgroundColor: pal().panel, flexShrink: 0 }}>
-			<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-				{label("Font")}
-				<For each={FONTS}>{(f) => <Chip label={f.label} on={st().font === f.id} onClick={() => p.setSettings({ font: f.id })} />}</For>
-			</div>
-			<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
-				<Stepper name="Size" value={`${st().size}px`} dec={() => p.setSettings({ size: step(st().size, -1, LIMITS.size) })} inc={() => p.setSettings({ size: step(st().size, 1, LIMITS.size) })} />
-				<Stepper name="Line spacing" value={st().lineHeight.toFixed(2)} dec={() => p.setSettings({ lineHeight: step(st().lineHeight, -0.05, LIMITS.lineHeight, 2) })} inc={() => p.setSettings({ lineHeight: step(st().lineHeight, 0.05, LIMITS.lineHeight, 2) })} />
-				<Stepper name="Text width" value={`${st().width}px`} dec={() => p.setSettings({ width: step(st().width, -40, LIMITS.width) })} inc={() => p.setSettings({ width: step(st().width, 40, LIMITS.width) })} />
-			</div>
-			<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
-				{label("Theme")}
-				<For each={THEMES}>{(th) => <Chip label={th.label} on={st().theme === th.id} onClick={() => p.setSettings({ theme: th.id })} />}</For>
-				<div style={{ flexGrow: 1 }} />
-				<Chip label="Reset" onClick={p.resetSettings} />
-			</div>
-		</div>
-	);
+	const Chip = makeChip(pal);
 
 	let rootEl: { id: number } | undefined;
 	let tocBtn: { id: number } | undefined;
@@ -723,7 +678,7 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 			style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, minWidth: 0, backgroundColor: pal().bg, position: "relative" }}
 		>
 			{bar()}
-			<Show when={settingsOpen()}>{settingsPanel()}</Show>
+			<Show when={settingsOpen()}><SettingsPanel pal={pal} settings={st} setSettings={p.setSettings} reset={p.resetSettings} Chip={Chip} /></Show>
 			<Switch>
 				<Match when={p.state().phase === "loading"}>
 					{message("loader-circle", "Analysing the document layout...", false, (p.state() as { pct: number }).pct)}
