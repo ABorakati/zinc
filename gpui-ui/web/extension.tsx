@@ -10,6 +10,7 @@ import { render } from "@gpuix/solid";
 import { createComponent, createSignal, Show, type Component } from "solid-js";
 import { setDirect } from "../src/api";
 import { applyAppearance, setThemePrefs, startAppearance } from "../src/shell/appearance";
+import { setBrowserLibrary } from "../src/shell/libraryMode";
 import { bindUiState } from "../src/shell/prefs";
 import { handleWindowKeyDown } from "../src/shell/shortcuts";
 import { fontFamilyNames, tw } from "../src/theme";
@@ -28,6 +29,7 @@ declare const chrome: {
 // ?mode=browser: the library lives in this browser (web/browser-db: an offscreen document owns a SQLite database on OPFS), not in the
 // desktop app behind the native host. The same frames go over an extension port named "zinc-db" instead (browser-db/CONTRACT.md).
 const BROWSER = new URLSearchParams(location.search).get("mode") === "browser";
+setBrowserLibrary(BROWSER); // settings read it (src/shell/libraryMode.ts): the browser library has no desktop Zotero folder
 /** Ask the extension's service worker for the database owner (it creates the offscreen document if there is none): {zincEnsureDb: true}. */
 const ensureDb = () => new Promise<void>((resolve, reject) => {
 	chrome.runtime.sendMessage({ zincEnsureDb: true }, (r) => {
