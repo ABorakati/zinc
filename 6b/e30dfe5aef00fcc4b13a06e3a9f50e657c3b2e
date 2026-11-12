@@ -1,0 +1,21 @@
+gpui-ui/web/browser-db/CONTRACT.md
+  s_e8244edae027cb::t_0db7f95360fa85 1-62
+docs/design/browser-edition.md
+  s_e8244edae027cb::t_6c638968896e58 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6be30dfe5aef00fcc4b13a06e3a9f50e657c3b2e",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
