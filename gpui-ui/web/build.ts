@@ -112,6 +112,52 @@ if (!result?.success) {
 	}
 }
 
+// the browser library (web/browser-db, extension build only): the offscreen document that owns the database (offscreen.html +
+// offscreen.js) and the module worker it starts (db-worker.js: the core and SQLite WebAssembly on the opfs-sahpool VFS, one file, no
+// shared chunks, next to sqlite3.wasm which it loads itself). Built like the page's bundle: Node-only imports become stubs.
+if (EXT) {
+	const bdb = join(here, "browser-db");
+	for (const entry of ["db-worker", "offscreen"]) {
+		let r: Awaited<ReturnType<typeof Bun.build>> | undefined;
+		for (let pass = 0; pass < 80; pass++) {
+			r = await Bun.build({
+				entrypoints: [join(bdb, `${entry}.ts`)],
+				outdir: out,
+				target: "browser",
+				format: "esm", // a module worker: the SQLite loader reads import.meta.url
+				minify: !process.argv.includes("--debug"),
+				throw: false,
+				naming: { entry: "[name].js", asset: "[name]-[hash].[ext]" },
+				define: { "process.env.NODE_ENV": '"production"' },
+				plugins: [shims],
+			});
+			if (r.success) break;
+			let learned = 0;
+			for (const l of r.logs) {
+				const m = /No matching export in "stub:([^"]+)" for import "([^"]+)"/.exec(String(l));
+				if (!m) continue;
+				const s = names.get(m[1]!) ?? new Set<string>();
+				if (!s.has(m[2]!)) { s.add(m[2]!); learned++; }
+				names.set(m[1]!, s);
+			}
+			if (!learned) break;
+		}
+		if (!r?.success) {
+			for (const l of r?.logs ?? []) console.error(String(l).slice(0, 400));
+			throw new Error(`browser library build failed (${entry})`);
+		}
+	}
+	// MV3: no inline script
+	writeFileSync(join(out, "offscreen.html"), `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Zinc library database</title></head>
+<body>
+<script type="module" src="offscreen.js"></script>
+</body>
+</html>
+`);
+}
+
 // what main.tsx fetches next to the bundle: the demo library, the Lucide icons (src/icons.tsx reads them from disk), the collection
 // colours and icons
 const iconDir = join(root, "node_modules", "lucide-static", "icons");
