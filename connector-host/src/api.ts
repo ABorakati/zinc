@@ -8,14 +8,19 @@
 //   to the app, and the sync engine does not run in the host) and /api/integrations/ (tokens of connected services).
 // - POST /api/ui/selection: the library view posts the collection it shows (src/store.ts). The core keeps it in this host
 //   process's memory only (core/src/connector/state.ts), so it changes nothing on disk. Without it every view change logs an error.
-// Everything else (item edits, collections, tags, trash, imports, attachment writes, and the routes that open a file, folder or
-// URL on this computer) answers 403 until editing is enabled on purpose.
+// - PUT and DELETE /api/attachments/<key>/annotations: the PDF reader in the page creates, edits and deletes annotations (the
+//   first real write). They go through handleApi like the desktop app's, so the core's checks (read-only group libraries) apply
+//   and the sync outbox records them for the next sync. Only this exact route: not the attachment's file, not its item.
+// Everything else (item edits, collections, tags, trash, imports, attachment writes, page edits, and the routes that open a file,
+// folder or URL on this computer) answers 403 until editing is enabled on purpose.
 import type { Database } from "bun:sqlite";
 import { isBusyError } from "../../core/src/connector/handlers";
 
 const READ_REFUSED = /^\/api\/(sync|websync|integrations)(\/|$)/;
 const WRITES_ALLOWED: { method: string; path: RegExp; why: string }[] = [
 	{ method: "POST", path: /^\/api\/ui\/selection$/, why: "the view the page shows; kept in host memory only" },
+	{ method: "PUT", path: /^\/api\/attachments\/[A-Za-z0-9]{1,32}\/annotations$/, why: "the reader saves new and changed annotations" },
+	{ method: "DELETE", path: /^\/api\/attachments\/[A-Za-z0-9]{1,32}\/annotations$/, why: "the reader deletes annotations" },
 ];
 
 /** null when the request may go to the core, else why it is refused. */

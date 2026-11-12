@@ -104,6 +104,57 @@ describe("api method: writes", () => {
 	});
 });
 
+describe("api method: annotations (the reader's writes)", () => {
+	const outbox = () => {
+		const db = repo.openDb(dbPath);
+		try {
+			return (db.query("SELECT count(*) n FROM sync_outbox").get() as { n: number }).n;
+		} finally {
+			db.close(true);
+		}
+	};
+	const ann = (id: string, comment = "") => ({
+		id,
+		type: "highlight",
+		color: "#ffd400",
+		sortIndex: "00000|000100|00072",
+		position: { pageIndex: 0, rects: [[72, 700, 300, 718]] },
+		text: "Fixture article",
+		comment,
+		pageLabel: "1",
+		dateModified: new Date().toISOString(),
+	});
+	const path = () => `/api/attachments/${pdfKey}/annotations`;
+
+	test("create, edit and delete round trip through handleApi, recorded in the sync outbox", async () => {
+		const before = outbox();
+		const put = await h.call("api", { http: "PUT", path: path(), json: [ann("ANNOTA01")] });
+		expect(put.status).toBe(200);
+		let got = await h.call("api", { http: "GET", path: path() });
+		expect(got.json.map((a: { id: string; text: string }) => [a.id, a.text])).toEqual([["ANNOTA01", "Fixture article"]]);
+		const afterCreate = outbox();
+		expect(afterCreate).toBeGreaterThan(before);
+
+		expect((await h.call("api", { http: "PUT", path: path(), json: [ann("ANNOTA01", "edited")] })).status).toBe(200);
+		got = await h.call("api", { http: "GET", path: path() });
+		expect(got.json[0].comment).toBe("edited");
+
+		const del = await h.call("api", { http: "DELETE", path: path(), json: { ids: ["ANNOTA01"] } });
+		expect(del.status).toBe(200);
+		expect((await h.call("api", { http: "GET", path: path() })).json).toEqual([]);
+		expect(outbox()).toBeGreaterThan(afterCreate);
+	});
+
+	test("only the annotations route is open: the file, the item and other verbs stay refused", async () => {
+		expect((await h.call("api", { http: "PUT", path: `/api/attachments/${pdfKey}/file`, bytes: new Uint8Array([1, 2, 3]), headers: { "Content-Type": "application/pdf" } })).status).toBe(403);
+		expect((await h.call("api", { http: "POST", path: path(), json: [ann("ANNOTA02")] })).status).toBe(403);
+		expect((await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "x" } } })).status).toBe(403);
+		expect((await h.call("api", { http: "PUT", path: `/api/attachments/../items/${itemKey}/annotations`, json: [] })).status).not.toBe(200);
+		const file = await h.call("api", { http: "GET", path: `/api/attachments/${pdfKey}/file` });
+		expect(Buffer.compare(Buffer.from(file.bytes), Buffer.from(pdfBytes))).toBe(0); // the PDF itself was not touched
+	});
+});
+
 describe("api method: changes made by another process", () => {
 	test("`ext` from GET /api/ui/selection moves when another connection commits", async () => {
 		const before = (await h.call("api", { http: "GET", path: "/api/ui/selection" })).json.ext;
@@ -126,6 +177,11 @@ describe("apiRefusal", () => {
 		expect(apiRefusal("POST", "/api/ui/selection")).toBeNull();
 		expect(apiRefusal("POST", "/api/ui/reveal")).not.toBeNull();
 		expect(apiRefusal("PUT", "/api/tag-colors")).not.toBeNull();
+		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/annotations")).toBeNull();
+		expect(apiRefusal("DELETE", "/api/attachments/ABCD1234/annotations")).toBeNull();
+		expect(apiRefusal("POST", "/api/attachments/ABCD1234/annotations")).not.toBeNull();
+		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/file")).not.toBeNull();
+		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/annotations/extra")).not.toBeNull();
 		expect(apiRefusal("GET", "/api/sync")).not.toBeNull();
 		expect(apiRefusal("GET", "/apix")).not.toBeNull();
 	});
