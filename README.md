@@ -53,7 +53,8 @@ Start-up is nearly 4 times faster to a window and over 20 times faster to a usab
 
 ### Works with the app closed
 
-- **Save references from Chrome or Edge.** The browser connector fork talks to a small native host, so pages, PDFs and references are saved straight into your library with the app closed. They sync the next time it runs.
+- **Save references from Chrome or Edge.** The browser connector fork talks to a small native host, so pages, PDFs and references are saved straight into your library with the app closed. They sync the next time it runs. A popup under the toolbar button picks the collection, removes or cancels a save, and opens the item in the app.
+- **Browse your library in a browser tab.** The connector opens the same interface, built for the browser, on your library file through the same host (read-only for now).
 - **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in Zinc** on a cited item.
 - **Ask an agent.** The library's MCP server also runs over stdio against the library file with the app closed.
 
@@ -111,7 +112,7 @@ GPUIX is a dependency (the npm package, plus a private fork), not part of this r
 - **Hover "Figure 2" or "Table 3"** to see the figure itself, its caption and its page, with **Go to figure**.
 - **Hover an entry in the bibliography** to see where the paper cites it, with the surrounding sentences.
 - **Side panels** for the paper's **References** (the resolved bibliography, with a filter), **Figures & Tables** (thumbnails; click to jump) and **Supplementary** files, next to Outline, Thumbnails and Annotations.
-- **Reading view**: a reflowed article layout built from the PDF, with your own font, size and width. Figures and tables stay in place as cards, and citations and figure mentions are links, with **Back** to return.
+- **Reading view**: a reflowed article layout built from the PDF, with your own font (Source Serif 4, Literata, the system font, or any font installed on the computer), size, spacing, width and theme. Each font and theme button previews itself. Figures and tables stay in place as cards, and citations and figure mentions are links, with **Back** to return.
 - Page tools: delete and rotate pages.
 
 ### Notes and web
@@ -152,7 +153,7 @@ Built in, no plugin to install:
 ### Around the app
 
 - **Word add-in** with a sidebar and its own MCP server.
-- **Browser connector**: the Zotero connector port (23119), or a native-messaging fork of the connector that works even when the app is closed.
+- **Browser connector**: the Zotero connector port (23119), or a native-messaging fork of the connector that works even when the app is closed, with a save popup and your library in a browser tab.
 - **MCP server** in the core, so AI agents can search and manage the library.
 - A per-user **Windows installer**, **signed auto-update**, crash logging and versioned database migrations.
 
@@ -289,6 +290,8 @@ Two routes put web pages and references into the library:
 
 1. **The Zotero connector port.** While the app runs it answers on port 23119 like Zotero does, so the official Zotero Connector extension works. Only one program can own that port, so close desktop Zotero first.
 2. **The native-messaging fork (Chrome and Edge).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`). The extension's source is its own repository, [ABorakati/zinc-connector](https://github.com/ABorakati/zinc-connector) (branch `zotero-next`), a fork of [zotero/zotero-connectors](https://github.com/zotero/zotero-connectors) under the same AGPL-3.0 licence.
+
+   With the fork, clicking the toolbar button saves the page and opens a popup under the button: choose or search the target collection, **Cancel** or **Remove** the save (to the Trash), or **Open PDF**, **Open in Zinc** and **Open library**. Right-click the button and choose **Open Zinc library** to browse your library in a browser tab, read-only for now. See [Adding items](docs/user-guide/adding-items.md#the-browser-connector).
 
 ## MCP for AI agents
 

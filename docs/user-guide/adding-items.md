@@ -94,9 +94,26 @@ To set it up, open **Settings > Integrations** and use **Browser connector (Edge
 2. Click **Add to Edge…** or **Add to Chrome…**. The app opens the browser's extensions page and the folder holding the extension. In the browser turn on Developer mode, click **Load unpacked**, and choose that folder. The browser asks you to add the extension yourself; the app cannot do that step for you.
 3. **Uninstall** removes the helper. Remove the extension in the browser as well.
 
+#### Saving with the popup
+
+Click the Zinc button in the browser's toolbar. The save starts at once, and a popup opens directly under the button, in the app's light or dark look:
+
+- **While saving**: the item and its PDF or snapshot, each with a tick when done. **Cancel** stops the save; anything already saved goes to the Trash.
+- **Collection**: where the item went. Click it to search your collections by name, pick one of your recent collections, or browse the tree. Choosing one moves the item you just saved.
+- **Open PDF** (or **Open snapshot**) opens the saved file in the app's reader. **Open in Zinc** selects the item in the app, starting the app if it is closed. **Open library** opens your library in a browser tab (below), with the item selected.
+- **Remove** moves the item you just saved to the Trash, where you can restore it. It only touches items created by that save.
+
+A save started from the right-click menu opens the same popup where the browser allows it; otherwise the older progress window appears in the page. Tags and a note can't be added in the popup yet: add them in the app.
+
+#### Your library in the browser
+
+Right-click the Zinc button and choose **Open Zinc library**, or click **Open library** in the popup. Your library opens in a browser tab: the same interface as the app, built for the browser, reading the same library file through the helper, so it works with the app closed. Changes made in the app show up within about two seconds.
+
+For now the browser tab is **read-only**: browsing, searching, collections, tags and item details work, but edits are not saved. PDFs don't open in the browser tab yet; use **Open PDF** in the popup, or the app.
+
 Things to know:
 
-- The collection offered as the target is the one selected in the app when it is running; otherwise it is the one last chosen in the extension's progress window; otherwise **My Library**.
+- The collection offered as the target is the one selected in the app when it is running; otherwise it is the one last chosen in the popup; otherwise **My Library**.
 - Word, LibreOffice and Google Docs integration is not available through this extension (the Word add-in has its own route; see [Word](word.md)). Proxy support is not provided.
 - The extension and the official Zotero Connector can both be installed, but on sites where you do not want two save buttons, install only one.
 - Saved PDFs are stored straight away; their text may be indexed later, when the app next runs its indexer.

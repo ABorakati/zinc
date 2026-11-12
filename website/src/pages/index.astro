@@ -16,10 +16,12 @@ const closed = bullets(section("### Works with the app closed")).map((b) => {
 	return { title: m ? m[1].replace(/\.$/, "") : "", body: m ? m[2] : b };
 });
 const word = paragraphs(section("## The Word add-in"))[0];
+/** a bullet of that list by the start of its bold title (not by position: bullets get added) */
+const closedBy = (title: RegExp) => closed.find((c) => title.test(c.title))?.body ?? "";
 const items = [
-	{ id: "word" as const, icon: "panel-right", title: "Cite in Word, from a sidebar", lead: true, body: [word, closed[1]?.body ?? ""], tags: ["Word for Windows", "Live citations", "Any CSL style", "App can stay closed"] },
-	{ id: "browser" as const, icon: "globe", title: "Save from Chrome and Edge", body: [closed[0]?.body ?? ""], tags: ["Pages, PDFs, references", "App can stay closed"] },
-	{ id: "agent" as const, icon: "bot", title: "Hand it to an agent", body: [closed[2]?.body ?? "", paragraphs(section("### Built-in MCP for AI agents"))[0]], tags: ["MCP", "Claude Code", "Loopback only"] },
+	{ id: "word" as const, icon: "panel-right", title: "Cite in Word, from a sidebar", lead: true, body: [word, closedBy(/^Cite in Word/)], tags: ["Word for Windows", "Live citations", "Any CSL style", "App can stay closed"] },
+	{ id: "browser" as const, icon: "globe", title: "Save from Chrome and Edge", body: [closedBy(/^Save references/), closedBy(/^Browse your library/)].filter(Boolean), tags: ["Pages, PDFs, references", "Save popup", "Library in a tab", "App can stay closed"] },
+	{ id: "agent" as const, icon: "bot", title: "Hand it to an agent", body: [closedBy(/^Ask an agent/), paragraphs(section("### Built-in MCP for AI agents"))[0]], tags: ["MCP", "Claude Code", "Loopback only"] },
 ];
 const still = paragraphs(section("### Still your Zotero library"));
 const why = bullets(section("## Why Zinc"));
