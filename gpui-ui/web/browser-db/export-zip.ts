@@ -14,7 +14,7 @@ const PREFIX = `${STORAGE}/`;
 
 export interface ExportSummary { items: number; collections: number; attachments: number; files: number; fileBytes: number; databaseBytes: number; serializeMs: number; zipMs: number; totalMs: number }
 
-/** Every file under `dir` (paths relative to it, as the file store reports them: lower-case). */
+/** Every file under `dir` (paths relative to it, as the file store reports them, in the case they were written with). */
 function walk(dir: string, rel = ""): string[] {
 	const out: string[] = [];
 	for (const e of readdirSync(`${dir}${rel}`, { withFileTypes: true }) as { name: string; isDirectory(): boolean }[]) {
@@ -34,7 +34,7 @@ export function exportLibraryZip(db: CoreDb): { bytes: Uint8Array; summary: Expo
 	const copy = new Database(tmp) as unknown as CoreDb;
 	let database: Uint8Array;
 	const counts = { items: 0, collections: 0, attachments: 0 };
-	// the original-case names of the files the library points at (the file store keeps lower-case keys)
+	// the original-case names of the files the library points at (for a file store that predates case-preserving names)
 	const names = new Map<string, string>();
 	try {
 		const rows = copy.query("SELECT item_key AS key, path FROM attachments WHERE path LIKE ?").all(`${PREFIX}%`) as { key: string; path: string }[];
@@ -62,7 +62,8 @@ export function exportLibraryZip(db: CoreDb): { bytes: Uint8Array; summary: Expo
 		for (const rel of walk(STORAGE)) {
 			const lower = rel.toLowerCase();
 			const key = rel.split("/")[0]!;
-			const orig = names.get(lower) ?? `${keys.get(key.toLowerCase()) ?? key.toUpperCase()}/${rel.slice(key.length + 1)}`;
+			// the file store keeps the case it was written with; a library from before that is all lower-case, so fall back to the rows' spelling
+			const orig = rel !== lower ? rel : names.get(lower) ?? `${keys.get(key.toLowerCase()) ?? key.toUpperCase()}/${rel.slice(key.length + 1)}`;
 			const bytes = readFileSync(`${STORAGE}/${rel}`) as Uint8Array;
 			// attachments are mostly PDFs, EPUBs and images: already compressed
 			entries[`storage/${orig}`] = [new Uint8Array(bytes), { level: 0 }];

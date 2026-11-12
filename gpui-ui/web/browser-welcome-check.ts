@@ -89,7 +89,8 @@ function buildFixtures() {
 	mkdirSync(join(ZOTERO, "storage", "ATT00001"), { recursive: true });
 	mkdirSync(join(ZOTERO, "storage", "ATT00002"), { recursive: true });
 	const pdf = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.from(crypto.getRandomValues(new Uint8Array(1_300_000)))]);
-	writeFileSync(join(ZOTERO, "storage", "ATT00001", "paper.pdf"), pdf);
+	// the file is spelled differently on disk and in the database, as Zotero allows on Windows and macOS: the browser's file store keeps the case it is given
+	writeFileSync(join(ZOTERO, "storage", "ATT00001", "Paper One.PDF"), pdf);
 	writeFileSync(join(ZOTERO, "storage", "ATT00001", ".zotero-ft-cache"), "hello full text");
 	const db = new Database(join(ZOTERO, "zotero.sqlite"), { create: true });
 	db.exec(`
@@ -142,7 +143,7 @@ function buildFixtures() {
 	INSERT INTO itemRelations VALUES (1,1,'http://zotero.org/users/1/items/AAAAAAAA');
 	INSERT INTO itemNotes VALUES (4,1,'<div>My note</div>','My note');
 	INSERT INTO itemAttachments VALUES
-	 (2,1,0,'application/pdf',1,'storage:paper.pdf',1700000000000,'abc123'),
+	 (2,1,0,'application/pdf',1,'storage:paper one.pdf',1700000000000,'abc123'),
 	 (3,1,1,'text/html',NULL,'storage:gone.html',NULL,NULL);
 	INSERT INTO itemAnnotations VALUES (5,2,1,NULL,'highlighted','my comment','#ffd400','3','00000|000001|00002','{"pageIndex":2,"rects":[[1,2,3,4]]}');
 	INSERT INTO deletedItems VALUES (6);
@@ -469,12 +470,29 @@ try {
 		const more = await worker?.evalIn<Record<string, number>>(`(() => { const d = znDb.db; const n = (s) => d.query(s).get().n; return { attachments: n("select count(*) n from attachments"), annotations: n("select count(*) n from annotations"), fulltext: n("select count(*) n from fulltext"), tags: n("select count(*) n from item_tags"), collectionItems: n("select count(*) n from collection_items"), outbox: n("select count(*) n from sync_outbox"), trashed: n("select count(*) n from items where deleted = 1") }; })()`);
 		check("attachments, annotations, full text, tags and memberships equal the core importer's; no sync change was queued", !!more && more.attachments === zoteroRef.attachments && more.annotations === zoteroRef.annotations && more.fulltext === zoteroRef.fulltext && more.tags === zoteroRef.tags && more.collectionItems === zoteroRef.collectionItems && more.outbox === 0, JSON.stringify(more));
 		check("the temporary copy of the folder is deleted", st.leftover === false, `leftover ${st.leftover}`);
+		// the importer's full-text pass finds the storage folders (upper-case keys) now that the file store keeps their case
+		check("full text was imported from the storage folder (.zotero-ft-cache)", !!more && zoteroRef.fulltext >= 1 && more.fulltext >= 1, `browser ${more?.fulltext}, core in Bun ${zoteroRef.fulltext}`);
 		const f = await attHash(tab, "ATT00001");
 		check("the 1.3 MB attachment (sent as `up` frames) reads back with the same bytes", f.status === 200 && f.hash === fx.zoteroPdf, `status ${f.status}, ${f.size} bytes, sha256 ${f.hash.slice(0, 12)} (fixture ${fx.zoteroPdf.slice(0, 12)})`);
 		const gone = await attHash(tab, "ATT00002");
 		check("an attachment whose file was not in the folder has no file (404), as in the core", gone.status === 404, `status ${gone.status}`);
 		await sleep(1500);
 		await tab.shot("6-after-zotero-import-light");
+
+		// export: the zip keeps the case of the folder and file names (ATT00001/Paper One.PDF), not lower-case
+		await cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: join(WORK, "downloads"), eventsEnabled: true });
+		const dl2 = new Promise<string>((res, rej) => {
+			let name = "";
+			const to = setTimeout(() => rej(new Error("the second download did not finish")), 60_000);
+			cdp.listeners.push((m) => {
+				if (m.method === "Browser.downloadWillBegin") name = m.params.suggestedFilename;
+				if (m.method === "Browser.downloadProgress" && m.params.state === "completed") { clearTimeout(to); res(name); }
+			});
+		});
+		await tab.evalIn("znLibrary.exportLibrary()");
+		const zipName = await dl2;
+		const stored = Object.keys(unzipSync(new Uint8Array(readFileSync(join(WORK, "downloads", zipName))))).filter((x) => x.startsWith("storage/"));
+		check("an exported zip keeps the original file-name case", stored.includes("storage/ATT00001/Paper One.PDF"), stored.join(", "));
 
 		// not allowed twice: importing into a library that has data is refused
 		const again = await importFrom(tab, "Zotero");

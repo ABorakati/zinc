@@ -57,10 +57,10 @@ Frames on the port, besides the native host's: the offscreen document sends `{t:
 
 - Database: `@sqlite.org/sqlite-wasm`, VFS `opfs-sahpool` (pool directory `.zinc-sahpool`), database name `/zinc/library.sqlite`. The core sees `db.filename === "/opfs/zinc/library.sqlite"`, so `storageRoot()` is `/opfs/zinc/storage`.
 - Files: everything the core writes under `/opfs/` goes through the `node:fs` shim into a second database in the same pool, `/zinc/files.sqlite`:
-  - table `files(path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL)`
-  - table `dirs(path TEXT PRIMARY KEY)`
+  - table `files(path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL, name TEXT)`
+  - table `dirs(path TEXT PRIMARY KEY, name TEXT)`
 
-  Paths are stored lower-cased, as the shim keys them. The core's file code stays synchronous and unchanged. Other paths stay in memory, as in the demo.
+  `path` is the lower-cased lookup key (paths are matched case-insensitively); `name` is the same path in the case it was written with, and is what `readdir` returns. A database from before `name` existed gets the column added on open, with `path` as the name. The core's file code stays synchronous and unchanged. Other paths stay in memory, as in the demo.
 - Settings that are not in the library: `chrome.storage.local`, key `zincBrowserLibrary`, holds `{saveTarget: "app" | "browser", firstRunDone: boolean}`.
 - The zotero.org API key: `chrome.storage.local` key `zincZoteroApiKey`. It is read only in the offscreen document or worker, never sent to a tab.
 
