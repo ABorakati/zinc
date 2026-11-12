@@ -1,0 +1,48 @@
+gpui-ui/web/extension.tsx
+  s_e8244edae027cb::t_ded587383e7a54 53-65
+gpui-ui/web/library-reader-check.ts
+  s_e8244edae027cb::t_8433111c575838 68
+  s_e8244edae027cb::t_bac6568e44991f 235-236
+  s_e8244edae027cb::t_6b4342863d03c5 209-210
+  s_e8244edae027cb::t_ed10a700e9d48a 266-267
+  s_e8244edae027cb::t_47bb6b850821eb 1-67,69-208,211-234,237-265,268-289
+gpui-ui/src/webview/config.ts
+  s_e8244edae027cb::t_16c7f9fc24ddc9 20-24
+reader-host/src/host.js
+  s_e8244edae027cb::t_1e3585b36e5ec2 210
+  s_e8244edae027cb::t_6f87fa3bdfe23c 369-374
+  s_e8244edae027cb::t_8101d139bdbdaa 171-172
+  s_e8244edae027cb::t_8c381059c850ec 227
+  s_e8244edae027cb::t_c22053eb5809c1 34
+  s_e8244edae027cb::t_4d2116a399cef8 266
+  s_e8244edae027cb::t_9b30878705a128 13-16
+  s_e8244edae027cb::t_eb39971bcca745 242
+  s_e8244edae027cb::t_e107bbe6e7ab4a 271
+gpui-ui/web/build.ts
+  s_e8244edae027cb::t_f14dec60ee38d5 149-167,171
+docs/user-guide/adding-items.md
+  s_e8244edae027cb::t_fd53b6ae11a86f 121
+docs/design/web-connector-wasm.md
+  s_e8244edae027cb::t_f790991ec3b431 263,265-267
+gpui-ui/src/store.ts
+  s_e8244edae027cb::t_2d3f3d449bb1d5 10
+  s_e8244edae027cb::t_2f758a5e2902dc 710-711
+gpui-ui/web/reader-tab/zn-bridge.ts
+  s_e8244edae027cb::t_ca5d28e4dd83de 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bac0b8d018857b32b94316618590b40a10932b81",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
