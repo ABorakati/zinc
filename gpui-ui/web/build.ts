@@ -1,5 +1,7 @@
 // Build the browser demo of the app (web/main.tsx) into <out> (default gpui-ui/out/web-demo):
 //   bun web/build.ts [--out <dir>] [--db <demo library.sqlite>] [--styles <collection-style.json>]
+// or the Zinc Connector's library page (web/extension.tsx) into gpui-ui/dist-extension:
+//   bun web/build.ts --target extension [--out <dir>] [--docworker]
 // Node and Bun built-ins map to the browser stand-ins in web/shims (an in-memory file system, path, os, url, a hash) and to
 // web/sqlite.ts (bun:sqlite on SQLite WebAssembly); anything else Node-only becomes a stub that throws if it is ever called, with
 // exactly the names the code imports (learned from the bundler's errors). The demo library is copied, never the real one.
@@ -10,8 +12,15 @@ import solidPlugin from "@gpuix/solid/bun-plugin";
 const here = import.meta.dir;
 const root = resolve(here, "..");
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1] : undefined; };
-const out = resolve(arg("out") ?? join(root, "out", "web-demo"));
-const db = arg("db");
+// --target web (default): the browser demo on a demo library. --target extension: the library page of the Zinc Connector
+// (web/extension.tsx), whose data comes from the connector's native host; written to gpui-ui/dist-extension for the connector's
+// build to copy. Manifest V3 extension pages run no inline script and forbid remote code, so that build has no service worker,
+// no web-app manifest and no inline <script>, and every .wasm and worker file is inside the output.
+const target = arg("target") ?? "web";
+if (target !== "web" && target !== "extension") throw new Error(`--target must be web or extension, not ${target}`);
+const EXT = target === "extension";
+const out = resolve(arg("out") ?? (EXT ? join(root, "dist-extension") : join(root, "out", "web-demo")));
+const db = EXT ? undefined : arg("db");
 if (db && /zotero-next[\\/]data[\\/]library\.sqlite$/i.test(db)) throw new Error("refusing to publish the real library: pass a demo library");
 
 const SHIMS: Record<string, string> = {
@@ -38,7 +47,7 @@ let result: Awaited<ReturnType<typeof Bun.build>> | undefined;
 for (let pass = 0; pass < 80; pass++) {
 	result = await Bun.build({
 		// globals.ts as its own entry, run by the page before main.js: shared chunks would otherwise run before it sets `process`
-		entrypoints: [join(here, "globals.ts"), join(here, "main.tsx")],
+		entrypoints: [join(here, "globals.ts"), join(here, EXT ? "extension.tsx" : "main.tsx")],
 		outdir: out,
 		target: "browser",
 		format: "esm",
@@ -98,11 +107,35 @@ cpSync(join(root, "node_modules", "@sqlite.org", "sqlite-wasm", "dist", "sqlite3
 // PDFium's (web/pdf.ts fetches it the first time a PDF is opened)
 cpSync(join(root, "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm"), join(out, "pdfium.wasm"));
 // Zotero's document worker (layout analysis; web/structure-load.ts starts docworker/boot.js the first time a PDF is analysed).
-// Optional: without vendor/document-worker the reader works and says layout analysis is unavailable.
-if (HAVE_STRUCTURE) {
+// Optional: without vendor/document-worker the reader works and says layout analysis is unavailable. The extension build leaves it
+// out unless --docworker is given (30 MB, and PDFs in the extension are phase 3: docs/design/web-connector-wasm.md).
+if (HAVE_STRUCTURE && (!EXT || process.argv.includes("--docworker"))) {
 	cpSync(join(DOCWORKER, "build"), join(out, "docworker"), { recursive: true });
 	writeFileSync(join(out, "docworker", "boot.js"), `// Starts Zotero's document worker (a UMD bundle for a Web Worker) and tells the page it is ready (web/structure-load.ts).\nimportScripts("worker.js");\npostMessage({ __ready: true });\n`);
 } else console.log("web demo: vendor/document-worker not found, layout analysis left out");
+if (EXT) {
+	// the connector's full-tab page: module scripts only, and nothing fetched from outside the extension
+	writeFileSync(join(out, "library.html"), `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zinc library</title>
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #F7F6F3; } @media (prefers-color-scheme: dark) { html, body { background: #141413; } }</style>
+</head>
+<body>
+<script type="module" src="globals.js"></script>
+<script type="module" src="extension.js"></script>
+</body>
+</html>
+`);
+	const files: string[] = [];
+	const walk = (d: string) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else files.push(p); } };
+	walk(out);
+	const mb = files.reduce((n, f) => n + statSync(f).size, 0) / 2 ** 20;
+	console.log(`extension library page -> ${out} (${files.length} files, ${mb.toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
+	process.exit(0);
+}
 // the demo library's stored attachments (<library folder>/storage), and a list of them for main.tsx to put in its file system
 const storage = db ? join(dirname(db), "storage") : "";
 const stored: string[] = [];
