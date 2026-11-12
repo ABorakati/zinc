@@ -11,6 +11,7 @@ import { SessionManager } from "../../core/src/connector/session";
 import { setSelection } from "../../core/src/connector/state";
 import { resolveTarget } from "../../core/src/connector/targets";
 import { forwardApi } from "./api";
+import { ImportError, importBrowserLibrary } from "./import-browser";
 import { revealInApp } from "./reveal";
 import { cancelSession, isCancelled, sessionItems, trashSession } from "./sessions";
 import { mergeSessions, readState, writeState } from "./store";
@@ -223,6 +224,27 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 		}
 		const r = await revealInApp(env.appPort, b.key, { open: b.open === true });
 		return done(r.status, JSON.stringify(r.body));
+	}
+
+	// "Move your browser library into Zinc": the zip of the browser library (Export library), merged into this library (import-browser.ts).
+	// The body is the zip, as `up` frames. Answers the counts; the extension empties the browser library only after a 200.
+	if (method === "importBrowserLibrary") {
+		let zip: Uint8Array;
+		try {
+			if (msg.body?.kind === "upload") zip = takeUpload(uploads, msg.body.uid);
+			else if (msg.body?.kind === "b64") zip = Buffer.from(msg.body.data, "base64");
+			else return done(400, JSON.stringify({ error: "the zip must be sent as an upload" }));
+		} catch (e) {
+			return done(400, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+		}
+		try {
+			return done(200, JSON.stringify(importBrowserLibrary(env.getDb(), zip)));
+		} catch (e) {
+			if (e instanceof ImportError) return done(e.status, JSON.stringify({ error: e.message }));
+			if (isBusyError(e)) return done(503, JSON.stringify({ error: BUSY_MESSAGE }));
+			console.error("[host] importBrowserLibrary failed:", e);
+			return done(500, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+		}
 	}
 
 	// The save popup: list, trash or cancel what one save session created (sessions.ts). Body {sessionID}.

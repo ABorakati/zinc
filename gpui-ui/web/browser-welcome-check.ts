@@ -382,7 +382,7 @@ try {
 		// the Export library row is in Settings (browser mode only)
 		check("Settings has the Export library row in browser mode", await tab.evalIn<boolean>("znLibrary.hasExportSetting"), "registered by the page");
 		// reset the flag and reload: the screen is back, and "Sign in" leads to Settings > Sync
-		await tab.evalIn(`new Promise((r) => chrome.storage.local.set({ zincBrowserLibrary: { saveTarget: "browser" } }, r))`);
+		await tab.evalIn(`new Promise((r) => chrome.storage.local.set({ zincBrowserLibrary: {} }, r))`);
 		await tab.send("Page.reload");
 		await sleep(300);
 		await tab.waitFor("!!globalThis.znLibrary && znLibrary.store.pagesLoaded() > 0 && znLibrary.welcomeShown()", 60_000);

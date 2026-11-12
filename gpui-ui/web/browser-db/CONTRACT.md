@@ -31,6 +31,7 @@ Methods:
 - `ping`
 - The connector methods (`saveItems`, `saveSnapshot`, `saveAttachment`, `updateSession`, `getSelectedCollection`, …)
 - `sessionItems`, `trashSession`, `cancelSession`
+- Native host only: `importBrowserLibrary` (see "One library per computer" below). The browser library has `/api/browser/*` routes (`state`, `export`, `empty`, the folder import) that only exist there.
 
 Not served (the connector uses its own remote source in browser mode): `getTranslators`, `getTranslatorCode`. Not served: `revealInApp` (there is no app). Unknown methods answer 404.
 
@@ -53,6 +54,19 @@ Then connect `chrome.runtime.connect({name: "zinc-db"})`. If the port disconnect
 
 Frames on the port, besides the native host's: the offscreen document sends `{t:"changed", dataVersion}` unprompted (no `id`). Uploads (`up` frames) belong to the port that sent them. A `hello` frame is answered with `{t:"hello", id, version, db, pid: 0, proto: 2}`.
 
+## One library per computer, and moving the browser library into the app
+
+Decided 2026-11-12 (design note, section 6). The connector (`nativeHost.js`) looks the target up; there is no stored choice.
+
+- **Target.** The app's native host is registered (it answers `ping`): the app. Chrome answers "Specified native messaging host not found": the browser library. The host is registered but fails (exits, forbidden, crashes, does not answer): still the app, and the call fails with the host's message; nothing goes to the browser library (the popup offers **Try again**). The target is looked up when the browser starts and before each save (`refreshTarget`), and reused for 30 s by other calls. A save session keeps the library its first call went to.
+- **Offer.** When the app is installed (answers) and the key `zincBrowserLibraryCreated` is true, the connector asks the browser library `GET /api/browser/state` (`{items, topLevelItems, collections}`); `topLevelItems > 0` means the popup and the app's library tab offer **Move your browser library into Zinc**. The browser database is not started to look unless that key is set.
+- **Move** (`Zotero.NativeHost.moveBrowserLibrary`, run by the extension's service worker; the library tab asks with `chrome.runtime.sendMessage({zincMoveState: true})` -> `{ok, offer, items, collections}` and `{zincMoveLibrary: true}` -> `{ok, result}`, progress as `{zincMoveProgress: {phase, text}}` with phase `export`, `send`, `empty`; only from extension pages):
+  1. `GET /api/browser/export` on the browser library (the Export library zip, `export-zip.ts`);
+  2. native host method **`importBrowserLibrary`**: `POST`, the zip as `up` frames, body `{kind: "upload", uid}`. The host (`connector-host/src/import-browser.ts`) merges it into the app's library and answers 200 `{topLevelItems, items, notes, attachments, annotations, collections, tags, files, fileBytes, skippedItems, skippedCollections, missingFiles, warnings, ms}`, or 400 (not a zip, no `library.sqlite`, not a Zinc library), 409 (the library is from a newer Zinc), 503 (library busy). Merge rules: a key the app already has is skipped (items and collections; a skipped item's collection memberships, tags, files and annotations are not copied); a new note or attachment under an item the app has is kept; new collections keep their parent when it exists; items get `version` 0 and the sync triggers are **not** suppressed, so the sync outbox records them for zotero.org; files go to `<library folder>/storage/<KEY>/<name>` and `attachments.path` is rebuilt from that, never taken from the zip; only My Library (library 1) is merged;
+  3. only after 200: `POST /api/browser/empty` with `{"confirm": true}` (`empty-library.ts`, routed by `import-run.ts`). It deletes every item, collection, tag, annotation, full-text row and file, with the sync triggers held off (nothing is sent to zotero.org), clears the sync outbox and the sync versions, switches zotero.org sync of the browser library off and removes its API key. Answers `{ok, items, collections, files, signedOut}`. Without `confirm: true`: 400.
+  If the host refuses the zip, the browser library is untouched. If it merged but the emptying failed, the result carries `emptied: false` and `emptyError`.
+- `zincBrowserLibraryCreated` is set when the browser library is started and cleared after a move that emptied it.
+
 ## Storage (OPFS, extension origin)
 
 - Database: `@sqlite.org/sqlite-wasm`, VFS `opfs-sahpool` (pool directory `.zinc-sahpool`), database name `/zinc/library.sqlite`. The core sees `db.filename === "/opfs/zinc/library.sqlite"`, so `storageRoot()` is `/opfs/zinc/storage`.
@@ -61,7 +75,7 @@ Frames on the port, besides the native host's: the offscreen document sends `{t:
   - table `dirs(path TEXT PRIMARY KEY, name TEXT)`
 
   `path` is the lower-cased lookup key (paths are matched case-insensitively); `name` is the same path in the case it was written with, and is what `readdir` returns. A database from before `name` existed gets the column added on open, with `path` as the name. The core's file code stays synchronous and unchanged. Other paths stay in memory, as in the demo.
-- Settings that are not in the library: `chrome.storage.local`, key `zincBrowserLibrary`, holds `{saveTarget: "app" | "browser", firstRunDone: boolean}`.
+- Settings that are not in the library: `chrome.storage.local`, key `zincBrowserLibrary`, holds `{firstRunDone: boolean}`. There is **no stored save target**: one library per computer, so the connector looks the target up from the app's native host (see "One library per computer" below). Key `zincBrowserLibraryCreated` (boolean) says the browser library has been used on this browser; the connector reads it to decide whether to look for a library to move into the app.
 - The zotero.org API key: `chrome.storage.local` key `zincZoteroApiKey`. It is read only in the offscreen document or worker, never sent to a tab.
 
 ## zotero.org sync (WP S)
@@ -80,5 +94,6 @@ The checks use Chrome for Testing (`~/.cache/puppeteer/chrome/win64-*`) with a f
 - D: 9352
 - E: 9353
 - S (`web/browser-sync-check.ts`): 9354
+- One library per computer (`web/connector-onelib-check.ts`, host name `com.zotero_next.connector_host_e2e_one`): 9362
 
 A native-host registration in a check uses the name `com.zotero_next.connector_host_e2e_<wp>`, under `HKCU\Software\Chromium` only, and is removed at the end. Never touch `Software\Google\Chrome`, the installed host, the user's browser or `data/library.sqlite`.

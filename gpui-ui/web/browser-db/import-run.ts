@@ -8,6 +8,7 @@
 //   DELETE /api/browser/import                 throws the temporary copy away (a cancelled import)
 //   GET  /api/browser/state                    {items, collections}: is the library empty (the welcome screen's condition)
 //   GET  /api/browser/export                   the library as one zip (export-zip.ts)
+//   POST /api/browser/empty {confirm: true}    empties the library after it was moved into the Zinc app (empty-library.ts)
 //
 // Zotero data folder: the core's importer (core/src/import/zotero.ts) runs unchanged. The web SQLite shim (web/sqlite.ts) lets it read
 // zotero.sqlite from the file store and build its output database in memory, which is then kept as a file (the shim's close hook);
@@ -67,7 +68,7 @@ export async function browserApi(req: Request, url: URL, db: CoreDb): Promise<Re
 	const route = url.pathname.slice("/api/browser".length).replace(/\/+$/, "");
 	try {
 		if (route === "/state" && req.method === "GET") {
-			const n = db.query("SELECT (SELECT count(*) FROM items) AS items, (SELECT count(*) FROM collections) AS collections").get() as { items: number; collections: number };
+			const n = db.query("SELECT (SELECT count(*) FROM items) AS items, (SELECT count(*) FROM items WHERE parent_key IS NULL) AS topLevelItems, (SELECT count(*) FROM collections) AS collections").get() as { items: number; topLevelItems: number; collections: number };
 			// leftover: is a temporary import copy still there (the headless check)
 			return json({ ...n, leftover: existsSync(IMPORT_ROOT) });
 		}
@@ -93,6 +94,14 @@ export async function browserApi(req: Request, url: URL, db: CoreDb): Promise<Re
 		if (route === "/export" && req.method === "GET") {
 			const z = exportLibraryZip(db);
 			return new Response(z.bytes as BlobPart, { status: 200, headers: { "Content-Type": "application/zip", "X-Zinc-Export": JSON.stringify(z.summary) } });
+		}
+		if (route === "/empty" && req.method === "POST") {
+			// after the library was moved into the Zinc app (the connector's "Move your browser library into Zinc"): everything goes, nothing is
+			// sent to zotero.org (empty-library.ts). Refused without {confirm: true}, and while an import runs.
+			const body = (await req.json().catch(() => ({}))) as { confirm?: unknown };
+			if (body.confirm !== true) return fail(400, "confirm: true is required");
+			if (state.running) return fail(409, "an import is running");
+			return json({ ok: true, ...(await (await import("./empty-library")).emptyBrowserLibrary(db)) });
 		}
 		return json({ error: "not found" }, 404);
 	} catch (e) {

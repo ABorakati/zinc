@@ -158,6 +158,8 @@ const probe = {
 		return r;
 	},
 	importProgress: [] as string[],
+	/** the app's library tab: the "Move your browser library into Zinc" offer (offerMove below), for the headless check */
+	move: { phase: "idle" } as { phase: string; offered?: boolean; items?: number; run?: () => Promise<MoveResult | null>; result?: MoveResult; error?: string },
 	/** the Export library command of Settings > Files and folders: starts the download; resolves to its size */
 	async exportLibrary(): Promise<unknown> { return (await import("./browser-db/welcome-import")).exportLibrary(); },
 	/** browser mode: has Settings the Export library row */
@@ -222,6 +224,71 @@ if (BROWSER) {
 	startOutsideChangeWatch(() => {
 		probe.outsideChanges++;
 		store.refresh();
+	});
+	// One library per computer (docs/design/browser-edition.md, section 6): this tab is the app's library. When the browser still holds a
+	// library of its own, offer to move it into the app. The extension's service worker does the move (connector nativeHost.js
+	// moveBrowserLibrary): export the browser library, the host merges it into this one, then the browser library is emptied.
+	void offerMove().catch((e) => console.warn("[library] move offer", e));
+}
+
+interface MoveReply { ok?: boolean; error?: string; offer?: boolean; items?: number; result?: MoveResult }
+interface MoveResult { topLevelItems: number; items: number; skippedItems: number; emptied?: boolean; emptyError?: string }
+// (function declarations: offerMove runs while the module is still being evaluated, before a `const` down here would be initialised)
+function askExtension(msg: object): Promise<MoveReply> {
+	return new Promise<MoveReply>((resolve, reject) => {
+		(chrome.runtime as unknown as { sendMessage(m: unknown, cb: (r?: MoveReply) => void): void }).sendMessage(msg, (r) => (r ? resolve(r) : reject(new Error(chrome.runtime.lastError?.message ?? "the extension did not answer"))));
+	});
+}
+function movedText(r: MoveResult): string {
+	return `Moved ${r.topLevelItems} ${r.topLevelItems === 1 ? "item" : "items"} into Zinc`;
+}
+
+async function offerMove(): Promise<void> {
+	const state = await askExtension({ zincMoveState: true });
+	if (!state.ok || !state.offer) return;
+	const { toast } = await import("../src/ui");
+	let running = false;
+	const run = async (): Promise<MoveResult | null> => {
+		if (running) return null;
+		running = true;
+		probe.move.phase = "running";
+		toast("Moving your browser library", { id: "zinc-move", description: "Starting", durationMs: 0 });
+		try {
+			const r = await askExtension({ zincMoveLibrary: true });
+			if (!r.ok || !r.result) throw new Error(r.error ?? "the move failed");
+			probe.move = { ...probe.move, phase: "done", result: r.result };
+			const skipped = r.result.skippedItems ? (r.result.skippedItems === 1 ? " One item was already in Zinc and was left as it is." : ` ${r.result.skippedItems} items were already in Zinc and were left as they are.`) : "";
+			toast.success(movedText(r.result), { id: "zinc-move", description: `${r.result.emptied === false ? `The browser library could not be emptied (${r.result.emptyError ?? "unknown error"}).` : "Your browser library is now empty."}${skipped}`, durationMs: 10_000 });
+			store.refresh();
+			return r.result;
+		} catch (e) {
+			probe.move = { ...probe.move, phase: "failed", error: e instanceof Error ? e.message : String(e) };
+			toast.error("Could not move your browser library", { id: "zinc-move", description: `${probe.move.error} Your browser library is unchanged.`, action: { label: "Try again", run: () => void run() } });
+			return null;
+		} finally {
+			running = false;
+		}
+	};
+	probe.move = { ...probe.move, offered: true, items: state.items ?? 0, run };
+	chrome.runtime.onMessage.addListener((m) => {
+		const p = (m as { zincMoveProgress?: { text?: string } } | null)?.zincMoveProgress;
+		if (p && running) toast("Moving your browser library", { id: "zinc-move", description: p.text ? `${p.text}…` : "", durationMs: 0 });
+	});
+	const label = `Move your browser library into Zinc`;
+	toast(label, {
+		id: "zinc-move",
+		description: `${state.items === 1 ? "One item" : `${state.items} items`} in this browser can go into your Zinc library. They are copied first; then the browser library is emptied.`,
+		actions: [{ label: "Not now", run: () => toast.dismiss("zinc-move") }, { label: "Move library", run: () => void run() }],
+		durationMs: 0,
+	});
+	// also in Settings > Files and folders, where it stays while the offer stands
+	const { registerSetting } = await import("../src/settings/registry");
+	const { Btn } = await import("../src/settings/controls");
+	registerSetting({
+		id: "browser.moveToApp", section: "files", label,
+		description: "This browser holds a library of its own from before the Zinc app was installed. Move it into the app's library: items, collections, notes, annotations, tags and files. Items the app already has are left as they are. Your browser library is emptied when the move succeeds.",
+		keywords: ["move", "browser library", "import", "merge", "copy", "browser"],
+		control: () => <Btn icon="download" onClick={() => void run()}>Move library</Btn>,
 	});
 }
 

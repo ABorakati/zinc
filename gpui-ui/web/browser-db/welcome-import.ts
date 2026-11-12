@@ -128,7 +128,7 @@ export async function importFolder(dir: DirHandleLike, onProgress: (p: Progress)
 	}
 }
 
-// ---- the first-run flag: chrome.storage.local "zincBrowserLibrary" = {saveTarget, firstRunDone} (browser-db/CONTRACT.md)
+// ---- the first-run flag: chrome.storage.local "zincBrowserLibrary" = {firstRunDone} (browser-db/CONTRACT.md)
 
 const KEY = "zincBrowserLibrary";
 interface Store { get(k: string): Promise<Record<string, unknown>>; set(o: Record<string, unknown>): Promise<void> }
@@ -142,10 +142,11 @@ export async function readFirstRunDone(): Promise<boolean> {
 	const v = (await storage().get(KEY))[KEY] as { firstRunDone?: boolean } | undefined;
 	return v?.firstRunDone === true;
 }
-/** Keeps the other setting (saveTarget) as it is. */
 export async function setFirstRunDone(): Promise<void> {
 	const cur = ((await storage().get(KEY))[KEY] ?? {}) as Record<string, unknown>;
-	await storage().set({ [KEY]: { saveTarget: "browser", ...cur, firstRunDone: true } });
+	// no save target is stored any more: the connector decides from the app's native host (docs/design/browser-edition.md, section 6)
+	delete cur.saveTarget;
+	await storage().set({ [KEY]: { ...cur, firstRunDone: true } });
 }
 
 /** Is the library empty? (Items and collections: a library with only collections is not new.) */
