@@ -51,11 +51,12 @@ rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 for (const d of ["shots", "ext"]) mkdirSync(join(WORK, d), { recursive: true });
 // --iframe: library/offscreen.html is a hidden iframe inside the extension's one offscreen document, as in the real connector
 const IFRAME = process.argv.includes("--iframe");
-copyFileSync(join(import.meta.dir, "browser-db", IFRAME ? "test-background-iframe.js" : "test-background.js"), join(ext, "test-background.js"));
+const background = readFileSync(join(import.meta.dir, "browser-db", "test-background.js"), "utf8");
+writeFileSync(join(ext, "test-background.js"), IFRAME ? `self.ZINC_TEST_OFFSCREEN = "test-offscreen.html";\n${background}` : background);
 if (IFRAME) writeFileSync(join(ext, "test-offscreen.html"), `<!doctype html><html><head><meta charset="utf-8"></head><body><iframe src="library/offscreen.html" style="display:none"></iframe></body></html>\n`);
 writeFileSync(join(ext, "manifest.json"), JSON.stringify({
 	name: "Zinc browser library check", manifest_version: 3, version: "1.0", key: readFileSync(KEY_FILE, "utf8").trim(),
-	permissions: ["offscreen", "unlimitedStorage"], background: { service_worker: "test-background.js" },
+	permissions: ["offscreen", "unlimitedStorage", "storage"], background: { service_worker: "test-background.js" },
 	content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
 }, null, 2));
 spawnSync("cmd", ["/c", "mklink", "/J", join(ext, "library"), DIST], { stdio: "ignore" });

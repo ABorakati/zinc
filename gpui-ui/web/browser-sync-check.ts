@@ -6,7 +6,7 @@
 // extension reaches it through the test-only override (chrome.storage.local "zincTestZoteroApiBase", accepted only as
 // http://127.0.0.1:<port>). The PDF's download redirects to a second mock, the "file host", on localhost:<port2>, which records the
 // headers it receives. The test extension has the declarativeNetRequest ruleset of web/browser-db/dnr-rules.json (with 127.0.0.1 added
-// next to api.zotero.org as "the API host"), host permissions for 127.0.0.1 and localhost, and web/browser-db/sync-test-background.js as
+// next to api.zotero.org as "the API host"), host permissions for 127.0.0.1 and localhost, and web/browser-db/test-background.js as
 // its service worker. Chrome for Testing, its own profile, CDP port 9354. Nothing of the user's browser is touched.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
@@ -71,7 +71,7 @@ const ext = join(WORK, "ext");
 if (existsSync(join(ext, "library"))) spawnSync("cmd", ["/c", "rmdir", join(ext, "library")], { stdio: "ignore" });
 rmSync(WORK, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 for (const d of ["shots", "ext"]) mkdirSync(join(WORK, d), { recursive: true });
-copyFileSync(join(import.meta.dir, "browser-db", "sync-test-background.js"), join(ext, "test-background.js"));
+copyFileSync(join(import.meta.dir, "browser-db", "test-background.js"), join(ext, "test-background.js"));
 const rules = JSON.parse(readFileSync(join(import.meta.dir, "browser-db", "dnr-rules.json"), "utf8")) as { condition: { excludedRequestDomains: string[] } }[];
 rules[0]!.condition.excludedRequestDomains.push("127.0.0.1"); // "the API host" of this check
 writeFileSync(join(ext, "dnr-rules.json"), JSON.stringify(rules, null, 2));
