@@ -185,8 +185,10 @@ export async function handleRequest(getDb: () => Database, msg: WireRequest, upl
 		if (API_REFUSED.test(url.pathname)) return done(403, JSON.stringify({ error: "not available in the browser library", method: http, path: url.pathname }));
 		const req = new Request(url, { method: http, headers, body: http === "GET" || http === "HEAD" ? undefined : init.body });
 		try {
-			const { handleApi } = await import("../../../core/src/api");
-			const res = await handleApi(req, getDb());
+			// /api/browser/*: what only the browser library has (import of a data folder, export as a zip; import-run.ts)
+			const res = url.pathname.startsWith("/api/browser/")
+				? await (await import("./import-run")).browserApi(req, url, getDb())
+				: await (await import("../../../core/src/api")).handleApi(req, getDb());
 			if (!res) return done(404, JSON.stringify({ error: "not found" }));
 			if (http === "POST" && url.pathname === "/api/ui/selection" && res.status === 200) selectionFrom = "ui";
 			const rh: Record<string, string> = {};

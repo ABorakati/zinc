@@ -108,10 +108,14 @@ if (theme === "light" || theme === "dark") setThemePrefs({ mode: theme });
 setThemePrefs({ font: "plex" });
 const MODE = applyAppearance();
 const [app, setApp] = createSignal<Component | null>(null);
+/** The browser library's first-run screen (web/browser-db/welcome.tsx), while there is one to show: it takes the place of the app. */
+const [welcome, setWelcome] = createSignal<Component | null>(null);
 function Root() {
 	return (
 		<div style={{ width: "100%", height: "100%", fontFamily: "IBM Plex Sans" }}>
-			<Show when={app()} fallback={<div style={{ ...tw("bg-canvas", MODE), width: "100%", height: "100%" }} />}>{(C) => createComponent(C(), {})}</Show>
+			<Show when={welcome()} fallback={
+				<Show when={app()} fallback={<div style={{ ...tw("bg-canvas", MODE), width: "100%", height: "100%" }} />}>{(C) => createComponent(C(), {})}</Show>
+			}>{(W) => createComponent(W(), {})}</Show>
 		</div>
 	);
 }
@@ -139,6 +143,25 @@ const probe = {
 	},
 	/** light / dark, as Settings > Appearance does */
 	setTheme: (mode: "light" | "dark") => setThemePrefs({ mode }),
+	/** browser mode, for the headless check (web/browser-welcome-check.ts): is the welcome screen up, and the entries the buttons use */
+	welcomeShown: () => welcome() !== null,
+	/** "Import a Zotero or Zinc data folder" without the folder dialog: `dir` is a FileSystemDirectoryHandle (or anything shaped like one) */
+	async importFolder(dir: unknown): Promise<unknown> {
+		const wi = await import("./browser-db/welcome-import");
+		const r = await wi.importFolder(dir as never, (p) => { probe.importProgress.push(p.phase); });
+		// what "Open the library" does after the import
+		await wi.setFirstRunDone();
+		setWelcome(null);
+		store.refresh();
+		return r;
+	},
+	importProgress: [] as string[],
+	/** the Export library command of Settings > Files and folders: starts the download; resolves to its size */
+	async exportLibrary(): Promise<unknown> { return (await import("./browser-db/welcome-import")).exportLibrary(); },
+	/** browser mode: has Settings the Export library row */
+	hasExportSetting: false,
+	/** the first-run flag as stored */
+	readFirstRunDone: async () => (await import("./browser-db/welcome-import")).readFirstRunDone(),
 	/** Highlight the first `n` words of a page of an open PDF through the reader's own annotation session (the same create
 	 *  and save path as the toolbar); resolves to the annotation's id, or null when the document is not open. */
 	async highlight(attachmentKey: string, page = 0, n = 4): Promise<string | null> {
@@ -158,6 +181,8 @@ const probe = {
 bindUiState(uiState);
 startAppearance(store);
 const { App } = await import("../src/App");
+// a new browser library asks how to start before the app is shown (no flash of an empty library)
+if (BROWSER) await welcomeScreenHook().catch((e) => console.warn("[library] welcome screen", e));
 setApp(() => App);
 await import("../src/features").catch((e) => console.warn("[library] features", e));
 {
@@ -173,7 +198,22 @@ if (BROWSER) {
 		clearTimeout(timer);
 		timer = setTimeout(() => { probe.outsideChanges++; store.refresh(); }, 60);
 	};
-	void welcomeScreenHook(store);
+	// Settings > Files and folders > Export library: only here (the desktop library is a file the user already has)
+		const { registerSetting } = await import("../src/settings/registry");
+		const { Btn } = await import("../src/settings/controls");
+		const { toast } = await import("../src/ui");
+		registerSetting({
+			id: "browser.export", section: "files", label: "Export library",
+			description: "Download the whole library as one zip file: library.sqlite and the attachment files (storage folder). Your library is stored in this browser, so keep a copy.",
+			keywords: ["export", "backup", "download", "zip", "browser library", "copy"],
+			control: () => <Btn icon="download" onClick={() => {
+				void import("./browser-db/welcome-import").then((m) => m.exportLibrary()).then(
+					(r) => toast("Library exported", { description: `${r.name} (${(r.bytes / 1048576).toFixed(1)} MB) is in your downloads.` }),
+					(e) => toast("Could not export the library", { description: e instanceof Error ? e.message : String(e) }),
+				);
+			}}>Export library</Btn>,
+		});
+		probe.hasExportSetting = true;
 } else {
 	// another program (the desktop app, a connector save) wrote to the library: reload the lists
 	const { startOutsideChangeWatch } = await import("../src/shell/outsideChanges");
@@ -184,12 +224,35 @@ if (BROWSER) {
 }
 
 /**
- * First run of the browser library (the library is empty): this is where the welcome screen goes later (sign in to zotero.org, import
- * a file, or start empty). For now the library simply starts empty, so this only waits for the first list and notes it.
+ * First run of the browser library: the library is empty and chrome.storage.local `zincBrowserLibrary.firstRunDone` is not true. The
+ * welcome screen then takes the place of the app until the user chooses: start empty, sign in to zotero.org (Settings > Sync), or import
+ * a Zotero or Zinc data folder. Any choice sets the flag; a library that is not empty skips the screen (and sets the flag).
  */
-async function welcomeScreenHook(s: { pagesLoaded(): number; total(): number }): Promise<void> {
-	for (let i = 0; i < 100 && s.pagesLoaded() === 0; i++) await new Promise((r) => setTimeout(r, 100));
-	if (s.pagesLoaded() > 0 && s.total() === 0) console.info("[library] empty browser library: first run (welcome screen: not built yet)");
+async function welcomeScreenHook(): Promise<void> {
+	const wi = await import("./browser-db/welcome-import");
+	if (await wi.readFirstRunDone()) return;
+	if (!(await wi.libraryIsEmpty())) { await wi.setFirstRunDone(); return; }
+	const { BrowserWelcome } = await import("./browser-db/welcome");
+	const finish = async () => { await wi.setFirstRunDone(); setWelcome(null); store.refresh(); };
+	const api = {
+		startEmpty: () => void finish(),
+		signIn: () => {
+			void finish().then(async () => {
+				const { openSettings } = await import("../src/shell/layout");
+				const { gotoSection } = await import("../src/settings");
+				openSettings();
+				gotoSection("sync");
+			});
+		},
+		async pickFolder() {
+			const picker = (globalThis as { showDirectoryPicker?: (o?: object) => Promise<unknown> }).showDirectoryPicker;
+			if (!picker) throw new Error("This browser cannot choose a folder (it has no showDirectoryPicker).");
+			try { return await picker({ mode: "read" }); } catch (e) { if ((e as { name?: string }).name === "AbortError") return null; throw e; }
+		},
+		importFolder: (dir: unknown, onProgress: (p: import("./browser-db/welcome-import").Progress) => void) => wi.importFolder(dir as never, onProgress),
+		done: () => void finish(),
+	};
+	setWelcome(() => () => <BrowserWelcome api={api} mode={store.mode()} />);
 }
 
 // "Open library" in the connector's popup: show the item just saved. ?select=<key> when the popup opens this page, a
