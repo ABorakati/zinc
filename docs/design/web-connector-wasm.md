@@ -146,7 +146,7 @@ What was built:
 | Outside changes | `gpui-ui/src/shell/outsideChanges.ts` (+ test) | Polls `ext` (`PRAGMA data_version`) from `GET /api/ui/selection` every 2 s, while the tab is visible. When it moves, it calls `store.refresh()`. |
 | Extension build | `gpui-ui/web/extension.tsx`, `bun web/build.ts --target extension` | Writes `gpui-ui/dist-extension/` (87 files, 30.5 MB): `library.html` with module scripts only. No inline script, service worker or web-app manifest. Every `.wasm` file is inside. The document worker is left out unless `--docworker` is given. |
 | Connector | `scripts/build-win.ts` step 6, `src/browserExt/background.js`, `manifest-v3.json` | The build copies the page into `library/` (from `--library <dir>`, `ZINC_LIBRARY_DIST`, or `../zotero-next/gpui-ui/dist-extension`). The toolbar button's right-click menu gets "Open Zinc library", which opens the page or focuses an open one. The item is hidden when the build has no page. `extension_pages` CSP: `script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`. Package: 35.6 MB unpacked. |
-| Headless check | `gpui-ui/web/extension-check.ts` | Builds a fixture library (`web/demo-library.ts`) and compiles the host. Registers it as `com.zotero_next.connector_host_e2e` under the Chrome for Testing and Chromium keys only (never `Software\Google\Chrome`), and opens the page with `?host=` that name. It first confirms which library the host serves. Then it checks the list, a collection, an item's details and an outside write, takes screenshots, and removes the registration, the profile and the host. |
+| Headless check | `gpui-ui/web/extension-check.ts` | Builds a fixture library (`web/demo-library.ts`) and compiles the host. Registers it as `com.zotero_next.connector_host_e2e` under `HKCU\Software\Chromium` only. That is where Chrome for Testing 151 looks: a run with the host registered under its own `Google\Chrome for Testing` key did not find it. `Software\Google\Chrome` is never touched. The check opens the page with `?host=` that name. It first confirms which library the host serves. Then it checks the list, a collection, an item's details and an outside write, takes screenshots, and removes the registration, the profile and the host. |
 
 Result of the headless check (Chrome for Testing 151): 7/7 checks passed. The fixture's 19 items loaded, "Thesis" opened with 6 items, the item pane showed "Attention Is All You Need", and an item written by another process appeared within the 2 s poll. There were no CSP violations and no page errors. The only refused requests were the sync status poll (403).
 
@@ -166,3 +166,39 @@ What is left:
 - Collection colours and icons (`collection-style.json`) live in the app's config folder, not the library, so the page shows the defaults. Serve them through an API route if they should match.
 - The host binary now contains the whole API: 118.8 MB, against 118.1 MB for the October build. The Bun runtime is most of it, so "larger binary" in section 1 is only 0.7 MB.
 - The real Chrome registration still points at the installed host, which has no `api` method until it is rebuilt and reinstalled.
+
+## 7. The save popup (Zinc look, folder picker, Remove and Cancel)
+
+Status: 2026-11-12, same branches as section 6. The toolbar button now opens a popup directly under it, in place of upstream's in-page progress window.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Popup page | connector `src/browserExt/popup/` (`popup.html`, `popup.css`, `popup.js`, Inter, Lucide icons) | 360 px wide. Inter at 13 px, the app's "Quiet Paper" colours (`gpui-ui/src/shell/schemes.ts`) and radii (6 / 8 px). Follows the system light or dark setting. Shows the save's status and items with attachment progress. Then: a collection picker, the actions Open item, Open in Zinc and Open library, and Cancel while saving or Remove after. |
+| Controller | connector `src/browserExt/savePopup.js` (loaded after `background.js`) | Wraps `Zotero.Messaging.sendMessage`, which carries every `progressWindow.*` event from the page to the tab. It keeps each tab's save state and pushes it to the open popup over a port. While a popup owns the save, the in-page window gets nothing, so it stays hidden. Clicking the button (`default_popup`) opens the popup, and the popup starts the save at once, as the click did before. If a save is still running, or its result was not seen yet, the popup shows that save instead of saving again. Saves started another way (context menu, in-page button) call `action.openPopup()`. When the browser refuses, the in-page window shows as before. |
+| Collection picker | `popup.js` | The current target at the top. A search field (name or parent path; arrow keys and Enter work). Up to 4 recent targets as one-click chips (`chrome.storage.local` `zincRecentTargets`). The collection tree with indentation. Choosing a collection moves the saved item through `updateSession`, the call the in-page window used. A choice made before the save reached the library is applied when it does. |
+| Remove / Cancel | connector-host `src/sessions.ts`, methods `sessionItems`, `trashSession`, `cancelSession` | Remove moves the session's own top-level items to the Trash (`deleted = 1`, the app's soft delete, synced and restorable). It only touches items the session created, added after the session started. Cancel does the same, and the host then refuses the save's later calls (409 `SESSION_CANCELLED`): a PDF still downloading is never stored. If Cancel races a `saveItems` call, what that call creates is trashed when it returns. These are host methods, not `/api` routes, so the library page cannot call them. |
+| Open item / Open in Zinc | core `connector/ui.ts` (`POST /api/ui/reveal {key, open}`), host `revealInApp {key, open}`, app `shell/revealRequests.ts` + `main.tsx` | Open in Zinc selects the item in the desktop app, starting the app if needed. Open item also opens the item's PDF, else its EPUB, else its snapshot, in the app's reader (the core picks it). Without a file it only selects. |
+| Open library | connector `background.js` `openLibrary(key)`, `gpui-ui/web/extension.tsx` | Opens `library/library.html?select=<key>`, or sends `{zincLibrarySelect: key}` to an open one, which reloads its lists and selects the item. |
+| Test hook | connector `nativeHost.js` `useHostForTests(name)` | Points the background at another host registration (`com.zotero_next.*` only). Used by the headless check. |
+
+Headless check (`gpui-ui/web/popup-check.ts`, Chrome for Testing 151): 15/15 checks passed. It uses the same safety rules as section 6, and the background is pointed at the test host before anything is saved. A local server gives two fixture articles with `citation_*` metadata and a PDF sent slowly. The check confirms:
+- the translator is found, and the popup shows the save while it runs while the in-page window stays hidden
+- after the save, the item and its PDF are in the library
+- searching the picker and pressing Enter moves the item to "Thesis", and the choice is remembered as recent
+- Open in Zinc asks the host and shows its answer (the app lookup is off in the test)
+- Open library opens the page, which selects the item
+- Remove trashes the item
+- a second save, cancelled during its PDF, ends with its item in the Trash and no PDF stored
+- there were no exceptions in the popup or the background
+
+Screenshots, light and dark, during and after a save: `<work>/shots/1-saving-light.png` … `7-cancelled-dark.png`. Also new: host tests `test/sessions.test.ts` (6) and a `revealInApp` open test; core `reveal.test.ts` (+1); app `revealRequests.test.ts` (+1).
+
+Try it: build as in section 6. The host must be rebuilt and reinstalled: the popup's Remove, Cancel and the saved-item list need its new methods. Then click the toolbar button on an article page. Or headless: in `gpui-ui`, `bun web/popup-check.ts --ext <connector>/build/manifestv3`.
+
+Not verified, or left:
+
+- `action.openPopup()` for saves from the context menu cannot be seen in a headless browser. It needs a check in a real window. If the browser refuses, the in-page window is the fallback.
+- Tags and a note on the saved item: the old in-page window had them, the popup does not yet. `updateSession` takes both, so it is UI work only.
+- Saving several items from a "Select items" page: the progress rows and Remove work per session, but no multi-item page was tried.
+- The popup's strings are English only (upstream's are translated).
+- Open item needs the desktop app. The browser library page cannot open PDFs yet (phase 3).

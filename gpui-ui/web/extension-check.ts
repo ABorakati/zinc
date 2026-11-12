@@ -2,9 +2,9 @@
 //   bun web/extension-check.ts --ext <connector build/manifestv3> [--chrome <Chrome for Testing chrome.exe>] [--work <dir>] [--keep]
 // 1. Builds a fixture library (web/demo-library.ts: public papers, no personal data) in <work>/library and compiles the native host
 //    to <work>/host/zinc-e2e-host.exe.
-// 2. Registers that host under a name of its own (com.zotero_next.connector_host_e2e) for Chrome for Testing / Chromium only, in
-//    HKCU\Software\Google\Chrome for Testing and HKCU\Software\Chromium. Chrome's own key (Software\Google\Chrome) and the
-//    installed host are never touched, and the page is opened with ?host=<that name>, so it cannot reach the real library.
+// 2. Registers that host under a name of its own (com.zotero_next.connector_host_e2e) in HKCU\Software\Chromium, where Chrome for
+//    Testing looks. Chrome's own key (Software\Google\Chrome) and the installed host are never touched, and the page is opened
+//    with ?host=<that name>, so it cannot reach the real library.
 // 3. Loads the extension in a fresh headless profile (<work>/profile) over CDP, opens library/library.html, and checks: the
 //    host answers for the fixture, the list loads the fixture's items, a collection opens, an item's details load, and an item
 //    written to the library by this process (another program, as the desktop app would be) shows up. Screenshots: <work>/shots.
@@ -21,7 +21,10 @@ const WORK = resolve(arg("work") ?? join(tmpdir(), "zinc-extension-check"));
 const KEEP = process.argv.includes("--keep");
 const ROOT = resolve(import.meta.dir, "..", "..");
 const HOST_NAME = "com.zotero_next.connector_host_e2e";
-const REG_KEYS = [`HKCU\\Software\\Google\\Chrome for Testing\\NativeMessagingHosts\\${HOST_NAME}`, `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`];
+// Chrome for Testing (151) looks hosts up under Software\Chromium, not under its own key nor Chrome's (Software\Google\Chrome):
+// a run with the host registered under "Google\Chrome for Testing" alone does not find it. So a test profile can only reach
+// hosts registered under Chromium, and the real host is never registered there.
+const REG_KEYS = [`HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`];
 const CDP_PORT = 9341;
 
 function findChrome(): string {
