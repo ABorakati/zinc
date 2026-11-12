@@ -41,8 +41,10 @@ export function startPrefetch(): boolean {
 	const finish = () => { for (const r of waiting.values()) r(null); waiting.clear(); };
 	let worker: Worker;
 	try {
-		// compiled exe: build.ts embeds the worker as /root/prefetch-worker.js; from sources it is this directory's .ts
-		worker = new Worker(compiled ? "B:/~BUN/root/prefetch-worker.js" : new URL("./prefetch-worker.ts", import.meta.url).href);
+		// compiled exe: build.ts embeds the worker as /root/prefetch-worker.js (Bun's embedded file system: B:/~BUN on Windows, /$bunfs elsewhere);
+		// from sources it is this directory's .ts
+		const embedded = process.platform === "win32" ? "B:/~BUN/root/prefetch-worker.js" : "/$bunfs/root/prefetch-worker.js";
+		worker = new Worker(compiled ? embedded : new URL("./prefetch-worker.ts", import.meta.url).href);
 	} catch (e) {
 		console.warn("[prefetch] no worker:", e instanceof Error ? e.message : e);
 		finish();

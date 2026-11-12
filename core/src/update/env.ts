@@ -1,5 +1,5 @@
 // The real UpdateEnv: fetch for the manifest and the (resumable) installer download, node:fs for the files, node:child_process to start
-// the installer detached. Nothing here decides anything; updater.ts does.
+// the installer detached (Windows), or replace.ts's way of swapping the app (Linux, macOS). Nothing here decides anything; updater.ts does.
 //
 // Private-repo feeds: ZN_UPDATE_TOKEN (a GitHub token) is sent as "Authorization: Bearer" to the feed's own origin ONLY - not to a
 // different host the manifest points at. Not recommended for end users (see UPDATES.md); fetch itself drops it on a cross-origin redirect.
@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { localDataDir } from "../platform-dirs";
 import { UpdateError, assertSecureUrl } from "./manifest";
+import type { SelfReplace } from "./replace";
 import type { UpdateEnv } from "./updater";
 
 /** %LOCALAPPDATA%\zotero-next-gpui\updates (ZN_UPDATE_DIR overrides, for tests). */
@@ -28,6 +29,8 @@ export interface RealEnvOptions {
 	/** A download that receives nothing for this long fails (default 30 s). */
 	idleMs?: number;
 	exit?: (code: number) => void;
+	/** Linux / macOS: how this copy replaces itself (replace.ts detectSelfReplace). Absent: Windows, the installer. */
+	replace?: SelfReplace;
 }
 
 export function createRealEnv(o: RealEnvOptions = {}): UpdateEnv {
@@ -120,5 +123,6 @@ export function createRealEnv(o: RealEnvOptions = {}): UpdateEnv {
 			child.unref();
 		},
 		exit: o.exit ?? ((code) => process.exit(code)),
+		...(o.replace ? { replace: o.replace } : {}),
 	};
 }

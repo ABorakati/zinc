@@ -73,13 +73,13 @@ registerSettings([
 	},
 	{
 		id: "update.download", section: "system", group: "Updates", label: "Download automatically",
-		description: "Fetch the installer in the background as soon as a new version is found. It is installed only when you choose Install now or Install on exit.",
+		description: "Fetch the update in the background as soon as a new version is found. It is installed only when you choose Install now or Install on exit.",
 		keywords: ["update", "upgrade", "download", "background"],
 		control: () => <Toggle checked={updateDownload()} onChange={setUpdateDownload} />,
 	},
 	{
 		id: "update.feed", section: "system", group: "Updates", label: "Update feed",
-		description: "The https address of the signed latest.json. Empty uses the address built into this version, if any.",
+		description: "The https address of the signed latest.json. On Linux and macOS Zinc reads latest-linux-x64.json or latest-darwin-arm64.json next to it. Empty uses the address built into this version, if any.",
 		keywords: ["update", "feed", "url", "manifest", "latest.json", "github"],
 		layout: "block",
 		control: () => <TextField value={updateFeed()} onCommit={(v) => setUpdateFeed(v.trim())} placeholder={feedUrl() || "https://…/latest.json"} width={440} />,

@@ -8,10 +8,15 @@
 //   - A manifest is trusted only after its Ed25519 signature verified against the embedded public key. A download is trusted only after
 //     its size and sha256 match the (signed) manifest; a mismatch deletes the file. The installer is verified AGAIN just before it runs.
 //   - Never blocks: every method is async; the UI only reads the model through onChange.
+//   - Platforms (platform.ts): Windows reads latest.json and runs the installer. Linux and macOS read latest-<platform>.json and put the new
+//     version in place themselves (env.replace, replace.ts); a manifest for another platform is refused, and a copy that cannot replace
+//     itself is offered the update as "install by hand".
 import { logInfo, logWarn } from "../log";
 import { type Manifest, UpdateError, verifyManifest } from "./manifest";
 import { type LastCheck, type UpdateEvent, type UpdateModel, initialModel, installerName, planCleanup, reduce } from "./machine";
 import { isNewer, parseVersion, compareVersions } from "./version";
+import { feedUrlFor, manifestPlatform, type UpdatePlatform } from "./platform";
+import type { SelfReplace } from "./replace";
 
 export interface UpdateSettings {
 	/** "Check automatically". */
@@ -41,6 +46,8 @@ export interface UpdateEnv {
 	runInstaller(file: string, args: string[]): void | Promise<void>;
 	/** End the app (the real one goes through process.exit, whose hook runs the shutdown closers). */
 	exit(code: number): void;
+	/** Linux and macOS: how this copy replaces itself (replace.ts) instead of running an installer. Absent: Windows. */
+	replace?: SelfReplace;
 }
 
 export interface UpdaterDeps {
@@ -126,7 +133,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		return p;
 	};
 	const updatable = () => !!parseVersion(deps.currentVersion);
-	const target = (m: Manifest) => `${env.updatesDir}/${installerName(m)}`.replaceAll("\\", "/");
+	const platform: UpdatePlatform = env.replace?.platform ?? "win-x64";
+	const downloadDir = () => (env.replace?.downloadDir ?? env.updatesDir).replaceAll("\\", "/");
+	const target = (m: Manifest) => `${downloadDir()}/${installerName(m, platform)}`;
 
 	async function verifyFile(file: string, m: Manifest): Promise<void> {
 		const size = await env.fileSize(file);
@@ -137,9 +146,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 	async function cleanup(): Promise<string[]> {
 		try {
 			const s = model.state;
-			const keep = "manifest" in s && s.manifest ? [installerName(s.manifest)] : [];
-			const gone = planCleanup(await env.list(env.updatesDir), keep, deps.currentVersion);
-			for (const f of gone) await env.remove(`${env.updatesDir}/${f}`.replaceAll("\\", "/")).catch(() => {});
+			const keep = "manifest" in s && s.manifest ? [installerName(s.manifest, platform)] : [];
+			const gone = planCleanup(await env.list(downloadDir()), keep, deps.currentVersion);
+			for (const f of gone) await env.remove(`${downloadDir()}/${f}`).catch(() => {});
+			if (s.kind !== "ready" && s.kind !== "installing" && !inflight) await env.replace?.cleanupStale?.().catch(() => {});
 			if (gone.length) logInfo("update", "removed old installer downloads", { count: gone.length });
 			return gone;
 		} catch (e) {
@@ -166,14 +176,20 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 			dispatch({ t: "check" });
 			try {
 				if (!deps.publicKey) throw new UpdateError("no-key", "This build has no update public key, so updates cannot be verified.");
-				const text = await env.fetchText(s.feedUrl.trim(), { maxBytes: MAX_MANIFEST });
+				const text = await env.fetchText(feedUrlFor(s.feedUrl.trim(), platform), { maxBytes: MAX_MANIFEST });
 				let json: unknown;
 				try { json = JSON.parse(text); } catch { throw new UpdateError("malformed", "bad update manifest: not JSON"); }
 				const m = await verifyManifest(json, deps.publicKey);
+				if (manifestPlatform(m) !== platform) throw new UpdateError("wrong-platform", `the update feed offers a ${manifestPlatform(m)} build, but this is ${platform}`);
 				const newer = isNewer(m.version, deps.currentVersion);
-				const manualOnly = newer && !!m.minVersion && compareVersions(deps.currentVersion, m.minVersion) < 0;
-				dispatch({ t: "checked", at: at(), manifest: newer ? m : null, manualOnly });
-				logInfo("update", newer ? "update available" : "up to date", { current: deps.currentVersion, latest: m.version, manualOnly });
+				let manualOnly = newer && !!m.minVersion && compareVersions(deps.currentVersion, m.minVersion) < 0;
+				let manualReason: string | undefined;
+				if (newer && !manualOnly && env.replace) {
+					manualReason = (await env.replace.manualReason().catch((e) => errMsg(e))) ?? undefined;
+					manualOnly = !!manualReason;
+				}
+				dispatch({ t: "checked", at: at(), manifest: newer ? m : null, manualOnly, ...(manualReason ? { manualReason } : {}) });
+				logInfo("update", newer ? "update available" : "up to date", { current: deps.currentVersion, latest: m.version, platform, manualOnly, ...(manualReason ? { manualReason } : {}) });
 			} catch (e) {
 				logWarn("update", `check failed: ${errMsg(e)}`, { code: errCode(e) ?? null });
 				dispatch({ t: "check-failed", at: at(), message: errMsg(e), code: errCode(e) });
@@ -242,6 +258,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		const { manifest, file } = st;
 		try {
 			await verifyFile(file, manifest); // again, right before running it
+			await env.replace?.prepare(file, manifest);
 		} catch (e) {
 			await env.remove(file).catch(() => {});
 			dispatch({ t: "install" });
@@ -253,9 +270,14 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		try {
 			await deps.prepareExit?.();
 			started = true;
-			const args = installerArgs({ pid: env.pid, file, relaunch: true });
-			logInfo("update", "starting the installer", { version: manifest.version, args: args.join(" ") });
-			await env.runInstaller(file, args);
+			if (env.replace) {
+				logInfo("update", "replacing the app", { version: manifest.version, platform });
+				env.replace.apply(file, { relaunch: true, pid: env.pid });
+			} else {
+				const args = installerArgs({ pid: env.pid, file, relaunch: true });
+				logInfo("update", "starting the installer", { version: manifest.version, args: args.join(" ") });
+				await env.runInstaller(file, args);
+			}
 		} catch (e) {
 			started = false;
 			logWarn("update", `could not start the installer: ${errMsg(e)}`);
@@ -276,7 +298,11 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		exitVerified = false;
 		const st = model.state;
 		if (!model.installOnExit || st.kind !== "ready" || started) return;
-		try { await verifyFile(st.file, st.manifest); exitVerified = true; } catch (e) { logWarn("update", `install on exit skipped: ${errMsg(e)}`); }
+		try {
+			await verifyFile(st.file, st.manifest);
+			await env.replace?.prepare(st.file, st.manifest);
+			exitVerified = true;
+		} catch (e) { logWarn("update", `install on exit skipped: ${errMsg(e)}`); }
 	}
 
 	function onExit(code: number): void {
@@ -284,6 +310,11 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		if (started || code !== 0 || !model.installOnExit || !exitVerified || st.kind !== "ready") return;
 		started = true;
 		try {
+			if (env.replace) {
+				logInfo("update", "replacing the app on exit", { version: st.manifest.version, platform });
+				env.replace.apply(st.file, { relaunch: false, pid: env.pid });
+				return;
+			}
 			const args = installerArgs({ pid: env.pid, file: st.file, relaunch: false });
 			logInfo("update", "starting the installer on exit", { version: st.manifest.version, args: args.join(" ") });
 			void env.runInstaller(st.file, args);

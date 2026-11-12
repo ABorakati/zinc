@@ -1,35 +1,45 @@
-// Release script: sign a built installer into the update feed and (optionally) publish it.
+// Release script: sign built packages into the update feed (one manifest per platform) and (optionally) publish them.
 //
 //   bun gpui-ui/scripts/release.ts --keygen <folder-outside-the-repo>
 //       Generate the Ed25519 key pair: <folder>/release-key.private.json (KEEP SECRET, back it up, never commit) and
 //       <folder>/release-key.public.txt (embed in builds: ZN_UPDATE_PUBKEY_FILE=<that file>, or save it as gpui-ui/update-pubkey.txt).
 //
 //   ZN_UPDATE_KEY=<path to release-key.private.json> \
-//   bun gpui-ui/scripts/release.ts --installer <Zinc-Setup-....exe> (ZoteroNext-Setup-....exe also accepted) [options]
-//       --version <stamp>      "0.2.0+1a2b3c4d-20261201" (default: parsed from the installer's file name, else the package's version.txt)
+//   bun gpui-ui/scripts/release.ts [--installer <Zinc-Setup-....exe>] [--appimage <Zinc-...-x86_64.AppImage>] [--mac-app <Zinc-...-arm64.app.zip>] [options]
+//       At least one package. Each gets its own manifest in <out>:
+//         --installer  Windows   latest.json               (no "platform" field: every Windows build reads this file)
+//         --appimage   Linux     latest-linux-x64.json     ("platform": "linux-x64")
+//         --mac-app    macOS     latest-darwin-arm64.json  ("platform": "darwin-arm64"; darwin-x64 when the file name says -x64)
+//       --version <stamp>      "0.2.0+1a2b3c4d-20261201" for every package. Default per package: the installer's file name; for the
+//                              AppImage and the zip the "<file>.version" next to them (appimage.ts / dmg.ts write it); else the package's
+//                              version.txt. The version MUST be the one built into that package, or the updated app is offered it again.
 //       --notes <file|text>    release notes, Markdown (a file path, or the text itself; default "Zinc <version>")
-//       --url <https url>      where users download the installer (default with --publish: the GitHub release asset URL)
+//       --url <https url>      where users download the package (one package only; default with --publish: the GitHub release asset URL)
+//       --base-url <https url> where users download the packages: <base-url>/<file name> (any number of packages)
 //       --min-version <v>      older installs cannot update in place and are told to install by hand
-//       --out <dir>            where latest.json goes (default gpui-ui/out/release)
-//       --publish <owner/repo> then run `gh release create` on that repo with the installer and latest.json
+//       --out <dir>            where the manifests go (default gpui-ui/out/release)
+//       --publish <owner/repo> then run `gh release create` on that repo with the packages, the manifests and any --attach files
+//       --attach <file>        another file for the release (the .dmg, .sha256 files); may be repeated
 //       --tag <tag>            the release tag (default v<version>)
 //       --dry-run              with --publish: print the gh command instead of running it
 //       --force                skip the "key matches the public key built into the app" check
-//   Writes <out>/latest.json: { version, releasedAt, notes, url, sha256, size, minVersion?, signature }, signed with the private key, then
-//   verifies its own output. Nothing is uploaded unless --publish is given, and `--publish --dry-run` shows the command only.
+//   Each manifest: { version, releasedAt, notes, url, sha256, size, minVersion?, platform?, signature }, signed with the private key, then
+//   verified. Nothing is uploaded unless --publish is given, and `--publish --dry-run` shows the command only.
 //
 // The private key is read from the path in ZN_UPDATE_KEY and refused if that path is inside this repo. See gpui-ui/UPDATES.md.
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { generateKeyPair, publicKeyOf, signManifest, verifyManifest, type PrivateJwk } from "../../core/src/update/manifest";
-import { parseVersion } from "../../core/src/update/version";
+import { feedFileName, type UpdatePlatform } from "../../core/src/update/platform";
+import { compareVersions, parseVersion } from "../../core/src/update/version";
 import { updatePubkey } from "./_update-key";
 
 const root = resolve(import.meta.dir, "..");
 const repo = resolve(root, "..");
 const args = process.argv.slice(2);
 const arg = (n: string): string | undefined => { const i = args.indexOf(`--${n}`); const v = i >= 0 ? args[i + 1] : undefined; return v && !v.startsWith("--") ? v : undefined; };
+const all = (n: string): string[] => args.flatMap((a, i) => (a === `--${n}` && args[i + 1] && !args[i + 1]!.startsWith("--") ? [args[i + 1]!] : []));
 const flag = (n: string) => args.includes(`--${n}`);
 const die = (m: string): never => { console.error(`release: ${m}`); process.exit(1); };
 
@@ -53,10 +63,38 @@ if (flag("keygen")) {
 	process.exit(0);
 }
 
-// ------------------------------------------------------------------------------------------------------------ sign
+// ------------------------------------------------------------------------------------------------------------ the packages
 
-const installer = arg("installer") ?? die("usage: bun gpui-ui/scripts/release.ts --installer <setup.exe> (see the header of this file); --keygen <folder> makes the key pair");
-if (!existsSync(installer)) die(`no such installer: ${installer}`);
+interface Pkg { file: string; platform: UpdatePlatform; version: string }
+
+const packageVersion = (): string | undefined => {
+	for (const d of ["package-aot", "package"]) {
+		const stamp = join(root, "out", d, "zotero-next-gpui", "version.txt");
+		if (existsSync(stamp)) return readFileSync(stamp, "utf8").trim();
+	}
+	return undefined;
+};
+const sidecar = (file: string): string | undefined => (existsSync(`${file}.version`) ? readFileSync(`${file}.version`, "utf8").trim() : undefined);
+
+const pkgs: Pkg[] = [];
+const installer = arg("installer");
+if (installer) {
+	const m = /^(?:Zinc|ZoteroNext)-Setup-(\d+(?:\.\d+)*)-([0-9a-f]{8})-(\d{8})(?:-TEST)?\.exe$/i.exec(basename(installer));
+	pkgs.push({ file: installer, platform: "win-x64", version: arg("version") ?? (m ? `${m[1]}+${m[2]}-${m[3]}` : packageVersion()) ?? die(`cannot tell the version of ${installer}: pass --version <stamp>`) });
+}
+const appimage = arg("appimage");
+if (appimage) pkgs.push({ file: appimage, platform: "linux-x64", version: arg("version") ?? sidecar(appimage) ?? die(`cannot tell the version of ${appimage}: no ${basename(appimage)}.version next to it; pass --version <stamp>`) });
+const macApp = arg("mac-app");
+if (macApp) {
+	if (!/\.zip$/i.test(macApp)) die(`--mac-app wants the zipped Zinc.app (dmg.ts writes Zinc-<version>-<arch>.app.zip), not ${basename(macApp)}`);
+	pkgs.push({ file: macApp, platform: /-x64\b/i.test(basename(macApp)) ? "darwin-x64" : "darwin-arm64", version: arg("version") ?? sidecar(macApp) ?? die(`cannot tell the version of ${macApp}: no ${basename(macApp)}.version next to it; pass --version <stamp>`) });
+}
+if (!pkgs.length) die("usage: bun gpui-ui/scripts/release.ts --installer <setup.exe> | --appimage <file> | --mac-app <file.app.zip> (see the header of this file); --keygen <folder> makes the key pair");
+for (const p of pkgs) {
+	if (!existsSync(p.file)) die(`no such file: ${p.file}`);
+	if (!parseVersion(p.version)) die(`not a version: ${p.version} (${basename(p.file)})`);
+}
+
 const keyPath = process.env.ZN_UPDATE_KEY ?? die("ZN_UPDATE_KEY (path to release-key.private.json) is not set");
 if (insideRepo(keyPath)) die(`ZN_UPDATE_KEY points inside the repository (${resolve(keyPath)}). Keep the private key outside it.`);
 const jwk: PrivateJwk = (() => { try { return JSON.parse(readFileSync(keyPath, "utf8")) as PrivateJwk; } catch (e) { return die(`cannot read the private key ${keyPath}: ${e instanceof Error ? e.message : e}`); } })();
@@ -68,48 +106,56 @@ const built = (() => { const w = console.warn; console.warn = () => {}; try { re
 if (built && built !== publicKey && !flag("force")) die(`this private key does not match the public key builds embed (${built}); apps would reject the manifest. Use the right key, or --force.`);
 if (!built) console.warn("release: note - no public key is configured for builds here (ZN_UPDATE_PUBKEY_FILE / gpui-ui/update-pubkey.txt); make sure the app you ship embeds " + publicKey);
 
-const version = (() => {
-	const v = arg("version");
-	if (v) return v;
-	const m = /^(?:Zinc|ZoteroNext)-Setup-(\d+(?:\.\d+)*)-([0-9a-f]{8})-(\d{8})(?:-TEST)?\.exe$/i.exec(basename(installer));
-	if (m) return `${m[1]}+${m[2]}-${m[3]}`;
-	const stamp = join(root, "out", "package-aot", "zotero-next-gpui", "version.txt");
-	return existsSync(stamp) ? readFileSync(stamp, "utf8").trim() : die("cannot tell the version: pass --version <stamp>");
-})();
-if (!parseVersion(version)) die(`not a version: ${version}`);
 const minVersion = arg("min-version");
 if (minVersion && !parseVersion(minVersion)) die(`not a version: ${minVersion}`);
 
+// the release is named after its newest package (they are usually the same stamp, or the same release built on different days)
+const version = pkgs.map((p) => p.version).reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b));
 const notesArg = arg("notes");
 const notes = notesArg === undefined ? `Zinc ${version}` : existsSync(notesArg) ? readFileSync(notesArg, "utf8") : notesArg;
 
 const publishRepo = arg("publish");
 const tag = arg("tag") ?? `v${version}`;
-const file = basename(installer);
-const url = arg("url") ?? (publishRepo ? `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(file)}` : die("--url <https url of the installer> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
+const urlArg = arg("url"), baseUrl = arg("base-url");
+if (urlArg && pkgs.length > 1) die("--url names one package's download; with several packages use --base-url or --publish");
+const urlOf = (file: string): string =>
+	urlArg ?? (baseUrl ? `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(basename(file))}`
+		: publishRepo ? `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(basename(file))}`
+		: die("--url / --base-url <https url> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
 
-const sha256 = await new Promise<string>((res, rej) => {
+const sha256Of = (file: string) => new Promise<string>((res, rej) => {
 	const h = createHash("sha256");
-	createReadStream(installer).on("data", (d) => h.update(d)).on("error", rej).on("end", () => res(h.digest("hex")));
+	createReadStream(file).on("data", (d) => h.update(d)).on("error", rej).on("end", () => res(h.digest("hex")));
 });
-const size = statSync(installer).size;
-
-const manifest = await signManifest({ version, releasedAt: new Date().toISOString(), notes, url, sha256, size, ...(minVersion ? { minVersion } : {}) }, jwk);
-await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey); // our own output must verify
 
 const out = resolve(arg("out") ?? join(root, "out", "release"));
 mkdirSync(out, { recursive: true });
-const latest = join(out, "latest.json");
-writeFileSync(latest, JSON.stringify(manifest, null, 2) + "\n");
-console.log(`wrote ${latest}`);
-console.log(`  version ${version}\n  installer ${file}  ${size} bytes  sha256 ${sha256}\n  url ${url}\n  signed with public key ${publicKey}`);
+const releasedAt = new Date().toISOString();
+const manifests: string[] = [];
+for (const p of pkgs) {
+	const sha256 = await sha256Of(p.file);
+	const size = statSync(p.file).size;
+	const url = urlOf(p.file);
+	const manifest = await signManifest({
+		version: p.version, releasedAt, notes, url, sha256, size, ...(minVersion ? { minVersion } : {}),
+		...(p.platform === "win-x64" ? {} : { platform: p.platform }), // latest.json stays readable by older Windows builds
+	}, jwk);
+	await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey); // our own output must verify
+	const dest = join(out, feedFileName(p.platform));
+	writeFileSync(dest, JSON.stringify(manifest, null, 2) + "\n");
+	manifests.push(dest);
+	console.log(`wrote ${dest}\n  ${p.platform}  version ${p.version}\n  ${basename(p.file)}  ${size} bytes  sha256 ${sha256}\n  url ${url}`);
+}
+console.log(`signed with public key ${publicKey}`);
 
 // ------------------------------------------------------------------------------------------------------------ --publish
 
+const attach = all("attach");
+for (const f of attach) if (!existsSync(f)) die(`no such file to attach: ${f}`);
 if (publishRepo) {
 	const notesFile = join(out, "release-notes.md");
 	writeFileSync(notesFile, notes.endsWith("\n") ? notes : notes + "\n");
-	const cmd = ["gh", "release", "create", tag, resolve(installer), latest, "--repo", publishRepo, "--title", `Zinc ${version}`, "--notes-file", notesFile, "--latest"];
+	const cmd = ["gh", "release", "create", tag, ...pkgs.map((p) => resolve(p.file)), ...manifests, ...attach.map((f) => resolve(f)), "--repo", publishRepo, "--title", `Zinc ${version}`, "--notes-file", notesFile, "--latest"];
 	if (flag("dry-run")) {
 		console.log(`dry run, not publishing. Would run:\n  ${cmd.map((c) => (/\s/.test(c) ? `"${c}"` : c)).join(" ")}`);
 	} else {
@@ -117,7 +163,8 @@ if (publishRepo) {
 		const r = Bun.spawnSync(cmd, { stdout: "inherit", stderr: "inherit" });
 		if (r.exitCode !== 0) die(`gh release create failed (${r.exitCode})`);
 		console.log(`published. Feed URL (if the repo is public): https://github.com/${publishRepo}/releases/latest/download/latest.json`);
+		console.log("  (Linux and macOS builds read latest-linux-x64.json / latest-darwin-arm64.json from the same place.)");
 	}
 } else {
-	console.log(`not published. Upload ${file} and latest.json yourself, or re-run with --publish <owner/repo> (add --dry-run to preview).`);
+	console.log(`not published. Upload ${pkgs.map((p) => basename(p.file)).join(", ")} and ${manifests.map((m) => basename(m)).join(", ")} yourself, or re-run with --publish <owner/repo> (add --dry-run to preview).`);
 }

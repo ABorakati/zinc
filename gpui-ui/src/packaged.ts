@@ -21,7 +21,8 @@ import { mark } from "./trace";
 mark("boot");
 
 const exe = process.execPath;
-export const packaged = /^zotero-next-gpui.*\.exe$/i.test(basename(exe));
+// zotero-next-gpui(-<variant>).exe on Windows; zotero-next-gpui with no extension on Linux and macOS (AppImage, .app bundle)
+export const packaged = /^zotero-next-gpui(-[\w-]+)?(\.exe)?$/i.test(basename(exe));
 
 /** What packaged start-up decided, for the UI (e.g. the "no library" message). */
 export const startup: {
@@ -55,14 +56,23 @@ export function backupOnce(db: string): string | undefined {
 /** The packaged app, or an unpackaged run asked to choose its library like one (ZN_RESOLVE_LIBRARY=1). */
 const chooseLibrary = packaged || process.env.ZN_RESOLVE_LIBRARY === "1";
 
+/** Where the packaged app's data files are: next to the exe, or Zinc.app/Contents/Resources in the macOS app bundle (scripts/dmg.ts),
+ *  which keeps only code (the exe and the two dylibs) in Contents/MacOS. */
+export const packageDataDir = (): string => {
+	const res = join(dirname(exe), "..", "Resources");
+	return process.platform === "darwin" && existsSync(join(res, "vendor")) ? res : dirname(exe);
+};
+
 if (packaged) {
-	const dir = dirname(exe);
+	const exeDir = dirname(exe);
+	const dir = packageDataDir();
 	const set = (k: string, v: string) => { if (!process.env[k]) process.env[k] = v; };
 	// vendor/document-worker and vendor/reader/structured-document-text are copied under the package folder
 	if (existsSync(join(dir, "vendor"))) set("ZN_ROOT", dir);
 	if (existsSync(join(dir, "docworker-entry.ts"))) set("ZN_DOCWORKER_ENTRY", join(dir, "docworker-entry.ts"));
 	if (existsSync(join(dir, "pdf-worker.ts"))) set("ZN_PDF_WORKER_ENTRY", join(dir, "pdf-worker.ts")); // PDF full-text extraction worker
-	if (existsSync(join(dir, "zn_pdf.dll"))) set("ZN_PDF_DLL", join(dir, "zn_pdf.dll"));
+	const pdfLib = process.platform === "win32" ? "zn_pdf.dll" : process.platform === "darwin" ? "libzn_pdf.dylib" : "libzn_pdf.so";
+	if (existsSync(join(exeDir, pdfLib))) set("ZN_PDF_DLL", join(exeDir, pdfLib));
 	// Zotero translators: the pre-bundled worker (jsdom inside) and the framework + translators + schema it reads from disk
 	if (existsSync(join(dir, "translate-worker.js"))) set("ZN_TRANSLATE_WORKER", join(dir, "translate-worker.js"));
 	if (existsSync(join(dir, "vendor", "zotero", "translators"))) set("ZN_ZOTERO_VENDOR", join(dir, "vendor", "zotero"));

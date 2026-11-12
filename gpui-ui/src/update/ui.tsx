@@ -31,7 +31,7 @@ export function showUpdateToast(m: Manifest, a: UpdateActions, o: { ready?: bool
 	});
 }
 
-function WhatsNew(p: { m: Manifest; a: UpdateActions; close: () => void; manualOnly?: boolean }): JSX.Element {
+function WhatsNew(p: { m: Manifest; a: UpdateActions; close: () => void; manualOnly?: boolean; manualReason?: string }): JSX.Element {
 	const lines = notesToLines(p.m.notes);
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
@@ -42,7 +42,7 @@ function WhatsNew(p: { m: Manifest; a: UpdateActions; close: () => void; manualO
 				</Show>
 			</Scroll>
 			<Show when={p.manualOnly}>
-				<Line class="text-xs text-destructive">This version cannot be installed over the one you have; download the installer from the project page.</Line>
+				<Line class="text-xs text-destructive">{p.manualReason ?? "This version cannot be installed over the one you have; download it from the project page."}</Line>
 			</Show>
 			<Footer>
 				<Button variant="ghost" size="sm" onClick={p.close}>Later</Button>
@@ -54,8 +54,8 @@ function WhatsNew(p: { m: Manifest; a: UpdateActions; close: () => void; manualO
 }
 
 let open = false;
-export function openWhatsNew(m: Manifest, a: UpdateActions, o: { manualOnly?: boolean } = {}): void {
+export function openWhatsNew(m: Manifest, a: UpdateActions, o: { manualOnly?: boolean; manualReason?: string } = {}): void {
 	if (open) return;
 	open = true;
-	void openDialog<void>((close) => <WhatsNew m={m} a={a} close={() => close()} manualOnly={o.manualOnly} />, { title: `Zinc ${displayVersion(m.version)}`, width: 520 }).finally(() => { open = false; });
+	void openDialog<void>((close) => <WhatsNew m={m} a={a} close={() => close()} manualOnly={o.manualOnly} manualReason={o.manualReason} />, { title: `Zinc ${displayVersion(m.version)}`, width: 520 }).finally(() => { open = false; });
 }

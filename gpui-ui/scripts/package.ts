@@ -25,7 +25,7 @@
 // The exe finds these next to itself (src/packaged.ts). It is standalone: it runs the core in its own process on the library
 // (after a one-time backup) and the same services as zotero-next (API on 23120, Zotero port 23119, Zotero sync, PDF extraction;
 // src/services.ts). --zip also writes out/package/zotero-next-gpui-<date>.zip.
-import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { BUILD_VERSION } from "./_version";
 import { signFiles } from "./sign";
@@ -41,23 +41,34 @@ const run = (cmd: string[], cwd = root) => {
 	if (r.exitCode !== 0) throw new Error(`${cmd.join(" ")} failed (${r.exitCode})`);
 };
 
+// Per OS: the exe has no extension and the native libraries are lib*.so / lib*.dylib outside Windows (Linux and macOS packages are
+// what scripts/appimage.ts and scripts/dmg.ts wrap). --aot, signing and the icon.ico window icon are Windows only.
+const isWin = process.platform === "win32";
+const EXE = isWin ? ".exe" : "";
+const PDF_LIB = isWin ? "zn_pdf.dll" : process.platform === "darwin" ? "libzn_pdf.dylib" : "libzn_pdf.so";
+const PDFIUM_LIB = isWin ? "pdfium.dll" : process.platform === "darwin" ? "libpdfium.dylib" : "libpdfium.so";
+if (aot && !isWin) throw new Error("--aot is Windows only");
+
 // 1. native PDF renderer (uses the user's normal cargo setup: shared target dir + kache)
 run(["cargo", "build", "--release"], join(root, "native", "pdf"));
 const dllCands = [
-	process.env.CARGO_TARGET_DIR && join(process.env.CARGO_TARGET_DIR, "release", "zn_pdf.dll"),
-	join(root, "native", "pdf", "target", "release", "zn_pdf.dll"),
+	process.env.CARGO_TARGET_DIR && join(process.env.CARGO_TARGET_DIR, "release", PDF_LIB),
+	join(root, "native", "pdf", "target", "release", PDF_LIB),
 ].filter(Boolean) as string[];
 const dll = dllCands.find((p) => existsSync(p));
-if (!dll) throw new Error("zn_pdf.dll not found after cargo build (tried " + dllCands.join(", ") + ")");
+if (!dll) throw new Error(`${PDF_LIB} not found after cargo build (tried ${dllCands.join(", ")})`);
 
-// 1b. PDFium (the rasteriser zn_pdf.dll loads at run time; hayro renders instead when it is missing). Fetched once, sha256-checked.
+// 1b. PDFium (the rasteriser zn_pdf loads at run time; hayro renders instead when it is missing). Fetched once, sha256-checked.
+// fetch-pdfium.ts puts the library in bin/ on Windows and lib/ elsewhere (the layout of the pdfium-binaries archives).
 const pdfiumDir = join(root, "native", "pdf", "vendor", "pdfium");
-if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) run(["bun", join(root, "native", "pdf", "vendor", "fetch-pdfium.ts")]);
-if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) throw new Error("pdfium.dll missing in " + pdfiumDir);
+const pdfiumFile = () => [join(pdfiumDir, "bin", PDFIUM_LIB), join(pdfiumDir, "lib", PDFIUM_LIB)].find((p) => existsSync(p));
+if (!pdfiumFile()) run(["bun", join(root, "native", "pdf", "vendor", "fetch-pdfium.ts")]);
+const pdfium = pdfiumFile();
+if (!pdfium) throw new Error(`${PDFIUM_LIB} missing in ${pdfiumDir}`);
 
 // 2. the exe
-run(aot ? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", "--hide-console"] : ["bun", "scripts/build.ts", "--variant", "bytecode", "--hide-console"]);
-const exe = join(root, "out", aot ? "zotero-next-gpui-aot.exe" : "zotero-next-gpui-bytecode.exe");
+run(aot ? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", "--hide-console"] : ["bun", "scripts/build.ts", "--variant", "bytecode", ...(isWin ? ["--hide-console"] : [])]);
+const exe = join(root, "out", aot ? "zotero-next-gpui-aot.exe" : `zotero-next-gpui-bytecode${EXE}`);
 
 // 2b. the Zotero translation worker, pre-bundled (jsdom and friends inside; see scripts/translate-worker.ts)
 const translateWorker = join(root, "out", "translate-worker.js");
@@ -66,10 +77,12 @@ if (!aot) run(["bun", "scripts/translate-worker.ts", translateWorker]);
 // 3. assemble
 rmSync(app, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
-cpSync(exe, join(app, "zotero-next-gpui.exe"));
-cpSync(dll, join(app, "zn_pdf.dll"));
-cpSync(join(root, "assets", "icon.ico"), join(app, "icon.ico")); // the window's title-bar/taskbar icon (src/shell/windowIcon.ts)
-cpSync(join(pdfiumDir, "bin", "pdfium.dll"), join(app, "pdfium.dll"));
+cpSync(exe, join(app, `zotero-next-gpui${EXE}`));
+if (!isWin) chmodSync(join(app, "zotero-next-gpui"), 0o755);
+cpSync(dll, join(app, PDF_LIB));
+if (isWin) cpSync(join(root, "assets", "icon.ico"), join(app, "icon.ico")); // the window's title-bar/taskbar icon (src/shell/windowIcon.ts)
+else cpSync(join(root, "assets", "icon.png"), join(app, "icon.png")); // for the AppImage / .app wrappers
+cpSync(pdfium, join(app, PDFIUM_LIB));
 cpSync(join(pdfiumDir, "licenses"), join(app, "pdfium-licenses"), { recursive: true });
 cpSync(join(pdfiumDir, "LICENSE"), join(app, "pdfium-licenses", "PDFIUM-LICENSE.txt"));
 if (!aot) {
@@ -90,7 +103,25 @@ for (const [name, index] of [["reader-host", "index.html"], ["note-host", "edito
 	if (existsSync(join(dist, index))) cpSync(dist, join(app, name, "dist"), { recursive: true });
 	else console.warn(`package: ${name}/dist not built (bash ${name}/build.sh); web tabs will be off`);
 }
-writeFileSync(join(app, "README.txt"), [
+if (!isWin) writeFileSync(join(app, "README.txt"), [
+	"Zinc",
+	"",
+	"Start zotero-next-gpui. It opens your library itself (the one chosen on first run), after making one backup copy of it",
+	"(library.backup-gpui-*.sqlite next to it), and runs Zinc's services: the HTTP API on 127.0.0.1:23120 (MCP), the Zotero",
+	"Connector port 23119, Zotero sync and PDF full-text extraction.",
+	"",
+	process.platform === "darwin"
+		? "Settings and logs: ~/Library/Application Support/zotero-next-gpui/"
+		: "Settings and logs: $XDG_CONFIG_HOME/zotero-next-gpui/ (~/.config). The default library goes in $XDG_DATA_HOME (~/.local/share).",
+	process.platform === "linux"
+		? "Snapshots, EPUBs and the note editor need GTK 4 and WebKitGTK 6 (webkitgtk-6.0), and run on X11 or XWayland; ZN_WAYLAND=1 keeps native Wayland without them."
+		: "",
+	"The Word add-in, the Zinc browser connector helper, auto-update and institution sign-in for Find Full Text are Windows only.",
+	"",
+	"Environment overrides: ZN_LIBRARY, ZN_DB, ZN_URL, ZN_PORT, ZN_SYNC=0, ZN_ZPORT=0|<port>, ZN_PDF_DLL, ZN_PDFIUM_DLL, ZN_TRACE=1.",
+	"",
+].join("\n"));
+else writeFileSync(join(app, "README.txt"), [
 	"Zinc (GPUI)",
 	"",
 	"Start zotero-next-gpui.exe. It does not need another Zinc: it opens the library itself (ZN_LIBRARY, default",
@@ -115,7 +146,7 @@ writeFileSync(join(app, "README.txt"), [
 
 writeFileSync(join(app, "version.txt"), BUILD_VERSION + "\n"); // the stamp scripts/installer.ts and the updater read
 // Authenticode (scripts/sign.ts): signs the exe and our native DLL when a certificate is configured, else prints "unsigned: ..." and moves on
-signFiles([join(app, "zotero-next-gpui.exe"), join(app, "zn_pdf.dll")]);
+if (isWin) signFiles([join(app, "zotero-next-gpui.exe"), join(app, "zn_pdf.dll")]);
 
 const size = (p: string): number => {
 	const s = statSync(p);
@@ -129,6 +160,7 @@ console.log(`package: ${app}  (${(size(app) / 1048576).toFixed(0)} MB)`);
 if (process.argv.includes("--zip")) {
 	const zip = join(pkgDir, `zotero-next-gpui-${new Date().toISOString().slice(0, 10)}.zip`);
 	rmSync(zip, { force: true });
-	run(["pwsh", "-NoProfile", "-Command", `Compress-Archive -Path '${app}' -DestinationPath '${zip}' -CompressionLevel Optimal`]);
+	if (isWin) run(["pwsh", "-NoProfile", "-Command", `Compress-Archive -Path '${app}' -DestinationPath '${zip}' -CompressionLevel Optimal`]);
+	else run(["zip", "-qry", zip, basename(app)], pkgDir); // -y keeps symlinks
 	console.log(`zip: ${zip}  (${(statSync(zip).size / 1048576).toFixed(0)} MB)`);
 }

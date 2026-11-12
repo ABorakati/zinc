@@ -1,0 +1,168 @@
+name: Desktop packages
+
+# Zinc for Linux and macOS: an AppImage (gpui-ui/scripts/appimage.ts) and a disk image with Zinc.app (gpui-ui/scripts/dmg.ts).
+#   - web-parts (Linux): the parts that are the same on every OS, built once: Zotero's document worker, the web reader page
+#     (reader-host/dist, from zotero/reader at a pinned commit) and the note editor page (note-host/dist).
+#   - appimage (Linux x64) and dmg (macOS, Apple Silicon): the native app (Bun executable, zn_pdf + PDFium) packaged with those parts.
+# Artifacts "zinc-appimage" and "zinc-dmg" are kept for a few days. A published release, or a run by hand with release_tag, also
+# attaches Zinc-<version>-x86_64.AppImage and Zinc-<version>-arm64.dmg to the release (gh workflow run desktop-packages.yml -f release_tag=v0.1.10).
+# macOS minutes cost several times Linux ones on a private repository, so this runs on releases and by hand, not on every push.
+# Auto-update: the builds embed the update public key and the default feed from the repository VARIABLES ZN_UPDATE_PUBKEY and
+# ZN_UPDATE_URL (Settings > Secrets and variables > Actions > Variables; a public key is not a secret). Without them a build never updates.
+# The dmg job also makes Zinc-<version>-arm64.app.zip, the archive the macOS updater downloads; each package gets a .version file with
+# its exact build stamp. Signing the feed (latest-linux-x64.json, latest-darwin-arm64.json) is NOT done here: the private key stays on
+# the release machine, where gpui-ui/scripts/release.ts signs these files (gpui-ui/UPDATES.md).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Attach the packages to this existing release (e.g. v0.1.10); empty: build only"
+        required: false
+        default: ""
+
+concurrency:
+  group: desktop-packages-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # gh release upload
+
+env:
+  BUN_VERSION: 1.4.4
+  # zotero/reader as vendored for the app (vendor/reader; its submodules follow the commit)
+  ZOTERO_READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39
+  TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+  ZN_UPDATE_PUBKEY: ${{ vars.ZN_UPDATE_PUBKEY }}
+  ZN_UPDATE_URL: ${{ vars.ZN_UPDATE_URL }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  web-parts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache Zotero's document worker
+        id: docworker
+        uses: actions/cache@v4
+        with:
+          path: vendor/document-worker
+          key: docworker-${{ hashFiles('scripts/build-docworker.sh') }}
+      - name: Build Zotero's document worker
+        if: steps.docworker.outputs.cache-hit != 'true'
+        run: mkdir -p vendor && bash scripts/build-docworker.sh
+      - name: Cache the web reader
+        id: reader
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/reader
+            reader-host/dist
+          key: reader-${{ env.ZOTERO_READER_COMMIT }}-${{ hashFiles('reader-host/**', 'scripts/shims/**') }}
+      - name: Build the web reader page
+        if: steps.reader.outputs.cache-hit != 'true'
+        run: |
+          git clone --recurse-submodules https://github.com/zotero/reader vendor/reader
+          git -C vendor/reader checkout "$ZOTERO_READER_COMMIT"
+          git -C vendor/reader submodule update --init --recursive
+          bash reader-host/build.sh
+      - name: Build the note editor page
+        run: bash note-host/build.sh
+      - name: Keep the parts
+        run: |
+          mkdir -p parts
+          tar -czf parts/web-parts.tgz vendor/document-worker/build vendor/reader/structured-document-text/src reader-host/dist note-host/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-parts
+          path: parts/web-parts.tgz
+          retention-days: 1
+
+  appimage:
+    needs: web-parts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-parts
+      - name: Unpack the parts
+        run: tar -xzf web-parts.tgz
+      - name: Install core and gpui-ui
+        run: |
+          (cd core && bun install --frozen-lockfile)
+          (cd gpui-ui && bun install --frozen-lockfile)
+      - name: Fetch vendored Zotero translation code
+        run: bun core/scripts/fetch-zotero-vendor.ts
+      - name: Placeholder for the fulltext wasm
+        run: mkdir -p core/vendor/fulltext-wasm && : > core/vendor/fulltext-wasm/fulltext.wasm
+      - name: AppImage
+        working-directory: gpui-ui
+        run: |
+          export ZN_RELEASE="${TAG#v}"; [ -n "$ZN_RELEASE" ] || export ZN_RELEASE=0.1.0 # v0.1.10 -> 0.1.10
+          bun scripts/appimage.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zinc-appimage
+          path: |
+            gpui-ui/out/appimage/*.AppImage
+            gpui-ui/out/appimage/*.sha256
+            gpui-ui/out/appimage/*.version
+      - name: Attach to the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" gpui-ui/out/appimage/*.AppImage gpui-ui/out/appimage/*.AppImage.sha256 gpui-ui/out/appimage/*.AppImage.version --clobber
+
+  dmg:
+    needs: web-parts
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-parts
+      - name: Unpack the parts
+        run: tar -xzf web-parts.tgz
+      - name: Install core and gpui-ui
+        run: |
+          (cd core && bun install --frozen-lockfile)
+          (cd gpui-ui && bun install --frozen-lockfile)
+      - name: Fetch vendored Zotero translation code
+        run: bun core/scripts/fetch-zotero-vendor.ts
+      - name: Placeholder for the fulltext wasm
+        run: mkdir -p core/vendor/fulltext-wasm && : > core/vendor/fulltext-wasm/fulltext.wasm
+      - name: Disk image
+        working-directory: gpui-ui
+        run: |
+          export ZN_RELEASE="${TAG#v}"; [ -n "$ZN_RELEASE" ] || export ZN_RELEASE=0.1.0 # v0.1.10 -> 0.1.10
+          bun scripts/dmg.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zinc-dmg
+          path: |
+            gpui-ui/out/dmg/*.dmg
+            gpui-ui/out/dmg/*.app.zip
+            gpui-ui/out/dmg/*.sha256
+            gpui-ui/out/dmg/*.version
+      - name: Attach to the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" gpui-ui/out/dmg/*.dmg gpui-ui/out/dmg/*.app.zip gpui-ui/out/dmg/*.sha256 gpui-ui/out/dmg/*.version --clobber

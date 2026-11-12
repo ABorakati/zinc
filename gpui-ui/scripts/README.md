@@ -24,12 +24,25 @@ bun --hot src/main.tsx                        # hot reload (bun run dev)
 bun check                                     # typecheck (do not use tsc via bunx)
 ```
 
+## Build and package scripts
+
+All run from `gpui-ui/`. Linux and macOS are covered too; see `docs/developer-guide/building.md`.
+
+```
+bun scripts/build.ts                # compile for this OS and CPU (bun-windows-x64, bun-linux-x64, bun-darwin-arm64); aot, exe icon, --hide-console: Windows only
+bun scripts/package.ts [--zip]      # out/package/zotero-next-gpui/ (PDF library and PDFium per OS); --aot and signing: Windows only
+bun scripts/installer.ts            # Windows: Inno Setup installer
+bun scripts/appimage.ts             # Linux x64: out/appimage/Zinc-<version>-x86_64.AppImage (+ .sha256); runs package.ts first
+bun scripts/dmg.ts                  # macOS: out/dmg/Zinc-<version>-<arch>.dmg (+ .sha256); runs package.ts first
+bun scripts/smoke-native.ts [dir]   # smoke test of the real app window (macOS CI; also Linux and Windows)
+```
+
 ## Which library the packaged app opens, and the first-run screen
 
 No path in the code names a user. The rule is `core/src/library-location.ts` (also used by the browser
 connector host; `word/addin/Settings.cs` mirrors it): `ZN_DB` / `ZN_LIBRARY`, else the library path saved in
-`%APPDATA%\zotero-next-gpui\library.json` (`{"path": "..."}`), else the legacy `<home>\zotero-next\data\library.sqlite` (when it exists it
-is adopted into that file on the first start, so the library keeps opening from there), else `%APPDATA%\zotero-next\library.sqlite`
+`<config>\zotero-next-gpui\library.json` (`{"path": "..."}`; `<config>` is `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` on Linux), else the legacy `<home>\zotero-next\data\library.sqlite` (when it exists it
+is adopted into that file on the first start, so the library keeps opening from there), else `<data>\zotero-next\library.sqlite`
 when that exists. Nothing found (or the saved file is gone): `startup.firstRun` is set and `main.tsx` shows `src/firstrun/` (Import from
 Zotero with progress, Open an existing library, Start an empty library) before anything opens a database; the choice is saved and
 start-up goes on. Settings > Files and folders > Library location > Change… saves another library file for the next start.
@@ -120,7 +133,7 @@ script sends the first request only once the main window is titled "... - Zotero
 
 ## Custom GPUIX native addon (cache regions)
 
-The app runs a locally built `@gpuix/native` addon, not the npm 0.11.0 binary. It adds `cacheRegion` (a style key: `true`, or
+On Windows the app runs a locally built `@gpuix/native` addon, not the npm 0.11.0 binary (Linux and macOS use the npm binary). It adds `cacheRegion` (a style key: `true`, or
 `"content"` for a region sized by its children). Each region is drawn by its own cached GPUI view, so a frame where only the list
 scrolled replays the sidebar, toolbar and item pane instead of rebuilding them (scroll draw p50 ~5.4 -> ~3.3 ms).
 

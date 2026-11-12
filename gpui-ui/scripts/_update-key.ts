@@ -12,9 +12,10 @@ import { resolve } from "node:path";
 const checkedIn = resolve(import.meta.dir, "..", "update-pubkey.txt");
 
 export function updatePubkey(): string {
-	const raw = (process.env.ZN_UPDATE_PUBKEY
-		?? (process.env.ZN_UPDATE_PUBKEY_FILE ? readFileSync(process.env.ZN_UPDATE_PUBKEY_FILE, "utf8") : undefined)
-		?? (existsSync(checkedIn) ? readFileSync(checkedIn, "utf8") : "")).trim();
+	// an EMPTY ZN_UPDATE_PUBKEY counts as unset (CI passes an unset repository variable as "")
+	const raw = (process.env.ZN_UPDATE_PUBKEY?.trim()
+		|| (process.env.ZN_UPDATE_PUBKEY_FILE ? readFileSync(process.env.ZN_UPDATE_PUBKEY_FILE, "utf8") : undefined)
+		|| (existsSync(checkedIn) ? readFileSync(checkedIn, "utf8") : "")).trim();
 	if (!raw) {
 		console.warn("[update] no update public key (ZN_UPDATE_PUBKEY / ZN_UPDATE_PUBKEY_FILE / gpui-ui/update-pubkey.txt): this build will not auto-update");
 		return "";

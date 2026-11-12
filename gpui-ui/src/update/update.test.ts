@@ -23,6 +23,8 @@ describe("status line", () => {
 		expect(updateStatus(initialModel({ at: "T", result: "up-to-date" }), o)).toBe("Last checked ago(T): up to date.");
 		expect(updateStatus(model({ kind: "checking" }), o)).toBe("Checking…");
 		expect(updateStatus(model({ kind: "available", manifest: m }), o)).toBe("0.2.0 (2026-12-01) is available.");
+		expect(updateStatus(model({ kind: "available", manifest: m, manualOnly: true }), o)).toBe("0.2.0 (2026-12-01) is available, but it has to be installed by hand.");
+		expect(updateStatus(model({ kind: "available", manifest: m, manualOnly: true, manualReason: "Not an AppImage." }), o)).toBe("0.2.0 (2026-12-01) is available, but it has to be installed by hand. Not an AppImage.");
 		expect(updateStatus(model({ kind: "downloading", manifest: m, received: 5, total: 10 }), o)).toContain("50%");
 		expect(updateStatus(model({ kind: "ready", manifest: m, file: "f" }, { installOnExit: true }), o)).toContain("installed when you quit");
 		expect(updateStatus(model({ kind: "error", phase: "check", message: "offline" }), o)).toBe("offline");

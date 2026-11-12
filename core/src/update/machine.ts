@@ -6,14 +6,16 @@
 //   An event that does not fit the current state is ignored (the same model comes back), so a late "progress" or a double click is harmless.
 //   "install on exit" is a flag beside the state: it is armed while an update is available / downloading / ready and honoured at a normal quit.
 import type { Manifest } from "./manifest";
+import type { UpdatePlatform } from "./platform";
 import { isNewer } from "./version";
 
 export type UpdateState =
 	| { kind: "idle" }
 	| { kind: "checking" }
 	| { kind: "up-to-date" }
-	/** `manualOnly`: the installed version is older than the manifest's minVersion, so it cannot update in place. */
-	| { kind: "available"; manifest: Manifest; manualOnly?: boolean }
+	/** `manualOnly`: this copy cannot update in place: the installed version is older than the manifest's minVersion, or (Linux, macOS)
+	 *  it cannot replace itself (not an AppImage, a folder it cannot write). `manualReason` then says why, for the UI. */
+	| { kind: "available"; manifest: Manifest; manualOnly?: boolean; manualReason?: string }
 	| { kind: "downloading"; manifest: Manifest; received: number; total: number }
 	| { kind: "ready"; manifest: Manifest; file: string }
 	| { kind: "installing"; manifest: Manifest; file: string }
@@ -35,7 +37,7 @@ export interface UpdateModel {
 
 export type UpdateEvent =
 	| { t: "check" }
-	| { t: "checked"; at: string; manifest: Manifest | null; manualOnly?: boolean }
+	| { t: "checked"; at: string; manifest: Manifest | null; manualOnly?: boolean; manualReason?: string }
 	| { t: "check-failed"; at: string; message: string; code?: string }
 	| { t: "download" }
 	| { t: "progress"; received: number; total: number }
@@ -59,7 +61,7 @@ export function reduce(m: UpdateModel, e: UpdateEvent): UpdateModel {
 		case "checked":
 			if (s.kind !== "checking") return m;
 			return e.manifest
-				? set({ kind: "available", manifest: e.manifest, ...(e.manualOnly ? { manualOnly: true } : {}) }, { lastCheck: { at: e.at, result: "available", version: e.manifest.version } })
+				? set({ kind: "available", manifest: e.manifest, ...(e.manualOnly ? { manualOnly: true, ...(e.manualReason ? { manualReason: e.manualReason } : {}) } : {}) }, { lastCheck: { at: e.at, result: "available", version: e.manifest.version } })
 				: set({ kind: "up-to-date" }, { lastCheck: { at: e.at, result: "up-to-date" }, installOnExit: false });
 		case "check-failed":
 			return s.kind === "checking" ? set({ kind: "error", phase: "check", message: e.message, code: e.code }, { lastCheck: { at: e.at, result: "error", message: e.message } }) : m;
@@ -91,18 +93,25 @@ export function reduce(m: UpdateModel, e: UpdateEvent): UpdateModel {
 // ------------------------------------------------------------------------------------------------------------ downloaded installers
 
 /**
- * File name of the installer download for a manifest: zotero-next-<version>-setup.<ext> (characters outside [0-9A-Za-z.+-] become "_").
- * <ext> is the extension of the manifest's url: exe (the real installer), or cmd / bat (the stub installers of the tests); anything else is exe.
+ * File name of the download for a manifest (characters of the version outside [0-9A-Za-z.+-] become "_"):
+ *   win-x64 (default)  zotero-next-<version>-setup.<ext>, <ext> the extension of the manifest's url: exe (the real installer), or cmd / bat
+ *                      (the stub installers of the tests); anything else is exe
+ *   linux-x64          .zinc-update-<version>.AppImage.download: hidden, next to the running AppImage, and not *.AppImage, so an
+ *                      AppImage manager watching that folder does not pick it up
+ *   darwin-*           zinc-update-<version>.app.zip
  */
-export function installerName(m: { version: string; url: string }): string {
+export function installerName(m: { version: string; url: string }, platform: UpdatePlatform = "win-x64"): string {
+	const v = m.version.replace(/[^0-9A-Za-z.+-]/g, "_");
+	if (platform === "linux-x64") return `.zinc-update-${v}.AppImage.download`;
+	if (platform === "darwin-arm64" || platform === "darwin-x64") return `zinc-update-${v}.app.zip`;
 	let ext = "exe";
 	try { const e = /\.(exe|cmd|bat)$/i.exec(new URL(m.url).pathname); if (e) ext = e[1]!.toLowerCase(); } catch { /* exe */ }
-	return `zotero-next-${m.version.replace(/[^0-9A-Za-z.+-]/g, "_")}-setup.${ext}`;
+	return `zotero-next-${v}-setup.${ext}`;
 }
 
-const OURS = /^zotero-next-.+-setup\.(exe|cmd|bat)(\.part)?$/i;
-
-const NAME_VERSION = /^zotero-next-(.+)-setup.(?:exe|cmd|bat)(?:.part)?$/i;
+/** Our downloads (and partial ones) of every platform; the version is in whichever group matched. */
+const NAME_VERSION = /^(?:zotero-next-(.+)-setup\.(?:exe|cmd|bat)|\.zinc-update-(.+)\.AppImage\.download|zinc-update-(.+)\.app\.zip)(?:\.part)?$/i;
+const versionOf = (f: string): string | undefined => { const m = NAME_VERSION.exec(f); return m ? (m[1] ?? m[2] ?? m[3]) : undefined; };
 
 /**
  * Which files in the updates folder to delete: every installer download (and partial one) of ours except those in `keep`. Nothing else
@@ -112,9 +121,9 @@ const NAME_VERSION = /^zotero-next-(.+)-setup.(?:exe|cmd|bat)(?:.part)?$/i;
 export function planCleanup(files: string[], keep: string[], current?: string): string[] {
 	const k = new Set(keep.flatMap((n) => [n.toLowerCase(), `${n.toLowerCase()}.part`]));
 	return files.filter((f) => {
-		if (!OURS.test(f) || k.has(f.toLowerCase())) return false;
+		if (!NAME_VERSION.test(f) || k.has(f.toLowerCase())) return false;
 		if (keep.length || !current) return true;
-		const v = NAME_VERSION.exec(f)?.[1];
+		const v = versionOf(f);
 		return !v || !isNewer(v, current);
 	});
 }

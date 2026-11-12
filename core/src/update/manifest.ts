@@ -3,7 +3,11 @@
 //   { "version": "0.2.0+1a2b3c4d-20261201", "releasedAt": "2026-12-01T09:00:00Z", "notes": "markdown ...",
 //     "url": "https://.../zotero-next-0.2.0-setup.exe", "sha256": "<64 hex>", "size": 123456789,
 //     "minVersion": "0.1.0",            // optional: older installs must update by hand
+//     "platform": "linux-x64",          // optional: which build this is (absent = "win-x64"; see platform.ts)
 //     "signature": "<base64 Ed25519>" }
+//
+// One manifest per platform: latest.json (Windows; never has "platform": Windows builds older than the per-platform feeds reject unknown fields),
+// latest-linux-x64.json and latest-darwin-arm64.json (each with its signed "platform", so one platform's file cannot be served as another's).
 //
 // The signature covers the canonical bytes of the manifest WITHOUT the "signature" field: UTF-8 JSON, object keys sorted
 // recursively, no whitespace. Every other field is signed, so a changed url / hash / size / version / notes fails verification.
@@ -19,12 +23,14 @@ export interface UnsignedManifest {
 	sha256: string;
 	size: number;
 	minVersion?: string;
+	/** "linux-x64" (an AppImage), "darwin-arm64" (Zinc.app, zipped); absent = "win-x64" (the installer). */
+	platform?: string;
 }
 export interface Manifest extends UnsignedManifest { signature: string }
 
 export type UpdateErrorCode =
 	| "malformed" | "bad-signature" | "no-key" | "insecure-url" | "too-large" | "hash-mismatch" | "size-mismatch"
-	| "network" | "http" | "installer" | "disabled" | "no-feed" | "busy";
+	| "network" | "http" | "installer" | "disabled" | "no-feed" | "busy" | "wrong-platform";
 export class UpdateError extends Error {
 	constructor(readonly code: UpdateErrorCode, message: string) {
 		super(message);
@@ -32,7 +38,7 @@ export class UpdateError extends Error {
 	}
 }
 
-const FIELDS = new Set(["version", "releasedAt", "notes", "url", "sha256", "size", "minVersion", "signature"]);
+const FIELDS = new Set(["version", "releasedAt", "notes", "url", "sha256", "size", "minVersion", "platform", "signature"]);
 
 // ------------------------------------------------------------------------------------------------------------ canonical bytes
 
@@ -113,8 +119,13 @@ export function validateShape(raw: unknown): Manifest {
 	if (typeof size !== "number" || !Number.isSafeInteger(size) || size <= 0) bad('"size" is not a positive integer');
 	const minVersion = m.minVersion;
 	if (minVersion !== undefined && (typeof minVersion !== "string" || !parseVersion(minVersion))) bad("minVersion is not a version number");
+	const platform = m.platform;
+	if (platform !== undefined && (typeof platform !== "string" || !/^[a-z0-9]+-[a-z0-9]+$/.test(platform))) bad("platform is not a platform name");
 	const signature = str("signature");
-	return { version, releasedAt, notes: m.notes as string, url, sha256, size: size as number, ...(minVersion ? { minVersion: minVersion as string } : {}), signature };
+	return {
+		version, releasedAt, notes: m.notes as string, url, sha256, size: size as number, ...(minVersion ? { minVersion: minVersion as string } : {}),
+		...(platform ? { platform: platform as string } : {}), signature,
+	};
 }
 
 /** Sign a manifest with the private JWK. */

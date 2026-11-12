@@ -4,13 +4,13 @@
 // Unpackaged: the repo's builds (../../reader-host/dist). Packaged: next to the exe (scripts/package.ts copies them). ZN_READER_HOST /
 // ZN_NOTE_HOST override. A mount whose folder (or index.html) is missing is left out, which turns web tabs off (config.ts).
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { packaged } from "../packaged";
+import { join, resolve } from "node:path";
+import { packageDataDir, packaged } from "../packaged";
 
 export interface Mount { prefix: string; dir: string }
 
 const here = import.meta.dir; // gpui-ui/src/webview (the exe build rewrites this to the embedded repo-relative location, which is not on disk)
-const root = (): string => (packaged ? dirname(process.execPath) : resolve(here, "..", "..", ".."));
+const root = (): string => (packaged ? packageDataDir() : resolve(here, "..", "..", ".."));
 
 function dir(env: string, name: string, index: string): string | null {
 	const cands = [process.env[env], packaged ? join(root(), name, "dist") : null, join(resolve(here, "..", "..", ".."), name, "dist")];

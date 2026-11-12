@@ -1,4 +1,5 @@
-// Ahead-of-time compile the GPUI app to a single Windows executable with Bun.
+// Ahead-of-time compile the GPUI app to a single executable with Bun, for the OS and CPU it runs on: zotero-next-gpui-<variant>.exe on
+// Windows, zotero-next-gpui-<variant> (no extension) on Linux and macOS. The aot variant, the exe icon and --hide-console are Windows only.
 //
 //   bun scripts/build.ts                         # all variants -> out/zotero-next-gpui-<variant>.exe, best copied to out/zotero-next-gpui.exe
 //   bun scripts/build.ts --variant bytecode      # one (or comma list): plain | bytecode | bytecode-min [| bytecode-min-profile]
@@ -284,8 +285,13 @@ mkdirSync(outDir, { recursive: true });
 const staged = stageAssets();
 const sizeMB = (p: string) => (statSync(p).size / 1048576).toFixed(1);
 
+const isWin = process.platform === "win32";
+const EXE = isWin ? ".exe" : "";
+const compileTarget = `bun-${isWin ? "windows" : process.platform}-${process.arch}`; // bun-windows-x64, bun-linux-x64, bun-darwin-arm64
+if (!isWin && todo.some((v) => v.aot)) throw new Error("the aot variant is Windows only (the canary and the patches above assume B:/~BUN)");
+
 for (const v of todo) {
-	const outfile = join(outDir, `zotero-next-gpui-${v.id}.exe`);
+	const outfile = join(outDir, `zotero-next-gpui-${v.id}${EXE}`);
 	rmSync(outfile, { force: true });
 	const t0 = performance.now();
 	currentAot = !!v.aot;
@@ -302,7 +308,7 @@ for (const v of todo) {
 		external: v.aot ? ["canvas"] : [], // jsdom's optional native peer (try { require("canvas") }): left out, jsdom runs without canvas support
 		plugins: [nativePlugin, metaPlugin, solidBunPlugin],
 		compile: {
-			target: "bun-windows-x64",
+			target: compileTarget as "bun-windows-x64",
 			outfile,
 			assets: staged.roots,
 			autoloadBunfig: false,
@@ -311,7 +317,7 @@ for (const v of todo) {
 			autoloadPackageJson: false,
 			...(v.bytecodeOrder ? { bytecodeOrder: v.bytecodeOrder } : {}),
 			...(v.aot ? aotOptions : {}),
-			windows: { hideConsole, icon: join(root, "assets", "icon.ico"), title: "Zinc", description: "Zinc", version: "0.0.1.0" },
+			...(isWin ? { windows: { hideConsole, icon: join(root, "assets", "icon.ico"), title: "Zinc", description: "Zinc", version: "0.0.1.0" } } : {}),
 		},
 	});
 	if (!result.success) {
@@ -320,14 +326,14 @@ for (const v of todo) {
 	}
 	for (const m of result.logs) console.warn(`[${v.id}] ${m.message ?? m}`);
 	// Bun leaves its template's one-image icon group first, pointing at our 16 px image: re-point it (scripts/fix-exe-icon.ts)
-	console.log(`[${v.id}] exe icon: ${fixExeIcon(outfile)}`);
+	if (isWin) console.log(`[${v.id}] exe icon: ${fixExeIcon(outfile)}`);
 	console.log(`[${v.id}] ${relative(root, outfile)}  ${sizeMB(outfile)} MB  (${((performance.now() - t0) / 1000).toFixed(1)} s; assets: ${staged.note})`);
 }
 
-const pick = join(outDir, `zotero-next-gpui-${best}.exe`);
+const pick = join(outDir, `zotero-next-gpui-${best}${EXE}`);
 if (!aotOnly && existsSync(pick)) {
-	cpSync(pick, join(outDir, "zotero-next-gpui.exe"));
-	console.log(`out/zotero-next-gpui.exe <- ${best}`);
+	cpSync(pick, join(outDir, `zotero-next-gpui${EXE}`));
+	console.log(`out/zotero-next-gpui${EXE} <- ${best}`);
 }
 
 if (runAotInChild) {

@@ -6,10 +6,13 @@
 //   initUpdates(o)   builds the updater (once); o overrides its dependencies (tests and screenshot scripts use a fake env / key).
 //   updateModel()    reactive state for the UI (Settings > System > Updates, toasts).
 //   Settings: update.auto (Check automatically, on), update.download (Download automatically, off), update.feedUrl (empty = the build's default).
+//   Platforms: Windows runs the signed installer; Linux (AppImage) and macOS (Zinc.app) replace themselves (core/src/update/replace.ts).
+//   A Linux or macOS copy that cannot (not an AppImage, a folder it cannot write) still checks and offers the update "by hand".
 //   Logging: area "update" (core/src/log.ts).
 import { createSignal } from "solid-js";
 import { initialModel, type LastCheck, type UpdateModel } from "../../../core/src/update/machine";
-import { createRealEnv } from "../../../core/src/update/env";
+import { createRealEnv, defaultUpdatesDir } from "../../../core/src/update/env";
+import { detectSelfReplace } from "../../../core/src/update/replace";
 import type { Manifest } from "../../../core/src/update/manifest";
 import { createUpdater, type Updater, type UpdaterDeps } from "../../../core/src/update/updater";
 import { onShutdown, servicesWanted, shutdown } from "../services";
@@ -88,7 +91,7 @@ export function initUpdates(o: Partial<UpdaterDeps> = {}): Updater {
 		currentVersion: currentVersion(),
 		publicKey: UPDATE_PUBKEY,
 		settings: () => ({ enabled: updateAuto(), autoDownload: updateDownload(), feedUrl: feedUrl() }),
-		env: createRealEnv({ token: process.env.ZN_UPDATE_TOKEN, tokenOrigin: () => originOf(feedUrl()) }),
+		env: createRealEnv({ token: process.env.ZN_UPDATE_TOKEN, tokenOrigin: () => originOf(feedUrl()), replace: selfReplace }),
 		prepareExit: () => shutdown(), // services stop, pending writes flush, the database closes
 		lastCheck: lastCheck(),
 		...o,
@@ -100,27 +103,34 @@ export function initUpdates(o: Partial<UpdaterDeps> = {}): Updater {
 
 /** Settings > Updates > Check now (works even with "Check automatically" off; still needs a feed URL). */
 export function checkNow(): void {
+	if (!updatesSupported) return;
 	void initUpdates().check({ manual: true }).catch((e) => logError("update", e, "check now"));
 }
 
 /** Show the release notes of the update found (Settings > Updates > What's new). */
 export function showWhatsNew(): void {
 	const s = updateModel().state;
-	if ("manifest" in s && s.manifest) openWhatsNew(s.manifest, actions, { manualOnly: s.kind === "available" && s.manualOnly });
+	if ("manifest" in s && s.manifest) openWhatsNew(s.manifest, actions, s.kind === "available" && s.manualOnly ? { manualOnly: true, manualReason: s.manualReason } : {});
 }
+
+/** How this copy replaces itself on Linux / macOS (undefined on Windows, where the installer does it). */
+const selfReplace = detectSelfReplace({ updatesDir: defaultUpdatesDir() });
+/** Windows (installer), Linux x64 and macOS (self-replacement, or "install by hand" with the reason). Not other platforms: no builds. */
+export const updatesSupported = process.platform === "win32" || selfReplace !== undefined;
 
 let started = false;
 /** Called once from main.tsx, after the first items. Cheap and non-blocking; does no network itself. */
 export function startUpdates(): void {
 	if (started) return;
 	started = true;
+	if (!updatesSupported) return void logInfo("update", "no updates for this platform: not started", { platform: process.platform, arch: process.arch });
 	try {
 		const u = initUpdates();
 		process.on("exit", (code) => u.onExit(code)); // the sync half of "install on exit"
 		if (servicesWanted()) onShutdown("update install-on-exit", () => u.prepareForExit()); // the async half: re-verify before exit
 		u.start();
 		void u.cleanup();
-		logInfo("update", "updater started", { version: currentVersion(), auto: updateAuto(), feed: feedUrl() ? "configured" : "none", key: UPDATE_PUBKEY ? "embedded" : "none" });
+		logInfo("update", "updater started", { version: currentVersion(), auto: updateAuto(), feed: feedUrl() ? "configured" : "none", key: UPDATE_PUBKEY ? "embedded" : "none", platform: selfReplace?.platform ?? "win-x64" });
 	} catch (e) {
 		logError("update", e, "start");
 	}
