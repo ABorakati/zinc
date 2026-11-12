@@ -228,7 +228,8 @@ if (BROWSER) {
 	// One library per computer (docs/design/browser-edition.md, section 6): this tab is the app's library. When the browser still holds a
 	// library of its own, offer to move it into the app. The extension's service worker does the move (connector nativeHost.js
 	// moveBrowserLibrary): export the browser library, the host merges it into this one, then the browser library is emptied.
-	void offerMove().catch((e) => console.warn("[library] move offer", e));
+	// no background to ask (an extension without the connector's service worker, e.g. a test one): nothing to offer, quietly
+	void offerMove().catch((e) => { if (!/Receiving end does not exist/i.test(String(e?.message ?? e))) console.warn("[library] move offer", e); });
 }
 
 interface MoveReply { ok?: boolean; error?: string; offer?: boolean; items?: number; result?: MoveResult }
