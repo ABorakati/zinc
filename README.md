@@ -54,7 +54,7 @@ Start-up is nearly 4 times faster to a window and over 20 times faster to a usab
 ### Works with the app closed
 
 - **Save references from Chrome or Edge.** The browser connector fork talks to a small native host, so pages, PDFs and references are saved straight into your library with the app closed. They sync the next time it runs. A popup under the toolbar button picks the collection, removes or cancels a save, and opens the item in the app.
-- **Browse your library in a browser tab.** The connector opens the same interface, built for the browser, on your library file through the same host (read-only for now).
+- **Browse your library in a browser tab.** The connector opens the same interface, built for the browser, on your library file through the same host. PDFs open there, and annotations made there are saved; item edits are read-only for now.
 - **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in Zinc** on a cited item.
 - **Ask an agent.** The library's MCP server also runs over stdio against the library file with the app closed.
 

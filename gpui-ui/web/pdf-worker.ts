@@ -1,5 +1,5 @@
 // A PDF render worker for the browser builds (web/pdf.ts starts one or more): PDFium WebAssembly off the page's main thread, so the
-// interface keeps drawing while pages render. Built by web/build.ts as a classic worker script (pdf-worker.js, one self-contained
+// interface keeps drawing while pages render. Built by web/build.ts as a module worker script (pdf-worker.js, one self-contained
 // file next to pdfium.wasm: Manifest V3 extension pages allow workers from the package, not from blob: URLs).
 //
 // Messages in:  {t:"open", doc, bytes} | {t:"close", doc} | {t:"render", job, doc, page, scale, opts, prio} | {t:"text", job, doc, page,

@@ -48,9 +48,10 @@ function findChrome(): string {
 	return exe;
 }
 
-/** A multi-page PDF of about `pages` x 0.9 MB: a heading, a few lines of text and an uncompressed 640x480 picture per page. */
+/** A multi-page PDF of about `pages` x 0.95 MB: a heading, a few lines of text, an uncompressed 560x420 picture and 9,000 thin
+ *  vector strokes per page (line work like a dense chart or map: the content that makes real articles slow to render). */
 function largePdf(pages: number): Uint8Array {
-	const W = 640, H = 480;
+	const W = 560, H = 420;
 	const enc = new TextEncoder();
 	const parts: Uint8Array[] = [];
 	let size = 0;
@@ -70,7 +71,9 @@ function largePdf(pages: number): Uint8Array {
 		obj(pg, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${ct} 0 R /Resources << /Font << /F1 3 0 R >> /XObject << /Im ${im} 0 R >> >> >>`));
 		const lines = [`Large fixture PDF, page ${p + 1} of ${pages}`, "Machine perfusion keeps a donor liver warm and supplied with oxygen", "until it is transplanted, so that its function can be assessed first."];
 		const text = lines.map((l, i) => `BT /F1 ${i ? 12 : 18} Tf 72 ${730 - i * 22} Td (${l}) Tj ET`).join("\n");
-		const content = `${text}\nq 468 0 0 351 72 300 cm /Im Do Q`;
+		const strokes: string[] = ["0.2 w"];
+		for (let k = 0; k < 9000; k++) strokes.push(`${(72 + rnd() * 1.8) | 0} ${40 + rnd()} m ${(72 + rnd() * 1.8) | 0} ${40 + rnd()} l S`);
+		const content = `${text}\nq 468 0 0 351 72 300 cm /Im Do Q\n${strokes.join("\n")}`;
 		obj(ct, () => push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
 		const px = new Uint8Array(W * H * 3);
 		for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -101,7 +104,9 @@ const dbPath = join(libDir, "library.sqlite");
 const bigFile = join(WORK, "Large fixture.pdf");
 writeFileSync(bigFile, largePdf(12));
 const fx = repo.openDb(dbPath);
-const small = fx.query("SELECT i.key, i.parent_key, i.title FROM items i JOIN attachments a ON a.item_key = i.key WHERE a.content_type = 'application/pdf' LIMIT 1").get() as { key: string; parent_key: string; title: string };
+const small = fx.query("SELECT i.key, i.parent_key, i.title, a.path FROM items i JOIN attachments a ON a.item_key = i.key WHERE a.content_type = 'application/pdf' LIMIT 1").get() as { key: string; parent_key: string; title: string; path: string };
+// the demo library records its files under the browser demo's virtual /demo/ folder; point the fixture at the real copy
+if (small.path.startsWith("/demo/")) fx.run("UPDATE attachments SET path = ? WHERE item_key = ?", [join(libDir, small.path.slice("/demo/".length)), small.key]);
 const bigParent = (fx.query("SELECT key FROM items WHERE title = 'Deep learning'").get() as { key: string }).key;
 const big = addFile(fx, { mode: "imported_file", path: bigFile, name: "Large fixture.pdf", contentType: "application/pdf", parentKey: bigParent, keepName: true } as never).data.key;
 repo.upsertAnnotations(fx, small.key, [{ id: "STORED01", type: "highlight", color: "#5fb236", sortIndex: "00000|000200|00100", position: { pageIndex: 0, rects: [[72, 690, 320, 706]] }, text: "stored before the page opened", comment: "", pageLabel: "1", dateModified: new Date().toISOString() } as never]);
@@ -244,7 +249,8 @@ try {
 			pagesRendered: mon.renders, avgRenderMs: r1(avg(mon.renderMs)), avgLatencyMs: r1(avg(mon.latency)), maxLatencyMs: r1(Math.max(0, ...mon.latency)),
 		};
 		measures[tag] = m;
-		check(`${tag}: scrolling the large PDF renders more pages`, mon.renders > 0, JSON.stringify(m));
+		// with workers asked for, they must really be used (pdf.ts falls back to the main thread when they fail to start)
+		check(`${tag}: scrolling the large PDF renders more pages`, mon.renders > 0 && (mode === 0) === (m.mode === "main"), JSON.stringify(m));
 		if (mode === MODES.at(-1)) await shot("3-large-pdf-scrolled");
 		await evalIn(`znLibrary.store.closeTab(${JSON.stringify(big)})`);
 		await sleep(500);

@@ -109,7 +109,7 @@ function startPool(): void {
 		const slots: Slot[] = [];
 		const jobs = new Map<number, PoolJob>();
 		for (let i = 0; i < n; i++) {
-			const w = new Worker(new URL("pdf-worker.js", import.meta.url));
+			const w = new Worker(new URL("pdf-worker.js", import.meta.url), { type: "module" });
 			const slot: Slot = { w, docs: new Set(), inflight: 0, ready: false };
 			w.onmessage = (e: MessageEvent) => {
 				const m = e.data as { t: string; job?: number; [k: string]: unknown };

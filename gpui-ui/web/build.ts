@@ -92,14 +92,14 @@ if (!result?.success) {
 	for (const l of result?.logs ?? []) console.error(String(l).slice(0, 400));
 	throw new Error("web demo build failed");
 }
-// the PDF render worker (web/pdf-worker.ts, started by web/pdf.ts): a classic worker script of its own, in one file (no shared
+// the PDF render worker (web/pdf-worker.ts, started by web/pdf.ts): a module worker script of its own, in one file (no shared
 // chunks to import), next to pdfium.wasm which it loads itself
 {
 	const worker = await Bun.build({
 		entrypoints: [join(here, "pdf-worker.ts")],
 		outdir: out,
 		target: "browser",
-		format: "iife",
+		format: "esm", // a module worker: the PDFium loader reads import.meta.url
 		minify: !process.argv.includes("--debug"),
 		throw: false,
 		naming: { entry: "[name].js", asset: "[name]-[hash].[ext]" },
