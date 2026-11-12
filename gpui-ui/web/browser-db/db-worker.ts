@@ -24,8 +24,10 @@ const toB64 = (b: Uint8Array): string => {
 	return btoa(s);
 };
 
-let db: Database | null = null;
-const getDb = (): Database => {
+// the core is typed against bun:sqlite; in this build that module is web/sqlite.ts, so the library handle has the core's type
+type CoreDb = import("bun:sqlite").Database;
+let db: CoreDb | null = null;
+const getDb = (): CoreDb => {
 	if (!db) throw new Error("the browser library is not open yet");
 	return db;
 };
