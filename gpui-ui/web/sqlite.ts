@@ -39,10 +39,28 @@ export async function installPool(directory = ".zinc-sahpool"): Promise<void> {
 }
 
 const POOL_PREFIX = "/opfs/zinc/";
+/** Under the pool prefix but not in the pool: the temporary copy an import reads (web/browser-db/import-run.ts). Such a path is an in-memory database. */
+const NOT_POOLED = "/opfs/zinc/import/";
 
 /** The bytes `new Database(path)` opens (as an in-memory copy; nothing is written back). */
 export function registerDatabase(path: string, bytes: Uint8Array): void {
 	images.set(norm(path), bytes);
+}
+export function forgetDatabase(path: string): void {
+	images.delete(norm(path));
+}
+/** Forget every registered or `VACUUM INTO` image (they are copies of whole databases: the import frees them when it is done). */
+export function dropDatabaseImages(): void {
+	images.clear();
+}
+
+/** For a path nothing registered: where its bytes come from (the browser import reads the files it wrote with the fs shim). */
+let resolveImage: ((path: string) => Uint8Array | undefined) | null = null;
+/** Called with the bytes of a database opened with `{create: true}` outside the pool when it is closed (the import's output file is built in memory, then kept). */
+let sink: ((path: string, bytes: Uint8Array) => void) | null = null;
+export function setDatabaseHooks(hooks: { resolve?: ((path: string) => Uint8Array | undefined) | null; sink?: ((path: string, bytes: Uint8Array) => void) | null }): void {
+	if ("resolve" in hooks) resolveImage = hooks.resolve ?? null;
+	if ("sink" in hooks) sink = hooks.sink ?? null;
 }
 
 const norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
@@ -121,18 +139,20 @@ export class Database {
 	private cache = new Map<string, Statement>();
 	private depth = 0;
 	private walless = false;
-	constructor(filename = ":memory:", _options?: unknown) {
+	private sinkOnClose = false;
+	constructor(filename = ":memory:", options?: unknown) {
 		const s = lib();
 		this.filename = filename;
 		// a database under /opfs/zinc/ goes to the sahpool VFS when it is installed (see installPool)
-		if (pool && norm(filename).startsWith(POOL_PREFIX)) {
+		if (pool && norm(filename).startsWith(POOL_PREFIX) && !norm(filename).startsWith(NOT_POOLED)) {
 			this.raw = new pool.OpfsSAHPoolDb(`/zinc/${filename.replace(/\\/g, "/").slice(POOL_PREFIX.length)}`);
 			// sahpool holds its files exclusively (no shared memory for a WAL index, no second connection): WAL does not apply to it
 			this.walless = true;
 			return;
 		}
 		this.raw = new s.oo1.DB(":memory:", "c");
-		const image = images.get(norm(filename));
+		if (sink && filename !== ":memory:" && (options as { create?: boolean } | undefined)?.create) this.sinkOnClose = true;
+		const image = images.get(norm(filename)) ?? (filename !== ":memory:" ? resolveImage?.(filename) : undefined);
 		if (image) {
 			// a WAL-mode file (header bytes 18-19 = 2) cannot be opened from memory: mark the copy as rollback-journal mode
 			const bytes = image.slice();
@@ -155,6 +175,12 @@ export class Database {
 		// the core's migrations ask for WAL; a sahpool database keeps its rollback journal
 		if (this.walless) sql = sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL\s*;?/gi, "");
 		if (!sql.trim()) return { changes: 0, lastInsertRowid: 0 };
+		// VACUUM INTO '<file>': there is no file system for SQLite here; the copy becomes the bytes `new Database('<file>')` opens
+		const vac = /^\s*VACUUM\s+INTO\s+'((?:[^']|'')*)'\s*;?\s*$/i.exec(sql);
+		if (vac) {
+			images.set(norm(vac[1]!.replace(/''/g, "'")), this.serialize());
+			return { changes: 0, lastInsertRowid: 0 };
+		}
 		if (params.length) return this.prepare(sql).run(...params);
 		this.raw.exec(sql);
 		return { changes: this.raw.changes(), lastInsertRowid: Number(lib().capi.sqlite3_last_insert_rowid(this.raw.pointer)) };
@@ -183,6 +209,9 @@ export class Database {
 	close(): void {
 		for (const st of this.cache.values()) try { st.finalize(); } catch {}
 		this.cache.clear();
+		if (this.sinkOnClose && sink) {
+			sink(this.filename, this.serialize());
+		}
 		this.raw.close();
 	}
 }
