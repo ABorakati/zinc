@@ -18,10 +18,25 @@ import { HOST_NAME, nativeApiTransport, type NativePort } from "./native-host";
 declare const chrome: {
 	runtime: {
 		connectNative(name: string): NativePort;
+		connect(info: { name: string }): NativePort;
+		sendMessage(msg: unknown, cb: (reply: { ok?: boolean; error?: string } | undefined) => void): void;
 		lastError?: { message?: string };
 		onMessage: { addListener(f: (msg: unknown) => void): void };
 	};
 };
+
+// ?mode=browser: the library lives in this browser (web/browser-db: an offscreen document owns a SQLite database on OPFS), not in the
+// desktop app behind the native host. The same frames go over an extension port named "zinc-db" instead (browser-db/CONTRACT.md).
+const BROWSER = new URLSearchParams(location.search).get("mode") === "browser";
+/** Ask the extension's service worker for the database owner (it creates the offscreen document if there is none): {zincEnsureDb: true}. */
+const ensureDb = () => new Promise<void>((resolve, reject) => {
+	chrome.runtime.sendMessage({ zincEnsureDb: true }, (r) => {
+		if (r?.ok) resolve();
+		else reject(new Error(r?.error ?? chrome.runtime.lastError?.message ?? "the extension did not start the library database"));
+	});
+});
+/** Called for every {t:"changed"} notice from the browser library's database (set below, once the store exists). */
+let onLibraryChanged: (m: { dataVersion?: number }) => void = () => {};
 
 const here = (f: string) => new URL(f, import.meta.url).href;
 // the Lucide icons the app reads from disk on the desktop (src/icons.tsx), before any app module asks for them
@@ -34,7 +49,16 @@ fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
 // registration of the same host (tests register one under their own name, so they never reach the installed host or its library).
 const hostParam = new URLSearchParams(location.search).get("host");
 const hostName = hostParam && /^com\.zotero_next\.[a-z0-9_.]+$/.test(hostParam) ? hostParam : HOST_NAME;
-const transport = nativeApiTransport(() => chrome.runtime.connectNative(hostName), () => chrome.runtime.lastError?.message);
+let transport: (req: Request) => Promise<Response>;
+if (BROWSER) {
+	await ensureDb();
+	const port = nativeApiTransport(() => chrome.runtime.connect({ name: "zinc-db" }), () => chrome.runtime.lastError?.message, { onNotice: (m) => onLibraryChanged(m), peer: "The browser library" });
+	// the offscreen document can be closed by the browser: ask for it again (the service worker recreates it) and retry once
+	transport = async (req) => {
+		const again = req.clone();
+		try { return await port(req); } catch { await ensureDb(); return port(again); }
+	};
+} else transport = nativeApiTransport(() => chrome.runtime.connectNative(hostName), () => chrome.runtime.lastError?.message);
 // the last requests and their status, for automated checks (window.znLibrary.requests)
 const requests: { method: string; path: string; status: number | string }[] = [];
 setDirect(async (req) => {
@@ -96,7 +120,18 @@ render(() => <Root />, { title: "Zinc library", onKeyDown: handleWindowKeyDown }
 const { store, uiState } = await import("../src/store");
 // for automated checks (the connector's headless test): the store, and how many outside changes were seen
 const probe = {
-	store, outsideChanges: 0, requests, hostName,
+	store, outsideChanges: 0, requests, hostName, browser: BROWSER,
+	/** browser mode: when each `changed` notice arrived (performance.now()) and its dataVersion */
+	notices: [] as { at: number; dataVersion?: number }[],
+	/** browser mode: one /api call as the page makes it (for the headless check); resolves to {status, json} */
+	async api(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown; text: string }> {
+		const { apiFetch } = await import("../src/api");
+		const res = await apiFetch(path, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+		const text = await res.text();
+		let json: unknown = null;
+		try { json = JSON.parse(text); } catch { /* a file, not JSON */ }
+		return { status: res.status, json, text };
+	},
 	/** ids of the annotations the reader has loaded for an open PDF */
 	async annotationIds(attachmentKey: string): Promise<string[]> {
 		const { sessionOf } = await import("../src/reader/annotations/session");
@@ -129,12 +164,33 @@ await import("../src/features").catch((e) => console.warn("[library] features", 
 	const { FONTS } = await import("../src/reader/reflow/settings");
 	for (const f of FONTS as readonly { family: string }[]) (f as { family: string }).family = "IBM Plex Sans";
 }
-// another program (the desktop app, a connector save) wrote to the library: reload the lists
-const { startOutsideChangeWatch } = await import("../src/shell/outsideChanges");
-startOutsideChangeWatch(() => {
-	probe.outsideChanges++;
-	store.refresh();
-});
+if (BROWSER) {
+	// the browser library tells every connected page when a write committed (a save from the connector, an edit in another tab): reload
+	// the lists then, in place of polling. A burst of writes (an import) costs one reload.
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	onLibraryChanged = (m) => {
+		probe.notices.push({ at: performance.now(), dataVersion: m.dataVersion });
+		clearTimeout(timer);
+		timer = setTimeout(() => { probe.outsideChanges++; store.refresh(); }, 60);
+	};
+	void welcomeScreenHook(store);
+} else {
+	// another program (the desktop app, a connector save) wrote to the library: reload the lists
+	const { startOutsideChangeWatch } = await import("../src/shell/outsideChanges");
+	startOutsideChangeWatch(() => {
+		probe.outsideChanges++;
+		store.refresh();
+	});
+}
+
+/**
+ * First run of the browser library (the library is empty): this is where the welcome screen goes later (sign in to zotero.org, import
+ * a file, or start empty). For now the library simply starts empty, so this only waits for the first list and notes it.
+ */
+async function welcomeScreenHook(s: { pagesLoaded(): number; total(): number }): Promise<void> {
+	for (let i = 0; i < 100 && s.pagesLoaded() === 0; i++) await new Promise((r) => setTimeout(r, 100));
+	if (s.pagesLoaded() > 0 && s.total() === 0) console.info("[library] empty browser library: first run (welcome screen: not built yet)");
+}
 
 // "Open library" in the connector's popup: show the item just saved. ?select=<key> when the popup opens this page, a
 // {zincLibrarySelect: key} message when the page is already open (the save is new, so the lists are reloaded first).

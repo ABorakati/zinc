@@ -10,9 +10,35 @@ type Params = Value[] | [Record<string, Value>];
 let sqlite3: Sqlite3 | null = null;
 const images = new Map<string, Uint8Array>();
 
+/** The opfs-sahpool VFS, once installPool() ran (inside the browser library's DB worker): databases under /opfs/zinc/ then live in it. */
+let pool: { OpfsSAHPoolDb: new (name: string, flags?: string) => any } | null = null;
+
 export async function initSqlite(): Promise<void> {
 	sqlite3 ??= await sqlite3InitModule();
 }
+
+/**
+ * Install the opfs-sahpool VFS (browser library, web/browser-db/db-worker.ts; needs a dedicated worker, no SharedArrayBuffer). After it,
+ * `new Database("/opfs/zinc/<name>.sqlite")` opens the pool database "/zinc/<name>.sqlite" (library.sqlite, and files.sqlite for the
+ * durable file store); `db.filename` stays the /opfs/ path the core builds its storage paths from. The pool belongs to one context at a
+ * time: right after a reload the previous owner may still hold it, so a failed install is retried for a few seconds.
+ */
+export async function installPool(directory = ".zinc-sahpool"): Promise<void> {
+	// the module tries its "opfs" and "opfs-wl" VFSs first when SharedArrayBuffer exists, and logs errors when their async worker
+	// cannot start (an extension page is not cross-origin isolated). This uses the sahpool VFS, which needs none of that.
+	(globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = undefined;
+	await initSqlite();
+	let last: unknown;
+	for (let i = 0; i < 40; i++) {
+		try {
+			pool = await (lib() as any).installOpfsSAHPoolVfs({ directory, name: "opfs-sahpool", initialCapacity: 12, clearOnInit: false, forceReinitIfPreviouslyFailed: true });
+			return;
+		} catch (e) { last = e; await new Promise((r) => setTimeout(r, 250)); }
+	}
+	throw new Error(`cannot open the browser library's storage: ${last instanceof Error ? last.message : last}`);
+}
+
+const POOL_PREFIX = "/opfs/zinc/";
 
 /** The bytes `new Database(path)` opens (as an in-memory copy; nothing is written back). */
 export function registerDatabase(path: string, bytes: Uint8Array): void {
@@ -38,6 +64,8 @@ export class Statement {
 	get columnNames(): string[] { return this.stmt.getColumnNames(); }
 	private bind(params: Params): void {
 		this.stmt.reset(true);
+		// bun's db.run(sql, [a, b]) / stmt.run([a, b]): one array is the positional list
+		if (params.length === 1 && Array.isArray(params[0])) params = params[0] as Value[];
 		if (params.length === 0) return;
 		const one = params[0];
 		if (params.length === 1 && one !== null && typeof one === "object" && !(one instanceof Uint8Array)) {
@@ -92,9 +120,17 @@ export class Database {
 	readonly filename: string;
 	private cache = new Map<string, Statement>();
 	private depth = 0;
+	private walless = false;
 	constructor(filename = ":memory:", _options?: unknown) {
 		const s = lib();
 		this.filename = filename;
+		// a database under /opfs/zinc/ goes to the sahpool VFS when it is installed (see installPool)
+		if (pool && norm(filename).startsWith(POOL_PREFIX)) {
+			this.raw = new pool.OpfsSAHPoolDb(`/zinc/${filename.replace(/\\/g, "/").slice(POOL_PREFIX.length)}`);
+			// sahpool holds its files exclusively (no shared memory for a WAL index, no second connection): WAL does not apply to it
+			this.walless = true;
+			return;
+		}
 		this.raw = new s.oo1.DB(":memory:", "c");
 		const image = images.get(norm(filename));
 		if (image) {
@@ -116,6 +152,9 @@ export class Database {
 	prepare(sql: string): Statement { return new Statement(this, sql); }
 	exec(sql: string, ...params: Params): { changes: number; lastInsertRowid: number } { return this.run(sql, ...params); }
 	run(sql: string, ...params: Params): { changes: number; lastInsertRowid: number } {
+		// the core's migrations ask for WAL; a sahpool database keeps its rollback journal
+		if (this.walless) sql = sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL\s*;?/gi, "");
+		if (!sql.trim()) return { changes: 0, lastInsertRowid: 0 };
 		if (params.length) return this.prepare(sql).run(...params);
 		this.raw.exec(sql);
 		return { changes: this.raw.changes(), lastInsertRowid: Number(lib().capi.sqlite3_last_insert_rowid(this.raw.pointer)) };

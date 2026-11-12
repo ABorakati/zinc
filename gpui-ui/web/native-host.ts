@@ -40,7 +40,16 @@ const NULL_BODY = new Set([101, 204, 205, 304]);
  * A `fetch`-like function over native messaging. `connect` opens the port (chrome.runtime.connectNative in the page); it is
  * called again after the host goes away, so a crashed or restarted host costs the requests in flight, not the page.
  */
-export function nativeApiTransport(connect: () => NativePort, lastError: () => string | undefined = () => undefined): (req: Request) => Promise<Response> {
+export function nativeApiTransport(
+	connect: () => NativePort,
+	lastError: () => string | undefined = () => undefined,
+	opts: {
+		/** a frame that answers no request: the browser library's {t:"changed", dataVersion} */
+		onNotice?: (m: any) => void;
+		/** what the other end is called in the error when it goes away (default: the Zinc Connector host) */
+		peer?: string;
+	} = {},
+): (req: Request) => Promise<Response> {
 	let port: NativePort | null = null;
 	let nextId = 1;
 	const pending = new Map<number, Pending>();
@@ -60,6 +69,7 @@ export function nativeApiTransport(connect: () => NativePort, lastError: () => s
 		const me = connect();
 		port = me;
 		me.onMessage.addListener((m) => {
+			if (m?.t === "changed") { opts.onNotice?.(m); return; }
 			const p = pending.get(m?.id);
 			if (!p) return;
 			if (m.t === "res") {
@@ -73,9 +83,10 @@ export function nativeApiTransport(connect: () => NativePort, lastError: () => s
 		me.onDisconnect.addListener(() => {
 			if (port === me) port = null;
 			const why = lastError() ?? "disconnected";
+			const peer = opts.peer ?? "The Zinc Connector host";
 			const err = new Error(/not found|forbidden|not allowed/i.test(why)
-				? `The Zinc Connector host is not installed or does not allow this extension (${why})`
-				: `The Zinc Connector host stopped (${why})`);
+				? `${peer} is not installed or does not allow this extension (${why})`
+				: `${peer} stopped (${why})`);
 			for (const p of pending.values()) p.reject(err);
 			pending.clear();
 		});
