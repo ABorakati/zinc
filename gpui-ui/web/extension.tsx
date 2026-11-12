@@ -26,8 +26,26 @@ for (const [name, svg] of Object.entries(icons)) seedFile(`/icons/${name}.svg`, 
 // GPUI's browser build cannot take font files (no registerFont); it has IBM Plex Sans built in, one of the app's own sans choices
 fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
 
-// the data path: each Request to the host as an `api` frame, the chunked answer back as a Response
-setDirect(nativeApiTransport(() => chrome.runtime.connectNative(HOST_NAME), () => chrome.runtime.lastError?.message));
+// the data path: each Request to the host as an `api` frame, the chunked answer back as a Response. ?host=<name> picks another
+// registration of the same host (tests register one under their own name, so they never reach the installed host or its library).
+const hostParam = new URLSearchParams(location.search).get("host");
+const hostName = hostParam && /^com\.zotero_next\.[a-z0-9_.]+$/.test(hostParam) ? hostParam : HOST_NAME;
+const transport = nativeApiTransport(() => chrome.runtime.connectNative(hostName), () => chrome.runtime.lastError?.message);
+// the last requests and their status, for automated checks (window.znLibrary.requests)
+const requests: { method: string; path: string; status: number | string }[] = [];
+setDirect(async (req) => {
+	const entry: (typeof requests)[number] = { method: req.method, path: new URL(req.url).pathname + new URL(req.url).search, status: "pending" };
+	requests.push(entry);
+	if (requests.length > 200) requests.shift();
+	try {
+		const res = await transport(req);
+		entry.status = res.status;
+		return res;
+	} catch (e) {
+		entry.status = String(e instanceof Error ? e.message : e);
+		throw e;
+	}
+});
 // PDFs (phase 3, not tested yet): the reader fetches the bytes through the same path; PDFium loads on the first one
 const { setFileFetcher } = await import("../src/reader/library");
 const { initPdfium } = await import("./pdf");
@@ -53,7 +71,7 @@ render(() => <Root />, { title: "Zinc library", onKeyDown: handleWindowKeyDown }
 
 const { store, uiState } = await import("../src/store");
 // for automated checks (the connector's headless test): the store, and how many outside changes were seen
-const probe = { store, outsideChanges: 0 };
+const probe = { store, outsideChanges: 0, requests, hostName };
 (globalThis as Record<string, unknown>).znLibrary = probe;
 bindUiState(uiState);
 startAppearance(store);

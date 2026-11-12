@@ -132,3 +132,37 @@ Not verified on this branch: the app in a real window acting on a reveal (only t
 | 5. Optional: Zinc on the web | Option C: the Zotero Web API in the page, OPFS storage, API-key handling. A separate product decision. | 3–6 weeks |
 
 Main risks: a GPUI code path that needs `eval` or blob workers (blocked by MV3); WebGPU missing on some machines; store review of a 20 MB WebAssembly file (check the store rules on compiled code before submitting); Chrome ending an app that the host started.
+
+## 6. Phase 2 built: the library in the connector
+
+Status: 2026-11-12. Branches: `claude/connector-library-05fc7d` (zotero-next) and `connector-library` (zotero-next-connector, worktree `C:\Users\abora\zotero-next-connector-library`). Not merged, not pushed.
+
+What was built:
+
+| Piece | Where | What it does |
+|---|---|---|
+| Host method `api` | `connector-host/src/api.ts`, wired in `dispatch.ts` | Sends a `/api/*` request to the core's `handleApi` on the library file. Answers use the existing `res`/`rc` chunks (frames under 1 MB). Bodies come inline or as `up` frames. Allow-list: GET and HEAD everywhere except `/api/sync/`, `/api/websync/` and `/api/integrations/`. The only write is `POST /api/ui/selection` (kept in host memory). Everything else answers 403. `handleApi` is loaded on the first `api` call, so `ping` and saves stay fast. Tests: `connector-host/test/api.test.ts` (9). |
+| Page transport | `gpui-ui/web/native-host.ts` (+ test) | A `fetch`-like function over `chrome.runtime.connectNative`. The page opens its own port, so it gets its own host process and database connection. Reconnects after the host goes away. |
+| Outside changes | `gpui-ui/src/shell/outsideChanges.ts` (+ test) | Polls `ext` (`PRAGMA data_version`) from `GET /api/ui/selection` every 2 s, while the tab is visible. When it moves, it calls `store.refresh()`. |
+| Extension build | `gpui-ui/web/extension.tsx`, `bun web/build.ts --target extension` | Writes `gpui-ui/dist-extension/` (87 files, 30.5 MB): `library.html` with module scripts only. No inline script, service worker or web-app manifest. Every `.wasm` file is inside. The document worker is left out unless `--docworker` is given. |
+| Connector | `scripts/build-win.ts` step 6, `src/browserExt/background.js`, `manifest-v3.json` | The build copies the page into `library/` (from `--library <dir>`, `ZINC_LIBRARY_DIST`, or `../zotero-next/gpui-ui/dist-extension`). The toolbar button's right-click menu gets "Open Zinc library", which opens the page or focuses an open one. The item is hidden when the build has no page. `extension_pages` CSP: `script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`. Package: 35.6 MB unpacked. |
+| Headless check | `gpui-ui/web/extension-check.ts` | Builds a fixture library (`web/demo-library.ts`) and compiles the host. Registers it as `com.zotero_next.connector_host_e2e` under the Chrome for Testing and Chromium keys only (never `Software\Google\Chrome`), and opens the page with `?host=` that name. It first confirms which library the host serves. Then it checks the list, a collection, an item's details and an outside write, takes screenshots, and removes the registration, the profile and the host. |
+
+Result of the headless check (Chrome for Testing 151): 7/7 checks passed. The fixture's 19 items loaded, "Thesis" opened with 6 items, the item pane showed "Attention Is All You Need", and an item written by another process appeared within the 2 s poll. There were no CSP violations and no page errors. The only refused requests were the sync status poll (403).
+
+Try it:
+
+1. In `zotero-next/gpui-ui`: `bun web/build.ts --target extension`.
+2. In the connector worktree: `bun scripts/build-win.ts --library <zotero-next>/gpui-ui/dist-extension`.
+3. Rebuild and reinstall the host (`connector-host`: `bun run build`, then `install.ps1`). The installed host must have the `api` method.
+4. Load `build/manifestv3` unpacked, then right-click the toolbar button and choose **Open Zinc library**.
+5. Or headless, without touching the installed host: in `gpui-ui`, `bun web/extension-check.ts --ext <connector>/build/manifestv3`.
+
+What is left:
+
+- Editing. The UI still shows Add, edit fields and the drag targets, but those requests answer 403. Next: enable writes route by route in `connector-host/src/api.ts` (item fields, tags, collections, trash). Each needs the sync outbox check that the desktop core already does, and a read-only mode in the UI until then.
+- The sync status poll (`/api/sync/status`) is refused every 5 s. Either let a sanitised status through, or skip the poll in the extension build.
+- PDFs (phase 3). The reader's file fetch is wired through the host, but no PDF was opened in the test.
+- Collection colours and icons (`collection-style.json`) live in the app's config folder, not the library, so the page shows the defaults. Serve them through an API route if they should match.
+- The host binary now contains the whole API: 118.8 MB, against 118.1 MB for the October build. The Bun runtime is most of it, so "larger binary" in section 1 is only 0.7 MB.
+- The real Chrome registration still points at the installed host, which has no `api` method until it is rebuilt and reinstalled.
