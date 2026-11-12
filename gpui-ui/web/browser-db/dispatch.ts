@@ -14,6 +14,16 @@ import { connectorRoutes, decodeRFC2047, isBusyError, runConnectorRoute } from "
 import { setSelection } from "../../../core/src/connector/state";
 import { resolveTarget } from "../../../core/src/connector/targets";
 import { cancelSession, isCancelled, sessionItems, trashSession } from "../../../connector-host/src/sessions";
+import { hooks } from "../../../core/src/additems/files";
+import { extractFulltext } from "../../../core/src/extract";
+
+// Full-text extraction as the host does it, minus the PDF pool: that is a Bun worker (new Worker with env), which a database worker in a
+// browser cannot start; the attempt only logged "full-text extraction failed: worker error" after every PDF save. HTML needs no pool.
+hooks.afterImport = (db: Database, attachmentKey: string) => {
+	const row = db.query("SELECT content_type FROM attachments WHERE item_key = ?").get(attachmentKey) as { content_type: string | null } | null;
+	if (!/html/i.test(row?.content_type ?? "")) return;
+	void extractFulltext(db, attachmentKey).catch((e) => console.error("[browser-db] full-text extraction failed:", e instanceof Error ? e.message : e));
+};
 
 /** The version the extension sees as the "Zotero" version (as the host does: it only shows it in a few messages). */
 export const ZOTERO_VERSION_HEADER = "7.0.0-zotero-next";

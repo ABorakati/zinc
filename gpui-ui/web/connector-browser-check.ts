@@ -60,6 +60,10 @@ const TRANSLATOR_DIR = join(ROOT, "core", "vendor", "zotero", "translators");
 const EM_FILE = join(TRANSLATOR_DIR, "Embedded Metadata.js");
 const EM_CODE = readFileSync(EM_FILE, "utf8");
 const EM_META = JSON.parse(/^\s*{[\S\s]*?}\s*?[\r\n]/.exec(EM_CODE)![0]);
+// Embedded Metadata hands the page's meta tags to the RDF import translator, so the repository mock must serve that one too
+// (without it the translation fails with "Failed to fetch code for translator undefined" and the save falls back to a bare snapshot)
+const RDF_CODE = readFileSync(join(TRANSLATOR_DIR, "RDF.js"), "utf8");
+const RDF_META = JSON.parse(/^\s*{[\S\s]*?}\s*?[\r\n]/.exec(RDF_CODE)![0]);
 const ARTICLES: Record<string, { title: string; doi: string; pieces: number; delay: number }> = {
 	"1": { title: "Machine perfusion of donor livers: a fixture article", doi: "10.5555/zinc.fixture.1", pieces: 6, delay: 300 },
 	"2": { title: "Cold ischaemia and graft survival: a second fixture article", doi: "10.5555/zinc.fixture.2", pieces: 16, delay: 450 },
@@ -79,6 +83,7 @@ function pdfBytes(n: string): Uint8Array {
 	return new TextEncoder().encode(out + `% ${"padding ".repeat(40_000)}\n`); // ~320 KB
 }
 const PDF_SIZE = pdfBytes("1").length;
+const PDF_SHA = new Bun.CryptoHasher("sha256").update(pdfBytes("1")).digest("hex");
 const hostsSeen = new Set<string>();
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*" };
 const server = Bun.serve({
@@ -94,8 +99,9 @@ const server = Bun.serve({
 			return Response.json({ host: h.host, headers: h }, { headers: cors });
 		}
 		// the Zotero repository, as far as the connector asks: translator metadata and code
-		if (u.pathname === "/repo/metadata") return new Response(JSON.stringify([EM_META]), { headers: { "Content-Type": "application/json", Date: new Date().toUTCString() } });
+		if (u.pathname === "/repo/metadata") return new Response(JSON.stringify([EM_META, RDF_META]), { headers: { "Content-Type": "application/json", Date: new Date().toUTCString() } });
 		if (u.pathname === `/repo/code/${EM_META.translatorID}`) return new Response(EM_CODE, { headers: { "Content-Type": "text/plain" } });
+		if (u.pathname === `/repo/code/${RDF_META.translatorID}`) return new Response(RDF_CODE, { headers: { "Content-Type": "text/plain" } });
 		const m = /^\/article(\d)\.html$/.exec(u.pathname);
 		if (m && ARTICLES[m[1]!]) {
 			const a = ARTICLES[m[1]!]!;
@@ -199,12 +205,13 @@ try {
 		const port = chrome.runtime.connect({ name: 'zinc-db' });
 		let head = null, got = 0; const parts = [];
 		const timer = setTimeout(() => { port.disconnect(); reject(new Error('no answer from the library')); }, 30000);
-		const fin = () => { clearTimeout(timer); port.disconnect(); const bin = parts.map((p) => atob(p)).join(''); const ct = String((head.headers || {})['content-type'] || (head.headers || {})['Content-Type'] || '');
-			resolve({ status: head.status, size: bin.length, magic: bin.slice(0, 5), type: ct, text: /json|text/.test(ct) ? decodeURIComponent(escape(bin)) : '' }); };
+		const fin = async () => { clearTimeout(timer); port.disconnect(); const bin = parts.map((p) => atob(p)).join(''); const ct = String((head.headers || {})['content-type'] || (head.headers || {})['Content-Type'] || '');
+			const sha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(bin, (c) => c.charCodeAt(0))))].map((b) => b.toString(16).padStart(2, '0')).join('');
+		resolve({ status: head.status, size: bin.length, sha, magic: bin.slice(0, 5), type: ct, text: /json|text/.test(ct) ? decodeURIComponent(escape(bin)) : '' }); };
 		port.onMessage.addListener((m) => { if (m.t === 'res') { head = m; if (!m.n) fin(); } else if (m.t === 'rc') { parts[m.seq] = m.data; if (++got === head.n) fin(); } });
 		port.postMessage({ t: 'req', id: 1, method, http, path, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : { kind: 'text', text: JSON.stringify(body) } });
 	})`;
-	const api = async (http: string, path: string, body?: unknown): Promise<{ status: number; size: number; magic: string; type: string; json: any }> => {
+	const api = async (http: string, path: string, body?: unknown): Promise<{ status: number; size: number; sha: string; magic: string; type: string; json: any }> => {
 		const r = await evalIn<any>(sw, `(async () => { ${HELPERS}; return await znCall("api", ${q(http)}, ${q(path)}, ${body === undefined ? "undefined" : q(body)}); })()`);
 		let json: any = null;
 		try { json = r.text ? JSON.parse(r.text) : null; } catch { /* binary or empty */ }
@@ -294,8 +301,8 @@ try {
 	measures.pdfBytesExpected = PDF_SIZE;
 	measures.pdfBytesRead = file?.size;
 	check("after the save: the item is in the browser library, with its PDF read back through GET /api/attachments/<key>/file",
-		saved && listed?.title === ARTICLES["1"]!.title && file?.status === 200 && file.magic === "%PDF-" && file.size === PDF_SIZE,
-		`${key}: "${listed?.title}", attachment ${att?.key} ${att?.contentType}, file ${file?.status} ${file?.size} bytes (served ${PDF_SIZE}), ${measures.saveMs} ms from opening the popup to "Saved"`);
+		saved && listed?.title === ARTICLES["1"]!.title && file?.status === 200 && file.magic === "%PDF-" && file.size === PDF_SIZE && att?.contentType === "application/pdf" && file.sha === PDF_SHA,
+		`${key}: "${listed?.title}", attachment ${att?.key} ${att?.contentType}, file ${file?.status} ${file?.size} bytes (served ${PDF_SIZE}), sha256 ${file?.sha === PDF_SHA ? "equal" : "DIFFERENT"}, ${measures.saveMs} ms from opening the popup to "Saved"`);
 	check("the save shows 'Saved to My Library' with the target still the browser", /^Saved to/.test(await text(p1.sid, "headline")) && (await text(p1.sid, "target-name")) === "This browser", await text(p1.sid, "headline"));
 	await sleep(300);
 	await shot(p1.sid, "2-saved-light");
@@ -371,7 +378,7 @@ try {
 	// ---- 9. errors
 	// the fixture pages have no favicon (404). The start-up translator update (repo.zotero.org: unreachable here) rejects once in the
 	// background before the mock repository is set (translators.js:66).
-	const errs = problems.filter((p) => !/^article\d log: Failed to load resource/.test(p) && !/repo\.zotero\.org\/repo\/metadata/.test(p) && !/^background exception: Error at \S+\/(translators\.js:66|background-worker\.js:0)$/.test(p));
+	const errs = problems.filter((p) => !/^article\d log: Failed to load resource/.test(p) && !/repo\.zotero\.org\/repo\/metadata/.test(p) && !/^article2 console\.error: Method (saveAttachment|saveAttachmentFromResolver|updateSession) failed/.test(p) && !/^background exception: Error at \S+\/(translators\.js:66|background-worker\.js:0)$/.test(p));
 	const watched = ["background", "popup", "offscreen", "library", "db-worker"].map((l) => `${l}: ${problems.filter((p) => p.startsWith(l)).length}`).join(", ");
 	check("no errors in the popup, background, offscreen document, database worker and library tab", !errs.some((p) => /^(background|popup|offscreen|library|db-worker)/.test(p)), errs.slice(0, 8).join(" | ") || `none (${watched})`);
 	const extErrs = errs.filter((p) => p.startsWith("extension page"));
