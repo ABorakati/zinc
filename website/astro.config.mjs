@@ -4,6 +4,7 @@ import starlight from "@astrojs/starlight";
 import mermaid from "astro-mermaid";
 import { unified } from "@astrojs/markdown-remark";
 import { normalizeBase, remarkDocs } from "./plugins/docs-markdown.mjs";
+import { DOCS_NAV } from "./plugins/docs-nav.mjs";
 
 // The docs are for local use and for browsing docs/ on GitHub; nothing here publishes them.
 //   DOCS_BASE  path prefix the site is served under (default "/"; e.g. "/zinc/" behind a path)
@@ -27,52 +28,11 @@ export default defineConfig({
 			favicon: "/icon.svg",
 			customCss: ["@fontsource-variable/inter/opsz.css", "@fontsource-variable/manrope/wght.css", "./src/styles/custom.css"],
 			// the docs use the product pages' top bar (with Starlight's search in it), so the menu stays the same everywhere
-			components: { Header: "./src/components/DocsHeader.astro" },
+			components: { Header: "./src/components/DocsHeader.astro", PageTitle: "./src/components/DocsPageTitle.astro" },
 			editLink: undefined,
 			lastUpdated: false,
-			sidebar: [
-				{ label: "Overview", slug: "overview" },
-				{
-					label: "User guide",
-					items: guide([
-						"user-guide",
-						"user-guide/install",
-						"user-guide/first-run",
-						"user-guide/library",
-						"user-guide/adding-items",
-						"user-guide/reader",
-						"user-guide/notes-and-web-tabs",
-						"user-guide/find-full-text",
-						"user-guide/locate-engines",
-						"user-guide/citations",
-						"user-guide/better-bibtex",
-						"user-guide/zotmoov-storage",
-						"user-guide/sync",
-						"user-guide/import-export",
-						"user-guide/word",
-						"user-guide/mcp",
-						"user-guide/settings",
-						"user-guide/logs-and-reports",
-						"user-guide/updates",
-						"user-guide/troubleshooting",
-						"user-guide/comparison",
-					]),
-				},
-				{
-					label: "Developer guide",
-					items: guide([
-						"developer-guide",
-						"developer-guide/architecture",
-						"developer-guide/building",
-						"developer-guide/testing",
-						"developer-guide/database",
-						"developer-guide/http-api",
-						"developer-guide/translators",
-						"developer-guide/releasing",
-						"developer-guide/contributing",
-					]),
-				},
-			],
+			// the same order as the Markdown index for language models (/llms.txt): plugins/docs-nav.mjs
+			sidebar: DOCS_NAV.map((g) => (g.slugs.length === 1 && g.label === "Overview" ? { label: g.label, slug: g.slugs[0] } : { label: g.label, items: guide(g.slugs) })),
 		}),
 	],
 });

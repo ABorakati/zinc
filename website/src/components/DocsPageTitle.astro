@@ -1,0 +1,62 @@
+---
+// Starlight's PageTitle override (astro.config.mjs `components.PageTitle`): the page title, then "Copy as Markdown" and
+// "View as Markdown" for the page's own Markdown (/<page>.md, src/pages/[...slug].md.ts), e.g. to paste into a chat with a model.
+// Pages that do not come from docs/ (the 404 page) get the title only.
+import Default from "@astrojs/starlight/components/PageTitle.astro";
+import Icon from "./Icon.astro";
+
+const route = Astro.locals.starlightRoute;
+const fromDocs = !!(route.entry as { filePath?: string }).filePath;
+const md = `${import.meta.env.BASE_URL.replace(/\/?$/, "/")}${route.id}.md`;
+---
+<Default />
+{fromDocs && (
+	<div class="md-actions">
+		<button type="button" class="md-copy" data-md={md}>
+			<Icon name="copy" size={14} /><span data-label>Copy as Markdown</span>
+		</button>
+		<a class="md-view" href={md}><Icon name="file-text" size={14} />View as Markdown</a>
+	</div>
+)}
+
+<script>
+	// The copy waits for the fetch inside the click's user activation: ClipboardItem takes the text as a promise where the
+	// browser allows it (Safari needs that), else the text is written once it has arrived.
+	for (const btn of document.querySelectorAll<HTMLButtonElement>(".md-copy")) {
+		btn.addEventListener("click", async () => {
+			const label = btn.querySelector<HTMLElement>("[data-label]")!;
+			const text = () => fetch(btn.dataset.md!).then((r) => {
+				if (!r.ok) throw new Error(String(r.status));
+				return r.text();
+			});
+			try {
+				if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+					await navigator.clipboard.write([new ClipboardItem({ "text/plain": text().then((t) => new Blob([t], { type: "text/plain" })) })]);
+				} else {
+					await navigator.clipboard.writeText(await text());
+				}
+				label.textContent = "Copied";
+				btn.dataset.state = "done";
+			} catch {
+				label.textContent = "Couldn't copy: use View as Markdown";
+				btn.dataset.state = "failed";
+			}
+			setTimeout(() => { label.textContent = "Copy as Markdown"; delete btn.dataset.state; }, 2200);
+		});
+	}
+</script>
+
+<style>
+	.md-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; }
+	.md-actions .md-copy,
+	.md-actions .md-view {
+		display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.7rem; border-radius: 999px;
+		border: 1px solid var(--sl-color-gray-5); background: transparent; color: var(--sl-color-gray-2);
+		font: inherit; font-size: var(--sl-text-sm); line-height: 1.4; text-decoration: none; cursor: pointer;
+	}
+	.md-actions .md-copy:hover,
+	.md-actions .md-view:hover { border-color: var(--sl-color-accent); color: var(--sl-color-accent-high); }
+	.md-actions .md-copy[data-state="done"] { border-color: var(--sl-color-accent); color: var(--sl-color-accent-high); }
+	.md-actions .md-copy[data-state="failed"] { border-color: #c4504a; color: #e07a74; }
+	.md-actions :global(.icon) { flex: none; }
+</style>

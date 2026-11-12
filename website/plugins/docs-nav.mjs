@@ -1,0 +1,45 @@
+// The docs' reading order, shared by the sidebar (astro.config.mjs) and the Markdown index for language models
+// (src/pages/llms.txt.ts, llms-full.txt.ts), so the two never disagree. Slugs as src/content.config.ts makes them.
+export const DOCS_NAV = [
+	{ label: "Overview", slugs: ["overview"] },
+	{
+		label: "User guide",
+		slugs: [
+			"user-guide",
+			"user-guide/install",
+			"user-guide/first-run",
+			"user-guide/library",
+			"user-guide/adding-items",
+			"user-guide/reader",
+			"user-guide/notes-and-web-tabs",
+			"user-guide/find-full-text",
+			"user-guide/locate-engines",
+			"user-guide/citations",
+			"user-guide/better-bibtex",
+			"user-guide/zotmoov-storage",
+			"user-guide/sync",
+			"user-guide/import-export",
+			"user-guide/word",
+			"user-guide/mcp",
+			"user-guide/settings",
+			"user-guide/logs-and-reports",
+			"user-guide/updates",
+			"user-guide/troubleshooting",
+			"user-guide/comparison",
+		],
+	},
+	{
+		label: "Developer guide",
+		slugs: [
+			"developer-guide",
+			"developer-guide/architecture",
+			"developer-guide/building",
+			"developer-guide/testing",
+			"developer-guide/database",
+			"developer-guide/http-api",
+			"developer-guide/translators",
+			"developer-guide/releasing",
+			"developer-guide/contributing",
+		],
+	},
+];
