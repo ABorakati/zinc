@@ -9,6 +9,18 @@
 //   <- {t:"res", id, status, headers, n}, then n x {t:"rc", id, seq, data}   (base64 body chunks, each frame under 1 MB)
 
 export const HOST_NAME = "com.zotero_next.connector_host";
+/** What a test extension (manifest field zinc_test: true; the headless checks make these) uses in place of the real host name. Registered nowhere. */
+export const TEST_HOST_NAME = "com.zotero_next.connector_host_unregistered_test";
+/**
+ * The host a page talks to: ?host=<name> when it looks like a Zinc host name, else the installed host (HOST_NAME). A test extension
+ * never gets the installed host: Chrome for Testing also reads the real host's registration under HKCU\Software\Google\Chrome
+ * (see web/check-safety.ts), so there, no ?host= (or ?host= naming the real host) means TEST_HOST_NAME.
+ */
+export function resolveHostName(search: string, isTestExtension: boolean): string {
+	const param = new URLSearchParams(search).get("host");
+	const named = param && /^com\.zotero_next\.[a-z0-9_.]+$/.test(param) ? param : HOST_NAME;
+	return isTestExtension && named === HOST_NAME ? TEST_HOST_NAME : named;
+}
 /** A body up to this size goes in the request frame; larger ones as `up` frames of UPLOAD_CHUNK bytes. */
 const INLINE_BYTES = 256 * 1024;
 const UPLOAD_CHUNK = 1024 * 1024;

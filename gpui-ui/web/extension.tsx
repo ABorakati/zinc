@@ -14,12 +14,13 @@ import { setBrowserLibrary } from "../src/shell/libraryMode";
 import { bindUiState } from "../src/shell/prefs";
 import { handleWindowKeyDown } from "../src/shell/shortcuts";
 import { fontFamilyNames, tw } from "../src/theme";
-import { HOST_NAME, nativeApiTransport, type NativePort } from "./native-host";
+import { nativeApiTransport, resolveHostName, type NativePort } from "./native-host";
 
 declare const chrome: {
 	runtime: {
 		connectNative(name: string): NativePort;
 		connect(info: { name: string }): NativePort;
+		getManifest(): { zinc_test?: boolean };
 		sendMessage(msg: unknown, cb: (reply: { ok?: boolean; error?: string } | undefined) => void): void;
 		lastError?: { message?: string };
 		onMessage: { addListener(f: (msg: unknown) => void): void };
@@ -49,8 +50,7 @@ fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
 
 // the data path: each Request to the host as an `api` frame, the chunked answer back as a Response. ?host=<name> picks another
 // registration of the same host (tests register one under their own name, so they never reach the installed host or its library).
-const hostParam = new URLSearchParams(location.search).get("host");
-const hostName = hostParam && /^com\.zotero_next\.[a-z0-9_.]+$/.test(hostParam) ? hostParam : HOST_NAME;
+const hostName = resolveHostName(location.search, chrome.runtime.getManifest().zinc_test === true);
 let transport: (req: Request) => Promise<Response>;
 if (BROWSER) {
 	await ensureDb();

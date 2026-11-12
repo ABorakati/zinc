@@ -1,9 +1,12 @@
 // Headless end-to-end check of the Zinc Connector's save popup (connector: src/browserExt/popup/, savePopup.js):
 //   bun web/popup-check.ts --ext <connector build/manifestv3> [--chrome <Chrome for Testing chrome.exe>] [--work <dir>] [--keep]
 // Same safety rules as web/extension-check.ts: a fixture library (web/demo-library.ts), the host compiled to <work>/host and
-// registered as com.zotero_next.connector_host_e2e under HKCU\Software\Chromium only (where Chrome for Testing looks; the real
-// host is not registered there), a fresh profile, and the extension's background pointed at that name before anything is saved
-// (Zotero.NativeHost.useHostForTests). It stops before any save unless the host reports the fixture library.
+// registered as com.zotero_next.connector_host_e2e under HKCU\Software\Chromium, a fresh profile, and the extension's background
+// pointed at that name before anything is saved (Zotero.NativeHost.useHostForTests). It stops before any save unless the host
+// reports the fixture library.
+// Chrome for Testing reads HKCU\Software\Google\Chrome\NativeMessagingHosts too, where the user's real host is registered. So the
+// check loads a COPY of the build (<work>/ext) whose default host name is one registered nowhere (web/check-safety.ts), and
+// refuses to start Chrome if anything it loads could reach a name registered under the Google key.
 //
 // Pages to save come from a local server: two fixture articles with citation_* metadata (Zotero's Embedded Metadata translator)
 // and a PDF that is sent slowly, so the popup can be seen during a save. The popup page is opened as a tab with ?tab=<id> (a
@@ -13,15 +16,16 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as repo from "../../core/src/db";
+import { assertSafeToStart, makeConnectorTestCopy } from "./check-safety";
 
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1] : undefined; };
-const EXT = resolve(arg("ext") ?? join(homedir(), "zotero-next-connector", "build", "manifestv3"));
+const EXT_BUILD = resolve(arg("ext") ?? join(homedir(), "zotero-next-connector", "build", "manifestv3"));
 const WORK = resolve(arg("work") ?? join(tmpdir(), "zinc-popup-check"));
 const KEEP = process.argv.includes("--keep");
 const ROOT = resolve(import.meta.dir, "..", "..");
 const HOST_NAME = "com.zotero_next.connector_host_e2e";
 const REG_KEY = `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`;
-const CDP_PORT = 9342;
+const CDP_PORT = Number(arg("port") ?? 9342);
 const EXT_ID = "pakgagonakcalfbmckaolkpidcojacaf";
 
 function findChrome(): string {
@@ -41,9 +45,11 @@ const run = (cmd: string[], cwd: string) => {
 	if (r.status !== 0) throw new Error(`${cmd.join(" ")} failed:\n${r.stderr || r.stdout}`);
 };
 
-if (!existsSync(join(EXT, "popup", "popup.html"))) throw new Error(`${EXT} is not a connector build with popup/popup.html`);
+if (!existsSync(join(EXT_BUILD, "popup", "popup.html"))) throw new Error(`${EXT_BUILD} is not a connector build with popup/popup.html`);
 rmSync(WORK, { recursive: true, force: true });
 for (const d of ["host", "shots"]) mkdirSync(join(WORK, d), { recursive: true });
+const EXT = join(WORK, "ext");
+makeConnectorTestCopy(EXT_BUILD, EXT); // no native host by default: the real name is replaced
 
 // ---- fixture library, host, registration
 const libDir = join(WORK, "library");
@@ -53,7 +59,6 @@ const hostExe = join(WORK, "host", "zinc-e2e-host.exe");
 run(["bun", "build", "--compile", join(ROOT, "connector-host", "src", "main.ts"), "--outfile", hostExe], join(ROOT, "connector-host"));
 const manifestPath = join(WORK, "host", `${HOST_NAME}.json`);
 writeFileSync(manifestPath, JSON.stringify({ name: HOST_NAME, description: "Zinc host (popup check, fixture library)", path: hostExe, type: "stdio", allowed_origins: [`chrome-extension://${EXT_ID}/`] }, null, 2));
-run(["reg", "add", REG_KEY, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], WORK);
 const fx = repo.openDb(dbPath);
 const thesis = (fx.query("SELECT key FROM collections WHERE name = 'Thesis'").get() as { key: string }).key;
 fx.close();
@@ -116,6 +121,8 @@ const server = Bun.serve({
 });
 
 const profile = join(WORK, "profile");
+assertSafeToStart({ extDir: EXT, hostNames: [HOST_NAME] });
+run(["reg", "add", REG_KEY, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], WORK); // the test host, under the Chromium key only
 const chrome = spawn(findChrome(), [
 	"--headless=new", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`,
 	`--load-extension=${EXT}`, `--disable-extensions-except=${EXT}`,
@@ -171,9 +178,9 @@ try {
 	const sw = await attach(swTarget, "background");
 	await waitFor(sw, "typeof Zotero !== 'undefined' && !!Zotero.NativeHost && !!Zotero.SavePopup", 20_000);
 	await evalIn(sw, `Zotero.initDeferred.promise.then(() => Zotero.NativeHost.useHostForTests(${JSON.stringify(HOST_NAME)}))`);
-	// errors before this point come from the start-up calls to the real host name, which this profile does not have
+	// errors before this point come from the start-up calls to the connector's default host name, which is registered nowhere
 	const startupProblems = problems.length;
-	// the translators came from the real host name at start-up (not registered in this profile): load them from the test host
+	// the translators came from the default host name at start-up (registered nowhere): load them from the test host
 	await evalIn(sw, "Zotero.Translators.updateFromRemote(true)").catch((e) => console.log(`translator reload: ${e.message}`));
 	const hello = await evalIn<{ db?: string }>(sw, "Zotero.NativeHost.hello()").catch((e) => ({ db: `error: ${e.message}` }));
 	check("the background reaches the test host, serving the fixture library", resolve(hello?.db ?? "") === resolve(dbPath), String(hello?.db));
