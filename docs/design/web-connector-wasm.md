@@ -260,9 +260,11 @@ What the user sees without it:
 - Figure and citation cards fall back to the page text (`academic/session.ts` builds its index from the text layer when the structure fails). Numbered references and captioned figures are found. Figures without a caption, and references not in a numbered list, are missed.
 - Nothing fails: the check's page-error test passes.
 
-### Snapshots and EPUB: not done
+### Snapshots and EPUB
 
-Neither is almost free. The app opens EPUBs and web snapshots in a webview that its local server feeds (`reader-host`, mounted at `/reader-host/`). The browser build has no local server and no webview. In the tab, they would need an extension page that loads the reader and serves the files from the host, with its own CSP work. Use the app for them.
+They open in Zotero's reader (`reader-host`) in a new browser tab. The tab is the extension page `library/reader/index.html?attachment=<key>&host=<name>`. A small script, `zn-bridge.js`, loads first and sends the reader's `/api` requests to the native host, the same way the library tab does. Annotations save through the host. `web/build.ts` copies the reader into `dist-extension/reader/`. It adds 4.9 MB and leaves out the document worker and PDF.js, so there is no reading mode there, and PDFs still open in the GPUI reader. Snapshot dark mode uses the reader's static theme, because the page CSP forbids `eval`.
+
+A snapshot's scripts do not run: the page CSP blocks inline scripts, and the reader adds its own CSP to the frame. No sandbox page is needed, and the connector manifest needs nothing new. The headless check is `bun web/library-reader-check.ts`.
 
 ### Try it
 

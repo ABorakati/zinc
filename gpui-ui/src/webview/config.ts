@@ -17,6 +17,11 @@ export function webBase(): string | null {
 	return process.env.ZN_DB ? null : BASE_URL;
 }
 
+/** The extension build (web/extension.tsx) sets this: EPUBs and snapshots open in a new browser tab instead of a web tab. */
+let tabOpener: ((attachmentKey: string) => void) | null = null;
+export function setWebTabOpener(f: ((attachmentKey: string) => void) | null): void { tabOpener = f; }
+export const webTabOpener = (): ((attachmentKey: string) => void) | null => tabOpener;
+
 /** Content types the web reader opens (snapshots and EPUBs); PDFs go to the native reader. */
 export const isWebContent = (contentType: string): boolean => /html|epub/i.test(contentType);
 

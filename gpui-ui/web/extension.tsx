@@ -50,6 +50,19 @@ setDirect(async (req) => {
 		throw e;
 	}
 });
+// EPUBs and web snapshots: Zotero's reader (reader/index.html, copied by web/build.ts) in a new browser tab of this extension. It
+// reaches the same host by name (reader/zn-bridge.js); PDFs keep opening in the GPUI reader below.
+{
+	const { setWebTabOpener } = await import("../src/webview/config");
+	setWebTabOpener((key) => {
+		const url = new URL("reader/index.html", location.href);
+		url.searchParams.set("attachment", key);
+		url.searchParams.set("host", hostName);
+		const tabs = (globalThis as { chrome?: { tabs?: { create(o: { url: string }): unknown } } }).chrome?.tabs;
+		if (tabs?.create) tabs.create({ url: url.href });
+		else window.open(url.href, "_blank");
+	});
+}
 // PDFs: the reader fetches the bytes through the same path (the host sends them in chunks under 1 MB); PDFium and its render workers
 // (web/pdf.ts) load on the first one. Each fetch is timed for the headless check (globalThis.znPdfStats.fetches).
 const { setFileFetcher } = await import("../src/reader/library");

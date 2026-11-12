@@ -147,10 +147,29 @@ if (EXT) {
 </body>
 </html>
 `);
+	// Zotero's reader for EPUBs and web snapshots (reader-host), a page of its own: library/reader/index.html?attachment=<key>&host=<name>
+	// opens in a new tab (web/extension.tsx). Copied from reader-host/dist (--reader <dir> to pick another build), minus the document
+	// worker (30 MB, layout analysis of PDFs) and pdf/ (PDF.js, only for PDFs, which open in the GPUI reader). host.js is rebuilt from
+	// reader-host/src (it needs vendor/ for the structured-document-text version) and zn-bridge.js (web/reader-tab) is loaded first:
+	// it sends host.js's /api requests over native messaging to the host named by ?host=. No inline script anywhere.
+	const readerDist = resolve(arg("reader") ?? join(root, "..", "reader-host", "dist"));
+	if (existsSync(join(readerDist, "reader.js")) && !process.argv.includes("--no-reader")) {
+		const rdir = join(out, "reader");
+		cpSync(readerDist, rdir, { recursive: true, filter: (s) => { const r = relative(readerDist, s).replaceAll("\\", "/"); return !/^(document-worker|pdf|reader\.html|index\.html|host\.js)(\/|$)/.test(r); } });
+		const rbuild = async (entry: string, outName: string, extra: Partial<Parameters<typeof Bun.build>[0]> = {}) => {
+			const r = await Bun.build({ entrypoints: [entry], outdir: rdir, target: "browser", format: "iife", minify: !process.argv.includes("--debug"), throw: false, naming: outName, ...extra });
+			if (!r.success) { for (const l of r.logs) console.error(String(l).slice(0, 400)); throw new Error(`reader build failed: ${entry}`); }
+		};
+		await rbuild(join(root, "..", "reader-host", "src", "host.js"), "host.js");
+		await rbuild(join(here, "reader-tab", "zn-bridge.ts"), "zn-bridge.js");
+		const page = readFileSync(join(root, "..", "reader-host", "src", "index.html"), "utf8");
+		if (!page.includes(`<script src="reader.js"></script>`)) throw new Error("reader-host/src/index.html changed: put zn-bridge.js before reader.js");
+		writeFileSync(join(rdir, "index.html"), page.replace(`<script src="reader.js"></script>`, `<script src="zn-bridge.js"></script>\n\t<script src="reader.js"></script>`));
+	} else console.log("extension build: reader-host/dist not found (or --no-reader), EPUBs and snapshots will not open in a tab");
 	const files: string[] = [];
 	const walk = (d: string) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else files.push(p); } };
 	walk(out);
-	const mb = files.reduce((n, f) => n + statSync(f).size, 0) / 2 ** 20;
+	const mb =files.reduce((n, f) => n + statSync(f).size, 0) / 2 ** 20;
 	console.log(`extension library page -> ${out} (${files.length} files, ${mb.toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
 	process.exit(0);
 }

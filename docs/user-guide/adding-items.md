@@ -118,7 +118,7 @@ Not available in the browser tab:
 - **Reading view**, which needs layout analysis. It shows "Open the PDF in the Zinc app to read it in the reading view", and the toolbar shows **Layout analysis unavailable**. Figure and citation previews still work from the page text, but can miss figures without a caption.
 - **Add Note from Annotations**: use the app.
 - Printing and page editing (rotate or delete pages in the file).
-- EPUBs and web snapshots: open them in the app.
+- EPUBs and web snapshots: they open in a new browser tab, in Zotero's reader. You can highlight and annotate there. Reading view is not available; use the app for that.
 
 Things to know:
 
