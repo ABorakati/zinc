@@ -39,7 +39,24 @@ export interface FilesContext {
 	ref?: LibraryRef;
 	/** <db dir>/storage */
 	storageDir: string;
+	/**
+	 * How a file download treats the redirect zotero.org answers with (GET .../items/<key>/file -> 302 to the file host).
+	 * "manual" (default): read the Location header and fetch the file host without the API key. Needs a fetch that exposes the
+	 *   redirect: Bun and Node do; a browser does not (it gives type "opaqueredirect", status 0, no headers), and downloadOne
+	 *   then fails with a clear error.
+	 * "follow": let fetch follow the redirect. In a browser that is the only way, but the browser forwards the custom
+	 *   Zotero-API-Key header to the file host. The extension must strip it with a declarativeNetRequest rule: install
+	 *   gpui-ui/web/browser-db/dnr-rules.json (static ruleset; needs the "declarativeNetRequest" permission and host permissions
+	 *   for the file hosts) BEFORE using "follow". Without the rule the key would be sent to a third party.
+	 */
+	fileRedirect?: FileRedirect;
 }
+
+export type FileRedirect = "manual" | "follow";
+
+/** The error for a browser fetch that hid the redirect, so the Location header cannot be read. */
+export const OPAQUE_REDIRECT_MESSAGE =
+	'the browser hid the file redirect (opaqueredirect): set the sync option fileRedirect to "follow" and install the declarativeNetRequest rule that removes Zotero-API-Key for hosts other than api.zotero.org';
 
 const refOf = (ctx: FilesContext): LibraryRef => ctx.ref ?? userRef(ctx.userId);
 
@@ -95,6 +112,8 @@ async function onServer(ctx: FilesContext, key: string): Promise<boolean | null>
 	try {
 		const res = await ctx.client.request("GET", `${refOf(ctx).prefix}/items/${key}/file`, { redirect: "manual" });
 		await res.body?.cancel();
+		// a browser hides the redirect (opaqueredirect, status 0); only a redirect looks like that, so the file exists
+		if (res.type === "opaqueredirect") return true;
 		if (res.status === 302 || res.status === 301 || res.status === 303 || res.status === 307 || res.status === 200) return true;
 		if (res.status === 404) return false;
 		return null;
@@ -175,15 +194,18 @@ function setFileBase(db: Database, key: string, path: string, md5: string): void
 }
 
 /** @param conflictCopy write the server's file here instead of over the attachment's file (a divergence is never overwritten) */
-async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: string): Promise<number> {
-	const res = await ctx.client.request("GET", `${refOf(ctx).prefix}/items/${a.key}/file`, { redirect: "manual" });
+export async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: string): Promise<number> {
+	const res = await ctx.client.request("GET", `${refOf(ctx).prefix}/items/${a.key}/file`, { redirect: ctx.fileRedirect ?? "manual" });
 	let bytes: Uint8Array;
-	if (res.status >= 300 && res.status < 400) {
+	if (res.type === "opaqueredirect") {
+		await res.body?.cancel();
+		throw new Error(OPAQUE_REDIRECT_MESSAGE);
+	} else if (res.status >= 300 && res.status < 400) {
 		const loc = res.headers.get("location");
 		await res.body?.cancel();
 		if (!loc) throw new Error("redirect without a location");
 		// the file host is not zotero.org's API: it never receives the API key
-		const file = await fetch(new URL(loc, ctx.client.base));
+		const file = await ctx.client.external(new URL(loc, ctx.client.base));
 		if (!file.ok) throw new Error(`file download answered ${file.status}`);
 		bytes = new Uint8Array(await file.arrayBuffer());
 	} else if (res.ok) {
@@ -310,7 +332,8 @@ async function uploadFile(ctx: FilesContext, a: Att, replaces: string | null): P
 	const j = (await auth.json()) as { exists?: number; url?: string; contentType?: string; prefix?: string; suffix?: string; uploadKey?: string };
 	if (!j.exists) {
 		if (!j.url || !j.uploadKey) throw new Error("unexpected upload authorization");
-		const put = await fetch(j.url, {
+		// (the URL the API returned is a file host, not zotero.org's API: the key is not sent, and no redirect is expected)
+		const put = await client.external(j.url, {
 			method: "POST",
 			headers: { "Content-Type": j.contentType ?? "application/octet-stream" },
 			body: new Blob([j.prefix ?? "", bytes, j.suffix ?? ""]),

@@ -9,8 +9,8 @@ import { dbFileOf } from "../files/config";
 import { listLibraries, markGroupsRemoved, upsertGroupLibrary, USER_LIBRARY, type Library } from "../libraries";
 import { pendingCount } from "../sync/build";
 import { failure, PreconditionFailed, WebApiError, ZoteroWebClient } from "./client";
-import { checkFiles, downloadMissing, reconcileFiles, uploadMissing, type FileJob, type FilesCheck } from "./files";
-import { bunKeyStore, type KeyStore } from "./keystore";
+import { checkFiles, downloadMissing, reconcileFiles, uploadMissing, type FileJob, type FileRedirect, type FilesCheck } from "./files";
+import { getDefaultKeyStore, type KeyStore } from "./keystore";
 import { pullOnce } from "./pull";
 import { pushOnce, type PushResult } from "./push";
 import { groupRef, userRef, webVersions, type LibraryRef } from "./library";
@@ -27,6 +27,29 @@ export interface WebSyncOptions {
 	pollMs?: number;
 	/** Run a sync as soon as the service starts (default true). */
 	initialSync?: boolean;
+	/** See FilesContext.fileRedirect. Default "manual" (desktop). A browser worker sets "follow" and installs dnr-rules.json. */
+	fileRedirect?: FileRedirect;
+	/**
+	 * The folder that holds `storage/<KEY>/<file>` (storage is <dataDir>/storage). Default: the folder of the database file; for
+	 * the browser library (db file BROWSER_DB_FILE) /opfs/zinc; for an in-memory database in Node/Bun, the working directory.
+	 */
+	dataDir?: string;
+}
+
+/** The library database's file name inside the browser worker (gpui-ui/web/browser-db/CONTRACT.md). */
+export const BROWSER_DB_FILE = "/opfs/zinc/library.sqlite";
+export const BROWSER_DATA_DIR = "/opfs/zinc";
+
+/** dataDir option, else the db file's folder, else (no file) the cwd; never process.cwd() in a browser. */
+export function resolveDataDir(db: Database, override?: string): string {
+	if (override) return override;
+	const file = dbFileOf(db);
+	if (file === BROWSER_DB_FILE) return BROWSER_DATA_DIR;
+	if (file) return dirname(file);
+	// In a browser (a window or a worker; the demo build fakes `process` there) cwd is never called.
+	const g = globalThis as { document?: unknown; WorkerGlobalScope?: unknown };
+	const inBrowser = g.document !== undefined || g.WorkerGlobalScope !== undefined;
+	return !inBrowser && typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : BROWSER_DATA_DIR;
 }
 
 export interface WebSyncStatus {
@@ -118,10 +141,9 @@ export class WebSyncService {
 		readonly db: Database,
 		readonly opts: WebSyncOptions = {},
 	) {
-		this.keyStore = opts.keyStore ?? bunKeyStore;
+		this.keyStore = opts.keyStore ?? getDefaultKeyStore();
 		this.client = new ZoteroWebClient({ base: opts.apiBase, getKey: () => this.keyStore.get(), fetch: opts.fetch, sleep: opts.sleep, now: opts.now });
-		const file = dbFileOf(db);
-		this.dataDir = file ? dirname(file) : process.cwd();
+		this.dataDir = resolveDataDir(db, opts.dataDir);
 		this.storageDir = join(this.dataDir, "storage");
 	}
 
@@ -376,13 +398,13 @@ export class WebSyncService {
 			if (mode === "off") return;
 			try {
 				if (mode === "sync" && this.canWrite && getState(this.db, "web_files_access") === "1") {
-					await uploadMissing({ db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir });
+					await uploadMissing({ db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir, fileRedirect: this.opts.fileRedirect });
 				}
 				if (mode === "sync" && getState(this.db, "web_files_access") === "1") {
 					for (const g of this.groupLibraries()) {
 						if (!g.filesEditable) continue;
 						try {
-							await uploadMissing({ db: this.db, client: this.client, userId: this.userId, ref: this.refFor(g), storageDir: this.storageDir });
+							await uploadMissing({ db: this.db, client: this.client, userId: this.userId, ref: this.refFor(g), storageDir: this.storageDir, fileRedirect: this.opts.fileRedirect });
 						} catch (e) {
 							setState(this.db, this.stateName("web_error", g.id), failMsg(e));
 						}
@@ -390,7 +412,7 @@ export class WebSyncService {
 				}
 				// attachments that changed after their last sync (the server's file replaced, or the local one edited)
 				const upload = mode === "sync" && getState(this.db, "web_files_access") === "1";
-				const base = { db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir };
+				const base = { db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir, fileRedirect: this.opts.fileRedirect };
 				try {
 					await reconcileFiles(base, { upload: upload && this.canWrite });
 				} catch (e) {
@@ -421,7 +443,7 @@ export class WebSyncService {
 	checkFiles(libraryId: number = USER_LIBRARY): Promise<FilesCheck> {
 		const lib = libraryId === USER_LIBRARY ? undefined : this.groupLibraries().find((g) => g.id === libraryId);
 		if (libraryId !== USER_LIBRARY && !lib) throw new HttpError(404, "library not found");
-		return checkFiles({ db: this.db, client: this.client, userId: this.userId, ref: lib ? this.refFor(lib) : undefined, storageDir: this.storageDir });
+		return checkFiles({ db: this.db, client: this.client, userId: this.userId, ref: lib ? this.refFor(lib) : undefined, storageDir: this.storageDir, fileRedirect: this.opts.fileRedirect });
 	}
 
 	/** Download every library's missing files, My Library first. The job's counters add up across libraries. */
@@ -429,7 +451,7 @@ export class WebSyncService {
 		if (this.job?.running) return;
 		const job: FileJob = { done: 0, total: 0, failed: 0, bytes: 0, running: true };
 		this.job = job;
-		const base = { db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir };
+		const base = { db: this.db, client: this.client, userId: this.userId, storageDir: this.storageDir, fileRedirect: this.opts.fileRedirect };
 		this.fileJobDone = (async () => {
 			await downloadMissing(base, job);
 			for (const g of this.groupLibraries()) {

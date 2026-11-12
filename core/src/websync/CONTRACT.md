@@ -79,3 +79,12 @@ zotero.org storage.
 
 Entry point for the app: `startWebSync(db, opts?)` / `stopWebSync(db)` exported from `core/src/websync/index.ts`,
 plus `syncMode(db)` so the app's services start either the local SyncService or this one.
+
+## In a browser worker
+
+Browser edition (`gpui-ui/web/browser-db/CONTRACT.md`): the worker calls `setDefaultKeyStore(chromeKeyStore())`
+(gpui-ui/web/browser-db/keystore-chrome.ts), then `startWebSync(db, { fileRedirect: "follow", ... })`. A db named
+`/opfs/zinc/library.sqlite` stores files under `/opfs/zinc/storage` (`WebSyncOptions.dataDir` overrides).
+`fileRedirect: "follow"` needs the declarativeNetRequest rule in `gpui-ui/web/browser-db/dnr-rules.json`, which removes
+`Zotero-API-Key` from requests to every domain but api.zotero.org. File-host and upload requests go through
+`client.external()`, which never carries the key.

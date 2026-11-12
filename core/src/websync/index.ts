@@ -8,7 +8,7 @@ export { handleWebSyncApi, getWebSync, configureWebSync } from "./api";
 export { WebSyncService } from "./service";
 export type { WebSyncOptions, WebSyncStatus } from "./service";
 export type { FilesCheck, FileJob } from "./files";
-export { MemoryKeyStore, bunKeyStore, type KeyStore } from "./keystore";
+export { MemoryKeyStore, bunKeyStore, setDefaultKeyStore, getDefaultKeyStore, type KeyStore } from "./keystore";
 export { syncMode, setSyncMode, filesMode, type SyncModeName, type FilesMode } from "./state";
 
 import { configureWebSync, getWebSync, stopWebSyncService } from "./api";
