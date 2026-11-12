@@ -1,0 +1,53 @@
+connector-host/test/sessions.test.ts
+  s_e8244edae027cb::t_59c40103702793 1-108
+core/src/connector/state.ts
+  s_e8244edae027cb::t_2383d0b7bb47aa 86-87
+  s_e8244edae027cb::t_ec60108789def2 75-76
+core/test/connector/reveal.test.ts
+  s_e8244edae027cb::t_b2e958a4a2672a 68-91
+core/src/connector/ui.ts
+  s_e8244edae027cb::t_94d1ababaefc52 35,37,44-45,47-50
+  s_e8244edae027cb::t_2211cb53571be1 16-29
+  s_e8244edae027cb::t_15371996f6ca4d 4-5
+connector-host/test/reveal.test.ts
+  s_e8244edae027cb::t_2eb1cf8ddd983b 52-69
+gpui-ui/src/main.tsx
+  s_e8244edae027cb::t_7152b929e87295 142-146
+gpui-ui/src/shell/revealRequests.ts
+  s_e8244edae027cb::t_238e411d70ee79 8-15
+  s_e8244edae027cb::t_b7393c5621628f 29
+  s_e8244edae027cb::t_d395bd8dfe68b2 40
+gpui-ui/web/extension.tsx
+  s_e8244edae027cb::t_c1ccb68f1f6163 19-23
+  s_e8244edae027cb::t_38be856d444b5a 95-106
+gpui-ui/src/shell/revealRequests.test.ts
+  s_e8244edae027cb::t_744e98ed2c5020 33-42
+connector-host/src/reveal.ts
+  s_e8244edae027cb::t_51a932c3f69ce4 13
+  s_e8244edae027cb::t_66e0b2d09516c8 24-25
+  s_e8244edae027cb::t_386c722c2887a2 80,83,85
+connector-host/src/sessions.ts
+  s_e8244edae027cb::t_af752b22b074a3 1-80
+connector-host/src/dispatch.ts
+  s_e8244edae027cb::t_052057c6d6f8bf 310-311
+  s_e8244edae027cb::t_b36c08da90d7a5 113-114
+  s_e8244edae027cb::t_a6b8406d7c7957 269-272
+  s_e8244edae027cb::t_035f76ef280147 218,220,224,228-242
+  s_e8244edae027cb::t_f10b6fde038010 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0dd8f5eb3d6d548eafdbbf8067a0284e0b3313b",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
