@@ -1,0 +1,14 @@
+[
+	{
+		"id": 1,
+		"priority": 1,
+		"action": {
+			"type": "modifyHeaders",
+			"requestHeaders": [{ "header": "Zotero-API-Key", "operation": "remove" }]
+		},
+		"condition": {
+			"excludedRequestDomains": ["api.zotero.org"],
+			"resourceTypes": ["xmlhttprequest", "other"]
+		}
+	}
+]

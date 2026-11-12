@@ -21,6 +21,21 @@ export const bunKeyStore: KeyStore = {
 	},
 };
 
+let defaultStore: KeyStore = bunKeyStore;
+
+/**
+ * The key store a WebSyncService uses when WebSyncOptions.keyStore is not given. Desktop: the OS keychain (bunKeyStore).
+ * A browser worker, where Bun.secrets does not exist, installs its own (gpui-ui/web/browser-db/keystore-chrome.ts) before
+ * startWebSync. The interface is already async, so any backend fits and no call site needed changing.
+ */
+export function setDefaultKeyStore(ks: KeyStore): void {
+	defaultStore = ks;
+}
+
+export function getDefaultKeyStore(): KeyStore {
+	return defaultStore;
+}
+
 /** Test double: keeps the key in memory so tests never touch the real keychain. */
 export class MemoryKeyStore implements KeyStore {
 	value: string | null;
