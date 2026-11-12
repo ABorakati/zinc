@@ -1,6 +1,8 @@
 # Design note: Zinc in the browser (the connector as a full app)
 
-Status: draft, 2026-11-12. Branch `claude/connector-library-05fc7d`. Nothing in this note is built yet. It builds on `web-connector-wasm.md` (phases 2 and 3: the library tab and PDFs through the native host).
+Status: 2026-11-12. Branch `claude/connector-library-05fc7d`. The user took every recommendation in "Decisions for the user" below; store distribution is still open (it does not change the build). Building has started. The interfaces fixed for the parallel work are in `gpui-ui/web/browser-db/CONTRACT.md`, which overrides this note where they differ:
+- The transport is the native host's own frame protocol over `chrome.runtime.connect({name: "zinc-db"})`, not a `BroadcastChannel`.
+- Attachment files live in a second SQLite database behind the `node:fs` shim, not in plain OPFS files with a `FileStore` refactor. The core's file code stays synchronous and unchanged. It builds on `web-connector-wasm.md` (phases 2 and 3: the library tab and PDFs through the native host).
 
 ## The decision
 
