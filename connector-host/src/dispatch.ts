@@ -10,6 +10,7 @@ import { connectorRoutes, decodeRFC2047, isBusyError, runConnectorRoute } from "
 import { SessionManager } from "../../core/src/connector/session";
 import { setSelection } from "../../core/src/connector/state";
 import { resolveTarget } from "../../core/src/connector/targets";
+import { revealInApp } from "./reveal";
 import { mergeSessions, readState, writeState } from "./store";
 import { translatorCode, translatorMetadata } from "./translators";
 
@@ -190,6 +191,18 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 	const method = String(msg.method ?? "");
 	const http = msg.http === "GET" ? "GET" : "POST";
 	const path = `/connector/${method}`;
+
+	// "Open in Zinc": not a Zotero connector method; asks the running app (started if needed) to show an item (reveal.ts).
+	if (method === "revealInApp") {
+		let key: unknown;
+		try {
+			key = JSON.parse(msg.body?.kind === "text" ? msg.body.text : "{}").key;
+		} catch {
+			/* no key: 400 below */
+		}
+		const r = await revealInApp(env.appPort, key);
+		return done(r.status, JSON.stringify(r.body));
+	}
 
 	// The translators come from the bundled copy (offline, instant): the extension asks "the client" for them
 	// before it ever tries the translator repository.

@@ -45,7 +45,10 @@ Frames: 4-byte little-endian length + UTF-8 JSON, both directions (`src/frames.t
 | extension to host | `{t:"hello", id}` answered with `{t:"hello", id, version, db, pid}` |
 | host to extension | `{t:"res", id, status, headers, n}` then `n` x `{t:"rc", id, seq, data}` (base64, under 1 MB per frame: Chrome's host-to-browser limit) |
 
-`method` is the connector endpoint name (`saveItems`, `saveAttachment`, ...). Unknown methods (`getTranslators`,
+`method` is the connector endpoint name (`saveItems`, `saveAttachment`, ...). One method is Zinc's own: `revealInApp` with
+body `{"key": "<item key>"}` asks the running app to show that item (`POST /api/ui/reveal` on `ZN_PORT`, default 23120), starting
+the app first when its API does not answer (`ZN_LAUNCHER`, else `%LOCALAPPDATA%\Programs\Zinc\zotero-next-gpui.exe`), and answers
+`{ok, started, error?}` (`src/reveal.ts`; design: `docs/design/web-connector-wasm.md`). Unknown methods (`getTranslators`,
 `getTranslatorCode`, `document/*`) answer 404, which makes the extension use Zotero's translator repository and show
 no word-processor integration.
 

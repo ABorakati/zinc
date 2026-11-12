@@ -138,5 +138,7 @@ await import("./features").then(
 	(e) => console.error("[features]", e),
 );
 void openTabsFromEnv(store.openAttachment);
+// "Open in Zinc" from the Word sidebar or the browser connector: POST /api/ui/reveal, acted on here (src/shell/revealRequests.ts)
+void import("./shell/revealRequests").then((m) => m.startRevealPolling((key) => { store.setActiveTab("library"); store.selectItem(key); }));
 void import("./features/report/crashToast").then((m) => m.showCrashToast()); // "closed unexpectedly last time", if the crash marker found one
 void import("./update/service").then((m) => m.startUpdates()); // auto-update: timer + install-on-exit hooks; no network unless a feed is configured (src/update/)
