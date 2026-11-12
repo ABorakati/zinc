@@ -1,6 +1,6 @@
 ---
-// One picture for the "Works with the app closed" slideshow: the Word sidebar screenshot, how a browser save reaches the library
-// (a diagram, not a screenshot), or an example agent chat over the core's MCP server: the question and answer are written for the
+// One picture for the "Works with the app closed" slideshow: the Word sidebar screenshot, the connector's save popup beside how a
+// browser save reaches the library (a diagram), or an example agent chat over the core's MCP server: the question and answer are written for the
 // page, the three tool calls and their results are real (run on a copy of the demo library). The chat plays message by message when
 // its slide becomes active.
 import Icon from "./Icon.astro";
@@ -16,15 +16,15 @@ const base = import.meta.env.BASE_URL;
 	</figure>
 )}
 {id === "browser" && (
-	<figure class="slide-flow">
-		<ol>
-			<li><Icon name="globe" size={22} /><strong>A page in Chrome or Edge</strong><span>an article, a PDF, a search result</span></li>
-			<li><Icon name="puzzle" size={22} /><strong>Zinc Connector</strong><span>click Save in the toolbar</span></li>
-			<li><Icon name="terminal" size={22} /><strong>zotero-next-host.exe</strong><span>a small helper the browser starts</span></li>
-			<li><Icon name="database" size={22} /><strong>Your library</strong><span>the item, its PDF and its collection</span></li>
-		</ol>
+	<figure class="slide-flow slide-popup">
+		<div class="slide-popup-shot">
+			<img class="only-light" src={`${base}screenshots/connector-popup-light.png`} width="720" height="762" loading="lazy"
+				alt="The Zinc save popup under the toolbar button: the saved article and its PDF, the collection picker, and Open PDF, Open in Zinc and Open library" />
+			<img class="only-dark" src={`${base}screenshots/connector-popup-dark.png`} width="720" height="762" loading="lazy"
+				alt="The Zinc save popup in dark mode, after moving the saved article to the Thesis collection" />
+		</div>
 		<p class="slide-off"><Icon name="power-off" size={14} />Zinc stays closed</p>
-		<figcaption>How a save reaches your library without the app.</figcaption>
+		<figcaption>The save popup, directly under the toolbar button.</figcaption>
 	</figure>
 )}
 {id === "agent" && (

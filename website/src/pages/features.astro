@@ -9,15 +9,16 @@ const base = import.meta.env.BASE_URL;
 
 // One row per README "## Features" group, then the Word add-in and MCP, each beside its screenshot. A group without a screenshot
 // yet shows its list across the full width.
-interface Shot { src: string; dark?: string; h?: number; n: string; alt: string; caption: string }
+interface Shot { src: string; dark?: string; w?: number; h?: number; n: string; alt: string; caption: string }
 const SHOTS: Record<string, Shot> = {
 	library: { src: "library-cards-light.png", dark: "library-cards-dark.png", n: "I", alt: "The library in Cards view: coloured collections, papers grouped by year, and the item pane", caption: "The library in Cards view." },
 	"pdf-reader": { src: "pdf-reader-annotations-light.png", dark: "pdf-reader-annotations-dark.png", h: 881, n: "III", alt: "The PDF reader with highlights and the annotations panel", caption: "The PDF reader with the annotations panel." },
 	"notes-and-web": { src: "reading-view-table.png", n: "IV", alt: "The reading view, showing an article's table as a card", caption: "The reading view, with a table set as a card." },
 	"around-the-app": { src: "settings-reader-dark.png", n: "V", alt: "Settings, on the reader page, in the dark theme", caption: "Settings, reader page, dark theme." },
+	"browser-connector": { src: "web-library-item-dark.png", w: 1374, h: 744, n: "VIII", alt: "Your library in a browser tab, opened from the Zinc Connector: collections, the item list and an item's details", caption: "Your library in a browser tab, opened from the connector." },
 	"word-add-in": { src: "word-sidebar.png", h: 839, n: "VII", alt: "Word with the Zinc sidebar beside a paragraph with numbered citations and a bibliography", caption: "The Word sidebar, with the app closed." },
 };
-const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "better-bibtex": "braces", "zotmoov-file-storage": "folder-tree", "around-the-app": "settings", "word-add-in": "panel-right", "mcp-for-agents": "bot" };
+const ICONS: Record<string, string> = { library: "library", "pdf-reader": "file-text", "notes-and-web": "notebook-pen", "sync-and-storage": "refresh-cw", "getting-references-in-and-out": "arrow-left-right", "better-bibtex": "braces", "zotmoov-file-storage": "folder-tree", "around-the-app": "settings", "word-add-in": "panel-right", "browser-connector": "globe", "mcp-for-agents": "bot" };
 const MORE: Record<string, string> = { library: "user-guide/library/", "pdf-reader": "user-guide/reader/", "better-bibtex": "user-guide/better-bibtex/", "zotmoov-file-storage": "user-guide/zotmoov-storage/", "sync-and-storage": "user-guide/sync/" };
 // a group's own lead line, if the README has one before its bullets ("Built in, no plugin to install:")
 const leadOf = (body: string) => body.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith("-") && !p.startsWith("|")) ?? "";
@@ -25,6 +26,19 @@ const leadOf = (body: string) => body.split(/\n\s*\n/).map((p) => p.trim()).find
 const groups = [
 	...subsections(section("## Features")).map((s) => ({ title: s.title, id: slug(s.title), lead: leadOf(s.body), items: bullets(s.body), more: MORE[slug(s.title)] ? `${base}${MORE[slug(s.title)]}` : "" })),
 	{ title: "Word add-in", id: "word-add-in", lead: "**Zinc does not need to be open.** The add-in reads your library file itself, so you can search, cite and build a bibliography with the app closed.", items: [paragraphs(section("## The Word add-in"))[0]], more: `${base}user-guide/word/` },
+	{
+		title: "Browser connector", id: "browser-connector", more: `${base}user-guide/adding-items/#the-browser-connector`,
+		lead: "**Save from Chrome and Edge, and browse your library in a tab, with Zinc closed.** The Zinc Connector saves through a small helper program that opens your library file itself; saves sync the next time the app runs.",
+		items: [
+			"**One click saves.** Click the toolbar button and the page, its PDF or snapshot and its metadata are saved at once. A popup opens directly under the button, in Zinc's own look, light or dark.",
+			"**Choose the collection in the popup.** Search your collections by name, pick a recent one, or browse the tree. Choosing one moves the item you just saved.",
+			"**Cancel or remove.** Cancel stops a save in progress; Remove sends what you just saved to the Trash, where you can still restore it.",
+			"**Open it where you want.** Open PDF shows the saved file in the app's reader, Open in Zinc selects the item in the app (starting it if needed), and Open library opens your library in the browser.",
+			"**Your library in a browser tab.** Right-click the button and choose Open Zinc library: the same interface, built for the browser, on your library file. Read-only for now; PDFs in the tab come next.",
+			"Runs Zotero's translators, and works with Chrome and Edge (Manifest V3). The official Zotero Connector also works while the app is open.",
+		],
+		aside: { light: "connector-popup-light.png", dark: "connector-popup-dark.png", w: 720, h: 762, alt: "The save popup: the saved article and its PDF, the collection, and Open PDF, Open in Zinc and Open library" },
+	},
 	{ title: "MCP for agents", id: "mcp-for-agents", lead: "", items: [paragraphs(section("### Built-in MCP for AI agents"))[0]], more: `${base}user-guide/mcp/` },
 ].map((g) => ({ ...g, shot: SHOTS[g.id], icon: ICONS[g.id] ?? "circle" }));
 ---
@@ -49,9 +63,16 @@ const groups = [
 						<h2 class="h2"><Icon name={g.icon} size={26} />{g.title}</h2>
 						{g.lead && <p class="feature-lead" set:html={inline(g.lead, base)} />}
 						<ul class="points">{g.items.map((it) => <li set:html={inline(it, base)} />)}</ul>
-						{g.more && <p class="feature-more"><a href={g.more}>Read the guide</a>{g.id === "word-add-in" && <> · <a href={`${base}demo/#word`}>Try the sidebar live</a></>}{g.id === "library" && <> · <a href={`${base}demo/`}>Try the library live</a></>}</p>}
+						{"aside" in g && g.aside && (
+							<figure class="feature-aside">
+								<img class="only-light" src={`${base}screenshots/${g.aside.light}`} width={g.aside.w} height={g.aside.h} loading="lazy" alt={g.aside.alt} />
+								<img class="only-dark" src={`${base}screenshots/${g.aside.dark}`} width={g.aside.w} height={g.aside.h} loading="lazy" alt={g.aside.alt} />
+								<figcaption>The save popup, under the toolbar button.</figcaption>
+							</figure>
+						)}
+						{g.more && <p class="feature-more"><a href={g.more}>Read the guide</a>{g.id === "word-add-in" && <> · <a href={`${base}demo/#word`}>Try the sidebar live</a></>}{g.id === "library" && <> · <a href={`${base}demo/`}>Try the library live</a></>}{g.id === "browser-connector" && <> · <a href={`${base}download/#connector`}>Install it</a></>}</p>}
 					</div>
-					{g.shot && <Plate n={g.shot.n} src={g.shot.src} dark={g.shot.dark} h={g.shot.h ?? 857} tilt={i % 2 ? 0.6 : -0.6} alt={g.shot.alt} caption={g.shot.caption} />}
+					{g.shot && <Plate n={g.shot.n} src={g.shot.src} dark={g.shot.dark} w={g.shot.w ?? 1400} h={g.shot.h ?? 857} tilt={i % 2 ? 0.6 : -0.6} alt={g.shot.alt} caption={g.shot.caption} />}
 				</article>
 			))}
 		</div>

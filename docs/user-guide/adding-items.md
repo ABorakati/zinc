@@ -98,6 +98,8 @@ To set it up, open **Settings > Integrations** and use **Browser connector (Edge
 
 Click the Zinc button in the browser's toolbar. The save starts at once, and a popup opens directly under the button, in the app's light or dark look:
 
+![The save popup: the saved article and its PDF, the collection, and Open PDF, Open in Zinc and Open library](../screenshots/connector-popup-light.png)
+
 - **While saving**: the item and its PDF or snapshot, each with a tick when done. **Cancel** stops the save; anything already saved goes to the Trash.
 - **Collection**: where the item went. Click it to search your collections by name, pick one of your recent collections, or browse the tree. Choosing one moves the item you just saved.
 - **Open PDF** (or **Open snapshot**) opens the saved file in the app's reader. **Open in Zinc** selects the item in the app, starting the app if it is closed. **Open library** opens your library in a browser tab (below), with the item selected.
@@ -106,6 +108,8 @@ Click the Zinc button in the browser's toolbar. The save starts at once, and a p
 A save started from the right-click menu opens the same popup where the browser allows it; otherwise the older progress window appears in the page. Tags and a note can't be added in the popup yet: add them in the app.
 
 #### Your library in the browser
+
+![Your library in a browser tab: collections, the item list and an item's details](../screenshots/web-library-item-dark.png)
 
 Right-click the Zinc button and choose **Open Zinc library**, or click **Open library** in the popup. Your library opens in a browser tab: the same interface as the app, built for the browser, reading the same library file through the helper, so it works with the app closed. Changes made in the app show up within about two seconds.
 

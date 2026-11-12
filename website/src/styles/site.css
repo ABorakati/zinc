@@ -260,6 +260,10 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .closed-show:has(.is-current) .closed-item:not(.is-current) { opacity: 0.55; }
 /* slides */
 .slide-shot img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--rule); box-shadow: var(--shadow-card); }
+/* the browser slide: the save popup, a narrow screenshot, shown at about its real size */
+.slide-popup { display: flex; flex-direction: column; align-items: center; }
+.slide-popup-shot { width: min(100%, 340px); }
+.slide-popup-shot img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow-card); }
 .closed-stage figcaption, .closed-inline figcaption { margin-top: 0.75rem; font-size: 0.85rem; color: var(--ink-3); }
 .slide-flow ol { list-style: none; margin: 0; padding: 1.25rem; display: grid; gap: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow-card); }
 .slide-flow li { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); column-gap: 0.9rem; align-items: center; padding: 0.85rem 0.25rem; position: relative; }
@@ -358,6 +362,10 @@ table, .num { font-variant-numeric: tabular-nums lining-nums; }
 .feature-row { scroll-margin-top: 6rem; }
 .feature-row .h2 { display: flex; align-items: center; gap: 0.7rem; }
 .feature-row .h2 .icon { color: var(--primary); flex: none; }
+/* a narrow screenshot (the connector's popup) under a feature's points, at about its real size */
+.feature-aside { margin: 1.5rem 0 0; width: min(100%, 300px); }
+.feature-aside img { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow-card); }
+.feature-aside figcaption { margin-top: 0.6rem; font-size: 0.82rem; color: var(--ink-3); }
 .feature-row.no-shot { grid-template-columns: minmax(0, 1fr); }
 .why-zinc { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); column-gap: 2.5rem; gap: 1rem 2.5rem; }
 .feature-row.no-shot .points { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); column-gap: 2.5rem; }
