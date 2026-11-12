@@ -1,0 +1,57 @@
+gpui-ui/web/browser-db/blobfs.ts
+  s_e8244edae027cb::t_a50e93a90f1889 6-13,32-33,38-40,45-50,53-56,58,73-75,77,80,87-100,102-103,107-109,114,117-118,121,123,145-148,152-153,156-157
+gpui-ui/web/browser-db/CONTRACT.md
+  s_e8244edae027cb::t_28d93315c5a2a1 60-61,63
+gpui-ui/web/shims/fs.ts
+  s_e8244edae027cb::t_6282461d087471 312
+  s_e8244edae027cb::t_265ebd418d7251 34
+  s_e8244edae027cb::t_15c92a0453f673 51-53,56,59
+  s_e8244edae027cb::t_aae8fed30fb34f 122
+  s_e8244edae027cb::t_0e89b1cb1ddbea 260
+  s_e8244edae027cb::t_1fced50c4c4718 288
+  s_e8244edae027cb::t_34667abec74f1d 222
+  s_e8244edae027cb::t_bcc0b6beb1a185 200
+  s_e8244edae027cb::t_ef41699b5315a0 28
+  s_e8244edae027cb::t_20596811291c12 239
+  s_e8244edae027cb::t_845355941cea95 36
+  s_e8244edae027cb::t_288a536032b425 26
+  s_e8244edae027cb::t_968ef4184e97a0 142
+  s_e8244edae027cb::t_365d1e66bfa702 252
+  s_e8244edae027cb::t_122fab831950f4 287
+  s_e8244edae027cb::t_fe1aaf6a8199f0 22
+  s_e8244edae027cb::t_adbed2842ea49f 285
+  s_e8244edae027cb::t_39da4bc81463ee 13-14
+  s_e8244edae027cb::t_e0d80edc1000e1 24
+  s_e8244edae027cb::t_7a3a4d968306eb 133
+  s_e8244edae027cb::t_4c9d4642bc4511 418
+gpui-ui/web/browser-db/export-zip.ts
+  s_e8244edae027cb::t_1a9168585e4cde 17
+  s_e8244edae027cb::t_78d13acce2942b 37
+  s_e8244edae027cb::t_e5ed1fa2ae1213 65-66
+gpui-ui/web/browser-welcome-check.ts
+  s_e8244edae027cb::t_f4547092878b72 482-496
+  s_e8244edae027cb::t_dc331c3af3c494 146
+  s_e8244edae027cb::t_1825a0294c8b34 473-474
+  s_e8244edae027cb::t_a1241302e1cb38 92-93
+gpui-ui/web/browser-db/blobfs.test.ts
+  s_e8244edae027cb::t_e078640e65ac12 331
+  s_e8244edae027cb::t_c491db343f9624 146
+  s_e8244edae027cb::t_6d681a6b0379ed 337-363
+  s_e8244edae027cb::t_0598c2dd6e601e 53-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ebf663cc9bc0c7a008401a29931e3916917b0fc",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
