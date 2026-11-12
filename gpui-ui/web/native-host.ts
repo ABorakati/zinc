@@ -18,8 +18,11 @@ export const TEST_HOST_NAME = "com.zotero_next.connector_host_unregistered_test"
  */
 export function resolveHostName(search: string, isTestExtension: boolean): string {
 	const param = new URLSearchParams(search).get("host");
-	const named = param && /^com\.zotero_next\.[a-z0-9_.]+$/.test(param) ? param : HOST_NAME;
-	return isTestExtension && named === HOST_NAME ? TEST_HOST_NAME : named;
+	// an explicit, valid ?host= is used as given (a check names its own host; web/check-safety.ts refuses to start one that could
+	// reach a registered host). Without one, a test extension never falls back to the real name. (Not a comparison with HOST_NAME:
+	// a check's copy of the build rewrites that literal to the check's own host name.)
+	if (param && /^com\.zotero_next\.[a-z0-9_.]+$/.test(param)) return param;
+	return isTestExtension ? TEST_HOST_NAME : HOST_NAME;
 }
 /** A body up to this size goes in the request frame; larger ones as `up` frames of UPLOAD_CHUNK bytes. */
 const INLINE_BYTES = 256 * 1024;

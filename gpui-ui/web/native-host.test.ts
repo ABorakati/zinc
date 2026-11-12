@@ -72,3 +72,13 @@ test("a host that goes away fails the calls in flight, and the next call reconne
 	expect(next.status).toBe(204);
 	expect(h.connects()).toBe(2);
 });
+
+test("resolveHostName: an explicit ?host= is used; without one a test extension never gets the real name", async () => {
+	const { resolveHostName, HOST_NAME } = await import("./native-host");
+	expect(resolveHostName("?host=com.zotero_next.connector_host_e2e_x", true)).toBe("com.zotero_next.connector_host_e2e_x");
+	expect(resolveHostName("?host=com.zotero_next.connector_host_e2e_x", false)).toBe("com.zotero_next.connector_host_e2e_x");
+	expect(resolveHostName("", false)).toBe(HOST_NAME);
+	expect(resolveHostName("", true)).not.toBe(HOST_NAME);
+	expect(resolveHostName("?host=evil.example", true)).not.toBe(HOST_NAME);
+	expect(resolveHostName("?host=evil.example", false)).toBe(HOST_NAME);
+});
