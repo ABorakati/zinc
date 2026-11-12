@@ -1,6 +1,6 @@
 # Design note: Zinc in the browser (the connector as a full app)
 
-Status: 2026-11-12. Branch `claude/connector-library-05fc7d`. The user took every recommendation in "Decisions for the user" below; store distribution is still open (it does not change the build). Building has started. The interfaces fixed for the parallel work are in `gpui-ui/web/browser-db/CONTRACT.md`, which overrides this note where they differ:
+Status: 2026-11-12, built (section 10). Branch `claude/connector-library-05fc7d`. The user took every recommendation in "Decisions for the user" below; store distribution is still open (it does not change the build). Building has started. The interfaces fixed for the parallel work are in `gpui-ui/web/browser-db/CONTRACT.md`, which overrides this note where they differ:
 - The transport is the native host's own frame protocol over `chrome.runtime.connect({name: "zinc-db"})`, not a `BroadcastChannel`.
 - Attachment files live in a second SQLite database behind the `node:fs` shim, not in plain OPFS files with a `FileStore` refactor. The core's file code stays synchronous and unchanged. It builds on `web-connector-wasm.md` (phases 2 and 3: the library tab and PDFs through the native host).
 
@@ -160,3 +160,27 @@ Not planned: Firefox (no offscreen documents; it would need a different owner fo
 3. **The Zinc-Web zip**: stop publishing it, so the extension is the browser option (recommended).
 4. **Uninstall risk**: is "sync plus Export library, with a warning at first run" enough (recommended)? The other way is a library file in a folder the user picks, through the File System Access API. The browser asks again for permission to that folder after a restart, and SQLite cannot use such a file the way it uses OPFS, so it would need a copy in OPFS anyway. Not recommended.
 5. **Store distribution**: whether the extension will go to the Chrome Web Store and Edge Add-ons (review of the WebAssembly, the `unlimitedStorage` and `<all_urls>` reasons) or stay a private unpacked or self-hosted install. This changes nothing in the build. It affects the review text and the install docs.
+
+## 10. Built (2026-11-12): what works, how it was checked, what is left
+
+Steps B1 to B5 of section 9 are built. The work is on branch `claude/connector-library-05fc7d` (zotero-next) and branch `browser-library` (connector, commit `b6d1f8c`). Neither is pushed or merged.
+
+| Piece | Where | Headless check (Chrome for Testing 151) |
+|---|---|---|
+| Database owner: offscreen page + module worker, SQLite on OPFS (`opfs-sahpool`), native-host frames over a `zinc-db` port, change notices instead of polling | `gpui-ui/web/browser-db/{db-worker,offscreen,dispatch}.ts`, `web/sqlite.ts`, `web/extension.tsx` (`?mode=browser`) | `browser-library-check.ts`: 23/23; `--iframe` (inside the connector's offscreen page): 22/22. Cold load 0.6–0.8 s, request round trip under 1 ms, a change shows in a second tab in about 0.1 s. Items and files survive a reload, a browser restart and a hard kill. |
+| Attachment files: kept in `/zinc/files.sqlite` behind the `node:fs` shim; names keep their case | `web/shims/fs.ts`, `browser-db/blobfs.ts` | unit tests; files survive restarts in the checks above |
+| zotero.org sync in the worker: key in `chrome.storage.local` (reached through the service worker; never sent to a tab); file downloads follow the redirect, and a `declarativeNetRequest` rule removes `Zotero-API-Key` for every host but `api.zotero.org` | `core/src/websync` (`fileRedirect`, `dataDir`, `setDefaultKeyStore`), `browser-db/{sync,sync-storage,keystore-chrome}.ts`, `dnr-rules.json` | `browser-sync-check.ts` against a mock zotero.org: 17/17. Pull, PDF download, upload of an edit, server change shown, the file host never received the key, the page never saw it. |
+| Welcome screen (empty, sign in, import), import of a Zotero or Zinc data folder, Export library (one zip) | `browser-db/{welcome,welcome-import,import-run,export-zip}.ts` | `browser-welcome-check.ts`: 27/27. 21-item Zinc folder in 0.44 s, Zotero folder (with full text) in 1.8 s; the exported zip reopens with the core. |
+| Saving from the connector into the browser library; one library per computer; Move your browser library into Zinc | connector `nativeHost.js`, `popup/*`, `offscreen/offscreen.js`; host method `importBrowserLibrary` (`connector-host/src/import-browser.ts`); `POST /api/browser/empty` | `connector-browser-check.ts`: 20/20 (save with PDF, collection picker, Remove, Cancel, Open library, the key rule). `connector-onelib-check.ts`: 28/28 (no app: browser; app installed: app, re-checked each save; failing host: Try again, nothing saved in the browser; the move: new items in, same-key items skipped, PDF in storage, sync outbox, browser library emptied; uninstall: back to browser). |
+| EPUBs and web snapshots in a reader tab (both editions) | `reader-tab/zn-bridge.ts`, `reader-host/src/host.js`, `build.ts` | `library-reader-check.ts`: 25/25 (a snapshot's own scripts never run). |
+| Shims: MD5/SHA-1/SHA-256, zlib, POSIX paths | `web/shims/{small,zlib,path}.ts` | unit tests |
+| Check safety: no check can start the user's registered host | `web/check-safety.ts`, used by every `*-check.ts` | Chrome for Testing reads `HKCU\Software\Google\Chrome\NativeMessagingHosts` too; the gate refuses to start Chrome if a test extension could reach a name registered there. |
+
+The other checks pass on the same build: `library-pdf-check.ts` 12/12, `extension-check.ts` 7/7, `popup-check.ts` 15/15. Build size: the library page is 37 MB unpacked (it was 31 MB): the reader adds 4.9 MB and the database worker 1.6 MB.
+
+Left:
+- PDFs saved into the browser library are not full-text indexed: the core's extractor needs Zotero's document worker. Next: index from PDFium's page text (`web/pdf-engine.ts` `pageText`).
+- The native folder picker of the import was not driven headless; the check feeds a directory handle directly.
+- Only My Library moves into the app; group libraries are not moved.
+- The sync check runs with the test background. The connector's own `{zincStorage}` handler (connector commit `b6d1f8c`) has a unit test, but no headless sync run through the real connector yet. The connector manifest already has `storage`, `declarativeNetRequest` (with the key rule) and host permissions for all hosts.
+- Store review, user guide and the download page: not started (the download page and install docs belong to the main session).
