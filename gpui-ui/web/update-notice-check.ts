@@ -87,8 +87,11 @@ async function session(dir: string, profile: string, body: (h: { sw: string; eva
 			if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); return; }
 			const label = sids.get(m.sessionId);
 			if (!label) return;
-			if (m.method === "Runtime.exceptionThrown") problems.push(`${label}: ${(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text).slice(0, 300)}`);
-			if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") problems.push(`${label} console.error: ${m.params.args.map((a: any) => a.value ?? a.description).join(" ").slice(0, 300)}`);
+			// where it came from: this check is about updateNotice.js and the popup (the connector's translator start-up fails here on
+			// purpose, no name resolves; web/connector-browser-check.ts covers the rest of the background)
+			const where = (d: any) => [d?.url, ...(d?.stackTrace?.callFrames ?? []).map((f: any) => f.url)].filter(Boolean).join(" ");
+			if (m.method === "Runtime.exceptionThrown") { const d = m.params.exceptionDetails; problems.push(`${label}: ${(d.exception?.description ?? d.text).slice(0, 300)} @ ${where(d)}`); }
+			if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") problems.push(`${label} console.error: ${m.params.args.map((a: any) => a.value ?? a.description).join(" ").slice(0, 300)} @ ${where(m.params)}`);
 		};
 		const send = (method: string, params: object = {}, sessionId?: string): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params, sessionId })); });
 		const attach = async (targetId: string, label: string) => {
@@ -152,9 +155,8 @@ try {
 		const outcome = await evalIn<string>(sw, "self.ZincUpdateNotice.check({ force: true })");
 		const after = await evalIn<any>(sw, "chrome.storage.local.get('zincUpdateAvailable').then((o) => o.zincUpdateAvailable ?? null)");
 		check("a feed whose signature does not match is ignored", fetches > before && outcome === "invalid" && after === null, `fetched again: ${fetches > before}; outcome ${outcome}; stored ${JSON.stringify(after)}`);
-		// expected: the connector cannot reach repo.zotero.org for translators (this check resolves no name but 127.0.0.1)
-		const errs = problems.filter((x) => !/update feed|signature|retrieve translators/i.test(x));
-		check("no errors in the background or the popup", errs.length === 0, errs.slice(0, 4).join(" | ") || "none");
+		const errs = problems.filter((x) => x.startsWith("popup") || /updateNotice\.js|updateKey\.js/.test(x));
+		check("no errors from the update notice or the popup", errs.length === 0, errs.slice(0, 4).join(" | ") || `none (${problems.length} other background messages, translator start-up without network)`);
 	});
 	// ---- a store install: the browser updates it, so no feed is fetched
 	serve = "good";
