@@ -133,6 +133,18 @@ The extension does everything the zip does, and keeps the data. Recommendation:
 
 The main session owns the download page and install docs (`website/src/pages/download.astro`, `docs/user-guide/install.md`). This work does not change them.
 
+**Decided (2026-11-13): one browser product.** Zinc in the browser *is* the Zinc Connector. The extension saves pages, and its library tab is the full app, with the library in browser storage and zotero.org sync. There is no separate web edition with a library of its own. A plain page with its own OPFS library was built and then removed (`0b1bbb2` reverts `fc6ab81`). It was a second code path, it kept the API key in page storage, and nobody could verify that zotero.org allows a web page to read its files (CORS). The plain web build is now only the website's read-only demo: the demo library, no sync, nothing saved.
+
+Proposed removal of the release zip. The workflow is **not changed yet**; these are the files that would change:
+
+| File | Change |
+|---|---|
+| `.github/workflows/web.yml` | Remove the "Attach the browser build to the release" step (lines 146–153), the `release: published` trigger (28–29), the `workflow_dispatch` `release_tag` input (31–35), `contents: write` on the job (57–58, so `read` is enough), and the header lines about the zip (8–10, and the concurrency comment at 38). Keep the build, the `zotero-next-web` artifact and the website job with the demo in `/app-demo/`. |
+| `gpui-ui/web/build.ts` | Stop writing `README.txt` (instructions for serving the unzipped folder). Drop the installable-app parts (`manifest.webmanifest`, icons, `sw.js` offline cache): a showcase page does not need to be installed or work offline. |
+| `README.md` | Line 267: the `Zinc-Web-<tag>.zip` paragraph becomes one sentence pointing to the Zinc Connector as the browser option, plus the online demo. |
+| `docs/user-guide/install.md` | Lines 36–38: replace the zip instructions with "Zinc in your browser: install the Zinc Connector". The main session owns this file. |
+| `website/src/pages/download.astro` | Lines 8 and 94: remove the zip link and its steps, and point to the connector. The main session owns this file. |
+
 ## 8. Size
 
 The extension today, with the library page and without the document worker, is 35.6 MB unpacked and about 11 MB zipped. Browser mode adds the DB worker (sqlite-wasm and `opfs-sahpool`: already in the build), the offscreen page and MD5. That is under 0.5 MB. Both stores accept it. Store review of a 20 MB WebAssembly file is the open risk noted in `web-connector-wasm.md`.
