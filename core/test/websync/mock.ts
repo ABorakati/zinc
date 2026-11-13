@@ -92,6 +92,8 @@ export class MockZotero implements LibState {
 	inFlight = 0;
 	maxInFlight = 0;
 	delayMs = 0;
+	/** When set (a page's origin), every response carries CORS headers for it and a preflight is answered: a plain web page's view of the API. */
+	corsOrigin: string | null = null;
 	private uploads = new Map<string, Uint8Array>();
 	private server: ReturnType<typeof Bun.serve>;
 
@@ -169,22 +171,32 @@ export class MockZotero implements LibState {
 		try {
 			if (this.delayMs) await Bun.sleep(this.delayMs);
 			const url = new URL(req.url);
+			if (this.corsOrigin && req.method === "OPTIONS") return this.withCors(new Response(null, { status: 204 }));
 			const query = Object.fromEntries(url.searchParams);
 			const entry: Logged = { method: req.method, path: url.pathname, query, ifUnmodified: req.headers.get("if-unmodified-since-version"), status: 0 };
 			this.log.push(entry);
 			const res = await this.route(req, url, query, entry);
 			entry.status = res.status;
-			return res;
+			return this.corsOrigin ? this.withCors(res) : res;
 		} finally {
 			this.inFlight--;
 		}
+	}
+
+	private withCors(res: Response): Response {
+		const h = new Headers(res.headers);
+		h.set("Access-Control-Allow-Origin", this.corsOrigin!);
+		h.set("Access-Control-Allow-Headers", "Zotero-API-Key, Zotero-API-Version, Content-Type, If-Match, If-None-Match, If-Unmodified-Since-Version, If-Modified-Since-Version, Zotero-Write-Token");
+		h.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+		h.set("Access-Control-Expose-Headers", "Last-Modified-Version, Backoff, Retry-After, Total-Results, Link");
+		return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 	}
 
 	private async route(req: Request, url: URL, query: Record<string, string>, entry: Logged): Promise<Response> {
 		const path = url.pathname;
 		// blob host: no API key needed (a real file host never gets the key)
 		if (path.startsWith("/blob/")) {
-			if (req.headers.get("zotero-api-key")) return new Response("key leaked to the file host", { status: 400 });
+			if (req.headers.get("zotero-api-key") || url.searchParams.has("key")) return new Response("key leaked to the file host", { status: 400 });
 			const blobKey = path.slice("/blob/".length);
 			const bytes = this.files.get(blobKey) ?? [...this.groups.values()].map((g) => g.files.get(blobKey)).find(Boolean);
 			return bytes ? new Response(Buffer.from(bytes)) :new Response("gone", { status: 404 });
@@ -193,8 +205,9 @@ export class MockZotero implements LibState {
 			this.uploads.set(path.slice("/upload/".length), new Uint8Array(await req.arrayBuffer()));
 			return new Response(null, { status: 201 });
 		}
-		if (req.headers.get("zotero-api-key") !== API_KEY) return new Response("Forbidden", { status: 403 });
-		if (req.headers.get("zotero-api-version") !== "3") return new Response("bad version", { status: 400 });
+		// the key: the Zotero-API-Key header, or (a web page, keyIn "query") the key parameter, which the real API accepts too
+		if ((req.headers.get("zotero-api-key") ?? url.searchParams.get("key")) !== API_KEY) return new Response("Forbidden", { status: 403 });
+		if ((req.headers.get("zotero-api-version") ?? url.searchParams.get("v")) !== "3") return new Response("bad version", { status: 400 });
 		this.onRequest?.(path, query);
 		if (this.throttle > 0) {
 			this.throttle--;

@@ -140,12 +140,27 @@ try {
 	check("no page errors with ?demo", demo.errors.length === 0, demo.errors.length ? demo.errors.slice(0, 3).join(" | ") : "none");
 
 	// ---- no ?demo: the page's own library (a stub until web/browser-db/page-library.ts is built)
+	const ready = "!!globalThis.znLibrary?.store && globalThis.znLibrary.store.pagesLoaded() > 0";
 	const own = await open(cdp, `${ORIGIN}/index.html`);
-	await sleep(4000);
-	const stubbed = await own.evalIn<boolean>(`!globalThis.znDemo`);
-	const said = own.errors.some((e) => /not built yet/.test(e)) || own.lines.some((l) => /not built yet/.test(l));
-	const hasLib = await own.evalIn<boolean>(`!!globalThis.znLibrary?.store && globalThis.znLibrary.store.pagesLoaded() > 0`).catch(() => false);
-	check("without ?demo the page asks for its own library", stubbed && (said || hasLib), hasLib ? "its library loaded" : said ? "the stub said it is not built yet" : "no sign of either");
+	const loaded = await own.waitFor(ready, 60_000);
+	const isDemo = loaded ? await own.evalIn<boolean>(`!!globalThis.znDemo`) : false;
+	const total0 = loaded ? await own.evalIn<number>(`znLibrary.store.groups().length + (znLibrary.store.peek(0) ? 1 : 0)`) : -1;
+	check("without ?demo the page's own library loads, empty", loaded && !isDemo && total0 === 0, loaded ? `rows: ${total0}` : `never loaded: ${own.errors.slice(0, 2).join(" | ")}`);
+	const made = loaded ? await own.evalIn<{ status: number }>(`znLibrary.api("POST", "/items", { data: { itemType: "book", title: "Made on the plain page" } })`) : { status: 0 };
+	check("an item is created", made.status >= 200 && made.status < 300, `status ${made.status}`);
+	await own.evalIn(`location.reload()`).catch(() => {});
+	await sleep(1500);
+	const again = await own.waitFor(ready, 60_000);
+	const title = again ? await own.waitFor(`znLibrary.store.peek(0)?.title === "Made on the plain page"`, 15_000) : false;
+	check("the item survives a reload", title, title ? "listed after the reload" : again ? "not listed" : `the page did not come back: ${own.errors.slice(0, 2).join(" | ")}`);
+	await own.shot("page-library");
+	check("no page errors on the plain page", own.errors.length === 0, own.errors.length ? own.errors.slice(0, 3).join(" | ") : "none");
+	// a second tab: the library is owned by the first (one page per library), so it says so instead of showing the app
+	const second = await open(cdp, `${ORIGIN}/index.html`);
+	await sleep(6000);
+	const busy = second.errors.some((e) => /open in another tab/.test(e)) || second.lines.some((l) => /open in another tab/.test(l));
+	check("a second tab says the library is open elsewhere", busy, busy ? "PageLibraryBusyError reached the console" : "no busy message seen");
+	await second.shot("page-library-busy");
 	failed = results.some((r) => !r.ok);
 } finally {
 	chrome.kill();

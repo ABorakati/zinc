@@ -16,6 +16,8 @@ afterEach(stopAll);
 interface Seen {
 	url: string;
 	hasKey: boolean;
+	keyInHeader: boolean;
+	keyInUrl: boolean;
 }
 
 /**
@@ -34,7 +36,7 @@ function browserFetch(apiOrigin: string, opts: { dnr: boolean }) {
 			// (the mock serves its file host on the API's origin under /blob and /upload: those count as another domain)
 			const isApi = u.origin === apiOrigin && !/^\/(blob|upload)\//.test(u.pathname);
 			if (opts.dnr && !isApi) out.delete("Zotero-API-Key");
-			seen.push({ url: u.href, hasKey: out.has("Zotero-API-Key") });
+			seen.push({ url: u.href, hasKey: out.has("Zotero-API-Key") || u.searchParams.has("key"), keyInHeader: out.has("Zotero-API-Key"), keyInUrl: u.searchParams.has("key") });
 			return real(u, { ...init, headers: out, redirect });
 		};
 		const first = await send(url, headers, "manual");
@@ -50,7 +52,7 @@ function browserFetch(apiOrigin: string, opts: { dnr: boolean }) {
 	return { fetch: f as typeof fetch, seen };
 }
 
-function setup(o: { redirect?: "manual" | "follow"; dnr?: boolean } = {}) {
+function setup(o: { redirect?: "manual" | "follow"; dnr?: boolean; keyIn?: "header" | "query" } = {}) {
 	const mock = new MockZotero();
 	const dir = tempDir();
 	const db = openDb(join(dir, "lib.sqlite"));
@@ -61,6 +63,7 @@ function setup(o: { redirect?: "manual" | "follow"; dnr?: boolean } = {}) {
 		apiBase: () => mock.url, // (no process.env: a worker has none)
 		fetch: bf.fetch,
 		fileRedirect: o.redirect,
+		keyIn: o.keyIn,
 		dataDir: dir,
 		pollMs: 0,
 		initialSync: false,
@@ -114,6 +117,66 @@ describe("websync with a browser-like fetch", () => {
 			await t.svc.syncNow();
 			await t.svc.fileJobDone;
 			expect(t.bf.seen.find((s) => s.url.includes("/blob/"))!.hasKey).toBe(true);
+		} finally {
+			t.stop();
+		}
+	});
+
+	test("keyIn query (a plain web page, no DNR rule): the key goes in the URL of API requests only; the file host gets it neither in a header nor in the URL", async () => {
+		const t = setup({ redirect: "follow", dnr: false, keyIn: "query" });
+		try {
+			await t.svc.setKey(API_KEY);
+			library(t.mock);
+			await t.svc.setOptions({ files: "download" });
+			await t.svc.syncNow();
+			await t.svc.fileJobDone;
+			expect((await t.svc.status()).lastError).toBeUndefined();
+			expect(readFileSync(join(t.dir, "storage", "ATT00001", "one.txt"), "utf8")).toBe("browser file");
+			const blob = t.bf.seen.filter((s) => s.url.includes("/blob/"));
+			expect(blob).toHaveLength(1);
+			expect(blob[0].keyInHeader).toBe(false);
+			expect(blob[0].keyInUrl).toBe(false);
+			expect(blob[0].url).not.toContain(API_KEY);
+			const api = t.bf.seen.filter((s) => !s.url.includes("/blob/"));
+			expect(api.length).toBeGreaterThan(3);
+			expect(api.every((s) => s.keyInUrl && !s.keyInHeader)).toBe(true);
+			// no request, API or file host, carries the key as a header at all
+			expect(t.bf.seen.some((s) => s.keyInHeader)).toBe(false);
+		} finally {
+			t.stop();
+		}
+	});
+
+	test("keyIn query: an upload sends the key to the API only, not to the upload URL", async () => {
+		const t = setup({ redirect: "follow", dnr: false, keyIn: "query" });
+		try {
+			await t.svc.setKey(API_KEY);
+			t.mock.put("item", "PARENT01", { title: "P" });
+			t.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt" });
+			mkdirSync(join(t.dir, "storage", "ATT00001"), { recursive: true });
+			writeFileSync(join(t.dir, "storage", "ATT00001", "one.txt"), "local bytes");
+			await t.svc.setOptions({ files: "sync" });
+			await t.svc.syncNow();
+			await t.svc.fileJobDone;
+			expect((await t.svc.status()).lastError).toBeUndefined();
+			expect(new TextDecoder().decode(t.mock.files.get("ATT00001"))).toBe("local bytes");
+			const up = t.bf.seen.find((s) => s.url.includes("/upload/"))!;
+			expect(up.keyInHeader).toBe(false);
+			expect(up.keyInUrl).toBe(false);
+		} finally {
+			t.stop();
+		}
+	});
+
+	test("the header stays the default (desktop and extension): keyIn unset sends Zotero-API-Key and no key parameter", async () => {
+		const t = setup({ redirect: "follow" });
+		try {
+			await t.svc.setKey(API_KEY);
+			library(t.mock);
+			await t.svc.syncNow();
+			const api = t.bf.seen.filter((s) => !s.url.includes("/blob/"));
+			expect(api.length).toBeGreaterThan(2);
+			expect(api.every((s) => s.keyInHeader && !s.keyInUrl)).toBe(true);
 		} finally {
 			t.stop();
 		}

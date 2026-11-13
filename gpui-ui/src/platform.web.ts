@@ -16,6 +16,7 @@
 import { seedFile } from "../web/shims/fs";
 import { nativeApiTransport, resolveHostName, type NativePort } from "../web/native-host";
 import type { MoveProbe } from "../web/extension-ui";
+import { createComponent } from "solid-js";
 import { setDirect } from "./api";
 import { setThemePrefs } from "./shell/appearance";
 import { setBrowserLibrary } from "./shell/libraryMode";
@@ -104,14 +105,25 @@ export const platform: Platform = {
 	prefetch: () => false,
 	registerFonts() {},
 
-	async connect() {
+	async connect(ctx) {
 		// the Lucide icons the app reads from disk on the desktop (src/icons.tsx), before any app module asks for them
 		const icons = (await fetch(here("icons.json")).then((r) => r.json())) as Record<string, string>;
 		for (const [name, svg] of Object.entries(icons)) seedFile(`/icons/${name}.svg`, svg, true);
 		// the data path: each Request as an `api` frame to the host, or to the library in this browser. ?host=<name> picks another
 		// registration of the same host (tests register one under their own name, so they never reach the installed host or its library).
 		if (inExtension) hostName = resolveHostName(location.search, chrome!.runtime.getManifest().zinc_test === true);
-		const transport = await openTransport();
+		let transport: (req: Request) => Promise<Response>;
+		try {
+			transport = await openTransport();
+		} catch (e) {
+			// the page's own library could not start (another tab has it, no OPFS): its message in the app's look, in place of the app
+			if (!__ZN_EXTENSION__ && source === "page") {
+				const message = e instanceof Error ? e.message : String(e);
+				const { PageError } = await import("../web/page-error");
+				ctx.setOverlay(() => createComponent(PageError, { message, mode: ctx.mode }));
+			}
+			throw e;
+		}
 		setDirect(async (req) => {
 			const entry: (typeof requests)[number] = { method: req.method, path: new URL(req.url).pathname + new URL(req.url).search, status: "pending" };
 			requests.push(entry);
