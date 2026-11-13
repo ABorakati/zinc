@@ -1,0 +1,29 @@
+core/src/websync/client.ts
+  s_e8244edae027cb::t_2fe83c59cb0ad0 124
+core/src/websync/service.ts
+  s_e8244edae027cb::t_8f44fd2976d590 145
+core/test/websync/browser.test.ts
+  s_e8244edae027cb::t_8116782bb6d8e5 37,53
+core/test/websync/mock.ts
+  s_e8244edae027cb::t_6067ebc8e73071 177,187,196-197
+gpui-ui/web/browser-db/db-worker.ts
+  s_e8244edae027cb::t_f8f87e48b17f00 15,52,73
+gpui-ui/web/browser-db/sync.ts
+  s_e8244edae027cb::t_56b01cbc38cbd9 10,21-23,28,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af9b96be7493e733cbe4e9248bac7cd01bce880f",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "unknown"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
