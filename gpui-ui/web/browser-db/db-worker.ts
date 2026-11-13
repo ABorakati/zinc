@@ -2,6 +2,7 @@
 // WebAssembly on the opfs-sahpool VFS (web/sqlite.ts installPool; no SharedArrayBuffer) and answers the native host's frame protocol
 // (CONTRACT.md "Transport"), so the library tab and the connector only change how they connect.
 //
+// Started by offscreen.ts (extension) or, with `?mode=page`, by a plain web page (page-library.ts), which is then port 0.
 // Messages in (from offscreen.ts):  {p, m}  m = a frame from the port numbered p: {t:"hello"|"req"|"up"|"drop", ...}; {p, gone: true} a port went away
 // Messages out:  {t:"ready"} | {t:"failed", error} | {p, m}  m = {t:"res", id, status, headers, n} then n x {t:"rc", id, seq, data} (base64),
 //                {t:"hello", ...}  | {t:"changed", dataVersion}  (no p: to every port)
@@ -12,7 +13,7 @@ import { installDurableFs } from "../shims/fs";
 import { createBlobBackend } from "./blobfs";
 import { handleRequest, uploadIdsOf, ZOTERO_VERSION_HEADER, type WireRequest } from "./dispatch";
 import { startBrowserSync, type BrowserSyncHandle } from "./sync";
-import { storageClient } from "./sync-storage";
+import { pageStorageArea, storageClient } from "./sync-storage";
 
 const LIBRARY = "/opfs/zinc/library.sqlite";
 const FILES = "/opfs/zinc/files.sqlite";
@@ -36,6 +37,9 @@ const getDb = (): CoreDb => {
 
 // worker -> offscreen -> chrome.storage (a worker has no `chrome`): see sync.ts
 const storage = storageClient((m) => post(m));
+// Page mode: a plain web page started this worker itself (page-library.ts, `db-worker.js?mode=page`). The page is port 0 and talks to the
+// worker directly; there is no offscreen document and no chrome.*, and the key area is IndexedDB in this worker (sync-storage.ts).
+const PAGE_MODE = new URL(self.location.href).searchParams.get("mode") === "page";
 let syncInfo: BrowserSyncHandle | null = null;
 
 async function open(): Promise<void> {
@@ -49,7 +53,7 @@ async function open(): Promise<void> {
 	// zotero.org sync: the key store and options are set up now; the service starts when the library's sync mode is zotero.org. A sync that
 	// cannot start must not stop the library from opening.
 	try {
-		syncInfo = await startBrowserSync(db, storage);
+		syncInfo = await startBrowserSync(db, PAGE_MODE ? null : storage, {}, PAGE_MODE ? pageStorageArea() : undefined);
 	} catch (e) {
 		console.error("[browser-db] zotero.org sync not started:", e instanceof Error ? e.message : e);
 	}
@@ -70,7 +74,7 @@ const portState = (p: number) => {
 };
 
 // for automated checks (web/browser-library-check.ts reads the journal mode and schema version through the DevTools protocol)
-(globalThis as Record<string, unknown>).znDb = { get db() { return db; }, get sync() { return syncInfo; }, hasChrome: typeof (globalThis as { chrome?: unknown }).chrome !== "undefined" };
+(globalThis as Record<string, unknown>).znDb = { get db() { return db; }, get sync() { return syncInfo; }, hasChrome: typeof (globalThis as { chrome?: unknown }).chrome !== "undefined", pageMode: PAGE_MODE };
 
 let announced = 0;
 /** After a request: rows changed since the last notice? (SQLite's total_changes() counts this connection's writes, which are all of them.) */

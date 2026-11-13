@@ -32,6 +32,13 @@ export interface ClientOptions {
 	/** Base URL; a function so the environment is read when a request is made. */
 	base?: () => string;
 	getKey: () => Promise<string | null>;
+	/**
+	 * Where the API key goes. "header" (default; the desktop and the extension): the Zotero-API-Key header. "query": the `key` query
+	 * parameter, which the Zotero Web API accepts too. A plain web page uses "query": it cannot install a declarativeNetRequest rule,
+	 * so a custom header would be forwarded by the browser to the file host when it follows the file redirect, while a query
+	 * parameter is not (the redirect target is the Location URL zotero.org chose, without our query).
+	 */
+	keyIn?: "header" | "query";
 	concurrency?: number;
 	fetch?: typeof fetch;
 	/** Pauses are awaited through these; tests inject a fake clock instead of really waiting. */
@@ -121,7 +128,11 @@ export class ZoteroWebClient {
 		if (!key) throw new WebApiError(401, "no zotero.org API key is set");
 		const url = new URL(this.base + path);
 		for (const [k, v] of Object.entries(init.query ?? {})) if (v !== undefined) url.searchParams.set(k, String(v));
-		const headers: Record<string, string> = { "Zotero-API-Key": key, "Zotero-API-Version": "3", ...init.headers };
+		const inQuery = this.opts.keyIn === "query";
+		// (query mode also sends the API version as `v=3`, which the API accepts, so a plain GET carries no custom header at all: a
+		// browser then makes no CORS preflight for it and forwards nothing special when it follows the file redirect)
+		if (inQuery) { url.searchParams.set("key", key); url.searchParams.set("v", "3"); }
+		const headers: Record<string, string> = { ...(inQuery ? {} : { "Zotero-API-Key": key, "Zotero-API-Version": "3" }), ...init.headers };
 		let res!: Response;
 		for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
 			await this.acquire();

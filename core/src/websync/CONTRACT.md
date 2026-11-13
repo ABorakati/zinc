@@ -88,3 +88,6 @@ Browser edition (`gpui-ui/web/browser-db/CONTRACT.md`): the worker calls `setDef
 `fileRedirect: "follow"` needs the declarativeNetRequest rule in `gpui-ui/web/browser-db/dnr-rules.json`, which removes
 `Zotero-API-Key` from requests to every domain but api.zotero.org. File-host and upload requests go through
 `client.external()`, which never carries the key.
+A plain web page (no extension, so no DNR rule) sets `keyIn: "query"`: the key goes in the `key` query parameter and the version
+as `v=3` instead of the `Zotero-API-Key` / `Zotero-API-Version` headers, so a followed file redirect has nothing to forward. The
+default, `"header"`, is for the desktop and the extension.

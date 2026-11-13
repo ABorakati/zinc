@@ -29,6 +29,8 @@ export interface WebSyncOptions {
 	initialSync?: boolean;
 	/** See FilesContext.fileRedirect. Default "manual" (desktop). A browser worker sets "follow" and installs dnr-rules.json. */
 	fileRedirect?: FileRedirect;
+	/** Where the API key is sent: see ClientOptions.keyIn. Default "header"; a plain web page (no DNR rule) sets "query". */
+	keyIn?: "header" | "query";
 	/**
 	 * The folder that holds `storage/<KEY>/<file>` (storage is <dataDir>/storage). Default: the folder of the database file; for
 	 * the browser library (db file BROWSER_DB_FILE) /opfs/zinc; for an in-memory database in Node/Bun, the working directory.
@@ -142,7 +144,7 @@ export class WebSyncService {
 		readonly opts: WebSyncOptions = {},
 	) {
 		this.keyStore = opts.keyStore ?? getDefaultKeyStore();
-		this.client = new ZoteroWebClient({ base: opts.apiBase, getKey: () => this.keyStore.get(), fetch: opts.fetch, sleep: opts.sleep, now: opts.now });
+		this.client = new ZoteroWebClient({ base: opts.apiBase, getKey: () => this.keyStore.get(), keyIn: opts.keyIn, fetch: opts.fetch, sleep: opts.sleep, now: opts.now });
 		this.dataDir = resolveDataDir(db, opts.dataDir);
 		this.storageDir = join(this.dataDir, "storage");
 	}
