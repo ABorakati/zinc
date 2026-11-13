@@ -1,5 +1,5 @@
 // node:fs for the browser build: an in-memory file system. Settings the app writes stay in this tab; files the demo needs (fonts,
-// collection styles) are seeded by web/main.tsx with seedFile(). A path is looked up by its full form first, then by its last
+// collection styles) are seeded by web/page-source.ts and src/platform.web.ts with seedFile(). A path is looked up by its full form first, then by its last
 // part, so seeded files are found wherever the app's code builds their path from.
 //
 // Durable paths: installDurableFs(backend) sends every path under a prefix (default "/opfs/") to a DurableBackend instead of the

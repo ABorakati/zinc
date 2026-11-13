@@ -1,7 +1,7 @@
 // Changes another program makes to the library while this UI is open: the desktop app, the connector saving a page, the MCP
 // server. GET /api/ui/selection returns `ext`, the core connection's PRAGMA data_version (core/src/connector/ui.ts). SQLite moves
 // it on every commit by another connection and never for the connection's own writes, so a change means "someone else wrote":
-// reload the lists then. Used by the browser extension's library page (web/extension.tsx), whose core runs in the connector's
+// reload the lists then. Used by the browser extension's library page (src/platform.web.ts), whose core runs in the connector's
 // native host; the desktop app's own writes go through its own core and refresh the lists where they happen.
 import { apiRequest } from "../api";
 

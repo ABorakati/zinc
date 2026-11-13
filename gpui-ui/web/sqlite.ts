@@ -1,5 +1,5 @@
 // bun:sqlite's Database, enough of it for the core, on SQLite compiled to WebAssembly (@sqlite.org/sqlite-wasm), for the browser
-// demo of the app (web/main.tsx). The demo build maps `bun:sqlite` to this module. Call initSqlite() and registerDatabase() before
+// demo of the app (web/page-source.ts). The demo build maps `bun:sqlite` to this module. Call initSqlite() and registerDatabase() before
 // anything opens a database: `new Database(path)` then opens an in-memory copy of the bytes registered for that path.
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 
