@@ -1,0 +1,31 @@
+docs/user-guide/adding-items.md
+  s_e8244edae027cb::t_4867a1c1936202 132-137
+gpui-ui/scripts/release.ts
+  s_e8244edae027cb::t_03dd1a9cdbb56b 80,82-83
+  s_e8244edae027cb::t_84392446713774 96-97,99,104-136
+  s_e8244edae027cb::t_f21b5c236973dc 143
+  s_e8244edae027cb::t_089bd547b7b169 18-21,23
+  s_e8244edae027cb::t_facc6ed65b4f93 150
+  s_e8244edae027cb::t_da58b99fbed91e 62-65
+  s_e8244edae027cb::t_2bf11993536dc4 153
+gpui-ui/scripts/release.test.ts
+  s_e8244edae027cb::t_38fa57814a7876 1-71
+docs/developer-guide/releasing.md
+  s_e8244edae027cb::t_3a7b8676952a6e 133-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d446b87f067896587126795a974f7139b947c489",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
