@@ -7,7 +7,7 @@ import { apiBaseFrom, TEST_API_BASE_NAME, type StorageClient } from "./sync-stor
 
 export interface BrowserSyncHandle {
 	/** Where the key store reads from: "chrome" (chrome.storage in this worker) or "proxy" (through the offscreen document). */
-	storage: "chrome" | "proxy" | "page";
+	storage: "chrome" | "proxy";
 	apiBase: string;
 	mode: string;
 	started: boolean;
@@ -18,19 +18,16 @@ export interface BrowserSyncHandle {
  * zotero.org, start the service. In any other mode the options are still registered, so Settings > Sync > "zotero.org" (POST
  * /api/websync/mode) starts it later with the same ones.
  */
-export async function startBrowserSync(db: Database, client: StorageClient | null, extra: WebSyncOptions = {}, page?: StorageArea): Promise<BrowserSyncHandle> {
-	const direct = page ? undefined : (globalThis as { chrome?: { storage?: { local?: StorageArea } } }).chrome?.storage?.local;
-	const area = page ?? direct ?? client?.area;
-	if (!area) throw new Error("no key storage is available here");
+export async function startBrowserSync(db: Database, client: StorageClient, extra: WebSyncOptions = {}): Promise<BrowserSyncHandle> {
+	const direct = (globalThis as { chrome?: { storage?: { local?: StorageArea } } }).chrome?.storage?.local;
+	const area = direct ?? client.area;
 	setDefaultKeyStore(chromeKeyStore(area));
 	let override: unknown;
 	try { override = (await area.get(TEST_API_BASE_NAME))[TEST_API_BASE_NAME]; } catch { /* no override */ }
 	const apiBase = apiBaseFrom(override);
-	// a plain page (`page`): no declarativeNetRequest rule can remove a header, so the key goes in the query string and the redirect
-	// to the file host (whose URL zotero.org chose) never carries it
-	const opts: WebSyncOptions = { fileRedirect: "follow", apiBase: () => apiBase, ...(page ? { keyIn: "query" as const } : {}), ...extra };
+	const opts: WebSyncOptions = { fileRedirect: "follow", apiBase: () => apiBase, ...extra };
 	const mode = syncMode(db);
 	if (mode === "zotero-org") startWebSync(db, opts);
 	else configureWebSync(db, opts);
-	return { storage: page ? "page" : direct ? "chrome" : "proxy", apiBase, mode, started: mode === "zotero-org" };
+	return { storage: direct ? "chrome" : "proxy", apiBase, mode, started: mode === "zotero-org" };
 }

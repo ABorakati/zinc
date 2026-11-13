@@ -159,39 +159,6 @@ if (EXT) {
 `);
 }
 
-// the browser library on a plain web page (web/browser-db/page-library.ts): the page starts db-worker.js itself (`?mode=page`), next to
-// sqlite3.wasm (copied below). No offscreen document: that is the extension's.
-if (!EXT) {
-	let r: Awaited<ReturnType<typeof Bun.build>> | undefined;
-	for (let pass = 0; pass < 80; pass++) {
-		r = await Bun.build({
-			entrypoints: [join(here, "browser-db", "db-worker.ts")],
-			outdir: out,
-			target: "browser",
-			format: "esm",
-			minify: !process.argv.includes("--debug"),
-			throw: false,
-			naming: { entry: "[name].js", asset: "[name]-[hash].[ext]" },
-			define: { "process.env.NODE_ENV": '"production"' },
-			plugins: [shims],
-		});
-		if (r.success) break;
-		let learned = 0;
-		for (const l of r.logs) {
-			const m = /No matching export in "stub:([^"]+)" for import "([^"]+)"/.exec(String(l));
-			if (!m) continue;
-			const s = names.get(m[1]!) ?? new Set<string>();
-			if (!s.has(m[2]!)) { s.add(m[2]!); learned++; }
-			names.set(m[1]!, s);
-		}
-		if (!learned) break;
-	}
-	if (!r?.success) {
-		for (const l of r?.logs ?? []) console.error(String(l).slice(0, 400));
-		throw new Error("browser library worker build failed (db-worker, plain web page)");
-	}
-}
-
 // what main.tsx fetches next to the bundle: the demo library, the Lucide icons (src/icons.tsx reads them from disk), the collection
 // colours and icons
 const iconDir = join(root, "node_modules", "lucide-static", "icons");
