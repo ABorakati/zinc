@@ -1,0 +1,78 @@
+gpui-ui/web/browser-db/page-library.ts
+  s_e8244edae027cb::t_eb1026c061dd33 1-13
+gpui-ui/web/shims/fs.ts
+  s_e8244edae027cb::t_16abafea98f1d5 2
+gpui-ui/src/reader/structure/load.docworker.web.ts
+  s_e8244edae027cb::t_d6b17e6d7c618c 1-11
+gpui-ui/src/platform.web.ts
+  s_e8244edae027cb::t_320647fb4f8dac 23
+  s_e8244edae027cb::t_9161b6457382e7 217-218
+  s_e8244edae027cb::t_c4409ce8f367de 195,201
+  s_e8244edae027cb::t_02e95350cc4000 78-84
+  s_e8244edae027cb::t_1fd63a9d25acc7 37-39
+  s_e8244edae027cb::t_55ded391f051a6 54-55
+  s_e8244edae027cb::t_47ab200425ac90 77
+  s_e8244edae027cb::t_574d6daa86ddb3 1-22,24-36,40-53,56-76,85-194,196-200,202-216,219-224,226-252,254-256,258-283
+  s_e8244edae027cb::t_7c79586761b2fd 225
+  s_e8244edae027cb::t_b7213363f5b5a6 253,257
+gpui-ui/src/platform.ts
+  s_e8244edae027cb::t_0ab43d3447a3d2 1-80
+gpui-ui/web/extension-ui.tsx
+  s_e8244edae027cb::t_43360e7a11210e 1-27,48-151
+  s_e8244edae027cb::t_ff680917b7d8c9 28-47
+gpui-ui/src/reader/pdf.web.ts
+  s_e8244edae027cb::t_9650238090399d 2
+  s_e8244edae027cb::t_efbb51ae1816a3 11
+gpui-ui/src/main.tsx
+  s_e8244edae027cb::t_dd7e12983b42ab 1-9
+gpui-ui/src/shell/outsideChanges.ts
+  s_e8244edae027cb::t_16abafea98f1d5 4
+gpui-ui/src/webview/config.ts
+  s_e8244edae027cb::t_16abafea98f1d5 20
+gpui-ui/web/globals.ts
+  s_e8244edae027cb::t_f19a336a858c54 2
+gpui-ui/web/page-source.ts
+  s_e8244edae027cb::t_54aba12cb94fab 1-42
+gpui-ui/src/reader/annotations/session.ts
+  s_e8244edae027cb::t_16abafea98f1d5 140
+gpui-ui/web/web-demo-check.ts
+  s_e8244edae027cb::t_7b3f430dc3a567 1-157
+gpui-ui/web/sqlite.ts
+  s_e8244edae027cb::t_16abafea98f1d5 2
+gpui-ui/src/start.tsx
+  s_e8244edae027cb::t_c4d17e78f6beee 36
+  s_e8244edae027cb::t_319b672563d869 1-35,37-177
+gpui-ui/web/build.ts
+  s_e8244edae027cb::t_0ca855a6deebf3 61-69
+  s_e8244edae027cb::t_45dd6e6fd565dd 208
+  s_e8244edae027cb::t_50d32864636117 44-53
+  s_e8244edae027cb::t_9b899b523a75c0 1,3,5-6
+  s_e8244edae027cb::t_4cb6b3540d08af 84-86
+  s_e8244edae027cb::t_bc4efd4f9c4f3c 94,123,148
+  s_e8244edae027cb::t_4a789d43ecd2d8 192
+  s_e8244edae027cb::t_71077f2df59c4b 17-19
+docs/developer-guide/architecture.md
+  s_e8244edae027cb::t_6ddf3779dbd102 75-89
+gpui-ui/src/reader/structure/load.web.ts
+  s_e8244edae027cb::t_655750f4121d75 16-17
+  s_e8244edae027cb::t_f5356a010a6e39 1-15,19-23
+  s_e8244edae027cb::t_9ed6d5cb091809 18
+gpui-ui/src/shell/libraryMode.ts
+  s_e8244edae027cb::t_16abafea98f1d5 2,6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e97947549fc427344ab06fd07eedd7329d982faf",
+  "prompts": {},
+  "sessions": {
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
