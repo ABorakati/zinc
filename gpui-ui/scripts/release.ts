@@ -15,8 +15,12 @@
 //       --tag <tag>            the release tag (default v<version>)
 //       --dry-run              with --publish: print the gh command instead of running it
 //       --force                skip the "key matches the public key built into the app" check
+//       --extension-zip <zip>  also write latest-extension.json, the signed feed of the Zinc Connector's unpacked install (the file is
+//                              Zinc-Connector-<version>.zip: the unpacked zip with the pinned key). With --publish the zip and the feed are
+//                              uploaded too. --installer may then be left out (a connector-only release).
+//       --extension-url <url>  where the zip is downloaded from (default with --publish: the GitHub release asset URL)
 //   Writes <out>/latest.json: { version, releasedAt, notes, url, sha256, size, minVersion?, signature }, signed with the private key, then
-//   verifies its own output. Nothing is uploaded unless --publish is given, and `--publish --dry-run` shows the command only.
+//   verifies its own output. latest-extension.json has the same fields (no minVersion), the same key and the same signing. Nothing is uploaded unless --publish is given, and `--publish --dry-run` shows the command only.
 //
 // The private key is read from the path in ZN_UPDATE_KEY and refused if that path is inside this repo. See gpui-ui/UPDATES.md.
 import { createHash } from "node:crypto";
@@ -55,8 +59,10 @@ if (flag("keygen")) {
 
 // ------------------------------------------------------------------------------------------------------------ sign
 
-const installer = arg("installer") ?? die("usage: bun gpui-ui/scripts/release.ts --installer <setup.exe> (see the header of this file); --keygen <folder> makes the key pair");
-if (!existsSync(installer)) die(`no such installer: ${installer}`);
+const extZip = arg("extension-zip");
+const installer = arg("installer") ?? (extZip ? undefined : die("usage: bun gpui-ui/scripts/release.ts --installer <setup.exe> [--extension-zip <zip>] (see the header of this file); --keygen <folder> makes the key pair"));
+if (installer && !existsSync(installer)) die(`no such installer: ${installer}`);
+if (extZip && !existsSync(extZip)) die(`no such extension zip: ${extZip}`);
 const keyPath = process.env.ZN_UPDATE_KEY ?? die("ZN_UPDATE_KEY (path to release-key.private.json) is not set");
 if (insideRepo(keyPath)) die(`ZN_UPDATE_KEY points inside the repository (${resolve(keyPath)}). Keep the private key outside it.`);
 const jwk: PrivateJwk = (() => { try { return JSON.parse(readFileSync(keyPath, "utf8")) as PrivateJwk; } catch (e) { return die(`cannot read the private key ${keyPath}: ${e instanceof Error ? e.message : e}`); } })();
@@ -71,8 +77,10 @@ if (!built) console.warn("release: note - no public key is configured for builds
 const version = (() => {
 	const v = arg("version");
 	if (v) return v;
-	const m = /^(?:Zinc|ZoteroNext)-Setup-(\d+(?:\.\d+)*)-([0-9a-f]{8})-(\d{8})(?:-TEST)?\.exe$/i.exec(basename(installer));
+	const m = installer ? /^(?:Zinc|ZoteroNext)-Setup-(\d+(?:\.\d+)*)-([0-9a-f]{8})-(\d{8})(?:-TEST)?\.exe$/i.exec(basename(installer)) : null;
 	if (m) return `${m[1]}+${m[2]}-${m[3]}`;
+	const z = extZip && !installer ? /^Zinc-Connector-(.+)\.zip$/i.exec(basename(extZip)) : null;
+	if (z && parseVersion(z[1]!)) return z[1]!;
 	const stamp = join(root, "out", "package-aot", "zotero-next-gpui", "version.txt");
 	return existsSync(stamp) ? readFileSync(stamp, "utf8").trim() : die("cannot tell the version: pass --version <stamp>");
 })();
@@ -85,39 +93,62 @@ const notes = notesArg === undefined ? `Zinc ${version}` : existsSync(notesArg) 
 
 const publishRepo = arg("publish");
 const tag = arg("tag") ?? `v${version}`;
-const file = basename(installer);
-const url = arg("url") ?? (publishRepo ? `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(file)}` : die("--url <https url of the installer> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
-
-const sha256 = await new Promise<string>((res, rej) => {
+const assetUrl = (f: string) => `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(f)}`;
+const sha256Of = (p: string) => new Promise<string>((res, rej) => {
 	const h = createHash("sha256");
-	createReadStream(installer).on("data", (d) => h.update(d)).on("error", rej).on("end", () => res(h.digest("hex")));
+	createReadStream(p).on("data", (d) => h.update(d)).on("error", rej).on("end", () => res(h.digest("hex")));
 });
-const size = statSync(installer).size;
-
-const manifest = await signManifest({ version, releasedAt: new Date().toISOString(), notes, url, sha256, size, ...(minVersion ? { minVersion } : {}) }, jwk);
-await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey); // our own output must verify
 
 const out = resolve(arg("out") ?? join(root, "out", "release"));
 mkdirSync(out, { recursive: true });
-const latest = join(out, "latest.json");
-writeFileSync(latest, JSON.stringify(manifest, null, 2) + "\n");
-console.log(`wrote ${latest}`);
-console.log(`  version ${version}\n  installer ${file}  ${size} bytes  sha256 ${sha256}\n  url ${url}\n  signed with public key ${publicKey}`);
+const uploads: string[] = [];
+let file = "";
+
+if (installer) {
+	file = basename(installer);
+	const url = arg("url") ?? (publishRepo ? assetUrl(file) : die("--url <https url of the installer> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
+	const sha256 = await sha256Of(installer);
+	const size = statSync(installer).size;
+
+	const manifest = await signManifest({ version, releasedAt: new Date().toISOString(), notes, url, sha256, size, ...(minVersion ? { minVersion } : {}) }, jwk);
+	await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey); // our own output must verify
+
+	const latest = join(out, "latest.json");
+	writeFileSync(latest, JSON.stringify(manifest, null, 2) + "\n");
+	uploads.push(resolve(installer), latest);
+	console.log(`wrote ${latest}`);
+	console.log(`  version ${version}\n  installer ${file}  ${size} bytes  sha256 ${sha256}\n  url ${url}\n  signed with public key ${publicKey}`);
+}
+
+// The Zinc Connector's feed: the same fields, key and signing, for the unpacked zip. The extension checks it once a day (browserExt/updateNotice.js).
+if (extZip) {
+	const zipName = basename(extZip);
+	const url = arg("extension-url") ?? (publishRepo ? assetUrl(zipName) : die("--extension-url <https url of the zip> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
+	const sha256 = await sha256Of(extZip);
+	const size = statSync(extZip).size;
+	const manifest = await signManifest({ version, releasedAt: new Date().toISOString(), notes, url, sha256, size }, jwk);
+	await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey);
+	const feed = join(out, "latest-extension.json");
+	writeFileSync(feed, JSON.stringify(manifest, null, 2) + "\n");
+	uploads.push(resolve(extZip), feed);
+	console.log(`wrote ${feed}`);
+	console.log(`  version ${version}\n  extension ${zipName}  ${size} bytes  sha256 ${sha256}\n  url ${url}\n  signed with public key ${publicKey}`);
+}
 
 // ------------------------------------------------------------------------------------------------------------ --publish
 
 if (publishRepo) {
 	const notesFile = join(out, "release-notes.md");
 	writeFileSync(notesFile, notes.endsWith("\n") ? notes : notes + "\n");
-	const cmd = ["gh", "release", "create", tag, resolve(installer), latest, "--repo", publishRepo, "--title", `Zinc ${version}`, "--notes-file", notesFile, "--latest"];
+	const cmd = ["gh", "release", "create", tag, ...uploads, "--repo", publishRepo, "--title", `Zinc ${version}`, "--notes-file", notesFile, "--latest"];
 	if (flag("dry-run")) {
 		console.log(`dry run, not publishing. Would run:\n  ${cmd.map((c) => (/\s/.test(c) ? `"${c}"` : c)).join(" ")}`);
 	} else {
 		console.log(`publishing to ${publishRepo} as ${tag} ...`);
 		const r = Bun.spawnSync(cmd, { stdout: "inherit", stderr: "inherit" });
 		if (r.exitCode !== 0) die(`gh release create failed (${r.exitCode})`);
-		console.log(`published. Feed URL (if the repo is public): https://github.com/${publishRepo}/releases/latest/download/latest.json`);
+		console.log(`published. Feed URL (if the repo is public): https://github.com/${publishRepo}/releases/latest/download/${installer ? "latest.json" : "latest-extension.json"}`);
 	}
 } else {
-	console.log(`not published. Upload ${file} and latest.json yourself, or re-run with --publish <owner/repo> (add --dry-run to preview).`);
+	console.log(`not published. Upload ${uploads.map((u) => basename(u)).join(" and ")} yourself, or re-run with --publish <owner/repo> (add --dry-run to preview).`);
 }

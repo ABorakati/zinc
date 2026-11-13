@@ -129,6 +129,12 @@ Things to know:
 
 The helper's design, protocol and test setup are described in the repository at `connector-host/README.md`. For developers, see [Architecture](../developer-guide/architecture.md).
 
+### Updates
+
+If you installed the Zinc Connector from a browser store (Chrome Web Store, Edge Add-ons), the browser updates it by itself and you see no notice.
+
+If you loaded it unpacked from a folder, the browser cannot update it. The extension checks a signed update feed about once a day and when the browser starts. When a newer version exists, the save popup shows "Zinc <version> is available. Download". The link opens the zip in a new tab. To update, unzip it over your folder, then reload the extension in `chrome://extensions` (or `edge://extensions`). A feed that is unsigned or wrongly signed is ignored, and a failed check shows nothing.
+
 ## After adding
 
 Newly added items are selected so you can check them. Use [Duplicate Items](library.md#duplicates) to merge any copies, and [Find Full Text](find-full-text.md) to attach a PDF if one did not arrive.
