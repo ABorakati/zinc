@@ -1,0 +1,183 @@
+name: Browser extension
+
+# Builds the Zinc Connector, the browser extension (a Zotero Connector fork, private repo ABorakati/zinc-connector), with the Zinc app as
+# its library tab (WebAssembly). Not to be confused with web.yml, which builds the website's read-only demo of the app: that one has a
+# demo library and no extension. This one builds the library page for the extension (gpui-ui/web/build.ts --target extension) and
+# packs it into the connector (scripts/package.ts in the connector repo).
+#   - every run: the unpacked zip as the artifact "zinc-connector-unpacked" (unzip it, then "Load unpacked" in chrome://extensions).
+#   - a published release (or release_tag by hand, for a release that exists): also Zinc-Connector-<version>.zip and
+#     Zinc-Connector-<version>-store.zip, attached to the release. The version comes from the tag: v0.2.0 -> 0.2.0, v0.2.0-beta.1 ->
+#     manifest version 0.2.0.1 with version_name 0.2.0-beta.1. Nothing is uploaded to the Chrome Web Store or Edge Add-ons: the
+#     store zip is uploaded by hand (docs/developer-guide/extension-release.md).
+# Needs the secret CONNECTOR_REPO_TOKEN: a fine-grained token with read-only "Contents" on ABorakati/zinc-connector.
+# The runner is Windows: scripts/build-win.ts is the connector build without build.sh's Unix tools, and it is the one that has been run
+# (on Windows). It needs only Bun, and a checkout of both repositories side by side (zotero-next and zinc-connector).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gpui-ui/**"
+      - "core/**"
+      - "connector-host/**"
+      - "reader-host/**"
+      - ".github/workflows/extension.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Attach the zips to this existing release (e.g. v0.2.0); empty: build only"
+        required: false
+        default: ""
+
+concurrency:
+  # per event: a tag's push run must not cancel the release run of the same tag (which attaches the zips)
+  group: extension-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: 1.4.4
+  # The Zotero reader (vendor/reader) is not fetched by any script in this repository (reader-host/build.sh expects it to exist).
+  # This is the commit the reader was built from; change it deliberately.
+  READER_REPO: https://github.com/zotero/reader
+  READER_COMMIT: 293d7e1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  extension:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # only used on a release, to attach the zips
+    steps:
+      # The connector repository is private. Without the token the checkout below would fail with a vague "repository not found".
+      - name: Check the connector token
+        env:
+          CONNECTOR_REPO_TOKEN: ${{ secrets.CONNECTOR_REPO_TOKEN }}
+        run: |
+          if [ -z "$CONNECTOR_REPO_TOKEN" ]; then
+            echo "::error title=CONNECTOR_REPO_TOKEN is not set::The secret CONNECTOR_REPO_TOKEN is missing, so ABorakati/zinc-connector cannot be checked out. Add a fine-grained token with read-only Contents access to that repository as a repository secret (docs/developer-guide/extension-release.md)."
+            exit 1
+          fi
+
+      - name: Check out zotero-next
+        uses: actions/checkout@v4
+        with:
+          path: zotero-next
+
+      - name: Check out the connector
+        uses: actions/checkout@v4
+        with:
+          repository: ABorakati/zinc-connector
+          ref: zotero-next
+          submodules: true
+          token: ${{ secrets.CONNECTOR_REPO_TOKEN }}
+          path: zinc-connector
+
+      - name: Check the connector checkout
+        run: |
+          for f in zinc-connector/scripts/package.ts zinc-connector/scripts/build-win.ts zinc-connector/src/zotero/chrome/skin; do
+            [ -e "$f" ] || { echo "::error title=Connector checkout incomplete::$f is missing: branch zotero-next of ABorakati/zinc-connector has no scripts/package.ts yet, or its submodules did not come with it."; exit 1; }
+          done
+          [ -s zotero-next/gpui-ui/update-pubkey.txt ] || { echo "::error title=No update public key::gpui-ui/update-pubkey.txt is missing: the extension's update notice needs it (gpui-ui/UPDATES.md)."; exit 1; }
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-ext-${{ runner.os }}-${{ hashFiles('zotero-next/core/bun.lock', 'zotero-next/gpui-ui/bun.lock', 'zinc-connector/bun.lock') }}
+          restore-keys: bun-ext-${{ runner.os }}-
+
+      - name: Install core, gpui-ui and the connector
+        run: |
+          (cd zotero-next/core && bun install --frozen-lockfile)
+          (cd zotero-next/gpui-ui && bun install --frozen-lockfile)
+          (cd zinc-connector && bun install --frozen-lockfile)
+
+      # core/vendor is git-ignored; same pinned download as web.yml and ci.yml.
+      - name: Cache vendored Zotero translation code
+        id: vendor
+        uses: actions/cache@v4
+        with:
+          path: zotero-next/core/vendor/zotero
+          key: zotero-vendor-${{ hashFiles('zotero-next/core/scripts/fetch-zotero-vendor.ts') }}
+      - name: Fetch vendored Zotero translation code
+        if: steps.vendor.outputs.cache-hit != 'true'
+        working-directory: zotero-next
+        run: bun core/scripts/fetch-zotero-vendor.ts
+
+      # The full-text engine is built in a separate private repo (see ci.yml): a placeholder lets the build resolve.
+      - name: Placeholder for the fulltext wasm
+        working-directory: zotero-next
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          [ -s core/vendor/fulltext-wasm/fulltext.wasm ] || : > core/vendor/fulltext-wasm/fulltext.wasm
+
+      # The reader tab (EPUBs and web snapshots) is the Zotero reader plus its host page: reader-host/dist, built by
+      # reader-host/build.sh from vendor/reader and vendor/document-worker. Both are git-ignored upstream clones.
+      - name: Cache the Zotero reader and document worker
+        id: reader
+        uses: actions/cache@v4
+        with:
+          path: |
+            zotero-next/vendor/reader
+            zotero-next/vendor/document-worker
+          key: zotero-reader-${{ env.READER_COMMIT }}-${{ hashFiles('zotero-next/reader-host/build.sh', 'zotero-next/scripts/build-docworker.sh') }}
+      - name: Fetch and build the Zotero reader and the document worker
+        if: steps.reader.outputs.cache-hit != 'true'
+        working-directory: zotero-next
+        run: |
+          mkdir -p vendor
+          git clone "$READER_REPO" vendor/reader
+          git -C vendor/reader checkout "$READER_COMMIT"
+          git -C vendor/reader submodule update --init --recursive
+          bash scripts/build-docworker.sh # the reader host needs vendor/document-worker/build/worker.js
+          bash reader-host/build.sh # also builds vendor/reader/build/web
+      - name: Reader host page
+        if: steps.reader.outputs.cache-hit == 'true'
+        working-directory: zotero-next
+        run: bash reader-host/build.sh --skip-reader
+
+      - name: Build the library page
+        working-directory: zotero-next/gpui-ui
+        run: bun web/build.ts --target extension --reader ../reader-host/dist
+
+      - name: Package the connector
+        id: pkg
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          ZN_UPDATE_PUBKEY_FILE: ${{ github.workspace }}/zotero-next/gpui-ui/update-pubkey.txt
+        working-directory: zinc-connector
+        run: |
+          # no release: a throw-away pre-release version, so the artifact's manifest says which run built it
+          [ -n "$TAG" ] || TAG="v0.0.0-ci.$GITHUB_RUN_NUMBER"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          bun scripts/package.ts --tag "$TAG" --library ../zotero-next/gpui-ui/dist-extension --out ../ext-out
+          ls -l ../ext-out
+
+      - name: Upload the unpacked zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: zinc-connector-unpacked
+          path: |
+            ext-out/*.zip
+            !ext-out/*-store.zip
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Attach both zips to the release
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.pkg.outputs.tag }}
+        run: gh release upload "$TAG" ext-out/*.zip --clobber --repo "$GITHUB_REPOSITORY"

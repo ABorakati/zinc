@@ -9,6 +9,7 @@ How Zinc is built, tested and released.
 - [The core HTTP API](http-api.md)
 - [The translators runtime](translators.md)
 - [Releasing](releasing.md): installer, update feed, signing hooks
+- [Releasing the browser extension](extension-release.md): the connector's two zips, the workflow, store updates
 - [Contributing](contributing.md)
 
 The repository root keeps `CONTRIBUTING.md` (GitHub links to it from pull requests). It holds the short version and points here.

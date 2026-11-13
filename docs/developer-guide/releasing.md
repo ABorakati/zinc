@@ -12,6 +12,8 @@ bun gpui-ui/scripts/release.ts --installer <that exe> --notes <file> ...   # sig
 
 `installer.ts` does not rebuild the package, and `release.ts` does not build anything: it hashes the installer you give it, writes a signed manifest, and optionally uploads. The build that users run must already contain the matching public key (below) and be older than the release.
 
+The browser extension (the Zinc Connector) has its own zips, workflow and store steps: see [Releasing the browser extension](extension-release.md).
+
 ## Code signing: not used today
 
 Two different signatures exist. Do not confuse them.
