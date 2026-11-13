@@ -137,7 +137,7 @@ export function sessionFor(ctx: ReaderContext): Session {
 	}
 	return s;
 }
-/** The session of an open document, if there is one (automated checks of the browser build: gpui-ui/web/extension.tsx). */
+/** The session of an open document, if there is one (automated checks of the browser build: gpui-ui/src/platform.web.ts). */
 export const sessionOf = (attachmentKey: string): Session | undefined => sessions.get(attachmentKey);
 export function closeSession(attachmentKey: string): void {
 	const s = sessions.get(attachmentKey);

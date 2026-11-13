@@ -72,6 +72,21 @@ The old Electrobun app (`app/`, `ui/`) is not part of this documentation.
 
 `gpui-ui/src/main.tsx` is the entry point. It renders a splash screen first, registers fonts, and only then imports the heavy modules (the app, the store, the core), so the window appears before the core has loaded.
 
+### Entry layout and the `.web.ts` rule
+
+The desktop app, the browser extension's library page and the web page all start from `src/main.tsx`, so they cannot drift apart. The start-up is split in three:
+
+| File | Holds |
+| --- | --- |
+| `src/main.tsx` | Imports the platform module first, then calls `start(platform)`. |
+| `src/start.tsx` | The start-up steps, in one fixed order, with their trace marks (`mark(...)`, read by `scripts/startup.ts`): appearance, splash, `render()`, fonts, connect the data, store, `bindUiState`, `startAppearance`, App, first items, features. Also the `Platform` interface. |
+| `src/platform.ts` | The desktop: the four side-effect imports (`linuxDisplay`, `uvpool`, `signin/entry`, `packaged`), the error log, the prefetch worker, fonts, the in-process core, the window theme and icon, reveal requests, updates, the crash toast. |
+| `src/platform.web.ts` | The browser: the data path, the file fetcher for PDFs, the probes the headless checks read (`znLibrary`, `znPdfStats`, `znDemo`), the welcome screen, the move offer, `?select=`, outside-change handling. |
+
+`platform.web.ts` picks the data path when the page loads. An extension page uses the native host, or, with `?mode=browser`, the browser library over a `zinc-db` port. A plain web page is a read-only showcase: it always runs the in-memory demo library (`web/page-source.ts`), where every write answers 403 and My Library is marked not editable so the app hides its edit actions. Nothing is saved and there is no sync; the Zinc Connector is the browser product that keeps a library.
+
+**The rule.** `web/build.ts` builds both browser targets from `src/main.tsx`. When a relative import resolves to `X.ts` or `X.tsx` and `X.web.ts` or `X.web.tsx` sits next to it, the browser builds use the sibling. Bun on the desktop never looks for `.web` files, and `tsc` checks them with everything else. Today there are three: `platform.web.ts`, `reader/pdf.web.ts` (PDFium WebAssembly in place of `zn_pdf.dll`) and `reader/structure/load.web.ts` (the document worker as a Web Worker). To make a module differ in the browser, add the sibling with the same exports; do not add a branch to the shared file. Build-time constants (`__ZN_EXTENSION__`, `__ZN_DOCWORKER__`, set in `web/build.ts`) drop code a target does not use.
+
 The UI is TypeScript with Solid components. GPUIX (a Solid adapter for Zed's GPUI) draws it natively; there is no browser engine in the main window. Features plug into the shell through the registry in `gpui-ui/src/registry.ts` (item actions, app actions, overlays, sidebar sections, settings sections); see [Contributing](contributing.md).
 
 ### Core in the same process

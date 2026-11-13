@@ -1,5 +1,5 @@
 // `process` and `Bun` for the browser demo: just enough of each for the app's modules to load and run on the demo library.
-// Imported first by web/main.tsx, before any app module reads them.
+// Its own entry in web/build.ts: the page loads it before main.js (src/main.tsx), so it runs before any app module reads them.
 import { Buffer } from "buffer"; // Bun's browser polyfill (web/build.ts leaves `buffer` to it)
 import * as fs from "./shims/fs";
 

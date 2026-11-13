@@ -1,5 +1,5 @@
 // src/reader/pdf.ts for the browser builds: the same PdfDoc interface, on PDFium compiled to WebAssembly (web/pdf-engine.ts) instead
-// of zn_pdf.dll. web/build.ts maps the reader's `./pdf` imports here. There is no page editing or printing in the browser.
+// of zn_pdf.dll. web/build.ts uses this file wherever `./pdf` is imported (the `X.web.ts` rule). There is no page editing or printing in the browser.
 //
 // Where the work runs: the page keeps one copy of PDFium for the calls the reader makes synchronously (open, page sizes, rotation,
 // links, outline: all cheap), and renders pages and text layers in Web Workers (web/pdf-worker.ts), each holding its own copy of
@@ -8,7 +8,7 @@
 // default 2 (1 on a machine with fewer than 4 cores). Timings go to globalThis.znPdfStats for the headless checks.
 //
 // initPdfium() must have finished before a document is opened (the reader's file fetcher awaits it).
-import { closeDoc, drawPage, engineReady, fn, free, geometry, heap, initEngine, malloc, openDoc, pageText, withPage, type DocHandle, type DrawOpts, type Look, type TextLayer, type TextWord } from "./pdf-engine";
+import { closeDoc, drawPage, engineReady, fn, free, geometry, heap, initEngine, malloc, openDoc, pageText, withPage, type DocHandle, type DrawOpts, type Look, type TextLayer, type TextWord } from "../../web/pdf-engine";
 
 export type { Look, TextLayer, TextWord };
 

@@ -17,7 +17,7 @@ export function webBase(): string | null {
 	return process.env.ZN_DB ? null : BASE_URL;
 }
 
-/** The extension build (web/extension.tsx) sets this: EPUBs and snapshots open in a new browser tab instead of a web tab. */
+/** The extension build (src/platform.web.ts) sets this: EPUBs and snapshots open in a new browser tab instead of a web tab. */
 let tabOpener: ((attachmentKey: string) => void) | null = null;
 export function setWebTabOpener(f: ((attachmentKey: string) => void) | null): void { tabOpener = f; }
 export const webTabOpener = (): ((attachmentKey: string) => void) | null => tabOpener;
