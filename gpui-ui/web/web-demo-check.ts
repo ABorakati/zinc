@@ -3,9 +3,9 @@
 // Without --dist it makes the demo library (web/demo-library.ts) and the build in <work>, then serves the build from a loopback server
 // of its own (any free port) and opens it in Chrome for Testing (fresh profile, headless, nothing of the user's browser).
 //
-// Checks: with ?demo the page starts on the in-memory demo library and the app lists its items (store has rows, no error); the demo
-// article's PDF opens in the reader; the page logs no error; without ?demo the page asks for its own library (web/browser-db/page-library.ts)
-// and, while that file is the "not built yet" stub, says so in the console and lists nothing.
+// Checks: the plain page (no query) starts on the in-memory demo library and the app lists its items (store has rows, no error); the demo
+// article's PDF opens in the reader; the page logs no error; the demo is read-only (a write answers 403 with the demo message, view state
+// and reads still work, the app marks My Library not editable); ?demo gives the same page.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -120,7 +120,7 @@ try {
 	const cdp = await Cdp.connect();
 
 	// ---- ?demo: the in-memory demo library
-	const demo = await open(cdp, `${ORIGIN}/index.html?demo`);
+	const demo = await open(cdp, `${ORIGIN}/index.html`);
 	const listed = await demo.waitFor("!!globalThis.znDemo?.store && globalThis.znDemo.store.pagesLoaded() > 0 && !!globalThis.znDemo.store.peek(0)", 60_000);
 	const first = listed ? await demo.evalIn<{ title: string; groups: number; error: string | null }>(`({ title: String(znDemo.store.peek(0)?.title ?? ""), groups: znDemo.store.groups().length, error: znDemo.store.error() })`) : null;
 	check("demo library lists items", listed && !!first?.title && !first.error, listed ? `first row "${first!.title.slice(0, 60)}", error ${first!.error}` : "the store never loaded a page");
@@ -139,28 +139,24 @@ try {
 	} else check("the demo article's PDF opens in the reader", false, "the demo library has no stored attachment");
 	check("no page errors with ?demo", demo.errors.length === 0, demo.errors.length ? demo.errors.slice(0, 3).join(" | ") : "none");
 
-	// ---- no ?demo: the page's own library (a stub until web/browser-db/page-library.ts is built)
-	const ready = "!!globalThis.znLibrary?.store && globalThis.znLibrary.store.pagesLoaded() > 0";
-	const own = await open(cdp, `${ORIGIN}/index.html`);
-	const loaded = await own.waitFor(ready, 60_000);
-	const isDemo = loaded ? await own.evalIn<boolean>(`!!globalThis.znDemo`) : false;
-	const total0 = loaded ? await own.evalIn<number>(`znLibrary.store.groups().length + (znLibrary.store.peek(0) ? 1 : 0)`) : -1;
-	check("without ?demo the page's own library loads, empty", loaded && !isDemo && total0 === 0, loaded ? `rows: ${total0}` : `never loaded: ${own.errors.slice(0, 2).join(" | ")}`);
-	const made = loaded ? await own.evalIn<{ status: number }>(`znLibrary.api("POST", "/items", { data: { itemType: "book", title: "Made on the plain page" } })`) : { status: 0 };
-	check("an item is created", made.status >= 200 && made.status < 300, `status ${made.status}`);
-	await own.evalIn(`location.reload()`).catch(() => {});
-	await sleep(1500);
-	const again = await own.waitFor(ready, 60_000);
-	const title = again ? await own.waitFor(`znLibrary.store.peek(0)?.title === "Made on the plain page"`, 15_000) : false;
-	check("the item survives a reload", title, title ? "listed after the reload" : again ? "not listed" : `the page did not come back: ${own.errors.slice(0, 2).join(" | ")}`);
-	await own.shot("page-library");
-	check("no page errors on the plain page", own.errors.length === 0, own.errors.length ? own.errors.slice(0, 3).join(" | ") : "none");
-	// a second tab: the library is owned by the first (one page per library), so it says so instead of showing the app
-	const second = await open(cdp, `${ORIGIN}/index.html`);
-	await sleep(6000);
-	const busy = second.errors.some((e) => /open in another tab/.test(e)) || second.lines.some((l) => /open in another tab/.test(l));
-	check("a second tab says the library is open elsewhere", busy, busy ? "PageLibraryBusyError reached the console" : "no busy message seen");
-	await second.shot("page-library-busy");
+
+	// ---- read-only: a write answers 403 with the message, nothing is added, and the app has its edit actions off
+	const made = await demo.evalIn<{ status: number; text: string }>(`znDemo.api("POST", "/items", { data: { itemType: "book", title: "Made on the demo" } })`);
+	check("an edit is refused with 403 and a clear message", made.status === 403 && /read-only demo/i.test(made.text), `status ${made.status}: ${made.text.slice(0, 90)}`);
+	const del = await demo.evalIn<{ status: number }>(`znDemo.api("DELETE", "/items/AAAAAAAA")`);
+	check("a delete is refused too", del.status === 403, `status ${del.status}`);
+	const sel = await demo.evalIn<{ status: number }>(`znDemo.api("POST", "/ui/selection", { key: null })`);
+	check("view state (POST /api/ui/selection) is not refused", sel.status !== 403, `status ${sel.status}`);
+	const readable = await demo.evalIn<{ status: number }>(`znDemo.api("GET", "/collections")`);
+	check("reads still work", readable.status === 200, `status ${readable.status}`);
+	const canEdit = await demo.waitFor(`znDemo.store.canEdit() === false`, 15_000);
+	check("My Library is marked read-only for the app", canEdit, canEdit ? "store.canEdit() is false: edit actions are hidden" : "the app still offers edits");
+	await demo.shot("demo-readonly");
+
+	// ---- ?demo gives the same page
+	const flagged = await open(cdp, `${ORIGIN}/index.html?demo`);
+	const same = await flagged.waitFor("!!globalThis.znDemo?.store && globalThis.znDemo.store.pagesLoaded() > 0 && !!globalThis.znDemo.store.peek(0)", 60_000);
+	check("?demo is the same demo page", same && flagged.errors.length === 0, same ? "lists items, no errors" : `never loaded: ${flagged.errors.slice(0, 2).join(" | ")}`);
 	failed = results.some((r) => !r.ok);
 } finally {
 	chrome.kill();

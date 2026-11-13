@@ -7,16 +7,14 @@
 //                                  which answers with the core's handleApi against the desktop library (web/native-host.ts)
 //   extension page, ?mode=browser  the browser library: the same frames over an extension port named "zinc-db" to an offscreen document
 //                                  that owns a SQLite database on OPFS (web/browser-db, CONTRACT.md)
-//   web page                       the page's own library: startPageLibrary() (web/browser-db/page-library.ts) runs it in a worker the
-//                                  page starts, SQLite on OPFS
-//   web page, ?demo                the demo library, in memory: SQLite WebAssembly and the core's handleApi in the tab (the online
-//                                  "try it" page; library.sqlite, icons.json and the rest sit next to the bundle)
+//   web page (with or without ?demo)  the demo library, in memory and read-only: SQLite WebAssembly and the core's handleApi in the tab
+//                                  (the online "try it" page; library.sqlite, icons.json and the rest sit next to the bundle). A
+//                                  showcase: nothing is saved, there is no sync. To keep a library, install the Zinc Connector.
 // Other query parameters: ?theme=light|dark, ?host=<name> (a registration of the native host other than the installed one; tests),
 // ?select=<item key> (extension: show that item), ?open=<attachment key|demo> and ?view=reading (demo), ?pdfworkers=N (src/reader/pdf.web.ts).
 import { seedFile } from "../web/shims/fs";
 import { nativeApiTransport, resolveHostName, type NativePort } from "../web/native-host";
 import type { MoveProbe } from "../web/extension-ui";
-import { createComponent } from "solid-js";
 import { setDirect } from "./api";
 import { setThemePrefs } from "./shell/appearance";
 import { setBrowserLibrary } from "./shell/libraryMode";
@@ -38,10 +36,10 @@ declare const chrome: {
 /** Defined by web/build.ts: true in the extension target. A branch on it drops the other target's code from the bundle. */
 declare const __ZN_EXTENSION__: boolean;
 
-type Source = "host" | "browser" | "page" | "demo";
+type Source = "host" | "browser" | "demo";
 const params = new URLSearchParams(location.search);
 const inExtension = typeof chrome !== "undefined" && !!chrome.runtime?.id;
-const source: Source = inExtension ? (params.get("mode") === "browser" ? "browser" : "host") : params.has("demo") ? "demo" : "page";
+const source: Source = inExtension ? (params.get("mode") === "browser" ? "browser" : "host") : "demo";
 const here = (f: string) => new URL(f, import.meta.url).href;
 
 /** Called for every notice that the browser library changed under this page (set by afterFeatures, once the store exists). */
@@ -75,24 +73,24 @@ async function openTransport(): Promise<(req: Request) => Promise<Response>> {
 			try { return await port(req); } catch { await ensureDb(); return port(again); }
 		};
 	}
-	// the web page's own library, or the demo (web/page-source.ts: not in the extension build, which has no such page)
+	// the web page: the read-only demo library (web/page-source.ts; not in the extension build, which has no such page)
 	if (!__ZN_EXTENSION__) {
-		const s = await import("../web/page-source").then((m) => m.openPageSource(source === "demo" ? "demo" : "page"));
-		if (s.onChanged) s.onChanged(() => onLibraryChanged({}));
-		if (s.demo) { demoStored = s.demo.stored; demoHandle = s.demo.handle; }
+		const s = await import("../web/page-source").then((m) => m.openDemoSource());
+		demoStored = s.stored;
+		demoHandle = s.handle;
 		return s.transport;
 	}
 	throw new Error("the extension's library page has no data path without the extension");
 }
 
 export const platform: Platform = {
-	title: source === "demo" ? "Zinc demo" : source === "page" ? "Zinc" : "Zinc library",
+	title: source === "demo" ? "Zinc demo" : "Zinc library",
 	// the outer div sets the family text inherits where the app sets none (GPUI's own default in the browser is a monospace font)
 	frame: { width: "100%", height: "100%", fontFamily: "IBM Plex Sans" },
 	init() {},
 
 	prepare() {
-		setBrowserLibrary(source === "browser" || source === "page"); // settings read it (src/shell/libraryMode.ts): this library has no desktop Zotero folder
+		setBrowserLibrary(source === "browser"); // settings read it (src/shell/libraryMode.ts): this library has no desktop Zotero folder
 		// GPUI's browser build cannot take font files (no registerFont); it has IBM Plex Sans built in, one of the app's own sans choices
 		fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
 		// light or dark from the page that embeds this one (?theme=, then postMessage({ theme }) when the site's theme changes)
@@ -112,18 +110,7 @@ export const platform: Platform = {
 		// the data path: each Request as an `api` frame to the host, or to the library in this browser. ?host=<name> picks another
 		// registration of the same host (tests register one under their own name, so they never reach the installed host or its library).
 		if (inExtension) hostName = resolveHostName(location.search, chrome!.runtime.getManifest().zinc_test === true);
-		let transport: (req: Request) => Promise<Response>;
-		try {
-			transport = await openTransport();
-		} catch (e) {
-			// the page's own library could not start (another tab has it, no OPFS): its message in the app's look, in place of the app
-			if (!__ZN_EXTENSION__ && source === "page") {
-				const message = e instanceof Error ? e.message : String(e);
-				const { PageError } = await import("../web/page-error");
-				ctx.setOverlay(() => createComponent(PageError, { message, mode: ctx.mode }));
-			}
-			throw e;
-		}
+		const transport = await openTransport();
 		setDirect(async (req) => {
 			const entry: (typeof requests)[number] = { method: req.method, path: new URL(req.url).pathname + new URL(req.url).search, status: "pending" };
 			requests.push(entry);
@@ -173,6 +160,12 @@ export const platform: Platform = {
 			// the store, and the layout analysis of the demo article (counts of what it found)
 			(globalThis as Record<string, unknown>).znDemo = {
 				store,
+				/** one /api call as the page makes it (for the headless check): the demo is read-only, so a write answers 403 */
+				async api(method: string, path: string, body?: unknown): Promise<{ status: number; text: string }> {
+					const { apiFetch } = await import("./api");
+					const res = await apiFetch(path, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+					return { status: res.status, text: await res.text() };
+				},
 				async analyse() {
 					const key = demoStored[0]?.split("/")[0];
 					if (!key || !demoHandle) return null;
@@ -252,7 +245,7 @@ export const platform: Platform = {
 			if (open && /^[A-Z0-9]{8}$/.test(open)) setTimeout(() => store.openAttachment(open, "Demo review", ""), 400);
 			return;
 		}
-		if (source === "browser" || source === "page") {
+		if (source === "browser") {
 			// the browser library tells every connected page when a write committed (a save from the connector, an edit in another tab): reload
 			// the lists then, in place of polling. A burst of writes (an import) costs one reload.
 			let timer: ReturnType<typeof setTimeout> | undefined;
