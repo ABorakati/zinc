@@ -1,0 +1,37 @@
+core/test/websync/browser.test.ts
+  s_e8244edae027cb::t_f5ce1beaee8587 37,53
+gpui-ui/web/browser-db/sync.ts
+  s_e8244edae027cb::t_6fcb2176aeb9f8 10,21-23,28,32
+core/src/websync/client.ts
+  s_09eded5a7d60a3::t_3d224feba2dbc2 124
+core/src/websync/service.ts
+  s_09eded5a7d60a3::t_57a9339bd788b1 145
+core/test/websync/mock.ts
+  s_09eded5a7d60a3::t_5fad0958686d0e 177,187,196-197
+gpui-ui/web/browser-db/db-worker.ts
+  s_09eded5a7d60a3::t_808eb8cc566e25 15,52,73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b1bbb2c2ccec3625883910656171fe0314995c8",
+  "prompts": {},
+  "sessions": {
+    "s_09eded5a7d60a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a887eb2c679e31fe8",
+        "model": "unknown"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    },
+    "s_e8244edae027cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c1dc5ae7-c6db-4d3a-83d0-ba9036d23ba9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
