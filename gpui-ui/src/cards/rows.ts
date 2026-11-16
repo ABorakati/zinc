@@ -1,7 +1,10 @@
 // Header + item rows over the store's year groups (ui/src/groups.ts createGroupedRows, with the groups coming from the store).
 // Group g covers item indexes [start, start + count); a collapsed group shows only its header row.
 import { createEffect, createMemo, createSignal, on } from "solid-js";
+import type { ChildSummary } from "../api";
 import { store } from "../store";
+import { childrenOf, hasChildren, openKeys } from "./children";
+import { flatten, sameOpened, type Opened } from "./flatten";
 
 export interface Group {
 	value: string | null;
@@ -9,7 +12,33 @@ export interface Group {
 	count: number;
 	start: number;
 }
-export type Row = { kind: "header"; group: Group } | { kind: "item"; index: number };
+type BaseRow = { kind: "header"; group: Group } | { kind: "item"; index: number };
+/** A child row of an opened item: `child` is null until the item's children have loaded (a placeholder row meanwhile). */
+export type ChildRow = {
+	kind: "child";
+	parentKey: string;
+	parentIndex: number;
+	pos: number;
+	last: boolean;
+	child: ChildSummary | null;
+};
+export type Row = BaseRow | ChildRow;
+
+/** Same row content: a memo over a row keeps its value (and the row stays mounted) while nothing it shows changed. */
+export function sameRow(a: Row | undefined, b: Row | undefined): boolean {
+	if (!a || !b) return a === b;
+	if (a.kind === "item") return b.kind === "item" && a.index === b.index;
+	if (a.kind === "child")
+		return (
+			b.kind === "child" &&
+			a.parentKey === b.parentKey &&
+			a.parentIndex === b.parentIndex &&
+			a.pos === b.pos &&
+			a.last === b.last &&
+			a.child === b.child
+		);
+	return a === b;
+}
 
 const typeLabel = (t: string) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
 /** Group header text (ui/src/groups.ts label): depends on what the list is grouped by. */
@@ -90,27 +119,87 @@ export function createRows() {
 	};
 	const starts = createMemo(() => (active() ?? []).map((g) => g.start));
 
+	// ---- base rows: headers + items, before the opened items' children are added ----
+	const baseCount = () => {
+		const rs = rowStart();
+		return active() ? rs[rs.length - 1]! : store.total();
+	};
+	function baseRow(r: number): BaseRow | undefined {
+		const gs = active();
+		if (!gs) return r >= 0 && r < store.total() ? { kind: "item", index: r } : undefined;
+		const rs = rowStart();
+		if (r < 0 || r >= rs[rs.length - 1]!) return undefined;
+		const gi = floor(rs, r, gs.length);
+		const off = r - rs[gi]!;
+		return off === 0 ? { kind: "header", group: gs[gi]! } : { kind: "item", index: gs[gi]!.start + off - 1 };
+	}
+	function baseRowOf(index: number): number {
+		const gs = active();
+		if (!gs) return index;
+		const gi = floor(starts(), index, gs.length);
+		return collapsed().has(keyOf(gs[gi]!)) ? -1 : rowStart()[gi]! + 1 + index - gs[gi]!.start;
+	}
+
+	// ---- opened items (children.ts): their child rows follow them ----
+	// Re-read when a page arrives (an opened item's row may only now be known) but kept equal unless something it shows changed, so
+	// page loads elsewhere do not re-mount the rows.
+	const opened = createMemo<Opened<ChildSummary>[]>(
+		() => {
+			const keys = openKeys();
+			if (!keys.size) return [];
+			store.pagesLoaded();
+			store.listVersion();
+			const out: Opened<ChildSummary>[] = [];
+			for (const key of keys) {
+				const index = store.indexOfKey(key);
+				if (index < 0) continue;
+				const base = baseRowOf(index);
+				const it = store.peek(index);
+				if (base < 0 || !it || !hasChildren(it)) continue;
+				const kids = childrenOf(key);
+				out.push({ key, index, base, count: kids ? kids.length : (it.attachmentCount ?? 0) + (it.noteCount ?? 0), kids });
+			}
+			return out.sort((a, b) => a.base - b.base);
+		},
+		[],
+		{ equals: sameOpened },
+	);
+	const flat = createMemo(() => flatten(baseCount(), opened()));
+	const toBase = (r: number): number => {
+		const a = flat().at(r);
+		return "base" in a ? a.base : a.opened.base;
+	};
+
+	/** Row of child `pos` of the opened item `parentKey`, or -1. */
+	const childRow = (parentKey: string, pos: number): number => {
+		const r = flat().rowOfOpened(parentKey);
+		return r < 0 ? -1 : r + 1 + pos;
+	};
+
 	return {
-		count: () => {
-			const rs = rowStart();
-			return active() ? rs[rs.length - 1]! : store.total();
-		},
+		count: () => flat().count,
 		row(r: number): Row | undefined {
-			const gs = active();
-			if (!gs) return r >= 0 && r < store.total() ? { kind: "item", index: r } : undefined;
-			const rs = rowStart();
-			if (r < 0 || r >= rs[rs.length - 1]!) return undefined;
-			const gi = floor(rs, r, gs.length);
-			const off = r - rs[gi]!;
-			return off === 0 ? { kind: "header", group: gs[gi]! } : { kind: "item", index: gs[gi]!.start + off - 1 };
+			if (r < 0 || r >= flat().count) return undefined;
+			const a = flat().at(r);
+			if ("base" in a) return baseRow(a.base);
+			const o = a.opened;
+			return {
+				kind: "child",
+				parentKey: o.key,
+				parentIndex: o.index,
+				pos: a.pos,
+				last: a.pos === o.count - 1,
+				child: o.kids?.[a.pos] ?? null,
+			};
 		},
-		/** The group row `r` belongs to (its header or one of its items); undefined when the list is not grouped. */
+		/** The group row `r` belongs to (its header, one of its items or their children); undefined when the list is not grouped. */
 		groupAt(r: number): Group | undefined {
 			const gs = active();
 			if (!gs) return undefined;
+			const b = toBase(r);
 			const rs = rowStart();
-			if (r < 0 || r >= rs[rs.length - 1]!) return undefined;
-			return gs[floor(rs, r, gs.length)];
+			if (b < 0 || b >= rs[rs.length - 1]!) return undefined;
+			return gs[floor(rs, b, gs.length)];
 		},
 		isCollapsed: (g: Group) => collapsed().has(keyOf(g)),
 		toggle(g: Group) {
@@ -120,10 +209,15 @@ export function createRows() {
 		},
 		/** Row showing item `index`, or -1 while its group is collapsed. */
 		rowOf(index: number): number {
-			const gs = active();
-			if (!gs) return index;
-			const gi = floor(starts(), index, gs.length);
-			return collapsed().has(keyOf(gs[gi]!)) ? -1 : rowStart()[gi]! + 1 + index - gs[gi]!.start;
+			const b = baseRowOf(index);
+			return b < 0 ? -1 : flat().fromBase(b);
+		},
+		childRow,
+		/** Row of the child with key `childKey` under `parentKey` (once its children have loaded), or -1. */
+		childRowByKey(parentKey: string, childKey: string): number {
+			const o = opened().find((x) => x.key === parentKey);
+			const pos = o?.kids?.findIndex((c) => c.key === childKey) ?? -1;
+			return pos < 0 ? -1 : childRow(parentKey, pos);
 		},
 	};
 }

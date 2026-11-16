@@ -20,7 +20,10 @@ import { cardLayout, cardListWidth as cardListWidthNow, setCardListWidth } from 
 import { ListRetry } from "./ListRetry";
 import { loadTagColors } from "./logic";
 import { openItemMenu } from "./menus";
-import { createRows, type Group, type Rows } from "./rows";
+import { CardChildRow } from "./ChildRow";
+import { hasChildren, isOpen, selectedChild } from "./children";
+import { createRows, sameRow, type Group, type Rows } from "./rows";
+import { createTree, toggleItem } from "./tree";
 import { markScroll, throttledCommit } from "./scrolling";
 import { SearchResults } from "./SearchResults";
 
@@ -112,7 +115,8 @@ function ItemRowView(p: { index: number }): JSX.Element {
 						item={x()}
 						index={p.index}
 						hovered={false}
-						focused={listFocused() && store.focusIndex() === p.index}
+						focused={listFocused() && store.focusIndex() === p.index && !selectedChild()}
+						tree={hasChildren(x()) ? { open: isOpen(x().key), toggle: () => toggleItem(x().key, p.index) } : undefined}
 						onMore={(r) => openItemMenu({ x: r.x, y: r.y + r.height }, x(), p.index)}
 					/>
 				)}
@@ -122,12 +126,14 @@ function ItemRowView(p: { index: number }): JSX.Element {
 }
 
 function RowView(p: { row: number; rows: Rows }): JSX.Element {
-	const r = createMemo(() => p.rows.row(p.row));
+	const r = createMemo(() => p.rows.row(p.row), undefined, { equals: sameRow });
 	return (
 		<Show when={r()} keyed>
 			{(rw) =>
 				rw.kind === "header" ? (
 					<GroupHeader group={rw.group} collapsed={p.rows.isCollapsed(rw.group)} onToggle={() => p.rows.toggle(rw.group)} />
+				) : rw.kind === "child" ? (
+					<CardChildRow row={rw} />
 				) : (
 					<ItemRowView index={rw.index} />
 				)
@@ -162,7 +168,7 @@ export function CardsView(): JSX.Element {
 	/** Item index shown at a row (a header stands for the group's first item). */
 	const itemAtRow = (r: number): number => {
 		const rw = rows.row(Math.max(0, Math.min(r, count() - 1)));
-		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.group.start;
+		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.kind === "child" ? rw.parentIndex : rw.group.start;
 	};
 	// Keep the mounted window around the visible rows. Moving it is a JS commit (a full, uncached frame), so while scrolling it
 	// happens at most every 100 ms, and at once only when the view is about to run off the mounted rows.
@@ -251,13 +257,16 @@ export function CardsView(): JSX.Element {
 		store.focusRow(next, extend);
 		reveal(rows.rowOf(next));
 	}
+	const tree = createTree({ rows, reveal, visible: () => [visA, visB], moveItems: move });
 	const keys = listKeyHandler({
-		move,
+		move: tree.move,
 		page: () => Math.max(1, Math.floor((visB - visA) * 0.9)),
-		open: () => {
-			const it = store.peek(store.focusIndex());
-			if (it) void openItem(it);
-		},
+		open: () =>
+			tree.open(() => {
+				const it = store.peek(store.focusIndex());
+				if (it) void openItem(it);
+			}),
+		extra: tree.extra,
 		toggle: () => {
 			if (store.focusIndex() >= 0) store.selectClick(store.focusIndex(), { shift: false, ctrl: true });
 		},
