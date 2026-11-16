@@ -77,20 +77,15 @@ jobs:
           for f in zinc-connector/scripts/package.ts zinc-connector/scripts/build-win.ts zinc-connector/src/zotero/chrome/skin; do
             [ -e "$f" ] || { echo "::error title=Connector checkout incomplete::$f is missing: branch zotero-next of ABorakati/zinc-connector has no scripts/package.ts yet, or its submodules did not come with it."; exit 1; }
           done
-      # A release must carry the update notice's public key. Other runs build without it (no update notice) and say so.
+      # The update notice's public key. Without it the build (a release too, like the app's own builds) shows no update notice, with a
+      # warning; commit gpui-ui/update-pubkey.txt (gpui-ui/UPDATES.md) so releases get one.
       - name: Check the update public key
-        env:
-          RELEASE: ${{ github.event_name == 'release' || inputs.release_tag != '' }}
         run: |
           if [ -s zotero-next/gpui-ui/update-pubkey.txt ]; then
             echo "ZN_UPDATE_PUBKEY_FILE=$GITHUB_WORKSPACE/zotero-next/gpui-ui/update-pubkey.txt" >> "$GITHUB_ENV"
             exit 0
           fi
-          if [ "$RELEASE" = "true" ]; then
-            echo "::error title=No update public key::gpui-ui/update-pubkey.txt is missing: the extension's update notice needs it (gpui-ui/UPDATES.md)."
-            exit 1
-          fi
-          echo "::warning title=No update public key::gpui-ui/update-pubkey.txt is missing: this build shows no update notice. Releases fail until it is committed (gpui-ui/UPDATES.md)."
+          echo "::warning title=No update public key::gpui-ui/update-pubkey.txt is missing: this build shows no update notice (gpui-ui/UPDATES.md)."
           echo "ZN_ALLOW_NO_UPDATE_KEY=1" >> "$GITHUB_ENV"
 
       - uses: oven-sh/setup-bun@v2
