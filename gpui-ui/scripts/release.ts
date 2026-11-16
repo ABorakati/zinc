@@ -146,10 +146,12 @@ for (const p of pkgs) {
 	if (!parseVersion(p.version)) die(`not a version: ${p.version} (${basename(p.file)})`);
 }
 if (extZip && !existsSync(extZip)) die(`no such extension zip: ${extZip}`);
-// a connector-only release is versioned by --version, else by the zip's name (Zinc-Connector-<version>.zip)
+// The connector's own version: the zip's name (Zinc-Connector-<version>.zip, the version the extension reports), else --version, else
+// the app package's. latest-extension.json must carry exactly this: the extension compares it with its manifest version, and an app
+// stamp (0.1.11+1a2b3c4d-20261116) would count as newer than its own 0.1.11 for ever.
 const extVersion = (): string => {
 	const z = extZip ? /^Zinc-Connector-(.+)\.zip$/i.exec(basename(extZip)) : null;
-	const v = arg("version") ?? (z && parseVersion(z[1]!) ? z[1]! : undefined) ?? packageVersion();
+	const v = (z && parseVersion(z[1]!) ? z[1]! : undefined) ?? arg("version") ?? packageVersion();
 	return v ?? die(`cannot tell the version of ${extZip}: pass --version <stamp>`);
 };
 
@@ -249,17 +251,22 @@ const extFiles: string[] = [];
 if (extZip) {
 	const url =
 		arg("extension-url") ??
-		(publishRepo
-			? `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(basename(extZip))}`
-			: die("--extension-url <https url of the zip> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
+		(baseUrl
+			? `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(basename(extZip))}`
+			: publishRepo
+				? `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(basename(extZip))}`
+				: die(
+						"--extension-url / --base-url <https url> is required (or --publish <owner/repo>, which implies the GitHub release URL)",
+					));
 	const sha256 = await sha256Of(extZip);
 	const size = statSync(extZip).size;
-	const manifest = await signManifest({ version, releasedAt, notes, url, sha256, size }, jwk);
+	const extV = extVersion();
+	const manifest = await signManifest({ version: extV, releasedAt, notes, url, sha256, size }, jwk);
 	await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey);
 	const feed = join(out, "latest-extension.json");
 	writeFileSync(feed, JSON.stringify(manifest, null, 2) + "\n");
 	extFiles.push(resolve(extZip), feed);
-	console.log(`wrote ${feed}\n  extension  version ${version}\n  ${basename(extZip)}  ${size} bytes  sha256 ${sha256}\n  url ${url}`);
+	console.log(`wrote ${feed}\n  extension  version ${extV}\n  ${basename(extZip)}  ${size} bytes  sha256 ${sha256}\n  url ${url}`);
 }
 console.log(`signed with public key ${publicKey}`);
 
