@@ -17,18 +17,32 @@ import { shutdownStructureWorker } from "../src/reader/structure/load";
 import { OverlayHost } from "../src/ui";
 
 const args = process.argv.slice(2);
-const val = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
+const val = (n: string, d: string) => {
+	const i = args.indexOf(`--${n}`);
+	return i >= 0 ? args[i + 1]! : d;
+};
 const has = (n: string) => args.includes(`--${n}`);
 const KEY = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1] === "--out"));
-if (!KEY) { console.error("usage: bun scripts/shot-reader-plugins-core.tsx <attachment key> [--out DIR] [--light]"); process.exit(2); }
-const OUT = val("out", "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots");
+if (!KEY) {
+	console.error("usage: bun scripts/shot-reader-plugins-core.tsx <attachment key> [--out DIR] [--light]");
+	process.exit(2);
+}
+const OUT = val(
+	"out",
+	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots",
+);
 mkdirSync(OUT, { recursive: true });
 setReaderDpr(1);
 setReaderMode(has("light") ? "light" : "dark");
 
 let ctx: ReaderContext | null = null;
 register();
-registerReaderPlugin({ id: "probe", onOpen: (c) => { ctx = c; } });
+registerReaderPlugin({
+	id: "probe",
+	onOpen: (c) => {
+		ctx = c;
+	},
+});
 
 const t = createTestRoot({ width: 1440, height: 880 });
 const r = t.renderer;
@@ -37,13 +51,30 @@ registerFonts(r);
 t.render(() => (
 	<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%" }}>
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-			<Reader attachmentKey={KEY} title="Reader with plugins" ephemeral controller={(c) => { ctl = c; }} />
+			<Reader
+				attachmentKey={KEY}
+				title="Reader with plugins"
+				ephemeral
+				controller={(c) => {
+					ctl = c;
+				}}
+			/>
 		</div>
 		<OverlayHost />
 	</div>
 ));
-const pump = () => { r.flush(); r.dispatchNativeEvents(); r.flush(); };
-const frame = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { pump(); await Bun.sleep(16); } };
+const pump = () => {
+	r.flush();
+	r.dispatchNativeEvents();
+	r.flush();
+};
+const frame = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		pump();
+		await Bun.sleep(16);
+	}
+};
 const shot = async (name: string, wait = 500) => {
 	await frame(wait);
 	const file = join(OUT, `plugins-core-${name}.png`);
@@ -52,7 +83,11 @@ const shot = async (name: string, wait = 500) => {
 };
 async function until(cond: () => boolean, ms = 20000, what = "condition"): Promise<boolean> {
 	const t0 = performance.now();
-	while (performance.now() - t0 < ms) { pump(); if (cond()) return true; await Bun.sleep(30); }
+	while (performance.now() - t0 < ms) {
+		pump();
+		if (cond()) return true;
+		await Bun.sleep(30);
+	}
 	console.warn(`timeout waiting for ${what}`);
 	return false;
 }
@@ -103,7 +138,9 @@ try {
 	await shot("back-to-pages", 800);
 } finally {
 	if (!has("keep") && created.length) {
-		await apiRequest("DELETE", `/attachments/${KEY}/annotations`, { ids: created }).catch((e) => console.warn("cleanup failed:", e.message));
+		await apiRequest("DELETE", `/attachments/${KEY}/annotations`, { ids: created }).catch((e) =>
+			console.warn("cleanup failed:", e.message),
+		);
 		console.log(`removed ${created.length} test annotations again`);
 	}
 	shutdownStructureWorker();

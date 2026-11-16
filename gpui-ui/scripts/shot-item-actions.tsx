@@ -18,7 +18,11 @@ const api = async <T,>(path: string): Promise<T> => {
 	if (!res.ok) throw new Error(`${path}: ${res.status}`);
 	return (await res.json()) as T;
 };
-interface Attachment { key: string; title: string; collections: string[] }
+interface Attachment {
+	key: string;
+	title: string;
+	collections: string[];
+}
 /** A standalone PDF attachment (every row of the item list is a top-level item), preferably one that is in a collection. */
 async function findStandalonePdf(skip: string[] = [], wantCollection = false): Promise<Attachment> {
 	const found: Attachment[] = [];
@@ -26,8 +30,11 @@ async function findStandalonePdf(skip: string[] = [], wantCollection = false): P
 		const p = await api<Page>(`/items?limit=100&offset=${page * 100}&sort=dateAdded&dir=asc`);
 		for (const row of p.items) {
 			if (row.itemType !== "attachment" || skip.includes(row.key)) continue;
-			const d = await api<{ data: { contentType?: string; filename?: string; title?: string }; collections: string[] }>(`/items/${row.key}`);
-			if (/pdf/i.test(String(d.data.contentType ?? d.data.filename ?? ""))) found.push({ key: row.key, title: String(d.data.title ?? row.title), collections: d.collections });
+			const d = await api<{ data: { contentType?: string; filename?: string; title?: string }; collections: string[] }>(
+				`/items/${row.key}`,
+			);
+			if (/pdf/i.test(String(d.data.contentType ?? d.data.filename ?? "")))
+				found.push({ key: row.key, title: String(d.data.title ?? row.title), collections: d.collections });
 		}
 		if (p.items.length < 100) break;
 	}
@@ -84,7 +91,12 @@ const boundsOf = async (s: string, exact = false) => {
 		if (b) return { x: b.x + Math.min(24, b.width / 2), y: b.y + b.height / 2 };
 		await settle(150);
 	}
-	console.log(`!! no text "${s}"; texts with that word:`, text().filter((x) => x.includes(s.split(" ")[0]!)).slice(0, 6));
+	console.log(
+		`!! no text "${s}"; texts with that word:`,
+		text()
+			.filter((x) => x.includes(s.split(" ")[0]!))
+			.slice(0, 6),
+	);
 	return null;
 };
 const press = async (s: string, exact = false) => {
@@ -127,24 +139,45 @@ await shot("menu");
 
 // ---------------------------------------------------------------- Duplicate Item
 await press("Duplicate Item", true);
-check("a copy is selected", await waitFor(() => store.selected().size === 1 && store.selectedItem() !== src!.key), String(store.selectedItem()));
+check(
+	"a copy is selected",
+	await waitFor(() => store.selected().size === 1 && store.selectedItem() !== src!.key),
+	String(store.selectedItem()),
+);
 check("the list has one more item", await waitFor(() => store.total() === totalBefore + 1), `${totalBefore} -> ${store.total()}`);
 await settle(800);
 const copyKey = store.selectedItem();
 check("the copy has its own key", !!copyKey && copyKey !== src.key, String(copyKey));
-type Detail = { data: { title?: string; creators?: unknown[]; itemType?: string }; tags: { tag: string }[]; collections: string[]; children: unknown[] };
+type Detail = {
+	data: { title?: string; creators?: unknown[]; itemType?: string };
+	tags: { tag: string }[];
+	collections: string[];
+	children: unknown[];
+};
 const srcDetail = await api<Detail>(`/items/${src.key}`);
 const copyDetail = await api<Detail>(`/items/${copyKey}`);
-const sortedTags = (d: Detail) => d.tags.map((t) => t.tag).sort().join(",");
+const sortedTags = (d: Detail) =>
+	d.tags
+		.map((t) => t.tag)
+		.sort()
+		.join(",");
 check("the copy keeps the item type", copyDetail.data.itemType === srcDetail.data.itemType, String(copyDetail.data.itemType));
 check("the copy keeps the title", copyDetail.data.title === srcTitle, JSON.stringify(copyDetail.data.title));
 check("the copy keeps the creators", JSON.stringify(copyDetail.data.creators) === JSON.stringify(srcDetail.data.creators));
 check("the copy keeps the tags", sortedTags(copyDetail) === sortedTags(srcDetail), `${copyDetail.tags.length} of ${srcDetail.tags.length}`);
-check("the copy keeps the collections", [...copyDetail.collections].sort().join(",") === [...srcDetail.collections].sort().join(","), copyDetail.collections.join(","));
+check(
+	"the copy keeps the collections",
+	[...copyDetail.collections].sort().join(",") === [...srcDetail.collections].sort().join(","),
+	copyDetail.collections.join(","),
+);
 check("the copy has no children", copyDetail.children.length === 0);
 // the pane shows the copy, with the title open in the editor (an input in the right-hand column)
 check("the item pane shows the copy", await waitFor(() => has(srcTitle.slice(0, 24))));
-const paneInput = () => r.findByType("input").find((e) => { const b = r.getElementBounds(e.id); return !!b && b.x > 900; });
+const paneInput = () =>
+	r.findByType("input").find((e) => {
+		const b = r.getElementBounds(e.id);
+		return !!b && b.x > 900;
+	});
 check("the copy's title opens in the editor", await waitFor(() => !!paneInput()), paneInput() ? "input focused" : "no input");
 await shot("duplicated");
 
@@ -152,7 +185,11 @@ await shot("duplicated");
 const pdf = await findStandalonePdf([], true);
 const treeBefore = pdf.collections.length ? treeCount(pdf.collections[0]!) : undefined;
 store.setFilter(pdf.title.replace(/\.pdf$/i, "").slice(0, 18));
-check("the standalone PDF is in the list", await waitFor(() => store.itemAt(0)?.key === pdf.key), `${pdf.key} ${JSON.stringify(pdf.title)}`);
+check(
+	"the standalone PDF is in the list",
+	await waitFor(() => store.itemAt(0)?.key === pdf.key),
+	`${pdf.key} ${JSON.stringify(pdf.title)}`,
+);
 await rightClick(pdf.title.slice(0, 18));
 check("the menu keeps Retrieve Metadata for PDF", has("Retrieve Metadata for PDF"));
 check("the menu lists Create Parent Item", has("Create Parent Item"));
@@ -168,16 +205,31 @@ console.log("typing the DOI:", doi);
 r.simulateKeystrokes(doi.split("").join(" "));
 await settle(300);
 await press("Create", true);
-check("the parent item is selected", await waitFor(() => !!store.selectedItem() && store.selectedItem() !== pdf.key), String(store.selectedItem()));
+check(
+	"the parent item is selected",
+	await waitFor(() => !!store.selectedItem() && store.selectedItem() !== pdf.key),
+	String(store.selectedItem()),
+);
 const parentKey = store.selectedItem()!;
 check("the PDF left the list (it is a child now)", await waitFor(() => store.itemAt(0)?.key !== pdf.key), String(store.itemAt(0)?.key));
 const parentDetail = await api<{ data: { DOI?: string }; children: { key: string }[]; collections: string[] }>(`/items/${parentKey}`);
-check("the parent is the library's item for the DOI", String(parentDetail.data.DOI ?? "").toLowerCase() === doi.toLowerCase(), String(parentDetail.data.DOI));
-check("the parent lists the PDF as a child", parentDetail.children.some((c) => c.key === pdf.key));
+check(
+	"the parent is the library's item for the DOI",
+	String(parentDetail.data.DOI ?? "").toLowerCase() === doi.toLowerCase(),
+	String(parentDetail.data.DOI),
+);
+check(
+	"the parent lists the PDF as a child",
+	parentDetail.children.some((c) => c.key === pdf.key),
+);
 if (pdf.collections.length) {
 	const collKey = pdf.collections[0]!;
 	check("the parent took the PDF's collection", parentDetail.collections.includes(collKey), parentDetail.collections.join(","));
-	check("the sidebar tree still counts the item in that collection", await waitFor(() => treeCount(collKey) === treeBefore), `${collKey}: ${treeBefore} -> ${treeCount(collKey)}`);
+	check(
+		"the sidebar tree still counts the item in that collection",
+		await waitFor(() => treeCount(collKey) === treeBefore),
+		`${collKey}: ${treeBefore} -> ${treeCount(collKey)}`,
+	);
 }
 check("the item pane shows the parent", await waitFor(() => has("Journal Article")));
 check("the parent's title opens in the editor", await waitFor(() => !!paneInput()));
@@ -195,10 +247,18 @@ check("the dialog opens again", await waitFor(() => has("Enter a DOI")));
 await press("Book", true);
 await shot("create-parent-manual");
 await press("Create", true);
-check("the manual parent is selected", await waitFor(() => !!store.selectedItem() && store.selectedItem() !== other.key), String(store.selectedItem()));
+check(
+	"the manual parent is selected",
+	await waitFor(() => !!store.selectedItem() && store.selectedItem() !== other.key),
+	String(store.selectedItem()),
+);
 const manualKey = store.selectedItem()!;
 const manualDetail = await api<{ data: { itemType: string }; children: { key: string }[] }>(`/items/${manualKey}`);
-check("the manual parent is an empty book", manualDetail.data.itemType === "book" && manualDetail.children.length === 1, `${manualDetail.data.itemType}, ${manualDetail.children.length} child`);
+check(
+	"the manual parent is an empty book",
+	manualDetail.data.itemType === "book" && manualDetail.children.length === 1,
+	`${manualDetail.data.itemType}, ${manualDetail.children.length} child`,
+);
 await settle(600);
 check("the item pane shows Book as the item type", has("Book"));
 await shot("parent-manual");

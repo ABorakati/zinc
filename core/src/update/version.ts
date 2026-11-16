@@ -38,7 +38,8 @@ function comparePre(a: (string | number)[], b: (string | number)[]): number {
 	if (!a.length) return 1; // a final release is newer than its pre-releases
 	if (!b.length) return -1;
 	for (let i = 0; i < Math.max(a.length, b.length); i++) {
-		const x = a[i], y = b[i];
+		const x = a[i],
+			y = b[i];
 		if (x === undefined) return -1;
 		if (y === undefined) return 1;
 		if (x === y) continue;
@@ -65,7 +66,8 @@ export function compareVersions(a: string | ParsedVersion, b: string | ParsedVer
 
 /** True if `candidate` is strictly newer than `current`. False when either is not a version (a dev build is never updated). */
 export function isNewer(candidate: string, current: string): boolean {
-	const a = parseVersion(candidate), b = parseVersion(current);
+	const a = parseVersion(candidate),
+		b = parseVersion(current);
 	return !!a && !!b && compareVersions(a, b) > 0;
 }
 

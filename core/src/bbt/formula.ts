@@ -20,7 +20,10 @@ import { nopunct, parseExtra, stripHtml, titleWords, transliterate } from "./tex
 import type { ZoteroItemData, Creator } from "../api-types";
 
 export class FormulaError extends Error {
-	constructor(message: string, public position = -1) {
+	constructor(
+		message: string,
+		public position = -1,
+	) {
 		super(message);
 	}
 }
@@ -164,7 +167,11 @@ class Parser {
 		return this.cur.k === "p" && this.cur.v === v;
 	}
 	private eat(v: string): void {
-		if (!this.isP(v)) throw new FormulaError(`expected "${v}"${this.cur.k === "end" ? " but the formula ended" : ` but found "${this.cur.v}"`}`, this.cur.at);
+		if (!this.isP(v))
+			throw new FormulaError(
+				`expected "${v}"${this.cur.k === "end" ? " but the formula ended" : ` but found "${this.cur.v}"`}`,
+				this.cur.at,
+			);
 		this.i++;
 	}
 	formulas(): Node[] {
@@ -254,7 +261,7 @@ class Parser {
 		while (this.isP(".")) {
 			this.i++;
 			const id = this.cur;
-			if (id.k !== "id") throw new FormulaError("expected a filter name after \".\"", id.at);
+			if (id.k !== "id") throw new FormulaError('expected a filter name after "."', id.at);
 			this.i++;
 			const args = this.isP("(") ? this.args() : { pos: [], named: {} };
 			node = { t: "filter", input: node, name: id.v, args, at: id.at };
@@ -316,7 +323,7 @@ class Parser {
 		if (t.k === "p" && t.v === "-") {
 			this.i++;
 			const n = this.cur;
-			if (n.k !== "num") throw new FormulaError("expected a number after \"-\"", n.at);
+			if (n.k !== "num") throw new FormulaError('expected a number after "-"', n.at);
 			this.i++;
 			return -n.v;
 		}
@@ -404,7 +411,17 @@ type CreatorKind = "author" | "editor" | "translator" | "collaborator" | "*";
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 interface ParsedDate {
-	Y: string; y: string; m: string; d: string; oY: string; oy: string; om: string; od: string; H: string; M: string; S: string;
+	Y: string;
+	y: string;
+	m: string;
+	d: string;
+	oY: string;
+	oy: string;
+	om: string;
+	od: string;
+	H: string;
+	M: string;
+	S: string;
 }
 function parseDate(d: string, orig = ""): ParsedDate {
 	const out: ParsedDate = { Y: "", y: "", m: "", d: "", oY: "", oy: "", om: "", od: "", H: "", M: "", S: "" };
@@ -469,11 +486,17 @@ export class Ctx {
 	nameSpace = " ";
 	translit: "minimal" | "german" = "minimal";
 
-	constructor(data: ZoteroItemData, readonly cfg: FormulaConfig) {
+	constructor(
+		data: ZoteroItemData,
+		readonly cfg: FormulaConfig,
+	) {
 		this.data = data;
 		this.postfix = { template: cfg.postfix ?? "%(a)s", offset: 0 };
 		this.itemType = String(data.itemType);
-		this.primary = getSchema().itemTypes.find((t) => t.itemType === this.itemType)?.creatorTypes.find((c) => c.primary)?.creatorType ?? "author";
+		this.primary =
+			getSchema()
+				.itemTypes.find((t) => t.itemType === this.itemType)
+				?.creatorTypes.find((c) => c.primary)?.creatorType ?? "author";
 		this.extra = parseExtra(typeof data.extra === "string" ? data.extra : "");
 		// item JSON comes from sync and imports: creators may be missing, not an array, or hold non-string values
 		const text = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -504,7 +527,8 @@ export class Ctx {
 			if (typeof v === "string" || typeof v === "number") return stripHtml(String(v));
 			return "";
 		}
-		if (lc === "dateadded" || lc === "datemodified") return String(d[lc === "dateadded" ? "dateAdded" : "dateModified"] ?? "").replace(/[ T].*/, "");
+		if (lc === "dateadded" || lc === "datemodified")
+			return String(d[lc === "dateadded" ? "dateAdded" : "dateModified"] ?? "").replace(/[ T].*/, "");
 		return this.extra.kv[norm(name)] ?? "";
 	}
 
@@ -514,7 +538,7 @@ export class Ctx {
 
 	initials(c: CreatorView, all = true): string {
 		if (!c.firstName) return "";
-		let ini = all ? c.firstName : Array.from(c.firstName)[0] ?? "";
+		let ini = all ? c.firstName : (Array.from(c.firstName)[0] ?? "");
 		ini = ini.replace(/[^\p{Lu}\p{Lt}]/gu, "");
 		ini = this.trans(ini);
 		return ini.replace(/[^\p{Lu}]/gu, "");
@@ -523,7 +547,13 @@ export class Ctx {
 	nameOf(c: CreatorView, template: string): string {
 		const last = c.lastName || c.name;
 		const { family } = parseParticles(last);
-		const vars: Record<string, string> = { f: last, F: family || last, g: c.firstName, I: this.initials(c), i: this.initials(c, false) };
+		const vars: Record<string, string> = {
+			f: last,
+			F: family || last,
+			g: c.firstName,
+			I: this.initials(c),
+			i: this.initials(c, false),
+		};
 		if (this.nameTransliterate) {
 			vars.f = this.trans(vars.f!);
 			vars.F = this.trans(vars.F!);
@@ -592,13 +622,19 @@ const FUNCTIONS: Record<string, Fn> = {
 			if (!a.length) return "";
 			if (a.length === 1) return a[0]!.slice(0, 3);
 			if (a.length <= 4) return a.map((x) => x.slice(0, 1)).join(sep);
-			return `${a.slice(0, 3).map((x) => x.slice(0, 1)).join(sep)}+`;
+			return `${a
+				.slice(0, 3)
+				.map((x) => x.slice(0, 1))
+				.join(sep)}+`;
 		},
 	},
 	authini: {
 		params: ["n", "creator", "initials", "sep"],
 		run: (c, [n = 0, creator, initials = false, sep = "."]) =>
-			c.byKind(kindArg(creator), tmpl(c, initials)).map((x) => (n ? x.slice(0, n) : x)).join(sep),
+			c
+				.byKind(kindArg(creator), tmpl(c, initials))
+				.map((x) => (n ? x.slice(0, n) : x))
+				.join(sep),
 	},
 	authorini: {
 		params: ["creator", "initials", "sep"],
@@ -613,7 +649,10 @@ const FUNCTIONS: Record<string, Fn> = {
 		params: ["creator", "initials", "sep"],
 		run: (c, [creator, initials = false, sep = "."]) => {
 			const a = c.byKind(kindArg(creator), tmpl(c, initials));
-			return a.slice(0, 2).concat(a.length > 2 ? ["ea"] : []).join(sep);
+			return a
+				.slice(0, 2)
+				.concat(a.length > 2 ? ["ea"] : [])
+				.join(sep);
 		},
 	},
 	authetal: {
@@ -621,7 +660,12 @@ const FUNCTIONS: Record<string, Fn> = {
 		run: (c, [creator, initials = false, sep = " "]) => {
 			const a = c.byKind(kindArg(creator), tmpl(c, initials));
 			if (!a.length) return "";
-			return a.length === 2 ? a.join(sep) : a.slice(0, 1).concat(a.length > 1 ? ["EtAl"] : []).join(sep);
+			return a.length === 2
+				? a.join(sep)
+				: a
+						.slice(0, 1)
+						.concat(a.length > 1 ? ["EtAl"] : [])
+						.join(sep);
 		},
 	},
 	authetal2: {
@@ -629,7 +673,12 @@ const FUNCTIONS: Record<string, Fn> = {
 		run: (c, [creator, initials = false, sep = "."]) => {
 			const a = c.byKind(kindArg(creator), tmpl(c, initials));
 			if (!a.length) return "";
-			return a.length === 2 ? a.join(sep) : a.slice(0, 1).concat(a.length > 1 ? ["etal"] : []).join(sep);
+			return a.length === 2
+				? a.join(sep)
+				: a
+						.slice(0, 1)
+						.concat(a.length > 1 ? ["etal"] : [])
+						.join(sep);
 		},
 	},
 	authshort: {
@@ -638,7 +687,12 @@ const FUNCTIONS: Record<string, Fn> = {
 			const a = c.byKind(kindArg(creator), tmpl(c, initials));
 			if (a.length === 0) return "";
 			if (a.length === 1) return a[0]!;
-			return a.slice(0, 3).map((x) => x.slice(0, 1)).join(sep) + (a.length > 3 ? "+" : "");
+			return (
+				a
+					.slice(0, 3)
+					.map((x) => x.slice(0, 1))
+					.join(sep) + (a.length > 3 ? "+" : "")
+			);
 		},
 	},
 	creatornames: {
@@ -670,7 +724,14 @@ const FUNCTIONS: Record<string, Fn> = {
 		},
 	},
 	firstpage: { params: [], run: (c) => c.field("pages").split(/[-\s,–]/)[0] ?? "" },
-	lastpage: { params: [], run: (c) => c.field("pages").split(/[-\s,–]/).pop() ?? "" },
+	lastpage: {
+		params: [],
+		run: (c) =>
+			c
+				.field("pages")
+				.split(/[-\s,–]/)
+				.pop() ?? "",
+	},
 	keyword: {
 		params: ["n"],
 		run: (c, [n = 0]) => {
@@ -680,11 +741,21 @@ const FUNCTIONS: Record<string, Fn> = {
 	},
 	shorttitle: {
 		params: ["n", "m"],
-		run: (c, [n = 3, m = 0]) => c.words(c.title).slice(0, n).map((w, i) => (i < m ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" "),
+		run: (c, [n = 3, m = 0]) =>
+			c
+				.words(c.title)
+				.slice(0, n)
+				.map((w, i) => (i < m ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+				.join(" "),
 	},
 	veryshorttitle: {
 		params: ["n", "m"],
-		run: (c, [n = 1, m = 0]) => c.words(c.title).slice(0, n).map((w, i) => (i < m ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(" "),
+		run: (c, [n = 1, m = 0]) =>
+			c
+				.words(c.title)
+				.slice(0, n)
+				.map((w, i) => (i < m ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+				.join(" "),
 	},
 	title: { params: [], run: (c) => c.words(c.title).join(" ") },
 	shortyear: { params: [], run: (c) => formatDate(c.date, "%y") },
@@ -728,7 +799,11 @@ const FUNCTIONS: Record<string, Fn> = {
 	extra: {
 		params: ["variable"],
 		run: (c, [variable]) => {
-			const names = String(variable).toLowerCase().trim().split(/\s*\/\s*/).filter(Boolean);
+			const names = String(variable)
+				.toLowerCase()
+				.trim()
+				.split(/\s*\/\s*/)
+				.filter(Boolean);
 			for (const n of names) {
 				const tex = c.extra.tex[n.replace(/^tex\./, "")];
 				if (tex) return tex.value;
@@ -777,7 +852,10 @@ function postfixStart(start: unknown): number {
 	if (typeof start === "number") return start;
 	let n = 0;
 	const a = "A".charCodeAt(0) + 1;
-	for (const ch of String(start).toUpperCase().replace(/[^A-Z]/g, "")) n = n * 26 + (ch.charCodeAt(0) - a);
+	for (const ch of String(start)
+		.toUpperCase()
+		.replace(/[^A-Z]/g, ""))
+		n = n * 26 + (ch.charCodeAt(0) - a);
 	return n;
 }
 
@@ -787,7 +865,7 @@ function creators(c: Ctx, nIn: unknown, type: unknown, name: unknown, etalIn: un
 	const types = c.creators.map((x) => x.creatorType);
 	const include: string[] = [];
 	const exclude: string[] = [];
-	const resolve = (t: string) => (t === "*" ? types[0] ?? "" : t === "primary" ? c.primary : t);
+	const resolve = (t: string) => (t === "*" ? (types[0] ?? "") : t === "primary" ? c.primary : t);
 	const spec = type === undefined || type === "" ? [["primary", "editor", "translator", "*"]] : type;
 	if (typeof spec === "string") include.push(resolve(spec));
 	else {
@@ -856,7 +934,11 @@ function lenTest(input: string, rel: unknown, n: number): string {
 	return input;
 }
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const cleanText = (c: Ctx, s: string, spaces = false) => c.trans(s).replace(spaces ? /[\\"#%'(),={}~�]/g : /[\\"#%'(),={}~�\s]/g, "").trim();
+const cleanText = (c: Ctx, s: string, spaces = false) =>
+	c
+		.trans(s)
+		.replace(spaces ? /[\\"#%'(),={}~�]/g : /[\\"#%'(),={}~�\s]/g, "")
+		.trim();
 
 const FILTERS: Record<string, Filter> = {
 	lower: { params: [], run: (_c, s) => s.toLowerCase() },
@@ -864,13 +946,39 @@ const FILTERS: Record<string, Filter> = {
 	len: { params: ["relation", "length"], run: (_c, s, [rel = ">", n = 0]) => lenTest(s, rel, Number(n)) },
 	default: { params: ["text"], run: (_c, s, [t = ""]) => s || String(t) },
 	discard: { params: [], run: () => "" },
-	capitalize: { params: ["wordstart"], run: (_c, s, [re]) => s.replace(re instanceof RegExp ? re : /((?<=^|\s)[a-z])/g, (m) => m.toUpperCase()) },
+	capitalize: {
+		params: ["wordstart"],
+		run: (_c, s, [re]) => s.replace(re instanceof RegExp ? re : /((?<=^|\s)[a-z])/g, (m) => m.toUpperCase()),
+	},
 	condense: { params: ["sep"], run: (_c, s, [sep = ""]) => s.replace(/\s+/g, String(sep)) },
 	prefix: { params: ["prefix"], run: (_c, s, [p = ""]) => (s && p ? `${p}${s}` : s) },
 	postfix: { params: ["postfix"], run: (_c, s, [p = ""]) => (s && p ? `${s}${p}` : s) },
-	abbr: { params: ["chars"], run: (_c, s, [n = 1]) => s.split(/\s+/).map((w) => w.slice(0, Number(n))).join("") },
-	ascii: { params: [], run: (_c, s) => s.replace(/[^ -~]/g, "").split(/\s+/).join(" ").trim() },
-	alphanum: { params: [], run: (_c, s) => s.replace(/[^\p{L}\p{N}]/gu, "").split(/\s+/).join(" ").trim() },
+	abbr: {
+		params: ["chars"],
+		run: (_c, s, [n = 1]) =>
+			s
+				.split(/\s+/)
+				.map((w) => w.slice(0, Number(n)))
+				.join(""),
+	},
+	ascii: {
+		params: [],
+		run: (_c, s) =>
+			s
+				.replace(/[^ -~]/g, "")
+				.split(/\s+/)
+				.join(" ")
+				.trim(),
+	},
+	alphanum: {
+		params: [],
+		run: (_c, s) =>
+			s
+				.replace(/[^\p{L}\p{N}]/gu, "")
+				.split(/\s+/)
+				.join(" ")
+				.trim(),
+	},
 	nopunct: { params: ["dash"], run: (_c, s, [d = "-"]) => nopunct(s, String(d)) },
 	nopunctordash: { params: [], run: (_c, s) => nopunct(s, "") },
 	skipwords: {
@@ -897,7 +1005,10 @@ const FILTERS: Record<string, Filter> = {
 		},
 	},
 	clean: { params: [], run: (c, s) => cleanText(c, s, true) },
-	transliterate: { params: ["mode"], run: (c, s, [mode]) => transliterate(s, mode === "german" || mode === "de" ? "german" : c.translit) },
+	transliterate: {
+		params: ["mode"],
+		run: (c, s, [mode]) => transliterate(s, mode === "german" || mode === "de" ? "german" : c.translit),
+	},
 	replace: {
 		params: ["find", "replace"],
 		run: (_c, s, [find, rep = ""]) => {
@@ -1030,7 +1141,8 @@ export function generate(f: Compiled, data: ZoteroItemData, cfg: FormulaConfig):
 		} catch (e) {
 			if (e instanceof FormulaError) throw e;
 			// a function given an argument of the wrong kind (a regex where a list is expected, ...) is a formula error, not a crash
-			if (!(e instanceof Skip)) throw new FormulaError(`the formula could not be evaluated: ${e instanceof Error ? e.message : String(e)}`);
+			if (!(e instanceof Skip))
+				throw new FormulaError(`the formula could not be evaluated: ${e instanceof Error ? e.message : String(e)}`);
 			text = "";
 		}
 		if (text.replace(MARK, "").trim()) break;
@@ -1065,7 +1177,9 @@ export function formatPostfix(template: string, rawIndex: number): string {
 	return template
 		.replace(/%\(a\)s/g, alpha(index))
 		.replace(/%\(A\)s/g, alpha(index).toUpperCase())
-		.replace(/%\(n\)(?:0?(\d+)d|s)/g, (_m, w?: string) => String(index + 1).padStart(w ? Math.min(Number(w), MAX_POSTFIX_WIDTH) : 0, "0"));
+		.replace(/%\(n\)(?:0?(\d+)d|s)/g, (_m, w?: string) =>
+			String(index + 1).padStart(w ? Math.min(Number(w), MAX_POSTFIX_WIDTH) : 0, "0"),
+		);
 }
 
 /** Check a postfix template: it needs exactly one of %(a)s, %(A)s, %(n)s. */

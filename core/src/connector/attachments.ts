@@ -39,8 +39,15 @@ export function zoteroBaseName(data: ZoteroItemData): string {
 	const authors = (data.creators ?? []).filter((c) => c.creatorType === "author");
 	const list = authors.length ? authors : (data.creators ?? []).slice(0, 1);
 	const last = (c: { lastName?: string; name?: string }) => (c.lastName || c.name || "").trim();
-	const who = list.length === 0 ? "" : list.length === 1 ? last(list[0]) : list.length === 2 ? `${last(list[0])} and ${last(list[1])}` : `${last(list[0])} et al.`;
-	const year = typeof data.date === "string" ? data.date.match(/(?<!\d)(\d{4})(?!\d)/)?.[1] ?? "" : "";
+	const who =
+		list.length === 0
+			? ""
+			: list.length === 1
+				? last(list[0])
+				: list.length === 2
+					? `${last(list[0])} and ${last(list[1])}`
+					: `${last(list[0])} et al.`;
+	const year = typeof data.date === "string" ? (data.date.match(/(?<!\d)(\d{4})(?!\d)/)?.[1] ?? "") : "";
 	const title = typeof data.title === "string" ? data.title.trim().slice(0, 100) : "";
 	return [who, year, title].filter(Boolean).join(" - ");
 }
@@ -71,7 +78,8 @@ export interface StoreOpts {
 /** Store `bytes` as an imported_url attachment (under `parentKey`, or standalone in `collectionKey`). Returns its key. */
 export function storeWebAttachment(db: Database, o: StoreOpts): string {
 	if (!o.bytes || o.bytes.byteLength === 0) throw new HttpError(400, "empty attachment");
-	const contentType = (o.contentType || guessContentType(o.filename || urlName(o.url))).split(";")[0].trim() || "application/octet-stream";
+	const contentType =
+		(o.contentType || guessContentType(o.filename || urlName(o.url))).split(";")[0].trim() || "application/octet-stream";
 	let parent: ZoteroItemData | null = null;
 	if (o.parentKey) {
 		const row = db.query("SELECT data FROM items WHERE key = ?").get(o.parentKey) as { data: string } | null;
@@ -79,7 +87,9 @@ export function storeWebAttachment(db: Database, o: StoreOpts): string {
 		parent = JSON.parse(row.data) as ZoteroItemData;
 	}
 	// bytes from a web page never keep an executable / script extension ("setup.exe" is stored as "setup.exe.txt")
-	const name = neutraliseExecutableName(o.filename ? safeFileName(o.filename) : attachmentFileName({ parent, title: o.title, url: o.url, contentType }));
+	const name = neutraliseExecutableName(
+		o.filename ? safeFileName(o.filename) : attachmentFileName({ parent, title: o.title, url: o.url, contentType }),
+	);
 	// One transaction for the new attachment and its web-save fields: if anything after addFile fails, no half-made
 	// imported_file row is left behind, and the file addFile stored is removed again.
 	let made: ItemDetail | undefined;
@@ -87,7 +97,13 @@ export function storeWebAttachment(db: Database, o: StoreOpts): string {
 		return db.transaction(() => {
 			made = addFile(
 				db,
-				{ mode: "imported_file", name, contentType, parentKey: o.parentKey, collectionKey: o.parentKey ? undefined : o.collectionKey || undefined },
+				{
+					mode: "imported_file",
+					name,
+					contentType,
+					parentKey: o.parentKey,
+					collectionKey: o.parentKey ? undefined : o.collectionKey || undefined,
+				},
 				o.bytes,
 			);
 			return finishWebAttachment(db, made, o, name, contentType);
@@ -112,7 +128,10 @@ function finishWebAttachment(db: Database, detail: ItemDetail, o: StoreOpts, nam
 	const key = detail.data.key;
 	// A file the storage folder took over (linked file, renamed to "Author - Year - Title") keeps that name as its title.
 	const managed = detail.data.linkMode === "linked_file";
-	const title = managed && detail.data.title && detail.data.title !== name ? detail.data.title : (o.title ?? "").trim() || detail.data.title || name;
+	const title =
+		managed && detail.data.title && detail.data.title !== name
+			? detail.data.title
+			: (o.title ?? "").trim() || detail.data.title || name;
 	// addFile made an imported_file; a web save keeps its source URL: imported_url. In the storage folder it stays a linked file.
 	const linkMode = managed ? "linked_file" : "imported_url";
 	patchItem(db, key, {

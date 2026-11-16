@@ -5,7 +5,11 @@ export function normalizeDoi(s: unknown): string | null {
 	if (typeof s !== "string") return null;
 	// Find the DOI in the raw text first (a raw < or > ends it), then decode it: URL-encoded < and > (%3C %3E) belong to old
 	// SICI-style DOIs, as in Zotero.Utilities.cleanDOI.
-	let d = s.trim().toLowerCase().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//, "").replace(/^doi:\s*/, "");
+	let d = s
+		.trim()
+		.toLowerCase()
+		.replace(/^(https?:\/\/)?(dx\.)?doi\.org\//, "")
+		.replace(/^doi:\s*/, "");
 	if (/^https?%3a%2f%2f/.test(d)) {
 		try {
 			d = decodeURIComponent(d).replace(/^https?:\/\/(dx\.)?doi\.org\//, "");
@@ -89,7 +93,14 @@ export function buildLibraryIndex(db: Database, excludeKey?: string): LibraryInd
 			 FROM items
 			 WHERE parent_key IS NULL AND deleted = 0 AND item_type NOT IN ${NON_TOP}`,
 		)
-		.all() as { key: string; title: string | null; year: number | null; doi: string | null; extra: string | null; url: string | null }[];
+		.all() as {
+		key: string;
+		title: string | null;
+		year: number | null;
+		doi: string | null;
+		extra: string | null;
+		url: string | null;
+	}[];
 	const byDoi = new Map<string, string>();
 	const byTitle = new Map<string, { key: string; year: number | null }[]>();
 	for (const r of rows) {

@@ -12,7 +12,10 @@ function fixture() {
 	writeFileSync(join(from, "Default", "Network", "Cookies"), "cookie-db");
 	return { root, from, to: join(root, "new", "EBWebView") };
 }
-const listing = (dir: string): string[] => readdirSync(dir, { recursive: true }).map((p) => `${p}:${statSync(join(dir, String(p))).isFile() ? readFileSync(join(dir, String(p)), "utf8") : "d"}`).sort();
+const listing = (dir: string): string[] =>
+	readdirSync(dir, { recursive: true })
+		.map((p) => `${p}:${statSync(join(dir, String(p))).isFile() ? readFileSync(join(dir, String(p)), "utf8") : "d"}`)
+		.sort();
 
 describe("migrateOldProfile", () => {
 	test("copies the whole folder once, leaves the source untouched, never overwrites", () => {

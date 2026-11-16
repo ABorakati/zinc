@@ -28,7 +28,12 @@ export const [updateFeed, setUpdateFeed] = persisted<string>("update.feedUrl", "
 
 const validLast = (v: unknown): LastCheck | undefined => {
 	const o = v as Partial<LastCheck> | null;
-	return o && typeof o === "object" && typeof o.at === "string" && (o.result === "up-to-date" || o.result === "available" || o.result === "error") ? (o as LastCheck) : undefined;
+	return o &&
+		typeof o === "object" &&
+		typeof o.at === "string" &&
+		(o.result === "up-to-date" || o.result === "available" || o.result === "error")
+		? (o as LastCheck)
+		: undefined;
 };
 const [lastCheck, setLastCheck] = persisted<LastCheck | undefined>("update.last", undefined, validLast);
 
@@ -41,7 +46,13 @@ export const updatesPossible = (): boolean => !!keyUsed && currentVersion() !== 
 
 export const [updateModel, setUpdateModel] = createSignal<UpdateModel>(initialModel(lastCheck()));
 
-const originOf = (u: string): string | undefined => { try { return new URL(u).origin; } catch { return undefined; } };
+const originOf = (u: string): string | undefined => {
+	try {
+		return new URL(u).origin;
+	} catch {
+		return undefined;
+	}
+};
 
 let updater: Updater | undefined;
 let versionUsed: string | undefined; // initUpdates overrides (tests, screenshots)
@@ -52,13 +63,20 @@ let lastSaved = "";
 const actions: UpdateActions = {
 	installNow() {
 		const k = updateModel().state.kind;
-		toast(k === "available" || k === "downloading" ? "Downloading the update…" : "Installing the update…", { id: "update-progress", description: "Zinc will close and start again when it is done.", durationMs: 8000 });
+		toast(k === "available" || k === "downloading" ? "Downloading the update…" : "Installing the update…", {
+			id: "update-progress",
+			description: "Zinc will close and start again when it is done.",
+			durationMs: 8000,
+		});
 		void updater?.installNow().catch((e) => logError("update", e, "install now"));
 	},
 	installOnExit() {
-		void updater?.setInstallOnExit(true).then((m) => {
-			if (m.installOnExit) toast.success("The update will be installed when you quit Zinc", { id: "update-progress" });
-		}).catch((e) => logError("update", e, "install on exit"));
+		void updater
+			?.setInstallOnExit(true)
+			.then((m) => {
+				if (m.installOnExit) toast.success("The update will be installed when you quit Zinc", { id: "update-progress" });
+			})
+			.catch((e) => logError("update", e, "install on exit"));
 	},
 };
 export { actions as updateActions };
@@ -67,12 +85,20 @@ function onChange(m: UpdateModel): void {
 	setUpdateModel(m);
 	if (m.lastCheck) {
 		const k = JSON.stringify(m.lastCheck);
-		if (k !== lastSaved) { lastSaved = k; setLastCheck(m.lastCheck); }
+		if (k !== lastSaved) {
+			lastSaved = k;
+			setLastCheck(m.lastCheck);
+		}
 	}
 	const s = m.state;
 	if (s.kind === "available" && !s.manualOnly && !updateDownload()) announce(s.manifest, false);
 	else if (s.kind === "ready") announce(s.manifest, true);
-	else if (s.kind === "error" && s.phase !== "check") toast.error(s.phase === "install" ? "Could not install the update" : "Could not download the update", { id: "update-error", description: s.message, durationMs: 10000 });
+	else if (s.kind === "error" && s.phase !== "check")
+		toast.error(s.phase === "install" ? "Could not install the update" : "Could not download the update", {
+			id: "update-error",
+			description: s.message,
+			durationMs: 10000,
+		});
 }
 
 function announce(m: Manifest, ready: boolean): void {
@@ -95,7 +121,10 @@ export function initUpdates(o: Partial<UpdaterDeps> = {}): Updater {
 		prepareExit: () => shutdown(), // services stop, pending writes flush, the database closes
 		lastCheck: lastCheck(),
 		...o,
-		onChange: (m) => { onChange(m); o.onChange?.(m); },
+		onChange: (m) => {
+			onChange(m);
+			o.onChange?.(m);
+		},
 	});
 	setUpdateModel(updater.model());
 	return updater;
@@ -104,13 +133,16 @@ export function initUpdates(o: Partial<UpdaterDeps> = {}): Updater {
 /** Settings > Updates > Check now (works even with "Check automatically" off; still needs a feed URL). */
 export function checkNow(): void {
 	if (!updatesSupported) return;
-	void initUpdates().check({ manual: true }).catch((e) => logError("update", e, "check now"));
+	void initUpdates()
+		.check({ manual: true })
+		.catch((e) => logError("update", e, "check now"));
 }
 
 /** Show the release notes of the update found (Settings > Updates > What's new). */
 export function showWhatsNew(): void {
 	const s = updateModel().state;
-	if ("manifest" in s && s.manifest) openWhatsNew(s.manifest, actions, s.kind === "available" && s.manualOnly ? { manualOnly: true, manualReason: s.manualReason } : {});
+	if ("manifest" in s && s.manifest)
+		openWhatsNew(s.manifest, actions, s.kind === "available" && s.manualOnly ? { manualOnly: true, manualReason: s.manualReason } : {});
 }
 
 /** How this copy replaces itself on Linux / macOS (undefined on Windows, where the installer does it). */
@@ -123,14 +155,21 @@ let started = false;
 export function startUpdates(): void {
 	if (started) return;
 	started = true;
-	if (!updatesSupported) return void logInfo("update", "no updates for this platform: not started", { platform: process.platform, arch: process.arch });
+	if (!updatesSupported)
+		return void logInfo("update", "no updates for this platform: not started", { platform: process.platform, arch: process.arch });
 	try {
 		const u = initUpdates();
 		process.on("exit", (code) => u.onExit(code)); // the sync half of "install on exit"
 		if (servicesWanted()) onShutdown("update install-on-exit", () => u.prepareForExit()); // the async half: re-verify before exit
 		u.start();
 		void u.cleanup();
-		logInfo("update", "updater started", { version: currentVersion(), auto: updateAuto(), feed: feedUrl() ? "configured" : "none", key: UPDATE_PUBKEY ? "embedded" : "none", platform: selfReplace?.platform ?? "win-x64" });
+		logInfo("update", "updater started", {
+			version: currentVersion(),
+			auto: updateAuto(),
+			feed: feedUrl() ? "configured" : "none",
+			key: UPDATE_PUBKEY ? "embedded" : "none",
+			platform: selfReplace?.platform ?? "win-x64",
+		});
 	} catch (e) {
 		logError("update", e, "start");
 	}

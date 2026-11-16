@@ -7,7 +7,7 @@ export const yearOf = (d?: string) => {
 	return m ? +m[1]! : null;
 };
 
-export const creatorLast = (c: Creator) => (c.name !== undefined ? c.name : c.lastName ?? "");
+export const creatorLast = (c: Creator) => (c.name !== undefined ? c.name : (c.lastName ?? ""));
 export const creatorFull = (c: Creator) => (c.name !== undefined ? c.name : [c.firstName, c.lastName].filter(Boolean).join(" "));
 
 /** "Smith", "Smith and Jones", "Smith et al." using the first creator type that is present. */
@@ -64,14 +64,19 @@ export function isPlainDate(v: string): boolean {
 	if (!t) return true;
 	const p = parseDate(t);
 	if (!p?.y) return false;
-	return formatDateParts(p.y, p.m ?? "", p.d ?? "") === t || /^\d{4}([-/.]\d{1,2}){0,2}$/.test(t) ||
-		/^(\d{1,2}\s+)?[A-Za-z]{3,9}\.?,?\s+(\d{1,2}(st|nd|rd|th)?,?\s+)?\d{4}$/.test(t);
+	return (
+		formatDateParts(p.y, p.m ?? "", p.d ?? "") === t ||
+		/^\d{4}([-/.]\d{1,2}){0,2}$/.test(t) ||
+		/^(\d{1,2}\s+)?[A-Za-z]{3,9}\.?,?\s+(\d{1,2}(st|nd|rd|th)?,?\s+)?\d{4}$/.test(t)
+	);
 }
 
 export function fmtTimestamp(iso?: string): string {
 	if (!iso) return "";
 	const d = new Date(iso);
-	return isNaN(+d) ? iso : d.toLocaleString(undefined, { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
+	return isNaN(+d)
+		? iso
+		: d.toLocaleString(undefined, { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 const ENT: Record<string, string> = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "#39": "'" };
@@ -86,10 +91,13 @@ export const decodeEntities = (s: string) =>
 
 /** First non-empty line of a note's HTML (what the web UI lists as the note title). */
 export function firstLine(html: string): string {
-	const text = decodeEntities(
-		html.replace(/<\/(p|div|h[1-6]|li|br)>|<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, ""),
+	const text = decodeEntities(html.replace(/<\/(p|div|h[1-6]|li|br)>|<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, ""));
+	return (
+		text
+			.split("\n")
+			.map((l) => l.trim())
+			.find(Boolean) ?? ""
 	);
-	return text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 }
 
 // ---- children (ui/src/itemopen.ts) ----
@@ -104,13 +112,19 @@ export function childKind(c: ChildSummary): ChildKind {
 
 /** DOI -> https://doi.org/..., else the DOI's own URL if it is one. */
 export const doiUrl = (doi: string | undefined) => {
-	const d = (doi ?? "").trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, "").replace(/^doi:\s*/i, "");
+	const d = (doi ?? "")
+		.trim()
+		.replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
+		.replace(/^doi:\s*/i, "");
 	return d ? "https://doi.org/" + encodeURI(d) : undefined;
 };
 export const webUrl = (u: string | undefined) => (u && /^https?:\/\//i.test(u.trim()) ? u.trim() : undefined);
 
 // ---- collections ----
-export interface FlatCollection { key: string; path: string[] }
+export interface FlatCollection {
+	key: string;
+	path: string[];
+}
 /** Every collection with its ancestors-first name chain, sorted by path. */
 export function flattenCollections(tree: Collection[]): FlatCollection[] {
 	const out: FlatCollection[] = [];

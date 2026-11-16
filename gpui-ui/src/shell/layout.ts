@@ -16,10 +16,12 @@ export const [rightOpen, setRightOpen] = persisted("shell.panelRight", true, isB
 // ---- column sizes: fractions summing to 1, per combination of visible panels ("11" both, "10" sidebar only, "01" item pane only, "00")
 export const DEFAULT_COLS: Record<string, number[]> = { "11": [0.18, 0.54, 0.28], "10": [0.22, 0.78], "01": [0.64, 0.36], "00": [1] };
 const colsKey = (k: string) => `shell.cols.${k}`;
-const validCols = (k: string) => (v: unknown): number[] | undefined => {
-	const want = DEFAULT_COLS[k]!.length;
-	return Array.isArray(v) && v.length === want && v.every((n) => typeof n === "number" && n > 0.02) ? (v as number[]) : undefined;
-};
+const validCols =
+	(k: string) =>
+	(v: unknown): number[] | undefined => {
+		const want = DEFAULT_COLS[k]!.length;
+		return Array.isArray(v) && v.length === want && v.every((n) => typeof n === "number" && n > 0.02) ? (v as number[]) : undefined;
+	};
 const [colsRev, bumpCols] = createSignal(0);
 /** Stored sizes for a panel combination (falls back to the defaults). */
 export function getCols(k: string): number[] {
@@ -27,7 +29,10 @@ export function getCols(k: string): number[] {
 	return getPref(colsKey(k), DEFAULT_COLS[k]!, validCols(k));
 }
 export function setCols(k: string, sizes: number[]): void {
-	setPref(colsKey(k), sizes.map((n) => +n.toFixed(4)));
+	setPref(
+		colsKey(k),
+		sizes.map((n) => +n.toFixed(4)),
+	);
 	// no bump: the Resizable owns the live sizes while it is mounted; the stored copy is read when it is next created
 }
 export function resetCols(): void {

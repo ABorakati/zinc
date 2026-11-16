@@ -6,10 +6,13 @@ import { parseWebResponse } from "./logic";
 
 export type { ImportResult, ExportResult };
 
-export interface TranslatorImportResult extends ImportResult { translator: string }
+export interface TranslatorImportResult extends ImportResult {
+	translator: string;
+}
 
 export const translateApi = {
-	web: async (url: string, collectionKey?: string): Promise<WebOutcome> => parseWebResponse(await post<unknown>("/api/translate/web", { url, collectionKey })),
+	web: async (url: string, collectionKey?: string): Promise<WebOutcome> =>
+		parseWebResponse(await post<unknown>("/api/translate/web", { url, collectionKey })),
 	select: (session: string, keys: string[], collectionKey?: string) =>
 		post<{ items: SavedItem[]; translator: string | null }>("/api/translate/web/select", { session, keys, collectionKey }),
 	importFormats: () => get<TranslatorFormat[]>("/api/translate/import-formats"),

@@ -54,9 +54,11 @@ function uriKey(uri: string): string | null {
 }
 
 function validateTopLevelItem(db: Database, key: string): ItemDetail {
-	const row = db
-		.query("SELECT parent_key, item_type, deleted FROM items WHERE key = ?")
-		.get(key) as { parent_key: string | null; item_type: string; deleted: number } | null;
+	const row = db.query("SELECT parent_key, item_type, deleted FROM items WHERE key = ?").get(key) as {
+		parent_key: string | null;
+		item_type: string;
+		deleted: number;
+	} | null;
 	if (!row) throw new HttpError(404, `item not found: ${key}`);
 	if (row.deleted) throw new HttpError(400, `cannot merge trashed item: ${key}`);
 	if (row.parent_key || row.item_type === "attachment" || row.item_type === "note" || row.item_type === "annotation") {

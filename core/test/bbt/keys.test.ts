@@ -5,8 +5,19 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { createItem, listItems, openDb, patchItem } from "../../src/db";
 import {
-	backfillKeys, checkFormula, flushDirty, getKeyInfo, getKeyInfos, getSettings, itemsForCitekey, pinKey, previewFormula, refreshKeys,
-	setSettings, staleKeyCount, unpinKey,
+	backfillKeys,
+	checkFormula,
+	flushDirty,
+	getKeyInfo,
+	getKeyInfos,
+	getSettings,
+	itemsForCitekey,
+	pinKey,
+	previewFormula,
+	refreshKeys,
+	setSettings,
+	staleKeyCount,
+	unpinKey,
 } from "../../src/bbt";
 import { insertItem, tempDir } from "../fixture";
 
@@ -42,7 +53,11 @@ describe("generation", () => {
 	test("keys are stored in a table with the formula version", () => {
 		const a = createItem(db, smith()).data.key;
 		key(a);
-		const row = db.query("SELECT key, pinned, formula FROM bbt_keys WHERE item_key = ?").get(a) as { key: string; pinned: number; formula: string };
+		const row = db.query("SELECT key, pinned, formula FROM bbt_keys WHERE item_key = ?").get(a) as {
+			key: string;
+			pinned: number;
+			formula: string;
+		};
 		expect(row.key).toBe("smithDeepLearningRadiology2020");
 		expect(row.pinned).toBe(0);
 		expect(row.formula.length).toBeGreaterThan(0);
@@ -178,7 +193,13 @@ describe("regeneration", () => {
 		db.query("UPDATE items SET data = json_set(data, '$.date', '2019') WHERE key = ?").run(a);
 		expect(key(a)).toBe("smithDeepLearningRadiology2019");
 		// a row inserted by raw SQL (as the Zotero sync does)
-		insertItem(db, { key: "SYNCED01", itemType: "book", title: "Synced Book", creators: [{ creatorType: "author", lastName: "Wu" }], date: "2001" });
+		insertItem(db, {
+			key: "SYNCED01",
+			itemType: "book",
+			title: "Synced Book",
+			creators: [{ creatorType: "author", lastName: "Wu" }],
+			date: "2001",
+		});
 		expect(key("SYNCED01")).toBe("wuSyncedBook2001");
 		// and a pinned key arriving through sync
 		db.query("UPDATE items SET data = json_set(data, '$.citationKey', 'synced-pin') WHERE key = 'SYNCED01'").run();
@@ -254,7 +275,13 @@ describe("lookups, listing and search", () => {
 	});
 
 	test("backfill generates keys for items that never had one", () => {
-		insertItem(db, { key: "OLDITEM1", itemType: "book", title: "Old Book", creators: [{ creatorType: "author", lastName: "Li" }], date: "1990" });
+		insertItem(db, {
+			key: "OLDITEM1",
+			itemType: "book",
+			title: "Old Book",
+			creators: [{ creatorType: "author", lastName: "Li" }],
+			date: "1990",
+		});
 		db.query("DELETE FROM bbt_dirty").run();
 		db.query("DELETE FROM bbt_keys").run();
 		expect(backfillKeys(db)).toBe(1);

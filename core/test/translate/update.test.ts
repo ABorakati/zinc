@@ -55,7 +55,10 @@ describe("update-translators", () => {
 	test("from a GitHub-style tarball URL, taking the commit from the root folder name", async () => {
 		const files = readdirSync(VENDORED_TRANSLATORS_DIR)
 			.filter((n) => n.endsWith(".js"))
-			.map((n): [string, Uint8Array] => [`zotero-translators-abc1234/${n}`, new Uint8Array(readFileSync(join(VENDORED_TRANSLATORS_DIR, n)))]);
+			.map((n): [string, Uint8Array] => [
+				`zotero-translators-abc1234/${n}`,
+				new Uint8Array(readFileSync(join(VENDORED_TRANSLATORS_DIR, n))),
+			]);
 		files.push(["zotero-translators-abc1234/nested/ignored.js", new TextEncoder().encode("x")]);
 		const gz = gzipSync(tarOf(files));
 		const srv = Bun.serve({ port: 0, fetch: () => new Response(gz, { headers: { "content-type": "application/gzip" } }) });
@@ -71,7 +74,10 @@ describe("update-translators", () => {
 		const data = tempDir();
 		await updateTranslators({ dataDir: data, source: VENDORED_TRANSLATORS_DIR });
 		const small = tempDir();
-		await Bun.write(join(small, "x.js"), `{"translatorID":"a","label":"A","translatorType":4,"priority":1,"lastUpdated":"2020-01-01 00:00:00"}\n`);
+		await Bun.write(
+			join(small, "x.js"),
+			`{"translatorID":"a","label":"A","translatorType":4,"priority":1,"lastUpdated":"2020-01-01 00:00:00"}\n`,
+		);
 		await expect(updateTranslators({ dataDir: data, source: small })).rejects.toThrow(/not replacing/);
 		expect(listTranslators(join(data, "translators")).length).toBeGreaterThan(700);
 	});

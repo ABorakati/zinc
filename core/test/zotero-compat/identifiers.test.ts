@@ -56,7 +56,9 @@ describe("Zotero.Utilities.Internal", () => {
 			]);
 		});
 
-		test.todo("should extract multiple old and new style arXivs (bare 8-digit number 12345678 between the ids is read as an arXiv id upstream)");
+		test.todo(
+			"should extract multiple old and new style arXivs (bare 8-digit number 12345678 between the ids is read as an arXiv id upstream)",
+		);
 		test.todo("should extract ADS bibcodes (2021wfc..rept....8D): ADS bibcodes are not an identifier kind");
 	});
 });
@@ -167,7 +169,17 @@ describe("zotero-next ISBN handling agrees with Zotero's cleanISBN/toISBN13 on v
 	afterAll(() => oracle.close());
 
 	test("a spread of valid ISBN-10 and ISBN-13 numbers", async () => {
-		const isbns = ["0134685997", "9780134685991", "0838985890", "978-0838985892", "123456789X", "9791843123391", "0-596-52068-9", "978-0-596-52068-7", "0199535922"];
+		const isbns = [
+			"0134685997",
+			"9780134685991",
+			"0838985890",
+			"978-0838985892",
+			"123456789X",
+			"9791843123391",
+			"0-596-52068-9",
+			"978-0-596-52068-7",
+			"0199535922",
+		];
 		const problems: string[] = [];
 		for (const s of isbns) {
 			const cleaned = await oracle.call<string | false>("cleanISBN", s);
@@ -177,7 +189,8 @@ describe("zotero-next ISBN handling agrees with Zotero's cleanISBN/toISBN13 on v
 			}
 			const zotero = await oracle.call<string>("toISBN13", cleaned);
 			if (normalizeIsbn(s) !== zotero) problems.push(`${s}: zotero ${zotero} vs zotero-next ${normalizeIsbn(s)}`);
-			if (normalizeIsbns(s)[0] !== zotero) problems.push(`${s}: duplicates.normalizeIsbns ${normalizeIsbns(s)[0]} vs zotero ${zotero}`);
+			if (normalizeIsbns(s)[0] !== zotero)
+				problems.push(`${s}: duplicates.normalizeIsbns ${normalizeIsbns(s)[0]} vs zotero ${zotero}`);
 		}
 		expect(problems).toEqual([]);
 	});

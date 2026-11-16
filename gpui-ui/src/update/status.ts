@@ -6,10 +6,14 @@ export function updateStatus(m: UpdateModel, o: { feed: boolean; possible: boole
 	const s = m.state;
 	const exit = m.installOnExit ? " It will be installed when you quit." : "";
 	if (s.kind === "checking") return "Checking…";
-	if (s.kind === "downloading") return `Downloading ${displayVersion(s.manifest.version)}… ${s.total ? Math.round((s.received / s.total) * 100) : 0}%`;
+	if (s.kind === "downloading")
+		return `Downloading ${displayVersion(s.manifest.version)}… ${s.total ? Math.round((s.received / s.total) * 100) : 0}%`;
 	if (s.kind === "ready") return `${displayVersion(s.manifest.version)} is downloaded and verified.${exit}`;
 	if (s.kind === "installing") return "Installing… Zinc is closing.";
-	if (s.kind === "available") return s.manualOnly ? `${displayVersion(s.manifest.version)} is available, but it has to be installed by hand.${s.manualReason ? ` ${s.manualReason}` : ""}` : `${displayVersion(s.manifest.version)} is available.${exit}`;
+	if (s.kind === "available")
+		return s.manualOnly
+			? `${displayVersion(s.manifest.version)} is available, but it has to be installed by hand.${s.manualReason ? ` ${s.manualReason}` : ""}`
+			: `${displayVersion(s.manifest.version)} is available.${exit}`;
 	if (s.kind === "error") return s.message;
 	if (!o.feed) return "No update feed is configured, so Zinc does not look for updates.";
 	if (!o.possible) return "This build cannot check for updates (development build or no update key).";

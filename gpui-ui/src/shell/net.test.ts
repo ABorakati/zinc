@@ -3,12 +3,18 @@ import { setBaseUrl, setDirect } from "../api";
 import { call } from "./net";
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; setBaseUrl("http://127.0.0.1:23160"); });
+afterEach(() => {
+	globalThis.fetch = realFetch;
+	setBaseUrl("http://127.0.0.1:23160");
+});
 
 describe("shell call()", () => {
 	test("an /api path goes to the direct handler, not over the network", async () => {
 		const fetched: string[] = [];
-		globalThis.fetch = (async (u: string | URL | Request) => { fetched.push(String(u)); return new Response("{}"); }) as typeof fetch;
+		globalThis.fetch = (async (u: string | URL | Request) => {
+			fetched.push(String(u));
+			return new Response("{}");
+		}) as typeof fetch;
 		const seen: string[] = [];
 		setDirect(async (req) => {
 			seen.push(`${req.method} ${new URL(req.url).pathname} ${req.method === "POST" ? await req.text() : ""}`.trim());
@@ -31,7 +37,10 @@ describe("shell call()", () => {
 	test("without a direct handler an /api path goes to BASE_URL", async () => {
 		setBaseUrl("http://127.0.0.1:9");
 		const fetched: string[] = [];
-		globalThis.fetch = (async (u: string | URL | Request) => { fetched.push(String(u)); return Response.json({ n: 1 }); }) as typeof fetch;
+		globalThis.fetch = (async (u: string | URL | Request) => {
+			fetched.push(String(u));
+			return Response.json({ n: 1 });
+		}) as typeof fetch;
 		expect(await call<{ n: number }>("GET", "/api/settings")).toEqual({ n: 1 });
 		expect(fetched).toEqual(["http://127.0.0.1:9/api/settings"]);
 	});

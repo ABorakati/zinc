@@ -16,8 +16,13 @@ let direct: DirectHandler | null = null;
 /** Requests wait for this before going out: main.tsx holds them while the in-process core starts (so the store can be created at once). */
 let gate: Promise<unknown> = Promise.resolve();
 
-export function setBaseUrl(u: string): void { BASE_URL = trim(u); direct = null; }
-export function setDirect(h: DirectHandler): void { direct = h; }
+export function setBaseUrl(u: string): void {
+	BASE_URL = trim(u);
+	direct = null;
+}
+export function setDirect(h: DirectHandler): void {
+	direct = h;
+}
 export function holdRequestsUntil(p: Promise<unknown>): void {
 	gate = Promise.all([gate, p]);
 	gate.catch(() => {}); // a failed core start surfaces through the requests waiting on it, not as an unhandled rejection
@@ -86,8 +91,12 @@ let recorded: string[] | null = [];
 const PREFETCHABLE = /^\/(collections|items\?|items\/groups\?|schema|tag-colors|searches)/;
 let onDemand: (() => void) | null = null;
 /** Start the in-process core on the first request that early answers do not cover (main.tsx starts it anyway after the first page). */
-export function startCoreOnDemand(start: () => void): void { onDemand = start; }
-export function expectEarly(path: string, answer: Promise<string | null>): void { early.set(path, answer); }
+export function startCoreOnDemand(start: () => void): void {
+	onDemand = start;
+}
+export function expectEarly(path: string, answer: Promise<string | null>): void {
+	early.set(path, answer);
+}
 export function takeRecordedPaths(): string[] {
 	const r = recorded ?? [];
 	recorded = null;
@@ -100,7 +109,11 @@ export function takeRecordedPaths(): string[] {
  * to /api. Use it instead of fetch(BASE_URL + ...), which misses the direct handler.
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-	if (onDemand) { const start = onDemand; onDemand = null; start(); } // the in-process core was left to start lazily (main.tsx): now it is needed
+	if (onDemand) {
+		const start = onDemand;
+		onDemand = null;
+		start();
+	} // the in-process core was left to start lazily (main.tsx): now it is needed
 	await gate;
 	init.signal?.throwIfAborted();
 	return direct
@@ -112,10 +125,17 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
 	if (method === "GET") {
 		if (recorded && PREFETCHABLE.test(path) && !recorded.includes(path) && recorded.length < 8) recorded.push(path);
 		const e = early.get(path);
-		if (e) { // each early answer is used once: later identical requests (refresh) go to the core
+		if (e) {
+			// each early answer is used once: later identical requests (refresh) go to the core
 			early.delete(path);
 			const text = await e;
-			if (text != null) { try { return JSON.parse(text) as T; } catch { /* fall through to the core */ } }
+			if (text != null) {
+				try {
+					return JSON.parse(text) as T;
+				} catch {
+					/* fall through to the core */
+				}
+			}
 		}
 	}
 	const res = await apiFetch(path, {
@@ -126,13 +146,15 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
 	});
 	if (!res.ok) {
 		let msg = res.statusText;
-		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch {}
+		try {
+			msg = ((await res.json()) as { error?: string }).error ?? msg;
+		} catch {}
 		throw Object.assign(new Error(msg), { status: res.status }); // callers that must tell a refusal (4xx) from a hiccup read .status
 	}
 	const text = await res.text();
 	return (text ? JSON.parse(text) : {}) as T;
 }
-const get = <T,>(path: string, signal?: AbortSignal) => request<T>("GET", path, undefined, signal);
+const get = <T>(path: string, signal?: AbortSignal) => request<T>("GET", path, undefined, signal);
 
 /** Raw verbs for features that need an endpoint this file does not wrap yet. `path` is relative to /api. */
 export const apiRequest = request;
@@ -142,7 +164,15 @@ export { request };
 /** Turn the flat collection list into a tree (roots first, siblings sorted by name). */
 export function buildTree(flat: CollectionDto[]): Collection[] {
 	const byKey = new Map<string, Collection>();
-	for (const c of flat) byKey.set(c.key, { key: c.key, name: c.name, parentKey: c.parentKey, itemCount: c.itemCount, ...(c.dateAdded ? { dateAdded: c.dateAdded } : {}), ...(c.dateModified ? { dateModified: c.dateModified } : {}) });
+	for (const c of flat)
+		byKey.set(c.key, {
+			key: c.key,
+			name: c.name,
+			parentKey: c.parentKey,
+			itemCount: c.itemCount,
+			...(c.dateAdded ? { dateAdded: c.dateAdded } : {}),
+			...(c.dateModified ? { dateModified: c.dateModified } : {}),
+		});
 	const roots: Collection[] = [];
 	for (const c of byKey.values()) {
 		const parent = c.parentKey ? byKey.get(c.parentKey) : undefined;
@@ -184,16 +214,36 @@ export interface SearchHit {
 	matchedIn: ("metadata" | "fulltext" | "notes")[];
 	rank: number;
 }
-export interface SearchResult { total: number; hits: SearchHit[] }
-export interface TagColor { name: string; color: string; position: number }
+export interface SearchResult {
+	total: number;
+	hits: SearchHit[];
+}
+export interface TagColor {
+	name: string;
+	color: string;
+	position: number;
+}
 export interface ZoteroSchema {
 	itemTypes: { itemType: string; label: string; fields: { field: string; label: string; baseField?: string }[] }[];
 	fieldLabels: Record<string, string>;
 	[k: string]: unknown;
 }
-export interface DuplicateSet { keys: string[]; reason: string; title?: string; creatorsSummary?: string; year?: number | null; itemType?: string }
-export interface CiteSettings { quickCopy: { style: string; locale?: string; mode: "bibliography" | "citation"; format: string } }
-export interface CiteResult { text?: string; html?: string; rtf?: string }
+export interface DuplicateSet {
+	keys: string[];
+	reason: string;
+	title?: string;
+	creatorsSummary?: string;
+	year?: number | null;
+	itemType?: string;
+}
+export interface CiteSettings {
+	quickCopy: { style: string; locale?: string; mode: "bibliography" | "citation"; format: string };
+}
+export interface CiteResult {
+	text?: string;
+	html?: string;
+	rtf?: string;
+}
 export interface FullTextJob {
 	id: string;
 	done: boolean;
@@ -201,7 +251,8 @@ export interface FullTextJob {
 }
 
 export const api = {
-	collections: async (library?: number) => buildTree(await get<CollectionDto[]>("/collections" + (library && library > 1 ? `?library=${library}` : ""))),
+	collections: async (library?: number) =>
+		buildTree(await get<CollectionDto[]>("/collections" + (library && library > 1 ? `?library=${library}` : ""))),
 	/** My Library and the account's group libraries. */
 	libraries: async () => (await get<{ libraries: Library[] }>("/libraries")).libraries,
 	/** Tags of one library with their counts. */
@@ -216,16 +267,20 @@ export const api = {
 	schema: (signal?: AbortSignal) => get<ZoteroSchema>("/schema", signal),
 	item: (key: string, signal?: AbortSignal) => get<ItemDetail>(`/items/${key}`, signal),
 	/** Full-text + metadata search with snippets (the "Full text" quick-search mode). */
-	search: (q: string, limit = 200, offset = 0, signal?: AbortSignal, library?: number) => get<SearchResult>("/search?" + qs({ q, limit, offset, library: library && library > 1 ? library : undefined }), signal),
+	search: (q: string, limit = 200, offset = 0, signal?: AbortSignal, library?: number) =>
+		get<SearchResult>("/search?" + qs({ q, limit, offset, library: library && library > 1 ? library : undefined }), signal),
 	tagColors: (signal?: AbortSignal) => get<TagColor[]>("/tag-colors", signal),
 	addTags: (key: string, tags: string[]) => request<{ ok: true }>("POST", `/items/${key}/tags`, { tags }),
 	removeTags: (key: string, tags: string[]) => request<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),
 	/** Move to / restore from the trash (Zotero convention: data.deleted = 1 | 0). */
 	setDeleted: (key: string, deleted: boolean) => request<ItemDetail>("PATCH", `/items/${key}`, { data: { deleted: deleted ? 1 : 0 } }),
 	/** Add to / remove from My Publications (data.inPublications = true | absent). */
-	setInPublications: (key: string, inPublications: boolean) => request<ItemDetail>("PATCH", `/items/${key}`, { data: { inPublications } }),
-	addToCollection: (collectionKey: string, keys: string[]) => request<{ ok: true }>("POST", `/collections/${collectionKey}/items`, { keys }),
-	removeFromCollection: (collectionKey: string, keys: string[]) => request<{ ok: true }>("DELETE", `/collections/${collectionKey}/items`, { keys }),
+	setInPublications: (key: string, inPublications: boolean) =>
+		request<ItemDetail>("PATCH", `/items/${key}`, { data: { inPublications } }),
+	addToCollection: (collectionKey: string, keys: string[]) =>
+		request<{ ok: true }>("POST", `/collections/${collectionKey}/items`, { keys }),
+	removeFromCollection: (collectionKey: string, keys: string[]) =>
+		request<{ ok: true }>("DELETE", `/collections/${collectionKey}/items`, { keys }),
 	duplicates: (signal?: AbortSignal) => get<{ sets: DuplicateSet[]; total: number }>("/duplicates?summary=1", signal),
 	/** Open an http(s) URL in the system browser (through the core). */
 	openUrl: (url: string) => request<{ ok: true }>("POST", "/open-url", { url }),
@@ -233,9 +288,11 @@ export const api = {
 	openExternal: (attachmentKey: string) => request<{ ok: true }>("POST", `/attachments/${attachmentKey}/open-external`, {}),
 	reveal: (attachmentKey: string) => request<{ ok: true }>("POST", `/attachments/${attachmentKey}/reveal`, {}),
 	citeSettings: () => get<CiteSettings>("/cite/settings"),
-	citeFormat: (b: { keys: string[]; style?: string; locale?: string; mode?: string; format?: string | string[] }) => request<CiteResult>("POST", "/cite/format", b),
+	citeFormat: (b: { keys: string[]; style?: string; locale?: string; mode?: string; format?: string | string[] }) =>
+		request<CiteResult>("POST", "/cite/format", b),
 	/** Find Full Text: starts a job for top-level item keys; returns its id. */
-	findFullText: (keys: string[], openAccessOnly = false) => request<{ jobId: string }>("POST", "/fulltext/find", { keys, openAccessOnly }),
+	findFullText: (keys: string[], openAccessOnly = false) =>
+		request<{ jobId: string }>("POST", "/fulltext/find", { keys, openAccessOnly }),
 	fullTextJob: (id: string) => get<FullTextJob>(`/fulltext/jobs/${id}`),
 	/** Browser-extension saves go to the collection selected here (best effort). */
 	postSelection: (sel: { kind: string; key?: string }) => request<unknown>("POST", "/ui/selection", sel),

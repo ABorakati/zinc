@@ -12,11 +12,50 @@ const out =
 	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots/theme.png";
 
 const SWATCHES = [
-	"background", "foreground", "canvas", "topbar", "card", "muted", "muted-foreground", "popover", "border", "border-soft", "input",
-	"primary", "primary-foreground", "primary-soft", "primary-tint", "primary-line", "primary-deep", "secondary", "accent",
-	"destructive", "success", "success-foreground", "warning", "warning-foreground", "error", "error-foreground", "journal",
+	"background",
+	"foreground",
+	"canvas",
+	"topbar",
+	"card",
+	"muted",
+	"muted-foreground",
+	"popover",
+	"border",
+	"border-soft",
+	"input",
+	"primary",
+	"primary-foreground",
+	"primary-soft",
+	"primary-tint",
+	"primary-line",
+	"primary-deep",
+	"secondary",
+	"accent",
+	"destructive",
+	"success",
+	"success-foreground",
+	"warning",
+	"warning-foreground",
+	"error",
+	"error-foreground",
+	"journal",
 ];
-const ICONS = ["folder", "folder-open", "chevron-right", "file-text", "copy", "search", "layout-list", "table-2", "panel-left", "settings", "plus", "wrench", "refresh-cw", "star"];
+const ICONS = [
+	"folder",
+	"folder-open",
+	"chevron-right",
+	"file-text",
+	"copy",
+	"search",
+	"layout-list",
+	"table-2",
+	"panel-left",
+	"settings",
+	"plus",
+	"wrench",
+	"refresh-cw",
+	"star",
+];
 
 function T(p: { m: Mode; c?: string; children: string }) {
 	return <text style={textStyle(p.c, p.m)}>{p.children}</text>;
@@ -43,7 +82,15 @@ function Panel(p: { m: Mode }) {
 					<For each={SWATCHES}>
 						{(k) => (
 							<div style={{ ...tw("flex flex-col gap-1 w-[78px]", m) }}>
-								<div style={{ height: 26, borderRadius: 6, backgroundColor: tk[k], borderWidth: 1, borderColor: tk["border"] }} />
+								<div
+									style={{
+										height: 26,
+										borderRadius: 6,
+										backgroundColor: tk[k],
+										borderWidth: 1,
+										borderColor: tk["border"],
+									}}
+								/>
 								<text style={textStyle("text-[9px] text-muted-foreground truncate", m)}>{k}</text>
 							</div>
 						)}
@@ -87,15 +134,21 @@ function Panel(p: { m: Mode }) {
 				<div style={tw("flex flex-col gap-0.5", m)}>
 					<For each={[400, 500, 600, 700]}>
 						{(w) => (
-							<text style={{ ...textStyle("text-[13px]", m), fontWeight: w }}>{`Inter ${w}: The quick brown fox jumps over 0123456789 (Glioma, 2.5%)`}</text>
+							<text
+								style={{ ...textStyle("text-[13px]", m), fontWeight: w }}
+							>{`Inter ${w}: The quick brown fox jumps over 0123456789 (Glioma, 2.5%)`}</text>
 						)}
 					</For>
 					<text style={textStyle("text-[11px] text-muted-foreground", m)}>11px text-[11px] label</text>
 					<text style={textStyle("text-xs", m)}>12px text-xs</text>
 					<text style={textStyle("text-sm", m)}>14px text-sm</text>
-					<text style={textStyle("font-title text-[15.5px] font-semibold", m)}>Source Serif 4 600 title at 15.5px, Immunotherapy outcomes</text>
+					<text style={textStyle("font-title text-[15.5px] font-semibold", m)}>
+						Source Serif 4 600 title at 15.5px, Immunotherapy outcomes
+					</text>
 					<text style={textStyle("font-title text-lg font-medium", m)}>Source Serif 4 500 at 18px: year heading 2024</text>
-					<text style={{ ...textStyle("text-[13px]", m), fontFamily: "Manrope", fontWeight: 600 }}>Manrope 600 13px (fallback font stack)</text>
+					<text style={{ ...textStyle("text-[13px]", m), fontFamily: "Manrope", fontWeight: 600 }}>
+						Manrope 600 13px (fallback font stack)
+					</text>
 				</div>
 			</Section>
 

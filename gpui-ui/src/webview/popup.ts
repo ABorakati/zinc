@@ -12,6 +12,19 @@ export const popupsAvailable = (): boolean =>
 	process.platform === "linux" ? x11.x11Available() : process.platform === "darwin" ? cocoa.cocoaAvailable() : win32.win32Available();
 
 export const {
-	appIsForeground, clientOnScreen, clipPopup, dpr, focusMain, focusPopup, forgetPopup, hidePopup, isWindow, keepAbove, mainWindow,
-	makeOwnedPopup, placePopup, popupHasFocus, pump,
+	appIsForeground,
+	clientOnScreen,
+	clipPopup,
+	dpr,
+	focusMain,
+	focusPopup,
+	forgetPopup,
+	hidePopup,
+	isWindow,
+	keepAbove,
+	mainWindow,
+	makeOwnedPopup,
+	placePopup,
+	popupHasFocus,
+	pump,
 } = impl;

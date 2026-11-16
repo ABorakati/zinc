@@ -29,9 +29,10 @@ function kindOf(contentType: string | null, path: string): Kind | null {
 }
 
 export async function extractFulltext(db: Database, attachmentKey: string, opts: { force?: boolean } = {}): Promise<ExtractResult> {
-	const row = db
-		.query("SELECT content_type, path FROM attachments WHERE item_key = ?")
-		.get(attachmentKey) as { content_type: string | null; path: string | null } | null;
+	const row = db.query("SELECT content_type, path FROM attachments WHERE item_key = ?").get(attachmentKey) as {
+		content_type: string | null;
+		path: string | null;
+	} | null;
 	const filePath = resolveStoredPath(db, row?.path); // "attachments:<rel>" -> absolute
 	if (!row || !filePath) return { attachmentKey, chars: 0, skipped: "no-file" };
 
@@ -56,7 +57,10 @@ export async function extractFulltext(db: Database, attachmentKey: string, opts:
 		text = stripHtml(await file.text());
 	}
 	// NUL bytes break FTS tokenising and some SQLite tooling.
-	text = text.replace(/\0/g, "").replace(/[ \t]+\n/g, "\n").trim();
+	text = text
+		.replace(/\0/g, "")
+		.replace(/[ \t]+\n/g, "\n")
+		.trim();
 
 	db.query(
 		`INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES(?, ?, 'document-worker', ?)

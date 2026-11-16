@@ -10,8 +10,18 @@
 import { batch, createEffect, createRoot, createSignal, type Accessor } from "solid-js";
 import { dlopen, FFIType } from "bun:ffi";
 import {
-	accentFor, cleanFamily, computeVars, DEFAULT_THEME, FONT_SUGGESTIONS, FONTS, sanitizeTheme, SCHEMES, TEXT_SIZES,
-	type FontId, type ThemeMode, type ThemePrefs,
+	accentFor,
+	cleanFamily,
+	computeVars,
+	DEFAULT_THEME,
+	FONT_SUGGESTIONS,
+	FONTS,
+	sanitizeTheme,
+	SCHEMES,
+	TEXT_SIZES,
+	type FontId,
+	type ThemeMode,
+	type ThemePrefs,
 } from "./schemes";
 import type { Mode } from "../contracts";
 import { setSansFont } from "../fonts";
@@ -40,7 +50,10 @@ export function readWindowsAppsUseDark(): boolean | undefined {
 	if (process.platform !== "win32") return undefined;
 	try {
 		const adv = dlopen("advapi32.dll", {
-			RegGetValueW: { args: [FFIType.u64, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+			RegGetValueW: {
+				args: [FFIType.u64, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.ptr],
+				returns: FFIType.i32,
+			},
 		}).symbols;
 		const wide = (s: string) => Buffer.from(`${s}\0`, "utf16le");
 		const sub = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
@@ -78,7 +91,13 @@ export function resolveMode(p: ThemePrefs = prefs()): Mode {
 
 // ------------------------------------------------------------------------------------------------ applying
 
-const SANS: Record<string, string> = { inter: "inter", manrope: "manrope", plex: "plex", source: "source", system: "Segoe UI Variable Text" };
+const SANS: Record<string, string> = {
+	inter: "inter",
+	manrope: "manrope",
+	plex: "plex",
+	source: "source",
+	system: "Segoe UI Variable Text",
+};
 function sansFor(p: ThemePrefs): string {
 	if (p.font === "custom") return p.fontCustom || "Segoe UI Variable Text";
 	return SANS[p.font] ?? "inter";
@@ -101,7 +120,11 @@ function applyColours(p: ThemePrefs): boolean {
 		const cur = tokens[m];
 		for (const k of Object.keys(cur)) delete cur[k];
 		Object.assign(cur, t);
-		shadows[m] = { raised: parseShadow(t["raised-shadow"]!), pill: parseShadow(t["pill-shadow"]!), primary: parseShadow(t["primary-shadow"]!) };
+		shadows[m] = {
+			raised: parseShadow(t["raised-shadow"]!),
+			pill: parseShadow(t["pill-shadow"]!),
+			primary: parseShadow(t["primary-shadow"]!),
+		};
 	}
 	return true;
 }
@@ -110,9 +133,17 @@ let lastSans = "";
 function applyTypography(p: ThemePrefs): boolean {
 	let changed = false;
 	const s = +(p.size / BASE_SIZE).toFixed(4);
-	if (s !== scale) { scale = s; setUiScale(s); changed = true; }
+	if (s !== scale) {
+		scale = s;
+		setUiScale(s);
+		changed = true;
+	}
 	const sans = sansFor(p);
-	if (sans !== lastSans) { lastSans = sans; setSansFont(sans); changed = true; }
+	if (sans !== lastSans) {
+		lastSans = sans;
+		setSansFont(sans);
+		changed = true;
+	}
 	return changed;
 }
 
@@ -136,7 +167,10 @@ export function applyAppearance(): Mode {
 }
 
 /** Minimal slice of the app store this module drives. */
-interface ModeStore { mode: Accessor<Mode>; setMode(m: Mode): void }
+interface ModeStore {
+	mode: Accessor<Mode>;
+	setMode(m: Mode): void;
+}
 
 let started = false;
 /**

@@ -16,7 +16,13 @@ async function citationCode(host: ReturnType<typeof createMockHost>, app: App, k
 }
 function setup(prefsXml: string | null = null) {
 	const items = structuredClone(SAMPLE_ITEMS);
-	const host = createMockHost({ items, userId: "5106252", prefsXml, styleXml: async (id) => read(`${id}.csl`), localeXml: async (l) => (l === "en-US" ? read("locales-en-US.xml") : null) });
+	const host = createMockHost({
+		items,
+		userId: "5106252",
+		prefsXml,
+		styleXml: async (id) => read(`${id}.csl`),
+		localeXml: async (l) => (l === "en-US" ? read("locales-en-US.xml") : null),
+	});
 	return { items, host, app: new App(host) };
 }
 
@@ -31,7 +37,9 @@ describe("cited helpers", () => {
 		expect(targetFromCursor(null)).toBeNull();
 	});
 	test("runsToHtml escapes and styles", () => {
-		expect(runsToHtml([{ t: "A <b> & " }, { t: "Journal", i: 1 }, { t: "2", sup: 1 }])).toBe("A &lt;b&gt; &amp; <i>Journal</i><sup>2</sup>");
+		expect(runsToHtml([{ t: "A <b> & " }, { t: "Journal", i: 1 }, { t: "2", sup: 1 }])).toBe(
+			"A &lt;b&gt; &amp; <i>Journal</i><sup>2</sup>",
+		);
 		expect(escapeHtml(`"'`)).toBe("&quot;&#39;");
 	});
 	test("metaLine, noteChips, popupHeight", () => {

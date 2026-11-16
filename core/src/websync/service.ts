@@ -80,7 +80,12 @@ export interface GroupRecord {
  * What this user may do in a group: the API key must allow writing to it, and the group's own rules must let this user edit
  * (owner and admins always; members when libraryEditing is "members"). Files follow fileEditing the same way.
  */
-export function groupPermissions(rec: GroupRecord, userId: number, access: KeyAccess | undefined, keyFiles: boolean): { editable: boolean; filesEditable: boolean } {
+export function groupPermissions(
+	rec: GroupRecord,
+	userId: number,
+	access: KeyAccess | undefined,
+	keyFiles: boolean,
+): { editable: boolean; filesEditable: boolean } {
 	const keyWrite = !!(access?.[String(rec.id)]?.write ?? access?.all?.write);
 	const owner = rec.owner === userId;
 	const admin = owner || !!rec.admins?.includes(userId);
@@ -119,7 +124,13 @@ export class WebSyncService {
 		readonly opts: WebSyncOptions = {},
 	) {
 		this.keyStore = opts.keyStore ?? bunKeyStore;
-		this.client = new ZoteroWebClient({ base: opts.apiBase, getKey: () => this.keyStore.get(), fetch: opts.fetch, sleep: opts.sleep, now: opts.now });
+		this.client = new ZoteroWebClient({
+			base: opts.apiBase,
+			getKey: () => this.keyStore.get(),
+			fetch: opts.fetch,
+			sleep: opts.sleep,
+			now: opts.now,
+		});
 		const file = dbFileOf(db);
 		this.dataDir = file ? dirname(file) : process.cwd();
 		this.storageDir = join(this.dataDir, "storage");
@@ -166,10 +177,20 @@ export class WebSyncService {
 	async setKey(apiKey: string): Promise<WebSyncStatus> {
 		const key = apiKey.trim();
 		if (!key) throw new HttpError(400, "the API key is empty");
-		let info: { userID?: number; username?: string; access?: { user?: { library?: boolean; write?: boolean; files?: boolean }; groups?: KeyAccess } };
+		let info: {
+			userID?: number;
+			username?: string;
+			access?: { user?: { library?: boolean; write?: boolean; files?: boolean }; groups?: KeyAccess };
+		};
 		try {
 			const res = await this.client.request("GET", "/keys/current", { key });
-			if (!res.ok) throw new HttpError(400, res.status === 403 || res.status === 404 || res.status === 401 ? "zotero.org rejected that API key" : `zotero.org answered ${res.status}`);
+			if (!res.ok)
+				throw new HttpError(
+					400,
+					res.status === 403 || res.status === 404 || res.status === 401
+						? "zotero.org rejected that API key"
+						: `zotero.org answered ${res.status}`,
+				);
 			info = (await res.json()) as typeof info;
 		} catch (e) {
 			if (e instanceof HttpError) throw e;
@@ -211,9 +232,20 @@ export class WebSyncService {
 				this.db.run("DELETE FROM websync_versions");
 				this.db.run("UPDATE libraries SET web_version = 0, web_write_version = 0, group_version = 0");
 				for (const n of [
-					"web_bound_user_id", "web_user_id", "web_username", "web_can_write", "web_files_access", "web_groups_access", "web_error",
-					"web_library_version", "web_write_version", "web_retry", "web_last_pull_at", "web_last_push_at",
-				]) setState(this.db, n, null);
+					"web_bound_user_id",
+					"web_user_id",
+					"web_username",
+					"web_can_write",
+					"web_files_access",
+					"web_groups_access",
+					"web_error",
+					"web_library_version",
+					"web_write_version",
+					"web_retry",
+					"web_last_pull_at",
+					"web_last_push_at",
+				])
+					setState(this.db, n, null);
 				this.db.run("DELETE FROM sync_state WHERE name LIKE 'web!_%!_lib%' ESCAPE '!' OR name LIKE 'web!_file!_md5:%' ESCAPE '!'");
 			})();
 		});
@@ -223,7 +255,8 @@ export class WebSyncService {
 
 	async clearKey(): Promise<WebSyncStatus> {
 		await this.keyStore.delete();
-		for (const n of ["web_user_id", "web_username", "web_can_write", "web_files_access", "web_groups_access", "web_error"]) setState(this.db, n, null);
+		for (const n of ["web_user_id", "web_username", "web_can_write", "web_files_access", "web_groups_access", "web_error"])
+			setState(this.db, n, null);
 		return this.status();
 	}
 
@@ -263,9 +296,17 @@ export class WebSyncService {
 		const vres = await this.client.request("GET", `/users/${uid}/groups`, { query: { format: "versions" } });
 		if (!vres.ok) throw await failure(vres);
 		const versions = (await vres.json()) as Record<string, number>;
-		const present = Object.keys(versions).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+		const present = Object.keys(versions)
+			.map(Number)
+			.filter((n) => Number.isInteger(n) && n > 0);
 		const known = new Map(
-			(this.db.query("SELECT group_id AS id, group_version AS version, removed FROM libraries WHERE type = 'group'").all() as { id: number; version: number; removed: number }[]).map((r) => [r.id, r]),
+			(
+				this.db.query("SELECT group_id AS id, group_version AS version, removed FROM libraries WHERE type = 'group'").all() as {
+					id: number;
+					version: number;
+					removed: number;
+				}[]
+			).map((r) => [r.id, r]),
 		);
 		const stale = present.filter((id) => {
 			const k = known.get(id);
@@ -282,7 +323,12 @@ export class WebSyncService {
 					const id = Number(rec?.id ?? g.id);
 					if (!rec || !present.includes(id)) continue;
 					const perm = groupPermissions({ ...rec, id }, uid, this.accessGroups, filesAccess);
-					upsertGroupLibrary(this.db, { groupId: id, name: rec.name || `Group ${id}`, ...perm, version: Number(g.version ?? rec.version ?? versions[String(id)]) || 0 });
+					upsertGroupLibrary(this.db, {
+						groupId: id,
+						name: rec.name || `Group ${id}`,
+						...perm,
+						version: Number(g.version ?? rec.version ?? versions[String(id)]) || 0,
+					});
 				}
 				if (page.length < 100) break;
 			}
@@ -382,7 +428,13 @@ export class WebSyncService {
 					for (const g of this.groupLibraries()) {
 						if (!g.filesEditable) continue;
 						try {
-							await uploadMissing({ db: this.db, client: this.client, userId: this.userId, ref: this.refFor(g), storageDir: this.storageDir });
+							await uploadMissing({
+								db: this.db,
+								client: this.client,
+								userId: this.userId,
+								ref: this.refFor(g),
+								storageDir: this.storageDir,
+							});
 						} catch (e) {
 							setState(this.db, this.stateName("web_error", g.id), failMsg(e));
 						}
@@ -421,7 +473,13 @@ export class WebSyncService {
 	checkFiles(libraryId: number = USER_LIBRARY): Promise<FilesCheck> {
 		const lib = libraryId === USER_LIBRARY ? undefined : this.groupLibraries().find((g) => g.id === libraryId);
 		if (libraryId !== USER_LIBRARY && !lib) throw new HttpError(404, "library not found");
-		return checkFiles({ db: this.db, client: this.client, userId: this.userId, ref: lib ? this.refFor(lib) : undefined, storageDir: this.storageDir });
+		return checkFiles({
+			db: this.db,
+			client: this.client,
+			userId: this.userId,
+			ref: lib ? this.refFor(lib) : undefined,
+			storageDir: this.storageDir,
+		});
 	}
 
 	/** Download every library's missing files, My Library first. The job's counters add up across libraries. */
@@ -493,7 +551,14 @@ export class WebSyncService {
 		if (this.job) st.fileJob = { ...this.job };
 		if (keySet) {
 			for (const g of this.groupLibraries()) {
-				const gs: GroupStatus = { libraryId: g.id, groupId: g.groupId!, name: g.name, editable: g.editable, filesEditable: g.filesEditable, pending: pendingCount(this.db, g.id) };
+				const gs: GroupStatus = {
+					libraryId: g.id,
+					groupId: g.groupId!,
+					name: g.name,
+					editable: g.editable,
+					filesEditable: g.filesEditable,
+					pending: pendingCount(this.db, g.id),
+				};
 				const gv = webVersions(this.db, g.id).pull;
 				if (gv) gs.libraryVersion = gv;
 				const lp = getState(this.db, this.stateName("web_last_pull_at", g.id));

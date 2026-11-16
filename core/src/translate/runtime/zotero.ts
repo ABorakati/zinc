@@ -11,7 +11,8 @@ import { SandboxManager } from "./sandbox";
 
 const req = createRequire(import.meta.url);
 // ZN_ZOTERO_VENDOR: the vendor/zotero folder shipped beside the packaged exe (the pre-bundled worker has no repo tree around it)
-export const VENDOR_DIR = process.env.ZN_ZOTERO_VENDOR || join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "vendor", "zotero");
+export const VENDOR_DIR =
+	process.env.ZN_ZOTERO_VENDOR || join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "vendor", "zotero");
 
 const TRANSLATOR_TYPES: Record<string, number> = { import: 1, export: 2, web: 4, search: 8 };
 const INFO_RE = /^\s*{[\S\s]*?}\s*?[\r\n]/;
@@ -29,7 +30,10 @@ export function bootRuntime(): any {
 	const g = globalThis as any;
 	installDomGlobals();
 
-	const prefs = new Map<string, unknown>([["downloadAssociatedFiles", false], ["automaticSnapshots", false]]);
+	const prefs = new Map<string, unknown>([
+		["downloadAssociatedFiles", false],
+		["automaticSnapshots", false],
+	]);
 	const Zotero: any = (g.Zotero = {
 		isNode: true,
 		isServer: true,

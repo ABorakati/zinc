@@ -29,15 +29,19 @@ const CHILD_TYPE: Record<string, true> = { attachment: true, note: true, annotat
 export async function createParent(db: Database, req: Partial<CreateParentRequest>): Promise<CreateParentResult> {
 	const itemKey = typeof req?.itemKey === "string" ? req.itemKey : "";
 	if (!itemKey) throw new HttpError(400, "itemKey is required");
-	const row = db.query("SELECT item_type, parent_key FROM items WHERE key = ?").get(itemKey) as
-		| { item_type: string; parent_key: string | null }
-		| null;
+	const row = db.query("SELECT item_type, parent_key FROM items WHERE key = ?").get(itemKey) as {
+		item_type: string;
+		parent_key: string | null;
+	} | null;
 	if (!row) throw new HttpError(404, "item not found");
-	if (row.item_type !== "attachment" && row.item_type !== "note") throw new HttpError(400, "only a standalone attachment or note can get a parent item");
+	if (row.item_type !== "attachment" && row.item_type !== "note")
+		throw new HttpError(400, "only a standalone attachment or note can get a parent item");
 	if (row.parent_key) throw new HttpError(400, "the item already has a parent");
 	// The parent takes the child's collections (the child leaves them, as for any child item).
 	const collections = (
-		db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(itemKey) as { collection_key: string }[]
+		db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(itemKey) as {
+			collection_key: string;
+		}[]
 	).map((r) => r.collection_key);
 
 	// the new parent lives in the same library as the item it adopts
@@ -48,13 +52,19 @@ export async function createParent(db: Database, req: Partial<CreateParentReques
 	if (text) {
 		const { ids, unknown } = parseIdentifiers(text);
 		if (ids.length === 0) {
-			throw new HttpError(400, unknown.length ? `${unknown[0]} is not a recognised identifier (DOI, PMID, PMCID, arXiv ID or ISBN)` : "no identifier found");
+			throw new HttpError(
+				400,
+				unknown.length
+					? `${unknown[0]} is not a recognised identifier (DOI, PMID, PMCID, arXiv ID or ISBN)`
+					: "no identifier found",
+			);
 		}
 		if (ids.length > 1) throw new HttpError(400, "enter one identifier");
 		const r = await addOne(db, ids[0]!, loadKnown(db, lib), collections[0], true, lib);
 		parentKey = r.added?.data.key ?? r.existing!;
 		if (r.added) {
-			for (const c of collections.slice(1)) db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parentKey);
+			for (const c of collections.slice(1))
+				db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parentKey);
 		} else {
 			// The work was already in the library: the attachment is about to leave its collections, so the parent joins them
 			// (else the work would drop out of the collection view it was filed in).

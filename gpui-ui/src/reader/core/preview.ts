@@ -15,10 +15,23 @@ const PREVIEW_MAX = 512;
 /** PDF points -> css px (the reader's 100 % zoom) */
 const CSS_PER_PT = 4 / 3;
 
-export interface PreviewData { w: number; h: number; px: Uint8Array; key: string }
-export interface PreviewWant { page: number; rot: number; prio: number }
+export interface PreviewData {
+	w: number;
+	h: number;
+	px: Uint8Array;
+	key: string;
+}
+export interface PreviewWant {
+	page: number;
+	rot: number;
+	prio: number;
+}
 
-interface Slot { data: Accessor<PreviewData | undefined>; set: Setter<PreviewData | undefined>; touched: number }
+interface Slot {
+	data: Accessor<PreviewData | undefined>;
+	set: Setter<PreviewData | undefined>;
+	touched: number;
+}
 
 export class Previews {
 	private slots = new Map<number, Slot>();
@@ -27,9 +40,15 @@ export class Previews {
 	private closed = false;
 	/** previews rendered, for scripts */
 	made = 0;
-	constructor(private doc: PdfDoc, private dpr: Accessor<number>, private look: Accessor<Look>) {}
+	constructor(
+		private doc: PdfDoc,
+		private dpr: Accessor<number>,
+		private look: Accessor<Look>,
+	) {}
 
-	get pending(): number { return this.inflight.size; }
+	get pending(): number {
+		return this.inflight.size;
+	}
 
 	private slot(page: number): Slot {
 		let s = this.slots.get(page);
@@ -50,7 +69,9 @@ export class Previews {
 		return d.key === this.keyOf(rot) ? d : undefined;
 	}
 
-	private keyOf(rot: number): string { return `${rot}.${lookKey(this.look())}.${Math.round(this.dpr() * 100)}`; }
+	private keyOf(rot: number): string {
+		return `${rot}.${lookKey(this.look())}.${Math.round(this.dpr() * 100)}`;
+	}
 
 	/** Make these pages' previews exist (render the missing ones at the given priorities) and cancel the jobs that are no longer wanted. */
 	want(list: PreviewWant[]): void {
@@ -62,7 +83,10 @@ export class Previews {
 			const have = this.slot(w.page).data();
 			if (have && have.key === key) continue;
 			const run = this.inflight.get(w.page);
-			if (run?.key === key) { run.setPrio(w.prio); continue; }
+			if (run?.key === key) {
+				run.setPrio(w.prio);
+				continue;
+			}
 			run?.task.cancel();
 			this.start(w, key);
 		}
@@ -76,26 +100,36 @@ export class Previews {
 	private start(w: PreviewWant, key: string): void {
 		const sz = this.doc.sizes[w.page];
 		if (!sz) return;
-		const bw = w.rot % 180 === 0 ? sz[0] : sz[1], bh = w.rot % 180 === 0 ? sz[1] : sz[0];
+		const bw = w.rot % 180 === 0 ? sz[0] : sz[1],
+			bh = w.rot % 180 === 0 ? sz[1] : sz[0];
 		const scale = Math.min(0.2 * CSS_PER_PT * this.dpr(), PREVIEW_MAX / Math.max(bw, bh));
 		let task: RenderTask;
-		try { task = this.doc.render3(w.page, scale, { rot: w.rot, look: this.look(), prio: w.prio }); } catch { return; }
+		try {
+			task = this.doc.render3(w.page, scale, { rot: w.rot, look: this.look(), prio: w.prio });
+		} catch {
+			return;
+		}
 		const run = { key, task, setPrio: (p: number) => task.setPrio(p) };
 		this.inflight.set(w.page, run);
-		void task.promise.then((r) => {
-			if (!r) return;
-			try {
-				if (this.closed || this.inflight.get(w.page) !== run) return;
-				const px = new Uint8Array(r.pixels.length);
-				px.set(r.pixels);
-				this.slot(w.page).set({ w: r.width, h: r.height, px, key });
-				this.made++;
-				this.evict();
-			} finally {
-				r.release();
+		void task.promise.then(
+			(r) => {
+				if (!r) return;
+				try {
+					if (this.closed || this.inflight.get(w.page) !== run) return;
+					const px = new Uint8Array(r.pixels.length);
+					px.set(r.pixels);
+					this.slot(w.page).set({ w: r.width, h: r.height, px, key });
+					this.made++;
+					this.evict();
+				} finally {
+					r.release();
+					if (this.inflight.get(w.page) === run) this.inflight.delete(w.page);
+				}
+			},
+			() => {
 				if (this.inflight.get(w.page) === run) this.inflight.delete(w.page);
-			}
-		}, () => { if (this.inflight.get(w.page) === run) this.inflight.delete(w.page); });
+			},
+		);
 	}
 
 	private evict(): void {

@@ -2,7 +2,22 @@ import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { addItemsToCollection, addTags, createCollection, createItem, deleteAnnotations, deleteCollection, listCollections, listItems, listTags, openDb, patchItem, removeTags, updateCollection, upsertAnnotations } from "../src/db";
+import {
+	addItemsToCollection,
+	addTags,
+	createCollection,
+	createItem,
+	deleteAnnotations,
+	deleteCollection,
+	listCollections,
+	listItems,
+	listTags,
+	openDb,
+	patchItem,
+	removeTags,
+	updateCollection,
+	upsertAnnotations,
+} from "../src/db";
 import { USER_LIBRARY, getLibrary, listLibraries, resolveLibrary, upsertGroupLibrary, markGroupsRemoved } from "../src/libraries";
 import { MIGRATIONS, SCHEMA_HEAD, migrate } from "../src/migrations";
 import { rebuildSearchIndex, search } from "../src/search";
@@ -20,8 +35,20 @@ beforeEach(() => {
 afterEach(() => db.close());
 
 const group = (groupId = 100, over: Partial<{ name: string; editable: boolean; filesEditable: boolean }> = {}) =>
-	upsertGroupLibrary(db, { groupId, name: over.name ?? `Group ${groupId}`, editable: over.editable ?? true, filesEditable: over.filesEditable ?? true, version: 1 });
-const outbox = () => db.query("SELECT type, key, op, library_id AS lib FROM sync_outbox ORDER BY seq").all() as { type: string; key: string; op: string; lib: number }[];
+	upsertGroupLibrary(db, {
+		groupId,
+		name: over.name ?? `Group ${groupId}`,
+		editable: over.editable ?? true,
+		filesEditable: over.filesEditable ?? true,
+		version: 1,
+	});
+const outbox = () =>
+	db.query("SELECT type, key, op, library_id AS lib FROM sync_outbox ORDER BY seq").all() as {
+		type: string;
+		key: string;
+		op: string;
+		lib: number;
+	}[];
 const clearOutbox = () => db.run("DELETE FROM sync_outbox");
 const status = (fn: () => unknown): number | undefined => {
 	try {
@@ -39,7 +66,10 @@ describe("migration 4 on an existing library", () => {
 		migrate(raw, old, { migrations: MIGRATIONS.slice(0, SCHEMA_HEAD - 1) }); // as the last release left it: no libraries yet
 		expect((raw.query("PRAGMA table_info(items)").all() as { name: string }[]).some((c) => c.name === "library_id")).toBe(false);
 		for (let i = 0; i < 20; i++) {
-			raw.run("INSERT INTO items(key, item_type, title, data, date_added, date_modified) VALUES(?, 'journalArticle', ?, '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')", [`OLD${String(i).padStart(5, "0")}`, `Old ${i}`]);
+			raw.run(
+				"INSERT INTO items(key, item_type, title, data, date_added, date_modified) VALUES(?, 'journalArticle', ?, '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+				[`OLD${String(i).padStart(5, "0")}`, `Old ${i}`],
+			);
 		}
 		raw.run("INSERT INTO collections(key, name) VALUES('OLDCOLL1', 'Old collection')");
 		raw.run("INSERT INTO collection_items(collection_key, item_key) VALUES('OLDCOLL1', 'OLD00000')");
@@ -58,12 +88,16 @@ describe("migration 4 on an existing library", () => {
 		expect(n("SELECT count(*) AS n FROM items WHERE library_id = 1")).toBe(20);
 		expect(n("SELECT count(*) AS n FROM collections WHERE library_id = 1")).toBe(1);
 		expect(n("SELECT count(*) AS n FROM sync_outbox WHERE library_id = 1")).toBe(queued.n);
-		expect(up.query("SELECT id, type, name, editable FROM libraries").all()).toEqual([{ id: 1, type: "user", name: "My Library", editable: 1 }]);
+		expect(up.query("SELECT id, type, name, editable FROM libraries").all()).toEqual([
+			{ id: 1, type: "user", name: "My Library", editable: 1 },
+		]);
 		expect(up.query("PRAGMA integrity_check").all()).toEqual([{ integrity_check: "ok" }]);
 		// the re-created triggers keep working: a new edit is queued, in the right library
 		up.run("DELETE FROM sync_outbox");
 		up.run("UPDATE items SET title = 'Edited' WHERE key = 'OLD00001'");
-		expect(up.query("SELECT type, key, op, library_id AS lib FROM sync_outbox").all()).toEqual([{ type: "item", key: "OLD00001", op: "upsert", lib: 1 }]);
+		expect(up.query("SELECT type, key, op, library_id AS lib FROM sync_outbox").all()).toEqual([
+			{ type: "item", key: "OLD00001", op: "upsert", lib: 1 },
+		]);
 		up.close();
 	});
 
@@ -141,7 +175,10 @@ describe("items and collections belong to one library", () => {
 		const child = createItem(db, { itemType: "note", parentItem: parent.data.key, note: "<p>n</p>" });
 		expect(db.query("SELECT library_id AS l FROM items WHERE key = ?").get(child.data.key)).toEqual({ l: g.id });
 		// raw SQL, as importers and the connector do: no library given
-		db.run("INSERT INTO items(key, item_type, parent_key, title, data, date_added, date_modified) VALUES('RAWCHILD', 'attachment', ?, 'a', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')", [parent.data.key]);
+		db.run(
+			"INSERT INTO items(key, item_type, parent_key, title, data, date_added, date_modified) VALUES('RAWCHILD', 'attachment', ?, 'a', '{}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+			[parent.data.key],
+		);
 		expect(db.query("SELECT library_id AS l FROM items WHERE key = 'RAWCHILD'").get()).toEqual({ l: g.id });
 		expect(status(() => createItem(db, { itemType: "note", parentItem: parent.data.key }, USER_LIBRARY))).toBe(400);
 	});
@@ -177,7 +214,11 @@ describe("read-only libraries", () => {
 		denied(() => addItemsToCollection(db, coll.key, [it.data.key]));
 		denied(() => addTags(db, it.data.key, ["x"]));
 		denied(() => removeTags(db, it.data.key, ["x"]));
-		denied(() => upsertAnnotations(db, att.data.key, [{ id: "ANNOT001", type: "highlight", sortIndex: "0", dateModified: "2026-01-01T00:00:00Z" } as never]));
+		denied(() =>
+			upsertAnnotations(db, att.data.key, [
+				{ id: "ANNOT001", type: "highlight", sortIndex: "0", dateModified: "2026-01-01T00:00:00Z" } as never,
+			]),
+		);
 		denied(() => deleteAnnotations(db, att.data.key, ["ANNOT001"]));
 		// reading is fine, and My Library still works
 		expect(listItems(db, { library: g.id }).total).toBe(1);
@@ -202,7 +243,9 @@ describe("the sync outbox knows each change's library", () => {
 		expect(pendingCount(db, g.id)).toBe(2);
 		const own = buildPush(db, dir).writes.map((w) => w.key);
 		expect(own).toEqual([mine.data.key]);
-		const grp = buildPush(db, dir, g.id).writes.map((w) => w.key).sort();
+		const grp = buildPush(db, dir, g.id)
+			.writes.map((w) => w.key)
+			.sort();
 		expect(grp).toEqual([coll.key, theirs.data.key].sort());
 	});
 
@@ -229,13 +272,34 @@ describe("adding items to a library", () => {
 		const mine = addLink(db, { url: "https://example.org/b" });
 		expect(libOf(mine.data.key)).toBe(USER_LIBRARY);
 
-		const file = addFile(db, { name: "paper.pdf", contentType: "application/pdf", dataBase64: Buffer.from("%PDF-1.4 test").toString("base64"), collectionKey: coll.key });
+		const file = addFile(db, {
+			name: "paper.pdf",
+			contentType: "application/pdf",
+			dataBase64: Buffer.from("%PDF-1.4 test").toString("base64"),
+			collectionKey: coll.key,
+		});
 		expect(libOf(file.data.key)).toBe(g.id); // filed in a group collection: it is the group's
-		expect(db.query("SELECT collection_key FROM collection_items WHERE item_key = ?").all(file.data.key)).toEqual([{ collection_key: coll.key }]);
-		expect(status(() => addFile(db, { name: "x.pdf", dataBase64: Buffer.from("x").toString("base64"), collectionKey: coll.key, libraryId: USER_LIBRARY }))).toBe(400);
+		expect(db.query("SELECT collection_key FROM collection_items WHERE item_key = ?").all(file.data.key)).toEqual([
+			{ collection_key: coll.key },
+		]);
+		expect(
+			status(() =>
+				addFile(db, {
+					name: "x.pdf",
+					dataBase64: Buffer.from("x").toString("base64"),
+					collectionKey: coll.key,
+					libraryId: USER_LIBRARY,
+				}),
+			),
+		).toBe(400);
 
 		const lone = createItem(db, { itemType: "journalArticle", title: "Lonely group item" }, g.id);
-		const child = addFile(db, { name: "child.pdf", contentType: "application/pdf", dataBase64: Buffer.from("%PDF child").toString("base64"), parentKey: lone.data.key });
+		const child = addFile(db, {
+			name: "child.pdf",
+			contentType: "application/pdf",
+			dataBase64: Buffer.from("%PDF child").toString("base64"),
+			parentKey: lone.data.key,
+		});
 		expect(libOf(child.data.key)).toBe(g.id);
 
 		const copy = duplicateItem(db, lone.data.key);
@@ -249,7 +313,9 @@ describe("adding items to a library", () => {
 
 		upsertGroupLibrary(db, { groupId: 100, name: "Group 100", editable: false, filesEditable: false, version: 3 });
 		expect(status(() => addLink(db, { url: "https://example.org/d", libraryId: g.id }))).toBe(403);
-		expect(status(() => addFile(db, { name: "n.pdf", dataBase64: Buffer.from("n").toString("base64"), collectionKey: coll.key }))).toBe(403);
+		expect(status(() => addFile(db, { name: "n.pdf", dataBase64: Buffer.from("n").toString("base64"), collectionKey: coll.key }))).toBe(
+			403,
+		);
 		expect(status(() => duplicateItem(db, lone.data.key))).toBe(403);
 		expect(status(() => addLink(db, { url: "https://example.org/e" }))).toBeUndefined(); // My Library is unaffected
 	});

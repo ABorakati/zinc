@@ -5,10 +5,41 @@ let fx: Fixture;
 beforeEach(() => {
 	fx = buildFixture();
 	// Extra top-level items with ties, case differences and NULL years / publications.
-	insertItem(fx.db, { key: "EEEEEEE5", itemType: "journalArticle", title: "Beta", creators: [{ creatorType: "author", lastName: "Zed" }], date: "2020", publicationTitle: "alpha journal", tags: [{ tag: "grp" }], dateAdded: "2024-05-01T00:00:00Z" });
-	insertItem(fx.db, { key: "FFFFFFF6", itemType: "journalArticle", title: "alpha", creators: [{ creatorType: "author", lastName: "Zed" }], date: "2020", publicationTitle: "Alpha Journal", tags: [{ tag: "grp" }], dateAdded: "2024-05-02T00:00:00Z" });
-	insertItem(fx.db, { key: "GGGGGGG7", itemType: "book", title: "Gamma", creators: [{ creatorType: "author", lastName: "Abel" }], dateAdded: "2024-05-03T00:00:00Z" });
-	insertItem(fx.db, { key: "HHHHHHH8", itemType: "book", title: "Delta", creators: [{ creatorType: "author", lastName: "Abel" }], date: "1999", dateAdded: "2024-05-04T00:00:00Z" });
+	insertItem(fx.db, {
+		key: "EEEEEEE5",
+		itemType: "journalArticle",
+		title: "Beta",
+		creators: [{ creatorType: "author", lastName: "Zed" }],
+		date: "2020",
+		publicationTitle: "alpha journal",
+		tags: [{ tag: "grp" }],
+		dateAdded: "2024-05-01T00:00:00Z",
+	});
+	insertItem(fx.db, {
+		key: "FFFFFFF6",
+		itemType: "journalArticle",
+		title: "alpha",
+		creators: [{ creatorType: "author", lastName: "Zed" }],
+		date: "2020",
+		publicationTitle: "Alpha Journal",
+		tags: [{ tag: "grp" }],
+		dateAdded: "2024-05-02T00:00:00Z",
+	});
+	insertItem(fx.db, {
+		key: "GGGGGGG7",
+		itemType: "book",
+		title: "Gamma",
+		creators: [{ creatorType: "author", lastName: "Abel" }],
+		dateAdded: "2024-05-03T00:00:00Z",
+	});
+	insertItem(fx.db, {
+		key: "HHHHHHH8",
+		itemType: "book",
+		title: "Delta",
+		creators: [{ creatorType: "author", lastName: "Abel" }],
+		date: "1999",
+		dateAdded: "2024-05-04T00:00:00Z",
+	});
 	fx.db.query("INSERT INTO collection_items VALUES('COLLAAA1', 'EEEEEEE5')").run();
 	fx.db.query("INSERT INTO collection_items VALUES('COLLAAA1', 'GGGGGGG7')").run();
 });
@@ -63,7 +94,9 @@ describe("GET /api/items/groups", () => {
 
 	async function check(by: string, dir: string, filter = "") {
 		const g = await groups(`by=${by}&dir=${dir}${filter}`);
-		const l = await list(`sort=${by}&dir=${dir}&limit=1000&fields=${by === "year" ? "date" : by === "itemType" ? "itemType" : "publicationTitle"}${filter}`);
+		const l = await list(
+			`sort=${by}&dir=${dir}&limit=1000&fields=${by === "year" ? "date" : by === "itemType" ? "itemType" : "publicationTitle"}${filter}`,
+		);
 		const sum = g.groups.reduce((n: number, x: any) => n + x.count, 0);
 		expect(sum).toBe(l.total);
 		// Cumulative offsets: the first item of each group in the list must belong to that group.

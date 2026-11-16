@@ -13,7 +13,10 @@ import { toast } from "../ui/overlay";
 
 type Msg = { action?: string; [k: string]: unknown };
 type Citation = { citationItems?: { uris?: string[]; locator?: string; label?: string }[] };
-interface Jump { page: number; /** the top of the target in PDF points from the page's bottom (Zotero rects) */ top?: number }
+interface Jump {
+	page: number;
+	/** the top of the target in PDF points from the page's bottom (Zotero rects) */ top?: number;
+}
 
 const readers = new Map<string, ReaderContext>();
 const jumps = new Map<string, Jump>();
@@ -23,8 +26,13 @@ registerReaderPlugin({
 	onOpen(ctx) {
 		readers.set(ctx.attachmentKey, ctx);
 		const j = jumps.get(ctx.attachmentKey);
-		if (j) { jumps.delete(ctx.attachmentKey); jumpIn(ctx, j); }
-		return () => { if (readers.get(ctx.attachmentKey) === ctx) readers.delete(ctx.attachmentKey); };
+		if (j) {
+			jumps.delete(ctx.attachmentKey);
+			jumpIn(ctx, j);
+		}
+		return () => {
+			if (readers.get(ctx.attachmentKey) === ctx) readers.delete(ctx.attachmentKey);
+		};
 	},
 });
 
@@ -38,7 +46,9 @@ function jumpIn(ctx: ReaderContext, j: Jump): void {
 	};
 	// after the reader restored its saved position (and laid out the pages)
 	setTimeout(go, 250);
-	setTimeout(() => { if (ctx.currentPage() !== Math.max(0, j.page)) go(); }, 900);
+	setTimeout(() => {
+		if (ctx.currentPage() !== Math.max(0, j.page)) go();
+	}, 900);
 }
 
 /** The 8-character item key at the end of a Zotero item URI (http://zotero.org/users/<id>/items/<KEY>, zotero://select/library/items/<KEY>). */
@@ -76,7 +86,10 @@ async function pdfOf(itemKey: string): Promise<string | null> {
 
 const firstCited = (c: unknown): { key: string; locator?: string } | null => {
 	for (const ci of (c as Citation | undefined)?.citationItems ?? []) {
-		for (const u of ci.uris ?? []) { const key = keyOfUri(u); if (key) return { key, locator: ci.locator }; }
+		for (const u of ci.uris ?? []) {
+			const key = keyOfUri(u);
+			if (key) return { key, locator: ci.locator };
+		}
 	}
 	return null;
 };
@@ -87,11 +100,17 @@ async function zoteroLink(url: string): Promise<boolean> {
 	if (!m) return false;
 	const key = keyOfUri(url);
 	if (!key) return true;
-	if (m[1]!.toLowerCase() === "select") { selectItem(key); return true; }
+	if (m[1]!.toLowerCase() === "select") {
+		selectItem(key);
+		return true;
+	}
 	const q = new URLSearchParams(url.split("?")[1] ?? "");
 	const page = Number(q.get("page"));
 	const att = await pdfOf(key);
-	if (!att) { selectItem(key); return true; }
+	if (!att) {
+		selectItem(key);
+		return true;
+	}
 	await openAttachmentAt(att, Number.isFinite(page) && page > 0 ? { page: page - 1 } : null);
 	return true;
 }
@@ -115,7 +134,11 @@ export async function handleNoteAction(m: Msg): Promise<void> {
 				const c = firstCited(m.citation);
 				if (!c) return;
 				const att = await pdfOf(c.key);
-				if (!att) { toast("The cited item has no PDF", { kind: "info" }); selectItem(c.key); return; }
+				if (!att) {
+					toast("The cited item has no PDF", { kind: "info" });
+					selectItem(c.key);
+					return;
+				}
 				const page = parseInt(String(c.locator ?? ""), 10);
 				await openAttachmentAt(att, Number.isFinite(page) && page > 0 ? { page: page - 1 } : { page: 0 });
 				return;

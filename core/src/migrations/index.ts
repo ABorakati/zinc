@@ -43,7 +43,8 @@ export function readSchemaVersion(db: Database): number {
 	if (!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get()) return 0;
 	const row = db.query("SELECT value FROM meta WHERE name = 'schema_version'").get() as { value: string } | null;
 	if (!row) return 0;
-	if (!/^\d+$/.test(row.value)) throw new MigrationError(`The library's schema_version (${JSON.stringify(row.value)}) is not a number.`, undefined);
+	if (!/^\d+$/.test(row.value))
+		throw new MigrationError(`The library's schema_version (${JSON.stringify(row.value)}) is not a number.`, undefined);
 	return Number(row.value);
 }
 
@@ -116,7 +117,10 @@ function backup(db: Database, path: string, from: number, to: number, now: Date,
 function integrityProblem(db: Database): string | null {
 	const rows = db.query("PRAGMA integrity_check").all() as { integrity_check: string }[];
 	if (rows.length === 1 && rows[0].integrity_check === "ok") return null;
-	return `integrity_check: ${rows.slice(0, 5).map((r) => r.integrity_check).join("; ")}`;
+	return `integrity_check: ${rows
+		.slice(0, 5)
+		.map((r) => r.integrity_check)
+		.join("; ")}`;
 }
 
 const fkViolations = (db: Database): number => db.query("PRAGMA foreign_key_check").all().length;
@@ -185,7 +189,9 @@ export function migrate(db: Database, path: string, opts: MigrateOptions = {}): 
 	} catch (e) {
 		if (e instanceof LibraryTooNewError) throw e;
 		const where = current ? `migration ${current.id} "${current.name}"` : "the checks after the migrations";
-		const kept = backupPath ? `A backup from before the upgrade is at ${backupPath}.` : "The library was empty, so no backup was needed.";
+		const kept = backupPath
+			? `A backup from before the upgrade is at ${backupPath}.`
+			: "The library was empty, so no backup was needed.";
 		throw new MigrationError(
 			`The library could not be upgraded to version ${head}: ${where} failed (${(e as Error).message}). Everything was rolled back, so the library is unchanged. ${kept}`,
 			backupPath,

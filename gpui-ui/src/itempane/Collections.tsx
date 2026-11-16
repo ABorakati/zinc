@@ -9,7 +9,9 @@ import { flattenCollections, type FlatCollection } from "./util";
 
 /** All collections flattened with their name chains (recomputed when the sidebar's tree changes). */
 export const useFlatCollections = () =>
-	createMemo(() => flattenCollections(store.libraryId() === 1 ? store.collections() : (store.groupCollections()[store.libraryId()] ?? [])));
+	createMemo(() =>
+		flattenCollections(store.libraryId() === 1 ? store.collections() : (store.groupCollections()[store.libraryId()] ?? [])),
+	);
 
 function CollectionRow(p: { path: string[]; onRemove: () => void }): JSX.Element {
 	const [hover, setHover] = createSignal(false);
@@ -17,15 +19,31 @@ function CollectionRow(p: { path: string[]; onRemove: () => void }): JSX.Element
 		<div
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
-			style={{ ...t("flex items-center gap-1.5 rounded py-[3px] w-full"), paddingLeft: 20, paddingRight: 6, backgroundColor: hover() ? tok("accent") : "transparent" }}
+			style={{
+				...t("flex items-center gap-1.5 rounded py-[3px] w-full"),
+				paddingLeft: 20,
+				paddingRight: 6,
+				backgroundColor: hover() ? tok("accent") : "transparent",
+			}}
 		>
 			<Icon name="folder" size={16} color={tok("muted-foreground")} />
 			<div style={{ ...t("flex items-center"), flexGrow: 1, flexShrink: 1, minWidth: 0, overflow: "hidden" }}>
 				<For each={p.path}>
 					{(name, i) => (
 						<>
-							<Show when={i() > 0}><text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 2, paddingRight: 2 }}>›</text></Show>
-							<text style={{ ...tx("text-[13px]"), color: i() < p.path.length - 1 ? tok("muted-foreground") : tok("foreground"), ...TRUNC, flexShrink: i() < p.path.length - 1 ? 1 : 0 }}>{name}</text>
+							<Show when={i() > 0}>
+								<text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 2, paddingRight: 2 }}>›</text>
+							</Show>
+							<text
+								style={{
+									...tx("text-[13px]"),
+									color: i() < p.path.length - 1 ? tok("muted-foreground") : tok("foreground"),
+									...TRUNC,
+									flexShrink: i() < p.path.length - 1 ? 1 : 0,
+								}}
+							>
+								{name}
+							</text>
 						</>
 					)}
 				</For>
@@ -71,14 +89,28 @@ export function CollectionsSection(): JSX.Element {
 	}
 	const candidates = (q: string): FlatCollection[] => {
 		const needle = q.trim().toLowerCase();
-		return flat().filter((c) => !mine().includes(c.key) && (!needle || c.path.join(" ").toLowerCase().includes(needle))).slice(0, 50);
+		return flat()
+			.filter((c) => !mine().includes(c.key) && (!needle || c.path.join(" ").toLowerCase().includes(needle)))
+			.slice(0, 50);
 	};
 
 	return (
-		<Section id="collections" title="Libraries and Collections" icon="library" count={mine().length} actions={<Show when={!locked()}><IconBtn icon="plus" title="Add to Collection" onClick={() => setAdding(!adding())} /></Show>}>
+		<Section
+			id="collections"
+			title="Libraries and Collections"
+			icon="library"
+			count={mine().length}
+			actions={
+				<Show when={!locked()}>
+					<IconBtn icon="plus" title="Add to Collection" onClick={() => setAdding(!adding())} />
+				</Show>
+			}
+		>
 			<div style={{ ...t("flex items-center gap-1.5 px-1.5 py-[3px]") }}>
 				<Icon name="library" size={16} color={tok("muted-foreground")} />
-				<text style={{ ...tx("text-[13px]") }}>{store.libraries().find((l) => l.id === store.libraryId())?.name ?? "My Library"}</text>
+				<text style={{ ...tx("text-[13px]") }}>
+					{store.libraries().find((l) => l.id === store.libraryId())?.name ?? "My Library"}
+				</text>
 			</div>
 			<For each={mine()}>{(k) => <CollectionRow path={byKey().get(k)?.path ?? [k]} onRemove={() => void remove(k)} />}</For>
 			<Show when={adding()}>

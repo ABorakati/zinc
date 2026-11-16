@@ -21,7 +21,8 @@ export const GET: APIRoute = async () => {
 	];
 	for (const s of sections) {
 		out.push(`## ${s}`, "");
-		for (const p of pages.filter((x) => x.section === s)) out.push(line(p.title, addressOf(mdPathOf(p.slug)), summaryOf(markdownOf(p).replace(/^#\s+.*\n/, ""))));
+		for (const p of pages.filter((x) => x.section === s))
+			out.push(line(p.title, addressOf(mdPathOf(p.slug)), summaryOf(markdownOf(p).replace(/^#\s+.*\n/, ""))));
 		out.push("");
 	}
 	return textResponse(out.join("\n"), "text/plain");

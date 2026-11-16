@@ -37,7 +37,9 @@ export function SourceControl(): JSX.Element {
 				<div style={{ ...t("flex flex-col items-end gap-1"), maxWidth: 380 }}>
 					<Choice<WebSyncMode> value={s().mode} options={SOURCES} width={170} onChange={(m) => void webSync.setMode(m)} />
 					<Show when={s().mode === "zotero-org" && !s().account.keySet}>
-						<Txt cls="text-xs text-muted-foreground" style={{ textAlign: "right" }}>Add an API key below to start.</Txt>
+						<Txt cls="text-xs text-muted-foreground" style={{ textAlign: "right" }}>
+							Add an API key below to start.
+						</Txt>
 					</Show>
 				</div>
 			)}
@@ -49,7 +51,13 @@ export function SourceControl(): JSX.Element {
  * The API key field. The text is masked while typing and cleared once sent: the key is never shown again (the core does not
  * return it either). The masking diffs the new field value against the dots shown to find what was typed or pasted.
  */
-function SecretField(p: { value: string; onInput: (v: string) => void; onEnter: () => void; placeholder?: string; width: number }): JSX.Element {
+function SecretField(p: {
+	value: string;
+	onInput: (v: string) => void;
+	onEnter: () => void;
+	placeholder?: string;
+	width: number;
+}): JSX.Element {
 	const DOT = "•";
 	const onInput = (v: string) => {
 		const shown = DOT.repeat(p.value.length);
@@ -60,7 +68,15 @@ function SecretField(p: { value: string; onInput: (v: string) => void; onEnter: 
 		const inserted = v.slice(pre, v.length - suf);
 		p.onInput(p.value.slice(0, pre) + inserted + p.value.slice(p.value.length - suf));
 	};
-	return <TextInput value={DOT.repeat(p.value.length)} onInput={onInput} onEnter={p.onEnter} placeholder={p.placeholder} style={{ width: p.width }} />;
+	return (
+		<TextInput
+			value={DOT.repeat(p.value.length)}
+			onInput={onInput}
+			onEnter={p.onEnter}
+			placeholder={p.placeholder}
+			style={{ width: p.width }}
+		/>
+	);
 }
 
 export function AccountControl(): JSX.Element {
@@ -91,10 +107,14 @@ export function AccountControl(): JSX.Element {
 							<Txt cls="text-xs text-foreground">
 								{`Connected as ${s().account.username ?? "unknown user"}${s().account.userId !== undefined ? ` (user ${s().account.userId})` : ""}`}
 							</Txt>
-							<Btn disabled={webSync.working()} onClick={() => void webSync.removeKey()}>Remove key</Btn>
+							<Btn disabled={webSync.working()} onClick={() => void webSync.removeKey()}>
+								Remove key
+							</Btn>
 						</div>
 						<Show when={s().account.canWrite === false}>
-							<Txt cls="text-xs text-muted-foreground">This key can only read the library; sending changes needs write access.</Txt>
+							<Txt cls="text-xs text-muted-foreground">
+								This key can only read the library; sending changes needs write access.
+							</Txt>
 						</Show>
 						<Show when={s().account.filesAccess === false}>
 							<Txt cls="text-xs text-muted-foreground">This key has no file access; attachment files cannot be synced.</Txt>
@@ -108,12 +128,16 @@ export function AccountControl(): JSX.Element {
 							placeholder={s().account.keySet ? "Paste a different API key" : "Paste your zotero.org API key"}
 							width={300}
 						/>
-						<Btn primary disabled={webSync.working() || !draft().trim()} onClick={() => void connect()}>{s().account.keySet ? "Replace key" : "Connect"}</Btn>
+						<Btn primary disabled={webSync.working() || !draft().trim()} onClick={() => void connect()}>
+							{s().account.keySet ? "Replace key" : "Connect"}
+						</Btn>
 					</div>
 					<ErrorLine />
 					<Show when={webSync.otherAccount() && draft().trim()}>
 						<div style={t("flex items-center gap-2")}>
-							<Btn disabled={webSync.working()} onClick={() => void switchAccount()}>Switch to this account…</Btn>
+							<Btn disabled={webSync.working()} onClick={() => void switchAccount()}>
+								Switch to this account…
+							</Btn>
 						</div>
 					</Show>
 					<Txt cls="text-xs text-muted-foreground">{`Create a key at ${KEYS_URL} with library read/write access and file access.`}</Txt>
@@ -139,7 +163,14 @@ export function PushControl(): JSX.Element {
 export function FilesControl(): JSX.Element {
 	return (
 		<Show when={webSync.status()} fallback={loading()}>
-			{(s) => <Choice<WebSyncFiles> value={s().files} options={FILES} width={190} onChange={(f) => void webSync.setOptions({ files: f })} />}
+			{(s) => (
+				<Choice<WebSyncFiles>
+					value={s().files}
+					options={FILES}
+					width={190}
+					onChange={(f) => void webSync.setOptions({ files: f })}
+				/>
+			)}
 		</Show>
 	);
 }
@@ -149,7 +180,16 @@ export function GroupsControl(): JSX.Element {
 	return (
 		<Show when={webSync.status()} fallback={loading()}>
 			{(s) => (
-				<Show when={s().groups?.length} fallback={<Value>{s().account.keySet ? "This account has no group libraries." : "Connect a zotero.org account to see its groups."}</Value>}>
+				<Show
+					when={s().groups?.length}
+					fallback={
+						<Value>
+							{s().account.keySet
+								? "This account has no group libraries."
+								: "Connect a zotero.org account to see its groups."}
+						</Value>
+					}
+				>
 					<div style={{ ...t("flex flex-col gap-1.5"), width: "100%" }}>
 						<For each={s().groups}>
 							{(g) => (
@@ -185,10 +225,21 @@ export function OrgStatusControl(): JSX.Element {
 							{`${s().mode === "zotero-org" ? "" : "Not running. "}Last sync ${ago(s().lastPullAt)}; ${s().pending ? `${plural(s().pending, "change")} waiting to send` : "nothing waiting to send"}; ${plural(s().conflicts, "conflict")}`}
 						</Txt>
 						<Show when={waiting()}>
-							<Txt cls="text-xs text-muted-foreground" style={{ textAlign: "right" }}>{`zotero.org asked us to wait; resuming at ${clock(s().backoffUntil!)}.`}</Txt>
+							<Txt
+								cls="text-xs text-muted-foreground"
+								style={{ textAlign: "right" }}
+							>{`zotero.org asked us to wait; resuming at ${clock(s().backoffUntil!)}.`}</Txt>
 						</Show>
-						<Show when={s().lastError}><Txt cls="text-xs text-destructive" style={{ textAlign: "right" }}>{s().lastError ?? ""}</Txt></Show>
-						<Btn icon="refresh-cw" disabled={webSync.working() || s().busy || s().mode !== "zotero-org" || !s().account.keySet} onClick={() => void webSync.syncNow()}>
+						<Show when={s().lastError}>
+							<Txt cls="text-xs text-destructive" style={{ textAlign: "right" }}>
+								{s().lastError ?? ""}
+							</Txt>
+						</Show>
+						<Btn
+							icon="refresh-cw"
+							disabled={webSync.working() || s().busy || s().mode !== "zotero-org" || !s().account.keySet}
+							onClick={() => void webSync.syncNow()}
+						>
 							{s().busy ? "Syncing…" : "Sync now"}
 						</Btn>
 					</div>
@@ -207,12 +258,18 @@ export function FileCheckControl(): JSX.Element {
 				return (
 					<div style={{ ...t("flex flex-col gap-2"), width: "100%" }}>
 						<div style={t("flex items-center gap-2")}>
-							<Btn disabled={webSync.working() || jobBusy() || !s().account.keySet} onClick={() => void webSync.checkFiles()}>Check online-only files</Btn>
+							<Btn disabled={webSync.working() || jobBusy() || !s().account.keySet} onClick={() => void webSync.checkFiles()}>
+								Check online-only files
+							</Btn>
 							<Show when={(webSync.check()?.missingLocally ?? 0) > 0}>
-								<Btn primary disabled={webSync.working() || jobBusy()} onClick={() => void webSync.downloadMissing()}>Download missing files</Btn>
+								<Btn primary disabled={webSync.working() || jobBusy()} onClick={() => void webSync.downloadMissing()}>
+									Download missing files
+								</Btn>
 							</Show>
 						</div>
-						<Show when={!s().account.keySet}><Value>Connect an API key first.</Value></Show>
+						<Show when={!s().account.keySet}>
+							<Value>Connect an API key first.</Value>
+						</Show>
 						<Show when={webSync.check()}>
 							{(c) => (
 								<Note>
@@ -222,7 +279,12 @@ export function FileCheckControl(): JSX.Element {
 											{`Of those: ${c().onServer} on zotero.org, ${c().notOnServer} not on zotero.org${c().unknown ? `, ${c().unknown} unknown` : ""}.`}
 										</NoteText>
 										<For each={c().sample.slice(0, 5)}>
-											{(x) => <Txt cls="text-xs text-muted-foreground" wrap={false}>{`${x.onServer === null ? "?" : x.onServer ? "online" : "missing"}  ${x.title || x.key}`}</Txt>}
+											{(x) => (
+												<Txt
+													cls="text-xs text-muted-foreground"
+													wrap={false}
+												>{`${x.onServer === null ? "?" : x.onServer ? "online" : "missing"}  ${x.title || x.key}`}</Txt>
+											)}
 										</For>
 									</Show>
 								</Note>

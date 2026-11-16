@@ -19,21 +19,56 @@ export function createHash(_alg?: string) {
 	const chunks: Uint8Array[] = [];
 	const enc = new TextEncoder();
 	const self = {
-		update(d: string | Uint8Array) { chunks.push(typeof d === "string" ? enc.encode(d) : d); return self; },
+		update(d: string | Uint8Array) {
+			chunks.push(typeof d === "string" ? enc.encode(d) : d);
+			return self;
+		},
 		digest(fmt?: string) {
 			let h = 0x811c9dc5;
 			const out: number[] = [];
-			for (const c of chunks) for (const b of c) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
-			for (let i = 0; i < 16; i++) { h ^= i; h = Math.imul(h, 0x01000193) >>> 0; out.push(h & 0xff); }
+			for (const c of chunks)
+				for (const b of c) {
+					h ^= b;
+					h = Math.imul(h, 0x01000193) >>> 0;
+				}
+			for (let i = 0; i < 16; i++) {
+				h ^= i;
+				h = Math.imul(h, 0x01000193) >>> 0;
+				out.push(h & 0xff);
+			}
 			const bytes = new Uint8Array(out);
-			return fmt === "hex" ? [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("") : fmt === "base64" ? btoa(String.fromCharCode(...bytes)) : bytes;
+			return fmt === "hex"
+				? [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")
+				: fmt === "base64"
+					? btoa(String.fromCharCode(...bytes))
+					: bytes;
 		},
 	};
 	return self;
 }
 export const randomUUID = () => crypto.randomUUID();
 export const randomBytes = (n: number) => crypto.getRandomValues(new Uint8Array(n));
-export const createCipheriv = () => { throw new Error("encryption is not available in the browser demo"); };
+export const createCipheriv = () => {
+	throw new Error("encryption is not available in the browser demo");
+};
 export const createDecipheriv = createCipheriv;
 
-export default { homedir, tmpdir, arch, release, type, platform, hostname, cpus, totalmem, EOL, pathToFileURL, fileURLToPath, createHash, randomUUID, randomBytes, createCipheriv, createDecipheriv };
+export default {
+	homedir,
+	tmpdir,
+	arch,
+	release,
+	type,
+	platform,
+	hostname,
+	cpus,
+	totalmem,
+	EOL,
+	pathToFileURL,
+	fileURLToPath,
+	createHash,
+	randomUUID,
+	randomBytes,
+	createCipheriv,
+	createDecipheriv,
+};

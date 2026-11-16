@@ -25,8 +25,11 @@ import { mark } from "./trace";
 import { webMounts } from "./webview/mounts";
 import { setNoteBase, setWebBase } from "./webview/config";
 
-
-interface Started { url: string; db: Database; stop(): void }
+interface Started {
+	url: string;
+	db: Database;
+	stop(): void;
+}
 
 export interface Core {
 	/** Loopback URL of the in-process HTTP server; null in direct mode. */
@@ -45,35 +48,43 @@ export const inProcessDb = (): string | undefined => process.env.ZN_DB || undefi
 async function start(dbPath: string): Promise<Core> {
 	// "the real library": the one saved in %APPDATA%\zotero-next-gpui\library.json, or at the legacy / default location (library-location.ts)
 	if (isRealLibrary(dbPath) && process.env.ZN_ALLOW_REAL_DB !== "1") {
-		throw new Error(`ZN_DB points at the real library (${dbPath}); the core writes to its database. Use a copy, or set ZN_ALLOW_REAL_DB=1.`);
+		throw new Error(
+			`ZN_DB points at the real library (${dbPath}); the core writes to its database. Use a copy, or set ZN_ALLOW_REAL_DB=1.`,
+		);
 	}
 	mark("core-start");
 	if (process.env.ZN_CORE_DIRECT === "1") {
 		// string literals (the `as string` is erased on transpile, so a bundler sees a plain literal and can follow it) typed as string for
 		// TypeScript, which keeps the core's sources out of this app's `bun check`
-		const [dbMod, apiMod] = await Promise.all([import("../../core/src/db" as string), import("../../core/src/api" as string)]) as unknown as [
-			{ openDb(path: string): Database },
-			{ handleApi(req: Request, db: Database): Promise<Response | null> },
-		];
+		const [dbMod, apiMod] = (await Promise.all([
+			import("../../core/src/db" as string),
+			import("../../core/src/api" as string),
+		])) as unknown as [{ openDb(path: string): Database }, { handleApi(req: Request, db: Database): Promise<Response | null> }];
 		const db = dbMod.openDb(dbPath) as Database;
 		setDirect((req) => apiMod.handleApi(req, db));
 		// the reader fetches attachment bytes too, and there is no socket in this mode
 		const { setFileFetcher } = await import("./reader/library");
-		setFileFetcher(async (key, signal) =>
-			(await apiMod.handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db)) ?? new Response("not found", { status: 404 }));
+		setFileFetcher(
+			async (key, signal) =>
+				(await apiMod.handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db)) ??
+				new Response("not found", { status: 404 }),
+		);
 		mark("core-ready");
 		setWebBase(null); // no HTTP in this mode: web tabs fall back to the default app
 		setNoteBase(null); // and notes to the built-in Markdown editor
 		return finish({ url: null, direct: true, primary: true, db, dbPath, wantedPort: null, stopServer: () => db.close() });
 	}
-	const { startServer } = await import("../../core/src/server" as string) as unknown as { startServer(o: { dbPath: string; port?: number; hostname?: string; mounts?: { prefix: string; dir: string }[] }): Started };
+	const { startServer } = (await import("../../core/src/server" as string)) as unknown as {
+		startServer(o: { dbPath: string; port?: number; hostname?: string; mounts?: { prefix: string; dir: string }[] }): Started;
+	};
 	mark("core-imported");
 	const mounts = webMounts(); // /reader-host/ (web tabs) and /note-host/, when their builds exist
 	const serves = mounts.some((m) => m.prefix === "/reader-host/");
 	const want = Number(process.env.ZN_PORT) || (packaged ? 23120 : 23161);
 	let s: Started | undefined;
 	let primary = true;
-	if (await portInUse(want)) primary = false; // another zotero-next (or anything) answers there: do not even try to share it
+	if (await portInUse(want))
+		primary = false; // another zotero-next (or anything) answers there: do not even try to share it
 	else {
 		try {
 			s = startServer({ dbPath, port: want, hostname: "127.0.0.1", mounts });
@@ -93,7 +104,15 @@ async function start(dbPath: string): Promise<Core> {
 }
 
 /** Start the services (packaged app / ZN_SERVICES=1) and register the clean shutdown: services first, then the server and its database. */
-async function finish(c: { url: string | null; direct: boolean; primary: boolean; db: Database; dbPath: string; wantedPort: number | null; stopServer: () => void }): Promise<Core> {
+async function finish(c: {
+	url: string | null;
+	direct: boolean;
+	primary: boolean;
+	db: Database;
+	dbPath: string;
+	wantedPort: number | null;
+	stopServer: () => void;
+}): Promise<Core> {
 	let services: Promise<{ stop(): Promise<void> } | undefined> | undefined;
 	let stopped = false;
 	const stop = async () => {

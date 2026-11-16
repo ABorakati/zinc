@@ -116,7 +116,10 @@ export function rangeRects(rects: PdfRect[], a: number, b: number): PdfRect[] {
 		if (cur) {
 			const h = Math.min(r[3] - r[1], cur[3] - cur[1]);
 			const overlap = Math.min(r[3], cur[3]) - Math.max(r[1], cur[1]);
-			if (overlap < 0.45 * h) { out.push(cur); cur = null; }
+			if (overlap < 0.45 * h) {
+				out.push(cur);
+				cur = null;
+			}
 		}
 		if (!cur) cur = [r[0], r[1], r[2], r[3]];
 		else {

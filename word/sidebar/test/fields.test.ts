@@ -21,7 +21,13 @@ import {
 const sample = {
 	citationID: "a1B2c3D4",
 	properties: { formattedCitation: "\\super 1\\nosupersub{}", plainCitation: "1", noteIndex: 0 },
-	citationItems: [{ id: 123, uris: ["http://zotero.org/users/5106252/items/223L2GC8"], itemData: { id: 123, type: "article-journal", title: 'A "quoted" \\ title – é “x”' } }],
+	citationItems: [
+		{
+			id: 123,
+			uris: ["http://zotero.org/users/5106252/items/223L2GC8"],
+			itemData: { id: 123, type: "article-journal", title: 'A "quoted" \\ title – é “x”' },
+		},
+	],
 	schema: CITATION_SCHEMA,
 };
 
@@ -42,7 +48,8 @@ describe("field codes", () => {
 	});
 
 	test("reads a field written by Zotero (spaces, trailing space, no schema)", () => {
-		const zot = ' ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x","properties":{"formattedCitation":"(Smith, 2020)","plainCitation":"(Smith, 2020)","noteIndex":0},"citationItems":[{"id":1,"uris":["http://zotero.org/users/local/abc12345/items/ABCD1234"],"itemData":{"id":1,"type":"book","title":"T"}}]} ';
+		const zot =
+			' ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x","properties":{"formattedCitation":"(Smith, 2020)","plainCitation":"(Smith, 2020)","noteIndex":0},"citationItems":[{"id":1,"uris":["http://zotero.org/users/local/abc12345/items/ABCD1234"],"itemData":{"id":1,"type":"book","title":"T"}}]} ';
 		const p = parseFieldCode(zot);
 		expect(p?.kind).toBe("item");
 		expect(p && p.kind === "item" && p.data.citationItems[0]!.uris[0]).toContain("local/abc12345");
@@ -87,7 +94,9 @@ describe("document preferences", () => {
 		p.bibliographyStyleHasBeenSet = true;
 		p.noteType = 1;
 		const xml = buildPrefsXml(p);
-		expect(xml).toContain('<style id="http://www.zotero.org/styles/vancouver" locale="en-GB" hasBibliography="1" bibliographyStyleHasBeenSet="1"/>');
+		expect(xml).toContain(
+			'<style id="http://www.zotero.org/styles/vancouver" locale="en-GB" hasBibliography="1" bibliographyStyleHasBeenSet="1"/>',
+		);
 		expect(xml).toContain('<pref name="fieldType" value="Field"/>');
 		const back = parsePrefsXml(xml)!;
 		expect(back.styleId).toBe("http://www.zotero.org/styles/vancouver");
@@ -97,7 +106,8 @@ describe("document preferences", () => {
 		expect(back.noteType).toBe(1);
 	});
 	test("reads Zotero's own document data and keeps unknown prefs", () => {
-		const zot = '<data data-version="3" zotero-version="7.0.3"><session id="mAGnqnH1"/><style id="http://www.zotero.org/styles/the-lancet" locale="en-US" hasBibliography="true" bibliographyStyleHasBeenSet="true"/><prefs><pref name="fieldType" value="Field"/><pref name="automaticJournalAbbreviations" value="true"/><pref name="noteType" value="0"/><pref name="dontAskDelayCitationUpdates" value="true"/></prefs></data>';
+		const zot =
+			'<data data-version="3" zotero-version="7.0.3"><session id="mAGnqnH1"/><style id="http://www.zotero.org/styles/the-lancet" locale="en-US" hasBibliography="true" bibliographyStyleHasBeenSet="true"/><prefs><pref name="fieldType" value="Field"/><pref name="automaticJournalAbbreviations" value="true"/><pref name="noteType" value="0"/><pref name="dontAskDelayCitationUpdates" value="true"/></prefs></data>';
 		const p = parsePrefsXml(zot)!;
 		expect(styleUrlToId(p.styleId)).toBe("the-lancet");
 		expect(p.hasBibliography).toBe(true);
@@ -114,14 +124,18 @@ describe("document preferences", () => {
 
 describe("formatted text", () => {
 	test("html -> runs: italic, superscript, small caps, entities", () => {
-		const runs = htmlToRuns('Smith &#38; Jones. <i>Lancet</i> 2020;<sup>3</sup> <span style="font-variant:small-caps;">Abc</span> &lt;x&gt;');
+		const runs = htmlToRuns(
+			'Smith &#38; Jones. <i>Lancet</i> 2020;<sup>3</sup> <span style="font-variant:small-caps;">Abc</span> &lt;x&gt;',
+		);
 		expect(runsToPlain(runs)).toBe("Smith & Jones. Lancet 2020;3 Abc <x>");
 		expect(runs.find((r) => r.t === "Lancet")?.i).toBe(1);
 		expect(runs.find((r) => r.t === "3")?.sup).toBe(1);
 		expect(runs.find((r) => r.t === "Abc")?.sc).toBe(1);
 	});
 	test("second-field-align entries get a tab after the label", () => {
-		const runs = htmlToRuns('<div class="csl-entry"><div class="csl-left-margin">1.</div><div class="csl-right-inline">Text.</div></div>');
+		const runs = htmlToRuns(
+			'<div class="csl-entry"><div class="csl-left-margin">1.</div><div class="csl-right-inline">Text.</div></div>',
+		);
 		expect(runsToPlain(runs)).toBe("1.\tText.");
 	});
 	test("rtf matches Zotero's conventions", () => {

@@ -11,13 +11,16 @@ import { findRefStartInPages, refStartFromStructure, type RefStart } from "./cit
 import { buildCiteIndex, type CiteIndex } from "./citedby";
 import { indexFromStructure, mergeIndex, scanCaptionsInPage, type FigItem } from "./figures";
 
-export type StructState =
-	| { phase: "loading"; pct: number }
-	| { phase: "ready"; doc: DocStructure }
-	| { phase: "error"; message: string };
+export type StructState = { phase: "loading"; pct: number } | { phase: "ready"; doc: DocStructure } | { phase: "error"; message: string };
 
 /** The card shown for a mention: drawn in the overlay of `page`, next to `rect` (PDF points). */
-export interface Popup { key: string; page: number; rect: PdfRect; content: () => JSX.Element; pinned: boolean }
+export interface Popup {
+	key: string;
+	page: number;
+	rect: PdfRect;
+	content: () => JSX.Element;
+	pinned: boolean;
+}
 
 export const EMPTY_STRUCTURE: DocStructure = { blocks: [], figures: [], tables: [], references: [], outline: [] };
 
@@ -35,7 +38,10 @@ export function createSession(ctx: ReaderContext) {
 		let p = ptCache.get(i);
 		if (!p) {
 			const size = ctx.pageSize(i);
-			p = ctx.textLayer(i).then((l) => buildPageText(l.words, size.w, size.h)).catch(() => ({ text: "", rects: [] }) as PagePt);
+			p = ctx
+				.textLayer(i)
+				.then((l) => buildPageText(l.words, size.w, size.h))
+				.catch(() => ({ text: "", rects: [] }) as PagePt);
 			ptCache.set(i, p);
 		}
 		return p;
@@ -47,7 +53,9 @@ export function createSession(ctx: ReaderContext) {
 			let doc = EMPTY_STRUCTURE;
 			try {
 				const bytes = await ctx.pdfBytes();
-				doc = await loadStructure(ctx.attachmentKey, bytes, (pct) => { if (struct().phase === "loading") setStruct({ phase: "loading", pct }); });
+				doc = await loadStructure(ctx.attachmentKey, bytes, (pct) => {
+					if (struct().phase === "loading") setStruct({ phase: "loading", pct });
+				});
 				if (closed) return;
 				setStruct({ phase: "ready", doc });
 			} catch (e) {
@@ -62,16 +70,27 @@ export function createSession(ctx: ReaderContext) {
 					if (i % 6 === 5) await Bun.sleep(0);
 				}
 				refStart ??= findRefStartInPages(all);
-				setFigItems(mergeIndex(indexFromStructure(doc), all.flatMap((pt, i) => scanCaptionsInPage(i, pt))));
-			} catch (e) { console.warn("[academic] text scan failed:", (e as Error).message); }
+				setFigItems(
+					mergeIndex(
+						indexFromStructure(doc),
+						all.flatMap((pt, i) => scanCaptionsInPage(i, pt)),
+					),
+				);
+			} catch (e) {
+				console.warn("[academic] text scan failed:", (e as Error).message);
+			}
 			setAnalysed(true);
 		})());
 	}
 
 	/** Reference number -> where the text cites it (built once, after the structure and the page texts are in). */
 	let citeP: Promise<CiteIndex> | null = null;
-	const structureNow = (): DocStructure => { const s = struct(); return s.phase === "ready" ? s.doc : EMPTY_STRUCTURE; };
-	const citeIndex = (): Promise<CiteIndex> => (citeP ??= start().then(() => buildCiteIndex({ ctx, pageText, structure: structureNow, refStart: () => refStart })));
+	const structureNow = (): DocStructure => {
+		const s = struct();
+		return s.phase === "ready" ? s.doc : EMPTY_STRUCTURE;
+	};
+	const citeIndex = (): Promise<CiteIndex> =>
+		(citeP ??= start().then(() => buildCiteIndex({ ctx, pageText, structure: structureNow, refStart: () => refStart })));
 
 	/** Start over after a failure (the structure loader forgets failed runs). */
 	function retry(): Promise<void> {
@@ -83,7 +102,10 @@ export function createSession(ctx: ReaderContext) {
 	// ---- popups
 	const [popup, setPopup] = createSignal<Popup | null>(null);
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
-	const cancelHide = () => { clearTimeout(hideTimer); hideTimer = undefined; };
+	const cancelHide = () => {
+		clearTimeout(hideTimer);
+		hideTimer = undefined;
+	};
 
 	// ---- jumps with a way back
 	const [backStack, setBack] = createSignal<number[]>([]);
@@ -91,10 +113,15 @@ export function createSession(ctx: ReaderContext) {
 	let jumpOverride: ((page: number, rect: PdfRect | null) => boolean) | null = null;
 	function setJumpOverride(fn: ((page: number, rect: PdfRect | null) => boolean) | null): () => void {
 		jumpOverride = fn;
-		return () => { if (jumpOverride === fn) jumpOverride = null; };
+		return () => {
+			if (jumpOverride === fn) jumpOverride = null;
+		};
 	}
 	function jump(page: number, rect: PdfRect | null, remember = true) {
-		if (jumpOverride?.(page, rect)) { setPopup(null); return; }
+		if (jumpOverride?.(page, rect)) {
+			setPopup(null);
+			return;
+		}
 		const size = ctx.pageSize(page);
 		const here = ctx.currentPage();
 		if (remember && backStack()[backStack().length - 1] !== here) setBack((s) => [...s.slice(-29), here]);
@@ -110,17 +137,42 @@ export function createSession(ctx: ReaderContext) {
 	}
 
 	return {
-		ctx, api, struct, figItems, analysed,
+		ctx,
+		api,
+		struct,
+		figItems,
+		analysed,
 		structure: structureNow,
 		refStart: () => refStart,
-		pageText, start, retry, citeIndex,
+		pageText,
+		start,
+		retry,
+		citeIndex,
 		popup,
-		showPopup(p: Popup) { cancelHide(); setPopup(p); },
-		hidePopup() { cancelHide(); setPopup(null); },
-		scheduleHide(ms = 400) { cancelHide(); hideTimer = setTimeout(() => { if (!popup()?.pinned) setPopup(null); }, ms); },
+		showPopup(p: Popup) {
+			cancelHide();
+			setPopup(p);
+		},
+		hidePopup() {
+			cancelHide();
+			setPopup(null);
+		},
+		scheduleHide(ms = 400) {
+			cancelHide();
+			hideTimer = setTimeout(() => {
+				if (!popup()?.pinned) setPopup(null);
+			}, ms);
+		},
 		cancelHide,
-		backStack, jump, goBack, setJumpOverride,
-		dispose() { closed = true; cancelHide(); closeRegions(ctx.attachmentKey); },
+		backStack,
+		jump,
+		goBack,
+		setJumpOverride,
+		dispose() {
+			closed = true;
+			cancelHide();
+			closeRegions(ctx.attachmentKey);
+		},
 	};
 }
 export type AcademicSession = ReturnType<typeof createSession>;
@@ -128,7 +180,10 @@ export type AcademicSession = ReturnType<typeof createSession>;
 const sessions = new Map<string, AcademicSession>();
 export function academicFor(ctx: ReaderContext): AcademicSession {
 	let s = sessions.get(ctx.attachmentKey);
-	if (!s) { s = createSession(ctx); sessions.set(ctx.attachmentKey, s); }
+	if (!s) {
+		s = createSession(ctx);
+		sessions.set(ctx.attachmentKey, s);
+	}
 	return s;
 }
 export function closeAcademic(attachmentKey: string): void {

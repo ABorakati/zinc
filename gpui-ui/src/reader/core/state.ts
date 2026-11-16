@@ -25,14 +25,33 @@ export interface DocViewState {
 }
 
 export type AppearanceMode = "normal" | "dark" | "sepia" | "custom" | "reading";
-export interface Appearance { mode: AppearanceMode; custom: string; /** reading mode: text and paper colours */ fg?: string; bg?: string }
+export interface Appearance {
+	mode: AppearanceMode;
+	custom: string;
+	/** reading mode: text and paper colours */ fg?: string;
+	bg?: string;
+}
 
-export interface SidebarState { open: boolean; tab: string; width: number }
+export interface SidebarState {
+	open: boolean;
+	tab: string;
+	width: number;
+}
 
-interface Persisted { v: 1; docs: Record<string, DocViewState>; appearance: Appearance; sidebar: SidebarState }
+interface Persisted {
+	v: 1;
+	docs: Record<string, DocViewState>;
+	appearance: Appearance;
+	sidebar: SidebarState;
+}
 
 const MAX_DOCS = 300;
-const defaults = (): Persisted => ({ v: 1, docs: {}, appearance: { mode: "normal", custom: "#e8f0e0" }, sidebar: { open: true, tab: "thumbs", width: 232 } });
+const defaults = (): Persisted => ({
+	v: 1,
+	docs: {},
+	appearance: { mode: "normal", custom: "#e8f0e0" },
+	sidebar: { open: true, tab: "thumbs", width: 232 },
+});
 
 export function stateFile(): string {
 	return process.env.ZN_READER_STATE ?? join(configDir(), "zotero-next-gpui", "reader-state.json");
@@ -43,7 +62,9 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 /** scripts set this to keep a run from touching the real file */
 let disabled = false;
 const off = () => disabled || process.env.ZN_READER_STATE === "off";
-export function disableReaderState(): void { disabled = true; }
+export function disableReaderState(): void {
+	disabled = true;
+}
 
 function load(): Persisted {
 	if (data) return data;
@@ -59,7 +80,9 @@ function load(): Persisted {
 					if (j.sidebar && typeof j.sidebar === "object") d.sidebar = { ...d.sidebar, ...j.sidebar };
 				}
 			}
-		} catch { /* corrupt file: start empty */ }
+		} catch {
+			/* corrupt file: start empty */
+		}
 	}
 	return (data = d);
 }
@@ -84,7 +107,9 @@ export function flushReaderState(): void {
 	}
 }
 // the debounced write may still be pending when the process exits
-process.on("exit", () => { if (timer) flushReaderState(); });
+process.on("exit", () => {
+	if (timer) flushReaderState();
+});
 function schedule() {
 	if (timer || off()) return;
 	timer = setTimeout(flushReaderState, 900);
@@ -97,6 +122,12 @@ export function setDocState(key: string, s: Omit<DocViewState, "t">): void {
 }
 
 export const getAppearance = (): Appearance => load().appearance;
-export function saveAppearance(a: Appearance): void { load().appearance = a; schedule(); }
+export function saveAppearance(a: Appearance): void {
+	load().appearance = a;
+	schedule();
+}
 export const getSidebar = (): SidebarState => load().sidebar;
-export function saveSidebar(s: SidebarState): void { load().sidebar = s; schedule(); }
+export function saveSidebar(s: SidebarState): void {
+	load().sidebar = s;
+	schedule();
+}

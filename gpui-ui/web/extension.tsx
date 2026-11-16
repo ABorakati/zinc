@@ -34,11 +34,18 @@ fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
 // registration of the same host (tests register one under their own name, so they never reach the installed host or its library).
 const hostParam = new URLSearchParams(location.search).get("host");
 const hostName = hostParam && /^com\.zotero_next\.[a-z0-9_.]+$/.test(hostParam) ? hostParam : HOST_NAME;
-const transport = nativeApiTransport(() => chrome.runtime.connectNative(hostName), () => chrome.runtime.lastError?.message);
+const transport = nativeApiTransport(
+	() => chrome.runtime.connectNative(hostName),
+	() => chrome.runtime.lastError?.message,
+);
 // the last requests and their status, for automated checks (window.znLibrary.requests)
 const requests: { method: string; path: string; status: number | string }[] = [];
 setDirect(async (req) => {
-	const entry: (typeof requests)[number] = { method: req.method, path: new URL(req.url).pathname + new URL(req.url).search, status: "pending" };
+	const entry: (typeof requests)[number] = {
+		method: req.method,
+		path: new URL(req.url).pathname + new URL(req.url).search,
+		status: "pending",
+	};
 	requests.push(entry);
 	if (requests.length > 200) requests.shift();
 	try {
@@ -67,7 +74,9 @@ const [app, setApp] = createSignal<Component | null>(null);
 function Root() {
 	return (
 		<div style={{ width: "100%", height: "100%", fontFamily: "IBM Plex Sans" }}>
-			<Show when={app()} fallback={<div style={{ ...tw("bg-canvas", MODE), width: "100%", height: "100%" }} />}>{(C) => createComponent(C(), {})}</Show>
+			<Show when={app()} fallback={<div style={{ ...tw("bg-canvas", MODE), width: "100%", height: "100%" }} />}>
+				{(C) => createComponent(C(), {})}
+			</Show>
 		</div>
 	);
 }

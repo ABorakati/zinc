@@ -28,7 +28,9 @@ const [lib, styles, icons, stored] = await Promise.all([
 ]);
 for (const [name, svg] of Object.entries(icons)) seedFile(`/icons/${name}.svg`, svg, true);
 // the library's stored attachments (the demo article's PDF), where the core looks for them: <library folder>/storage/<key>/<file>
-await Promise.all(stored.map(async (rel) => seedFile(`/demo/storage/${rel}`, await bytes(`storage/${rel.split("/").map(encodeURIComponent).join("/")}`))));
+await Promise.all(
+	stored.map(async (rel) => seedFile(`/demo/storage/${rel}`, await bytes(`storage/${rel.split("/").map(encodeURIComponent).join("/")}`))),
+);
 if (styles) seedFile("/appdata/zotero-next-gpui/collection-style.json", styles, true);
 // GPUI's browser build cannot take font files (no registerFont); it has IBM Plex Sans built in, one of the app's own sans choices
 fontFamilyNames.sans = fontFamilyNames.title = "IBM Plex Sans";
@@ -44,7 +46,10 @@ const { setFileFetcher } = await import("../src/reader/library");
 const { initPdfium } = await import("./pdf");
 setFileFetcher(async (key, signal) => {
 	await initPdfium();
-	return (await handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db as never)) ?? new Response("not found", { status: 404 });
+	return (
+		(await handleApi(new Request(`http://127.0.0.1/api/attachments/${encodeURIComponent(key)}/file`, { signal }), db as never)) ??
+		new Response("not found", { status: 404 })
+	);
 });
 
 // light or dark from the page that embeds the demo (?theme=, then postMessage({ theme }) when the site's theme changes)
@@ -52,14 +57,19 @@ const theme = new URLSearchParams(location.search).get("theme");
 if (theme === "light" || theme === "dark") setThemePrefs({ mode: theme });
 // the interface font through the app's own setting (Settings > Appearance): IBM Plex Sans, the one GPUI's browser build has
 setThemePrefs({ font: "plex" });
-addEventListener("message", (e) => { const t = (e.data as { theme?: string } | null)?.theme; if (t === "light" || t === "dark") setThemePrefs({ mode: t }); });
+addEventListener("message", (e) => {
+	const t = (e.data as { theme?: string } | null)?.theme;
+	if (t === "light" || t === "dark") setThemePrefs({ mode: t });
+});
 const MODE = applyAppearance();
 const [app, setApp] = createSignal<Component | null>(null);
 function Root() {
 	// the outer div sets the family text inherits where the app sets none (GPUI's own default in the browser is a monospace font)
 	return (
 		<div style={{ width: "100%", height: "100%", fontFamily: "IBM Plex Sans" }}>
-			<Show when={app()} fallback={<div style={{ ...tw("bg-canvas", MODE), width: "100%", height: "100%" }} />}>{(C) => createComponent(C(), {})}</Show>
+			<Show when={app()} fallback={<div style={{ ...tw("bg-canvas", MODE), width: "100%", height: "100%" }} />}>
+				{(C) => createComponent(C(), {})}
+			</Show>
 		</div>
 	);
 }
@@ -73,8 +83,10 @@ const { store, uiState } = await import("../src/store");
 		const key = stored[0]?.split("/")[0];
 		if (!key) return null;
 		const { loadStructure } = await import("../src/reader/structure/load");
-		const bytes = new Uint8Array(await (await handleApi(new Request(`http://127.0.0.1/api/attachments/${key}/file`), db as never))!.arrayBuffer());
-		const s = await loadStructure(key, bytes) as unknown as Record<string, unknown>;
+		const bytes = new Uint8Array(
+			await (await handleApi(new Request(`http://127.0.0.1/api/attachments/${key}/file`), db as never))!.arrayBuffer(),
+		);
+		const s = (await loadStructure(key, bytes)) as unknown as Record<string, unknown>;
 		return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Array.isArray(v) ? v.length : typeof v]));
 	},
 };
@@ -88,7 +100,8 @@ await import("../src/features").catch((e) => console.warn("[demo] features", e))
 {
 	const { FONTS } = await import("../src/reader/reflow/settings");
 	for (const f of FONTS as readonly { family: string }[]) (f as { family: string }).family = "IBM Plex Sans";
-	if (new URLSearchParams(location.search).get("view") === "reading") (await import("../src/reader/reflow/state")).setReflowSettings({ openByDefault: true });
+	if (new URLSearchParams(location.search).get("view") === "reading")
+		(await import("../src/reader/reflow/state")).setReflowSettings({ openByDefault: true });
 }
 // ?open=<attachment key>, or ?open=demo for the demo article: open that PDF in the reader once the list is in (a direct link)
 const openParam = new URLSearchParams(location.search).get("open");

@@ -25,7 +25,15 @@ export interface WebParams {
 	headers?: Record<string, string>;
 }
 export type WebResult =
-	| { kind: "items"; items: any[]; collections: any[]; translator: TranslatorRef | null; fallback?: "embedded" | "webpage"; cache: CachedResponse[]; log: string[] }
+	| {
+			kind: "items";
+			items: any[];
+			collections: any[];
+			translator: TranslatorRef | null;
+			fallback?: "embedded" | "webpage";
+			cache: CachedResponse[];
+			log: string[];
+	  }
 	| { kind: "choices"; choices: Choice[]; translator: TranslatorRef; url: string; cache: CachedResponse[]; log: string[] };
 
 export interface ImportParams {
@@ -71,12 +79,24 @@ export async function webJob(p: WebParams): Promise<WebResult> {
 	try {
 		const req = await Z.HTTP.request("GET", p.url, {
 			headers: p.headers,
-			responseTypeMap: new Map([["html", "document"], ["application/xhtml+xml", "document"], ["text/plain", "text"], ["", "text"]]),
+			responseTypeMap: new Map([
+				["html", "document"],
+				["application/xhtml+xml", "document"],
+				["text/plain", "text"],
+				["", "text"],
+			]),
 		});
 		if (req.type !== "document") {
 			// a direct link to an export file (RIS, BibTeX, ...): treat as an import
 			const done = await importJob({ text: String(req.response), translatorsDir: p.translatorsDir, limits: p.limits });
-			return { kind: "items", items: done.items, collections: done.collections, translator: done.translator, cache: endRun(), log: [...log] };
+			return {
+				kind: "items",
+				items: done.items,
+				collections: done.collections,
+				translator: done.translator,
+				cache: endRun(),
+				log: [...log],
+			};
 		}
 		const doc = req.response;
 		const translate = new Z.Translate.Web();
@@ -106,7 +126,8 @@ export async function webJob(p: WebParams): Promise<WebResult> {
 			const out: Choice[] = [];
 			const entries = Array.isArray(offered) ? offered.map((v, i) => [String(i), v] as const) : Object.entries(offered);
 			for (const [key, v] of entries) {
-				if (v && typeof v === "object") out.push({ key, title: String((v as any).title ?? ""), checked: (v as any).checked ? true : undefined });
+				if (v && typeof v === "object")
+					out.push({ key, title: String((v as any).title ?? ""), checked: (v as any).checked ? true : undefined });
 				else out.push({ key, title: String(v) });
 			}
 			if (p.selectedKeys) {
@@ -135,7 +156,8 @@ export async function webJob(p: WebParams): Promise<WebResult> {
 		for (const t of translators) {
 			try {
 				const r = await attempt(t);
-				if (r === "choices") return { kind: "choices", choices: choices!, translator: ref(t), url: p.url, cache: endRun(), log: [...log] };
+				if (r === "choices")
+					return { kind: "choices", choices: choices!, translator: ref(t), url: p.url, cache: endRun(), log: [...log] };
 				if (r.length) {
 					items = r;
 					used = t;
@@ -147,7 +169,8 @@ export async function webJob(p: WebParams): Promise<WebResult> {
 			}
 		}
 		// the follow-up call after a choice list has no fallback: say what went wrong instead of saving a webpage
-		if (!items && p.translatorID) throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "the translator returned no items"));
+		if (!items && p.translatorID)
+			throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "the translator returned no items"));
 		let fallback: "embedded" | "webpage" | undefined;
 		if (!items) {
 			// nothing detected or everything failed: Embedded Metadata forced, then a plain webpage item
@@ -185,7 +208,15 @@ export async function webJob(p: WebParams): Promise<WebResult> {
 			fallback = "webpage";
 		}
 		void chosen;
-		return { kind: "items", items: clone(items), collections: clone((globalThis as any).__znCollections), translator: used ? ref(used) : null, fallback, cache: endRun(), log: [...log] };
+		return {
+			kind: "items",
+			items: clone(items),
+			collections: clone((globalThis as any).__znCollections),
+			translator: used ? ref(used) : null,
+			fallback,
+			cache: endRun(),
+			log: [...log],
+		};
 	} catch (e) {
 		endRun();
 		throw e;

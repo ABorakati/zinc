@@ -43,7 +43,15 @@ class FakeWord {
 		const fieldById = (id: string) => this.fields.find((f) => f.id === id)!;
 		switch (command) {
 			case "Application.getActiveDocument":
-				return { documentID: "doc1", outputFormat: "html", supportedNotes: ["footnotes", "endnotes"], supportsImportExport: true, supportsTextInsertion: true, supportsCitationMerging: true, processorName: "Test Word" };
+				return {
+					documentID: "doc1",
+					outputFormat: "html",
+					supportedNotes: ["footnotes", "endnotes"],
+					supportsImportExport: true,
+					supportsTextInsertion: true,
+					supportsCitationMerging: true,
+					processorName: "Test Word",
+				};
 			case "Document.getDocumentData":
 				return this.docData;
 			case "Document.setDocumentData":
@@ -75,7 +83,12 @@ class FakeWord {
 				fieldById(a).code = b;
 				return null;
 			case "Field.setText":
-				fieldById(a).text = String(b).replace(/<br>/g, "\r").replace(/<\/div>/g, "\r").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/\r$/, "");
+				fieldById(a).text = String(b)
+					.replace(/<br>/g, "\r")
+					.replace(/<\/div>/g, "\r")
+					.replace(/<[^>]+>/g, "")
+					.replace(/&amp;/g, "&")
+					.replace(/\r$/, "");
 				return null;
 			case "Field.delete":
 				this.fields = this.fields.filter((f) => f.id !== a);
@@ -96,7 +109,11 @@ class FakeWord {
 
 	/** Run one integration command like a ribbon button does; resolves when zotero-next sends Document.complete. */
 	async run(command: string): Promise<{ status: number }> {
-		let res = await fetch(`${URL0}/connector/document/execCommand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command, docId: "doc1" }) });
+		let res = await fetch(`${URL0}/connector/document/execCommand`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ command, docId: "doc1" }),
+		});
 		if (res.status !== 200) return { status: res.status };
 		for (;;) {
 			const req = (await res.json()) as { command: string; arguments: any[] };
@@ -107,7 +124,11 @@ class FakeWord {
 			} catch (e) {
 				result = { error: "Connector Error", message: String(e) };
 			}
-			res = await fetch(`${URL0}/connector/document/respond`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result ?? null) });
+			res = await fetch(`${URL0}/connector/document/respond`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(result ?? null),
+			});
 		}
 	}
 }
@@ -345,7 +366,9 @@ describe("dialog queue over HTTP", () => {
 		const running = word.run("addEditCitation");
 		let dlg: { id: string; kind: string; payload: any; secret: string } | undefined;
 		for (let i = 0; i < 50 && !dlg; i++) {
-			const r = (await (await fetch(`${URL0}/zotero-next/integration/dialogs`)).json()) as { pending: { id: string; kind: string; payload: any; secret: string }[] };
+			const r = (await (await fetch(`${URL0}/zotero-next/integration/dialogs`)).json()) as {
+				pending: { id: string; kind: string; payload: any; secret: string }[];
+			};
 			dlg = r.pending[0];
 			if (!dlg) await Bun.sleep(40);
 		}
@@ -354,10 +377,18 @@ describe("dialog queue over HTTP", () => {
 		expect(dlg!.secret.length).toBeGreaterThan(16);
 		// an answer without (or with a wrong) secret is refused and leaves the dialog open
 		for (const bad of [{}, { secret: "nope" }]) {
-			const r = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...bad, result: { items: [{ key: "AAAAAAA1" }] } }) });
+			const r = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ ...bad, result: { items: [{ key: "AAAAAAA1" }] } }),
+			});
 			expect(r.status).toBe(403);
 		}
-		const ok = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secret: dlg!.secret, result: { items: [{ key: "BBBBBBB2" }] } }) });
+		const ok = await fetch(`${URL0}/zotero-next/integration/dialogs/${dlg!.id}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ secret: dlg!.secret, result: { items: [{ key: "BBBBBBB2" }] } }),
+		});
 		expect(ok.status).toBe(200);
 		await running;
 		expect(word.fields[0]!.text).toBe("(1)");
@@ -370,7 +401,11 @@ describe("abandoned transactions", () => {
 		const was = integrationOptions.clientAnswerTimeoutMs;
 		integrationOptions.clientAnswerTimeoutMs = 300;
 		try {
-			const first = await fetch(`${URL0}/connector/document/execCommand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: "refresh", docId: "doc1" }) });
+			const first = await fetch(`${URL0}/connector/document/execCommand`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ command: "refresh", docId: "doc1" }),
+			});
 			expect(((await first.json()) as { command: string }).command).toBe("Application.getActiveDocument");
 			// the page now sits on the lock without answering
 			expect((await new FakeWord().run("refresh")).status).toBe(503);

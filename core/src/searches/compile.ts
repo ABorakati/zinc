@@ -25,7 +25,8 @@ export interface Compiled {
 	empty: boolean; // no usable conditions: matches nothing
 }
 
-type Kind = "text" | "creator" | "year" | "date" | "datetime" | "itemType" | "tag" | "collection" | "note" | "fileType" | "fulltext" | "any";
+type Kind =
+	"text" | "creator" | "year" | "date" | "datetime" | "itemType" | "tag" | "collection" | "note" | "fileType" | "fulltext" | "any";
 
 interface Spec {
 	kind: Kind;
@@ -88,7 +89,11 @@ export function resolveField(name: string): Spec {
 	switch (n.toLowerCase()) {
 		case "title": {
 			const mapped = BASE_MAP.get("title") ?? [];
-			return { kind: "text", field: "title", expr: (a) => `COALESCE(${[`NULLIF(${a}.title, '')`, ...mapped.map((f) => jsonField(a, f))].join(", ")}, NULL)` };
+			return {
+				kind: "text",
+				field: "title",
+				expr: (a) => `COALESCE(${[`NULLIF(${a}.title, '')`, ...mapped.map((f) => jsonField(a, f))].join(", ")}, NULL)`,
+			};
 		}
 		case "creator":
 			return { kind: "creator", field: "creator" };
@@ -132,7 +137,8 @@ export function operatorsFor(field: string): Operator[] {
 
 export function normalizeOptions(input: unknown): SearchOptions {
 	const o = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-	const bool = (k: keyof SearchOptions) => (o[k] === undefined ? (DEFAULT_OPTIONS[k] as boolean) : o[k] === true || o[k] === 1 || o[k] === "true");
+	const bool = (k: keyof SearchOptions) =>
+		o[k] === undefined ? (DEFAULT_OPTIONS[k] as boolean) : o[k] === true || o[k] === 1 || o[k] === "true";
 	if (o.match !== undefined && o.match !== "all" && o.match !== "any") throw new HttpError(400, "options.match must be 'all' or 'any'");
 	return {
 		match: o.match === "any" ? "any" : "all",
@@ -184,7 +190,9 @@ const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 export function parseDateValue(v: string): string {
 	const s = v.trim();
 	const bad = () => new HttpError(400, `invalid date: ${v}`);
-	let y: number, m: number | null = null, d: number | null = null;
+	let y: number,
+		m: number | null = null,
+		d: number | null = null;
 	let mt = /^(\d{4})(?:[-/.](\d{1,2})(?:[-/.](\d{1,2}))?)?(?:[T ].*)?$/.exec(s);
 	if (mt) {
 		y = Number(mt[1]);
@@ -274,9 +282,7 @@ function yearPred(c: Ctx, a: string, op: Operator, v: string): string {
 }
 
 function normDate(raw: string, yearExpr: string | null): string {
-	const tail = yearExpr
-		? `CAST(${yearExpr} AS TEXT)`
-		: `CASE WHEN ${raw} GLOB '[0-9][0-9][0-9][0-9]' THEN ${raw} END`;
+	const tail = yearExpr ? `CAST(${yearExpr} AS TEXT)` : `CASE WHEN ${raw} GLOB '[0-9][0-9][0-9][0-9]' THEN ${raw} END`;
 	return `CASE WHEN ${raw} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' THEN substr(${raw}, 1, 10) WHEN ${raw} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]*' THEN substr(${raw}, 1, 7) ELSE ${tail} END`;
 }
 
@@ -454,7 +460,9 @@ export function quickSearchClause(q: string, mode: QuickSearchMode): { sql: stri
 	for (const term of q.split(/\s+/).filter(Boolean).slice(0, 16)) {
 		if (mode === "titleCreatorYear") {
 			const like = `%${likeEsc(term)}%`;
-			parts.push(`(i.title LIKE ${p(ctx, like)} ${ESC} OR i.creators_summary LIKE ${p(ctx, like)} ${ESC} OR CAST(i.year AS TEXT) LIKE ${p(ctx, like)} ${ESC})`);
+			parts.push(
+				`(i.title LIKE ${p(ctx, like)} ${ESC} OR i.creators_summary LIKE ${p(ctx, like)} ${ESC} OR CAST(i.year AS TEXT) LIKE ${p(ctx, like)} ${ESC})`,
+			);
 			continue;
 		}
 		let part = anyFieldPred(ctx, "i", "contains", term);

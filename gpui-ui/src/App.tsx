@@ -46,7 +46,16 @@ function ItemPaneEmpty() {
 
 /** The item pane (src/itempane); the placeholder shows if it throws while rendering. */
 function ItemPaneSlot(): JSX.Element {
-	return <ErrorBoundary fallback={(err) => { logBoundary("item pane", err); return <ItemPaneEmpty />; }}><ItemPane /></ErrorBoundary>;
+	return (
+		<ErrorBoundary
+			fallback={(err) => {
+				logBoundary("item pane", err);
+				return <ItemPaneEmpty />;
+			}}
+		>
+			<ItemPane />
+		</ErrorBoundary>
+	);
 }
 
 /**
@@ -56,17 +65,47 @@ function ItemPaneSlot(): JSX.Element {
 function ReaderTabView(p: { tab: ReaderTab | WebTab }): JSX.Element {
 	const active = () => store.activeTab() === p.tab.id;
 	return (
-		<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["canvas"], ...(active() ? {} : HIDDEN) }}>
-			<ErrorBoundary fallback={(err) => {
-				logBoundary(isWebTab(p.tab) ? "web tab" : "reader", err, isWebTab(p.tab) ? "ui" : "reader"); // not the title: it is the user's content
-				return (
-					<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
-						<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>{`Could not open "${p.tab.title}"`}</text>
-						<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
-					</div>
-				);
-			}}>
-				<Show when={isWebTab(p.tab)} fallback={<Reader attachmentKey={p.tab.id} title={p.tab.title} itemKey={(p.tab as ReaderTab).itemKey} editable={store.libraryEditable((p.tab as ReaderTab).library ?? 1)} filesEditable={store.libraryFilesEditable((p.tab as ReaderTab).library ?? 1)} active={active()} />}><WebTabView tab={p.tab as WebTab} /></Show>
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				flexGrow: 1,
+				minHeight: 0,
+				width: "100%",
+				backgroundColor: tokens[mode()]["canvas"],
+				...(active() ? {} : HIDDEN),
+			}}
+		>
+			<ErrorBoundary
+				fallback={(err) => {
+					logBoundary(isWebTab(p.tab) ? "web tab" : "reader", err, isWebTab(p.tab) ? "ui" : "reader"); // not the title: it is the user's content
+					return (
+						<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
+							<text
+								style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}
+							>{`Could not open "${p.tab.title}"`}</text>
+							<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>
+								{String((err as Error)?.message ?? err)}
+							</text>
+						</div>
+					);
+				}}
+			>
+				<Show
+					when={isWebTab(p.tab)}
+					fallback={
+						<Reader
+							attachmentKey={p.tab.id}
+							title={p.tab.title}
+							itemKey={(p.tab as ReaderTab).itemKey}
+							editable={store.libraryEditable((p.tab as ReaderTab).library ?? 1)}
+							filesEditable={store.libraryFilesEditable((p.tab as ReaderTab).library ?? 1)}
+							active={active()}
+						/>
+					}
+				>
+					<WebTabView tab={p.tab as WebTab} />
+				</Show>
 			</ErrorBoundary>
 		</div>
 	);
@@ -76,16 +115,32 @@ function ReaderTabView(p: { tab: ReaderTab | WebTab }): JSX.Element {
 function SettingsTabView(): JSX.Element {
 	const active = () => store.activeTab() === SETTINGS_TAB;
 	return (
-		<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["background"], ...(active() ? {} : HIDDEN) }}>
-			<ErrorBoundary fallback={(err) => {
-				logBoundary("settings", err);
-				return (
-					<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
-						<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>Settings could not be shown</text>
-						<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{String((err as Error)?.message ?? err)}</text>
-					</div>
-				);
-			}}>
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				flexGrow: 1,
+				minHeight: 0,
+				width: "100%",
+				backgroundColor: tokens[mode()]["background"],
+				...(active() ? {} : HIDDEN),
+			}}
+		>
+			<ErrorBoundary
+				fallback={(err) => {
+					logBoundary("settings", err);
+					return (
+						<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), width: "100%", height: "100%" }}>
+							<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>
+								Settings could not be shown
+							</text>
+							<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>
+								{String((err as Error)?.message ?? err)}
+							</text>
+						</div>
+					);
+				}}
+			>
 				<SettingsPage active={active()} />
 			</ErrorBoundary>
 		</div>
@@ -97,7 +152,8 @@ const MINS = { sidebar: 0.1, list: 0.25, pane: 0.15 };
 
 /** The panels present for one combination of sidebar / item-pane visibility; rebuilt when that combination changes. */
 function LibraryPanels(p: { k: string }): JSX.Element {
-	const left = p.k[0] === "1", right = p.k[1] === "1";
+	const left = p.k[0] === "1",
+		right = p.k[1] === "1";
 	const [cols, setColsSig] = createSignal(getCols(p.k));
 	const panels: JSX.Element[] = [];
 	const mins: number[] = [];
@@ -116,7 +172,20 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 		<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), height: "100%", width: "100%" }}>
 			<Toolbar />
 			<SortBar />
-			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column", paddingBottom: 10, backgroundColor: tokens[mode()]["card"], borderBottomLeftRadius: 14, borderBottomRightRadius: 14, ...REGION }}>
+			<div
+				style={{
+					flexGrow: 1,
+					minHeight: 0,
+					width: "100%",
+					display: "flex",
+					flexDirection: "column",
+					paddingBottom: 10,
+					backgroundColor: tokens[mode()]["card"],
+					borderBottomLeftRadius: 14,
+					borderBottomRightRadius: 14,
+					...REGION,
+				}}
+			>
 				<CardList />
 			</div>
 		</div>,
@@ -131,7 +200,16 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 		mins.push(MINS.pane);
 	}
 	return (
-		<Resizable sizes={cols()} minSizes={mins} gutter={12} line={false} onSizes={(s) => { setColsSig(s); setCols(p.k, s); }}>
+		<Resizable
+			sizes={cols()}
+			minSizes={mins}
+			gutter={12}
+			line={false}
+			onSizes={(s) => {
+				setColsSig(s);
+				setCols(p.k, s);
+			}}
+		>
 			{panels}
 		</Resizable>
 	);
@@ -144,21 +222,41 @@ export function App() {
 	// window title: the reader's document, Settings, or the app name
 	createEffect(() => {
 		const id = store.activeTab();
-		const reader = store.tabs().filter(isDocTab).find((x) => x.id === id);
+		const reader = store
+			.tabs()
+			.filter(isDocTab)
+			.find((x) => x.id === id);
 		setWindowTitle(reader ? `${reader.title || "Reader"} - Zinc` : id === SETTINGS_TAB ? "Settings - Zinc" : "Zinc");
 	});
 
 	return (
-		<div style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }} onFileDrop={(e) => { if (store.canEdit()) void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y }); else toast("This library is read-only", { description: "Files cannot be added to it." }); }}>
+		<div
+			style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }}
+			onFileDrop={(e) => {
+				if (store.canEdit()) void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y });
+				else toast("This library is read-only", { description: "Files cannot be added to it." });
+			}}
+		>
 			<TopBar />
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
 			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}
-			<div style={{ ...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3"), paddingLeft: leftOpen() ? 0 : 12, width: "100%", ...(onLibrary() ? {} : HIDDEN) }}>
-				<Show when={panelsKey()} keyed>{(k) => <LibraryPanels k={k} />}</Show>
+			<div
+				style={{
+					...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3"),
+					paddingLeft: leftOpen() ? 0 : 12,
+					width: "100%",
+					...(onLibrary() ? {} : HIDDEN),
+				}}
+			>
+				<Show when={panelsKey()} keyed>
+					{(k) => <LibraryPanels k={k} />}
+				</Show>
 			</div>
 			{/* Reader tabs: full width below the top bar, one per open attachment, all kept mounted */}
 			<For each={store.tabs().filter(isDocTab)}>{(tab) => <ReaderTabView tab={tab} />}</For>
-			<Show when={settingsOpen()}><SettingsTabView /></Show>
+			<Show when={settingsOpen()}>
+				<SettingsTabView />
+			</Show>
 			{/* menus, dialogs, popovers, toasts; then the features' always-mounted overlays */}
 			<OverlayHost />
 			<For each={overlays()}>{(o) => o.render()}</For>

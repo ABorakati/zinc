@@ -21,7 +21,7 @@ export function readTar(tar: Uint8Array): [string, Uint8Array][] {
 	const out: [string, Uint8Array][] = [];
 	const dec = new TextDecoder();
 	let longName: string | null = null;
-	for (let off = 0; off + 512 <= tar.length; ) {
+	for (let off = 0; off + 512 <= tar.length;) {
 		const header = tar.subarray(off, off + 512);
 		if (header.every((b) => b === 0)) break;
 		const field = (start: number, len: number) => dec.decode(header.subarray(start, start + len)).replace(/\0.*$/s, "");
@@ -59,7 +59,10 @@ async function loadSource(source: string): Promise<{ files: Map<string, Uint8Arr
 		}
 		return { files, commit: null };
 	}
-	const res = await fetch(source, { headers: { "User-Agent": "zinc", Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(120_000) });
+	const res = await fetch(source, {
+		headers: { "User-Agent": "zinc", Accept: "application/vnd.github+json" },
+		signal: AbortSignal.timeout(120_000),
+	});
 	if (!res.ok) throw new Error(`download failed: HTTP ${res.status} from ${source}`);
 	const tar = gunzipSync(new Uint8Array(await res.arrayBuffer()));
 	let commit: string | null = null;
@@ -86,7 +89,10 @@ export async function updateTranslators(opts: { dataDir: string; source?: string
 		for (const [name, bytes] of files) writeFileSync(join(staging, name), bytes);
 		const count = listTranslators(staging).length;
 		if (count < MIN_TRANSLATORS) throw new Error(`only ${count} valid translators in ${source}; not replacing the current set`);
-		writeFileSync(join(staging, ".source.json"), JSON.stringify({ source, commit, fetchedAt: new Date().toISOString(), count }, null, "\t") + "\n");
+		writeFileSync(
+			join(staging, ".source.json"),
+			JSON.stringify({ source, commit, fetchedAt: new Date().toISOString(), count }, null, "\t") + "\n",
+		);
 		const old = `${target}.old-${process.pid}`;
 		rmSync(old, { recursive: true, force: true });
 		if (existsSync(target)) renameSync(target, old);

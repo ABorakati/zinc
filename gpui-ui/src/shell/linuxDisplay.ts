@@ -15,7 +15,10 @@ if (process.platform === "linux" && process.env.ZN_WAYLAND !== "1" && process.en
 			unsetenv: { args: [FFIType.cstring], returns: FFIType.i32 },
 		}).symbols;
 		const c = (s: string) => Buffer.from(`${s}\0`) as unknown as string;
-		if (process.env.WAYLAND_DISPLAY) { libc.unsetenv(c("WAYLAND_DISPLAY")); delete process.env.WAYLAND_DISPLAY; }
+		if (process.env.WAYLAND_DISPLAY) {
+			libc.unsetenv(c("WAYLAND_DISPLAY"));
+			delete process.env.WAYLAND_DISPLAY;
+		}
 		libc.setenv(c("GDK_BACKEND"), c("x11"), 1);
 		process.env.GDK_BACKEND = "x11";
 		// GTK's print dialog goes through the desktop portal when one is installed, and where the portal cannot show its dialog (no GNOME

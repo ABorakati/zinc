@@ -23,15 +23,30 @@ setOpenUrlResolver(RESOLVER);
 // No browser and no Explorer: record what the menu entries hand to the existing open/reveal helpers.
 const opened: string[] = [];
 const revealed: string[] = [];
-api.openUrl = async (url) => { opened.push(url); return { ok: true }; };
-api.reveal = async (key) => { revealed.push(key); return { ok: true }; };
-ipApi.openUrl = async (url) => { opened.push(url); return { ok: true }; };
-ipApi.reveal = async (key) => { revealed.push(key); return { ok: true }; };
+api.openUrl = async (url) => {
+	opened.push(url);
+	return { ok: true };
+};
+api.reveal = async (key) => {
+	revealed.push(key);
+	return { ok: true };
+};
+ipApi.openUrl = async (url) => {
+	opened.push(url);
+	return { ok: true };
+};
+ipApi.reveal = async (key) => {
+	revealed.push(key);
+	return { ok: true };
+};
 
 const h = await boot({ prefs: { mode: "dark" } });
 const r = h.t.renderer;
 let failed = 0;
-const check = (name: string, ok: boolean) => { console.log(`${ok ? "PASS" : "FAIL"} ${name}`); if (!ok) failed++; };
+const check = (name: string, ok: boolean) => {
+	console.log(`${ok ? "PASS" : "FAIL"} ${name}`);
+	if (!ok) failed++;
+};
 const has = (s: string) => r.getAllText().some((t) => t.includes(s));
 const bounds = (s: string) => {
 	const el = r.findByText(s);
@@ -53,7 +68,11 @@ const hoverText = async (s: string) => {
  *  once the detail is cached (the menu appears inside the click it would then close). */
 const showItemMenu = async (key: string) => {
 	let item = h.store.itemAt(0);
-	for (let i = 0; i < 200; i++) if (h.store.itemAt(i)?.key === key) { item = h.store.itemAt(i); break; }
+	for (let i = 0; i < 200; i++)
+		if (h.store.itemAt(i)?.key === key) {
+			item = h.store.itemAt(i);
+			break;
+		}
 	if (!item) throw new Error(`no row ${key}`);
 	const detail = await getDetail(key);
 	openMenu({ x: 420, y: 300 }, itemMenuItems(item, [key], detail));
@@ -63,7 +82,10 @@ const showItemMenu = async (key: string) => {
 
 /** First visible row title (table cells may be clipped with an ellipsis). */
 const rowTitle = (): { key: string; x: number; y: number } | null => {
-	const texts = r.findByType("text").map((e) => ({ e, b: r.getElementBounds(e.id) })).filter((x) => x.b);
+	const texts = r
+		.findByType("text")
+		.map((e) => ({ e, b: r.getElementBounds(e.id) }))
+		.filter((x) => x.b);
 	for (let i = 0; i < 60; i++) {
 		const it = h.store.itemAt(i);
 		if (!it?.title || it.title.length < 4) continue;
@@ -115,7 +137,10 @@ if (row) {
 	const fileKey = detail.children.find((c) => c.hasFile)?.key;
 	await showItemMenu(row.key);
 	await clickText("Show File");
-	check(fileKey ? "Show File reveals the attachment" : "Show File is disabled without a file", fileKey ? revealed[0] === fileKey : revealed.length === 0);
+	check(
+		fileKey ? "Show File reveals the attachment" : "Show File is disabled without a file",
+		fileKey ? revealed[0] === fileKey : revealed.length === 0,
+	);
 }
 
 // 2. View Online on an item that has a URL or DOI (the first row of this library copy has neither)
@@ -157,7 +182,10 @@ if (withFile < 0) {
 	const key = h.store.itemAt(withFile)!.key;
 	h.store.selectItem(key);
 	await h.settle(1800);
-	if (has("Locate")) { r.simulateKeystrokes("escape"); await h.settle(300); }
+	if (has("Locate")) {
+		r.simulateKeystrokes("escape");
+		await h.settle(300);
+	}
 	const more = r.findByTestId("ip-more");
 	const mb = more ? r.getElementBounds(more.id) : null;
 	if (!mb) {
@@ -167,7 +195,8 @@ if (withFile < 0) {
 		await h.settle(500);
 		check("More menu has Locate", has("Locate"));
 		await hoverText("Locate");
-		for (const label of ["View Online", "Library Lookup", "Search Google Scholar", "Show File"]) check(`pane Locate has ${label}`, has(label));
+		for (const label of ["View Online", "Library Lookup", "Search Google Scholar", "Show File"])
+			check(`pane Locate has ${label}`, has(label));
 		const shot = `${out}/shell-locate-pane.png`;
 		r.captureScreenshot(shot);
 		console.log("wrote", shot);

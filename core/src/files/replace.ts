@@ -26,10 +26,20 @@ export async function replaceAttachmentFile(db: Database, key: string, req: Requ
 	if (!att.path) throw new HttpError(404, "file not found on disk");
 	const type = (att.content_type || "").toLowerCase();
 	if (type && type !== "application/pdf") throw new HttpError(415, `only PDF attachments can be replaced (this one is ${type})`);
-	const st = (() => { try { return statSync(att.path!); } catch { return null; } })();
+	const st = (() => {
+		try {
+			return statSync(att.path!);
+		} catch {
+			return null;
+		}
+	})();
 	if (!st?.isFile()) throw new HttpError(404, "file not found on disk");
 	let parsed: unknown;
-	try { parsed = await req.json(); } catch { throw new HttpError(400, "the body must be JSON {dataBase64}"); }
+	try {
+		parsed = await req.json();
+	} catch {
+		throw new HttpError(400, "the body must be JSON {dataBase64}");
+	}
 	const b64 = (parsed as { dataBase64?: unknown } | null)?.dataBase64;
 	const rawDeleted = (parsed as { deletedPages?: unknown } | null)?.deletedPages;
 	if (rawDeleted !== undefined && (!Array.isArray(rawDeleted) || rawDeleted.some((p) => !Number.isInteger(p) || p < 0))) {
@@ -72,14 +82,37 @@ export async function replaceAttachmentFile(db: Database, key: string, req: Requ
 	} catch (e) {
 		if (swapped && backup) {
 			// the database refused after the file was swapped: the annotations rolled back, so the original goes back
-			try { renameSync(backup, att.path); backup = null; } catch { /* the copy stays next to the file */ }
+			try {
+				renameSync(backup, att.path);
+				backup = null;
+			} catch {
+				/* the copy stays next to the file */
+			}
 		}
-		if (backup && !swapped) { try { rmSync(backup, { force: true }); } catch { /* ignore */ } }
-		if (fd >= 0) try { closeSync(fd); } catch { /* ignore */ }
-		try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
+		if (backup && !swapped) {
+			try {
+				rmSync(backup, { force: true });
+			} catch {
+				/* ignore */
+			}
+		}
+		if (fd >= 0)
+			try {
+				closeSync(fd);
+			} catch {
+				/* ignore */
+			}
+		try {
+			rmSync(tmp, { force: true });
+		} catch {
+			/* ignore */
+		}
 		const code = (e as NodeJS.ErrnoException).code;
 		if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
-			throw new HttpError(409, `the file could not be replaced: it is in use or read-only (${code}). Close it in other programs and try again.`);
+			throw new HttpError(
+				409,
+				`the file could not be replaced: it is in use or read-only (${code}). Close it in other programs and try again.`,
+			);
 		}
 		throw new HttpError(500, `the file could not be replaced: ${e instanceof Error ? e.message : String(e)}`);
 	}

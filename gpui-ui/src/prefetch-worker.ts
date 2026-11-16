@@ -7,7 +7,10 @@
 import { Database } from "bun:sqlite";
 
 declare const self: Worker;
-interface Job { db: string; paths: string[] }
+interface Job {
+	db: string;
+	paths: string[];
+}
 
 const t0 = performance.now();
 // the core's request handler loads while the main thread is still creating the window; the job arrives meanwhile
@@ -26,13 +29,19 @@ self.onmessage = async (e: MessageEvent<Job>) => {
 			try {
 				const res = await handleApi(new Request("http://127.0.0.1/api" + path), db);
 				if (res && res.ok) text = await res.text();
-			} catch { /* a miss: the main thread asks the core */ }
+			} catch {
+				/* a miss: the main thread asks the core */
+			}
 			postMessage({ path, text, ms: Math.round(performance.now() - t0) });
 		}
 	} catch {
 		for (const path of paths) postMessage({ path, text: null, ms: Math.round(performance.now() - t0) });
 	} finally {
-		try { db?.close(); } catch { /* ignore */ }
+		try {
+			db?.close();
+		} catch {
+			/* ignore */
+		}
 		postMessage({ done: true });
 	}
 };

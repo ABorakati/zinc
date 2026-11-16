@@ -21,16 +21,28 @@ let db: Database;
 
 beforeEach(() => {
 	db = openDb(join(tempDir(), "lib.sqlite"));
-	insertItem(db, { key: "AAAAAAA1", itemType: "journalArticle", title: "Deep learning for radiology", creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }], date: "2020-05-01", dateAdded: "2024-01-01T00:00:00Z" });
+	insertItem(db, {
+		key: "AAAAAAA1",
+		itemType: "journalArticle",
+		title: "Deep learning for radiology",
+		creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }],
+		date: "2020-05-01",
+		dateAdded: "2024-01-01T00:00:00Z",
+	});
 });
 afterEach(() => db.close());
 
-const z = (path: string, headers: Record<string, string> = {}, init: RequestInit = {}) => handleZRequest(new Request(BASE + path, { headers, ...init }), db, server);
+const z = (path: string, headers: Record<string, string> = {}, init: RequestInit = {}) =>
+	handleZRequest(new Request(BASE + path, { headers, ...init }), db, server);
 const CONNECTOR = { "X-Zotero-Connector-API-Version": "3", "Content-Type": "application/json" };
 
 describe("Zotero port origin policy", () => {
 	test("a web page is refused even with the connector headers, and gets no CORS grant", async () => {
-		const res = await z("/connector/getSelectedCollection", { ...CONNECTOR, Origin: "https://evil.example" }, { method: "POST", body: "{}" });
+		const res = await z(
+			"/connector/getSelectedCollection",
+			{ ...CONNECTOR, Origin: "https://evil.example" },
+			{ method: "POST", body: "{}" },
+		);
 		expect(res.status).toBe(403);
 		expect(res.headers.get("access-control-allow-origin")).toBeNull();
 	});
@@ -65,7 +77,11 @@ describe("Zotero port origin policy", () => {
 	});
 
 	test("opening /connector/ping in a tab (navigation) still works", async () => {
-		const res = await z("/connector/ping", { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "User-Agent": "Mozilla/5.0" });
+		const res = await z("/connector/ping", {
+			"Sec-Fetch-Site": "cross-site",
+			"Sec-Fetch-Mode": "navigate",
+			"User-Agent": "Mozilla/5.0",
+		});
 		expect(res.status).toBe(200);
 	});
 
@@ -90,7 +106,13 @@ describe("Better BibTeX endpoints", () => {
 		z("/better-bibtex/json-rpc", { "Content-Type": "application/json", ...headers }, { method: "POST", body });
 
 	test("any Origin (even null or an extension) and cross-site fetches are refused", async () => {
-		const browserHeaders: Record<string, string>[] = [{ Origin: "null" }, { Origin: "https://evil.example" }, { Origin: "chrome-extension://abc" }, { "Sec-Fetch-Site": "cross-site" }, { "Sec-Fetch-Site": "same-site" }];
+		const browserHeaders: Record<string, string>[] = [
+			{ Origin: "null" },
+			{ Origin: "https://evil.example" },
+			{ Origin: "chrome-extension://abc" },
+			{ "Sec-Fetch-Site": "cross-site" },
+			{ "Sec-Fetch-Site": "same-site" },
+		];
 		for (const h of browserHeaders) {
 			expect((await z("/better-bibtex/cayw?probe", h)).status).toBe(403);
 		}
@@ -106,7 +128,9 @@ describe("Better BibTeX endpoints", () => {
 		const body = (await res.json()) as any;
 		expect(body.error?.message).toContain("POST");
 		expect(existsSync(target)).toBe(false);
-		const batch = await z(`/better-bibtex/json-rpc?${encodeURIComponent(JSON.stringify([JSON.parse(rpcBody("collection.scanAUX", ["/x", "a.aux"]))]))}`);
+		const batch = await z(
+			`/better-bibtex/json-rpc?${encodeURIComponent(JSON.stringify([JSON.parse(rpcBody("collection.scanAUX", ["/x", "a.aux"]))]))}`,
+		);
 		expect(((await batch.json()) as any)[0].error.message).toContain("POST");
 	});
 
@@ -126,7 +150,9 @@ describe("Better BibTeX endpoints", () => {
 	});
 
 	test("autoexport.add refuses scripts and system folders", async () => {
-		const bad = (await (await post(rpcBody("autoexport.add", ["/", "betterbibtex", join(tempDir(), "startup.bat"), {}, true]))).json()) as any;
+		const bad = (await (
+			await post(rpcBody("autoexport.add", ["/", "betterbibtex", join(tempDir(), "startup.bat"), {}, true]))
+		).json()) as any;
 		expect(bad.error).toBeDefined();
 	});
 });
@@ -136,7 +162,9 @@ describe("auto-export targets", () => {
 	// The target rules are Windows path rules (drive letters, UNC, device names, streams); other platforms read these strings as relative names.
 	test.skipIf(process.platform !== "win32")("system folders, UNC and device paths, odd extensions and streams are refused", () => {
 		expect(() => checkExportTarget(w("C:/Windows/System32/refs.bib"))).toThrow("system");
-		expect(() => checkExportTarget(w("C:/Users/x/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/r.bib"))).toThrow("startup");
+		expect(() => checkExportTarget(w("C:/Users/x/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/r.bib"))).toThrow(
+			"startup",
+		);
 		expect(() => checkExportTarget(w("//server/share/refs.bib"))).toThrow("network");
 		expect(() => checkExportTarget(w("//./pipe/refs.bib"))).toThrow("network");
 		expect(() => checkExportTarget(w("C:/Users/x/run.bat"))).toThrow("must end in");
@@ -159,19 +187,33 @@ describe("auto-export targets", () => {
 
 describe("executable attachments", () => {
 	test("executable and script names are recognised and neutralised", () => {
-		for (const n of ["setup.exe", "run.BAT", "x.hta", "a.vbs", "a.js", "evil.lnk", "x.exe.", "m.docm", "s.ps1"]) expect(isExecutableName(n)).toBe(true);
+		for (const n of ["setup.exe", "run.BAT", "x.hta", "a.vbs", "a.js", "evil.lnk", "x.exe.", "m.docm", "s.ps1"])
+			expect(isExecutableName(n)).toBe(true);
 		for (const n of ["paper.pdf", "notes.txt", "page.html", "image.png", "data.json"]) expect(isExecutableName(n)).toBe(false);
 		expect(neutraliseExecutableName("setup.exe")).toBe("setup.exe.txt");
 		expect(neutraliseExecutableName("paper.pdf")).toBe("paper.pdf");
-		expect(attachmentFileName({ title: "Tool", url: "https://x.example/download/tool.hta", contentType: "application/octet-stream" })).toBe("Tool.hta.txt");
+		expect(
+			attachmentFileName({ title: "Tool", url: "https://x.example/download/tool.hta", contentType: "application/octet-stream" }),
+		).toBe("Tool.hta.txt");
 	});
 
 	test("a web-saved executable is stored with a harmless name", () => {
-		const key = storeWebAttachment(db, { parentKey: "AAAAAAA1", bytes: new TextEncoder().encode("MZ..."), url: "https://x.example/a/payload.exe", contentType: "application/octet-stream" });
+		const key = storeWebAttachment(db, {
+			parentKey: "AAAAAAA1",
+			bytes: new TextEncoder().encode("MZ..."),
+			url: "https://x.example/a/payload.exe",
+			contentType: "application/octet-stream",
+		});
 		const row = db.query("SELECT path FROM attachments WHERE item_key = ?").get(key) as { path: string | null };
 		expect(row.path ?? "").not.toMatch(/\.exe$/i);
 		expect(row.path ?? "").toMatch(/\.txt$/i);
-		const key2 = storeWebAttachment(db, { parentKey: "AAAAAAA1", bytes: new TextEncoder().encode("x"), url: "https://x.example/a", contentType: "application/octet-stream", filename: "run.cmd" });
+		const key2 = storeWebAttachment(db, {
+			parentKey: "AAAAAAA1",
+			bytes: new TextEncoder().encode("x"),
+			url: "https://x.example/a",
+			contentType: "application/octet-stream",
+			filename: "run.cmd",
+		});
 		expect((db.query("SELECT path FROM attachments WHERE item_key = ?").get(key2) as { path: string }).path).toMatch(/\.cmd\.txt$/);
 	});
 });
@@ -182,7 +224,11 @@ describe("open externally", () => {
 	beforeEach(() => {
 		fx = buildFixture();
 		opened.length = 0;
-		setOpener({ reveal: (p) => opened.push(`reveal:${p}`), openFile: (p) => opened.push(`file:${p}`), openUrl: (u) => opened.push(`url:${u}`) });
+		setOpener({
+			reveal: (p) => opened.push(`reveal:${p}`),
+			openFile: (p) => opened.push(`file:${p}`),
+			openUrl: (u) => opened.push(`url:${u}`),
+		});
 	});
 	afterEach(() => setOpener());
 
@@ -242,7 +288,14 @@ describe("import attachments", () => {
 describe("citation keys per library", () => {
 	test("the same key in another library neither forces a postfix nor leaks into lookups", () => {
 		db.query("INSERT OR IGNORE INTO libraries(id, type, name) VALUES(2, 'group', 'G')").run();
-		insertItem(db, { key: "GGGGGGG1", itemType: "journalArticle", title: "Deep learning for radiology", creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }], date: "2020-05-01", dateAdded: "2024-02-01T00:00:00Z" });
+		insertItem(db, {
+			key: "GGGGGGG1",
+			itemType: "journalArticle",
+			title: "Deep learning for radiology",
+			creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }],
+			date: "2020-05-01",
+			dateAdded: "2024-02-01T00:00:00Z",
+		});
 		db.query("UPDATE items SET library_id = 2 WHERE key = 'GGGGGGG1'").run();
 		const mine = getKeyInfo(db, "AAAAAAA1")!.key;
 		const theirs = getKeyInfo(db, "GGGGGGG1")!.key;
@@ -254,7 +307,14 @@ describe("citation keys per library", () => {
 	test("a read-only connection does not write key rows", () => {
 		const path = join(tempDir(), "ro.sqlite");
 		const w = openDb(path);
-		insertItem(w, { key: "RRRRRRR1", itemType: "book", title: "Read only", creators: [{ creatorType: "author", lastName: "Doe" }], date: "2019", dateAdded: "2024-01-01T00:00:00Z" });
+		insertItem(w, {
+			key: "RRRRRRR1",
+			itemType: "book",
+			title: "Read only",
+			creators: [{ creatorType: "author", lastName: "Doe" }],
+			date: "2019",
+			dateAdded: "2024-01-01T00:00:00Z",
+		});
 		w.close();
 		const { Database } = require("bun:sqlite");
 		const ro = new Database(path, { readonly: true });

@@ -21,21 +21,45 @@ export interface MockOptions {
 
 export const SAMPLE_ITEMS: ZoteroItemData[] = [
 	{
-		key: "AAAA1111", itemType: "journalArticle", title: "Outcomes after liver transplantation in the United Kingdom",
-		creators: [{ creatorType: "author", firstName: "Jane", lastName: "Smith" }, { creatorType: "author", firstName: "Omar", lastName: "Haddad" }],
-		publicationTitle: "Transplantation", date: "2021-03-04", volume: "105", issue: "3", pages: "512-520", DOI: "10.1000/tx.2021.001",
-		abstractNote: "BACKGROUND: Long-term outcomes after liver transplantation vary by centre. METHODS: We analysed registry data for 12,000 recipients. RESULTS: Five-year graft survival was 82%. CONCLUSIONS: Centre volume matters.",
+		key: "AAAA1111",
+		itemType: "journalArticle",
+		title: "Outcomes after liver transplantation in the United Kingdom",
+		creators: [
+			{ creatorType: "author", firstName: "Jane", lastName: "Smith" },
+			{ creatorType: "author", firstName: "Omar", lastName: "Haddad" },
+		],
+		publicationTitle: "Transplantation",
+		date: "2021-03-04",
+		volume: "105",
+		issue: "3",
+		pages: "512-520",
+		DOI: "10.1000/tx.2021.001",
+		abstractNote:
+			"BACKGROUND: Long-term outcomes after liver transplantation vary by centre. METHODS: We analysed registry data for 12,000 recipients. RESULTS: Five-year graft survival was 82%. CONCLUSIONS: Centre volume matters.",
 	} as ZoteroItemData,
 	{
-		key: "BBBB2222", itemType: "journalArticle", title: "Machine perfusion for donor liver preservation: a systematic review",
+		key: "BBBB2222",
+		itemType: "journalArticle",
+		title: "Machine perfusion for donor liver preservation: a systematic review",
 		creators: [{ creatorType: "author", firstName: "Li", lastName: "Chen" }],
-		publicationTitle: "Journal of Hepatology", date: "2019", volume: "71", pages: "1-12", DOI: "10.1000/jh.2019.044",
+		publicationTitle: "Journal of Hepatology",
+		date: "2019",
+		volume: "71",
+		pages: "1-12",
+		DOI: "10.1000/jh.2019.044",
 		abstractNote: "We reviewed 34 trials of normothermic and hypothermic machine perfusion.",
 	} as ZoteroItemData,
 	{
-		key: "CCCC3333", itemType: "book", title: "Clinical Transplantation Handbook",
-		creators: [{ creatorType: "author", firstName: "Anna", lastName: "Rossi" }, { creatorType: "author", firstName: "Peter", lastName: "Kovacs" }],
-		publisher: "Oxford University Press", place: "Oxford", date: "2018",
+		key: "CCCC3333",
+		itemType: "book",
+		title: "Clinical Transplantation Handbook",
+		creators: [
+			{ creatorType: "author", firstName: "Anna", lastName: "Rossi" },
+			{ creatorType: "author", firstName: "Peter", lastName: "Kovacs" },
+		],
+		publisher: "Oxford University Press",
+		place: "Oxford",
+		date: "2018",
 	} as ZoteroItemData,
 ];
 
@@ -54,13 +78,26 @@ export interface MockField {
 	anchor?: number;
 }
 
-export function createMockHost(opts: MockOptions = {}): Host & { emit(event: string, data: unknown): void; fields: any[]; unlinked: { story: string; text: string }[]; prefsXml: string | null; settings: Record<string, any>; calls: string[] } {
+export function createMockHost(opts: MockOptions = {}): Host & {
+	emit(event: string, data: unknown): void;
+	fields: any[];
+	unlinked: { story: string; text: string }[];
+	prefsXml: string | null;
+	settings: Record<string, any>;
+	calls: string[];
+} {
 	const items = opts.items ?? SAMPLE_ITEMS;
 	const handlers = new Map<string, ((d: any) => void)[]>();
 	// fields are kept in document order (main text, notes interleaved as Word's reference marks would place them); `idx` counts per story like Word's Fields collection
 	const fields: MockField[] = [];
 	const unlinked: { story: string; text: string }[] = [];
-	const state = { prefsXml: opts.prefsXml ?? (null as string | null), settings: { style: "vancouver" } as Record<string, any>, calls: [] as string[], cursor: -1, target: null as string | null };
+	const state = {
+		prefsXml: opts.prefsXml ?? (null as string | null),
+		settings: { style: "vancouver" } as Record<string, any>,
+		calls: [] as string[],
+		cursor: -1,
+		target: null as string | null,
+	};
 	const body = opts.body ?? "Intro sentence one. Second sentence here. Third sentence here. Final words.";
 	const docNames = ["Preview.docx", ...(opts.otherDocs ?? [])];
 	const fetchText = async (url: string) => {
@@ -82,7 +119,7 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 			const prevSame = prev && prev.story === f.story;
 			if (!main) {
 				if (prevSame && gap === 0) f.note = prev!.note;
-				else f.note = (noteNo[f.story] = (noteNo[f.story] ?? 0) + 1);
+				else f.note = noteNo[f.story] = (noteNo[f.story] ?? 0) + 1;
 			} else delete f.note;
 			f.start = (pos[f.story] ?? 0) + gap;
 			f.end = f.start + f.text.length + 2;
@@ -94,13 +131,19 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 	const find = (ref: { story?: string; idx: number; kind?: string; cid?: string }): MockField => {
 		const f = fields.find((x) => x.story === (ref.story ?? "main") && x.idx === ref.idx);
 		if (!f) throw new Error("The document changed: field " + ref.idx + " no longer exists. Refresh and try again.");
-		if ((ref.kind && f.kind !== ref.kind) || (ref.cid && !f.code.includes('"' + ref.cid + '"'))) throw new Error("The document changed under the sidebar. Refresh and try again.");
+		if ((ref.kind && f.kind !== ref.kind) || (ref.cid && !f.code.includes('"' + ref.cid + '"')))
+			throw new Error("The document changed under the sidebar. Refresh and try again.");
 		return f;
 	};
 	const storyOf = (placement?: string) => (placement === "footnote" ? "fn" : placement === "endnote" ? "en" : "main");
 	const row = (d: ZoteroItemData) => ({
-		key: d.key, title: d.title ?? "", creators: (d.creators ?? []).map((c: any) => c.lastName ?? c.name).join(", "),
-		year: Number(/\d{4}/.exec(String(d.date ?? ""))?.[0]) || null, publication: String((d as any).publicationTitle ?? ""), itemType: d.itemType, doi: String((d as any).DOI ?? ""),
+		key: d.key,
+		title: d.title ?? "",
+		creators: (d.creators ?? []).map((c: any) => c.lastName ?? c.name).join(", "),
+		year: Number(/\d{4}/.exec(String(d.date ?? ""))?.[0]) || null,
+		publication: String((d as any).publicationTitle ?? ""),
+		itemType: d.itemType,
+		doi: String((d as any).DOI ?? ""),
 	});
 	const methods: Record<string, (p: any) => any> = {
 		"host.info": () => ({
@@ -124,14 +167,22 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 			}
 			return rows.slice(0, p.limit ?? rows.length).map(row);
 		},
-		"lib.items": (p) => (p.keys as string[]).map((k) => {
-			const d = items.find((x) => x.key === k);
-			return d ? { key: k, found: true, itemKey: k, trashed: false, itemType: d.itemType, data: d } : { key: k, found: false };
-		}),
+		"lib.items": (p) =>
+			(p.keys as string[]).map((k) => {
+				const d = items.find((x) => x.key === k);
+				return d ? { key: k, found: true, itemKey: k, trashed: false, itemType: d.itemType, data: d } : { key: k, found: false };
+			}),
 		"lib.byUri": () => ({}),
-		"style.search": () => [{ id: "vancouver", title: "Vancouver", installed: true, dependent: false }, { id: "apa", title: "American Psychological Association 7th edition", installed: true, dependent: false }, { id: "nature", title: "Nature", installed: true, dependent: false }],
+		"style.search": () => [
+			{ id: "vancouver", title: "Vancouver", installed: true, dependent: false },
+			{ id: "apa", title: "American Psychological Association 7th edition", installed: true, dependent: false },
+			{ id: "nature", title: "Nature", installed: true, dependent: false },
+		],
 		"style.xml": async (p) => ({ id: p.id, xml: await (opts.styleXml ?? ((id) => fetchText(`/mock/styles/${id}.csl`)))(p.id) }),
-		"locale.xml": async (p) => ({ lang: p.lang, xml: await (opts.localeXml ?? ((l) => fetchText(`/mock/locales/locales-${l}.xml`).catch(() => null)))(p.lang) }),
+		"locale.xml": async (p) => ({
+			lang: p.lang,
+			xml: await (opts.localeXml ?? ((l) => fetchText(`/mock/locales/locales-${l}.xml`).catch(() => null)))(p.lang),
+		}),
 		"zn.status": () => ({ up: false }),
 		"zn.reveal": () => ({ ok: false, error: "preview mode" }),
 		"zn.lookup": () => null,
@@ -142,7 +193,11 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 				state.target = null;
 				return { ok: true, name: "Preview.docx" };
 			}
-			const hit = docNames.find((n) => n.toLowerCase() === String(p.document).toLowerCase() || ("C:\docs\\" + n).toLowerCase() === String(p.document).toLowerCase());
+			const hit = docNames.find(
+				(n) =>
+					n.toLowerCase() === String(p.document).toLowerCase() ||
+					("C:\docs\\" + n).toLowerCase() === String(p.document).toLowerCase(),
+			);
 			if (!hit) throw new Error("No open document matches '" + p.document + "'. Open documents: " + docNames.join(", "));
 			state.target = hit;
 			return { ok: true, name: hit };
@@ -156,19 +211,57 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 				if (at < 0) break;
 				if (++n === (p.occurrence ?? 1)) return { pos: at + String(p.afterText).length };
 			}
-			throw new Error("The text '" + p.afterText + "' was not found" + (n ? " (only " + n + " occurrence(s))" : "") + " in the document body.");
+			throw new Error(
+				"The text '" + p.afterText + "' was not found" + (n ? " (only " + n + " occurrence(s))" : "") + " in the document body.",
+			);
 		},
-		"doc.state": () => ({ hasDoc: true, name: state.target ?? "Preview.docx", fullName: state.target ?? "Preview.docx", readOnly: false, prefsXml: state.prefsXml }),
+		"doc.state": () => ({
+			hasDoc: true,
+			name: state.target ?? "Preview.docx",
+			fullName: state.target ?? "Preview.docx",
+			readOnly: false,
+			prefsXml: state.prefsXml,
+		}),
 		"doc.fields": () => {
 			layout();
-			return fields.map((f) => ({ story: f.story, idx: f.idx, kind: f.kind, code: f.code, text: f.text, start: f.start, end: f.end, note: f.note ?? 0 }));
+			return fields.map((f) => ({
+				story: f.story,
+				idx: f.idx,
+				kind: f.kind,
+				code: f.code,
+				text: f.text,
+				start: f.start,
+				end: f.end,
+				note: f.note ?? 0,
+			}));
 		},
 		"doc.cursor": () => {
 			const f = fields[state.cursor];
-			return f ? { hasDoc: true, doc: "Preview.docx", start: 1, end: 1, story: 1, inField: true, ref: { story: f.story, idx: f.idx }, kind: f.kind, code: f.code, text: f.text } : { hasDoc: true, doc: "Preview.docx", start: 0, end: 0, story: 1, inField: false };
+			return f
+				? {
+						hasDoc: true,
+						doc: "Preview.docx",
+						start: 1,
+						end: 1,
+						story: 1,
+						inField: true,
+						ref: { story: f.story, idx: f.idx },
+						kind: f.kind,
+						code: f.code,
+						text: f.text,
+					}
+				: { hasDoc: true, doc: "Preview.docx", start: 0, end: 0, story: 1, inField: false };
 		},
 		"doc.insert": (p) => {
-			const field: MockField = { story: storyOf(p.placement), idx: 0, kind: p.kind, code: String(p.code).trim(), text: p.text ?? (p.runs ?? []).map((r: any) => r.t).join(""), start: 0, end: 0 };
+			const field: MockField = {
+				story: storyOf(p.placement),
+				idx: 0,
+				kind: p.kind,
+				code: String(p.code).trim(),
+				text: p.text ?? (p.runs ?? []).map((r: any) => r.t).join(""),
+				start: 0,
+				end: 0,
+			};
 			if (p.after) {
 				// directly after another field (same story, nothing in between)
 				const prev = find(p.after);
@@ -197,7 +290,12 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 			if (p.runs?.length) f.text = p.runs.map((r: any) => r.t).join("");
 			return { ok: true };
 		},
-		"doc.delete": (p) => { fields.splice(fields.indexOf(find(p.ref)), 1); reindex(); state.cursor = -1; return { ok: true }; },
+		"doc.delete": (p) => {
+			fields.splice(fields.indexOf(find(p.ref)), 1);
+			reindex();
+			state.cursor = -1;
+			return { ok: true };
+		},
 		"doc.unlink": (p) => {
 			const f = find(p.ref);
 			unlinked.push({ story: f.story, text: f.text });
@@ -217,7 +315,10 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 			return { ok: true, story: f.story };
 		},
 		"doc.getPrefs": () => ({ xml: state.prefsXml }),
-		"doc.setPrefs": (p) => { state.prefsXml = p.xml; return { ok: true }; },
+		"doc.setPrefs": (p) => {
+			state.prefsXml = p.xml;
+			return { ok: true };
+		},
 		"popup.close": () => ({ ok: true }),
 		"popup.resize": () => ({ ok: true }),
 		"popup.edit": () => ({ ok: true }),
@@ -231,7 +332,9 @@ export function createMockHost(opts: MockOptions = {}): Host & { emit(event: str
 		emit(event: string, data: unknown) {
 			for (const cb of handlers.get(event) ?? []) cb(data);
 		},
-		get prefsXml() { return state.prefsXml; },
+		get prefsXml() {
+			return state.prefsXml;
+		},
 		settings: state.settings,
 		calls: state.calls,
 		async call(method: string, params: Record<string, unknown> = {}) {

@@ -40,8 +40,18 @@ describe("tool definitions", () => {
 	test("every tool in McpTools.json has a handler and vice versa", () => {
 		expect(TOOL_DEFS.map((t) => t.name).sort()).toEqual([...HANDLER_NAMES].sort());
 		expect(TOOL_DEFS.map((t) => t.name)).toEqual([
-			"list_documents", "search_library", "search_styles", "list_citations", "insert_citation", "edit_citation",
-			"delete_citation", "insert_bibliography", "get_document_prefs", "set_style", "set_document_prefs", "refresh",
+			"list_documents",
+			"search_library",
+			"search_styles",
+			"list_citations",
+			"insert_citation",
+			"edit_citation",
+			"delete_citation",
+			"insert_bibliography",
+			"get_document_prefs",
+			"set_style",
+			"set_document_prefs",
+			"refresh",
 		]);
 		for (const t of TOOL_DEFS) {
 			expect(t.description.length).toBeGreaterThan(40);
@@ -85,11 +95,17 @@ describe("search tools", () => {
 describe("citations", () => {
 	test("insert at end / after text / cursor, list, edit with a locator, delete", async () => {
 		const { agent, mock } = setup();
-		const a: any = await agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: { afterText: "Second sentence here" } });
+		const a: any = await agent.call("insert_citation", {
+			items: [{ key: "AAAA1111" }],
+			position: { afterText: "Second sentence here" },
+		});
 		expect(a.inserted.index).toBe(1);
 		expect(a.inserted.text).toBe("(1)");
 		expect(a.inserted.items[0].key).toBe("AAAA1111");
-		const b: any = await agent.call("insert_citation", { items: [{ key: "BBBB2222", locator: "12", label: "page" }], position: { afterText: "Intro sentence one" } });
+		const b: any = await agent.call("insert_citation", {
+			items: [{ key: "BBBB2222", locator: "12", label: "page" }],
+			position: { afterText: "Intro sentence one" },
+		});
 		// document order: B (earlier in the text) now comes first and is numbered 1
 		expect(b.inserted.index).toBe(1);
 		const c: any = await agent.call("insert_citation", { items: [{ key: "CCCC3333" }], position: "end" });
@@ -105,7 +121,10 @@ describe("citations", () => {
 		expect(list.bibliography.present).toBe(false);
 
 		// edit by index: add a locator and a second item
-		const e: any = await agent.call("edit_citation", { index: 2, items: [{ key: "AAAA1111", locator: "5-7", label: "page" }, { key: "CCCC3333" }] });
+		const e: any = await agent.call("edit_citation", {
+			index: 2,
+			items: [{ key: "AAAA1111", locator: "5-7", label: "page" }, { key: "CCCC3333" }],
+		});
 		expect(e.edited.items.map((x: any) => x.key)).toEqual(["AAAA1111", "CCCC3333"]);
 		expect(code(mock.fields[1]).citationItems[0].locator).toBe("5-7");
 		expect(code(mock.fields[1]).citationItems[0].label).toBe("page");
@@ -125,12 +144,15 @@ describe("citations", () => {
 		list = await agent.call("list_citations", {});
 		expect(list.citations.map((x: any) => x.text)).toEqual(["(1)", "(2)"]);
 		await agent.call("delete_citation", { fieldId: list.citations[0].fieldId });
-		expect((await agent.call("list_citations", {}) as any).count).toBe(1);
+		expect(((await agent.call("list_citations", {})) as any).count).toBe(1);
 	});
 
 	test("prefix, suffix, suppressAuthor and label land in the field code", async () => {
 		const { agent, mock } = setup();
-		await agent.call("insert_citation", { items: [{ key: "AAAA1111", locator: "3", label: "chapter", prefix: "see", suffix: "and refs", suppressAuthor: true }], position: "end" });
+		await agent.call("insert_citation", {
+			items: [{ key: "AAAA1111", locator: "3", label: "chapter", prefix: "see", suffix: "and refs", suppressAuthor: true }],
+			position: "end",
+		});
 		const ci = code(mock.fields[0]).citationItems[0]!;
 		expect(ci.locator).toBe("3");
 		expect(ci.label).toBe("chapter");
@@ -142,11 +164,19 @@ describe("citations", () => {
 
 	test("clear errors: unknown item, unknown text, bad index, bad fieldId, no identifier", async () => {
 		const { agent } = setup();
-		await expect(agent.call("insert_citation", { items: [{ key: "ZZZZ9999" }], position: "end" })).rejects.toThrow(/ZZZZ9999 is not in the library/);
-		await expect(agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: { afterText: "no such text" } })).rejects.toThrow(/not found/);
-		await expect(agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: { afterText: "sentence here", occurrence: 5 } })).rejects.toThrow(/only 2 occurrence/);
+		await expect(agent.call("insert_citation", { items: [{ key: "ZZZZ9999" }], position: "end" })).rejects.toThrow(
+			/ZZZZ9999 is not in the library/,
+		);
+		await expect(
+			agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: { afterText: "no such text" } }),
+		).rejects.toThrow(/not found/);
+		await expect(
+			agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: { afterText: "sentence here", occurrence: 5 } }),
+		).rejects.toThrow(/only 2 occurrence/);
 		await agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: "end" });
-		await expect(agent.call("edit_citation", { index: 9, items: [{ key: "AAAA1111" }] })).rejects.toThrow(/no citation number 9: the document has 1/);
+		await expect(agent.call("edit_citation", { index: 9, items: [{ key: "AAAA1111" }] })).rejects.toThrow(
+			/no citation number 9: the document has 1/,
+		);
 		await expect(agent.call("delete_citation", { fieldId: "nope" })).rejects.toThrow(/No citation with fieldId nope/);
 		await expect(agent.call("delete_citation", {})).rejects.toThrow(/index.*fieldId/);
 	});
@@ -165,7 +195,13 @@ describe("bibliography, style, preferences, refresh", () => {
 		expect(mock.fields.filter((f: any) => f.kind === "bibl").length).toBe(1);
 
 		let prefs: any = await agent.call("get_document_prefs", {});
-		expect(prefs).toMatchObject({ configured: true, styleId: "vancouver", citationPlacement: "inline", automaticUpdates: true, hasBibliography: true });
+		expect(prefs).toMatchObject({
+			configured: true,
+			styleId: "vancouver",
+			citationPlacement: "inline",
+			automaticUpdates: true,
+			hasBibliography: true,
+		});
 
 		const r: any = await agent.call("set_style", { styleId: "apa" });
 		expect(r.prefs.styleId).toBe("apa");
@@ -187,7 +223,12 @@ describe("bibliography, style, preferences, refresh", () => {
 
 	test("refresh picks up library edits", async () => {
 		const items = structuredClone(SAMPLE_ITEMS);
-		const mock = createMockHost({ items, userId: "5106252", styleXml: async (id) => read(`${id}.csl`), localeXml: async (l) => (l === "en-US" ? read("locales-en-US.xml") : null) });
+		const mock = createMockHost({
+			items,
+			userId: "5106252",
+			styleXml: async (id) => read(`${id}.csl`),
+			localeXml: async (l) => (l === "en-US" ? read("locales-en-US.xml") : null),
+		});
 		const agent = new Agent(mock);
 		await agent.call("insert_citation", { items: [{ key: "AAAA1111" }], position: "end" });
 		items[0]!.title = "A new title";

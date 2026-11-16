@@ -14,7 +14,9 @@ import { indexItem } from "../search";
 export const hooks = {
 	/** Runs after an attachment is stored: full-text extraction + indexing, best effort (tests replace it). */
 	afterImport: (db: Database, attachmentKey: string): void => {
-		void extractFulltext(db, attachmentKey).catch((e) => console.error("full-text extraction failed:", e instanceof Error ? e.message : e));
+		void extractFulltext(db, attachmentKey).catch((e) =>
+			console.error("full-text extraction failed:", e instanceof Error ? e.message : e),
+		);
 	},
 };
 
@@ -70,9 +72,13 @@ export function safeFileName(s: string): string {
 }
 
 function checkParent(db: Database, parentKey: string): void {
-	const p = db.query("SELECT parent_key, item_type FROM items WHERE key = ?").get(parentKey) as { parent_key: string | null; item_type: string } | null;
+	const p = db.query("SELECT parent_key, item_type FROM items WHERE key = ?").get(parentKey) as {
+		parent_key: string | null;
+		item_type: string;
+	} | null;
 	if (!p) throw new HttpError(404, "parent item not found");
-	if (p.parent_key || p.item_type === "attachment" || p.item_type === "note") throw new HttpError(400, "parent item must be a regular top-level item");
+	if (p.parent_key || p.item_type === "attachment" || p.item_type === "note")
+		throw new HttpError(400, "parent item must be a regular top-level item");
 }
 
 function checkCollection(db: Database, key: string): void {
@@ -104,8 +110,13 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	const collectionKey = req.parentKey ? undefined : req.collectionKey || undefined;
 	if (collectionKey) checkCollection(db, collectionKey);
 	// a child joins its parent's library, a filed attachment its collection's; nothing is added to a read-only library
-	const lib = req.parentKey ? (libraryOfItem(db, req.parentKey) ?? 1) : collectionKey ? (libraryOfCollection(db, collectionKey) ?? 1) : (req.libraryId ?? 1);
-	if (!req.parentKey && collectionKey && req.libraryId !== undefined && req.libraryId !== lib) throw new HttpError(400, "the collection is in another library");
+	const lib = req.parentKey
+		? (libraryOfItem(db, req.parentKey) ?? 1)
+		: collectionKey
+			? (libraryOfCollection(db, collectionKey) ?? 1)
+			: (req.libraryId ?? 1);
+	if (!req.parentKey && collectionKey && req.libraryId !== undefined && req.libraryId !== lib)
+		throw new HttpError(400, "the collection is in another library");
 	assertWritable(db, lib);
 	assertFilesWritable(db, lib); // a group can allow metadata edits yet forbid files
 
@@ -116,10 +127,15 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 		source = req.path;
 	}
 	if (mode === "linked_file" && !source) throw new HttpError(400, "linked_file requires a local path");
-	if (mode === "imported_file" && !source && !bytes && typeof req.dataBase64 !== "string") throw new HttpError(400, "dataBase64 or path is required");
+	if (mode === "imported_file" && !source && !bytes && typeof req.dataBase64 !== "string")
+		throw new HttpError(400, "dataBase64 or path is required");
 
 	const name = safeFileName(String(req.name || (source ? basename(source) : "") || "file"));
-	const contentType = (typeof req.contentType === "string" && req.contentType && req.contentType !== "application/octet-stream" ? req.contentType : guessContentType(name)).split(";")[0];
+	const contentType = (
+		typeof req.contentType === "string" && req.contentType && req.contentType !== "application/octet-stream"
+			? req.contentType
+			: guessContentType(name)
+	).split(";")[0];
 
 	let key = generateKey();
 	while (db.query("SELECT 1 FROM items WHERE key = ?").get(key)) key = generateKey();
@@ -133,7 +149,14 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	let tag: string | undefined;
 	let extraCopy: string | undefined; // "copy" behaviour: the copy placed in the storage folder
 	if (mode === "imported_file") {
-		const t = storageTargetFor(db, { key, name, parentKey: req.parentKey, collectionKey: req.collectionKey || null, force: req.forceStorage === true, keepName: req.keepName === true });
+		const t = storageTargetFor(db, {
+			key,
+			name,
+			parentKey: req.parentKey,
+			collectionKey: req.collectionKey || null,
+			force: req.forceStorage === true,
+			keepName: req.keepName === true,
+		});
 		finalMode = t.mode;
 		dir = t.dir;
 		stored = t.path;
@@ -191,8 +214,24 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 			db.query(
 				`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted, library_id)
 				 VALUES(?, 'attachment', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-			).run(key, req.parentKey || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now, lib);
-			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(key, finalMode, contentType, dbPath);
+			).run(
+				key,
+				req.parentKey || null,
+				cols.title,
+				cols.creators_summary,
+				cols.year,
+				cols.publication,
+				JSON.stringify(data),
+				now,
+				now,
+				lib,
+			);
+			db.query("INSERT INTO attachments(item_key, link_mode, content_type, path, url) VALUES(?, ?, ?, ?, NULL)").run(
+				key,
+				finalMode,
+				contentType,
+				dbPath,
+			);
 			if (collectionKey) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(collectionKey, key);
 		})();
 	} catch (e) {
@@ -218,7 +257,10 @@ export function addFile(db: Database, req: AddFileRequest, bytes?: Uint8Array): 
 	return getItemDetail(db, key)!;
 }
 
-export function addLink(db: Database, req: { parentKey?: string; url?: string; title?: string; collectionKey?: string; libraryId?: number }): ItemDetail {
+export function addLink(
+	db: Database,
+	req: { parentKey?: string; url?: string; title?: string; collectionKey?: string; libraryId?: number },
+): ItemDetail {
 	const raw = typeof req.url === "string" ? req.url.trim() : "";
 	if (!raw) throw new HttpError(400, "url is required");
 	let url: URL;
@@ -227,18 +269,23 @@ export function addLink(db: Database, req: { parentKey?: string; url?: string; t
 	} catch {
 		throw new HttpError(400, "invalid url");
 	}
-	if (!/^[a-z][a-z0-9+.-]*:$/i.test(url.protocol) || url.protocol === "javascript:" || url.protocol === "data:") throw new HttpError(400, "unsupported url scheme");
+	if (!/^[a-z][a-z0-9+.-]*:$/i.test(url.protocol) || url.protocol === "javascript:" || url.protocol === "data:")
+		throw new HttpError(400, "unsupported url scheme");
 	if (req.parentKey) checkParent(db, req.parentKey);
 	const title = typeof req.title === "string" && req.title.trim() ? req.title.trim() : raw;
-	const detail = createItem(db, {
-		itemType: "attachment",
-		linkMode: "linked_url",
-		title,
-		url: raw,
-		accessDate: nowIso(),
-		contentType: "",
-		...(req.parentKey ? { parentItem: req.parentKey } : req.collectionKey ? { collections: [req.collectionKey] } : {}),
-	}, req.parentKey ? undefined : req.libraryId);
+	const detail = createItem(
+		db,
+		{
+			itemType: "attachment",
+			linkMode: "linked_url",
+			title,
+			url: raw,
+			accessDate: nowIso(),
+			contentType: "",
+			...(req.parentKey ? { parentItem: req.parentKey } : req.collectionKey ? { collections: [req.collectionKey] } : {}),
+		},
+		req.parentKey ? undefined : req.libraryId,
+	);
 	indexItem(db, detail.data.key);
 	return detail;
 }
@@ -247,10 +294,16 @@ export function addLink(db: Database, req: { parentKey?: string; url?: string; t
 export function reparentItem(db: Database, itemKey: string, parentKey: string): void {
 	checkParent(db, parentKey);
 	const itemLib = libraryOfItem(db, itemKey);
-	if (itemLib !== null && itemLib !== libraryOfItem(db, parentKey)) throw new HttpError(400, "the item and its new parent are in different libraries");
+	if (itemLib !== null && itemLib !== libraryOfItem(db, parentKey))
+		throw new HttpError(400, "the item and its new parent are in different libraries");
 	assertItemWritable(db, itemKey);
-	const row = db.query("SELECT data, parent_key, item_type FROM items WHERE key = ?").get(itemKey) as { data: string; parent_key: string | null; item_type: string } | null;
-	if (!row || (row.item_type !== "attachment" && row.item_type !== "note")) throw new HttpError(404, "standalone attachment or note not found");
+	const row = db.query("SELECT data, parent_key, item_type FROM items WHERE key = ?").get(itemKey) as {
+		data: string;
+		parent_key: string | null;
+		item_type: string;
+	} | null;
+	if (!row || (row.item_type !== "attachment" && row.item_type !== "note"))
+		throw new HttpError(404, "standalone attachment or note not found");
 	if (row.parent_key) throw new HttpError(400, "the item already has a parent");
 	const data = JSON.parse(row.data) as ZoteroItemData;
 	data.parentItem = parentKey;
@@ -258,7 +311,12 @@ export function reparentItem(db: Database, itemKey: string, parentKey: string): 
 	const modified = nowIso();
 	data.dateModified = modified;
 	db.transaction(() => {
-		db.query("UPDATE items SET parent_key = ?, data = ?, date_modified = ? WHERE key = ?").run(parentKey, JSON.stringify(data), modified, itemKey);
+		db.query("UPDATE items SET parent_key = ?, data = ?, date_modified = ? WHERE key = ?").run(
+			parentKey,
+			JSON.stringify(data),
+			modified,
+			itemKey,
+		);
 		db.query("DELETE FROM collection_items WHERE item_key = ?").run(itemKey);
 	})();
 	clearFileCache();

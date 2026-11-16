@@ -14,10 +14,16 @@ let storage: string;
 const outbox = () => db.query("SELECT type, key, op FROM sync_outbox ORDER BY seq").all() as { type: string; key: string; op: string }[];
 const has = (type: string, key: string, op: string) => outbox().some((o) => o.type === type && o.key === key && o.op === op);
 const dataTags = (key: string) =>
-	((JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data).tags ?? []) as { tag: string; type?: number }[])
+	(
+		(JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data).tags ?? []) as {
+			tag: string;
+			type?: number;
+		}[]
+	)
 		.map((t) => t.tag)
 		.sort();
-const rowTags = (key: string) => (db.query("SELECT tag FROM item_tags WHERE item_key = ? ORDER BY tag").all(key) as { tag: string }[]).map((r) => r.tag);
+const rowTags = (key: string) =>
+	(db.query("SELECT tag FROM item_tags WHERE item_key = ? ORDER BY tag").all(key) as { tag: string }[]).map((r) => r.tag);
 
 /** Move ATT00002's PDF into zotero-next's own storage dir. */
 function storeOwnFile(key: string, name: string): string {
@@ -84,7 +90,10 @@ describe("erase", () => {
 	});
 
 	test("reports missing keys and validates the body", async () => {
-		const r = (await (await call(db, "POST", "/api/maintenance/erase", { keys: ["NOPE0000"] })).json()) as { erased: number; missing: string[] };
+		const r = (await (await call(db, "POST", "/api/maintenance/erase", { keys: ["NOPE0000"] })).json()) as {
+			erased: number;
+			missing: string[];
+		};
 		expect(r.erased).toBe(0);
 		expect(r.missing).toEqual(["NOPE0000"]);
 		expect((await call(db, "POST", "/api/maintenance/erase", { keys: "x" })).status).toBe(400);
@@ -109,8 +118,14 @@ describe("erase", () => {
 
 describe("tags", () => {
 	test("rename keeps data JSON, index and colours in sync", async () => {
-		setTagColors(db, [{ name: "ml", color: "#FF6666" }, { name: "other", color: "#00AA00" }]);
-		const r = (await (await call(db, "POST", "/api/maintenance/tags/rename", { from: "ml", to: "machine learning" })).json()) as { items: number; merged: boolean };
+		setTagColors(db, [
+			{ name: "ml", color: "#FF6666" },
+			{ name: "other", color: "#00AA00" },
+		]);
+		const r = (await (await call(db, "POST", "/api/maintenance/tags/rename", { from: "ml", to: "machine learning" })).json()) as {
+			items: number;
+			merged: boolean;
+		};
 		expect(r).toEqual({ items: 1, merged: false });
 		expect(rowTags("AAAAAAA1")).toEqual(["imaging", "machine learning"]);
 		expect(dataTags("AAAAAAA1")).toEqual(["imaging", "machine learning"]);
@@ -123,8 +138,14 @@ describe("tags", () => {
 	});
 
 	test("rename onto an existing tag merges, including items that already have both", async () => {
-		setTagColors(db, [{ name: "ml", color: "#FF6666" }, { name: "imaging", color: "#0000FF" }]);
-		const r = (await (await call(db, "POST", "/api/maintenance/tags/rename", { from: "ml", to: "imaging" })).json()) as { items: number; merged: boolean };
+		setTagColors(db, [
+			{ name: "ml", color: "#FF6666" },
+			{ name: "imaging", color: "#0000FF" },
+		]);
+		const r = (await (await call(db, "POST", "/api/maintenance/tags/rename", { from: "ml", to: "imaging" })).json()) as {
+			items: number;
+			merged: boolean;
+		};
 		expect(r.merged).toBe(true);
 		expect(rowTags("AAAAAAA1")).toEqual(["imaging"]);
 		expect(dataTags("AAAAAAA1")).toEqual(["imaging"]);
@@ -141,7 +162,10 @@ describe("tags", () => {
 
 	test("delete removes rows, data JSON and colour", async () => {
 		setTagColors(db, [{ name: "imaging", color: "#0000FF" }]);
-		const r = (await (await call(db, "POST", "/api/maintenance/tags/delete", { tags: ["imaging"] })).json()) as { tags: number; items: number };
+		const r = (await (await call(db, "POST", "/api/maintenance/tags/delete", { tags: ["imaging"] })).json()) as {
+			tags: number;
+			items: number;
+		};
 		expect(r).toEqual({ tags: 1, items: 2 });
 		expect(rowTags("AAAAAAA1")).toEqual(["ml"]);
 		expect(dataTags("AAAAAAA1")).toEqual(["ml"]);
@@ -151,7 +175,9 @@ describe("tags", () => {
 	});
 
 	test("delete-automatic only removes automatic rows", async () => {
-		db.query("INSERT INTO item_tags(item_key, tag, type) VALUES('BBBBBBB2', 'auto1', 1), ('BBBBBBB2', 'ml', 1), ('DDDDDDD4', 'auto1', 1)").run();
+		db.query(
+			"INSERT INTO item_tags(item_key, tag, type) VALUES('BBBBBBB2', 'auto1', 1), ('BBBBBBB2', 'ml', 1), ('DDDDDDD4', 'auto1', 1)",
+		).run();
 		const list = (await (await call(db, "GET", "/api/maintenance/tags/automatic")).json()) as { tag: string; count: number }[];
 		expect(list.map((t) => t.tag)).toEqual(["auto1", "ml"]);
 		const r = (await (await call(db, "POST", "/api/maintenance/tags/delete-automatic", {})).json()) as { tags: number; items: number };
@@ -178,7 +204,9 @@ describe("rename files", () => {
 
 	test("renames own-storage files from parent metadata; skips others with a reason", async () => {
 		const own = storeOwnFile("ATT00002", "download.pdf");
-		const res = await call(db, "POST", "/api/maintenance/rename-files", { attachmentKeys: ["ATT00002", "ATT00001", "ATT00003", "NOTE0001", "AAAAAAA1"] });
+		const res = await call(db, "POST", "/api/maintenance/rename-files", {
+			attachmentKeys: ["ATT00002", "ATT00001", "ATT00003", "NOTE0001", "AAAAAAA1"],
+		});
 		const { results } = (await res.json()) as { results: { key: string; status: string; reason?: string; path?: string }[] };
 		const by = Object.fromEntries(results.map((r) => [r.key, r]));
 		const expected = join(storage, "ATT00002", "Smith and Jones - 2020 - Deep learning for radiology.pdf");
@@ -195,12 +223,16 @@ describe("rename files", () => {
 			expect(by[k].reason).toBeTruthy();
 		}
 		// running again: already named
-		const again = (await (await call(db, "POST", "/api/maintenance/rename-files", { attachmentKeys: ["ATT00002"] })).json()) as { results: { status: string }[] };
+		const again = (await (await call(db, "POST", "/api/maintenance/rename-files", { attachmentKeys: ["ATT00002"] })).json()) as {
+			results: { status: string }[];
+		};
 		expect(again.results[0].status).toBe("skipped");
 	});
 
 	test("never renames files outside zotero-next storage", async () => {
-		const res = (await (await call(db, "POST", "/api/maintenance/rename-files", { attachmentKeys: ["ATT00002"] })).json()) as { results: { status: string; reason: string }[] };
+		const res = (await (await call(db, "POST", "/api/maintenance/rename-files", { attachmentKeys: ["ATT00002"] })).json()) as {
+			results: { status: string; reason: string }[];
+		};
 		expect(res.results[0].status).toBe("skipped");
 		expect(res.results[0].reason).toContain("own storage");
 		expect(existsSync(fx.pdfPath)).toBe(true);

@@ -8,7 +8,16 @@ export function TranslatorFormats(p: { formats: TranslatorFormat[]; selected: st
 		<div style={t("flex flex-col gap-1")}>
 			<Txt class="text-xs font-medium text-muted-foreground">More formats (Zotero translators)</Txt>
 			<Scroll height={Math.min(p.formats.length, 5) * 32} border>
-				<For each={p.formats}>{(f) => <Choice selected={p.selected === f.id} label={f.label} hint={f.extension ? `.${f.extension.replace(/^\./, "")}` : undefined} onClick={() => p.onPick(f.id)} />}</For>
+				<For each={p.formats}>
+					{(f) => (
+						<Choice
+							selected={p.selected === f.id}
+							label={f.label}
+							hint={f.extension ? `.${f.extension.replace(/^\./, "")}` : undefined}
+							onClick={() => p.onPick(f.id)}
+						/>
+					)}
+				</For>
 			</Scroll>
 		</div>
 	);

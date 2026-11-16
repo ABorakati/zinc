@@ -18,7 +18,12 @@ export function loadTestCases(file: string): TranslatorCase[] {
 	const start = src.indexOf("/** BEGIN TEST CASES **/");
 	const end = src.indexOf("/** END TEST CASES **/");
 	if (start < 0 || end < 0) throw new Error(`${file}: no test cases`);
-	const body = src.slice(start, end).replace("/** BEGIN TEST CASES **/", "").trim().replace(/^var testCases =\s*/, "").replace(/;\s*$/, "");
+	const body = src
+		.slice(start, end)
+		.replace("/** BEGIN TEST CASES **/", "")
+		.trim()
+		.replace(/^var testCases =\s*/, "")
+		.replace(/;\s*$/, "");
 	return JSON.parse(body) as TranslatorCase[];
 }
 
@@ -35,8 +40,28 @@ const sortableDate = (d: unknown) => strToMultipart(String(d ?? "")).slice(0, 10
 
 // Fields compared when the translator's item has them. Dates compare by their sortable form; pages ignore dash type.
 const TEXT_FIELDS = [
-	"title", "publicationTitle", "bookTitle", "proceedingsTitle", "volume", "issue", "pages", "publisher", "university", "institution",
-	"DOI", "ISBN", "ISSN", "url", "place", "edition", "numPages", "series", "seriesNumber", "thesisType", "reportNumber", "conferenceName",
+	"title",
+	"publicationTitle",
+	"bookTitle",
+	"proceedingsTitle",
+	"volume",
+	"issue",
+	"pages",
+	"publisher",
+	"university",
+	"institution",
+	"DOI",
+	"ISBN",
+	"ISSN",
+	"url",
+	"place",
+	"edition",
+	"numPages",
+	"series",
+	"seriesNumber",
+	"thesisType",
+	"reportNumber",
+	"conferenceName",
 ];
 
 export interface Mismatch {
@@ -56,7 +81,8 @@ export function compareItem(expected: Record<string, any>, got: Record<string, a
 		const b = f === "DOI" ? lc(got[f]) : norm(got[f]);
 		if (a !== b) out.push({ field: f, expected: expected[f], got: got[f] });
 	}
-	if (expected.date !== undefined && sortableDate(expected.date) !== sortableDate(got.date)) out.push({ field: "date", expected: expected.date, got: got.date });
+	if (expected.date !== undefined && sortableDate(expected.date) !== sortableDate(got.date))
+		out.push({ field: "date", expected: expected.date, got: got.date });
 	const key = (c: any) => `${c.creatorType}|${lc(c.lastName ?? c.name)}|${lc(c.firstName)}`;
 	const ec: string[] = (expected.creators ?? []).map(key);
 	const gc: string[] = (got.creators ?? []).map(key);

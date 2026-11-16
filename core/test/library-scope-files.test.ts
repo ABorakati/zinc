@@ -32,9 +32,11 @@ afterEach(() => {
 	db.close(true);
 });
 
-const group = (groupId: number, editable = true, filesEditable = true) => upsertGroupLibrary(db, { groupId, name: `Group ${groupId}`, editable, filesEditable, version: 1 }).id;
+const group = (groupId: number, editable = true, filesEditable = true) =>
+	upsertGroupLibrary(db, { groupId, name: `Group ${groupId}`, editable, filesEditable, version: 1 }).id;
 /** Makes a group read-only after its items were created (a read-only group's items arrive through a pull, never the API). */
-const lock = (g: number, editable = false, filesEditable = false) => db.query("UPDATE libraries SET editable = ?, files_editable = ? WHERE id = ?").run(editable ? 1 : 0, filesEditable ? 1 : 0, g);
+const lock = (g: number, editable = false, filesEditable = false) =>
+	db.query("UPDATE libraries SET editable = ?, files_editable = ? WHERE id = ?").run(editable ? 1 : 0, filesEditable ? 1 : 0, g);
 const status = (fn: () => unknown): number | undefined => {
 	try {
 		fn();
@@ -43,14 +45,20 @@ const status = (fn: () => unknown): number | undefined => {
 	}
 	return undefined;
 };
-const tagsOf = (key: string) => (db.query("SELECT tag FROM item_tags WHERE item_key = ? ORDER BY tag").all(key) as { tag: string }[]).map((r) => r.tag);
-const article = (title: string, lib: number, tags: { tag: string; type?: number }[] = []) => createItem(db, { itemType: "journalArticle", title, tags }, lib).data.key;
+const tagsOf = (key: string) =>
+	(db.query("SELECT tag FROM item_tags WHERE item_key = ? ORDER BY tag").all(key) as { tag: string }[]).map((r) => r.tag);
+const article = (title: string, lib: number, tags: { tag: string; type?: number }[] = []) =>
+	createItem(db, { itemType: "journalArticle", title, tags }, lib).data.key;
 const body = (obj: unknown) => new Request("http://x/", { method: "PUT", body: JSON.stringify(obj) });
 const PDF = (extra = "") => Buffer.from(`%PDF-1.4\n${extra}%%EOF\n`).toString("base64");
 
 /** An imported PDF attachment of `parent` whose file really exists in the library's own storage folder. */
 function pdfOf(parent: string, lib: number, name = "paper.pdf", content = "%PDF-1.4 original"): { key: string; path: string } {
-	const key = createItem(db, { itemType: "attachment", linkMode: "imported_file", title: name, contentType: "application/pdf", parentItem: parent }, lib).data.key;
+	const key = createItem(
+		db,
+		{ itemType: "attachment", linkMode: "imported_file", title: name, contentType: "application/pdf", parentItem: parent },
+		lib,
+	).data.key;
 	const p = join(dir, "storage", key, name);
 	mkdirSync(join(dir, "storage", key), { recursive: true });
 	writeFileSync(p, content);
@@ -142,7 +150,9 @@ describe("relocation keeps a source that changed while it was copied", () => {
 		expect(report.moved).toBe(0);
 		expect(report.failed).toHaveLength(1);
 		expect(readFileSync(att.path, "utf8")).toContain("edited by the reader");
-		expect((db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(att.key) as { path: string }).path).toBe(att.path);
+		expect((db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(att.key) as { path: string }).path).toBe(
+			att.path,
+		);
 		expect(existsSync(join(custom, "paper.pdf"))).toBe(false);
 	});
 
@@ -151,7 +161,9 @@ describe("relocation keeps a source that changed while it was copied", () => {
 		const att = pdfOf(article("Paper", USER_LIBRARY), USER_LIBRARY);
 		const other = join(dir, "other.pdf");
 		writeFileSync(other, "%PDF-1.4 other");
-		const report = await runMove(db, planMove(db), { afterCopy: () => void db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(other, att.key) });
+		const report = await runMove(db, planMove(db), {
+			afterCopy: () => void db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(other, att.key),
+		});
 		expect(report.failed).toHaveLength(1);
 		expect(existsSync(att.path)).toBe(true);
 	});
@@ -161,12 +173,22 @@ describe("PDF page deletion is one atomic core operation", () => {
 	test("the file and the annotations change together", async () => {
 		const parent = article("Paper", USER_LIBRARY);
 		const att = pdfOf(parent, USER_LIBRARY);
-		const ann = (id: string, page: number) => ({ id, type: "highlight", sortIndex: `${String(page).padStart(5, "0")}|000100|00200`, pageLabel: String(page + 1), position: { pageIndex: page, rects: [] }, dateModified: "2024-01-01T00:00:00Z" });
+		const ann = (id: string, page: number) => ({
+			id,
+			type: "highlight",
+			sortIndex: `${String(page).padStart(5, "0")}|000100|00200`,
+			pageLabel: String(page + 1),
+			position: { pageIndex: page, rects: [] },
+			dateModified: "2024-01-01T00:00:00Z",
+		});
 		upsertAnnotations(db, att.key, [ann("ANNOAAA1", 0), ann("ANNOAAA2", 1), ann("ANNOAAA3", 2)] as never);
 		const res = await replaceAttachmentFile(db, att.key, body({ dataBase64: PDF("shorter"), deletedPages: [1] }));
 		expect(res.ok).toBe(true);
 		expect(readFileSync(att.path, "utf8")).toContain("shorter");
-		const rows = db.query("SELECT key, data FROM annotations WHERE attachment_key = ? ORDER BY key").all(att.key) as { key: string; data: string }[];
+		const rows = db.query("SELECT key, data FROM annotations WHERE attachment_key = ? ORDER BY key").all(att.key) as {
+			key: string;
+			data: string;
+		}[];
 		expect(rows.map((r) => r.key)).toEqual(["ANNOAAA1", "ANNOAAA3"]);
 		expect(JSON.parse(rows[1]!.data).position.pageIndex).toBe(1);
 		expect(JSON.parse(rows[1]!.data).sortIndex.startsWith("00001|")).toBe(true);
@@ -176,19 +198,29 @@ describe("PDF page deletion is one atomic core operation", () => {
 
 	test("an annotation failure leaves the original file and annotations untouched", async () => {
 		const att = pdfOf(article("Paper", USER_LIBRARY), USER_LIBRARY);
-		const old = { id: "ANNOBBB1", type: "highlight", sortIndex: "00001|000100|00200", position: { pageIndex: 1 }, dateModified: "2024-01-01T00:00:00Z" };
+		const old = {
+			id: "ANNOBBB1",
+			type: "highlight",
+			sortIndex: "00001|000100|00200",
+			position: { pageIndex: 1 },
+			dateModified: "2024-01-01T00:00:00Z",
+		};
 		upsertAnnotations(db, att.key, [old] as never);
 		// a trigger that refuses the annotation update stands in for any database failure
 		db.run("CREATE TRIGGER refuse_ann BEFORE UPDATE ON annotations BEGIN SELECT RAISE(ABORT, 'refused'); END");
 		await expect(replaceAttachmentFile(db, att.key, body({ dataBase64: PDF("shorter"), deletedPages: [0] }))).rejects.toBeTruthy();
 		expect(readFileSync(att.path, "utf8")).toBe("%PDF-1.4 original");
-		expect(JSON.parse((db.query("SELECT data FROM annotations WHERE key = 'ANNOBBB1'").get() as { data: string }).data).position.pageIndex).toBe(1);
+		expect(
+			JSON.parse((db.query("SELECT data FROM annotations WHERE key = 'ANNOBBB1'").get() as { data: string }).data).position.pageIndex,
+		).toBe(1);
 		expect((await import("node:fs")).readdirSync(join(dir, "storage", att.key))).toEqual(["paper.pdf"]);
 	});
 
 	test("bad deletedPages is a 400 before anything changes", async () => {
 		const att = pdfOf(article("Paper", USER_LIBRARY), USER_LIBRARY);
-		await expect(replaceAttachmentFile(db, att.key, body({ dataBase64: PDF(), deletedPages: [-1] }))).rejects.toMatchObject({ status: 400 });
+		await expect(replaceAttachmentFile(db, att.key, body({ dataBase64: PDF(), deletedPages: [-1] }))).rejects.toMatchObject({
+			status: 400,
+		});
 		expect(readFileSync(att.path, "utf8")).toBe("%PDF-1.4 original");
 	});
 });
@@ -242,7 +274,11 @@ describe("related items and patchItem", () => {
 	test("reparenting across libraries or in a read-only group is refused", () => {
 		const g = group(32, true);
 		const parentG = article("pg", g);
-		const lone = createItem(db, { itemType: "attachment", linkMode: "linked_url", title: "x", url: "http://example.org/" }, USER_LIBRARY).data.key;
+		const lone = createItem(
+			db,
+			{ itemType: "attachment", linkMode: "linked_url", title: "x", url: "http://example.org/" },
+			USER_LIBRARY,
+		).data.key;
 		expect(status(() => reparentItem(db, lone, parentG))).toBe(400);
 	});
 });
@@ -262,7 +298,9 @@ describe("merging duplicates", () => {
 	});
 
 	test("in My Library the replacement uses the linked account id and the local alias", () => {
-		db.query("INSERT INTO sync_state(name, value) VALUES('web_user_id', '4242') ON CONFLICT(name) DO UPDATE SET value = excluded.value").run();
+		db.query(
+			"INSERT INTO sync_state(name, value) VALUES('web_user_id', '4242') ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+		).run();
 		const master = article("same", USER_LIBRARY);
 		const dup = article("same", USER_LIBRARY);
 		mergeDuplicateItems(db, { masterKey: master, otherKeys: [dup] });
@@ -291,7 +329,18 @@ describe("duplicating a standalone attachment", () => {
 		const g = group(50);
 		const coll = "GROUPCO1";
 		db.query("INSERT INTO collections(key, name, library_id) VALUES(?, 'C', ?)").run(coll, g);
-		const key = createItem(db, { itemType: "attachment", linkMode: "linked_file", title: "doc", contentType: "application/pdf", path: join(base, "doc.pdf"), collections: [coll] }, g).data.key;
+		const key = createItem(
+			db,
+			{
+				itemType: "attachment",
+				linkMode: "linked_file",
+				title: "doc",
+				contentType: "application/pdf",
+				path: join(base, "doc.pdf"),
+				collections: [coll],
+			},
+			g,
+		).data.key;
 		db.query("UPDATE attachments SET path = 'attachments:doc.pdf' WHERE item_key = ?").run(key);
 		const copy = duplicateItem(db, key);
 		const lib = (db.query("SELECT library_id FROM items WHERE key = ?").get(copy.data.key) as { library_id: number }).library_id;

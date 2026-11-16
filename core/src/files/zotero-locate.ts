@@ -67,13 +67,17 @@ export function inspectDataDir(dir: string): DataDirInfo {
 			   AND itemTypeID NOT IN (SELECT itemTypeID FROM itemTypes WHERE typeName IN ${NOT_REGULAR})`,
 		);
 		info.attachmentCount = one(`SELECT count(*) AS n FROM itemAttachments WHERE itemID NOT IN (SELECT itemID FROM deletedItems)`);
-		info.collectionCount = one(`SELECT count(*) AS n FROM collections WHERE collectionID NOT IN (SELECT collectionID FROM deletedCollections)`);
+		info.collectionCount = one(
+			`SELECT count(*) AS n FROM collections WHERE collectionID NOT IN (SELECT collectionID FROM deletedCollections)`,
+		);
 		const lm = (db.query("SELECT max(clientDateModified) AS m FROM items").get() as { m: string | null } | null)?.m;
 		if (lm) info.lastModified = `${lm.replace(" ", "T")}Z`;
 		info.readable = true;
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		info.error = /lock|busy/i.test(msg) ? "Zotero has the database locked. Close Zotero to read it." : `Could not read the database: ${msg}`;
+		info.error = /lock|busy/i.test(msg)
+			? "Zotero has the database locked. Close Zotero to read it."
+			: `Could not read the database: ${msg}`;
 	} finally {
 		try {
 			db?.close(true);

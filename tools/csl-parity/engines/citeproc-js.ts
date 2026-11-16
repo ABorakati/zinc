@@ -33,7 +33,9 @@ function loadLocale(lang: string): string {
 
 /** Collapse a multi-line string to one line, trimmed. */
 function oneLine(s: unknown): string {
-	return String(s ?? "").trim().replace(/\s*\r?\n\s*/g, " ");
+	return String(s ?? "")
+		.trim()
+		.replace(/\s*\r?\n\s*/g, " ");
 }
 
 /**

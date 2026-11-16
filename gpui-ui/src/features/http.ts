@@ -7,15 +7,19 @@ const rel = (path: string) => path.replace(/^\/api/, "");
 export async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
 	return apiRequest<T>(method, rel(path), body, signal);
 }
-export const get = <T,>(path: string, signal?: AbortSignal) => call<T>("GET", path, undefined, signal);
-export const post = <T,>(path: string, body?: unknown) => call<T>("POST", path, body ?? {});
+export const get = <T>(path: string, signal?: AbortSignal) => call<T>("GET", path, undefined, signal);
+export const post = <T>(path: string, body?: unknown) => call<T>("POST", path, body ?? {});
 
 /** The raw Response, for the few endpoints that answer in headers too (X-Total). Same route as call(). */
 export async function callRaw(method: string, path: string, signal?: AbortSignal): Promise<Response> {
 	const res = await apiFetch(rel(path), { method, signal });
 	if (!res.ok) {
 		let msg = res.statusText;
-		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* keep status text */ }
+		try {
+			msg = ((await res.json()) as { error?: string }).error ?? msg;
+		} catch {
+			/* keep status text */
+		}
 		throw new Error(msg);
 	}
 	return res;

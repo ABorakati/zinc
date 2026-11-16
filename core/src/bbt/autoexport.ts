@@ -64,8 +64,24 @@ const EXPORT_EXTENSIONS = new Set([".bib", ".bibtex", ".biblatex", ".json", ".ya
 
 /** Folders no export may be written into (system and autostart locations). Compared case-insensitively on the normalised path. */
 const PROTECTED_DIRS = [
-	"c:/windows", "c:/program files", "c:/program files (x86)", "c:/programdata", "c:/system volume information",
-	"/etc", "/bin", "/sbin", "/usr", "/boot", "/lib", "/lib64", "/proc", "/sys", "/dev", "/system", "/library", "/private/etc",
+	"c:/windows",
+	"c:/program files",
+	"c:/program files (x86)",
+	"c:/programdata",
+	"c:/system volume information",
+	"/etc",
+	"/bin",
+	"/sbin",
+	"/usr",
+	"/boot",
+	"/lib",
+	"/lib64",
+	"/proc",
+	"/sys",
+	"/dev",
+	"/system",
+	"/library",
+	"/private/etc",
 ];
 const PROTECTED_FRAGMENTS = ["/start menu/", "/startup/", "/appdata/roaming/microsoft/", "/.ssh/", "/.gnupg/", "/.config/autostart/"];
 
@@ -104,13 +120,23 @@ export function addAutoExport(
 	const scope = a.scope ?? { type: "library" };
 	if (scope.type !== "library" && scope.type !== "collection") throw new HttpError(400, "scope.type must be library or collection");
 	if (scope.type === "collection") {
-		if (!scope.key || !db.query("SELECT 1 FROM collections WHERE key = ?").get(scope.key)) throw new HttpError(404, "collection not found");
+		if (!scope.key || !db.query("SELECT 1 FROM collections WHERE key = ?").get(scope.key))
+			throw new HttpError(404, "collection not found");
 	}
 	const trigger = a.trigger === "idle" ? "idle" : "change";
 	const id = Number(
 		db
-			.query("INSERT INTO bbt_autoexport(path, format, scope_type, scope_key, trigger, options, status) VALUES(?, ?, ?, ?, ?, ?, 'pending')")
-			.run(resolve(a.path), a.format, scope.type, scope.type === "collection" ? scope.key! : null, trigger, JSON.stringify(a.options ?? {})).lastInsertRowid,
+			.query(
+				"INSERT INTO bbt_autoexport(path, format, scope_type, scope_key, trigger, options, status) VALUES(?, ?, ?, ?, ?, ?, 'pending')",
+			)
+			.run(
+				resolve(a.path),
+				a.format,
+				scope.type,
+				scope.type === "collection" ? scope.key! : null,
+				trigger,
+				JSON.stringify(a.options ?? {}),
+			).lastInsertRowid,
 	);
 	return runAutoExport(db, id);
 }
@@ -147,9 +173,15 @@ export function runAutoExport(db: Database, id: number): AutoExport {
 		checkExportTarget(r.path);
 		const exists = existsSync(r.path);
 		// a file Zinc never wrote (no recorded hash) is only replaced when it already looks like a bibliography export
-		if (exists && r.hash === null && !looksLikeExport(r.path)) throw new Error("refusing to overwrite an existing file that is not a bibliography export");
+		if (exists && r.hash === null && !looksLikeExport(r.path))
+			throw new Error("refusing to overwrite an existing file that is not a bibliography export");
 		if (hash !== r.hash || !exists || readFileSync(r.path, "utf8") !== text) writeFileAtomic(r.path, text);
-		db.query("UPDATE bbt_autoexport SET status = 'done', error = NULL, last_export = ?, count = ?, hash = ? WHERE id = ?").run(nowIso(), items.length, hash, id);
+		db.query("UPDATE bbt_autoexport SET status = 'done', error = NULL, last_export = ?, count = ?, hash = ? WHERE id = ?").run(
+			nowIso(),
+			items.length,
+			hash,
+			id,
+		);
 	} catch (e) {
 		db.query("UPDATE bbt_autoexport SET status = 'error', error = ? WHERE id = ?").run(e instanceof Error ? e.message : String(e), id);
 	}

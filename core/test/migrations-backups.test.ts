@@ -35,7 +35,8 @@ describe("migration backups", () => {
 		const a = makeV1("alpha.sqlite");
 		const b = makeV1("beta.sqlite");
 		for (const stem of ["alpha", "beta"]) {
-			for (const d of ["01", "02", "03"]) writeFileSync(join(dir, `${stem}.backup-v1-to-v2-202001${d}-000000-000.sqlite`), `old ${stem}`);
+			for (const d of ["01", "02", "03"])
+				writeFileSync(join(dir, `${stem}.backup-v1-to-v2-202001${d}-000000-000.sqlite`), `old ${stem}`);
 		}
 		openDb(a).close();
 		openDb(b).close();

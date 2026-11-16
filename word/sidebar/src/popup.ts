@@ -56,7 +56,9 @@ function close() {
 }
 
 function message(text: string, opts: { err?: boolean; busy?: boolean } = {}) {
-	root.replaceChildren(h("div", { class: "msg muted" + (opts.err ? " err" : "") }, opts.busy ? h("span", { class: "spin" }) : null, text));
+	root.replaceChildren(
+		h("div", { class: "msg muted" + (opts.err ? " err" : "") }, opts.busy ? h("span", { class: "spin" }) : null, text),
+	);
 	reportSize();
 }
 
@@ -119,56 +121,93 @@ function paintLabels() {
 // ---------------------------------------------------------------- rendering
 
 function renderItem(it: PopupItemView): HTMLElement {
-	const status = it.pending ? null : h("div", { class: "row small chips" },
-		it.trashed ? h("span", { class: "badge warn" }, "In trash") : it.inLibrary ? h("span", { class: "badge ok" }, "In library") : h("span", { class: "badge warn" }, "Not in library: showing the copy stored in the document"),
-		...noteChips(it).map((c) => h("span", { class: "badge" }, c)),
-	);
+	const status = it.pending
+		? null
+		: h(
+				"div",
+				{ class: "row small chips" },
+				it.trashed
+					? h("span", { class: "badge warn" }, "In trash")
+					: it.inLibrary
+						? h("span", { class: "badge ok" }, "In library")
+						: h("span", { class: "badge warn" }, "Not in library: showing the copy stored in the document"),
+				...noteChips(it).map((c) => h("span", { class: "badge" }, c)),
+			);
 	const err = h("div", { class: "small msg err", hidden: true });
 	const acts = h("div", { class: "acts row" });
 	if (!it.pending && it.key && it.inLibrary) {
-		const open = h("button", { class: "primary", onclick: async () => {
-			open.disabled = true;
-			open.textContent = "Opening Zinc…";
-			err.hidden = true;
-			try {
-				const r = await app.reveal(it.key!);
-				if (r && !r.ok) {
-					err.textContent = r.error ?? "Could not open Zinc.";
-					err.hidden = false;
-				}
-			} catch (e) {
-				err.textContent = e instanceof Error ? e.message : String(e);
-				err.hidden = false;
-			}
-			open.disabled = false;
-			open.textContent = "Open in Zinc";
-			reportSize();
-		} }, "Open in Zinc");
+		const open = h(
+			"button",
+			{
+				class: "primary",
+				onclick: async () => {
+					open.disabled = true;
+					open.textContent = "Opening Zinc…";
+					err.hidden = true;
+					try {
+						const r = await app.reveal(it.key!);
+						if (r && !r.ok) {
+							err.textContent = r.error ?? "Could not open Zinc.";
+							err.hidden = false;
+						}
+					} catch (e) {
+						err.textContent = e instanceof Error ? e.message : String(e);
+						err.hidden = false;
+					}
+					open.disabled = false;
+					open.textContent = "Open in Zinc";
+					reportSize();
+				},
+			},
+			"Open in Zinc",
+		);
 		acts.append(open);
 	}
-	if (!it.pending && it.doi) acts.append(h("button", { class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch(() => {}) }, "DOI"));
+	if (!it.pending && it.doi)
+		acts.append(
+			h(
+				"button",
+				{ class: "ghost", onclick: () => void host.call("app.openUrl", { url: "https://doi.org/" + it.doi }).catch(() => {}) },
+				"DOI",
+			),
+		);
 
 	const abs = h("div", { class: "abs" }, it.abstract);
-	const more = h("button", { class: "link small", hidden: true, onclick: () => {
-		abs.classList.toggle("open");
-		more.textContent = abs.classList.contains("open") ? "Show less" : "Show more";
-		reportSize();
-	} }, "Show more");
+	const more = h(
+		"button",
+		{
+			class: "link small",
+			hidden: true,
+			onclick: () => {
+				abs.classList.toggle("open");
+				more.textContent = abs.classList.contains("open") ? "Show less" : "Show more";
+				reportSize();
+			},
+		},
+		"Show more",
+	);
 	const absBlock = h("div", {});
 	if (it.abstract) absBlock.append(h("div", { class: "abs-label" }, "Abstract"), abs, more);
 	else if (!it.pending) absBlock.append(h("div", { class: "muted small", style: "margin-top:8px" }, "No abstract on record."));
 	if (!it.abstract && it.doi && app.info?.zn.up) {
-		const fetchBtn = h("button", { class: "ghost", onclick: async () => {
-			fetchBtn.disabled = true;
-			fetchBtn.textContent = "Fetching…";
-			const a = await app.lookupAbstract(it.doi);
-			if (a) {
-				it.abstract = a;
-				render();
-			} else {
-				fetchBtn.textContent = "No abstract found online";
-			}
-		} }, "Fetch abstract");
+		const fetchBtn = h(
+			"button",
+			{
+				class: "ghost",
+				onclick: async () => {
+					fetchBtn.disabled = true;
+					fetchBtn.textContent = "Fetching…";
+					const a = await app.lookupAbstract(it.doi);
+					if (a) {
+						it.abstract = a;
+						render();
+					} else {
+						fetchBtn.textContent = "No abstract found online";
+					}
+				},
+			},
+			"Fetch abstract",
+		);
 		acts.append(fetchBtn);
 	}
 	// reveal "Show more" only when the 6-line clamp actually cuts the text
@@ -177,8 +216,15 @@ function renderItem(it: PopupItemView): HTMLElement {
 		reportSize();
 	});
 
-	return h("div", { class: "item" },
-		h("div", { class: "head" }, h("div", { class: "t" }, h("span", { class: "lab", hidden: true }), it.title), h("div", { class: "m" }, metaLine(it))),
+	return h(
+		"div",
+		{ class: "item" },
+		h(
+			"div",
+			{ class: "head" },
+			h("div", { class: "t" }, h("span", { class: "lab", hidden: true }), it.title),
+			h("div", { class: "m" }, metaLine(it)),
+		),
 		status,
 		it.reference.length && !it.pending ? h("div", { class: "ref", html: runsToHtml(it.reference) }) : null,
 		absBlock,
@@ -192,7 +238,9 @@ function render() {
 	const { view } = current;
 	root.replaceChildren(
 		...view.items.map(renderItem),
-		h("div", { class: "actions row" },
+		h(
+			"div",
+			{ class: "actions row" },
 			h("button", { onclick: () => void host.call("popup.edit").catch(() => {}) }, "Edit citation"),
 			h("span", { class: "spacer" }),
 			h("button", { class: "ghost danger", onclick: () => void del() }, "Delete citation"),
@@ -256,7 +304,11 @@ async function main() {
 
 /** Browser preview: put a two-item citation in the fake document and "show" the popup for it. */
 function startMock(mh: ReturnType<typeof createMockHost>) {
-	const mk = (k: string, id: number) => ({ id, uris: [`http://zotero.org/users/12345/items/${k}`], itemData: { id, type: "article-journal", title: SAMPLE_ITEMS.find((i) => i.key === k)!.title } });
+	const mk = (k: string, id: number) => ({
+		id,
+		uris: [`http://zotero.org/users/12345/items/${k}`],
+		itemData: { id, type: "article-journal", title: SAMPLE_ITEMS.find((i) => i.key === k)!.title },
+	});
 	const data = {
 		citationID: "mock1",
 		properties: { formattedCitation: "(1,2)", plainCitation: "(1,2)", noteIndex: 0 },
@@ -265,7 +317,18 @@ function startMock(mh: ReturnType<typeof createMockHost>) {
 	};
 	const code = buildItemCode(data as any);
 	mh.fields.push({ story: "main", idx: 1, kind: "item", code, text: "(1,2)", start: 10, end: 15 });
-	mh.emit("popup.show", { hasDoc: true, doc: "Preview.docx", start: 12, end: 12, story: 1, inField: true, ref: { story: "main", idx: 1 }, kind: "item", code, text: "(1,2)" });
+	mh.emit("popup.show", {
+		hasDoc: true,
+		doc: "Preview.docx",
+		start: 12,
+		end: 12,
+		story: 1,
+		inField: true,
+		ref: { story: "main", idx: 1 },
+		kind: "item",
+		code,
+		text: "(1,2)",
+	});
 }
 
 void main();

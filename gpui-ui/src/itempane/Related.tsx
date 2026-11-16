@@ -8,23 +8,39 @@ import { ipApi } from "./net";
 
 const sub = (c: string | undefined, y: number | null | undefined) => [c, y].filter(Boolean).join(" · ");
 
-interface Found { key: string; title: string; creatorsSummary?: string; year?: number | null }
+interface Found {
+	key: string;
+	title: string;
+	creatorsSummary?: string;
+	year?: number | null;
+}
 
-function RelatedRow(p: { r: { key: string; itemType: string; title: string; creatorsSummary: string; year: number | null }; onRemove?: () => void }): JSX.Element {
+function RelatedRow(p: {
+	r: { key: string; itemType: string; title: string; creatorsSummary: string; year: number | null };
+	onRemove?: () => void;
+}): JSX.Element {
 	const [hover, setHover] = createSignal(false);
 	return (
 		<div
 			onMouseEnter={() => setHover(true)}
 			onMouseLeave={() => setHover(false)}
 			onClick={() => store.selectItem(p.r.key)}
-			style={{ ...t("flex items-center gap-1.5 rounded px-1.5 py-[3px] w-full"), cursor: "pointer", backgroundColor: hover() ? tok("accent") : "transparent" }}
+			style={{
+				...t("flex items-center gap-1.5 rounded px-1.5 py-[3px] w-full"),
+				cursor: "pointer",
+				backgroundColor: hover() ? tok("accent") : "transparent",
+			}}
 		>
 			<Icon name={itemTypeIconName(p.r.itemType)} size={16} color={tok("muted-foreground")} />
 			<text style={{ ...tx("text-[13px]"), ...TRUNC, flexGrow: 1, flexShrink: 1 }}>{p.r.title || "Untitled"}</text>
-			<text style={{ ...tx("text-[11px] text-muted-foreground"), ...TRUNC, flexShrink: 2, maxWidth: 110 }}>{sub(p.r.creatorsSummary, p.r.year)}</text>
+			<text style={{ ...tx("text-[11px] text-muted-foreground"), ...TRUNC, flexShrink: 2, maxWidth: 110 }}>
+				{sub(p.r.creatorsSummary, p.r.year)}
+			</text>
 			<Show when={hover()}>
 				<div onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}>
-					<Show when={p.onRemove}><IconBtn icon="minus" title="Remove relation" onClick={p.onRemove} /></Show>
+					<Show when={p.onRemove}>
+						<IconBtn icon="minus" title="Remove relation" onClick={p.onRemove} />
+					</Show>
 				</div>
 			</Show>
 		</div>
@@ -65,8 +81,20 @@ export function RelatedSection(): JSX.Element {
 	}
 
 	return (
-		<Section id="related" title="Related" icon="link-2" count={related().length} actions={<Show when={!locked()}><IconBtn icon="plus" title="Add related item" onClick={() => setAdding(!adding())} /></Show>}>
-			<Show when={related().length === 0 && !adding()}><Empty text="No related items" /></Show>
+		<Section
+			id="related"
+			title="Related"
+			icon="link-2"
+			count={related().length}
+			actions={
+				<Show when={!locked()}>
+					<IconBtn icon="plus" title="Add related item" onClick={() => setAdding(!adding())} />
+				</Show>
+			}
+		>
+			<Show when={related().length === 0 && !adding()}>
+				<Empty text="No related items" />
+			</Show>
 			<For each={related()}>{(r) => <RelatedRow r={r} onRemove={locked() ? undefined : () => void remove(r.key)} />}</For>
 			<Show when={adding()}>
 				<div style={{ marginTop: 6, width: "100%" }}>

@@ -12,7 +12,16 @@ import { createRealEnv } from "../../src/update/env";
 import { installerName, planCleanup } from "../../src/update/machine";
 import { generateKeyPair, signManifest, validateShape, type KeyPair, type Manifest } from "../../src/update/manifest";
 import { currentPlatform, feedFileName, feedUrlFor, manifestPlatform } from "../../src/update/platform";
-import { WAIT_THEN_EXEC, appImageReplace, detectSelfReplace, macAppReplace, macSwapScript, relaunchEnv, type ReplaceDeps, type SelfReplace } from "../../src/update/replace";
+import {
+	WAIT_THEN_EXEC,
+	appImageReplace,
+	detectSelfReplace,
+	macAppReplace,
+	macSwapScript,
+	relaunchEnv,
+	type ReplaceDeps,
+	type SelfReplace,
+} from "../../src/update/replace";
 import { createUpdater, type UpdateEnv } from "../../src/update/updater";
 
 const ROOT = mkdtempSync(join(tmpdir(), "zn-replace-"));
@@ -24,17 +33,31 @@ const NEW_BYTES = new TextEncoder().encode("#!/bin/sh\necho new zinc\n" + "x".re
 const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 let kp: KeyPair;
-beforeEach(async () => { kp = await generateKeyPair(); });
+beforeEach(async () => {
+	kp = await generateKeyPair();
+});
 
 let n = 0;
-const fresh = (name: string) => { const d = join(ROOT, `${name}-${++n}`); mkdirSync(d, { recursive: true }); return d; };
+const fresh = (name: string) => {
+	const d = join(ROOT, `${name}-${++n}`);
+	mkdirSync(d, { recursive: true });
+	return d;
+};
 
 async function signed(platform: string | undefined, o: { bytes?: Uint8Array; url?: string } = {}): Promise<Manifest> {
 	const bytes = o.bytes ?? NEW_BYTES;
-	return signManifest({
-		version: NEXT, releasedAt: "2026-12-01T09:00:00Z", notes: "# 0.2.0", url: o.url ?? "https://example.org/Zinc-0.2.0-x86_64.AppImage",
-		sha256: sha(bytes), size: bytes.length, ...(platform ? { platform } : {}),
-	}, kp.privateJwk);
+	return signManifest(
+		{
+			version: NEXT,
+			releasedAt: "2026-12-01T09:00:00Z",
+			notes: "# 0.2.0",
+			url: o.url ?? "https://example.org/Zinc-0.2.0-x86_64.AppImage",
+			sha256: sha(bytes),
+			size: bytes.length,
+			...(platform ? { platform } : {}),
+		},
+		kp.privateJwk,
+	);
 }
 
 /** The real env.ts (files), with the network replaced: the manifest text and the download bytes come from here. */
@@ -44,9 +67,19 @@ function env(o: { updatesDir: string; replace?: SelfReplace; manifest: () => Man
 	const real = createRealEnv({ updatesDir: o.updatesDir, replace: o.replace, exit: (c) => void exits.push(c) });
 	const e: UpdateEnv = {
 		...real,
-		async fetchText(url) { fetched.push(url); const m = o.manifest(); return typeof m === "string" ? m : JSON.stringify(m); },
-		async download(_url, dest, { onProgress }) { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, o.bytes ?? NEW_BYTES); onProgress((o.bytes ?? NEW_BYTES).length, (o.bytes ?? NEW_BYTES).length); },
-		runInstaller() { throw new Error("no installer on Linux / macOS"); },
+		async fetchText(url) {
+			fetched.push(url);
+			const m = o.manifest();
+			return typeof m === "string" ? m : JSON.stringify(m);
+		},
+		async download(_url, dest, { onProgress }) {
+			mkdirSync(dirname(dest), { recursive: true });
+			writeFileSync(dest, o.bytes ?? NEW_BYTES);
+			onProgress((o.bytes ?? NEW_BYTES).length, (o.bytes ?? NEW_BYTES).length);
+		},
+		runInstaller() {
+			throw new Error("no installer on Linux / macOS");
+		},
 	};
 	return { env: e, fetched, exits };
 }
@@ -69,10 +102,14 @@ describe("per-platform feed (pure)", () => {
 	test("feedUrlFor: Windows keeps latest.json, the others read latest-<platform>.json next to it", () => {
 		const gh = "https://github.com/o/zotero-next-releases/releases/latest/download/latest.json";
 		expect(feedUrlFor(gh, "win-x64")).toBe(gh);
-		expect(feedUrlFor(gh, "linux-x64")).toBe("https://github.com/o/zotero-next-releases/releases/latest/download/latest-linux-x64.json");
+		expect(feedUrlFor(gh, "linux-x64")).toBe(
+			"https://github.com/o/zotero-next-releases/releases/latest/download/latest-linux-x64.json",
+		);
 		expect(feedUrlFor("https://e.org/feed/latest.json?x=1", "darwin-arm64")).toBe("https://e.org/feed/latest-darwin-arm64.json?x=1");
 		expect(feedUrlFor("https://e.org/latest-linux-x64.json", "linux-x64")).toBe("https://e.org/latest-linux-x64.json"); // set by hand
-		expect(feedUrlFor("https://api.github.com/repos/o/r/releases/assets/123", "linux-x64")).toBe("https://api.github.com/repos/o/r/releases/assets/123");
+		expect(feedUrlFor("https://api.github.com/repos/o/r/releases/assets/123", "linux-x64")).toBe(
+			"https://api.github.com/repos/o/r/releases/assets/123",
+		);
 		expect(feedUrlFor("not a url", "linux-x64")).toBe("not a url");
 	});
 	test("platform field: optional, signed, validated; absent = win-x64", async () => {
@@ -88,8 +125,17 @@ describe("per-platform feed (pure)", () => {
 		expect(installerName(m, "linux-x64")).toBe(`.zinc-update-${NEXT}.AppImage.download`);
 		expect(installerName(m, "darwin-arm64")).toBe(`zinc-update-${NEXT}.app.zip`);
 		expect(installerName(m)).toBe(`zotero-next-${NEXT}-setup.exe`);
-		const files = [".zinc-update-0.0.9.AppImage.download", `.zinc-update-${NEXT}.AppImage.download.part`, "zinc-update-0.0.9.app.zip", "Zinc-0.1.0-x86_64.AppImage", "notes.AppImage", ".zinc-update"];
-		expect(planCleanup(files, []).sort()).toEqual([".zinc-update-0.0.9.AppImage.download", `.zinc-update-${NEXT}.AppImage.download.part`, "zinc-update-0.0.9.app.zip"].sort());
+		const files = [
+			".zinc-update-0.0.9.AppImage.download",
+			`.zinc-update-${NEXT}.AppImage.download.part`,
+			"zinc-update-0.0.9.app.zip",
+			"Zinc-0.1.0-x86_64.AppImage",
+			"notes.AppImage",
+			".zinc-update",
+		];
+		expect(planCleanup(files, []).sort()).toEqual(
+			[".zinc-update-0.0.9.AppImage.download", `.zinc-update-${NEXT}.AppImage.download.part`, "zinc-update-0.0.9.app.zip"].sort(),
+		);
 		// start-up: a newer partial download survives so it can be resumed
 		expect(planCleanup(files, [], CURRENT).sort()).toEqual([".zinc-update-0.0.9.AppImage.download", "zinc-update-0.0.9.app.zip"]);
 	});
@@ -101,7 +147,12 @@ describe("Linux: the AppImage swap", () => {
 		const appimage = join(dir, "Zinc-0.1.0-x86_64.AppImage");
 		writeFileSync(appimage, "old zinc");
 		const r = recorder();
-		const replace = appImageReplace({ appimage, spawn: r.spawn, env: o.env ?? { PATH: "/usr/bin" }, ...(o.canWrite === false ? { canWrite: async () => false } : {}) });
+		const replace = appImageReplace({
+			appimage,
+			spawn: r.spawn,
+			env: o.env ?? { PATH: "/usr/bin" },
+			...(o.canWrite === false ? { canWrite: async () => false } : {}),
+		});
 		return { dir, appimage, replace, ...r, o };
 	}
 	test("check reads latest-linux-x64.json, downloads next to the AppImage, Install now renames it over $APPIMAGE and relaunches after exit", async () => {
@@ -109,7 +160,15 @@ describe("Linux: the AppImage swap", () => {
 		const m = await signed("linux-x64");
 		const e = env({ updatesDir: fresh("updates"), replace: s.replace, manifest: () => m });
 		const order: string[] = [];
-		const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: false, feedUrl: "https://example.org/dl/latest.json" }), prepareExit: async () => { order.push("prepareExit"); } });
+		const u = createUpdater({
+			currentVersion: CURRENT,
+			publicKey: kp.publicKey,
+			env: e.env,
+			settings: () => ({ enabled: true, autoDownload: false, feedUrl: "https://example.org/dl/latest.json" }),
+			prepareExit: async () => {
+				order.push("prepareExit");
+			},
+		});
 		await u.check({ manual: true });
 		expect(e.fetched).toEqual(["https://example.org/dl/latest-linux-x64.json"]);
 		expect(u.model().state).toMatchObject({ kind: "available" });
@@ -123,14 +182,21 @@ describe("Linux: the AppImage swap", () => {
 		expect(readFileSync(s.appimage)).toEqual(Buffer.from(NEW_BYTES));
 		expect(existsSync(file)).toBe(false);
 		if (posix) expect(statSync(s.appimage).mode & 0o111).toBe(0o111);
-		expect(s.spawned).toEqual([{ cmd: "/bin/sh", args: ["-c", WAIT_THEN_EXEC, "zinc-relaunch", String(process.pid), s.appimage], env: { PATH: "/usr/bin" } }]);
+		expect(s.spawned).toEqual([
+			{ cmd: "/bin/sh", args: ["-c", WAIT_THEN_EXEC, "zinc-relaunch", String(process.pid), s.appimage], env: { PATH: "/usr/bin" } },
+		]);
 		expect(e.exits).toEqual([0]);
 	});
 	test("install on exit: verified + prepared before exit, renamed in the exit handler, no relaunch", async () => {
 		const s = setup();
 		const m = await signed("linux-x64");
 		const e = env({ updatesDir: fresh("updates"), replace: s.replace, manifest: () => m });
-		const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: false, feedUrl: "https://example.org/latest.json" }) });
+		const u = createUpdater({
+			currentVersion: CURRENT,
+			publicKey: kp.publicKey,
+			env: e.env,
+			settings: () => ({ enabled: true, autoDownload: false, feedUrl: "https://example.org/latest.json" }),
+		});
 		await u.check();
 		await u.setInstallOnExit(true);
 		expect(u.model()).toMatchObject({ installOnExit: true, state: { kind: "ready" } });
@@ -145,18 +211,33 @@ describe("Linux: the AppImage swap", () => {
 		{
 			const s = setup();
 			const e = env({ updatesDir: fresh("updates"), replace: s.replace, manifest: () => m });
-			const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest.json" }) });
-			await u.check(); await u.setInstallOnExit(true); await u.prepareForExit(); u.onExit(3);
+			const u = createUpdater({
+				currentVersion: CURRENT,
+				publicKey: kp.publicKey,
+				env: e.env,
+				settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest.json" }),
+			});
+			await u.check();
+			await u.setInstallOnExit(true);
+			await u.prepareForExit();
+			u.onExit(3);
 			expect(readFileSync(s.appimage, "utf8")).toBe("old zinc");
 		}
 		{
 			const s = setup();
 			const e = env({ updatesDir: fresh("updates"), replace: s.replace, manifest: () => m });
-			const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest.json" }) });
-			await u.check(); await u.setInstallOnExit(true);
+			const u = createUpdater({
+				currentVersion: CURRENT,
+				publicKey: kp.publicKey,
+				env: e.env,
+				settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest.json" }),
+			});
+			await u.check();
+			await u.setInstallOnExit(true);
 			const st = u.model().state as { file: string };
 			writeFileSync(st.file, "evil");
-			await u.prepareForExit(); u.onExit(0);
+			await u.prepareForExit();
+			u.onExit(0);
 			expect(readFileSync(s.appimage, "utf8")).toBe("old zinc");
 			await u.installNow();
 			expect(readFileSync(s.appimage, "utf8")).toBe("old zinc");
@@ -168,7 +249,12 @@ describe("Linux: the AppImage swap", () => {
 		const s = setup({ canWrite: false });
 		const m = await signed("linux-x64");
 		const e = env({ updatesDir: fresh("updates"), replace: s.replace, manifest: () => m });
-		const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest.json" }) });
+		const u = createUpdater({
+			currentVersion: CURRENT,
+			publicKey: kp.publicKey,
+			env: e.env,
+			settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest.json" }),
+		});
 		await u.check();
 		expect(u.model().state).toMatchObject({ kind: "available", manualOnly: true });
 		expect((u.model().state as { manualReason?: string }).manualReason).toContain("cannot write");
@@ -180,23 +266,53 @@ describe("Linux: the AppImage swap", () => {
 		const linux = detectSelfReplace({ updatesDir: "/u", platform: "linux", arch: "x64", env: {} })!;
 		expect(linux.platform).toBe("linux-x64");
 		expect(await linux.manualReason()).toContain("not running from an AppImage");
-		expect(detectSelfReplace({ updatesDir: "/u", platform: "linux", arch: "x64", env: { APPIMAGE: "/home/a/Apps/Zinc.AppImage" } })!.downloadDir).toBe("/home/a/Apps");
+		expect(
+			detectSelfReplace({ updatesDir: "/u", platform: "linux", arch: "x64", env: { APPIMAGE: "/home/a/Apps/Zinc.AppImage" } })!
+				.downloadDir,
+		).toBe("/home/a/Apps");
 		expect(detectSelfReplace({ updatesDir: "/u", platform: "win32", arch: "x64", env: {} })).toBeUndefined();
-		const mac = detectSelfReplace({ updatesDir: "/u", platform: "darwin", arch: "arm64", env: {}, execPath: "/Applications/Zinc.app/Contents/MacOS/zotero-next-gpui" })!;
+		const mac = detectSelfReplace({
+			updatesDir: "/u",
+			platform: "darwin",
+			arch: "arm64",
+			env: {},
+			execPath: "/Applications/Zinc.app/Contents/MacOS/zotero-next-gpui",
+		})!;
 		expect(mac.platform).toBe("darwin-arm64");
-		expect(await detectSelfReplace({ updatesDir: "/u", platform: "darwin", arch: "arm64", env: {}, execPath: "/usr/local/bin/bun" })!.manualReason()).toContain("not running from Zinc.app");
+		expect(
+			await detectSelfReplace({
+				updatesDir: "/u",
+				platform: "darwin",
+				arch: "arm64",
+				env: {},
+				execPath: "/usr/local/bin/bun",
+			})!.manualReason(),
+		).toContain("not running from Zinc.app");
 	});
 	test("a manifest for another platform is refused (the Windows latest.json served to Linux)", async () => {
 		const s = setup();
 		const win = await signed(undefined);
 		const e = env({ updatesDir: fresh("updates"), replace: s.replace, manifest: () => win });
-		const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest-linux-x64.json" }) });
+		const u = createUpdater({
+			currentVersion: CURRENT,
+			publicKey: kp.publicKey,
+			env: e.env,
+			settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://e.org/latest-linux-x64.json" }),
+		});
 		await u.check();
 		expect(u.model().state).toMatchObject({ kind: "error", phase: "check", code: "wrong-platform" });
 	});
 	test("relaunch environment drops the old AppImage's variables and library folders", () => {
-		expect(relaunchEnv({ APPIMAGE: "/a/Z.AppImage", APPDIR: "/tmp/.mount_Zx", ARGV0: "z", OWD: "/home", HOME: "/home/a", LD_LIBRARY_PATH: "/opt/lib:/usr/lib:/tmp/.mount_Zx/usr/lib/zinc/lib" }))
-			.toEqual({ HOME: "/home/a", LD_LIBRARY_PATH: "/opt/lib:/usr/lib" });
+		expect(
+			relaunchEnv({
+				APPIMAGE: "/a/Z.AppImage",
+				APPDIR: "/tmp/.mount_Zx",
+				ARGV0: "z",
+				OWD: "/home",
+				HOME: "/home/a",
+				LD_LIBRARY_PATH: "/opt/lib:/usr/lib:/tmp/.mount_Zx/usr/lib/zinc/lib",
+			}),
+		).toEqual({ HOME: "/home/a", LD_LIBRARY_PATH: "/opt/lib:/usr/lib" });
 		expect(relaunchEnv({ APPDIR: "/tmp/.mount_Zx", LD_LIBRARY_PATH: "/tmp/.mount_Zx/usr/lib/zinc/lib" })).toEqual({});
 	});
 });
@@ -213,7 +329,9 @@ describe("macOS: the Zinc.app swap", () => {
 		const calls: string[] = [];
 		const verify = [...(o.verify ?? [0])];
 		const exec: NonNullable<ReplaceDeps["exec"]> = async (cmd, args) => {
-			calls.push([cmd.split("/").pop(), ...args.map((a) => a.replaceAll("\\", "/").replace(dir.replaceAll("\\", "/"), "<dir>"))].join(" "));
+			calls.push(
+				[cmd.split("/").pop(), ...args.map((a) => a.replaceAll("\\", "/").replace(dir.replaceAll("\\", "/"), "<dir>"))].join(" "),
+			);
 			if (cmd.endsWith("ditto")) {
 				const into = join(args[3]!, "Zinc.app", "Contents", "MacOS");
 				mkdirSync(into, { recursive: true });
@@ -225,7 +343,13 @@ describe("macOS: the Zinc.app swap", () => {
 			return 0;
 		};
 		const r = recorder();
-		const replace = macAppReplace({ app: o.translocated ? `/private/var/folders/x/AppTranslocation/1/Zinc.app` : app, updatesDir, exec, spawn: r.spawn, ...(o.canWrite === false ? { canWrite: async () => false } : {}) });
+		const replace = macAppReplace({
+			app: o.translocated ? `/private/var/folders/x/AppTranslocation/1/Zinc.app` : app,
+			updatesDir,
+			exec,
+			spawn: r.spawn,
+			...(o.canWrite === false ? { canWrite: async () => false } : {}),
+		});
 		return { dir, app, updatesDir, replace, calls, ...r };
 	}
 	const m = () => signed("darwin-arm64", { url: "https://example.org/Zinc-0.2.0-arm64.app.zip" });
@@ -234,7 +358,12 @@ describe("macOS: the Zinc.app swap", () => {
 		const s = setup();
 		const mf = await m();
 		const e = env({ updatesDir: s.updatesDir, replace: s.replace, manifest: () => mf });
-		const u = createUpdater({ currentVersion: CURRENT, publicKey: kp.publicKey, env: e.env, settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://example.org/latest.json" }) });
+		const u = createUpdater({
+			currentVersion: CURRENT,
+			publicKey: kp.publicKey,
+			env: e.env,
+			settings: () => ({ enabled: true, autoDownload: true, feedUrl: "https://example.org/latest.json" }),
+		});
 		await u.check();
 		expect(e.fetched).toEqual(["https://example.org/latest-darwin-arm64.json"]);
 		const file = `${s.updatesDir.replaceAll("\\", "/")}/zinc-update-${NEXT}.app.zip`;
@@ -293,7 +422,13 @@ describe("macOS: the Zinc.app swap", () => {
 
 // The shell programs themselves. Needs a POSIX sh (Linux, macOS); WSL runs these for the Windows checkout.
 describe.skipIf(!posix)("shell helpers (real sh)", () => {
-	const waitGone = async (path: string, ms = 8000) => { const t0 = Date.now(); while (!existsSync(path)) { if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${path}`); await Bun.sleep(50); } };
+	const waitGone = async (path: string, ms = 8000) => {
+		const t0 = Date.now();
+		while (!existsSync(path)) {
+			if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${path}`);
+			await Bun.sleep(50);
+		}
+	};
 	/** A process that lives ~`s` seconds: the stand-in for the quitting app. */
 	const sleeper = (s: number) => nodeSpawn("sleep", [String(s)], { stdio: "ignore" });
 
@@ -304,7 +439,10 @@ describe.skipIf(!posix)("shell helpers (real sh)", () => {
 		writeFileSync(appimage, `#!/bin/sh\necho started > '${marker}'\n`, { mode: 0o755 });
 		const old = sleeper(0.6);
 		const t0 = Date.now();
-		nodeSpawn("/bin/sh", ["-c", WAIT_THEN_EXEC, "zinc-relaunch", String(old.pid), appimage], { detached: true, stdio: "ignore" }).unref();
+		nodeSpawn("/bin/sh", ["-c", WAIT_THEN_EXEC, "zinc-relaunch", String(old.pid), appimage], {
+			detached: true,
+			stdio: "ignore",
+		}).unref();
 		await Bun.sleep(250);
 		expect(existsSync(marker)).toBe(false); // still waiting for the old process
 		await waitGone(marker);
@@ -328,8 +466,15 @@ describe.skipIf(!posix)("shell helpers (real sh)", () => {
 		return { dir, app, stage, neu, opened, script };
 	}
 	/** The pid of a process that has already ended. */
-	const deadPid = () => new Promise<number>((res) => { const c = nodeSpawn("true", [], { stdio: "ignore" }); c.on("exit", () => res(c.pid!)); });
-	const run = (script: string, pid: number, relaunch: boolean) => new Promise<number>((res) => nodeSpawn("/bin/sh", [script, String(pid), relaunch ? "1" : "0"], { stdio: "ignore" }).on("exit", (c) => res(c ?? 1)));
+	const deadPid = () =>
+		new Promise<number>((res) => {
+			const c = nodeSpawn("true", [], { stdio: "ignore" });
+			c.on("exit", () => res(c.pid!));
+		});
+	const run = (script: string, pid: number, relaunch: boolean) =>
+		new Promise<number>((res) =>
+			nodeSpawn("/bin/sh", [script, String(pid), relaunch ? "1" : "0"], { stdio: "ignore" }).on("exit", (c) => res(c ?? 1)),
+		);
 
 	test("macOS helper: waits for the pid, swaps the bundle, removes the stage, relaunches", async () => {
 		const f = macFixture();

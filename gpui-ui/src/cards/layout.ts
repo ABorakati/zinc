@@ -17,7 +17,13 @@ export interface CardLayout {
 }
 
 export const DEFAULT_LAYOUT: CardLayout = {
-	star: true, tags: true, allTags: false, creators: "full", meta: ["publication", "year", "itemType"], icons: true, density: "comfortable",
+	star: true,
+	tags: true,
+	allTags: false,
+	creators: "full",
+	meta: ["publication", "year", "itemType"],
+	icons: true,
+	density: "comfortable",
 };
 
 function load(): CardLayout {
@@ -28,8 +34,13 @@ function load(): CardLayout {
 			star: typeof s.star === "boolean" ? s.star : d.star,
 			tags: typeof s.tags === "boolean" ? s.tags : d.tags,
 			allTags: typeof s.allTags === "boolean" ? s.allTags : d.allTags,
-			creators: s.creators === "full" || s.creators === "short" || s.creators === "summary" || s.creators === "off" ? s.creators : d.creators,
-			meta: Array.isArray(s.meta) ? [...new Set(s.meta.filter((x): x is string => typeof x === "string" && isKnownMeta(x)))] : [...d.meta],
+			creators:
+				s.creators === "full" || s.creators === "short" || s.creators === "summary" || s.creators === "off"
+					? s.creators
+					: d.creators,
+			meta: Array.isArray(s.meta)
+				? [...new Set(s.meta.filter((x): x is string => typeof x === "string" && isKnownMeta(x)))]
+				: [...d.meta],
 			icons: typeof s.icons === "boolean" ? s.icons : d.icons,
 			density: s.density === "compact" ? "compact" : "comfortable",
 		};
@@ -55,16 +66,22 @@ export const cardLayout = createRoot(() => {
 	});
 
 	return {
-		layout, set, metaFields, fieldsParam, includeParam,
+		layout,
+		set,
+		metaFields,
+		fieldsParam,
+		includeParam,
 		addMeta: (id: string) => setLayout((l) => (l.meta.includes(id) ? l : { ...l, meta: [...l.meta, id] })),
 		removeMeta: (id: string) => setLayout((l) => ({ ...l, meta: l.meta.filter((x) => x !== id) })),
-		moveMeta: (id: string, delta: number) => setLayout((l) => {
-			const i = l.meta.indexOf(id), j = i + delta;
-			if (i < 0 || j < 0 || j >= l.meta.length) return l;
-			const m = [...l.meta];
-			[m[i], m[j]] = [m[j]!, m[i]!];
-			return { ...l, meta: m };
-		}),
+		moveMeta: (id: string, delta: number) =>
+			setLayout((l) => {
+				const i = l.meta.indexOf(id),
+					j = i + delta;
+				if (i < 0 || j < 0 || j >= l.meta.length) return l;
+				const m = [...l.meta];
+				[m[i], m[j]] = [m[j]!, m[i]!];
+				return { ...l, meta: m };
+			}),
 		reset: () => setLayout({ ...DEFAULT_LAYOUT, meta: [...DEFAULT_LAYOUT.meta] }),
 	};
 });

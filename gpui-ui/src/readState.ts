@@ -41,8 +41,9 @@ function loadInitial(): { installedAt: string; enabled: boolean; items: Record<s
 	}
 	try {
 		const raw = JSON.parse(readFileSync(p, "utf8")) as ReadStateFile;
-		const installedAt = typeof raw._installedAt === "string" ? raw._installedAt : (typeof raw.installedAt === "string" ? raw.installedAt : now);
-		const enabled = typeof raw._enabled === "boolean" ? raw._enabled : (typeof raw.enabled === "boolean" ? raw.enabled : true);
+		const installedAt =
+			typeof raw._installedAt === "string" ? raw._installedAt : typeof raw.installedAt === "string" ? raw.installedAt : now;
+		const enabled = typeof raw._enabled === "boolean" ? raw._enabled : typeof raw.enabled === "boolean" ? raw.enabled : true;
 		const items: Record<string, boolean> = {};
 		if (raw.items && typeof raw.items === "object") {
 			for (const [k, v] of Object.entries(raw.items)) {

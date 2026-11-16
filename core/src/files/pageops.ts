@@ -40,7 +40,8 @@ export function shiftAnnotations<T extends { id: string }>(anns: T[], deleted: n
 		const np: NonNullable<WireAnnotation["position"]> = { ...pos, pageIndex: pi - shift };
 		if (dropNext) delete np.nextPageRects;
 		const b: WireAnnotation = { ...a, position: np, dateModified: nowIso() };
-		if (shift && typeof a.sortIndex === "string" && /^\d{5}\|/.test(a.sortIndex)) b.sortIndex = String(pi - shift).padStart(5, "0") + a.sortIndex.slice(5);
+		if (shift && typeof a.sortIndex === "string" && /^\d{5}\|/.test(a.sortIndex))
+			b.sortIndex = String(pi - shift).padStart(5, "0") + a.sortIndex.slice(5);
 		if (shift && a.pageLabel === String(pi + 1)) b.pageLabel = String(pi - shift + 1);
 		changed.push(b as unknown as T);
 	}

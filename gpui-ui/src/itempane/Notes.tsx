@@ -34,7 +34,14 @@ export function markdownTheme() {
 
 /** Rendered note (read-only). */
 export function NotePreview(p: { markdown: string }): JSX.Element {
-	return <markdown source={p.markdown || "*Empty note*"} theme={markdownTheme()} onLinkClick={(e) => void openLink(String((e as { value?: string }).value ?? ""))} style={{ width: "100%" }} />;
+	return (
+		<markdown
+			source={p.markdown || "*Empty note*"}
+			theme={markdownTheme()}
+			onLinkClick={(e) => void openLink(String((e as { value?: string }).value ?? ""))}
+			style={{ width: "100%" }}
+		/>
+	);
 }
 
 function Segmented(p: { value: "edit" | "preview"; onChange: (v: "edit" | "preview") => void }): JSX.Element {
@@ -61,7 +68,14 @@ function Segmented(p: { value: "edit" | "preview"; onChange: (v: "edit" | "previ
 	);
 }
 
-type NoteEditorProps = { noteKey: string; startEditing?: boolean; onClose?: () => void; onSaved?: (html: string) => void; height?: number; fill?: boolean };
+type NoteEditorProps = {
+	noteKey: string;
+	startEditing?: boolean;
+	onClose?: () => void;
+	onSaved?: (html: string) => void;
+	height?: number;
+	fill?: boolean;
+};
 
 /** One note: Zotero's editor when it is available, else the Markdown editor. `fill` (top-level notes) fills the parent's height. */
 export function NoteEditor(p: NoteEditorProps): JSX.Element {
@@ -93,15 +107,23 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 
 	const simple = createMemo(() => (html() === null ? true : isSimpleNoteHtml(html()!)));
 	const markdown = createMemo(() => (html() === null ? "" : htmlToMarkdown(html()!)));
-	const source = () => (simple() ? markdown() : html() ?? "");
+	const source = () => (simple() ? markdown() : (html() ?? ""));
 
-	createEffect(on(() => p.noteKey, (k) => {
-		setHtml(null);
-		void ipApi.item(k).then(
-			(d) => { setHtml(((d.data.note as string | undefined) ?? "")); draft = source(); },
-			(e) => fail("Could not load the note", e),
-		);
-	}));
+	createEffect(
+		on(
+			() => p.noteKey,
+			(k) => {
+				setHtml(null);
+				void ipApi.item(k).then(
+					(d) => {
+						setHtml((d.data.note as string | undefined) ?? "");
+						draft = source();
+					},
+					(e) => fail("Could not load the note", e),
+				);
+			},
+		),
+	);
 
 	const toHtml = (text: string) => {
 		if (!simple()) return text;
@@ -126,7 +148,10 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 			fail("Could not save the note", e);
 		}
 	}
-	onCleanup(() => { clearTimeout(timer); void flush(); });
+	onCleanup(() => {
+		clearTimeout(timer);
+		void flush();
+	});
 
 	const edit = (v: string) => {
 		draft = v;
@@ -142,17 +167,41 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 	};
 
 	return (
-		<div style={{ ...t("flex flex-col w-full overflow-hidden rounded-md border"), backgroundColor: tok("background"), borderColor: tok("border") }}>
+		<div
+			style={{
+				...t("flex flex-col w-full overflow-hidden rounded-md border"),
+				backgroundColor: tok("background"),
+				borderColor: tok("border"),
+			}}
+		>
 			<div style={{ ...t("flex h-8 items-center gap-2 border-b px-2"), backgroundColor: withMuted(), borderColor: tok("border") }}>
-				<Show when={!locked()}><Segmented value={mode()} onChange={(m) => void switchTo(m)} /></Show>
-				<Show when={locked()}><text style={{ ...tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Read-only</text></Show>
+				<Show when={!locked()}>
+					<Segmented value={mode()} onChange={(m) => void switchTo(m)} />
+				</Show>
+				<Show when={locked()}>
+					<text style={{ ...tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Read-only</text>
+				</Show>
 				<Show when={!simple()}>
 					<text style={{ ...tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>HTML</text>
 				</Show>
 				<div style={{ flexGrow: 1 }} />
-				<Show when={status()}><text style={{ ...tx("text-[11px] text-muted-foreground") }}>{status()}</text></Show>
+				<Show when={status()}>
+					<text style={{ ...tx("text-[11px] text-muted-foreground") }}>{status()}</text>
+				</Show>
 				<Show when={p.onClose}>
-					<div role="button" aria-label="Close" onClick={() => { void flush(); p.onClose!(); }} style={{ ...t("flex items-center gap-0.5 rounded px-1"), cursor: "pointer", hover: { backgroundColor: tok("accent") } }}>
+					<div
+						role="button"
+						aria-label="Close"
+						onClick={() => {
+							void flush();
+							p.onClose!();
+						}}
+						style={{
+							...t("flex items-center gap-0.5 rounded px-1"),
+							cursor: "pointer",
+							hover: { backgroundColor: tok("accent") },
+						}}
+					>
 						<Icon name="x" size={12} color={tok("muted-foreground")} />
 						<text style={{ ...tx("text-[11px] text-muted-foreground") }}>Close</text>
 					</div>
@@ -163,7 +212,8 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 					<Show when={mode() === "edit"} fallback={<NotePreview markdown={markdown()} />}>
 						<Show when={!simple()}>
 							<text style={{ ...tx("text-[11px] text-muted-foreground"), lineHeight: 15 }}>
-								This note has formatting Markdown cannot keep (highlights, citations, tables, images or styles), so it is edited as HTML.
+								This note has formatting Markdown cannot keep (highlights, citations, tables, images or styles), so it is
+								edited as HTML.
 							</text>
 						</Show>
 						<textarea
@@ -174,7 +224,15 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 							placeholder="Write a note…  Markdown: # heading, **bold**, *italic*, - list, [text](url)"
 							onChange={(e) => edit((e as { value?: string }).value ?? "")}
 							onBlur={() => void flush()}
-							style={{ width: "100%", padding: 0, fontSize: 13, lineHeight: 18, fontFamily: simple() ? "Inter" : "Consolas", color: tok("foreground"), backgroundColor: "transparent" }}
+							style={{
+								width: "100%",
+								padding: 0,
+								fontSize: 13,
+								lineHeight: 18,
+								fontFamily: simple() ? "Inter" : "Consolas",
+								color: tok("foreground"),
+								backgroundColor: "transparent",
+							}}
 							theme={inputTheme()}
 						/>
 					</Show>
@@ -190,7 +248,9 @@ export function NotesSection(): JSX.Element {
 	const d = () => pane.detail()!;
 	const notes = () => d().children.filter((c) => c.itemType === "note");
 	// keyed by note key so a reload after a save does not rebuild (and defocus) the open editor
-	const noteKeys = createMemo(() => notes().map((n) => n.key), [] as string[], { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+	const noteKeys = createMemo(() => notes().map((n) => n.key), [] as string[], {
+		equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
+	});
 	const [openKey, setOpenKey] = createSignal<string | null>(null);
 	const [editing, setEditing] = createSignal(false);
 	const [adding, setAdding] = createSignal(false);
@@ -232,35 +292,98 @@ export function NotesSection(): JSX.Element {
 	}
 
 	return (
-		<Section id="notes" title="Notes" icon="sticky-note" count={notes().length} actions={<Show when={!locked()}><IconBtn icon="plus" title="Add Note" disabled={adding()} onClick={() => void addNote()} /></Show>}>
-			<Show when={notes().length} fallback={<Empty text="No notes"><Show when={!locked()}><TextBtn icon="plus" label="Add Note" disabled={adding()} onClick={() => void addNote()} /></Show></Empty>}>
+		<Section
+			id="notes"
+			title="Notes"
+			icon="sticky-note"
+			count={notes().length}
+			actions={
+				<Show when={!locked()}>
+					<IconBtn icon="plus" title="Add Note" disabled={adding()} onClick={() => void addNote()} />
+				</Show>
+			}
+		>
+			<Show
+				when={notes().length}
+				fallback={
+					<Empty text="No notes">
+						<Show when={!locked()}>
+							<TextBtn icon="plus" label="Add Note" disabled={adding()} onClick={() => void addNote()} />
+						</Show>
+					</Empty>
+				}
+			>
 				<For each={noteKeys()}>
-					{(nk) => { const n = { get key() { return nk; }, get title() { return notes().find((x) => x.key === nk)?.title ?? ""; } }; return (
-						<div style={{ ...t("flex flex-col w-full") }}>
-							<div
-								onMouseEnter={() => setHover(n.key)}
-								onMouseLeave={() => setHover((h) => (h === n.key ? null : h))}
-								onClick={() => { setEditing(false); setOpenKey(openKey() === n.key ? null : n.key); }}
-								style={{ ...t("flex items-center gap-1.5 rounded px-1.5 py-[3px]"), cursor: "pointer", backgroundColor: openKey() === n.key || hover() === n.key ? tok("accent") : "transparent" }}
-							>
-								<Icon name="sticky-note" size={16} color="#f59e0b" />
-								<text style={{ ...tx("text-[13px]"), flexGrow: 1, flexShrink: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.title || "Untitled note"}</text>
-								<Show when={hover() === n.key}>
-									<div onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()} style={{ ...t("flex flex-none items-center") }}>
-										<Show when={!locked()}>
-											<IconBtn icon="pencil" title="Edit note" onClick={() => { setEditing(true); setOpenKey(n.key); }} />
-											<IconBtn icon="trash-2" title="Move note to Trash" onClick={() => void trash(n.key)} />
-										</Show>
+					{(nk) => {
+						const n = {
+							get key() {
+								return nk;
+							},
+							get title() {
+								return notes().find((x) => x.key === nk)?.title ?? "";
+							},
+						};
+						return (
+							<div style={{ ...t("flex flex-col w-full") }}>
+								<div
+									onMouseEnter={() => setHover(n.key)}
+									onMouseLeave={() => setHover((h) => (h === n.key ? null : h))}
+									onClick={() => {
+										setEditing(false);
+										setOpenKey(openKey() === n.key ? null : n.key);
+									}}
+									style={{
+										...t("flex items-center gap-1.5 rounded px-1.5 py-[3px]"),
+										cursor: "pointer",
+										backgroundColor: openKey() === n.key || hover() === n.key ? tok("accent") : "transparent",
+									}}
+								>
+									<Icon name="sticky-note" size={16} color="#f59e0b" />
+									<text
+										style={{
+											...tx("text-[13px]"),
+											flexGrow: 1,
+											flexShrink: 1,
+											minWidth: 0,
+											whiteSpace: "nowrap",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+										}}
+									>
+										{n.title || "Untitled note"}
+									</text>
+									<Show when={hover() === n.key}>
+										<div
+											onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}
+											style={{ ...t("flex flex-none items-center") }}
+										>
+											<Show when={!locked()}>
+												<IconBtn
+													icon="pencil"
+													title="Edit note"
+													onClick={() => {
+														setEditing(true);
+														setOpenKey(n.key);
+													}}
+												/>
+												<IconBtn icon="trash-2" title="Move note to Trash" onClick={() => void trash(n.key)} />
+											</Show>
+										</div>
+									</Show>
+								</div>
+								<Show when={openKey() === n.key}>
+									<div style={{ marginTop: 4, marginBottom: 6, width: "100%" }}>
+										<NoteEditor
+											noteKey={n.key}
+											startEditing={editing() && !locked()}
+											onClose={() => setOpenKey(null)}
+											onSaved={() => void pane.reload()}
+										/>
 									</div>
 								</Show>
 							</div>
-							<Show when={openKey() === n.key}>
-								<div style={{ marginTop: 4, marginBottom: 6, width: "100%" }}>
-									<NoteEditor noteKey={n.key} startEditing={editing() && !locked()} onClose={() => setOpenKey(null)} onSaved={() => void pane.reload()} />
-								</div>
-							</Show>
-						</div>
-					); }}
+						);
+					}}
 				</For>
 			</Show>
 		</Section>

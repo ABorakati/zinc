@@ -31,14 +31,27 @@ const [spreadMode, setSpreadMode] = persisted<SpreadModePref>("shell.reader.spre
 
 export const readerPrefs = {
 	/** "width" | "page" | a scale as a number (1 = 100%) */
-	zoom: (): DefaultZoom => { const z = zoomKey(); return z === "width" || z === "page" ? z : Number(z); },
+	zoom: (): DefaultZoom => {
+		const z = zoomKey();
+		return z === "width" || z === "page" ? z : Number(z);
+	},
 	zoomKey,
 	setZoomKey,
-	sidebar, setSidebar,
-	pageAppearance: pages, setPageAppearance: setPages,
-	scrollMode, setScrollMode,
-	spreadMode, setSpreadMode,
-	reset(): void { setZoomKey("width"); setSidebar("remember"); setPages("app"); setScrollMode("vertical"); setSpreadMode("none"); },
+	sidebar,
+	setSidebar,
+	pageAppearance: pages,
+	setPageAppearance: setPages,
+	scrollMode,
+	setScrollMode,
+	spreadMode,
+	setSpreadMode,
+	reset(): void {
+		setZoomKey("width");
+		setSidebar("remember");
+		setPages("app");
+		setScrollMode("vertical");
+		setSpreadMode("none");
+	},
 };
 
 // ---- the reflowed reading view (reader/reflow): typography, theme and "open PDFs in the reading view by default". They live in

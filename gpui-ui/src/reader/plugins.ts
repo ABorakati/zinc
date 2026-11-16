@@ -4,8 +4,20 @@
 import { createSignal, type Accessor, type JSX } from "solid-js";
 
 /** A rect in page space, normalised 0..1 (x, y from the top-left of the page). */
-export interface NRect { x: number; y: number; w: number; h: number }
-export interface Word { t: string; x: number; y: number; w: number; h: number; l: number /* line index */ }
+export interface NRect {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+export interface Word {
+	t: string;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	l: number; /* line index */
+}
 
 export interface ReaderContext {
 	attachmentKey: string;
@@ -25,7 +37,9 @@ export interface ReaderContext {
 	/** current text selection (set by the reader core's drag-select), null when none */
 	selection: Accessor<{
 		/** the page of the selection's first word; `rects` are that page's rects (unrotated page space) */
-		page: number; text: string; rects: NRect[];
+		page: number;
+		text: string;
+		rects: NRect[];
 		/** added by the core: every page the selection touches, in order (a selection can span pages); `pages[0]` is {page, rects} */
 		pages?: { page: number; rects: NRect[] }[];
 	} | null>;
@@ -42,7 +56,15 @@ export interface ReaderContext {
 	/** link annotations of a page: rect in unrotated page space; internal targets carry the destination page + y (0..1, -1 unknown) */
 	pageLinks?(page: number): Promise<{ rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string } }[]>;
 	/** Intercept link clicks (e.g. to show a citation popup instead of jumping): return true to stop the core's navigation. x/y: window px. */
-	onLink?(cb: (e: { page: number; rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string }; x: number; y: number }) => boolean | void): () => void;
+	onLink?(
+		cb: (e: {
+			page: number;
+			rect: NRect;
+			target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string };
+			x: number;
+			y: number;
+		}) => boolean | void,
+	): () => void;
 	openUrl?(url: string): boolean;
 	/** put text on the clipboard */
 	copy?(text: string): boolean;

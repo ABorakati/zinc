@@ -2,7 +2,10 @@
 // without an import cycle.
 import type { Database } from "bun:sqlite";
 
-export type ZRoute = (req: Request, ctx: { db: Database; url: URL; server: Bun.Server<unknown> }) => Response | null | Promise<Response | null>;
+export type ZRoute = (
+	req: Request,
+	ctx: { db: Database; url: URL; server: Bun.Server<unknown> },
+) => Response | null | Promise<Response | null>;
 
 export const routes: { method: string; path: string | RegExp; handler: ZRoute }[] = [];
 

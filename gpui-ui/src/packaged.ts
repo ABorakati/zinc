@@ -26,7 +26,11 @@ export const packaged = /^zotero-next-gpui(-[\w-]+)?(\.exe)?$/i.test(basename(ex
 
 /** What packaged start-up decided, for the UI (e.g. the "no library" message). */
 export const startup: {
-	library: "external" | "in-process" | "none"; url?: string; db?: string; backup?: string; error?: string;
+	library: "external" | "in-process" | "none";
+	url?: string;
+	db?: string;
+	backup?: string;
+	error?: string;
 	/** No usable library: the first-run screen must run before anything opens a database. */
 	firstRun?: boolean;
 	/** Where a new library goes by default (set with firstRun). */
@@ -66,7 +70,9 @@ export const packageDataDir = (): string => {
 if (packaged) {
 	const exeDir = dirname(exe);
 	const dir = packageDataDir();
-	const set = (k: string, v: string) => { if (!process.env[k]) process.env[k] = v; };
+	const set = (k: string, v: string) => {
+		if (!process.env[k]) process.env[k] = v;
+	};
 	// vendor/document-worker and vendor/reader/structured-document-text are copied under the package folder
 	if (existsSync(join(dir, "vendor"))) set("ZN_ROOT", dir);
 	if (existsSync(join(dir, "docworker-entry.ts"))) set("ZN_DOCWORKER_ENTRY", join(dir, "docworker-entry.ts"));
@@ -91,7 +97,9 @@ if (chooseLibrary) {
 		if (!loc.path || !loc.exists) {
 			// nothing configured, or the configured file is gone (moved drive, deleted): ask the user, never create over a path they chose
 			Object.assign(startup, {
-				library: "none", firstRun: true, defaultPath: loc.defaultPath,
+				library: "none",
+				firstRun: true,
+				defaultPath: loc.defaultPath,
 				error: loc.path ? `no library was found at ${loc.path}` : undefined,
 			});
 		} else {
@@ -105,10 +113,15 @@ if (chooseLibrary) {
 					const logDir = join(configDir(), "zotero-next-gpui");
 					mkdirSync(logDir, { recursive: true });
 					writeFileSync(join(logDir, "startup.json"), JSON.stringify({ at: new Date().toISOString(), ...startup }, null, 1));
-				} catch { /* best effort */ }
+				} catch {
+					/* best effort */
+				}
 			} catch (e) {
 				// no backup, no write access: never open the library without the backup
-				Object.assign(startup, { library: "none", error: `could not back up the library before opening it: ${(e as Error).message}` });
+				Object.assign(startup, {
+					library: "none",
+					error: `could not back up the library before opening it: ${(e as Error).message}`,
+				});
 				process.env.ZN_URL = "http://127.0.0.1:23120";
 			}
 		}

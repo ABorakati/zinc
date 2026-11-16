@@ -10,11 +10,23 @@ import { preprintServer, venueOf } from "../src/venue";
 describe("venueOf", () => {
 	test("preprints show their server, recognised from the URL, archive ID or DOI", () => {
 		// shapes from the user's library
-		expect(venueOf({ itemType: "preprint", repository: "arXiv", archiveID: "arXiv:1706.03762", url: "http://arxiv.org/abs/1706.03762" })).toBe("arXiv");
+		expect(
+			venueOf({ itemType: "preprint", repository: "arXiv", archiveID: "arXiv:1706.03762", url: "http://arxiv.org/abs/1706.03762" }),
+		).toBe("arXiv");
 		expect(venueOf({ itemType: "preprint", archiveID: "arXiv:2311.08526", DOI: "10.48550/arXiv.2311.08526" })).toBe("arXiv");
-		expect(venueOf({ itemType: "preprint", repository: "Transplantation", url: "http://medrxiv.org/lookup/doi/10.1101/2024.11.01.24316601" })).toBe("medRxiv");
-		expect(venueOf({ itemType: "preprint", url: "https://doi.org/10.1101/2023.08.31.23294924", DOI: "10.1101/2023.08.31.23294924" })).toBe("medRxiv");
-		expect(venueOf({ itemType: "preprint", repository: "Bioinformatics", url: "http://biorxiv.org/lookup/doi/10.1101/2022.08.31.506101" })).toBe("bioRxiv");
+		expect(
+			venueOf({
+				itemType: "preprint",
+				repository: "Transplantation",
+				url: "http://medrxiv.org/lookup/doi/10.1101/2024.11.01.24316601",
+			}),
+		).toBe("medRxiv");
+		expect(
+			venueOf({ itemType: "preprint", url: "https://doi.org/10.1101/2023.08.31.23294924", DOI: "10.1101/2023.08.31.23294924" }),
+		).toBe("medRxiv");
+		expect(
+			venueOf({ itemType: "preprint", repository: "Bioinformatics", url: "http://biorxiv.org/lookup/doi/10.1101/2022.08.31.506101" }),
+		).toBe("bioRxiv");
 		expect(venueOf({ itemType: "preprint", DOI: "10.1101/2022.08.31.506101" })).toBe("bioRxiv");
 		expect(venueOf({ itemType: "preprint", repository: "SSRN", url: "https://www.ssrn.com/abstract=4605366" })).toBe("SSRN");
 		expect(venueOf({ itemType: "preprint", repository: "In Review", DOI: "10.21203/rs.3.rs-4611820/v1" })).toBe("Research Square");
@@ -40,14 +52,19 @@ test("openDb recomputes stored venues once, without queueing sync writes", () =>
 		openDb(path).close();
 		const raw = new Database(path);
 		const data = { key: "PREPRNT1", itemType: "preprint", title: "Attention", repository: "arXiv", archiveID: "arXiv:1706.03762" };
-		raw.run("INSERT INTO items(key, item_type, title, creators_summary, publication, data, date_added, date_modified, deleted) VALUES(?, 'preprint', 'Attention', '', NULL, ?, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 0)", ["PREPRNT1", JSON.stringify(data)]);
+		raw.run(
+			"INSERT INTO items(key, item_type, title, creators_summary, publication, data, date_added, date_modified, deleted) VALUES(?, 'preprint', 'Attention', '', NULL, ?, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 0)",
+			["PREPRNT1", JSON.stringify(data)],
+		);
 		raw.run("DELETE FROM sync_outbox");
 		raw.run("DELETE FROM meta WHERE name = 'venue_version'"); // as a library written before this rule
 		raw.run("UPDATE meta SET value = '1' WHERE name = 'schema_version'"); // the venue refresh is migration 2
 		raw.close();
 
 		const db = openDb(path);
-		expect((db.query("SELECT publication FROM items WHERE key = 'PREPRNT1'").get() as { publication: string }).publication).toBe("arXiv");
+		expect((db.query("SELECT publication FROM items WHERE key = 'PREPRNT1'").get() as { publication: string }).publication).toBe(
+			"arXiv",
+		);
 		expect((db.query("SELECT count(*) n FROM sync_outbox").get() as { n: number }).n).toBe(0);
 		expect(db.query("SELECT 1 FROM sync_flags WHERE name = 'suppress'").get()).toBeNull();
 		db.close();

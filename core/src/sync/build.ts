@@ -43,7 +43,11 @@ export function readGroups(db: Database, libraryId = 1): Group[] {
 }
 
 export function pendingCount(db: Database, libraryId = 1): number {
-	return (db.query("SELECT count(*) AS n FROM (SELECT 1 FROM sync_outbox WHERE library_id = ? GROUP BY type, key)").get(libraryId) as { n: number }).n;
+	return (
+		db.query("SELECT count(*) AS n FROM (SELECT 1 FROM sync_outbox WHERE library_id = ? GROUP BY type, key)").get(libraryId) as {
+			n: number;
+		}
+	).n;
 }
 
 /** A path with its symbolic links resolved when it exists, else as given (resolved). */
@@ -90,14 +94,17 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 	const storageDir = join(dataDir, "storage");
 	const hasBase = db.query("SELECT 1 FROM sync_base WHERE type = ? AND key = ?");
 	const baseQ = db.query("SELECT date_modified FROM sync_base WHERE type = ? AND key = ?");
-	const baseOf = (type: string, key: string): string | undefined => (baseQ.get(type, key) as { date_modified: string } | null)?.date_modified || undefined;
+	const baseOf = (type: string, key: string): string | undefined =>
+		(baseQ.get(type, key) as { date_modified: string } | null)?.date_modified || undefined;
 	const upserts: { rank: number; sort: number; writes: ZoteroWrite[] }[] = [];
 	const erases: { rank: number; sort: number; write: ZoteroWrite }[] = [];
 
 	for (const g of readGroups(db, libraryId)) {
 		const id = `${g.type}:${g.key}`;
 		if (g.type === "item") {
-			const row = db.query("SELECT key, parent_key, item_type, data, date_modified, deleted FROM items WHERE key = ?").get(g.key) as ItemRow | null;
+			const row = db
+				.query("SELECT key, parent_key, item_type, data, date_modified, deleted FROM items WHERE key = ?")
+				.get(g.key) as ItemRow | null;
 			if (!row) {
 				if (!hasBase.get("item", g.key)) plan.dropped.push(g);
 				else {
@@ -110,9 +117,9 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 			const data = JSON.parse(row.data) as ZoteroJson;
 			data.key = row.key;
 			data.dateModified = row.date_modified;
-			data.tags = (db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag").all(row.key) as { tag: string; type: number }[]).map(
-				(t) => (t.type ? { tag: t.tag, type: t.type } : { tag: t.tag }),
-			);
+			data.tags = (
+				db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag").all(row.key) as { tag: string; type: number }[]
+			).map((t) => (t.type ? { tag: t.tag, type: t.type } : { tag: t.tag }));
 			if (row.parent_key) {
 				data.parentItem = row.parent_key;
 				delete data.collections;
@@ -143,7 +150,8 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 					write.file = {
 						path: att.path,
 						filename,
-						contentType: att.content_type || (typeof data.contentType === "string" && data.contentType) || "application/octet-stream",
+						contentType:
+							att.content_type || (typeof data.contentType === "string" && data.contentType) || "application/octet-stream",
 					};
 					plan.files.set(row.key, att.path);
 				}
@@ -172,7 +180,14 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 			upserts.push({
 				rank: 0,
 				sort: depth(db, "collections", row.key),
-				writes: [{ type: "collection", op: "upsert", key: row.key, data: { key: row.key, name: row.name, parentCollection: row.parent_key ?? false, relations: {} } }],
+				writes: [
+					{
+						type: "collection",
+						op: "upsert",
+						key: row.key,
+						data: { key: row.key, name: row.name, parentCollection: row.parent_key ?? false, relations: {} },
+					},
+				],
 			});
 			plan.groups.push(g);
 			plan.base.set(id, nowIso());
@@ -194,7 +209,11 @@ export function buildPush(db: Database, dataDir: string, libraryId = 1): PushPla
 			}
 			const data = { ...(JSON.parse(row.data) as ZoteroJson), key: row.key, parentItem: row.attachment_key };
 			const annBase = baseOf("annotation", row.key);
-			upserts.push({ rank: 2, sort: 0, writes: [{ type: "annotation", op: "upsert", key: row.key, data, ...(annBase ? { baseline: annBase } : {}) }] });
+			upserts.push({
+				rank: 2,
+				sort: 0,
+				writes: [{ type: "annotation", op: "upsert", key: row.key, data, ...(annBase ? { baseline: annBase } : {}) }],
+			});
 			plan.groups.push(g);
 			plan.base.set(id, row.date_modified);
 		}
@@ -255,7 +274,8 @@ export function completePush(db: Database, plan: PushPlan, results: ZoteroWriteR
 				}
 				out.done++;
 			}
-			for (const g of plan.dropped) db.query("DELETE FROM sync_outbox WHERE type = ? AND key = ? AND seq <= ?").run(g.type, g.key, g.maxSeq);
+			for (const g of plan.dropped)
+				db.query("DELETE FROM sync_outbox WHERE type = ? AND key = ? AND seq <= ?").run(g.type, g.key, g.maxSeq);
 		} finally {
 			db.run("DELETE FROM sync_flags WHERE name = 'suppress'");
 		}

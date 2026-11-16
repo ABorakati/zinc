@@ -42,7 +42,10 @@ const retryName = (libraryId: number): string => (libraryId === 1 ? "web_retry" 
 export function retryKeys(db: Database, libraryId: number): { type: EntityType; key: string }[] {
 	try {
 		const v = JSON.parse(getState(db, retryName(libraryId)) ?? "[]") as { type?: unknown; key?: unknown }[];
-		return v.filter((r): r is { type: EntityType; key: string } => (r.type === "item" || r.type === "annotation" || r.type === "collection") && typeof r.key === "string");
+		return v.filter(
+			(r): r is { type: EntityType; key: string } =>
+				(r.type === "item" || r.type === "annotation" || r.type === "collection") && typeof r.key === "string",
+		);
 	} catch {
 		return [];
 	}
@@ -56,8 +59,12 @@ function setRetry(db: Database, libraryId: number, list: { type: EntityType; key
 function libraryOf(db: Database, type: EntityType, key: string): number | "none" {
 	const r =
 		type === "annotation"
-			? (db.query("SELECT i.library_id AS lib FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ?").get(key) as { lib: number } | null)
-			: (db.query(`SELECT library_id AS lib FROM ${type === "item" ? "items" : "collections"} WHERE key = ?`).get(key) as { lib: number } | null);
+			? (db
+					.query("SELECT i.library_id AS lib FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ?")
+					.get(key) as { lib: number } | null)
+			: (db.query(`SELECT library_id AS lib FROM ${type === "item" ? "items" : "collections"} WHERE key = ?`).get(key) as {
+					lib: number;
+				} | null);
 	return r ? r.lib : "none";
 }
 
@@ -67,7 +74,9 @@ export function knownVersions(db: Database, type: EntityType): Map<string, numbe
 }
 
 export function recordVersions(db: Database, rows: { type: EntityType; key: string; version: number }[]): void {
-	const ins = db.query("INSERT INTO websync_versions(type, key, version) VALUES(?, ?, ?) ON CONFLICT(type, key) DO UPDATE SET version = excluded.version");
+	const ins = db.query(
+		"INSERT INTO websync_versions(type, key, version) VALUES(?, ?, ?) ON CONFLICT(type, key) DO UPDATE SET version = excluded.version",
+	);
 	db.transaction(() => {
 		for (const r of rows) ins.run(r.type, r.key, r.version);
 	})();
@@ -80,7 +89,12 @@ export function forgetVersions(db: Database, rows: { type: EntityType; key: stri
 	})();
 }
 
-async function getJson<T>(ctx: PullContext, path: string, query: Record<string, string | number>, libV?: number): Promise<{ body: T; version: number }> {
+async function getJson<T>(
+	ctx: PullContext,
+	path: string,
+	query: Record<string, string | number>,
+	libV?: number,
+): Promise<{ body: T; version: number }> {
 	const res = await ctx.client.request("GET", path, { query });
 	if (!res.ok) throw await failure(res);
 	const version = libraryVersion(res) ?? 0;
@@ -121,8 +135,17 @@ async function attempt(ctx: PullContext): Promise<PullResult> {
 	for (const r of retry) (r.type === "collection" ? collKeys : itemKeys).add(r.key);
 
 	const fetched = await Promise.all([
-		...chunk([...itemKeys], BATCH).map((keys) => getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/items`, { itemKey: keys.join(","), includeTrashed: 1 }, libV)),
-		...chunk([...collKeys], BATCH).map((keys) => getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/collections`, { collectionKey: keys.join(",") }, libV)),
+		...chunk([...itemKeys], BATCH).map((keys) =>
+			getJson<{ key: string; version: number; data: ZoteroJson }[]>(
+				ctx,
+				`${u}/items`,
+				{ itemKey: keys.join(","), includeTrashed: 1 },
+				libV,
+			),
+		),
+		...chunk([...collKeys], BATCH).map((keys) =>
+			getJson<{ key: string; version: number; data: ZoteroJson }[]>(ctx, `${u}/collections`, { collectionKey: keys.join(",") }, libV),
+		),
 	]);
 
 	const changes: RemoteChanges = { upserts: [], deletes: [] };

@@ -122,18 +122,29 @@ d("zotero-db writer + reader", () => {
 		const it = q<Record<string, any>>("SELECT * FROM items WHERE key = ?", article)[0];
 		expect(it).toMatchObject({ synced: 0, version: 0, libraryID: 1 });
 		expect(it.dateAdded).toBe(it.clientDateModified);
-		const date = q("SELECT v.value FROM itemData d JOIN itemDataValues v USING(valueID) WHERE d.itemID = ? AND d.fieldID = (SELECT fieldID FROM fieldsCombined WHERE fieldName='date')", it.itemID)[0];
+		const date = q(
+			"SELECT v.value FROM itemData d JOIN itemDataValues v USING(valueID) WHERE d.itemID = ? AND d.fieldID = (SELECT fieldID FROM fieldsCombined WHERE fieldName='date')",
+			it.itemID,
+		)[0];
 		expect(date.value).toBe("2024-04-16 2024-04-16");
 		expect(q("SELECT firstNameNormalized FROM creators WHERE lastName = 'Lovelace'")[0]).toBeTruthy();
 		const ci = q("SELECT orderIndex, collectionID FROM collectionItems WHERE itemID = ?", it.itemID);
 		expect(ci.length).toBe(2);
 		const tt = q("SELECT t.name, it.type FROM itemTags it JOIN tags t USING(tagID) WHERE it.itemID = ? ORDER BY t.name", it.itemID);
-		expect(tt).toEqual([{ name: "zn-alpha", type: 0 }, { name: "zn-auto", type: 1 }]);
+		expect(tt).toEqual([
+			{ name: "zn-alpha", type: 0 },
+			{ name: "zn-auto", type: 1 },
+		]);
 	});
 
 	test("re-applying identical data is a no-op", async () => {
 		const before = q("SELECT clientVersion FROM libraries WHERE libraryID = 1")[0].clientVersion;
-		const { results } = await apply({ type: "item", op: "upsert", key: article, data: { ...items[0], dateModified: undefined } as never });
+		const { results } = await apply({
+			type: "item",
+			op: "upsert",
+			key: article,
+			data: { ...items[0], dateModified: undefined } as never,
+		});
 		expect(results[0]).toMatchObject({ ok: true, changed: false });
 		expect(q("SELECT clientVersion FROM libraries WHERE libraryID = 1")[0].clientVersion).toBe(before);
 	});
@@ -155,9 +166,14 @@ d("zotero-db writer + reader", () => {
 		expect(stable(got)).toEqual({ key: article, ...data });
 		const it = q<Record<string, any>>("SELECT itemID FROM items WHERE key = ?", article)[0];
 		// removed fields are gone from itemData
-		const fields = q("SELECT f.fieldName FROM itemData d JOIN fieldsCombined f USING(fieldID) WHERE d.itemID = ?", it.itemID).map((r) => r.fieldName);
+		const fields = q("SELECT f.fieldName FROM itemData d JOIN fieldsCombined f USING(fieldID) WHERE d.itemID = ?", it.itemID).map(
+			(r) => r.fieldName,
+		);
 		expect(fields.sort()).toEqual(["date", "publicationTitle", "title"]);
-		expect(q("SELECT v.value FROM itemData d JOIN itemDataValues v USING(valueID) WHERE d.itemID = ? AND d.fieldID = 6", it.itemID)[0].value).toBe("2024-04-00 April 2024");
+		expect(
+			q("SELECT v.value FROM itemData d JOIN itemDataValues v USING(valueID) WHERE d.itemID = ? AND d.fieldID = 6", it.itemID)[0]
+				.value,
+		).toBe("2024-04-00 April 2024");
 		// orphan tag zn-auto purged, orphan creator Lovelace purged
 		expect(q("SELECT 1 FROM tags WHERE name = 'zn-auto'")).toEqual([]);
 		expect(q("SELECT 1 FROM creators WHERE lastName = 'Lovelace'")).toEqual([]);
@@ -184,7 +200,13 @@ d("zotero-db writer + reader", () => {
 
 	test("note child, imported attachment (file copy) and annotation", async () => {
 		const pdf = writeTempFile("zn test.pdf", "%PDF-1.4\n%%EOF\n");
-		const noteData = { itemType: "note", parentItem: article, note: "<p>Hello &amp; welcome note</p>", tags: [{ tag: "zn-note" }], relations: {} };
+		const noteData = {
+			itemType: "note",
+			parentItem: article,
+			note: "<p>Hello &amp; welcome note</p>",
+			tags: [{ tag: "zn-note" }],
+			relations: {},
+		};
 		const attData = {
 			itemType: "attachment",
 			parentItem: article,
@@ -207,7 +229,13 @@ d("zotero-db writer + reader", () => {
 		};
 		const { results } = await apply(
 			{ type: "annotation", op: "upsert", key: ann, data: annData },
-			{ type: "item", op: "upsert", key: att, data: attData, file: { path: pdf, filename: "zn test.pdf", contentType: "application/pdf" } },
+			{
+				type: "item",
+				op: "upsert",
+				key: att,
+				data: attData,
+				file: { path: pdf, filename: "zn test.pdf", contentType: "application/pdf" },
+			},
 			{ type: "item", op: "upsert", key: note, data: noteData },
 		);
 		expect(results.map((r) => r.ok)).toEqual([true, true, true]);
@@ -215,11 +243,20 @@ d("zotero-db writer + reader", () => {
 		expect(results[1].path).toBe(storedPath);
 		expect(readFileSync(storedPath, "utf8")).toContain("%PDF");
 
-		const n = q<Record<string, any>>("SELECT n.note, n.title, n.parentItemID FROM itemNotes n JOIN items i USING(itemID) WHERE i.key = ?", note)[0];
+		const n = q<Record<string, any>>(
+			"SELECT n.note, n.title, n.parentItemID FROM itemNotes n JOIN items i USING(itemID) WHERE i.key = ?",
+			note,
+		)[0];
 		expect(n.note).toBe('<div class="zotero-note znv1"><p>Hello &amp; welcome note</p></div>');
 		expect(n.title).toBe("Hello & welcome note");
 		const a = q<Record<string, any>>("SELECT a.* FROM itemAttachments a JOIN items i USING(itemID) WHERE i.key = ?", att)[0];
-		expect(a).toMatchObject({ linkMode: 0, contentType: "application/pdf", path: "storage:zn test.pdf", syncState: 0, storageHash: null });
+		expect(a).toMatchObject({
+			linkMode: 0,
+			contentType: "application/pdf",
+			path: "storage:zn test.pdf",
+			syncState: 0,
+			storageHash: null,
+		});
 		const an = q<Record<string, any>>("SELECT a.* FROM itemAnnotations a JOIN items i USING(itemID) WHERE i.key = ?", ann)[0];
 		expect(an).toMatchObject({ type: 1, color: "#ff6666", pageLabel: "7", isExternal: 0, text: "highlighted text" });
 		expect(an.position).toBe('{"pageIndex":0,"rects":[[1,2,3,4.5]]}');
@@ -229,9 +266,25 @@ d("zotero-db writer + reader", () => {
 		expect(rn).toMatchObject({ itemType: "note", parentItem: article, tags: [{ tag: "zn-note" }] });
 		expect(rn.note).toContain("Hello &amp; welcome note");
 		const ra = all.get(`item:${att}`)?.data as Record<string, any>;
-		expect(ra).toMatchObject({ itemType: "attachment", linkMode: "imported_file", contentType: "application/pdf", filename: "zn test.pdf", path: storedPath, parentItem: article });
+		expect(ra).toMatchObject({
+			itemType: "attachment",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "zn test.pdf",
+			path: storedPath,
+			parentItem: article,
+		});
 		const rann = all.get(`annotation:${ann}`)?.data as Record<string, any>;
-		expect(rann).toMatchObject({ id: ann, type: "highlight", color: "#ff6666", text: "highlighted text", comment: "a comment", pageLabel: "7", tags: [{ name: "zn-ann" }], parentItem: att });
+		expect(rann).toMatchObject({
+			id: ann,
+			type: "highlight",
+			color: "#ff6666",
+			text: "highlighted text",
+			comment: "a comment",
+			pageLabel: "7",
+			tags: [{ name: "zn-ann" }],
+			parentItem: att,
+		});
 		expect(rann.position).toEqual(annData.position);
 
 		// edit annotation + note
@@ -259,12 +312,44 @@ d("zotero-db writer + reader", () => {
 		const lf = genKey();
 		const lu = genKey();
 		const { results } = await apply(
-			{ type: "item", op: "upsert", key: lf, data: { itemType: "attachment", parentItem: article, linkMode: "linked_file", title: "Linked", contentType: "application/pdf", path: "C:\\somewhere\\x.pdf", tags: [] } },
-			{ type: "item", op: "upsert", key: lu, data: { itemType: "attachment", parentItem: article, linkMode: "linked_url", title: "Web", url: "https://example.org/", contentType: "text/html", tags: [] } },
+			{
+				type: "item",
+				op: "upsert",
+				key: lf,
+				data: {
+					itemType: "attachment",
+					parentItem: article,
+					linkMode: "linked_file",
+					title: "Linked",
+					contentType: "application/pdf",
+					path: "C:\\somewhere\\x.pdf",
+					tags: [],
+				},
+			},
+			{
+				type: "item",
+				op: "upsert",
+				key: lu,
+				data: {
+					itemType: "attachment",
+					parentItem: article,
+					linkMode: "linked_url",
+					title: "Web",
+					url: "https://example.org/",
+					contentType: "text/html",
+					tags: [],
+				},
+			},
 		);
 		expect(results.every((r) => r.ok)).toBe(true);
-		expect(q("SELECT path, linkMode FROM itemAttachments WHERE itemID = (SELECT itemID FROM items WHERE key = ?)", lf)[0]).toEqual({ path: "C:\\somewhere\\x.pdf", linkMode: 2 });
-		expect(q("SELECT path, linkMode FROM itemAttachments WHERE itemID = (SELECT itemID FROM items WHERE key = ?)", lu)[0]).toEqual({ path: null, linkMode: 3 });
+		expect(q("SELECT path, linkMode FROM itemAttachments WHERE itemID = (SELECT itemID FROM items WHERE key = ?)", lf)[0]).toEqual({
+			path: "C:\\somewhere\\x.pdf",
+			linkMode: 2,
+		});
+		expect(q("SELECT path, linkMode FROM itemAttachments WHERE itemID = (SELECT itemID FROM items WHERE key = ?)", lu)[0]).toEqual({
+			path: null,
+			linkMode: 3,
+		});
 		const all = await readAll();
 		expect(all.get(`item:${lf}`)?.data).toMatchObject({ linkMode: "linked_file", path: "C:\\somewhere\\x.pdf" });
 		expect(all.get(`item:${lu}`)?.data).toMatchObject({ linkMode: "linked_url", url: "https://example.org/" });
@@ -313,14 +398,23 @@ d("zotero-db writer + reader", () => {
 		for (const k of [article, note, att, ann]) expect(q("SELECT 1 FROM items WHERE key = ?", k)).toEqual([]);
 		expect(q("SELECT 1 FROM itemAnnotations WHERE parentItemID NOT IN (SELECT itemID FROM items)")).toEqual([]);
 		expect(q("SELECT key FROM collections WHERE key IN (?, ?)", collA, collB)).toEqual([]);
-		const log = q<{ syncObjectTypeID: number; key: string }>("SELECT syncObjectTypeID, key FROM syncDeleteLog").map((r) => `${r.syncObjectTypeID}:${r.key}`);
+		const log = q<{ syncObjectTypeID: number; key: string }>("SELECT syncObjectTypeID, key FROM syncDeleteLog").map(
+			(r) => `${r.syncObjectTypeID}:${r.key}`,
+		);
 		for (const k of [article, note, att, ann]) expect(log).toContain(`3:${k}`);
 		for (const k of [collA, collB]) expect(log).toContain(`1:${k}`);
 		expect(existsSync(join(dataDir, "storage", att))).toBe(false);
 
 		const ch = await reader.changesSince(since, { knownKeys: known });
 		const del = ch.deletes.map((x) => `${x.type}:${x.key}`).sort();
-		for (const e of [`item:${article}`, `item:${note}`, `item:${att}`, `annotation:${ann}`, `collection:${collA}`, `collection:${collB}`]) {
+		for (const e of [
+			`item:${article}`,
+			`item:${note}`,
+			`item:${att}`,
+			`annotation:${ann}`,
+			`collection:${collA}`,
+			`collection:${collB}`,
+		]) {
 			expect(del).toContain(e);
 		}
 		// without knownKeys the syncDeleteLog still reports them (annotation keys appear as items)
@@ -344,7 +438,9 @@ d("zotero-db writer + reader", () => {
 		other.exec("BEGIN EXCLUSIVE");
 		try {
 			expect(await writer.canWrite()).toBe(false);
-			await expect(apply({ type: "collection", op: "upsert", key: genKey(), data: { name: "nope" } })).rejects.toBeInstanceOf(ZoteroLockedError);
+			await expect(apply({ type: "collection", op: "upsert", key: genKey(), data: { name: "nope" } })).rejects.toBeInstanceOf(
+				ZoteroLockedError,
+			);
 		} finally {
 			other.exec("ROLLBACK");
 			other.close(true);
@@ -355,7 +451,9 @@ d("zotero-db writer + reader", () => {
 	test("a running Zotero process blocks writes", async () => {
 		const w = new ZoteroDbWriter({ dataDir, isRunning: async () => true });
 		expect(await w.canWrite()).toBe(false);
-		await expect(w.apply([{ type: "collection", op: "upsert", key: genKey(), data: { name: "nope" } }])).rejects.toBeInstanceOf(ZoteroLockedError);
+		await expect(w.apply([{ type: "collection", op: "upsert", key: genKey(), data: { name: "nope" } }])).rejects.toBeInstanceOf(
+			ZoteroLockedError,
+		);
 	});
 
 	test("an unexpected database error rolls the whole batch back", async () => {

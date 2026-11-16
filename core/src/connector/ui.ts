@@ -23,7 +23,9 @@ function readableAttachment(db: Database, asked: string | null, parent: string):
 		)
 		.all(parent) as A[];
 	const rank = (ct: string | null) => (/pdf/i.test(ct ?? "") ? 0 : /epub/i.test(ct ?? "") ? 1 : /html/i.test(ct ?? "") ? 2 : 9);
-	const pick = (asked ? rows.filter((r) => r.key === asked) : rows).filter((r) => rank(r.content_type) < 9).sort((x, y) => rank(x.content_type) - rank(y.content_type))[0];
+	const pick = (asked ? rows.filter((r) => r.key === asked) : rows)
+		.filter((r) => rank(r.content_type) < 9)
+		.sort((x, y) => rank(x.content_type) - rank(y.content_type))[0];
 	return pick ? { key: pick.key, title: pick.title ?? "" } : undefined;
 }
 

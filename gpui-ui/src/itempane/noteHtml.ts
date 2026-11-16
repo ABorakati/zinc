@@ -20,14 +20,21 @@ function parse(html: string): N[] {
 	const root: El = { t: "#root", a: {}, c: [] };
 	const stack = [root];
 	const re = /<!--[\s\S]*?-->|<(\/)?([a-zA-Z][a-zA-Z0-9]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>|[^<]+|</g;
-	for (let m: RegExpExecArray | null; (m = re.exec(html)); ) {
+	for (let m: RegExpExecArray | null; (m = re.exec(html));) {
 		const top = stack[stack.length - 1]!;
 		if (m[0].startsWith("<!--")) continue;
-		if (m[2] === undefined) { top.c.push(m[0]); continue; }
+		if (m[2] === undefined) {
+			top.c.push(m[0]);
+			continue;
+		}
 		const tag = m[2].toLowerCase();
 		if (m[1]) {
 			// closing: pop to the matching open element (tolerate unbalanced markup)
-			for (let i = stack.length - 1; i > 0; i--) if (stack[i]!.t === tag) { stack.length = i; break; }
+			for (let i = stack.length - 1; i > 0; i--)
+				if (stack[i]!.t === tag) {
+					stack.length = i;
+					break;
+				}
 			continue;
 		}
 		const a: Record<string, string> = {};
@@ -44,7 +51,14 @@ function parse(html: string): N[] {
 let td: TurndownService | undefined;
 export function htmlToMarkdown(html: string): string {
 	if (!td) {
-		td = new TurndownService({ headingStyle: "atx", bulletListMarker: "-", codeBlockStyle: "fenced", emDelimiter: "*", strongDelimiter: "**", hr: "---" });
+		td = new TurndownService({
+			headingStyle: "atx",
+			bulletListMarker: "-",
+			codeBlockStyle: "fenced",
+			emDelimiter: "*",
+			strongDelimiter: "**",
+			hr: "---",
+		});
 		td.use(gfm);
 	}
 	// <li><p>text</p>…</li> (what Zotero's editor writes) would become a loose list with blank lines: unwrap single paragraphs
@@ -60,18 +74,53 @@ export function markdownToHtml(md: string): string {
 
 // ---- which notes can be edited as Markdown without loss ----
 
-const OK_TAGS = new Set(["p", "br", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "b", "em", "i", "s", "strike", "del", "code", "pre", "a", "ul", "ol", "li", "blockquote", "hr", "div"]);
+const OK_TAGS = new Set([
+	"p",
+	"br",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"strong",
+	"b",
+	"em",
+	"i",
+	"s",
+	"strike",
+	"del",
+	"code",
+	"pre",
+	"a",
+	"ul",
+	"ol",
+	"li",
+	"blockquote",
+	"hr",
+	"div",
+]);
 
 export function isSimpleNoteHtml(html: string): boolean {
 	let simple = true;
 	const check = (nodes: N[], top: boolean) => {
 		for (const n of nodes) {
 			if (typeof n === "string" || !simple) continue;
-			if (!OK_TAGS.has(n.t)) { simple = false; return; }
+			if (!OK_TAGS.has(n.t)) {
+				simple = false;
+				return;
+			}
 			const attrs = Object.keys(n.a);
-			const allowed = n.t === "a" ? ["href"] : n.t === "ol" ? ["start"] : n.t === "div" && top ? ["data-schema-version", "class"] : [];
-			if (attrs.some((k) => !allowed.includes(k))) { simple = false; return; }
-			if (n.t === "div" && !top) { simple = false; return; }
+			const allowed =
+				n.t === "a" ? ["href"] : n.t === "ol" ? ["start"] : n.t === "div" && top ? ["data-schema-version", "class"] : [];
+			if (attrs.some((k) => !allowed.includes(k))) {
+				simple = false;
+				return;
+			}
+			if (n.t === "div" && !top) {
+				simple = false;
+				return;
+			}
 			check(n.c, false);
 		}
 	};
@@ -84,5 +133,7 @@ export function noteWrapper(html: string): { open: string; close: string } {
 	// a single top-level <div ...>...</div> (Zotero writes <div class="zotero-note znv1"> or <div data-schema-version="9">)
 	const top = parse(html).filter((n) => typeof n !== "string" || n.trim());
 	const m = /^\s*(<div\b[^>]*>)[\s\S]*<\/div>\s*$/.exec(html);
-	return m && top.length === 1 && typeof top[0] !== "string" && top[0]!.t === "div" ? { open: m[1]!, close: "</div>" } : { open: "", close: "" };
+	return m && top.length === 1 && typeof top[0] !== "string" && top[0]!.t === "div"
+		? { open: m[1]!, close: "</div>" }
+		: { open: "", close: "" };
 }

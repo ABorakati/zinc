@@ -58,7 +58,9 @@ const DOWNLOAD_WORKERS = 6;
 
 /** Characters that cannot appear in a file name on Windows; also strips any directory part. */
 function safeName(name: string, fallback: string): string {
-	const n = basename(name.replaceAll("\\", "/")).replace(/[<>:"|?*\x00-\x1f]/g, "_").trim();
+	const n = basename(name.replaceAll("\\", "/"))
+		.replace(/[<>:"|?*\x00-\x1f]/g, "_")
+		.trim();
 	return n && n !== "." && n !== ".." ? n : fallback;
 }
 
@@ -70,7 +72,14 @@ export function importedAttachments(db: Database, libraryId = 1): Att[] {
 			 FROM attachments a JOIN items i ON i.key = a.item_key
 			 WHERE a.link_mode IN ('imported_file', 'imported_url') AND i.library_id = ? ORDER BY a.item_key`,
 		)
-		.all(libraryId) as { key: string; link_mode: string; content_type: string | null; path: string | null; title: string | null; data: string }[];
+		.all(libraryId) as {
+		key: string;
+		link_mode: string;
+		content_type: string | null;
+		path: string | null;
+		title: string | null;
+		data: string;
+	}[];
 	const out: Att[] = [];
 	for (const r of rows) {
 		const snapshot = r.link_mode === "imported_url" && /^(text\/html|application\/xhtml)/i.test(r.content_type ?? "");
@@ -80,8 +89,19 @@ export function importedAttachments(db: Database, libraryId = 1): Att[] {
 		} catch {
 			// keep defaults
 		}
-		const filename = safeName(typeof data.filename === "string" && data.filename ? data.filename : r.path ? basename(r.path) : (r.title ?? ""), r.key);
-		out.push({ key: r.key, title: r.title || r.key, path: r.path, filename, md5: typeof data.md5 === "string" && data.md5 ? data.md5 : null, linkMode: r.link_mode, snapshot });
+		const filename = safeName(
+			typeof data.filename === "string" && data.filename ? data.filename : r.path ? basename(r.path) : (r.title ?? ""),
+			r.key,
+		);
+		out.push({
+			key: r.key,
+			title: r.title || r.key,
+			path: r.path,
+			filename,
+			md5: typeof data.md5 === "string" && data.md5 ? data.md5 : null,
+			linkMode: r.link_mode,
+			snapshot,
+		});
 	}
 	return out;
 }
@@ -121,7 +141,11 @@ export async function checkFiles(ctx: FilesContext): Promise<FilesCheck> {
 	const out: FilesCheck = {
 		imported,
 		missingLocally: missing.length,
-		snapshots: { imported: all.filter((a) => a.snapshot).length, missingLocally: missing.filter((a) => a.snapshot).length, onServer: 0 },
+		snapshots: {
+			imported: all.filter((a) => a.snapshot).length,
+			missingLocally: missing.filter((a) => a.snapshot).length,
+			onServer: 0,
+		},
 		onServer: 0,
 		notOnServer: 0,
 		unknown: 0,
@@ -230,7 +254,8 @@ async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: string): Pr
 			put(target, alt.data);
 		}
 	} else {
-		if (a.md5 && createHash("md5").update(bytes).digest("hex") !== a.md5.toLowerCase()) throw new Error("downloaded file does not match its checksum");
+		if (a.md5 && createHash("md5").update(bytes).digest("hex") !== a.md5.toLowerCase())
+			throw new Error("downloaded file does not match its checksum");
 		put(target, bytes);
 		if (!conflictCopy && !a.snapshot) setFileBase(ctx.db, a.key, target, createHash("md5").update(bytes).digest("hex"));
 	}
@@ -278,7 +303,9 @@ export async function uploadMissing(ctx: FilesContext): Promise<{ uploaded: numb
 	const { db, client } = ctx;
 	const known = db.query("SELECT key FROM websync_versions WHERE type = 'item'").all() as { key: string }[];
 	const onServerItems = new Set(known.map((k) => k.key));
-	const todo = importedAttachments(db, refOf(ctx).id).filter((a) => a.linkMode === "imported_file" && !a.md5 && a.path && existsSync(a.path) && onServerItems.has(a.key));
+	const todo = importedAttachments(db, refOf(ctx).id).filter(
+		(a) => a.linkMode === "imported_file" && !a.md5 && a.path && existsSync(a.path) && onServerItems.has(a.key),
+	);
 	let uploaded = 0;
 	let failed = 0;
 	for (const a of todo) {
@@ -307,7 +334,14 @@ async function uploadFile(ctx: FilesContext, a: Att, replaces: string | null): P
 		body: new URLSearchParams({ md5, filename: basename(a.path!), filesize: String(bytes.length), mtime: String(mtime) }).toString(),
 	});
 	if (!auth.ok) throw await failure(auth);
-	const j = (await auth.json()) as { exists?: number; url?: string; contentType?: string; prefix?: string; suffix?: string; uploadKey?: string };
+	const j = (await auth.json()) as {
+		exists?: number;
+		url?: string;
+		contentType?: string;
+		prefix?: string;
+		suffix?: string;
+		uploadKey?: string;
+	};
 	if (!j.exists) {
 		if (!j.url || !j.uploadKey) throw new Error("unexpected upload authorization");
 		const put = await fetch(j.url, {
@@ -346,7 +380,9 @@ export interface ReconcileResult {
 }
 
 function conflictOnce(db: Database, key: string, localMd5: string, remoteMd5: string, extra: Record<string, unknown>): boolean {
-	const dup = db.query("SELECT 1 FROM sync_conflicts WHERE type = 'item' AND key = ? AND remote LIKE ? LIMIT 1").get(key, `%"fileMd5":"${remoteMd5}"%`);
+	const dup = db
+		.query("SELECT 1 FROM sync_conflicts WHERE type = 'item' AND key = ? AND remote LIKE ? LIMIT 1")
+		.get(key, `%"fileMd5":"${remoteMd5}"%`);
 	if (dup) return false;
 	db.query("INSERT INTO sync_conflicts(type, key, local, remote, resolved) VALUES('item', ?, ?, ?, 'local')").run(
 		key,
@@ -365,7 +401,9 @@ function conflictOnce(db: Database, key: string, localMd5: string, remoteMd5: st
 export async function reconcileFiles(ctx: FilesContext, opts: { upload: boolean }): Promise<ReconcileResult> {
 	const { db } = ctx;
 	const out: ReconcileResult = { downloaded: 0, uploaded: 0, conflicts: 0, failed: 0 };
-	const todo = importedAttachments(db, refOf(ctx).id).filter((a) => a.linkMode === "imported_file" && a.md5 && a.path && existsSync(a.path));
+	const todo = importedAttachments(db, refOf(ctx).id).filter(
+		(a) => a.linkMode === "imported_file" && a.md5 && a.path && existsSync(a.path),
+	);
 	for (const a of todo) {
 		try {
 			const path = a.path!;
@@ -384,7 +422,12 @@ export async function reconcileFiles(ctx: FilesContext, opts: { upload: boolean 
 			}
 			if (!base) {
 				// never synchronised since this feature: nobody can say which side changed
-				if (conflictOnce(db, a.key, local, remote, { note: "the file here differs from the one on zotero.org; neither was replaced" })) out.conflicts++;
+				if (
+					conflictOnce(db, a.key, local, remote, {
+						note: "the file here differs from the one on zotero.org; neither was replaced",
+					})
+				)
+					out.conflicts++;
 				continue;
 			}
 			const localChanged = local !== base.md5;

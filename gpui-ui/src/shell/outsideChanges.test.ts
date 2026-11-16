@@ -14,7 +14,9 @@ test("extMoved: the first answer is only the baseline", () => {
 
 test("calls onChange once per data_version change", async () => {
 	let ext = 5;
-	setDirect((r) => (new URL(r.url).pathname === "/api/ui/selection" ? Response.json({ selection: { kind: "library" }, rev: 1, ext }) : null));
+	setDirect((r) =>
+		new URL(r.url).pathname === "/api/ui/selection" ? Response.json({ selection: { kind: "library" }, rev: 1, ext }) : null,
+	);
 	let changes = 0;
 	const stop = startOutsideChangeWatch(() => changes++, 20);
 	await Bun.sleep(60);

@@ -50,10 +50,12 @@ export function remarkDocs(options = {}) {
 				if (!rawPath) return;
 				const target = path.resolve(dir, decodeURI(rawPath));
 				const frag = hash ? "#" + hash : "";
-				if (!target.startsWith(DOCS_ROOT)) throw new Error(`Link in docs/${where} leaves docs/: ${node.url}. Link inside docs/ only.`);
+				if (!target.startsWith(DOCS_ROOT))
+					throw new Error(`Link in docs/${where} leaves docs/: ${node.url}. Link inside docs/ only.`);
 				let md = null;
 				if (/\.md$/i.test(target)) md = target;
-				else if (existsSync(target) && statSync(target).isDirectory() && existsSync(path.join(target, "README.md"))) md = path.join(target, "README.md");
+				else if (existsSync(target) && statSync(target).isDirectory() && existsSync(path.join(target, "README.md")))
+					md = path.join(target, "README.md");
 				if (md) {
 					if (!existsSync(md)) throw new Error(`Broken link in docs/${where}: ${node.url} (no such file)`);
 					node.url = `${base}${slugOf(path.relative(DOCS_ROOT, md))}/${frag}`;

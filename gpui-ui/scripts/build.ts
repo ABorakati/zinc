@@ -61,7 +61,13 @@ const iconMode = arg("icons", "used")!; // used | all
 const hideConsole = arg("hide-console") === "true";
 const bytecodeOrder = arg("bytecode-order");
 
-interface Variant { id: string; bytecode: boolean; minify: boolean; bytecodeOrder?: string[]; aot?: boolean }
+interface Variant {
+	id: string;
+	bytecode: boolean;
+	minify: boolean;
+	bytecodeOrder?: string[];
+	aot?: boolean;
+}
 const VARIANTS: Variant[] = [
 	{ id: "plain", bytecode: false, minify: false },
 	{ id: "bytecode", bytecode: true, minify: false },
@@ -72,7 +78,7 @@ const best = arg("best", "bytecode")!; // which variant is copied to out/zotero-
 
 // --aot: an extra `aot` variant (compile.aot: true), which only Bun's canary can build (stable 1.4.4 has no AOT compiler). Run under
 // stable Bun, the other variants build in-process and the aot variant is then built by a child run under the canary (env ZN_BUN_CANARY,
-// default C:/Users/abora/zn-ws/_tmp/bun-aot/canary/bun-windows-x64/bun.exe; the global bun is never touched). The child is this same
+// default C:/Users/abora/zn-ws/_tmp/bun-aot/canary-2026-11-16/bun-windows-x64/bun.exe, 1.4.5-canary.1; the global bun is never touched). The child is this same
 // script with --aot-only, so it can also be started by hand with the canary: `<canary>/bun.exe scripts/build.ts --aot-only`.
 // --explain[=report] adds compile.aotExplain (default report "text": the slow-path list). --aot-trim adds compile.trim.
 const aotOnly = process.argv.includes("--aot-only");
@@ -83,7 +89,7 @@ const known = wantAot ? [...VARIANTS, AOT] : VARIANTS;
 let todo = wanted && wanted !== "true" ? known.filter((v) => wanted.split(",").includes(v.id)) : [...VARIANTS, ...(wantAot ? [AOT] : [])];
 if (aotOnly) todo = todo.filter((v) => v.aot);
 if (!todo.length) throw new Error(`unknown --variant ${wanted}; have ${known.map((v) => v.id).join(", ")}`);
-const canaryBun = process.env.ZN_BUN_CANARY ?? "C:/Users/abora/zn-ws/_tmp/bun-aot/canary/bun-windows-x64/bun.exe";
+const canaryBun = process.env.ZN_BUN_CANARY ?? "C:/Users/abora/zn-ws/_tmp/bun-aot/canary-2026-11-16/bun-windows-x64/bun.exe";
 const runAotInChild = !aotOnly && todo.some((v) => v.aot);
 if (runAotInChild) todo = todo.filter((v) => !v.aot);
 
@@ -102,10 +108,17 @@ function usedIcons(): string[] {
 	const dir = join(root, "node_modules/lucide-static/icons");
 	const all = readdirSync(dir).filter((f) => f.endsWith(".svg"));
 	if (iconMode === "all") return all;
-	const text = walk(join(root, "src")).filter((f) => /\.(tsx?|json)$/.test(f)).map((f) => readFileSync(f, "utf8")).join("\n");
+	const text = walk(join(root, "src"))
+		.filter((f) => /\.(tsx?|json)$/.test(f))
+		.map((f) => readFileSync(f, "utf8"))
+		.join("\n");
 	const words = new Set(text.match(/[A-Za-z][A-Za-z0-9-]*/g) ?? []);
 	// icons.tsx also accepts lucide-solid component names (FileText -> file-text, Table2 -> table-2)
-	const kebab = (w: string) => w.replace(/([a-z\d])([A-Z])/g, "$1-$2").replace(/([A-Za-z])(\d)/g, "$1-$2").toLowerCase();
+	const kebab = (w: string) =>
+		w
+			.replace(/([a-z\d])([A-Z])/g, "$1-$2")
+			.replace(/([A-Za-z])(\d)/g, "$1-$2")
+			.toLowerCase();
 	for (const w of [...words]) words.add(kebab(w));
 	words.add("circle-help"); // icons.tsx FALLBACK
 	return all.filter((f) => words.has(f.slice(0, -4)));
@@ -158,25 +171,79 @@ const embeddedPath = (rel: string) => `B:/~BUN/root/${relative(repo, resolve(roo
 const abs = (rel: string) => join(root, rel);
 
 // Zotero translate framework + utilities: modules the translation runtime require()s by computed path (runtime/zotero.ts rt()/ut()).
-const TRANSLATE_RT = ["promise", "debug", "utilities_translate", "translators", "translator", "translation/translate", "tlds", "proxy", "rdf/init"];
-const TRANSLATE_UT = ["openurl", "date", "utilities", "xregexp-all", "utilities_item", "xregexp-unicode-zotero", "schema.js", "resource/dateFormats.json", "cachedTypes", "resource/zoteroTypeSchemaData"];
+const TRANSLATE_RT = [
+	"promise",
+	"debug",
+	"utilities_translate",
+	"translators",
+	"translator",
+	"translation/translate",
+	"tlds",
+	"proxy",
+	"rdf/init",
+];
+const TRANSLATE_UT = [
+	"openurl",
+	"date",
+	"utilities",
+	"xregexp-all",
+	"utilities_item",
+	"xregexp-unicode-zotero",
+	"schema.js",
+	"resource/dateFormats.json",
+	"cachedTypes",
+	"resource/zoteroTypeSchemaData",
+];
 const staticRequires = (fn: string, kind: "translate/src" | "utilities", names: string[]) => {
-	const cases = names.map((n) => `\t\tcase ${JSON.stringify(n)}: return require(${JSON.stringify(`../../../vendor/zotero/${kind}/${n}`)});`).join("\n");
+	const cases = names
+		.map((n) => `\t\tcase ${JSON.stringify(n)}: return require(${JSON.stringify(`../../../vendor/zotero/${kind}/${n}`)});`)
+		.join("\n");
 	return `const ${fn} = (p: string): any => { switch (p) {\n${cases}\n\t\tdefault: throw new Error("zotero module not compiled in: " + p); } };`;
 };
 
-/** [file, from (string or regexp), to] edits applied to repo sources in the aot variant. A miss is an error: the shim has gone stale. */
+/**
+ * [file, from (string or regexp), to] edits applied to repo sources in the aot variant. A miss is an error: the shim has gone stale.
+ * Where `bun fmt` may wrap the code differently as it changes, `from` is a regexp that allows any whitespace between the tokens.
+ */
 const AOT_PATCHES: [string, string | RegExp, string][] = [
 	// PDF text extraction
-	[abs("../core/src/extract/pool.ts"), "this.worker = new Worker(WORKER_ENTRY.href, docWorkerDir ?", `this.worker = new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.pdf))}, false ?`],
-	[abs("../core/src/extract/pdf-worker.ts"), "await import(workerPath);", '// @ts-ignore: an untyped JS bundle\nawait import("../../../vendor/document-worker/build/worker.js");'],
+	[
+		abs("../core/src/extract/pool.ts"),
+		/this\.worker = new Worker\(\s*WORKER_ENTRY\.href,\s*docWorkerDir \?/,
+		`this.worker = new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.pdf))}, false ?`,
+	],
+	[
+		abs("../core/src/extract/pdf-worker.ts"),
+		"await import(workerPath);",
+		'// @ts-ignore: an untyped JS bundle\nawait import("../../../vendor/document-worker/build/worker.js");',
+	],
 	// document structure (reading layout)
-	[abs("src/reader/structure/worker.ts"), 'const bundle = join(WORKER_DIR, "worker.js");', 'const bundle = join(WORKER_DIR, "metadata.json"); // the engine itself is compiled in; this only proves the data folder is there'],
-	[abs("src/reader/structure/worker.ts"), "new Worker(entry ? pathToFileURL(entry).href : new URL(\"./docworker-entry.ts\", import.meta.url).href)", `new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.doc))})`],
-	[abs("src/reader/structure/worker.ts"), "if (entry && !existsSync(entry)) throw", "if (false) throw"],
-	[abs("src/reader/structure/docworker-entry.ts"), "await import(`${root}/vendor/document-worker/build/worker.js`);", '// @ts-ignore: an untyped JS bundle\nawait import("../../../../vendor/document-worker/build/worker.js");'],
-	[abs("src/reader/structure/load.ts"), 'import(pathToFileURL(join(SDT_DIR, "pack", "reader.js")).href)', 'import("../../../../vendor/reader/structured-document-text/src/pack/reader.js")'],
-	[abs("src/reader/structure/load.ts"), 'import(pathToFileURL(join(SDT_DIR, "version.js")).href)', 'import("../../../../vendor/reader/structured-document-text/src/version.js")'],
+	[
+		abs("src/reader/structure/worker.ts"),
+		'const bundle = join(WORKER_DIR, "worker.js");',
+		'const bundle = join(WORKER_DIR, "metadata.json"); // the engine itself is compiled in; this only proves the data folder is there',
+	],
+	[
+		abs("src/reader/structure/worker.ts"),
+		'new Worker(entry ? pathToFileURL(entry).href : new URL("./docworker-entry.ts", import.meta.url).href)',
+		`new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.doc))})`,
+	],
+	[abs("src/reader/structure/worker.ts"), /if \(entry && !existsSync\(entry\)\)\s*throw/, "if (false) throw"],
+	[
+		abs("src/reader/structure/docworker-entry.ts"),
+		"await import(`${root}/vendor/document-worker/build/worker.js`);",
+		'// @ts-ignore: an untyped JS bundle\nawait import("../../../../vendor/document-worker/build/worker.js");',
+	],
+	[
+		abs("src/reader/structure/load.ts"),
+		'import(pathToFileURL(join(SDT_DIR, "pack", "reader.js")).href)',
+		'import("../../../../vendor/reader/structured-document-text/src/pack/reader.js")',
+	],
+	[
+		abs("src/reader/structure/load.ts"),
+		'import(pathToFileURL(join(SDT_DIR, "version.js")).href)',
+		'import("../../../../vendor/reader/structured-document-text/src/version.js")',
+	],
 	[abs("src/services.ts"), 'join(buildDir, "worker.js")', 'join(buildDir, "metadata.json")'],
 	// WebAssembly. An AOT exe has no JIT, so a module it builds from bytes at run time is interpreted (Find Full Text's fx_inspect ran ~70x
 	// slower, the structure worker's ONNX model ~4x). Only a `.wasm` the build has seen is compiled to machine code, and `with { type: "file" }`
@@ -187,13 +254,32 @@ const AOT_PATCHES: [string, string | RegExp, string][] = [
 	// The document worker's wasm (onnxruntime-web, pdf.js's openjpeg and jbig2) reaches it as bytes read from vendor/document-worker/build by
 	// the host (worker.ts FetchWasm/FetchData). Importing the same files here makes the build compile them; those bytes then match at run time.
 	// The files stay on disk (the host still reads them), so the package folder keeps its copy.
-	[abs("src/reader/structure/docworker-entry.ts"), "const g = globalThis as Record<string, unknown>;", [
-		"onnx/ort-wasm-simd-threaded", "wasm/openjpeg", "wasm/jbig2",
-	].map((n) => `// @ts-ignore: a wasm file, imported only so the AOT build compiles it\nimport "../../../../vendor/document-worker/build/${n}.wasm";`).join("\n") + "\nconst g = globalThis as Record<string, unknown>;"],
+	[
+		abs("src/reader/structure/docworker-entry.ts"),
+		"const g = globalThis as Record<string, unknown>;",
+		["onnx/ort-wasm-simd-threaded", "wasm/openjpeg", "wasm/jbig2"]
+			.map(
+				(n) =>
+					`// @ts-ignore: a wasm file, imported only so the AOT build compiles it\nimport "../../../../vendor/document-worker/build/${n}.wasm";`,
+			)
+			.join("\n") + "\nconst g = globalThis as Record<string, unknown>;",
+	],
 	// Zotero translators
-	[abs("../core/src/translate/pool.ts"), "new Worker(WORKER_ENTRY.href, {", `new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.translate))}, {`],
-	[abs("../core/src/translate/runtime/zotero.ts"), 'const rt = (p: string) => req(join(VENDOR_DIR, "translate", "src", p));', staticRequires("rt", "translate/src", TRANSLATE_RT)],
-	[abs("../core/src/translate/runtime/zotero.ts"), 'const ut = (p: string) => req(join(VENDOR_DIR, "utilities", p));', staticRequires("ut", "utilities", TRANSLATE_UT)],
+	[
+		abs("../core/src/translate/pool.ts"),
+		"new Worker(WORKER_ENTRY.href, {",
+		`new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.translate))}, {`,
+	],
+	[
+		abs("../core/src/translate/runtime/zotero.ts"),
+		'const rt = (p: string) => req(join(VENDOR_DIR, "translate", "src", p));',
+		staticRequires("rt", "translate/src", TRANSLATE_RT),
+	],
+	[
+		abs("../core/src/translate/runtime/zotero.ts"),
+		'const ut = (p: string) => req(join(VENDOR_DIR, "utilities", p));',
+		staticRequires("ut", "utilities", TRANSLATE_UT),
+	],
 	[abs("../core/src/translate/runtime/dom.ts"), /\breq\(("jsdom"|"wicked-good-xpath"|"w3c-xmlserializer")\)/g, "require($1)"],
 ];
 
@@ -216,13 +302,17 @@ const metaPlugin: Bun.BunPlugin = {
 					if (file !== path) continue;
 					const before = src;
 					src = src.replace(from, to);
-					if (src === before) throw new Error(`[zn-aot-patch] ${relative(repo, path)}: pattern not found: ${String(from).slice(0, 70)}`);
+					if (src === before)
+						throw new Error(`[zn-aot-patch] ${relative(repo, path)}: pattern not found: ${String(from).slice(0, 70)}`);
 					shimmed++;
 				}
 				if (shimmed) console.log(`[zn-aot-patch] ${relative(repo, path)}: ${shimmed} edit(s)`);
 			}
 			if (path === join(root, "src", "core.ts")) {
-				src = src.replace(/import\(\s*dir\s*\+\s*"([\w./-]+)"\s*\)/g, (_m, n: string) => (shimmed++, `import("../../core/src/${n}")`));
+				src = src.replace(
+					/import\(\s*dir\s*\+\s*"([\w./-]+)"\s*\)/g,
+					(_m, n: string) => (shimmed++, `import("../../core/src/${n}")`),
+				);
 				if (shimmed) console.log(`[zn-core-shim] src/core.ts: ${shimmed} variable import(dir + ...) -> literal`);
 			}
 			// src/prefetch.ts: the worker is started from a hard-coded embedded path ("B:/~BUN/root/prefetch-worker.js", where the bytecode
@@ -230,9 +320,11 @@ const metaPlugin: Bun.BunPlugin = {
 			// Proper fix: do that in src/prefetch.ts for compiled and source runs alike.
 			if (currentAot && path === join(root, "src", "prefetch.ts")) {
 				const before = src;
-				const from = 'new Worker(compiled ? "B:/~BUN/root/prefetch-worker.js" : new URL("./prefetch-worker.ts", import.meta.url).href)';
+				const from = /new Worker\(\s*compiled \? embedded : new URL\("\.\/prefetch-worker\.ts", import\.meta\.url\)\.href\s*\)/;
 				src = src.replace(from, 'new Worker("B:/~BUN/root/gpui-ui/src/prefetch-worker.ts")');
-				if (src !== before) { shimmed++; console.log("[zn-aot-shim] src/prefetch.ts: embedded worker path"); }
+				if (src === before) throw new Error("[zn-aot-shim] src/prefetch.ts: pattern not found (the worker start changed)");
+				shimmed++;
+				console.log("[zn-aot-shim] src/prefetch.ts: embedded worker path");
 			}
 			META.lastIndex = 0;
 			if (!META.test(src)) {
@@ -245,17 +337,23 @@ const metaPlugin: Bun.BunPlugin = {
 			const out = src.replace(META, (_m, k: string) => {
 				if (currentAot) {
 					switch (k) {
-						case "url": return `new URL(${JSON.stringify(rel)}, "file:///${AOT_ROOT}/").href`;
+						case "url":
+							return `new URL(${JSON.stringify(rel)}, "file:///${AOT_ROOT}/").href`;
 						case "dir":
-						case "dirname": return JSON.stringify(`${AOT_ROOT}/${relDir}`);
-						default: return JSON.stringify(`${AOT_ROOT}/${rel}`); // path, filename
+						case "dirname":
+							return JSON.stringify(`${AOT_ROOT}/${relDir}`);
+						default:
+							return JSON.stringify(`${AOT_ROOT}/${rel}`); // path, filename
 					}
 				}
 				switch (k) {
-					case "url": return `new URL(${JSON.stringify(rel)}, import.meta.url).href`;
+					case "url":
+						return `new URL(${JSON.stringify(rel)}, import.meta.url).href`;
 					case "dir":
-					case "dirname": return `(import.meta.dir + ${JSON.stringify("/" + relDir)})`;
-					default: return `(import.meta.dir + ${JSON.stringify("/" + rel)})`; // path, filename
+					case "dirname":
+						return `(import.meta.dir + ${JSON.stringify("/" + relDir)})`;
+					default:
+						return `(import.meta.dir + ${JSON.stringify("/" + rel)})`; // path, filename
 				}
 			});
 			const jsx = /\.[cm]?[jt]sx$/.test(path);
@@ -302,7 +400,12 @@ for (const v of todo) {
 		minify: v.minify,
 		// stamp the build into the logs and crash reports (core/src/log.ts reads these; the packaged exe has no env for them)
 		// ZN_UPDATE_PUBKEY / ZN_UPDATE_URL: the auto-update public key and default feed (src/update/config.ts, scripts/_update-key.ts)
-		define: { "process.env.ZN_VERSION": JSON.stringify(BUILD_VERSION), "process.env.ZN_BUILD_VARIANT": JSON.stringify(v.aot ? "aot" : "bytecode"), "process.env.ZN_UPDATE_PUBKEY": JSON.stringify(updatePubkey()), "process.env.ZN_UPDATE_URL": JSON.stringify(process.env.ZN_UPDATE_URL ?? "") },
+		define: {
+			"process.env.ZN_VERSION": JSON.stringify(BUILD_VERSION),
+			"process.env.ZN_BUILD_VARIANT": JSON.stringify(v.aot ? "aot" : "bytecode"),
+			"process.env.ZN_UPDATE_PUBKEY": JSON.stringify(updatePubkey()),
+			"process.env.ZN_UPDATE_URL": JSON.stringify(process.env.ZN_UPDATE_URL ?? ""),
+		},
 		bytecode: v.bytecode && !v.aot, // AOT replaces bytecode
 		sourcemap: "none",
 		external: v.aot ? ["canvas"] : [], // jsdom's optional native peer (try { require("canvas") }): left out, jsdom runs without canvas support
@@ -317,7 +420,17 @@ for (const v of todo) {
 			autoloadPackageJson: false,
 			...(v.bytecodeOrder ? { bytecodeOrder: v.bytecodeOrder } : {}),
 			...(v.aot ? aotOptions : {}),
-			...(isWin ? { windows: { hideConsole, icon: join(root, "assets", "icon.ico"), title: "Zinc", description: "Zinc", version: "0.0.1.0" } } : {}),
+			...(isWin
+				? {
+						windows: {
+							hideConsole,
+							icon: join(root, "assets", "icon.ico"),
+							title: "Zinc",
+							description: "Zinc",
+							version: "0.0.1.0",
+						},
+					}
+				: {}),
 		},
 	});
 	if (!result.success) {
@@ -327,7 +440,9 @@ for (const v of todo) {
 	for (const m of result.logs) console.warn(`[${v.id}] ${m.message ?? m}`);
 	// Bun leaves its template's one-image icon group first, pointing at our 16 px image: re-point it (scripts/fix-exe-icon.ts)
 	if (isWin) console.log(`[${v.id}] exe icon: ${fixExeIcon(outfile)}`);
-	console.log(`[${v.id}] ${relative(root, outfile)}  ${sizeMB(outfile)} MB  (${((performance.now() - t0) / 1000).toFixed(1)} s; assets: ${staged.note})`);
+	console.log(
+		`[${v.id}] ${relative(root, outfile)}  ${sizeMB(outfile)} MB  (${((performance.now() - t0) / 1000).toFixed(1)} s; assets: ${staged.note})`,
+	);
 }
 
 const pick = join(outDir, `zotero-next-gpui-${best}${EXE}`);
@@ -339,10 +454,17 @@ if (!aotOnly && existsSync(pick)) {
 if (runAotInChild) {
 	// the aot variant needs the canary: re-run this script under it (--aot-only), forwarding the options that matter
 	const fwd: string[] = [];
-	for (const f of ["entry", "out", "icons", "best"]) { const v = arg(f); if (v) fwd.push(`--${f}`, v); }
+	for (const f of ["entry", "out", "icons", "best"]) {
+		const v = arg(f);
+		if (v) fwd.push(`--${f}`, v);
+	}
 	if (hideConsole) fwd.push("--hide-console");
 	for (const a of process.argv.slice(2)) if (a.startsWith("--explain") || a === "--aot-trim") fwd.push(a);
 	console.log(`[aot] building under the canary: ${canaryBun}`);
-	const r = Bun.spawnSync([canaryBun, join(root, "scripts", "build.ts"), "--aot-only", ...fwd], { cwd: root, stdout: "inherit", stderr: "inherit" });
+	const r = Bun.spawnSync([canaryBun, join(root, "scripts", "build.ts"), "--aot-only", ...fwd], {
+		cwd: root,
+		stdout: "inherit",
+		stderr: "inherit",
+	});
 	if (r.exitCode !== 0) throw new Error(`aot build failed (exit ${r.exitCode})`);
 }

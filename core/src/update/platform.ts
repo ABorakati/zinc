@@ -32,7 +32,11 @@ export const feedFileName = (p: UpdatePlatform): string => (p === "win-x64" ? "l
 export function feedUrlFor(url: string, p: UpdatePlatform): string {
 	if (p === "win-x64") return url;
 	let u: URL;
-	try { u = new URL(url); } catch { return url; }
+	try {
+		u = new URL(url);
+	} catch {
+		return url;
+	}
 	if (!/(^|\/)latest\.json$/.test(u.pathname)) return url;
 	u.pathname = u.pathname.replace(/latest\.json$/, feedFileName(p));
 	return u.toString();

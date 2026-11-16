@@ -8,9 +8,33 @@ import type { Style } from "../contracts";
 import { Icon } from "../icons";
 import { DialogLayerView } from "./dialogs";
 import {
-	addToast, armToast, boundsOf, dismissToast, focusedId, hideTooltip, newId, overlayLayers, pauseToast, placeAt, pushLayer, removeLayer,
-	restoreFocus, setNative, setWindowSignal, showTooltip, t, toastList, tok, tooltipState, tx, windowSize,
-	type Anchor, type NativeLike, type PopoverLayer, type Rect, type ToastItem,
+	addToast,
+	armToast,
+	boundsOf,
+	dismissToast,
+	focusedId,
+	hideTooltip,
+	newId,
+	overlayLayers,
+	pauseToast,
+	placeAt,
+	pushLayer,
+	removeLayer,
+	restoreFocus,
+	setNative,
+	setWindowSignal,
+	showTooltip,
+	t,
+	toastList,
+	tok,
+	tooltipState,
+	tx,
+	windowSize,
+	type Anchor,
+	type NativeLike,
+	type PopoverLayer,
+	type Rect,
+	type ToastItem,
 } from "./core";
 import { MenuLayerView } from "./menu";
 
@@ -21,20 +45,33 @@ export function OverlayHost(): JSX.Element {
 	onCleanup(() => setNative(undefined));
 	try {
 		const size = createWindowSize();
-		createEffect(() => { const s = size(); setWindowSignal(s.width, s.height); });
-	} catch { /* a renderer without getWindowSize: the 1440x881 fallback stays */ }
+		createEffect(() => {
+			const s = size();
+			setWindowSignal(s.width, s.height);
+		});
+	} catch {
+		/* a renderer without getWindowSize: the 1440x881 fallback stays */
+	}
 	return (
 		<div style={{ position: "absolute", top: 0, left: 0, width: 0, height: 0 }}>
-			<For each={overlayLayers()}>{(layer, i) => {
-				const priority = 100 + i() * 10;
-				return (
-					<Switch>
-						<Match when={layer.kind === "menu"}><MenuLayerView layer={layer as never} priority={priority} /></Match>
-						<Match when={layer.kind === "dialog"}><DialogLayerView layer={layer as never} priority={priority} /></Match>
-						<Match when={layer.kind === "popover"}><PopoverLayerView layer={layer as PopoverLayer} priority={priority} /></Match>
-					</Switch>
-				);
-			}}</For>
+			<For each={overlayLayers()}>
+				{(layer, i) => {
+					const priority = 100 + i() * 10;
+					return (
+						<Switch>
+							<Match when={layer.kind === "menu"}>
+								<MenuLayerView layer={layer as never} priority={priority} />
+							</Match>
+							<Match when={layer.kind === "dialog"}>
+								<DialogLayerView layer={layer as never} priority={priority} />
+							</Match>
+							<Match when={layer.kind === "popover"}>
+								<PopoverLayerView layer={layer as PopoverLayer} priority={priority} />
+							</Match>
+						</Switch>
+					);
+				}}
+			</For>
 			<ToastStack />
 			<TooltipView />
 		</div>
@@ -47,16 +84,29 @@ export function OverlayHost(): JSX.Element {
 export function Popover(p: { open: boolean; onClose: () => void; anchor: Anchor; children: JSX.Element; width?: number }): JSX.Element {
 	const id = newId();
 	let prevFocus: number | null = null;
-	createEffect(on(() => p.open, (open) => {
-		if (open) {
-			prevFocus = focusedId();
-			pushLayer({ kind: "popover", id, open: () => p.open, onClose: () => p.onClose(), anchor: () => p.anchor, width: () => p.width ?? 288, children: () => p.children });
-		} else {
-			removeLayer(id);
-			restoreFocus(prevFocus);
-			prevFocus = null;
-		}
-	}));
+	createEffect(
+		on(
+			() => p.open,
+			(open) => {
+				if (open) {
+					prevFocus = focusedId();
+					pushLayer({
+						kind: "popover",
+						id,
+						open: () => p.open,
+						onClose: () => p.onClose(),
+						anchor: () => p.anchor,
+						width: () => p.width ?? 288,
+						children: () => p.children,
+					});
+				} else {
+					removeLayer(id);
+					restoreFocus(prevFocus);
+					prevFocus = null;
+				}
+			},
+		),
+	);
 	onCleanup(() => removeLayer(id));
 	return undefined as unknown as JSX.Element; // draws nothing here: the content renders in OverlayHost
 }
@@ -65,8 +115,21 @@ function PopoverLayerView(p: { layer: PopoverLayer; priority: number }) {
 	const l = p.layer;
 	const pos = () => placeAt(l.anchor(), 160);
 	return (
-		<anchored fill="window" priority={p.priority} style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }} onClick={() => l.onClose()} onAuxClick={() => l.onClose()}>
-			<div tabIndex={0} autoFocus onKeyDown={(e) => { if (e.key === "escape") l.onClose(); }} style={{ width: "100%", height: "100%", keyboardFocusDim: false }}>
+		<anchored
+			fill="window"
+			priority={p.priority}
+			style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }}
+			onClick={() => l.onClose()}
+			onAuxClick={() => l.onClose()}
+		>
+			<div
+				tabIndex={0}
+				autoFocus
+				onKeyDown={(e) => {
+					if (e.key === "escape") l.onClose();
+				}}
+				style={{ width: "100%", height: "100%", keyboardFocusDim: false }}
+			>
 				<anchored
 					position={{ x: pos().x, y: pos().y }}
 					anchor={pos().anchor}
@@ -92,16 +155,31 @@ const TOOLTIP_DELAY_MS = 500;
 export function Tooltip(p: { label: string; children: JSX.Element; style?: Style }): JSX.Element {
 	let el: HostElement | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const cancel = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; hideTooltip(); };
+	const cancel = () => {
+		if (timer !== undefined) clearTimeout(timer);
+		timer = undefined;
+		hideTooltip();
+	};
 	onCleanup(cancel);
 	const enter = (e: EventPayload) => {
 		cancel();
 		if (!p.label) return;
 		const pointer = { x: e.x ?? 0, y: e.y ?? 0 };
-		timer = setTimeout(() => { timer = undefined; showTooltip({ label: p.label, rect: boundsOf(el), pointer }); }, TOOLTIP_DELAY_MS);
+		timer = setTimeout(() => {
+			timer = undefined;
+			showTooltip({ label: p.label, rect: boundsOf(el), pointer });
+		}, TOOLTIP_DELAY_MS);
 	};
 	return (
-		<div ref={(x: HostElement) => { el = x; }} onMouseEnter={enter} onMouseLeave={cancel} onMouseDown={cancel} style={{ display: "flex", flexDirection: "row", ...p.style }}>
+		<div
+			ref={(x: HostElement) => {
+				el = x;
+			}}
+			onMouseEnter={enter}
+			onMouseLeave={cancel}
+			onMouseDown={cancel}
+			style={{ display: "flex", flexDirection: "row", ...p.style }}
+		>
 			{p.children}
 		</div>
 	);
@@ -109,36 +187,47 @@ export function Tooltip(p: { label: string; children: JSX.Element; style?: Style
 
 function TooltipView() {
 	return (
-		<Show when={tooltipState()}>{(s) => {
-			const pos = () => {
-				const st = s();
-				const win = windowSize();
-				const r = st.rect;
-				if (!r) return { x: st.pointer.x, y: st.pointer.y + 20, anchor: "topLeft" as const };
-				const cx = r.x + r.width / 2;
-				if (r.y + r.height + 4 + 36 > win.height - 8) return { x: cx, y: r.y - 4, anchor: "bottomCenter" as const };
-				return { x: cx, y: r.y + r.height + 4, anchor: (st.rect ? "topCenter" : "topLeft") as "topCenter" };
-			};
-			return (
-				<anchored
-					ref={(el: HostElement) => { tipEl = el; }}
-					position={{ x: pos().x, y: pos().y }}
-					anchor={pos().anchor}
-					fit="snap"
-					priority={5000}
-					occlude={false}
-					style={{ ...t("rounded-md border bg-popover px-3 py-1.5 shadow-md"), pointerEvents: "none" }}
-				>
-					<text style={{ ...tx("text-sm text-popover-foreground"), whiteSpace: "nowrap" }}>{s().label}</text>
-				</anchored>
-			);
-		}}</Show>
+		<Show when={tooltipState()}>
+			{(s) => {
+				const pos = () => {
+					const st = s();
+					const win = windowSize();
+					const r = st.rect;
+					if (!r) return { x: st.pointer.x, y: st.pointer.y + 20, anchor: "topLeft" as const };
+					const cx = r.x + r.width / 2;
+					if (r.y + r.height + 4 + 36 > win.height - 8) return { x: cx, y: r.y - 4, anchor: "bottomCenter" as const };
+					return { x: cx, y: r.y + r.height + 4, anchor: (st.rect ? "topCenter" : "topLeft") as "topCenter" };
+				};
+				return (
+					<anchored
+						ref={(el: HostElement) => {
+							tipEl = el;
+						}}
+						position={{ x: pos().x, y: pos().y }}
+						anchor={pos().anchor}
+						fit="snap"
+						priority={5000}
+						occlude={false}
+						style={{ ...t("rounded-md border bg-popover px-3 py-1.5 shadow-md"), pointerEvents: "none" }}
+					>
+						<text style={{ ...tx("text-sm text-popover-foreground"), whiteSpace: "nowrap" }}>{s().label}</text>
+					</anchored>
+				);
+			}}
+		</Show>
 	);
 }
 
 // ---------------------------------------------------------------------------------------------------- toasts
 
-export interface ToastOptions { kind?: "info" | "success" | "error"; description?: string; action?: { label: string; run: () => void }; actions?: { label: string; run: () => void }[]; durationMs?: number; id?: string }
+export interface ToastOptions {
+	kind?: "info" | "success" | "error";
+	description?: string;
+	action?: { label: string; run: () => void };
+	actions?: { label: string; run: () => void }[];
+	durationMs?: number;
+	id?: string;
+}
 
 /** Toast messages (solid-sonner in the web UI): bottom-right stack, dismissed after 4 s (6 s for errors), a click dismisses. `id` (addition) replaces a toast with the same id. */
 export function toast(message: string, o?: ToastOptions): void {
@@ -172,7 +261,11 @@ function ToastView(p: { item: ToastItem }) {
 			onClick={() => dismissToast(it.id)}
 			onMouseEnter={() => pauseToast(it.id)}
 			onMouseLeave={() => armToast(it.id, 2000)}
-			style={{ ...t("flex flex-none items-start rounded-lg border border-border bg-background p-4 shadow-lg"), width: TOAST_W, cursor: "default" }}
+			style={{
+				...t("flex flex-none items-start rounded-lg border border-border bg-background p-4 shadow-lg"),
+				width: TOAST_W,
+				cursor: "default",
+			}}
 		>
 			{iconName ? <Icon name={iconName} size={16} color={iconColor()} style={{ marginRight: 12, marginTop: 2 }} /> : undefined}
 			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0, gap: 2 }}>
@@ -184,10 +277,31 @@ function ToastView(p: { item: ToastItem }) {
 							const primary = i === it.actions!.length - 1;
 							return (
 								<div
-									onClick={() => { dismissToast(it.id); a.run(); }}
-									style={{ ...t(primary ? "flex h-6 flex-none items-center rounded-md bg-primary px-2" : "flex h-6 flex-none items-center rounded-md border border-border px-2"), cursor: "pointer" }}
+									onClick={() => {
+										dismissToast(it.id);
+										a.run();
+									}}
+									style={{
+										...t(
+											primary
+												? "flex h-6 flex-none items-center rounded-md bg-primary px-2"
+												: "flex h-6 flex-none items-center rounded-md border border-border px-2",
+										),
+										cursor: "pointer",
+									}}
 								>
-									<text style={{ ...tx(primary ? "text-xs font-medium text-primary-foreground" : "text-xs font-medium text-foreground"), whiteSpace: "nowrap" }}>{a.label}</text>
+									<text
+										style={{
+											...tx(
+												primary
+													? "text-xs font-medium text-primary-foreground"
+													: "text-xs font-medium text-foreground",
+											),
+											whiteSpace: "nowrap",
+										}}
+									>
+										{a.label}
+									</text>
 								</div>
 							);
 						})}
@@ -196,7 +310,11 @@ function ToastView(p: { item: ToastItem }) {
 			</div>
 			{it.action ? (
 				<div
-					onClick={() => { const a = it.action!; dismissToast(it.id); a.run(); }}
+					onClick={() => {
+						const a = it.action!;
+						dismissToast(it.id);
+						a.run();
+					}}
 					style={{ ...t("flex h-6 flex-none items-center rounded-md bg-primary px-2"), marginLeft: 12, cursor: "pointer" }}
 				>
 					<text style={{ ...tx("text-xs font-medium text-primary-foreground"), whiteSpace: "nowrap" }}>{it.action.label}</text>
@@ -212,7 +330,10 @@ let tipEl: HostElement | undefined;
 /** Window rects (logical px) of the toasts and the tooltip now on screen: a WebView2 popup cuts holes for them (webview/host.ts). */
 export function floatingRects(): Rect[] {
 	const out: Rect[] = [];
-	for (const el of [toastEl, tipEl]) { const r = boundsOf(el); if (r && r.width > 0 && r.height > 0) out.push(r); }
+	for (const el of [toastEl, tipEl]) {
+		const r = boundsOf(el);
+		if (r && r.width > 0 && r.height > 0) out.push(r);
+	}
 	return out;
 }
 
@@ -220,7 +341,9 @@ function ToastStack() {
 	return (
 		<Show when={toastList().length > 0}>
 			<anchored
-				ref={(el: HostElement) => { toastEl = el; }}
+				ref={(el: HostElement) => {
+					toastEl = el;
+				}}
 				position={{ x: windowSize().width - 16, y: windowSize().height - 16 }}
 				anchor="bottomRight"
 				fit="snap"

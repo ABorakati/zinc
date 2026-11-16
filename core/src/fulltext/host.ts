@@ -21,7 +21,21 @@ import { type BodyStore, stageBytes, stageFile } from "./bodies";
 import { type BrowserBridge, getBrowserBridge } from "./browser-bridge";
 import { type ForeignCookie, type HttpClient, OpError } from "./http";
 import { LoginController } from "./login";
-import type { BodyRef, Command, CompletionMsg, Effect, ItemId, OpErr, OpId, Outcome, Persisted, ProgressRow, RunId, RunReport, StepOut } from "./proto";
+import type {
+	BodyRef,
+	Command,
+	CompletionMsg,
+	Effect,
+	ItemId,
+	OpErr,
+	OpId,
+	Outcome,
+	Persisted,
+	ProgressRow,
+	RunId,
+	RunReport,
+	StepOut,
+} from "./proto";
 import type { WasmHost } from "./wasm";
 import { EngineError, EngineTrap } from "./wasm";
 
@@ -222,7 +236,13 @@ export class Runner {
 	}
 
 	private isQuiet(): boolean {
-		return this.ops.size === 0 && this.pendingCompletions.length === 0 && this.pendingCommands.length === 0 && !this.pumping && this.pumpTimer === null;
+		return (
+			this.ops.size === 0 &&
+			this.pendingCompletions.length === 0 &&
+			this.pendingCommands.length === 0 &&
+			!this.pumping &&
+			this.pumpTimer === null
+		);
 	}
 
 	private notifyQuiet(): void {
@@ -438,7 +458,8 @@ export class Runner {
 				break;
 			}
 			case "log":
-				if (eff.level !== "debug") this.log(eff.level === "error" || eff.level === "warn" ? eff.level : "info", `engine: ${eff.msg}`);
+				if (eff.level !== "debug")
+					this.log(eff.level === "error" || eff.level === "warn" ? eff.level : "info", `engine: ${eff.msg}`);
 				break;
 			case "trace":
 				break;
@@ -564,11 +585,25 @@ export class Runner {
 				if (retain === "page") body = bodies.putMemory(bytes, eff.run);
 			}
 			const status = raw.status > 0 ? raw.status : 200;
-			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = { status, final_url: raw.finalUrl, headers, body_len: staged.body_len, truncated: staged.truncated };
+			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = {
+				status,
+				final_url: raw.finalUrl,
+				headers,
+				body_len: staged.body_len,
+				truncated: staged.truncated,
+			};
 			if (staged.head_len != null) resp.head_len = staged.head_len;
 			const inspection = this.inspect(spec, resp, staged.bytes);
 			if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
-			return { status, final_url: raw.finalUrl, headers, bytes: len, ms: Math.max(0, Math.round(raw.ms) || 0), body, inspect: inspection };
+			return {
+				status,
+				final_url: raw.finalUrl,
+				headers,
+				bytes: len,
+				ms: Math.max(0, Math.round(raw.ms) || 0),
+				body,
+				inspect: inspection,
+			};
 		} catch (e) {
 			if (body) bodies.release((body as BodyRef).handle);
 			throw e;
@@ -608,7 +643,9 @@ export class Runner {
 		let kept = false;
 		try {
 			const fileWritten = !!(slot && raw.path);
-			const staged = fileWritten ? stageFile(raw.path!, raw.bytes) : stageBytes((slot ? raw.errorBody : raw.body) ?? new Uint8Array(0), "page");
+			const staged = fileWritten
+				? stageFile(raw.path!, raw.bytes)
+				: stageBytes((slot ? raw.errorBody : raw.body) ?? new Uint8Array(0), "page");
 			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = {
 				status: raw.status,
 				final_url: raw.final_url,
@@ -618,7 +655,8 @@ export class Runner {
 			};
 			if (staged.head_len != null) resp.head_len = staged.head_len;
 			const inspection = this.inspect(spec, resp, staged.bytes);
-			if (process.env.FULLTEXT_DEBUG) console.log("fulltext http", eff.req.url, raw.status, JSON.stringify(resp), JSON.stringify(inspection).slice(0, 300));
+			if (process.env.FULLTEXT_DEBUG)
+				console.log("fulltext http", eff.req.url, raw.status, JSON.stringify(resp), JSON.stringify(inspection).slice(0, 300));
 			if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
 			let body = null;
 			if (retain !== "none") {
@@ -689,7 +727,13 @@ export class Runner {
 				staged = stageBytes(new Uint8Array(0), "page");
 			}
 			const status = raw.status > 0 ? raw.status : 200;
-			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = { status, final_url: raw.finalUrl, headers, body_len: staged.body_len, truncated: staged.truncated };
+			const resp: Parameters<WasmHost["inspect"]>[0]["resp"] = {
+				status,
+				final_url: raw.finalUrl,
+				headers,
+				body_len: staged.body_len,
+				truncated: staged.truncated,
+			};
 			if (staged.head_len != null) resp.head_len = staged.head_len;
 			const inspection = this.inspect(spec, resp, staged.bytes);
 			if (signal.aborted) throw new OpError("cancelled", String(signal.reason));
@@ -827,7 +871,12 @@ export function syntheticReport(r: RunRec): RunReport {
 	const items = r.items.map((it) => {
 		const done = r.saved.get(it.item);
 		if (done) saved++;
-		return { item: it.item, key: it.key, outcome: done ?? ({ kind: "needs_user", why: "engine_restarted", handoff: {} } as Outcome), trace: [] };
+		return {
+			item: it.item,
+			key: it.key,
+			outcome: done ?? ({ kind: "needs_user", why: "engine_restarted", handoff: {} } as Outcome),
+			trace: [],
+		};
 	});
 	return {
 		run: r.run,

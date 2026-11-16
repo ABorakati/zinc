@@ -45,7 +45,10 @@ function gtk(): Lib | null {
 			g_main_context_iteration: { args: [P, I32], returns: I32 },
 		}).symbols;
 		lib = { ...g, ...gio, ...gobj, ...glib } as unknown as Lib;
-		if (!lib.gtk_init_check()) { why = "GTK could not start (no display?)"; lib = null; }
+		if (!lib.gtk_init_check()) {
+			why = "GTK could not start (no display?)";
+			lib = null;
+		}
 	} catch (e) {
 		why = `printing needs GTK 4.14 or newer (${e instanceof Error ? e.message : String(e)})`;
 		lib = null;
@@ -76,12 +79,18 @@ export function printWithGtkDialog(bytes: Uint8Array, title: string): Promise<"p
 	g.gtk_print_dialog_set_title(dialog, cstr(title || "Print"));
 	g.gtk_print_dialog_set_modal(dialog, 1);
 	return new Promise((resolve, reject) => {
-		const pump = setInterval(() => { let n = 0; while (n++ < 50 && g.g_main_context_iteration(null, 0)) { /* dispatch */ } }, 15);
+		const pump = setInterval(() => {
+			let n = 0;
+			while (n++ < 50 && g.g_main_context_iteration(null, 0)) {
+				/* dispatch */
+			}
+		}, 15);
 		const errOut = new BigUint64Array(1);
 		let cb: JSCallback | undefined = new JSCallback(
 			(_source: Ptr, result: Ptr) => {
 				const ok = g.gtk_print_dialog_print_file_finish(dialog, result, errOut);
-				let message = "", code = 0;
+				let message = "",
+					code = 0;
 				const err = errOut[0]!;
 				if (!ok && err) {
 					// GError { GQuark domain; gint code; gchar *message; }
@@ -93,8 +102,17 @@ export function printWithGtkDialog(bytes: Uint8Array, title: string): Promise<"p
 				clearInterval(pump);
 				g.g_object_unref(dialog);
 				g.g_object_unref(gfile);
-				setTimeout(() => { try { rmSync(file, { force: true }); } catch { /* still in use */ } }, 60_000);
-				queueMicrotask(() => { cb?.close(); cb = undefined; });
+				setTimeout(() => {
+					try {
+						rmSync(file, { force: true });
+					} catch {
+						/* still in use */
+					}
+				}, 60_000);
+				queueMicrotask(() => {
+					cb?.close();
+					cb = undefined;
+				});
 				// GtkDialogError: FAILED 0, CANCELLED 1, DISMISSED 2 (the user closed the dialog)
 				if (ok) resolve("printed");
 				else if (code === 1 || code === 2) resolve("cancelled");
@@ -111,7 +129,10 @@ export function printWithGtkDialog(bytes: Uint8Array, title: string): Promise<"p
  * into the file `output` when given (the tests' "print to file").
  */
 export async function printWithLp(bytes: Uint8Array, o: { title: string; printer?: string; output?: string }): Promise<string> {
-	if (o.output) { writeFileSync(o.output, bytes); return "file"; }
+	if (o.output) {
+		writeFileSync(o.output, bytes);
+		return "file";
+	}
 	const file = join(tmpdir(), `zinc-print-${process.pid}-${++seq}.pdf`);
 	writeFileSync(file, bytes);
 	try {
@@ -121,6 +142,12 @@ export async function printWithLp(bytes: Uint8Array, o: { title: string; printer
 		if ((await p.exited) !== 0) throw new Error(err.trim() || `lp failed (${p.exitCode})`);
 		return o.printer || /request id is (\S+)-\d+/.exec(out)?.[1] || "the default printer";
 	} finally {
-		setTimeout(() => { try { rmSync(file, { force: true }); } catch { /* spooled already */ } }, 60_000);
+		setTimeout(() => {
+			try {
+				rmSync(file, { force: true });
+			} catch {
+				/* spooled already */
+			}
+		}, 60_000);
 	}
 }

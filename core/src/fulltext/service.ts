@@ -166,7 +166,8 @@ export class FulltextService {
 	) {
 		this.opts = opts;
 		const file = (db as unknown as { filename?: string }).filename;
-		this.dataDir = opts.dataDir ?? (file && file !== ":memory:" ? dirname(file) : join(process.env.TEMP ?? ".", "zotero-next-fulltext"));
+		this.dataDir =
+			opts.dataDir ?? (file && file !== ":memory:" ? dirname(file) : join(process.env.TEMP ?? ".", "zotero-next-fulltext"));
 		mkdirSync(this.dataDir, { recursive: true });
 		this.bodies = new BodyStore(join(this.dataDir, "storage", ".fulltext-tmp"));
 		this.bodies.sweep();
@@ -302,7 +303,14 @@ export class FulltextService {
 		this.runToJob.set(run, job);
 		this.keyOf.set(run, new Map(items.map((i) => [i.snapshot.item, i.key])));
 		runner.send([
-			{ type: "start_run", run, mode: openAccessOnly ? "oa_only" : "full", interactive: false, items: items.map((i) => i.snapshot), resume: [] },
+			{
+				type: "start_run",
+				run,
+				mode: openAccessOnly ? "oa_only" : "full",
+				interactive: false,
+				items: items.map((i) => i.snapshot),
+				resume: [],
+			},
 		]);
 		return job.id;
 	}
@@ -351,7 +359,8 @@ export class FulltextService {
 		}
 		if (patch.unpaywallEmail !== undefined) {
 			const e = typeof patch.unpaywallEmail === "string" ? patch.unpaywallEmail.trim() : null;
-			if (e === null || (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) || e.length > 254) throw new HttpError(400, "unpaywallEmail is not a valid email address");
+			if (e === null || (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) || e.length > 254)
+				throw new HttpError(400, "unpaywallEmail is not a valid email address");
 			next.unpaywallEmail = e;
 		}
 		if (patch.concurrency !== undefined) {
@@ -387,7 +396,10 @@ export class FulltextService {
 		const timer = setTimeout(() => ac.abort(), 3000);
 		try {
 			const f = this.opts.fetch ?? ((url: string, init?: RequestInit) => fetch(url, init));
-			const res = await f(`https://md.seamlessaccess.org/entities/?q=${encodeURIComponent(query)}`, { signal: ac.signal, headers: { Accept: "application/json" } });
+			const res = await f(`https://md.seamlessaccess.org/entities/?q=${encodeURIComponent(query)}`, {
+				signal: ac.signal,
+				headers: { Accept: "application/json" },
+			});
 			if (res.ok) {
 				for (const h of parseFederationSearch(await res.json())) {
 					if (known.has(h.shibbolethEntityId)) continue;
@@ -434,7 +446,12 @@ export class FulltextService {
 		out.signedIn = await this.sessionCookiesPresent();
 		// the tick and the downloads must agree: with a live session, fetch through the signed-in browser
 		if (out.signedIn) {
-			try { await this.boot(); this.runner!.login.markSignedIn(); } catch { /* the finder can't start: nothing to mark */ }
+			try {
+				await this.boot();
+				this.runner!.login.markSignedIn();
+			} catch {
+				/* the finder can't start: nothing to mark */
+			}
 		}
 		return out;
 	}
@@ -527,7 +544,8 @@ export class FulltextService {
 		const text = STATUS_TEXT[id] ?? id;
 		const next: JobItem = { ...cur, message: row.args?.host ? `${text} (${row.args.host})` : text };
 		next.state = rowState(id, row.state);
-		if (row.route && (next.state === "searching" || next.state === "downloading")) next.source = row.route === "inst" ? "Institutional access" : "Open access";
+		if (row.route && (next.state === "searching" || next.state === "downloading"))
+			next.source = row.route === "inst" ? "Institutional access" : "Open access";
 		const open = row.actions?.find((a) => a.kind === "open_browser" && a.url);
 		if (open?.url) next.handoffUrl = open.url;
 		if (cur.state === "attached" || cur.state === "cancelled") return; // never walk back from a final state
@@ -548,7 +566,11 @@ export class FulltextService {
 		for (let i = 0; i < job.items.length; i++) {
 			const it = job.items[i];
 			if (it.state === "queued" || it.state === "searching" || it.state === "downloading") {
-				job.items[i] = { ...it, state: job.cancelled ? "cancelled" : "failed", message: job.cancelled ? "Cancelled" : "No result from the engine" };
+				job.items[i] = {
+					...it,
+					state: job.cancelled ? "cancelled" : "failed",
+					message: job.cancelled ? "Cancelled" : "No result from the engine",
+				};
 			}
 		}
 		job.done = true;
@@ -563,7 +585,13 @@ export class FulltextService {
 		switch (o.kind) {
 			case "saved": {
 				const label = sourceLabel(o.route, o.source);
-				return { ...base, state: "attached", source: label, message: `PDF attached from ${label}`, attachmentKey: o.attachment_key.split("/").pop() };
+				return {
+					...base,
+					state: "attached",
+					source: label,
+					message: `PDF attached from ${label}`,
+					attachmentKey: o.attachment_key.split("/").pop(),
+				};
 			}
 			case "skipped": {
 				const map: Record<string, [FullTextItemState, string]> = {
@@ -581,18 +609,32 @@ export class FulltextService {
 			case "no_identifier":
 				return { ...base, state: "not-found", message: "No DOI or other identifier to search with" };
 			case "not_found":
-				return { ...base, state: "not-found", message: o.reason === "oa_only" ? "No open access full text found" : "No full text found" };
+				return {
+					...base,
+					state: "not-found",
+					message: o.reason === "oa_only" ? "No open access full text found" : "No full text found",
+				};
 			case "not_entitled": {
 				// No open copy was found and the automatic institutional routes did not get in: the hand-off link
 				// (OpenAthens / LibKey) is the way forward, so this is a sign-in case like the engine's own counts say.
 				const url = handoffUrl(o.handoff);
 				return url
-					? { ...base, state: "needs-sign-in", source: "Institutional access", message: "No open access copy. Open the link in your browser and sign in with your institution", handoffUrl: url }
+					? {
+							...base,
+							state: "needs-sign-in",
+							source: "Institutional access",
+							message: "No open access copy. Open the link in your browser and sign in with your institution",
+							handoffUrl: url,
+						}
 					: { ...base, state: "not-found", message: "Not available through your institution" };
 			}
 			case "needs_user": {
 				if (o.why === "network_down" || o.why === "engine_restarted") {
-					return { ...base, state: "failed", message: o.why === "network_down" ? "Network is down" : "The finder restarted; try again" };
+					return {
+						...base,
+						state: "failed",
+						message: o.why === "network_down" ? "Network is down" : "The finder restarted; try again",
+					};
 				}
 				const why: Record<string, string> = {
 					login_declined: "Sign-in needed: open the link and sign in with your institution",
@@ -605,10 +647,21 @@ export class FulltextService {
 					handoff_requested: "Open the link in your browser to get the PDF",
 					group_library: "Group library skipped",
 				};
-				return { ...base, state: "needs-sign-in", source: "Institutional access", message: why[o.why] ?? `Needs you (${o.why})`, handoffUrl: handoffUrl(o.handoff) };
+				return {
+					...base,
+					state: "needs-sign-in",
+					source: "Institutional access",
+					message: why[o.why] ?? `Needs you (${o.why})`,
+					handoffUrl: handoffUrl(o.handoff),
+				};
 			}
 			case "blocked":
-				return { ...base, state: "needs-sign-in", message: `${o.host} blocked automatic access: open the link in your browser`, handoffUrl: handoffUrl(o.handoff) };
+				return {
+					...base,
+					state: "needs-sign-in",
+					message: `${o.host} blocked automatic access: open the link in your browser`,
+					handoffUrl: handoffUrl(o.handoff),
+				};
 			case "deferred":
 				return { ...base, state: "failed", message: `Download limit reached (${o.cap}); try again later` };
 			case "halted":
@@ -625,7 +678,8 @@ function rowState(id: string, state: ProgressRow["state"]): FullTextItemState {
 	if (id.startsWith("saved")) return "attached";
 	if (id === "skipped-has-pdf" || id === "skipped-not-downloaded") return "already-has-pdf";
 	if (id === "no-identifier" || id.startsWith("not-found") || id === "not-entitled") return "not-found";
-	if (id === "needs-login" || id === "needs-user" || id === "blocked" || id.startsWith("login-") || id === "challenge") return "needs-sign-in";
+	if (id === "needs-login" || id === "needs-user" || id === "blocked" || id.startsWith("login-") || id === "challenge")
+		return "needs-sign-in";
 	if (state === "cancelled" || id === "cancelled") return "cancelled";
 	if (state === "failed" || state === "skipped") return "failed";
 	if (id === "downloading" || id === "saving") return "downloading";

@@ -19,19 +19,20 @@ export function parseCitationNumbers(s: string): number[] {
 	for (const part of inner.split(/[,;]/)) {
 		const p = part.trim();
 		if (!p) continue;
-		const r = p.split(DASH).map((x) => x.trim()).filter(Boolean);
+		const r = p
+			.split(DASH)
+			.map((x) => x.trim())
+			.filter(Boolean);
 		if (r.length === 1) {
 			const n = Number(r[0]);
 			if (!Number.isInteger(n) || n < 1 || n > 999) return [];
 			out.push(n);
-		}
-		else if (r.length === 2) {
+		} else if (r.length === 2) {
 			const a = Number(r[0]);
 			const b = Number(r[1]);
 			if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b > 999 || b < a || b - a > 60) return [];
 			for (let i = a; i <= b; i++) out.push(i);
-		}
-		else return [];
+		} else return [];
 	}
 	return [...new Set(out)];
 }
@@ -41,8 +42,8 @@ export function parseCitationNumbers(s: string): number[] {
  * inside "[3, 5, 9]" returns "[3, 5, 9]". `idx` is the char range of the link text in the page text.
  */
 export function expandCitationGroup(text: string, idx: [number, number]): string {
-	let a = idx[0];
-	let b = idx[1];
+	const a = idx[0];
+	const b = idx[1];
 	const open = "[(";
 	const close = "])";
 	let l = a;
@@ -69,7 +70,12 @@ const ABBREV = /(?:\bet al|\bFigs?|\bTab|\be\.g|\bi\.e|\bvs|\bcf|\bRefs?|\bNo|\b
  * the sentence start up to the citation, the citation itself, and the rest of the sentence. Line-break hyphens
  * are joined and whitespace collapsed; long sentences are cut with "…".
  */
-export function sentenceAround(text: string, idx: [number, number], maxBefore = 260, maxAfter = 160): { before: string; cite: string; after: string } {
+export function sentenceAround(
+	text: string,
+	idx: [number, number],
+	maxBefore = 260,
+	maxAfter = 160,
+): { before: string; cite: string; after: string } {
 	const [a, b] = idx;
 	let s = a;
 	while (s > 0 && a - s < maxBefore) {
@@ -78,11 +84,22 @@ export function sentenceAround(text: string, idx: [number, number], maxBefore = 
 	}
 	let e = b;
 	while (e < text.length && e - b < maxAfter) {
-		if (/[.!?]/.test(text[e]!) && (e + 1 >= text.length || /\s/.test(text[e + 1]!)) && !ABBREV.test(text.slice(Math.max(0, e - 7), e + 1))) { e++; break; }
+		if (
+			/[.!?]/.test(text[e]!) &&
+			(e + 1 >= text.length || /\s/.test(text[e + 1]!)) &&
+			!ABBREV.test(text.slice(Math.max(0, e - 7), e + 1))
+		) {
+			e++;
+			break;
+		}
 		e++;
 	}
 	// pdfium marks line-break hyphens as U+FFFE (or a soft hyphen): drop them with the line break
-	const clean = (t: string) => t.replace(/[￾­]\s*/g, "").replace(/(\p{L})-\s*\n\s*(\p{Ll})/gu, "$1$2").replace(/\s+/g, " ");
+	const clean = (t: string) =>
+		t
+			.replace(/[￾­]\s*/g, "")
+			.replace(/(\p{L})-\s*\n\s*(\p{Ll})/gu, "$1$2")
+			.replace(/\s+/g, " ");
 	return {
 		before: (s > 0 && a - s >= maxBefore ? "…" : "") + clean(text.slice(s, a)).trimStart(),
 		cite: clean(text.slice(a, b)),
@@ -98,7 +115,8 @@ export interface RefStart {
 	y: number;
 }
 
-const HEADING_RE = /^\s*(?:\d{1,2}\.?\s+)?(?:references?(?:\s+list)?|bibliography|literature\s+cited|works\s+cited|notes\s+and\s+references|references\s+and\s+notes)\s*:?\s*$/i;
+const HEADING_RE =
+	/^\s*(?:\d{1,2}\.?\s+)?(?:references?(?:\s+list)?|bibliography|literature\s+cited|works\s+cited|notes\s+and\s+references|references\s+and\s+notes)\s*:?\s*$/i;
 
 /** Find the page/y where the bibliography starts, scanning pages from the end. */
 export function findRefStartInPages(pages: { text: string; rects: PdfRect[] }[]): RefStart | null {
@@ -173,13 +191,13 @@ function extentFrom(lines: Line[], k: number): Line[] {
 		if (firstMarker !== undefined) {
 			const mk = markerOf(l.text);
 			if (mk !== undefined && (mk === firstMarker + 1 || (/^\s*\[\d+\]/.test(l.text) && mk !== firstMarker))) break;
-		}
-		else {
+		} else {
 			// author-year: hanging indent (continuation lines indented) or a new "Surname, I." start
 			const second = lines[k + 1];
 			const hanging = !!second && second.y2 < first.y2 && second.x1 > first.x1 + 3;
-			if (hanging) { if (l.x1 <= first.x1 + 2.5) break; }
-			else if (AUTHOR_START.test(l.text) && /[.)d]s*$/.test(prev.text)) break;
+			if (hanging) {
+				if (l.x1 <= first.x1 + 2.5) break;
+			} else if (AUTHOR_START.test(l.text) && /[.)d]s*$/.test(prev.text)) break;
 		}
 		out.push(l);
 		chars += l.text.length;
@@ -259,7 +277,9 @@ function structureEntry(s: DocStructure | null | undefined, page: number, top: n
 function structureEntryByIndex(s: DocStructure | null | undefined, n: number): Entry | null {
 	// the printed marker ("18." / "[18]") first; the entry's position in the list only for unmarked lists
 	const refs = s?.references ?? [];
-	const e = refs.find((r) => markerOf(r.text) === n) ?? (refs.some((r) => markerOf(r.text) != null) ? undefined : refs.find((r) => r.index === n));
+	const e =
+		refs.find((r) => markerOf(r.text) === n) ??
+		(refs.some((r) => markerOf(r.text) != null) ? undefined : refs.find((r) => r.index === n));
 	if (!e || !e.rects.length) return null;
 	return { page: e.page, text: stripMarker(e.text), marker: n, rect: unionRects(e.rects)!, lineRects: e.rects };
 }
@@ -314,7 +334,6 @@ export function resolveCitation(inp: ResolveInput): Resolution {
 		if (!best.ref || (sc >= MATCH_THRESHOLD && best.ref !== byIndex && sc >= best.score - 0.1) || (best.score < 0.8 && !best.entry)) {
 			best = { ref: byIndex, entry: best.entry, via: sc >= MATCH_THRESHOLD ? "text" : "index", score: sc };
 		}
-		else if (!best.ref) best = { ref: byIndex, entry: best.entry, via: "index", score: sc };
 	}
 	return best;
 }

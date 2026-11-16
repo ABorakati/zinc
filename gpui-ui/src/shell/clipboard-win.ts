@@ -54,7 +54,10 @@ function globalCopy(w: Win32, bytes: Buffer): number | bigint | null {
 	const mem = w.GlobalAlloc(GMEM_MOVEABLE, bytes.byteLength);
 	if (!mem) return null;
 	const dst = w.GlobalLock(mem);
-	if (!dst) { w.GlobalFree(mem); return null; }
+	if (!dst) {
+		w.GlobalFree(mem);
+		return null;
+	}
 	new Uint8Array(toArrayBuffer(dst as never, 0, bytes.byteLength)).set(bytes);
 	w.GlobalUnlock(mem);
 	return mem;
@@ -69,15 +72,25 @@ export function writeClipboard(text: string, cfHtmlDoc?: string): boolean {
 		const fmt = w.RegisterClipboardFormatW(Buffer.from("HTML Format\0", "utf16le"));
 		if (fmt) parts.push([fmt, Buffer.from(cfHtmlDoc + "\0", "utf8")]);
 	}
-	for (let attempt = 0; attempt < 5; attempt++) { // another process may hold the clipboard for a moment
-		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+	for (let attempt = 0; attempt < 5; attempt++) {
+		// another process may hold the clipboard for a moment
+		if (!w.OpenClipboard(0)) {
+			Bun.sleepSync(10);
+			continue;
+		}
 		try {
 			w.EmptyClipboard();
 			let ok = true;
 			for (const [fmt, bytes] of parts) {
 				const mem = globalCopy(w, bytes);
-				if (!mem) { ok = false; continue; }
-				if (!w.SetClipboardData(fmt, mem)) { w.GlobalFree(mem); ok = false; } // on success the system owns the memory
+				if (!mem) {
+					ok = false;
+					continue;
+				}
+				if (!w.SetClipboardData(fmt, mem)) {
+					w.GlobalFree(mem);
+					ok = false;
+				} // on success the system owns the memory
 			}
 			return ok;
 		} finally {
@@ -92,7 +105,10 @@ export function readClipboard(): string | null {
 	const w = win32();
 	if (!w) return null;
 	for (let attempt = 0; attempt < 5; attempt++) {
-		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		if (!w.OpenClipboard(0)) {
+			Bun.sleepSync(10);
+			continue;
+		}
 		try {
 			const h = w.GetClipboardData(CF_UNICODETEXT);
 			if (!h) return "";
@@ -126,14 +142,23 @@ export function writeClipboardImage(pngBytes: Buffer, dibBytes?: Buffer): boolea
 		parts.push([fmt, pngBytes]);
 	}
 	for (let attempt = 0; attempt < 5; attempt++) {
-		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		if (!w.OpenClipboard(0)) {
+			Bun.sleepSync(10);
+			continue;
+		}
 		try {
 			w.EmptyClipboard();
 			let ok = true;
 			for (const [f, bytes] of parts) {
 				const mem = globalCopy(w, bytes);
-				if (!mem) { ok = false; continue; }
-				if (!w.SetClipboardData(f, mem)) { w.GlobalFree(mem); ok = false; }
+				if (!mem) {
+					ok = false;
+					continue;
+				}
+				if (!w.SetClipboardData(f, mem)) {
+					w.GlobalFree(mem);
+					ok = false;
+				}
 			}
 			return ok;
 		} finally {
@@ -149,7 +174,10 @@ export function hasClipboardImage(): boolean {
 	if (!w) return false;
 	const fmt = w.RegisterClipboardFormatW(Buffer.from("PNG\0", "utf16le"));
 	for (let attempt = 0; attempt < 5; attempt++) {
-		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		if (!w.OpenClipboard(0)) {
+			Bun.sleepSync(10);
+			continue;
+		}
 		try {
 			return !!(w.GetClipboardData(CF_DIB) || (fmt && w.GetClipboardData(fmt)));
 		} finally {
@@ -166,7 +194,10 @@ export function readClipboardImage(): Buffer | null {
 	const fmt = w.RegisterClipboardFormatW(Buffer.from("PNG\0", "utf16le"));
 	if (!fmt) return null;
 	for (let attempt = 0; attempt < 5; attempt++) {
-		if (!w.OpenClipboard(0)) { Bun.sleepSync(10); continue; }
+		if (!w.OpenClipboard(0)) {
+			Bun.sleepSync(10);
+			continue;
+		}
 		try {
 			const h = w.GetClipboardData(fmt);
 			if (!h) return null;

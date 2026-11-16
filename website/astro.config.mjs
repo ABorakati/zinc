@@ -32,7 +32,11 @@ export default defineConfig({
 			editLink: undefined,
 			lastUpdated: false,
 			// the same order as the Markdown index for language models (/llms.txt): plugins/docs-nav.mjs
-			sidebar: DOCS_NAV.map((g) => (g.slugs.length === 1 && g.label === "Overview" ? { label: g.label, slug: g.slugs[0] } : { label: g.label, items: guide(g.slugs) })),
+			sidebar: DOCS_NAV.map((g) =>
+				g.slugs.length === 1 && g.label === "Overview"
+					? { label: g.label, slug: g.slugs[0] }
+					: { label: g.label, items: guide(g.slugs) },
+			),
 		}),
 	],
 });

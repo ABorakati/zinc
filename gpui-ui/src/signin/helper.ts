@@ -61,7 +61,9 @@ async function waitForDevtools(): Promise<Cdp> {
 			try {
 				const port = Number(readFileSync(file, "utf8").split("\n")[0]);
 				if (port > 0) {
-					const v = (await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1500) })).json()) as { webSocketDebuggerUrl?: string };
+					const v = (await (
+						await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1500) })
+					).json()) as { webSocketDebuggerUrl?: string };
 					if (v.webSocketDebuggerUrl) return await Cdp.connect(v.webSocketDebuggerUrl);
 				}
 			} catch {
@@ -121,7 +123,10 @@ function byId(id: string): Win {
 async function setDownloads(dir: string | null): Promise<void> {
 	downloadDir = dir;
 	if (dir) mkdirSync(dir, { recursive: true });
-	await cdp.send("Browser.setDownloadBehavior", dir ? { behavior: "allowAndName", downloadPath: dir, eventsEnabled: true } : { behavior: "deny", eventsEnabled: true });
+	await cdp.send(
+		"Browser.setDownloadBehavior",
+		dir ? { behavior: "allowAndName", downloadPath: dir, eventsEnabled: true } : { behavior: "deny", eventsEnabled: true },
+	);
 }
 
 const downloads = new Map<string, { url: string; filename?: string }>();
@@ -164,11 +169,15 @@ function onEvent(e: CdpEvent): void {
 				return;
 			}
 			if (a === "ready") render(w);
-			else if (w.id && (a === "skip" || a === "handoff" || a === "keep_waiting")) send({ ev: "action", id: w.id, a: a as BannerAction });
+			else if (w.id && (a === "skip" || a === "handoff" || a === "keep_waiting"))
+				send({ ev: "action", id: w.id, a: a as BannerAction });
 			return;
 		}
 		case "Browser.downloadWillBegin":
-			downloads.set(String(p.guid), { url: String(p.url ?? ""), filename: typeof p.suggestedFilename === "string" ? p.suggestedFilename : undefined });
+			downloads.set(String(p.guid), {
+				url: String(p.url ?? ""),
+				filename: typeof p.suggestedFilename === "string" ? p.suggestedFilename : undefined,
+			});
 			send({ ev: "download-begin" });
 			return;
 		case "Browser.downloadProgress": {
@@ -180,13 +189,19 @@ function onEvent(e: CdpEvent): void {
 			if (p.state !== "completed" || !downloadDir) return;
 			const d = downloads.get(String(p.guid));
 			downloads.delete(String(p.guid));
-			send({ ev: "download", path: join(downloadDir, String(p.guid)), url: d?.url ?? "", ...(d?.filename ? { filename: d.filename } : {}) });
+			send({
+				ev: "download",
+				path: join(downloadDir, String(p.guid)),
+				url: d?.url ?? "",
+				...(d?.filename ? { filename: d.filename } : {}),
+			});
 			return;
 		}
 		case "Target.targetInfoChanged": {
 			// a link that opens a new window: the sign-in goes on in the same window
 			const t = p.targetInfo;
-			if (!t || t.type !== "page" || wins.some((x) => x.targetId === t.targetId) || !t.openerId || !/^https?:/i.test(String(t.url))) return;
+			if (!t || t.type !== "page" || wins.some((x) => x.targetId === t.targetId) || !t.openerId || !/^https?:/i.test(String(t.url)))
+				return;
 			const opener = wins.find((x) => x.targetId === t.openerId && x.id);
 			if (!opener) return;
 			cdp.send("Page.navigate", { url: t.url }, opener.sessionId).catch(() => {});
@@ -225,7 +240,12 @@ const ops: { [K in HelperOp]: (a: HelperOps[K]["args"]) => Promise<HelperOps[K][
 	},
 	async html(a) {
 		const w = byId(a.id);
-		const r = await cdp.send<{ result?: { value?: unknown } }>("Runtime.evaluate", { expression: HTML_JS(a.max), returnByValue: true }, w.sessionId, 4000);
+		const r = await cdp.send<{ result?: { value?: unknown } }>(
+			"Runtime.evaluate",
+			{ expression: HTML_JS(a.max), returnByValue: true },
+			w.sessionId,
+			4000,
+		);
 		return typeof r.result?.value === "string" ? r.result.value : "";
 	},
 	async title(a) {

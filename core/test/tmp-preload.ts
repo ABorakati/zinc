@@ -13,25 +13,48 @@ import { join } from "node:path";
 
 const base = tmpdir();
 const PREFIX = "zn-test-run-";
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-for (const name of (() => { try { return readdirSync(base); } catch { return []; } })()) {
+const alive = (pid: number) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+for (const name of (() => {
+	try {
+		return readdirSync(base);
+	} catch {
+		return [];
+	}
+})()) {
 	if (!name.startsWith(PREFIX)) continue;
 	try {
 		const p = join(base, name);
 		const pid = Number(name.slice(PREFIX.length).split("-")[0]);
 		// a finished run (its process is gone), or a very old one whose pid may have been reused
 		if (!alive(pid) || Date.now() - statSync(p).mtimeMs > 6 * 3600_000) rmSync(p, { recursive: true, force: true });
-	} catch { /* still in use or already gone */ }
+	} catch {
+		/* still in use or already gone */
+	}
 }
 
 // Older test scratch made outside a run folder (zn-core-*, zn-ft-*, zn-login-*… from runs that skipped this preload, e.g. started from
 // another directory): remove the ones untouched for 6 hours. Thousands of them (7+ GB) once filled the disk.
-for (const name of (() => { try { return readdirSync(base); } catch { return []; } })()) {
+for (const name of (() => {
+	try {
+		return readdirSync(base);
+	} catch {
+		return [];
+	}
+})()) {
 	if (!/^zn[a-z]*-/.test(name) || name.startsWith(PREFIX)) continue;
 	try {
 		const p = join(base, name);
 		if (Date.now() - statSync(p).mtimeMs > 6 * 3600_000) rmSync(p, { recursive: true, force: true });
-	} catch { /* in use or already gone */ }
+	} catch {
+		/* in use or already gone */
+	}
 }
 
 const run = join(base, `${PREFIX}${process.pid}-${Date.now()}`);
@@ -56,15 +79,30 @@ if (dir && dir.includes(${JSON.stringify(PREFIX)})) { try { rmSync(dir, { recurs
  * which makes it nobody's child; it runs from the plain temp folder, so it neither loads this preload nor holds the folder open.
  */
 function removeRun(): void {
-	try { rmSync(run, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch { /* a file still open: see below */ }
+	try {
+		rmSync(run, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+	} catch {
+		/* a file still open: see below */
+	}
 	if (!existsSync(run) || process.platform !== "win32") return;
 	try {
 		const file = join(base, "zn-test-cleaner.mjs");
 		writeFileSync(file, CLEANER);
 		const cmd = `"${process.execPath}" "${file}" ${process.pid} "${run}"`;
 		const q = (s: string) => s.replace(/'/g, "''");
-		spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${q(cmd)}'; CurrentDirectory = '${q(base)}' } | Out-Null`], { windowsHide: true, stdio: "ignore", timeout: 15_000 });
-	} catch { /* no cleaner: the next run's sweep removes it */ }
+		spawnSync(
+			"powershell.exe",
+			[
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				`Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${q(cmd)}'; CurrentDirectory = '${q(base)}' } | Out-Null`,
+			],
+			{ windowsHide: true, stdio: "ignore", timeout: 15_000 },
+		);
+	} catch {
+		/* no cleaner: the next run's sweep removes it */
+	}
 }
 afterAll(removeRun);
 

@@ -59,7 +59,10 @@ describe("itemToCsl", () => {
 			d({
 				itemType: "book",
 				title: "The Book",
-				creators: [{ creatorType: "author", firstName: "A", lastName: "Writer" }, { creatorType: "translator", firstName: "T", lastName: "Rans" }],
+				creators: [
+					{ creatorType: "author", firstName: "A", lastName: "Writer" },
+					{ creatorType: "translator", firstName: "T", lastName: "Rans" },
+				],
 				publisher: "Oxford University Press",
 				place: "Oxford",
 				edition: "3rd",

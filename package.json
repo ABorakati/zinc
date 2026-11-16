@@ -1,9 +1,13 @@
 {
-  "name": "zotero-next",
-  "private": true,
-  "scripts": {
-    "docs:dev": "cd website && bun run docs:dev",
-    "docs:build": "cd website && bun run docs:build",
-    "docs:preview": "cd website && bun run docs:preview"
-  }
+	"name": "zotero-next",
+	"private": true,
+	"scripts": {
+		"docs:dev": "cd website && bun run docs:dev",
+		"docs:build": "cd website && bun run docs:build",
+		"docs:preview": "cd website && bun run docs:preview",
+		"format": "bun fmt",
+		"format:check": "bun fmt --check",
+		"lint": "bun scripts/lint.ts",
+		"lint:fix": "bun scripts/lint.ts --fix ."
+	}
 }

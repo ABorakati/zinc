@@ -10,7 +10,17 @@ import { handleFilesApi } from "../../src/files/api";
 import { attachNewest, findNewestFile, previewAttachNewest, runOrganize } from "../../src/files/organize";
 import { baseDirInfo, setBaseDir, setZoteroProfilesDir, applyConversion } from "../../src/files/paths";
 import { expandPattern, metaOfItem, monthDayOf, validatePattern, type PatternMeta } from "../../src/files/pattern";
-import { applyZotMoovPreset, copyVerifiedSync, extAllowed, planRelocate, setAttributeProbe, setLockProbe, setStorage, storageTargetFor, storageView } from "../../src/files/storage";
+import {
+	applyZotMoovPreset,
+	copyVerifiedSync,
+	extAllowed,
+	planRelocate,
+	setAttributeProbe,
+	setLockProbe,
+	setStorage,
+	storageTargetFor,
+	storageView,
+} from "../../src/files/storage";
 import { eraseItems } from "../../src/maintenance/erase";
 import { renameFiles } from "../../src/maintenance/rename-files";
 import { savePdf } from "../../src/fulltext/save";
@@ -22,9 +32,16 @@ let own: string;
 let dest: string;
 let downloads: string;
 
-const row = (key: string) => db.query("SELECT link_mode, path, url FROM attachments WHERE item_key = ?").get(key) as { link_mode: string; path: string; url: string | null };
-const data = (key: string) => JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data) as Record<string, any>;
-const tagsOf = (key: string) => (db.query("SELECT tag FROM item_tags WHERE item_key = ? ORDER BY tag").all(key) as { tag: string }[]).map((r) => r.tag);
+const row = (key: string) =>
+	db.query("SELECT link_mode, path, url FROM attachments WHERE item_key = ?").get(key) as {
+		link_mode: string;
+		path: string;
+		url: string | null;
+	};
+const data = (key: string) =>
+	JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data) as Record<string, any>;
+const tagsOf = (key: string) =>
+	(db.query("SELECT tag FROM item_tags WHERE item_key = ? ORDER BY tag").all(key) as { tag: string }[]).map((r) => r.tag);
 const names = (dir: string) => readdirSync(dir).sort();
 
 function ownFile(key: string, name: string, content = "pdf-bytes"): string {
@@ -39,8 +56,24 @@ function addLinked(key: string, parent: string, path: string, content = "linked-
 	mkdirSync(join(path, ".."), { recursive: true });
 	writeFileSync(path, content);
 	const name = path.split(/[\\/]/).pop()!;
-	insertItem(db, { key, itemType: "attachment", linkMode: "linked_file", parentItem: parent, title: name, contentType: "application/pdf", path, filename: name } as never, parent);
-	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'linked_file', 'application/pdf', ?)").run(key, path);
+	insertItem(
+		db,
+		{
+			key,
+			itemType: "attachment",
+			linkMode: "linked_file",
+			parentItem: parent,
+			title: name,
+			contentType: "application/pdf",
+			path,
+			filename: name,
+		} as never,
+		parent,
+	);
+	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'linked_file', 'application/pdf', ?)").run(
+		key,
+		path,
+	);
 }
 function touch(path: string, content: string, ageSeconds: number): void {
 	mkdirSync(join(path, ".."), { recursive: true });
@@ -50,7 +83,11 @@ function touch(path: string, content: string, ageSeconds: number): void {
 }
 async function api(method: string, route: string, body?: unknown): Promise<{ status: number; json: any }> {
 	const res = await handleFilesApi(
-		new Request(`http://127.0.0.1:23120/api/files/${route}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }),
+		new Request(`http://127.0.0.1:23120/api/files/${route}`, {
+			method,
+			headers: { "Content-Type": "application/json" },
+			body: body === undefined ? undefined : JSON.stringify(body),
+		}),
 		db,
 	);
 	return { status: res!.status, json: await res!.json() };
@@ -76,9 +113,27 @@ afterEach(() => {
 
 describe("wildcards", () => {
 	const meta: PatternMeta = {
-		author: "Smith", year: "2020", title: "Deep learning", publication: "J Med AI", itemType: "journalArticle",
-		citekey: "smith2020", authorInitials: "AS", editor: "Lee", editorLastF: "LeeK", editorInitials: "KL", publisher: "Acme", journalAbbrev: "JMAI",
-		volume: "7", issue: "2", pages: "10-20", month: "05", day: "01", addedYear: "2024", addedMonth: "03", addedDay: "09", collectionPath: ["Radiology", "Sub/Folder"],
+		author: "Smith",
+		year: "2020",
+		title: "Deep learning",
+		publication: "J Med AI",
+		itemType: "journalArticle",
+		citekey: "smith2020",
+		authorInitials: "AS",
+		editor: "Lee",
+		editorLastF: "LeeK",
+		editorInitials: "KL",
+		publisher: "Acme",
+		journalAbbrev: "JMAI",
+		volume: "7",
+		issue: "2",
+		pages: "10-20",
+		month: "05",
+		day: "01",
+		addedYear: "2024",
+		addedMonth: "03",
+		addedDay: "09",
+		collectionPath: ["Radiology", "Sub/Folder"],
 	};
 	test("single wildcards", () => {
 		expect(expandPattern("{%a}/{%y}/{%A}/{%b}/{%I}", meta)).toEqual(["Smith", "2020", "S", "smith2020", "AS"]);
@@ -122,9 +177,21 @@ describe("wildcards", () => {
 	});
 	test("metaOfItem reads fields, date parts, date added and the collection path", () => {
 		db.query("INSERT INTO collection_items VALUES('COLLAAA2', 'AAAAAAA1')").run();
-		db.query("UPDATE items SET data = json_set(data, '$.volume', '12', '$.publisher', 'Acme', '$.extra', 'Citation Key: smith2020x') WHERE key = 'AAAAAAA1'").run();
+		db.query(
+			"UPDATE items SET data = json_set(data, '$.volume', '12', '$.publisher', 'Acme', '$.extra', 'Citation Key: smith2020x') WHERE key = 'AAAAAAA1'",
+		).run();
 		const m = metaOfItem(db, "AAAAAAA1", { collectionKey: "COLLAAA2" });
-		expect(m).toMatchObject({ author: "Smith", authorInitials: "AS", volume: "12", publisher: "Acme", citekey: "smith2020x", month: "05", day: "01", addedYear: "2024", addedMonth: "03" });
+		expect(m).toMatchObject({
+			author: "Smith",
+			authorInitials: "AS",
+			volume: "12",
+			publisher: "Acme",
+			citekey: "smith2020x",
+			month: "05",
+			day: "01",
+			addedYear: "2024",
+			addedMonth: "03",
+		});
 		expect(m.collectionPath).toEqual(["Radiology", "Sub"]); // the collection the user looks at
 		expect(metaOfItem(db, "AAAAAAA1", { collectionKey: "NOPE" }).collectionPath).toEqual(["Radiology"]); // else the first one
 	});
@@ -133,9 +200,32 @@ describe("wildcards", () => {
 describe("settings", () => {
 	test("defaults and the ZotMoov preset", () => {
 		const v = storageView(db);
-		expect(v).toMatchObject({ dir: null, auto: true, behavior: "move", allowedExt: [], rename: false, renameTitle: true, addTag: false, tag: "zotmoov", deleteFiles: false, pruneEmptyDirs: true, attachDir: null });
+		expect(v).toMatchObject({
+			dir: null,
+			auto: true,
+			behavior: "move",
+			allowedExt: [],
+			rename: false,
+			renameTitle: true,
+			addTag: false,
+			tag: "zotmoov",
+			deleteFiles: false,
+			pruneEmptyDirs: true,
+			attachDir: null,
+		});
 		const p = applyZotMoovPreset(db, dest);
-		expect(p).toMatchObject({ dir: dest, subfolder: "", linked: true, auto: true, behavior: "move", allowedExt: ["pdf", "epub", "docx", "djvu"], rename: true, renameTitle: true, addTag: true, deleteFiles: false });
+		expect(p).toMatchObject({
+			dir: dest,
+			subfolder: "",
+			linked: true,
+			auto: true,
+			behavior: "move",
+			allowedExt: ["pdf", "epub", "docx", "djvu"],
+			rename: true,
+			renameTitle: true,
+			addTag: true,
+			deleteFiles: false,
+		});
 	});
 	test("validation and normalisation", () => {
 		expect(setStorage(db, { allowedExt: [".PDF", "*.Epub", "pdf", " "] }).allowedExt).toEqual(["pdf", "epub"]);
@@ -161,9 +251,25 @@ describe("settings", () => {
 		}
 	});
 	test("routes: configure, preset, validation", async () => {
-		const r = await api("PUT", "storage", { dir: dest, behavior: "copy", allowedExt: ["pdf"], rename: true, addTag: true, tag: "moved", attachDir: downloads });
+		const r = await api("PUT", "storage", {
+			dir: dest,
+			behavior: "copy",
+			allowedExt: ["pdf"],
+			rename: true,
+			addTag: true,
+			tag: "moved",
+			attachDir: downloads,
+		});
 		expect(r.status).toBe(200);
-		expect(r.json.storage).toMatchObject({ dir: dest, behavior: "copy", allowedExt: ["pdf"], rename: true, addTag: true, tag: "moved", attachDir: downloads });
+		expect(r.json.storage).toMatchObject({
+			dir: dest,
+			behavior: "copy",
+			allowedExt: ["pdf"],
+			rename: true,
+			addTag: true,
+			tag: "moved",
+			attachDir: downloads,
+		});
 		expect((await api("PUT", "storage", { allowedExt: ["x y"] })).status).toBe(400);
 		const p = await api("POST", "storage/preset", { dir: dest });
 		expect(p.json.storage).toMatchObject({ behavior: "move", tag: "zotmoov", allowedExt: ["pdf", "epub", "docx", "djvu"] });
@@ -245,9 +351,24 @@ describe("automatic placement of new files", () => {
 
 	test("web saves (connector) keep a renamed linked file linked and keep the source URL", () => {
 		applyZotMoovPreset(db, dest);
-		const key = storeWebAttachment(db, { parentKey: "AAAAAAA1", bytes: new Uint8Array([1, 2, 3]), url: "https://example.org/p.pdf", title: "Full Text PDF", contentType: "application/pdf", filename: "p.pdf" });
-		expect(row(key)).toMatchObject({ link_mode: "linked_file", url: "https://example.org/p.pdf", path: join(dest, "Smith and Jones - 2020 - Deep learning for radiology.pdf") });
-		expect(data(key)).toMatchObject({ linkMode: "linked_file", url: "https://example.org/p.pdf", title: "Smith and Jones - 2020 - Deep learning for radiology.pdf" });
+		const key = storeWebAttachment(db, {
+			parentKey: "AAAAAAA1",
+			bytes: new Uint8Array([1, 2, 3]),
+			url: "https://example.org/p.pdf",
+			title: "Full Text PDF",
+			contentType: "application/pdf",
+			filename: "p.pdf",
+		});
+		expect(row(key)).toMatchObject({
+			link_mode: "linked_file",
+			url: "https://example.org/p.pdf",
+			path: join(dest, "Smith and Jones - 2020 - Deep learning for radiology.pdf"),
+		});
+		expect(data(key)).toMatchObject({
+			linkMode: "linked_file",
+			url: "https://example.org/p.pdf",
+			title: "Smith and Jones - 2020 - Deep learning for radiology.pdf",
+		});
 		expect(tagsOf(key)).toEqual(["zotmoov"]);
 	});
 
@@ -259,7 +380,15 @@ describe("automatic placement of new files", () => {
 		const bodies = { get: () => ({ kind: "pdf", path: staged }), release: () => {} } as never;
 		const r = savePdf(
 			{ db, dataDir: fx.dir, bodies, keyOfItem: () => key, ezproxySuffix: "" },
-			{ item: 1, body: { handle: "h" } as never, trim_prefix: 0, version: "published", url_to_store: "https://example.org/a.pdf", route: "x", source: "y" },
+			{
+				item: 1,
+				body: { handle: "h" } as never,
+				trim_prefix: 0,
+				version: "published",
+				url_to_store: "https://example.org/a.pdf",
+				route: "x",
+				source: "y",
+			},
 		);
 		const att = row(r.attachment_key);
 		expect(att.link_mode).toBe("linked_file");
@@ -276,9 +405,20 @@ describe("automatic placement of new files", () => {
 		const bodies = { get: () => ({ kind: "pdf", path: staged }), release: () => {} } as never;
 		const r = savePdf(
 			{ db, dataDir: fx.dir, bodies, keyOfItem: () => "BBBBBBB2", ezproxySuffix: "" },
-			{ item: 1, body: { handle: "h" } as never, trim_prefix: 0, version: "published", url_to_store: "https://example.org/b.pdf", route: "x", source: "y" },
+			{
+				item: 1,
+				body: { handle: "h" } as never,
+				trim_prefix: 0,
+				version: "published",
+				url_to_store: "https://example.org/b.pdf",
+				route: "x",
+				source: "y",
+			},
 		);
-		expect(row(r.attachment_key)).toMatchObject({ link_mode: "imported_url", path: join(fx.dir, "storage", r.attachment_key, r.filename) });
+		expect(row(r.attachment_key)).toMatchObject({
+			link_mode: "imported_url",
+			path: join(fx.dir, "storage", r.attachment_key, r.filename),
+		});
 	});
 });
 
@@ -297,7 +437,11 @@ describe("the move, copy and convert commands", () => {
 		const file = join(dest, "Smith and Jones - 2020 - Deep learning for radiology.pdf");
 		expect(report.moved).toBe(1);
 		expect(row("ATT00002")).toEqual({ link_mode: "linked_file", path: file, url: null });
-		expect(data("ATT00002")).toMatchObject({ title: "Smith and Jones - 2020 - Deep learning for radiology.pdf", filename: "Smith and Jones - 2020 - Deep learning for radiology.pdf", path: file });
+		expect(data("ATT00002")).toMatchObject({
+			title: "Smith and Jones - 2020 - Deep learning for radiology.pdf",
+			filename: "Smith and Jones - 2020 - Deep learning for radiology.pdf",
+			path: file,
+		});
 		expect(tagsOf("ATT00002")).toEqual(["zotmoov"]);
 		expect(row("ATT00005").path).toBe(join(own, "ATT00005", "other.pdf")); // not selected: untouched
 		expect(existsSync(join(own, "ATT00002"))).toBe(false);
@@ -409,7 +553,11 @@ describe("the move, copy and convert commands", () => {
 		const plan = planRelocate(db, { keys: ["ATT00002", "LNK00021"], toOwn: true });
 		expect(plan.skipped.find((s) => s.key === "ATT00002")!.reason).toMatch(/already a stored file/);
 		const { runMove } = await import("../../src/files/storage");
-		const report = await runMove(db, plan, { beforeCommit: () => { throw new Error("disk on fire"); } });
+		const report = await runMove(db, plan, {
+			beforeCommit: () => {
+				throw new Error("disk on fire");
+			},
+		});
 		expect(report.failed).toHaveLength(1);
 		expect(readFileSync(join(dest, "x.pdf"), "utf8")).toBe("linked-bytes");
 		expect(existsSync(join(own, "LNK00021"))).toBe(false);
@@ -466,7 +614,11 @@ describe("attach the newest file of a folder", () => {
 	test("preview, then attach: stored in the storage folder under the parent's name, the download leaves the folder", () => {
 		touch(join(downloads, "paper (1).pdf"), "downloaded", 5);
 		const pv = previewAttachNewest(db, "AAAAAAA1");
-		expect(pv).toMatchObject({ source: join(downloads, "paper (1).pdf"), size: 10, proposedName: "Smith and Jones - 2020 - Deep learning for radiology.pdf" });
+		expect(pv).toMatchObject({
+			source: join(downloads, "paper (1).pdf"),
+			size: 10,
+			proposedName: "Smith and Jones - 2020 - Deep learning for radiology.pdf",
+		});
 		expect(existsSync(join(downloads, "paper (1).pdf"))).toBe(true); // a preview changes nothing
 		const r = attachNewest(db, { parentKey: "AAAAAAA1" });
 		const file = join(dest, "Smith and Jones - 2020 - Deep learning for radiology.pdf");
@@ -492,7 +644,9 @@ describe("attach the newest file of a folder", () => {
 		setLockProbe(() => true);
 		expect(() => attachNewest(db, { parentKey: "AAAAAAA1" })).toThrow(/open in another program/);
 		expect(existsSync(join(downloads, "x.pdf"))).toBe(true);
-		expect(db.query("SELECT count(*) AS n FROM items WHERE parent_key = 'AAAAAAA1' AND item_type = 'attachment'").get()).toEqual({ n: 2 });
+		expect(db.query("SELECT count(*) AS n FROM items WHERE parent_key = 'AAAAAAA1' AND item_type = 'attachment'").get()).toEqual({
+			n: 2,
+		});
 		setLockProbe(() => false);
 		expect(() => attachNewest(db, { parentKey: "ATT00002" })).toThrow(/regular top-level/);
 		expect(() => attachNewest(db, { parentKey: "NOPE0000" })).toThrow(/not found/);
@@ -549,7 +703,6 @@ describe("deleting linked files with their items", () => {
 		expect(r.linkedFilesRemoved).toBe(0);
 		expect(existsSync(join(dest, "s.pdf"))).toBe(true);
 	});
-
 });
 
 describe("verified copy", () => {

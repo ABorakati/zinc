@@ -41,7 +41,19 @@ export function showRecord(v: unknown): string {
 	if (typeof v !== "object") return String(v);
 	const o = v as Record<string, unknown>;
 	const out: string[] = [];
-	for (const k of ["title", "name", "itemType", "date", "abstractNote", "note", "text", "comment", "url", "publicationTitle", "dateModified"]) {
+	for (const k of [
+		"title",
+		"name",
+		"itemType",
+		"date",
+		"abstractNote",
+		"note",
+		"text",
+		"comment",
+		"url",
+		"publicationTitle",
+		"dateModified",
+	]) {
 		const x = o[k];
 		if (x === undefined || x === "") continue;
 		const s = typeof x === "string" ? (x.length > 160 ? `${x.slice(0, 160)}…` : x) : String(x);
@@ -97,7 +109,11 @@ function create() {
 	}
 
 	return {
-		status, conflicts, working, error, reachable,
+		status,
+		conflicts,
+		working,
+		error,
+		reachable,
 		/** Start polling (idempotent). `changed` fires when Zotero's changes were pulled in (refresh lists). */
 		start(changed?: () => void) {
 			if (changed) onChanged = changed;
@@ -119,7 +135,9 @@ function create() {
 				await call("DELETE", id === undefined ? "/api/sync/conflicts" : `/api/sync/conflicts?id=${id}`);
 				await refresh();
 				await loadConflicts();
-			} catch (e) { setError(errMsg(e)); }
+			} catch (e) {
+				setError(errMsg(e));
+			}
 		},
 		clearError: () => setError(""),
 		busy: () => working() || !!status()?.busy,

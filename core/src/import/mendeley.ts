@@ -9,7 +9,17 @@
 import { Database } from "bun:sqlite";
 import { createCipheriv } from "node:crypto";
 import {
-	closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, writeFileSync,
+	closeSync,
+	copyFileSync,
+	existsSync,
+	mkdtempSync,
+	openSync,
+	readFileSync,
+	readSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -167,24 +177,66 @@ export function decryptMendeleyDb(source: string, target: string): void {
 // ---------------------------------------------------------------- schema map
 
 const ITEM_TYPES: Record<string, string> = {
-	Bill: "bill", Book: "book", BookSection: "bookSection", Case: "case", ComputerProgram: "computerProgram",
-	ConferenceProceedings: "conferencePaper", EncyclopediaArticle: "encyclopediaArticle", Film: "film",
-	Generic: "document", Hearing: "hearing", JournalArticle: "journalArticle", MagazineArticle: "magazineArticle",
-	NewspaperArticle: "newspaperArticle", Patent: "patent", Report: "report", Statute: "statute",
-	TelevisionBroadcast: "tvBroadcast", Thesis: "thesis", WebPage: "webpage", WorkingPaper: "report",
+	Bill: "bill",
+	Book: "book",
+	BookSection: "bookSection",
+	Case: "case",
+	ComputerProgram: "computerProgram",
+	ConferenceProceedings: "conferencePaper",
+	EncyclopediaArticle: "encyclopediaArticle",
+	Film: "film",
+	Generic: "document",
+	Hearing: "hearing",
+	JournalArticle: "journalArticle",
+	MagazineArticle: "magazineArticle",
+	NewspaperArticle: "newspaperArticle",
+	Patent: "patent",
+	Report: "report",
+	Statute: "statute",
+	TelevisionBroadcast: "tvBroadcast",
+	Thesis: "thesis",
+	WebPage: "webpage",
+	WorkingPaper: "report",
 };
 
 const CREATOR_TYPES: Record<string, string> = { DocumentAuthor: "author", DocumentEditor: "editor", DocumentTranslator: "translator" };
 
 /** Documents column -> Zotero field (the map Zotero ships for schema 83); "" means handled elsewhere. */
 const FIELD_MAP: Record<string, string> = {
-	publisher: "publisher", series: "seriesTitle", seriesNumber: "seriesNumber", sections: "section",
-	pages: "pages", publication: "publicationTitle", publicLawNumber: "publicLawNumber", shortTitle: "shortTitle",
-	volume: "volume", userType: "type", dateAccessed: "accessDate", committee: "committee", doi: "DOI",
-	edition: "edition", codeSection: "section", codeVolume: "codeVolume", code: "code", codeNumber: "codeNumber",
-	issue: "issue", language: "language", isbn: "ISBN", issn: "ISSN", medium: "medium", legalStatus: "legalStatus",
-	institution: "publisher", genre: "genre", applicationNumber: "applicationNumber", abstract: "abstractNote",
-	title: "title", pmid: "PMID", citationKey: "Citation Key", arxivId: "arXiv", country: "place", city: "place",
+	publisher: "publisher",
+	series: "seriesTitle",
+	seriesNumber: "seriesNumber",
+	sections: "section",
+	pages: "pages",
+	publication: "publicationTitle",
+	publicLawNumber: "publicLawNumber",
+	shortTitle: "shortTitle",
+	volume: "volume",
+	userType: "type",
+	dateAccessed: "accessDate",
+	committee: "committee",
+	doi: "DOI",
+	edition: "edition",
+	codeSection: "section",
+	codeVolume: "codeVolume",
+	code: "code",
+	codeNumber: "codeNumber",
+	issue: "issue",
+	language: "language",
+	isbn: "ISBN",
+	issn: "ISSN",
+	medium: "medium",
+	legalStatus: "legalStatus",
+	institution: "publisher",
+	genre: "genre",
+	applicationNumber: "applicationNumber",
+	abstract: "abstractNote",
+	title: "title",
+	pmid: "PMID",
+	citationKey: "Citation Key",
+	arxivId: "arXiv",
+	country: "place",
+	city: "place",
 	session: "session",
 };
 
@@ -254,8 +306,14 @@ export function importMendeley(db: Database, opts: MendeleyImportOptions): Mende
 	if (!opts.path || !existsSync(opts.path)) throw new HttpError(404, "Mendeley database not found");
 	if (opts.collectionKey && !getCollection(db, opts.collectionKey)) throw new HttpError(404, "collection not found");
 	const result: MendeleyImportResult = {
-		created: 0, skipped: 0, errors: [], collectionKey: null,
-		format: "mendeley", collections: 0, attachments: 0, missingFiles: 0,
+		created: 0,
+		skipped: 0,
+		errors: [],
+		collectionKey: null,
+		format: "mendeley",
+		collections: 0,
+		attachments: 0,
+		missingFiles: 0,
 	};
 
 	// every document goes into this collection; its Mendeley folders are created underneath it
@@ -310,7 +368,14 @@ export function importMendeley(db: Database, opts: MendeleyImportOptions): Mende
 	}
 }
 
-function readLibrary(db: Database, src: Database, opts: MendeleyImportOptions, root: string | null, result: MendeleyImportResult, dataDir: string): void {
+function readLibrary(
+	db: Database,
+	src: Database,
+	opts: MendeleyImportOptions,
+	root: string | null,
+	result: MendeleyImportResult,
+	dataDir: string,
+): void {
 	if (!rows(src, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Documents'").length) {
 		throw new Error("the file is not a Mendeley Desktop library (no Documents table)");
 	}
@@ -322,7 +387,11 @@ function readLibrary(db: Database, src: Database, opts: MendeleyImportOptions, r
 	const contributors = new Map<number, { creatorType: string; firstNames: string; lastName: string }[]>();
 	for (const r of rows(src, "SELECT documentId, contribution, firstNames, lastName FROM DocumentContributors")) {
 		const list = contributors.get(r.documentId as number) ?? [];
-		list.push({ creatorType: CREATOR_TYPES[r.contribution as string] ?? "author", firstNames: r.firstNames ?? "", lastName: r.lastName ?? "" });
+		list.push({
+			creatorType: CREATOR_TYPES[r.contribution as string] ?? "author",
+			firstNames: r.firstNames ?? "",
+			lastName: r.lastName ?? "",
+		});
 		contributors.set(r.documentId as number, list);
 	}
 	const tags = new Map<number, { tag: string; type: number }[]>();
@@ -344,7 +413,10 @@ function readLibrary(db: Database, src: Database, opts: MendeleyImportOptions, r
 		urls.set(r.documentId as number, list);
 	}
 	const files = new Map<number, { path: string; name: string }[]>();
-	for (const r of rows(src, "SELECT DF.documentId AS documentId, F.localUrl AS localUrl FROM DocumentFiles DF JOIN Files F ON F.hash = DF.hash")) {
+	for (const r of rows(
+		src,
+		"SELECT DF.documentId AS documentId, F.localUrl AS localUrl FROM DocumentFiles DF JOIN Files F ON F.hash = DF.hash",
+	)) {
 		if (typeof r.localUrl !== "string") continue;
 		let path: string;
 		try {
@@ -393,7 +465,10 @@ function readLibrary(db: Database, src: Database, opts: MendeleyImportOptions, r
 	};
 
 	const existing = new Set<string>();
-	for (const r of rows(db, "SELECT json_extract(data, '$.relations.\"mendeleyDB:documentUUID\"') AS uuid FROM items WHERE data LIKE '%mendeleyDB:documentUUID%'")) {
+	for (const r of rows(
+		db,
+		"SELECT json_extract(data, '$.relations.\"mendeleyDB:documentUUID\"') AS uuid FROM items WHERE data LIKE '%mendeleyDB:documentUUID%'",
+	)) {
 		if (r.uuid) existing.add(String(r.uuid));
 	}
 
@@ -405,18 +480,27 @@ function readLibrary(db: Database, src: Database, opts: MendeleyImportOptions, r
 				continue;
 			}
 			try {
-				createDocument(db, doc, {
-					contributors: contributors.get(doc.id as number) ?? [],
-					tags: tags.get(doc.id as number) ?? [],
-					urls: urls.get(doc.id as number) ?? [],
-					files: files.get(doc.id as number) ?? [],
-					collections: (documentFolders.get(doc.id as number) ?? []).map(ensureFolder).filter((k): k is string => !!k),
-					uuid,
-				}, opts, root, result);
+				createDocument(
+					db,
+					doc,
+					{
+						contributors: contributors.get(doc.id as number) ?? [],
+						tags: tags.get(doc.id as number) ?? [],
+						urls: urls.get(doc.id as number) ?? [],
+						files: files.get(doc.id as number) ?? [],
+						collections: (documentFolders.get(doc.id as number) ?? []).map(ensureFolder).filter((k): k is string => !!k),
+						uuid,
+					},
+					opts,
+					root,
+					result,
+				);
 				if (uuid) existing.add(uuid);
 				result.created++;
 			} catch (e) {
-				result.errors.push(`document ${doc.id}${doc.title ? ` (${String(doc.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`);
+				result.errors.push(
+					`document ${doc.id}${doc.title ? ` (${String(doc.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`,
+				);
 			}
 		}
 	})();
@@ -475,7 +559,11 @@ function createDocument(
 
 	const creators: Creator[] = extra.contributors
 		.filter((c) => c.lastName || c.firstNames)
-		.map((c) => (c.firstNames ? { creatorType: c.creatorType, firstName: c.firstNames, lastName: c.lastName } : { creatorType: c.creatorType, name: c.lastName }));
+		.map((c) =>
+			c.firstNames
+				? { creatorType: c.creatorType, firstName: c.firstNames, lastName: c.lastName }
+				: { creatorType: c.creatorType, name: c.lastName },
+		);
 	if (creators.length) data.creators = creators;
 	if (extra.tags.length) data.tags = extra.tags;
 	// favourites are a star tag in Zotero
@@ -523,7 +611,5 @@ function createDocument(
 
 /** "publicLawNumber" -> "Public Law Number" for Extra lines. */
 function zoteroLabel(field: string): string {
-	return field
-		.replace(/([a-z])([A-Z])/g, "$1 $2")
-		.replace(/^./, (c) => c.toUpperCase());
+	return field.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
 }

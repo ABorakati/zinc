@@ -2,7 +2,9 @@
 import { expect, test } from "bun:test";
 import { nativeApiTransport, type NativePort } from "./native-host";
 
-function fakeHost(answer: (req: any, uploads: Map<string, string[]>) => { status: number; body: Uint8Array; headers?: Record<string, string> }) {
+function fakeHost(
+	answer: (req: any, uploads: Map<string, string[]>) => { status: number; body: Uint8Array; headers?: Record<string, string> },
+) {
 	const sent: any[] = [];
 	let onMsg: (m: any) => void = () => {};
 	let onDisc: () => void = () => {};
@@ -11,7 +13,10 @@ function fakeHost(answer: (req: any, uploads: Map<string, string[]>) => { status
 	const port: NativePort = {
 		postMessage(m: any) {
 			sent.push(m);
-			if (m.t === "up") { uploads.set(m.uid, [...(uploads.get(m.uid) ?? []), m.data]); return; }
+			if (m.t === "up") {
+				uploads.set(m.uid, [...(uploads.get(m.uid) ?? []), m.data]);
+				return;
+			}
 			if (m.t !== "req") return;
 			const a = answer(m, uploads);
 			const CH = 600_000;
@@ -19,13 +24,31 @@ function fakeHost(answer: (req: any, uploads: Map<string, string[]>) => { status
 			queueMicrotask(() => {
 				onMsg({ t: "res", id: m.id, status: a.status, headers: a.headers ?? { "content-type": "application/json" }, n });
 				// chunks out of order: the transport must put them back by seq
-				for (let i = n - 1; i >= 0; i--) onMsg({ t: "rc", id: m.id, seq: i, data: Buffer.from(a.body.subarray(i * CH, (i + 1) * CH)).toString("base64") });
+				for (let i = n - 1; i >= 0; i--)
+					onMsg({ t: "rc", id: m.id, seq: i, data: Buffer.from(a.body.subarray(i * CH, (i + 1) * CH)).toString("base64") });
 			});
 		},
-		onMessage: { addListener: (f) => { onMsg = f; } },
-		onDisconnect: { addListener: (f) => { onDisc = f; } },
+		onMessage: {
+			addListener: (f) => {
+				onMsg = f;
+			},
+		},
+		onDisconnect: {
+			addListener: (f) => {
+				onDisc = f;
+			},
+		},
 	};
-	return { sent, uploads, connect: () => { connects++; return port; }, disconnect: () => onDisc(), connects: () => connects };
+	return {
+		sent,
+		uploads,
+		connect: () => {
+			connects++;
+			return port;
+		},
+		disconnect: () => onDisc(),
+		connects: () => connects,
+	};
 }
 
 test("a GET becomes an api frame, and a multi-chunk answer is reassembled", async () => {
@@ -41,15 +64,30 @@ test("a GET becomes an api frame, and a multi-chunk answer is reassembled", asyn
 
 test("small JSON bodies go inline; large ones as up frames", async () => {
 	const h = fakeHost((req, uploads) => {
-		const text = req.body?.kind === "upload" ? Buffer.concat(uploads.get(req.body.uid)!.map((d) => Buffer.from(d, "base64"))).toString() : req.body?.text;
+		const text =
+			req.body?.kind === "upload"
+				? Buffer.concat(uploads.get(req.body.uid)!.map((d) => Buffer.from(d, "base64"))).toString()
+				: req.body?.text;
 		return { status: 200, body: new TextEncoder().encode(JSON.stringify({ len: text.length })) };
 	});
 	const fetchNative = nativeApiTransport(h.connect);
-	const small = await fetchNative(new Request("http://127.0.0.1/api/ui/selection", { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"kind":"library"}' }));
+	const small = await fetchNative(
+		new Request("http://127.0.0.1/api/ui/selection", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: '{"kind":"library"}',
+		}),
+	);
 	expect(await small.json()).toEqual({ len: 18 });
 	expect(h.sent.at(-1).body.kind).toBe("text");
 	const long = JSON.stringify({ note: "x".repeat(3_000_000) });
-	const large = await fetchNative(new Request("http://127.0.0.1/api/items/ABCD1234", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: long }));
+	const large = await fetchNative(
+		new Request("http://127.0.0.1/api/items/ABCD1234", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: long,
+		}),
+	);
 	expect(await large.json()).toEqual({ len: long.length });
 	expect(h.sent.filter((m) => m.t === "up").length).toBe(3);
 });
@@ -58,11 +96,19 @@ test("a host that goes away fails the calls in flight, and the next call reconne
 	let hold = true;
 	const h = fakeHost(() => ({ status: 204, body: new Uint8Array() }));
 	const base = h.connect;
-	const fetchNative = nativeApiTransport(() => {
-		const p = base();
-		const post = p.postMessage.bind(p);
-		return { ...p, postMessage: (m: any) => { if (!hold) post(m); } };
-	}, () => "Native host has exited.");
+	const fetchNative = nativeApiTransport(
+		() => {
+			const p = base();
+			const post = p.postMessage.bind(p);
+			return {
+				...p,
+				postMessage: (m: any) => {
+					if (!hold) post(m);
+				},
+			};
+		},
+		() => "Native host has exited.",
+	);
 	const inFlight = fetchNative(new Request("http://127.0.0.1/api/items"));
 	await Bun.sleep(5);
 	h.disconnect();

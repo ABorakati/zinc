@@ -14,7 +14,8 @@ afterEach(stopAll);
 
 const rows = (r: Rig, sql: string, ...p: any[]) => r.db.query(sql).all(...p) as any[];
 const groupLib = (r: Rig, groupId: number) => libraryByGroupId(r.db, groupId)!;
-const titles = (r: Rig, library: number) => repo.listItems(r.db, { library, limit: 1000, sort: "title", dir: "asc" }).items.map((i) => i.title);
+const titles = (r: Rig, library: number) =>
+	repo.listItems(r.db, { library, limit: 1000, sort: "title", dir: "asc" }).items.map((i) => i.title);
 const status = (fn: () => unknown): number | undefined => {
 	try {
 		fn();
@@ -27,7 +28,8 @@ const groupPosts = (r: Rig, groupId: number) => r.mock.log.filter((l) => l.metho
 const userPosts = (r: Rig) => r.mock.log.filter((l) => l.method === "POST" && l.path.startsWith(`/users/${USER_ID}/`));
 
 describe("group permissions", () => {
-	const rec = (over: Record<string, unknown> = {}) => ({ id: 5, owner: 1, admins: [2], members: [3], libraryEditing: "members", fileEditing: "members", ...over }) as any;
+	const rec = (over: Record<string, unknown> = {}) =>
+		({ id: 5, owner: 1, admins: [2], members: [3], libraryEditing: "members", fileEditing: "members", ...over }) as any;
 	const all = { all: { library: true, write: true } };
 	test("owner and admins always edit; members edit only when the group lets members; others never", () => {
 		expect(groupPermissions(rec(), 1, all, true).editable).toBe(true); // owner
@@ -110,8 +112,21 @@ describe("pulling a group", () => {
 		g.put("collection", "GCOLL001", { name: "Papers" });
 		g.put("item", "GITEM001", { title: "Shared paper", collections: ["GCOLL001"], tags: [{ tag: "shared" }] });
 		g.put("item", "GNOTE001", { itemType: "note", note: "<p>hi</p>", parentItem: "GITEM001" });
-		g.put("item", "GATT0001", { itemType: "attachment", linkMode: "imported_file", contentType: "application/pdf", filename: "p.pdf", parentItem: "GITEM001" });
-		g.put("item", "GANN0001", { itemType: "annotation", annotationType: "highlight", annotationText: "x", annotationSortIndex: "00000|000000|00000", annotationPosition: JSON.stringify({ pageIndex: 0, rects: [[0, 0, 1, 1]] }), parentItem: "GATT0001" });
+		g.put("item", "GATT0001", {
+			itemType: "attachment",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "p.pdf",
+			parentItem: "GITEM001",
+		});
+		g.put("item", "GANN0001", {
+			itemType: "annotation",
+			annotationType: "highlight",
+			annotationText: "x",
+			annotationSortIndex: "00000|000000|00000",
+			annotationPosition: JSON.stringify({ pageIndex: 0, rects: [[0, 0, 1, 1]] }),
+			parentItem: "GATT0001",
+		});
 		await connect(r);
 		await r.svc.pull();
 		const lib = groupLib(r, 100).id;
@@ -120,7 +135,9 @@ describe("pulling a group", () => {
 		expect(repo.listCollections(r.db, lib).map((c) => c.name)).toEqual(["Papers"]);
 		expect(repo.listCollections(r.db).map((c) => c.name)).toEqual([]);
 		expect(repo.listTags(r.db, lib)).toEqual([{ tag: "shared", count: 1 }]);
-		expect(rows(r, "SELECT key, library_id FROM items WHERE key IN ('GNOTE001', 'GATT0001') ORDER BY key").map((x) => x.library_id)).toEqual([lib, lib]);
+		expect(
+			rows(r, "SELECT key, library_id FROM items WHERE key IN ('GNOTE001', 'GATT0001') ORDER BY key").map((x) => x.library_id),
+		).toEqual([lib, lib]);
 		expect(rows(r, "SELECT key FROM annotations").map((x) => x.key)).toEqual(["GANN0001"]);
 		expect(repo.listItems(r.db, { collection: "GCOLL001" }).items.map((i) => i.title)).toEqual(["Shared paper"]);
 		expect(rows(r, "SELECT count(*) AS n FROM sync_outbox").at(0).n).toBe(0); // pulling never queues a push
@@ -195,7 +212,9 @@ describe("pulling a group", () => {
 		g.put("item", "GITEM001", { title: "Fine" });
 		await connect(r);
 		await r.svc.pull();
-		expect(rows(r, "SELECT title, library_id FROM items WHERE key = 'SAMEKEY1'")).toEqual([{ title: "My own item", library_id: USER_LIBRARY }]);
+		expect(rows(r, "SELECT title, library_id FROM items WHERE key = 'SAMEKEY1'")).toEqual([
+			{ title: "My own item", library_id: USER_LIBRARY },
+		]);
 		expect(titles(r, groupLib(r, 100).id)).toEqual(["Fine"]);
 	});
 });
@@ -333,7 +352,13 @@ describe("files in a group", () => {
 		const r = makeRig();
 		const g = r.mock.addGroup(100, { owner: USER_ID });
 		g.put("item", "GITEM001", { title: "Paper" });
-		g.put("item", "GATT0001", { itemType: "attachment", linkMode: "imported_file", contentType: "application/pdf", filename: "p.pdf", parentItem: "GITEM001" });
+		g.put("item", "GATT0001", {
+			itemType: "attachment",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "p.pdf",
+			parentItem: "GITEM001",
+		});
 		g.files.set("GATT0001", new TextEncoder().encode("group pdf bytes"));
 		await connect(r);
 		await r.svc.setOptions({ files: "download" });
@@ -350,7 +375,13 @@ describe("files in a group", () => {
 		const r = makeRig();
 		const g = r.mock.addGroup(100, { owner: USER_ID });
 		g.put("item", "GITEM001", { title: "Paper" });
-		g.put("item", "GATT0001", { itemType: "attachment", linkMode: "imported_file", contentType: "application/pdf", filename: "p.pdf", parentItem: "GITEM001" });
+		g.put("item", "GATT0001", {
+			itemType: "attachment",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "p.pdf",
+			parentItem: "GITEM001",
+		});
 		g.files.set("GATT0001", new Uint8Array([1, 2, 3]));
 		await connect(r);
 		await r.svc.pull();
@@ -364,7 +395,13 @@ describe("files in a group", () => {
 		const r = makeRig();
 		const g = r.mock.addGroup(100, { owner: 7, members: [USER_ID], libraryEditing: "members", fileEditing: "admins" });
 		g.put("item", "GITEM001", { title: "Paper" });
-		g.put("item", "GATT0001", { itemType: "attachment", linkMode: "imported_file", contentType: "application/pdf", filename: "p.pdf", parentItem: "GITEM001" });
+		g.put("item", "GATT0001", {
+			itemType: "attachment",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "p.pdf",
+			parentItem: "GITEM001",
+		});
 		await connect(r);
 		await r.svc.setOptions({ files: "sync", push: true });
 		await r.svc.pull();
@@ -419,7 +456,15 @@ describe("the HTTP API", () => {
 		await connect(r);
 		await r.svc.pull();
 		const lib = groupLib(r, 100).id;
-		const post = (path: string, body: unknown) => handleApi(new Request(`http://x${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), r.db);
+		const post = (path: string, body: unknown) =>
+			handleApi(
+				new Request(`http://x${path}`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				}),
+				r.db,
+			);
 		expect((await post("/api/items", { data: { itemType: "journalArticle", title: "x" }, library: lib }))!.status).toBe(403);
 		expect((await post("/api/collections", { name: "x", library: lib }))!.status).toBe(403);
 	});

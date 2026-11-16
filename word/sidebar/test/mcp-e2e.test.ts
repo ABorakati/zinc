@@ -23,7 +23,8 @@ function wordRunning(): boolean {
 	return /WINWORD\.EXE/i.test(new TextDecoder().decode(r.stdout));
 }
 const PART2 = process.env.ZN_WORD_E2E === "1" && !wordRunning();
-if (process.env.ZN_WORD_E2E === "1" && !PART2) console.warn("mcp-e2e part 2 skipped: WINWORD.EXE is running (the harness never touches an existing Word)");
+if (process.env.ZN_WORD_E2E === "1" && !PART2)
+	console.warn("mcp-e2e part 2 skipped: WINWORD.EXE is running (the harness never touches an existing Word)");
 
 function freePort(): number {
 	const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
@@ -52,15 +53,27 @@ async function raw(port: number, request: string): Promise<string> {
 
 class Mcp {
 	private id = 0;
-	constructor(readonly port: number, readonly token: string) {}
+	constructor(
+		readonly port: number,
+		readonly token: string,
+	) {}
 	get url() {
 		return `http://127.0.0.1:${this.port}/mcp`;
 	}
 	headers(extra: Record<string, string> = {}) {
-		return { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${this.token}`, ...extra };
+		return {
+			"content-type": "application/json",
+			accept: "application/json, text/event-stream",
+			authorization: `Bearer ${this.token}`,
+			...extra,
+		};
 	}
 	async rpc(method: string, params?: unknown): Promise<any> {
-		const r = await fetch(this.url, { method: "POST", headers: this.headers(), body: JSON.stringify({ jsonrpc: "2.0", id: ++this.id, method, params }) });
+		const r = await fetch(this.url, {
+			method: "POST",
+			headers: this.headers(),
+			body: JSON.stringify({ jsonrpc: "2.0", id: ++this.id, method, params }),
+		});
 		expect(r.status).toBe(200);
 		return r.json();
 	}
@@ -120,9 +133,15 @@ d1("MCP server: HTTP layer and library tools (no Word needed)", () => {
 		expect(noAuth.headers.get("www-authenticate")).toContain("Bearer");
 		const wrong = await fetch(mcp.url, { method: "POST", headers: mcp.headers({ authorization: "Bearer " + "0".repeat(64) }), body });
 		expect(wrong.status).toBe(401);
-		const withOrigin = await raw(mcp.port, `POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:${mcp.port}\r\nOrigin: http://evil.example\r\nAuthorization: Bearer ${mcp.token}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`);
+		const withOrigin = await raw(
+			mcp.port,
+			`POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:${mcp.port}\r\nOrigin: http://evil.example\r\nAuthorization: Bearer ${mcp.token}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`,
+		);
 		expect(withOrigin).toMatch(/^HTTP\/1\.1 403/);
-		const badHost = await raw(mcp.port, `POST /mcp HTTP/1.1\r\nHost: rebind.example:${mcp.port}\r\nAuthorization: Bearer ${mcp.token}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`);
+		const badHost = await raw(
+			mcp.port,
+			`POST /mcp HTTP/1.1\r\nHost: rebind.example:${mcp.port}\r\nAuthorization: Bearer ${mcp.token}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`,
+		);
 		expect(badHost).toMatch(/^HTTP\/1\.1 403/);
 		const get = await fetch(mcp.url, { method: "GET", headers: mcp.headers() });
 		expect(get.status).toBe(405);
@@ -134,14 +153,22 @@ d1("MCP server: HTTP layer and library tools (no Word needed)", () => {
 	});
 
 	test("initialize, initialized notification, ping, tools/list", async () => {
-		const init = await mcp.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+		const init = await mcp.rpc("initialize", {
+			protocolVersion: "2025-06-18",
+			capabilities: {},
+			clientInfo: { name: "test", version: "1" },
+		});
 		expect(init.result.protocolVersion).toBe("2025-06-18");
 		expect(init.result.serverInfo.name).toBe("zotero-next-word");
 		expect(init.result.capabilities.tools).toBeDefined();
 		expect(init.result.instructions).toContain("Zotero");
 		const old = await mcp.rpc("initialize", { protocolVersion: "1999-01-01" });
 		expect(old.result.protocolVersion).toBe("2025-06-18");
-		const note = await fetch(mcp.url, { method: "POST", headers: mcp.headers(), body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
+		const note = await fetch(mcp.url, {
+			method: "POST",
+			headers: mcp.headers(),
+			body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+		});
 		expect(note.status).toBe(202);
 		expect((await mcp.rpc("ping")).result).toEqual({});
 		const list = await mcp.rpc("tools/list");
@@ -158,7 +185,15 @@ d1("MCP server: HTTP layer and library tools (no Word needed)", () => {
 		// malformed JSON and batches
 		const bad = await fetch(mcp.url, { method: "POST", headers: mcp.headers(), body: "{not json" });
 		expect(bad.status).toBe(400);
-		const batch = await fetch(mcp.url, { method: "POST", headers: mcp.headers(), body: JSON.stringify([{ jsonrpc: "2.0", id: 1, method: "ping" }, { jsonrpc: "2.0", method: "notifications/initialized" }, { jsonrpc: "2.0", id: 2, method: "ping" }]) });
+		const batch = await fetch(mcp.url, {
+			method: "POST",
+			headers: mcp.headers(),
+			body: JSON.stringify([
+				{ jsonrpc: "2.0", id: 1, method: "ping" },
+				{ jsonrpc: "2.0", method: "notifications/initialized" },
+				{ jsonrpc: "2.0", id: 2, method: "ping" },
+			]),
+		});
 		expect((await batch.json()).length).toBe(2);
 	});
 
@@ -182,7 +217,10 @@ d1("MCP server: HTTP layer and library tools (no Word needed)", () => {
 	test("a chunked request body with Expect: 100-continue is understood", async () => {
 		const body = JSON.stringify({ jsonrpc: "2.0", id: 9, method: "ping" });
 		const hex = body.length.toString(16);
-		const out = await raw(mcp.port, `POST /mcp HTTP/1.1\r\nHost: localhost:${mcp.port}\r\nAuthorization: Bearer ${mcp.token}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n${hex}\r\n${body}\r\n0\r\n\r\n`);
+		const out = await raw(
+			mcp.port,
+			`POST /mcp HTTP/1.1\r\nHost: localhost:${mcp.port}\r\nAuthorization: Bearer ${mcp.token}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n${hex}\r\n${body}\r\n0\r\n\r\n`,
+		);
 		expect(out).toMatch(/^HTTP\/1\.1 200/);
 		expect(out).toContain('"id":9');
 	});
@@ -230,7 +268,11 @@ d2("MCP server: the citation flow in a private Word", () => {
 		await h.call("h.newDoc");
 		await h.call("h.type", { text: "Intro sentence one. Second sentence here. Final words." });
 
-		const init = await mcp.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } });
+		const init = await mcp.rpc("initialize", {
+			protocolVersion: "2025-06-18",
+			capabilities: {},
+			clientInfo: { name: "e2e", version: "1" },
+		});
 		expect(init.result.serverInfo.name).toBe("zotero-next-word");
 		const list = await mcp.rpc("tools/list");
 		expect(list.result.tools.length).toBe(12);

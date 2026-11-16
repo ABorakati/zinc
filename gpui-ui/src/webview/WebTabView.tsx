@@ -21,8 +21,11 @@ const [rects, setRects] = createSignal<Record<string, Rect>>({});
 /** What the reader page asks of its host (the Electrobun shell's onMessage in ui/src/App.tsx). */
 function onPage(m: PageMessage): void {
 	if (m.type === "open-link" && typeof m.url === "string") void api.openUrl(m.url).catch(() => {});
-	else if (m.type === "open-item" && typeof m.key === "string") { store.setActiveTab("library"); store.selectItem(m.key); }
-	else if (m.type === "open-attachment" && typeof m.key === "string") store.openAttachment(m.key, typeof m.title === "string" ? m.title : "", "");
+	else if (m.type === "open-item" && typeof m.key === "string") {
+		store.setActiveTab("library");
+		store.selectItem(m.key);
+	} else if (m.type === "open-attachment" && typeof m.key === "string")
+		store.openAttachment(m.key, typeof m.title === "string" ? m.title : "", "");
 	else if (m.type === "reference-added") store.refresh();
 }
 
@@ -32,18 +35,26 @@ createRoot(() => {
 	createEffect(() => {
 		const tab = store.tabs().find((x) => x.id === store.activeTab());
 		if (!tab || !isWebTab(tab)) return hide();
-		const r = rects()[tab.id], url = webTabUrl(tab.attachmentKey);
+		const r = rects()[tab.id],
+			url = webTabUrl(tab.attachmentKey);
 		if (!r || !url || overlayLayers().length > 0) return hide();
 		setBackground(tokens[mode()]["background"] ?? "#000000");
 		show(url, r);
 	});
 	// the last web tab closed: destroy the WebView2 (its processes are the memory cost)
-	createEffect(() => { if (!store.tabs().some(isWebTab)) release(); });
+	createEffect(() => {
+		if (!store.tabs().some(isWebTab)) release();
+	});
 });
 
 export function WebTabView(p: { tab: WebTab }): JSX.Element {
 	const active = () => store.activeTab() === p.tab.id;
-	onCleanup(() => setRects((r) => { const { [p.tab.id]: _gone, ...rest } = r; return rest; }));
+	onCleanup(() =>
+		setRects((r) => {
+			const { [p.tab.id]: _gone, ...rest } = r;
+			return rest;
+		}),
+	);
 	const failed = () => hostState() === "error";
 	const openExternal = () => void openAttachmentExternally(p.tab.attachmentKey).catch(() => {});
 	return (
@@ -54,12 +65,24 @@ export function WebTabView(p: { tab: WebTab }): JSX.Element {
 			}}
 			style={{
 				...t("flex flex-col items-center justify-center gap-2 p-6"),
-				flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: tokens[mode()]["background"],
+				flexGrow: 1,
+				minHeight: 0,
+				width: "100%",
+				backgroundColor: tokens[mode()]["background"],
 				...(active() ? {} : HIDDEN),
 			}}
 		>
-			<Show when={failed()} fallback={<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{`Opening "${p.tab.title}"...`}</text>}>
-				<text style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}>{`Could not show "${p.tab.title}" in the web view`}</text>
+			<Show
+				when={failed()}
+				fallback={
+					<text
+						style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}
+					>{`Opening "${p.tab.title}"...`}</text>
+				}
+			>
+				<text
+					style={{ ...textStyle("text-foreground", mode()), textAlign: "center" }}
+				>{`Could not show "${p.tab.title}" in the web view`}</text>
 				<text style={{ ...textStyle("text-xs text-muted-foreground", mode()), textAlign: "center" }}>{hostError()}</text>
 				<div onClick={openExternal} style={{ ...t("rounded-md border px-3 py-1.5 cursor-pointer"), hover: t("bg-foreground/5") }}>
 					<text style={textStyle("text-xs text-foreground", mode())}>Open in default app</text>

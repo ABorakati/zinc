@@ -45,7 +45,11 @@ export function joinHtml(a: string, b: string): string {
 	return a + " " + b;
 }
 
-interface Dest { page: number; top: number; kind: "ref" | "fig" | "other" }
+interface Dest {
+	page: number;
+	top: number;
+	kind: "ref" | "fig" | "other";
+}
 
 function nodeAt(content: Node[], ref: number[]): Node | null {
 	let node: Node = { content };
@@ -80,7 +84,10 @@ function destOf(content: Node[], t: Node): Dest | null {
 	return null;
 }
 
-interface Inline { text: string; html: string }
+interface Inline {
+	text: string;
+	html: string;
+}
 
 /** Inline TextNode[] (or a node whose content is text) -> plain text + inline html. */
 function inline(content: Node[], nodes: Node[], pre = false): Inline {
@@ -95,17 +102,31 @@ function inline(content: Node[], nodes: Node[], pre = false): Inline {
 		const st = n.style;
 		const dest = n.refs || n.target?.position ? destOf(content, n) : null;
 		const url: string | undefined = typeof n.target?.url === "string" ? n.target.url : undefined;
-		if (st?.monospace) { h = `<code>${h}</code>`; hasTag = true; }
-		if (st?.sup) { h = `<sup>${h}</sup>`; hasTag = true; }
-		if (st?.sub) { h = `<sub>${h}</sub>`; hasTag = true; }
-		if (st?.italic) { h = `<i>${h}</i>`; hasTag = true; }
-		if (st?.bold) { h = `<b>${h}</b>`; hasTag = true; }
+		if (st?.monospace) {
+			h = `<code>${h}</code>`;
+			hasTag = true;
+		}
+		if (st?.sup) {
+			h = `<sup>${h}</sup>`;
+			hasTag = true;
+		}
+		if (st?.sub) {
+			h = `<sub>${h}</sub>`;
+			hasTag = true;
+		}
+		if (st?.italic) {
+			h = `<i>${h}</i>`;
+			hasTag = true;
+		}
+		if (st?.bold) {
+			h = `<b>${h}</b>`;
+			hasTag = true;
+		}
 		if (dest && /\S/.test(raw)) {
 			const top = Number.isFinite(dest.top) ? ` data-top="${Math.round(dest.top * 10) / 10}"` : "";
 			h = `<a class="rx-cite" href="#" data-kind="${dest.kind}" data-page="${dest.page}"${top}>${h}</a>`;
 			hasTag = true;
-		}
-		else if (url && /\S/.test(raw)) {
+		} else if (url && /\S/.test(raw)) {
 			h = `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${h}</a>`;
 			hasTag = true;
 		}
@@ -113,7 +134,10 @@ function inline(content: Node[], nodes: Node[], pre = false): Inline {
 	}
 	if (!pre) {
 		text = cleanText(text);
-		html = html.replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, "$1$2").replace(/\s+/g, " ").trim();
+		html = html
+			.replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, "$1$2")
+			.replace(/\s+/g, " ")
+			.trim();
 	}
 	return { text, html: hasTag || pre ? html : "" };
 }
@@ -135,8 +159,13 @@ function listHtml(content: Node[], list: Node): { text: string; html: string } {
 		const leaves = leafNodes(li);
 		let { text, html } = inline(content, leaves);
 		// strip a leading bullet glyph / number label (the view draws its own markers)
-		if (!ordered) { text = text.replace(BULLET, ""); html = html.replace(/^(?:\s|<[^>]+>)*[•●▪■◦‣·–—−*](?:<\/[^>]+>)*\s*/u, ""); }
-		else { text = text.replace(/^\(?(?:\d+|[a-zA-Z]|[ivxIVX]+)[.)]\s+/, ""); html = html.replace(/^((?:<[^>]+>)*)\(?(?:\d+|[a-zA-Z]|[ivxIVX]+)[.)]\s+/, "$1"); }
+		if (!ordered) {
+			text = text.replace(BULLET, "");
+			html = html.replace(/^(?:\s|<[^>]+>)*[•●▪■◦‣·–—−*](?:<\/[^>]+>)*\s*/u, "");
+		} else {
+			text = text.replace(/^\(?(?:\d+|[a-zA-Z]|[ivxIVX]+)[.)]\s+/, "");
+			html = html.replace(/^((?:<[^>]+>)*)\(?(?:\d+|[a-zA-Z]|[ivxIVX]+)[.)]\s+/, "$1");
+		}
 		items.push({ text, html: html || esc(text) });
 	}
 	const tag = ordered ? "ol" : "ul";
@@ -167,15 +196,18 @@ function tableHtml(content: Node[], t: Node): string | undefined {
 // ---------------------------------------------------------------- geometry
 
 const unionRect = (rs: PdfRect[]): PdfRect => [
-	Math.min(...rs.map((r) => r[0])), Math.min(...rs.map((r) => r[1])),
-	Math.max(...rs.map((r) => r[2])), Math.max(...rs.map((r) => r[3])),
+	Math.min(...rs.map((r) => r[0])),
+	Math.min(...rs.map((r) => r[1])),
+	Math.max(...rs.map((r) => r[2])),
+	Math.max(...rs.map((r) => r[3])),
 ];
 const xOverlap = (a: PdfRect, b: PdfRect) => Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
 const yGap = (a: PdfRect, b: PdfRect) => Math.max(0, Math.max(a[1], b[1]) - Math.min(a[3], b[3]));
 
 // ---------------------------------------------------------------- labels
 
-const LABEL = /^\s*(?:(Supplementary|Supp\.?|Extended Data|Appendix)\s+)?(Figure|Fig\.?|Table|Scheme|Box|Panel)\s*([A-Z]?\d+[A-Za-z]?(?:\.\d+)?|[IVXL]{1,5})(?=[\s.:|,–—)\-]|$)/i;
+const LABEL =
+	/^\s*(?:(Supplementary|Supp\.?|Extended Data|Appendix)\s+)?(Figure|Fig\.?|Table|Scheme|Box|Panel)\s*([A-Z]?\d+[A-Za-z]?(?:\.\d+)?|[IVXL]{1,5})(?=[\s.:|,–—)\-]|$)/i;
 
 export function captionLabel(text: string): { label: string; kind: "figure" | "table" } | null {
 	const m = LABEL.exec(text);
@@ -277,8 +309,7 @@ export function convertSdt(sdt: Sdt): DocStructure {
 						const { text, html } = inline(content, leafNodes(li));
 						if (text) push([...ref, i], li, "reference", text, html);
 					});
-				}
-				else {
+				} else {
 					const { text, html } = listHtml(content, node);
 					if (text.trim()) push(ref, node, "list", text, html);
 				}
@@ -287,7 +318,8 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			case "blockquote":
 				(node.content ?? []).forEach((c: Node, i: number) => visit(c, [...ref, i]));
 				break;
-			default: break;
+			default:
+				break;
 		}
 	};
 	content.forEach((n, i) => visit(n, [i]));
@@ -319,8 +351,7 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			const r = b.rects[0];
 			const mid = r ? (r[1] + r[3]) / 2 : 0;
 			b.type = mid > pageHeight(b.page) / 2 ? "header" : "footer";
-		}
-		else if (it.flow === "auxiliary" && b.type === "paragraph") {
+		} else if (it.flow === "auxiliary" && b.type === "paragraph") {
 			b.type = /^\d+$/.test(b.text) && b.text.length < 4 ? "footer" : "footnote";
 		}
 	}
@@ -334,7 +365,10 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			walk(o.children, d + 1);
 		}
 	})(sdt.catalog?.outline, 0);
-	const srcTitle = String(sdt.metadata?.source?.properties?.Title ?? "").toLowerCase().replace(/\W+/g, " ").trim();
+	const srcTitle = String(sdt.metadata?.source?.properties?.Title ?? "")
+		.toLowerCase()
+		.replace(/\W+/g, " ")
+		.trim();
 	// title: the heading on page 0 (before the first section heading) that matches the PDF's Title property,
 	// else the longest one; short kickers like "Meeting report" stay ordinary headings
 	const norm = (t: string) => t.toLowerCase().replace(/\W+/g, " ").trim();
@@ -346,10 +380,18 @@ export function convertSdt(sdt: Sdt): DocStructure {
 		if (b.page !== 0 || SECTION.test(b.text) || REF_HEADING.test(b.text)) break;
 		cands.push(it);
 	}
-	const longest = cands.reduce<Item | undefined>((best, c) => (!best || c.block.text.length > best.block.text.length * 1.15 ? c : best), undefined);
+	const longest = cands.reduce<Item | undefined>(
+		(best, c) => (!best || c.block.text.length > best.block.text.length * 1.15 ? c : best),
+		undefined,
+	);
 	// the PDF's own Title property wins only when it is about as long as the longest candidate (it is often just a section tag)
-	const titleItem = cands.find((c) => srcTitle && norm(c.block.text) === srcTitle && c.block.text.length >= (longest?.block.text.length ?? 0) * 0.6) ?? longest;
-	if (titleItem) { titleItem.block.type = "title"; titleItem.block.level = 1; }
+	const titleItem =
+		cands.find((c) => srcTitle && norm(c.block.text) === srcTitle && c.block.text.length >= (longest?.block.text.length ?? 0) * 0.6) ??
+		longest;
+	if (titleItem) {
+		titleItem.block.type = "title";
+		titleItem.block.level = 1;
+	}
 	for (const it of live()) {
 		const b = it.block;
 		if (b.type !== "heading") continue;
@@ -386,11 +428,17 @@ export function convertSdt(sdt: Sdt): DocStructure {
 	// running heads / page numbers sometimes sit inside a figure's bounding box: crop them off
 	// (only short ones: a tall "header" beside or inside a figure is the figure's own vector drawing / panel text, see widen below)
 	const isTall = (r: PdfRect) => r[3] - r[1] > 40;
-	const furniture = live().filter((i) => (i.block.type === "header" || i.block.type === "footer") && i.block.rects[0] && !isTall(i.block.rects[0]));
+	const furniture = live().filter(
+		(i) => (i.block.type === "header" || i.block.type === "footer") && i.block.rects[0] && !isTall(i.block.rects[0]),
+	);
 	/** The worker often finds only part of a vector figure as its image region and files the rest (panel text, labels) as a tall header /
 	 *  footer / other block of the page. Those that lie on the figure's rows and between it and its caption are part of it. */
 	// where the running head sits, from the pages that have a plain (short) one
-	const headBottoms = furniture.map((i) => ({ y: i.block.rects[0][1], h: pageHeight(i.block.page) })).filter((x) => x.y > x.h * 0.85).map((x) => x.y).sort((a, b) => a - b);
+	const headBottoms = furniture
+		.map((i) => ({ y: i.block.rects[0][1], h: pageHeight(i.block.page) }))
+		.filter((x) => x.y > x.h * 0.85)
+		.map((x) => x.y)
+		.sort((a, b) => a - b);
 	const headBottom = headBottoms.length ? headBottoms[Math.floor(headBottoms.length / 2)]! : undefined;
 	const widen = (page: number, r: PdfRect, cap: PdfRect, owner: Item[]): PdfRect => {
 		let [x1, y1, x2, y2] = r;
@@ -401,7 +449,10 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			const overlap = Math.min(q[3], y2) - Math.max(q[1], y1);
 			if (overlap < 0.5 * Math.min(q[3] - q[1], y2 - y1)) continue;
 			if (q[1] < cap[3] - 2) continue; // not into the caption
-			x1 = Math.min(x1, q[0]); x2 = Math.max(x2, q[2]); y1 = Math.min(y1, q[1]); y2 = Math.max(y2, q[3]);
+			x1 = Math.min(x1, q[0]);
+			x2 = Math.max(x2, q[2]);
+			y1 = Math.min(y1, q[1]);
+			y2 = Math.max(y2, q[3]);
 		}
 		// the tall block also holds the page's running head: keep the figure below it
 		if (headBottom !== undefined && y2 > headBottom - 9 && y2 - y1 > 80) y2 = Math.max(y1 + 40, headBottom - 9); // (the rule under the head sits a few points below its text)
@@ -429,30 +480,51 @@ export function convertSdt(sdt: Sdt): DocStructure {
 		if (regions.length) {
 			rect = unionRect(regions.flatMap((r) => r.block.rects.map((q) => clip(c.block.page, q))));
 			if (c.block.rects[0]) rect = widen(c.block.page, rect, c.block.rects[0], regions);
-		}
-		else {
+		} else {
 			// no detected region: take the open space beside the caption's column (above for figures, below for tables)
 			const cr = c.block.rects[0];
 			if (cr) {
-				const bodies = live().filter((i) => i.block.page === c.block.page && i !== c && ["paragraph", "heading", "list", "table", "equation", "other"].includes(i.block.type) && i.block.rects[0] && xOverlap(i.block.rects[0], cr) > 20);
+				const bodies = live().filter(
+					(i) =>
+						i.block.page === c.block.page &&
+						i !== c &&
+						["paragraph", "heading", "list", "table", "equation", "other"].includes(i.block.type) &&
+						i.block.rects[0] &&
+						xOverlap(i.block.rects[0], cr) > 20,
+				);
 				if (lab!.kind === "figure") {
-					const above = bodies.map((b) => b.block.rects[0]).filter((r) => r[1] >= cr[3] - 1).map((r) => r[1]);
+					const above = bodies
+						.map((b) => b.block.rects[0])
+						.filter((r) => r[1] >= cr[3] - 1)
+						.map((r) => r[1]);
 					const top = above.length ? Math.min(...above) : pageHeight(c.block.page) - 36;
 					// (the caption can be narrower than the drawing above it: take in the drawing's own blocks)
 					if (top - cr[3] > 60) {
 						rect = [cr[0], cr[3] + 4, cr[2], top - 2]; // (the reading view pads a region by 3)
 						// a caption narrower than the page's text column does not make the drawing narrow: when no body text of the other
 						// column shares the drawing's rows, the drawing spans the page's text
-						const text = live().filter((i) => i.block.page === c.block.page && ["paragraph", "heading", "list"].includes(i.block.type) && i.block.rects[0]).map((i) => i.block.rects[0]);
-						if (text.length > 4 && !text.some((r) => xOverlap(r, cr) <= 20 && Math.min(r[3], rect![3]) - Math.max(r[1], rect![1]) > 10)) {
+						const text = live()
+							.filter(
+								(i) =>
+									i.block.page === c.block.page &&
+									["paragraph", "heading", "list"].includes(i.block.type) &&
+									i.block.rects[0],
+							)
+							.map((i) => i.block.rects[0]);
+						if (
+							text.length > 4 &&
+							!text.some((r) => xOverlap(r, cr) <= 20 && Math.min(r[3], rect![3]) - Math.max(r[1], rect![1]) > 10)
+						) {
 							rect[0] = Math.min(rect[0], ...text.map((r) => r[0]));
 							rect[2] = Math.max(rect[2], ...text.map((r) => r[2]));
 						}
 						rect = widen(c.block.page, rect, cr, []);
 					}
-				}
-				else {
-					const below = bodies.map((b) => b.block.rects[0]).filter((r) => r[3] <= cr[1] + 1).map((r) => r[3]);
+				} else {
+					const below = bodies
+						.map((b) => b.block.rects[0])
+						.filter((r) => r[3] <= cr[1] + 1)
+						.map((r) => r[3]);
 					const bottom = below.length ? Math.max(...below) : 36;
 					if (cr[1] - bottom > 60) rect = [cr[0], bottom + 2, cr[2], cr[1] - 2];
 				}
@@ -469,10 +541,13 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			fig = primary.block;
 			fig.type = kind;
 			fig.rects = regions.flatMap((r) => r.block.rects.map((q) => clip(fig.page, q)));
-			if (rect && (rect[0] < Math.min(...fig.rects.map((q) => q[0])) || rect[2] > Math.max(...fig.rects.map((q) => q[2])))) fig.rects = [rect];
-			for (const r of regions.slice(1)) { r.merged = true; refToId.set(r.key, fig.id); }
-		}
-		else {
+			if (rect && (rect[0] < Math.min(...fig.rects.map((q) => q[0])) || rect[2] > Math.max(...fig.rects.map((q) => q[2]))))
+				fig.rects = [rect];
+			for (const r of regions.slice(1)) {
+				r.merged = true;
+				refToId.set(r.key, fig.id);
+			}
+		} else {
 			// synthetic block placed just before the caption
 			const synth: Item = { key: `${c.key}.fig`, node: {}, block: { id, type: kind, page: c.block.page, rects: [rect], text: "" } };
 			items.splice(items.indexOf(c), 0, synth);
@@ -481,7 +556,15 @@ export function convertSdt(sdt: Sdt): DocStructure {
 		}
 		c.block.captionOf = fig.id;
 		const seen = [...figures, ...tables].some((e) => e.label === lab!.label);
-		const entry: FigureOrTable = { id: fig.id, kind, label: seen ? `${lab!.label} (cont.)` : lab!.label, page: fig.page, rect, captionBlockId: c.block.id, caption: c.block.text };
+		const entry: FigureOrTable = {
+			id: fig.id,
+			kind,
+			label: seen ? `${lab!.label} (cont.)` : lab!.label,
+			page: fig.page,
+			rect,
+			captionBlockId: c.block.id,
+			caption: c.block.text,
+		};
 		(kind === "figure" ? figures : tables).push(entry);
 		// sub-captions ("(a)", panel text) lying inside the figure rect belong to it
 		for (const o of caps) {
@@ -501,8 +584,10 @@ export function convertSdt(sdt: Sdt): DocStructure {
 			for (let k = h + 1; k < list.length; k++) {
 				const b = list[k].block;
 				if (b.type === "heading" || b.type === "title") break;
-				if (b.type === "paragraph") { b.type = "reference"; refItems.push(list[k]); }
-				else if (b.type === "list") {
+				if (b.type === "paragraph") {
+					b.type = "reference";
+					refItems.push(list[k]);
+				} else if (b.type === "list") {
 					b.type = "reference";
 					// split the list into one reference per item
 					const lines = b.text.split("\n").filter(Boolean);
@@ -511,7 +596,13 @@ export function convertSdt(sdt: Sdt): DocStructure {
 					const newItems: Item[] = lines.map((t, n) => {
 						const li = node.content?.[n];
 						const rr = rectsOf(li ?? node);
-						const blk: Block = { id: `${b.id}.${n}`, type: "reference", page: rr.rects.length ? rr.page : b.page, rects: rr.rects.length ? rr.rects : b.rects, text: t };
+						const blk: Block = {
+							id: `${b.id}.${n}`,
+							type: "reference",
+							page: rr.rects.length ? rr.page : b.page,
+							rects: rr.rects.length ? rr.rects : b.rects,
+							text: t,
+						};
 						return { key: `${list[k].key}.${n}`, node: li ?? {}, block: blk };
 					});
 					list[k].merged = true;
@@ -535,12 +626,14 @@ export function convertSdt(sdt: Sdt): DocStructure {
 	const outline: DocStructure["outline"] = [];
 	(function walk(list: any[] | undefined, d: number) {
 		for (const o of list ?? []) {
-			if (o && typeof o.title === "string" && o.title.trim() && Array.isArray(o.ref)) outline.push({ title: o.title.trim(), level: d + 1, blockId: idOf(o.ref) });
+			if (o && typeof o.title === "string" && o.title.trim() && Array.isArray(o.ref))
+				outline.push({ title: o.title.trim(), level: d + 1, blockId: idOf(o.ref) });
 			walk(o.children, d + 1);
 		}
 	})(sdt.catalog?.outline, 0);
 	if (!outline.length) {
-		for (const b of blocks) if (b.type === "heading" || b.type === "title") outline.push({ title: b.text, level: b.level ?? 2, blockId: b.id });
+		for (const b of blocks)
+			if (b.type === "heading" || b.type === "title") outline.push({ title: b.text, level: b.level ?? 2, blockId: b.id });
 	}
 	return { blocks, figures, tables, references, outline };
 }

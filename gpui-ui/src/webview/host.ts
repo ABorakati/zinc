@@ -14,8 +14,22 @@
 import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { Rect } from "../ui/core";
 import {
-	appIsForeground, clientOnScreen, clipPopup, dpr, focusMain, focusPopup, forgetPopup, hidePopup, isWindow, keepAbove, mainWindow, makeOwnedPopup,
-	placePopup, popupHasFocus, popupsAvailable, pump,
+	appIsForeground,
+	clientOnScreen,
+	clipPopup,
+	dpr,
+	focusMain,
+	focusPopup,
+	forgetPopup,
+	hidePopup,
+	isWindow,
+	keepAbove,
+	mainWindow,
+	makeOwnedPopup,
+	placePopup,
+	popupHasFocus,
+	popupsAvailable,
+	pump,
 } from "./popup";
 
 type H = number | bigint;
@@ -31,7 +45,11 @@ type WebviewLike = {
 export type HostState = "idle" | "starting" | "ready" | "error";
 export type PageMessage = { type?: string; [k: string]: unknown };
 /** Where a popup goes, in window-relative logical px: `rect` is the placeholder; only the part inside `clip` and outside `holes` shows. */
-export interface Placement { rect: Rect; clip?: Rect | null; holes?: Rect[] }
+export interface Placement {
+	rect: Rect;
+	clip?: Rect | null;
+	holes?: Rect[];
+}
 
 export interface WebHostOptions {
 	/** script run in every page before its own scripts (webview_init) */
@@ -66,12 +84,21 @@ function startPump(h: WebHost): void {
 		pump();
 		const t1 = TRACE ? performance.now() : 0;
 		for (const x of [...live]) x.tick();
-		if (TRACE) { const t2 = performance.now(); if (t2 - t0 > 30) console.log(`[webview trace] round ${(t2 - t0).toFixed(0)} ms: pump ${(t1 - t0).toFixed(0)} ms, tick ${(t2 - t1).toFixed(0)} ms`); }
+		if (TRACE) {
+			const t2 = performance.now();
+			if (t2 - t0 > 30)
+				console.log(
+					`[webview trace] round ${(t2 - t0).toFixed(0)} ms: pump ${(t1 - t0).toFixed(0)} ms, tick ${(t2 - t1).toFixed(0)} ms`,
+				);
+		}
 	}, 10);
 }
 function stopPump(h: WebHost): void {
 	live.delete(h);
-	if (!live.size && pumpTimer) { clearInterval(pumpTimer); pumpTimer = undefined; }
+	if (!live.size && pumpTimer) {
+		clearInterval(pumpTimer);
+		pumpTimer = undefined;
+	}
 }
 
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -98,19 +125,31 @@ export class WebHost {
 	constructor(private o: WebHostOptions) {
 		const [state, setState] = createSignal<HostState>("idle");
 		const [error, setError] = createSignal("");
-		this.state = state; this.error = error; this.setState = setState; this.setError = setError;
+		this.state = state;
+		this.error = error;
+		this.setState = setState;
+		this.setError = setError;
 	}
 
 	/** The view exists (its page may still be loading). */
-	get alive(): boolean { return this.wv != null; }
+	get alive(): boolean {
+		return this.wv != null;
+	}
 	/** The popup is on screen. */
-	get onScreen(): boolean { return this.shown; }
+	get onScreen(): boolean {
+		return this.shown;
+	}
 	/** The popup's window handle (diagnostics). */
-	get handle(): H | null { return this.hwnd; }
+	get handle(): H | null {
+		return this.hwnd;
+	}
 
 	/** Create the view if needed and load `url` in it (hidden until show()). */
 	load(url: string): void {
-		if (this.releaseTimer) { clearTimeout(this.releaseTimer); this.releaseTimer = undefined; }
+		if (this.releaseTimer) {
+			clearTimeout(this.releaseTimer);
+			this.releaseTimer = undefined;
+		}
 		this.url = url;
 		if (!this.wv) return void this.start();
 		this.navigate();
@@ -137,19 +176,34 @@ export class WebHost {
 		this.hide();
 		if (!this.wv || this.releaseTimer) return;
 		this.o.onLeave?.(this);
-		this.releaseTimer = setTimeout(() => { this.releaseTimer = undefined; if (!this.url) this.teardown(); }, delayMs);
+		this.releaseTimer = setTimeout(() => {
+			this.releaseTimer = undefined;
+			if (!this.url) this.teardown();
+		}, delayMs);
 	}
 
 	/** Run a script in the page (fire and forget; answers come back through window.znMsg). */
-	eval(js: string): void { try { this.wv?.eval(js); } catch { /* gone */ } }
+	eval(js: string): void {
+		try {
+			this.wv?.eval(js);
+		} catch {
+			/* gone */
+		}
+	}
 
-	setBackground(hex: string): void { this.background = hex.replace("#", "").slice(0, 6).toUpperCase(); }
+	setBackground(hex: string): void {
+		this.background = hex.replace("#", "").slice(0, 6).toUpperCase();
+	}
 
 	/** Give the popup keyboard focus (only while it is shown and this app is in front). */
-	focus(): void { if (this.hwnd != null && this.shown) focusPopup(this.hwnd); }
+	focus(): void {
+		if (this.hwnd != null && this.shown) focusPopup(this.hwnd);
+	}
 
 	/** True when the popup has keyboard focus. */
-	hasFocus(): boolean { return this.hwnd != null && popupHasFocus(this.hwnd); }
+	hasFocus(): boolean {
+		return this.hwnd != null && popupHasFocus(this.hwnd);
+	}
 
 	/** The shared pump calls this every 10 ms while the view exists. */
 	tick(): void {
@@ -158,14 +212,26 @@ export class WebHost {
 			const t0 = performance.now();
 			const p = typeof this.where === "function" ? this.where() : null;
 			const t1 = performance.now();
-			clientOnScreen(); dpr();
+			clientOnScreen();
+			dpr();
 			const t2 = performance.now();
-			if (t2 - t0 > 20) console.log(`[webview trace] tick: placement callback ${(t1 - t0).toFixed(0)} ms, window queries ${(t2 - t1).toFixed(0)} ms (rect ${p ? "yes" : "no"})`);
+			if (t2 - t0 > 20)
+				console.log(
+					`[webview trace] tick: placement callback ${(t1 - t0).toFixed(0)} ms, window queries ${(t2 - t1).toFixed(0)} ms (rect ${p ? "yes" : "no"})`,
+				);
 		}
-		if (!isWindow(this.hwnd)) { // closed behind our back (Alt+F4 while the page had focus): start over if the page is still wanted
-			const url = this.url, where = this.where, visible = this.visible;
+		if (!isWindow(this.hwnd)) {
+			// closed behind our back (Alt+F4 while the page had focus): start over if the page is still wanted
+			const url = this.url,
+				where = this.where,
+				visible = this.visible;
 			this.teardown();
-			if (url) { this.url = url; this.where = where; this.visible = visible; void this.start(); }
+			if (url) {
+				this.url = url;
+				this.where = where;
+				this.visible = visible;
+				void this.start();
+			}
 			return;
 		}
 		if (this.o.follow || ++this.ticks % 3 === 0) this.place();
@@ -175,7 +241,8 @@ export class WebHost {
 		if (this.hwnd != null && this.shown) {
 			const had = popupHasFocus(this.hwnd);
 			hidePopup(this.hwnd);
-			this.shown = false; this.placed = "";
+			this.shown = false;
+			this.placed = "";
 			if (had || appIsForeground()) focusMain();
 		}
 	}
@@ -193,13 +260,20 @@ export class WebHost {
 		this.setError("");
 		await new Promise((r) => setTimeout(r, 0)); // let the placeholder paint before the ~0.4 s creation
 		try {
-			if (!popupsAvailable()) throw new Error(process.platform === "linux" ? "the web view needs X11 (it is off with ZN_WAYLAND=1) and GTK 4" : "the web view is not available on this system");
+			if (!popupsAvailable())
+				throw new Error(
+					process.platform === "linux"
+						? "the web view needs X11 (it is off with ZN_WAYLAND=1) and GTK 4"
+						: "the web view is not available on this system",
+				);
 			const owner = mainWindow();
 			if (owner == null && !webViewHeadless()) throw new Error("no application window to attach the web view to");
 			// WebView2's profile: the webview library picks %APPDATA%/<exe name>/EBWebView (bun.exe unpackaged, zotero-next-gpui.exe packaged); it ignores WEBVIEW2_USER_DATA_FOLDER
 			if (this.background) process.env.WEBVIEW2_DEFAULT_BACKGROUND_COLOR = `FF${this.background}`;
 			// literal specifier cast to string: bundled by Bun.build, but keeps TypeScript out of the package's .ts sources (they do not type-check under bun-types 1.4)
-			const { Webview } = await import("webview-bun" as string) as unknown as { Webview: new (debug: boolean, size?: unknown, window?: unknown) => WebviewLike };
+			const { Webview } = (await import("webview-bun" as string)) as unknown as {
+				Webview: new (debug: boolean, size?: unknown, window?: unknown) => WebviewLike;
+			};
 			const tc = TRACE ? performance.now() : 0;
 			// macOS: the page goes into a window made here (cocoa.newWebviewWindow says why the library must not make its own)
 			const parent = process.platform === "darwin" ? (await import("./cocoa")).newWebviewWindow() : null;
@@ -209,16 +283,32 @@ export class WebHost {
 			if (h == null) throw new Error("the web view created no window");
 			w.bind("znMsg", (json) => {
 				const tm = TRACE ? performance.now() : 0;
-				try { this.o.onMessage?.(JSON.parse(String(json)) as PageMessage); } catch (e) { console.error("[webview] message:", e); }
-				if (TRACE) { const d = performance.now() - tm; if (d > 20) console.log(`[webview trace] page message handled in ${d.toFixed(0)} ms: ${String(json).slice(0, 80)}`); }
+				try {
+					this.o.onMessage?.(JSON.parse(String(json)) as PageMessage);
+				} catch (e) {
+					console.error("[webview] message:", e);
+				}
+				if (TRACE) {
+					const d = performance.now() - tm;
+					if (d > 20) console.log(`[webview trace] page message handled in ${d.toFixed(0)} ms: ${String(json).slice(0, 80)}`);
+				}
 				return null;
 			});
 			w.init(this.o.init);
 			makeOwnedPopup(h, owner); // not actually owned: see makeOwnedPopup (cross-thread ownership hung the app)
-			this.wv = w; this.hwnd = h; this.navigated = ""; this.placed = ""; this.region = ""; this.shown = false; this.ticks = 0;
+			this.wv = w;
+			this.hwnd = h;
+			this.navigated = "";
+			this.placed = "";
+			this.region = "";
+			this.shown = false;
+			this.ticks = 0;
 			startPump(this);
 			this.setState("ready");
-			if (!this.url) { this.release(); return; } // released while it was being created
+			if (!this.url) {
+				this.release();
+				return;
+			} // released while it was being created
 			this.navigate();
 			this.place();
 		} catch (e) {
@@ -235,31 +325,53 @@ export class WebHost {
 		const c = clientOnScreen();
 		const r = p?.rect;
 		if (!p || !r || !c || r.width < 2 || r.height < 2 || (p.clip && !overlaps(r, p.clip))) {
-			if (this.shown) { hidePopup(hwnd); this.shown = false; this.placed = ""; } // window minimised / area collapsed or scrolled away
+			if (this.shown) {
+				hidePopup(hwnd);
+				this.shown = false;
+				this.placed = "";
+			} // window minimised / area collapsed or scrolled away
 			return;
 		}
 		const k = dpr();
-		const x = c.x + Math.round(r.x * k), y = c.y + Math.round(r.y * k);
-		const w = Math.max(1, Math.round(r.width * k)), h = Math.max(1, Math.round(r.height * k));
+		const x = c.x + Math.round(r.x * k),
+			y = c.y + Math.round(r.y * k);
+		const w = Math.max(1, Math.round(r.width * k)),
+			h = Math.max(1, Math.round(r.height * k));
 		// a rect's part inside the placeholder, in the popup's own pixels
 		const px = (q: Rect) => {
-			const x0 = Math.round((Math.max(q.x, r.x) - r.x) * k), y0 = Math.round((Math.max(q.y, r.y) - r.y) * k);
-			const x1 = Math.round((Math.min(q.x + q.width, r.x + r.width) - r.x) * k), y1 = Math.round((Math.min(q.y + q.height, r.y + r.height) - r.y) * k);
+			const x0 = Math.round((Math.max(q.x, r.x) - r.x) * k),
+				y0 = Math.round((Math.max(q.y, r.y) - r.y) * k);
+			const x1 = Math.round((Math.min(q.x + q.width, r.x + r.width) - r.x) * k),
+				y1 = Math.round((Math.min(q.y + q.height, r.y + r.height) - r.y) * k);
 			return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
 		};
 		const clip = p.clip;
-		const inside = !clip || (clip.x <= r.x && clip.y <= r.y && clip.x + clip.width >= r.x + r.width && clip.y + clip.height >= r.y + r.height);
+		const inside =
+			!clip || (clip.x <= r.x && clip.y <= r.y && clip.x + clip.width >= r.x + r.width && clip.y + clip.height >= r.y + r.height);
 		const keep = inside ? null : px(clip!);
 		if (keep && (keep.width < 2 || keep.height < 2)) {
-			if (this.shown) { hidePopup(hwnd); this.shown = false; this.placed = ""; }
+			if (this.shown) {
+				hidePopup(hwnd);
+				this.shown = false;
+				this.placed = "";
+			}
 			return;
 		}
 		const holes = (p.holes ?? []).filter((q) => overlaps(q, r)).map(px);
 		const region = keep || holes.length ? JSON.stringify([keep, holes]) : "";
 		const key = `${x},${y},${w},${h}`;
-		if (this.shown && key === this.placed && region === this.region) { keepAbove(hwnd); return; }
-		if (region !== this.region) { clipPopup(hwnd, keep, holes); this.region = region; }
-		if (TRACE) console.log(`[webview trace] place: placeholder ${JSON.stringify(r)} client ${JSON.stringify(c)} dpr ${k} -> ${key} region ${region || "-"}`);
+		if (this.shown && key === this.placed && region === this.region) {
+			keepAbove(hwnd);
+			return;
+		}
+		if (region !== this.region) {
+			clipPopup(hwnd, keep, holes);
+			this.region = region;
+		}
+		if (TRACE)
+			console.log(
+				`[webview trace] place: placeholder ${JSON.stringify(r)} client ${JSON.stringify(c)} dpr ${k} -> ${key} region ${region || "-"}`,
+			);
 		placePopup(hwnd, { x, y, width: w, height: h });
 		keepAbove(hwnd);
 		this.shown = true;
@@ -268,12 +380,27 @@ export class WebHost {
 
 	private teardown(): void {
 		stopPump(this);
-		if (this.releaseTimer) { clearTimeout(this.releaseTimer); this.releaseTimer = undefined; }
-		const w = this.wv, had = this.hwnd != null && this.shown && popupHasFocus(this.hwnd);
+		if (this.releaseTimer) {
+			clearTimeout(this.releaseTimer);
+			this.releaseTimer = undefined;
+		}
+		const w = this.wv,
+			had = this.hwnd != null && this.shown && popupHasFocus(this.hwnd);
 		if (this.hwnd != null) forgetPopup(this.hwnd);
-		this.wv = null; this.hwnd = null; this.navigated = ""; this.placed = ""; this.region = ""; this.shown = false;
-		this.url = null; this.where = null; this.visible = false;
-		try { w?.destroy(); } catch { /* already gone */ }
+		this.wv = null;
+		this.hwnd = null;
+		this.navigated = "";
+		this.placed = "";
+		this.region = "";
+		this.shown = false;
+		this.url = null;
+		this.where = null;
+		this.visible = false;
+		try {
+			w?.destroy();
+		} catch {
+			/* already gone */
+		}
 		// destroy() only posts WM_CLOSE; with the pump stopped just above, the window would linger and the NEXT view then failed to
 		// create ("the web view created no window": close a web tab, open another within a second or so). Drain the close chain now.
 		if (w) for (let i = 0; i < 3; i++) pump();
@@ -319,18 +446,30 @@ export const webTabHandle = (): H | null => webTabs.handle;
 export const hostError: Accessor<string> = webTabs.error;
 
 /** Called by the tab view: the page to show and where (window-relative logical px). Creates the view on first use. */
-export function show(url: string, rect: Rect): void { webTabs.show(url, rect); }
+export function show(url: string, rect: Rect): void {
+	webTabs.show(url, rect);
+}
 
 /** Keep the view alive but out of sight (its tab is not active, or something is drawn over it). */
-export function hide(): void { webTabs.hide(); }
+export function hide(): void {
+	webTabs.hide();
+}
 
 /** No web tab is open any more: flush the page's pending saves, then destroy the view and stop the timer. */
-export function release(): void { webTabs.release(); }
+export function release(): void {
+	webTabs.release();
+}
 
 /** Receive the messages the reader page posts to its "parent" (open-link, open-item, open-attachment, ...). */
-export function onPageMessage(cb: ((m: PageMessage) => void) | undefined): void { handler = cb; }
+export function onPageMessage(cb: ((m: PageMessage) => void) | undefined): void {
+	handler = cb;
+}
 
 /** Run a script in the page (tests, debugging). */
-export function evalInPage(js: string): void { webTabs.eval(js); }
+export function evalInPage(js: string): void {
+	webTabs.eval(js);
+}
 
-export function setBackground(hex: string): void { webTabs.setBackground(hex); }
+export function setBackground(hex: string): void {
+	webTabs.setBackground(hex);
+}

@@ -31,7 +31,10 @@ uiState.disableWrites();
 const args = process.argv.slice(2);
 const mode = args.includes("light") ? "light" : "dark";
 const outIdx = args.indexOf("--out");
-const SHOTS = outIdx >= 0 ? args[outIdx + 1]! : "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots";
+const SHOTS =
+	outIdx >= 0
+		? args[outIdx + 1]!
+		: "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots";
 const ALL = ["base", "menu", "create", "rename", "drag", "tags", "tagmenu", "search", "saved", "itemdrop"];
 const wanted = args.filter((a) => ALL.includes(a));
 const scenes = wanted.length ? wanted : ALL;
@@ -130,7 +133,8 @@ try {
 		created.push(target.key);
 		await reloadCollections();
 		await settle(400);
-		const a = at(NAME), b = at(NAME2);
+		const a = at(NAME),
+			b = at(NAME2);
 		t.renderer.nativeSimulateMouseDown(a.x, a.y);
 		for (const f of [0.25, 0.6, 1]) {
 			t.renderer.nativeSimulateMouseMove(a.x, a.y + (b.y - a.y) * f, 0);
@@ -214,7 +218,8 @@ try {
 		await key("escape");
 	}
 } finally {
-	for (const x of await sidebarApi.savedSearches()) if (x.name.startsWith("Title contains liver")) await sidebarApi.deleteSavedSearch(x.key).catch(() => {});
+	for (const x of await sidebarApi.savedSearches())
+		if (x.name.startsWith("Title contains liver")) await sidebarApi.deleteSavedSearch(x.key).catch(() => {});
 	for (const k of created.reverse()) await sidebarApi.deleteCollection(k).catch(() => {});
 	for (const n of ["Abdomen", "ACC"]) if (tagColors().some((c) => c.name === n)) await setTagColor(n, null);
 	await reloadCollections();

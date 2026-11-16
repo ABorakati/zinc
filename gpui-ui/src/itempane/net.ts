@@ -1,9 +1,7 @@
 // Item-pane HTTP calls (the routes ui/src/itempane/api.ts and ui/src/api.ts use). The core's base URL comes from ../api; if that
 // module exports a generic `request(method, path, body)` (also covering the in-process "direct" mode) it is used instead.
 import * as core from "../api";
-import type {
-	ChildSummary, Creator, ItemDetail, ItemList, TagColor, ZoteroItemData, ZoteroSchema,
-} from "../../../core/src/api-types";
+import type { ChildSummary, Creator, ItemDetail, ItemList, TagColor, ZoteroItemData, ZoteroSchema } from "../../../core/src/api-types";
 
 export type { ChildSummary, Creator, ItemDetail, ItemList, TagColor, ZoteroItemData, ZoteroSchema };
 export type { ZoteroSchemaField, ZoteroSchemaItemType, FullTextJob } from "../../../core/src/api-types";
@@ -20,7 +18,11 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
 	});
 	if (!res.ok) {
 		let msg = res.statusText;
-		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* keep the status text */ }
+		try {
+			msg = ((await res.json()) as { error?: string }).error ?? msg;
+		} catch {
+			/* keep the status text */
+		}
 		throw new Error(msg);
 	}
 	return (await res.json()) as T;
@@ -40,7 +42,11 @@ const libQ = (library?: number): { library?: number } => (library && library > 1
 
 export const ipApi = {
 	/** Cached for the life of the process; retried if the first load failed. */
-	schema: () => (schemaP ??= req<ZoteroSchema>("GET", "/schema").catch((e) => { schemaP = null; throw e; })),
+	schema: () =>
+		(schemaP ??= req<ZoteroSchema>("GET", "/schema").catch((e) => {
+			schemaP = null;
+			throw e;
+		})),
 	item: (key: string) => req<ItemDetail>("GET", `/items/${key}`),
 	patchItem: (key: string, data: Partial<ZoteroItemData>) => req<ItemDetail>("PATCH", `/items/${key}`, { data }),
 	setDeleted: (key: string, deleted: boolean) => req<ItemDetail>("PATCH", `/items/${key}`, { data: { deleted: deleted ? 1 : 0 } }),
@@ -49,18 +55,23 @@ export const ipApi = {
 	removeTags: (key: string, tags: string[]) => req<{ ok: true }>("DELETE", `/items/${key}/tags`, { tags }),
 	/** A library's tag list (large: fetched at most once a minute per library). */
 	tags: (library = 1) => {
-	const cur = tagsP.get(library);
-	if (cur && Date.now() - cur.at <= 60_000) return cur.p;
-	const p = req<{ tag: string; count: number }[]>("GET", "/tags" + (library > 1 ? `?library=${library}` : ""));
-	p.catch(() => { if (tagsP.get(library)?.p === p) tagsP.delete(library); });
-	tagsP.set(library, { at: Date.now(), p });
-	return p;
+		const cur = tagsP.get(library);
+		if (cur && Date.now() - cur.at <= 60_000) return cur.p;
+		const p = req<{ tag: string; count: number }[]>("GET", "/tags" + (library > 1 ? `?library=${library}` : ""));
+		p.catch(() => {
+			if (tagsP.get(library)?.p === p) tagsP.delete(library);
+		});
+		tagsP.set(library, { at: Date.now(), p });
+		return p;
 	},
-	invalidateTags: () => { tagsP.clear(); },
+	invalidateTags: () => {
+		tagsP.clear();
+	},
 	tagColors: () => req<TagColor[]>("GET", "/tag-colors"),
 	addRelated: (key: string, keys: string[]) => req<ItemDetail>("POST", `/items/${key}/related`, { keys }),
 	removeRelated: (key: string, keys: string[]) => req<ItemDetail>("DELETE", `/items/${key}/related`, { keys }),
-	searchItems: (q: string, limit = 15, library = 1) => req<ItemList>("GET", "/items?" + qs({ q, sort: "title", dir: "asc", limit, offset: 0, ...libQ(library) })),
+	searchItems: (q: string, limit = 15, library = 1) =>
+		req<ItemList>("GET", "/items?" + qs({ q, sort: "title", dir: "asc", limit, offset: 0, ...libQ(library) })),
 	addToCollection: (coll: string, keys: string[]) => req<{ ok: true }>("POST", `/collections/${coll}/items`, { keys }),
 	removeFromCollection: (coll: string, keys: string[]) => req<{ ok: true }>("DELETE", `/collections/${coll}/items`, { keys }),
 	reveal: (attachmentKey: string) => req<{ ok: true }>("POST", `/attachments/${attachmentKey}/reveal`),

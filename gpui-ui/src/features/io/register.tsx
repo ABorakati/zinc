@@ -7,8 +7,20 @@ import { openMendeleyImport } from "./mendeley";
 
 export function register(): void {
 	registerAppAction({ id: "io.import", label: "Import…", icon: "file-up", menu: "tools", run: () => void pickAndImport() });
-	registerAppAction({ id: "io.importClipboard", label: "Import from Clipboard", icon: "clipboard-paste", menu: "tools", run: () => void importFromClipboard() });
-	registerAppAction({ id: "io.importMendeley", label: "Import from Mendeley Desktop…", icon: "database", menu: "tools", run: () => void openMendeleyImport() });
+	registerAppAction({
+		id: "io.importClipboard",
+		label: "Import from Clipboard",
+		icon: "clipboard-paste",
+		menu: "tools",
+		run: () => void importFromClipboard(),
+	});
+	registerAppAction({
+		id: "io.importMendeley",
+		label: "Import from Mendeley Desktop…",
+		icon: "database",
+		menu: "tools",
+		run: () => void openMendeleyImport(),
+	});
 
 	registerItemAction({
 		id: "io.export",

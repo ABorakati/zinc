@@ -14,7 +14,9 @@ import type { Mode } from "../contracts";
 // ------------------------------------------------------------------------------------------------ DPR
 
 let forcedDpr: number | undefined = Number(process.env.ZN_DPR) > 0 ? Number(process.env.ZN_DPR) : undefined;
-export function setReaderDpr(dpr: number | undefined): void { forcedDpr = dpr; }
+export function setReaderDpr(dpr: number | undefined): void {
+	forcedDpr = dpr;
+}
 
 interface User32 {
 	EnumWindows(cb: unknown, lparam: number): number;
@@ -84,7 +86,10 @@ const [mode, setMode] = createSignal<Mode>("dark");
 let bound = false;
 
 /** Force the mode (scripts); stops the reader from following the store. */
-export function setReaderMode(m: Mode): void { bound = true; setMode(m); }
+export function setReaderMode(m: Mode): void {
+	bound = true;
+	setMode(m);
+}
 
 /** The reader's current mode accessor; the first call starts following store.mode(). */
 export function readerMode(): Accessor<Mode> {

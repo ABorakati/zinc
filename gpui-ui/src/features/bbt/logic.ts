@@ -15,7 +15,10 @@ export const QUICK_COPY_OPTIONS: { value: QuickCopyFormat; label: string; hint: 
 ];
 
 /** The body of POST /api/bbt/cite for the Quick Copy settings: the LaTeX command only matters for the latex format. */
-export function citeRequest(keys: string[], s: Pick<BbtSettings, "quickCopy" | "citeCommand">): { items: string[]; format: QuickCopyFormat; command?: string } {
+export function citeRequest(
+	keys: string[],
+	s: Pick<BbtSettings, "quickCopy" | "citeCommand">,
+): { items: string[]; format: QuickCopyFormat; command?: string } {
 	const format = QUICK_COPY_OPTIONS.some((o) => o.value === s.quickCopy) ? s.quickCopy : "latex";
 	const command = s.citeCommand.trim();
 	return format === "latex" && command ? { items: keys, format, command } : { items: keys, format };
@@ -46,21 +49,43 @@ export function formulaTyped(formula: string): FormulaState {
 }
 
 /** A check came back; a result for a formula that is no longer the current one is dropped (returns `state` unchanged). */
-export function formulaChecked(state: FormulaState, formula: string, r: { ok: boolean; error?: string; preview?: string; position?: number }): FormulaState {
+export function formulaChecked(
+	state: FormulaState,
+	formula: string,
+	r: { ok: boolean; error?: string; preview?: string; position?: number },
+): FormulaState {
 	if (state.formula !== formula) return state;
-	return r.ok ? { status: "ok", formula, preview: r.preview ?? "" } : { status: "error", formula, error: r.error ?? "Invalid formula", position: r.position };
+	return r.ok
+		? { status: "ok", formula, preview: r.preview ?? "" }
+		: { status: "error", formula, error: r.error ?? "Invalid formula", position: r.position };
 }
 
 /** Save is enabled only for a formula that was checked valid and differs from the saved one. */
 export const canSaveFormula = (state: FormulaState, saved: string): boolean => state.status === "ok" && state.formula !== saved;
 
 /** A debouncer with an injectable clock (tests pass their own scheduler). */
-export interface Scheduler { set(fn: () => void, ms: number): unknown; clear(h: unknown): void }
+export interface Scheduler {
+	set(fn: () => void, ms: number): unknown;
+	clear(h: unknown): void;
+}
 const real: Scheduler = { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
-export function debounce<A extends unknown[]>(fn: (...a: A) => void, ms: number, s: Scheduler = real): ((...a: A) => void) & { cancel(): void } {
+export function debounce<A extends unknown[]>(
+	fn: (...a: A) => void,
+	ms: number,
+	s: Scheduler = real,
+): ((...a: A) => void) & { cancel(): void } {
 	let h: unknown;
-	const d = (...a: A) => { if (h !== undefined) s.clear(h); h = s.set(() => { h = undefined; fn(...a); }, ms); };
-	d.cancel = () => { if (h !== undefined) s.clear(h); h = undefined; };
+	const d = (...a: A) => {
+		if (h !== undefined) s.clear(h);
+		h = s.set(() => {
+			h = undefined;
+			fn(...a);
+		}, ms);
+	};
+	d.cancel = () => {
+		if (h !== undefined) s.clear(h);
+		h = undefined;
+	};
 	return d;
 }
 
@@ -78,7 +103,9 @@ export function parseSeconds(text: string): number | undefined {
 }
 
 export const staleKeysNote = (n: number): string =>
-	n > 0 ? `${n.toLocaleString()} citation key${n === 1 ? " is" : "s are"} out of date with the formula. Refresh all citation keys to regenerate them.` : "";
+	n > 0
+		? `${n.toLocaleString()} citation key${n === 1 ? " is" : "s are"} out of date with the formula. Refresh all citation keys to regenerate them.`
+		: "";
 
 // ---------------------------------------------------------------- automatic exports
 
@@ -91,7 +118,8 @@ export const triggerLabel = (t: AutoExport["trigger"]): string => TRIGGER_OPTION
 export const formatLabel = (f: string): string => BBT_FORMATS[f as BbtExportFormat]?.label ?? f;
 
 /** A starter file name for a new automatic export: "My Library.bib". */
-export const defaultExportName = (scopeName: string, format: BbtExportFormat): string => `${scopeName.replace(/[\\/:*?"<>|]+/g, "_").trim() || "export"}.${BBT_FORMATS[format].ext}`;
+export const defaultExportName = (scopeName: string, format: BbtExportFormat): string =>
+	`${scopeName.replace(/[\\/:*?"<>|]+/g, "_").trim() || "export"}.${BBT_FORMATS[format].ext}`;
 
 export function statusText(e: AutoExport): string {
 	if (e.status === "error") return e.error ? `Error: ${e.error}` : "Error";
@@ -99,7 +127,10 @@ export function statusText(e: AutoExport): string {
 }
 
 /** The lines of one auto-export row, in display order. */
-export function autoExportLines(e: AutoExport, ago: (iso: string | null) => string): { title: string; detail: string; status: string; error: boolean } {
+export function autoExportLines(
+	e: AutoExport,
+	ago: (iso: string | null) => string,
+): { title: string; detail: string; status: string; error: boolean } {
 	const count = e.count == null ? "" : `, ${e.count.toLocaleString()} item${e.count === 1 ? "" : "s"}`;
 	return {
 		title: e.path,

@@ -46,7 +46,9 @@ const COLS = "id, type, group_id, name, editable, files_editable, removed";
 /** My Library first, then the groups by name. Libraries that left the account's group list (removed) are left out unless asked for. */
 export function listLibraries(db: Database, opts: { includeRemoved?: boolean } = {}): Library[] {
 	const rows = db
-		.query(`SELECT ${COLS} FROM libraries ${opts.includeRemoved ? "" : "WHERE removed = 0"} ORDER BY (id = ${USER_LIBRARY}) DESC, name COLLATE NOCASE, id`)
+		.query(
+			`SELECT ${COLS} FROM libraries ${opts.includeRemoved ? "" : "WHERE removed = 0"} ORDER BY (id = ${USER_LIBRARY}) DESC, name COLLATE NOCASE, id`,
+		)
 		.all() as LibraryRow[];
 	return rows.map(toLibrary);
 }
@@ -164,14 +166,17 @@ export function upsertGroupLibrary(db: Database, g: GroupInfo): Library {
 
 /** Marks groups missing from the account's current list as removed: hidden and no longer synced, their data kept. */
 export function markGroupsRemoved(db: Database, presentGroupIds: number[]): void {
-	db.query("UPDATE libraries SET removed = 1 WHERE type = 'group' AND removed = 0 AND group_id NOT IN (SELECT value FROM json_each(?))").run(
-		JSON.stringify(presentGroupIds),
-	);
+	db.query(
+		"UPDATE libraries SET removed = 1 WHERE type = 'group' AND removed = 0 AND group_id NOT IN (SELECT value FROM json_each(?))",
+	).run(JSON.stringify(presentGroupIds));
 }
 
 /** Last pulled and last written zotero.org library versions for a library. */
 export function libraryVersions(db: Database, id: number): { pull: number; write: number } {
-	const r = db.query("SELECT web_version AS pull, web_write_version AS write FROM libraries WHERE id = ?").get(id) as { pull: number; write: number } | null;
+	const r = db.query("SELECT web_version AS pull, web_write_version AS write FROM libraries WHERE id = ?").get(id) as {
+		pull: number;
+		write: number;
+	} | null;
 	return r ?? { pull: 0, write: 0 };
 }
 

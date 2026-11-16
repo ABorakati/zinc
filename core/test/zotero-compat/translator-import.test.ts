@@ -27,24 +27,32 @@ const SUITES: { file: string; parse: Parse }[] = [
 
 // "<file>#<n>" (n-th import case in the translator) -> why zotero-next's importer differs
 const KNOWN: Record<string, string> = {
-	"BibTeX.js#3": "name suffix: 'von Hicks, III, Michael' - Zotero keeps 'III' in the given name, zotero-next appends it to the family name",
+	"BibTeX.js#3":
+		"name suffix: 'von Hicks, III, Michael' - Zotero keeps 'III' in the given name, zotero-next appends it to the family name",
 	"BibTeX.js#5": "a bare \\~ (LaTeX tilde accent without a letter) is not turned into the tilde operator",
-	"BibTeX.js#6": "LaTeX markup (\\textit, \\textbf, \\textsc, $_{..}$, $^{..}$) becomes HTML tags in Zotero (<i>, <b>, <sub>, <sup>); zotero-next keeps the math source / strips the commands",
-	"BibTeX.js#7": "@misc with a url: Zotero makes a document, zotero-next a webpage; the lowercase word 'at' in 'American Rights at Work' stays with the family name",
-	"BibTeX.js#8": "Zotero tolerates a missing comma between two fields (title = {..} file = {..}); zotero-next reports a parse error and skips that entry",
+	"BibTeX.js#6":
+		"LaTeX markup (\\textit, \\textbf, \\textsc, $_{..}$, $^{..}$) becomes HTML tags in Zotero (<i>, <b>, <sub>, <sup>); zotero-next keeps the math source / strips the commands",
+	"BibTeX.js#7":
+		"@misc with a url: Zotero makes a document, zotero-next a webpage; the lowercase word 'at' in 'American Rights at Work' stays with the family name",
+	"BibTeX.js#8":
+		"Zotero tolerates a missing comma between two fields (title = {..} file = {..}); zotero-next reports a parse error and skips that entry",
 	"BibTeX.js#9": "\\textbackslash / escaped braces: the exact text Zotero keeps differs",
-	"BibTeX.js#13": "@mastersthesis / @phdthesis type text is 'Master's Thesis' / 'PhD Thesis' in Zotero; zotero-next writes and reads 'Master's thesis' / 'PhD thesis' (its own export round-trips)",
+	"BibTeX.js#13":
+		"@mastersthesis / @phdthesis type text is 'Master's Thesis' / 'PhD Thesis' in Zotero; zotero-next writes and reads 'Master's thesis' / 'PhD thesis' (its own export round-trips)",
 	"BibTeX.js#15": "MathSciNet FJOURNAL (full journal name) is not read; zotero-next uses JOURNAL (the abbreviation) as publication title",
 	"BibTeX.js#17": "a lowercase word in a corporate-style name ('Corporation for Digital Scholarship') stays with the family name",
 	"BibTeX.js#18": "LaTeX symbols (\\textcircled, \\ı, \\textTEL ...) are not all mapped to Unicode",
 	"BibTeX.js#19": "initials without spaces ('KC') are expanded by Zotero to 'K. C.'; zotero-next keeps them as typed",
 	"BibTeX.js#22": "TeX math ($\\Sigma^0$) is not converted to Unicode (Σ⁰)",
 	"RIS.js#1": "patent A2 'Epitope, I.' is dropped by Zotero (assignee-like); zotero-next adds it as a contributor",
-	"RIS.js#2": "exhaustive mapping test of every RIS tag, with continuation keywords split on ';' and TA/AU variants; zotero-next maps the common tags only",
+	"RIS.js#2":
+		"exhaustive mapping test of every RIS tag, with continuation keywords split on ';' and TA/AU variants; zotero-next maps the common tags only",
 	"RIS.js#4": "exhaustive mapping test of every RIS type (48 entry types); zotero-next maps the common types and falls back to document",
 	"RIS.js#11": "TY - GEN: Zotero makes a journalArticle (its default), zotero-next a document",
-	"Endnote XML.js#0": "series editors become editors; initials lose their trailing period ('John S.' -> 'John S'); a url in related-urls is not read",
-	"Endnote XML.js#1": "rich text runs (bold, italic, superscript) are flattened to plain text; Zotero keeps <b> <i> <sup> <sub> in the title",
+	"Endnote XML.js#0":
+		"series editors become editors; initials lose their trailing period ('John S.' -> 'John S'); a url in related-urls is not read",
+	"Endnote XML.js#1":
+		"rich text runs (bold, italic, superscript) are flattened to plain text; Zotero keeps <b> <i> <sup> <sub> in the title",
 	"Endnote XML.js#2": "a 'Jr.' suffix keeps its period in zotero-next, Zotero drops it",
 	"MODS.js#2": "role 'artist' is a contributor, not an artist creator",
 	"MODS.js#4": "originInfo place and copyright dates (c1999) are not read; zotero-next keeps the 'c' prefix",
@@ -108,7 +116,10 @@ describe("KNOWN differences are still differences", () => {
 
 	test("every KNOWN key names an existing case", () => {
 		const keys = new Set<string>();
-		for (const suite of SUITES) loadTestCases(suite.file).filter((c) => c.type === "import" && Array.isArray(c.items)).forEach((_c, i) => keys.add(`${suite.file}#${i}`));
+		for (const suite of SUITES)
+			loadTestCases(suite.file)
+				.filter((c) => c.type === "import" && Array.isArray(c.items))
+				.forEach((_c, i) => keys.add(`${suite.file}#${i}`));
 		expect(Object.keys(KNOWN).filter((k) => !keys.has(k))).toEqual([]);
 	});
 });

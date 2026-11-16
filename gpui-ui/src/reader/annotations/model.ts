@@ -84,7 +84,10 @@ export function formatSortIndex(pageIndex: number, offset: number, top: number):
 }
 
 function rectsDist([ax1, ay1, ax2, ay2]: PdfRect, [bx1, by1, bx2, by2]: PdfRect): number {
-	const left = bx2 < ax1, right = ax2 < bx1, bottom = by2 < ay1, top = ay2 < by1;
+	const left = bx2 < ax1,
+		right = ax2 < bx1,
+		bottom = by2 < ay1,
+		top = ay2 < by1;
 	if (top && left) return Math.hypot(ax1 - bx2, ay2 - by1);
 	if (left && bottom) return Math.hypot(ax1 - bx2, ay1 - by2);
 	if (bottom && right) return Math.hypot(ax2 - bx1, ay1 - by2);
@@ -98,12 +101,16 @@ function rectsDist([ax1, ay1, ax2, ay2]: PdfRect, [bx1, by1, bx2, by2]: PdfRect)
 
 /** Index of the character whose rect is closest to `rect` (characters with an empty rect are ignored). */
 export function closestOffset(charRects: PdfRect[], rect: PdfRect): number {
-	let best = Infinity, idx = 0;
+	let best = Infinity,
+		idx = 0;
 	for (let i = 0; i < charRects.length; i++) {
 		const c = charRects[i]!;
 		if (c[2] <= c[0] || c[3] <= c[1]) continue;
 		const d = rectsDist(c, rect);
-		if (d < best) { best = d; idx = i; }
+		if (d < best) {
+			best = d;
+			idx = i;
+		}
 	}
 	return idx;
 }
@@ -115,14 +122,24 @@ export function topMostRect(rects: PdfRect[]): PdfRect | undefined {
 
 export function boundingRect(p: Position): PdfRect {
 	if (p.rects?.length) {
-		return [Math.min(...p.rects.map((r) => r[0])), Math.min(...p.rects.map((r) => r[1])), Math.max(...p.rects.map((r) => r[2])), Math.max(...p.rects.map((r) => r[3]))];
+		return [
+			Math.min(...p.rects.map((r) => r[0])),
+			Math.min(...p.rects.map((r) => r[1])),
+			Math.max(...p.rects.map((r) => r[2])),
+			Math.max(...p.rects.map((r) => r[3])),
+		];
 	}
 	if (p.paths?.length) {
-		let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+		let x1 = Infinity,
+			y1 = Infinity,
+			x2 = -Infinity,
+			y2 = -Infinity;
 		for (const path of p.paths) {
 			for (let i = 0; i + 1 < path.length; i += 2) {
-				x1 = Math.min(x1, path[i]!); x2 = Math.max(x2, path[i]!);
-				y1 = Math.min(y1, path[i + 1]!); y2 = Math.max(y2, path[i + 1]!);
+				x1 = Math.min(x1, path[i]!);
+				x2 = Math.max(x2, path[i]!);
+				y1 = Math.min(y1, path[i + 1]!);
+				y2 = Math.max(y2, path[i + 1]!);
 			}
 		}
 		if (x1 !== Infinity) return [x1, y1, x2, y2];
@@ -151,7 +168,8 @@ export function textPosition(pageIndex: number, rects: PdfRect[], nextPageRects?
 /** A sticky note is a NOTE_SIZE box centred on the click. */
 export function notePosition(pageIndex: number, x: number, y: number, pageW = Infinity, pageH = Infinity): Position {
 	const h = NOTE_SIZE / 2;
-	const cx = Math.min(Math.max(x, h), Math.max(h, pageW - h)), cy = Math.min(Math.max(y, h), Math.max(h, pageH - h));
+	const cx = Math.min(Math.max(x, h), Math.max(h, pageW - h)),
+		cy = Math.min(Math.max(y, h), Math.max(h, pageH - h));
 	return { pageIndex, rects: [roundRect([cx - h, cy - h, cx + h, cy + h])] };
 }
 
@@ -160,7 +178,14 @@ export function areaPosition(pageIndex: number, a: [number, number], b: [number,
 	const cl = (v: number, max: number) => Math.min(Math.max(v, 0), max);
 	return {
 		pageIndex,
-		rects: [roundRect([cl(Math.min(a[0], b[0]), pageW), cl(Math.min(a[1], b[1]), pageH), cl(Math.max(a[0], b[0]), pageW), cl(Math.max(a[1], b[1]), pageH)])],
+		rects: [
+			roundRect([
+				cl(Math.min(a[0], b[0]), pageW),
+				cl(Math.min(a[1], b[1]), pageH),
+				cl(Math.max(a[0], b[0]), pageW),
+				cl(Math.max(a[1], b[1]), pageH),
+			]),
+		],
 	};
 }
 
@@ -247,8 +272,15 @@ export function toWire(a: Annotation): Annotation {
 export function isDisplayable(a: unknown): a is Annotation {
 	if (!a || typeof a !== "object") return false;
 	const x = a as Partial<Annotation>;
-	return typeof x.id === "string" && !!x.id && typeof x.type === "string" && typeof x.sortIndex === "string"
-		&& !!x.position && typeof x.position.pageIndex === "number" && ((x.position.rects?.length ?? 0) > 0 || (x.position.paths?.length ?? 0) > 0);
+	return (
+		typeof x.id === "string" &&
+		!!x.id &&
+		typeof x.type === "string" &&
+		typeof x.sortIndex === "string" &&
+		!!x.position &&
+		typeof x.position.pageIndex === "number" &&
+		((x.position.rects?.length ?? 0) > 0 || (x.position.paths?.length ?? 0) > 0)
+	);
 }
 
 export const hasText = (a: Annotation) => a.type === "highlight" || a.type === "underline";

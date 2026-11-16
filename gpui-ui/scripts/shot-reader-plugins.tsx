@@ -22,11 +22,26 @@ import { shutdownStructureWorker } from "../src/reader/structure/load";
 import { OverlayHost } from "../src/ui";
 
 const args = process.argv.slice(2);
-const val = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
+const val = (n: string, d: string) => {
+	const i = args.indexOf(`--${n}`);
+	return i >= 0 ? args[i + 1]! : d;
+};
 const has = (n: string) => args.includes(`--${n}`);
-const spec = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]!.startsWith("--") && ["out", "only", "page", "panel-w", "click", "tag"].includes(args[i - 1]!.slice(2))));
-if (!spec) { console.error("usage: bun scripts/shot-reader-plugins.tsx <attachment key | file.pdf> [--out DIR] [--only annotations,academic,figures,references,reflow] [--light]"); process.exit(2); }
-const OUT = val("out", "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots");
+const spec = args.find(
+	(a, i) =>
+		!a.startsWith("--") &&
+		!(i > 0 && args[i - 1]!.startsWith("--") && ["out", "only", "page", "panel-w", "click", "tag"].includes(args[i - 1]!.slice(2))),
+);
+if (!spec) {
+	console.error(
+		"usage: bun scripts/shot-reader-plugins.tsx <attachment key | file.pdf> [--out DIR] [--only annotations,academic,figures,references,reflow] [--light]",
+	);
+	process.exit(2);
+}
+const OUT = val(
+	"out",
+	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots",
+);
 mkdirSync(OUT, { recursive: true });
 const only = new Set(val("only", "annotations,academic,figures,references,reflow").split(","));
 const MODE = has("light") ? "light" : "dark";
@@ -51,18 +66,27 @@ const scrolls: [number, number][] = [];
 
 const ctx: ReaderContext = {
 	attachmentKey: KEY,
-	itemKey: isKey ? ((await apiRequest<{ parentItem?: string }>("GET", `/items/${KEY}`).catch(() => ({}) as { parentItem?: string })).parentItem ?? "") : "",
+	itemKey: isKey
+		? ((await apiRequest<{ parentItem?: string }>("GET", `/items/${KEY}`).catch(() => ({}) as { parentItem?: string })).parentItem ??
+			"")
+		: "",
 	pageCount: () => doc.pageCount,
 	pageSize: (i) => ({ w: doc.sizes[i]![0], h: doc.sizes[i]![1] }),
 	textLayer: (i) => {
 		let p = layers.get(i);
-		if (!p) { p = doc.textLayerAsync(i).then((l) => ({ words: l.words })); layers.set(i, p); }
+		if (!p) {
+			p = doc.textLayerAsync(i).then((l) => ({ words: l.words }));
+			layers.set(i, p);
+		}
 		return p;
 	},
 	pdfBytes: async () => bytes,
 	currentPage: curPage,
 	zoom: () => 1,
-	scrollTo: (page, y) => { scrolls.push([page, y ?? -1]); setCurPage(page); },
+	scrollTo: (page, y) => {
+		scrolls.push([page, y ?? -1]);
+		setCurPage(page);
+	},
 	selection: sel,
 	clearSelection: () => setSel(null),
 	altView: alt,
@@ -95,12 +119,25 @@ function PageView(p: { page: number }): JSX.Element {
 	});
 	const box: Accessor<{ width: number; height: number }> = () => ({ width: PAGE_W, height: h });
 	return (
-		<div ref={(el: { id: number }) => { pageBox = el; }} style={{ position: "relative", width: PAGE_W, height: h, flexShrink: 0, backgroundColor: "#ffffff" }}>
-			<img ref={(el) => { img = el as never; }} objectFit="fill" style={{ position: "absolute", left: 0, top: 0, width: PAGE_W, height: h }} />
+		<div
+			ref={(el: { id: number }) => {
+				pageBox = el;
+			}}
+			style={{ position: "relative", width: PAGE_W, height: h, flexShrink: 0, backgroundColor: "#ffffff" }}
+		>
+			<img
+				ref={(el) => {
+					img = el as never;
+				}}
+				objectFit="fill"
+				style={{ position: "absolute", left: 0, top: 0, width: PAGE_W, height: h }}
+			/>
 			<For each={plugins()}>
 				{(pl) => (
 					<Show when={pl.pageOverlay}>
-						<div style={{ position: "absolute", left: 0, top: 0, width: PAGE_W, height: h, pointerEvents: "none" }}>{pl.pageOverlay!(ctx, p.page, box)}</div>
+						<div style={{ position: "absolute", left: 0, top: 0, width: PAGE_W, height: h, pointerEvents: "none" }}>
+							{pl.pageOverlay!(ctx, p.page, box)}
+						</div>
 					</Show>
 				)}
 			</For>
@@ -110,12 +147,24 @@ function PageView(p: { page: number }): JSX.Element {
 
 function Chrome(): JSX.Element {
 	const k = kit(mode);
-	const panels = createMemo(() => plugins().filter((p) => p.sidePanel).map((p) => p.sidePanel!));
+	const panels = createMemo(() =>
+		plugins()
+			.filter((p) => p.sidePanel)
+			.map((p) => p.sidePanel!),
+	);
 	const cur = createMemo(() => panels().find((s) => s.id === panel()));
 	const altPlugin = createMemo(() => plugins().find((p) => p.altView && p.altView.id === alt()));
 	return (
 		<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%", backgroundColor: k.tok("background") }}>
-			<div style={{ ...k.t("flex flex-col border-r bg-card"), width: Number(val("panel-w", "340")), flexShrink: 0, height: "100%", minHeight: 0 }}>
+			<div
+				style={{
+					...k.t("flex flex-col border-r bg-card"),
+					width: Number(val("panel-w", "340")),
+					flexShrink: 0,
+					height: "100%",
+					minHeight: 0,
+				}}
+			>
 				<Show when={cur()}>{cur()!.render(ctx)}</Show>
 			</div>
 			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, height: "100%" }}>
@@ -130,7 +179,14 @@ function Chrome(): JSX.Element {
 							<PageView page={curPage()} />
 							<Show when={sel() && plugins().find((p) => p.selectionPopup)}>
 								<div style={{ position: "absolute", left: 360, top: 330 }}>
-									<div style={{ ...k.t("flex rounded-lg border bg-popover p-2"), boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 14, spreadRadius: -2, color: "rgba(0, 0, 0, 0.3)" }] }}>
+									<div
+										style={{
+											...k.t("flex rounded-lg border bg-popover p-2"),
+											boxShadow: [
+												{ offsetX: 0, offsetY: 6, blurRadius: 14, spreadRadius: -2, color: "rgba(0, 0, 0, 0.3)" },
+											],
+										}}
+									>
 										<For each={plugins().filter((p) => p.selectionPopup)}>{(pl) => pl.selectionPopup!(ctx)}</For>
 									</div>
 								</div>
@@ -150,8 +206,18 @@ registerFonts(r);
 t.render(() => <Chrome />);
 
 // ---- driving helpers
-const pump = () => { r.flush(); r.dispatchNativeEvents(); r.flush(); };
-const frame = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { pump(); await Bun.sleep(16); } };
+const pump = () => {
+	r.flush();
+	r.dispatchNativeEvents();
+	r.flush();
+};
+const frame = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		pump();
+		await Bun.sleep(16);
+	}
+};
 const shot = async (name: string, wait = 400) => {
 	await frame(wait);
 	const file = join(OUT, `plugins-${name}.png`);
@@ -160,7 +226,11 @@ const shot = async (name: string, wait = 400) => {
 };
 async function until(cond: () => boolean, ms = 20000, what = "condition"): Promise<boolean> {
 	const t0 = performance.now();
-	while (performance.now() - t0 < ms) { pump(); if (cond()) return true; await Bun.sleep(30); }
+	while (performance.now() - t0 < ms) {
+		pump();
+		if (cond()) return true;
+		await Bun.sleep(30);
+	}
 	console.warn(`timeout waiting for ${what}`);
 	return false;
 }
@@ -169,7 +239,11 @@ async function until(cond: () => boolean, ms = 20000, what = "condition"): Promi
 async function pickSelection(page: number, from: number, count: number): Promise<{ page: number; text: string; rects: NRect[] }> {
 	const { words } = await ctx.textLayer(page);
 	const byLine = new Map<number, Word[]>();
-	for (const w of words) { const l = byLine.get(w.l) ?? []; l.push(w); byLine.set(w.l, l); }
+	for (const w of words) {
+		const l = byLine.get(w.l) ?? [];
+		l.push(w);
+		byLine.set(w.l, l);
+	}
 	const lines = [...byLine.values()].filter((l) => l.length >= 7).slice(from, from + count);
 	const ws = lines.flat();
 	return { page, text: ws.map((w) => w.t).join(" "), rects: ws.map((w) => ({ x: w.x, y: w.y, w: w.w, h: w.h })) };
@@ -210,7 +284,8 @@ try {
 		if (b && a3) {
 			const rr = a3.position.rects![0]!;
 			const size = ctx.pageSize(page);
-			const hx = b.x + (rr[0] / size.w) * b.width - 13 + 5, hy = b.y + (1 - rr[3] / size.h) * b.height + 2 + 5;
+			const hx = b.x + (rr[0] / size.w) * b.width - 13 + 5,
+				hy = b.y + (1 - rr[3] / size.h) * b.height + 2 + 5;
 			r.nativeSimulateClick(hx, hy);
 			await frame(300);
 			console.log(`clicked the handle at ${hx.toFixed(0)},${hy.toFixed(0)}: selected=${s.ui.selectedId() === a3.id}`);
@@ -231,7 +306,9 @@ try {
 		const s = academicFor(ctx);
 		const t0 = performance.now();
 		await s.start();
-		console.log(`structure ${s.struct().phase} in ${Math.round(performance.now() - t0)} ms: ${s.structure().blocks.length} blocks, ${s.figItems().length} figure/table entries, ${s.structure().references.length} references; refStart=${JSON.stringify(s.refStart())}`);
+		console.log(
+			`structure ${s.struct().phase} in ${Math.round(performance.now() - t0)} ms: ${s.structure().blocks.length} blocks, ${s.figItems().length} figure/table entries, ${s.structure().references.length} references; refStart=${JSON.stringify(s.refStart())}`,
+		);
 		if (only.has("academic")) {
 			setPanel("figures-tables");
 			// find a page with a citation and click it
@@ -251,7 +328,8 @@ try {
 			const m = /\[\d+(?:[,\u2013-]\s*\d+)*\]/.exec(pt.text) ?? /\b(?:Figure|Table)\s+\d/.exec(pt.text);
 			if (m && bb) {
 				const rc = pt.rects[m.index + 1]!;
-				const x = bb.x + ((rc[0] + rc[2]) / 2 / size.w) * bb.width, y = bb.y + (1 - (rc[1] + rc[3]) / 2 / size.h) * bb.height;
+				const x = bb.x + ((rc[0] + rc[2]) / 2 / size.w) * bb.width,
+					y = bb.y + (1 - (rc[1] + rc[3]) / 2 / size.h) * bb.height;
 				console.log(`hover "${m[0]}" at ${x.toFixed(0)},${y.toFixed(0)}`);
 				r.nativeSimulateMouseMove(x, y);
 				await frame(700);
@@ -264,7 +342,11 @@ try {
 				await shot("academic-popover", 800);
 			}
 		}
-		if (only.has("figures")) { setPanel("figures-tables"); setCurPage(0); await shot("figures", 2500); }
+		if (only.has("figures")) {
+			setPanel("figures-tables");
+			setCurPage(0);
+			await shot("figures", 2500);
+		}
 		if (only.has("references")) {
 			setPanel("references");
 			await frame(500);
@@ -286,7 +368,8 @@ try {
 		await until(() => academicFor(ctx).struct().phase === "ready", 60000, "structure");
 		await shot("reflow", 2500);
 		// click an in-text citation of the reading view: the reference popover opens (CHARMS: "[1-3]" in the first paragraph)
-		const cx = Number(val("cite-x", "985")), cy = Number(val("cite-y", "578"));
+		const cx = Number(val("cite-x", "985")),
+			cy = Number(val("cite-y", "578"));
 		r.nativeSimulateMouseMove(cx, cy);
 		r.nativeSimulateClick(cx, cy);
 		await frame(2000);
@@ -308,7 +391,9 @@ try {
 	}
 } finally {
 	if (!has("keep") && created.length) {
-		await apiRequest("DELETE", `/attachments/${KEY}/annotations`, { ids: created }).catch((e) => console.warn("cleanup failed:", e.message));
+		await apiRequest("DELETE", `/attachments/${KEY}/annotations`, { ids: created }).catch((e) =>
+			console.warn("cleanup failed:", e.message),
+		);
 		console.log(`removed ${created.length} test annotations again`);
 	}
 	shutdownStructureWorker();

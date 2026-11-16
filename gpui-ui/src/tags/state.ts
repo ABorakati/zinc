@@ -8,12 +8,21 @@ import { setTagFilter, tagFilter } from "../sidebar/bridge";
 
 /** Zotero's tag colour palette (ui/src/cards/tags.ts). */
 export const TAG_PALETTE = [
-	{ name: "Red", color: "#FF6666" }, { name: "Orange", color: "#FF8C19" }, { name: "Gray", color: "#999999" },
-	{ name: "Green", color: "#5FB236" }, { name: "Teal", color: "#009980" }, { name: "Blue", color: "#2EA8E5" },
-	{ name: "Navy", color: "#576DD9" }, { name: "Purple", color: "#A28AE5" }, { name: "Plum", color: "#A6507B" },
+	{ name: "Red", color: "#FF6666" },
+	{ name: "Orange", color: "#FF8C19" },
+	{ name: "Gray", color: "#999999" },
+	{ name: "Green", color: "#5FB236" },
+	{ name: "Teal", color: "#009980" },
+	{ name: "Blue", color: "#2EA8E5" },
+	{ name: "Navy", color: "#576DD9" },
+	{ name: "Purple", color: "#A28AE5" },
+	{ name: "Plum", color: "#A6507B" },
 ];
 
-export interface TagCount { tag: string; count: number }
+export interface TagCount {
+	tag: string;
+	count: number;
+}
 
 const [tags, setTags] = createSignal<TagCount[]>([]);
 const [loaded, setLoaded] = createSignal(false);

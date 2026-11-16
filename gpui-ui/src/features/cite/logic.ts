@@ -7,8 +7,7 @@ import type { CiteFormat, CiteMode, QuickCopySettings } from "../../../../core/s
 
 /** What a Quick Copy produces: an export in an export format, or a style-formatted bibliography / citation. */
 export type QuickCopyPlan =
-	| { kind: "export"; format: string }
-	| { kind: "style"; style: string; locale: string; mode: CiteMode; includeHtml: boolean };
+	{ kind: "export"; format: string } | { kind: "style"; style: string; locale: string; mode: CiteMode; includeHtml: boolean };
 
 export const flipMode = (m: CiteMode): CiteMode => (m === "citation" ? "bibliography" : "citation");
 
@@ -26,10 +25,14 @@ export function planQuickCopy(s: QuickCopySettings, exportFormat: string, how: {
 }
 
 /** Stable key of a plan, to memoise the formatted result while one drag is under way. */
-export const planKey = (p: QuickCopyPlan): string => (p.kind === "export" ? `export:${p.format}` : `style:${p.style}:${p.locale}:${p.mode}:${p.includeHtml ? "h" : "t"}`);
+export const planKey = (p: QuickCopyPlan): string =>
+	p.kind === "export" ? `export:${p.format}` : `style:${p.style}:${p.locale}:${p.mode}:${p.includeHtml ? "h" : "t"}`;
 
 /** The request for POST /api/cite/format. */
-export function formatRequest(keys: string[], p: Extract<QuickCopyPlan, { kind: "style" }>): { keys: string[]; style: string; locale: string; mode: CiteMode; format: CiteFormat[] } {
+export function formatRequest(
+	keys: string[],
+	p: Extract<QuickCopyPlan, { kind: "style" }>,
+): { keys: string[]; style: string; locale: string; mode: CiteMode; format: CiteFormat[] } {
 	return { keys, style: p.style, locale: p.locale, mode: p.mode, format: p.includeHtml ? ["html", "text"] : ["text"] };
 }
 

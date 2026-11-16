@@ -11,7 +11,9 @@ export { reflowSettings, setReflowSettings };
 export const reflowPlugin: ReaderPlugin = {
 	id: "reflow",
 	altView: {
-		id: "reflow", label: "Reading view", icon: "book-open",
+		id: "reflow",
+		label: "Reading view",
+		icon: "book-open",
 		render: (ctx) => {
 			const s = academicFor(ctx);
 			void s.start();
@@ -19,7 +21,16 @@ export const reflowPlugin: ReaderPlugin = {
 				const x = s.struct();
 				return x.phase === "ready" ? { phase: "ready", doc: x.doc } : x;
 			};
-			return <ReflowView ctx={ctx} state={state} retry={() => void s.retry()} settings={reflowSettings} setSettings={setReflowSettings} resetSettings={resetReflowSettings} />;
+			return (
+				<ReflowView
+					ctx={ctx}
+					state={state}
+					retry={() => void s.retry()}
+					settings={reflowSettings}
+					setSettings={setReflowSettings}
+					resetSettings={resetReflowSettings}
+				/>
+			);
 		},
 	},
 	onOpen(ctx) {

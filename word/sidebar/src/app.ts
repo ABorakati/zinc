@@ -204,7 +204,20 @@ const DEFAULT_STYLE = "vancouver";
 
 export function authorsOf(csl: CslItem, max = 6): string {
 	const list = (csl.author as { family?: string; given?: string; literal?: string }[] | undefined) ?? [];
-	const names = list.map((a) => a.literal ?? [a.family, (a.given ?? "").split(/[\s.-]+/).filter(Boolean).map((g) => g[0]).join("")].filter(Boolean).join(" "));
+	const names = list.map(
+		(a) =>
+			a.literal ??
+			[
+				a.family,
+				(a.given ?? "")
+					.split(/[\s.-]+/)
+					.filter(Boolean)
+					.map((g) => g[0])
+					.join(""),
+			]
+				.filter(Boolean)
+				.join(" "),
+	);
 	if (names.length > max) return names.slice(0, max).join(", ") + ", et al.";
 	return names.join(", ");
 }
@@ -308,9 +321,17 @@ export class App {
 	async libraryItems(keys: string[]): Promise<Map<string, LibraryHit>> {
 		const out = new Map<string, LibraryHit>();
 		if (keys.length === 0) return out;
-		const rows = await this.host.call<{ key: string; found: boolean; trashed?: boolean; itemKey?: string; data?: ZoteroItemData; groupId?: number | null }[]>("lib.items", { keys });
+		const rows = await this.host.call<
+			{ key: string; found: boolean; trashed?: boolean; itemKey?: string; data?: ZoteroItemData; groupId?: number | null }[]
+		>("lib.items", { keys });
 		for (const r of rows)
-			if (r.found && r.data) out.set(r.key, { data: { ...r.data, key: r.itemKey ?? r.key }, trashed: !!r.trashed, itemKey: r.itemKey ?? r.key, groupId: r.groupId ?? null });
+			if (r.found && r.data)
+				out.set(r.key, {
+					data: { ...r.data, key: r.itemKey ?? r.key },
+					trashed: !!r.trashed,
+					itemKey: r.itemKey ?? r.key,
+					groupId: r.groupId ?? null,
+				});
 		return out;
 	}
 
@@ -408,7 +429,13 @@ export class App {
 	// ---- cursor -> cited items -------------------------------------------------------------------------------
 
 	/** What the sidebar shows when the cursor is inside a citation: the items with their abstracts. */
-	async describeCitation(cursor: { inField: boolean; kind?: string; code?: string; ref?: { story: string; idx: number }; text?: string }): Promise<CitationView | null> {
+	async describeCitation(cursor: {
+		inField: boolean;
+		kind?: string;
+		code?: string;
+		ref?: { story: string; idx: number };
+		text?: string;
+	}): Promise<CitationView | null> {
 		if (!cursor.inField || cursor.kind !== "item" || !cursor.code || !cursor.ref) return null;
 		const parsed = parseFieldCode(cursor.code);
 		if (!parsed || parsed.kind !== "item") return null;
@@ -422,7 +449,13 @@ export class App {
 	quickView(code: string): PopupCitation | null {
 		const parsed = parseFieldCode(code);
 		if (!parsed || parsed.kind !== "item") return null;
-		const items: PopupItemView[] = parsed.data.citationItems.map((ci) => ({ ...viewOfCitationItem(ci, undefined), reference: [], missing: false, cslId: guessCslId(ci), pending: true }));
+		const items: PopupItemView[] = parsed.data.citationItems.map((ci) => ({
+			...viewOfCitationItem(ci, undefined),
+			reference: [],
+			missing: false,
+			cslId: guessCslId(ci),
+			pending: true,
+		}));
 		return { citationID: parsed.data.citationID, items };
 	}
 
@@ -457,7 +490,12 @@ export class App {
 			let reference: Run[] = [];
 			if (r && fmt) {
 				try {
-					const out = fmt.format([{ citationID: "popup", noteIndex: 0, items: [{ id: r.cslId }] }], new Map([[r.cslId, r.csl]]), [], true);
+					const out = fmt.format(
+						[{ citationID: "popup", noteIndex: 0, items: [{ id: r.cslId }] }],
+						new Map([[r.cslId, r.csl]]),
+						[],
+						true,
+					);
 					const entry = out.bibliography?.runs;
 					if (entry?.length) reference = stripNumberLabel(entry);
 				} catch {
@@ -484,7 +522,7 @@ export class App {
 				cslId: r.cslId,
 				csl: r.csl,
 				// the citation keeps the URIs it was written with (they may name a group library or another account); only an item without any gets a new one
-					uris: ci.uris?.length ? ci.uris : r.key ? [this.uriForItem(r.key, r.groupId)] : [],
+				uris: ci.uris?.length ? ci.uris : r.key ? [this.uriForItem(r.key, r.groupId)] : [],
 				inLibrary: r.inLibrary,
 				title: String(r.csl.title ?? ""),
 				creators: authorsOf(r.csl, 3),
@@ -506,7 +544,7 @@ export class App {
 			citationID,
 			properties: { ...keep, formattedCitation: "", plainCitation: "", noteIndex },
 			citationItems: picks.map((p) => {
-				const nid = p.key ? numericId(p.key) : (typeof p.csl.id === "number" ? p.csl.id : numericId(p.cslId));
+				const nid = p.key ? numericId(p.key) : typeof p.csl.id === "number" ? p.csl.id : numericId(p.cslId);
 				const ci: CitationItem = {
 					id: nid,
 					uris: p.uris,
@@ -539,7 +577,10 @@ export class App {
 	 * A citation formatted on its own, as Zotero's writeDelayedCitation does when "Automatically update citations" is off:
 	 * no other citation and no bibliography is touched, so numbering is only what a one-citation document would show.
 	 */
-	private async previewCitation(data: CitationData, fmt: CslFormatter): Promise<{ runs: Run[]; plain: string; rtf: string; noteIndex: number }> {
+	private async previewCitation(
+		data: CitationData,
+		fmt: CslFormatter,
+	): Promise<{ runs: Run[]; plain: string; rtf: string; noteIndex: number }> {
 		const res = await this.resolveAll(data.citationItems);
 		const cslById = new Map<string, CslItem>();
 		for (const r of res.values()) cslById.set(r.cslId, r.csl);
@@ -576,7 +617,14 @@ export class App {
 				const p = await this.previewCitation(data, f);
 				data.properties = { ...data.properties, formattedCitation: p.rtf, plainCitation: p.plain, noteIndex: p.noteIndex };
 				await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), runs: p.runs, placement, ...where });
-				return { citations: 1, updated: 1, bibliographies: 0, missing: [], style: styleUrlToId(prefs.styleId), changed: ["item#new:preview"] };
+				return {
+					citations: 1,
+					updated: 1,
+					bibliographies: 0,
+					missing: [],
+					style: styleUrlToId(prefs.styleId),
+					changed: ["item#new:preview"],
+				};
 			}
 			await this.host.call("doc.insert", { kind: "item", code: buildItemCode(data), text: "…", placement, ...where });
 			return await this.refreshAll();
@@ -593,7 +641,8 @@ export class App {
 	async updateCitation(ref: { story: string; idx: number }, citationID: string, picks: Pick[]): Promise<RefreshReport> {
 		if (picks.length === 0) throw new Error("A citation needs at least one item (use Delete to remove it).");
 		const cur = (await this.readFields()).find((f) => f.story === ref.story && f.idx === ref.idx);
-		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID) throw new Error("The document changed under the sidebar. Refresh and try again.");
+		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID)
+			throw new Error("The document changed under the sidebar. Refresh and try again.");
 		const old = cur.parsed.data.properties;
 		const data = this.citationDataFromPicks(picks, citationID, old.noteIndex ?? 0, prepareForEditing(old));
 		await this.host.call("doc.begin", { name: "Edit citation" });
@@ -603,8 +652,19 @@ export class App {
 				const f = await this.formatter(styleUrlToId(prefs.styleId), prefs.locale);
 				const p = await this.previewCitation(data, f);
 				data.properties = { ...data.properties, formattedCitation: p.rtf, plainCitation: p.plain };
-				await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(data), runs: p.runs });
-				return { citations: 1, updated: 1, bibliographies: 0, missing: [], style: styleUrlToId(prefs.styleId), changed: ["item#" + ref.idx + ":preview"] };
+				await this.host.call("doc.set", {
+					ref: { ...ref, kind: "item", cid: citationID },
+					code: buildItemCode(data),
+					runs: p.runs,
+				});
+				return {
+					citations: 1,
+					updated: 1,
+					bibliographies: 0,
+					missing: [],
+					style: styleUrlToId(prefs.styleId),
+					changed: ["item#" + ref.idx + ":preview"],
+				};
 			}
 			await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(data) });
 			return await this.refreshAll();
@@ -614,9 +674,14 @@ export class App {
 	}
 
 	/** A multi-item citation becomes one citation per item, one after another (locator, prefix and suffix stay with their item). */
-	async splitCitation(ref: { story: string; idx: number }, citationID: string, opts: { allowProtected?: boolean } = {}): Promise<RefreshReport> {
+	async splitCitation(
+		ref: { story: string; idx: number },
+		citationID: string,
+		opts: { allowProtected?: boolean } = {},
+	): Promise<RefreshReport> {
 		const cur = (await this.readFields()).find((f) => f.story === ref.story && f.idx === ref.idx);
-		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID) throw new Error("The document changed under the sidebar. Refresh and try again.");
+		if (!cur || cur.parsed?.kind !== "item" || cur.parsed.data.citationID !== citationID)
+			throw new Error("The document changed under the sidebar. Refresh and try again.");
 		if (cur.parsed.data.citationItems.length < 2) throw new Error("This citation has only one item.");
 		const pr = cur.parsed.data.properties;
 		if (!opts.allowProtected && (pr.custom || pr.dontUpdate || isHandEdited(pr, cur.text))) {
@@ -630,7 +695,12 @@ export class App {
 			try {
 				// each new field goes straight after the original, last item first, so they end up in the original order
 				for (let i = parts.length - 1; i >= 1; i--) {
-					await this.host.call("doc.insert", { kind: "item", code: buildItemCode(parts[i]!), text: "…", after: { story: ref.story, idx: ref.idx } });
+					await this.host.call("doc.insert", {
+						kind: "item",
+						code: buildItemCode(parts[i]!),
+						text: "…",
+						after: { story: ref.story, idx: ref.idx },
+					});
 					inserted++;
 				}
 				await this.host.call("doc.set", { ref: { ...ref, kind: "item", cid: citationID }, code: buildItemCode(parts[0]!) });
@@ -639,7 +709,9 @@ export class App {
 				try {
 					await this.removeInsertedParts(ref, parts.slice(parts.length - inserted));
 				} catch {
-					throw new Error(`The split failed (${why}) and could not be fully undone. Press Ctrl+Z in Word to restore the citation.`);
+					throw new Error(
+						`The split failed (${why}) and could not be fully undone. Press Ctrl+Z in Word to restore the citation.`,
+					);
 				}
 				throw new Error(`The split failed (${why}). The original citation is unchanged.`);
 			}
@@ -653,16 +725,24 @@ export class App {
 	private async removeInsertedParts(ref: { story: string; idx: number }, made: CitationData[]): Promise<void> {
 		if (!made.length) return;
 		const ids = new Set(made.map((m) => m.citationID));
-		const doomed = (await this.readFields()).filter((f) => f.story === ref.story && f.parsed?.kind === "item" && ids.has(f.parsed.data.citationID));
+		const doomed = (await this.readFields()).filter(
+			(f) => f.story === ref.story && f.parsed?.kind === "item" && ids.has(f.parsed.data.citationID),
+		);
 		doomed.sort((a, b) => b.idx - a.idx);
-		for (const f of doomed) await this.host.call("doc.delete", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed?.kind === "item" ? f.parsed.data.citationID : undefined } });
+		for (const f of doomed)
+			await this.host.call("doc.delete", {
+				ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed?.kind === "item" ? f.parsed.data.citationID : undefined },
+			});
 	}
 
 	/** Fold citations that touch each other into the first of them (Zotero's merge on Refresh). Returns how many fields were removed. */
 	private async mergeAdjacent(): Promise<number> {
 		const fields = await this.readFields();
 		const mergeable = (f: DocField): f is ItemField =>
-			f.parsed?.kind === "item" && !f.parsed.data.properties.dontUpdate && !f.parsed.data.properties.custom && !isHandEdited(f.parsed.data.properties, f.text);
+			f.parsed?.kind === "item" &&
+			!f.parsed.data.properties.dontUpdate &&
+			!f.parsed.data.properties.custom &&
+			!isHandEdited(f.parsed.data.properties, f.text);
 		const groups: ItemField[][] = [];
 		let cur: ItemField[] = [];
 		for (const f of fields) {
@@ -682,19 +762,36 @@ export class App {
 			try {
 				for (const g of groups) {
 					const [first, ...rest] = g as [ItemField, ...ItemField[]];
-					const merged = mergeCitationData(first.parsed.data, rest.map((r) => r.parsed.data));
+					const merged = mergeCitationData(
+						first.parsed.data,
+						rest.map((r) => r.parsed.data),
+					);
 					merged.properties = prepareForEditing(merged.properties);
-					await this.host.call("doc.set", { ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID }, code: buildItemCode(merged) });
+					await this.host.call("doc.set", {
+						ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID },
+						code: buildItemCode(merged),
+					});
 					rewritten.push(first);
 					doomed.push(...rest);
 				}
 				// deletions last, highest index first, so no pending index moves
 				doomed.sort((a, b) => b.idx - a.idx);
-				for (const f of doomed) await this.host.call("doc.delete", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID } });
+				for (const f of doomed)
+					await this.host.call("doc.delete", {
+						ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID },
+					});
 			} catch (e) {
 				// put the first citation of each group back as it was: nothing is lost, the touching citations simply stay separate
-				for (const first of rewritten) await this.host.call("doc.set", { ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID }, code: first.code }).catch(() => {});
-				throw new Error(`Merging adjacent citations failed (${e instanceof Error ? e.message : String(e)}); the citations were left as they were. Ctrl+Z in Word undoes anything partial.`);
+				for (const first of rewritten)
+					await this.host
+						.call("doc.set", {
+							ref: { story: first.story, idx: first.idx, kind: "item", cid: first.parsed.data.citationID },
+							code: first.code,
+						})
+						.catch(() => {});
+				throw new Error(
+					`Merging adjacent citations failed (${e instanceof Error ? e.message : String(e)}); the citations were left as they were. Ctrl+Z in Word undoes anything partial.`,
+				);
 			}
 			return doomed.length;
 		} finally {
@@ -726,7 +823,9 @@ export class App {
 	 */
 	async convertCitations(target: "inline" | "footnote" | "endnote"): Promise<number> {
 		const want = target === "inline" ? "main" : target === "footnote" ? "fn" : "en";
-		const todo = (await this.readFields()).filter((f) => f.parsed?.kind === "item" && f.story !== want && !f.parsed.data.properties.dontUpdate);
+		const todo = (await this.readFields()).filter(
+			(f) => f.parsed?.kind === "item" && f.story !== want && !f.parsed.data.properties.dontUpdate,
+		);
 		if (!todo.length) return 0;
 		await this.host.call("doc.begin", { name: "Convert citations" });
 		try {
@@ -738,7 +837,9 @@ export class App {
 					// the add-in creates the replacement first and removes the original only then, so a failure leaves this citation as it was
 					await this.host.call("doc.convert", { ref: { story: f.story, idx: f.idx, kind: "item", cid }, target, code: f.code });
 				} catch (e) {
-					throw new Error(`Moving citations failed after ${done} of ${todo.length} (${e instanceof Error ? e.message : String(e)}). The failing citation was not changed; Ctrl+Z in Word undoes the ones already moved.`);
+					throw new Error(
+						`Moving citations failed after ${done} of ${todo.length} (${e instanceof Error ? e.message : String(e)}). The failing citation was not changed; Ctrl+Z in Word undoes the ones already moved.`,
+					);
 				}
 				done++;
 			}
@@ -765,7 +866,12 @@ export class App {
 		if (!fields.some((f) => f.kind === "bibl")) {
 			await this.host.call("doc.begin", { name: "Insert bibliography" });
 			try {
-				await this.host.call("doc.insert", { kind: "bibl", code: buildBiblCode(), text: "…", ...(opts.at === undefined ? {} : { at: { pos: opts.at } }) });
+				await this.host.call("doc.insert", {
+					kind: "bibl",
+					code: buildBiblCode(),
+					text: "…",
+					...(opts.at === undefined ? {} : { at: { pos: opts.at } }),
+				});
 				prefs.hasBibliography = true;
 				await this.writePrefs(prefs);
 				return await this.refreshAll();
@@ -837,7 +943,21 @@ export class App {
 			prefs = defaultPrefs(d.style, d.locale);
 		}
 		const styleId = styleUrlToId(prefs.styleId);
-		const base = { fields, items, bibls, st, prefs, styleId, missing, resolved: new Map<CitationItem, Resolved>(), docCitations: [] as DocCitation[], engineIds: [] as string[], probeIds: new Map<string, string>(), cslUris: new Map<string, string[]>(), uncitedIds: new Set<string>() };
+		const base = {
+			fields,
+			items,
+			bibls,
+			st,
+			prefs,
+			styleId,
+			missing,
+			resolved: new Map<CitationItem, Resolved>(),
+			docCitations: [] as DocCitation[],
+			engineIds: [] as string[],
+			probeIds: new Map<string, string>(),
+			cslUris: new Map<string, string[]>(),
+			uncitedIds: new Set<string>(),
+		};
 		if (items.length === 0 && bibls.length === 0) return { ...base, fmt: null, out: null };
 		const fmt = await this.formatter(styleId, prefs.locale);
 
@@ -880,7 +1000,8 @@ export class App {
 			const distinct = [...new Set(docCitations.flatMap((c) => c.items.map((i) => i.id)))];
 			// a probe straight after a real citation of the same single item would render "Ibid."; start with another item
 			const last = docCitations[docCitations.length - 1];
-			if (distinct.length > 1 && last && last.items.length === 1 && last.items[0]!.id === distinct[0]) distinct.push(distinct.shift()!);
+			if (distinct.length > 1 && last && last.items.length === 1 && last.items[0]!.id === distinct[0])
+				distinct.push(distinct.shift()!);
 			let note = docCitations.reduce((m, c) => Math.max(m, c.noteIndex), 0);
 			distinct.forEach((id, i) => {
 				const pid = `~probe~${i}`;
@@ -970,7 +1091,16 @@ export class App {
 		const merged = opts.merge ? await this.mergeAdjacent() : 0;
 		const d = await this.formatDocument();
 		const { items, bibls, st, prefs, resolved, docCitations, engineIds, out } = d;
-		const report: RefreshReport = { citations: items.length, updated: 0, bibliographies: bibls.length, missing: d.missing, style: d.styleId, changed: [], merged, kept: 0 };
+		const report: RefreshReport = {
+			citations: items.length,
+			updated: 0,
+			bibliographies: bibls.length,
+			missing: d.missing,
+			style: d.styleId,
+			changed: [],
+			merged,
+			kept: 0,
+		};
 		if (!out) return report;
 
 		// citations whose text the user typed into: never overwritten silently
@@ -980,7 +1110,14 @@ export class App {
 			const on = opts.onModified ?? "keep";
 			choice =
 				typeof on === "function"
-					? await on(edited.map((f) => ({ ref: { story: f.story, idx: f.idx }, citationID: f.parsed.data.citationID, was: f.parsed.data.properties.plainCitation ?? "", now: f.text })))
+					? await on(
+							edited.map((f) => ({
+								ref: { story: f.story, idx: f.idx },
+								citationID: f.parsed.data.citationID,
+								was: f.parsed.data.properties.plainCitation ?? "",
+								now: f.text,
+							})),
+						)
 					: on;
 		}
 		const editedSet = new Set(edited);
@@ -1003,7 +1140,12 @@ export class App {
 					data.properties = { ...data.properties, noteIndex: dc.noteIndex, dontUpdate: true };
 					if (keepEdit) report.kept = (report.kept ?? 0) + 1;
 				} else {
-					data.properties = { ...data.properties, formattedCitation: custom ? runsToRtf(shown) : o.rtf, plainCitation: custom ? runsToPlain(shown) : o.plain, noteIndex: dc.noteIndex };
+					data.properties = {
+						...data.properties,
+						formattedCitation: custom ? runsToRtf(shown) : o.rtf,
+						plainCitation: custom ? runsToPlain(shown) : o.plain,
+						noteIndex: dc.noteIndex,
+					};
 				}
 				data.schema ??= CITATION_SCHEMA;
 				for (const ci of data.citationItems) {
@@ -1020,7 +1162,11 @@ export class App {
 				const same = JSON.stringify(f.parsed.data) === JSON.stringify(data);
 				const wantText = runsToPlain(shown);
 				if (same && (frozen || f.text === wantText)) continue;
-				await this.host.call("doc.set", { ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID }, code, ...(frozen ? {} : { runs: shown }) });
+				await this.host.call("doc.set", {
+					ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID },
+					code,
+					...(frozen ? {} : { runs: shown }),
+				});
 				report.updated++;
 				report.changed.push(`item#${f.idx}:${same ? "text" : "code"}`);
 			}
@@ -1037,7 +1183,9 @@ export class App {
 				});
 				report.updated++;
 				const at = [...plain].findIndex((c, i) => c !== b.text[i]);
-				report.changed.push(`bibl#${b.idx}: differs at ${at}: ${JSON.stringify(b.text.slice(Math.max(0, at - 10), at + 20))} vs ${JSON.stringify(plain.slice(Math.max(0, at - 10), at + 20))} (len ${b.text.length}/${plain.length})`);
+				report.changed.push(
+					`bibl#${b.idx}: differs at ${at}: ${JSON.stringify(b.text.slice(Math.max(0, at - 10), at + 20))} vs ${JSON.stringify(plain.slice(Math.max(0, at - 10), at + 20))} (len ${b.text.length}/${plain.length})`,
+				);
 			}
 			const wantHas = bibls.length > 0;
 			if (!st.prefs || prefs.hasBibliography !== wantHas) {
@@ -1089,7 +1237,8 @@ export class App {
 				const data = { ...(b.parsed as { data: BibliographyData }).data };
 				if (changes.omitted) data.omitted = uris(changes.omitted);
 				if (changes.uncited) data.uncited = uris(changes.uncited);
-				if (changes.custom) data.custom = changes.custom.filter((c) => c.uris.length && c.runs.length).map((c) => [c.uris, runsToRtf(c.runs)]);
+				if (changes.custom)
+					data.custom = changes.custom.filter((c) => c.uris.length && c.runs.length).map((c) => [c.uris, runsToRtf(c.runs)]);
 				await this.host.call("doc.set", { ref: { story: b.story, idx: b.idx, kind: "bibl" }, code: buildBiblCode(data) });
 			}
 			return await this.refreshAll();
@@ -1121,7 +1270,7 @@ function docCitationItem(ci: CitationItem, r: Resolved): DocCitationItem {
 	return {
 		id: r.cslId,
 		locator: ci.locator,
-		label: ci.locator ? ci.label ?? "page" : undefined,
+		label: ci.locator ? (ci.label ?? "page") : undefined,
 		prefix: ci.prefix,
 		suffix: ci.suffix,
 		"suppress-author": ci["suppress-author"],

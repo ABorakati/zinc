@@ -5,14 +5,16 @@ import type { ItemDetail, Reference, ReferenceDetail, ReferenceList } from "../t
 export type { Reference, ReferenceDetail, ReferenceList };
 
 export const referencesApi = {
-	list: (itemKey: string, refresh = false) => get<ReferenceList>(`/api/references/${encodeURIComponent(itemKey)}${refresh ? "?refresh=1" : ""}`),
+	list: (itemKey: string, refresh = false) =>
+		get<ReferenceList>(`/api/references/${encodeURIComponent(itemKey)}${refresh ? "?refresh=1" : ""}`),
 	lookup: (r: Pick<Reference, "doi" | "title">) => {
 		const p = new URLSearchParams();
 		if (r.doi) p.set("doi", r.doi);
 		else if (r.title) p.set("title", r.title);
 		return get<ReferenceDetail>("/api/references/lookup?" + p);
 	},
-	add: (body: { doi?: string; reference?: Reference; collectionKey?: string; findFullText?: boolean }) => post<ItemDetail>("/api/references/add", body),
+	add: (body: { doi?: string; reference?: Reference; collectionKey?: string; findFullText?: boolean }) =>
+		post<ItemDetail>("/api/references/add", body),
 };
 
 const detailCache = new Map<string, Promise<ReferenceDetail>>();

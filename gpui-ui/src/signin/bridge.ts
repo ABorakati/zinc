@@ -82,7 +82,8 @@ export function windowTitle(institution: string, url: string): string {
 	let where = "";
 	try {
 		const u = new URL(url);
-		if (u.protocol === "http:" || u.protocol === "https:") where = ` - ${u.protocol}//${u.host}${u.protocol === "http:" ? " (not secure)" : ""}`;
+		if (u.protocol === "http:" || u.protocol === "https:")
+			where = ` - ${u.protocol}//${u.host}${u.protocol === "http:" ? " (not secure)" : ""}`;
 	} catch {
 		/* no address yet */
 	}
@@ -174,7 +175,11 @@ class Tracker {
 	pdf: Pdf | null = null;
 	capturePdf: boolean;
 	private probed = new Set<string>();
-	constructor(private now: () => number, capturePdf: boolean, private onChange: () => void) {
+	constructor(
+		private now: () => number,
+		capturePdf: boolean,
+		private onChange: () => void,
+	) {
 		this.lastEventAt = now();
 		this.capturePdf = capturePdf;
 	}
@@ -398,7 +403,11 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 			const cs = await cookiesFor(url);
 			const res = await doFetch(url, {
 				redirect: "follow",
-				headers: { "User-Agent": FALLBACK_UA, Accept: "application/pdf,*/*;q=0.8", ...(cs.length ? { Cookie: cookieHeader(cs) } : {}) },
+				headers: {
+					"User-Agent": FALLBACK_UA,
+					Accept: "application/pdf,*/*;q=0.8",
+					...(cs.length ? { Cookie: cookieHeader(cs) } : {}),
+				},
 				signal: AbortSignal.timeout(30_000),
 			});
 			const ct = (res.headers.get("content-type") ?? "").toLowerCase();
@@ -434,7 +443,14 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 		}
 
 		private initialBanner(req: LoginRequest): BannerView {
-			return { institution: req.institutionName || req.realm, waiting: req.waiting, status: "", offerKeepWaiting: false, challengeHint: false, standby: false };
+			return {
+				institution: req.institutionName || req.realm,
+				waiting: req.waiting,
+				status: "",
+				offerKeepWaiting: false,
+				challengeHint: false,
+				standby: false,
+			};
 		}
 
 		private notify(): void {
@@ -462,7 +478,8 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 
 		onEvent(e: Extract<HelperEvent, { id: string }>): void {
 			if (e.ev === "nav") {
-				if (this.tracker.nav(e.url) && e.mime?.toLowerCase().includes("pdf") && this.tracker.capturePdf) void probe(this.tracker, e.url);
+				if (this.tracker.nav(e.url) && e.mime?.toLowerCase().includes("pdf") && this.tracker.capturePdf)
+					void probe(this.tracker, e.url);
 				else if (isHttp(e.url) && this.tracker.capturePdf && pdfish(e.url)) void probe(this.tracker, e.url);
 			} else if (e.ev === "loaded") {
 				this.tracker.loaded = true;
@@ -589,7 +606,11 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 				busy++;
 				try {
 					if (req.capturePdf) await setDownloads(true);
-					await d.call("open", { id: w.id, url: req.entryUrl, title: windowTitle(w.banner.institution, ""), visible: true }, 30_000);
+					await d.call(
+						"open",
+						{ id: w.id, url: req.entryUrl, title: windowTitle(w.banner.institution, ""), visible: true },
+						30_000,
+					);
 				} catch (e) {
 					w.gone();
 					throw e;

@@ -1,64 +1,124 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Zinc Connector - how to install</title>
-<style>
-  body { font: 16px/1.5 "Segoe UI", system-ui, sans-serif; max-width: 46rem; margin: 2.5rem auto; padding: 0 1.25rem; color: #1d2428; }
-  h1 { font-size: 1.5rem; margin-bottom: .25rem; }
-  .lead { color: #4a5860; margin-top: 0; }
-  ol li { margin: .7rem 0; }
-  code, .path { font-family: Consolas, "Cascadia Mono", monospace; background: #eef3f4; padding: .1rem .35rem; border-radius: 4px; }
-  .path { display: block; padding: .55rem .7rem; margin: .4rem 0; word-break: break-all; user-select: all; }
-  button { font: inherit; padding: .3rem .8rem; border: 1px solid #0f8b8d; background: #0f8b8d; color: #fff; border-radius: 5px; cursor: pointer; }
-  .note { border-left: 4px solid #0f8b8d; background: #f3f9f9; padding: .6rem .9rem; margin: 1.5rem 0; }
-  small { color: #5b6a72; }
-</style>
-</head>
-<body>
-<h1>Zinc Connector</h1>
-<p class="lead">Save web pages, PDFs and references into your Zinc library from Chrome or Edge, with or without the app open.</p>
+	<head>
+		<meta charset="utf-8" />
+		<title>Zinc Connector - how to install</title>
+		<style>
+			body {
+				font:
+					16px/1.5 "Segoe UI",
+					system-ui,
+					sans-serif;
+				max-width: 46rem;
+				margin: 2.5rem auto;
+				padding: 0 1.25rem;
+				color: #1d2428;
+			}
+			h1 {
+				font-size: 1.5rem;
+				margin-bottom: 0.25rem;
+			}
+			.lead {
+				color: #4a5860;
+				margin-top: 0;
+			}
+			ol li {
+				margin: 0.7rem 0;
+			}
+			code,
+			.path {
+				font-family: Consolas, "Cascadia Mono", monospace;
+				background: #eef3f4;
+				padding: 0.1rem 0.35rem;
+				border-radius: 4px;
+			}
+			.path {
+				display: block;
+				padding: 0.55rem 0.7rem;
+				margin: 0.4rem 0;
+				word-break: break-all;
+				user-select: all;
+			}
+			button {
+				font: inherit;
+				padding: 0.3rem 0.8rem;
+				border: 1px solid #0f8b8d;
+				background: #0f8b8d;
+				color: #fff;
+				border-radius: 5px;
+				cursor: pointer;
+			}
+			.note {
+				border-left: 4px solid #0f8b8d;
+				background: #f3f9f9;
+				padding: 0.6rem 0.9rem;
+				margin: 1.5rem 0;
+			}
+			small {
+				color: #5b6a72;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Zinc Connector</h1>
+		<p class="lead">Save web pages, PDFs and references into your Zinc library from Chrome or Edge, with or without the app open.</p>
 
-<p>Setup has already registered the helper program the extension talks to. The browser itself does not let an installer add an
-extension, so do this once (about thirty seconds):</p>
+		<p>
+			Setup has already registered the helper program the extension talks to. The browser itself does not let an installer add an
+			extension, so do this once (about thirty seconds):
+		</p>
 
-<ol>
-  <li>Open <code>chrome://extensions</code> in Chrome (or <code>edge://extensions</code> in Edge).</li>
-  <li>Turn on <b>Developer mode</b> (top right in Chrome, left sidebar in Edge).</li>
-  <li>Click <b>Load unpacked</b> and pick this folder:
-    <span class="path" id="path">the <b>extension</b> folder next to this page (inside the <b>connector</b> folder of your Zinc installation)</span>
-    <button id="copy" type="button" hidden>Copy folder path</button></li>
-  <li>Check the extension's ID reads <code>pakgagonakcalfbmckaolkpidcojacaf</code>. It is fixed, and it is the ID Setup allowed
-    to talk to the helper. Pin the toolbar button if you like, then open any article and click it.</li>
-</ol>
+		<ol>
+			<li>Open <code>chrome://extensions</code> in Chrome (or <code>edge://extensions</code> in Edge).</li>
+			<li>Turn on <b>Developer mode</b> (top right in Chrome, left sidebar in Edge).</li>
+			<li>
+				Click <b>Load unpacked</b> and pick this folder:
+				<span class="path" id="path"
+					>the <b>extension</b> folder next to this page (inside the <b>connector</b> folder of your Zinc installation)</span
+				>
+				<button id="copy" type="button" hidden>Copy folder path</button>
+			</li>
+			<li>
+				Check the extension's ID reads <code>pakgagonakcalfbmckaolkpidcojacaf</code>. It is fixed, and it is the ID Setup allowed to
+				talk to the helper. Pin the toolbar button if you like, then open any article and click it.
+			</li>
+		</ol>
 
-<div class="note">
-  Keep the folder where it is: the browser loads the extension from it every time it starts. After a Zinc update, open the
-  extensions page and click the reload arrow on the extension to pick up the new version.
-</div>
+		<div class="note">
+			Keep the folder where it is: the browser loads the extension from it every time it starts. After a Zinc update, open the
+			extensions page and click the reload arrow on the extension to pick up the new version.
+		</div>
 
-<p>Prefer the official Zotero Connector from the Chrome Web Store or the Edge Add-ons store? It works too, but only while Zinc
-is open (the app answers on Zotero's port 23119). Keep just one of the two connectors on a browser, or every page shows two Save
-buttons.</p>
+		<p>
+			Prefer the official Zotero Connector from the Chrome Web Store or the Edge Add-ons store? It works too, but only while Zinc is
+			open (the app answers on Zotero's port 23119). Keep just one of the two connectors on a browser, or every page shows two Save
+			buttons.
+		</p>
 
-<p><small>Remove it: delete the extension in the extensions page, and untick or remove the connector in Zinc's uninstaller.</small></p>
+		<p>
+			<small>Remove it: delete the extension in the extensions page, and untick or remove the connector in Zinc's uninstaller.</small>
+		</p>
 
-<script>
-(function () {
-  if (location.protocol !== "file:") return;
-  // file:///C:/Users/me/AppData/Local/Programs/Zotero%20Next/connector/connector-howto.html -> C:\...\connector\extension
-  var p = decodeURIComponent(location.pathname).replace(/^\/([A-Za-z]:)/, "$1");
-  var folder = p.replace(/[\/\\][^\/\\]*$/, "") + "/extension";
-  if (location.host) folder = "\\\\" + location.host + folder;
-  folder = folder.replace(/\//g, "\\");
-  var el = document.getElementById("path");
-  el.textContent = folder;
-  var b = document.getElementById("copy");
-  if (navigator.clipboard) {
-    b.hidden = false;
-    b.onclick = function () { navigator.clipboard.writeText(folder).then(function () { b.textContent = "Copied"; }); };
-  }
-})();
-</script>
-</body>
+		<script>
+			(function () {
+				if (location.protocol !== "file:") return;
+				// file:///C:/Users/me/AppData/Local/Programs/Zotero%20Next/connector/connector-howto.html -> C:\...\connector\extension
+				var p = decodeURIComponent(location.pathname).replace(/^\/([A-Za-z]:)/, "$1");
+				var folder = p.replace(/[\/\\][^\/\\]*$/, "") + "/extension";
+				if (location.host) folder = "\\\\" + location.host + folder;
+				folder = folder.replace(/\//g, "\\");
+				var el = document.getElementById("path");
+				el.textContent = folder;
+				var b = document.getElementById("copy");
+				if (navigator.clipboard) {
+					b.hidden = false;
+					b.onclick = function () {
+						navigator.clipboard.writeText(folder).then(function () {
+							b.textContent = "Copied";
+						});
+					};
+				}
+			})();
+		</script>
+	</body>
 </html>

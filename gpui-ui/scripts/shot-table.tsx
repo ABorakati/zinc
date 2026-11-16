@@ -33,12 +33,33 @@ const t = createTestRoot({ width: COLUMN + 400, height: 900 });
 const r = t.renderer;
 (registerFonts as (x?: unknown) => void)(r);
 store.setMode(mode);
-store.setViewMode(scenario === "cards" || scenario === "multi" || scenario === "ctx" || scenario === "customize" || scenario === "compact" ? "cards" : "table");
+store.setViewMode(
+	scenario === "cards" || scenario === "multi" || scenario === "ctx" || scenario === "customize" || scenario === "compact"
+		? "cards"
+		: "table",
+);
 if (scenario === "compact") cardLayout.set("density", "compact");
 
 t.render(() => (
-	<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%", backgroundColor: mode === "dark" ? "#0c0c0f" : "#f4f4f6" }}>
-		<div style={{ display: "flex", flexDirection: "column", width: COLUMN, height: "100%", flexShrink: 0, backgroundColor: mode === "dark" ? "#16161a" : "#ffffff" }}>
+	<div
+		style={{
+			display: "flex",
+			flexDirection: "row",
+			width: "100%",
+			height: "100%",
+			backgroundColor: mode === "dark" ? "#0c0c0f" : "#f4f4f6",
+		}}
+	>
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				width: COLUMN,
+				height: "100%",
+				flexShrink: 0,
+				backgroundColor: mode === "dark" ? "#16161a" : "#ffffff",
+			}}
+		>
 			<Toolbar />
 			<SortBar />
 			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
@@ -50,8 +71,18 @@ t.render(() => (
 ));
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-const frames = (n = 3) => { for (let i = 0; i < n; i++) { r.flush(); r.dispatchNativeEvents(); r.flush(); } };
-async function settle(ms = 150) { frames(); await sleep(ms); frames(); }
+const frames = (n = 3) => {
+	for (let i = 0; i < n; i++) {
+		r.flush();
+		r.dispatchNativeEvents();
+		r.flush();
+	}
+};
+async function settle(ms = 150) {
+	frames();
+	await sleep(ms);
+	frames();
+}
 
 const t0 = performance.now();
 while (performance.now() - t0 < 15000) {
@@ -73,7 +104,11 @@ function at(s: string, nth = 0): { x: number; y: number } {
 	if (!b) throw new Error(`"${s}" has no bounds`);
 	return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
-const click = (p: { x: number; y: number }, button = 0, mods?: string) => { frames(1); r.nativeSimulateClick(p.x, p.y, button, mods); frames(); };
+const click = (p: { x: number; y: number }, button = 0, mods?: string) => {
+	frames(1);
+	r.nativeSimulateClick(p.x, p.y, button, mods);
+	frames();
+};
 
 async function shot(name: string, cropW = COLUMN + 400) {
 	await settle(120);
@@ -93,13 +128,19 @@ switch (scenario) {
 	case "cards":
 	case "compact":
 		break;
-	case "multi": { // click, ctrl+click, ctrl+click on three separate cards, then shift+click a fourth (range)
+	case "multi": {
+		// click, ctrl+click, ctrl+click on three separate cards, then shift+click a fourth (range)
 		const ys: number[] = [];
-		const titles = r.findByType("text")
+		const titles = r
+			.findByType("text")
 			.map((e) => ({ e, b: r.getElementBounds(e.id) }))
 			.filter((x) => x.b && x.b.y > 120 && x.b.x < 80 + 20 && x.b.x > 40 && (x.e.text ?? "").length > 20)
 			.sort((p, q) => p.b!.y - q.b!.y);
-		const cards = titles.filter((x) => { if (ys.some((y) => Math.abs(y - x.b!.y) < 70)) return false; ys.push(x.b!.y); return true; });
+		const cards = titles.filter((x) => {
+			if (ys.some((y) => Math.abs(y - x.b!.y) < 70)) return false;
+			ys.push(x.b!.y);
+			return true;
+		});
 		console.log("cards", cards.length);
 		click({ x: cards[0]!.b!.x + 30, y: cards[0]!.b!.y + 4 });
 		click({ x: cards[2]!.b!.x + 30, y: cards[2]!.b!.y + 4 }, 0, "ctrl");
@@ -107,22 +148,31 @@ switch (scenario) {
 		console.log("selected", store.selected().size);
 		break;
 	}
-	case "ctx": { // right-click a card
+	case "ctx": {
+		// right-click a card
 		const a = at("Borakati", 0);
 		frames(1);
 		r.nativeSimulateClick(a.x, a.y, 2);
-		frames(); await sleep(400); frames();
+		frames();
+		await sleep(400);
+		frames();
 		break;
 	}
 	case "tablectx": {
 		const a = at("Borakati", 0);
 		frames(1);
 		r.nativeSimulateClick(a.x, a.y, 2);
-		frames(); await sleep(400); frames();
+		frames();
+		await sleep(400);
+		frames();
 		break;
 	}
-	case "sort": click(at("Date Added", 0)); break;
-	case "group": click(at("Year", 0)); break;
+	case "sort":
+		click(at("Date Added", 0));
+		break;
+	case "group":
+		click(at("Year", 0));
+		break;
 	case "fulltext": {
 		store.setFulltext(true);
 		store.setFilter("liver transplantation");
@@ -131,20 +181,32 @@ switch (scenario) {
 	}
 	case "colmenu": {
 		const h = at("Creator", 1); // 0 is the quick-search mode label
-		frames(1); r.nativeSimulateClick(h.x, h.y, 2); frames(); await sleep(200); frames();
+		frames(1);
+		r.nativeSimulateClick(h.x, h.y, 2);
+		frames();
+		await sleep(200);
+		frames();
 		break;
 	}
-	case "customize": click(at("Customise")); await sleep(200); break;
-	case "resize": { // drag the Creator column's right edge 80 px to the right
+	case "customize":
+		click(at("Customise"));
+		await sleep(200);
+		break;
+	case "resize": {
+		// drag the Creator column's right edge 80 px to the right
 		const h = at("Creator", 0);
 		const b = r.getElementBounds(r.findByType("text").filter((e) => (e.text ?? "") === "Creator")[0]!.id)!;
 		const edge = columnLayout.widthOf("title") + columnLayout.widthOf("creator");
 		console.log("widths before", columnLayout.widthOf("creator"), "edge", edge, h, b);
 		const x = 6 + edge + 0; // approximate header left = column x (0) -> right edge of the creator column
-		r.nativeSimulateMouseDown(x - 2, h.y, 0); frames();
-		r.nativeSimulateMouseMove(x + 60, h.y, 0); frames();
-		r.nativeSimulateMouseMove(x + 80, h.y, 0); frames();
-		r.nativeSimulateMouseUp(x + 80, h.y, 0); frames();
+		r.nativeSimulateMouseDown(x - 2, h.y, 0);
+		frames();
+		r.nativeSimulateMouseMove(x + 60, h.y, 0);
+		frames();
+		r.nativeSimulateMouseMove(x + 80, h.y, 0);
+		frames();
+		r.nativeSimulateMouseUp(x + 80, h.y, 0);
+		frames();
 		console.log("widths after", columnLayout.widthOf("creator"));
 		break;
 	}

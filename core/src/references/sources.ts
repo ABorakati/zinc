@@ -71,7 +71,10 @@ export function reconstructAbstract(inv: Record<string, number[]> | null | undef
 		if (!Array.isArray(positions)) continue;
 		for (const p of positions) words[p] = word;
 	}
-	const text = words.filter((w) => w !== undefined).join(" ").trim();
+	const text = words
+		.filter((w) => w !== undefined)
+		.join(" ")
+		.trim();
 	return text || undefined;
 }
 
@@ -116,7 +119,10 @@ export async function openAlexByDois(dois: string[], mailto: string | null): Pro
 	for (let i = 0; i < uniq.length; i += 50) chunks.push(uniq.slice(i, i + 50));
 	await mapLimit(chunks, 2, async (chunk) => {
 		try {
-			const url = withMailto(`${OA}/works?filter=doi:${chunk.map((d) => `https://doi.org/${d}`).join("|")}&per-page=50&select=${OA_SELECT}`, mailto);
+			const url = withMailto(
+				`${OA}/works?filter=doi:${chunk.map((d) => `https://doi.org/${d}`).join("|")}&per-page=50&select=${OA_SELECT}`,
+				mailto,
+			);
 			for (const w of (await getJson<{ results?: any[] }>(url))?.results ?? []) {
 				const ref = oaWorkToRef(w);
 				if (ref.doi) out.set(ref.doi, ref);
@@ -228,7 +234,10 @@ export async function crossrefQuery(raw: string, mailto: string | null): Promise
 		return compact({
 			doi: doi ?? undefined,
 			title,
-			authors: (it.author ?? []).slice(0, 6).map((a: any) => (a.family ? `${a.family} ${initialsOf(a.given ?? "")}`.trim() : a.name)).filter(Boolean),
+			authors: (it.author ?? [])
+				.slice(0, 6)
+				.map((a: any) => (a.family ? `${a.family} ${initialsOf(a.given ?? "")}`.trim() : a.name))
+				.filter(Boolean),
 			year: crossrefYear(it),
 			venue: it["container-title"]?.[0],
 			url: doi ? `https://doi.org/${doi}` : undefined,
@@ -252,7 +261,10 @@ export async function semanticScholarReferences(doi: string): Promise<RefCore[] 
 		return compact({
 			doi: d ?? undefined,
 			title: p?.title || undefined,
-			authors: (p?.authors ?? []).slice(0, 6).map((a: any) => (a?.name ? formatName(a.name) : "")).filter(Boolean),
+			authors: (p?.authors ?? [])
+				.slice(0, 6)
+				.map((a: any) => (a?.name ? formatName(a.name) : ""))
+				.filter(Boolean),
 			year: typeof p?.year === "number" ? p.year : undefined,
 			venue: p?.venue || undefined,
 			url: d ? `https://doi.org/${d}` : p?.url || undefined,

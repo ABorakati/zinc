@@ -25,13 +25,24 @@ export async function organize(keys: string[], action: OrganizeAction, dir?: str
 		refresh();
 		show(describeOrganize(r, action));
 	} catch (e) {
-		fail(action === "copy" ? "Could not copy the files" : action === "to-stored" ? "Could not convert the files" : "Could not move the files", e);
+		fail(
+			action === "copy"
+				? "Could not copy the files"
+				: action === "to-stored"
+					? "Could not convert the files"
+					: "Could not move the files",
+			e,
+		);
 	}
 }
 
 /** Choose a folder with the native dialog, then move or copy there. */
 export async function organizeToFolder(keys: string[], action: "move" | "copy"): Promise<void> {
-	if (!canPickFolder()) return void toast("No folder dialog here", { kind: "info", description: "Set the storage folder in Settings > Files and folders instead." });
+	if (!canPickFolder())
+		return void toast("No folder dialog here", {
+			kind: "info",
+			description: "Set the storage folder in Settings > Files and folders instead.",
+		});
 	try {
 		const dir = await pickFolder(action === "copy" ? "Copy files to" : "Move files to");
 		if (dir) await organize(keys, action, dir);
@@ -40,14 +51,26 @@ export async function organizeToFolder(keys: string[], action: "move" | "copy"):
 	}
 }
 
-interface AttachPreview { source: string; size: number; proposedName: string; dir: string }
-interface AttachResult extends AttachPreview { sourceRemoved: boolean; note?: string }
+interface AttachPreview {
+	source: string;
+	size: number;
+	proposedName: string;
+	dir: string;
+}
+interface AttachResult extends AttachPreview {
+	sourceRemoved: boolean;
+	note?: string;
+}
 
 /** Attach the newest file of the "attach from" folder to an item (asks for the name first when Settings say so). */
 export async function attachNewest(parentKey: string): Promise<void> {
 	await refreshStorage();
 	const s: StorageInfo | null = storage();
-	if (!s?.attachDir) return void toast("Choose the folder to attach files from", { kind: "info", description: "Settings > Files and folders > Attach newest file from." });
+	if (!s?.attachDir)
+		return void toast("Choose the folder to attach files from", {
+			kind: "info",
+			description: "Settings > Files and folders > Attach newest file from.",
+		});
 	try {
 		let name: string | undefined;
 		if (s.attachConfirm) {
@@ -63,7 +86,14 @@ export async function attachNewest(parentKey: string): Promise<void> {
 		}
 		const r = await post<AttachResult>("/api/files/attach-newest", { parentKey, name });
 		refresh();
-		toast(`Attached ${baseName(r.source)}`, { kind: "success", description: r.note ?? (r.sourceRemoved ? `Now in ${r.dir === s.attachDir && s.dir ? s.dir : "the library"}; removed from ${baseName(r.dir)}.` : undefined) });
+		toast(`Attached ${baseName(r.source)}`, {
+			kind: "success",
+			description:
+				r.note ??
+				(r.sourceRemoved
+					? `Now in ${r.dir === s.attachDir && s.dir ? s.dir : "the library"}; removed from ${baseName(r.dir)}.`
+					: undefined),
+		});
 	} catch (e) {
 		fail("Could not attach the newest file", e);
 	}

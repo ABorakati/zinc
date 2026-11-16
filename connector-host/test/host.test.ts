@@ -47,7 +47,14 @@ const article = (id = "item1", over: Record<string, unknown> = {}) => ({
 	notes: [{ note: "<p>Translator note</p>" }],
 	attachments: [
 		{ id: "att1", title: "Full Text PDF", url: "https://www.bmj.com/x.pdf", mimeType: "application/pdf", parentItem: id },
-		{ id: "att2", title: "Publisher link", url: "https://www.bmj.com/content/383/" + id, mimeType: "text/html", snapshot: false, parentItem: id },
+		{
+			id: "att2",
+			title: "Publisher link",
+			url: "https://www.bmj.com/content/383/" + id,
+			mimeType: "text/html",
+			snapshot: false,
+			parentItem: id,
+		},
 	],
 	seeAlso: [],
 	...over,
@@ -92,8 +99,11 @@ beforeAll(() => {
 afterAll(() => {
 	// Windows keeps the folder locked for a moment after the host process exits: retry, and never fail the run
 	if (!process.env.ZNH_TEST_DIR) {
-		try { rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
-		catch (e) { console.warn(`could not remove ${ROOT}:`, e); }
+		try {
+			rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+		} catch (e) {
+			console.warn(`could not remove ${ROOT}:`, e);
+		}
 	}
 });
 
@@ -136,11 +146,23 @@ describe("native host: a full save", () => {
 		const saved = await h.call("saveItems", { json: { sessionID: "S1", uri: "https://www.bmj.com/content/383", items } });
 		expect(saved.status).toBe(201);
 
-		const meta = JSON.stringify({ id: "att1", url: "https://www.bmj.com/x.pdf", contentType: "application/pdf", parentItemID: "item1", title: "Full Text PDF" });
-		const att = await h.call("saveAttachment", { bytes: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": meta }, query: "sessionID=S1" });
+		const meta = JSON.stringify({
+			id: "att1",
+			url: "https://www.bmj.com/x.pdf",
+			contentType: "application/pdf",
+			parentItemID: "item1",
+			title: "Full Text PDF",
+		});
+		const att = await h.call("saveAttachment", {
+			bytes: pdf,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": meta },
+			query: "sessionID=S1",
+		});
 		expect(att.status).toBe(201);
 
-		const upd = await h.call("updateSession", { json: { sessionID: "S1", target: `C${collKey}`, tags: ["from-ext"], note: "my note" } });
+		const upd = await h.call("updateSession", {
+			json: { sessionID: "S1", target: `C${collKey}`, tags: ["from-ext"], note: "my note" },
+		});
 		expect(upd.status).toBe(200);
 
 		const html = "<html><body><h1>Snapshot</h1></body></html>";
@@ -152,14 +174,22 @@ describe("native host: a full save", () => {
 
 		const db = openDb(dbPath);
 		try {
-			const top = db.query("SELECT key, title FROM items WHERE title LIKE 'Outcomes after liver transplantation item1' AND parent_key IS NULL").get() as { key: string; title: string };
+			const top = db
+				.query("SELECT key, title FROM items WHERE title LIKE 'Outcomes after liver transplantation item1' AND parent_key IS NULL")
+				.get() as { key: string; title: string };
 			expect(top).toBeTruthy();
 			// collection, tags
-			expect(count(db, "SELECT count(*) n FROM collection_items WHERE item_key = ? AND collection_key = ?", top.key, collKey)).toBe(1);
+			expect(count(db, "SELECT count(*) n FROM collection_items WHERE item_key = ? AND collection_key = ?", top.key, collKey)).toBe(
+				1,
+			);
 			const tags = (db.query("SELECT tag FROM item_tags WHERE item_key = ?").all(top.key) as { tag: string }[]).map((t) => t.tag);
 			expect(tags).toEqual(expect.arrayContaining(["liver", "transplant", "from-ext"]));
 			// attachments: PDF + snapshot (the publisher link is saved by link only, not here)
-			const atts = db.query("SELECT a.item_key, a.content_type, a.path FROM attachments a JOIN items i ON i.key = a.item_key WHERE i.parent_key = ?").all(top.key) as { item_key: string; content_type: string; path: string }[];
+			const atts = db
+				.query(
+					"SELECT a.item_key, a.content_type, a.path FROM attachments a JOIN items i ON i.key = a.item_key WHERE i.parent_key = ?",
+				)
+				.all(top.key) as { item_key: string; content_type: string; path: string }[];
 			const pdfAtt = atts.find((a) => a.content_type === "application/pdf")!;
 			expect(pdfAtt).toBeTruthy();
 			const onDisk = readFileSync(pdfAtt.path);
@@ -169,7 +199,11 @@ describe("native host: a full save", () => {
 			const snap = atts.find((a) => a.content_type === "text/html" && a.path)!;
 			expect(readFileSync(snap.path, "utf8")).toContain("<h1>Snapshot</h1>");
 			// notes: translator note + the user's typed note
-			const notes = (db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0").all(top.key) as { data: string }[]).map((r) => JSON.parse(r.data).note as string);
+			const notes = (
+				db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0").all(top.key) as {
+					data: string;
+				}[]
+			).map((r) => JSON.parse(r.data).note as string);
 			expect(notes.some((n) => n.includes("Translator note"))).toBe(true);
 			expect(notes.some((n) => n.includes("my note"))).toBe(true);
 			// sync outbox recorded the writes by trigger
@@ -190,7 +224,8 @@ describe("native host: a full save", () => {
 		const saved = await h.call("saveItems", { json: { sessionID: "S2", items: [article("item2")] } });
 		expect(saved.status).toBe(201);
 		const db = openDb(dbPath);
-		const k = (db.query("SELECT key FROM items WHERE title = 'Outcomes after liver transplantation item2'").get() as { key: string }).key;
+		const k = (db.query("SELECT key FROM items WHERE title = 'Outcomes after liver transplantation item2'").get() as { key: string })
+			.key;
 		expect(count(db, "SELECT count(*) n FROM collection_items WHERE item_key = ? AND collection_key = ?", k, collKey)).toBe(1);
 		db.close(true);
 		// back to My Library
@@ -204,12 +239,23 @@ describe("native host: a full save", () => {
 		expect((await h.call("saveItems", { json: { sessionID: "S3", items: [article("item3")] } })).status).toBe(201);
 		await h.close();
 		h = new HostClient({ ZN_DB: dbPath });
-		const meta = JSON.stringify({ id: "att1", url: "https://www.bmj.com/x.pdf", contentType: "application/pdf", parentItemID: "item3", title: "Full Text PDF" });
-		const att = await h.call("saveAttachment", { bytes: fakePdf(5000), headers: { "Content-Type": "application/pdf", "X-Metadata": meta }, query: "sessionID=S3" });
+		const meta = JSON.stringify({
+			id: "att1",
+			url: "https://www.bmj.com/x.pdf",
+			contentType: "application/pdf",
+			parentItemID: "item3",
+			title: "Full Text PDF",
+		});
+		const att = await h.call("saveAttachment", {
+			bytes: fakePdf(5000),
+			headers: { "Content-Type": "application/pdf", "X-Metadata": meta },
+			query: "sessionID=S3",
+		});
 		expect(att.status).toBe(201);
 		expect((await h.call("updateSession", { json: { sessionID: "S3", target: "L1", tags: ["restarted"] } })).status).toBe(200);
 		const db = openDb(dbPath);
-		const k = (db.query("SELECT key FROM items WHERE title = 'Outcomes after liver transplantation item3'").get() as { key: string }).key;
+		const k = (db.query("SELECT key FROM items WHERE title = 'Outcomes after liver transplantation item3'").get() as { key: string })
+			.key;
 		expect(count(db, "SELECT count(*) n FROM item_tags WHERE item_key = ? AND tag = 'restarted'", k)).toBe(1);
 		expect(count(db, "SELECT count(*) n FROM items WHERE parent_key = ? AND item_type = 'attachment'", k)).toBeGreaterThanOrEqual(1);
 		db.close(true);
@@ -218,16 +264,34 @@ describe("native host: a full save", () => {
 	test("a saved PDF is full-text indexed by the host (worker pool from the zotero-next checkout)", async () => {
 		const id = "item-ft";
 		expect((await h.call("saveItems", { json: { sessionID: "SFT", items: [article(id)] } })).status).toBe(201);
-		const meta = JSON.stringify({ id: "att1", url: "https://www.bmj.com/ft.pdf", contentType: "application/pdf", parentItemID: id, title: "FT" });
-		const att = await h.call("saveAttachment", { bytes: tinyPdf("Zebra pangolin xylophone"), headers: { "Content-Type": "application/pdf", "X-Metadata": meta }, query: "sessionID=SFT" });
+		const meta = JSON.stringify({
+			id: "att1",
+			url: "https://www.bmj.com/ft.pdf",
+			contentType: "application/pdf",
+			parentItemID: id,
+			title: "FT",
+		});
+		const att = await h.call("saveAttachment", {
+			bytes: tinyPdf("Zebra pangolin xylophone"),
+			headers: { "Content-Type": "application/pdf", "X-Metadata": meta },
+			query: "sessionID=SFT",
+		});
 		expect(att.status).toBe(201);
 		const db = openDb(dbPath);
 		const parent = (db.query("SELECT key FROM items WHERE title LIKE '%item-ft'").get() as { key: string }).key;
-		const attKey = (db.query("SELECT a.item_key AS key FROM attachments a JOIN items i ON i.key = a.item_key WHERE i.parent_key = ? AND a.path IS NOT NULL").get(parent) as { key: string }).key;
+		const attKey = (
+			db
+				.query(
+					"SELECT a.item_key AS key FROM attachments a JOIN items i ON i.key = a.item_key WHERE i.parent_key = ? AND a.path IS NOT NULL",
+				)
+				.get(parent) as { key: string }
+		).key;
 		let content = "";
 		for (let i = 0; i < 80 && !content; i++) {
 			await Bun.sleep(500);
-			content = (db.query("SELECT content FROM fulltext WHERE attachment_key = ?").get(attKey) as { content: string } | null)?.content ?? "";
+			content =
+				(db.query("SELECT content FROM fulltext WHERE attachment_key = ?").get(attKey) as { content: string } | null)?.content ??
+				"";
 		}
 		db.close(true);
 		if (!content) console.error("host stderr:", h.stderr.join(""));
@@ -320,7 +384,10 @@ describe("native host: concurrent writes with a running core server", () => {
 	test("host saves while the app's server writes the same database", async () => {
 		const dbPath = makeLibrary("concurrent");
 		const PORT = 23138;
-		const server = Bun.spawn(["bun", join(import.meta.dir, "../../core/src/server.ts"), "--db", dbPath, "--port", String(PORT)], { stdout: "ignore", stderr: "ignore" });
+		const server = Bun.spawn(["bun", join(import.meta.dir, "../../core/src/server.ts"), "--db", dbPath, "--port", String(PORT)], {
+			stdout: "ignore",
+			stderr: "ignore",
+		});
 		const base = `http://127.0.0.1:${PORT}`;
 		try {
 			for (let i = 0; i < 100; i++) {
@@ -341,17 +408,42 @@ describe("native host: concurrent writes with a running core server", () => {
 			before.close(true);
 			const serverWrites = (async () => {
 				for (let i = 0; i < N; i++) {
-					const r = await fetch(`${base}/api/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: { itemType: "book", title: `Server book ${i}` } }) });
+					const r = await fetch(`${base}/api/items`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ data: { itemType: "book", title: `Server book ${i}` } }),
+					});
 					if (!r.ok) throw new Error(`server write ${i}: ${r.status} ${await r.text()}`);
 				}
 			})();
 			const hostWrites = (async () => {
 				for (let i = 0; i < N; i++) {
 					const id = `c${i}`;
-					const r = await h.call("saveItems", { json: { sessionID: `CC${i}`, items: [article(id, { attachments: [{ id: "a", title: "PDF", url: "https://x.test/a.pdf", mimeType: "application/pdf", parentItem: id }] })] } });
+					const r = await h.call("saveItems", {
+						json: {
+							sessionID: `CC${i}`,
+							items: [
+								article(id, {
+									attachments: [
+										{ id: "a", title: "PDF", url: "https://x.test/a.pdf", mimeType: "application/pdf", parentItem: id },
+									],
+								}),
+							],
+						},
+					});
 					if (r.status !== 201) throw new Error(`host write ${i}: ${r.status} ${r.text}`);
-					const meta = JSON.stringify({ id: "a", url: "https://x.test/a.pdf", contentType: "application/pdf", parentItemID: id, title: "PDF" });
-					const a = await h.call("saveAttachment", { bytes: fakePdf(20000 + i), headers: { "Content-Type": "application/pdf", "X-Metadata": meta }, query: `sessionID=CC${i}` });
+					const meta = JSON.stringify({
+						id: "a",
+						url: "https://x.test/a.pdf",
+						contentType: "application/pdf",
+						parentItemID: id,
+						title: "PDF",
+					});
+					const a = await h.call("saveAttachment", {
+						bytes: fakePdf(20000 + i),
+						headers: { "Content-Type": "application/pdf", "X-Metadata": meta },
+						query: `sessionID=CC${i}`,
+					});
 					if (a.status !== 201) throw new Error(`host attachment ${i}: ${a.status} ${a.text}`);
 				}
 			})();

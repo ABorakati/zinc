@@ -12,14 +12,18 @@ type R = {
 	nativeSimulateMouseDown(x: number, y: number, button?: number): void;
 	nativeSimulateMouseMove(x: number, y: number, pressedButton?: number): void;
 	nativeSimulateMouseUp(x: number, y: number, button?: number): void;
-	flush(): void; dispatchNativeEvents(): void; captureScreenshot(f: string): void;
+	flush(): void;
+	dispatchNativeEvents(): void;
+	captureScreenshot(f: string): void;
 };
 const r = h.t.renderer as unknown as R;
 await h.settle(600); // bounds exist once a frame has painted
 const el = r.findByTestId("card-list");
 if (!el) console.log("no element with testId card-list");
 // a virtual list reports no bounds of its own: use its parent box (CardsView's root, same rect)
-const lists = (r as unknown as { findByType(t: string): { id: number; parentId?: number; parent?: { id: number } }[] }).findByType("virtual-list");
+const lists = (r as unknown as { findByType(t: string): { id: number; parentId?: number; parent?: { id: number } }[] }).findByType(
+	"virtual-list",
+);
 const pick = lists.find((l) => l.id === el?.id) ?? lists[0];
 const pid = pick?.parentId ?? pick?.parent?.id;
 const b = (el && r.getElementBounds(el.id)) ?? (pid != null ? r.getElementBounds(pid) : null);
@@ -27,27 +31,41 @@ console.log("virtual lists", lists.length, "picked", pick?.id, "parent", pid);
 if (!b) throw new Error("no card-list");
 console.log("list bounds", b);
 const x = b.x + b.width - 3; // on the 6 px thumb at the right edge
-const tick = async (ms = 40) => { r.flush(); r.dispatchNativeEvents(); await sleep(ms); };
+const tick = async (ms = 40) => {
+	r.flush();
+	r.dispatchNativeEvents();
+	await sleep(ms);
+};
 // record what the list reports as visible (CardList's onVisibleRange -> store.setVisible(firstItem, lastItem))
 let vis: [number, number] | null = null;
 const st = h.store as unknown as { setVisible(a: number, b: number): void };
 const orig = st.setVisible.bind(st);
-st.setVisible = (a: number, b: number) => { vis = [a, b]; orig(a, b); };
+st.setVisible = (a: number, b: number) => {
+	vis = [a, b];
+	orig(a, b);
+};
 
 const before = vis;
 console.log("visible before", before);
 r.nativeSimulateMouseDown(x, b.y + 8, 0);
 await tick();
-const steps = 20, target = b.y + b.height / 2;
+const steps = 20,
+	target = b.y + b.height / 2;
 const { stats } = await import("../src/store"); // relative: an absolute path would load a second copy of the store
 const f0 = stats.fetches;
-for (let i = 1; i <= steps; i++) { r.nativeSimulateMouseMove(x, b.y + 8 + ((target - b.y - 8) * i) / steps, 0); await tick(16); }
+for (let i = 1; i <= steps; i++) {
+	r.nativeSimulateMouseMove(x, b.y + 8 + ((target - b.y - 8) * i) / steps, 0);
+	await tick(16);
+}
 console.log("page fetches started during the drag", stats.fetches - f0);
 r.captureScreenshot(`${prefix}-mid-drag.png`);
 r.nativeSimulateMouseUp(x, target, 0);
 const t0 = performance.now();
 // time until the first visible row has its data (the cards are drawn, not skeletons)
-while (performance.now() - t0 < 5000) { await tick(10); if (vis && h.store.peek(vis[0])) break; }
+while (performance.now() - t0 < 5000) {
+	await tick(10);
+	if (vis && h.store.peek(vis[0])) break;
+}
 console.log("visible after drag", vis, "data after", Math.round(performance.now() - t0), "ms");
 r.captureScreenshot(`${prefix}-after-drag.png`);
 // a press on the track near the bottom jumps there

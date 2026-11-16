@@ -127,17 +127,21 @@ export function renameFiles(db: Database, attachmentKeys: string[], ownStorageDi
 		const data = JSON.parse(att.data) as Record<string, unknown>;
 		const now = nowIso();
 		try {
-		db.transaction(() => {
-			db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(wasRelative ? toStoredPath(db, target) : target, key);
-			if (linked) data.path = target; // sync hands Zotero the absolute path
-			data.filename = name;
-			data.dateModified = now;
-			db.query("UPDATE items SET data = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), now, key);
-			indexItem(db, key);
-		})();
+			db.transaction(() => {
+				db.query("UPDATE attachments SET path = ? WHERE item_key = ?").run(wasRelative ? toStoredPath(db, target) : target, key);
+				if (linked) data.path = target; // sync hands Zotero the absolute path
+				data.filename = name;
+				data.dateModified = now;
+				db.query("UPDATE items SET data = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), now, key);
+				indexItem(db, key);
+			})();
 		} catch (e) {
 			// the database refused: put the file back so the path in the library still points at it
-			try { renameSync(target, current); } catch { /* ignore */ }
+			try {
+				renameSync(target, current);
+			} catch {
+				/* ignore */
+			}
 			skip(`could not update the library: ${e instanceof Error ? e.message : String(e)}`);
 			continue;
 		}

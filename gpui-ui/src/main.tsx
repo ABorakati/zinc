@@ -48,10 +48,22 @@ function Splash() {
 			<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }} />
 			<div style={{ ...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3 pl-3"), width: "100%" }}>
 				<div style={{ ...t("flex flex-col gap-3 p-3"), width: "18%", flexShrink: 0, minWidth: 0, height: "100%" }}>
-					{[70, 55, 80, 60, 65].map((w) => <div style={bar(`${w}%`)} />)}
+					{[70, 55, 80, 60, 65].map((w) => (
+						<div style={bar(`${w}%`)} />
+					))}
 				</div>
-				<div style={{ ...t("min-w-0 rounded-[14px] bg-background shadow-raised flex flex-col gap-4 p-4 overflow-hidden"), flexGrow: 1, flexShrink: 1, minWidth: 0, height: "100%" }}>
-					{[90, 70, 85, 60, 80, 75, 65, 88, 72].map((w) => <div style={bar(`${w}%`, 12)} />)}
+				<div
+					style={{
+						...t("min-w-0 rounded-[14px] bg-background shadow-raised flex flex-col gap-4 p-4 overflow-hidden"),
+						flexGrow: 1,
+						flexShrink: 1,
+						minWidth: 0,
+						height: "100%",
+					}}
+				>
+					{[90, 70, 85, 60, 80, 75, 65, 88, 72].map((w) => (
+						<div style={bar(`${w}%`, 12)} />
+					))}
 				</div>
 				<div style={{ width: 12, flexShrink: 0 }} />
 				<div style={{ ...t("min-w-0 rounded-[14px] bg-background shadow-raised"), width: "28%", flexShrink: 0, height: "100%" }} />
@@ -63,7 +75,11 @@ function Splash() {
 const [app, setApp] = createSignal<Component | null>(null);
 
 function Root() {
-	return <Show when={app()} fallback={<Splash />}>{(C) => createComponent(C(), {})}</Show>;
+	return (
+		<Show when={app()} fallback={<Splash />}>
+			{(C) => createComponent(C(), {})}
+		</Show>
+	);
 }
 
 const earlyData = startPrefetch(); // a worker answers the first screen's requests while render() below blocks this thread (src/prefetch.ts)
@@ -96,7 +112,8 @@ if (startup.firstRun) await import("./firstrun/run").then((m) => m.runFirstRun((
 // The core: at once, unless the prefetch worker is answering the first screen's requests (src/prefetch.ts); then it starts when the
 // first page is in (below) or when a request needs it (api.ts calls this on the first request the worker did not answer).
 const bootCore = () => void startCore().catch((e) => console.error("[core]", e instanceof Error ? e.message : e));
-if (earlyData) startCoreOnDemand(bootCore); else bootCore(); // before the store: it holds requests
+if (earlyData) startCoreOnDemand(bootCore);
+else bootCore(); // before the store: it holds requests
 const storeP = import("./store"); // creating the store starts the data loading right now
 const appP = import("./App");
 const { store, uiState } = await storeP;
@@ -104,26 +121,32 @@ bindUiState(uiState); // shell preferences are written by store.ts's ui-state.js
 mark("store-ready");
 startAppearance(store); // store.mode follows the stored mode / the OS; colours, font and size follow the preferences
 // the Windows title bar follows the theme too (after startAppearance's effect, so the scheme's tokens are already rewritten)
-void import("./shell/windowFrame").then(({ applyFrameTheme }) => createRoot(() => createEffect(() => {
-	const m = store.mode();
-	themePrefs(); // re-run on a scheme change: applyColours rewrites tokens in place
-	const t = tokens[m];
-	applyFrameTheme(m === "dark", { caption: t.canvas, text: t.foreground, border: t.border });
-})));
+void import("./shell/windowFrame").then(({ applyFrameTheme }) =>
+	createRoot(() =>
+		createEffect(() => {
+			const m = store.mode();
+			themePrefs(); // re-run on a scheme change: applyColours rewrites tokens in place
+			const t = tokens[m];
+			applyFrameTheme(m === "dark", { caption: t.canvas, text: t.foreground, border: t.border });
+		}),
+	),
+);
 const { App } = await appP;
 setApp(() => App);
 mark("app-mounted");
 
 // The App is mounted; this resolves when its first page of items is in (or the load failed): the next frame paints it.
-await new Promise<void>((resolve) => createRoot((dispose) => {
-	createEffect(() => {
-		if (store.pagesLoaded() > 0 || store.error()) {
-			mark("first-items");
-			dispose();
-			resolve();
-		}
-	});
-}));
+await new Promise<void>((resolve) =>
+	createRoot((dispose) => {
+		createEffect(() => {
+			if (store.pagesLoaded() > 0 || store.error()) {
+				mark("first-items");
+				dispose();
+				resolve();
+			}
+		});
+	}),
+);
 
 // Everything below is off the path to the first items. Let the frame go out first.
 await new Promise((r) => setTimeout(r, 16));
@@ -139,10 +162,12 @@ await import("./features").then(
 );
 void openTabsFromEnv(store.openAttachment);
 // "Open in Zinc" from the Word sidebar or the browser connector: POST /api/ui/reveal, acted on here (src/shell/revealRequests.ts)
-void import("./shell/revealRequests").then((m) => m.startRevealPolling((key, open) => {
-	store.setActiveTab("library");
-	store.selectItem(key);
-	if (open) store.openAttachment(open.key, open.title, key); // "Open item" from the connector popup
-}));
+void import("./shell/revealRequests").then((m) =>
+	m.startRevealPolling((key, open) => {
+		store.setActiveTab("library");
+		store.selectItem(key);
+		if (open) store.openAttachment(open.key, open.title, key); // "Open item" from the connector popup
+	}),
+);
 void import("./features/report/crashToast").then((m) => m.showCrashToast()); // "closed unexpectedly last time", if the crash marker found one
 void import("./update/service").then((m) => m.startUpdates()); // auto-update: timer + install-on-exit hooks; no network unless a feed is configured (src/update/)

@@ -25,7 +25,7 @@ export { jobs, panelCollapsed, setPanelCollapsed };
 
 const timers = new Map<string, ReturnType<typeof setInterval>>(); // job id -> poll timer
 
-export const call = <T,>(method: string, path: string, body?: unknown) => http<T>(method, `/api/fulltext${path}`, body);
+export const call = <T>(method: string, path: string, body?: unknown) => http<T>(method, `/api/fulltext${path}`, body);
 
 export function summarize(job: FullTextJob) {
 	const c = { attached: 0, already: 0, signIn: 0, notFound: 0, failed: 0, cancelled: 0, open: 0 };
@@ -54,7 +54,13 @@ function finishToast(t: TrackedJob) {
 	if (c.cancelled) parts.push(`${c.cancelled} cancelled`);
 	const description = parts.join(", ") || undefined;
 	if (c.attached) toast(`Attached ${plural(c.attached, "PDF")}`, { kind: "success", description, durationMs: 6000 });
-	else if (c.signIn) toast("Sign-in needed for full text", { kind: "info", description, durationMs: 10000, action: { label: "Review", run: () => setPanelCollapsed(false) } });
+	else if (c.signIn)
+		toast("Sign-in needed for full text", {
+			kind: "info",
+			description,
+			durationMs: 10000,
+			action: { label: "Review", run: () => setPanelCollapsed(false) },
+		});
 	else if (c.cancelled && c.cancelled === job.items.length) toast("Find Full Text cancelled", { kind: "info", durationMs: 3000 });
 	else toast("No new PDFs found", { kind: "info", description, durationMs: 5000 });
 }
@@ -82,20 +88,23 @@ function apply(snapshot: FullTextJob) {
 
 function follow(id: string) {
 	let inflight = false;
-	timers.set(id, setInterval(async () => {
-		if (inflight) return;
-		inflight = true;
-		try {
-			apply(await call<FullTextJob>("GET", `/jobs/${id}`));
-		} catch (e) {
-			stop(id);
-			const msg = errMsg(e);
-			update(id, (t) => ({ ...t, error: msg })); // shown in the panel
-			if (panelCollapsed()) toast("Lost contact with Find Full Text", { kind: "error", description: msg });
-		} finally {
-			inflight = false;
-		}
-	}, 800));
+	timers.set(
+		id,
+		setInterval(async () => {
+			if (inflight) return;
+			inflight = true;
+			try {
+				apply(await call<FullTextJob>("GET", `/jobs/${id}`));
+			} catch (e) {
+				stop(id);
+				const msg = errMsg(e);
+				update(id, (t) => ({ ...t, error: msg })); // shown in the panel
+				if (panelCollapsed()) toast("Lost contact with Find Full Text", { kind: "error", description: msg });
+			} finally {
+				inflight = false;
+			}
+		}, 800),
+	);
 }
 
 /** Start a job for top-level item keys and track it. Resolves with the job id. */
@@ -111,7 +120,9 @@ export async function startJob(keys: string[], openAccessOnly = false): Promise<
 
 export function findFullText(keys: string[], opts: { openAccessOnly?: boolean } = {}): void {
 	if (keys.length === 0) return;
-	startJob(keys, opts.openAccessOnly === true).catch((e) => toast("Could not start Find Full Text", { kind: "error", description: errMsg(e) }));
+	startJob(keys, opts.openAccessOnly === true).catch((e) =>
+		toast("Could not start Find Full Text", { kind: "error", description: errMsg(e) }),
+	);
 }
 
 export async function cancelJob(id: string): Promise<void> {

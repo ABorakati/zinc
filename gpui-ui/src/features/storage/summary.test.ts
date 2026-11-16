@@ -2,7 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { attachNewestLabel, describeOrganize, formatExtensions, parseExtensions, type OrganizeReport } from "./summary";
 
 const report = (p: Partial<OrganizeReport> = {}): OrganizeReport => ({
-	moved: 0, copied: 0, failed: [], leftBehind: [], onlineOnly: 0, locked: 0, skipped: 0, skippedSample: [], bytes: 0, ...p,
+	moved: 0,
+	copied: 0,
+	failed: [],
+	leftBehind: [],
+	onlineOnly: 0,
+	locked: 0,
+	skipped: 0,
+	skippedSample: [],
+	bytes: 0,
+	...p,
 });
 
 describe("describeOrganize", () => {
@@ -12,13 +21,26 @@ describe("describeOrganize", () => {
 		expect(describeOrganize(report({ moved: 2 }), "to-stored").title).toBe("2 files converted to stored files");
 	});
 	test("says why nothing happened", () => {
-		const r = describeOrganize(report({ skipped: 1, skippedSample: [{ key: "A", path: "x", reason: "already in the right folder" }] }), "move");
+		const r = describeOrganize(
+			report({ skipped: 1, skippedSample: [{ key: "A", path: "x", reason: "already in the right folder" }] }),
+			"move",
+		);
 		expect(r).toMatchObject({ kind: "info", title: "Nothing to do" });
 		expect(r.description).toContain("already in the right folder");
 		expect(describeOrganize(report(), "move").description).toBe("Every file is already in place.");
 	});
 	test("reports files that were left alone", () => {
-		const r = describeOrganize(report({ moved: 1, locked: 2, onlineOnly: 1, leftBehind: [{ key: "A", path: "x" }], skipped: 3, skippedSample: [{ key: "B", path: "y", reason: "the file is open in another program" }] }), "move");
+		const r = describeOrganize(
+			report({
+				moved: 1,
+				locked: 2,
+				onlineOnly: 1,
+				leftBehind: [{ key: "A", path: "x" }],
+				skipped: 3,
+				skippedSample: [{ key: "B", path: "y", reason: "the file is open in another program" }],
+			}),
+			"move",
+		);
 		expect(r.kind).toBe("success");
 		expect(r.description).toContain("2 files open in another program skipped");
 		expect(r.description).toContain("1 online-only OneDrive file skipped");

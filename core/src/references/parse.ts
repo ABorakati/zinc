@@ -9,8 +9,10 @@ export interface ParsedEntry {
 	authors?: string[];
 }
 
-const HEADING = /^[ \t]*(?:\d{1,2}[.)]?[ \t]+)?(?:references?(?: list)?|bibliography|literature cited|works cited|reference list|references and notes)[ \t]*:?[ \t]*$/gim;
-const END_HEADING = /^[ \t]*(?:appendix|appendices|supplementary (?:material|information|data)|supporting information|acknowledg(?:e)?ments?|author contributions?|conflicts? of interest|funding|figure legends|tables?)\b.{0,40}$/im;
+const HEADING =
+	/^[ \t]*(?:\d{1,2}[.)]?[ \t]+)?(?:references?(?: list)?|bibliography|literature cited|works cited|reference list|references and notes)[ \t]*:?[ \t]*$/gim;
+const END_HEADING =
+	/^[ \t]*(?:appendix|appendices|supplementary (?:material|information|data)|supporting information|acknowledg(?:e)?ments?|author contributions?|conflicts? of interest|funding|figure legends|tables?)\b.{0,40}$/im;
 
 /** The text after the last References/Bibliography heading, or null when none is found. */
 export function findReferencesSection(text: string): string | null {
@@ -74,7 +76,8 @@ function splitNumbered(lines: string[]): string[] | null {
 
 const YEAR = /\b(?:19|20)\d{2}[a-z]?\b/;
 // "Smith J, ..." / "Smith, J." / "Smith, John" / "van der Berg A" / "World Health Organization."
-const AUTHOR_START = /^(?:[\p{Lu}][\p{L}'’\-]+(?:\s+(?:van|von|de|der|den|di|da|del|la|le|bin|al)\b)*(?:\s+[\p{Lu}][\p{L}'’\-]+)?)(?:,\s*(?:[\p{Lu}]\.|[\p{Lu}]{1,3}\b|[\p{Lu}][\p{L}]+)|\s+[\p{Lu}]{1,3}(?:[,.]|\s|$))/u;
+const AUTHOR_START =
+	/^(?:[\p{Lu}][\p{L}'’\-]+(?:\s+(?:van|von|de|der|den|di|da|del|la|le|bin|al)\b)*(?:\s+[\p{Lu}][\p{L}'’\-]+)?)(?:,\s*(?:[\p{Lu}]\.|[\p{Lu}]{1,3}\b|[\p{Lu}][\p{L}]+)|\s+[\p{Lu}]{1,3}(?:[,.]|\s|$))/u;
 
 function splitAuthorYear(lines: string[]): string[] {
 	const out: string[] = [];
@@ -161,7 +164,11 @@ export function parseEntry(raw: string): ParsedEntry {
 	const doi = normalizeDoi(raw.match(/10\.\d{4,9}\/[^\s"<>]+/)?.[0]);
 	if (doi) entry.doi = doi;
 	// remove DOI/URL so they do not confuse title splitting
-	const text = raw.replace(/(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)?10\.\d{4,9}\/\S+/gi, " ").replace(/https?:\/\/\S+/g, " ").replace(/\s+/g, " ").trim();
+	const text = raw
+		.replace(/(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)?10\.\d{4,9}\/\S+/gi, " ")
+		.replace(/https?:\/\/\S+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 
 	const paren = text.match(/\(((?:19|20)\d{2})[a-z]?\)\.?/);
 	let title: string | undefined;

@@ -25,16 +25,16 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export type SignConfig =
-	| { kind: "pfx"; pfx: string; password: string }
-	| { kind: "azure"; endpoint: string; account: string; profile: string }
-	| null;
+	{ kind: "pfx"; pfx: string; password: string } | { kind: "azure"; endpoint: string; account: string; profile: string } | null;
 
 export function signConfig(env: Record<string, string | undefined> = process.env): SignConfig {
-	if (env.ZN_SIGN_PFX && env.ZN_SIGN_PFX_PASSWORD !== undefined) return { kind: "pfx", pfx: env.ZN_SIGN_PFX, password: env.ZN_SIGN_PFX_PASSWORD };
+	if (env.ZN_SIGN_PFX && env.ZN_SIGN_PFX_PASSWORD !== undefined)
+		return { kind: "pfx", pfx: env.ZN_SIGN_PFX, password: env.ZN_SIGN_PFX_PASSWORD };
 	if (env.ZN_SIGN_PFX) throw new Error("ZN_SIGN_PFX is set but ZN_SIGN_PFX_PASSWORD is not (use an empty value for a passwordless pfx)");
 	if (env.ZN_SIGN_AZURE_ENDPOINT || env.ZN_SIGN_AZURE_ACCOUNT || env.ZN_SIGN_AZURE_PROFILE) {
 		const { ZN_SIGN_AZURE_ENDPOINT: endpoint, ZN_SIGN_AZURE_ACCOUNT: account, ZN_SIGN_AZURE_PROFILE: profile } = env;
-		if (!endpoint || !account || !profile) throw new Error("Azure signing needs all of ZN_SIGN_AZURE_ENDPOINT, ZN_SIGN_AZURE_ACCOUNT and ZN_SIGN_AZURE_PROFILE");
+		if (!endpoint || !account || !profile)
+			throw new Error("Azure signing needs all of ZN_SIGN_AZURE_ENDPOINT, ZN_SIGN_AZURE_ACCOUNT and ZN_SIGN_AZURE_PROFILE");
 		return { kind: "azure", endpoint, account, profile };
 	}
 	return null;
@@ -45,14 +45,21 @@ export function findSigntool(env: Record<string, string | undefined> = process.e
 	if (env.ZN_SIGN_TOOL) return env.ZN_SIGN_TOOL;
 	const bin = join(env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)", "Windows Kits", "10", "bin");
 	if (!existsSync(bin)) return null;
-	const vers = readdirSync(bin).filter((d) => /^\d+\.\d+\.\d+\.\d+$/.test(d)).sort((a, b) => cmpVer(b, a));
+	const vers = readdirSync(bin)
+		.filter((d) => /^\d+\.\d+\.\d+\.\d+$/.test(d))
+		.sort((a, b) => cmpVer(b, a));
 	for (const v of vers) {
 		const p = join(bin, v, "x64", "signtool.exe");
 		if (existsSync(p)) return p;
 	}
 	return null;
 }
-const cmpVer = (a: string, b: string) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return (x[i]! - y[i]!); return 0; };
+const cmpVer = (a: string, b: string) => {
+	const x = a.split(".").map(Number),
+		y = b.split(".").map(Number);
+	for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i]! - y[i]!;
+	return 0;
+};
 
 function run(cmd: string[], redact: string[] = []): { code: number; out: string } {
 	const r = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "pipe" });
@@ -64,7 +71,10 @@ function run(cmd: string[], redact: string[] = []): { code: number; out: string 
 /** Signs `files` in place. Returns true when they were signed, false when no certificate is configured (nothing is touched then). */
 export function signFiles(files: string[], env: Record<string, string | undefined> = process.env): boolean {
 	const cfg = signConfig(env);
-	if (!cfg) { console.log("unsigned: no certificate configured"); return false; }
+	if (!cfg) {
+		console.log("unsigned: no certificate configured");
+		return false;
+	}
 	const existing = files.filter((f) => existsSync(f));
 	if (existing.length !== files.length) throw new Error(`sign: missing ${files.filter((f) => !existsSync(f)).join(", ")}`);
 	if (!files.length) return true;
@@ -81,10 +91,26 @@ export function signFiles(files: string[], env: Record<string, string | undefine
 		}
 	} else {
 		const tool = env.ZN_SIGN_TOOL || Bun.which("sign");
-		if (!tool) throw new Error("the `sign` tool is not installed: dotnet tool install --global sign --prerelease (or set ZN_SIGN_TOOL)");
+		if (!tool)
+			throw new Error("the `sign` tool is not installed: dotnet tool install --global sign --prerelease (or set ZN_SIGN_TOOL)");
 		const cred = env.ZN_SIGN_AZURE_CREDENTIAL ? ["-act", env.ZN_SIGN_AZURE_CREDENTIAL] : [];
 		const ts = tsRaw === "none" ? [] : ["-t", tsRaw || "http://timestamp.acs.microsoft.com/"];
-		const r = run([tool, "code", "artifact-signing", "-ase", cfg.endpoint, "-asa", cfg.account, "-ascp", cfg.profile, ...cred, ...ts, "-d", desc, ...files]);
+		const r = run([
+			tool,
+			"code",
+			"artifact-signing",
+			"-ase",
+			cfg.endpoint,
+			"-asa",
+			cfg.account,
+			"-ascp",
+			cfg.profile,
+			...cred,
+			...ts,
+			"-d",
+			desc,
+			...files,
+		]);
 		if (r.code !== 0) throw new Error(`sign failed (exit ${r.code}):\n${r.out}`);
 	}
 	console.log(`signed (${cfg.kind}): ${files.map((f) => f.split(/[\\/]/).pop()).join(", ")}`);
@@ -92,7 +118,10 @@ export function signFiles(files: string[], env: Record<string, string | undefine
 }
 
 /** `signtool verify /pa`. present = the file has an Authenticode signature (even when its certificate chain is untrusted). */
-export function verifySignature(file: string, env: Record<string, string | undefined> = process.env): { present: boolean; trusted: boolean; output: string } {
+export function verifySignature(
+	file: string,
+	env: Record<string, string | undefined> = process.env,
+): { present: boolean; trusted: boolean; output: string } {
 	const tool = findSigntool(env);
 	if (!tool) throw new Error("signtool.exe not found");
 	if (!existsSync(file)) return { present: false, trusted: false, output: "file not found" };
@@ -109,11 +138,21 @@ if (import.meta.main) {
 		let bad = 0;
 		for (const f of args.slice(1)) {
 			const v = verifySignature(f);
-			console.log(`${f}: signature ${v.present ? "present" : "ABSENT"}${v.present ? (v.trusted ? ", trusted" : ", not trusted by this machine") : ""}`);
+			console.log(
+				`${f}: signature ${v.present ? "present" : "ABSENT"}${v.present ? (v.trusted ? ", trusted" : ", not trusted by this machine") : ""}`,
+			);
 			if (!v.present) bad++;
 		}
 		process.exit(bad ? 1 : 0);
 	}
-	if (!args.length) { console.error("usage: bun scripts/sign.ts <file>...   |   --check <file>..."); process.exit(2); }
-	try { signFiles(args); } catch (e) { console.error(String((e as Error).message ?? e)); process.exit(1); }
+	if (!args.length) {
+		console.error("usage: bun scripts/sign.ts <file>...   |   --check <file>...");
+		process.exit(2);
+	}
+	try {
+		signFiles(args);
+	} catch (e) {
+		console.error(String((e as Error).message ?? e));
+		process.exit(1);
+	}
 }

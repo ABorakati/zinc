@@ -11,14 +11,20 @@ export function hostRenderer(): NativeRenderer | undefined {
 
 let override: NativeRenderer | undefined;
 /** Scripts: use this renderer (t.renderer from createTestRoot) for the window calls below. */
-export function setNativeRenderer(r: NativeRenderer | undefined): void { override = r; }
+export function setNativeRenderer(r: NativeRenderer | undefined): void {
+	override = r;
+}
 const renderer = (): NativeRenderer | undefined => override ?? hostRenderer();
 
 let lastTitle = "";
 export function setWindowTitle(title: string): void {
 	if (title === lastTitle) return;
 	lastTitle = title;
-	try { renderer()?.setWindowTitle?.(title); } catch { /* headless */ }
+	try {
+		renderer()?.setWindowTitle?.(title);
+	} catch {
+		/* headless */
+	}
 }
 
 /** True when a native folder dialog is available (a real window). */

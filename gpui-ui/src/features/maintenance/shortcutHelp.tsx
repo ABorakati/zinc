@@ -42,9 +42,13 @@ function ShortcutsDialog(p: { close: () => void }): JSX.Element {
 							<For each={list}>
 								{(e) => (
 									<div style={{ ...t("flex flex-row items-center gap-4 py-0.5"), width: "100%" }}>
-										<Line class="text-sm text-foreground" style={{ flexGrow: 1 }}>{e.description}</Line>
+										<Line class="text-sm text-foreground" style={{ flexGrow: 1 }}>
+											{e.description}
+										</Line>
 										<div style={{ ...t("flex-none rounded border bg-muted px-1.5 py-0.5"), flexShrink: 0 }}>
-											<Txt class="text-xs text-foreground" style={{ whiteSpace: "nowrap" }}>{e.keys}</Txt>
+											<Txt class="text-xs text-foreground" style={{ whiteSpace: "nowrap" }}>
+												{e.keys}
+											</Txt>
 										</div>
 									</div>
 								)}
@@ -53,7 +57,11 @@ function ShortcutsDialog(p: { close: () => void }): JSX.Element {
 					)}
 				</For>
 			</Scroll>
-			<Footer><Button variant="outline" size="sm" onClick={p.close}>Close</Button></Footer>
+			<Footer>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Close
+				</Button>
+			</Footer>
 		</div>
 	);
 }
@@ -62,5 +70,7 @@ let open = false;
 export function showShortcutHelp(): void {
 	if (open) return;
 	open = true;
-	void openDialog<void>((close) => <ShortcutsDialog close={() => close()} />, { title: "Keyboard shortcuts", width: 520 }).finally(() => { open = false; });
+	void openDialog<void>((close) => <ShortcutsDialog close={() => close()} />, { title: "Keyboard shortcuts", width: 520 }).finally(() => {
+		open = false;
+	});
 }

@@ -12,16 +12,7 @@ import { backfillKeys, ensureKeys } from "./bbt/keys";
 import { assertQuickMode, compileSearch, quickSearchClause } from "./searches/compile";
 import { ensureSearchSchema, getSavedSearch } from "./searches/store";
 import type { QuickSearchMode, SearchDefinition } from "./searches/types";
-import type {
-	ChildSummary,
-	Collection,
-	ItemDetail,
-	ItemList,
-	ItemSummary,
-	ReaderAnnotation,
-	TagColor,
-	ZoteroItemData,
-} from "./api-types";
+import type { ChildSummary, Collection, ItemDetail, ItemList, ItemSummary, ReaderAnnotation, TagColor, ZoteroItemData } from "./api-types";
 
 export class HttpError extends Error {
 	constructor(
@@ -125,7 +116,9 @@ export function openDb(path: string): Database {
 		db.close();
 		throw e;
 	}
-	db.exec("PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456;");
+	db.exec(
+		"PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456;",
+	);
 	return db;
 }
 
@@ -145,11 +138,19 @@ const COLLECTION_SQL = `SELECT c.key, c.name, c.parent_key, c.library_id,
 	FROM collections c`;
 
 function toCollection(r: CollectionRow): Collection {
-	return { key: r.key, name: r.name, parentKey: r.parent_key, itemCount: r.item_count, ...(r.library_id !== USER_LIBRARY ? { libraryId: r.library_id } : {}) };
+	return {
+		key: r.key,
+		name: r.name,
+		parentKey: r.parent_key,
+		itemCount: r.item_count,
+		...(r.library_id !== USER_LIBRARY ? { libraryId: r.library_id } : {}),
+	};
 }
 
 export function listCollections(db: Database, libraryId: number = USER_LIBRARY): Collection[] {
-	const rows = db.query(`${COLLECTION_SQL} WHERE c.library_id = ? ORDER BY c.name COLLATE NOCASE, c.key`).all(libraryId) as CollectionRow[];
+	const rows = db
+		.query(`${COLLECTION_SQL} WHERE c.library_id = ? ORDER BY c.name COLLATE NOCASE, c.key`)
+		.all(libraryId) as CollectionRow[];
 	return rows.map(toCollection);
 }
 
@@ -164,7 +165,8 @@ function collectionExists(db: Database, key: string): boolean {
 
 export function createCollection(db: Database, name: string, parentKey?: string | null, libraryId?: number): Collection {
 	if (name !== undefined && name !== null && typeof name !== "string") throw new HttpError(400, "name must be a string");
-	if (parentKey !== undefined && parentKey !== null && typeof parentKey !== "string") throw new HttpError(400, "parentKey must be a string or null");
+	if (parentKey !== undefined && parentKey !== null && typeof parentKey !== "string")
+		throw new HttpError(400, "parentKey must be a string or null");
 	name = (name ?? "").trim();
 	if (!name) throw new HttpError(400, "name is required");
 	if (parentKey && !collectionExists(db, parentKey)) throw new HttpError(404, "parent collection not found");
@@ -189,15 +191,12 @@ function descendantKeys(db: Database, key: string): string[] {
 	return rows.map((r) => r.key);
 }
 
-export function updateCollection(
-	db: Database,
-	key: string,
-	patch: { name?: string; parentKey?: string | null },
-): Collection {
+export function updateCollection(db: Database, key: string, patch: { name?: string; parentKey?: string | null }): Collection {
 	if (!collectionExists(db, key)) throw new HttpError(404, "collection not found");
 	assertWritable(db, libraryOfCollection(db, key)!);
 	if (patch.name !== undefined && typeof patch.name !== "string") throw new HttpError(400, "name must be a string");
-	if (patch.parentKey !== undefined && patch.parentKey !== null && typeof patch.parentKey !== "string") throw new HttpError(400, "parentKey must be a string or null");
+	if (patch.parentKey !== undefined && patch.parentKey !== null && typeof patch.parentKey !== "string")
+		throw new HttpError(400, "parentKey must be a string or null");
 	if (patch.name !== undefined) {
 		const name = patch.name.trim();
 		if (!name) throw new HttpError(400, "name must not be empty");
@@ -207,7 +206,8 @@ export function updateCollection(
 		const parent = patch.parentKey || null;
 		if (parent) {
 			if (!collectionExists(db, parent)) throw new HttpError(404, "parent collection not found");
-			if (libraryOfCollection(db, parent) !== libraryOfCollection(db, key)) throw new HttpError(400, "a collection cannot move to another library");
+			if (libraryOfCollection(db, parent) !== libraryOfCollection(db, key))
+				throw new HttpError(400, "a collection cannot move to another library");
 			if (descendantKeys(db, key).includes(parent)) throw new HttpError(400, "cannot move a collection into itself");
 		}
 		db.query("UPDATE collections SET parent_key = ? WHERE key = ?").run(parent, key);
@@ -234,9 +234,9 @@ function itemExists(db: Database, key: string): boolean {
 }
 
 function syncDataCollections(db: Database, itemKey: string): void {
-	const rows = db
-		.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key")
-		.all(itemKey) as { collection_key: string }[];
+	const rows = db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(itemKey) as {
+		collection_key: string;
+	}[];
 	db.query("UPDATE items SET data = json_set(data, '$.collections', json(?), '$.dateModified', ?), date_modified = ? WHERE key = ?").run(
 		JSON.stringify(rows.map((r) => r.collection_key)),
 		nowIso(),
@@ -338,7 +338,8 @@ const EXTRA_SORT_EXPR: Record<string, string> = {
 	firstAuthor: `${FIRST_AUTHOR_SQL} COLLATE NOCASE`,
 	hasPdf: PDF_STATE_SQL,
 	noteCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'note' AND c.deleted = 0)",
-	citationKey: "COALESCE(NULLIF(json_extract(i.data, '$.citationKey'), ''), (SELECT k.key FROM bbt_keys k WHERE k.item_key = i.key)) COLLATE NOCASE",
+	citationKey:
+		"COALESCE(NULLIF(json_extract(i.data, '$.citationKey'), ''), (SELECT k.key FROM bbt_keys k WHERE k.item_key = i.key)) COLLATE NOCASE",
 	attachmentCount: "(SELECT count(*) FROM items c WHERE c.parent_key = i.key AND c.item_type = 'attachment' AND c.deleted = 0)",
 };
 
@@ -373,7 +374,12 @@ function buildFilter(db: Database, opts: ListOptions) {
 	// sort indexes of My Library (items_top_*) are only used when the query says `library_id = 1` literally.
 	const library = opts.library ?? (opts.collection ? (libraryOfCollection(db, opts.collection) ?? USER_LIBRARY) : USER_LIBRARY);
 	if (!Number.isInteger(library) || library < 1) throw new HttpError(400, "invalid library");
-	const where: string[] = ["i.parent_key IS NULL", "i.item_type <> 'annotation'", `i.deleted = ${opts.trash ? 1 : 0}`, `i.library_id = ${library}`];
+	const where: string[] = [
+		"i.parent_key IS NULL",
+		"i.item_type <> 'annotation'",
+		`i.deleted = ${opts.trash ? 1 : 0}`,
+		`i.library_id = ${library}`,
+	];
 	const params: (string | number)[] = [];
 	// A collection or tag filter drives the join (CROSS JOIN fixes the loop order), so the
 	// planner never walks all items probing per row.
@@ -445,7 +451,10 @@ function orderTerm(spec: { expr: string; nullsLast: boolean }, dir: string): str
 // "creator:asc,title" -> ORDER BY terms. Each key goes through resolveSort; dir defaults to asc.
 function parseThen(then: string | undefined): string[] {
 	if (!then) return [];
-	const parts = then.split(",").map((p) => p.trim()).filter(Boolean);
+	const parts = then
+		.split(",")
+		.map((p) => p.trim())
+		.filter(Boolean);
 	if (parts.length > MAX_SORT_LEVELS - 1) throw new HttpError(400, `too many sort levels (max ${MAX_SORT_LEVELS})`);
 	return parts.map((p) => {
 		const [key, d, ...rest] = p.split(":");
@@ -530,8 +539,7 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 		opts.sort ?? "dateAdded"
 	];
 	const { unfiltered, params } = f;
-	const from =
-		driver || extraTerms.length > 0 || !unfiltered || !indexName ? f.from : `items i INDEXED BY ${indexName}`;
+	const from = driver || extraTerms.length > 0 || !unfiltered || !indexName ? f.from : `items i INDEXED BY ${indexName}`;
 	const orderBy = [orderTerm(sortSpec, dir), ...extraTerms, `i.key ${dir}`].join(", ");
 	let total: number;
 	let rows: SummaryRow[];
@@ -663,7 +671,11 @@ export function setTagColors(db: Database, input: unknown): TagColor[] {
 function attachFields(db: Database, items: ItemSummary[], fields: string[]): void {
 	if (items.length === 0) return;
 	// Better BibTeX: the citation key column shows the generated key when none is pinned in the item data
-	if (fields.includes("citationKey")) ensureKeys(db, items.map((it) => it.key));
+	if (fields.includes("citationKey"))
+		ensureKeys(
+			db,
+			items.map((it) => it.key),
+		);
 	const cols = fields
 		.map((f, i) =>
 			f === "citationKey"
@@ -809,19 +821,32 @@ function uriKey(uri: string): string | null {
 }
 
 function resolveRelated(db: Database, data: ZoteroItemData): NonNullable<ItemDetail["related"]> {
-	const keys = [...new Set(relationUris(data).map(uriKey).filter((k): k is string => !!k))];
+	const keys = [
+		...new Set(
+			relationUris(data)
+				.map(uriKey)
+				.filter((k): k is string => !!k),
+		),
+	];
 	if (keys.length === 0) return [];
 	const rows = db
 		.query(
 			`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year
 			 FROM json_each(?) j CROSS JOIN items i ON i.key = j.value WHERE i.deleted = 0`,
 		)
-		.all(JSON.stringify(keys)) as { key: string; item_type: string; title: string | null; creators_summary: string | null; year: number | null }[];
+		.all(JSON.stringify(keys)) as {
+		key: string;
+		item_type: string;
+		title: string | null;
+		creators_summary: string | null;
+		year: number | null;
+	}[];
 	const byKey = new Map(rows.map((r) => [r.key, r]));
 	const out: NonNullable<ItemDetail["related"]> = [];
 	for (const k of keys) {
 		const r = byKey.get(k);
-		if (r) out.push({ key: r.key, itemType: r.item_type, title: r.title ?? "", creatorsSummary: r.creators_summary ?? "", year: r.year });
+		if (r)
+			out.push({ key: r.key, itemType: r.item_type, title: r.title ?? "", creatorsSummary: r.creators_summary ?? "", year: r.year });
 	}
 	return out;
 }
@@ -864,7 +889,12 @@ function changeRelated(db: Database, key: string, others: string[], add: boolean
 			const uris = relationUris(JSON.parse(row.data) as ZoteroItemData);
 			const has = uris.some((u) => uriKey(u) === to);
 			if (add && !has) setRelations(db, from, [...uris, itemUri(db, lib, to)]);
-			else if (!add && has) setRelations(db, from, uris.filter((u) => uriKey(u) !== to));
+			else if (!add && has)
+				setRelations(
+					db,
+					from,
+					uris.filter((u) => uriKey(u) !== to),
+				);
 		};
 		for (const k of others) {
 			apply(key, k);
@@ -878,7 +908,9 @@ function changeRelated(db: Database, key: string, others: string[], add: boolean
 /** Keys of the items of the same library whose dc:relation names `key` (what is left dangling when `key` is merged away or erased). */
 export function itemsRelatingTo(db: Database, key: string): string[] {
 	const lib = libraryOfItem(db, key) ?? USER_LIBRARY;
-	const rows = db.query("SELECT key, data FROM items WHERE library_id = ? AND key <> ? AND instr(data, ?) > 0").all(lib, key, `/items/${key}`) as { key: string; data: string }[];
+	const rows = db
+		.query("SELECT key, data FROM items WHERE library_id = ? AND key <> ? AND instr(data, ?) > 0")
+		.all(lib, key, `/items/${key}`) as { key: string; data: string }[];
 	const out: string[] = [];
 	for (const r of rows) {
 		try {
@@ -914,18 +946,42 @@ export function assertItemShape(d: Record<string, unknown>): void {
 		if (v === undefined) continue;
 		switch (k) {
 			case "tags":
-				if (!Array.isArray(v) || v.some((t) => !(typeof t === "string" || (isObject(t) && (t.tag === undefined || typeof t.tag === "string") && (t.type === undefined || typeof t.type === "number"))))) bad("tags must be an array of strings or {tag, type} objects");
+				if (
+					!Array.isArray(v) ||
+					v.some(
+						(t) =>
+							!(
+								typeof t === "string" ||
+								(isObject(t) &&
+									(t.tag === undefined || typeof t.tag === "string") &&
+									(t.type === undefined || typeof t.type === "number"))
+							),
+					)
+				)
+					bad("tags must be an array of strings or {tag, type} objects");
 				break;
 			case "collections":
 				if (!Array.isArray(v) || v.some((c) => typeof c !== "string")) bad("collections must be an array of strings");
 				break;
 			case "creators":
-				if (!Array.isArray(v) || v.some((c) => !isObject(c) || typeof c.creatorType !== "string" || ["firstName", "lastName", "name"].some((f) => c[f] !== undefined && typeof c[f] !== "string"))) {
+				if (
+					!Array.isArray(v) ||
+					v.some(
+						(c) =>
+							!isObject(c) ||
+							typeof c.creatorType !== "string" ||
+							["firstName", "lastName", "name"].some((f) => c[f] !== undefined && typeof c[f] !== "string"),
+					)
+				) {
 					bad("creators must be an array of {creatorType, firstName, lastName} or {creatorType, name} objects");
 				}
 				break;
 			case "relations":
-				if (!isObject(v) || Object.values(v).some((x) => typeof x !== "string" && !(Array.isArray(x) && x.every((y) => typeof y === "string")))) bad("relations must be an object of strings or string arrays");
+				if (
+					!isObject(v) ||
+					Object.values(v).some((x) => typeof x !== "string" && !(Array.isArray(x) && x.every((y) => typeof y === "string")))
+				)
+					bad("relations must be an object of strings or string arrays");
 				break;
 			case "deleted":
 			case "inPublications":
@@ -974,9 +1030,12 @@ export function createItem(db: Database, input: Partial<ZoteroItemData>, library
 	}
 	const collections = parent ? [] : [...new Set((collsIn ?? []) as string[])];
 	for (const c of collections) if (!collectionExists(db, c)) throw new HttpError(404, `collection not found: ${c}`);
-	const lib = parent ? libraryOfItem(db, parent)! : (libraryId ?? (collections.length ? libraryOfCollection(db, collections[0])! : USER_LIBRARY));
+	const lib = parent
+		? libraryOfItem(db, parent)!
+		: (libraryId ?? (collections.length ? libraryOfCollection(db, collections[0])! : USER_LIBRARY));
 	if (parent && libraryId !== undefined && libraryId !== lib) throw new HttpError(400, "the parent item is in another library");
-	for (const c of collections) if (libraryOfCollection(db, c) !== lib) throw new HttpError(400, `collection ${c} is in another library than the item`);
+	for (const c of collections)
+		if (libraryOfCollection(db, c) !== lib) throw new HttpError(400, `collection ${c} is in another library than the item`);
 	assertWritable(db, lib);
 	const tags: { tag: string; type?: number }[] = [];
 	const seen = new Set<string>();
@@ -1001,7 +1060,19 @@ export function createItem(db: Database, input: Partial<ZoteroItemData>, library
 		db.query(
 			`INSERT INTO items(key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, deleted, library_id)
 			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-		).run(key, itemType, parent || null, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(data), now, now, lib);
+		).run(
+			key,
+			itemType,
+			parent || null,
+			cols.title,
+			cols.creators_summary,
+			cols.year,
+			cols.publication,
+			JSON.stringify(data),
+			now,
+			now,
+			lib,
+		);
 		for (const t of tags) db.query("INSERT INTO item_tags(item_key, tag, type) VALUES(?, ?, ?)").run(key, t.tag, t.type ?? 0);
 		for (const c of collections) db.query("INSERT INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, key);
 		if (itemType === "attachment") {
@@ -1060,7 +1131,8 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 			const valid: string[] = [];
 			for (const ck of rest.collections ?? []) {
 				if (!collectionExists(db, ck)) continue;
-				if (libraryOfCollection(db, ck) !== row.library_id) throw new HttpError(400, `collection ${ck} is in another library than the item`);
+				if (libraryOfCollection(db, ck) !== row.library_id)
+					throw new HttpError(400, `collection ${ck} is in another library than the item`);
 				db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(ck, key);
 				valid.push(ck);
 			}
@@ -1078,7 +1150,17 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 		}
 		db.query(
 			"UPDATE items SET data = ?, item_type = ?, title = ?, creators_summary = ?, year = ?, publication = ?, date_modified = ?, deleted = ? WHERE key = ?",
-		).run(JSON.stringify(data), data.itemType, cols.title, cols.creators_summary, cols.year, cols.publication, now, data.deleted ? 1 : 0, key);
+		).run(
+			JSON.stringify(data),
+			data.itemType,
+			cols.title,
+			cols.creators_summary,
+			cols.year,
+			cols.publication,
+			now,
+			data.deleted ? 1 : 0,
+			key,
+		);
 	})();
 	return getItemDetail(db, key)!;
 }

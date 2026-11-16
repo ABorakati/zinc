@@ -52,7 +52,12 @@ export function checkFormula(formula: string): { error: string; position: number
 
 export function formulaConfig(s: BbtSettings): FormulaConfig {
 	return {
-		skipWords: new Set(s.skipWords.split(",").map((w) => w.trim().toLowerCase()).filter(Boolean)),
+		skipWords: new Set(
+			s.skipWords
+				.split(",")
+				.map((w) => w.trim().toLowerCase())
+				.filter(Boolean),
+		),
 		fold: s.citekeyFold,
 		unsafeChars: s.citekeyUnsafeChars,
 		postfix: validPostfix(s.postfix) ? s.postfix : "%(a)s",
@@ -61,7 +66,9 @@ export function formulaConfig(s: BbtSettings): FormulaConfig {
 
 /** The "formula version": changes whenever a setting that affects generated keys changes. */
 export function formulaVersion(s: BbtSettings): string {
-	return Bun.hash(JSON.stringify([s.citekeyFormat, s.citekeyFold, s.citekeyUnsafeChars, s.skipWords, s.postfix, s.keyCaseInsensitive])).toString(36);
+	return Bun.hash(
+		JSON.stringify([s.citekeyFormat, s.citekeyFold, s.citekeyUnsafeChars, s.skipWords, s.postfix, s.keyCaseInsensitive]),
+	).toString(36);
 }
 
 interface ItemRow {
@@ -74,7 +81,16 @@ interface ItemRow {
 }
 
 function dataHash(d: ZoteroItemData): string {
-	const { dateModified: _m, version: _v, tags: _t, collections: _c, relations: _r, deleted: _d, inPublications: _p, ...rest } = d as Record<string, unknown>;
+	const {
+		dateModified: _m,
+		version: _v,
+		tags: _t,
+		collections: _c,
+		relations: _r,
+		deleted: _d,
+		inPublications: _p,
+		...rest
+	} = d as Record<string, unknown>;
 	return Bun.hash(JSON.stringify(rest)).toString(36);
 }
 
@@ -86,7 +102,11 @@ export function pinnedKeyOf(d: ZoteroItemData): string {
 }
 
 /** Generate the key text (before duplicate disambiguation) for item data. Throws FormulaError for an invalid formula. */
-export function generateKeyText(db: Database, d: ZoteroItemData, settings = getSettings(db)): { text: string; offset: number; template: string } {
+export function generateKeyText(
+	db: Database,
+	d: ZoteroItemData,
+	settings = getSettings(db),
+): { text: string; offset: number; template: string } {
 	const g = generate(compileCached(settings.citekeyFormat), d, formulaConfig(settings));
 	return { text: g.text, offset: g.postfix.offset, template: validPostfix(g.postfix.template) ? g.postfix.template : "%(a)s" };
 }
@@ -101,7 +121,13 @@ function taken(db: Database, candidate: string, self: string, s: BbtSettings): b
 	return s.keyCaseInsensitive ? rows.length > 0 : rows.some((r) => r.key === candidate);
 }
 
-function disambiguate(db: Database, self: string, g: { text: string; offset: number; template: string }, s: BbtSettings, fallback: string): string {
+function disambiguate(
+	db: Database,
+	self: string,
+	g: { text: string; offset: number; template: string },
+	s: BbtSettings,
+	fallback: string,
+): string {
 	const base = g.text.replace(MARK, "\u0000");
 	const make = (post: string) => base.replace("\u0000", post);
 	if (!g.text.replace(MARK, "")) return disambiguateRaw(db, self, fallback, s);
@@ -141,7 +167,9 @@ const upsert = (db: Database, item: string, key: string, pinned: boolean, formul
 
 /** Bring one item's key row up to date. `force` regenerates an unpinned key even if nothing changed. */
 function syncOne(db: Database, itemKey: string, s: BbtSettings, fv: string, force = false): void {
-	const row = db.query("SELECT key, item_type, parent_key, deleted, date_added, data FROM items i WHERE key = ?").get(itemKey) as ItemRow | null;
+	const row = db
+		.query("SELECT key, item_type, parent_key, deleted, date_added, data FROM items i WHERE key = ?")
+		.get(itemKey) as ItemRow | null;
 	if (!row || row.parent_key || ["note", "attachment", "annotation"].includes(row.item_type)) {
 		db.query("DELETE FROM bbt_keys WHERE item_key = ?").run(itemKey);
 		return;
@@ -154,7 +182,15 @@ function syncOne(db: Database, itemKey: string, s: BbtSettings, fv: string, forc
 		return;
 	}
 	const cur = db.query("SELECT * FROM bbt_keys WHERE item_key = ?").get(itemKey) as KeyRow | null;
-	if (cur && !cur.pinned && !force && cur.data_hash === hash && cur.formula === fv && !(row.deleted === 0 && taken(db, cur.key, itemKey, s))) return;
+	if (
+		cur &&
+		!cur.pinned &&
+		!force &&
+		cur.data_hash === hash &&
+		cur.formula === fv &&
+		!(row.deleted === 0 && taken(db, cur.key, itemKey, s))
+	)
+		return;
 	const g = generateKeyText(db, data, s);
 	const key = disambiguate(db, itemKey, g, s, itemKey.toLowerCase());
 	upsert(db, itemKey, key, false, fv, hash);
@@ -169,12 +205,15 @@ function cannotWrite(db: Database): boolean {
 	}
 }
 
-const isReadonlyError = (e: unknown) => /readonly|read-only|SQLITE_READONLY/i.test(String((e as { code?: string })?.code ?? "") + String((e as Error)?.message ?? ""));
+const isReadonlyError = (e: unknown) =>
+	/readonly|read-only|SQLITE_READONLY/i.test(String((e as { code?: string })?.code ?? "") + String((e as Error)?.message ?? ""));
 
 /** Drain the dirty set (items written since the last call). Cheap when nothing changed. */
 export function flushDirty(db: Database): number {
 	if (cannotWrite(db)) return 0;
-	const dirty = db.query("SELECT d.item_key FROM bbt_dirty d LEFT JOIN items i ON i.key = d.item_key ORDER BY i.date_added, i.rowid, d.item_key").all() as { item_key: string }[];
+	const dirty = db
+		.query("SELECT d.item_key FROM bbt_dirty d LEFT JOIN items i ON i.key = d.item_key ORDER BY i.date_added, i.rowid, d.item_key")
+		.all() as { item_key: string }[];
 	if (!dirty.length) return 0;
 	const s = getSettings(db);
 	const fv = formulaVersion(s);
@@ -205,7 +244,11 @@ export function ensureKeys(db: Database, itemKeys: string[]): void {
 	flushDirty(db);
 	if (!itemKeys.length) return;
 	const have = new Set(
-		(db.query("SELECT item_key FROM bbt_keys WHERE item_key IN (SELECT value FROM json_each(?))").all(JSON.stringify(itemKeys)) as { item_key: string }[]).map((r) => r.item_key),
+		(
+			db.query("SELECT item_key FROM bbt_keys WHERE item_key IN (SELECT value FROM json_each(?))").all(JSON.stringify(itemKeys)) as {
+				item_key: string;
+			}[]
+		).map((r) => r.item_key),
 	);
 	const missing = itemKeys.filter((k) => !have.has(k));
 	if (!missing.length || cannotWrite(db)) return;
@@ -231,7 +274,9 @@ export function getKeyInfos(db: Database, itemKeys: string[]): Record<string, Ke
 	const out: Record<string, KeyInfo | null> = {};
 	for (const k of itemKeys) out[k] = null;
 	if (!itemKeys.length) return out;
-	for (const r of db.query("SELECT item_key, key, pinned FROM bbt_keys WHERE item_key IN (SELECT value FROM json_each(?))").all(JSON.stringify(itemKeys)) as {
+	for (const r of db
+		.query("SELECT item_key, key, pinned FROM bbt_keys WHERE item_key IN (SELECT value FROM json_each(?))")
+		.all(JSON.stringify(itemKeys)) as {
 		item_key: string;
 		key: string;
 		pinned: number;
@@ -254,7 +299,9 @@ export function itemsForCitekey(db: Database, citekey: string, libraryId: number
 	flushDirty(db);
 	return (
 		db
-			.query("SELECT k.item_key FROM bbt_keys k JOIN items i ON i.key = k.item_key WHERE k.key = ? COLLATE NOCASE AND i.deleted = 0 AND i.library_id = ? ORDER BY k.pinned DESC, i.date_added")
+			.query(
+				"SELECT k.item_key FROM bbt_keys k JOIN items i ON i.key = k.item_key WHERE k.key = ? COLLATE NOCASE AND i.deleted = 0 AND i.library_id = ? ORDER BY k.pinned DESC, i.date_added",
+			)
 			.all(citekey, libraryId) as { item_key: string }[]
 	).map((r) => r.item_key);
 }
@@ -262,7 +309,8 @@ export function itemsForCitekey(db: Database, citekey: string, libraryId: number
 function validKey(key: string): string {
 	const k = key.replace(/\s+/g, "").trim();
 	if (!k) throw new repo.HttpError(400, "citation key is empty");
-	if (/[{}(),=#%\\"'~]/.test(k)) throw new repo.HttpError(400, "citation key contains characters that are not allowed in Bib(La)TeX keys");
+	if (/[{}(),=#%\\"'~]/.test(k))
+		throw new repo.HttpError(400, "citation key contains characters that are not allowed in Bib(La)TeX keys");
 	return k;
 }
 
@@ -307,10 +355,14 @@ export function refreshKeys(db: Database, itemKeys?: string[]): number {
 		let keys: string[];
 		if (itemKeys) {
 			keys = itemKeys;
-			db.query("DELETE FROM bbt_keys WHERE pinned = 0 AND item_key IN (SELECT value FROM json_each(?))").run(JSON.stringify(itemKeys));
+			db.query("DELETE FROM bbt_keys WHERE pinned = 0 AND item_key IN (SELECT value FROM json_each(?))").run(
+				JSON.stringify(itemKeys),
+			);
 		} else {
 			db.query("DELETE FROM bbt_keys WHERE pinned = 0").run();
-			keys = (db.query(`SELECT i.key FROM items i WHERE ${REGULAR} ORDER BY i.date_added, i.rowid`).all() as { key: string }[]).map((r) => r.key);
+			keys = (db.query(`SELECT i.key FROM items i WHERE ${REGULAR} ORDER BY i.date_added, i.rowid`).all() as { key: string }[]).map(
+				(r) => r.key,
+			);
 		}
 		// deterministic order regardless of what was asked for, so the earliest-added item keeps the plain key
 		if (itemKeys) {
@@ -329,11 +381,19 @@ export function refreshKeys(db: Database, itemKeys?: string[]): number {
 
 /** Number of generated keys made with an older formula/options than the current ones. */
 export function staleKeyCount(db: Database): number {
-	return (db.query("SELECT count(*) AS n FROM bbt_keys WHERE pinned = 0 AND formula <> ?").get(formulaVersion(getSettings(db))) as { n: number }).n;
+	return (
+		db.query("SELECT count(*) AS n FROM bbt_keys WHERE pinned = 0 AND formula <> ?").get(formulaVersion(getSettings(db))) as {
+			n: number;
+		}
+	).n;
 }
 
 /** What `formula` would give an item (no disambiguation): for the settings preview. */
-export function previewFormula(db: Database, formula: string, itemKey?: string): { ok: boolean; error?: string; position?: number; preview?: string } {
+export function previewFormula(
+	db: Database,
+	formula: string,
+	itemKey?: string,
+): { ok: boolean; error?: string; position?: number; preview?: string } {
 	const bad = checkFormula(formula);
 	if (bad) return { ok: false, error: bad.error, position: bad.position };
 	let data: ZoteroItemData | null = null;

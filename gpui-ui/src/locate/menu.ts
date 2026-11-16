@@ -25,10 +25,42 @@ export function locateMenu(item: LocateItem, attachmentKey: string | null, actio
 	// Zotero's default engine IS Google Scholar: while it is enabled it stands in for the built-in entry instead of repeating it
 	const scholarEngine = extra.some((e) => e.name.toLowerCase() === "google scholar");
 	const entries: MenuItem[] = [
-		{ label: "View Online", icon: "globe", disabled: !online, onSelect: () => { if (online) actions.openUrl(online); } },
-		{ label: "Library Lookup", icon: "library", disabled: !lookup, onSelect: () => { if (lookup) actions.openUrl(lookup); } },
-		...(scholarEngine ? [] : [{ label: "Search Google Scholar", icon: "graduation-cap", disabled: !scholar, onSelect: () => { if (scholar) actions.openUrl(scholar); } }]),
-		{ label: "Show File", icon: "folder-open", disabled: !attachmentKey, onSelect: () => { if (attachmentKey) actions.revealFile(attachmentKey); } },
+		{
+			label: "View Online",
+			icon: "globe",
+			disabled: !online,
+			onSelect: () => {
+				if (online) actions.openUrl(online);
+			},
+		},
+		{
+			label: "Library Lookup",
+			icon: "library",
+			disabled: !lookup,
+			onSelect: () => {
+				if (lookup) actions.openUrl(lookup);
+			},
+		},
+		...(scholarEngine
+			? []
+			: [
+					{
+						label: "Search Google Scholar",
+						icon: "graduation-cap",
+						disabled: !scholar,
+						onSelect: () => {
+							if (scholar) actions.openUrl(scholar);
+						},
+					},
+				]),
+		{
+			label: "Show File",
+			icon: "folder-open",
+			disabled: !attachmentKey,
+			onSelect: () => {
+				if (attachmentKey) actions.revealFile(attachmentKey);
+			},
+		},
 	];
 	if (!extra.length) return entries;
 	// an engine the item cannot fill in (no title ...) is disabled, not hidden
@@ -37,7 +69,14 @@ export function locateMenu(item: LocateItem, attachmentKey: string | null, actio
 		{ separator: true },
 		...extra.map((e): MenuItem => {
 			const url = engineUrl(e, item);
-			return { label: e.name, icon: "search", disabled: !url, onSelect: () => { if (url) actions.openUrl(url); } };
+			return {
+				label: e.name,
+				icon: "search",
+				disabled: !url,
+				onSelect: () => {
+					if (url) actions.openUrl(url);
+				},
+			};
 		}),
 	];
 }

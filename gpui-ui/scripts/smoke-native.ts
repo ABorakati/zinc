@@ -20,11 +20,18 @@ mkdirSync(out, { recursive: true });
 const root = mkdtempSync(join(tmpdir(), "zn-smoke-"));
 const pdf = resolve(import.meta.dir, "..", "web", "demo-article.pdf");
 const summary: Record<string, unknown> = { platform: `${process.platform} ${process.arch}`, bun: Bun.version };
-const fail = (why: string) => { summary.failure = why; console.error(`[smoke] FAIL: ${why}`); };
+const fail = (why: string) => {
+	summary.failure = why;
+	console.error(`[smoke] FAIL: ${why}`);
+};
 /** Say which step starts and keep what is known so far: a step that hangs (CI cancels it) still leaves its trail. */
 const step = (name: string) => {
 	console.log(`[smoke] ${new Date().toISOString().slice(11, 19)} ${name}`);
-	try { writeFileSync(join(out, "summary.json"), JSON.stringify({ ...summary, step: name }, null, 1)); } catch { /* best effort */ }
+	try {
+		writeFileSync(join(out, "summary.json"), JSON.stringify({ ...summary, step: name }, null, 1));
+	} catch {
+		/* best effort */
+	}
 };
 
 // ---- 1. the library
@@ -37,17 +44,44 @@ const dbPath = join(root, "library.sqlite");
 		{ key: "SMOKE003", title: "Outcomes after kidney transplantation in older recipients", last: "Jones", year: "2023" },
 	];
 	for (const it of items) {
-		insertItem(db, { key: it.key, itemType: "journalArticle", title: it.title, creators: [{ creatorType: "author", firstName: "A", lastName: it.last }], date: it.year, publicationTitle: "Smoke Test Journal" } as never);
+		insertItem(db, {
+			key: it.key,
+			itemType: "journalArticle",
+			title: it.title,
+			creators: [{ creatorType: "author", firstName: "A", lastName: it.last }],
+			date: it.year,
+			publicationTitle: "Smoke Test Journal",
+		} as never);
 	}
-	insertItem(db, { key: "SMOKEPDF", itemType: "attachment", title: "Full Text PDF", contentType: "application/pdf", linkMode: "linked_file", parentItem: "SMOKE001", path: pdf } as never, "SMOKE001");
-	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES('SMOKEPDF', 'linked_file', 'application/pdf', ?)").run(pdf);
+	insertItem(
+		db,
+		{
+			key: "SMOKEPDF",
+			itemType: "attachment",
+			title: "Full Text PDF",
+			contentType: "application/pdf",
+			linkMode: "linked_file",
+			parentItem: "SMOKE001",
+			path: pdf,
+		} as never,
+		"SMOKE001",
+	);
+	db.query(
+		"INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES('SMOKEPDF', 'linked_file', 'application/pdf', ?)",
+	).run(pdf);
 	rebuildSearchIndex(db);
 	db.close();
 }
 
 // ---- 2. the app
 Object.assign(process.env, {
-	APPDATA: join(root, "appdata"), ZN_DB: dbPath, ZN_PORT: process.env.ZN_PORT ?? "23191", ZN_SYNC: "0", ZN_ZPORT: "0", ZN_SIGNIN: "0", ZN_OPEN_TABS: "SMOKEPDF",
+	APPDATA: join(root, "appdata"),
+	ZN_DB: dbPath,
+	ZN_PORT: process.env.ZN_PORT ?? "23191",
+	ZN_SYNC: "0",
+	ZN_ZPORT: "0",
+	ZN_SIGNIN: "0",
+	ZN_OPEN_TABS: "SMOKEPDF",
 });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 await import("../src/main");
@@ -108,11 +142,19 @@ if (process.platform !== "win32") {
 		<div style="height:50vh;background:#2a7de1;color:white;padding:24px;box-sizing:border-box">Web view: top half (blue)</div>
 		<div style="height:50vh;background:#e8483b;color:white;padding:24px;box-sizing:border-box">bottom half (red): hidden when clipped</div>`;
 	// served over http on loopback, as the app serves Zotero's reader and note pages; the page reports when it has loaded
-	const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } }) });
-	let loaded = "", pinged = false;
+	const server = Bun.serve({
+		port: 0,
+		hostname: "127.0.0.1",
+		fetch: () => new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } }),
+	});
+	let loaded = "",
+		pinged = false;
 	const host = new WebHost({
 		init: "window.addEventListener('load', () => window.znMsg(JSON.stringify({ type: 'loaded', width: innerWidth, height: innerHeight })));",
-		onMessage: (m) => { if (m.type === "loaded") loaded = `${m.width}x${m.height}`; if (m.type === "ping") pinged = true; },
+		onMessage: (m) => {
+			if (m.type === "loaded") loaded = `${m.width}x${m.height}`;
+			if (m.type === "ping") pinged = true;
+		},
 	});
 	const box = { x: 240, y: 120, width: 560, height: 360 };
 	let clip: typeof box | null = null;
@@ -124,7 +166,9 @@ if (process.platform !== "win32") {
 	// the bridge, from the app's side: a message sent by a script the app runs in the page
 	host.eval("window.znMsg && window.znMsg(JSON.stringify({ type: 'ping' }))");
 	// what the page sees, through its title (read back via WebKit, not via the bridge)
-	host.eval("document.title = ['znMsg:' + typeof window.znMsg, 'handler:' + typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.__webview__), 'ready:' + document.readyState].join(' ')");
+	host.eval(
+		"document.title = ['znMsg:' + typeof window.znMsg, 'handler:' + typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.__webview__), 'ready:' + document.readyState].join(' ')",
+	);
 	await sleep(1500);
 	summary.webPinged = pinged;
 	summary.webState = host.state();
@@ -159,7 +203,9 @@ if (process.platform !== "win32") {
 	// macOS: the print panel itself cannot be driven in CI (and runners have no printer); check PDFKit builds the print job
 	if (process.platform === "darwin") {
 		try {
-			summary.macPrintJob = (await import("../src/reader/printMac")).canPrepareMacPrint(new Uint8Array(await Bun.file(pdf).arrayBuffer()));
+			summary.macPrintJob = (await import("../src/reader/printMac")).canPrepareMacPrint(
+				new Uint8Array(await Bun.file(pdf).arrayBuffer()),
+			);
 			if (!summary.macPrintJob) fail("PDFKit could not prepare a print job");
 		} catch (e) {
 			fail(`PDFKit could not prepare a print job: ${e instanceof Error ? e.message : String(e)}`);

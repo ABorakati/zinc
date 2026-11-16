@@ -14,7 +14,27 @@ describe("sanitising", () => {
 		expect(parseQuery("")).toEqual([]);
 	});
 	test("FTS syntax can never throw", () => {
-		const nasty = ['"', "(", ")", "AND", "OR", "NOT", "NEAR(", "title:", "a OR", "*", "-foo", "foo*bar", "^x", "'; DROP TABLE items;--", "{", "\\", "\"unterminated phrase", "title : foo", "é ü ñ"];
+		const nasty = [
+			'"',
+			"(",
+			")",
+			"AND",
+			"OR",
+			"NOT",
+			"NEAR(",
+			"title:",
+			"a OR",
+			"*",
+			"-foo",
+			"foo*bar",
+			"^x",
+			"'; DROP TABLE items;--",
+			"{",
+			"\\",
+			'"unterminated phrase',
+			"title : foo",
+			"é ü ñ",
+		];
 		for (const q of nasty) {
 			expect(() => search(fx.db, q)).not.toThrow();
 		}
@@ -62,7 +82,11 @@ describe("search", () => {
 		expect(search(fx.db, '"networks neural"').total).toBe(0);
 	});
 	test("title outranks fulltext", () => {
-		fx.db.query("INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('ATT00003', 'a long text about zebra zebra', 'x', 'y')").run();
+		fx.db
+			.query(
+				"INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('ATT00003', 'a long text about zebra zebra', 'x', 'y')",
+			)
+			.run();
 		indexItem(fx.db, "DDDDDDD4");
 		const r = search(fx.db, "zebra");
 		// trashed item is excluded; only the live one remains

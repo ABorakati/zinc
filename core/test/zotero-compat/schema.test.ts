@@ -20,7 +20,11 @@ const baseFor = (itemType: string, field: string): string | false => {
 	if (isBase && t && (f || t.fields.some((y) => y.baseField === field))) return field;
 	return false;
 };
-const dateFields = new Set(Object.entries((shipped.meta as any).fields).filter(([, v]) => (v as any).type === "date").map(([k]) => k));
+const dateFields = new Set(
+	Object.entries((shipped.meta as any).fields)
+		.filter(([, v]) => (v as any).type === "date")
+		.map(([k]) => k),
+);
 const isDate = (field: string): boolean => {
 	if (dateFields.has(field)) return true;
 	for (const t of types) for (const f of t.fields) if (f.field === field && f.baseField && dateFields.has(f.baseField)) return true;
@@ -75,7 +79,8 @@ describe("Zotero.ItemFields", () => {
 		});
 
 		test("zotero-next search treats those fields as dates", () => {
-			for (const f of ["date", "dateDecided", "originalDate", "priorityDate", "filingDate"]) expect(resolveField(f).kind).toMatch(/^date/);
+			for (const f of ["date", "dateDecided", "originalDate", "priorityDate", "filingDate"])
+				expect(resolveField(f).kind).toMatch(/^date/);
 			expect(resolveField("title").kind).toBe("text");
 		});
 	});
@@ -106,14 +111,26 @@ describe("Zotero.Item", () => {
 		});
 
 		test("moves a type-specific field to the new type's field with the same base field", () => {
-			const { data, dropped } = convertItemType<Record<string, unknown>>({ itemType: "audioRecording", label: "Blue Note", runningTime: "3:00" }, "book");
+			const { data, dropped } = convertItemType<Record<string, unknown>>(
+				{ itemType: "audioRecording", label: "Blue Note", runningTime: "3:00" },
+				"book",
+			);
 			expect(data.publisher).toBe("Blue Note"); // label -> publisher
 			expect(data.label).toBeUndefined();
 			expect(dropped).toContain("runningTime"); // book has no running time
 		});
 
 		test("maps a creator type the new type lacks to its primary creator type", () => {
-			const { data } = convertItemType({ itemType: "book", creators: [{ creatorType: "bookAuthor", name: "X" }, { creatorType: "author", name: "Y" }] }, "film");
+			const { data } = convertItemType(
+				{
+					itemType: "book",
+					creators: [
+						{ creatorType: "bookAuthor", name: "X" },
+						{ creatorType: "author", name: "Y" },
+					],
+				},
+				"film",
+			);
 			expect((data.creators as any[]).map((c) => c.creatorType)).toEqual(["director", "director"]);
 		});
 

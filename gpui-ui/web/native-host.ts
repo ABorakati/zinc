@@ -40,7 +40,10 @@ const NULL_BODY = new Set([101, 204, 205, 304]);
  * A `fetch`-like function over native messaging. `connect` opens the port (chrome.runtime.connectNative in the page); it is
  * called again after the host goes away, so a crashed or restarted host costs the requests in flight, not the page.
  */
-export function nativeApiTransport(connect: () => NativePort, lastError: () => string | undefined = () => undefined): (req: Request) => Promise<Response> {
+export function nativeApiTransport(
+	connect: () => NativePort,
+	lastError: () => string | undefined = () => undefined,
+): (req: Request) => Promise<Response> {
 	let port: NativePort | null = null;
 	let nextId = 1;
 	const pending = new Map<number, Pending>();
@@ -50,7 +53,10 @@ export function nativeApiTransport(connect: () => NativePort, lastError: () => s
 		const size = p.chunks.reduce((n, c) => n + c.length, 0);
 		const body = new Uint8Array(size);
 		let at = 0;
-		for (const c of p.chunks) { body.set(c, at); at += c.length; }
+		for (const c of p.chunks) {
+			body.set(c, at);
+			at += c.length;
+		}
 		const status = p.head!.status;
 		p.resolve(new Response(NULL_BODY.has(status) ? null : body, { status, headers: p.head!.headers }));
 	};
@@ -73,9 +79,11 @@ export function nativeApiTransport(connect: () => NativePort, lastError: () => s
 		me.onDisconnect.addListener(() => {
 			if (port === me) port = null;
 			const why = lastError() ?? "disconnected";
-			const err = new Error(/not found|forbidden|not allowed/i.test(why)
-				? `The Zinc Connector host is not installed or does not allow this extension (${why})`
-				: `The Zinc Connector host stopped (${why})`);
+			const err = new Error(
+				/not found|forbidden|not allowed/i.test(why)
+					? `The Zinc Connector host is not installed or does not allow this extension (${why})`
+					: `The Zinc Connector host stopped (${why})`,
+			);
 			for (const p of pending.values()) p.reject(err);
 			pending.clear();
 		});
@@ -93,15 +101,30 @@ export function nativeApiTransport(connect: () => NativePort, lastError: () => s
 		if (bytes.length > INLINE_BYTES) {
 			const uid = `lib${id}`;
 			const n = Math.ceil(bytes.length / UPLOAD_CHUNK);
-			for (let i = 0; i < n; i++) p.postMessage({ t: "up", uid, seq: i, last: i === n - 1, data: toB64(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)) });
+			for (let i = 0; i < n; i++)
+				p.postMessage({
+					t: "up",
+					uid,
+					seq: i,
+					last: i === n - 1,
+					data: toB64(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)),
+				});
 			body = { kind: "upload", uid };
 		} else if (bytes.length) {
 			// JSON and text inline as they are; anything else (file bytes) as base64
-			body = /json|^text\//i.test(headers["content-type"] ?? "") ? { kind: "text", text: new TextDecoder().decode(bytes) } : { kind: "b64", data: toB64(bytes) };
+			body = /json|^text\//i.test(headers["content-type"] ?? "")
+				? { kind: "text", text: new TextDecoder().decode(bytes) }
+				: { kind: "b64", data: toB64(bytes) };
 		}
 		return new Promise<Response>((resolve, reject) => {
 			pending.set(id, { resolve, reject, chunks: [], got: 0 });
-			req.signal?.addEventListener("abort", () => { if (pending.delete(id)) reject(req.signal.reason ?? new DOMException("aborted", "AbortError")); }, { once: true });
+			req.signal?.addEventListener(
+				"abort",
+				() => {
+					if (pending.delete(id)) reject(req.signal.reason ?? new DOMException("aborted", "AbortError"));
+				},
+				{ once: true },
+			);
 			p.postMessage({ t: "req", id, method: "api", http: req.method, path: url.pathname + url.search, headers, body });
 		});
 	};

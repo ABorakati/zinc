@@ -7,7 +7,8 @@ import { BASELINE_CHANGED } from "../../src/sync/protocol";
 import { makeRig, outbox } from "./fakes";
 
 const rows = (db: ReturnType<typeof makeRig>["db"], sql: string, ...p: any[]) => db.query(sql).all(...p) as any[];
-const state = (db: ReturnType<typeof makeRig>["db"], name: string) => (db.query("SELECT value FROM sync_state WHERE name = ?").get(name) as { value: string } | null)?.value;
+const state = (db: ReturnType<typeof makeRig>["db"], name: string) =>
+	(db.query("SELECT value FROM sync_state WHERE name = ?").get(name) as { value: string } | null)?.value;
 
 describe("push after a failed pull (GPT #5)", () => {
 	test("a failed pull blocks the push; the queue is kept and goes out after a good pull", async () => {
@@ -33,7 +34,12 @@ describe("push after a failed pull (GPT #5)", () => {
 		const plan = buildPush(r.db, r.zoteroDir);
 		const w = plan.writes.find((x) => x.key === "BASE0001" && x.op === "upsert")!;
 		expect(w.baseline).toBe("2026-06-01T10:00:00Z");
-		const done = completePush(r.db, plan, [{ key: "BASE0001", ok: false, error: `${BASELINE_CHANGED} (BASE0001); not overwritten` }], null);
+		const done = completePush(
+			r.db,
+			plan,
+			[{ key: "BASE0001", ok: false, error: `${BASELINE_CHANGED} (BASE0001); not overwritten` }],
+			null,
+		);
 		expect(done.failed).toHaveLength(1);
 		expect(outbox(r.db)).toContain("item:BASE0001:upsert"); // still queued
 		expect(rows(r.db, "SELECT key, resolved FROM sync_conflicts")).toEqual([{ key: "BASE0001", resolved: "remote" }]);
@@ -48,7 +54,11 @@ describe("remote parent deletion (GPT #6)", () => {
 		const child = repo.createItem(r.db, { itemType: "note", parentItem: "PARENT01", note: "<p>mine</p>" }).data.key;
 		r.reader.deletes.push({ type: "item", key: "PARENT01" });
 		await r.svc.pull();
-		expect(rows(r.db, "SELECT key FROM items WHERE key IN ('PARENT01', ?) ORDER BY key", child).map((x) => x.key).sort()).toEqual([child, "PARENT01"].sort());
+		expect(
+			rows(r.db, "SELECT key FROM items WHERE key IN ('PARENT01', ?) ORDER BY key", child)
+				.map((x) => x.key)
+				.sort(),
+		).toEqual([child, "PARENT01"].sort());
 		const c = rows(r.db, "SELECT type, key, resolved FROM sync_conflicts");
 		expect(c).toEqual([{ type: "item", key: "PARENT01", resolved: "local" }]);
 		expect(outbox(r.db)).toContain("item:PARENT01:upsert"); // queued again so a push re-creates it
@@ -67,9 +77,23 @@ describe("remote parent deletion (GPT #6)", () => {
 	test("an annotation with unsent changes keeps its attachment's parent", async () => {
 		const r = makeRig();
 		r.reader.item("PARENT03", { itemType: "journalArticle", title: "P" });
-		r.reader.item("ATTACH03", { itemType: "attachment", parentItem: "PARENT03", linkMode: "imported_file", contentType: "application/pdf" });
+		r.reader.item("ATTACH03", {
+			itemType: "attachment",
+			parentItem: "PARENT03",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		});
 		await r.svc.pull();
-		repo.upsertAnnotations(r.db, "ATTACH03", [{ id: "ANNOT003", type: "highlight", color: "#ffd400", sortIndex: "1", position: {}, dateModified: "2026-02-01T00:00:00Z" } as any]);
+		repo.upsertAnnotations(r.db, "ATTACH03", [
+			{
+				id: "ANNOT003",
+				type: "highlight",
+				color: "#ffd400",
+				sortIndex: "1",
+				position: {},
+				dateModified: "2026-02-01T00:00:00Z",
+			} as any,
+		]);
 		r.reader.deletes.push({ type: "item", key: "PARENT03" });
 		await r.svc.pull();
 		expect(rows(r.db, "SELECT key FROM items WHERE key = 'PARENT03'")).toHaveLength(1);
@@ -101,8 +125,18 @@ describe("objects that fail to apply (GPT #15)", () => {
 			r.db,
 			{
 				upserts: [
-					{ type: "item", key: "NOPARENT", dateModified: "2026-06-01T10:00:00Z", data: { key: "NOPARENT", itemType: "note", parentItem: "GONE0001", note: "x" } },
-					{ type: "item", key: "FINE0001", dateModified: "2026-06-01T10:00:00Z", data: { key: "FINE0001", itemType: "journalArticle", title: "ok" } },
+					{
+						type: "item",
+						key: "NOPARENT",
+						dateModified: "2026-06-01T10:00:00Z",
+						data: { key: "NOPARENT", itemType: "note", parentItem: "GONE0001", note: "x" },
+					},
+					{
+						type: "item",
+						key: "FINE0001",
+						dateModified: "2026-06-01T10:00:00Z",
+						data: { key: "FINE0001", itemType: "journalArticle", title: "ok" },
+					},
 				],
 				deletes: [],
 			},
@@ -123,7 +157,12 @@ describe("annotations across libraries (Gemini #4)", () => {
 	test("a deletion in a group never removes an annotation of My Library", () => {
 		const r = twoLibraries();
 		r.reader.item("PARENT10", { itemType: "journalArticle", title: "P" });
-		r.reader.item("ATTACH10", { itemType: "attachment", parentItem: "PARENT10", linkMode: "imported_file", contentType: "application/pdf" });
+		r.reader.item("ATTACH10", {
+			itemType: "attachment",
+			parentItem: "PARENT10",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		});
 		r.reader.annotation("ANNOT010", "ATTACH10", {});
 		applyChanges(r.db, { upserts: r.reader.upserts, deletes: [] }, r.zoteroDir, 1);
 		expect(rows(r.db, "SELECT key FROM annotations")).toHaveLength(1);
@@ -135,7 +174,12 @@ describe("annotations across libraries (Gemini #4)", () => {
 	test("an annotation whose attachment is in another library is not stored, and a clashing key is skipped", () => {
 		const r = twoLibraries();
 		r.reader.item("PARENT11", { itemType: "journalArticle", title: "P" });
-		r.reader.item("ATTACH11", { itemType: "attachment", parentItem: "PARENT11", linkMode: "imported_file", contentType: "application/pdf" });
+		r.reader.item("ATTACH11", {
+			itemType: "attachment",
+			parentItem: "PARENT11",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		});
 		r.reader.annotation("ANNOT011", "ATTACH11", { comment: "mine" });
 		applyChanges(r.db, { upserts: r.reader.upserts, deletes: [] }, r.zoteroDir, 1);
 		r.reader.upserts = [];

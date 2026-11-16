@@ -59,10 +59,7 @@ export function addToIndex(idx: FileIndex, path: string): void {
 
 // Walk the roots (directory listings only; never opens file contents, so OneDrive
 // cloud-only placeholders are not hydrated).
-export function buildFileIndex(
-	roots: string[],
-	opts: { extensions?: string[]; maxDepth?: number } = {},
-): FileIndex {
+export function buildFileIndex(roots: string[], opts: { extensions?: string[]; maxDepth?: number } = {}): FileIndex {
 	const exts = new Set((opts.extensions ?? [".pdf", ".epub"]).map((e) => e.toLowerCase()));
 	const maxDepth = opts.maxDepth ?? 12;
 	const idx = newFileIndex();
@@ -167,7 +164,10 @@ function pickOne(cands: string[], spec: FileSpec): string | null {
 	if (uniq.length === 1) return uniq[0];
 	if (uniq.length === 0) return null;
 	// several files share the name: use the first author's surname in the path to tell them apart
-	const surname = (spec.parentAuthor ?? "").split(/\s+(?:and|et al\.?)\s*/i)[0].trim().toLowerCase();
+	const surname = (spec.parentAuthor ?? "")
+		.split(/\s+(?:and|et al\.?)\s*/i)[0]
+		.trim()
+		.toLowerCase();
 	if (surname.length >= 3) {
 		const hit = uniq.filter((c) => dirname(c).toLowerCase().includes(surname));
 		if (hit.length === 1) return hit[0];
@@ -191,7 +191,7 @@ export function fileTitleNorm(path: string): string {
 	const zot = /^.*? - (?:\d{4}|n\.d\.) - ([\s\S]*)$/.exec(stem);
 	if (zot) return normName(`${zot[1]}.x`);
 	const dash = /^[^-]+-([\s\S]*)$/.exec(stem);
-	return normName(`${(dash ? dash[1] : stem)}.x`);
+	return normName(`${dash ? dash[1] : stem}.x`);
 }
 
 function titleCandidates(idx: FileIndex, title: string, ext: string): string[] {

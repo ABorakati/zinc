@@ -105,11 +105,14 @@ export async function pushOnce(ctx: PushContext): Promise<PushResult> {
 	let v = webVersions(db, ref.id).write;
 	const u = ref.prefix;
 	const finish = (keys: string[], failed: Map<string, string>): void => {
-		const results: ZoteroWriteResult[] = keys.map((key) => (failed.has(key) ? { key, ok: false, error: failed.get(key) } : { key, ok: true }));
+		const results: ZoteroWriteResult[] = keys.map((key) =>
+			failed.has(key) ? { key, ok: false, error: failed.get(key) } : { key, ok: true },
+		);
 		const done = completePush(db, subPlan(plan, new Set(keys)), results, ctx.ownStorageDir);
 		out.pushed += done.done;
 		out.failed += done.failed.length;
-		if (done.failed.length && !out.error) out.error = `${done.failed.length} change(s) not accepted by zotero.org; ${done.failed[0].key}: ${done.failed[0].error}`;
+		if (done.failed.length && !out.error)
+			out.error = `${done.failed.length} change(s) not accepted by zotero.org; ${done.failed[0].key}: ${done.failed[0].error}`;
 	};
 
 	for (const kind of ["collection", "item"] as const) {

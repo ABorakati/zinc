@@ -37,8 +37,24 @@ const esc = (p: string) => p.replaceAll("\\", "\\\\"); // prefs.js writes backsl
 
 function addLinked(key: string, path: string): void {
 	const name = path.split(/[\\/]/).pop()!;
-	insertItem(db, { key, itemType: "attachment", linkMode: "linked_file", parentItem: "AAAAAAA1", title: name, contentType: "application/pdf", path, filename: name } as never, "AAAAAAA1");
-	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'linked_file', 'application/pdf', ?)").run(key, path);
+	insertItem(
+		db,
+		{
+			key,
+			itemType: "attachment",
+			linkMode: "linked_file",
+			parentItem: "AAAAAAA1",
+			title: name,
+			contentType: "application/pdf",
+			path,
+			filename: name,
+		} as never,
+		"AAAAAAA1",
+	);
+	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'linked_file', 'application/pdf', ?)").run(
+		key,
+		path,
+	);
 }
 const rawPath = (key: string) => (db.query("SELECT path FROM attachments WHERE item_key = ?").get(key) as { path: string }).path;
 
@@ -105,7 +121,14 @@ describe("locateZotero / inspectDataDir", () => {
 		const dir = join(fx.dir, "ZoteroData");
 		makeZoteroDb(dir);
 		const info = inspectDataDir(dir);
-		expect(info).toMatchObject({ hasDatabase: true, readable: true, itemCount: 2, collectionCount: 2, attachmentCount: 1, hasStorageFolder: true });
+		expect(info).toMatchObject({
+			hasDatabase: true,
+			readable: true,
+			itemCount: 2,
+			collectionCount: 2,
+			attachmentCount: 1,
+			hasStorageFolder: true,
+		});
 		expect(info.lastModified).toBe("2026-03-01T00:00:00Z");
 		expect(info.sizeBytes).toBeGreaterThan(0);
 	});
@@ -138,7 +161,13 @@ describe("locateZotero / inspectDataDir", () => {
 	test("locate falls back to ~/Zotero without any profile", async () => {
 		const home = join(fx.dir, "home2");
 		makeZoteroDb(join(home, "Zotero"));
-		const r = await locateZotero({ profilesDir: join(fx.dir, "no-profiles"), home, env: {}, isRunning: async () => false, exeCandidates: [] });
+		const r = await locateZotero({
+			profilesDir: join(fx.dir, "no-profiles"),
+			home,
+			env: {},
+			isRunning: async () => false,
+			exeCandidates: [],
+		});
 		expect(r.profiles).toEqual([]);
 		expect(r.recommended).toBe(join(home, "Zotero"));
 	});
@@ -253,7 +282,26 @@ describe("sync keeps Zotero's path forms", () => {
 	test("incoming linked files are stored relative only after the user converted", () => {
 		const abs = join(base, "Smith", "f.pdf");
 		const changes = (key: string) => ({
-			upserts: [{ type: "item" as const, key, dateModified: "2026-01-01T00:00:00Z", data: { key, itemType: "attachment", linkMode: "linked_file", parentItem: "AAAAAAA1", title: "f", contentType: "application/pdf", path: abs, version: 5, dateAdded: "2026-01-01T00:00:00Z", dateModified: "2026-01-01T00:00:00Z", tags: [] } }],
+			upserts: [
+				{
+					type: "item" as const,
+					key,
+					dateModified: "2026-01-01T00:00:00Z",
+					data: {
+						key,
+						itemType: "attachment",
+						linkMode: "linked_file",
+						parentItem: "AAAAAAA1",
+						title: "f",
+						contentType: "application/pdf",
+						path: abs,
+						version: 5,
+						dateAdded: "2026-01-01T00:00:00Z",
+						dateModified: "2026-01-01T00:00:00Z",
+						tags: [],
+					},
+				},
+			],
 			deletes: [],
 		});
 		applyChanges(db, changes("INC00001"), fx.dir);

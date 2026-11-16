@@ -16,17 +16,92 @@ const single = (ctx: { keys: string[]; item: { itemType: string } }) => ctx.keys
 export function register(): void {
 	registerOverlay("additems-retrieve-panel", () => <RetrievePanel />);
 
-	registerAppAction({ id: "add.identifier", label: "Add Item by Identifier…", icon: "wand-sparkles", menu: "add", when: canAdd, shortcut: "Ctrl+Shift+I", run: () => void openIdentifierDialog() });
-	registerAppAction({ id: "add.newItem", label: "New Item…", icon: "file-plus", menu: "add", when: canAdd, shortcut: "Ctrl+Shift+N", run: () => void openNewItemDialog() });
-	registerAppAction({ id: "add.note", label: "New Standalone Note", icon: "sticky-note", menu: "add", when: canAdd, run: () => void createNote() });
-	registerAppAction({ id: "add.storedFile", label: "Add Attachment: Stored File…", icon: "paperclip", menu: "add", when: canAdd, run: () => void pickAndImport() });
-	registerAppAction({ id: "add.linkFile", label: "Add Attachment: Link to File…", icon: "link", menu: "add", when: canAdd, run: () => void openLinkFileDialog() });
-	registerAppAction({ id: "add.linkUri", label: "Add Attachment: Link to URI…", icon: "link", menu: "add", when: canAdd, run: () => void openLinkUriDialog() });
+	registerAppAction({
+		id: "add.identifier",
+		label: "Add Item by Identifier…",
+		icon: "wand-sparkles",
+		menu: "add",
+		when: canAdd,
+		shortcut: "Ctrl+Shift+I",
+		run: () => void openIdentifierDialog(),
+	});
+	registerAppAction({
+		id: "add.newItem",
+		label: "New Item…",
+		icon: "file-plus",
+		menu: "add",
+		when: canAdd,
+		shortcut: "Ctrl+Shift+N",
+		run: () => void openNewItemDialog(),
+	});
+	registerAppAction({
+		id: "add.note",
+		label: "New Standalone Note",
+		icon: "sticky-note",
+		menu: "add",
+		when: canAdd,
+		run: () => void createNote(),
+	});
+	registerAppAction({
+		id: "add.storedFile",
+		label: "Add Attachment: Stored File…",
+		icon: "paperclip",
+		menu: "add",
+		when: canAdd,
+		run: () => void pickAndImport(),
+	});
+	registerAppAction({
+		id: "add.linkFile",
+		label: "Add Attachment: Link to File…",
+		icon: "link",
+		menu: "add",
+		when: canAdd,
+		run: () => void openLinkFileDialog(),
+	});
+	registerAppAction({
+		id: "add.linkUri",
+		label: "Add Attachment: Link to URI…",
+		icon: "link",
+		menu: "add",
+		when: canAdd,
+		run: () => void openLinkUriDialog(),
+	});
 
-	registerItemAction({ id: "add.childNote", label: "Add Note", icon: "sticky-note", group: "edit", visible: single, run: (ctx) => void createNote(ctx.item.key) });
-	registerItemAction({ id: "add.attachFile", label: "Stored File…", submenu: "Add Attachment", icon: "paperclip", group: "edit", visible: single, run: (ctx) => void pickAndImport(ctx.item.key) });
-	registerItemAction({ id: "add.attachLinkFile", label: "Link to File…", submenu: "Add Attachment", icon: "link", group: "edit", visible: single, run: (ctx) => void openLinkFileDialog(ctx.item.key) });
-	registerItemAction({ id: "add.attachLinkUri", label: "Link to URI…", submenu: "Add Attachment", icon: "link", group: "edit", visible: single, run: (ctx) => void openLinkUriDialog(ctx.item.key) });
+	registerItemAction({
+		id: "add.childNote",
+		label: "Add Note",
+		icon: "sticky-note",
+		group: "edit",
+		visible: single,
+		run: (ctx) => void createNote(ctx.item.key),
+	});
+	registerItemAction({
+		id: "add.attachFile",
+		label: "Stored File…",
+		submenu: "Add Attachment",
+		icon: "paperclip",
+		group: "edit",
+		visible: single,
+		run: (ctx) => void pickAndImport(ctx.item.key),
+	});
+	registerItemAction({
+		id: "add.attachLinkFile",
+		label: "Link to File…",
+		submenu: "Add Attachment",
+		icon: "link",
+		group: "edit",
+		visible: single,
+		run: (ctx) => void openLinkFileDialog(ctx.item.key),
+	});
+	registerItemAction({
+		id: "add.attachLinkUri",
+		label: "Link to URI…",
+		submenu: "Add Attachment",
+		icon: "link",
+		group: "edit",
+		visible: single,
+		run: (ctx) => void openLinkUriDialog(ctx.item.key),
+	});
 	registerItemAction({
 		id: "add.duplicate",
 		label: (ctx) => (ctx.keys.length > 1 ? "Duplicate Items" : "Duplicate Item"),
@@ -51,7 +126,8 @@ export function register(): void {
 		icon: "corner-up-left",
 		group: "maintain",
 		// a standalone attachment or note (a child item's parent already exists)
-		visible: (ctx) => ctx.view.kind !== "trash" && ctx.keys.length === 1 && (ctx.item.itemType === "attachment" || ctx.item.itemType === "note"),
+		visible: (ctx) =>
+			ctx.view.kind !== "trash" && ctx.keys.length === 1 && (ctx.item.itemType === "attachment" || ctx.item.itemType === "note"),
 		run: (ctx) => void openCreateParentDialog(ctx.item.key),
 	});
 }

@@ -9,12 +9,22 @@ let cached: Promise<string[]> | undefined;
 
 /** Weight / width words Windows' older (GDI) font list appends to a family ("Cascadia Code SemiBold"); DirectWrite, which GPUI
  *  uses, knows only the family ("Cascadia Code"), so such names are dropped when their family is listed too. */
-const STYLE = /\s+(?:(?:Extra|Ultra|Semi|Demi)?(?:Light|Bold|Condensed|Expanded)|Thin|Hairline|Medium|Black|Heavy|Book|Narrow|Regular|SemiLight)$/i;
+const STYLE =
+	/\s+(?:(?:Extra|Ultra|Semi|Demi)?(?:Light|Bold|Condensed|Expanded)|Thin|Hairline|Medium|Black|Heavy|Book|Narrow|Regular|SemiLight)$/i;
 
 export function tidy(names: Iterable<string>): string[] {
 	const all = new Set([...names].map((n) => n.trim()).filter((n) => n && !n.startsWith("@") && !n.startsWith(".")));
-	const base = (n: string): string => { let b = n; while (STYLE.test(b)) b = b.replace(STYLE, ""); return b; };
-	return [...all].filter((n) => { const b = base(n); return b === n || !all.has(b); }).sort((a, b) => a.localeCompare(b));
+	const base = (n: string): string => {
+		let b = n;
+		while (STYLE.test(b)) b = b.replace(STYLE, "");
+		return b;
+	};
+	return [...all]
+		.filter((n) => {
+			const b = base(n);
+			return b === n || !all.has(b);
+		})
+		.sort((a, b) => a.localeCompare(b));
 }
 
 async function run(cmd: string[]): Promise<string> {
@@ -44,7 +54,8 @@ function macFamilies(): string[] {
 
 async function load(): Promise<string[]> {
 	if (process.platform === "win32") {
-		const ps = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }";
+		const ps =
+			"[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }";
 		return tidy((await run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps])).split(/\r?\n/));
 	}
 	if (process.platform === "darwin") return tidy(macFamilies());

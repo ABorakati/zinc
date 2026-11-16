@@ -20,14 +20,7 @@
 // transaction with foreign_keys = ON; integrity_check + foreign_key_check before COMMIT; any
 // unexpected error rolls everything back (and removes copied files) and is rethrown.
 import { Database } from "bun:sqlite";
-import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	renameSync,
-	rmSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
 	BASELINE_CHANGED,
@@ -85,9 +78,28 @@ const SYNC_OBJECT_COLLECTION = 1;
 const SYNC_OBJECT_ITEM = 3;
 const READER_CONTENT_TYPES = new Set(["application/pdf", "application/epub+zip", "text/html"]);
 const NON_FIELD_KEYS = new Set([
-	"key", "version", "itemType", "parentItem", "collections", "tags", "creators", "relations",
-	"dateAdded", "dateModified", "deleted", "inPublications", "note", "md5", "mtime", "linkMode",
-	"contentType", "charset", "filename", "path", "extra", "lastRead",
+	"key",
+	"version",
+	"itemType",
+	"parentItem",
+	"collections",
+	"tags",
+	"creators",
+	"relations",
+	"dateAdded",
+	"dateModified",
+	"deleted",
+	"inPublications",
+	"note",
+	"md5",
+	"mtime",
+	"linkMode",
+	"contentType",
+	"charset",
+	"filename",
+	"path",
+	"extra",
+	"lastRead",
 ]);
 
 function str(v: unknown): string | null {
@@ -203,7 +215,11 @@ class Session {
 		return this.get("SELECT itemID, itemTypeID FROM items WHERE libraryID = ? AND key = ?", this.lib, key);
 	}
 	private findCollection(key: string): Row | null {
-		return this.get("SELECT collectionID, collectionName, parentCollectionID FROM collections WHERE libraryID = ? AND key = ?", this.lib, key);
+		return this.get(
+			"SELECT collectionID, collectionName, parentCollectionID FROM collections WHERE libraryID = ? AND key = ?",
+			this.lib,
+			key,
+		);
 	}
 
 	private ftRun(sql: string, ...p: unknown[]): void {
@@ -228,7 +244,9 @@ class Session {
 	private tagId(name: string): number {
 		const r = this.get("SELECT tagID FROM tags WHERE name = ?", name);
 		if (r) return r.tagID as number;
-		return Number(this.run("INSERT INTO tags (name, nameNormalized) VALUES (?, ?)", name, normalizeForSearchStorage(name)).lastInsertRowid);
+		return Number(
+			this.run("INSERT INTO tags (name, nameNormalized) VALUES (?, ?)", name, normalizeForSearchStorage(name)).lastInsertRowid,
+		);
 	}
 
 	private creatorId(c: { firstName: string; lastName: string; fieldMode: number }): number {
@@ -261,16 +279,18 @@ class Session {
 		this.run("DELETE FROM tags WHERE tagID = ? AND NOT EXISTS (SELECT 1 FROM itemTags WHERE tagID = ?)", tagID, tagID);
 	}
 	private purgeCreator(creatorID: number): void {
-		this.run("DELETE FROM creators WHERE creatorID = ? AND NOT EXISTS (SELECT 1 FROM itemCreators WHERE creatorID = ?)", creatorID, creatorID);
+		this.run(
+			"DELETE FROM creators WHERE creatorID = ? AND NOT EXISTS (SELECT 1 FROM itemCreators WHERE creatorID = ?)",
+			creatorID,
+			creatorID,
+		);
 	}
 
 	private itemUri(key: string): string {
 		if (!this.userURIBase) {
 			const uid = this.get("SELECT value FROM settings WHERE setting = 'account' AND key = 'userID'");
 			const local = this.get("SELECT value FROM settings WHERE setting = 'account' AND key = 'localUserKey'");
-			this.userURIBase = uid?.value
-				? `http://zotero.org/users/${uid.value}`
-				: `http://zotero.org/users/local/${local?.value ?? ""}`;
+			this.userURIBase = uid?.value ? `http://zotero.org/users/${uid.value}` : `http://zotero.org/users/local/${local?.value ?? ""}`;
 		}
 		return `${this.userURIBase}/items/${key}`;
 	}
@@ -392,12 +412,15 @@ class Session {
 		const data = w.data;
 		if (!data) throw new ZoteroWriteError("upsert without data");
 		const existingRow = this.findItem(w.key);
-		const cur: LoadedItem | undefined = existingRow ? loadItems(this.db, this.lk, [existingRow.itemID])?.get(existingRow.itemID) : undefined;
+		const cur: LoadedItem | undefined = existingRow
+			? loadItems(this.db, this.lk, [existingRow.itemID])?.get(existingRow.itemID)
+			: undefined;
 		if (cur?.annotation) throw new ZoteroWriteError(`${w.key} is an annotation, not an item`);
 		const typeName = String(data.itemType ?? cur?.typeName ?? "");
 		if (!typeName) throw new ZoteroWriteError("itemType missing");
 		if (typeName === "annotation") throw new ZoteroWriteError("annotations must use type 'annotation'");
-		if (cur && cur.typeName !== typeName) throw new ZoteroWriteError(`changing itemType (${cur.typeName} -> ${typeName}) is not supported`);
+		if (cur && cur.typeName !== typeName)
+			throw new ZoteroWriteError(`changing itemType (${cur.typeName} -> ${typeName}) is not supported`);
 		const typeId = this.lk.typeId.get(typeName);
 		if (typeId === undefined) throw new ZoteroWriteError(`unknown itemType '${typeName}'`);
 		const isNote = typeName === "note";
@@ -428,7 +451,9 @@ class Session {
 		relIn.sort((a, b) => (a[0] + a[1]).localeCompare(b[0] + b[1]));
 		let collectionIDsIn: number[] = [];
 		if (!isChild || !parentID) {
-			const ks = Array.isArray(data.collections) ? (data.collections as unknown[]).filter((k): k is string => typeof k === "string") : [];
+			const ks = Array.isArray(data.collections)
+				? (data.collections as unknown[]).filter((k): k is string => typeof k === "string")
+				: [];
 			for (const k of new Set(ks)) {
 				const c = this.findCollection(k);
 				if (c) collectionIDsIn.push(c.collectionID as number); // unknown collections are skipped
@@ -448,7 +473,11 @@ class Session {
 			if (linkMode < 0) throw new ZoteroWriteError(`unknown linkMode '${lmName}'`);
 			const contentType = data.contentType !== undefined ? str(data.contentType) || null : (cur?.attRow?.contentType ?? null);
 			const charset = data.charset !== undefined ? String(data.charset).toLowerCase() : null;
-			const charsetID = charset ? (this.lk.charsetId.get(charset) ?? null) : data.charset === undefined ? (cur?.attRow?.charsetID ?? null) : null;
+			const charsetID = charset
+				? (this.lk.charsetId.get(charset) ?? null)
+				: data.charset === undefined
+					? (cur?.attRow?.charsetID ?? null)
+					: null;
 			let path: string | null = cur?.attRow?.path ?? null;
 			if (linkMode === 3) path = null;
 			else if (linkMode === 2) {
@@ -457,7 +486,11 @@ class Session {
 				else if (!path) throw new ZoteroWriteError("linked_file attachment needs a path");
 			} else {
 				// imported file: path is storage:<filename>; a new file or filename defines it
-				const fn = w.file ? validFileName(w.file.filename) : typeof data.filename === "string" && data.filename ? validFileName(data.filename) : null;
+				const fn = w.file
+					? validFileName(w.file.filename)
+					: typeof data.filename === "string" && data.filename
+						? validFileName(data.filename)
+						: null;
 				if (fn) path = `storage:${fn}`;
 				else if (!path) path = null;
 			}
@@ -470,8 +503,15 @@ class Session {
 		const incomingDM = isoToSql(str(data.dateModified));
 		let changedAny = false;
 		const flags = {
-			fields: false, creators: false, tags: false, collections: false, relations: false,
-			note: false, attachment: false, parent: false, file: !!fileInfo,
+			fields: false,
+			creators: false,
+			tags: false,
+			collections: false,
+			relations: false,
+			note: false,
+			attachment: false,
+			parent: false,
+			file: !!fileInfo,
 		};
 		if (!cur) {
 			changedAny = true;
@@ -489,11 +529,14 @@ class Session {
 			const tk = (l: { tag: string; type: number }[]) => l.map((t) => `${t.type}:${t.tag}`).sort();
 			flags.tags = !sameJson(tk(tagsIn), tk(cur.input?.tags ?? []));
 			if (!isChild || !cur.parentID) {
-				const curColl = this.all("SELECT collectionID FROM collectionItems WHERE itemID = ?", cur.itemID).map((r) => r.collectionID as number).sort((a, b) => a - b);
+				const curColl = this.all("SELECT collectionID FROM collectionItems WHERE itemID = ?", cur.itemID)
+					.map((r) => r.collectionID as number)
+					.sort((a, b) => a - b);
 				flags.collections = !sameJson(curColl, collectionIDsIn);
 			}
 			const curRel: [string, string][] = [];
-			for (const [p, o] of Object.entries(cur.input?.relations ?? {})) for (const x of Array.isArray(o) ? o : [o]) curRel.push([p, x]);
+			for (const [p, o] of Object.entries(cur.input?.relations ?? {}))
+				for (const x of Array.isArray(o) ? o : [o]) curRel.push([p, x]);
 			curRel.sort((a, b) => (a[0] + a[1]).localeCompare(b[0] + b[1]));
 			flags.relations = !sameJson(relIn, curRel);
 			if (noteIn !== null) flags.note = (cur.input?.noteText ?? "") !== noteIn;
@@ -531,7 +574,12 @@ class Session {
 			itemID = Number(
 				this.run(
 					"INSERT INTO items (itemTypeID, dateAdded, dateModified, clientDateModified, libraryID, key, version, synced) VALUES (?, ?, ?, ?, ?, ?, 0, 0)",
-					typeId, added, dm, now, this.lib, w.key,
+					typeId,
+					added,
+					dm,
+					now,
+					this.lib,
+					w.key,
 				).lastInsertRowid,
 			);
 		} else {
@@ -574,12 +622,22 @@ class Session {
 			if (!exists) {
 				this.run(
 					"INSERT INTO itemAttachments (itemID, parentItemID, linkMode, contentType, charsetID, path, syncState, storageModTime, storageHash, lastProcessedModificationTime, lastRead) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL)",
-					itemID, parentID, att.linkMode, att.contentType, att.charsetID, att.path,
+					itemID,
+					parentID,
+					att.linkMode,
+					att.contentType,
+					att.charsetID,
+					att.path,
 				);
 			} else if (flags.attachment || fileInfo) {
 				this.run(
 					`UPDATE itemAttachments SET parentItemID = ?, linkMode = ?, contentType = ?, charsetID = ?, path = ?${fileInfo ? ", syncState = 0" : ""} WHERE itemID = ?`,
-					parentID, att.linkMode, att.contentType, att.charsetID, att.path, itemID,
+					parentID,
+					att.linkMode,
+					att.contentType,
+					att.charsetID,
+					att.path,
+					itemID,
 				);
 			}
 			if (noteIn !== null && (!cur || flags.note)) {
@@ -595,10 +653,13 @@ class Session {
 
 		// collections (after parent rows exist)
 		if ((!isChild || !parentID) && (!cur || flags.collections)) {
-			const oldC = cur ? this.all("SELECT collectionID FROM collectionItems WHERE itemID = ?", itemID).map((r) => r.collectionID as number) : [];
+			const oldC = cur
+				? this.all("SELECT collectionID FROM collectionItems WHERE itemID = ?", itemID).map((r) => r.collectionID as number)
+				: [];
 			const oldSet = new Set(oldC);
 			const newSet = new Set(collectionIDsIn);
-			for (const c of oldC) if (!newSet.has(c)) this.run("DELETE FROM collectionItems WHERE collectionID = ? AND itemID = ?", c, itemID);
+			for (const c of oldC)
+				if (!newSet.has(c)) this.run("DELETE FROM collectionItems WHERE collectionID = ? AND itemID = ?", c, itemID);
 			for (const c of collectionIDsIn) {
 				if (oldSet.has(c)) continue;
 				const o = this.get("SELECT IFNULL(MAX(orderIndex) + 1, 0) AS o FROM collectionItems WHERE collectionID = ?", c);
@@ -608,7 +669,13 @@ class Session {
 		if (!cur || flags.tags) this.writeTags(itemID, tagsIn, cur?.input?.tags ?? []);
 		if (!cur || flags.relations) {
 			this.run("DELETE FROM itemRelations WHERE itemID = ?", itemID);
-			for (const [p, o] of relIn) this.run("INSERT OR IGNORE INTO itemRelations (itemID, predicateID, object) VALUES (?, ?, ?)", itemID, this.predicateId(p), o);
+			for (const [p, o] of relIn)
+				this.run(
+					"INSERT OR IGNORE INTO itemRelations (itemID, predicateID, object) VALUES (?, ?, ?)",
+					itemID,
+					this.predicateId(p),
+					o,
+				);
 		}
 		if (wantDeleted !== null && (!cur ? wantDeleted : wantDeleted !== cur.deleted)) this.setDeleted(itemID, wantDeleted);
 		if (pubChange) this.setInPublications(itemID, wantPub);
@@ -693,8 +760,17 @@ class Session {
 		const dcRelation = this.get("SELECT predicateID FROM relationPredicates WHERE predicate = 'dc:relation'");
 		if (dcRelation) {
 			const uri = this.itemUri(key);
-			for (const rel of this.all("SELECT itemID FROM itemRelations WHERE predicateID = ? AND object = ?", dcRelation.predicateID, uri)) {
-				this.run("DELETE FROM itemRelations WHERE itemID = ? AND predicateID = ? AND object = ?", rel.itemID, dcRelation.predicateID, uri);
+			for (const rel of this.all(
+				"SELECT itemID FROM itemRelations WHERE predicateID = ? AND object = ?",
+				dcRelation.predicateID,
+				uri,
+			)) {
+				this.run(
+					"DELETE FROM itemRelations WHERE itemID = ? AND predicateID = ? AND object = ?",
+					rel.itemID,
+					dcRelation.predicateID,
+					uri,
+				);
 				this.run("UPDATE items SET synced = 0, clientDateModified = ? WHERE itemID = ?", this.now, rel.itemID);
 				this.bump("items", "itemID", rel.itemID as number);
 			}
@@ -713,7 +789,13 @@ class Session {
 			this.ftRun("DELETE FROM ftindex.fulltextContentCJK WHERE rowid = ?", itemID);
 			this.ftRun("DELETE FROM ftindex.fulltextIndexState WHERE itemID = ?", itemID);
 		}
-		this.run("REPLACE INTO syncDeleteLog (syncObjectTypeID, libraryID, key, dateDeleted) VALUES (?, ?, ?, ?)", SYNC_OBJECT_ITEM, this.lib, key, this.now);
+		this.run(
+			"REPLACE INTO syncDeleteLog (syncObjectTypeID, libraryID, key, dateDeleted) VALUES (?, ?, ?, ?)",
+			SYNC_OBJECT_ITEM,
+			this.lib,
+			key,
+			this.now,
+		);
 		this.run("DELETE FROM items WHERE itemID = ?", itemID);
 		for (const t of tagIDs) this.purgeTag(t);
 		for (const c of new Set(creatorIDs)) this.purgeCreator(c);
@@ -730,7 +812,8 @@ class Session {
 		if (!parentKey) throw new ZoteroWriteError("annotation needs parentItem (attachment key)");
 		const parent = this.get(
 			"SELECT i.itemID, a.linkMode, a.contentType FROM items i JOIN itemAttachments a ON a.itemID = i.itemID WHERE i.libraryID = ? AND i.key = ?",
-			this.lib, parentKey,
+			this.lib,
+			parentKey,
 		);
 		if (!parent) throw new ZoteroWriteError(`annotation parent ${parentKey} is not an attachment`);
 		if (parent.linkMode === 3 || !READER_CONTENT_TYPES.has(String(parent.contentType))) {
@@ -772,10 +855,7 @@ class Session {
 				(a.pageLabel || null) === incoming.pageLabel &&
 				a.sortIndex === incoming.sortIndex &&
 				sameJson(JSON.parse(a.position), JSON.parse(incoming.position)) &&
-				sameJson(
-					a.tags.map((t) => `${t.type}:${t.tag}`).sort(),
-					tagsIn.map((t) => `${t.type}:${t.tag}`).sort(),
-				) &&
+				sameJson(a.tags.map((t) => `${t.type}:${t.tag}`).sort(), tagsIn.map((t) => `${t.type}:${t.tag}`).sort()) &&
 				(data.deleted === undefined || !!data.deleted === cur.deleted);
 			if (same) return { changed: false, dateModified: cur.dateModified };
 		}
@@ -787,7 +867,12 @@ class Session {
 			itemID = Number(
 				this.run(
 					"INSERT INTO items (itemTypeID, dateAdded, dateModified, clientDateModified, libraryID, key, version, synced) VALUES (?, ?, ?, ?, ?, ?, 0, 0)",
-					this.lk.typeId.get("annotation"), isoToSql(str(data.dateAdded)) ?? this.now, dm, this.now, this.lib, w.key,
+					this.lk.typeId.get("annotation"),
+					isoToSql(str(data.dateAdded)) ?? this.now,
+					dm,
+					this.now,
+					this.lib,
+					w.key,
 				).lastInsertRowid,
 			);
 		} else {
@@ -797,8 +882,18 @@ class Session {
 		}
 		this.run(
 			"REPLACE INTO itemAnnotations (itemID, parentItemID, type, authorName, text, textNormalized, comment, commentNormalized, color, pageLabel, sortIndex, position, isExternal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
-			itemID, parent.itemID, incoming.type, incoming.authorName, incoming.text, normalizeForSearchStorage(incoming.text),
-			incoming.comment, normalizeForSearchStorage(incoming.comment), incoming.color, incoming.pageLabel, incoming.sortIndex, incoming.position,
+			itemID,
+			parent.itemID,
+			incoming.type,
+			incoming.authorName,
+			incoming.text,
+			normalizeForSearchStorage(incoming.text),
+			incoming.comment,
+			normalizeForSearchStorage(incoming.comment),
+			incoming.color,
+			incoming.pageLabel,
+			incoming.sortIndex,
+			incoming.position,
 		);
 		this.writeTags(itemID, tagsIn, cur?.annotation?.tags ?? []);
 		if (data.deleted !== undefined) this.setDeleted(itemID, !!data.deleted);
@@ -843,14 +938,24 @@ class Session {
 			id = Number(
 				this.run(
 					"INSERT INTO collections (collectionName, parentCollectionID, clientDateModified, libraryID, key, version, synced) VALUES (?, ?, ?, ?, ?, 0, 0)",
-					name, parentID, this.now, this.lib, w.key,
+					name,
+					parentID,
+					this.now,
+					this.lib,
+					w.key,
 				).lastInsertRowid,
 			);
 			changed = true;
 		} else {
 			id = cur.collectionID as number;
 			if (cur.collectionName !== name || (cur.parentCollectionID ?? null) !== parentID) {
-				this.run("UPDATE collections SET collectionName = ?, parentCollectionID = ?, clientDateModified = ?, synced = 0 WHERE collectionID = ?", name, parentID, this.now, id);
+				this.run(
+					"UPDATE collections SET collectionName = ?, parentCollectionID = ?, clientDateModified = ?, synced = 0 WHERE collectionID = ?",
+					name,
+					parentID,
+					this.now,
+					id,
+				);
 				changed = true;
 			}
 		}
@@ -899,19 +1004,21 @@ class Session {
 			this.run("DELETE FROM collectionItems WHERE collectionID = ?", cid);
 			this.run("UPDATE collections SET parentCollectionID = NULL WHERE parentCollectionID = ?", cid);
 			this.run("DELETE FROM collections WHERE collectionID = ?", cid);
-			if (ck) this.run("REPLACE INTO syncDeleteLog (syncObjectTypeID, libraryID, key, dateDeleted) VALUES (?, ?, ?, ?)", SYNC_OBJECT_COLLECTION, this.lib, ck, this.now);
+			if (ck)
+				this.run(
+					"REPLACE INTO syncDeleteLog (syncObjectTypeID, libraryID, key, dateDeleted) VALUES (?, ?, ?, ?)",
+					SYNC_OBJECT_COLLECTION,
+					this.lib,
+					ck,
+					this.now,
+				);
 		}
 		this.bumpLibrary();
 		return { changed: true };
 	}
 }
 
-function collectionsNeedRemoval(
-	flags: { parent: boolean },
-	cur: LoadedItem,
-	isChild: boolean,
-	parentID: number | null,
-): boolean {
+function collectionsNeedRemoval(flags: { parent: boolean }, cur: LoadedItem, isChild: boolean, parentID: number | null): boolean {
 	// A standalone note/attachment that becomes a child leaves its collections (Zotero's trigger does
 	// the same; doing it explicitly keeps the later collectionItems rewrite consistent).
 	return isChild && flags.parent && !cur.parentID && parentID !== null;
@@ -925,8 +1032,7 @@ export class ZoteroDbWriter implements ZoteroWriter {
 	constructor(private opts: ZoteroDbOptions = {}) {
 		this.dataDir = opts.dataDir ?? findZoteroDataDir(opts.profilesDir);
 		this.dbPath = join(this.dataDir, "zotero.sqlite");
-		this.baseAttach =
-			opts.baseAttachmentPath !== undefined ? opts.baseAttachmentPath : findBaseAttachmentPath(opts.profilesDir);
+		this.baseAttach = opts.baseAttachmentPath !== undefined ? opts.baseAttachmentPath : findBaseAttachmentPath(opts.profilesDir);
 	}
 
 	private async running(): Promise<boolean> {
@@ -1009,7 +1115,7 @@ export class ZoteroDbWriter implements ZoteroWriter {
 				db.exec("SAVEPOINT w");
 				const mark = session.stageMark();
 				try {
-					const r =this.applyOne(session, w);
+					const r = this.applyOne(session, w);
 					db.exec("RELEASE w");
 					results[i] = { key: w.key, ok: true, ...r };
 				} catch (e) {
@@ -1032,7 +1138,7 @@ export class ZoteroDbWriter implements ZoteroWriter {
 			db.exec("COMMIT");
 			inTx = false;
 			session.commitStaged();
-				for (const f of session.afterCommit) {
+			for (const f of session.afterCommit) {
 				try {
 					f();
 				} catch {
@@ -1092,4 +1198,3 @@ export class ZoteroDbWriter implements ZoteroWriter {
 function toIsoOrUndef(sql: string | undefined): string | undefined {
 	return sql ? `${sql.replace(" ", "T")}Z` : undefined;
 }
-

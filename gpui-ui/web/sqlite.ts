@@ -25,17 +25,23 @@ const lib = (): Sqlite3 => {
 	return sqlite3;
 };
 
-const toBind = (v: Value): string | number | bigint | null | Uint8Array => (v === undefined ? null : typeof v === "boolean" ? (v ? 1 : 0) : v);
+const toBind = (v: Value): string | number | bigint | null | Uint8Array =>
+	v === undefined ? null : typeof v === "boolean" ? (v ? 1 : 0) : v;
 
 export class Statement {
 	private stmt: any;
 	private names: string[] = [];
-	constructor(private db: Database, readonly sql: string) {
+	constructor(
+		private db: Database,
+		readonly sql: string,
+	) {
 		this.stmt = db.raw.prepare(sql);
 		const n = lib().capi.sqlite3_bind_parameter_count(this.stmt.pointer);
 		for (let i = 1; i <= n; i++) this.names.push(lib().capi.sqlite3_bind_parameter_name(this.stmt.pointer, i) ?? "");
 	}
-	get columnNames(): string[] { return this.stmt.getColumnNames(); }
+	get columnNames(): string[] {
+		return this.stmt.getColumnNames();
+	}
 	private bind(params: Params): void {
 		this.stmt.reset(true);
 		if (params.length === 0) return;
@@ -74,7 +80,11 @@ export class Statement {
 	}
 	*iterate(...params: Params): IterableIterator<Record<string, unknown>> {
 		this.bind(params);
-		try { while (this.stmt.step()) yield this.stmt.get({}); } finally { this.stmt.reset(); }
+		try {
+			while (this.stmt.step()) yield this.stmt.get({});
+		} finally {
+			this.stmt.reset();
+		}
 	}
 	run(...params: Params): { changes: number; lastInsertRowid: number } {
 		this.bind(params);
@@ -82,9 +92,15 @@ export class Statement {
 		this.stmt.reset();
 		return { changes: this.db.raw.changes(), lastInsertRowid: Number(lib().capi.sqlite3_last_insert_rowid(this.db.raw.pointer)) };
 	}
-	as(): this { return this; }
-	finalize(): void { this.stmt.finalize(); }
-	toString(): string { return this.sql; }
+	as(): this {
+		return this;
+	}
+	finalize(): void {
+		this.stmt.finalize();
+	}
+	toString(): string {
+		return this.sql;
+	}
 }
 
 export class Database {
@@ -107,42 +123,66 @@ export class Database {
 			this.raw.checkRc(s.capi.sqlite3_deserialize(this.raw.pointer, "main", p, bytes.byteLength, bytes.byteLength, flags));
 		}
 	}
-	get inTransaction(): boolean { return this.depth > 0 || !lib().capi.sqlite3_get_autocommit(this.raw.pointer); }
+	get inTransaction(): boolean {
+		return this.depth > 0 || !lib().capi.sqlite3_get_autocommit(this.raw.pointer);
+	}
 	query(sql: string): Statement {
 		let st = this.cache.get(sql);
-		if (!st) { st = new Statement(this, sql); this.cache.set(sql, st); }
+		if (!st) {
+			st = new Statement(this, sql);
+			this.cache.set(sql, st);
+		}
 		return st;
 	}
-	prepare(sql: string): Statement { return new Statement(this, sql); }
-	exec(sql: string, ...params: Params): { changes: number; lastInsertRowid: number } { return this.run(sql, ...params); }
+	prepare(sql: string): Statement {
+		return new Statement(this, sql);
+	}
+	exec(sql: string, ...params: Params): { changes: number; lastInsertRowid: number } {
+		return this.run(sql, ...params);
+	}
 	run(sql: string, ...params: Params): { changes: number; lastInsertRowid: number } {
 		if (params.length) return this.prepare(sql).run(...params);
 		this.raw.exec(sql);
 		return { changes: this.raw.changes(), lastInsertRowid: Number(lib().capi.sqlite3_last_insert_rowid(this.raw.pointer)) };
 	}
-	transaction<A extends unknown[], R>(fn: (...args: A) => R): ((...args: A) => R) & { deferred: (...args: A) => R; immediate: (...args: A) => R; exclusive: (...args: A) => R } {
-		const wrap = (begin: string) => (...args: A): R => {
-			const nested = this.depth > 0;
-			const sp = `sp${this.depth}`;
-			this.raw.exec(nested ? `SAVEPOINT ${sp}` : begin);
-			this.depth++;
-			try {
-				const r = fn(...args);
-				this.depth--;
-				this.raw.exec(nested ? `RELEASE ${sp}` : "COMMIT");
-				return r;
-			} catch (e) {
-				this.depth--;
-				this.raw.exec(nested ? `ROLLBACK TO ${sp}; RELEASE ${sp}` : "ROLLBACK");
-				throw e;
-			}
-		};
-		return Object.assign(wrap("BEGIN"), { deferred: wrap("BEGIN DEFERRED"), immediate: wrap("BEGIN IMMEDIATE"), exclusive: wrap("BEGIN EXCLUSIVE") });
+	transaction<A extends unknown[], R>(
+		fn: (...args: A) => R,
+	): ((...args: A) => R) & { deferred: (...args: A) => R; immediate: (...args: A) => R; exclusive: (...args: A) => R } {
+		const wrap =
+			(begin: string) =>
+			(...args: A): R => {
+				const nested = this.depth > 0;
+				const sp = `sp${this.depth}`;
+				this.raw.exec(nested ? `SAVEPOINT ${sp}` : begin);
+				this.depth++;
+				try {
+					const r = fn(...args);
+					this.depth--;
+					this.raw.exec(nested ? `RELEASE ${sp}` : "COMMIT");
+					return r;
+				} catch (e) {
+					this.depth--;
+					this.raw.exec(nested ? `ROLLBACK TO ${sp}; RELEASE ${sp}` : "ROLLBACK");
+					throw e;
+				}
+			};
+		return Object.assign(wrap("BEGIN"), {
+			deferred: wrap("BEGIN DEFERRED"),
+			immediate: wrap("BEGIN IMMEDIATE"),
+			exclusive: wrap("BEGIN EXCLUSIVE"),
+		});
 	}
-	serialize(): Uint8Array { return lib().capi.sqlite3_js_db_export(this.raw.pointer); }
-	loadExtension(): void { throw new Error("extensions are not available in the browser demo"); }
+	serialize(): Uint8Array {
+		return lib().capi.sqlite3_js_db_export(this.raw.pointer);
+	}
+	loadExtension(): void {
+		throw new Error("extensions are not available in the browser demo");
+	}
 	close(): void {
-		for (const st of this.cache.values()) try { st.finalize(); } catch {}
+		for (const st of this.cache.values())
+			try {
+				st.finalize();
+			} catch {}
 		this.cache.clear();
 		this.raw.close();
 	}

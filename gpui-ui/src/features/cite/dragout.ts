@@ -10,7 +10,17 @@
 // is not (a big selection) the wait happens first; if the button was released meanwhile, or the OS drag cannot run (no zn_pdf.dll
 // drag source, or the window is not on the JS thread), the text goes on the clipboard instead and a toast says so (the fallback).
 import { endDrag, setDragHook, type DragPayload } from "../../dnd";
-import { altDown, dragReady, lastDragError, leftButtonDown, osDragSupported, pointerOutsideWindow, runOsDrag, shiftDown, type OsDragResult } from "../../shell/dragout";
+import {
+	altDown,
+	dragReady,
+	lastDragError,
+	leftButtonDown,
+	osDragSupported,
+	pointerOutsideWindow,
+	runOsDrag,
+	shiftDown,
+	type OsDragResult,
+} from "../../shell/dragout";
 import { toast } from "../../ui";
 import { copyRich } from "../platform";
 import { errMsg } from "../text";
@@ -47,7 +57,10 @@ export function createOutDrag(d: OutDragDeps): OutDrag {
 	let memo = new Map<string, Promise<QuickCopyContent>>();
 	let session = 0;
 
-	const clear = () => { stop?.(); stop = null; };
+	const clear = () => {
+		stop?.();
+		stop = null;
+	};
 
 	/** Both results are requested up front (the plan is the same for both when an export format is chosen, so that is one request). */
 	function prefetch(keys: string[]): (shift: boolean) => Promise<QuickCopyContent> {
@@ -55,7 +68,11 @@ export function createOutDrag(d: OutDragDeps): OutDrag {
 			// the plan key is only known after the settings are read, so memoise on the Shift flag
 			const k = shift ? "shift" : "plain";
 			let p = memo.get(k);
-			if (!p) { p = d.content(keys, shift); memo.set(k, p); p.catch(() => {}); }
+			if (!p) {
+				p = d.content(keys, shift);
+				memo.set(k, p);
+				p.catch(() => {});
+			}
 			return p;
 		};
 		void get(false);
@@ -72,7 +89,8 @@ export function createOutDrag(d: OutDragDeps): OutDrag {
 			if (!d.ready()) throw new Error("no window to drag from, or zn_pdf.dll has no drag source");
 			const c = await get(shift);
 			if (mySession !== session) return; // cancelled meanwhile
-			if (!d.leftDown()) { // released while formatting: nothing to drag any more
+			if (!d.leftDown()) {
+				// released while formatting: nothing to drag any more
 				await d.copy(c);
 				d.notify(`${copiedMessage(c.plan, c.count)} — paste it`, "success");
 				d.endInApp();
@@ -101,7 +119,10 @@ export function createOutDrag(d: OutDragDeps): OutDrag {
 			const get = prefetch(payload.keys);
 			const mine = session;
 			const tick = () => {
-				if (!d.leftDown()) { clear(); return; } // an ordinary release inside the window: the in-app drag ends itself
+				if (!d.leftDown()) {
+					clear();
+					return;
+				} // an ordinary release inside the window: the in-app drag ends itself
 				if (d.outside()) void handoff(get, mine);
 			};
 			stop = d.every(tick, 16);
@@ -123,14 +144,36 @@ export function installOutDrag(): void {
 		leftDown: leftButtonDown,
 		shiftDown,
 		altDown,
-		outside: () => { const o = pointerOutsideWindow(); if (o) dbg("outside"); return o; },
-		ready: () => { const ok = dragReady(); dbg(`ready=${ok}`); return ok; },
+		outside: () => {
+			const o = pointerOutsideWindow();
+			if (o) dbg("outside");
+			return o;
+		},
+		ready: () => {
+			const ok = dragReady();
+			dbg(`ready=${ok}`);
+			return ok;
+		},
 		content: (keys, shift) => quickCopyContent(keys, { shift }),
-		run: async (c) => { dbg(`DoDragDrop text=${c.text.length} html=${c.html?.length ?? 0}`); const r = await runOsDrag(c); dbg(`result ${r} ${lastDragError()}`); return r; },
+		run: async (c) => {
+			dbg(`DoDragDrop text=${c.text.length} html=${c.html?.length ?? 0}`);
+			const r = await runOsDrag(c);
+			dbg(`result ${r} ${lastDragError()}`);
+			return r;
+		},
 		endInApp: endDrag,
 		copy: (c) => copyRich(c.html ?? "", c.text),
 		notify: (message, kind, description) => toast(message, { kind, description }),
-		every: (fn, ms) => { const t = setInterval(fn, ms); return () => clearInterval(t); },
+		every: (fn, ms) => {
+			const t = setInterval(fn, ms);
+			return () => clearInterval(t);
+		},
 	});
-	setDragHook({ start: (p) => { dbg(`start ${p.keys.length}`); out.start(p); }, end: () => out.end() });
+	setDragHook({
+		start: (p) => {
+			dbg(`start ${p.keys.length}`);
+			out.start(p);
+		},
+		end: () => out.end(),
+	});
 }

@@ -4,7 +4,10 @@ import type { APIRoute } from "astro";
 import { addressOf, docPages, markdownOf, mdPathOf, readmeMarkdown, SUMMARY, textResponse } from "../lib/llms";
 
 export const GET: APIRoute = async () => {
-	const parts = [`# Zinc: the full documentation\n\n> ${SUMMARY}\n`, `<!-- ${addressOf("readme.md")} -->\n\n${readmeMarkdown().trim()}\n`];
+	const parts = [
+		`# Zinc: the full documentation\n\n> ${SUMMARY}\n`,
+		`<!-- ${addressOf("readme.md")} -->\n\n${readmeMarkdown().trim()}\n`,
+	];
 	for (const p of await docPages()) parts.push(`<!-- ${addressOf(mdPathOf(p.slug))} -->\n\n${markdownOf(p).trim()}\n`);
 	return textResponse(parts.join("\n---\n\n"), "text/plain");
 };

@@ -4,13 +4,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -35,13 +29,7 @@
 		"event-place": "Event place",
 		"id": 38,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -58,13 +46,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -96,13 +78,7 @@
 		"event-place": "Place",
 		"id": 39,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -133,13 +109,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -162,13 +132,7 @@
 		],
 		"id": 40,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -188,13 +152,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -216,13 +174,7 @@
 		"genre": "Type",
 		"id": 41,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -244,13 +196,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -288,13 +234,7 @@
 		],
 		"id": 42,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -328,13 +268,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -379,13 +313,7 @@
 		],
 		"id": 43,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -417,13 +345,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -445,13 +367,7 @@
 		],
 		"id": 44,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -470,13 +386,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -501,13 +411,7 @@
 		"genre": "Programming language",
 		"id": 45,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"license": "Rights",
 		"medium": "System",
@@ -527,13 +431,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -574,13 +472,7 @@
 		"id": 46,
 		"issue": "5",
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -606,13 +498,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -636,13 +522,7 @@
 		"genre": "Type",
 		"id": 47,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -663,13 +543,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -708,13 +582,7 @@
 		],
 		"id": 48,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -740,13 +608,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -776,13 +638,7 @@
 		"genre": "Type",
 		"id": 49,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -811,13 +667,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -837,13 +687,7 @@
 		],
 		"id": 50,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -870,13 +714,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -915,13 +753,7 @@
 		],
 		"id": 51,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -947,13 +779,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -990,13 +816,7 @@
 		],
 		"id": 52,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1044,13 +864,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -1072,13 +886,7 @@
 		"genre": "Type",
 		"id": 53,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1092,13 +900,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"authority": "Authority",
 		"chapter-number": "Session",
@@ -1114,13 +916,7 @@
 		],
 		"id": 54,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1141,13 +937,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -1167,13 +957,7 @@
 		],
 		"id": 55,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1193,13 +977,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1228,13 +1006,7 @@
 			}
 		],
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1261,13 +1033,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1299,13 +1065,7 @@
 		"id": 57,
 		"issue": "5",
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"journalAbbreviation": "Journal abbreviation",
 		"language": "en-US",
@@ -1340,13 +1100,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1371,13 +1125,7 @@
 		"genre": "Type",
 		"id": 58,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1405,13 +1153,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1436,13 +1178,7 @@
 		"id": 59,
 		"issue": "5",
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1473,13 +1209,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1503,13 +1233,7 @@
 		"genre": "Type",
 		"id": 60,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1535,13 +1259,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1573,13 +1291,7 @@
 		"genre": "Type",
 		"id": 61,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1598,13 +1310,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1630,13 +1336,7 @@
 		"id": 62,
 		"issue": "5",
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1668,13 +1368,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -1697,13 +1391,7 @@
 		"id": 63,
 		"issue": "Priority numbers",
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1717,13 +1405,7 @@
 		"references": "References",
 		"status": "Status",
 		"submitted": {
-			"date-parts": [
-				[
-					"2000",
-					1,
-					2
-				]
-			]
+			"date-parts": [["2000", 1, 2]]
 		},
 		"title": "Title",
 		"title-short": "Short title",
@@ -1734,13 +1416,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"citation-key": "Citation key",
 		"collection-title": "Series title",
@@ -1780,13 +1456,7 @@
 		],
 		"id": 64,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1834,13 +1504,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -1872,13 +1536,7 @@
 		"genre": "Type",
 		"id": 65,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1908,13 +1566,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -1945,13 +1597,7 @@
 		"genre": "Type",
 		"id": 66,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -1977,13 +1623,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -2032,13 +1672,7 @@
 		],
 		"id": 67,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2089,13 +1723,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -2133,13 +1761,7 @@
 		"genre": "Type",
 		"id": 68,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2165,13 +1787,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -2203,13 +1819,7 @@
 		"genre": "Type",
 		"id": 69,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2233,13 +1843,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -2261,13 +1865,7 @@
 		],
 		"id": 70,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2288,13 +1886,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -2320,13 +1912,7 @@
 		"genre": "Type",
 		"id": 71,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2344,13 +1930,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -2393,13 +1973,7 @@
 		],
 		"id": 72,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2455,13 +2029,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"archive": "Archive",
 		"archive_location": "Archive location",
@@ -2511,13 +2079,7 @@
 		],
 		"id": 73,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",
@@ -2566,13 +2128,7 @@
 		"URL": "http://www.example.com",
 		"abstract": "Abstract note",
 		"accessed": {
-			"date-parts": [
-				[
-					"1997",
-					6,
-					13
-				]
-			]
+			"date-parts": [["1997", 6, 13]]
 		},
 		"author": [
 			{
@@ -2594,13 +2150,7 @@
 		"genre": "Type",
 		"id": 74,
 		"issued": {
-			"date-parts": [
-				[
-					"1999",
-					12,
-					31
-				]
-			]
+			"date-parts": [["1999", 12, 31]]
 		},
 		"language": "en-US",
 		"license": "Rights",

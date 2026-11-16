@@ -17,5 +17,14 @@ export function register(): void {
 
 export { ReferencesPanel, openReferences } from "./references/register";
 export { findFullText } from "./fulltext/register";
-export { deleteAutomaticTags, deleteSelected, deleteTag, emptyTrash, registerShortcutHelp, renameFilesFromParent, renameTag, trashItems } from "./maintenance/register";
+export {
+	deleteAutomaticTags,
+	deleteSelected,
+	deleteTag,
+	emptyTrash,
+	registerShortcutHelp,
+	renameFilesFromParent,
+	renameTag,
+	trashItems,
+} from "./maintenance/register";
 export { openDuplicates } from "./duplicates/DuplicatesDialog";

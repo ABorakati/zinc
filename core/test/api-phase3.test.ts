@@ -97,11 +97,20 @@ describe("POST /api/items", () => {
 		expect(hits.hits.map((h: any) => h.key)).toContain(d.data.key);
 	});
 	test("child note and attachment", async () => {
-		const n = await j(await call(fx.db, "POST", "/api/items", { data: { itemType: "note", note: "<p>child note</p>", parentItem: "BBBBBBB2" } }));
+		const n = await j(
+			await call(fx.db, "POST", "/api/items", { data: { itemType: "note", note: "<p>child note</p>", parentItem: "BBBBBBB2" } }),
+		);
 		expect(n.data.parentItem).toBe("BBBBBBB2");
 		const att = await j(
 			await call(fx.db, "POST", "/api/items", {
-				data: { itemType: "attachment", title: "Link", linkMode: "linked_url", url: "https://example.org", contentType: "text/html", parentItem: "BBBBBBB2" },
+				data: {
+					itemType: "attachment",
+					title: "Link",
+					linkMode: "linked_url",
+					url: "https://example.org",
+					contentType: "text/html",
+					parentItem: "BBBBBBB2",
+				},
 			}),
 		);
 		const parent = await j(await call(fx.db, "GET", "/api/items/BBBBBBB2"));
@@ -122,7 +131,9 @@ describe("POST /api/items", () => {
 		expect((await call(fx.db, "PUT", "/api/items", {})).status).toBe(405);
 	});
 	test("ignores client-supplied key and dates", async () => {
-		const d = await j(await call(fx.db, "POST", "/api/items", { data: { itemType: "book", key: "AAAAAAA1", dateAdded: "1999-01-01T00:00:00Z" } }));
+		const d = await j(
+			await call(fx.db, "POST", "/api/items", { data: { itemType: "book", key: "AAAAAAA1", dateAdded: "1999-01-01T00:00:00Z" } }),
+		);
 		expect(d.data.key).not.toBe("AAAAAAA1");
 		expect(d.data.dateAdded).not.toBe("1999-01-01T00:00:00Z");
 	});
@@ -134,7 +145,12 @@ describe("related items", () => {
 		expect(r.status).toBe(200);
 		const d = await j(r);
 		expect(d.related.map((x: any) => x.key).sort()).toEqual(["BBBBBBB2", "DDDDDDD4"]);
-		expect(d.related.find((x: any) => x.key === "BBBBBBB2")).toMatchObject({ itemType: "book", title: "Surgical anatomy", creatorsSummary: "Brown", year: 2018 });
+		expect(d.related.find((x: any) => x.key === "BBBBBBB2")).toMatchObject({
+			itemType: "book",
+			title: "Surgical anatomy",
+			creatorsSummary: "Brown",
+			year: 2018,
+		});
 		const uris = d.data.relations["dc:relation"] as string[];
 		expect(uris).toHaveLength(2);
 		for (const u of uris) expect(u).toMatch(/^http:\/\/zotero\.org\/users\/local\/[2-9A-Z]{8}\/items\/[2-9A-Z]{8}$/);
@@ -153,7 +169,15 @@ describe("related items", () => {
 	});
 	test("resolves foreign-user URIs and skips missing / trashed items", async () => {
 		await call(fx.db, "PATCH", "/api/items/BBBBBBB2", {
-			data: { relations: { "dc:relation": ["http://zotero.org/users/5106252/items/AAAAAAA1", "http://zotero.org/users/5106252/items/ZZZZZZZ9", "http://zotero.org/users/5106252/items/CCCCCCC3"] } },
+			data: {
+				relations: {
+					"dc:relation": [
+						"http://zotero.org/users/5106252/items/AAAAAAA1",
+						"http://zotero.org/users/5106252/items/ZZZZZZZ9",
+						"http://zotero.org/users/5106252/items/CCCCCCC3",
+					],
+				},
+			},
 		});
 		const b = await j(await call(fx.db, "GET", "/api/items/BBBBBBB2"));
 		expect(b.related.map((x: any) => x.key)).toEqual(["AAAAAAA1"]);
@@ -188,7 +212,17 @@ describe("openers", () => {
 		expect(opened).toEqual(["url:https://example.org/a?b=1&c=2", "url:http://example.org/", "url:https://doi.org/10.1000/xyz(1)"]);
 	});
 	test("open-url rejects other schemes and junk", async () => {
-		for (const url of ["file:///C:/Windows/System32/calc.exe", "javascript:alert(1)", "ms-msdt:/id", "calc.exe", "", "https://a.org/\nx", 5, null, "ftp://x.org"]) {
+		for (const url of [
+			"file:///C:/Windows/System32/calc.exe",
+			"javascript:alert(1)",
+			"ms-msdt:/id",
+			"calc.exe",
+			"",
+			"https://a.org/\nx",
+			5,
+			null,
+			"ftp://x.org",
+		]) {
 			expect((await call(fx.db, "POST", "/api/open-url", { url })).status).toBe(400);
 		}
 		expect((await call(fx.db, "POST", "/api/open-url", {})).status).toBe(400);

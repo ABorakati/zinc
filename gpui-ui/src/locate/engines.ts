@@ -110,8 +110,15 @@ export function parseZoteroEngines(text: string): LocateEngine[] {
 /** The engines as Zotero's engines.json would hold them (for tests and export; the app never writes Zotero's file). */
 export function toZoteroJson(engines: LocateEngine[]): unknown[] {
 	return engines.map((e) => ({
-		_name: e.name, _alias: e.alias, _description: e.description, _icon: e.icon, _hidden: !e.enabled,
-		_urlTemplate: e.urlTemplate, _urlParams: e.urlParams, _urlNamespaces: e.urlNamespaces, _iconSourceURI: e.iconSourceUri,
+		_name: e.name,
+		_alias: e.alias,
+		_description: e.description,
+		_icon: e.icon,
+		_hidden: !e.enabled,
+		_urlTemplate: e.urlTemplate,
+		_urlParams: e.urlParams,
+		_urlNamespaces: e.urlNamespaces,
+		_iconSourceURI: e.iconSourceUri,
 		...(e.method === "POST" ? { _method: "POST" } : {}),
 	}));
 }
@@ -221,7 +228,11 @@ export async function fetchOpenSearch(url: string, fetchImpl: (url: string) => P
 	const engine = parseOpenSearch(await res.text());
 	// a relative icon address is relative to the description
 	if (engine.iconSourceUri && !/^[a-z][a-z0-9+.-]*:/i.test(engine.iconSourceUri)) {
-		try { engine.iconSourceUri = new URL(engine.iconSourceUri, url.trim()).toString(); } catch { /* keep as is */ }
+		try {
+			engine.iconSourceUri = new URL(engine.iconSourceUri, url.trim()).toString();
+		} catch {
+			/* keep as is */
+		}
 	}
 	return engine;
 }
@@ -240,7 +251,11 @@ const present = (v: string[] | undefined | false): string[] | false => (v && v.l
 
 /** Zotero's _lookupParam: the raw (unencoded) values of {prefix:param}, or false when the item has none. */
 function lookupParam(
-	item: LocateItem, ctx: ReturnType<typeof contextOf>, engine: LocateEngine, prefix: string | undefined, param: string,
+	item: LocateItem,
+	ctx: ReturnType<typeof contextOf>,
+	engine: LocateEngine,
+	prefix: string | undefined,
+	param: string,
 ): string[] | false {
 	const title = typeof item.title === "string" && item.title ? item.title : ""; // item JSON may hold anything in a field
 	if (!prefix) return param === "searchTerms" && title ? [title] : false;
@@ -263,7 +278,10 @@ function lookupParam(
 	return false;
 }
 
-export interface Submission { url: string; postData: string | null }
+export interface Submission {
+	url: string;
+	postData: string | null;
+}
 
 /**
  * Zotero's getItemSubmission: the engine's URL (and POST body) for an item, or null when a required {param} has no value for it.
@@ -271,19 +289,25 @@ export interface Submission { url: string; postData: string | null }
 export function engineSubmission(engine: LocateEngine, item: LocateItem): Submission | null {
 	const ctx = contextOf(item);
 	let abort = false;
-	let url = engine.urlTemplate.replace(/{(?:([^}:]+):)?([^}:?]+)(\?)?}/g, (_all, prefix: string | undefined, param: string, optional: string | undefined) => {
-		const r = lookupParam(item, ctx, engine, prefix, param);
-		if (r) return enc(r[0]!);
-		if (optional) return "";
-		abort = true;
-		return "";
-	});
+	let url = engine.urlTemplate.replace(
+		/{(?:([^}:]+):)?([^}:?]+)(\?)?}/g,
+		(_all, prefix: string | undefined, param: string, optional: string | undefined) => {
+			const r = lookupParam(item, ctx, engine, prefix, param);
+			if (r) return enc(r[0]!);
+			if (optional) return "";
+			abort = true;
+			return "";
+		},
+	);
 	if (abort) return null;
 
 	const add: string[] = [];
 	for (const [name, value] of Object.entries(engine.urlParams)) {
 		const m = /^{(?:([^}:]+):)?([^}:?]+)(\?)?}$/.exec(value);
-		if (!m) { add.push(`${enc(name)}=${enc(value)}`); continue; }
+		if (!m) {
+			add.push(`${enc(name)}=${enc(value)}`);
+			continue;
+		}
 		const r = lookupParam(item, ctx, engine, m[1], m[2]!);
 		if (r) for (const v of r) add.push(`${enc(name)}=${enc(v)}`);
 		else if (!m[3]) return null;
@@ -330,9 +354,12 @@ export function moveEngine(list: LocateEngine[], index: number, delta: number): 
 
 /** Merge engines imported from Zotero into the list: same name replaces in place, new ones are appended. */
 export function mergeEngines(list: LocateEngine[], imported: LocateEngine[]): { list: LocateEngine[]; added: number; replaced: number } {
-	let out = list, added = 0, replaced = 0;
+	let out = list,
+		added = 0,
+		replaced = 0;
 	for (const e of imported) {
-		if (out.some((x) => x.name.toLowerCase() === e.name.toLowerCase())) replaced++; else added++;
+		if (out.some((x) => x.name.toLowerCase() === e.name.toLowerCase())) replaced++;
+		else added++;
 		out = upsertEngine(out, e);
 	}
 	return { list: out, added, replaced };

@@ -25,9 +25,28 @@ export interface Pick {
 export type CawyParams = Record<string, string | undefined>;
 
 const LABELS: Record<string, string> = {
-	article: "art.", chapter: "ch.", subchapter: "subch.", column: "col.", figure: "fig.", line: "l.", note: "n.", issue: "no.", opus: "op.",
-	page: "p.", paragraph: "para.", subparagraph: "subpara.", part: "pt.", rule: "r.", section: "sec.", subsection: "subsec.", Section: "Sec.",
-	"sub verbo": "sv.", schedule: "sch.", title: "tit.", verse: "vrs.", volume: "vol.",
+	article: "art.",
+	chapter: "ch.",
+	subchapter: "subch.",
+	column: "col.",
+	figure: "fig.",
+	line: "l.",
+	note: "n.",
+	issue: "no.",
+	opus: "op.",
+	page: "p.",
+	paragraph: "para.",
+	subparagraph: "subpara.",
+	part: "pt.",
+	rule: "r.",
+	section: "sec.",
+	subsection: "subsec.",
+	Section: "Sec.",
+	"sub verbo": "sv.",
+	schedule: "sch.",
+	title: "tit.",
+	verse: "vrs.",
+	volume: "vol.",
 };
 
 function locatorText(p: Pick, params: CawyParams): string {
@@ -48,7 +67,11 @@ export function formatPicks(picks: Pick[], params: CawyParams): string {
 	switch (format) {
 		case "key":
 			return unique(keys).join(",");
-		case "cite": case "latex": case "natbib": case "citep": case "citet": {
+		case "cite":
+		case "latex":
+		case "natbib":
+		case "citep":
+		case "citet": {
 			const base = format === "citep" || format === "citet" ? format : params.command || "cite";
 			const noAuthor = picks.filter((p) => p.suppressAuthor).length;
 			if (picks.every(plain) && (noAuthor === 0 || noAuthor === picks.length)) {
@@ -108,7 +131,9 @@ export function scannableCites(db: Database, picks: Pick[], params: CawyParams):
 		.map((p) => {
 			const row = db.query("SELECT data FROM items WHERE key = ?").get(p.itemKey) as { data: string } | null;
 			const d = row ? (JSON.parse(row.data) as ZoteroItemData) : null;
-			const authors = ((d?.creators ?? []) as { creatorType: string; lastName?: string; name?: string }[]).filter((c) => c.creatorType === "author").map(creatorLast);
+			const authors = ((d?.creators ?? []) as { creatorType: string; lastName?: string; name?: string }[])
+				.filter((c) => c.creatorType === "author")
+				.map(creatorLast);
 			const year = String(d?.date ?? "").match(/\d{4}/)?.[0] ?? "";
 			const short = [authors.join(", "), year].filter(Boolean).join(", ");
 			return `{ ${p.prefix ?? ""} | ${p.suppressAuthor ? `-${short}` : short} | ${locatorText(p, params)} | ${p.suffix ?? ""} | zotero://select/library/items/${p.itemKey} }`;
@@ -121,11 +146,20 @@ export function translatorFormat(name: string): BbtExportFormat | null {
 	const compact = name.toLowerCase().replace(/[^a-z]/g, "");
 	if (isBbtFormat(compact)) return compact;
 	switch (compact.replace(/^better/, "")) {
-		case "bib": case "biblatex": return "betterbiblatex";
-		case "bibtex": return "betterbibtex";
-		case "json": case "csljson": return "bettercsljson";
-		case "yaml": case "yml": case "cslyaml": return "bettercslyaml";
-		default: return null;
+		case "bib":
+		case "biblatex":
+			return "betterbiblatex";
+		case "bibtex":
+			return "betterbibtex";
+		case "json":
+		case "csljson":
+			return "bettercsljson";
+		case "yaml":
+		case "yml":
+		case "cslyaml":
+			return "bettercslyaml";
+		default:
+			return null;
 	}
 }
 
@@ -156,7 +190,13 @@ export async function cawyOutput(db: Database, picks: Pick[], params: CawyParams
 		case "formatted-citation":
 		case "formatted-bibliography": {
 			const mode = format === "formatted-citation" ? "citation" : "bibliography";
-			const r = await citeService(db).format(db, { keys: picks.map((p) => p.itemKey), style: params.style || undefined, locale: params.locale || undefined, mode, format: "text" });
+			const r = await citeService(db).format(db, {
+				keys: picks.map((p) => p.itemKey),
+				style: params.style || undefined,
+				locale: params.locale || undefined,
+				mode,
+				format: "text",
+			});
 			return text(r.text ?? "");
 		}
 		case "translate": {

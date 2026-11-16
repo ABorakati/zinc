@@ -30,15 +30,24 @@ const text = (re: RegExp, _min = 1, _max = 24) => fc.stringMatching(re); // the 
 const word = text(/^[A-Za-z]{2,8}( [A-Za-z]{2,8}){0,2}$/); // single spaces: the XML formats collapse runs of whitespace
 // characters the exporters must escape or encode
 const tricky = fc.constantFrom("R&D", "50% of {x}", "Müller_test #1", "café ß ø", "$5 effects", "tilde~here", "caret^up", "Zoë Łódź");
-const titleArb = fc.oneof(word, fc.tuple(word, tricky, word).map((a) => a.join(" ")));
+const titleArb = fc.oneof(
+	word,
+	fc.tuple(word, tricky, word).map((a) => a.join(" ")),
+);
 const creatorArb: fc.Arbitrary<Creator> = fc.oneof(
-	fc.record({ creatorType: fc.constant("author"), firstName: text(/^[A-Z][a-z]{1,9}$/, 2, 10), lastName: text(/^[A-Z][a-z]{2,11}$/, 3, 12) }),
+	fc.record({
+		creatorType: fc.constant("author"),
+		firstName: text(/^[A-Z][a-z]{1,9}$/, 2, 10),
+		lastName: text(/^[A-Z][a-z]{2,11}$/, 3, 12),
+	}),
 	fc.record({ creatorType: fc.constant("author"), name: text(/^[A-Z][a-z]{2,9} [A-Z][a-z]{2,9}$/, 6, 20) }),
 );
 const dateArb = fc.oneof(
 	fc.integer({ min: 1800, max: 2030 }).map(String),
 	fc.tuple(fc.integer({ min: 1800, max: 2030 }), fc.integer({ min: 1, max: 12 })).map(([y, m]) => `${y}-${String(m).padStart(2, "0")}`),
-	fc.tuple(fc.integer({ min: 1800, max: 2030 }), fc.integer({ min: 1, max: 12 }), fc.integer({ min: 1, max: 28 })).map(([y, m, d]) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`),
+	fc
+		.tuple(fc.integer({ min: 1800, max: 2030 }), fc.integer({ min: 1, max: 12 }), fc.integer({ min: 1, max: 28 }))
+		.map(([y, m, d]) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`),
 );
 
 const itemDataArb: fc.Arbitrary<ZoteroItemData> = fc
@@ -55,15 +64,34 @@ const itemDataArb: fc.Arbitrary<ZoteroItemData> = fc
 		abstract: fc.option(fc.oneof(word, tricky), { nil: undefined }),
 	})
 	.map((r) => {
-		const d: Record<string, unknown> = { key: "ABCD2345", itemType: r.kind, title: r.title, creators: r.creators, date: r.date, tags: r.tags.map((tag) => ({ tag })) };
+		const d: Record<string, unknown> = {
+			key: "ABCD2345",
+			itemType: r.kind,
+			title: r.title,
+			creators: r.creators,
+			date: r.date,
+			tags: r.tags.map((tag) => ({ tag })),
+		};
 		if (r.abstract) d.abstractNote = r.abstract;
 		switch (r.kind) {
-			case "journalArticle": Object.assign(d, { publicationTitle: r.container, volume: r.volume, pages: r.pages, DOI: r.doi }); break;
-			case "book": Object.assign(d, { publisher: r.container, place: "London" }); break;
-			case "bookSection": Object.assign(d, { bookTitle: r.container, publisher: "Elsevier", pages: r.pages }); break;
-			case "conferencePaper": Object.assign(d, { proceedingsTitle: r.container, pages: r.pages }); break;
-			case "thesis": Object.assign(d, { university: r.container, thesisType: "PhD thesis" }); break;
-			case "webpage": Object.assign(d, { websiteTitle: r.container, url: "https://example.org/x" }); break;
+			case "journalArticle":
+				Object.assign(d, { publicationTitle: r.container, volume: r.volume, pages: r.pages, DOI: r.doi });
+				break;
+			case "book":
+				Object.assign(d, { publisher: r.container, place: "London" });
+				break;
+			case "bookSection":
+				Object.assign(d, { bookTitle: r.container, publisher: "Elsevier", pages: r.pages });
+				break;
+			case "conferencePaper":
+				Object.assign(d, { proceedingsTitle: r.container, pages: r.pages });
+				break;
+			case "thesis":
+				Object.assign(d, { university: r.container, thesisType: "PhD thesis" });
+				break;
+			case "webpage":
+				Object.assign(d, { websiteTitle: r.container, url: "https://example.org/x" });
+				break;
 		}
 		return d as ZoteroItemData;
 	});
@@ -74,14 +102,57 @@ const asExport = (d: ZoteroItemData): ExportItem => ({ data: d, tags: (d.tags ??
 
 const SEED_ITEMS: ZoteroItemData[] = [
 	{
-		key: "AAAAAAA1", itemType: "journalArticle", title: "Outcomes after liver transplantation: a cohort study", date: "2023-11-02",
-		creators: [{ creatorType: "author", firstName: "Jane", lastName: "Smith" }, { creatorType: "author", firstName: "José", lastName: "Müller-García" }, { creatorType: "editor", firstName: "Dev", lastName: "Patel" }],
-		publicationTitle: "The Lancet", volume: "383", issue: "9", pages: "100–110", DOI: "10.1016/s0140-6736(23)00001-1", url: "https://example.org/a",
-		abstractNote: "We studied 100% of patients & found $5 effects.", ISSN: "0140-6736", tags: [{ tag: "transplant" }, { tag: "liver" }],
+		key: "AAAAAAA1",
+		itemType: "journalArticle",
+		title: "Outcomes after liver transplantation: a cohort study",
+		date: "2023-11-02",
+		creators: [
+			{ creatorType: "author", firstName: "Jane", lastName: "Smith" },
+			{ creatorType: "author", firstName: "José", lastName: "Müller-García" },
+			{ creatorType: "editor", firstName: "Dev", lastName: "Patel" },
+		],
+		publicationTitle: "The Lancet",
+		volume: "383",
+		issue: "9",
+		pages: "100–110",
+		DOI: "10.1016/s0140-6736(23)00001-1",
+		url: "https://example.org/a",
+		abstractNote: "We studied 100% of patients & found $5 effects.",
+		ISSN: "0140-6736",
+		tags: [{ tag: "transplant" }, { tag: "liver" }],
 	},
-	{ key: "BBBBBBB2", itemType: "book", title: "Surgical Anatomy", date: "2018", creators: [{ creatorType: "author", name: "NHS Blood and Transplant" }], publisher: "Oxford University Press", place: "Oxford", ISBN: "9780198000000", tags: [] },
-	{ key: "CCCCCCC3", itemType: "thesis", title: "Machine learning in transplant allocation", date: "2024-09", creators: [{ creatorType: "author", firstName: "Aditya", lastName: "Borakati" }], thesisType: "PhD thesis", university: "King's College London", tags: [] },
-	{ key: "DDDDDDD4", itemType: "bookSection", title: "The spleen", date: "2020-05", creators: [{ creatorType: "author", firstName: "Ann", lastName: "Lee" }], bookTitle: "Textbook of Surgery", publisher: "Elsevier", pages: "45–67", tags: [] },
+	{
+		key: "BBBBBBB2",
+		itemType: "book",
+		title: "Surgical Anatomy",
+		date: "2018",
+		creators: [{ creatorType: "author", name: "NHS Blood and Transplant" }],
+		publisher: "Oxford University Press",
+		place: "Oxford",
+		ISBN: "9780198000000",
+		tags: [],
+	},
+	{
+		key: "CCCCCCC3",
+		itemType: "thesis",
+		title: "Machine learning in transplant allocation",
+		date: "2024-09",
+		creators: [{ creatorType: "author", firstName: "Aditya", lastName: "Borakati" }],
+		thesisType: "PhD thesis",
+		university: "King's College London",
+		tags: [],
+	},
+	{
+		key: "DDDDDDD4",
+		itemType: "bookSection",
+		title: "The spleen",
+		date: "2020-05",
+		creators: [{ creatorType: "author", firstName: "Ann", lastName: "Lee" }],
+		bookTitle: "Textbook of Surgery",
+		publisher: "Elsevier",
+		pages: "45–67",
+		tags: [],
+	},
 ];
 
 const SEEDS: Record<ImportFormat, string> = {
@@ -130,7 +201,20 @@ const CSV_SEED = exportCsv(SEED_ITEMS.map(asExport));
 
 // ---------------------------------------------------------------- item validity
 
-const FREE_KEYS = new Set(["itemType", "creators", "tags", "collections", "relations", "extra", "note", "dateAdded", "dateModified", "accessDate", "key", "parentItem"]);
+const FREE_KEYS = new Set([
+	"itemType",
+	"creators",
+	"tags",
+	"collections",
+	"relations",
+	"extra",
+	"note",
+	"dateAdded",
+	"dateModified",
+	"accessDate",
+	"key",
+	"parentItem",
+]);
 
 /** The reasons a parsed item is not valid Zotero item JSON for the schema (empty = valid). */
 export function itemProblems(it: ParsedItem): string[] {
@@ -149,19 +233,22 @@ export function itemProblems(it: ParsedItem): string[] {
 				const types = new Set(type.creatorTypes.map((c) => c.creatorType));
 				v.forEach((c: Creator, i) => {
 					if (!c || typeof c !== "object") return void out.push(`creator ${i} not an object`);
-					if (!types.has(c.creatorType)) out.push(`creator ${i} type ${JSON.stringify(c.creatorType)} not valid for ${type.itemType}`);
+					if (!types.has(c.creatorType))
+						out.push(`creator ${i} type ${JSON.stringify(c.creatorType)} not valid for ${type.itemType}`);
 					const single = typeof c.name === "string" && c.name.trim() !== "";
 					const dual = typeof c.lastName === "string" || typeof c.firstName === "string";
 					if (single === dual) out.push(`creator ${i} must be either name or first/last: ${JSON.stringify(c)}`);
 					if (dual && !String(c.lastName ?? "").trim() && !String(c.firstName ?? "").trim()) out.push(`creator ${i} empty`);
-					for (const f of ["name", "firstName", "lastName"] as const) if (c[f] !== undefined && typeof c[f] !== "string") out.push(`creator ${i}.${f} not a string`);
+					for (const f of ["name", "firstName", "lastName"] as const)
+						if (c[f] !== undefined && typeof c[f] !== "string") out.push(`creator ${i}.${f} not a string`);
 				});
 			}
 		} else if (k === "tags") {
 			if (!Array.isArray(v)) out.push("tags not an array");
-			else v.forEach((t, i) => {
-				if (!t || typeof t.tag !== "string" || !t.tag.trim()) out.push(`tag ${i} invalid: ${JSON.stringify(t)}`);
-			});
+			else
+				v.forEach((t, i) => {
+					if (!t || typeof t.tag !== "string" || !t.tag.trim()) out.push(`tag ${i} invalid: ${JSON.stringify(t)}`);
+				});
 		} else if (k === "collections") {
 			if (!Array.isArray(v) || v.some((c) => typeof c !== "string")) out.push("collections invalid");
 		} else if (k === "relations") {
@@ -173,9 +260,12 @@ export function itemProblems(it: ParsedItem): string[] {
 	if (!Array.isArray(it.notes) || it.notes.some((n) => typeof n !== "string")) out.push("notes invalid");
 	for (const a of it.attachments ?? []) {
 		if (!a || typeof a !== "object") out.push("attachment invalid");
-		else for (const f of ["title", "path", "url", "contentType"] as const) if (a[f] !== undefined && typeof a[f] !== "string") out.push(`attachment.${f} not a string`);
+		else
+			for (const f of ["title", "path", "url", "contentType"] as const)
+				if (a[f] !== undefined && typeof a[f] !== "string") out.push(`attachment.${f} not a string`);
 	}
-	for (const c of it.collections ?? []) if (!Array.isArray(c) || c.some((s) => typeof s !== "string")) out.push("collection path invalid");
+	for (const c of it.collections ?? [])
+		if (!Array.isArray(c) || c.some((s) => typeof s !== "string")) out.push("collection path invalid");
 	try {
 		const s = JSON.stringify(it.data);
 		if (typeof s !== "string") out.push("data not JSON serialisable");
@@ -187,7 +277,13 @@ export function itemProblems(it: ParsedItem): string[] {
 
 type Parser = (t: string) => { items: ParsedItem[]; errors: string[] };
 const PARSERS: Record<ImportFormat, Parser> = {
-	bibtex: parseBibtex, ris: parseRis, csljson: parseCslJson, "endnote-xml": parseEndnoteXml, rdf: parseZoteroRdf, mods: parseMods, "pubmed-nbib": parseNbib,
+	bibtex: parseBibtex,
+	ris: parseRis,
+	csljson: parseCslJson,
+	"endnote-xml": parseEndnoteXml,
+	rdf: parseZoteroRdf,
+	mods: parseMods,
+	"pubmed-nbib": parseNbib,
 };
 
 function checkParse(format: ImportFormat, input: string): void {
@@ -197,10 +293,12 @@ function checkParse(format: ImportFormat, input: string): void {
 	} catch (e) {
 		throw new Error(`${format} importer threw ${describeError(e)}`, { cause: e });
 	}
-	if (!Array.isArray(r.items) || !Array.isArray(r.errors) || r.errors.some((e) => typeof e !== "string")) throw new Error(`${format}: bad result shape`);
+	if (!Array.isArray(r.items) || !Array.isArray(r.errors) || r.errors.some((e) => typeof e !== "string"))
+		throw new Error(`${format}: bad result shape`);
 	r.items.forEach((it, i) => {
 		const p = itemProblems(it);
-		if (p.length) throw new Error(`${format} item ${i} is not valid Zotero JSON: ${p.join("; ")}\n${JSON.stringify(it.data).slice(0, 400)}`);
+		if (p.length)
+			throw new Error(`${format} item ${i} is not valid Zotero JSON: ${p.join("; ")}\n${JSON.stringify(it.data).slice(0, 400)}`);
 	});
 }
 
@@ -229,47 +327,89 @@ function expectDbHealthy(d: Database) {
 for (const format of IMPORT_FORMATS) {
 	describe(`importer ${format}`, () => {
 		fuzz(`${format}: random text never throws and yields valid items`, [messyText(600)], (s) => checkParse(format, s));
-		fuzz(`${format}: mutated valid document never throws and yields valid items`, [mutated(SEEDS[format])], (s) => checkParse(format, s), { normal: 300 });
+		fuzz(
+			`${format}: mutated valid document never throws and yields valid items`,
+			[mutated(SEEDS[format])],
+			(s) => checkParse(format, s),
+			{ normal: 300 },
+		);
 	});
 }
 
 describe("importers on a mutated document of another format", () => {
 	const all = IMPORT_FORMATS.map((f) => SEEDS[f]);
-	fuzz("each importer survives every other format's text", [fc.constantFrom(...all).chain((s) => mutated(s, 3))], (s) => {
-		for (const f of IMPORT_FORMATS) checkParse(f, s);
-	}, { normal: 100 });
+	fuzz(
+		"each importer survives every other format's text",
+		[fc.constantFrom(...all).chain((s) => mutated(s, 3))],
+		(s) => {
+			for (const f of IMPORT_FORMATS) checkParse(f, s);
+		},
+		{ normal: 100 },
+	);
 });
 
 describe("pathological sizes", () => {
-	fuzz("deeply nested / long XML stays fast", [fc.constantFrom("<a>", "<rdf:RDF><b>", "<mods>", "<record>"), fc.integer({ min: 100, max: 4000 })], (open, n) => {
-		const doc = `${open.repeat(n)}text`;
-		for (const f of ["endnote-xml", "rdf", "mods"] as ImportFormat[]) checkParse(f, doc);
-	}, { normal: 20, timeBoxMs: 4000 });
-	fuzz("long lines of delimiters stay fast", [fc.constantFrom("{", "}", "\"", "@article{", "ER  - \n", "TY  - JOUR\n", "\\", "$", "[", "<![CDATA[", "&amp;"), fc.integer({ min: 500, max: 8000 })], (tok, n) => {
-		const doc = tok.repeat(n);
-		for (const f of IMPORT_FORMATS) checkParse(f, doc);
-	}, { normal: 20, timeBoxMs: 4000 });
+	fuzz(
+		"deeply nested / long XML stays fast",
+		[fc.constantFrom("<a>", "<rdf:RDF><b>", "<mods>", "<record>"), fc.integer({ min: 100, max: 4000 })],
+		(open, n) => {
+			const doc = `${open.repeat(n)}text`;
+			for (const f of ["endnote-xml", "rdf", "mods"] as ImportFormat[]) checkParse(f, doc);
+		},
+		{ normal: 20, timeBoxMs: 4000 },
+	);
+	fuzz(
+		"long lines of delimiters stay fast",
+		[
+			fc.constantFrom("{", "}", '"', "@article{", "ER  - \n", "TY  - JOUR\n", "\\", "$", "[", "<![CDATA[", "&amp;"),
+			fc.integer({ min: 500, max: 8000 }),
+		],
+		(tok, n) => {
+			const doc = tok.repeat(n);
+			for (const f of IMPORT_FORMATS) checkParse(f, doc);
+		},
+		{ normal: 20, timeBoxMs: 4000 },
+	);
 });
 
 describe("format detection", () => {
-	fuzz("detectFormat never throws and returns a known format or null", [fc.oneof(messyText(500), mutated(fc.constantFrom(...Object.values(SEEDS), CSV_SEED)))], (s) => {
-		const f = detectFormat(s);
-		if (f !== null) expect(IMPORT_FORMATS).toContain(f);
-	});
-	fuzz("detectFormat finds the format of every clean seed", [fc.constantFrom(...IMPORT_FORMATS)], (f) => {
-		expect(detectFormat(SEEDS[f])).toBe(f);
-	}, { normal: 14 });
+	fuzz(
+		"detectFormat never throws and returns a known format or null",
+		[fc.oneof(messyText(500), mutated(fc.constantFrom(...Object.values(SEEDS), CSV_SEED)))],
+		(s) => {
+			const f = detectFormat(s);
+			if (f !== null) expect(IMPORT_FORMATS).toContain(f);
+		},
+	);
+	fuzz(
+		"detectFormat finds the format of every clean seed",
+		[fc.constantFrom(...IMPORT_FORMATS)],
+		(f) => {
+			expect(detectFormat(SEEDS[f])).toBe(f);
+		},
+		{ normal: 14 },
+	);
 });
 
 describe("importText into a database", () => {
-	fuzz("only an HttpError escapes, and the database stays consistent", [fc.oneof(messyText(500), mutated(fc.constantFrom(...Object.values(SEEDS)))), fc.constantFrom<ImportFormat | "auto">("auto", ...IMPORT_FORMATS)], (s, format) => {
-		try {
-			importText(db, { text: s, format, collectionName: null });
-		} catch (e) {
-			if (!(e instanceof HttpError)) throw new Error(`importText threw ${describeError(e)}`, { cause: e });
-		}
-	}, { normal: 150 });
-	fuzz("database passes integrity_check and foreign_key_check after the fuzzing", [fc.constant(0)], (_n: number) => expectDbHealthy(db), { normal: 1 });
+	fuzz(
+		"only an HttpError escapes, and the database stays consistent",
+		[
+			fc.oneof(messyText(500), mutated(fc.constantFrom(...Object.values(SEEDS)))),
+			fc.constantFrom<ImportFormat | "auto">("auto", ...IMPORT_FORMATS),
+		],
+		(s, format) => {
+			try {
+				importText(db, { text: s, format, collectionName: null });
+			} catch (e) {
+				if (!(e instanceof HttpError)) throw new Error(`importText threw ${describeError(e)}`, { cause: e });
+			}
+		},
+		{ normal: 150 },
+	);
+	fuzz("database passes integrity_check and foreign_key_check after the fuzzing", [fc.constant(0)], (_n: number) => expectDbHealthy(db), {
+		normal: 1,
+	});
 });
 
 describe("export then import round trip", () => {
@@ -282,42 +422,68 @@ describe("export then import round trip", () => {
 		{ name: "rdf", make: (i) => exportZoteroRdf(i.map(asExport)), format: "rdf", day: true },
 	];
 	for (const r of ROUND) {
-		fuzz(`${r.name}: generated items keep their core fields`, [fc.array(itemDataArb, { minLength: 1, maxLength: 3 })], (items) => {
-			// the exporters want distinct keys
-			items.forEach((d, i) => (d.key = `KEY${String(i).padStart(5, "0")}`));
-			const out = PARSERS[r.format](r.make(items));
-			expect(out.errors).toEqual([]);
-			expect(out.items.length).toBe(items.length);
-			items.forEach((d, i) => {
-				const got = out.items[i]!.data as Record<string, any>;
-				expect(got.itemType).toBe(d.itemType);
-				expect(got.title).toBe(d.title);
-				const names = (cs?: Creator[]) => (cs ?? []).map((c) => (c.name ?? `${c.lastName}, ${c.firstName}`).trim());
-				expect(names(got.creators)).toEqual(names(d.creators));
-				expect(String(got.date)).toBe(r.day ? String(d.date) : String(d.date).slice(0, 7));
-				for (const f of ["publicationTitle", "bookTitle", "proceedingsTitle", "websiteTitle", "volume", "pages", "publisher", "university", "DOI", "url"]) {
-					if ((d as any)[f] !== undefined) expect(got[f]).toBe((d as any)[f]);
-				}
-				if (d.abstractNote) expect(got.abstractNote).toBe(d.abstractNote);
-				expect((got.tags ?? []).map((t: { tag: string }) => t.tag).sort()).toEqual((d.tags ?? []).map((t) => t.tag).sort());
-			});
-		}, { normal: 100 });
+		fuzz(
+			`${r.name}: generated items keep their core fields`,
+			[fc.array(itemDataArb, { minLength: 1, maxLength: 3 })],
+			(items) => {
+				// the exporters want distinct keys
+				items.forEach((d, i) => (d.key = `KEY${String(i).padStart(5, "0")}`));
+				const out = PARSERS[r.format](r.make(items));
+				expect(out.errors).toEqual([]);
+				expect(out.items.length).toBe(items.length);
+				items.forEach((d, i) => {
+					const got = out.items[i]!.data as Record<string, any>;
+					expect(got.itemType).toBe(d.itemType);
+					expect(got.title).toBe(d.title);
+					const names = (cs?: Creator[]) => (cs ?? []).map((c) => (c.name ?? `${c.lastName}, ${c.firstName}`).trim());
+					expect(names(got.creators)).toEqual(names(d.creators));
+					expect(String(got.date)).toBe(r.day ? String(d.date) : String(d.date).slice(0, 7));
+					for (const f of [
+						"publicationTitle",
+						"bookTitle",
+						"proceedingsTitle",
+						"websiteTitle",
+						"volume",
+						"pages",
+						"publisher",
+						"university",
+						"DOI",
+						"url",
+					]) {
+						if ((d as any)[f] !== undefined) expect(got[f]).toBe((d as any)[f]);
+					}
+					if (d.abstractNote) expect(got.abstractNote).toBe(d.abstractNote);
+					expect((got.tags ?? []).map((t: { tag: string }) => t.tag).sort()).toEqual((d.tags ?? []).map((t) => t.tag).sort());
+				});
+			},
+			{ normal: 100 },
+		);
 	}
-	fuzz("importText of an exported document creates every item and reports no error", [fc.constantFrom(...ROUND), fc.array(itemDataArb, { minLength: 1, maxLength: 3 })], (r, items) => {
-		items.forEach((d, i) => {
-			d.key = `KEY${String(i).padStart(5, "0")}`;
-			delete (d as any).DOI; // existing DOIs are skipped as duplicates
-		});
-		const res = importText(db, { text: r.make(items), format: "auto", collectionName: null });
-		expect(res.errors).toEqual([]);
-		expect(res.created).toBe(items.length);
-	}, { normal: 60 });
+	fuzz(
+		"importText of an exported document creates every item and reports no error",
+		[fc.constantFrom(...ROUND), fc.array(itemDataArb, { minLength: 1, maxLength: 3 })],
+		(r, items) => {
+			items.forEach((d, i) => {
+				d.key = `KEY${String(i).padStart(5, "0")}`;
+				delete (d as any).DOI; // existing DOIs are skipped as duplicates
+			});
+			const res = importText(db, { text: r.make(items), format: "auto", collectionName: null });
+			expect(res.errors).toEqual([]);
+			expect(res.created).toBe(items.length);
+		},
+		{ normal: 60 },
+	);
 });
 
 describe("item data from createItem on parsed output", () => {
-	fuzz("every parsed item can be stored", [fc.constantFrom(...IMPORT_FORMATS).chain((f) => mutated(SEEDS[f]).map((s) => [f, s] as const))], ([f, s]) => {
-		for (const it of PARSERS[f](s).items) createItem(db, { ...it.data });
-	}, { normal: 150 });
+	fuzz(
+		"every parsed item can be stored",
+		[fc.constantFrom(...IMPORT_FORMATS).chain((f) => mutated(SEEDS[f]).map((s) => [f, s] as const))],
+		([f, s]) => {
+			for (const it of PARSERS[f](s).items) createItem(db, { ...it.data });
+		},
+		{ normal: 150 },
+	);
 	fuzz("BibTeX record parser handles arbitrary text", [messyText(500)], (s) => {
 		parseBibRecords(s);
 	});
@@ -332,13 +498,28 @@ describe("seeds and regressions found by the fuzzer", () => {
 		});
 	}
 	test("a literal ~ survives BibTeX (it is not a non-breaking space)", () => {
-		const d: ZoteroItemData = { key: "AAAAAAA1", itemType: "journalArticle", title: "tilde~here", abstractNote: "tilde~here", date: "2020", tags: [] };
+		const d: ZoteroItemData = {
+			key: "AAAAAAA1",
+			itemType: "journalArticle",
+			title: "tilde~here",
+			abstractNote: "tilde~here",
+			date: "2020",
+			tags: [],
+		};
 		const out = parseBibtex(exportBibtex([asExport(d)], "bibtex")).items[0]!.data;
 		expect(out.title).toBe("tilde~here");
 		expect(out.abstractNote).toBe("tilde~here");
 	});
 	test("Zotero RDF keeps the URL of every item, also when two items share one URL", () => {
-		const mk = (key: string, title: string): ZoteroItemData => ({ key, itemType: "webpage", title, websiteTitle: "w", url: "https://example.org/x", date: "2020", tags: [] });
+		const mk = (key: string, title: string): ZoteroItemData => ({
+			key,
+			itemType: "webpage",
+			title,
+			websiteTitle: "w",
+			url: "https://example.org/x",
+			date: "2020",
+			tags: [],
+		});
 		const items = parseZoteroRdf(exportZoteroRdf([asExport(mk("AAAAAAA1", "one")), asExport(mk("BBBBBBB2", "two"))])).items;
 		expect(items.map((i) => i.data.url)).toEqual(["https://example.org/x", "https://example.org/x"]);
 	});

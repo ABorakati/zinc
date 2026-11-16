@@ -18,7 +18,10 @@ else mkdirSync(out, { recursive: true });
 for (const dir of [join(repo, "gpui-ui", "assets"), join(repo, "app", "assets")]) {
 	let copied = false;
 	for (const f of ["icon.svg", "icon.png"]) {
-		if (existsSync(join(dir, f))) { cpSync(join(dir, f), join(site, "public", f)); copied = true; }
+		if (existsSync(join(dir, f))) {
+			cpSync(join(dir, f), join(site, "public", f));
+			copied = true;
+		}
 	}
 	if (copied) break;
 }
@@ -29,8 +32,17 @@ for (const dir of [join(repo, "gpui-ui", "assets"), join(repo, "app", "assets")]
 	const demo = join(site, "public", "word-demo");
 	rmSync(demo, { recursive: true, force: true });
 	mkdirSync(demo, { recursive: true });
-	const r = await Bun.build({ entrypoints: [join(side, "src", "demo.ts")], outdir: demo, target: "browser", format: "esm", minify: true });
-	if (!r.success) { for (const l of r.logs) console.error(l); throw new Error("word demo build failed"); }
+	const r = await Bun.build({
+		entrypoints: [join(side, "src", "demo.ts")],
+		outdir: demo,
+		target: "browser",
+		format: "esm",
+		minify: true,
+	});
+	if (!r.success) {
+		for (const l of r.logs) console.error(l);
+		throw new Error("word demo build failed");
+	}
 	cpSync(join(side, "style.css"), join(demo, "style.css"));
 	const html = readFileSync(join(side, "index.html"), "utf8").replace('src="main.js"', 'src="demo.js"');
 	if (!html.includes('src="demo.js"')) throw new Error("word demo: index.html no longer loads main.js");
@@ -45,7 +57,8 @@ for (const dir of [join(repo, "gpui-ui", "assets"), join(repo, "app", "assets")]
 	const gpui = join(repo, "gpui-ui");
 	const demo = join(site, "public", "app-demo");
 	if (process.env.ZN_SKIP_APP_DEMO === "1") console.log("[docs] app demo skipped (ZN_SKIP_APP_DEMO=1)");
-	else if (!existsSync(join(gpui, "node_modules", "@gpuix", "native", "wasm"))) console.log("[docs] app demo skipped: run `bun install` in gpui-ui first");
+	else if (!existsSync(join(gpui, "node_modules", "@gpuix", "native", "wasm")))
+		console.log("[docs] app demo skipped: run `bun install` in gpui-ui first");
 	else {
 		const lib = join(gpui, "out", "demo-library");
 		const run = (args: string[]) => {

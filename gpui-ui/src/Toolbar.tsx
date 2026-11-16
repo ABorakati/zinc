@@ -19,8 +19,21 @@ const tok = (name: string): string => tokens[mode()][name] ?? "#888";
 
 /** GPUIX has no display:none that takes the box out of the layout: collapse it and hide it. The subtree stays mounted. */
 const HIDDEN: Style = {
-	display: "none", visibility: "hidden", width: 0, height: 0, flexGrow: 0, flexShrink: 1, overflow: "hidden",
-	padding: 0, paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0, margin: 0, marginLeft: 0, borderBottomWidth: 0,
+	display: "none",
+	visibility: "hidden",
+	width: 0,
+	height: 0,
+	flexGrow: 0,
+	flexShrink: 1,
+	overflow: "hidden",
+	padding: 0,
+	paddingTop: 0,
+	paddingBottom: 0,
+	paddingLeft: 0,
+	paddingRight: 0,
+	margin: 0,
+	marginLeft: 0,
+	borderBottomWidth: 0,
 };
 
 // ------------------------------------------------------------------------------------------------ quick search mode
@@ -40,14 +53,15 @@ const currentMode = (): SearchMode => (store.fulltext() ? "fulltext" : store.qmo
  * select beside the field; a lone white box among the toolbar's grey controls looked out of place.)
  */
 function QuickSearchMode() {
-	const items = (): MenuItem[] => QUICK_MODES.map((m) => ({
-		label: m.label,
-		checked: currentMode() === m.mode,
-		onSelect: () => {
-			store.setFulltext(m.mode === "fulltext");
-			if (m.mode !== "fulltext") store.setQMode(m.mode);
-		},
-	}));
+	const items = (): MenuItem[] =>
+		QUICK_MODES.map((m) => ({
+			label: m.label,
+			checked: currentMode() === m.mode,
+			onSelect: () => {
+				store.setFulltext(m.mode === "fulltext");
+				if (m.mode !== "fulltext") store.setQMode(m.mode);
+			},
+		}));
 	return (
 		<DropdownMenu
 			items={items}
@@ -55,7 +69,8 @@ function QuickSearchMode() {
 			style={{ flexShrink: 0, marginLeft: 3 }}
 			trigger={
 				<div
-					role="button" aria-label="Quick search mode"
+					role="button"
+					aria-label="Quick search mode"
 					style={{
 						...t("flex h-[30px] flex-none items-center gap-1 rounded-md pl-2.5 pr-1.5"),
 						cursor: "pointer",
@@ -76,7 +91,9 @@ function QuickSearchMode() {
 function SearchBox() {
 	const gpuix = useGpuix();
 	let input: { id: number } | undefined;
-	registerSearchFocus(() => { if (input) gpuix?.renderer.focusElement?.(input.id); });
+	registerSearchFocus(() => {
+		if (input) gpuix?.renderer.focusElement?.(input.id);
+	});
 	onCleanup(() => registerSearchFocus(undefined));
 	return (
 		<div style={t("relative flex h-9 min-w-0 flex-1 items-center rounded-lg bg-muted")}>
@@ -86,7 +103,9 @@ function SearchBox() {
 				<Icon name="search" size={15} color={tok("muted-foreground")} />
 			</div>
 			<input
-				ref={(el: { id: number }) => { input = el; }}
+				ref={(el: { id: number }) => {
+					input = el;
+				}}
 				value={store.filter()}
 				placeholder={store.fulltext() ? "Search full text…" : "Search titles, authors, year…"}
 				onChange={(e) => store.setFilter((e as { value?: string }).value ?? "")}
@@ -124,23 +143,31 @@ function ViewToggle() {
 	];
 	return (
 		<div style={t("flex flex-none rounded-lg bg-muted p-[3px]")}>
-			<For each={items}>{(m) => {
-				const on = () => store.viewMode() === m.id;
-				return (
-					<div
-						role="button" aria-label={m.id === "cards" ? "Card view" : "Table view"} aria-selected={on()}
-						onClick={() => store.setViewMode(m.id)}
-						style={{
-							...t("flex h-[30px] items-center gap-1.5 rounded-md px-2.5"),
-							cursor: "pointer",
-							...(on() ? { backgroundColor: tok("background"), boxShadow: tw("shadow-sm", mode()).boxShadow as BoxShadow[] } : {}),
-						}}
-					>
-						<Icon name={m.icon} size={14} color={tok(on() ? "foreground" : "muted-foreground")} />
-						<text style={tx(on() ? "text-[13px] font-medium text-foreground" : "text-[13px] text-muted-foreground")}>{m.text}</text>
-					</div>
-				);
-			}}</For>
+			<For each={items}>
+				{(m) => {
+					const on = () => store.viewMode() === m.id;
+					return (
+						<div
+							role="button"
+							aria-label={m.id === "cards" ? "Card view" : "Table view"}
+							aria-selected={on()}
+							onClick={() => store.setViewMode(m.id)}
+							style={{
+								...t("flex h-[30px] items-center gap-1.5 rounded-md px-2.5"),
+								cursor: "pointer",
+								...(on()
+									? { backgroundColor: tok("background"), boxShadow: tw("shadow-sm", mode()).boxShadow as BoxShadow[] }
+									: {}),
+							}}
+						>
+							<Icon name={m.icon} size={14} color={tok(on() ? "foreground" : "muted-foreground")} />
+							<text style={tx(on() ? "text-[13px] font-medium text-foreground" : "text-[13px] text-muted-foreground")}>
+								{m.text}
+							</text>
+						</div>
+					);
+				}}
+			</For>
 		</div>
 	);
 }
@@ -148,30 +175,49 @@ function ViewToggle() {
 /** Registered app actions of a toolbar menu ("tools" wrench / "add" +). Collapsed while the menu has no entries. */
 function ActionMenu(p: { menu: "add" | "tools" }) {
 	const list = createMemo(() => appActions().filter((a) => a.menu === p.menu && (a.when?.() ?? true)));
-	const items = (): MenuItem[] => list().map((a) => ({
-		label: typeof a.label === "function" ? a.label() : a.label,
-		icon: a.icon,
-		shortcut: a.shortcut,
-		onSelect: () => a.run(),
-	}));
+	const items = (): MenuItem[] =>
+		list().map((a) => ({
+			label: typeof a.label === "function" ? a.label() : a.label,
+			icon: a.icon,
+			shortcut: a.shortcut,
+			onSelect: () => a.run(),
+		}));
 	return (
 		<div style={{ display: "flex", flexDirection: "row", marginLeft: 10, ...(list().length ? {} : HIDDEN) }}>
 			<DropdownMenu
 				items={items}
 				align="end"
 				width={240}
-				trigger={p.menu === "add" ? (
-					/* Add: h-9 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground shadow-primary */
-					<div role="button" aria-label="Add items" style={{ ...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"), boxShadow: shadows[mode()].primary, cursor: "pointer" }}>
-						<Icon name="plus" size={14} color={tok("primary-foreground")} />
-						<text style={tx("text-[13px] font-medium text-primary-foreground")}>Add</text>
-					</div>
-				) : (
-					/* Tools: size-8 rounded-lg icon button */
-					<div role="button" aria-label="Tools" style={{ ...t("flex size-8 flex-none items-center justify-center rounded-lg"), cursor: "pointer", hover: t("bg-foreground/5") }}>
-						<Icon name="wrench" size={16} color={tok("muted-foreground")} />
-					</div>
-				)}
+				trigger={
+					p.menu === "add" ? (
+						/* Add: h-9 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground shadow-primary */
+						<div
+							role="button"
+							aria-label="Add items"
+							style={{
+								...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"),
+								boxShadow: shadows[mode()].primary,
+								cursor: "pointer",
+							}}
+						>
+							<Icon name="plus" size={14} color={tok("primary-foreground")} />
+							<text style={tx("text-[13px] font-medium text-primary-foreground")}>Add</text>
+						</div>
+					) : (
+						/* Tools: size-8 rounded-lg icon button */
+						<div
+							role="button"
+							aria-label="Tools"
+							style={{
+								...t("flex size-8 flex-none items-center justify-center rounded-lg"),
+								cursor: "pointer",
+								hover: t("bg-foreground/5"),
+							}}
+						>
+							<Icon name="wrench" size={16} color={tok("muted-foreground")} />
+						</div>
+					)
+				}
 			/>
 		</div>
 	);
@@ -185,7 +231,9 @@ export function Toolbar() {
 	return (
 		// cacheRegion "content": drawn by its own cached GPUI view at the height it last painted with (re-measured whenever its
 		// subtree changes), so list scrolling does not rebuild the toolbar every frame.
-		<div style={{ ...t("flex flex-none items-center border-b border-border-soft px-4 pt-3.5 pb-2.5"), width: "100%", ...CONTENT_REGION }}>
+		<div
+			style={{ ...t("flex flex-none items-center border-b border-border-soft px-4 pt-3.5 pb-2.5"), width: "100%", ...CONTENT_REGION }}
+		>
 			<SearchBox />
 			<div style={{ width: 10, flexShrink: 0 }} />
 			<ViewToggle />
@@ -204,7 +252,11 @@ const dirLabel = (l: SortLevel) => (isNumericKey(l.key) ? (l.dir === "asc" ? "�
 
 /** All sortable keys as radio items (the common ones, then every other schema field). */
 function keyItems(current: string | null, exclude: (key: string) => boolean, pick: (key: string) => void): MenuItem[] {
-	const out: MenuItem[] = SORT_OPTIONS.filter((o) => !exclude(o.key)).map((o) => ({ label: o.label, checked: o.key === current, onSelect: () => pick(o.key) }));
+	const out: MenuItem[] = SORT_OPTIONS.filter((o) => !exclude(o.key)).map((o) => ({
+		label: o.label,
+		checked: o.key === current,
+		onSelect: () => pick(o.key),
+	}));
 	const more = moreColumns().filter((c) => !KNOWN.has(c.id) && !exclude(c.id));
 	if (more.length) {
 		out.push({ separator: true }, { heading: "More fields" });
@@ -221,7 +273,14 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 		store.setSortLevels(levels().flatMap((l, i) => (i === p.index ? (next ? [next] : []) : next && l.key === next.key ? [] : [l])));
 	const flip = () => replace({ key: p.level.key, dir: p.level.dir === "asc" ? "desc" : "asc" });
 	const menu = (): MenuItem[] => {
-		const out: MenuItem[] = [{ heading: `Sort level ${p.index + 1} by` }, ...keyItems(p.level.key, () => false, (key) => replace({ key, dir: defaultDir(key) }))];
+		const out: MenuItem[] = [
+			{ heading: `Sort level ${p.index + 1} by` },
+			...keyItems(
+				p.level.key,
+				() => false,
+				(key) => replace({ key, dir: defaultDir(key) }),
+			),
+		];
 		if (removable()) out.push({ separator: true }, { label: "Remove level", danger: true, onSelect: () => replace(null) });
 		return out;
 	};
@@ -234,12 +293,20 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 	return (
 		<div role="group" aria-label={`Sort level ${p.index + 1}`} style={t(`${chipBase} border-border bg-card`)}>
 			<Show when={!locked()} fallback={label}>
-				<DropdownMenu items={menu} width={208} trigger={<div style={{ ...t("flex h-full rounded-l-full hover:bg-accent/60"), cursor: "pointer" }}>{label}</div>} />
+				<DropdownMenu
+					items={menu}
+					width={208}
+					trigger={<div style={{ ...t("flex h-full rounded-l-full hover:bg-accent/60"), cursor: "pointer" }}>{label}</div>}
+				/>
 			</Show>
 			<div
-				role="button" aria-label="Reverse sort direction"
+				role="button"
+				aria-label="Reverse sort direction"
 				onClick={flip}
-				style={{ ...t("flex h-full min-w-6 items-center justify-center rounded-r-full pl-1 pr-2.5 hover:bg-accent/60"), cursor: "pointer" }}
+				style={{
+					...t("flex h-full min-w-6 items-center justify-center rounded-r-full pl-1 pr-2.5 hover:bg-accent/60"),
+					cursor: "pointer",
+				}}
 			>
 				<text style={tx("text-xs text-muted-foreground")}>{dirLabel(p.level)}</text>
 			</div>
@@ -259,10 +326,16 @@ function GroupChip() {
 			width={176}
 			trigger={
 				<div
-					role="button" aria-label="Group by"
-					style={{ ...t(`${chipBase} gap-1 px-2.5 ${none() ? "border-border bg-card" : "border-primary/25 bg-primary/10"}`), cursor: "pointer" }}
+					role="button"
+					aria-label="Group by"
+					style={{
+						...t(`${chipBase} gap-1 px-2.5 ${none() ? "border-border bg-card" : "border-primary/25 bg-primary/10"}`),
+						cursor: "pointer",
+					}}
 				>
-					<text style={tx(`text-xs font-medium ${none() ? "text-foreground/80" : "text-primary"}`)}>{GROUP_BY.find((g) => g.id === store.groupBy())?.label ?? "None"}</text>
+					<text style={tx(`text-xs font-medium ${none() ? "text-foreground/80" : "text-primary"}`)}>
+						{GROUP_BY.find((g) => g.id === store.groupBy())?.label ?? "None"}
+					</text>
 					<Icon name="chevron-down" size={12} color={tok(none() ? "foreground" : "primary")} style={{ opacity: 0.7 }} />
 				</div>
 			}
@@ -274,7 +347,11 @@ function AddLevel() {
 	const used = () => new Set(store.sortLevels().map((l) => l.key));
 	const items = (): MenuItem[] => [
 		{ heading: "Then sort by" },
-		...keyItems(null, (k) => used().has(k), (key) => store.setSortLevels([...store.sortLevels(), { key, dir: defaultDir(key) }])),
+		...keyItems(
+			null,
+			(k) => used().has(k),
+			(key) => store.setSortLevels([...store.sortLevels(), { key, dir: defaultDir(key) }]),
+		),
 	];
 	return (
 		<div style={{ display: "flex", flexDirection: "row", ...(store.sortLevels().length < MAX_LEVELS ? {} : HIDDEN) }}>
@@ -282,7 +359,11 @@ function AddLevel() {
 				items={items}
 				width={208}
 				trigger={
-					<div role="button" aria-label="Add sort level" style={{ ...t(`${chipBase} gap-1 border-dashed border-border px-2`), cursor: "pointer" }}>
+					<div
+						role="button"
+						aria-label="Add sort level"
+						style={{ ...t(`${chipBase} gap-1 border-dashed border-border px-2`), cursor: "pointer" }}
+					>
 						<Icon name="plus" size={12} color={tok("muted-foreground")} />
 						<text style={{ ...tx("text-xs text-muted-foreground"), whiteSpace: "nowrap" }}>Add level</text>
 					</div>
@@ -302,7 +383,15 @@ export function SortBar() {
 	};
 	// the sort bar belongs to the item list: the full-text results have their own header-less list
 	return (
-		<div style={{ ...t("flex flex-none items-center gap-2 border-b px-5 py-1.5"), width: "100%", overflow: "hidden", ...CONTENT_REGION, ...(store.fulltext() ? HIDDEN : {}) }}>
+		<div
+			style={{
+				...t("flex flex-none items-center gap-2 border-b px-5 py-1.5"),
+				width: "100%",
+				overflow: "hidden",
+				...CONTENT_REGION,
+				...(store.fulltext() ? HIDDEN : {}),
+			}}
+		>
 			<div style={t("flex items-center gap-1.5")}>
 				<Icon name="layout-panel-top" size={14} color={tok("muted-foreground")} />
 				<text style={tx("text-xs text-muted-foreground")}>Group</text>
@@ -313,20 +402,47 @@ export function SortBar() {
 				<Icon name="arrow-down-up" size={14} color={tok("muted-foreground")} />
 				<text style={tx("text-xs text-muted-foreground")}>Sort</text>
 			</div>
-			<For each={store.sortLevels()}>{(l, i) => (
-				<div style={{ display: "flex", flexDirection: "row", alignItems: "center" }}>
-					<text style={i() > 0 ? { ...tx("text-xs text-muted-foreground"), marginRight: 8 } : { ...tx("text-xs text-muted-foreground"), ...HIDDEN }}>›</text>
-					<LevelChip level={l} index={i()} />
-				</div>
-			)}</For>
+			<For each={store.sortLevels()}>
+				{(l, i) => (
+					<div style={{ display: "flex", flexDirection: "row", alignItems: "center" }}>
+						<text
+							style={
+								i() > 0
+									? { ...tx("text-xs text-muted-foreground"), marginRight: 8 }
+									: { ...tx("text-xs text-muted-foreground"), ...HIDDEN }
+							}
+						>
+							›
+						</text>
+						<LevelChip level={l} index={i()} />
+					</div>
+				)}
+			</For>
 			<AddLevel />
 			<div style={{ flexGrow: 1 }} />
-			<text style={{ ...tx("text-xs text-muted-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 1, minWidth: 0 }}>{count()}</text>
+			<text
+				style={{
+					...tx("text-xs text-muted-foreground"),
+					whiteSpace: "nowrap",
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					flexShrink: 1,
+					minWidth: 0,
+				}}
+			>
+				{count()}
+			</text>
 			{/* Customise (cards view trailing control): ghost button with a sliders icon */}
 			<div
-				role="button" aria-label="Customise rows"
+				role="button"
+				aria-label="Customise rows"
 				onClick={() => openCustomize()}
-				style={{ ...t("flex h-6 items-center gap-1.5 rounded-md px-2"), cursor: "pointer", hover: t("bg-foreground/5"), ...(store.viewMode() === "cards" ? {} : HIDDEN) }}
+				style={{
+					...t("flex h-6 items-center gap-1.5 rounded-md px-2"),
+					cursor: "pointer",
+					hover: t("bg-foreground/5"),
+					...(store.viewMode() === "cards" ? {} : HIDDEN),
+				}}
 			>
 				<Icon name="settings-2" size={14} color={tok("muted-foreground")} />
 				<text style={tx("text-xs text-muted-foreground")}>Customise</text>

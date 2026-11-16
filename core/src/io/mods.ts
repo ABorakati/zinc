@@ -8,67 +8,180 @@ import type { ExportItem } from "./bibtex";
 const KNOWN_TYPES = new Set(getSchema().itemTypes.map((t) => t.itemType));
 
 const FROM_MARC_GENRE: Record<string, string> = {
-	"art reproduction": "artwork", article: "journalArticle", autobiography: "book", bibliography: "book",
-	biography: "book", book: "book", chart: "artwork", "comic or graphic novel": "book", comic: "book",
-	"graphic novel": "book", "comic strip": "artwork", "conference publication": "conferencePaper",
-	dictionary: "dictionaryEntry", diorama: "artwork", drama: "book", encyclopedia: "encyclopediaArticle",
-	festschrift: "book", fiction: "book", filmstrip: "videoRecording", folktale: "book", graphic: "artwork",
-	globe: "map", handbook: "book", history: "book", hymnal: "book", humor: "book", satire: "book",
-	journal: "journalArticle", kit: "artwork", "law report or digest": "journalArticle", "law report": "journalArticle",
-	digest: "journalArticle", "law digest": "journalArticle", "legal article": "journalArticle",
-	"legal case and case notes": "case", "legal case": "case", "case notes": "case", legislation: "statute",
-	"loose-leaf": "manuscript", map: "map", memoir: "book", "microscope slide": "artwork", model: "artwork",
-	novel: "book", "online system or service": "webpage", "online system": "webpage", service: "webpage",
-	"online service": "webpage", patent: "patent", periodical: "journalArticle", picture: "artwork",
-	realia: "artwork", script: "book", slide: "artwork", sound: "audioRecording", speech: "audioRecording",
-	"standard or specification": "report", standard: "report", "technical report": "report",
-	newspaper: "newspaperArticle", theses: "thesis", thesis: "thesis", transparency: "artwork",
-	videorecording: "videoRecording", letter: "letter", "motion picture": "film", "art original": "artwork",
-	"web site": "webpage", yearbook: "book", "government publication": "report",
+	"art reproduction": "artwork",
+	article: "journalArticle",
+	autobiography: "book",
+	bibliography: "book",
+	biography: "book",
+	book: "book",
+	chart: "artwork",
+	"comic or graphic novel": "book",
+	comic: "book",
+	"graphic novel": "book",
+	"comic strip": "artwork",
+	"conference publication": "conferencePaper",
+	dictionary: "dictionaryEntry",
+	diorama: "artwork",
+	drama: "book",
+	encyclopedia: "encyclopediaArticle",
+	festschrift: "book",
+	fiction: "book",
+	filmstrip: "videoRecording",
+	folktale: "book",
+	graphic: "artwork",
+	globe: "map",
+	handbook: "book",
+	history: "book",
+	hymnal: "book",
+	humor: "book",
+	satire: "book",
+	journal: "journalArticle",
+	kit: "artwork",
+	"law report or digest": "journalArticle",
+	"law report": "journalArticle",
+	digest: "journalArticle",
+	"law digest": "journalArticle",
+	"legal article": "journalArticle",
+	"legal case and case notes": "case",
+	"legal case": "case",
+	"case notes": "case",
+	legislation: "statute",
+	"loose-leaf": "manuscript",
+	map: "map",
+	memoir: "book",
+	"microscope slide": "artwork",
+	model: "artwork",
+	novel: "book",
+	"online system or service": "webpage",
+	"online system": "webpage",
+	service: "webpage",
+	"online service": "webpage",
+	patent: "patent",
+	periodical: "journalArticle",
+	picture: "artwork",
+	realia: "artwork",
+	script: "book",
+	slide: "artwork",
+	sound: "audioRecording",
+	speech: "audioRecording",
+	"standard or specification": "report",
+	standard: "report",
+	"technical report": "report",
+	newspaper: "newspaperArticle",
+	theses: "thesis",
+	thesis: "thesis",
+	transparency: "artwork",
+	videorecording: "videoRecording",
+	letter: "letter",
+	"motion picture": "film",
+	"art original": "artwork",
+	"web site": "webpage",
+	yearbook: "book",
+	"government publication": "report",
 };
 
 const TO_MARC_GENRE: Record<string, string> = {
-	artwork: "art original", audioRecording: "sound", bill: "legislation", blogPost: "web site", book: "book",
-	bookSection: "book", case: "legal case and case notes", conferencePaper: "conference publication",
-	dictionaryEntry: "dictionary", email: "letter", encyclopediaArticle: "encyclopedia", film: "motion picture",
-	forumPost: "web site", hearing: "government publication", instantMessage: "letter", interview: "interview",
-	journalArticle: "journal", letter: "letter", magazineArticle: "periodical", map: "map",
-	newspaperArticle: "newspaper", patent: "patent", podcast: "speech", radioBroadcast: "sound",
-	report: "technical report", statute: "legislation", thesis: "thesis", videoRecording: "videorecording",
+	artwork: "art original",
+	audioRecording: "sound",
+	bill: "legislation",
+	blogPost: "web site",
+	book: "book",
+	bookSection: "book",
+	case: "legal case and case notes",
+	conferencePaper: "conference publication",
+	dictionaryEntry: "dictionary",
+	email: "letter",
+	encyclopediaArticle: "encyclopedia",
+	film: "motion picture",
+	forumPost: "web site",
+	hearing: "government publication",
+	instantMessage: "letter",
+	interview: "interview",
+	journalArticle: "journal",
+	letter: "letter",
+	magazineArticle: "periodical",
+	map: "map",
+	newspaperArticle: "newspaper",
+	patent: "patent",
+	podcast: "speech",
+	radioBroadcast: "sound",
+	report: "technical report",
+	statute: "legislation",
+	thesis: "thesis",
+	videoRecording: "videorecording",
 	webpage: "web site",
 };
 
 const FROM_DCT_GENRE: Record<string, string> = {
-	image: "artwork", interactiveresource: "webpage", movingimage: "videoRecording", software: "computerProgram",
-	sound: "audioRecording", stillimage: "artwork",
+	image: "artwork",
+	interactiveresource: "webpage",
+	movingimage: "videoRecording",
+	software: "computerProgram",
+	sound: "audioRecording",
+	stillimage: "artwork",
 };
 
 const FROM_TYPE_OF_RESOURCE: Record<string, string> = {
-	cartographic: "map", "sound recording-musical": "audioRecording", "sound recording-nonmusical": "audioRecording",
-	"sound recording": "audioRecording", "still image": "artwork", "moving image": "videoRecording",
+	cartographic: "map",
+	"sound recording-musical": "audioRecording",
+	"sound recording-nonmusical": "audioRecording",
+	"sound recording": "audioRecording",
+	"still image": "artwork",
+	"moving image": "videoRecording",
 	"software, multimedia": "computerProgram",
 };
 
 const TO_TYPE_OF_RESOURCE: Record<string, string> = {
-	artwork: "still image", audioRecording: "sound recording", computerProgram: "software, multimedia",
-	film: "moving image", map: "cartographic", podcast: "sound recording-nonmusical",
-	radioBroadcast: "sound recording-nonmusical", videoRecording: "moving image", tvBroadcast: "moving image",
-	webpage: "software, multimedia", blogPost: "software, multimedia", presentation: "mixed material",
+	artwork: "still image",
+	audioRecording: "sound recording",
+	computerProgram: "software, multimedia",
+	film: "moving image",
+	map: "cartographic",
+	podcast: "sound recording-nonmusical",
+	radioBroadcast: "sound recording-nonmusical",
+	videoRecording: "moving image",
+	tvBroadcast: "moving image",
+	webpage: "software, multimedia",
+	blogPost: "software, multimedia",
+	presentation: "mixed material",
 };
 
 const MARC_RELATORS: Record<string, string> = {
-	aut: "author", edt: "editor", ctb: "contributor", pbd: "seriesEditor", trl: "translator", cmp: "composer",
-	lyr: "wordsBy", prf: "performer", cre: "author", rcp: "recipient",
+	aut: "author",
+	edt: "editor",
+	ctb: "contributor",
+	pbd: "seriesEditor",
+	trl: "translator",
+	cmp: "composer",
+	lyr: "wordsBy",
+	prf: "performer",
+	cre: "author",
+	rcp: "recipient",
 };
 
 const TO_MARC_RELATOR: Record<string, string> = {
-	author: "aut", editor: "edt", contributor: "ctb", seriesEditor: "pbd", translator: "trl", composer: "cmp",
-	wordsBy: "lyr", performer: "prf", recipient: "rcp",
+	author: "aut",
+	editor: "edt",
+	contributor: "ctb",
+	seriesEditor: "pbd",
+	translator: "trl",
+	composer: "cmp",
+	wordsBy: "lyr",
+	performer: "prf",
+	recipient: "rcp",
 };
 
 const PARTIAL_TYPES = new Set([
-	"blogPost", "bookSection", "conferencePaper", "dictionaryEntry", "encyclopediaArticle", "forumPost",
-	"journalArticle", "magazineArticle", "newspaperArticle", "webpage",
+	"blogPost",
+	"bookSection",
+	"conferencePaper",
+	"dictionaryEntry",
+	"encyclopediaArticle",
+	"forumPost",
+	"journalArticle",
+	"magazineArticle",
+	"newspaperArticle",
+	"webpage",
 ]);
 
 // ---------------------------------------------------------------- import
@@ -161,7 +274,10 @@ function creatorOf(name: XmlNode, itemType: string, fallback: string): Creator |
 		if (given) creator.firstName = given;
 	} else {
 		const parts = children(name, "namePart").filter((p) => p.attrs.type !== "date" && p.attrs.type !== "termsOfAddress");
-		const whole = parts.map((p) => textOf(p)).filter(Boolean).join(" ");
+		const whole = parts
+			.map((p) => textOf(p))
+			.filter(Boolean)
+			.join(" ");
 		if (!whole) return null;
 		if (name.attrs.type === "personal") {
 			const cleaned = whole.replace(/[[(][^A-Za-z]*[\])]/g, "");
@@ -212,7 +328,9 @@ function creatorsFrom(context: XmlNode, itemType: string, fallback: string): Cre
 	const out: Creator[] = [];
 	for (const name of children(context, "name")) {
 		// a name that only publishes or distributes is not a creator
-		const codes = children(name, "role").flatMap((r) => children(r, "roleTerm")).filter((t) => t.attrs.type === "code");
+		const codes = children(name, "role")
+			.flatMap((r) => children(r, "roleTerm"))
+			.filter((t) => t.attrs.type === "code");
 		if (codes.length && codes.every((t) => ["pbl", "dst"].includes(textOf(t).toLowerCase()))) continue;
 		const c = creatorOf(name, itemType, fallback);
 		if (c) out.push(c);
@@ -224,7 +342,9 @@ function identifiersFrom(context: XmlNode, data: Record<string, unknown>): void 
 	const isbns: string[] = [];
 	for (const n of descendants(context, "identifier")) {
 		if (n.attrs.type !== "isbn") continue;
-		const m = textOf(n).replace(/\s*-\s*/g, "").match(/(?:\d{13}|[\dX]{10})/i);
+		const m = textOf(n)
+			.replace(/\s*-\s*/g, "")
+			.match(/(?:\d{13}|[\dX]{10})/i);
 		if (m) isbns.push(m[0]!);
 	}
 	if (isbns.length) setBase(data, "ISBN", isbns.join(", "));
@@ -292,9 +412,23 @@ function modsToItem(mods: XmlNode): ParsedItem | null {
 
 	setBase(data, "libraryCatalog", textOf(children(children(mods, "recordInfo")[0], "recordContentSource")[0]));
 	setBase(data, "rights", textOf(children(mods, "accessCondition")[0]));
-	setBase(data, "abstractNote", descendants(mods, "abstract").map((a) => textOf(a)).filter(Boolean).join("\n\n"));
+	setBase(
+		data,
+		"abstractNote",
+		descendants(mods, "abstract")
+			.map((a) => textOf(a))
+			.filter(Boolean)
+			.join("\n\n"),
+	);
 	setBase(data, "callNumber", textOf(children(mods, "classification")[0]));
-	setBase(data, "archiveLocation", descendants(mods, "physicalLocation").map((a) => textOf(a)).filter(Boolean).join("; "));
+	setBase(
+		data,
+		"archiveLocation",
+		descendants(mods, "physicalLocation")
+			.map((a) => textOf(a))
+			.filter(Boolean)
+			.join("; "),
+	);
 	setBase(data, "edition", textOf(descendants(mods, "edition")[0]));
 
 	// host: publication title, its abbreviation, creators and volume/issue/pages
@@ -314,7 +448,12 @@ function modsToItem(mods: XmlNode): ParsedItem | null {
 		const name = textOf(path(series, "titleInfo", "title")[0]);
 		if (name) setFirst(data, ["series", "seriesTitle"], name);
 		if (!data.seriesText) setBase(data, "seriesText", textOf(path(series, "titleInfo", "subTitle")[0]));
-		if (!data.seriesNumber) setFirst(data, ["seriesNumber"], textOf(path(series, "part", "detail", "number")[0]) || textOf(path(series, "titleInfo", "partNumber")[0]));
+		if (!data.seriesNumber)
+			setFirst(
+				data,
+				["seriesNumber"],
+				textOf(path(series, "part", "detail", "number")[0]) || textOf(path(series, "titleInfo", "partNumber")[0]),
+			);
 		for (const c of creatorsFrom(series, itemType, "seriesEditor")) data.creators = [...(data.creators ?? []), c];
 	}
 
@@ -347,7 +486,9 @@ function modsToItem(mods: XmlNode): ParsedItem | null {
 		if (value) notes.push(textToNoteHtml(`Table of Contents: ${value}`));
 	}
 
-	const tags = path(mods, "subject", "topic").map((t) => textOf(t)).filter(Boolean);
+	const tags = path(mods, "subject", "topic")
+		.map((t) => textOf(t))
+		.filter(Boolean);
 	if (tags.length) data.tags = [...new Set(tags)].map((tag) => ({ tag }));
 
 	// language: codes preferred over names, like Zotero
@@ -462,7 +603,7 @@ export function exportMods(items: ExportItem[]): string {
 		for (const creator of d.creators ?? []) {
 			const code = TO_MARC_RELATOR[creator.creatorType] ?? "ctb";
 			const family = creator.name ?? creator.lastName ?? "";
-			const given = creator.name ? "" : creator.firstName ?? "";
+			const given = creator.name ? "" : (creator.firstName ?? "");
 			const name = wrap("name", { type: creator.name ? "corporate" : "personal" }, [
 				tag("namePart", family, creator.name ? {} : { type: "family" }),
 				tag("namePart", given, { type: "given" }),
@@ -477,7 +618,11 @@ export function exportMods(items: ExportItem[]): string {
 
 		// volume/issue/section and pages, on the host for parts of a larger work
 		const part: string[] = [];
-		for (const [type, value] of [["volume", d.volume], ["issue", d.issue], ["section", d.section]] as [string, unknown][]) {
+		for (const [type, value] of [
+			["volume", d.volume],
+			["issue", d.issue],
+			["section", d.section],
+		] as [string, unknown][]) {
 			const v = String(value ?? "").trim();
 			if (v) part.push(...wrap("detail", { type }, [tag("number", v)]));
 		}
@@ -494,11 +639,18 @@ export function exportMods(items: ExportItem[]): string {
 		if (place) origin.push(...wrap("place", {}, [tag("placeTerm", place, { type: "text" })]));
 		const publisher = getBase(d, "publisher");
 		origin.push(tag("publisher", publisher));
-		const dateField = ["book", "bookSection"].includes(d.itemType) ? "copyrightDate"
-			: ["journalArticle", "magazineArticle", "newspaperArticle"].includes(d.itemType) ? "dateIssued"
-			: "dateCreated";
+		const dateField = ["book", "bookSection"].includes(d.itemType)
+			? "copyrightDate"
+			: ["journalArticle", "magazineArticle", "newspaperArticle"].includes(d.itemType)
+				? "dateIssued"
+				: "dateCreated";
 		origin.push(tag(dateField, d.date));
-		origin.push(tag("issuance", partial && ["journalArticle", "magazineArticle", "newspaperArticle"].includes(d.itemType) ? "continuing" : "monographic"));
+		origin.push(
+			tag(
+				"issuance",
+				partial && ["journalArticle", "magazineArticle", "newspaperArticle"].includes(d.itemType) ? "continuing" : "monographic",
+			),
+		);
 		const originBlock = wrap("originInfo", {}, origin);
 
 		if (partial) host.push(...partBlock, ...originBlock);
@@ -513,7 +665,14 @@ export function exportMods(items: ExportItem[]): string {
 		body.push(tag("identifier", d.DOI, { type: "doi" }));
 		body.push(tag("classification", d.callNumber));
 		if (d.url) {
-			body.push(...wrap("location", {}, [tag("url", d.url, { usage: "primary display", ...(d.accessDate ? { dateLastAccessed: String(d.accessDate).slice(0, 10) } : {}) })]));
+			body.push(
+				...wrap("location", {}, [
+					tag("url", d.url, {
+						usage: "primary display",
+						...(d.accessDate ? { dateLastAccessed: String(d.accessDate).slice(0, 10) } : {}),
+					}),
+				]),
+			);
 		}
 		if (d.archiveLocation) body.push(...wrap("location", {}, [tag("physicalLocation", d.archiveLocation)]));
 		body.push(tag("abstract", d.abstractNote));
@@ -525,7 +684,16 @@ export function exportMods(items: ExportItem[]): string {
 			series.push(...wrap("part", {}, wrap("detail", { type: "volume" }, [tag("number", d.seriesNumber)])));
 		}
 
-		for (const note of item.notes) body.push(tag("note", note.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()));
+		for (const note of item.notes)
+			body.push(
+				tag(
+					"note",
+					note
+						.replace(/<[^>]+>/g, " ")
+						.replace(/\s+/g, " ")
+						.trim(),
+				),
+			);
 		for (const t of item.tags) body.push(...wrap("subject", {}, [tag("topic", t)]));
 		if (d.language) body.push(...wrap("language", {}, [tag("languageTerm", d.language, { type: "text" })]));
 		body.push(tag("note", d.extra));
@@ -535,7 +703,17 @@ export function exportMods(items: ExportItem[]): string {
 			// the site name is the host title
 			const site = getBase(d, "publicationTitle");
 			if (site) host.push(...wrap("titleInfo", {}, [tag("title", site)]));
-		} else if (["journalArticle", "magazineArticle", "newspaperArticle", "bookSection", "conferencePaper", "encyclopediaArticle", "dictionaryEntry"].includes(d.itemType)) {
+		} else if (
+			[
+				"journalArticle",
+				"magazineArticle",
+				"newspaperArticle",
+				"bookSection",
+				"conferencePaper",
+				"encyclopediaArticle",
+				"dictionaryEntry",
+			].includes(d.itemType)
+		) {
 			const container = getBase(d, "publicationTitle");
 			if (container) host.push(...wrap("titleInfo", {}, [tag("title", container)]));
 			if (d.journalAbbreviation) host.push(...wrap("titleInfo", { type: "abbreviated" }, [tag("title", d.journalAbbreviation)]));

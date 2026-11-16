@@ -107,7 +107,9 @@ jobs:
       - name: Fetch vendored Zotero translation code
         run: bun core/scripts/fetch-zotero-vendor.ts
       - name: Placeholder for the fulltext wasm
-        run: mkdir -p core/vendor/fulltext-wasm && : > core/vendor/fulltext-wasm/fulltext.wasm
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          touch core/vendor/fulltext-wasm/fulltext.wasm
       - name: AppImage
         working-directory: gpui-ui
         run: |
@@ -147,7 +149,9 @@ jobs:
       - name: Fetch vendored Zotero translation code
         run: bun core/scripts/fetch-zotero-vendor.ts
       - name: Placeholder for the fulltext wasm
-        run: mkdir -p core/vendor/fulltext-wasm && : > core/vendor/fulltext-wasm/fulltext.wasm
+        run: |
+          mkdir -p core/vendor/fulltext-wasm
+          touch core/vendor/fulltext-wasm/fulltext.wasm
       - name: Disk image
         working-directory: gpui-ui
         run: |

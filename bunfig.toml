@@ -1,0 +1,11 @@
+# `bun fmt` (Prettier's rules): indentation and line length come from .editorconfig. Run it with `bun run format`
+# (`bun run format:check` only reports). Markdown is left alone: the docs are written by hand and the website reads README tables.
+[fmt]
+endOfLine = "auto"
+ignorePatterns = ["**/*.md", ".impeccable/", "word/addin/McpTools.json", "tools/csl-parity/corpus/"]
+
+# `bun lint`: the default rules (ESLint's and typescript-eslint's recommended ones). Run it with `bun run lint`, which uses a Bun
+# canary until a stable release has the command (scripts/lint.ts). Errors fail the run; warnings are reported.
+[lint.rules]
+# `any` is used on purpose where data crosses a boundary (JSON bodies, worker messages, the GPUI bridge)
+"@typescript-eslint/no-explicit-any" = "off"

@@ -24,12 +24,25 @@ function rig(over: Partial<OutDragDeps> = {}) {
 		altDown: () => state.alt,
 		outside: () => state.outside,
 		ready: () => state.ready,
-		content: async (_k, shift) => { requested.push(shift); return content(shift); },
-		run: async (c) => { runs.push(c); return "dropped"; },
+		content: async (_k, shift) => {
+			requested.push(shift);
+			return content(shift);
+		},
+		run: async (c) => {
+			runs.push(c);
+			return "dropped";
+		},
 		endInApp: () => log.push("endInApp"),
-		copy: async (c) => { log.push(`copy:${c.text}`); },
+		copy: async (c) => {
+			log.push(`copy:${c.text}`);
+		},
 		notify: (m, kind) => log.push(`${kind}:${m}`),
-		every: (fn) => { tick = fn; return () => { tick = () => {}; }; },
+		every: (fn) => {
+			tick = fn;
+			return () => {
+				tick = () => {};
+			};
+		},
 		...over,
 	};
 	const out = createOutDrag(deps);
@@ -41,7 +54,8 @@ describe("createOutDrag", () => {
 	test("stays in-app while the pointer is inside the window", async () => {
 		const r = rig();
 		r.out.start(payload);
-		r.tick(); r.tick();
+		r.tick();
+		r.tick();
 		await r.flush();
 		expect(r.runs).toEqual([]);
 		expect(r.log).toEqual([]);
@@ -61,7 +75,8 @@ describe("createOutDrag", () => {
 	test("Shift at the moment of leaving drops the citation", async () => {
 		const r = rig();
 		r.out.start(payload);
-		r.state.outside = true; r.state.shift = true;
+		r.state.outside = true;
+		r.state.shift = true;
 		r.tick();
 		await r.flush();
 		expect(r.runs).toEqual([{ text: "[1]", html: "<span>[1]</span>" }]);
@@ -90,7 +105,8 @@ describe("createOutDrag", () => {
 	test("the button released inside the window ends the watch without a drag", async () => {
 		const r = rig();
 		r.out.start(payload);
-		r.state.left = false; r.state.outside = true;
+		r.state.left = false;
+		r.state.outside = true;
 		r.tick();
 		await r.flush();
 		expect(r.runs).toEqual([]);
@@ -98,7 +114,13 @@ describe("createOutDrag", () => {
 	});
 
 	test("button released while the text was still being formatted: clipboard fallback", async () => {
-		const r = rig({ content: async (_k, shift) => { await new Promise((x) => setTimeout(x, 10)); r.state.left = false; return content(shift); } });
+		const r = rig({
+			content: async (_k, shift) => {
+				await new Promise((x) => setTimeout(x, 10));
+				r.state.left = false;
+				return content(shift);
+			},
+		});
 		r.out.start(payload);
 		r.state.outside = true;
 		r.tick();
@@ -129,7 +151,11 @@ describe("createOutDrag", () => {
 	});
 
 	test("a formatting error is reported and the in-app drag ends", async () => {
-		const r = rig({ content: async () => { throw new Error("core down"); } });
+		const r = rig({
+			content: async () => {
+				throw new Error("core down");
+			},
+		});
 		r.out.start(payload);
 		r.state.outside = true;
 		r.tick();

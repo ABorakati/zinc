@@ -5,7 +5,18 @@
 
 const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const MONTHS_LONG = [
-	"january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+	"january",
+	"february",
+	"march",
+	"april",
+	"may",
+	"june",
+	"july",
+	"august",
+	"september",
+	"october",
+	"november",
+	"december",
 ];
 const MONTH_RE = new RegExp(`(.*)(?:^|[^\\p{L}])(${[...MONTHS_SHORT, ...MONTHS_LONG].join("|")})[^ ]*(?: (.*)$|$)`, "iu");
 const SLASH_RE = /^(.*?)\b([0-9]{1,4})(?:([\-\/\.年])([0-9]{1,2}))?(?:([\-\/\.月])([0-9]{1,4}))?((?:\b|[^0-9]).*?)$/;
@@ -30,7 +41,9 @@ const lpad = (v: string | number, w: number) => String(v).padStart(w, "0");
 export function strToDate(input: unknown, now: Date = new Date()): DateParts {
 	const date: { year?: number | string; month?: number; day?: number } = {};
 	if (typeof input !== "string" && typeof input !== "number") return date;
-	const string = String(input).replace(/[\xA0\r\n\s]+/g, " ").trim();
+	const string = String(input)
+		.replace(/[\xA0\r\n\s]+/g, " ")
+		.trim();
 	if (!string) return date;
 
 	let parts: Part[] = [];

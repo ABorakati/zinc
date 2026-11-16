@@ -12,7 +12,9 @@ import type { ItemRow } from "../src/contracts";
 import { registerFonts } from "../src/fonts";
 import { store } from "../src/store";
 
-const outDir = process.argv[2] ?? "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots";
+const outDir =
+	process.argv[2] ??
+	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots";
 mkdirSync(outDir, { recursive: true });
 
 const t = createTestRoot({ width: 1400, height: 900 });
@@ -21,9 +23,20 @@ t.render(() => <App />);
 const r = t.renderer;
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 // the test renderer only delivers onLayout / onVisibleRange (the reader sizes its pages from them) after dispatchNativeEvents()
-const frames = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { r.flush(); r.dispatchNativeEvents(); r.flush(); await sleep(16); } };
+const frames = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		r.flush();
+		r.dispatchNativeEvents();
+		r.flush();
+		await sleep(16);
+	}
+};
 let failed = 0;
-const check = (name: string, ok: boolean, extra = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${name}${extra ? ` (${extra})` : ""}`); if (!ok) failed++; };
+const check = (name: string, ok: boolean, extra = "") => {
+	console.log(`${ok ? "ok  " : "FAIL"} ${name}${extra ? ` (${extra})` : ""}`);
+	if (!ok) failed++;
+};
 
 for (let i = 0; i < 100 && store.total() === 0; i++) await sleep(100);
 await frames(800);
@@ -35,7 +48,10 @@ for (let i = 0; i < 40 && pdfItems.length < 2; i++) {
 	if (it?.primaryAttachment && !/epub|html/i.test(it.primaryAttachment.contentType ?? "")) pdfItems.push(it);
 	if (!it) await frames(100);
 }
-if (pdfItems.length < 2) { console.error("need 2 items with a PDF in the first 40 rows, found", pdfItems.length); process.exit(1); }
+if (pdfItems.length < 2) {
+	console.error("need 2 items with a PDF in the first 40 rows, found", pdfItems.length);
+	process.exit(1);
+}
 const [a, b] = pdfItems as [ItemRow, ItemRow];
 
 // scroll the list down so a preserved scroll position is visible in the library shot
@@ -51,7 +67,14 @@ store.openAttachment(a.primaryAttachment!.key, a.title, a.key);
 await frames(500);
 store.openAttachment(b.primaryAttachment!.key, b.title, b.key);
 await frames(500);
-check("two reader tabs after openAttachment", store.tabs().length === 3, store.tabs().map((x) => x.id).join(","));
+check(
+	"two reader tabs after openAttachment",
+	store.tabs().length === 3,
+	store
+		.tabs()
+		.map((x) => x.id)
+		.join(","),
+);
 store.openAttachment(a.primaryAttachment!.key, a.title, a.key); // already open: focus, no duplicate
 check("re-opening focuses the existing tab", store.tabs().length === 3 && store.activeTab() === a.primaryAttachment!.key);
 store.setActiveTab(b.primaryAttachment!.key);
@@ -68,7 +91,11 @@ r.captureScreenshot(`${outDir}/tabs-library.png`);
 console.log("wrote", `${outDir}/tabs-library.png`);
 const scrollAfter = native.getListScrollTop(list.id);
 const diff = belowTopBarDiff(beforePng, `${outDir}/tabs-library.png`);
-check("library scroll position kept", JSON.stringify(scrollBefore) === JSON.stringify(scrollAfter) && diff < 0.5, `list anchor ${JSON.stringify(scrollBefore)} -> ${JSON.stringify(scrollAfter)}, ${diff.toFixed(3)}% of pixels below the top bar differ from before opening the tabs`);
+check(
+	"library scroll position kept",
+	JSON.stringify(scrollBefore) === JSON.stringify(scrollAfter) && diff < 0.5,
+	`list anchor ${JSON.stringify(scrollBefore)} -> ${JSON.stringify(scrollAfter)}, ${diff.toFixed(3)}% of pixels below the top bar differ from before opening the tabs`,
+);
 
 // closing: the active reader tab goes, its neighbour takes over
 store.setActiveTab(a.primaryAttachment!.key);
@@ -81,14 +108,21 @@ check("the library tab cannot be closed", store.tabs().length === 1);
 
 /** Percentage of pixels below the 40px top bar that differ between two screenshots (hover/anti-aliasing noise aside, 0 = identical list). */
 function belowTopBarDiff(f1: string, f2: string): number {
-	const A = PNG.sync.read(readFileSync(f1)), B = PNG.sync.read(readFileSync(f2));
+	const A = PNG.sync.read(readFileSync(f1)),
+		B = PNG.sync.read(readFileSync(f2));
 	if (A.width !== B.width || A.height !== B.height) return 100;
-	let n = 0, total = 0;
-	for (let y = 44; y < A.height; y++) for (let x = 0; x < A.width; x++) {
-		const o = (y * A.width + x) * 4;
-		total++;
-		if (Math.abs(A.data[o]! - B.data[o]!) + Math.abs(A.data[o + 1]! - B.data[o + 1]!) + Math.abs(A.data[o + 2]! - B.data[o + 2]!) > 24) n++;
-	}
+	let n = 0,
+		total = 0;
+	for (let y = 44; y < A.height; y++)
+		for (let x = 0; x < A.width; x++) {
+			const o = (y * A.width + x) * 4;
+			total++;
+			if (
+				Math.abs(A.data[o]! - B.data[o]!) + Math.abs(A.data[o + 1]! - B.data[o + 1]!) + Math.abs(A.data[o + 2]! - B.data[o + 2]!) >
+				24
+			)
+				n++;
+		}
 	return (100 * n) / total;
 }
 

@@ -159,7 +159,13 @@ async function rawRequest(method: string, requestURL: string, options: any): Pro
 	const key = method === "GET" && options.body == null ? requestURL : null;
 	if (key) {
 		const hit = cache.get(key);
-		if (hit) return { responseURL: hit.responseURL, status: hit.status, headers: new Headers(hit.headers), body: new Uint8Array(Buffer.from(hit.body, "base64")) };
+		if (hit)
+			return {
+				responseURL: hit.responseURL,
+				status: hit.status,
+				headers: new Headers(hit.headers),
+				body: new Uint8Array(Buffer.from(hit.body, "base64")),
+			};
 	}
 	if (closed) throw new Error("the translation run has finished");
 	if (++requests > limits.maxRequests) throw new Error(`translator exceeded the limit of ${limits.maxRequests} HTTP requests`);
@@ -253,12 +259,18 @@ export function installHttp(Z: any): void {
 		try {
 			raw = await rawRequest(method, new URL(requestURL).href, options);
 		} catch (e: any) {
-			if (e?.name === "TimeoutError" || e?.name === "AbortError") throw new HTTP.TimeoutError(options.timeout ?? limits.requestTimeoutMs);
+			if (e?.name === "TimeoutError" || e?.name === "AbortError")
+				throw new HTTP.TimeoutError(options.timeout ?? limits.requestTimeoutMs);
 			throw e;
 		}
 		const ct = raw.headers.get("content-type");
 		const e = mimeEssence(ct);
-		const ok = options.successCodes === false ? true : Array.isArray(options.successCodes) ? options.successCodes.includes(raw.status) : raw.status >= 200 && raw.status < 300;
+		const ok =
+			options.successCodes === false
+				? true
+				: Array.isArray(options.successCodes)
+					? options.successCodes.includes(raw.status)
+					: raw.status >= 200 && raw.status < 300;
 		if (!ok) throw new HTTP.StatusError(requestURL, raw.status, decode(raw.body, charsetOf(ct)));
 		const type = responseTypeFor(ct, options);
 		const map: Map<string, string> | undefined = options.responseTypeMap;
@@ -303,7 +315,11 @@ export function installHttp(Z: any): void {
 		if (typeof urls === "string") urls = [urls];
 		const results: unknown[] = [];
 		for (const url of urls) {
-			const req = await HTTP.request("GET", url, { responseType: "document", cookieSandbox: options.cookieSandbox, headers: options.headers });
+			const req = await HTTP.request("GET", url, {
+				responseType: "document",
+				cookieSandbox: options.cookieSandbox,
+				headers: options.headers,
+			});
 			results.push(await processor(req.response, req.responseURL));
 		}
 		if (arguments.length > 3 && typeof arguments[3] === "function") arguments[3]();
@@ -311,11 +327,22 @@ export function installHttp(Z: any): void {
 	};
 
 	HTTP.doGet = function (url: string, onDone: (x: any) => void, _charset?: string, cookieSandbox?: unknown, headers?: unknown) {
-		HTTP.request("GET", url, { headers, cookieSandbox }).then(onDone, (e: any) => onDone({ status: e.status, responseText: e.responseText }));
+		HTTP.request("GET", url, { headers, cookieSandbox }).then(onDone, (e: any) =>
+			onDone({ status: e.status, responseText: e.responseText }),
+		);
 		return true;
 	};
-	HTTP.doPost = function (url: string, body: unknown, onDone: (x: any) => void, headers?: unknown, _charset?: string, cookieSandbox?: unknown) {
-		HTTP.request("POST", url, { body, headers, cookieSandbox }).then(onDone, (e: any) => onDone({ status: e.status, responseText: e.responseText }));
+	HTTP.doPost = function (
+		url: string,
+		body: unknown,
+		onDone: (x: any) => void,
+		headers?: unknown,
+		_charset?: string,
+		cookieSandbox?: unknown,
+	) {
+		HTTP.request("POST", url, { body, headers, cookieSandbox }).then(onDone, (e: any) =>
+			onDone({ status: e.status, responseText: e.responseText }),
+		);
 		return true;
 	};
 }

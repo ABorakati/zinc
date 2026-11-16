@@ -40,14 +40,18 @@ const ARXIV_NEW = /(?:arxiv\s*:\s*|arxiv\.org\/(?:abs|pdf)\/)?(\d{4}\.\d{4,5})(?
 const ARXIV_OLD = /(?:arxiv\s*:\s*|arxiv\.org\/(?:abs|pdf)\/)([a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?/i;
 
 export function findArxivId(text: string): string | null {
-	const labelled = text.match(/arxiv\s*:\s*(\d{4}\.\d{4,5})(?:v\d+)?/i) ?? text.match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?/i);
+	const labelled =
+		text.match(/arxiv\s*:\s*(\d{4}\.\d{4,5})(?:v\d+)?/i) ?? text.match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?/i);
 	if (labelled) return labelled[1];
 	const old = text.match(ARXIV_OLD);
 	return old ? old[1] : null;
 }
 
 function classify(tok: string): ParsedId | null {
-	const t = tok.trim().replace(/^[<"']+/, "").replace(/[>"',;.]+$/, "");
+	const t = tok
+		.trim()
+		.replace(/^[<"']+/, "")
+		.replace(/[>"',;.]+$/, "");
 	if (!t) return null;
 	const raw = tok.trim();
 
@@ -91,7 +95,10 @@ export function parseIdentifiers(text: string): { ids: ParsedId[]; unknown: stri
 	const lines = String(text ?? "").split(/\r?\n/);
 	for (const line of lines) {
 		// glue "PMID: 123", "ISBN 978...", "arXiv: 2101.1" into single tokens
-		const glued = line.replace(/\b(pmid|pubmed|isbn(?:-1[03])?|arxiv|doi|pmcid)\s*:?\s+(?=\S)/gi, (_m, l) => `${String(l).toLowerCase()}:`);
+		const glued = line.replace(
+			/\b(pmid|pubmed|isbn(?:-1[03])?|arxiv|doi|pmcid)\s*:?\s+(?=\S)/gi,
+			(_m, l) => `${String(l).toLowerCase()}:`,
+		);
 		for (const tok of glued.split(/[\s,;]+/)) {
 			if (!tok) continue;
 			let p = classify(tok.replace(/^(doi|pmcid):/i, ""));

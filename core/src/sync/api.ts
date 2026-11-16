@@ -50,7 +50,15 @@ export async function handleSyncApi(req: Request, db: Database): Promise<Respons
 		if (!svc) {
 			// Sync is not running in this process (tests, headless core): report it instead of failing.
 			if (route === "status" && m === "GET") {
-				return json({ enabled: false, zotero: "missing", dataDir: defaultZoteroDataDir(), pending: 0, conflicts: 0, changeCount: 0, busy: false });
+				return json({
+					enabled: false,
+					zotero: "missing",
+					dataDir: defaultZoteroDataDir(),
+					pending: 0,
+					conflicts: 0,
+					changeCount: 0,
+					busy: false,
+				});
 			}
 			throw new HttpError(503, "sync service is not running");
 		}

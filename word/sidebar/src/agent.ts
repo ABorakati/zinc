@@ -65,7 +65,8 @@ export function validate(schema: JsonSchema, v: unknown, path = "arguments"): st
 	}
 	if (!typeOk(schema.type, v)) return [`${path}: must be ${schema.type === "integer" ? "an integer" : "a " + schema.type}`];
 	const out: string[] = [];
-	if (schema.enum && !schema.enum.includes(v)) out.push(`${path}: must be one of ${schema.enum.map((e) => JSON.stringify(e)).join(", ")}`);
+	if (schema.enum && !schema.enum.includes(v))
+		out.push(`${path}: must be one of ${schema.enum.map((e) => JSON.stringify(e)).join(", ")}`);
 	if (typeof v === "string") {
 		if (schema.minLength !== undefined && v.length < schema.minLength) out.push(`${path}: must not be empty`);
 		if (schema.maxLength !== undefined && v.length > schema.maxLength) out.push(`${path}: at most ${schema.maxLength} characters`);
@@ -133,7 +134,14 @@ interface ItemArg {
 const noteName = (n: number) => (n === 1 ? "footnotes" : n === 2 ? "endnotes" : "inline");
 
 function reportOut(r: RefreshReport) {
-	return { citations: r.citations, updated: r.updated, bibliographies: r.bibliographies, style: r.style, missingItems: r.missing, keptHandEdited: r.kept ?? 0 };
+	return {
+		citations: r.citations,
+		updated: r.updated,
+		bibliographies: r.bibliographies,
+		style: r.style,
+		missingItems: r.missing,
+		keptHandEdited: r.kept ?? 0,
+	};
 }
 
 // ---------------------------------------------------------------- the agent
@@ -256,7 +264,16 @@ export class Agent {
 		const st = await this.app.docState();
 		const d = this.app.defaults;
 		const p: DocPrefs | null = st.prefs;
-		if (!p) return { document: st.name, configured: false, styleId: d.style, locale: d.locale, citationPlacement: "inline", automaticUpdates: true, hasBibliography: false };
+		if (!p)
+			return {
+				document: st.name,
+				configured: false,
+				styleId: d.style,
+				locale: d.locale,
+				citationPlacement: "inline",
+				automaticUpdates: true,
+				hasBibliography: false,
+			};
 		return {
 			document: st.name,
 			configured: true,
@@ -272,7 +289,18 @@ export class Agent {
 }
 
 function itemOut(v: CitedItemView, suppressAuthor: boolean, label: string | undefined): CitationItemOut {
-	return { key: v.key, title: v.title, authors: v.authors, year: v.year, locator: v.locator, label: v.locator ? label ?? "page" : "", prefix: v.prefix, suffix: v.suffix, suppressAuthor, inLibrary: v.inLibrary };
+	return {
+		key: v.key,
+		title: v.title,
+		authors: v.authors,
+		year: v.year,
+		locator: v.locator,
+		label: v.locator ? (label ?? "page") : "",
+		prefix: v.prefix,
+		suffix: v.suffix,
+		suppressAuthor,
+		inLibrary: v.inLibrary,
+	};
 }
 
 // ---------------------------------------------------------------- tool handlers
@@ -287,11 +315,25 @@ const HANDLERS: Record<string, Handler> = {
 
 	async search_library(a, args: { query: string; limit?: number }) {
 		const rows = await a.app.search(args.query, args.limit ?? 10);
-		return { count: rows.length, items: rows.map((r) => ({ key: r.key, title: r.title, creators: r.creators, year: r.year, publication: r.publication, itemType: r.itemType, doi: r.doi })) };
+		return {
+			count: rows.length,
+			items: rows.map((r) => ({
+				key: r.key,
+				title: r.title,
+				creators: r.creators,
+				year: r.year,
+				publication: r.publication,
+				itemType: r.itemType,
+				doi: r.doi,
+			})),
+		};
 	},
 
 	async search_styles(a, args: { query: string; limit?: number }) {
-		const rows = await a.host.call<{ id: string; title: string; format?: string | null; dependent?: boolean; installed?: boolean }[]>("style.search", { q: args.query, limit: args.limit ?? 15 });
+		const rows = await a.host.call<{ id: string; title: string; format?: string | null; dependent?: boolean; installed?: boolean }[]>(
+			"style.search",
+			{ q: args.query, limit: args.limit ?? 15 },
+		);
 		return { styles: rows.map((s) => ({ id: s.id, title: s.title, format: s.format ?? null, installed: !!s.installed })) };
 	},
 
@@ -339,7 +381,11 @@ const HANDLERS: Record<string, Handler> = {
 		const at = had ? undefined : await a.resolvePosition(args.position, "end");
 		const report = await a.app.insertBibliography({ at });
 		const bib = (await a.app.readFields()).find((f) => f.kind === "bibl");
-		return { created: !had, bibliography: bib ? { text: bib.text.slice(0, 2000), entries: bib.text.split(/\r|\n/).filter((l) => l.trim()).length } : null, report: reportOut(report) };
+		return {
+			created: !had,
+			bibliography: bib ? { text: bib.text.slice(0, 2000), entries: bib.text.split(/\r|\n/).filter((l) => l.trim()).length } : null,
+			report: reportOut(report),
+		};
 	},
 
 	async get_document_prefs(a) {
@@ -355,18 +401,24 @@ const HANDLERS: Record<string, Handler> = {
 	},
 
 	async set_document_prefs(a, args: { noteType?: "footnotes" | "endnotes"; automaticUpdates?: boolean }) {
-		if (args.noteType === undefined && args.automaticUpdates === undefined) throw new Error("Give 'noteType' and/or 'automaticUpdates'.");
+		if (args.noteType === undefined && args.automaticUpdates === undefined)
+			throw new Error("Give 'noteType' and/or 'automaticUpdates'.");
 		let note: { applied: boolean; reason?: string; report?: ReturnType<typeof reportOut> } | undefined;
 		if (args.noteType !== undefined) {
 			const r = await a.app.setNoteType(args.noteType === "endnotes" ? 2 : 1);
-			note = r ? { applied: true, report: reportOut(r) } : { applied: false, reason: "The document's style is an in-text style; footnotes/endnotes only apply to note styles." };
+			note = r
+				? { applied: true, report: reportOut(r) }
+				: { applied: false, reason: "The document's style is an in-text style; footnotes/endnotes only apply to note styles." };
 		}
 		if (args.automaticUpdates !== undefined) await a.app.setAutoUpdate(args.automaticUpdates);
 		return { prefs: await a.prefsOut(), noteType: note };
 	},
 
 	async refresh(a, args: { mergeAdjacent?: boolean; overwriteEditedText?: boolean }) {
-		const r = await a.app.refreshAll({ merge: args.mergeAdjacent === true, onModified: args.overwriteEditedText === true ? "overwrite" : "keep" });
+		const r = await a.app.refreshAll({
+			merge: args.mergeAdjacent === true,
+			onModified: args.overwriteEditedText === true ? "overwrite" : "keep",
+		});
 		return reportOut(r);
 	},
 };

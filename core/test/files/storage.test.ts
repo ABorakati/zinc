@@ -3,7 +3,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Database as Db } from "bun:sqlite";
-import { expandPattern, isOnlineOnly, metaOfItem, planMove, runMove, setAttributeProbe, setStorage, storageTargetFor, storageView, validatePattern } from "../../src/files/storage";
+import {
+	expandPattern,
+	isOnlineOnly,
+	metaOfItem,
+	planMove,
+	runMove,
+	setAttributeProbe,
+	setStorage,
+	storageTargetFor,
+	storageView,
+	validatePattern,
+} from "../../src/files/storage";
 import { setZoteroProfilesDir, baseDirInfo, setBaseDir } from "../../src/files/paths";
 import { buildPush } from "../../src/sync/build";
 import { buildFixture, call, insertAttachment, insertItem, type Fixture } from "../fixture";
@@ -13,8 +24,10 @@ let db: Db;
 let own: string; // zotero-next's own storage
 let dest: string; // custom storage folder
 
-const row = (key: string) => db.query("SELECT link_mode, path FROM attachments WHERE item_key = ?").get(key) as { link_mode: string; path: string };
-const itemData = (key: string) => JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data) as Record<string, any>;
+const row = (key: string) =>
+	db.query("SELECT link_mode, path FROM attachments WHERE item_key = ?").get(key) as { link_mode: string; path: string };
+const itemData = (key: string) =>
+	JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data) as Record<string, any>;
 const outboxKeys = () => (db.query("SELECT DISTINCT key FROM sync_outbox").all() as { key: string }[]).map((r) => r.key);
 
 /** An imported attachment whose file sits in zotero-next's own storage. */
@@ -30,8 +43,24 @@ function addLinked(key: string, parent: string, path: string, content = "linked-
 	mkdirSync(join(path, ".."), { recursive: true });
 	writeFileSync(path, content);
 	const name = path.split(/[\\/]/).pop()!;
-	insertItem(db, { key, itemType: "attachment", linkMode: "linked_file", parentItem: parent, title: name, contentType: "application/pdf", path, filename: name } as never, parent);
-	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'linked_file', 'application/pdf', ?)").run(key, path);
+	insertItem(
+		db,
+		{
+			key,
+			itemType: "attachment",
+			linkMode: "linked_file",
+			parentItem: parent,
+			title: name,
+			contentType: "application/pdf",
+			path,
+			filename: name,
+		} as never,
+		parent,
+	);
+	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'linked_file', 'application/pdf', ?)").run(
+		key,
+		path,
+	);
 }
 
 beforeEach(() => {
@@ -59,12 +88,21 @@ describe("patterns", () => {
 	});
 
 	test("expansion uses first author, year, sanitises, never escapes", () => {
-		const meta = { author: "Smith", year: "2020", title: 'A: "title"/with*bad?chars', publication: "J. Med", itemType: "journalArticle" };
+		const meta = {
+			author: "Smith",
+			year: "2020",
+			title: 'A: "title"/with*bad?chars',
+			publication: "J. Med",
+			itemType: "journalArticle",
+		};
 		expect(expandPattern("{%a}/{%y}", meta)).toEqual(["Smith", "2020"]);
 		expect(expandPattern("{%F}\\{%a} {%y}", meta)).toEqual(["S", "Smith 2020"]);
 		expect(expandPattern("{%t}", meta)).toEqual(["A titlewithbadchars"]);
 		expect(expandPattern("../{%a}/..", { ...meta })).toEqual(["Smith"]);
-		expect(expandPattern("{%a}/{%y}", { author: "", year: "", title: "", publication: "", itemType: "" })).toEqual(["Unknown author", "undated"]);
+		expect(expandPattern("{%a}/{%y}", { author: "", year: "", title: "", publication: "", itemType: "" })).toEqual([
+			"Unknown author",
+			"undated",
+		]);
 		expect(expandPattern("{%a}", { ...meta, author: "con" })).toEqual(["_con"]);
 	});
 
@@ -83,10 +121,17 @@ describe("storage target (the hook for new files)", () => {
 	test("custom folder with pattern, linked by default, unique names", () => {
 		setStorage(db, { dir: dest, subfolder: "{%a}/{%y}" });
 		const t = storageTargetFor(db, { key: "NEWKEY01", name: "paper.pdf", parentKey: "AAAAAAA1" });
-		expect(t).toMatchObject({ mode: "linked_file", custom: true, dir: join(dest, "Smith", "2020"), path: join(dest, "Smith", "2020", "paper.pdf") });
+		expect(t).toMatchObject({
+			mode: "linked_file",
+			custom: true,
+			dir: join(dest, "Smith", "2020"),
+			path: join(dest, "Smith", "2020", "paper.pdf"),
+		});
 		mkdirSync(t.dir, { recursive: true });
 		writeFileSync(t.path, "x");
-		expect(storageTargetFor(db, { key: "NEWKEY02", name: "paper.pdf", parentKey: "AAAAAAA1" }).path).toBe(join(dest, "Smith", "2020", "paper (2).pdf"));
+		expect(storageTargetFor(db, { key: "NEWKEY02", name: "paper.pdf", parentKey: "AAAAAAA1" }).path).toBe(
+			join(dest, "Smith", "2020", "paper (2).pdf"),
+		);
 		setStorage(db, { linked: false });
 		expect(storageTargetFor(db, { key: "NEWKEY03", name: "q.pdf", parentKey: "AAAAAAA1" }).mode).toBe("imported_file");
 		setStorage(db, { dir: null });
@@ -124,7 +169,11 @@ describe("move existing attachments", () => {
 		const plan = planMove(db);
 		expect(plan.count).toBe(2);
 		expect(plan.totalBytes).toBe(10 + "linked-bytes".length);
-		expect(plan.sample.find((s) => s.key === "ATT00002")).toEqual({ key: "ATT00002", from: f, to: join(dest, "Smith", "2020", "paper.pdf") });
+		expect(plan.sample.find((s) => s.key === "ATT00002")).toEqual({
+			key: "ATT00002",
+			from: f,
+			to: join(dest, "Smith", "2020", "paper.pdf"),
+		});
 		expect(plan.sample.find((s) => s.key === "LNK00001")!.to).toBe(join(dest, "Brown", "2018", "book.pdf"));
 		const reasons = plan.skipped.map((s) => `${s.key}:${s.reason}`);
 		expect(reasons.some((r) => r.startsWith("ATT00001:file is missing") || r.includes("missing"))).toBe(true);
@@ -189,7 +238,9 @@ describe("move existing attachments", () => {
 		expect(row("LNK00003").path).toBe("attachments:Moved/Brown/2018/z.pdf");
 		expect(itemData("LNK00003").path).toBe(join(base, "Moved", "Brown", "2018", "z.pdf")); // sync gets the absolute path
 		const plan = buildPush(db, join(fx.dir, "ZoteroData"));
-		expect((plan.writes.find((w) => w.key === "LNK00003")!.data as { path: string }).path).toBe(join(base, "Moved", "Brown", "2018", "z.pdf"));
+		expect((plan.writes.find((w) => w.key === "LNK00003")!.data as { path: string }).path).toBe(
+			join(base, "Moved", "Brown", "2018", "z.pdf"),
+		);
 	});
 
 	test("skips Zotero-owned files, missing files and items without a parent", async () => {

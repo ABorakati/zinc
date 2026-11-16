@@ -47,7 +47,9 @@ function user32(): User32 | null {
 	if (u32 !== undefined) return u32;
 	if (process.platform !== "win32") return (u32 = null);
 	try {
-		const p = FFIType.ptr, i = FFIType.i32, u = FFIType.u32;
+		const p = FFIType.ptr,
+			i = FFIType.i32,
+			u = FFIType.u32;
 		u32 = dlopen("user32.dll", {
 			EnumWindows: { args: [FFIType.function, p], returns: i },
 			GetWindowThreadProcessId: { args: [p, p], returns: u },
@@ -112,7 +114,8 @@ export function mainWindow(): H | null {
 
 /** Scale factor of the main window (1 when there is none). */
 export function dpr(): number {
-	const s = user32(), w = mainWindow();
+	const s = user32(),
+		w = mainWindow();
 	if (!s || w == null) return 1;
 	const d = s.GetDpiForWindow(w);
 	return d > 0 ? d / 96 : 1;
@@ -122,21 +125,37 @@ const pt = new Int32Array(2);
 const rc = new Int32Array(4);
 /** The main window's client area in screen pixels, or null while it is minimised / gone. */
 export function clientOnScreen(): { x: number; y: number; width: number; height: number } | null {
-	const s = user32(), w = mainWindow();
+	const s = user32(),
+		w = mainWindow();
 	if (!s || w == null || s.IsIconic(w) || !s.IsWindowVisible(w)) return null;
-	pt[0] = 0; pt[1] = 0;
+	pt[0] = 0;
+	pt[1] = 0;
 	if (!s.ClientToScreen(w, pt)) return null;
 	s.GetClientRect(w, rc);
 	return { x: pt[0]!, y: pt[1]!, width: rc[2]!, height: rc[3]! };
 }
 
-export const isWindow = (h: H): boolean => { const s = user32(); return !!s && !!s.IsWindow(h); };
+export const isWindow = (h: H): boolean => {
+	const s = user32();
+	return !!s && !!s.IsWindow(h);
+};
 
-const GWL_STYLE = -16, GWL_EXSTYLE = -20, GWLP_HWNDPARENT = -8;
-const WS_POPUP = 0x80000000n, WS_CLIPCHILDREN = 0x02000000n;
-const WS_EX_TOOLWINDOW = 0x80n, WS_EX_NOACTIVATE = 0x08000000n;
-const HWND_TOPMOST = -1, HWND_NOTOPMOST = -2;
-const SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20, SWP_SHOWWINDOW = 0x40, SWP_HIDEWINDOW = 0x80;
+const GWL_STYLE = -16,
+	GWL_EXSTYLE = -20,
+	GWLP_HWNDPARENT = -8;
+const WS_POPUP = 0x80000000n,
+	WS_CLIPCHILDREN = 0x02000000n;
+const WS_EX_TOOLWINDOW = 0x80n,
+	WS_EX_NOACTIVATE = 0x08000000n;
+const HWND_TOPMOST = -1,
+	HWND_NOTOPMOST = -2;
+const SWP_NOSIZE = 0x1,
+	SWP_NOMOVE = 0x2,
+	SWP_NOZORDER = 0x4,
+	SWP_NOACTIVATE = 0x10,
+	SWP_FRAMECHANGED = 0x20,
+	SWP_SHOWWINDOW = 0x40,
+	SWP_HIDEWINDOW = 0x80;
 
 /** Our web view popups (never mistaken for the main window, which is found as this process's un-owned top-level window). */
 const popups = new Set<bigint>();
@@ -163,7 +182,9 @@ export function makeOwnedPopup(h: H, _owner: H | null): void {
 }
 
 /** The popup is gone (destroyed): forget it. */
-export function forgetPopup(h: H): void { popups.delete(BigInt(h)); }
+export function forgetPopup(h: H): void {
+	popups.delete(BigInt(h));
+}
 
 /**
  * Keep the popup directly over the main window while this app is in front (an owned window got that for free): when the user
@@ -171,7 +192,8 @@ export function forgetPopup(h: H): void { popups.delete(BigInt(h)); }
  * z-order below the popup looking for the main window, at most a few dozen windows.
  */
 export function keepAbove(h: H): void {
-	const s = user32(), w = mainWindow();
+	const s = user32(),
+		w = mainWindow();
 	if (!s || w == null || !appIsForeground()) return;
 	const target = BigInt(w);
 	let cur: H = h;
@@ -200,7 +222,8 @@ function gdi32(): Gdi32 | null {
 	if (g32 !== undefined) return g32;
 	if (!user32()) return (g32 = null);
 	try {
-		const p = FFIType.ptr, i = FFIType.i32;
+		const p = FFIType.ptr,
+			i = FFIType.i32;
 		g32 = dlopen("gdi32.dll", {
 			CreateRectRgn: { args: [i, i, i, i], returns: p },
 			CombineRgn: { args: [p, p, p, i], returns: i },
@@ -220,9 +243,13 @@ const RGN_DIFF = 4;
  * Clicks outside the region go to the window below (the GPUI window).
  */
 export function clipPopup(h: H, keep: PxRect | null, holes: PxRect[] = []): void {
-	const s = user32(), g = gdi32();
+	const s = user32(),
+		g = gdi32();
 	if (!s) return;
-	if (!g || (!keep && !holes.length)) { s.SetWindowRgn(h, null, 1); return; }
+	if (!g || (!keep && !holes.length)) {
+		s.SetWindowRgn(h, null, 1);
+		return;
+	}
 	const k = keep ?? { x: 0, y: 0, width: 1 << 15, height: 1 << 15 };
 	const rgn = g.CreateRectRgn(k.x, k.y, k.x + k.width, k.y + k.height);
 	for (const r of holes) {
@@ -249,7 +276,8 @@ export function popupHasFocus(h: H): boolean {
 
 /** Give keyboard focus back to the main window (after the popup is hidden). */
 export function focusMain(): void {
-	const s = user32(), w = mainWindow();
+	const s = user32(),
+		w = mainWindow();
 	if (s && w != null) s.SetForegroundWindow(w);
 }
 
@@ -290,11 +318,18 @@ export function hideTopLevel(h: H): void {
 	user32()?.ShowWindow(h, 0);
 }
 
-export const isShown = (h: H): boolean => { const s = user32(); return !!s && !!s.IsWindowVisible(h); };
+export const isShown = (h: H): boolean => {
+	const s = user32();
+	return !!s && !!s.IsWindowVisible(h);
+};
 
 /** The foreground process lets `pid` take the foreground (a process started from the click that asked for its window). */
 export function allowForeground(pid: number): void {
 	const s = user32();
 	if (!s) return;
-	try { s.AllowSetForegroundWindow(pid); } catch { /* not available */ }
+	try {
+		s.AllowSetForegroundWindow(pid);
+	} catch {
+		/* not available */
+	}
 }

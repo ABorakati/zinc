@@ -38,7 +38,9 @@ export function managedLinkedFiles(db: Database, keys: string[]): string[] | nul
 	for (let i = 0; i < keys.length; i += 500) {
 		const chunk = keys.slice(i, i + 500);
 		const rows = db
-			.query(`SELECT path FROM attachments WHERE link_mode = 'linked_file' AND path IS NOT NULL AND item_key IN (${chunk.map(() => "?").join(",")})`)
+			.query(
+				`SELECT path FROM attachments WHERE link_mode = 'linked_file' AND path IS NOT NULL AND item_key IN (${chunk.map(() => "?").join(",")})`,
+			)
 			.all(...chunk) as { path: string }[];
 		for (const r of rows) {
 			const p = resolveStoredPath(db, r.path);

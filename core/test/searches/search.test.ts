@@ -28,12 +28,16 @@ beforeAll(() => {
 		collections: ["COLLAAA1"],
 		dateAdded: "2024-03-01T00:00:00Z",
 	});
-	insertItem(db, { key: "NOTE0001", itemType: "note", note: "<p>Great <b>transformer</b> paper</p>", parentItem: "AAAAAAA1" }, "AAAAAAA1");
+	insertItem(
+		db,
+		{ key: "NOTE0001", itemType: "note", note: "<p>Great <b>transformer</b> paper</p>", parentItem: "AAAAAAA1" },
+		"AAAAAAA1",
+	);
 	insertAttachment(db, "ATT00001", "AAAAAAA1", "text/html", null);
 	insertAttachment(db, "ATT00002", "AAAAAAA1", "application/pdf", null);
-	db.query("INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('ATT00002', ?, 'zotero-cache', '2024-01-01T00:00:00Z')").run(
-		"convolutional segmentation of pulmonary nodules in lung scans",
-	);
+	db.query(
+		"INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('ATT00002', ?, 'zotero-cache', '2024-01-01T00:00:00Z')",
+	).run("convolutional segmentation of pulmonary nodules in lung scans");
 	insertItem(db, {
 		key: "BBBBBBB2",
 		itemType: "book",
@@ -43,7 +47,12 @@ beforeAll(() => {
 		tags: [{ tag: "imaging" }],
 		dateAdded: "2024-02-01T00:00:00Z",
 	});
-	insertItem(db, { key: "CCCCCCC3", itemType: "journalArticle", title: "Trashed article about zebras", dateAdded: "2024-01-15T00:00:00Z" }, undefined, 1);
+	insertItem(
+		db,
+		{ key: "CCCCCCC3", itemType: "journalArticle", title: "Trashed article about zebras", dateAdded: "2024-01-15T00:00:00Z" },
+		undefined,
+		1,
+	);
 	insertItem(db, {
 		key: "DDDDDDD4",
 		itemType: "journalArticle",
@@ -65,7 +74,13 @@ beforeAll(() => {
 		dateAdded: daysAgo(2),
 	});
 	insertItem(db, { key: "FFFFFFF6", itemType: "note", note: "<p>standalone zebra note</p>", dateAdded: "2023-06-01T00:00:00Z" });
-	insertItem(db, { key: "GGGGGGG7", itemType: "journalArticle", title: "Obscure findings", date: "2019", dateAdded: "2023-01-01T00:00:00Z" });
+	insertItem(db, {
+		key: "GGGGGGG7",
+		itemType: "journalArticle",
+		title: "Obscure findings",
+		date: "2019",
+		dateAdded: "2023-01-01T00:00:00Z",
+	});
 	insertItem(db, { key: "NOTE0002", itemType: "note", note: "<p>rare keyword quokka</p>", parentItem: "GGGGGGG7" }, "GGGGGGG7");
 	db.query("INSERT INTO collections(key, name) VALUES('COLLAAA1', 'Radiology')").run();
 	db.query("INSERT INTO collections(key, name, parent_key) VALUES('COLLAAA2', 'Sub', 'COLLAAA1')").run();
@@ -229,7 +244,11 @@ test("hostile input is bound as a parameter or rejected", () => {
 // ---------------------------------------------------------------- saved searches + API
 
 test("saved search CRUD over HTTP", async () => {
-	let res = await call(db, "POST", "/api/searches", { name: "  Imaging  ", conditions: [cond("tag", "is", "imaging")], options: { match: "all" } });
+	let res = await call(db, "POST", "/api/searches", {
+		name: "  Imaging  ",
+		conditions: [cond("tag", "is", "imaging")],
+		options: { match: "all" },
+	});
 	expect(res.status).toBe(201);
 	const created = await res.json();
 	expect(created.key).toMatch(/^[0-9A-Z]{8}$/);
@@ -244,7 +263,10 @@ test("saved search CRUD over HTTP", async () => {
 
 	res = await call(db, "PATCH", `/api/searches/${created.key}`, { name: "Imaging 2" });
 	expect((await res.json()).name).toBe("Imaging 2");
-	res = await call(db, "PATCH", `/api/searches/${created.key}`, { conditions: [cond("year", "is", "2018")], options: { includeTrash: true } });
+	res = await call(db, "PATCH", `/api/searches/${created.key}`, {
+		conditions: [cond("year", "is", "2018")],
+		options: { includeTrash: true },
+	});
 	const patched = await res.json();
 	expect(patched.conditions[0].field).toBe("year");
 	expect(patched.options.includeTrash).toBe(true);
@@ -314,7 +336,10 @@ test("listItems({search}) pages and sorts the saved results", async () => {
 });
 
 test("quick search modes", () => {
-	const q = (text: string, qmode?: string) => listItems(db, { q: text, qmode, limit: 100 }).items.map((i) => i.key).sort();
+	const q = (text: string, qmode?: string) =>
+		listItems(db, { q: text, qmode, limit: 100 })
+			.items.map((i) => i.key)
+			.sort();
 	expect(q("smith")).toEqual(K(1));
 	expect(q("ml")).toEqual([]); // default mode: title, creator, year only
 	expect(q("ml", "titleCreatorYear")).toEqual([]);

@@ -5,7 +5,10 @@ import { DEFAULT_COLUMNS, MENU_COLUMNS, getColumn, isKnownColumn } from "./defs"
 
 const MIN_WIDTH = 28;
 
-interface Saved { cols: string[]; widths: Record<string, number> }
+interface Saved {
+	cols: string[];
+	widths: Record<string, number>;
+}
 
 function load(): Saved {
 	const s = uiState.get<Partial<Saved> | null>("columns", null);
@@ -29,10 +32,23 @@ export const columnLayout = createRoot(() => {
 	const columns = createMemo(() => ids().map(getColumn));
 	const widthOf = (id: string) => widths()[id] ?? getColumn(id).width;
 	/** Zotero data fields the visible columns need, as the `fields=` parameter. */
-	const fieldsParam = createMemo(() => [...new Set(columns().map((c) => c.field).filter((f): f is string => !!f))].sort().join(","));
+	const fieldsParam = createMemo(() =>
+		[
+			...new Set(
+				columns()
+					.map((c) => c.field)
+					.filter((f): f is string => !!f),
+			),
+		]
+			.sort()
+			.join(","),
+	);
 
 	return {
-		ids, columns, widthOf, fieldsParam,
+		ids,
+		columns,
+		widthOf,
+		fieldsParam,
 		has: (id: string) => ids().includes(id),
 		total: createMemo(() => ids().reduce((n, id) => n + widthOf(id), 0)),
 		setWidth(id: string, w: number) {
@@ -58,7 +74,10 @@ export const columnLayout = createRoot(() => {
 			});
 		},
 		restoreOrder() {
-			const rank = (id: string) => { const i = MENU_COLUMNS.indexOf(id); return i < 0 ? 1e6 : i; };
+			const rank = (id: string) => {
+				const i = MENU_COLUMNS.indexOf(id);
+				return i < 0 ? 1e6 : i;
+			};
 			setIds((c) => [...c].sort((a, b) => rank(a) - rank(b)));
 		},
 	};

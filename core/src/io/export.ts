@@ -86,7 +86,11 @@ function selectKeys(db: Database, req: ExportRequest): string[] {
 		).map((r) => r.key);
 	}
 	return (
-		db.query(`SELECT i.key FROM items i WHERE i.deleted = 0 AND i.parent_key IS NULL AND i.library_id = ? AND ${REGULAR} ORDER BY i.date_added, i.key`).all(req.library ?? 1) as {
+		db
+			.query(
+				`SELECT i.key FROM items i WHERE i.deleted = 0 AND i.parent_key IS NULL AND i.library_id = ? AND ${REGULAR} ORDER BY i.date_added, i.key`,
+			)
+			.all(req.library ?? 1) as {
 			key: string;
 		}[]
 	).map((r) => r.key);
@@ -113,7 +117,13 @@ export function gatherItems(db: Database, req: ExportRequest): GatheredItem[] {
 		const tags = tagQ.all(key) as { tag: string; type: number }[];
 		const noteRows = req.includeNotes ? (noteQ.all(key) as { data: string }[]) : [];
 		const noteHtml = noteRows.map((r) => String((JSON.parse(r.data) as ZoteroItemData).note ?? "")).filter(Boolean);
-		const atts = attQ.all(key) as { link_mode: string; path: string | null; url: string | null; title: string | null; content_type: string | null }[];
+		const atts = attQ.all(key) as {
+			link_mode: string;
+			path: string | null;
+			url: string | null;
+			title: string | null;
+			content_type: string | null;
+		}[];
 		return {
 			data,
 			tags: tags.map((t) => t.tag),
@@ -126,7 +136,12 @@ export function gatherItems(db: Database, req: ExportRequest): GatheredItem[] {
 	});
 }
 
-const safeName = (s: string) => s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || "Exported Items";
+const safeName = (s: string) =>
+	s
+		.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 80) || "Exported Items";
 
 export function exportItems(db: Database, req: ExportRequest): ExportResult {
 	const fmt = EXPORT_FORMATS[req.format];
@@ -137,15 +152,30 @@ export function exportItems(db: Database, req: ExportRequest): ExportResult {
 	const dir = req.dir ? resolve(req.dir) : undefined;
 	if (dir) mkdirSync(dir, { recursive: true });
 	switch (req.format) {
-		case "betterbibtex": case "betterbiblatex": case "bettercsljson": case "bettercslyaml":
+		case "betterbibtex":
+		case "betterbiblatex":
+		case "bettercsljson":
+		case "bettercslyaml":
 			text = exportBetterFormat(db, req.format, items, { includeNotes: req.includeNotes });
 			break;
-		case "bibtex": text = exportBibtex(items, "bibtex"); break;
-		case "biblatex": text = exportBibtex(items, "biblatex"); break;
-		case "ris": text = exportRis(items); break;
-		case "csljson": text = exportCslJson(items); break;
-		case "csv": text = exportCsv(items); break;
-		case "mods": text = exportMods(items); break;
+		case "bibtex":
+			text = exportBibtex(items, "bibtex");
+			break;
+		case "biblatex":
+			text = exportBibtex(items, "biblatex");
+			break;
+		case "ris":
+			text = exportRis(items);
+			break;
+		case "csljson":
+			text = exportCslJson(items);
+			break;
+		case "csv":
+			text = exportCsv(items);
+			break;
+		case "mods":
+			text = exportMods(items);
+			break;
 		case "rdf": {
 			// files/1/<name>, files/2/<name>… next to the .rdf, as Zotero's RDF export writes them
 			const withAttachments = items.map((item, index) => {
@@ -164,7 +194,14 @@ export function exportItems(db: Database, req: ExportRequest): ExportResult {
 				return { ...item, attachments };
 			});
 			// collections travel with a collection or whole-library export, not with a hand-picked selection
-			const collections = req.keys && req.keys.length ? [] : exportCollections(db, req, items.map((i) => i.data.key));
+			const collections =
+				req.keys && req.keys.length
+					? []
+					: exportCollections(
+							db,
+							req,
+							items.map((i) => i.data.key),
+						);
 			text = exportZoteroRdf(withAttachments, collections);
 			break;
 		}
@@ -184,9 +221,19 @@ export function exportItems(db: Database, req: ExportRequest): ExportResult {
 }
 
 const MIME: Record<string, string> = {
-	".pdf": "application/pdf", ".epub": "application/epub+zip", ".html": "text/html", ".htm": "text/html",
-	".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv", ".json": "application/json",
-	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".doc": "application/msword",
+	".pdf": "application/pdf",
+	".epub": "application/epub+zip",
+	".html": "text/html",
+	".htm": "text/html",
+	".txt": "text/plain",
+	".md": "text/markdown",
+	".csv": "text/csv",
+	".json": "application/json",
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".doc": "application/msword",
 	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
@@ -197,11 +244,21 @@ function contentTypeFor(name: string): string | undefined {
 
 /** The collection tree of the exported scope (RDF carries collections). */
 function exportCollections(db: Database, req: ExportRequest, itemKeys: string[]): RdfCollection[] {
-	const rows = db.query("SELECT key, name, parent_key FROM collections").all() as { key: string; name: string; parent_key: string | null }[];
-	const inScope = req.collectionKey && !(req.keys && req.keys.length) ? new Set(collectionKeys(db, req.collectionKey)) : new Set(rows.map((r) => r.key));
+	const rows = db.query("SELECT key, name, parent_key FROM collections").all() as {
+		key: string;
+		name: string;
+		parent_key: string | null;
+	}[];
+	const inScope =
+		req.collectionKey && !(req.keys && req.keys.length)
+			? new Set(collectionKeys(db, req.collectionKey))
+			: new Set(rows.map((r) => r.key));
 	const keys = new Set(itemKeys);
 	const members = new Map<string, string[]>();
-	for (const r of db.query("SELECT collection_key, item_key FROM collection_items").all() as { collection_key: string; item_key: string }[]) {
+	for (const r of db.query("SELECT collection_key, item_key FROM collection_items").all() as {
+		collection_key: string;
+		item_key: string;
+	}[]) {
 		if (!keys.has(r.item_key)) continue;
 		const list = members.get(r.collection_key) ?? [];
 		list.push(r.item_key);
@@ -210,7 +267,12 @@ function exportCollections(db: Database, req: ExportRequest, itemKeys: string[])
 	const out: RdfCollection[] = [];
 	for (const r of rows) {
 		if (!inScope.has(r.key)) continue;
-		out.push({ key: r.key, name: r.name, parentKey: r.parent_key && inScope.has(r.parent_key) ? r.parent_key : null, itemKeys: members.get(r.key) ?? [] });
+		out.push({
+			key: r.key,
+			name: r.name,
+			parentKey: r.parent_key && inScope.has(r.parent_key) ? r.parent_key : null,
+			itemKeys: members.get(r.key) ?? [],
+		});
 	}
 	return out;
 }

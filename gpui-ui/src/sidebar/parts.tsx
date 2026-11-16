@@ -105,7 +105,9 @@ const ENTRY_PAD_RIGHT = 8 + SCROLLBAR_GUTTER;
  * `top` extra space above (the 16px between the Library and Collections groups).
  */
 export function ListItem(p: { children: JSX.Element; gap?: number; top?: number }): JSX.Element {
-	return <div style={{ width: "100%", paddingRight: ENTRY_PAD_RIGHT, paddingBottom: p.gap ?? 1, paddingTop: p.top ?? 0 }}>{p.children}</div>;
+	return (
+		<div style={{ width: "100%", paddingRight: ENTRY_PAD_RIGHT, paddingBottom: p.gap ?? 1, paddingTop: p.top ?? 0 }}>{p.children}</div>
+	);
 }
 
 export function SectionHeader(p: {
@@ -127,7 +129,9 @@ export function SectionHeader(p: {
 				aria-expanded={p.open}
 				aria-label={p.label}
 				onClick={p.onToggle}
-				onAuxClick={(e) => { if (e.isRightClick && p.onContextMenu) p.onContextMenu(e.x ?? 0, e.y ?? 0); }}
+				onAuxClick={(e) => {
+					if (e.isRightClick && p.onContextMenu) p.onContextMenu(e.x ?? 0, e.y ?? 0);
+				}}
 				style={{ ...t(HEADER_BTN), ...t("py-1"), flexGrow: 1, cursor: "pointer" }}
 			>
 				<Icon name={p.open ? "chevron-down" : "chevron-right"} size={12} color={muted()} />
@@ -142,7 +146,13 @@ export function SectionHeader(p: {
 }
 
 /** Ghost icon button: `inline-flex items-center justify-center rounded-md text-muted-foreground hover:bg-accent`. */
-export function IconButton(p: { name: string; box: number; icon: number; label: string; onClick?: (e: { x?: number; y?: number }) => void }): JSX.Element {
+export function IconButton(p: {
+	name: string;
+	box: number;
+	icon: number;
+	label: string;
+	onClick?: (e: { x?: number; y?: number }) => void;
+}): JSX.Element {
 	return (
 		<div
 			role="button"
@@ -165,7 +175,9 @@ export function CountBadge(p: { n: number | undefined }): JSX.Element {
 	return (
 		<Show when={p.n}>
 			<div style={{ ...t(BADGE), marginLeft: 4 }}>
-				<text style={{ ...tx("text-[11px] font-semibold text-secondary-foreground"), whiteSpace: "nowrap" }}>{p.n!.toLocaleString("en-US")}</text>
+				<text style={{ ...tx("text-[11px] font-semibold text-secondary-foreground"), whiteSpace: "nowrap" }}>
+					{p.n!.toLocaleString("en-US")}
+				</text>
 			</div>
 		</Show>
 	);

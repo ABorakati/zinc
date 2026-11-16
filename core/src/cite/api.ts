@@ -115,7 +115,8 @@ export function loadItems(db: Database, keys: string[]): ZoteroItemData[] {
 }
 
 async function formatRequest(db: Database, svc: CiteService, req: CiteFormatRequest): Promise<CiteFormatResult> {
-	if (!Array.isArray(req?.keys) || req.keys.some((k) => typeof k !== "string")) throw new HttpError(400, "keys must be an array of strings");
+	if (!Array.isArray(req?.keys) || req.keys.some((k) => typeof k !== "string"))
+		throw new HttpError(400, "keys must be an array of strings");
 	if (req.keys.length === 0) throw new HttpError(400, "keys must not be empty");
 	if (req.keys.length > MAX_KEYS) throw new HttpError(400, `at most ${MAX_KEYS} items per request`);
 	const qc = svc.getSettings().quickCopy;
@@ -177,27 +178,46 @@ const MAX_PREVIEW = 3;
 /** Built-in references, used when the library has nothing suitable to show. */
 const SAMPLE_ITEMS = [
 	{
-		key: "SAMPLE01", itemType: "journalArticle", title: "Enhanced recovery after surgery in liver transplantation",
+		key: "SAMPLE01",
+		itemType: "journalArticle",
+		title: "Enhanced recovery after surgery in liver transplantation",
 		creators: [
 			{ creatorType: "author", firstName: "Jane", lastName: "Smith" },
 			{ creatorType: "author", firstName: "Alan B", lastName: "Jones" },
 		],
-		publicationTitle: "Journal of Transplant Medicine", journalAbbreviation: "J Transplant Med", volume: "38", issue: "5",
-		pages: "123-130", date: "2020-03-15", DOI: "10.1000/xyz123",
+		publicationTitle: "Journal of Transplant Medicine",
+		journalAbbreviation: "J Transplant Med",
+		volume: "38",
+		issue: "5",
+		pages: "123-130",
+		date: "2020-03-15",
+		DOI: "10.1000/xyz123",
 	},
 	{
-		key: "SAMPLE02", itemType: "book", title: "Principles of Clinical Research",
+		key: "SAMPLE02",
+		itemType: "book",
+		title: "Principles of Clinical Research",
 		creators: [{ creatorType: "author", firstName: "Maria", lastName: "Garcia" }],
-		publisher: "Academic Press", place: "London", date: "2018", edition: "3",
+		publisher: "Academic Press",
+		place: "London",
+		date: "2018",
+		edition: "3",
 	},
 	{
-		key: "SAMPLE03", itemType: "journalArticle", title: "Citation practices across scientific disciplines",
+		key: "SAMPLE03",
+		itemType: "journalArticle",
+		title: "Citation practices across scientific disciplines",
 		creators: [
 			{ creatorType: "author", firstName: "Chen", lastName: "Wei" },
 			{ creatorType: "author", firstName: "Robert", lastName: "Miller" },
 			{ creatorType: "author", firstName: "Aisha", lastName: "Khan" },
 		],
-		publicationTitle: "Scholarly Communication Review", volume: "12", issue: "2", pages: "45-61", date: "2022-06", DOI: "10.1000/abc456",
+		publicationTitle: "Scholarly Communication Review",
+		volume: "12",
+		issue: "2",
+		pages: "45-61",
+		date: "2022-06",
+		DOI: "10.1000/abc456",
 	},
 ] as unknown as ZoteroItemData[];
 
@@ -208,7 +228,9 @@ function librarySamples(db: Database): ZoteroItemData[] {
 	let rows: { key: string; data: string }[] = [];
 	try {
 		rows = db
-			.query("SELECT key, data FROM items WHERE deleted = 0 AND parent_key IS NULL AND item_type NOT IN ('note','attachment','annotation') ORDER BY rowid DESC LIMIT 120")
+			.query(
+				"SELECT key, data FROM items WHERE deleted = 0 AND parent_key IS NULL AND item_type NOT IN ('note','attachment','annotation') ORDER BY rowid DESC LIMIT 120",
+			)
 			.all() as typeof rows;
 	} catch {
 		return [];
@@ -255,13 +277,17 @@ export async function handleCiteApi(req: Request, db: Database): Promise<Respons
 		if (parts[0] === "styles" && parts.length === 2 && parts[1] === "preview") {
 			if (m !== "GET") throw new HttpError(405, "method not allowed");
 			const sp = url.searchParams;
-			const keys = (sp.get("items") ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+			const keys = (sp.get("items") ?? "")
+				.split(",")
+				.map((k) => k.trim())
+				.filter(Boolean);
 			return json(await svc.preview(db, sp.get("id") ?? "", keys, sp.get("locale") ?? undefined));
 		}
 		if (parts[0] === "styles" && parts.length === 2) {
 			if (m !== "DELETE") throw new HttpError(405, "method not allowed");
 			const id = decodeURIComponent(parts[1]!);
-			if (svc.getSettings().quickCopy.style === id) throw new HttpError(409, `"${id}" is the Quick Copy style; choose another style first`);
+			if (svc.getSettings().quickCopy.style === id)
+				throw new HttpError(409, `"${id}" is the Quick Copy style; choose another style first`);
 			svc.store.remove(id);
 			return json({ id, removed: true });
 		}

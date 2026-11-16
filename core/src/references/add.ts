@@ -6,14 +6,7 @@ import { fulltextService } from "../fulltext/service";
 import { indexItem } from "../search";
 import { buildLibraryIndex, normalizeDoi } from "./ids";
 import { mailtoFor } from "./net";
-import {
-	compact,
-	crossrefWork,
-	crossrefYear,
-	oaWorkToDetail,
-	openAlexLookup,
-	stripMarkup,
-} from "./sources";
+import { compact, crossrefWork, crossrefYear, oaWorkToDetail, openAlexLookup, stripMarkup } from "./sources";
 
 export const addHooks = {
 	/** Starts a Find Full Text job for one item (tests replace it). */
@@ -39,12 +32,23 @@ function detailCache(db: Database) {
 	db.exec("CREATE TABLE IF NOT EXISTS reference_detail_cache(k TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
 	return {
 		get(k: string): ReferenceDetail | null | undefined {
-			const row = db.query("SELECT data, fetched_at FROM reference_detail_cache WHERE k = ?").get(k) as { data: string | null; fetched_at: number } | null;
+			const row = db.query("SELECT data, fetched_at FROM reference_detail_cache WHERE k = ?").get(k) as {
+				data: string | null;
+				fetched_at: number;
+			} | null;
 			if (!row || Date.now() - row.fetched_at > (row.data ? DETAIL_TTL : MISS_TTL)) return undefined;
-			try { return row.data ? JSON.parse(row.data) as ReferenceDetail : null; } catch { return undefined; }
+			try {
+				return row.data ? (JSON.parse(row.data) as ReferenceDetail) : null;
+			} catch {
+				return undefined;
+			}
 		},
 		set(k: string, d: ReferenceDetail | null) {
-			db.query("INSERT OR REPLACE INTO reference_detail_cache(k, data, fetched_at) VALUES(?, ?, ?)").run(k, d ? JSON.stringify(d) : null, Date.now());
+			db.query("INSERT OR REPLACE INTO reference_detail_cache(k, data, fetched_at) VALUES(?, ?, ?)").run(
+				k,
+				d ? JSON.stringify(d) : null,
+				Date.now(),
+			);
 		},
 	};
 }
@@ -52,7 +56,8 @@ function detailCache(db: Database) {
 /** The library DOI/title index, rebuilt at most every 30 s (it scans every item; hover cards ask often). */
 let libIndex: { db: Database; at: number; index: ReturnType<typeof buildLibraryIndex> } | null = null;
 function libraryIndex(db: Database) {
-	if (!libIndex || libIndex.db !== db || Date.now() - libIndex.at > 30_000) libIndex = { db, at: Date.now(), index: buildLibraryIndex(db) };
+	if (!libIndex || libIndex.db !== db || Date.now() - libIndex.at > 30_000)
+		libIndex = { db, at: Date.now(), index: buildLibraryIndex(db) };
 	return libIndex.index;
 }
 
@@ -88,7 +93,18 @@ async function fetchDetail(db: Database, doi: string | null, title: string | nul
 				index: 0,
 				doi,
 				title: m.title?.[0] ? stripMarkup(m.title[0]) : undefined,
-				authors: (m.author ?? []).slice(0, 6).map((a: any) => (a.family ? `${a.family} ${(a.given ?? "").split(/[\s.\-]+/).filter(Boolean).map((p: string) => p[0].toUpperCase()).join("")}`.trim() : a.name)).filter(Boolean),
+				authors: (m.author ?? [])
+					.slice(0, 6)
+					.map((a: any) =>
+						a.family
+							? `${a.family} ${(a.given ?? "")
+									.split(/[\s.\-]+/)
+									.filter(Boolean)
+									.map((p: string) => p[0].toUpperCase())
+									.join("")}`.trim()
+							: a.name,
+					)
+					.filter(Boolean),
 				year: crossrefYear(m),
 				venue: m["container-title"]?.[0],
 				url: `https://doi.org/${doi}`,
@@ -233,7 +249,8 @@ export async function addReference(db: Database, req: AddRequest): Promise<ItemD
 	const ref = req.reference && typeof req.reference === "object" ? req.reference : undefined;
 	const doi = normalizeDoi(req.doi) ?? normalizeDoi(ref?.doi);
 	if (!doi && !ref) throw new HttpError(400, "doi or reference is required");
-	if (req.collectionKey !== undefined && typeof req.collectionKey !== "string") throw new HttpError(400, "collectionKey must be a string");
+	if (req.collectionKey !== undefined && typeof req.collectionKey !== "string")
+		throw new HttpError(400, "collectionKey must be a string");
 
 	const existing = buildLibraryIndex(db).match({ doi, title: ref?.title, year: ref?.year });
 	if (existing) throw new AlreadyInLibrary(existing);

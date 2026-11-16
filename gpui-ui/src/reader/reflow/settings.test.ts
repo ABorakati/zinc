@@ -39,8 +39,18 @@ describe("reading settings: theme previews", () => {
 
 describe("installed font list", () => {
 	test("weight variants of a listed family are dropped; a family named like a weight stays", () => {
-		expect(tidy(["Cascadia Code", "Cascadia Code SemiBold", "Cascadia Code ExtraLight", "Segoe UI Black", "Segoe UI", "Arial Black", "@SimSun", "Bahnschrift Light"]))
-			.toEqual(["Arial Black", "Bahnschrift Light", "Cascadia Code", "Segoe UI"]);
+		expect(
+			tidy([
+				"Cascadia Code",
+				"Cascadia Code SemiBold",
+				"Cascadia Code ExtraLight",
+				"Segoe UI Black",
+				"Segoe UI",
+				"Arial Black",
+				"@SimSun",
+				"Bahnschrift Light",
+			]),
+		).toEqual(["Arial Black", "Bahnschrift Light", "Cascadia Code", "Segoe UI"]);
 	});
 });
 

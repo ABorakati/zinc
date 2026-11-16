@@ -35,32 +35,59 @@ export function RichNoteEditor(p: {
 		});
 		onCleanup(release);
 	});
-	createEffect(on(() => p.startEditing, (v) => { if (v) focusNote(); }, { defer: true }));
+	createEffect(
+		on(
+			() => p.startEditing,
+			(v) => {
+				if (v) focusNote();
+			},
+			{ defer: true },
+		),
+	);
 	const status = () => noteStatus(p.noteKey);
 
 	return (
 		<div
 			style={{
 				...t("flex flex-col w-full overflow-hidden rounded-md border"),
-				backgroundColor: tok("background"), borderColor: tok("border"),
+				backgroundColor: tok("background"),
+				borderColor: tok("border"),
 				...(p.fill ? { flexGrow: 1, minHeight: 0 } : {}),
 			}}
 		>
-			<div style={{ ...t("flex flex-none h-7 items-center gap-2 border-b px-2"), backgroundColor: tok("muted"), borderColor: tok("border") }}>
+			<div
+				style={{
+					...t("flex flex-none h-7 items-center gap-2 border-b px-2"),
+					backgroundColor: tok("muted"),
+					borderColor: tok("border"),
+				}}
+			>
 				<text style={{ ...tx("text-[11px] text-muted-foreground"), flexGrow: 1, whiteSpace: "nowrap" }}>{status() || "Note"}</text>
 				<Show when={p.onClose}>
-					<div role="button" aria-label="Close" onClick={() => p.onClose!()} style={{ ...t("flex items-center gap-0.5 rounded px-1"), cursor: "pointer", hover: { backgroundColor: tok("accent") } }}>
+					<div
+						role="button"
+						aria-label="Close"
+						onClick={() => p.onClose!()}
+						style={{
+							...t("flex items-center gap-0.5 rounded px-1"),
+							cursor: "pointer",
+							hover: { backgroundColor: tok("accent") },
+						}}
+					>
 						<Icon name="x" size={12} color={tok("muted-foreground")} />
 						<text style={{ ...tx("text-[11px] text-muted-foreground") }}>Close</text>
 					</div>
 				</Show>
 			</div>
 			<div
-				ref={(el: HostElement) => { box = el; }}
+				ref={(el: HostElement) => {
+					box = el;
+				}}
 				testId="rich-note-box"
 				style={{
 					...t("flex flex-col items-center justify-center"),
-					width: "100%", backgroundColor: tok("background"),
+					width: "100%",
+					backgroundColor: tok("background"),
 					...(p.fill ? { flexGrow: 1, minHeight: 0 } : { height: p.height ?? 320, flexShrink: 0 }),
 				}}
 			>

@@ -35,16 +35,32 @@ function Item(p: { ctx: ReaderContext; id: string }): JSX.Element {
 					}
 				}}
 				style={{
-					...k.t("flex flex-col border-b"), position: "relative", paddingTop: 8, paddingBottom: 8, paddingLeft: 14, paddingRight: 8, gap: 5, cursor: "pointer",
-					backgroundColor: selected() ? k.tok("accent") : "transparent", hover: k.t("bg-accent/60"),
+					...k.t("flex flex-col border-b"),
+					position: "relative",
+					paddingTop: 8,
+					paddingBottom: 8,
+					paddingLeft: 14,
+					paddingRight: 8,
+					gap: 5,
+					cursor: "pointer",
+					backgroundColor: selected() ? k.tok("accent") : "transparent",
+					hover: k.t("bg-accent/60"),
 				}}
 			>
 				<div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: a()!.color }} />
 				<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
 					<Icon name={TYPE_ICON[a()!.type] ?? "highlighter"} size={13} color={k.tok("muted-foreground")} />
-					<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>{`Page ${a()!.pageLabel || a()!.position.pageIndex + 1}`}</text>
+					<text
+						style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}
+					>{`Page ${a()!.pageLabel || a()!.position.pageIndex + 1}`}</text>
 					<div style={{ flexGrow: 1 }} />
-					<div onClick={(e) => { stop(e); s.act.remove([p.id]); }} style={{ cursor: "pointer", display: "flex" }}>
+					<div
+						onClick={(e) => {
+							stop(e);
+							s.act.remove([p.id]);
+						}}
+						style={{ cursor: "pointer", display: "flex" }}
+					>
 						<Icon name="trash-2" size={13} color={k.tok("muted-foreground")} />
 					</div>
 				</div>
@@ -58,13 +74,19 @@ function Item(p: { ctx: ReaderContext; id: string }): JSX.Element {
 						<text style={k.tx("text-[12px] text-muted-foreground")}>Image area</text>
 						<div style={{ flexGrow: 1 }} />
 						<div
-							onClick={(e) => { stop(e); void copyAnnotationImage(p.ctx, a()!, s.ui.notify); }}
+							onClick={(e) => {
+								stop(e);
+								void copyAnnotationImage(p.ctx, a()!, s.ui.notify);
+							}}
 							style={{ cursor: "pointer", display: "flex", padding: 2 }}
 						>
 							<Icon name="copy" size={13} color={k.tok("muted-foreground")} />
 						</div>
 						<div
-							onClick={(e) => { stop(e); void exportAnnotationImage(p.ctx, a()!, undefined, s.ui.notify); }}
+							onClick={(e) => {
+								stop(e);
+								void exportAnnotationImage(p.ctx, a()!, undefined, s.ui.notify);
+							}}
 							style={{ cursor: "pointer", display: "flex", padding: 2 }}
 						>
 							<Icon name="download" size={13} color={k.tok("muted-foreground")} />
@@ -108,20 +130,26 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 	const [localQuery, setLocalQuery] = createSignal("");
 	const [localColors, setLocalColors] = createSignal<string[]>([]);
 	const [localTag, setLocalTag] = createSignal("");
-	const query = () => p.filter?.query ? p.filter.query() : localQuery();
+	const query = () => (p.filter?.query ? p.filter.query() : localQuery());
 	const setQuery = (q: string) => (p.filter?.setQuery ? p.filter.setQuery(q) : setLocalQuery(q));
-	const colors = () => p.filter?.colors ? p.filter.colors() : localColors();
+	const colors = () => (p.filter?.colors ? p.filter.colors() : localColors());
 	const setColors = (valOrUpdater: string[] | ((prev: string[]) => string[])) => {
 		const next = typeof valOrUpdater === "function" ? valOrUpdater(colors()) : valOrUpdater;
 		if (p.filter?.setColors) p.filter.setColors(next);
 		else setLocalColors(next);
 	};
-	const tag = () => p.filter?.tag ? p.filter.tag() : localTag();
+	const tag = () => (p.filter?.tag ? p.filter.tag() : localTag());
 	const setTag = (t: string) => (p.filter?.setTag ? p.filter.setTag(t) : setLocalTag(t));
-	const allTags = createMemo(() => [...new Set(s.store.list().flatMap((a) => (a.tags ?? []).map((t) => t.name)))].sort((x, y) => x.localeCompare(y)));
+	const allTags = createMemo(() =>
+		[...new Set(s.store.list().flatMap((a) => (a.tags ?? []).map((t) => t.name)))].sort((x, y) => x.localeCompare(y)),
+	);
 	const usedColors = createMemo(() => COLORS.filter((c) => s.store.list().some((a) => a.color === c.value)));
 	const shown = createMemo(
-		() => s.store.list().filter((a) => matchesFilter(a, { query: query(), colors: colors(), tag: tag() })).map((a) => a.id),
+		() =>
+			s.store
+				.list()
+				.filter((a) => matchesFilter(a, { query: query(), colors: colors(), tag: tag() }))
+				.map((a) => a.id),
 		[] as string[],
 		{ equals: (x, y) => x.length === y.length && x.every((v, i) => v === y[i]) },
 	);
@@ -129,7 +157,16 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 	const filtered = () => !!(query().trim() || colors().length || tag());
 	const total = () => s.store.list().length;
 	const count = () => (filtered() ? `${shown().length} of ${total()}` : `${total()} annotation${total() === 1 ? "" : "s"}`);
-	const status = () => (s.store.readOnly() ? "Read-only library" : s.store.status() === "saved" ? "Saved" : s.store.status() === "saving" ? "Saving..." : s.store.retrying() ? "Not saved, retrying" : "Not saved");
+	const status = () =>
+		s.store.readOnly()
+			? "Read-only library"
+			: s.store.status() === "saved"
+				? "Saved"
+				: s.store.status() === "saving"
+					? "Saving..."
+					: s.store.retrying()
+						? "Not saved, retrying"
+						: "Not saved";
 	let tagBtnEl: HostElement | undefined;
 	const openTagPicker = (e: EventPayload) => {
 		const b = boundsOf(tagBtnEl);
@@ -161,7 +198,12 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 									<div
 										onClick={() => toggle(c.value)}
 										style={{
-											width: 18, height: 18, borderRadius: 9, flexShrink: 0, backgroundColor: c.value, cursor: "pointer",
+											width: 18,
+											height: 18,
+											borderRadius: 9,
+											flexShrink: 0,
+											backgroundColor: c.value,
+											cursor: "pointer",
 											borderWidth: isPicked() ? 2 : 1,
 											borderColor: isPicked() ? k.tok("foreground") : "rgba(0, 0, 0, 0.2)",
 											opacity: colors().length > 0 && !isPicked() ? 0.35 : 1,
@@ -173,15 +215,29 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 						<div style={{ flexGrow: 1 }} />
 						<Show when={allTags().length > 0}>
 							<div
-								ref={(el) => { tagBtnEl = el; }}
+								ref={(el) => {
+									tagBtnEl = el;
+								}}
 								onClick={openTagPicker}
 								style={{
 									...k.t("flex items-center rounded border bg-background px-2"),
-									height: 22, maxWidth: 130, borderColor: tag() ? k.tok("primary") : k.tok("input"), cursor: "pointer", gap: 4,
+									height: 22,
+									maxWidth: 130,
+									borderColor: tag() ? k.tok("primary") : k.tok("input"),
+									cursor: "pointer",
+									gap: 4,
 								}}
 							>
 								<Icon name="tag" size={11} color={tag() ? k.tok("primary") : k.tok("muted-foreground")} />
-								<text style={{ ...k.tx("text-[11px]"), color: tag() ? k.tok("primary") : k.tok("muted-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+								<text
+									style={{
+										...k.tx("text-[11px]"),
+										color: tag() ? k.tok("primary") : k.tok("muted-foreground"),
+										whiteSpace: "nowrap",
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+									}}
+								>
 									{tag() ? tag() : "All tags"}
 								</text>
 								<Icon name="chevron-down" size={10} color={k.tok("muted-foreground")} />
@@ -192,20 +248,40 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 				<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
 					<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>{count()}</text>
 					<Show when={filtered()}>
-						<div onClick={() => { setQuery(""); setColors([]); setTag(""); }} style={{ cursor: "pointer" }}>
+						<div
+							onClick={() => {
+								setQuery("");
+								setColors([]);
+								setTag("");
+							}}
+							style={{ cursor: "pointer" }}
+						>
 							<text style={{ ...k.tx("text-[11px] text-foreground"), textDecoration: "underline" }}>Clear</text>
 						</div>
 					</Show>
 					<div style={{ flexGrow: 1 }} />
-					<text style={{ ...k.tx(`text-[11px] ${s.store.status() === "error" && !s.store.readOnly() ? "text-destructive" : "text-muted-foreground"}`), whiteSpace: "nowrap" }}>{status()}</text>
+					<text
+						style={{
+							...k.tx(
+								`text-[11px] ${s.store.status() === "error" && !s.store.readOnly() ? "text-destructive" : "text-muted-foreground"}`,
+							),
+							whiteSpace: "nowrap",
+						}}
+					>
+						{status()}
+					</text>
 					<Show when={s.store.status() === "error" && !s.store.retrying() && !s.store.readOnly()}>
-					<div role="button" aria-label="Retry saving" onClick={() => void s.store.retry()} style={{ cursor: "pointer" }}>
-					<text style={{ ...k.tx("text-[11px] text-foreground"), textDecoration: "underline" }}>Retry</text>
-					</div>
+						<div role="button" aria-label="Retry saving" onClick={() => void s.store.retry()} style={{ cursor: "pointer" }}>
+							<text style={{ ...k.tx("text-[11px] text-foreground"), textDecoration: "underline" }}>Retry</text>
+						</div>
 					</Show>
 				</div>
 				<Button
-					variant="outline" size="sm" icon="file-plus" mode={p.ctx.mode} disabled={!p.ctx.itemKey || total() === 0}
+					variant="outline"
+					size="sm"
+					icon="file-plus"
+					mode={p.ctx.mode}
+					disabled={!p.ctx.itemKey || total() === 0}
 					onClick={() => void s.act.noteFromAnnotations(s.store.list().filter((a) => shown().includes(a.id)))}
 					style={{ width: "100%", justifyContent: "flex-start" }}
 				>
@@ -220,12 +296,21 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 				fallback={
 					<div style={{ padding: 16 }}>
 						<text style={k.tx("text-[12px] text-muted-foreground")}>
-							{s.store.loaded() ? "No annotations yet. Select text to highlight it, or use the note tool in the toolbar." : "Loading annotations..."}
+							{s.store.loaded()
+								? "No annotations yet. Select text to highlight it, or use the note tool in the toolbar."
+								: "Loading annotations..."}
 						</text>
 					</div>
 				}
 			>
-				<Show when={shown().length > 0} fallback={<div style={{ padding: 16 }}><text style={k.tx("text-[12px] text-muted-foreground")}>No annotations match.</text></div>}>
+				<Show
+					when={shown().length > 0}
+					fallback={
+						<div style={{ padding: 16 }}>
+							<text style={k.tx("text-[12px] text-muted-foreground")}>No annotations match.</text>
+						</div>
+					}
+				>
 					<virtual-list estimatedItemHeight={96} overdraw={300} style={{ width: "100%", flexGrow: 1, minHeight: 0 }}>
 						<For each={shown()}>{(id) => <Item ctx={p.ctx} id={id} />}</For>
 					</virtual-list>
@@ -234,4 +319,3 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 		</div>
 	);
 }
-

@@ -44,7 +44,10 @@ class PoolWorker {
 
 	constructor() {
 		// Workers don't see process.env changes made after startup, so pass the build folder explicitly.
-		this.worker = new Worker(WORKER_ENTRY.href, docWorkerDir ? { env: { ...process.env, ZN_DOCWORKER_DIR: docWorkerDir } } as WorkerOptions : undefined);
+		this.worker = new Worker(
+			WORKER_ENTRY.href,
+			docWorkerDir ? ({ env: { ...process.env, ZN_DOCWORKER_DIR: docWorkerDir } } as WorkerOptions) : undefined,
+		);
 		(this.worker as unknown as { unref?: () => void }).unref?.();
 		let onReady!: () => void;
 		let onFail!: (e: Error) => void;
@@ -166,12 +169,17 @@ class Pool {
 	/** Stop workers with nothing to do; the next extraction starts a fresh one (about half a second). */
 	private stopIdle(): void {
 		if (this.active) return;
-		for (const w of this.idle) { w.terminate(); this.all.delete(w); }
+		for (const w of this.idle) {
+			w.terminate();
+			this.all.delete(w);
+		}
 		this.idle = [];
 	}
 
 	/** Tests only. */
-	get workerCount(): number { return this.all.size; }
+	get workerCount(): number {
+		return this.all.size;
+	}
 
 	async extractPdf(buf: ArrayBuffer): Promise<PdfText> {
 		const w = await this.acquire();
@@ -196,7 +204,13 @@ const pool = new Pool();
  * buildDir: folder holding Zotero's built document-worker (worker.js, cmaps/, standard_fonts/...).
  * workerEntry: path to pdf-worker.ts. Both only matter before the first extraction starts a worker.
  */
-export function configureExtractPool(opts: { concurrency?: number; timeoutMs?: number; idleMs?: number; buildDir?: string; workerEntry?: string }): void {
+export function configureExtractPool(opts: {
+	concurrency?: number;
+	timeoutMs?: number;
+	idleMs?: number;
+	buildDir?: string;
+	workerEntry?: string;
+}): void {
 	if (opts.concurrency) pool.size = Math.max(1, Math.floor(opts.concurrency));
 	if (opts.timeoutMs) pool.timeoutMs = opts.timeoutMs;
 	if (opts.idleMs) pool.idleMs = opts.idleMs;

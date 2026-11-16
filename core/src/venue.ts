@@ -4,8 +4,17 @@
 
 /** Container fields in priority order (Zotero's own field names; the first non-empty one wins). */
 export const VENUE_FIELDS = [
-	"publicationTitle", "bookTitle", "proceedingsTitle", "websiteTitle", "blogTitle", "forumTitle", "encyclopediaTitle",
-	"dictionaryTitle", "programTitle", "university", "publisher",
+	"publicationTitle",
+	"bookTitle",
+	"proceedingsTitle",
+	"websiteTitle",
+	"blogTitle",
+	"forumTitle",
+	"encyclopediaTitle",
+	"dictionaryTitle",
+	"programTitle",
+	"university",
+	"publisher",
 ] as const;
 
 // Preprint servers, recognised from the URL host, the archive ID ("arXiv:1706.03762") or the DOI prefix. Zotero's

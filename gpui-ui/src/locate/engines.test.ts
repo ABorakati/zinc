@@ -1,8 +1,18 @@
 // bun test src/locate/engines.test.ts -- Zotero engines.json parsing, OpenSearch parsing (fetch mocked), template expansion and list ops.
 import { describe, expect, test } from "bun:test";
 import {
-	coerceEngines, defaultEngines, engineSubmission, engineUrl, fetchOpenSearch, mergeEngines, moveEngine, parseOpenSearch,
-	parseZoteroEngines, toZoteroJson, upsertEngine, type LocateEngine,
+	coerceEngines,
+	defaultEngines,
+	engineSubmission,
+	engineUrl,
+	fetchOpenSearch,
+	mergeEngines,
+	moveEngine,
+	parseOpenSearch,
+	parseZoteroEngines,
+	toZoteroJson,
+	upsertEngine,
+	type LocateEngine,
 } from "./engines";
 import { importFromZotero } from "./engines-store";
 import type { LocateItem } from "./openurl";
@@ -71,7 +81,9 @@ describe("Zotero engines.json", () => {
 	});
 
 	test("_hidden maps to enabled=false; junk entries are dropped; a non-list throws", () => {
-		const list = parseZoteroEngines(JSON.stringify([{ _name: "A", _urlTemplate: "https://a/{searchTerms}", _hidden: true }, { _name: "no template" }, 5]));
+		const list = parseZoteroEngines(
+			JSON.stringify([{ _name: "A", _urlTemplate: "https://a/{searchTerms}", _hidden: true }, { _name: "no template" }, 5]),
+		);
 		expect(list).toHaveLength(1);
 		expect(list[0]!.enabled).toBe(false);
 		expect(() => parseZoteroEngines("{}")).toThrow();
@@ -92,17 +104,27 @@ describe("OpenSearch", () => {
 		expect(e.urlTemplate).toBe("https://pubmed.example.org/?term={searchTerms}&from={z:year?}");
 		expect(e.method).toBe("GET");
 		expect(e.urlParams).toEqual({ source: "zotero", issn: "{rft:issn?}" });
-		expect(e.urlNamespaces).toMatchObject({ "": "http://a9.com/-/spec/opensearch/1.1/", z: "http://www.zotero.org/namespaces/openSearch#", rft: "info:ofi/fmt:kev:mtx:journal" });
+		expect(e.urlNamespaces).toMatchObject({
+			"": "http://a9.com/-/spec/opensearch/1.1/",
+			z: "http://www.zotero.org/namespaces/openSearch#",
+			rft: "info:ofi/fmt:kev:mtx:journal",
+		});
 		expect(e.iconSourceUri).toBe("https://pubmed.example.org/favicon.ico");
 	});
 
 	test("rejects a foreign namespace and a description with no html Url", () => {
 		expect(() => parseOpenSearch('<feed xmlns="http://www.w3.org/2005/Atom"/>')).toThrow(/namespace/i);
-		expect(() => parseOpenSearch('<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>x</ShortName><Url type="application/json" template="https://x/{searchTerms}"/></OpenSearchDescription>')).toThrow(/Url/);
+		expect(() =>
+			parseOpenSearch(
+				'<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>x</ShortName><Url type="application/json" template="https://x/{searchTerms}"/></OpenSearchDescription>',
+			),
+		).toThrow(/Url/);
 	});
 
 	test("POST method is kept", () => {
-		const e = parseOpenSearch('<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>P</ShortName><Url type="text/html" method="POST" template="https://p/"><Param name="q" value="{searchTerms}"/></Url></OpenSearchDescription>');
+		const e = parseOpenSearch(
+			'<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>P</ShortName><Url type="text/html" method="POST" template="https://p/"><Param name="q" value="{searchTerms}"/></Url></OpenSearchDescription>',
+		);
 		expect(e.method).toBe("POST");
 		expect(engineUrl(e, article)).toBeNull();
 		expect(engineSubmission(e, article)).toEqual({ url: "https://p/", postData: "q=Deep%20learning%20%26%20AI" });
@@ -111,7 +133,10 @@ describe("OpenSearch", () => {
 	test("fetchOpenSearch uses the injected fetch (no network) and resolves a relative icon", async () => {
 		const seen: string[] = [];
 		const xml = OPENSEARCH.replace("https://pubmed.example.org/favicon.ico", "/fav.ico");
-		const e = await fetchOpenSearch("https://pubmed.example.org/os.xml", async (u) => { seen.push(u); return new Response(xml); });
+		const e = await fetchOpenSearch("https://pubmed.example.org/os.xml", async (u) => {
+			seen.push(u);
+			return new Response(xml);
+		});
 		expect(seen).toEqual(["https://pubmed.example.org/os.xml"]);
 		expect(e.iconSourceUri).toBe("https://pubmed.example.org/fav.ico");
 		await expect(fetchOpenSearch("ftp://x", async () => new Response(""))).rejects.toThrow(/http/);
@@ -137,8 +162,14 @@ describe("template expansion", () => {
 	});
 
 	test("{searchTerms} is the title; z:field reads any item field; rft maps to OpenURL values", () => {
-		const e: LocateEngine = { ...scholar, urlTemplate: "https://x/?q={searchTerms}&d={z:DOI}&j={rft:jtitle}&t={rft:title}", urlParams: {} };
-		expect(engineUrl(e, article)).toBe("https://x/?q=Deep%20learning%20%26%20AI&d=10.1038%2Fnature14539&j=Nature&t=Deep%20learning%20%26%20AI");
+		const e: LocateEngine = {
+			...scholar,
+			urlTemplate: "https://x/?q={searchTerms}&d={z:DOI}&j={rft:jtitle}&t={rft:title}",
+			urlParams: {},
+		};
+		expect(engineUrl(e, article)).toBe(
+			"https://x/?q=Deep%20learning%20%26%20AI&d=10.1038%2Fnature14539&j=Nature&t=Deep%20learning%20%26%20AI",
+		);
 		expect(engineUrl(e, { ...article, DOI: undefined })).toBeNull();
 	});
 
@@ -156,7 +187,9 @@ describe("template expansion", () => {
 
 	test("urlParams: literals, {refs}, and the ? rule; appended with ? or &", () => {
 		const e: LocateEngine = {
-			...scholar, urlTemplate: "https://x/search", urlParams: { source: "zotero", issn: "{rft:issn?}", yr: "{z:year}" },
+			...scholar,
+			urlTemplate: "https://x/search",
+			urlParams: { source: "zotero", issn: "{rft:issn?}", yr: "{z:year}" },
 		};
 		expect(engineUrl(e, article)).toBe("https://x/search?source=zotero&yr=2015");
 		expect(engineUrl({ ...e, urlTemplate: "https://x/search?a=1" }, article)).toBe("https://x/search?a=1&source=zotero&yr=2015");
@@ -206,13 +239,20 @@ describe("list operations", () => {
 describe("importFromZotero (read-only, injected reader)", () => {
 	test("reads <dir>/locate/engines.json and merges", () => {
 		const paths: string[] = [];
-		const r = importFromZotero("C:/Z", (p) => { paths.push(p); return ZOTERO_JSON; });
+		const r = importFromZotero("C:/Z", (p) => {
+			paths.push(p);
+			return ZOTERO_JSON;
+		});
 		expect(paths[0]!.replace(/\\/g, "/")).toBe("C:/Z/locate/engines.json");
 		expect(r.added + r.replaced).toBe(1);
 	});
 
 	test("missing or malformed files give a clear error", () => {
-		expect(() => importFromZotero("C:/Z", () => { throw new Error("ENOENT"); })).toThrow(/No Zotero engines/);
+		expect(() =>
+			importFromZotero("C:/Z", () => {
+				throw new Error("ENOENT");
+			}),
+		).toThrow(/No Zotero engines/);
 		expect(() => importFromZotero("C:/Z", () => "[]")).toThrow(/no usable/);
 	});
 });

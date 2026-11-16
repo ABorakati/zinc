@@ -30,7 +30,9 @@ const multi = (name: string): string[] => args.flatMap((a, i) => (a === `--${nam
 
 const dbPath = opt("db");
 if (!dbPath) {
-	console.error("usage: bun core/scripts/relink-files.ts --db <library.sqlite> [--zotero <dir>] [--base <dir>] [--root <dir>]... [--no-fuzzy] [--apply] [--report <file.json>]");
+	console.error(
+		"usage: bun core/scripts/relink-files.ts --db <library.sqlite> [--zotero <dir>] [--base <dir>] [--root <dir>]... [--no-fuzzy] [--apply] [--report <file.json>]",
+	);
 	process.exit(2);
 }
 const apply = args.includes("--apply");

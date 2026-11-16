@@ -36,13 +36,32 @@ export class FakeReader implements ZoteroReader {
 		return out;
 	}
 	item(key: string, data: ZoteroJson, dm = "2026-06-01T10:00:00Z"): void {
-		this.upserts.push({ type: "item", key, dateModified: dm, data: { key, dateAdded: "2026-01-01T00:00:00Z", dateModified: dm, tags: [], collections: [], relations: {}, ...data } });
+		this.upserts.push({
+			type: "item",
+			key,
+			dateModified: dm,
+			data: { key, dateAdded: "2026-01-01T00:00:00Z", dateModified: dm, tags: [], collections: [], relations: {}, ...data },
+		});
 	}
 	collection(key: string, name: string, parent: string | false = false, dm = "2026-06-01T10:00:00Z"): void {
 		this.upserts.push({ type: "collection", key, dateModified: dm, data: { key, name, parentCollection: parent } });
 	}
 	annotation(key: string, attachment: string, data: ZoteroJson, dm = "2026-06-01T10:00:00Z"): void {
-		this.upserts.push({ type: "annotation", key, dateModified: dm, data: { type: "highlight", color: "#ffd400", sortIndex: "00001|000000|00000", position: {}, ...data, id: key, parentItem: attachment, dateModified: dm } });
+		this.upserts.push({
+			type: "annotation",
+			key,
+			dateModified: dm,
+			data: {
+				type: "highlight",
+				color: "#ffd400",
+				sortIndex: "00001|000000|00000",
+				position: {},
+				...data,
+				id: key,
+				parentItem: attachment,
+				dateModified: dm,
+			},
+		});
 	}
 }
 

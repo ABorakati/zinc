@@ -6,7 +6,24 @@ import { rebuildSearchIndex, search } from "../src/search";
 import { tempDir } from "./fixture";
 
 const N = 30000;
-const WORDS = ["alpha", "beta", "gamma", "delta", "kidney", "liver", "cohort", "trial", "imaging", "genome", "surgery", "outcome", "network", "protein", "cancer", "stroke"];
+const WORDS = [
+	"alpha",
+	"beta",
+	"gamma",
+	"delta",
+	"kidney",
+	"liver",
+	"cohort",
+	"trial",
+	"imaging",
+	"genome",
+	"surgery",
+	"outcome",
+	"network",
+	"protein",
+	"cancer",
+	"stroke",
+];
 
 function time<T>(fn: () => T): [T, number] {
 	const t = performance.now();
@@ -24,7 +41,9 @@ test.skipIf(!!process.env.CI)("30k items: page listing and search under 50ms", a
 	const insAtt = db.query(
 		`INSERT INTO items(key, item_type, parent_key, title, data, date_added, date_modified) VALUES(?, 'attachment', ?, 'a', '{}', ?, ?)`,
 	);
-	const insAttRow = db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'imported_file', 'application/pdf', NULL)");
+	const insAttRow = db.query(
+		"INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES(?, 'imported_file', 'application/pdf', NULL)",
+	);
 	const insTag = db.query("INSERT INTO item_tags(item_key, tag) VALUES(?, ?)");
 	const insCi = db.query("INSERT INTO collection_items VALUES('PERFCOL1', ?)");
 	db.run("INSERT INTO collections(key, name) VALUES('PERFCOL1', 'perf')");
@@ -34,7 +53,13 @@ test.skipIf(!!process.env.CI)("30k items: page listing and search under 50ms", a
 			const key = keyOf(i);
 			const title = `${WORDS[i % 16]} ${WORDS[(i * 7) % 16]} study ${i}`;
 			const added = new Date(1.6e12 + i * 60000).toISOString();
-			const data = { key, itemType: "journalArticle", title, abstractNote: `${WORDS[(i * 3) % 16]} ${WORDS[(i * 5) % 16]} results`, creators: [{ creatorType: "author", lastName: "Author" + (i % 500) }] };
+			const data = {
+				key,
+				itemType: "journalArticle",
+				title,
+				abstractNote: `${WORDS[(i * 3) % 16]} ${WORDS[(i * 5) % 16]} results`,
+				creators: [{ creatorType: "author", lastName: "Author" + (i % 500) }],
+			};
 			ins.run(key, title, "Author" + (i % 500), 1980 + (i % 45), WORDS[i % 16], JSON.stringify(data), added, added);
 			if (i % 2 === 0) {
 				insAtt.run("A" + key.slice(1), key, added, added);
@@ -46,7 +71,12 @@ test.skipIf(!!process.env.CI)("30k items: page listing and search under 50ms", a
 	})();
 	rebuildSearchIndex(db);
 
-	const sorts: [string, string][] = [["dateAdded", "desc"], ["title", "asc"], ["creator", "asc"], ["year", "desc"]];
+	const sorts: [string, string][] = [
+		["dateAdded", "desc"],
+		["title", "asc"],
+		["creator", "asc"],
+		["year", "desc"],
+	];
 	const report: string[] = [];
 	for (const [sort, dir] of sorts) {
 		listItems(db, { sort, dir, limit: 100 }); // warm up

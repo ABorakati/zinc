@@ -42,7 +42,8 @@ export async function handleFulltextApi(req: Request, db: Database): Promise<Res
 				throw new HttpError(400, "invalid JSON body");
 			}
 			const keys = body?.keys;
-			if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string")) throw new HttpError(400, "keys must be an array of strings");
+			if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string"))
+				throw new HttpError(400, "keys must be an array of strings");
 			if (keys.length === 0) throw new HttpError(400, "keys must not be empty");
 			if (keys.length > MAX_KEYS) throw new HttpError(400, `at most ${MAX_KEYS} items per request`);
 			const jobId = await svc.start(Array.from(new Set(keys as string[])), body?.openAccessOnly === true);
@@ -149,6 +150,10 @@ function events(svc: ReturnType<typeof fulltextService>, id: string, signal: Abo
 		},
 	});
 	return new Response(stream, {
-		headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" },
+		headers: {
+			"Content-Type": "text/event-stream; charset=utf-8",
+			"Cache-Control": "no-cache, no-transform",
+			Connection: "keep-alive",
+		},
 	});
 }

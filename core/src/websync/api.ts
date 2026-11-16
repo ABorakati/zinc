@@ -78,7 +78,8 @@ export async function handleWebSyncApi(req: Request, db: Database): Promise<Resp
 			case "account/reset": {
 				need("POST");
 				const b = await body(req);
-				if (b.confirm !== true) throw new HttpError(400, "confirm must be true: this unlinks the zotero.org account (no library data is deleted)");
+				if (b.confirm !== true)
+					throw new HttpError(400, "confirm must be true: this unlinks the zotero.org account (no library data is deleted)");
 				return json(await svc.resetAccount());
 			}
 			case "mode": {
@@ -103,7 +104,8 @@ export async function handleWebSyncApi(req: Request, db: Database): Promise<Resp
 				need("POST");
 				const b = await body(req);
 				if (b.push !== undefined && typeof b.push !== "boolean") throw new HttpError(400, "push must be a boolean");
-				if (b.files !== undefined && !FILES.has(b.files as FilesMode)) throw new HttpError(400, "files must be off, download or sync");
+				if (b.files !== undefined && !FILES.has(b.files as FilesMode))
+					throw new HttpError(400, "files must be off, download or sync");
 				return json(await svc.setOptions({ push: b.push as boolean | undefined, files: b.files as FilesMode | undefined }));
 			}
 			case "now":

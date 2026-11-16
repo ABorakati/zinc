@@ -26,7 +26,17 @@ const OPERATOR_MAP: Record<string, SearchCondition["operator"]> = {
 };
 
 // Zotero condition names with no equivalent here (or that only matter to Zotero's UI).
-const IGNORED = new Set(["libraryID", "tempTable", "noChildren", "includeParentsAndChildren", "includeParents", "includeChildren", "recursive", "deleted", "joinMode"]);
+const IGNORED = new Set([
+	"libraryID",
+	"tempTable",
+	"noChildren",
+	"includeParentsAndChildren",
+	"includeParents",
+	"includeChildren",
+	"recursive",
+	"deleted",
+	"joinMode",
+]);
 
 const truthy = (v: string) => /^(true|1)$/i.test(v.trim());
 
@@ -39,7 +49,8 @@ export function convertConditions(name: string, rows: { condition: string; opera
 		const c = r.condition;
 		if (c === "joinMode") options.match = r.operator === "any" ? "any" : "all";
 		else if (c === "noChildren") options.topLevelOnly = truthy(r.operator) || truthy(r.value);
-		else if (c === "includeParentsAndChildren" || c === "includeParents" || c === "includeChildren") options.includeParentsAndChildren = truthy(r.operator) || truthy(r.value);
+		else if (c === "includeParentsAndChildren" || c === "includeParents" || c === "includeChildren")
+			options.includeParentsAndChildren = truthy(r.operator) || truthy(r.value);
 		else if (c === "recursive") options.searchSubcollections = truthy(r.operator) || truthy(r.value);
 		else if (c === "deleted") options.includeTrash = truthy(r.operator) || truthy(r.value);
 		if (IGNORED.has(c)) continue;
@@ -51,7 +62,10 @@ export function convertConditions(name: string, rows: { condition: string; opera
 		// Zotero's own "any field" and quicksearch conditions
 		const field = c === "anyField" || c === "quicksearch-fields" || c === "quicksearch-everything" ? "anyField" : c;
 		if (c === "quicksearch-titleAndCreator") {
-			conditions.push({ field: "title", operator: "contains", value: r.value }, { field: "creator", operator: "contains", value: r.value });
+			conditions.push(
+				{ field: "title", operator: "contains", value: r.value },
+				{ field: "creator", operator: "contains", value: r.value },
+			);
 			options.match = "any";
 			continue;
 		}
@@ -72,7 +86,5 @@ export function readZoteroSavedSearches(zdb: Database): ZoteroSavedSearch[] {
 	const cond = zdb.query(
 		"SELECT condition, operator, value FROM savedSearchConditions WHERE savedSearchID = ? ORDER BY searchConditionID",
 	);
-	return searches.map((s) =>
-		convertConditions(s.name, cond.all(s.id) as { condition: string; operator: string; value: string }[]),
-	);
+	return searches.map((s) => convertConditions(s.name, cond.all(s.id) as { condition: string; operator: string; value: string }[]));
 }

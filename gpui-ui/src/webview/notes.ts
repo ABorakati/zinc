@@ -102,7 +102,15 @@ interface Current {
 	saving: Promise<void>;
 }
 
-const host = new WebHost({ init: NOTE_BRIDGE, onMessage, follow: true, onGone: () => { setPageReady(false); setShownKey(null); } });
+const host = new WebHost({
+	init: NOTE_BRIDGE,
+	onMessage,
+	follow: true,
+	onGone: () => {
+		setPageReady(false);
+		setShownKey(null);
+	},
+});
 const [claims, setClaims] = createSignal<{ id: number; c: NoteClaim }[]>([]);
 const [pageReady, setPageReady] = createSignal(false);
 /** the note the page has finished initialising */
@@ -142,8 +150,14 @@ export const noteShown = (key: string): boolean => shownKey() === key;
 export function claimNote(c: NoteClaim): () => void {
 	const id = ++seq;
 	if (c.focus) focusWanted = id;
-	if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
-	if (!shutdownHooked) { shutdownHooked = true; onShutdown("notes", () => flush(400)); }
+	if (idleTimer) {
+		clearTimeout(idleTimer);
+		idleTimer = undefined;
+	}
+	if (!shutdownHooked) {
+		shutdownHooked = true;
+		onShutdown("notes", () => flush(400));
+	}
 	setClaims((l) => [...l, { id, c }]);
 	return () => setClaims((l) => l.filter((x) => x.id !== id));
 }
@@ -166,11 +180,20 @@ function onMessage(m: PageMessage): void {
 		const c = cur;
 		if (c && m.instanceID === c.instanceID && typeof m.html === "string" && m.html !== c.saved) c.pending = m.html;
 		const w = waiters.get(Number(m.req));
-		if (w) { waiters.delete(Number(m.req)); w(); }
+		if (w) {
+			waiters.delete(Number(m.req));
+			w();
+		}
 		return;
 	}
-	if (m.type === "probe") { lastProbe = m.value; return; } // tests: noteEval("window.znMsg(JSON.stringify({type:'probe', value: ...}))")
-	if (m.type === "wheel") { if (typeof m.dy === "number") active()?.c.scrollBy?.(m.dy); return; }
+	if (m.type === "probe") {
+		lastProbe = m.value;
+		return;
+	} // tests: noteEval("window.znMsg(JSON.stringify({type:'probe', value: ...}))")
+	if (m.type === "wheel") {
+		if (typeof m.dy === "number") active()?.c.scrollBy?.(m.dy);
+		return;
+	}
 	if (m.type !== "editor") return;
 	const msg = (m.message ?? {}) as { action?: string; [k: string]: unknown };
 	const c = cur;
@@ -191,11 +214,14 @@ function onMessage(m: PageMessage): void {
 			const s = msg.subscription as { id?: string; type?: string; data?: { attachmentKey?: string } } | undefined;
 			const b = noteBase();
 			if (s?.type === "image" && s.id && s.data?.attachmentKey && b) {
-				host.eval(`window.__zn&&__zn.post(${js({ action: "notifySubscription", id: s.id, data: { src: `${b}/api/attachments/${encodeURIComponent(s.data.attachmentKey)}/file` } })})`);
+				host.eval(
+					`window.__zn&&__zn.post(${js({ action: "notifySubscription", id: s.id, data: { src: `${b}/api/attachments/${encodeURIComponent(s.data.attachmentKey)}/file` } })})`,
+				);
 			}
 			return;
 		}
-		case "focusBack": case "focusForward":
+		case "focusBack":
+		case "focusForward":
 			focusMain();
 			return;
 		default:
@@ -206,7 +232,9 @@ function onMessage(m: PageMessage): void {
 function openInPage(c: Current): void {
 	if (!pageReady()) return;
 	setShownKey(null);
-	host.eval(`window.__zn&&__zn.open(${js({ instanceID: c.instanceID, value: c.pending ?? c.saved, readOnly: !store.canEdit(), disableDrag: false, isAttachmentNote: false, colorScheme: store.mode() })})`);
+	host.eval(
+		`window.__zn&&__zn.open(${js({ instanceID: c.instanceID, value: c.pending ?? c.saved, readOnly: !store.canEdit(), disableDrag: false, isAttachmentNote: false, colorScheme: store.mode() })})`,
+	);
 }
 
 /** Save the note's pending HTML (one save at a time per note). */
@@ -221,7 +249,10 @@ function save(c: Current): Promise<void> {
 			await ipApi.patchItem(c.key, { note: html });
 			c.saved = html;
 			setStatus(c.key, "Saved");
-			untrack(claims).filter((x) => x.c.key() === c.key).at(-1)?.c.onSaved?.(html);
+			untrack(claims)
+				.filter((x) => x.c.key() === c.key)
+				.at(-1)
+				?.c.onSaved?.(html);
 		} catch (e) {
 			c.pending ??= html;
 			setStatus(c.key, "");
@@ -240,7 +271,9 @@ async function flush(timeoutMs = 1500): Promise<void> {
 		await new Promise<void>((res) => {
 			waiters.set(req, res);
 			host.eval(`window.__zn&&__zn.flush(${req})`);
-			setTimeout(() => { if (waiters.delete(req)) res(); }, timeoutMs);
+			setTimeout(() => {
+				if (waiters.delete(req)) res();
+			}, timeoutMs);
 		});
 	}
 	await save(c);
@@ -294,30 +327,35 @@ const placement = (c: NoteClaim) => (): Placement | null => {
 	const rect = boundsOf(c.el());
 	if (!rect) return null;
 	let clip = null;
-	if (c.clip) { clip = boundsOf(c.clip()); if (!clip) return null; }
+	if (c.clip) {
+		clip = boundsOf(c.clip());
+		if (!clip) return null;
+	}
 	return { rect, clip, holes: floatingRects() };
 };
 
 createRoot(() => {
 	// which note the page should hold
 	const wanted = createMemo(() => active()?.c.key() ?? null);
-	createEffect(on(wanted, (key) => {
-		const my = ++gen;
-		queue = queue.then(() => switchTo(key, my)).catch((e) => console.error("[notes]", e));
-		if (key === null) {
-			if (idleTimer) clearTimeout(idleTimer);
-			idleTimer = setTimeout(() => {
-				idleTimer = undefined;
-				if (active()) return;
-				queue = queue.then(async () => {
+	createEffect(
+		on(wanted, (key) => {
+			const my = ++gen;
+			queue = queue.then(() => switchTo(key, my)).catch((e) => console.error("[notes]", e));
+			if (key === null) {
+				if (idleTimer) clearTimeout(idleTimer);
+				idleTimer = setTimeout(() => {
+					idleTimer = undefined;
 					if (active()) return;
-					await flush();
-					cur = null;
-					host.release();
-				});
-			}, IDLE_MS);
-		}
-	}));
+					queue = queue.then(async () => {
+						if (active()) return;
+						await flush();
+						cur = null;
+						host.release();
+					});
+				}, IDLE_MS);
+			}
+		}),
+	);
 	// where the popup is
 	createEffect(() => {
 		const a = active();
@@ -329,15 +367,31 @@ createRoot(() => {
 		tryFocus();
 	});
 	// light / dark
-	createEffect(on(() => store.mode(), (mode) => {
-		if (pageReady()) host.eval(`window.__zn&&__zn.post(${js({ action: "setColorScheme", colorScheme: mode })})`);
-	}, { defer: true }));
+	createEffect(
+		on(
+			() => store.mode(),
+			(mode) => {
+				if (pageReady()) host.eval(`window.__zn&&__zn.post(${js({ action: "setColorScheme", colorScheme: mode })})`);
+			},
+			{ defer: true },
+		),
+	);
 });
 
 /** Tests: the page's current note and HTML state, and the last {type:"probe"} value the page sent. */
 export const noteDebug = () => ({
-	key: cur?.key ?? null, instanceID: cur?.instanceID ?? null, saved: cur?.saved ?? null, pending: cur?.pending ?? null,
-	pageReady: pageReady(), shown: shownKey(), state: host.state(), error: host.error(), onScreen: host.onScreen, alive: host.alive, focused: host.hasFocus(), probe: lastProbe,
+	key: cur?.key ?? null,
+	instanceID: cur?.instanceID ?? null,
+	saved: cur?.saved ?? null,
+	pending: cur?.pending ?? null,
+	pageReady: pageReady(),
+	shown: shownKey(),
+	state: host.state(),
+	error: host.error(),
+	onScreen: host.onScreen,
+	alive: host.alive,
+	focused: host.hasFocus(),
+	probe: lastProbe,
 });
 /** Tests: run a script in the editor page. */
 export const noteEval = (code: string): void => host.eval(code);

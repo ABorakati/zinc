@@ -19,7 +19,14 @@ async function openForView(): Promise<void> {
 
 /** Mounted once (an always-on overlay): watches the selected view. Renders nothing visible. */
 function ViewWatcher() {
-	createEffect(on(() => currentView().kind, (k) => { if (k === "duplicates") void openForView(); }));
+	createEffect(
+		on(
+			() => currentView().kind,
+			(k) => {
+				if (k === "duplicates") void openForView();
+			},
+		),
+	);
 	return <div style={{ position: "absolute", width: 0, height: 0 }} />;
 }
 
@@ -35,5 +42,11 @@ export function register(): void {
 		run: (ctx) => void openDuplicates(ctx.keys),
 	});
 
-	registerAppAction({ id: "duplicates.open-panel", label: "Duplicate Items…", icon: "git-merge", menu: "tools", run: () => void openDuplicates() });
+	registerAppAction({
+		id: "duplicates.open-panel",
+		label: "Duplicate Items…",
+		icon: "git-merge",
+		menu: "tools",
+		run: () => void openDuplicates(),
+	});
 }

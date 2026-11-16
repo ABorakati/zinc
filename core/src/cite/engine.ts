@@ -5,18 +5,12 @@ import CSL from "citeproc";
 import type { ZoteroItemData } from "../api-types";
 import { HttpError } from "../db";
 import { itemToCsl } from "./csl";
-import {
-	type CiteFormat,
-	type CiteMode,
-	type CiteStyleInfo,
-	DEFAULT_STYLES,
-} from "./types";
+import { type CiteFormat, type CiteMode, type CiteStyleInfo, DEFAULT_STYLES } from "./types";
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
 const STYLE_URL = (id: string) => `https://www.zotero.org/styles/${id}`;
-const LOCALE_URL = (lang: string) =>
-	`https://raw.githubusercontent.com/citation-style-language/locales/master/locales-${lang}.xml`;
+const LOCALE_URL = (lang: string) => `https://raw.githubusercontent.com/citation-style-language/locales/master/locales-${lang}.xml`;
 const INDEX_URL = "https://www.zotero.org/styles-files/styles.json";
 const INDEX_MAX_AGE_MS = 24 * 3600 * 1000;
 const INDEX_RETRY_MS = 3600 * 1000;
@@ -89,7 +83,10 @@ export class StyleStore {
 	private localeMem = new Map<string, string>();
 	private metas = new Map<string, Meta>();
 
-	constructor(public readonly dir: string, fetchFn?: FetchFn) {
+	constructor(
+		public readonly dir: string,
+		fetchFn?: FetchFn,
+	) {
 		this.fetchFn = fetchFn ?? ((url, init) => globalThis.fetch(url, init));
 		this.stylesDir = join(dir, "styles");
 		this.localesDir = join(dir, "locales");
@@ -200,7 +197,11 @@ export class StyleStore {
 		if (!this.isInstalled(id)) throw new HttpError(404, `style "${id}" is not installed`);
 		if (this.isBundled(id)) throw new HttpError(409, `"${id}" is a built-in default style and cannot be removed`);
 		const deps = this.installedIds().filter((d) => d !== id && this.meta(d)?.parent === id);
-		if (deps.length) throw new HttpError(409, `"${id}" is the parent of installed style${deps.length === 1 ? "" : "s"} ${deps.slice(0, 3).join(", ")}${deps.length > 3 ? ", ..." : ""}; remove ${deps.length === 1 ? "it" : "them"} first`);
+		if (deps.length)
+			throw new HttpError(
+				409,
+				`"${id}" is the parent of installed style${deps.length === 1 ? "" : "s"} ${deps.slice(0, 3).join(", ")}${deps.length > 3 ? ", ..." : ""}; remove ${deps.length === 1 ? "it" : "them"} first`,
+			);
 		rmSync(this.stylePath(id), { force: true });
 		this.metas.delete(id);
 	}
@@ -324,7 +325,12 @@ export class StyleStore {
 			if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("unexpected styles.json");
 			// keep only what the catalogue uses (the raw file is ~3 MB)
 			const slim: IndexEntry[] = parsed.map((e: IndexEntry) => ({
-				title: e.title, name: e.name, titleShort: e.titleShort, dependent: e.dependent, categories: e.categories, updated: e.updated,
+				title: e.title,
+				name: e.name,
+				titleShort: e.titleShort,
+				dependent: e.dependent,
+				categories: e.categories,
+				updated: e.updated,
 			}));
 			mkdirSync(this.cacheDir, { recursive: true });
 			writeFileSync(this.indexFile, JSON.stringify(slim));
@@ -394,7 +400,8 @@ export class StyleStore {
 			if (a.inst !== b.inst) return a.inst ? -1 : 1;
 			if (a.s !== b.s) return a.s - b.s;
 			if (!needle) {
-				const ba = bundledRank(a.r.id), bb = bundledRank(b.r.id);
+				const ba = bundledRank(a.r.id),
+					bb = bundledRank(b.r.id);
 				if (ba !== bb) return ba - bb;
 			}
 			if (a.r.dependent !== b.r.dependent) return a.r.dependent ? 1 : -1; // prefer independent styles

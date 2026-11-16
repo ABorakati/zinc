@@ -205,7 +205,8 @@ export class HttpClient {
 	}
 
 	async request(req: HttpReq, ctx: RequestCtx): Promise<RawResponse> {
-		if (!req || typeof req.url !== "string" || !/^https?:\/\//i.test(req.url)) throw new OpError("unsupported", "only http(s) URLs are supported");
+		if (!req || typeof req.url !== "string" || !/^https?:\/\//i.test(req.url))
+			throw new OpError("unsupported", "only http(s) URLs are supported");
 		if (!(Number(req.timeout_ms) > 0)) throw new OpError("internal", "timeout_ms must be positive");
 		if (ctx.sink === "file" && !ctx.path) throw new OpError("internal", "file sink needs a path");
 		const max = Number(req.max_bytes) > 0 ? Number(req.max_bytes) : 0;
@@ -234,17 +235,44 @@ export class HttpClient {
 			if (ctx.sink === "file") {
 				if (status >= 200 && status < 300) {
 					const bytes = await this.streamToFile(res, ctx.path!, max, arm, abort);
-					return { status, final_url: finalUrl, headers, bytes, ms: performance.now() - t0, body: null, path: ctx.path!, errorBody: null };
+					return {
+						status,
+						final_url: finalUrl,
+						headers,
+						bytes,
+						ms: performance.now() - t0,
+						body: null,
+						path: ctx.path!,
+						errorBody: null,
+					};
 				}
 				const errorBody = await readBody(res, INSPECT_TEXT_MAX, arm, null, true);
-				return { status, final_url: finalUrl, headers, bytes: errorBody.length, ms: performance.now() - t0, body: null, path: null, errorBody };
+				return {
+					status,
+					final_url: finalUrl,
+					headers,
+					bytes: errorBody.length,
+					ms: performance.now() - t0,
+					body: null,
+					path: null,
+					errorBody,
+				};
 			}
 			if (max && Number(res.headers.get("content-length")) > max) {
 				abort("too_large");
 				throw new Error("too large");
 			}
 			const body = await readBody(res, max, arm, abort, false);
-			return { status, final_url: finalUrl, headers, bytes: body.length, ms: performance.now() - t0, body, path: null, errorBody: null };
+			return {
+				status,
+				final_url: finalUrl,
+				headers,
+				bytes: body.length,
+				ms: performance.now() - t0,
+				body,
+				path: null,
+				errorBody: null,
+			};
 		} catch (e) {
 			if (ctx.sink === "file" && ctx.path) {
 				try {
@@ -282,7 +310,13 @@ export class HttpClient {
 			}
 			const cookie = this.jar.header(url);
 			if (cookie) headers.Cookie = cookie;
-			const res = await this.fetchFn(url, { method, headers, body: method === "GET" || method === "HEAD" ? undefined : body, redirect: "manual", signal });
+			const res = await this.fetchFn(url, {
+				method,
+				headers,
+				body: method === "GET" || method === "HEAD" ? undefined : body,
+				redirect: "manual",
+				signal,
+			});
 			const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
 			if (setCookies.length) this.jar.store(url, setCookies);
 			const loc = res.headers.get("location");
@@ -310,7 +344,13 @@ export class HttpClient {
 		}
 	}
 
-	private async streamToFile(res: Response, path: string, max: number, arm: () => void, abort: (k: "too_large") => void): Promise<number> {
+	private async streamToFile(
+		res: Response,
+		path: string,
+		max: number,
+		arm: () => void,
+		abort: (k: "too_large") => void,
+	): Promise<number> {
 		mkdirSync(dirname(path), { recursive: true });
 		const out = createWriteStream(path);
 		let total = 0;
@@ -343,7 +383,13 @@ export class HttpClient {
 	}
 }
 
-async function readBody(res: Response, limit: number, arm: () => void, abort: ((k: "too_large") => void) | null, truncateOnly: boolean): Promise<Uint8Array> {
+async function readBody(
+	res: Response,
+	limit: number,
+	arm: () => void,
+	abort: ((k: "too_large") => void) | null,
+	truncateOnly: boolean,
+): Promise<Uint8Array> {
 	if (!res.body) return new Uint8Array(0);
 	const reader = res.body.getReader();
 	const parts: Uint8Array[] = [];
@@ -406,6 +452,10 @@ function classify(e: unknown, abortKind: string | null, signal: AbortSignal, max
 	const msg = e instanceof Error ? `${(e as any).code ?? ""} ${e.message}`.trim() : String(e);
 	if ((e as any)?.name === "AbortError") return new OpError("network", `aborted: ${msg}`);
 	if (TLS_RE.test(msg)) return new OpError("tls", msg);
-	if (e instanceof TypeError || /fetch failed|ConnectionRefused|ENOTFOUND|ECONN|socket|network|Unable to connect|DNS|FailedToOpen/i.test(msg)) return new OpError("network", msg);
+	if (
+		e instanceof TypeError ||
+		/fetch failed|ConnectionRefused|ENOTFOUND|ECONN|socket|network|Unable to connect|DNS|FailedToOpen/i.test(msg)
+	)
+		return new OpError("network", msg);
 	return new OpError("internal", msg.slice(0, 300));
 }

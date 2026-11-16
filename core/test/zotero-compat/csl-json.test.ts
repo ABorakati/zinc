@@ -44,12 +44,51 @@ describe("Zotero.Utilities.Item", () => {
 			// Everything else must survive the round trip. Intended differences: page ranges get an en dash on import;
 			// "event" is an extra legacy alias zotero-next also writes for conferences and presentations.
 			const IMPORTER_DROPS = new Set([
-				"contributor", "license", "dimensions", "event-place", "composer", "original-author", "authority", "chapter-number",
-				"container-title", "references", "section", "original-date", "original-publisher", "original-publisher-place", "genre",
-				"medium", "version", "part-number", "part-title", "recipient", "guest", "host", "narrator", "performer", "producer",
-				"script-writer", "series-creator", "executive-producer", "chair", "organizer", "scale", "status", "submitted", "volume",
-				"number-of-volumes", "ISBN", "collection-title", "number", "issue", "call-number", "publisher-place", "director",
-				"author", "event-title", "journalAbbreviation",
+				"contributor",
+				"license",
+				"dimensions",
+				"event-place",
+				"composer",
+				"original-author",
+				"authority",
+				"chapter-number",
+				"container-title",
+				"references",
+				"section",
+				"original-date",
+				"original-publisher",
+				"original-publisher-place",
+				"genre",
+				"medium",
+				"version",
+				"part-number",
+				"part-title",
+				"recipient",
+				"guest",
+				"host",
+				"narrator",
+				"performer",
+				"producer",
+				"script-writer",
+				"series-creator",
+				"executive-producer",
+				"chair",
+				"organizer",
+				"scale",
+				"status",
+				"submitted",
+				"volume",
+				"number-of-volumes",
+				"ISBN",
+				"collection-title",
+				"number",
+				"issue",
+				"call-number",
+				"publisher-place",
+				"director",
+				"author",
+				"event-title",
+				"journalAbbreviation",
 			]);
 			const problems: string[] = [];
 			for (const [type, json] of Object.entries(sample)) {
@@ -69,13 +108,16 @@ describe("Zotero.Utilities.Item", () => {
 						if (String(back.page).replace(/–/g, "-") !== orig.page) problems.push(`${type}.page`);
 						continue;
 					}
-					if (JSON.stringify(back[k]) !== JSON.stringify(orig[k])) problems.push(`${type}.${k}: ${JSON.stringify(orig[k])} -> ${JSON.stringify(back[k])}`);
+					if (JSON.stringify(back[k]) !== JSON.stringify(orig[k]))
+						problems.push(`${type}.${k}: ${JSON.stringify(orig[k])} -> ${JSON.stringify(back[k])}`);
 				}
 			}
 			expect(problems).toEqual([]);
 		});
 
-		test.todo("should stably perform itemToCSLJSON -> itemFromCSLJSON -> itemToCSLJSON for every CSL variable (importer drops contributor, license, original-*, section ...)");
+		test.todo(
+			"should stably perform itemToCSLJSON -> itemFromCSLJSON -> itemToCSLJSON for every CSL variable (importer drops contributor, license, original-*, section ...)",
+		);
 
 		test("should recognize the legacy shortTitle key", () => {
 			const json = { ...sample.artwork! };
@@ -161,14 +203,27 @@ describe("Zotero.Utilities.Item", () => {
 				return (engine.makeBibliography()[1] as string[]).map((s) => s.replace(/<[^>]+>/g, "").trim());
 			};
 			const cases: { first: string; last: string; zotero: Loose }[] = [
-				{ first: "Jean de", last: "la Fontaine", zotero: { given: "Jean", "dropping-particle": "de", "non-dropping-particle": "la", family: "Fontaine" } },
+				{
+					first: "Jean de",
+					last: "la Fontaine",
+					zotero: { given: "Jean", "dropping-particle": "de", "non-dropping-particle": "la", family: "Fontaine" },
+				},
 				{ first: "Vincent", last: "van Gogh", zotero: { given: "Vincent", "non-dropping-particle": "van", family: "Gogh" } },
-				{ first: "Alexander von", last: "Humboldt", zotero: { given: "Alexander", "dropping-particle": "von", family: "Humboldt" } },
+				{
+					first: "Alexander von",
+					last: "Humboldt",
+					zotero: { given: "Alexander", "dropping-particle": "von", family: "Humboldt" },
+				},
 				{ first: "Jean de", last: '"la Fontaine"', zotero: { given: "Jean de", family: "la Fontaine" } },
 				{ first: "John", last: "Smith", zotero: { given: "John", family: "Smith" } },
 			];
 			for (const c of cases) {
-				const item = { ...newItem("book"), title: "T", date: "2000", creators: [{ creatorType: "author", firstName: c.first, lastName: c.last }] };
+				const item = {
+					...newItem("book"),
+					title: "T",
+					date: "2000",
+					creators: [{ creatorType: "author", firstName: c.first, lastName: c.last }],
+				};
 				const ours = render([{ ...toCsl(item), id: "a" }]);
 				const theirs = render([{ id: "a", type: "book", title: "T", issued: { "date-parts": [[2000]] }, author: [c.zotero] }]);
 				expect(ours).toEqual(theirs);
@@ -248,7 +303,8 @@ describe("itemToCsl agrees with Zotero's own Zotero.Utilities.Item.itemToCSLJSON
 			const item: Loose = newItem(t.itemType);
 			if (t.itemType === "note") item.note = "<p>Some note</p>";
 			for (const f of t.fields) item[f.field] = /date/i.test(f.field) ? "2001-02-03" : `v-${f.field}`;
-			for (const c of t.creatorTypes) item.creators.push({ creatorType: c.creatorType, firstName: `F${c.creatorType}`, lastName: `L${c.creatorType}` });
+			for (const c of t.creatorTypes)
+				item.creators.push({ creatorType: c.creatorType, firstName: `F${c.creatorType}`, lastName: `L${c.creatorType}` });
 			const zotero = alias(await oracle.call("itemToCSLJSON", item), t.itemType);
 			const znext = alias(toCsl(item), t.itemType);
 			expect(znext).toEqual(zotero);
@@ -257,8 +313,23 @@ describe("itemToCsl agrees with Zotero's own Zotero.Utilities.Item.itemToCSLJSON
 
 	test("Extra, ISBN lists, quoted values, dates and names", async () => {
 		const items: Loose[] = [
-			{ ...newItem("book"), title: "T", ISBN: "978-0-596-52068-7 0-596-52068-9", date: "May 2019", extra: "original-date: 1999\nfoo bar" },
-			{ ...newItem("journalArticle"), title: '"Quoted Title"', date: "March 5, 2019", DOI: "10.1/x", creators: [{ creatorType: "author", name: "The Group" }, { creatorType: "editor", firstName: "E", lastName: "Ditor" }] },
+			{
+				...newItem("book"),
+				title: "T",
+				ISBN: "978-0-596-52068-7 0-596-52068-9",
+				date: "May 2019",
+				extra: "original-date: 1999\nfoo bar",
+			},
+			{
+				...newItem("journalArticle"),
+				title: '"Quoted Title"',
+				date: "March 5, 2019",
+				DOI: "10.1/x",
+				creators: [
+					{ creatorType: "author", name: "The Group" },
+					{ creatorType: "editor", firstName: "E", lastName: "Ditor" },
+				],
+			},
 			{ ...newItem("book"), title: "T", date: "2019-2021" },
 			{ ...newItem("book"), title: "T", date: "n.d." },
 		];
@@ -270,7 +341,10 @@ describe("itemToCsl agrees with Zotero's own Zotero.Utilities.Item.itemToCSLJSON
 			const zotero = alias(await oracle.call("itemToCSLJSON", item), item.itemType);
 			const znext = alias(toCsl(item), item.itemType);
 			for (const k of new Set([...Object.keys(zotero), ...Object.keys(znext)])) {
-				if (JSON.stringify(zotero[k]) !== JSON.stringify(znext[k])) problems.push(`${JSON.stringify(item.title)}/${item.date ?? item.extra}: ${k}: zotero ${JSON.stringify(zotero[k])} vs zotero-next ${JSON.stringify(znext[k])}`);
+				if (JSON.stringify(zotero[k]) !== JSON.stringify(znext[k]))
+					problems.push(
+						`${JSON.stringify(item.title)}/${item.date ?? item.extra}: ${k}: zotero ${JSON.stringify(zotero[k])} vs zotero-next ${JSON.stringify(znext[k])}`,
+					);
 			}
 		}
 		expect(problems).toEqual([]);

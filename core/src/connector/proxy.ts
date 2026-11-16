@@ -25,7 +25,12 @@ export interface ProxyInfo {
 export function proxyFrom(raw: unknown): ProxyInfo | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as { toProperScheme?: unknown; scheme?: unknown; hosts?: unknown };
-	const scheme = typeof o.toProperScheme === "string" && o.toProperScheme.trim() ? o.toProperScheme.trim() : typeof o.scheme === "string" ? o.scheme.trim() : "";
+	const scheme =
+		typeof o.toProperScheme === "string" && o.toProperScheme.trim()
+			? o.toProperScheme.trim()
+			: typeof o.scheme === "string"
+				? o.scheme.trim()
+				: "";
 	if (!scheme || !/%[hpu]/.test(scheme)) return null;
 	return { scheme, hosts: Array.isArray(o.hosts) ? o.hosts.filter((h): h is string => typeof h === "string") : [] };
 }
@@ -41,7 +46,10 @@ function compile(scheme0: string): { re: RegExp; params: string[]; indices: Reco
 			scheme = scheme.slice(0, index - 1) + scheme.slice(index);
 			index = scheme.indexOf(param, index + 1);
 		}
-		if (index !== -1) { indices[param] = index; params.push(param); }
+		if (index !== -1) {
+			indices[param] = index;
+			params.push(param);
+		}
 	}
 	params.sort((a, b) => indices[a]! - indices[b]!);
 	let re = scheme.includes("://") ? "^" + quotemeta(scheme) + "$" : "^https?" + quotemeta("://" + scheme) + "$";
@@ -56,7 +64,11 @@ function compile(scheme0: string): { re: RegExp; params: string[]; indices: Reco
 export function toProper(proxy: ProxyInfo | null, url: string): string {
 	if (!proxy || !url) return url;
 	let href: string;
-	try { href = new URL(url).href; } catch { return url; }
+	try {
+		href = new URL(url).href;
+	} catch {
+		return url;
+	}
 	const { re, params, indices } = compile(proxy.scheme);
 	const m = re.exec(href);
 	if (!m) return url;

@@ -33,9 +33,36 @@ function mock(): void {
 }
 
 const OA_W: Record<string, any> = {
-	W1: { id: "https://openalex.org/W1", doi: "https://doi.org/10.1000/AAA", title: "Alpha paper", publication_year: 2020, authorships: [{ author: { display_name: "Jane Q. Smith" } }], primary_location: { source: { display_name: "Journal A" } }, open_access: { oa_url: "https://oa.example/alpha.pdf" }, cited_by_count: 12 },
-	W2: { id: "https://openalex.org/W2", doi: null, title: "Machine learning in liver transplantation outcomes", publication_year: 2020, authorships: [], primary_location: null, open_access: {}, cited_by_count: 3 },
-	W3: { id: "https://openalex.org/W3", doi: "https://doi.org/10.1000/ccc", title: "Gamma paper", publication_year: 2018, authorships: [{ author: { display_name: "Ana Lopez" } }], primary_location: null, open_access: {}, cited_by_count: 0 },
+	W1: {
+		id: "https://openalex.org/W1",
+		doi: "https://doi.org/10.1000/AAA",
+		title: "Alpha paper",
+		publication_year: 2020,
+		authorships: [{ author: { display_name: "Jane Q. Smith" } }],
+		primary_location: { source: { display_name: "Journal A" } },
+		open_access: { oa_url: "https://oa.example/alpha.pdf" },
+		cited_by_count: 12,
+	},
+	W2: {
+		id: "https://openalex.org/W2",
+		doi: null,
+		title: "Machine learning in liver transplantation outcomes",
+		publication_year: 2020,
+		authorships: [],
+		primary_location: null,
+		open_access: {},
+		cited_by_count: 3,
+	},
+	W3: {
+		id: "https://openalex.org/W3",
+		doi: "https://doi.org/10.1000/ccc",
+		title: "Gamma paper",
+		publication_year: 2018,
+		authorships: [{ author: { display_name: "Ana Lopez" } }],
+		primary_location: null,
+		open_access: {},
+		cited_by_count: 0,
+	},
 };
 
 beforeEach(() => {
@@ -43,9 +70,20 @@ beforeEach(() => {
 	net.backoffMs = 1;
 	insertItem(db, { key: "PAPER001", itemType: "journalArticle", title: "The citing paper", DOI: "10.1234/Citing.1", date: "2023" });
 	insertItem(db, { key: "LIBDOI01", itemType: "journalArticle", title: "Different title entirely", DOI: "10.1000/aaa", date: "2020" });
-	insertItem(db, { key: "LIBTIT01", itemType: "journalArticle", title: "Machine Learning in Liver Transplantation: Outcomes!", date: "2019-03" });
+	insertItem(db, {
+		key: "LIBTIT01",
+		itemType: "journalArticle",
+		title: "Machine Learning in Liver Transplantation: Outcomes!",
+		date: "2019-03",
+	});
 	routes = [
-		[/api\.openalex\.org\/works\/doi:10\.1234\/citing\.1/i, () => ({ id: "https://openalex.org/W9", referenced_works: ["https://openalex.org/W3", "https://openalex.org/W1", "https://openalex.org/W2"] })],
+		[
+			/api\.openalex\.org\/works\/doi:10\.1234\/citing\.1/i,
+			() => ({
+				id: "https://openalex.org/W9",
+				referenced_works: ["https://openalex.org/W3", "https://openalex.org/W1", "https://openalex.org/W2"],
+			}),
+		],
 		[/api\.openalex\.org\/works\?filter=openalex_id/, () => ({ results: [OA_W.W1, OA_W.W2, OA_W.W3] })],
 	];
 	mock();
@@ -82,9 +120,20 @@ describe("GET /api/references/:key", () => {
 		expect(status).toBe(200);
 		const list = body as ReferenceList;
 		expect(list.source).toBe("openalex");
-		expect(list.references.map((r) => r.title)).toEqual(["Gamma paper", "Alpha paper", "Machine learning in liver transplantation outcomes"]);
+		expect(list.references.map((r) => r.title)).toEqual([
+			"Gamma paper",
+			"Alpha paper",
+			"Machine learning in liver transplantation outcomes",
+		]);
 		expect(list.references.map((r) => r.index)).toEqual([1, 2, 3]);
-		expect(list.references[1]).toMatchObject({ doi: "10.1000/aaa", authors: ["Smith JQ"], venue: "Journal A", openAccessUrl: "https://oa.example/alpha.pdf", citedByCount: 12, inLibraryKey: "LIBDOI01" });
+		expect(list.references[1]).toMatchObject({
+			doi: "10.1000/aaa",
+			authors: ["Smith JQ"],
+			venue: "Journal A",
+			openAccessUrl: "https://oa.example/alpha.pdf",
+			citedByCount: 12,
+			inLibraryKey: "LIBDOI01",
+		});
 		expect(list.references[2].inLibraryKey).toBe("LIBTIT01");
 		expect(list.references[0].inLibraryKey).toBeUndefined();
 
@@ -110,7 +159,17 @@ describe("GET /api/references/:key", () => {
 	test("falls back to Crossref (enriched via OpenAlex DOI lookup) when OpenAlex has no list", async () => {
 		routes = [
 			[/api\.openalex\.org\/works\/doi:/, () => null],
-			[/api\.crossref\.org\/works\/10\.1234\/citing\.1/i, () => ({ message: { reference: [{ key: "r1", DOI: "10.1000/ccc" }, { key: "r2", unstructured: "Doe J. A study of livers. J Hepatol. 2017;66:1-9." }] } })],
+			[
+				/api\.crossref\.org\/works\/10\.1234\/citing\.1/i,
+				() => ({
+					message: {
+						reference: [
+							{ key: "r1", DOI: "10.1000/ccc" },
+							{ key: "r2", unstructured: "Doe J. A study of livers. J Hepatol. 2017;66:1-9." },
+						],
+					},
+				}),
+			],
 			[/api\.openalex\.org\/works\?filter=doi:/, () => ({ results: [OA_W.W3] })],
 		];
 		const { body } = await get("PAPER001");
@@ -123,7 +182,23 @@ describe("GET /api/references/:key", () => {
 		routes = [
 			[/api\.openalex\.org\/works\/doi:/, () => null],
 			[/api\.crossref\.org\/works\//, () => ({ message: {} })],
-			[/api\.semanticscholar\.org/, () => ({ data: [{ citedPaper: { title: "S2 paper", year: 2015, externalIds: { DOI: "10.5555/X" }, authors: [{ name: "Bo Li" }], citationCount: 7, openAccessPdf: { url: "https://pdf" } } }] })],
+			[
+				/api\.semanticscholar\.org/,
+				() => ({
+					data: [
+						{
+							citedPaper: {
+								title: "S2 paper",
+								year: 2015,
+								externalIds: { DOI: "10.5555/X" },
+								authors: [{ name: "Bo Li" }],
+								citationCount: 7,
+								openAccessPdf: { url: "https://pdf" },
+							},
+						},
+					],
+				}),
+			],
 		];
 		const { body } = await get("PAPER001");
 		expect(body.source).toBe("semanticscholar");
@@ -153,10 +228,27 @@ describe("GET /api/references/:key", () => {
 			"J Hepatol. 2020;73:100-110.",
 			"3. Wu X. Something with no match whatsoever in any index. Nature. 2001;1:1-2.",
 		].join("\n");
-		db.query("INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('NODOIPDF', ?, 'test', '2024-01-01T00:00:00Z')").run(text);
+		db.query(
+			"INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('NODOIPDF', ?, 'test', '2024-01-01T00:00:00Z')",
+		).run(text);
 		routes = [
 			[/api\.openalex\.org\/works\?filter=doi:/, () => ({ results: [OA_W.W3] })],
-			[/api\.crossref\.org\/works\?query\.bibliographic=.*Machine/, () => ({ message: { items: [{ DOI: "10.7777/mlt", title: ["Machine learning in liver transplantation outcomes"], issued: { "date-parts": [[2020]] }, "container-title": ["J Hepatol"], "is-referenced-by-count": 5 }] } })],
+			[
+				/api\.crossref\.org\/works\?query\.bibliographic=.*Machine/,
+				() => ({
+					message: {
+						items: [
+							{
+								DOI: "10.7777/mlt",
+								title: ["Machine learning in liver transplantation outcomes"],
+								issued: { "date-parts": [[2020]] },
+								"container-title": ["J Hepatol"],
+								"is-referenced-by-count": 5,
+							},
+						],
+					},
+				}),
+			],
 			[/api\.crossref\.org\/works\?query\.bibliographic/, () => ({ message: { items: [] } })],
 		];
 		const { body } = await get("NODOI001");
@@ -195,12 +287,25 @@ describe("lookup", () => {
 		routes = [
 			[
 				/api\.openalex\.org\/works\/doi:10\.1000\/aaa/,
-				() => ({ ...OA_W.W1, referenced_works_count: 40, type: "article", abstract_inverted_index: { We: [0], study: [1], livers: [2], "livers.": [3] } }),
+				() => ({
+					...OA_W.W1,
+					referenced_works_count: 40,
+					type: "article",
+					abstract_inverted_index: { We: [0], study: [1], livers: [2], "livers.": [3] },
+				}),
 			],
 		];
 		const res = (await handleReferencesApi(new Request("http://x/api/references/lookup?doi=10.1000/AAA"), db))!;
 		const d = (await res.json()) as ReferenceDetail;
-		expect(d).toMatchObject({ doi: "10.1000/aaa", abstract: "We study livers livers.", citedByCount: 12, referenceCount: 40, openAccessUrl: "https://oa.example/alpha.pdf", type: "article", inLibraryKey: "LIBDOI01" });
+		expect(d).toMatchObject({
+			doi: "10.1000/aaa",
+			abstract: "We study livers livers.",
+			citedByCount: 12,
+			referenceCount: 40,
+			openAccessUrl: "https://oa.example/alpha.pdf",
+			type: "article",
+			inLibraryKey: "LIBDOI01",
+		});
 	});
 
 	test("title lookup requires a close match; 404 otherwise", async () => {
@@ -215,13 +320,21 @@ describe("lookup", () => {
 
 	test("results (and misses) are cached in the database, so a second hover needs no network", async () => {
 		let calls = 0;
-		routes = [[/api\.openalex\.org\/works\/doi:10\.1000\/cache1/, () => { calls++; return { ...OA_W.W1, doi: "https://doi.org/10.1000/cache1", abstract_inverted_index: { Cached: [0] } }; }]];
+		routes = [
+			[
+				/api\.openalex\.org\/works\/doi:10\.1000\/cache1/,
+				() => {
+					calls++;
+					return { ...OA_W.W1, doi: "https://doi.org/10.1000/cache1", abstract_inverted_index: { Cached: [0] } };
+				},
+			],
+		];
 		const get = async (q: string) => (await handleReferencesApi(new Request(`http://x/api/references/lookup?${q}`), db))!;
-		expect((await (await get("doi=10.1000/cache1")).json() as ReferenceDetail).abstract).toBe("Cached");
+		expect(((await (await get("doi=10.1000/cache1")).json()) as ReferenceDetail).abstract).toBe("Cached");
 		routes = []; // network gone: the cached copy still answers
 		const again = await get("doi=10.1000/cache1");
 		expect(again.status).toBe(200);
-		expect((await again.json() as ReferenceDetail).abstract).toBe("Cached");
+		expect(((await again.json()) as ReferenceDetail).abstract).toBe("Cached");
 		expect(calls).toBe(1);
 		expect((await get("doi=10.1000/nothing-here")).status).toBe(404);
 		expect((await get("doi=10.1000/nothing-here")).status).toBe(404);
@@ -246,7 +359,10 @@ describe("POST /api/references/add", () => {
 		},
 	};
 	const post = async (body: unknown) => {
-		const res = (await handleReferencesApi(new Request("http://x/api/references/add", { method: "POST", body: JSON.stringify(body) }), db))!;
+		const res = (await handleReferencesApi(
+			new Request("http://x/api/references/add", { method: "POST", body: JSON.stringify(body) }),
+			db,
+		))!;
 		return { status: res.status, body: (await res.json()) as any };
 	};
 
@@ -278,7 +394,9 @@ describe("POST /api/references/add", () => {
 			expect(d.creators?.[1]).toMatchObject({ name: "The Consortium" });
 			expect(d.collections).toEqual(["COLL0001"]);
 			expect(ft).toBe(d.key);
-			const hit = db.query("SELECT count(*) AS n FROM search WHERE search MATCH 'lovelace' OR search MATCH 'things'").get() as { n: number };
+			const hit = db.query("SELECT count(*) AS n FROM search WHERE search MATCH 'lovelace' OR search MATCH 'things'").get() as {
+				n: number;
+			};
 			expect(hit.n).toBeGreaterThan(0);
 
 			const dup = await post({ doi: "10.1000/new.1" });
@@ -290,7 +408,21 @@ describe("POST /api/references/add", () => {
 	});
 
 	test("maps book chapters and reports 409 for a library DOI", async () => {
-		routes = [[/api\.crossref\.org\/works\/10\.2000\/ch/, () => ({ message: { type: "book-chapter", title: ["Chapter"], "container-title": ["The Book"], publisher: "Pub", page: "1-9", issued: { "date-parts": [[2015]] } } })]];
+		routes = [
+			[
+				/api\.crossref\.org\/works\/10\.2000\/ch/,
+				() => ({
+					message: {
+						type: "book-chapter",
+						title: ["Chapter"],
+						"container-title": ["The Book"],
+						publisher: "Pub",
+						page: "1-9",
+						issued: { "date-parts": [[2015]] },
+					},
+				}),
+			],
+		];
 		const { status, body } = await post({ doi: "10.2000/ch" });
 		expect(status).toBe(201);
 		expect(body.data).toMatchObject({ itemType: "bookSection", bookTitle: "The Book", publisher: "Pub", date: "2015" });
@@ -300,7 +432,9 @@ describe("POST /api/references/add", () => {
 	});
 
 	test("adds from a reference object when the DOI is unknown", async () => {
-		const { status, body } = await post({ reference: { index: 1, title: "A reference only paper", authors: ["Smith JQ"], year: 2012, venue: "Old Journal" } });
+		const { status, body } = await post({
+			reference: { index: 1, title: "A reference only paper", authors: ["Smith JQ"], year: 2012, venue: "Old Journal" },
+		});
 		expect(status).toBe(201);
 		expect(body.data).toMatchObject({ title: "A reference only paper", date: "2012", publicationTitle: "Old Journal" });
 		expect(body.data.creators[0]).toMatchObject({ lastName: "Smith", firstName: "JQ" });
@@ -313,19 +447,25 @@ describe("PDF bibliography parsing", () => {
 		const text = `Discussion text.\n\nReferences\n1. Smith J, Jones AB. Liver transplant outcomes in the modern era.\nLancet. 2019;393(10):100-9. doi:10.1016/S0140-6736(19)30001-1.\n2. Lee K, Park S, Kim Y. Machine-\nlearning prediction of graft failure. J Hepatol. 2020;73:1-10.\n3. World Health Organization. Global report on transplantation. Geneva: WHO; 2018.\n4. Chen L. A fourth entry that is long enough. Hepatology. 2021;1:2-3.\n`;
 		const refs = parseBibliography(text);
 		expect(refs).toHaveLength(4);
-		expect(refs[0]).toMatchObject({ doi: "10.1016/s0140-6736(19)30001-1", year: 2019, title: "Liver transplant outcomes in the modern era" });
+		expect(refs[0]).toMatchObject({
+			doi: "10.1016/s0140-6736(19)30001-1",
+			year: 2019,
+			title: "Liver transplant outcomes in the modern era",
+		});
 		expect(refs[0].authors).toEqual(["Smith J", "Jones AB"]);
 		expect(refs[1].raw).toContain("prediction of graft");
 		expect(refs[1].year).toBe(2020);
 	});
 
 	test("numbered entries run together in one paragraph", () => {
-		const text = "References\n1. Boyd NF, Pater JL. Observer variation in records. J Chronic Dis 1979;32:327-32. 2. Horwitz RI, Yu EC. Assessing the reliability of data. J Chronic Dis 1984;37:825-31. 3. Schulz KF, Grimes DA. Case-control studies: research in reverse. Lancet 2002;359:431-4.";
+		const text =
+			"References\n1. Boyd NF, Pater JL. Observer variation in records. J Chronic Dis 1979;32:327-32. 2. Horwitz RI, Yu EC. Assessing the reliability of data. J Chronic Dis 1984;37:825-31. 3. Schulz KF, Grimes DA. Case-control studies: research in reverse. Lancet 2002;359:431-4.";
 		expect(parseBibliography(text).map((r) => r.year)).toEqual([1979, 1984, 2002]);
 	});
 
 	test("bracketed numbering", () => {
-		const text = "REFERENCES\n[1] Foo A. First title of a paper here. Nature. 2010;1:1-2.\n[2] Bar B. Second title of a paper here. Science. 2011;2:3-4.\n[3] Baz C. Third title of a paper here. Cell. 2012;3:5-6.";
+		const text =
+			"REFERENCES\n[1] Foo A. First title of a paper here. Nature. 2010;1:1-2.\n[2] Bar B. Second title of a paper here. Science. 2011;2:3-4.\n[3] Baz C. Third title of a paper here. Cell. 2012;3:5-6.";
 		expect(parseBibliography(text).map((r) => r.year)).toEqual([2010, 2011, 2012]);
 	});
 

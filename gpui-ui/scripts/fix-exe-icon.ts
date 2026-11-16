@@ -15,7 +15,9 @@ export function fixExeIcon(exe: string): "fixed" | "already" | "skipped" {
 	const b = readFileSync(exe);
 	const pe = b.readUInt32LE(0x3c);
 	if (b.toString("latin1", pe, pe + 4) !== "PE\0\0") return "skipped";
-	const nsec = b.readUInt16LE(pe + 6), optSize = b.readUInt16LE(pe + 20), opt = pe + 24;
+	const nsec = b.readUInt16LE(pe + 6),
+		optSize = b.readUInt16LE(pe + 20),
+		opt = pe + 24;
 	const dd = opt + (b.readUInt16LE(opt) === 0x20b ? 112 : 96);
 	const rsrcRva = b.readUInt32LE(dd + 2 * 8);
 	const secs = Array.from({ length: nsec }, (_, i) => {
@@ -46,7 +48,8 @@ export function fixExeIcon(exe: string): "fixed" | "already" | "skipped" {
 		const data = off(b.readUInt32LE(de));
 		return { name: nameOf(g.id), de, count: data >= 0 ? b.readUInt16LE(data + 4) : 0 };
 	});
-	const first = groups[0], full = groups.reduce((a, g) => (g.count > a.count ? g : a), groups[0]!);
+	const first = groups[0],
+		full = groups.reduce((a, g) => (g.count > a.count ? g : a), groups[0]!);
 	if (!first || first === full || first.count >= full.count) return "already";
 	b.copy(b, first.de, full.de, full.de + 8); // OffsetToData (RVA) + Size; CodePage/Reserved stay
 	writeFileSync(exe, b);

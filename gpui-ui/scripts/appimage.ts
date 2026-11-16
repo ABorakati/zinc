@@ -85,20 +85,29 @@ const libDirs = (process.env.ZN_APPIMAGE_LIB_DIRS ?? "").split(":").filter(Boole
 const ldconfig = Bun.spawnSync(["sh", "-c", "ldconfig -p 2>/dev/null || /sbin/ldconfig -p"], { stdout: "pipe" }).stdout.toString();
 mkdirSync(join(lib, "lib"), { recursive: true });
 for (const so of FALLBACK_LIBS) {
-	const found = [...libDirs.map((d) => join(d, so)), ...[...ldconfig.matchAll(new RegExp(`${so.replace(/\./g, "\\.")} \\(libc6,x86-64\\) => (\\S+)`, "g"))].map((m) => m[1]!)].find((p) => existsSync(p));
+	const found = [
+		...libDirs.map((d) => join(d, so)),
+		...[...ldconfig.matchAll(new RegExp(`${so.replace(/\./g, "\\.")} \\(libc6,x86-64\\) => (\\S+)`, "g"))].map((m) => m[1]!),
+	].find((p) => existsSync(p));
 	if (found) cpSync(found, join(lib, "lib", so), { dereference: true });
-	else console.warn(`appimage: ${so} not found on this machine (install it or set ZN_APPIMAGE_LIB_DIRS); the AppImage then needs it on the user's system`);
+	else
+		console.warn(
+			`appimage: ${so} not found on this machine (install it or set ZN_APPIMAGE_LIB_DIRS); the AppImage then needs it on the user's system`,
+		);
 }
 
-writeFileSync(join(appDir, "AppRun"), [
-	"#!/bin/sh",
-	"# Zinc AppImage entry point: start the app from the mounted image. APPIMAGE (set by the runtime) is the .AppImage file itself.",
-	'HERE="$(dirname "$(readlink -f "$0")")"',
-	"# the bundled X11 keyboard libraries are a fallback: the system's own come first",
-	'export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/lib/x86_64-linux-gnu:/usr/lib64:/usr/lib:$HERE/usr/lib/zinc/lib"',
-	'exec "$HERE/usr/lib/zinc/zotero-next-gpui" "$@"',
-	"",
-].join("\n"));
+writeFileSync(
+	join(appDir, "AppRun"),
+	[
+		"#!/bin/sh",
+		"# Zinc AppImage entry point: start the app from the mounted image. APPIMAGE (set by the runtime) is the .AppImage file itself.",
+		'HERE="$(dirname "$(readlink -f "$0")")"',
+		"# the bundled X11 keyboard libraries are a fallback: the system's own come first",
+		'export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/lib/x86_64-linux-gnu:/usr/lib64:/usr/lib:$HERE/usr/lib/zinc/lib"',
+		'exec "$HERE/usr/lib/zinc/zotero-next-gpui" "$@"',
+		"",
+	].join("\n"),
+);
 chmodSync(join(appDir, "AppRun"), 0o755);
 
 const desktop = [
@@ -131,5 +140,8 @@ chmodSync(outFile, 0o755);
 const sha = createHash("sha256").update(readFileSync(outFile)).digest("hex");
 writeFileSync(`${outFile}.sha256`, `${sha}  ${outFile.slice(outFile.lastIndexOf("/") + 1)}\n`);
 // the exact build stamp, for scripts/release.ts to sign into latest-linux-x64.json (the file name only has the release number)
-writeFileSync(`${outFile}.version`, `${existsSync(join(pkg, "version.txt")) ? readFileSync(join(pkg, "version.txt"), "utf8").trim() : BUILD_VERSION}\n`);
+writeFileSync(
+	`${outFile}.version`,
+	`${existsSync(join(pkg, "version.txt")) ? readFileSync(join(pkg, "version.txt"), "utf8").trim() : BUILD_VERSION}\n`,
+);
 console.log(`appimage: ${outFile}  (${(statSync(outFile).size / 1048576).toFixed(0)} MB, sha256 ${sha})`);

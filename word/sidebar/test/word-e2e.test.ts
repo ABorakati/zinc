@@ -245,7 +245,9 @@ d("sidebar controller driving an invisible Word", () => {
 			}
 		};
 		await until("page init", "document.getElementById('docline').textContent.includes('Document')");
-		await ev("(() => { const q = document.getElementById('q'); q.value = 'liver transplantation'; q.dispatchEvent(new Event('input')); return 1; })()");
+		await ev(
+			"(() => { const q = document.getElementById('q'); q.value = 'liver transplantation'; q.dispatchEvent(new Event('input')); return 1; })()",
+		);
 		await until("results", "document.querySelectorAll('#results li').length > 0");
 		// tick the result's checkbox (a plain click on the row inserts the citation at once)
 		await ev("document.querySelector('#results li input[type=checkbox]').click(); 1");
@@ -258,7 +260,11 @@ d("sidebar controller driving an invisible Word", () => {
 		expect(fields[0]!.text).toBe("(1)");
 		// click into the citation: the add-in's cursor watcher tells the page, which shows title/abstract
 		await h.call("h.cursor", { start: fields[0]!.end - 3 });
-		await until("cited card", "!document.getElementById('cited').hidden && document.querySelectorAll('#cited .cite-item').length === 1", 15000);
+		await until(
+			"cited card",
+			"!document.getElementById('cited').hidden && document.querySelectorAll('#cited .cite-item').length === 1",
+			15000,
+		);
 		const card = await ev("document.getElementById('cited').innerText");
 		expect(card.toLowerCase()).toContain("cited here"); // the heading is upper-cased by CSS
 		expect(card).toContain("In library");

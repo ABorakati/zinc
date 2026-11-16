@@ -12,8 +12,18 @@ const repo = resolve(import.meta.dir, "..", "..");
 
 function compute(): string {
 	const base = process.env.ZN_RELEASE ?? "0.1.0";
-	const run = (cmd: string[]) => { try { const r = Bun.spawnSync(cmd, { cwd: repo, stdout: "pipe", stderr: "ignore" }); return r.exitCode === 0 ? r.stdout.toString().trim() : ""; } catch { return ""; } };
-	const commit = run(["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id.short(8)"]) || run(["git", "rev-parse", "--short=8", "HEAD"]) || "unknown";
+	const run = (cmd: string[]) => {
+		try {
+			const r = Bun.spawnSync(cmd, { cwd: repo, stdout: "pipe", stderr: "ignore" });
+			return r.exitCode === 0 ? r.stdout.toString().trim() : "";
+		} catch {
+			return "";
+		}
+	};
+	const commit =
+		run(["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id.short(8)"]) ||
+		run(["git", "rev-parse", "--short=8", "HEAD"]) ||
+		"unknown";
 	return `${base}+${commit}-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`;
 }
 

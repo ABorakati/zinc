@@ -65,7 +65,11 @@ describe("resolveAttachmentFile", () => {
 	});
 	test("canonical attachments: path", () => {
 		const m = resolveAttachmentFile(
-			{ key: "LINK0001", rawPath: "attachments:Sub/Smith et al. - 2021 - A study of surgical outcomes in elderly patients.pdf", filename: "x" },
+			{
+				key: "LINK0001",
+				rawPath: "attachments:Sub/Smith et al. - 2021 - A study of surgical outcomes in elderly patients.pdf",
+				filename: "x",
+			},
 			ctx(),
 		);
 		expect(m?.how).toBe("canonical");
@@ -77,7 +81,11 @@ describe("resolveAttachmentFile", () => {
 	});
 	test("no storage folder for the key: found by file name in another folder (exact, case-insensitive)", () => {
 		const m = resolveAttachmentFile(
-			{ key: "NOFOLDER", rawPath: "storage:moved - 2020 - orphan folder file.PDF", filename: "moved - 2020 - orphan folder file.PDF" },
+			{
+				key: "NOFOLDER",
+				rawPath: "storage:moved - 2020 - orphan folder file.PDF",
+				filename: "moved - 2020 - orphan folder file.PDF",
+			},
 			ctx(),
 		);
 		expect(m?.how).toBe("exact");
@@ -117,7 +125,11 @@ describe("ambiguity and fuzzy matching", () => {
 	});
 	test("title match finds a truncated Author-Title file name", () => {
 		const m = findFile(
-			{ key: "T2", filename: "gone.pdf", parentTitle: "Trends in the Incidence, Treatment and Outcomes of Patients with Intrahepatic Cholangiocarcinoma" },
+			{
+				key: "T2",
+				filename: "gone.pdf",
+				parentTitle: "Trends in the Incidence, Treatment and Outcomes of Patients with Intrahepatic Cholangiocarcinoma",
+			},
 			idx(),
 		);
 		expect(m?.path).toContain("Wu-Trends");

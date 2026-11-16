@@ -1,7 +1,8 @@
 // Field and operator catalogue for the condition editor (mirrors core/src/searches/compile.ts).
 import type { Operator, SearchCondition, ZoteroSchema } from "../sidebar/client";
 
-export type Kind = "text" | "creator" | "year" | "date" | "datetime" | "itemType" | "tag" | "collection" | "note" | "fileType" | "fulltext" | "any";
+export type Kind =
+	"text" | "creator" | "year" | "date" | "datetime" | "itemType" | "tag" | "collection" | "note" | "fileType" | "fulltext" | "any";
 
 export interface FieldDef {
 	id: string;

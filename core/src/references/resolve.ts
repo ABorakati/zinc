@@ -41,7 +41,10 @@ interface Cached {
 }
 
 function readCache(db: Database, key: string): Cached | null {
-	const row = db.query("SELECT data, fetched_at FROM reference_cache WHERE item_key = ?").get(key) as { data: string; fetched_at: string } | null;
+	const row = db.query("SELECT data, fetched_at FROM reference_cache WHERE item_key = ?").get(key) as {
+		data: string;
+		fetched_at: string;
+	} | null;
 	if (!row) return null;
 	if (Date.now() - Date.parse(row.fetched_at) > CACHE_MAX_AGE_MS) return null;
 	try {
@@ -66,9 +69,13 @@ interface ItemRef {
 }
 
 function resolveItem(db: Database, key: string): ItemRef {
-	const row = db.query("SELECT key, item_type, parent_key, data, deleted FROM items WHERE key = ?").get(key) as
-		| { key: string; item_type: string; parent_key: string | null; data: string; deleted: number }
-		| null;
+	const row = db.query("SELECT key, item_type, parent_key, data, deleted FROM items WHERE key = ?").get(key) as {
+		key: string;
+		item_type: string;
+		parent_key: string | null;
+		data: string;
+		deleted: number;
+	} | null;
 	if (!row) throw new HttpError(404, "item not found");
 	if (row.item_type === "attachment" && row.parent_key) return resolveItem(db, row.parent_key);
 	if (row.item_type === "note" || row.item_type === "annotation") throw new HttpError(400, "item has no references");
@@ -92,7 +99,9 @@ function resolveItem(db: Database, key: string): ItemRef {
 }
 
 async function pdfText(db: Database, attachmentKey: string): Promise<string | null> {
-	const get = () => (db.query("SELECT content FROM fulltext WHERE attachment_key = ?").get(attachmentKey) as { content: string } | null)?.content ?? null;
+	const get = () =>
+		(db.query("SELECT content FROM fulltext WHERE attachment_key = ?").get(attachmentKey) as { content: string } | null)?.content ??
+		null;
 	let text = get();
 	if (text == null) {
 		try {
@@ -112,7 +121,14 @@ async function fromPdf(db: Database, pdfs: string[], mailto: string | null): Pro
 		const entries = parseBibliography(text).slice(0, MAX_PDF_REFS);
 		if (entries.length === 0) continue;
 		const refs: RefCore[] = await mapLimit(entries, 4, async (e) => {
-			const base: RefCore = compact({ raw: e.raw, doi: e.doi, title: e.title, authors: e.authors, year: e.year, url: e.doi ? `https://doi.org/${e.doi}` : undefined });
+			const base: RefCore = compact({
+				raw: e.raw,
+				doi: e.doi,
+				title: e.title,
+				authors: e.authors,
+				year: e.year,
+				url: e.doi ? `https://doi.org/${e.doi}` : undefined,
+			});
 			if (e.doi) return base;
 			try {
 				const hit = await crossrefQuery(e.raw, mailto);
@@ -122,7 +138,10 @@ async function fromPdf(db: Database, pdfs: string[], mailto: string | null): Pro
 			}
 			return base;
 		});
-		const doiMeta = await openAlexByDois(refs.map((r) => r.doi).filter((d): d is string => !!d), mailto);
+		const doiMeta = await openAlexByDois(
+			refs.map((r) => r.doi).filter((d): d is string => !!d),
+			mailto,
+		);
 		enrich(refs, doiMeta);
 		return refs;
 	}
@@ -145,7 +164,14 @@ async function fetchFresh(db: Database, item: ItemRef): Promise<{ source: string
 		if (refs) return { source: "openalex", references: refs };
 		refs = await attempt(async () => {
 			const r = await crossrefReferences(doi, mailto);
-			if (r) enrich(r, await openAlexByDois(r.map((x) => x.doi).filter((d): d is string => !!d), mailto));
+			if (r)
+				enrich(
+					r,
+					await openAlexByDois(
+						r.map((x) => x.doi).filter((d): d is string => !!d),
+						mailto,
+					),
+				);
 			return r;
 		});
 		if (refs) return { source: "crossref", references: refs };

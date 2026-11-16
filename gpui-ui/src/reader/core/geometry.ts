@@ -17,11 +17,15 @@ export interface DocGeometry {
 }
 
 const docs = new Map<string, DocGeometry>();
-export function setDocGeometry(key: string, g: DocGeometry): void { docs.set(key, g); }
-export function getDocGeometry(key: string): DocGeometry | undefined { return docs.get(key); }
+export function setDocGeometry(key: string, g: DocGeometry): void {
+	docs.set(key, g);
+}
+export function getDocGeometry(key: string): DocGeometry | undefined {
+	return docs.get(key);
+}
 
 /** /Rotate of a page (0 for an unknown page). */
-export const pageRot = (g: DocGeometry | undefined, page: number): number => ((g?.rots[page] ?? 0) % 360 + 360) % 360;
+export const pageRot = (g: DocGeometry | undefined, page: number): number => (((g?.rots[page] ?? 0) % 360) + 360) % 360;
 
 /** The page's size in user space (without its /Rotate). */
 function userSize(g: DocGeometry, page: number): [number, number] {
@@ -33,10 +37,14 @@ function userSize(g: DocGeometry, page: number): [number, number] {
 export function fromUser(g: DocGeometry, page: number, x: number, y: number): [number, number] {
 	const [uw, uh] = userSize(g, page);
 	switch (pageRot(g, page)) {
-		case 90: return [y, uw - x];
-		case 180: return [uw - x, uh - y];
-		case 270: return [uh - y, x];
-		default: return [x, y];
+		case 90:
+			return [y, uw - x];
+		case 180:
+			return [uw - x, uh - y];
+		case 270:
+			return [uh - y, x];
+		default:
+			return [x, y];
 	}
 }
 
@@ -44,15 +52,20 @@ export function fromUser(g: DocGeometry, page: number, x: number, y: number): [n
 export function toUser(g: DocGeometry, page: number, x: number, y: number): [number, number] {
 	const [uw, uh] = userSize(g, page);
 	switch (pageRot(g, page)) {
-		case 90: return [uw - y, x];
-		case 180: return [uw - x, uh - y];
-		case 270: return [y, uh - x];
-		default: return [x, y];
+		case 90:
+			return [uw - y, x];
+		case 180:
+			return [uw - x, uh - y];
+		case 270:
+			return [y, uh - x];
+		default:
+			return [x, y];
 	}
 }
 
 function mapRect(r: PdfRect, f: (x: number, y: number) => [number, number]): PdfRect {
-	const [ax, ay] = f(r[0], r[1]), [bx, by] = f(r[2], r[3]);
+	const [ax, ay] = f(r[0], r[1]),
+		[bx, by] = f(r[2], r[3]);
 	return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
 }
 export const rectFromUser = (g: DocGeometry, page: number, r: PdfRect): PdfRect => mapRect(r, (x, y) => fromUser(g, page, x, y));
@@ -61,6 +74,10 @@ export const rectToUser = (g: DocGeometry, page: number, r: PdfRect): PdfRect =>
 /** A flat [x1, y1, x2, y2, ...] path through `f`. */
 export function mapPath(path: number[], f: (x: number, y: number) => [number, number]): number[] {
 	const out = path.slice();
-	for (let i = 0; i + 1 < path.length; i += 2) { const [x, y] = f(path[i]!, path[i + 1]!); out[i] = x; out[i + 1] = y; }
+	for (let i = 0; i + 1 < path.length; i += 2) {
+		const [x, y] = f(path[i]!, path[i + 1]!);
+		out[i] = x;
+		out[i + 1] = y;
+	}
 	return out;
 }

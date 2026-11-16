@@ -11,7 +11,9 @@ import { clipboard } from "../ui";
 import { post } from "./http";
 
 interface RendererLike {
-	promptForPaths?: (o?: { files?: boolean; directories?: boolean; multiple?: boolean; prompt?: string } | null) => Promise<string[] | null>;
+	promptForPaths?: (
+		o?: { files?: boolean; directories?: boolean; multiple?: boolean; prompt?: string } | null,
+	) => Promise<string[] | null>;
 }
 
 /** The window's native renderer (set by @gpuix/solid's render()). */
@@ -20,10 +22,12 @@ function renderer(): RendererLike | undefined {
 }
 
 /** Native file / folder picker. Resolves null when cancelled (or when no window renderer exists). */
-export async function pickPaths(o: { files?: boolean; directories?: boolean; multiple?: boolean; prompt?: string } = {}): Promise<string[] | null> {
+export async function pickPaths(
+	o: { files?: boolean; directories?: boolean; multiple?: boolean; prompt?: string } = {},
+): Promise<string[] | null> {
 	const r = renderer();
 	if (!r?.promptForPaths) return null;
-	const got = await r.promptForPaths({ files: o.directories ? o.files ?? false : true, ...o });
+	const got = await r.promptForPaths({ files: o.directories ? (o.files ?? false) : true, ...o });
 	return got && got.length ? got : null;
 }
 
@@ -48,7 +52,11 @@ if ($HtmlFile) { $d.SetData([System.Windows.Forms.DataFormats]::Html, [IO.File]:
 
 async function powershell(scriptName: string, script: string, args: string[] = []): Promise<string> {
 	const file = tmpFile(scriptName, script);
-	const p = Bun.spawn(["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", file, ...args], { stdout: "pipe", stderr: "pipe", windowsHide: true });
+	const p = Bun.spawn(["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", file, ...args], {
+		stdout: "pipe",
+		stderr: "pipe",
+		windowsHide: true,
+	});
 	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 	if (code !== 0) throw new Error(err.trim().split("\n")[0] || `PowerShell exited with ${code}`);
 	return out;

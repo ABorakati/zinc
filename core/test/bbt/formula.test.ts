@@ -6,7 +6,8 @@ import { formulaConfig } from "../../src/bbt/keys";
 import { DEFAULT_FORMULA, DEFAULT_SETTINGS } from "../../src/bbt/settings";
 
 const cfg = formulaConfig(DEFAULT_SETTINGS);
-const keyWith = (c: typeof cfg) => (formula: string, d: Partial<ZoteroItemData>) => generate(compile(formula), { key: "ITEM0001", itemType: "journalArticle", ...d } as ZoteroItemData, c).text.replace(MARK, "");
+const keyWith = (c: typeof cfg) => (formula: string, d: Partial<ZoteroItemData>) =>
+	generate(compile(formula), { key: "ITEM0001", itemType: "journalArticle", ...d } as ZoteroItemData, c).text.replace(MARK, "");
 // whitespace is always removed from a finished key; with folding on, non-ASCII is transliterated
 const key = keyWith(cfg);
 const keyU = keyWith({ ...cfg, fold: false });
@@ -58,7 +59,9 @@ describe("functions", () => {
 		expect(key("editors", paper)).toBe("Itor");
 	});
 	test("single-field names use the whole name", () => {
-		expect(key("auth.lower", { creators: [{ creatorType: "author", name: "World Health Organization" }] })).toBe("worldhealthorganization");
+		expect(key("auth.lower", { creators: [{ creatorType: "author", name: "World Health Organization" }] })).toBe(
+			"worldhealthorganization",
+		);
 	});
 	test("particles", () => {
 		const d = { creators: [{ creatorType: "author", firstName: "Jan", lastName: "van der Berg" }] };
@@ -92,7 +95,12 @@ describe("functions", () => {
 		expect(key("lastpage", paper)).toBe("145");
 	});
 	test("extra, field access and keyword", () => {
-		const d = { ...paper, extra: "tex.shortauthor: WHO\nOriginal Date: 1856", tags: [{ tag: "zeta" }, { tag: "alpha" }], DOI: "10.1/x" };
+		const d = {
+			...paper,
+			extra: "tex.shortauthor: WHO\nOriginal Date: 1856",
+			tags: [{ tag: "zeta" }, { tag: "alpha" }],
+			DOI: "10.1/x",
+		};
 		expect(key("extra('tex.shortauthor')", d)).toBe("WHO");
 		expect(key("Title", { title: "A Plain Title" })).toBe("APlainTitle");
 		expect(key("DOI", d)).toBe("10.1/x");
@@ -180,8 +188,12 @@ describe("alternatives and conditions", () => {
 		expect(key("(auth ? year : title)", { title: "Alone Title", date: "1999" })).toBe("AloneTitle");
 	});
 	test("length comparison shorthand skips to the next alternative", () => {
-		expect(key("(title > 1) + year; auth + year", { title: "x", date: "2000", creators: [{ creatorType: "author", lastName: "Ng" }] })).toBe("Ng2000");
-		expect(key("(auth > 3) + year; 'short' + year", { creators: [{ creatorType: "author", lastName: "Ng" }], date: "2000" })).toBe("short2000");
+		expect(
+			key("(title > 1) + year; auth + year", { title: "x", date: "2000", creators: [{ creatorType: "author", lastName: "Ng" }] }),
+		).toBe("Ng2000");
+		expect(key("(auth > 3) + year; 'short' + year", { creators: [{ creatorType: "author", lastName: "Ng" }], date: "2000" })).toBe(
+			"short2000",
+		);
 		expect(key("title.len('>',1) + year", { title: "Hello", date: "2001" })).toBe("Hello2001");
 	});
 	test("type() and language() conditions", () => {
@@ -220,10 +232,18 @@ describe("postfix", () => {
 		expect(formatPostfix("%(n)03d", 4)).toBe("005");
 	});
 	test("postfix() and infix() set the template and the position", () => {
-		const g = generate(compile("auth.lower + postfix('-%(n)s') + year"), { key: "X", itemType: "book", creators: [{ creatorType: "author", lastName: "Li" }], date: "2000" } as ZoteroItemData, cfg);
+		const g = generate(
+			compile("auth.lower + postfix('-%(n)s') + year"),
+			{ key: "X", itemType: "book", creators: [{ creatorType: "author", lastName: "Li" }], date: "2000" } as ZoteroItemData,
+			cfg,
+		);
 		expect(g.postfix.template).toBe("-%(n)s");
 		expect(g.text).toBe(`li2000${MARK}`);
-		const h = generate(compile("auth.lower + infix('%(A)s') + year"), { key: "X", itemType: "book", creators: [{ creatorType: "author", lastName: "Li" }], date: "2000" } as ZoteroItemData, cfg);
+		const h = generate(
+			compile("auth.lower + infix('%(A)s') + year"),
+			{ key: "X", itemType: "book", creators: [{ creatorType: "author", lastName: "Li" }], date: "2000" } as ZoteroItemData,
+			cfg,
+		);
 		expect(h.text).toBe(`li${MARK}2000`);
 	});
 });

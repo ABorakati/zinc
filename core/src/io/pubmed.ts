@@ -48,7 +48,11 @@ function nbibToItem(rec: [string, string][]): ParsedItem | null {
 	setBase(data, "ISSN", one("IS").replace(/\s*\(.*\)\s*$/, ""));
 	setBase(data, "language", one("LA"));
 	setBase(data, "place", one("PL"));
-	const date = normalizeDate(one("DP").replace(/\s+\d{1,2}\s*-\s*\S+$/, "").replace(/\s*-\s*\S+$/, ""));
+	const date = normalizeDate(
+		one("DP")
+			.replace(/\s+\d{1,2}\s*-\s*\S+$/, "")
+			.replace(/\s*-\s*\S+$/, ""),
+	);
 	if (date) setBase(data, "date", date);
 	let doi = "";
 	for (const v of [...all("LID"), ...all("AID")]) {
@@ -84,9 +88,7 @@ function nbibToItem(rec: [string, string][]): ParsedItem | null {
 		creators.push({ creatorType: "editor", lastName: last ?? n, firstName: first ?? "" });
 	}
 	if (creators.length) data.creators = creators;
-	const tags = [...all("MH"), ...all("OT"), ...all("KW")]
-		.map((t) => t.replace(/^\*/, "").trim())
-		.filter(Boolean);
+	const tags = [...all("MH"), ...all("OT"), ...all("KW")].map((t) => t.replace(/^\*/, "").trim()).filter(Boolean);
 	if (tags.length) data.tags = [...new Set(tags)].map((tag) => ({ tag }));
 	if (!data.title) return null;
 	return { data, notes: [] };

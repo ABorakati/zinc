@@ -89,7 +89,8 @@ export class ZoteroWebClient {
 
 	private release(): void {
 		const next = this.waiters.shift();
-		if (next) next(); // the slot passes straight to the next waiter
+		if (next)
+			next(); // the slot passes straight to the next waiter
 		else this.active--;
 	}
 

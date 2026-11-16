@@ -52,7 +52,9 @@ export function ensureFamily(family: string): boolean {
 /** True when `family` is bundled with the app and not registered yet (ensureFamily would do work). */
 export const needsRegistering = (family: string): boolean => !!FILE_OF[family]?.some((f) => !registered.has(f));
 
-interface FontHost { registerFont?: (bytes: Buffer) => void }
+interface FontHost {
+	registerFont?: (bytes: Buffer) => void;
+}
 const RENDER_HOST = Symbol.for("@gpuix/solid/render-host");
 
 const registered = new Set<string>();

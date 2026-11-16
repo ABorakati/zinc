@@ -17,18 +17,34 @@ import { shutdownStructureWorker } from "../src/reader/structure/load";
 import { OverlayHost } from "../src/ui";
 
 const args = process.argv.slice(2);
-const val = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
+const val = (n: string, d: string) => {
+	const i = args.indexOf(`--${n}`);
+	return i >= 0 ? args[i + 1]! : d;
+};
 const has = (n: string) => args.includes(`--${n}`);
-const KEY = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]!.startsWith("--") && ["out", "page"].includes(args[i - 1]!.slice(2))));
-if (!KEY) { console.error("usage: bun scripts/shot-reflow.tsx <attachment key> [--page N] [--out DIR]"); process.exit(2); }
-const OUT = val("out", "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots");
+const KEY = args.find(
+	(a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]!.startsWith("--") && ["out", "page"].includes(args[i - 1]!.slice(2))),
+);
+if (!KEY) {
+	console.error("usage: bun scripts/shot-reflow.tsx <attachment key> [--page N] [--out DIR]");
+	process.exit(2);
+}
+const OUT = val(
+	"out",
+	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/reader-shots",
+);
 mkdirSync(OUT, { recursive: true });
 setReaderDpr(1);
 setReaderMode(has("light") ? "light" : "dark");
 
 let ctx: ReaderContext | null = null;
 register();
-registerReaderPlugin({ id: "probe", onOpen: (c) => { ctx = c; } });
+registerReaderPlugin({
+	id: "probe",
+	onOpen: (c) => {
+		ctx = c;
+	},
+});
 
 const t = createTestRoot({ width: 1440, height: 880 });
 const r = t.renderer;
@@ -37,17 +53,43 @@ registerFonts(r);
 t.render(() => (
 	<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%" }}>
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-			<Reader attachmentKey={KEY} title="Reader" ephemeral controller={(c) => { ctl = c; }} />
+			<Reader
+				attachmentKey={KEY}
+				title="Reader"
+				ephemeral
+				controller={(c) => {
+					ctl = c;
+				}}
+			/>
 		</div>
 		<OverlayHost />
 	</div>
 ));
-const pump = () => { r.flush(); r.dispatchNativeEvents(); r.flush(); };
-const frame = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { pump(); await Bun.sleep(16); } };
-const shot = async (name: string, wait = 500) => { await frame(wait); const f = join(OUT, `reflow-${name}.png`); r.captureScreenshot(f); console.log("shot", f); };
+const pump = () => {
+	r.flush();
+	r.dispatchNativeEvents();
+	r.flush();
+};
+const frame = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		pump();
+		await Bun.sleep(16);
+	}
+};
+const shot = async (name: string, wait = 500) => {
+	await frame(wait);
+	const f = join(OUT, `reflow-${name}.png`);
+	r.captureScreenshot(f);
+	console.log("shot", f);
+};
 async function until(cond: () => boolean, ms = 20000, what = "condition"): Promise<boolean> {
 	const t0 = performance.now();
-	while (performance.now() - t0 < ms) { pump(); if (cond()) return true; await Bun.sleep(30); }
+	while (performance.now() - t0 < ms) {
+		pump();
+		if (cond()) return true;
+		await Bun.sleep(30);
+	}
 	console.warn(`timeout waiting for ${what}`);
 	return false;
 }
@@ -86,7 +128,8 @@ try {
 	const w = ctx!.rectToWindow?.(page, cite.rect);
 	console.log("link window rect:", JSON.stringify(w));
 	if (!w) throw new Error("page not mounted");
-	const cx = w.x + w.width / 2, cy = w.y + w.height / 2;
+	const cx = w.x + w.width / 2,
+		cy = w.y + w.height / 2;
 	await shot("page", 300);
 	r.nativeSimulateMouseMove(cx - 30, cy + 30);
 	await frame(100);
@@ -116,7 +159,8 @@ try {
 			const bw = ctx!.rectToWindow?.(bp, nr);
 			console.log("bib line:", JSON.stringify(line.text.slice(0, 60)), JSON.stringify(bw));
 			if (bw) {
-				const bx = bw.x + bw.width / 2, by = bw.y + bw.height / 2;
+				const bx = bw.x + bw.width / 2,
+					by = bw.y + bw.height / 2;
 				r.nativeSimulateMouseMove(bx - 20, by + 40);
 				await frame(100);
 				r.nativeSimulateMouseMove(bx, by);
@@ -135,7 +179,10 @@ try {
 	// the bibliography at the end of the reading view: a click on an entry shows where the paper cites it
 	const sy = Number(val("scroll", "0"));
 	if (sy) {
-		for (let i = 0; i < 8; i++) { r.nativeSimulateScrollWheel(900, 500, 0, -sy / 8); await frame(250); }
+		for (let i = 0; i < 8; i++) {
+			r.nativeSimulateScrollWheel(900, 500, 0, -sy / 8);
+			await frame(250);
+		}
 		await shot("reading-view-refs", 1200);
 		r.nativeSimulateMouseMove(900, Number(val("click-y", "400")));
 		r.nativeSimulateClick(900, Number(val("click-y", "400")));

@@ -9,7 +9,9 @@ import type { Session } from "./session";
 export function CommentBox(p: { k: Kit; s: Session; id: string; rows?: number; placeholder?: string; fontSize?: number }): JSX.Element {
 	const { store, ui } = p.s;
 	return (
-		<div style={{ ...p.k.t("flex w-full min-w-0 flex-row rounded-md border bg-background px-1.5 py-1"), borderColor: p.k.tok("input") }}>
+		<div
+			style={{ ...p.k.t("flex w-full min-w-0 flex-row rounded-md border bg-background px-1.5 py-1"), borderColor: p.k.tok("input") }}
+		>
 			<textarea
 				value={store.get(p.id)?.comment ?? ""}
 				placeholder={p.placeholder ?? "Add comment..."}
@@ -17,8 +19,17 @@ export function CommentBox(p: { k: Kit; s: Session; id: string; rows?: number; p
 				maxRows={8}
 				autoFocus={ui.focusComment() === p.id}
 				onChange={(e) => store.update(p.id, { comment: (e as { value?: string }).value ?? "" })}
-				onFocus={() => { if (ui.focusComment() === p.id) ui.setFocusComment(null); }}
-				style={{ flexGrow: 1, minWidth: 0, fontSize: p.fontSize ?? 12, lineHeight: (p.fontSize ?? 12) * 1.4, fontFamily: "Inter", color: p.k.tok("foreground") }}
+				onFocus={() => {
+					if (ui.focusComment() === p.id) ui.setFocusComment(null);
+				}}
+				style={{
+					flexGrow: 1,
+					minWidth: 0,
+					fontSize: p.fontSize ?? 12,
+					lineHeight: (p.fontSize ?? 12) * 1.4,
+					fontFamily: "Inter",
+					color: p.k.tok("foreground"),
+				}}
 				theme={inputTheme(p.k)}
 			/>
 		</div>
@@ -31,7 +42,10 @@ export function TagEditor(p: { k: Kit; s: Session; id: string }): JSX.Element {
 	const [draft, setDraft] = createSignal("");
 	const tags = () => store.get(p.id)?.tags ?? [];
 	const add = (raw: string) => {
-		const names = raw.split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+		const names = raw
+			.split(/[,;]/)
+			.map((x) => x.trim())
+			.filter(Boolean);
 		setDraft("");
 		if (!names.length) return;
 		const have = new Set(tags().map((t) => t.name));
@@ -45,7 +59,10 @@ export function TagEditor(p: { k: Kit; s: Session; id: string }): JSX.Element {
 				{(t) => (
 					<div style={chip}>
 						<text style={{ ...p.k.tx("text-[11px] text-foreground"), whiteSpace: "nowrap" }}>{t.name}</text>
-						<div onClick={() => store.update(p.id, { tags: tags().filter((x) => x.name !== t.name) })} style={{ cursor: "pointer", display: "flex" }}>
+						<div
+							onClick={() => store.update(p.id, { tags: tags().filter((x) => x.name !== t.name) })}
+							style={{ cursor: "pointer", display: "flex" }}
+						>
 							<Icon name="x" size={11} color={p.k.tok("muted-foreground")} />
 						</div>
 					</div>
@@ -54,7 +71,11 @@ export function TagEditor(p: { k: Kit; s: Session; id: string }): JSX.Element {
 			<input
 				value={draft()}
 				placeholder={tags().length ? "" : "Add tags..."}
-				onChange={(e) => { const v = (e as { value?: string }).value ?? ""; if (/[,;]$/.test(v)) add(v); else setDraft(v); }}
+				onChange={(e) => {
+					const v = (e as { value?: string }).value ?? "";
+					if (/[,;]$/.test(v)) add(v);
+					else setDraft(v);
+				}}
 				onSubmit={(e) => add((e as { value?: string }).value ?? draft())}
 				onBlur={() => add(draft())}
 				style={{ flexGrow: 1, minWidth: 60, height: 20, fontSize: 11, fontFamily: "Inter", color: p.k.tok("foreground") }}
@@ -65,6 +86,10 @@ export function TagEditor(p: { k: Kit; s: Session; id: string }): JSX.Element {
 }
 
 export const TYPE_ICON: Record<string, string> = {
-	highlight: "highlighter", underline: "underline", note: "sticky-note", image: "square-dashed", ink: "pen-line", text: "type",
+	highlight: "highlighter",
+	underline: "underline",
+	note: "sticky-note",
+	image: "square-dashed",
+	ink: "pen-line",
+	text: "type",
 };
-

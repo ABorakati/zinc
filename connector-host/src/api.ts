@@ -56,14 +56,20 @@ export async function forwardApi(getDb: () => Database, call: ApiCall): Promise<
 		return out(400, { error: "malformed path" });
 	}
 	const refused = apiRefusal(method, url.pathname);
-	if (refused) return out(refused === "malformed path" || refused === "not an /api path" ? 400 : 403, { error: refused, method, path: url.pathname });
+	if (refused)
+		return out(refused === "malformed path" || refused === "not an /api path" ? 400 : 403, {
+			error: refused,
+			method,
+			path: url.pathname,
+		});
 	const req = new Request(url, { method, headers: call.headers, body: method === "GET" || method === "HEAD" ? undefined : call.body });
 	let res: Response | null;
 	try {
 		const { handleApi } = await import("../../core/src/api");
 		res = await handleApi(req, getDb());
 	} catch (e) {
-		if (isBusyError(e)) return out(503, { error: "The Zinc library is busy (another program is writing to it). Try again in a moment." });
+		if (isBusyError(e))
+			return out(503, { error: "The Zinc library is busy (another program is writing to it). Try again in a moment." });
 		throw e;
 	}
 	if (!res) return out(404, { error: "not found" });

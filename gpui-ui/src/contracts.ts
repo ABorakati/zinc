@@ -78,9 +78,13 @@ export type View =
 	| { kind: "publications" };
 
 /** Sort level as in the web UI's SortBar (up to 4); while grouped, level 1 is the group field. */
-export interface SortLevel { key: string; dir: "asc" | "desc" }
+export interface SortLevel {
+	key: string;
+	dir: "asc" | "desc";
+}
 /** Grouping keys; each is also the sort key of level 1 while grouped (the core's GET /items/groups?by=). */
-export type GroupBy = "none" | "year" | "itemType" | "publication" | "firstAuthor" | "dateAdded" | "dateModified" | "hasPdf" | "language" | "publisher";
+export type GroupBy =
+	"none" | "year" | "itemType" | "publication" | "firstAuthor" | "dateAdded" | "dateModified" | "hasPdf" | "language" | "publisher";
 
 /**
  * Library-list state added for parity (implemented in store.ts by the list/table owner; other features use it).
@@ -105,11 +109,26 @@ export interface ListStore {
 }
 
 /** The permanent first tab: the library (sidebar | list | item pane). */
-export interface LibraryTab { id: "library" }
+export interface LibraryTab {
+	id: "library";
+}
 /** A PDF reader tab; its id is the attachment key. */
-export interface ReaderTab { id: string; kind: "reader"; title: string; itemKey: string; /** the library the attachment was opened from (absent: My Library) */ library?: number }
+export interface ReaderTab {
+	id: string;
+	kind: "reader";
+	title: string;
+	itemKey: string;
+	/** the library the attachment was opened from (absent: My Library) */ library?: number;
+}
 /** A web reader tab (HTML snapshots, EPUBs): Zotero's reader-host page in the shared WebView2 (src/webview); its id is the attachment key. */
-export interface WebTab { id: string; kind: "web"; title: string; itemKey: string; attachmentKey: string; contentType: string }
+export interface WebTab {
+	id: string;
+	kind: "web";
+	title: string;
+	itemKey: string;
+	attachmentKey: string;
+	contentType: string;
+}
 export type Tab = LibraryTab | ReaderTab | WebTab;
 export const isReaderTab = (t: Tab): t is ReaderTab => "kind" in t && t.kind === "reader";
 export const isWebTab = (t: Tab): t is WebTab => "kind" in t && t.kind === "web";

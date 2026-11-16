@@ -16,7 +16,9 @@ type KeyLike = EventPayload & { preventDefault?(): void; stopPropagation?(): voi
 
 let searchFocuser: (() => void) | undefined;
 /** The toolbar's search box registers how to focus itself (Ctrl+F in the list). */
-export const registerSearchFocus = (f: (() => void) | undefined) => { searchFocuser = f; };
+export const registerSearchFocus = (f: (() => void) | undefined) => {
+	searchFocuser = f;
+};
 export const focusSearch = () => searchFocuser?.();
 
 export interface ListKeyOps {
@@ -30,7 +32,7 @@ export interface ListKeyOps {
 	extra?(key: string, e: KeyLike): boolean;
 }
 function tryPasteIdentifiers(): boolean {
-	let clip = readClipboard();
+	const clip = readClipboard();
 	if (clip === null) {
 		void clipboard.readText().then((text) => {
 			const t = (text ?? "").trim();
@@ -46,7 +48,6 @@ function tryPasteIdentifiers(): boolean {
 	return false;
 }
 
-
 export function listKeyHandler(ops: ListKeyOps) {
 	return (ev: EventPayload) => {
 		const e = ev as KeyLike;
@@ -56,7 +57,8 @@ export function listKeyHandler(ops: ListKeyOps) {
 		let handled = true;
 		if (ctrl && k === "a") store.selectAll();
 		else if (ctrl && k === "f") focusSearch();
-		else if (ctrl && k === "v") handled = store.canEdit() && tryPasteIdentifiers(); // a read-only library takes no new items
+		else if (ctrl && k === "v")
+			handled = store.canEdit() && tryPasteIdentifiers(); // a read-only library takes no new items
 		else if (ctrl || m.alt) handled = false;
 		else if (k === "down") ops.move(1, !!m.shift);
 		else if (k === "up") ops.move(-1, !!m.shift);
@@ -67,8 +69,13 @@ export function listKeyHandler(ops: ListKeyOps) {
 		else if (k === "space" || k === " ") ops.toggle();
 		else if (k === "enter") ops.open();
 		else if (k === "escape") store.selectOnly(null);
-		else if (k === "delete") { if (store.canEdit()) void deleteSelected(!!m.shift); } // Delete: to the Trash (permanently in the Trash view); Shift+Delete: permanently
+		else if (k === "delete") {
+			if (store.canEdit()) void deleteSelected(!!m.shift);
+		} // Delete: to the Trash (permanently in the Trash view); Shift+Delete: permanently
 		else handled = ops.extra?.(k, e) ?? false;
-		if (handled) { e.preventDefault?.(); e.stopPropagation?.(); }
+		if (handled) {
+			e.preventDefault?.();
+			e.stopPropagation?.();
+		}
 	};
 }

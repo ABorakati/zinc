@@ -86,7 +86,10 @@ export function savePdf(deps: SaveDeps, req: SaveReq): { attachment_key: string;
 	if (!info || info.kind !== "pdf" || !info.path) throw new OpError("internal", "the staged PDF is not a file-backed body");
 	const parentKey = deps.keyOfItem(req.item);
 	if (!parentKey) throw new OpError("parent_gone", "unknown item");
-	const parentRow = db.query("SELECT data, deleted FROM items WHERE key = ? AND parent_key IS NULL").get(parentKey) as { data: string; deleted: number } | null;
+	const parentRow = db.query("SELECT data, deleted FROM items WHERE key = ? AND parent_key IS NULL").get(parentKey) as {
+		data: string;
+		deleted: number;
+	} | null;
 	if (!parentRow || parentRow.deleted) throw new OpError("parent_gone", "the parent item no longer exists");
 	const hasPdf = db
 		.query(
@@ -102,7 +105,8 @@ export function savePdf(deps: SaveDeps, req: SaveReq): { attachment_key: string;
 		const trim = Number(req.trim_prefix) || 0;
 		if (trim > 0) {
 			const bytes = readFileSync(info.path);
-			for (let i = 0; i < PDF_MAGIC.length; i++) if (bytes[trim + i] !== PDF_MAGIC[i]) throw new OpError("internal", "trim_prefix does not point at %PDF-");
+			for (let i = 0; i < PDF_MAGIC.length; i++)
+				if (bytes[trim + i] !== PDF_MAGIC[i]) throw new OpError("internal", "trim_prefix does not point at %PDF-");
 			writeFileSync(info.path, bytes.subarray(trim));
 		}
 		let key = generateKey();

@@ -1,7 +1,14 @@
 // bun test src/locate/openurl.test.ts -- the Locate links for a journal article, a book, a chapter and the edge cases.
 import { describe, expect, test } from "bun:test";
 import {
-	buildOpenUrl, googleScholarUrl, hasLookupData, normalizeDoi, openUrlParams, pageRange, pmidOf, viewOnlineUrl,
+	buildOpenUrl,
+	googleScholarUrl,
+	hasLookupData,
+	normalizeDoi,
+	openUrlParams,
+	pageRange,
+	pmidOf,
+	viewOnlineUrl,
 	type LocateItem,
 } from "./openurl";
 
@@ -130,7 +137,10 @@ describe("openUrlParams", () => {
 			itemType: "journalArticle",
 			title: "T",
 			publicationTitle: "J",
-			creators: [{ creatorType: "editor", lastName: "Editor" }, { creatorType: "author", lastName: "Author", firstName: "A" }],
+			creators: [
+				{ creatorType: "editor", lastName: "Editor" },
+				{ creatorType: "author", lastName: "Author", firstName: "A" },
+			],
 		});
 		expect(pairs.find(([k]) => k === "rft.aulast")?.[1]).toBe("Editor");
 	});

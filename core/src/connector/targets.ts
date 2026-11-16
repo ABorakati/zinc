@@ -30,7 +30,8 @@ export function groupSelection(db: Database): string | null {
 	return lib !== null && lib !== USER_LIBRARY ? (getLibrary(db, lib)?.name ?? "a group library") : null;
 }
 
-export type ResolvedTarget = { ok: true; collectionKey: string | null; redirected?: boolean } | { ok: false; error: "COLLECTION_NOT_FOUND" | "INVALID_TARGET" };
+export type ResolvedTarget =
+	{ ok: true; collectionKey: string | null; redirected?: boolean } | { ok: false; error: "COLLECTION_NOT_FOUND" | "INVALID_TARGET" };
 
 /** Parse a target ID ("L1", "C<key>") sent by the extension. */
 export function resolveTarget(db: Database, id: unknown): ResolvedTarget {
@@ -41,7 +42,9 @@ export function resolveTarget(db: Database, id: unknown): ResolvedTarget {
 		if (!getCollection(db, key)) return { ok: false, error: "COLLECTION_NOT_FOUND" };
 		// A group collection (e.g. one the UI had open): save to My Library rather than fail.
 		const lib = libraryOfCollection(db, key);
-		return lib !== null && lib !== USER_LIBRARY ? { ok: true, collectionKey: null, redirected: true } : { ok: true, collectionKey: key };
+		return lib !== null && lib !== USER_LIBRARY
+			? { ok: true, collectionKey: null, redirected: true }
+			: { ok: true, collectionKey: key };
 	}
 	return { ok: false, error: "INVALID_TARGET" };
 }

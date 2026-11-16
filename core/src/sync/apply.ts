@@ -149,7 +149,9 @@ function breakCollectionLoops(c: Ctx): void {
 				break;
 			}
 			seen.add(cur);
-			cur = (db.query("SELECT parent_key FROM collections WHERE key = ?").get(cur) as { parent_key: string | null } | null)?.parent_key ?? null;
+			cur =
+				(db.query("SELECT parent_key FROM collections WHERE key = ?").get(cur) as { parent_key: string | null } | null)
+					?.parent_key ?? null;
 		}
 	}
 }
@@ -183,11 +185,17 @@ function recordConflict(db: Database, type: string, key: string, local: unknown,
 
 function localSnapshot(db: Database, type: EntityType, key: string): { json: unknown; ms: number } | null {
 	if (type === "item") {
-		const r = db.query("SELECT data, date_modified FROM items WHERE key = ?").get(key) as { data: string; date_modified: string } | null;
+		const r = db.query("SELECT data, date_modified FROM items WHERE key = ?").get(key) as {
+			data: string;
+			date_modified: string;
+		} | null;
 		return r ? { json: JSON.parse(r.data), ms: ms(r.date_modified) } : null;
 	}
 	if (type === "annotation") {
-		const r = db.query("SELECT data, date_modified FROM annotations WHERE key = ?").get(key) as { data: string; date_modified: string } | null;
+		const r = db.query("SELECT data, date_modified FROM annotations WHERE key = ?").get(key) as {
+			data: string;
+			date_modified: string;
+		} | null;
 		return r ? { json: JSON.parse(r.data), ms: ms(r.date_modified) } : null;
 	}
 	const r = db.query("SELECT key, name, parent_key FROM collections WHERE key = ?").get(key) as {
@@ -260,7 +268,13 @@ function upsertCollection(c: Ctx, key: string, data: ZoteroJson, dm: string): vo
 	}
 	const name = typeof data.name === "string" ? data.name : "";
 	let parent = typeof data.parentCollection === "string" && data.parentCollection ? data.parentCollection : null;
-	if (parent && parent !== key && !c.batchCollections.has(parent) && !db.query("SELECT 1 FROM collections WHERE key = ? AND library_id = ?").get(parent, c.libraryId)) parent = null;
+	if (
+		parent &&
+		parent !== key &&
+		!c.batchCollections.has(parent) &&
+		!db.query("SELECT 1 FROM collections WHERE key = ? AND library_id = ?").get(parent, c.libraryId)
+	)
+		parent = null;
 	if (parent === key) parent = null;
 	const version = typeof data.version === "number" ? data.version : 0;
 	db.query(
@@ -300,7 +314,10 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 	// Fast path for the first full pull: identical modification time and nothing queued locally. Not when My Publications
 	// differs: older imports dropped that flag, and Zotero does not bump dateModified when it is set, so only a full apply fixes it.
 	if (
-		existing && !hasOutbox(db, "item", key) && ms(existing.date_modified) === ms(modified) && existing.version === (Number(data.version) || 0) &&
+		existing &&
+		!hasOutbox(db, "item", key) &&
+		ms(existing.date_modified) === ms(modified) &&
+		existing.version === (Number(data.version) || 0) &&
 		!!data.inPublications === localInPublications(db, key)
 	) {
 		setBase(db, "item", key, dm || modified);
@@ -331,7 +348,21 @@ function upsertItem(c: Ctx, key: string, data: ZoteroJson, dm: string): void {
 			creators_summary = excluded.creators_summary, year = excluded.year, publication = excluded.publication,
 			data = excluded.data, date_added = excluded.date_added, date_modified = excluded.date_modified,
 			version = excluded.version, deleted = excluded.deleted`,
-	).run(key, itemType, parent, cols.title, cols.creators_summary, cols.year, cols.publication, JSON.stringify(itemData), added, modified, version, deleted, c.libraryId);
+	).run(
+		key,
+		itemType,
+		parent,
+		cols.title,
+		cols.creators_summary,
+		cols.year,
+		cols.publication,
+		JSON.stringify(itemData),
+		added,
+		modified,
+		version,
+		deleted,
+		c.libraryId,
+	);
 
 	// tags
 	db.query("DELETE FROM item_tags WHERE item_key = ?").run(key);
@@ -382,7 +413,11 @@ function upsertAnnotation(c: Ctx, key: string, data: ZoteroJson, dm: string): vo
 		c.report.skipped++;
 		return;
 	}
-	if (db.query("SELECT 1 FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ? AND i.library_id <> ?").get(key, c.libraryId)) {
+	if (
+		db
+			.query("SELECT 1 FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ? AND i.library_id <> ?")
+			.get(key, c.libraryId)
+	) {
 		c.report.skipped++;
 		c.report.collisions = (c.report.collisions ?? 0) + 1;
 		return;
@@ -422,19 +457,39 @@ function deletionBlockedByChildren(c: Ctx, key: string): boolean {
 	const pendingAnns = anns.filter((a) => hasOutbox(db, "annotation", a.key));
 	if (pendingKids.length === 0 && pendingAnns.length === 0) return false;
 	const local = localSnapshot(db, "item", key);
-	recordConflict(db, "item", key, { ...((local?.json as object) ?? {}), pendingChildren: [...pendingKids, ...pendingAnns.map((a) => a.key)] }, null, "local");
+	recordConflict(
+		db,
+		"item",
+		key,
+		{ ...((local?.json as object) ?? {}), pendingChildren: [...pendingKids, ...pendingAnns.map((a) => a.key)] },
+		null,
+		"local",
+	);
 	c.report.conflicts++;
 	db.query("DELETE FROM sync_base WHERE type = 'item' AND key = ?").run(key);
-	db.query("INSERT INTO sync_outbox(type, key, op, library_id) VALUES('item', ?, 'upsert', ?) ON CONFLICT(type, key, op) DO NOTHING").run(key, c.libraryId);
+	db.query("INSERT INTO sync_outbox(type, key, op, library_id) VALUES('item', ?, 'upsert', ?) ON CONFLICT(type, key, op) DO NOTHING").run(
+		key,
+		c.libraryId,
+	);
 	return true;
 }
 
 function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 	const db = c.db;
 	// an erase in one library never touches an object of another that happens to share the key
-	if (type !== "annotation" && (db.query(`SELECT 1 FROM ${type === "item" ? "items" : "collections"} WHERE key = ? AND library_id <> ?`).get(key, c.libraryId))) return;
+	if (
+		type !== "annotation" &&
+		db.query(`SELECT 1 FROM ${type === "item" ? "items" : "collections"} WHERE key = ? AND library_id <> ?`).get(key, c.libraryId)
+	)
+		return;
 	// an annotation is only ever removed through its own library: its attachment must be in this library
-	if (type === "annotation" && !db.query("SELECT 1 FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ? AND i.library_id = ?").get(key, c.libraryId)) return;
+	if (
+		type === "annotation" &&
+		!db
+			.query("SELECT 1 FROM annotations a JOIN items i ON i.key = a.attachment_key WHERE a.key = ? AND i.library_id = ?")
+			.get(key, c.libraryId)
+	)
+		return;
 	if (type === "item" && deletionBlockedByChildren(c, key)) return;
 	if (hasOutbox(db, type, key)) {
 		// edited here while erased there: keep our version (it is written back on the next push)
@@ -449,7 +504,10 @@ function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 	}
 	db.query("DELETE FROM sync_base WHERE type = ? AND key = ?").run(type, key);
 	if (type === "item") {
-		const row = db.query("SELECT rowid, parent_key FROM items WHERE key = ?").get(key) as { rowid: number; parent_key: string | null } | null;
+		const row = db.query("SELECT rowid, parent_key FROM items WHERE key = ?").get(key) as {
+			rowid: number;
+			parent_key: string | null;
+		} | null;
 		if (!row) return;
 		db.query("DELETE FROM items WHERE key = ?").run(key);
 		if (row.parent_key) c.reindex.add(row.parent_key);
@@ -488,7 +546,11 @@ export function applyChanges(db: Database, changes: RemoteChanges, dataDir: stri
 		unindex: [],
 		batchItems: new Set(ch.upserts.filter((u) => u.type === "item").map((u) => u.key)),
 		batchCollections: new Set(ch.upserts.filter((u) => u.type === "collection").map((u) => u.key)),
-		batchParent: new Map(ch.upserts.filter((u) => u.type === "item").map((u) => [u.key, typeof u.data.parentItem === "string" && u.data.parentItem ? u.data.parentItem : null])),
+		batchParent: new Map(
+			ch.upserts
+				.filter((u) => u.type === "item")
+				.map((u) => [u.key, typeof u.data.parentItem === "string" && u.data.parentItem ? u.data.parentItem : null]),
+		),
 	};
 	db.transaction(() => {
 		db.run("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");

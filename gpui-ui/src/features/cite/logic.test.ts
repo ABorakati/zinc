@@ -19,10 +19,13 @@ describe("planQuickCopy", () => {
 	});
 	test("an explicit mode (the keyboard shortcuts) beats the default and Shift", () => {
 		expect(planQuickCopy(base, "", { mode: "citation" })).toMatchObject({ mode: "citation" });
-		expect(planQuickCopy({ ...base, mode: "citation" }, "", { mode: "bibliography", shift: true })).toMatchObject({ mode: "bibliography" });
+		expect(planQuickCopy({ ...base, mode: "citation" }, "", { mode: "bibliography", shift: true })).toMatchObject({
+			mode: "bibliography",
+		});
 	});
 	test("an export format wins over style and mode", () => {
-		for (const how of [{}, { shift: true }, { mode: "citation" as const }]) expect(planQuickCopy(base, "bibtex", how)).toEqual({ kind: "export", format: "bibtex" });
+		for (const how of [{}, { shift: true }, { mode: "citation" as const }])
+			expect(planQuickCopy(base, "bibtex", how)).toEqual({ kind: "export", format: "bibtex" });
 	});
 	test("plain-text output drops the HTML", () => {
 		expect(planQuickCopy({ ...base, format: "text" }, "")).toMatchObject({ includeHtml: false });
@@ -36,11 +39,22 @@ describe("planQuickCopy", () => {
 describe("request, key and message", () => {
 	test("formatRequest asks for html+text, or text only", () => {
 		const p = planQuickCopy(base, "") as Extract<ReturnType<typeof planQuickCopy>, { kind: "style" }>;
-		expect(formatRequest(["A"], p)).toEqual({ keys: ["A"], style: "vancouver", locale: "", mode: "bibliography", format: ["html", "text"] });
+		expect(formatRequest(["A"], p)).toEqual({
+			keys: ["A"],
+			style: "vancouver",
+			locale: "",
+			mode: "bibliography",
+			format: ["html", "text"],
+		});
 		expect(formatRequest(["A"], { ...p, includeHtml: false }).format).toEqual(["text"]);
 	});
 	test("planKey differs by mode, style and export format", () => {
-		const keys = new Set([planKey(planQuickCopy(base, "")), planKey(planQuickCopy(base, "", { shift: true })), planKey(planQuickCopy({ ...base, style: "apa" }, "")), planKey(planQuickCopy(base, "ris"))]);
+		const keys = new Set([
+			planKey(planQuickCopy(base, "")),
+			planKey(planQuickCopy(base, "", { shift: true })),
+			planKey(planQuickCopy({ ...base, style: "apa" }, "")),
+			planKey(planQuickCopy(base, "ris")),
+		]);
 		expect(keys.size).toBe(4);
 		expect(planKey(planQuickCopy(base, "ris", { shift: true }))).toBe(planKey(planQuickCopy(base, "ris")));
 	});

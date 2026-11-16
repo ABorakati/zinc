@@ -41,7 +41,10 @@ const ctx: ReaderContext = {
 	pageSize: (i) => ({ w: doc.sizes[i]![0], h: doc.sizes[i]![1] }),
 	textLayer: (i) => {
 		let p = layers.get(i);
-		if (!p) { p = doc.textLayerAsync(i).then((l) => ({ words: l.words })); layers.set(i, p); }
+		if (!p) {
+			p = doc.textLayerAsync(i).then((l) => ({ words: l.words }));
+			layers.set(i, p);
+		}
 		return p;
 	},
 	pdfBytes: async () => bytes,
@@ -68,7 +71,17 @@ function Root(): JSX.Element {
 	return (
 		<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%", backgroundColor: k.tok("background") }}>
 			<div style={{ ...k.t("flex flex-col border-r bg-card"), width: 340, flexShrink: 0, height: "100%", minHeight: 0 }}>
-				<AnnotationsPanel ctx={ctx} filter={{ query: filterQuery, setQuery: setFilterQuery, colors: filterColors, setColors: setFilterColors, tag: filterTag, setTag: setFilterTag }} />
+				<AnnotationsPanel
+					ctx={ctx}
+					filter={{
+						query: filterQuery,
+						setQuery: setFilterQuery,
+						colors: filterColors,
+						setColors: setFilterColors,
+						tag: filterTag,
+						setTag: setFilterTag,
+					}}
+				/>
 			</div>
 			<div style={{ display: "flex", flexGrow: 1, position: "relative", alignItems: "center", justifyContent: "center" }}>
 				<div style={{ position: "relative", width: 800, height: 840 }}>
@@ -80,8 +93,18 @@ function Root(): JSX.Element {
 	);
 }
 t.render(() => <Root />);
-const pump = () => { r.flush(); r.dispatchNativeEvents(); r.flush(); };
-const frame = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { pump(); await Bun.sleep(16); } };
+const pump = () => {
+	r.flush();
+	r.dispatchNativeEvents();
+	r.flush();
+};
+const frame = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		pump();
+		await Bun.sleep(16);
+	}
+};
 
 await frame(400);
 const s = sessionFor(ctx);
@@ -129,14 +152,19 @@ console.log("Testing image annotation:", imageAnn.id, "on page", imageAnn.positi
 
 // Test context menu items for image annotation
 const menuItems = annotationContextMenu(ctx, imageAnn);
-console.log("Context menu items for image annotation:", menuItems.map((m) => m.label || "---"));
+console.log(
+	"Context menu items for image annotation:",
+	menuItems.map((m) => m.label || "---"),
+);
 if (!menuItems.some((m) => m.label === "Copy Image")) throw new Error("Missing 'Copy Image' in context menu");
 if (!menuItems.some((m) => m.label === "Export Image…")) throw new Error("Missing 'Export Image…' in context menu");
 
 // Test renderAnnotationImage
 const rendered = await renderAnnotationImage(ctx, imageAnn, 3);
 if (!rendered) throw new Error("renderAnnotationImage returned null");
-console.log(`Rendered image: ${rendered.width}x${rendered.height} px, PNG bytes: ${rendered.png.length}, DIB bytes: ${rendered.dib.length}`);
+console.log(
+	`Rendered image: ${rendered.width}x${rendered.height} px, PNG bytes: ${rendered.png.length}, DIB bytes: ${rendered.dib.length}`,
+);
 if (rendered.width <= 0 || rendered.height <= 0) throw new Error("Invalid rendered dimensions");
 
 // Test exportAnnotationImage
@@ -213,7 +241,9 @@ r.captureScreenshot(join(OUT_DIR, "probe-05-eraser-tool-active.png"));
 console.log("Screenshot: probe-05-eraser-tool-active.png");
 
 // Erase around point (220, 210) with radius 15
-const ex = 220, ey = 210, radius = 15;
+const ex = 220,
+	ey = 210,
+	radius = 15;
 const inkBefore = s.store.get("INKTEST1");
 console.log("Paths before erase:", inkBefore?.position.paths?.length);
 
@@ -221,7 +251,8 @@ const newPaths: number[][] = [];
 for (const p of inkBefore?.position.paths ?? []) {
 	let cur: number[] = [];
 	for (let i = 0; i + 1 < p.length; i += 2) {
-		const px = p[i]!, py = p[i + 1]!;
+		const px = p[i]!,
+			py = p[i + 1]!;
 		if (Math.hypot(px - ex, py - ey) <= radius) {
 			if (cur.length >= 4) newPaths.push(cur);
 			cur = [];

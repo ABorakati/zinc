@@ -8,8 +8,18 @@ import { buildPageText, fromNRect } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
 import { selectionToPosition } from "./geometry";
 import {
-	boundingRect, COLORS, DEFAULT_COLOR, makeAnnotation, notePosition, notesHtml, pageLabelFor, sortIndexFor, textPosition,
-	type Annotation, type AnnotationType, type Position,
+	boundingRect,
+	COLORS,
+	DEFAULT_COLOR,
+	makeAnnotation,
+	notePosition,
+	notesHtml,
+	pageLabelFor,
+	sortIndexFor,
+	textPosition,
+	type Annotation,
+	type AnnotationType,
+	type Position,
 } from "./model";
 import { createStore } from "./store";
 
@@ -29,10 +39,28 @@ export function createSession(ctx: ReaderContext) {
 	let messageTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const ui = {
-		tool, color, selectedId, select, focusComment, setFocusComment, message, inkWidth,
-		setTool(t: Tool | null) { setToolRaw(t); if (t) { select(null); ctx.clearSelection(); } },
-		setColor(c: string) { rememberedColor = c; setColorRaw(c); },
-		setInkWidth(w: number) { setInkWidthRaw(w); },
+		tool,
+		color,
+		selectedId,
+		select,
+		focusComment,
+		setFocusComment,
+		message,
+		inkWidth,
+		setTool(t: Tool | null) {
+			setToolRaw(t);
+			if (t) {
+				select(null);
+				ctx.clearSelection();
+			}
+		},
+		setColor(c: string) {
+			rememberedColor = c;
+			setColorRaw(c);
+		},
+		setInkWidth(w: number) {
+			setInkWidthRaw(w);
+		},
 		notify(msg: string) {
 			setMessage(msg);
 			clearTimeout(messageTimer);
@@ -47,8 +75,20 @@ export function createSession(ctx: ReaderContext) {
 	}
 	const label = (pageIndex: number) => pageLabelFor(pageIndex, store.list());
 
-	async function create(type: AnnotationType, col: string, position: Position, extra: { text?: string; comment?: string } = {}): Promise<Annotation> {
-		const a = makeAnnotation({ type, color: col, position, sortIndex: await sortIndex(position), pageLabel: label(position.pageIndex), ...extra });
+	async function create(
+		type: AnnotationType,
+		col: string,
+		position: Position,
+		extra: { text?: string; comment?: string } = {},
+	): Promise<Annotation> {
+		const a = makeAnnotation({
+			type,
+			color: col,
+			position,
+			sortIndex: await sortIndex(position),
+			pageLabel: label(position.pageIndex),
+			...extra,
+		});
 		if (ctx.readOnly) ui.notify("This library is read-only: annotations cannot be added.");
 		store.add(a);
 		return a;
@@ -61,7 +101,12 @@ export function createSession(ctx: ReaderContext) {
 	const act = {
 		sortIndex,
 		/** Save a new annotation at an explicit position (PDF points), e.g. one made in the reading view; selects it. */
-		async create(type: AnnotationType, col: string, position: Position, extra: { text?: string; comment?: string; focusComment?: boolean } = {}): Promise<Annotation> {
+		async create(
+			type: AnnotationType,
+			col: string,
+			position: Position,
+			extra: { text?: string; comment?: string; focusComment?: boolean } = {},
+		): Promise<Annotation> {
 			const a = await create(type, col, position, { text: extra.text, comment: extra.comment });
 			select(a.id);
 			if (extra.focusComment) setFocusComment(a.id);
@@ -70,7 +115,9 @@ export function createSession(ctx: ReaderContext) {
 		/** Route jump() to another view while it is shown; returns the remover. */
 		setJumpOverride(fn: ((a: Annotation) => boolean) | null): () => void {
 			jumpOverride = fn;
-			return () => { if (jumpOverride === fn) jumpOverride = null; };
+			return () => {
+				if (jumpOverride === fn) jumpOverride = null;
+			};
 		},
 		/** Highlight/underline the current text selection; returns the new annotation. */
 		async fromSelection(type: "highlight" | "underline", col: string, opts: { comment?: boolean } = {}): Promise<Annotation | null> {
@@ -109,8 +156,14 @@ export function createSession(ctx: ReaderContext) {
 		},
 		/** Create a child note of the parent item listing the given annotations (Zotero's "Add Note from Annotations"). */
 		async noteFromAnnotations(anns: Annotation[]): Promise<boolean> {
-			if (!ctx.itemKey) { ui.notify("This file has no parent item to attach a note to."); return false; }
-			if (!anns.length) { ui.notify("No annotations to add."); return false; }
+			if (!ctx.itemKey) {
+				ui.notify("This file has no parent item to attach a note to.");
+				return false;
+			}
+			if (!anns.length) {
+				ui.notify("No annotations to add.");
+				return false;
+			}
 			try {
 				await apiRequest("POST", "/items", { data: { itemType: "note", parentItem: ctx.itemKey, note: notesHtml(anns) } });
 				ui.notify(`Added a note with ${anns.length} annotation${anns.length === 1 ? "" : "s"} to the item.`);

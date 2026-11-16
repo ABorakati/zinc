@@ -65,7 +65,10 @@ export function isoToSql(s: string | null | undefined): string | null {
 }
 
 export function sqlNow(d: Date = new Date()): string {
-	return d.toISOString().replace("T", " ").replace(/\.\d+Z$/, "");
+	return d
+		.toISOString()
+		.replace("T", " ")
+		.replace(/\.\d+Z$/, "");
 }
 
 // Zotero stores dates as "YYYY-MM-DD original text"; the API returns the original text.
@@ -95,10 +98,18 @@ export function dateToMultipart(text: string): string {
 // ---------------------------------------------------------------------------------------------
 
 const SEARCH_MAP: Record<string, string> = {
-	"ø": "o", "œ": "oe", "æ": "ae", "ł": "l", "đ": "d", "ð": "d", "þ": "th", "ß": "ss", "ı": "i", "\u2044": "/",
+	ø: "o",
+	œ: "oe",
+	æ: "ae",
+	ł: "l",
+	đ: "d",
+	ð: "d",
+	þ: "th",
+	ß: "ss",
+	ı: "i",
+	"\u2044": "/",
 };
-const SEARCH_FORMATTING_TAG_RE =
-	/<\/?(?:i|b|sub|sup)>|<span (?:style="font-variant:small-caps;"|class="nocase")>|<\/span>/g;
+const SEARCH_FORMATTING_TAG_RE = /<\/?(?:i|b|sub|sup)>|<span (?:style="font-variant:small-caps;"|class="nocase")>|<\/span>/g;
 
 export function normalizeForSearch(str: string): string {
 	if (!str) return str;
@@ -129,15 +140,13 @@ export function normalizeForSearchStorage(value: unknown): string | null {
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 
 function unescapeHtml(s: string): string {
-	return s
-		.replace(/<[^>]*>/g, "")
-		.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
-			if (e[0] === "#") {
-				const code = e[1].toLowerCase() === "x" ? Number.parseInt(e.slice(2), 16) : Number.parseInt(e.slice(1), 10);
-				return Number.isFinite(code) ? codePointChar(code) : m;
-			}
-			return ENTITIES[e.toLowerCase()] ?? m;
-		});
+	return s.replace(/<[^>]*>/g, "").replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+		if (e[0] === "#") {
+			const code = e[1].toLowerCase() === "x" ? Number.parseInt(e.slice(2), 16) : Number.parseInt(e.slice(1), 10);
+			return Number.isFinite(code) ? codePointChar(code) : m;
+		}
+		return ENTITIES[e.toLowerCase()] ?? m;
+	});
 }
 
 /** Zotero.Utilities.Item.noteToTitle */
@@ -172,7 +181,10 @@ export function validFileName(name: string): string {
 		.replace(/[\u200b-\u200e]/g, "")
 		.replace(/[\u2028-\u2029]/g, " ")
 		.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, "");
-	f = f.normalize().replace(/[\u2068\u2069]/g, "").replace(/^\./, "");
+	f = f
+		.normalize()
+		.replace(/[\u2068\u2069]/g, "")
+		.replace(/^\./, "");
 	if (!f || f === "." || f === "..") f = "_";
 	return f;
 }

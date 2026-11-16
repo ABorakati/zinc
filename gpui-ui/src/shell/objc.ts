@@ -71,10 +71,21 @@ export function objc() {
 		const classes = new Map<string, Id>();
 		rt = {
 			send,
-			cls: (n) => { let c = classes.get(n); if (c === undefined) classes.set(n, (c = lib.objc_getClass(cs(n)) as Id)); return c; },
-			sel: (n) => { let s = sels.get(n); if (s === undefined) sels.set(n, (s = lib.sel_registerName(cs(n)) as Id)); return s; },
+			cls: (n) => {
+				let c = classes.get(n);
+				if (c === undefined) classes.set(n, (c = lib.objc_getClass(cs(n)) as Id));
+				return c;
+			},
+			sel: (n) => {
+				let s = sels.get(n);
+				if (s === undefined) sels.set(n, (s = lib.sel_registerName(cs(n)) as Id));
+				return s;
+			},
 			/** the value of a global object constant (an NSString * variable such as NSPrintJobDisposition) */
-			sym: (n) => { const a = sys.dlsym(RTLD_DEFAULT, cs(n)); return a ? (read.ptr(a as never) as Id) : null; },
+			sym: (n) => {
+				const a = sys.dlsym(RTLD_DEFAULT, cs(n));
+				return a ? (read.ptr(a as never) as Id) : null;
+			},
 			/** load a framework (its classes register with the runtime) */
 			load: (path) => !!sys.dlopen(cs(path), 2 /* RTLD_NOW */),
 		};
@@ -93,9 +104,11 @@ export function runLoopOnce(): void {
 	if (cf === undefined) {
 		const r = objc();
 		try {
-			const lib = r && dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
-				CFRunLoopRunInMode: { args: [P, F64, I32], returns: I32 },
-			}).symbols;
+			const lib =
+				r &&
+				dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
+					CFRunLoopRunInMode: { args: [P, F64, I32], returns: I32 },
+				}).symbols;
 			const mode = r?.sym("kCFRunLoopDefaultMode") ?? null;
 			cf = lib && mode ? { run: lib.CFRunLoopRunInMode as never, mode } : null;
 		} catch {

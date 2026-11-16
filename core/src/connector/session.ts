@@ -36,7 +36,10 @@ export class SaveSession {
 	/** the proxy the saved page came through: attachment URLs of this save are stored without it */
 	proxy: ProxyInfo | null = null;
 
-	constructor(readonly id: string, readonly action: SessionAction) {}
+	constructor(
+		readonly id: string,
+		readonly action: SessionAction,
+	) {}
 
 	/** Plain-data form, so a session can outlive the process that created it (the native-messaging host). */
 	toJSON(): SerializedSession {
@@ -87,7 +90,10 @@ export class SaveSession {
 	topLevelKeys(db: Database): string[] {
 		const out = new Set<string>();
 		for (const key of this.items.values()) {
-			const row = db.query("SELECT parent_key, deleted FROM items WHERE key = ?").get(key) as { parent_key: string | null; deleted: number } | null;
+			const row = db.query("SELECT parent_key, deleted FROM items WHERE key = ?").get(key) as {
+				parent_key: string | null;
+				deleted: number;
+			} | null;
 			if (!row) continue;
 			const top = row.parent_key ?? key;
 			const t = row.parent_key ? (db.query("SELECT deleted FROM items WHERE key = ?").get(top) as { deleted: number } | null) : row;
@@ -109,7 +115,10 @@ export class SaveSession {
 			if (!d || d.data.deleted) continue;
 			const tagNames = new Set(this.tags);
 			const auto = d.tags.filter((t) => t.type === 1 && !tagNames.has(t.tag));
-			const tags = [...auto.map((t) => ({ tag: t.tag, type: 1 })), ...this.tags.filter((t, i, a) => a.indexOf(t) === i).map((tag) => ({ tag }))];
+			const tags = [
+				...auto.map((t) => ({ tag: t.tag, type: 1 })),
+				...this.tags.filter((t, i, a) => a.indexOf(t) === i).map((tag) => ({ tag })),
+			];
 			const same =
 				tags.length === d.tags.length &&
 				tags.every((t) => d.tags.some((x) => x.tag === t.tag && (x.type || 0) === (("type" in t ? t.type : 0) as number)));

@@ -42,20 +42,118 @@ const TRIGGERS: Trig[] = [
 		lib: itemLib("NEW"),
 	},
 	{ name: "sync_items_ad", on: "AFTER DELETE ON items", type: "item", key: "OLD.key", op: "'delete'", lib: itemLib("OLD") },
-	{ name: "sync_collections_ai", on: "AFTER INSERT ON collections", type: "collection", key: "NEW.key", op: "'upsert'", lib: "NEW.library_id" },
-	{ name: "sync_collections_au", on: "AFTER UPDATE ON collections", type: "collection", key: "NEW.key", op: "'upsert'", lib: "NEW.library_id" },
-	{ name: "sync_collections_ad", on: "AFTER DELETE ON collections", type: "collection", key: "OLD.key", op: "'delete'", lib: "OLD.library_id" },
-	{ name: "sync_collection_items_ai", on: "AFTER INSERT ON collection_items", type: "item", key: "NEW.item_key", op: "'upsert'", lib: ofItem("NEW.item_key") },
-	{ name: "sync_collection_items_ad", on: "AFTER DELETE ON collection_items", type: "item", key: "OLD.item_key", op: "'upsert'", lib: ofItem("OLD.item_key") },
-	{ name: "sync_item_tags_ai", on: "AFTER INSERT ON item_tags", type: "item", key: "NEW.item_key", op: "'upsert'", lib: ofItem("NEW.item_key") },
-	{ name: "sync_item_tags_au", on: "AFTER UPDATE ON item_tags", type: "item", key: "NEW.item_key", op: "'upsert'", lib: ofItem("NEW.item_key") },
-	{ name: "sync_item_tags_ad", on: "AFTER DELETE ON item_tags", type: "item", key: "OLD.item_key", op: "'upsert'", lib: ofItem("OLD.item_key") },
-	{ name: "sync_attachments_ai", on: "AFTER INSERT ON attachments", type: "item", key: "NEW.item_key", op: "'upsert'", lib: ofItem("NEW.item_key") },
-	{ name: "sync_attachments_au", on: "AFTER UPDATE ON attachments", type: "item", key: "NEW.item_key", op: "'upsert'", lib: ofItem("NEW.item_key") },
-	{ name: "sync_attachments_ad", on: "AFTER DELETE ON attachments", type: "item", key: "OLD.item_key", op: "'upsert'", lib: ofItem("OLD.item_key") },
-	{ name: "sync_annotations_ai", on: "AFTER INSERT ON annotations", type: "annotation", key: "NEW.key", op: "'upsert'", lib: ofItem("NEW.attachment_key") },
-	{ name: "sync_annotations_au", on: "AFTER UPDATE ON annotations", type: "annotation", key: "NEW.key", op: "'upsert'", lib: ofItem("NEW.attachment_key") },
-	{ name: "sync_annotations_ad", on: "AFTER DELETE ON annotations", type: "annotation", key: "OLD.key", op: "'delete'", lib: ofItem("OLD.attachment_key") },
+	{
+		name: "sync_collections_ai",
+		on: "AFTER INSERT ON collections",
+		type: "collection",
+		key: "NEW.key",
+		op: "'upsert'",
+		lib: "NEW.library_id",
+	},
+	{
+		name: "sync_collections_au",
+		on: "AFTER UPDATE ON collections",
+		type: "collection",
+		key: "NEW.key",
+		op: "'upsert'",
+		lib: "NEW.library_id",
+	},
+	{
+		name: "sync_collections_ad",
+		on: "AFTER DELETE ON collections",
+		type: "collection",
+		key: "OLD.key",
+		op: "'delete'",
+		lib: "OLD.library_id",
+	},
+	{
+		name: "sync_collection_items_ai",
+		on: "AFTER INSERT ON collection_items",
+		type: "item",
+		key: "NEW.item_key",
+		op: "'upsert'",
+		lib: ofItem("NEW.item_key"),
+	},
+	{
+		name: "sync_collection_items_ad",
+		on: "AFTER DELETE ON collection_items",
+		type: "item",
+		key: "OLD.item_key",
+		op: "'upsert'",
+		lib: ofItem("OLD.item_key"),
+	},
+	{
+		name: "sync_item_tags_ai",
+		on: "AFTER INSERT ON item_tags",
+		type: "item",
+		key: "NEW.item_key",
+		op: "'upsert'",
+		lib: ofItem("NEW.item_key"),
+	},
+	{
+		name: "sync_item_tags_au",
+		on: "AFTER UPDATE ON item_tags",
+		type: "item",
+		key: "NEW.item_key",
+		op: "'upsert'",
+		lib: ofItem("NEW.item_key"),
+	},
+	{
+		name: "sync_item_tags_ad",
+		on: "AFTER DELETE ON item_tags",
+		type: "item",
+		key: "OLD.item_key",
+		op: "'upsert'",
+		lib: ofItem("OLD.item_key"),
+	},
+	{
+		name: "sync_attachments_ai",
+		on: "AFTER INSERT ON attachments",
+		type: "item",
+		key: "NEW.item_key",
+		op: "'upsert'",
+		lib: ofItem("NEW.item_key"),
+	},
+	{
+		name: "sync_attachments_au",
+		on: "AFTER UPDATE ON attachments",
+		type: "item",
+		key: "NEW.item_key",
+		op: "'upsert'",
+		lib: ofItem("NEW.item_key"),
+	},
+	{
+		name: "sync_attachments_ad",
+		on: "AFTER DELETE ON attachments",
+		type: "item",
+		key: "OLD.item_key",
+		op: "'upsert'",
+		lib: ofItem("OLD.item_key"),
+	},
+	{
+		name: "sync_annotations_ai",
+		on: "AFTER INSERT ON annotations",
+		type: "annotation",
+		key: "NEW.key",
+		op: "'upsert'",
+		lib: ofItem("NEW.attachment_key"),
+	},
+	{
+		name: "sync_annotations_au",
+		on: "AFTER UPDATE ON annotations",
+		type: "annotation",
+		key: "NEW.key",
+		op: "'upsert'",
+		lib: ofItem("NEW.attachment_key"),
+	},
+	{
+		name: "sync_annotations_ad",
+		on: "AFTER DELETE ON annotations",
+		type: "annotation",
+		key: "OLD.key",
+		op: "'delete'",
+		lib: ofItem("OLD.attachment_key"),
+	},
 ];
 
 function triggerSql(t: Trig): string {
@@ -88,7 +186,8 @@ export const libraries4: Migration = {
 		db.run("INSERT OR IGNORE INTO libraries(id, type, name) VALUES(1, 'user', 'My Library')");
 
 		// Re-running (the runner may re-apply a half-recorded library): a column that is already there is left alone.
-		const has = (table: string, col: string) => (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
+		const has = (table: string, col: string) =>
+			(db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col);
 		for (const t of ["items", "collections", "sync_outbox"]) {
 			if (!has(t, "library_id")) db.run(`ALTER TABLE ${t} ADD COLUMN library_id INTEGER NOT NULL DEFAULT 1`);
 		}

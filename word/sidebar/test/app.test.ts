@@ -30,9 +30,16 @@ const citeData = (code: string) => {
 
 describe("buildSearchArgs", () => {
 	test("as-you-type prefix on the last word, year and DOI shortcuts", () => {
-		expect(buildSearchArgs("liver trans")).toEqual({ match: '{title creators abstract publication tags} : ("liver" "trans"*)', limit: 30 });
+		expect(buildSearchArgs("liver trans")).toEqual({
+			match: '{title creators abstract publication tags} : ("liver" "trans"*)',
+			limit: 30,
+		});
 		expect(buildSearchArgs("liver ").match).toBe('{title creators abstract publication tags} : ("liver")');
-		expect(buildSearchArgs("smith 2021")).toEqual({ match: '{title creators abstract publication tags} : ("smith"*)', year: 2021, limit: 30 });
+		expect(buildSearchArgs("smith 2021")).toEqual({
+			match: '{title creators abstract publication tags} : ("smith"*)',
+			year: 2021,
+			limit: 30,
+		});
 		expect(buildSearchArgs("2021")).toEqual({ year: 2021, limit: 30 });
 		expect(buildSearchArgs("https://doi.org/10.1000/tx.2021.001")).toEqual({ doi: "10.1000/tx.2021.001", limit: 30 });
 		expect(buildSearchArgs("")).toEqual({ limit: 30 });
@@ -76,7 +83,9 @@ describe("App against a mock Word document", () => {
 		items[0]!.title = "Outcomes after liver transplantation: a revised title";
 		const r = await app.refreshAll();
 		expect(r.updated).toBeGreaterThan(0);
-		expect(citeData(host.fields[0].code).citationItems[0]!.itemData!.title).toBe("Outcomes after liver transplantation: a revised title");
+		expect(citeData(host.fields[0].code).citationItems[0]!.itemData!.title).toBe(
+			"Outcomes after liver transplantation: a revised title",
+		);
 		expect(host.fields[1].text).toContain("a revised title");
 		const again = await app.refreshAll();
 		expect(again.updated).toBe(0); // idempotent
@@ -146,11 +155,17 @@ describe("App against a mock Word document", () => {
 	});
 
 	test("reads and refreshes a document created by Zotero (different style, local URIs)", async () => {
-		const zoteroPrefs = '<data data-version="3" zotero-version="7.0.3"><session id="mAGnqnH1"/><style id="http://www.zotero.org/styles/apa" locale="en-US" hasBibliography="0" bibliographyStyleHasBeenSet="1"/><prefs><pref name="fieldType" value="Field"/><pref name="automaticJournalAbbreviations" value="false"/><pref name="noteType" value="0"/></prefs></data>';
+		const zoteroPrefs =
+			'<data data-version="3" zotero-version="7.0.3"><session id="mAGnqnH1"/><style id="http://www.zotero.org/styles/apa" locale="en-US" hasBibliography="0" bibliographyStyleHasBeenSet="1"/><prefs><pref name="fieldType" value="Field"/><pref name="automaticJournalAbbreviations" value="false"/><pref name="noteType" value="0"/></prefs></data>';
 		const { app, host } = setup(zoteroPrefs);
 		await app.init();
 		host.fields.push({
-			story: "main", idx: 1, kind: "item", start: 0, end: 0, text: "(old)",
+			story: "main",
+			idx: 1,
+			kind: "item",
+			start: 0,
+			end: 0,
+			text: "(old)",
 			code: 'ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"q1w2e3r4","properties":{"formattedCitation":"(old)","plainCitation":"(old)","noteIndex":0},"citationItems":[{"id":9,"uris":["http://zotero.org/users/local/abc12345/items/BBBB2222"],"itemData":{"id":9,"type":"article-journal","title":"stale title","author":[{"family":"Chen","given":"Li"}],"issued":{"date-parts":[[2019]]}}}],"schema":"https://github.com/citation-style-language/schema/raw/master/csl-citation.json"} ',
 		});
 		const r = await app.refreshAll();
@@ -357,7 +372,8 @@ describe("bibliography editor", () => {
 	test("custom text applies only to single-item entries read from a Zotero-written field, and survives a plain refresh", async () => {
 		const { app, host } = await withBib();
 		const bib = biblOf(host);
-		bib.code = 'ADDIN ZOTERO_BIBL {"uncited":[],"omitted":[["http://zotero.org/users/5106252/items/AAAA1111"]],"custom":[[["http://zotero.org/users/5106252/items/BBBB2222"],"{\\\\i{}Chen}, custom"]]} CSL_BIBLIOGRAPHY';
+		bib.code =
+			'ADDIN ZOTERO_BIBL {"uncited":[],"omitted":[["http://zotero.org/users/5106252/items/AAAA1111"]],"custom":[[["http://zotero.org/users/5106252/items/BBBB2222"],"{\\\\i{}Chen}, custom"]]} CSL_BIBLIOGRAPHY';
 		await app.refreshAll();
 		expect(biblOf(host).text).toBe("Chen, custom");
 		expect(biblOf(host).code).toContain('"omitted":[["http://zotero.org/users/5106252/items/AAAA1111"]]'); // the field code is not rewritten by a refresh
@@ -412,7 +428,12 @@ describe("document preferences", () => {
 		frozen.properties.dontUpdate = true;
 		host.fields[1].code = buildItemCode(frozen);
 		await app.setStyle("mininote", "en-US");
-		expect(host.fields.map((f: any) => [f.kind, f.story])).toEqual([["item", "fn"], ["item", "main"], ["item", "fn"], ["bibl", "main"]]);
+		expect(host.fields.map((f: any) => [f.kind, f.story])).toEqual([
+			["item", "fn"],
+			["item", "main"],
+			["item", "fn"],
+			["bibl", "main"],
+		]);
 		expect(parsePrefsXml(host.prefsXml)!.noteType).toBe(1);
 		expect(host.fields[0].text).toBe("Outcomes after liver transplantation in the United Kingdom");
 		expect(citeData(host.fields[0].code).properties.noteIndex).toBe(1);
@@ -467,7 +488,8 @@ describe("document preferences", () => {
 	});
 
 	test("fieldType (bookmarks) and automaticJournalAbbreviations are kept as they are", async () => {
-		const zot = '<data data-version="3" zotero-version="7.0.3"><session id="mAGnqnH1"/><style id="http://www.zotero.org/styles/vancouver" locale="en-US" hasBibliography="0" bibliographyStyleHasBeenSet="1"/><prefs><pref name="fieldType" value="Bookmark"/><pref name="automaticJournalAbbreviations" value="true"/><pref name="noteType" value="0"/></prefs></data>';
+		const zot =
+			'<data data-version="3" zotero-version="7.0.3"><session id="mAGnqnH1"/><style id="http://www.zotero.org/styles/vancouver" locale="en-US" hasBibliography="0" bibliographyStyleHasBeenSet="1"/><prefs><pref name="fieldType" value="Bookmark"/><pref name="automaticJournalAbbreviations" value="true"/><pref name="noteType" value="0"/></prefs></data>';
 		const { app, host } = setup(zot);
 		await app.init();
 		await app.insertCitation([(await app.pickFromKey("AAAA1111"))!]);
@@ -511,7 +533,9 @@ describe("manual edits, custom text and unsorted items", () => {
 				return "overwrite";
 			},
 		});
-		expect(seen).toEqual([{ ref: { story: "main", idx: 1 }, citationID: citeData(host.fields[0].code).citationID, was: "(1)", now: "(typed)" }]);
+		expect(seen).toEqual([
+			{ ref: { story: "main", idx: 1 }, citationID: citeData(host.fields[0].code).citationID, was: "(1)", now: "(typed)" },
+		]);
 		expect(host.fields[0].text).toBe("(1)");
 		expect(r.kept).toBe(0);
 		expect(citeData(host.fields[0].code).properties.dontUpdate).toBeUndefined();

@@ -9,7 +9,10 @@ import { indexItem } from "../search";
 
 // Same shape as db.ts syncDataTags (not exported there): items.data.tags mirrors item_tags.
 function syncDataTags(db: Database, itemKey: string): void {
-	const rows = db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag").all(itemKey) as { tag: string; type: number }[];
+	const rows = db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag").all(itemKey) as {
+		tag: string;
+		type: number;
+	}[];
 	const now = nowIso();
 	db.query("UPDATE items SET data = json_set(data, '$.tags', json(?), '$.dateModified', ?), date_modified = ? WHERE key = ?").run(
 		JSON.stringify(rows.map((r) => (r.type ? { tag: r.tag, type: r.type } : { tag: r.tag }))),
@@ -30,7 +33,9 @@ function finish(db: Database, itemKeys: string[]): void {
 const itemsWithTag = (db: Database, tag: string, lib: number, onlyAutomatic = false) =>
 	(
 		db
-			.query(`SELECT t.item_key FROM item_tags t JOIN items i ON i.key = t.item_key WHERE t.tag = ? AND i.library_id = ?${onlyAutomatic ? " AND t.type = 1" : ""}`)
+			.query(
+				`SELECT t.item_key FROM item_tags t JOIN items i ON i.key = t.item_key WHERE t.tag = ? AND i.library_id = ?${onlyAutomatic ? " AND t.type = 1" : ""}`,
+			)
 			.all(tag, lib) as { item_key: string }[]
 	).map((r) => r.item_key);
 
@@ -71,10 +76,11 @@ export function renameTag(db: Database, fromRaw: unknown, toRaw: unknown, lib: n
 		const old = colors.find((c) => c.name === from);
 		if (old && !tagExistsAnywhere(db, from)) {
 			const rest = colors.filter((c) => c.name !== from);
-			const next: TagColor[] = rest.some((c) => c.name === to)
-				? rest
-				: colors.map((c) => (c.name === from ? { ...c, name: to } : c));
-			setTagColors(db, next.map((c) => ({ name: c.name, color: c.color })));
+			const next: TagColor[] = rest.some((c) => c.name === to) ? rest : colors.map((c) => (c.name === from ? { ...c, name: to } : c));
+			setTagColors(
+				db,
+				next.map((c) => ({ name: c.name, color: c.color })),
+			);
 		}
 		report = { items: keys.length, merged };
 	})();
@@ -106,7 +112,10 @@ function deleteTagRows(db: Database, tags: string[], onlyAutomatic: boolean, lib
 		const gone = colors.filter((c) => names.has(c.name) && !tagExistsAnywhere(db, c.name));
 		if (gone.length) {
 			const g = new Set(gone.map((c) => c.name));
-			setTagColors(db, colors.filter((c) => !g.has(c.name)).map((c) => ({ name: c.name, color: c.color })));
+			setTagColors(
+				db,
+				colors.filter((c) => !g.has(c.name)).map((c) => ({ name: c.name, color: c.color })),
+			);
 		}
 	})();
 	return { tags: names.size, items: affected.size };
@@ -129,7 +138,9 @@ export function automaticTags(db: Database, lib: number = USER_LIBRARY): { tag: 
 export function deleteAutomaticTags(db: Database, lib: number = USER_LIBRARY): TagDeleteReport {
 	assertWritable(db, lib);
 	const names = (
-		db.query("SELECT DISTINCT t.tag FROM item_tags t JOIN items i ON i.key = t.item_key WHERE t.type = 1 AND i.library_id = ?").all(lib) as { tag: string }[]
+		db
+			.query("SELECT DISTINCT t.tag FROM item_tags t JOIN items i ON i.key = t.item_key WHERE t.type = 1 AND i.library_id = ?")
+			.all(lib) as { tag: string }[]
 	).map((r) => r.tag);
 	return deleteTagRows(db, names, true, lib);
 }

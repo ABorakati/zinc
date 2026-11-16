@@ -32,5 +32,10 @@ export function startBbt(db: Database, o: { pollMs?: number } = {}): { stop(): v
 		}
 	}, 1000);
 	(keys as { unref?: () => void }).unref?.();
-	return { stop: () => { ae.stop(); clearInterval(keys); } };
+	return {
+		stop: () => {
+			ae.stop();
+			clearInterval(keys);
+		},
+	};
 }

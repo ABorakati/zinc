@@ -35,19 +35,54 @@ function WhatsNew(p: { m: Manifest; a: UpdateActions; close: () => void; manualO
 	const lines = notesToLines(p.m.notes);
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
-			<Line class="text-xs text-muted-foreground">{[when(p.m), `${(p.m.size / 1048576).toFixed(1)} MB`].filter(Boolean).join(" · ")}</Line>
+			<Line class="text-xs text-muted-foreground">
+				{[when(p.m), `${(p.m.size / 1048576).toFixed(1)} MB`].filter(Boolean).join(" · ")}
+			</Line>
 			<Scroll height={260} border style={{ padding: 12, gap: 4 }}>
 				<Show when={lines.length} fallback={<Txt class="text-sm text-muted-foreground">No release notes.</Txt>}>
-					<For each={lines}>{(l) => <Txt class={`text-sm ${l.startsWith("•") ? "text-foreground" : "text-foreground font-medium"}`} style={{ whiteSpace: "normal", flexShrink: 0 }}>{l === "" ? " " : l}</Txt>}</For>
+					<For each={lines}>
+						{(l) => (
+							<Txt
+								class={`text-sm ${l.startsWith("•") ? "text-foreground" : "text-foreground font-medium"}`}
+								style={{ whiteSpace: "normal", flexShrink: 0 }}
+							>
+								{l === "" ? " " : l}
+							</Txt>
+						)}
+					</For>
 				</Show>
 			</Scroll>
 			<Show when={p.manualOnly}>
-				<Line class="text-xs text-destructive">{p.manualReason ?? "This version cannot be installed over the one you have; download it from the project page."}</Line>
+				<Line class="text-xs text-destructive">
+					{p.manualReason ?? "This version cannot be installed over the one you have; download it from the project page."}
+				</Line>
 			</Show>
 			<Footer>
-				<Button variant="ghost" size="sm" onClick={p.close}>Later</Button>
-				<Button variant="outline" size="sm" disabled={p.manualOnly} onClick={() => { p.close(); p.a.installOnExit(); }}>Install on exit</Button>
-				<Button variant="primary" size="sm" disabled={p.manualOnly} onClick={() => { p.close(); p.a.installNow(); }}>Install now</Button>
+				<Button variant="ghost" size="sm" onClick={p.close}>
+					Later
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={p.manualOnly}
+					onClick={() => {
+						p.close();
+						p.a.installOnExit();
+					}}
+				>
+					Install on exit
+				</Button>
+				<Button
+					variant="primary"
+					size="sm"
+					disabled={p.manualOnly}
+					onClick={() => {
+						p.close();
+						p.a.installNow();
+					}}
+				>
+					Install now
+				</Button>
 			</Footer>
 		</div>
 	);
@@ -57,5 +92,10 @@ let open = false;
 export function openWhatsNew(m: Manifest, a: UpdateActions, o: { manualOnly?: boolean; manualReason?: string } = {}): void {
 	if (open) return;
 	open = true;
-	void openDialog<void>((close) => <WhatsNew m={m} a={a} close={() => close()} manualOnly={o.manualOnly} manualReason={o.manualReason} />, { title: `Zinc ${displayVersion(m.version)}`, width: 520 }).finally(() => { open = false; });
+	void openDialog<void>(
+		(close) => <WhatsNew m={m} a={a} close={() => close()} manualOnly={o.manualOnly} manualReason={o.manualReason} />,
+		{ title: `Zinc ${displayVersion(m.version)}`, width: 520 },
+	).finally(() => {
+		open = false;
+	});
 }

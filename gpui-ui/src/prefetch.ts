@@ -16,7 +16,9 @@ import { mark } from "./trace";
 
 const compiled = !/^bun(.exe)?$/i.test(basename(process.execPath));
 
-interface Hint { paths: string[] }
+interface Hint {
+	paths: string[];
+}
 
 const hintFile = (): string => join(configDir(), "zotero-next-gpui", "prefetch-hint.json");
 
@@ -25,7 +27,9 @@ function readHint(): string[] {
 	try {
 		const h = JSON.parse(readFileSync(hintFile(), "utf8")) as Hint;
 		if (Array.isArray(h.paths)) return h.paths.filter((p) => typeof p === "string").slice(0, 8);
-	} catch { /* none yet */ }
+	} catch {
+		/* none yet */
+	}
 	return [];
 }
 
@@ -38,7 +42,10 @@ export function startPrefetch(): boolean {
 	mark("prefetch-hint");
 	const waiting = new Map<string, (text: string | null) => void>();
 	for (const p of paths) expectEarly(p, new Promise<string | null>((resolve) => waiting.set(p, resolve)));
-	const finish = () => { for (const r of waiting.values()) r(null); waiting.clear(); };
+	const finish = () => {
+		for (const r of waiting.values()) r(null);
+		waiting.clear();
+	};
 	let worker: Worker;
 	try {
 		// compiled exe: build.ts embeds the worker as /root/prefetch-worker.js (Bun's embedded file system: B:/~BUN on Windows, /$bunfs elsewhere);
@@ -52,7 +59,11 @@ export function startPrefetch(): boolean {
 	}
 	worker.onmessage = (e: MessageEvent<{ path?: string; text?: string | null; ms?: number; done?: boolean }>) => {
 		const m = e.data;
-		if (m.done) { finish(); void worker.terminate(); return; }
+		if (m.done) {
+			finish();
+			void worker.terminate();
+			return;
+		}
 		if (m.path === undefined) return;
 		mark(`prefetch-${m.text == null ? "miss" : "hit"}-${m.path.split("?")[0]!.replace(/\W+/g, "-")}-w${m.ms}`);
 		waiting.get(m.path)?.(m.text ?? null);
@@ -60,7 +71,10 @@ export function startPrefetch(): boolean {
 	};
 	worker.onerror = (ev) => {
 		logError("worker", (ev as ErrorEvent).error ?? (ev as ErrorEvent).message, "prefetch worker");
-		if (process.env.ZN_TRACE) console.warn("[prefetch] worker error:", (ev as ErrorEvent).message); finish(); void worker.terminate(); };
+		if (process.env.ZN_TRACE) console.warn("[prefetch] worker error:", (ev as ErrorEvent).message);
+		finish();
+		void worker.terminate();
+	};
 	worker.postMessage({ db, paths });
 	mark("prefetch-started");
 	setTimeout(finish, 8000).unref?.(); // never hold a request for long
@@ -80,5 +94,7 @@ export function saveHint(): void {
 		mkdirSync(dirname(f), { recursive: true });
 		writeFileSync(f + ".tmp", JSON.stringify({ paths } satisfies Hint));
 		renameSync(f + ".tmp", f);
-	} catch { /* best effort */ }
+	} catch {
+		/* best effort */
+	}
 }

@@ -40,7 +40,10 @@ describe("server", () => {
 		const post = (headers: Record<string, string>, body: string | undefined = JSON.stringify({ name: "x" })) =>
 			fetch(`${base}/api/collections`, { method: "POST", headers, body });
 		// Same-origin JSON (what the app's pages send) is allowed; clean up what it creates.
-		const allowed: Record<string, string>[] = [{ "Content-Type": "application/json", Origin: base }, { "Content-Type": "application/json" }];
+		const allowed: Record<string, string>[] = [
+			{ "Content-Type": "application/json", Origin: base },
+			{ "Content-Type": "application/json" },
+		];
 		for (const headers of allowed) {
 			const ok = await post(headers);
 			expect(ok.status).toBe(201);

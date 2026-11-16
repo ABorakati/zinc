@@ -16,7 +16,7 @@ const envInt = (name: string): number | undefined => {
 };
 
 export const runs = (normal = 150): number => envInt("ZN_FUZZ_RUNS") ?? normal;
-export const SEED: number = envInt("ZN_FUZZ_SEED") ?? (Math.floor(Math.random() * 2 ** 31) | 0);
+export const SEED: number = envInt("ZN_FUZZ_SEED") ?? Math.floor(Math.random() * 2 ** 31) | 0;
 const PATH: string | undefined = process.env.ZN_FUZZ_PATH || undefined;
 
 export function fuzz<T extends unknown[]>(
@@ -36,11 +36,18 @@ export function fuzz<T extends unknown[]>(
 				if (dt > limit) throw new Error(`case took ${Math.round(dt)} ms (limit ${limit} ms): possible hang or quadratic blow-up`);
 			};
 			try {
-				await fc.assert((fc.asyncProperty as unknown as (...a: unknown[]) => fc.IAsyncProperty<T>)(...arbs, wrapped), { numRuns: runs(opts.normal), seed: SEED, path: PATH, verbose: 0 });
+				await fc.assert((fc.asyncProperty as unknown as (...a: unknown[]) => fc.IAsyncProperty<T>)(...arbs, wrapped), {
+					numRuns: runs(opts.normal),
+					seed: SEED,
+					path: PATH,
+					verbose: 0,
+				});
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
 				const path = /path: "([^"]*)"/.exec(msg)?.[1] ?? "";
-				console.error(`[fuzz] FAILED ${name}\n  replay: ZN_FUZZ_SEED=${SEED}${path ? ` ZN_FUZZ_PATH="${path}"` : ""} bun test <file> -t ${JSON.stringify(name)}`);
+				console.error(
+					`[fuzz] FAILED ${name}\n  replay: ZN_FUZZ_SEED=${SEED}${path ? ` ZN_FUZZ_PATH="${path}"` : ""} bun test <file> -t ${JSON.stringify(name)}`,
+				);
 				throw e;
 			}
 		},
@@ -49,8 +56,44 @@ export function fuzz<T extends unknown[]>(
 }
 
 /** Fragments that tend to break parsers and URL builders. */
-export const NASTY = ["{", "}", "<", ">", '"', "'", "\\", "/", "&", "=", "?", "#", "%", "%00", "%2F", "@", ":", ";", " ", "\n", "\0", "‮", "😀", "\ud800", "é", "..", "{z:title}", "{x?}", "&amp;", "&#99999999;", "javascript:", "//", "../"];
+export const NASTY = [
+	"{",
+	"}",
+	"<",
+	">",
+	'"',
+	"'",
+	"\\",
+	"/",
+	"&",
+	"=",
+	"?",
+	"#",
+	"%",
+	"%00",
+	"%2F",
+	"@",
+	":",
+	";",
+	" ",
+	"\n",
+	"\0",
+	"‮",
+	"😀",
+	"\ud800",
+	"é",
+	"..",
+	"{z:title}",
+	"{x?}",
+	"&amp;",
+	"&#99999999;",
+	"javascript:",
+	"//",
+	"../",
+];
 export const messyText = (maxLength = 60): fc.Arbitrary<string> =>
 	fc
-		.array(fc.oneof({ weight: 3, arbitrary: fc.string({ maxLength: 8 }) }, { weight: 2, arbitrary: fc.constantFrom(...NASTY) }), { maxLength: 12 })
+		.array(fc.oneof({ weight: 3, arbitrary: fc.string({ maxLength: 8 }) }, { weight: 2, arbitrary: fc.constantFrom(...NASTY) }), {
+			maxLength: 12,
+		})
 		.map((a) => a.join("").slice(0, maxLength));

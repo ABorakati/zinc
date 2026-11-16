@@ -16,7 +16,9 @@ export class TranslateError extends Error {
 
 // ZN_TRANSLATE_WORKER: a pre-bundled worker (translate-worker.js) beside the packaged exe, where the sources are not on disk
 // (gpui-ui/scripts/translate-worker.ts builds it; src/packaged.ts sets it). Unset: the source worker next to this file.
-const WORKER_ENTRY = process.env.ZN_TRANSLATE_WORKER ? Bun.pathToFileURL(process.env.ZN_TRANSLATE_WORKER) : new URL("./worker.ts", import.meta.url);
+const WORKER_ENTRY = process.env.ZN_TRANSLATE_WORKER
+	? Bun.pathToFileURL(process.env.ZN_TRANSLATE_WORKER)
+	: new URL("./worker.ts", import.meta.url);
 const MAX_WORKERS = 2;
 const RECYCLE_AFTER_JOBS = 50;
 const DEFAULT_TIMEOUT_MS = 60_000;

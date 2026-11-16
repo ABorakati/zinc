@@ -47,7 +47,10 @@ const got = await (await fetch(`${base}/api/attachments/TEST/annotations`)).json
 check("GET annotations round-trip", got.length === 1 && got[0].id === "A1");
 const del = await fetch(`${base}/api/attachments/TEST/annotations`, { method: "DELETE", body: JSON.stringify({ ids: ["A1"] }) });
 check("DELETE annotations", del.ok && (await (await fetch(`${base}/api/attachments/TEST/annotations`)).json()).length === 0);
-check("PUT view-state", (await fetch(`${base}/api/attachments/TEST/view-state`, { method: "PUT", body: JSON.stringify({ pageIndex: 3 }) })).ok);
+check(
+	"PUT view-state",
+	(await fetch(`${base}/api/attachments/TEST/view-state`, { method: "PUT", body: JSON.stringify({ pageIndex: 3 }) })).ok,
+);
 check("GET view-state", (await (await fetch(`${base}/api/attachments/TEST/view-state`)).json()).pageIndex === 3);
 
 if (process.argv.includes("--serve")) {

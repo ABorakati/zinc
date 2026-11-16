@@ -23,7 +23,9 @@ function add(label: string, data: Record<string, unknown> & { itemType?: string 
 }
 const cond = (field: string, operator: SearchCondition["operator"], value: string): SearchCondition => ({ field, operator, value });
 const search = (conditions: SearchCondition[], options: Partial<SearchOptions> = {}): string[] =>
-	listItems(db, { searchDef: { conditions, options: options as SearchOptions }, sort: "title", dir: "asc", limit: 1000 }).items.map((i) => i.key).sort();
+	listItems(db, { searchDef: { conditions, options: options as SearchOptions }, sort: "title", dir: "asc", limit: 1000 })
+		.items.map((i) => i.key)
+		.sort();
 const ids = (...labels: string[]) => labels.map((l) => KEYS.get(l)!).sort();
 
 beforeAll(() => {
@@ -149,7 +151,9 @@ describe("Zotero.Search", () => {
 			describe("titleCreatorYear", () => {
 				// zotero-next's quick-search mode of that name; the advanced-search field `title` + `creator` OR-ed is the same set
 				test("should match title, creator, and year but not other fields", () => {
-					const matches = search([cond("title", "contains", "ztcyabc"), cond("creator", "contains", "ztcyabc")], { match: "any" });
+					const matches = search([cond("title", "contains", "ztcyabc"), cond("creator", "contains", "ztcyabc")], {
+						match: "any",
+					});
 					expect(matches).toEqual(ids("byTitle", "byCreator"));
 				});
 

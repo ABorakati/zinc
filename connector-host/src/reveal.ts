@@ -31,7 +31,8 @@ const KEY = /^[A-Za-z0-9]{1,32}$/;
 export function launcherCandidates(env: Record<string, string | undefined>): string[] {
 	const out: string[] = [];
 	if (env.ZN_LAUNCHER) out.push(env.ZN_LAUNCHER);
-	if (env.LOCALAPPDATA) for (const dir of ["Zinc", "Zotero Next"]) out.push(join(env.LOCALAPPDATA, "Programs", dir, "zotero-next-gpui.exe"));
+	if (env.LOCALAPPDATA)
+		for (const dir of ["Zinc", "Zotero Next"]) out.push(join(env.LOCALAPPDATA, "Programs", dir, "zotero-next-gpui.exe"));
 	return out;
 }
 
@@ -62,16 +63,24 @@ export async function revealInApp(appPort: number, key: unknown, opts: RevealOpt
 	if (!(await apiUp(base))) {
 		const exists = opts.exists ?? existsSync;
 		const exe = (opts.candidates ?? launcherCandidates(process.env)).find((c) => exists(c));
-		if (!exe) return { status: 503, body: { ok: false, started, error: "Zinc is not running and its executable was not found (set ZN_LAUNCHER)" } };
+		if (!exe)
+			return {
+				status: 503,
+				body: { ok: false, started, error: "Zinc is not running and its executable was not found (set ZN_LAUNCHER)" },
+			};
 		try {
 			(opts.launch ?? defaultLaunch)(exe);
 			started = true;
 		} catch (e) {
-			return { status: 500, body: { ok: false, started, error: `could not start Zinc: ${e instanceof Error ? e.message : String(e)}` } };
+			return {
+				status: 500,
+				body: { ok: false, started, error: `could not start Zinc: ${e instanceof Error ? e.message : String(e)}` },
+			};
 		}
 		const until = Date.now() + (opts.waitMs ?? 40_000);
 		while (Date.now() < until && !(await apiUp(base))) await sleep(250);
-		if (!(await apiUp(base))) return { status: 504, body: { ok: false, started, error: "Zinc was started but its API did not answer in time" } };
+		if (!(await apiUp(base)))
+			return { status: 504, body: { ok: false, started, error: "Zinc was started but its API did not answer in time" } };
 	}
 	try {
 		const r = await fetch(`${base}/api/ui/reveal`, {

@@ -4,8 +4,19 @@ import type { AutoExport } from "../../../../core/src/bbt/types";
 import { DEFAULT_COLUMNS, getColumn, MENU_COLUMNS } from "../../table/defs";
 import { BBT_EXPORT_FORMATS } from "./formats";
 import {
-	autoExportLines, canSaveFormula, citeRequest, debounce, defaultExportName, formulaChecked, formulaTyped, hasCitationKey, parseSeconds, pinTarget,
-	settingsPatch, staleKeysNote, type Scheduler,
+	autoExportLines,
+	canSaveFormula,
+	citeRequest,
+	debounce,
+	defaultExportName,
+	formulaChecked,
+	formulaTyped,
+	hasCitationKey,
+	parseSeconds,
+	pinTarget,
+	settingsPatch,
+	staleKeysNote,
+	type Scheduler,
 } from "./logic";
 import type { BbtSettings } from "./client";
 
@@ -13,12 +24,14 @@ const base = { quickCopy: "latex", citeCommand: "cite" } as const;
 
 describe("citeRequest", () => {
 	test("latex carries the command", () => expect(citeRequest(["A"], base)).toEqual({ items: ["A"], format: "latex", command: "cite" }));
-	test("blank command is omitted", () => expect(citeRequest(["A"], { ...base, citeCommand: " " })).toEqual({ items: ["A"], format: "latex" }));
+	test("blank command is omitted", () =>
+		expect(citeRequest(["A"], { ...base, citeCommand: " " })).toEqual({ items: ["A"], format: "latex" }));
 	test("pandoc and key ignore the command", () => {
 		expect(citeRequest(["A", "B"], { ...base, quickCopy: "pandoc" })).toEqual({ items: ["A", "B"], format: "pandoc" });
 		expect(citeRequest(["A"], { ...base, quickCopy: "key" })).toEqual({ items: ["A"], format: "key" });
 	});
-	test("an unknown format falls back to latex", () => expect(citeRequest(["A"], { ...base, quickCopy: "nope" as never }).format).toBe("latex"));
+	test("an unknown format falls back to latex", () =>
+		expect(citeRequest(["A"], { ...base, quickCopy: "nope" as never }).format).toBe("latex"));
 });
 
 describe("item pane", () => {
@@ -60,15 +73,25 @@ describe("formula preview state", () => {
 
 describe("debounce", () => {
 	function fake() {
-		let now = 0, id = 0;
+		let now = 0,
+			id = 0;
 		const timers = new Map<number, { at: number; fn: () => void }>();
 		const s: Scheduler = {
-			set: (fn, ms) => { timers.set(++id, { at: now + ms, fn }); return id; },
-			clear: (h) => { timers.delete(h as number); },
+			set: (fn, ms) => {
+				timers.set(++id, { at: now + ms, fn });
+				return id;
+			},
+			clear: (h) => {
+				timers.delete(h as number);
+			},
 		};
 		const advance = (ms: number) => {
 			now += ms;
-			for (const [k, v] of [...timers]) if (v.at <= now) { timers.delete(k); v.fn(); }
+			for (const [k, v] of [...timers])
+				if (v.at <= now) {
+					timers.delete(k);
+					v.fn();
+				}
 		};
 		return { s, advance };
 	}
@@ -76,7 +99,11 @@ describe("debounce", () => {
 		const { s, advance } = fake();
 		const calls: string[] = [];
 		const d = debounce((v: string) => calls.push(v), 300, s);
-		d("a"); advance(100); d("ab"); advance(100); d("abc");
+		d("a");
+		advance(100);
+		d("ab");
+		advance(100);
+		d("abc");
 		advance(299);
 		expect(calls).toEqual([]);
 		advance(1);
@@ -86,7 +113,9 @@ describe("debounce", () => {
 		const { s, advance } = fake();
 		const calls: string[] = [];
 		const d = debounce((v: string) => calls.push(v), 300, s);
-		d("a"); d.cancel(); advance(1000);
+		d("a");
+		d.cancel();
+		advance(1000);
 		expect(calls).toEqual([]);
 	});
 });
@@ -111,12 +140,24 @@ describe("settings model", () => {
 
 describe("automatic exports", () => {
 	const e: AutoExport = {
-		id: 1, path: "C:/refs.bib", format: "betterbiblatex", scope: { type: "library" }, trigger: "idle", options: {},
-		status: "done", error: null, lastExport: "2026-01-01T00:00:00Z", count: 1, scopeName: "My Library",
+		id: 1,
+		path: "C:/refs.bib",
+		format: "betterbiblatex",
+		scope: { type: "library" },
+		trigger: "idle",
+		options: {},
+		status: "done",
+		error: null,
+		lastExport: "2026-01-01T00:00:00Z",
+		count: 1,
+		scopeName: "My Library",
 	};
 	test("row text", () => {
 		expect(autoExportLines(e, () => "3 min ago")).toEqual({
-			title: "C:/refs.bib", detail: "Better BibLaTeX · My Library · When idle", status: "Up to date · last export 3 min ago, 1 item", error: false,
+			title: "C:/refs.bib",
+			detail: "Better BibLaTeX · My Library · When idle",
+			status: "Up to date · last export 3 min ago, 1 item",
+			error: false,
 		});
 	});
 	test("error status", () => {

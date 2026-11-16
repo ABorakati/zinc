@@ -48,13 +48,7 @@ function CreateParentDialog(p: { itemKey: string; close: () => void }): JSX.Elem
 		<DialogBody>
 			<Para class="text-sm text-muted-foreground">The new item becomes the parent of the selected attachment or note.</Para>
 			<Field label="Enter a DOI, ISBN, PMID or arXiv ID">
-				<TextInput
-					autofocus
-					value={text()}
-					onInput={setText}
-					onEnter={() => void submit()}
-					placeholder="10.1136/bmj-2023-078378"
-				/>
+				<TextInput autofocus value={text()} onInput={setText} onEnter={() => void submit()} placeholder="10.1136/bmj-2023-078378" />
 			</Field>
 			<div style={{ ...t("flex flex-col"), width: "100%" }}>
 				<Txt class="text-xs text-muted-foreground">Or create an empty parent of the item type you pick:</Txt>
@@ -62,12 +56,19 @@ function CreateParentDialog(p: { itemKey: string; close: () => void }): JSX.Elem
 			<Scroll height={220} border>
 				<For
 					each={types()}
-					fallback={<div style={t("px-2 py-3")}><Txt class="text-xs text-muted-foreground">{loadError() || (schema() ? "No item types" : "Loading…")}</Txt></div>}
+					fallback={
+						<div style={t("px-2 py-3")}>
+							<Txt class="text-xs text-muted-foreground">{loadError() || (schema() ? "No item types" : "Loading…")}</Txt>
+						</div>
+					}
 				>
 					{(x) => (
 						<Row
 							selected={!text().trim() && itemType() === x.itemType}
-							onClick={() => { setItemType(x.itemType); setText(""); }}
+							onClick={() => {
+								setItemType(x.itemType);
+								setText("");
+							}}
 							style={{ flexShrink: 0 }}
 						>
 							<Icon name={itemTypeIconName(x.itemType)} size={16} color={tok("muted-foreground")} />
@@ -78,7 +79,9 @@ function CreateParentDialog(p: { itemKey: string; close: () => void }): JSX.Elem
 			</Scroll>
 			<ErrorLine>{error()}</ErrorLine>
 			<Footer>
-				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Cancel
+				</Button>
 				<Button variant="primary" size="sm" disabled={busy() || !choice()} onClick={() => void submit()}>
 					{busy() ? "Creating…" : "Create"}
 				</Button>
@@ -88,4 +91,7 @@ function CreateParentDialog(p: { itemKey: string; close: () => void }): JSX.Elem
 }
 
 export const openCreateParentDialog = (itemKey: string) =>
-	openDialog<void>((close) => <CreateParentDialog itemKey={itemKey} close={() => close()} />, { title: "Create Parent Item", width: 420 });
+	openDialog<void>((close) => <CreateParentDialog itemKey={itemKey} close={() => close()} />, {
+		title: "Create Parent Item",
+		width: 420,
+	});

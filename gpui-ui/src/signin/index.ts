@@ -19,7 +19,8 @@ export function registerSigninBridge(o: { packaged: boolean }): SigninBridge | n
 	const migrated = Promise.resolve().then(() => {
 		const r = migrateOldProfile();
 		if (r.status === "copied") logInfo("core", "signin: the sign-in of the previous zotero-next was copied");
-		else if (r.status === "failed" || r.status === "no-space") logWarn("core", `signin: the previous sign-in was not copied (${r.status})`);
+		else if (r.status === "failed" || r.status === "no-space")
+			logWarn("core", `signin: the previous sign-in was not copied (${r.status})`);
 		return r;
 	});
 	const bridge = createSigninBridge({

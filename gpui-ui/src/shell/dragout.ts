@@ -9,14 +9,21 @@ import { dlopen, FFIType, JSCallback, ptr, toBuffer } from "bun:ffi";
 import { findDll } from "../reader/pdf";
 import { cfHtml } from "../features/cfhtml";
 
-export interface Rect { left: number; top: number; right: number; bottom: number }
+export interface Rect {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+}
 
 /** Is the point outside the rect, with `inset` px of slack on every side (so a pointer on the very edge still counts as inside)? */
 export function pointOutside(r: Rect, x: number, y: number, inset = 1): boolean {
 	return x < r.left + inset || y < r.top + inset || x >= r.right - inset || y >= r.bottom - inset;
 }
 
-const VK_LBUTTON = 0x01, VK_SHIFT = 0x10, VK_MENU = 0x12;
+const VK_LBUTTON = 0x01,
+	VK_SHIFT = 0x10,
+	VK_MENU = 0x12;
 const GW_OWNER = 4;
 
 interface Native {
@@ -55,7 +62,10 @@ function load(): Native | null {
 			GetWindow: { args: [P, FFIType.u32], returns: P },
 			EnumWindows: { args: [P, FFIType.i64], returns: FFIType.i32 },
 		}).symbols;
-		const kernel = dlopen("kernel32.dll", { GetCurrentThreadId: { args: [], returns: FFIType.u32 }, GetCurrentProcessId: { args: [], returns: FFIType.u32 } }).symbols;
+		const kernel = dlopen("kernel32.dll", {
+			GetCurrentThreadId: { args: [], returns: FFIType.u32 },
+			GetCurrentProcessId: { args: [], returns: FFIType.u32 },
+		}).symbols;
 		let zn: Native["zn"] = null;
 		try {
 			zn = dlopen(findDll(), {
@@ -66,7 +76,9 @@ function load(): Native | null {
 				zpdf_job_free: { args: [P], returns: FFIType.void },
 				zpdf_last_error: { args: [], returns: FFIType.cstring },
 			}).symbols as unknown as Native["zn"];
-		} catch { zn = null; } // no zn_pdf.dll, or one built before the drag source: no OS drag, the caller falls back
+		} catch {
+			zn = null;
+		} // no zn_pdf.dll, or one built before the drag source: no OS drag, the caller falls back
 		native = { user: user as unknown as Native["user"], kernel, zn };
 	} catch {
 		native = null;
@@ -107,17 +119,24 @@ export function ownWindow(): { hwnd: number | bigint; threadId: number } | null 
 	if (own && n.user.IsWindowVisible(own.hwnd)) return own;
 	const pid = n.kernel.GetCurrentProcessId();
 	let best: { hwnd: number | bigint; threadId: number; area: number } | null = null;
-	const cb = new JSCallback((hwnd: number | bigint) => {
-		const owner = new Uint32Array(1);
-		const tid = n.user.GetWindowThreadProcessId(hwnd, owner);
-		if (owner[0] !== pid || !n.user.IsWindowVisible(hwnd) || n.user.GetWindow(hwnd, GW_OWNER)) return 1;
-		const r = new Int32Array(4);
-		if (!n.user.GetWindowRect(hwnd, r)) return 1;
-		const area = Math.max(0, r[2]! - r[0]!) * Math.max(0, r[3]! - r[1]!);
-		if (area > 0 && (!best || area > best.area)) best = { hwnd, threadId: tid, area };
-		return 1;
-	}, { args: [FFIType.ptr, FFIType.i64], returns: FFIType.i32 });
-	try { n.user.EnumWindows(cb.ptr, 0); } finally { cb.close(); }
+	const cb = new JSCallback(
+		(hwnd: number | bigint) => {
+			const owner = new Uint32Array(1);
+			const tid = n.user.GetWindowThreadProcessId(hwnd, owner);
+			if (owner[0] !== pid || !n.user.IsWindowVisible(hwnd) || n.user.GetWindow(hwnd, GW_OWNER)) return 1;
+			const r = new Int32Array(4);
+			if (!n.user.GetWindowRect(hwnd, r)) return 1;
+			const area = Math.max(0, r[2]! - r[0]!) * Math.max(0, r[3]! - r[1]!);
+			if (area > 0 && (!best || area > best.area)) best = { hwnd, threadId: tid, area };
+			return 1;
+		},
+		{ args: [FFIType.ptr, FFIType.i64], returns: FFIType.i32 },
+	);
+	try {
+		n.user.EnumWindows(cb.ptr, 0);
+	} finally {
+		cb.close();
+	}
 	const found = best as { hwnd: number | bigint; threadId: number } | null;
 	own = found ? { hwnd: found.hwnd, threadId: found.threadId } : null;
 	return own;
@@ -125,7 +144,8 @@ export function ownWindow(): { hwnd: number | bigint; threadId: number } | null 
 
 /** The main window's screen rectangle, or null. */
 export function ownWindowRect(): Rect | null {
-	const n = load(), w = ownWindow();
+	const n = load(),
+		w = ownWindow();
 	if (!n || !w) return null;
 	const r = new Int32Array(4);
 	return n.user.GetWindowRect(w.hwnd, r) ? { left: r[0]!, top: r[1]!, right: r[2]!, bottom: r[3]! } : null;
@@ -133,7 +153,8 @@ export function ownWindowRect(): Rect | null {
 
 /** Is the pointer outside the main window right now? false when unknown. */
 export function pointerOutsideWindow(): boolean {
-	const r = ownWindowRect(), c = cursorPos();
+	const r = ownWindowRect(),
+		c = cursorPos();
 	return !!r && !!c && pointOutside(r, c.x, c.y);
 }
 
@@ -150,21 +171,43 @@ export type OsDragResult = "dropped" | "cancelled" | "failed";
  * "failed": the drag could not run (the caller should fall back to the clipboard); `lastDragError` says why.
  */
 export async function runOsDrag(p: { text: string; html?: string }): Promise<OsDragResult> {
-	const n = load(), w = ownWindow();
-	if (!n?.zn) { lastError = "zn_pdf.dll has no drag source"; return "failed"; }
-	if (!w) { lastError = "no window"; return "failed"; }
+	const n = load(),
+		w = ownWindow();
+	if (!n?.zn) {
+		lastError = "zn_pdf.dll has no drag source";
+		return "failed";
+	}
+	if (!w) {
+		lastError = "no window";
+		return "failed";
+	}
 	const text = Buffer.from(p.text, "utf8");
 	const html = p.html ? Buffer.from(cfHtml(p.html), "utf8") : null;
-	const job = n.zn.zn_drag_begin(BigInt(w.hwnd), text.length ? ptr(text) : null, text.length, html ? ptr(html) : null, html ? html.length : 0);
-	if (!job) { lastError = String(n.zn.zpdf_last_error()); return "failed"; }
+	const job = n.zn.zn_drag_begin(
+		BigInt(w.hwnd),
+		text.length ? ptr(text) : null,
+		text.length,
+		html ? ptr(html) : null,
+		html ? html.length : 0,
+	);
+	if (!job) {
+		lastError = String(n.zn.zpdf_last_error());
+		return "failed";
+	}
 	try {
 		let st: number;
 		const t0 = Date.now();
 		while ((st = n.zn.zpdf_job_poll(job)) === 0) {
-			if (Date.now() - t0 > 120_000) { lastError = "the drag did not finish"; return "failed"; } // the job is left to finish by itself (freeing a pending job is safe)
+			if (Date.now() - t0 > 120_000) {
+				lastError = "the drag did not finish";
+				return "failed";
+			} // the job is left to finish by itself (freeing a pending job is safe)
 			await Bun.sleep(10);
 		}
-		if (st !== 1) { lastError = String(n.zn.zpdf_last_error()); return "failed"; }
+		if (st !== 1) {
+			lastError = String(n.zn.zpdf_last_error());
+			return "failed";
+		}
 		const len = Number(n.zn.zpdf_job_len(job));
 		const json = JSON.parse(Buffer.from(toBuffer(n.zn.zpdf_job_data(job) as never, 0, len)).toString("utf8")) as { result: string };
 		return json.result === "dropped" ? "dropped" : "cancelled";

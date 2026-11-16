@@ -43,9 +43,19 @@ describe("triggers", () => {
 	test("annotations and attachments are recorded", () => {
 		const { db } = makeRig();
 		const p = newArticle(db, "P");
-		const a = repo.createItem(db, { itemType: "attachment", parentItem: p, linkMode: "imported_file", contentType: "application/pdf" }).data.key;
+		const a = repo.createItem(db, { itemType: "attachment", parentItem: p, linkMode: "imported_file", contentType: "application/pdf" })
+			.data.key;
 		db.run("DELETE FROM sync_outbox");
-		repo.upsertAnnotations(db, a, [{ id: "ANNOT001", type: "highlight", color: "#ffd400", sortIndex: "1", position: {}, dateModified: "2026-02-01T00:00:00Z" } as any]);
+		repo.upsertAnnotations(db, a, [
+			{
+				id: "ANNOT001",
+				type: "highlight",
+				color: "#ffd400",
+				sortIndex: "1",
+				position: {},
+				dateModified: "2026-02-01T00:00:00Z",
+			} as any,
+		]);
 		expect(outbox(db)).toEqual(["annotation:ANNOT001:upsert"]);
 		db.run("UPDATE attachments SET path = '/x' WHERE item_key = ?", [a]);
 		expect(outbox(db)).toContain(`item:${a}:upsert`);
@@ -55,7 +65,15 @@ describe("triggers", () => {
 		const { db } = makeRig();
 		const p = newArticle(db, "P");
 		const a = repo.createItem(db, { itemType: "attachment", parentItem: p, linkMode: "imported_file" }).data.key;
-		const ann = { id: "ANNOT003", type: "note", color: "#fff", sortIndex: "1", position: {}, comment: "one", dateModified: "2026-02-01T00:00:00Z" } as any;
+		const ann = {
+			id: "ANNOT003",
+			type: "note",
+			color: "#fff",
+			sortIndex: "1",
+			position: {},
+			comment: "one",
+			dateModified: "2026-02-01T00:00:00Z",
+		} as any;
 		repo.upsertAnnotations(db, a, [ann]);
 		const seq = () => (db.query("SELECT seq FROM sync_outbox WHERE key = 'ANNOT003'").get() as { seq: number }).seq;
 		const first = seq();
@@ -92,7 +110,14 @@ describe("pull", () => {
 			publicationTitle: "J Test",
 		});
 		r.reader.item("NOTE0001", { itemType: "note", parentItem: "ITEM0001", note: "<p>remote note</p>" });
-		r.reader.item("ATT00001", { itemType: "attachment", parentItem: "ITEM0001", linkMode: "imported_file", contentType: "application/pdf", filename: "paper.pdf", title: "paper.pdf" });
+		r.reader.item("ATT00001", {
+			itemType: "attachment",
+			parentItem: "ITEM0001",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "paper.pdf",
+			title: "paper.pdf",
+		});
 		r.reader.annotation("ANN00001", "ATT00001", { text: "highlighted", comment: "c" });
 		await r.svc.pull();
 
@@ -111,7 +136,9 @@ describe("pull", () => {
 		expect(search(r.db, "remote").hits.map((h) => h.key)).toEqual(["ITEM0001"]);
 		// pulling never queues anything to push
 		expect(outbox(r.db)).toEqual([]);
-		expect(r.db.query("SELECT date_modified FROM sync_base WHERE type='item' AND key='ITEM0001'").get()).toEqual({ date_modified: "2026-06-01T10:00:00Z" });
+		expect(r.db.query("SELECT date_modified FROM sync_base WHERE type='item' AND key='ITEM0001'").get()).toEqual({
+			date_modified: "2026-06-01T10:00:00Z",
+		});
 		expect((await r.svc.status()).lastPullAt).toBeTruthy();
 		expect(r.reader.since).toEqual([null]);
 		await r.svc.pull();
@@ -366,7 +393,13 @@ describe("push", () => {
 	test("new attachment files are handed to the writer and the path is updated", async () => {
 		const r = await rig();
 		const parent = newArticle(r.db, "Has pdf");
-		const att = repo.createItem(r.db, { itemType: "attachment", parentItem: parent, linkMode: "imported_file", contentType: "application/pdf", title: "p.pdf" }).data.key;
+		const att = repo.createItem(r.db, {
+			itemType: "attachment",
+			parentItem: parent,
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			title: "p.pdf",
+		}).data.key;
 		const own = join(r.dir, "storage", att);
 		mkdirSync(own, { recursive: true });
 		const mine = join(own, "p.pdf");
@@ -391,7 +424,12 @@ describe("push", () => {
 	test("a failed push keeps zotero-next's own copy of the file", async () => {
 		const r = await rig();
 		const parent = newArticle(r.db, "P");
-		const att = repo.createItem(r.db, { itemType: "attachment", parentItem: parent, linkMode: "imported_file", contentType: "application/pdf" }).data.key;
+		const att = repo.createItem(r.db, {
+			itemType: "attachment",
+			parentItem: parent,
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		}).data.key;
 		const mine = join(r.dir, "storage", att, "x.pdf");
 		mkdirSync(join(r.dir, "storage", att), { recursive: true });
 		writeFileSync(mine, "x");
@@ -405,9 +443,24 @@ describe("push", () => {
 	test("annotations are pushed with their attachment as parentItem", async () => {
 		const r = await rig();
 		r.reader.item("ITEM0001", { itemType: "journalArticle", title: "x" });
-		r.reader.item("ATT00001", { itemType: "attachment", parentItem: "ITEM0001", linkMode: "imported_file", contentType: "application/pdf" });
+		r.reader.item("ATT00001", {
+			itemType: "attachment",
+			parentItem: "ITEM0001",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		});
 		await r.svc.pull();
-		repo.upsertAnnotations(r.db, "ATT00001", [{ id: "ANNOT002", type: "highlight", color: "#ffd400", sortIndex: "1", position: {}, text: "t", dateModified: "2026-07-01T00:00:00Z" } as any]);
+		repo.upsertAnnotations(r.db, "ATT00001", [
+			{
+				id: "ANNOT002",
+				type: "highlight",
+				color: "#ffd400",
+				sortIndex: "1",
+				position: {},
+				text: "t",
+				dateModified: "2026-07-01T00:00:00Z",
+			} as any,
+		]);
 		await r.svc.syncNow();
 		const w = r.writer.batches[0].find((x) => x.type === "annotation")!;
 		expect(w.key).toBe("ANNOT002");
@@ -440,9 +493,18 @@ describe("HTTP API", () => {
 			st = await res.json();
 			expect(st.pending).toBe(0);
 			expect((r.writer.batches[0] ?? []).length).toBeGreaterThan(0);
-			r.db.run("INSERT INTO sync_conflicts(type, key, local, remote, resolved) VALUES('item','K',?,?,'local')", [JSON.stringify({ title: "L" }), JSON.stringify({ title: "R" })]);
+			r.db.run("INSERT INTO sync_conflicts(type, key, local, remote, resolved) VALUES('item','K',?,?,'local')", [
+				JSON.stringify({ title: "L" }),
+				JSON.stringify({ title: "R" }),
+			]);
 			const cs = await (await get("conflicts")).json();
-			expect(cs.conflicts[0]).toMatchObject({ key: "K", title: "L", resolved: "local", local: { title: "L" }, remote: { title: "R" } });
+			expect(cs.conflicts[0]).toMatchObject({
+				key: "K",
+				title: "L",
+				resolved: "local",
+				local: { title: "L" },
+				remote: { title: "R" },
+			});
 			expect((await get(`conflicts?id=${cs.conflicts[0].id}`, { method: "DELETE" })).status).toBe(200);
 			expect((await (await get("conflicts")).json()).conflicts).toEqual([]);
 			expect((await get("bogus")).status).toBe(404);

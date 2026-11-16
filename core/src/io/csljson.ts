@@ -3,21 +3,68 @@ import type { Creator, ZoteroItemData } from "../api-types";
 import { itemToCsl } from "../cite/csl";
 import type { ExportItem } from "./bibtex";
 import { citationKeys } from "./bibtex";
-import { appendExtra, creatorTypeFor, isoDate, normalizeDate, setBase, setFirst, splitKeywords, textToNoteHtml, type ParsedItem } from "./common";
+import {
+	appendExtra,
+	creatorTypeFor,
+	isoDate,
+	normalizeDate,
+	setBase,
+	setFirst,
+	splitKeywords,
+	textToNoteHtml,
+	type ParsedItem,
+} from "./common";
 
 const CSL_TO_TYPE: Record<string, string> = {
-	"article-journal": "journalArticle", "article-magazine": "magazineArticle", "article-newspaper": "newspaperArticle",
-	article: "preprint", book: "book", chapter: "bookSection", "paper-conference": "conferencePaper", thesis: "thesis",
-	report: "report", webpage: "webpage", "post-weblog": "blogPost", post: "forumPost", patent: "patent", software: "computerProgram",
-	dataset: "dataset", manuscript: "manuscript", map: "map", graphic: "artwork", legal_case: "case", legislation: "statute",
-	bill: "bill", hearing: "hearing", interview: "interview", personal_communication: "letter", song: "audioRecording",
-	broadcast: "tvBroadcast", motion_picture: "film", speech: "presentation", standard: "standard",
-	"entry-encyclopedia": "encyclopediaArticle", "entry-dictionary": "dictionaryEntry", entry: "encyclopediaArticle",
-	pamphlet: "document", review: "journalArticle", "review-book": "journalArticle", figure: "artwork", treaty: "document",
-	musical_score: "document", document: "document",
+	"article-journal": "journalArticle",
+	"article-magazine": "magazineArticle",
+	"article-newspaper": "newspaperArticle",
+	article: "preprint",
+	book: "book",
+	chapter: "bookSection",
+	"paper-conference": "conferencePaper",
+	thesis: "thesis",
+	report: "report",
+	webpage: "webpage",
+	"post-weblog": "blogPost",
+	post: "forumPost",
+	patent: "patent",
+	software: "computerProgram",
+	dataset: "dataset",
+	manuscript: "manuscript",
+	map: "map",
+	graphic: "artwork",
+	legal_case: "case",
+	legislation: "statute",
+	bill: "bill",
+	hearing: "hearing",
+	interview: "interview",
+	personal_communication: "letter",
+	song: "audioRecording",
+	broadcast: "tvBroadcast",
+	motion_picture: "film",
+	speech: "presentation",
+	standard: "standard",
+	"entry-encyclopedia": "encyclopediaArticle",
+	"entry-dictionary": "dictionaryEntry",
+	entry: "encyclopediaArticle",
+	pamphlet: "document",
+	review: "journalArticle",
+	"review-book": "journalArticle",
+	figure: "artwork",
+	treaty: "document",
+	musical_score: "document",
+	document: "document",
 };
 
-type CslName = { family?: string; given?: string; literal?: string; "dropping-particle"?: string; "non-dropping-particle"?: string; suffix?: string };
+type CslName = {
+	family?: string;
+	given?: string;
+	literal?: string;
+	"dropping-particle"?: string;
+	"non-dropping-particle"?: string;
+	suffix?: string;
+};
 
 function cslNames(v: unknown, ct: string, itemType: string, ...fb: string[]): Creator[] {
 	if (!Array.isArray(v)) return [];
@@ -51,7 +98,11 @@ const s = (v: unknown): string => (typeof v === "string" ? v : typeof v === "num
 
 export function cslToItem(c: Record<string, any>): ParsedItem | null {
 	let itemType = CSL_TO_TYPE[String(c.type)] ?? "document";
-	if (itemType === "preprint" && !(c.DOI || c.URL || c.number || /arxiv|preprint/i.test(`${c.publisher ?? ""} ${c.source ?? ""} ${c.genre ?? ""}`))) itemType = "document";
+	if (
+		itemType === "preprint" &&
+		!(c.DOI || c.URL || c.number || /arxiv|preprint/i.test(`${c.publisher ?? ""} ${c.source ?? ""} ${c.genre ?? ""}`))
+	)
+		itemType = "document";
 	const data: Partial<ZoteroItemData> & { itemType: string } = { itemType };
 	const notes: string[] = [];
 	setBase(data, "title", s(c.title));

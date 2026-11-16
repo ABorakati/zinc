@@ -21,7 +21,10 @@ import { heapStats } from "bun:jsc";
 
 const stage = process.argv[2] ?? "bare";
 const flag = (n: string) => process.argv.includes(`--${n}`);
-const opt = (n: string, d: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1]! : d; };
+const opt = (n: string, d: string) => {
+	const i = process.argv.indexOf(`--${n}`);
+	return i >= 0 ? process.argv[i + 1]! : d;
+};
 const windowed = flag("window");
 const waitS = Number(opt("wait", "6"));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -53,33 +56,60 @@ function vmReport() {
 	const buckets: Record<string, { n: number; mb: number }> = {};
 	for (let guard = 0; guard < 400000; guard++) {
 		if (k32.symbols.VirtualQuery(addr, ptr(mbi), 48n) === 0n) break;
-		const base = mbi[0]!, allocBase = mbi[1]!, size = mbi[3]!;
-		const state = dv.getUint32(32, true), type = dv.getUint32(40, true);
+		const base = mbi[0]!,
+			allocBase = mbi[1]!,
+			size = mbi[3]!;
+		const state = dv.getUint32(32, true),
+			type = dv.getUint32(40, true);
 		if (state === 0x1000) {
-			if (type === 0x1000000) { tot.image += size; imageBy.set(allocBase, (imageBy.get(allocBase) ?? 0n) + size); }
-			else if (type === 0x40000) tot.mapped += size;
+			if (type === 0x1000000) {
+				tot.image += size;
+				imageBy.set(allocBase, (imageBy.get(allocBase) ?? 0n) + size);
+			} else if (type === 0x40000) tot.mapped += size;
 			else if (type === 0x20000) {
 				tot.private += size;
-				const k = size >= 64n * 1048576n ? ">=64MB" : size >= 16n * 1048576n ? "16-64MB" : size >= 4n * 1048576n ? "4-16MB" : size >= 1048576n ? "1-4MB" : "<1MB";
+				const k =
+					size >= 64n * 1048576n
+						? ">=64MB"
+						: size >= 16n * 1048576n
+							? "16-64MB"
+							: size >= 4n * 1048576n
+								? "4-16MB"
+								: size >= 1048576n
+									? "1-4MB"
+									: "<1MB";
 				const b = (buckets[k] ??= { n: 0, mb: 0 });
-				b.n++; b.mb += Number(size) / MB;
+				b.n++;
+				b.mb += Number(size) / MB;
 			}
 		}
 		addr = base + size;
 		if (size === 0n) break;
 	}
 	const me = k32.symbols.GetCurrentProcess();
-	const hm = new BigUint64Array(2048), need = new Uint32Array(1);
+	const hm = new BigUint64Array(2048),
+		need = new Uint32Array(1);
 	k32.symbols.K32EnumProcessModules(me, ptr(hm), 2048 * 8, ptr(need));
 	const names = new Uint16Array(1024);
 	const mods: { name: string; mb: number }[] = [];
 	for (let i = 0; i < Math.min(2048, Number(need[0]) / 8); i++) {
 		const len = k32.symbols.K32GetModuleFileNameExW(me, hm[i]!, ptr(names), 1024);
-		mods.push({ name: String.fromCharCode(...names.subarray(0, len)).split("\\").pop()!, mb: +(Number(imageBy.get(hm[i]!) ?? 0n) / MB).toFixed(1) });
+		mods.push({
+			name: String.fromCharCode(...names.subarray(0, len))
+				.split("\\")
+				.pop()!,
+			mb: +(Number(imageBy.get(hm[i]!) ?? 0n) / MB).toFixed(1),
+		});
 	}
 	mods.sort((a, b) => b.mb - a.mb);
 	for (const b of Object.values(buckets)) b.mb = +b.mb.toFixed(1);
-	return { imageMB: +(Number(tot.image) / MB).toFixed(1), mappedMB: +(Number(tot.mapped) / MB).toFixed(1), privateCommittedMB: +(Number(tot.private) / MB).toFixed(1), topModules: mods.slice(0, 12), privateRegionBuckets: buckets };
+	return {
+		imageMB: +(Number(tot.image) / MB).toFixed(1),
+		mappedMB: +(Number(tot.mapped) / MB).toFixed(1),
+		privateCommittedMB: +(Number(tot.private) / MB).toFixed(1),
+		topModules: mods.slice(0, 12),
+		privateRegionBuckets: buckets,
+	};
 }
 
 function sample(label: string) {
@@ -128,12 +158,37 @@ if (stage === "toolbar" || stage === "sortbar") {
 if (stage === "cards") comp = (await import("../src/cards/CardList")).CardList as Comp;
 if (stage === "appimport") await import("../src/App"); // JS-module cost only, nothing mounted
 if (stage === "app") comp = (await import("../src/App")).App as Comp;
-if (stage === "n-div") comp = () => <div style={wrap}>{Array.from({ length: NN }, () => <div style={{ width: 20, height: 10, backgroundColor: "#333", borderRadius: 3 }} />)}</div>;
-if (stage === "n-text") comp = () => <div style={wrap}>{Array.from({ length: NN }, (_, i) => <text style={{ color: "#888", fontSize: 13, fontFamily: "Inter", lineHeight: 18 }}>{"w" + i}</text>)}</div>;
+if (stage === "n-div")
+	comp = () => (
+		<div style={wrap}>
+			{Array.from({ length: NN }, () => (
+				<div style={{ width: 20, height: 10, backgroundColor: "#333", borderRadius: 3 }} />
+			))}
+		</div>
+	);
+if (stage === "n-text")
+	comp = () => (
+		<div style={wrap}>
+			{Array.from({ length: NN }, (_, i) => (
+				<text style={{ color: "#888", fontSize: 13, fontFamily: "Inter", lineHeight: 18 }}>{"w" + i}</text>
+			))}
+		</div>
+	);
 if (stage === "n-svg" || stage === "n-svg-uniq") {
 	const { iconSvg } = await import("../src/icons");
-	const src = (i: number) => stage === "n-svg" ? iconSvg("star") : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2"><circle cx="12" cy="12" r="' + (3 + (i % 8)) + '"/></svg>';
-	comp = () => <div style={wrap}>{Array.from({ length: NN }, (_, i) => <svg source={src(i)} style={{ width: 16, height: 16, color: "#888" }} />)}</div>;
+	const src = (i: number) =>
+		stage === "n-svg"
+			? iconSvg("star")
+			: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2"><circle cx="12" cy="12" r="' +
+				(3 + (i % 8)) +
+				'"/></svg>';
+	comp = () => (
+		<div style={wrap}>
+			{Array.from({ length: NN }, (_, i) => (
+				<svg source={src(i)} style={{ width: 16, height: 16, color: "#888" }} />
+			))}
+		</div>
+	);
 }
 
 const withFonts = stage !== "empty";
@@ -162,7 +217,9 @@ for (const s of marks) {
 	out(`${stage}@${s}s`);
 }
 if (windowed) {
-	const r = (globalThis as Record<symbol, { renderer?: { getWindowSize?(): unknown; getAutomationTree?(): string } }>)[Symbol.for("@gpuix/solid/render-host")]?.renderer;
+	const r = (globalThis as Record<symbol, { renderer?: { getWindowSize?(): unknown; getAutomationTree?(): string } }>)[
+		Symbol.for("@gpuix/solid/render-host")
+	]?.renderer;
 	const tree = String(r?.getAutomationTree?.() ?? "");
 	console.log("windowSize", JSON.stringify(r?.getWindowSize?.()), "host nodes ~", (tree.match(/"id":/g) ?? []).length);
 }

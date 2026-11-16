@@ -29,7 +29,12 @@ export interface MenuItem {
 	submenu?: MenuItem[];
 	onSelect?: () => void;
 }
-export interface Rect { x: number; y: number; width: number; height: number }
+export interface Rect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
 /** Screen position in window (logical px), e.g. from a pointer event, or the rect of an element to align to. */
 export type Anchor = { x: number; y: number } | { rect: Rect; align?: "start" | "end" };
 
@@ -41,7 +46,9 @@ export interface NativeLike {
 	focusElement?: (id: number) => void;
 }
 let nativeRef: NativeLike | undefined;
-export const setNative = (n: NativeLike | undefined) => { nativeRef = n; };
+export const setNative = (n: NativeLike | undefined) => {
+	nativeRef = n;
+};
 export const native = (): NativeLike | undefined => nativeRef;
 export const FALLBACK_WINDOW = { width: 1440, height: 881 };
 const [winSig, setWinSig] = createSignal(FALLBACK_WINDOW);
@@ -55,31 +62,67 @@ export function windowSize(): { width: number; height: number } {
 	try {
 		const s = nativeRef?.getWindowSize?.();
 		if (s && s.width > 0 && s.height > 0) return s;
-	} catch { /* renderer gone */ }
+	} catch {
+		/* renderer gone */
+	}
 	return FALLBACK_WINDOW;
 }
 /** Painted box of a host element (from a `ref`), null before the first paint. */
 export function boundsOf(el: HostElement | undefined | null): Rect | null {
 	if (!el || !el.mounted) return null;
-	try { return nativeRef?.getElementBounds?.(el.id) ?? null; } catch { return null; }
+	try {
+		return nativeRef?.getElementBounds?.(el.id) ?? null;
+	} catch {
+		return null;
+	}
 }
 export function focusedId(): number | null {
-	try { return nativeRef?.getFocusedElementId?.() ?? null; } catch { return null; }
+	try {
+		return nativeRef?.getFocusedElementId?.() ?? null;
+	} catch {
+		return null;
+	}
 }
 export function restoreFocus(id: number | null) {
 	if (id === null) return;
-	try { nativeRef?.focusElement?.(id); } catch { /* element is gone */ }
+	try {
+		nativeRef?.focusElement?.(id);
+	} catch {
+		/* element is gone */
+	}
 }
 
 // ---- overlay layers (menus, dialogs, popovers), bottom to top ----
-export interface MenuLayer { kind: "menu"; id: number; at: Anchor; items: () => MenuItem[]; minWidth?: number; prevFocus: number | null }
+export interface MenuLayer {
+	kind: "menu";
+	id: number;
+	at: Anchor;
+	items: () => MenuItem[];
+	minWidth?: number;
+	prevFocus: number | null;
+}
 export interface DialogLayer {
-	kind: "dialog"; id: number; render: (close: (v?: unknown) => void) => JSX.Element; title?: string; width: number;
-	dismissable: boolean; alert: boolean; close: (v?: unknown) => void; prevFocus: number | null;
+	kind: "dialog";
+	id: number;
+	render: (close: (v?: unknown) => void) => JSX.Element;
+	title?: string;
+	width: number;
+	dismissable: boolean;
+	alert: boolean;
+	close: (v?: unknown) => void;
+	prevFocus: number | null;
 	/** keys other than Escape that reach the dialog (the confirm dialog uses Enter) */
 	onKey?: (e: import("@gpuix/native").EventPayload) => void;
 }
-export interface PopoverLayer { kind: "popover"; id: number; open: () => boolean; onClose: () => void; anchor: () => Anchor; width: () => number; children: () => JSX.Element }
+export interface PopoverLayer {
+	kind: "popover";
+	id: number;
+	open: () => boolean;
+	onClose: () => void;
+	anchor: () => Anchor;
+	width: () => number;
+	children: () => JSX.Element;
+}
 export type Layer = MenuLayer | DialogLayer | PopoverLayer;
 
 const [layers, setLayers] = createSignal<Layer[]>([]);
@@ -107,16 +150,27 @@ export const toastList: Accessor<ToastItem[]> = toasts;
 const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 export function pauseToast(id: string) {
 	const h = toastTimers.get(id);
-	if (h !== undefined) { clearTimeout(h); toastTimers.delete(id); }
+	if (h !== undefined) {
+		clearTimeout(h);
+		toastTimers.delete(id);
+	}
 }
 export function armToast(id: string, ms?: number) {
 	pauseToast(id);
 	const item = toasts().find((x) => x.id === id);
 	const d = ms ?? item?.durationMs ?? 4000;
-	if (d > 0 && Number.isFinite(d)) toastTimers.set(id, setTimeout(() => dismissToast(id), d));
+	if (d > 0 && Number.isFinite(d))
+		toastTimers.set(
+			id,
+			setTimeout(() => dismissToast(id), d),
+		);
 }
 export function dismissToast(id?: string) {
-	if (id === undefined) { for (const k of [...toastTimers.keys()]) pauseToast(k); setToasts([]); return; }
+	if (id === undefined) {
+		for (const k of [...toastTimers.keys()]) pauseToast(k);
+		setToasts([]);
+		return;
+	}
 	pauseToast(id);
 	setToasts((l) => l.filter((x) => x.id !== id));
 }
@@ -126,7 +180,11 @@ export function addToast(item: ToastItem) {
 }
 
 // ---- tooltip (one at a time) ----
-export interface TooltipState { label: string; rect: Rect | null; pointer: { x: number; y: number } }
+export interface TooltipState {
+	label: string;
+	rect: Rect | null;
+	pointer: { x: number; y: number };
+}
 const [tooltip, setTooltip] = createSignal<TooltipState | null>(null);
 export const tooltipState: Accessor<TooltipState | null> = tooltip;
 export const showTooltip = (s: TooltipState) => setTooltip(s);
@@ -134,7 +192,11 @@ export const hideTooltip = () => setTooltip(null);
 
 // ---- placing a popup next to an anchor ----
 export type PopAnchor = "topLeft" | "topRight" | "bottomLeft" | "bottomRight" | "topCenter";
-export interface Pos { x: number; y: number; anchor: PopAnchor }
+export interface Pos {
+	x: number;
+	y: number;
+	anchor: PopAnchor;
+}
 const GUTTER = 4;
 /**
  * Window position + which corner of the popup sits on it. A point opens right/down of the pointer; a rect opens under the
@@ -148,7 +210,8 @@ export function placeAt(at: Anchor, estHeight: number): Pos {
 		const end = at.align === "end";
 		const x = end ? r.x + r.width : r.x;
 		const below = r.y + r.height + GUTTER;
-		if (below + estHeight > win.height - 8 && r.y - GUTTER - estHeight > 8) return { x, y: r.y - GUTTER, anchor: end ? "bottomRight" : "bottomLeft" };
+		if (below + estHeight > win.height - 8 && r.y - GUTTER - estHeight > 8)
+			return { x, y: r.y - GUTTER, anchor: end ? "bottomRight" : "bottomLeft" };
 		return { x, y: below, anchor: end ? "topRight" : "topLeft" };
 	}
 	return { x: at.x, y: at.y, anchor: "topLeft" };

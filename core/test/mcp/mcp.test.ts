@@ -43,9 +43,23 @@ describe("tools/list", () => {
 		const names = tools.map((t) => t.name).sort();
 		expect(names).toEqual(
 			[
-				"add_tags", "add_to_collection", "create_collection", "format_bibliography", "get_annotations", "get_file_path", "get_fulltext",
-				"get_item", "list_collections", "list_items", "list_libraries", "remove_from_collection", "remove_tags", "restore_item",
-				"search_library", "trash_item", "update_item",
+				"add_tags",
+				"add_to_collection",
+				"create_collection",
+				"format_bibliography",
+				"get_annotations",
+				"get_file_path",
+				"get_fulltext",
+				"get_item",
+				"list_collections",
+				"list_items",
+				"list_libraries",
+				"remove_from_collection",
+				"remove_tags",
+				"restore_item",
+				"search_library",
+				"trash_item",
+				"update_item",
 			].sort(),
 		);
 		const by = Object.fromEntries(tools.map((t) => [t.name, t]));
@@ -256,7 +270,9 @@ describe("group libraries", () => {
 		]);
 		expect((await tool("list_items", { library: g.id })).json.items.map((i: any) => i.title)).toEqual(["Pancreatic group paper"]);
 		expect((await tool("list_items", {})).json.items.map((i: any) => i.title)).not.toContain("Pancreatic group paper");
-		expect((await tool("search_library", { query: "pancreatic", library: g.id })).json.hits.map((h: any) => h.key)).toEqual([made.data.key]);
+		expect((await tool("search_library", { query: "pancreatic", library: g.id })).json.hits.map((h: any) => h.key)).toEqual([
+			made.data.key,
+		]);
 		const c = await tool("create_collection", { name: "In the group", library: g.id });
 		expect(c.json.libraryId).toBe(g.id);
 		expect((await tool("list_collections", { library: g.id })).json.collections.map((x: any) => x.name)).toEqual(["In the group"]);

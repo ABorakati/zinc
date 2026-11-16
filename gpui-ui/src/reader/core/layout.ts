@@ -61,9 +61,15 @@ export interface Layout {
 /** Index of the first page of every unit. */
 export function unitStarts(n: number, spread: SpreadMode): number[] {
 	const out: number[] = [];
-	if (spread === "none") { for (let i = 0; i < n; i++) out.push(i); return out; }
+	if (spread === "none") {
+		for (let i = 0; i < n; i++) out.push(i);
+		return out;
+	}
 	let i = 0;
-	if (spread === "even" && n > 0) { out.push(0); i = 1; }
+	if (spread === "even" && n > 0) {
+		out.push(0);
+		i = 1;
+	}
 	for (; i < n; i += 2) out.push(i);
 	return out;
 }
@@ -76,7 +82,8 @@ export function buildLayout(p: LayoutInput): Layout {
 	const starts = unitStarts(n, p.spread);
 	const uw: number[] = [];
 	for (let k = 0; k < starts.length; k++) {
-		const a = starts[k]!, b = unitEnd(starts, k, n);
+		const a = starts[k]!,
+			b = unitEnd(starts, k, n);
 		let w = 0;
 		for (let i = a; i < b; i++) w += p.w(i) + (i > a ? spreadGap : 0);
 		uw.push(w);
@@ -85,28 +92,42 @@ export function buildLayout(p: LayoutInput): Layout {
 	const runs: [number, number][] = [];
 	if (p.scroll === "wrapped") {
 		const avail = Math.max(1, p.viewW - pad * 2);
-		let a = 0, cur = 0;
+		let a = 0,
+			cur = 0;
 		for (let k = 0; k < starts.length; k++) {
 			const add = (k > a ? gap : 0) + uw[k]!;
-			if (k > a && cur + add > avail + 0.5) { runs.push([a, k]); a = k; cur = uw[k]!; } else cur += add;
+			if (k > a && cur + add > avail + 0.5) {
+				runs.push([a, k]);
+				a = k;
+				cur = uw[k]!;
+			} else cur += add;
 		}
 		if (starts.length) runs.push([a, starts.length]);
 	} else {
 		for (let k = 0; k < starts.length; k++) runs.push([k, k + 1]);
 	}
 	const rows = runs.length;
-	const first = new Int32Array(rows + 1), pageRow = new Int32Array(n);
-	const ext = new Float64Array(rows), start = new Float64Array(rows + 1), lead = new Float64Array(rows), trail = new Float64Array(rows), size = new Float64Array(rows);
-	const px = new Float64Array(n), py = new Float64Array(n);
+	const first = new Int32Array(rows + 1),
+		pageRow = new Int32Array(n);
+	const ext = new Float64Array(rows),
+		start = new Float64Array(rows + 1),
+		lead = new Float64Array(rows),
+		trail = new Float64Array(rows),
+		size = new Float64Array(rows);
+	const px = new Float64Array(n),
+		py = new Float64Array(n);
 	const horiz = p.scroll === "horizontal";
 	let maxSize = 0;
 	for (let r = 0; r < rows; r++) {
 		const [ka, kb] = runs[r]!;
-		const a = starts[ka]!, b = unitEnd(starts, kb - 1, n);
+		const a = starts[ka]!,
+			b = unitEnd(starts, kb - 1, n);
 		first[r] = a;
-		let x = 0, hmax = 0;
+		let x = 0,
+			hmax = 0;
 		for (let k = ka; k < kb; k++) {
-			const ua = starts[k]!, ub = unitEnd(starts, k, n);
+			const ua = starts[k]!,
+				ub = unitEnd(starts, k, n);
 			if (k > ka) x += gap;
 			for (let i = ua; i < ub; i++) {
 				if (i > ua) x += spreadGap;
@@ -125,16 +146,34 @@ export function buildLayout(p: LayoutInput): Layout {
 		maxSize = Math.max(maxSize, size[r]!);
 	}
 	first[rows] = n;
-	return { scroll: p.scroll, spread: p.spread, n, rows, first, pageRow, ext, start, lead, trail, size, px, py, maxSize, total: start[rows] ?? 0 };
+	return {
+		scroll: p.scroll,
+		spread: p.spread,
+		n,
+		rows,
+		first,
+		pageRow,
+		ext,
+		start,
+		lead,
+		trail,
+		size,
+		px,
+		py,
+		maxSize,
+		total: start[rows] ?? 0,
+	};
 }
 
 /** The row at main-axis position `pos` (clamped to the layout). */
 export function rowAt(l: Layout, pos: number): number {
 	if (l.rows <= 1) return 0;
-	let lo = 0, hi = l.rows - 1;
+	let lo = 0,
+		hi = l.rows - 1;
 	while (lo < hi) {
 		const mid = (lo + hi + 1) >> 1;
-		if (l.start[mid]! <= pos) lo = mid; else hi = mid - 1;
+		if (l.start[mid]! <= pos) lo = mid;
+		else hi = mid - 1;
 	}
 	return lo;
 }
@@ -168,7 +207,10 @@ export function medianUnit(n: number, spread: SpreadMode, widthPt: (i: number) =
 /** The unit (pages [a, b)) that contains page i. */
 export function unitOf(n: number, spread: SpreadMode, i: number): [number, number] {
 	if (spread === "none") return [i, i + 1];
-	if (spread === "odd") { const a = i - (i % 2); return [a, Math.min(n, a + 2)]; }
+	if (spread === "odd") {
+		const a = i - (i % 2);
+		return [a, Math.min(n, a + 2)];
+	}
 	if (i === 0) return [0, 1];
 	const a = i - ((i - 1) % 2);
 	return [a, Math.min(n, a + 2)];

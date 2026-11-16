@@ -15,7 +15,8 @@ afterEach(stopAll);
 
 const rows = (r: Rig, sql: string, ...p: any[]) => r.db.query(sql).all(...p) as any[];
 const outbox = (r: Rig) => rows(r, "SELECT type, key, op FROM sync_outbox ORDER BY seq").map((x) => `${x.type}:${x.key}:${x.op}`);
-const versionOf = (r: Rig, type: string, key: string) => (r.db.query("SELECT version FROM websync_versions WHERE type = ? AND key = ?").get(type, key) as { version: number } | null)?.version;
+const versionOf = (r: Rig, type: string, key: string) =>
+	(r.db.query("SELECT version FROM websync_versions WHERE type = ? AND key = ?").get(type, key) as { version: number } | null)?.version;
 
 const localItem = (key: string, title: string) => ({
 	key,
@@ -123,7 +124,13 @@ describe("pull", () => {
 		const r = makeRig();
 		await connect(r);
 		r.mock.put("item", "PARENT01", { title: "P" });
-		r.mock.put("item", "ATTACH01", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "application/pdf", filename: "a.pdf" });
+		r.mock.put("item", "ATTACH01", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "a.pdf",
+		});
 		r.mock.put("item", "ANNOT001", {
 			itemType: "annotation",
 			parentItem: "ATTACH01",
@@ -292,7 +299,13 @@ describe("files", () => {
 		const r = makeRig();
 		await connect(r);
 		r.mock.put("item", "PARENT01", { title: "P" });
-		r.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "application/pdf", filename: "one.pdf" });
+		r.mock.put("item", "ATT00001", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+			filename: "one.pdf",
+		});
 		r.mock.files.set("ATT00001", new TextEncoder().encode("bytes"));
 		await r.svc.setOptions({ push: true, files: "off" });
 		repo.createItem(r.db, { itemType: "journalArticle", title: "x" });
@@ -352,7 +365,14 @@ describe("files", () => {
 		await connect(r);
 		r.mock.put("item", "PARENT01", { title: "P" });
 		const snap = (key: string, filename: string) =>
-			r.mock.put("item", key, { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_url", contentType: "text/html", url: "https://example.org/", filename });
+			r.mock.put("item", key, {
+				itemType: "attachment",
+				parentItem: "PARENT01",
+				linkMode: "imported_url",
+				contentType: "text/html",
+				url: "https://example.org/",
+				filename,
+			});
 		snap("SNAP0001", "index.html");
 		snap("SNAP0002", "café.html");
 		snap("SNAP0003", "index.html");
@@ -370,10 +390,17 @@ describe("files", () => {
 		r.mock.files.set("SNAP0002", zipOf([{ name: "caf%C3%A9.html", data: "<html>two</html>" }])); // percent-encoded entry name
 		r.mock.files.set("SNAP0003", zipOf([{ name: "other.html", data: "no main file" }]));
 		await r.svc.pull();
-		for (const k of ["SNAP0001", "SNAP0002", "SNAP0003", "SNAP0004"]) expect((r.db.query("SELECT path FROM attachments WHERE item_key = ?").get(k) as any).path).toBeNull();
+		for (const k of ["SNAP0001", "SNAP0002", "SNAP0003", "SNAP0004"])
+			expect((r.db.query("SELECT path FROM attachments WHERE item_key = ?").get(k) as any).path).toBeNull();
 
 		const c = await r.svc.checkFiles();
-		expect(c).toMatchObject({ imported: 4, missingLocally: 4, onServer: 3, notOnServer: 1, snapshots: { imported: 4, missingLocally: 4, onServer: 3 } });
+		expect(c).toMatchObject({
+			imported: 4,
+			missingLocally: 4,
+			onServer: 3,
+			notOnServer: 1,
+			snapshots: { imported: 4, missingLocally: 4, onServer: 3 },
+		});
 
 		await r.svc.downloadMissing();
 		await r.svc.fileJobDone;
@@ -386,7 +413,9 @@ describe("files", () => {
 		expect(existsSync(join(s1, ".zotero-ft-cache"))).toBe(false);
 		expect((r.db.query("SELECT path FROM attachments WHERE item_key = 'SNAP0001'").get() as any).path).toBe(join(s1, "index.html"));
 		expect(readFileSync(join(r.dir, "storage", "SNAP0002", "café.html"), "utf8")).toBe("<html>two</html>");
-		expect((r.db.query("SELECT path FROM attachments WHERE item_key = 'SNAP0002'").get() as any).path).toBe(join(r.dir, "storage", "SNAP0002", "café.html"));
+		expect((r.db.query("SELECT path FROM attachments WHERE item_key = 'SNAP0002'").get() as any).path).toBe(
+			join(r.dir, "storage", "SNAP0002", "café.html"),
+		);
 		expect((r.db.query("SELECT path FROM attachments WHERE item_key = 'SNAP0003'").get() as any).path).toBeNull(); // archive without its main file
 		expect(outbox(r)).toEqual([]);
 		// once downloaded they no longer count as missing
@@ -397,7 +426,13 @@ describe("files", () => {
 		const r = makeRig();
 		await connect(r);
 		r.mock.put("item", "PARENT01", { title: "P" });
-		r.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt" });
+		r.mock.put("item", "ATT00001", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "text/plain",
+			filename: "one.txt",
+		});
 		r.mock.files.set("ATT00001", new TextEncoder().encode("hello"));
 		await r.svc.setOptions({ files: "download" });
 		await r.svc.syncNow();
@@ -410,7 +445,13 @@ describe("files", () => {
 		const r = makeRig();
 		await connect(r);
 		r.mock.put("item", "PARENT01", { title: "P" });
-		r.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt" });
+		r.mock.put("item", "ATT00001", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "text/plain",
+			filename: "one.txt",
+		});
 		mkdirSync(join(r.dir, "storage", "ATT00001"), { recursive: true });
 		writeFileSync(join(r.dir, "storage", "ATT00001", "one.txt"), "local bytes");
 		await r.svc.setOptions({ files: "sync" });
@@ -428,7 +469,11 @@ describe("files", () => {
 describe("HTTP API and mode exclusivity", () => {
 	const call = (r: Rig, method: string, path: string, body?: unknown) =>
 		handleApi(
-			new Request(`http://127.0.0.1/api/websync/${path}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }),
+			new Request(`http://127.0.0.1/api/websync/${path}`, {
+				method,
+				headers: { "Content-Type": "application/json" },
+				body: body === undefined ? undefined : JSON.stringify(body),
+			}),
 			r.db,
 		).then(async (res) => ({ status: res!.status, body: (await res!.json()) as any }));
 
@@ -436,7 +481,15 @@ describe("HTTP API and mode exclusivity", () => {
 		const r = makeRig();
 		let s = await call(r, "GET", "status");
 		expect(s.status).toBe(200);
-		expect(s.body).toMatchObject({ mode: "zotero-local", account: { keySet: false }, push: false, files: "off", pending: 0, conflicts: 0, busy: false });
+		expect(s.body).toMatchObject({
+			mode: "zotero-local",
+			account: { keySet: false },
+			push: false,
+			files: "off",
+			pending: 0,
+			conflicts: 0,
+			busy: false,
+		});
 
 		const bad = await call(r, "POST", "key", { apiKey: "wrong" });
 		expect(bad.status).toBe(400);
@@ -485,7 +538,14 @@ describe("HTTP API and mode exclusivity", () => {
 		await call(r, "POST", "key", { apiKey: API_KEY });
 		const zoteroDir = join(r.dir, "Zotero");
 		mkdirSync(join(zoteroDir, "storage"), { recursive: true });
-		startSync(r.db, { dataDir: zoteroDir, reader: new FakeReader(), writer: new FakeWriter(zoteroDir), isZoteroRunning: async () => false, pollMs: 0, watch: false });
+		startSync(r.db, {
+			dataDir: zoteroDir,
+			reader: new FakeReader(),
+			writer: new FakeWriter(zoteroDir),
+			isZoteroRunning: async () => false,
+			pollMs: 0,
+			watch: false,
+		});
 		expect(getSyncService(r.db)).toBeDefined();
 
 		const s = await call(r, "POST", "mode", { mode: "zotero-org" });

@@ -22,4 +22,5 @@ export const helperExePath = (local = localAppData(), exe = signinExeName()): st
 export const downloadsDir = (local = localAppData()): string => join(helperDir(local), "downloads");
 
 /** The profile of the old Electrobun app's "institution" partition. Read-only source of the one-time migration. */
-export const OLD_PARTITION = (local = localAppData()): string => join(local, "dev.zotero-next.app", "stable", "WebView2", "Partitions", "institution", "EBWebView");
+export const OLD_PARTITION = (local = localAppData()): string =>
+	join(local, "dev.zotero-next.app", "stable", "WebView2", "Partitions", "institution", "EBWebView");

@@ -18,7 +18,20 @@ interface X11 {
 	XDefaultRootWindow(d: unknown): bigint;
 	XInternAtom(d: unknown, name: Buffer, onlyIfExists: number): bigint;
 	XQueryTree(d: unknown, w: bigint, root: unknown, parent: unknown, children: unknown, n: unknown): number;
-	XGetWindowProperty(d: unknown, w: bigint, prop: bigint, off: number, len: number, del: number, type: bigint, actualType: unknown, fmt: unknown, n: unknown, after: unknown, data: unknown): number;
+	XGetWindowProperty(
+		d: unknown,
+		w: bigint,
+		prop: bigint,
+		off: number,
+		len: number,
+		del: number,
+		type: bigint,
+		actualType: unknown,
+		fmt: unknown,
+		n: unknown,
+		after: unknown,
+		data: unknown,
+	): number;
 	XFree(p: unknown): number;
 	XGetWindowAttributes(d: unknown, w: bigint, attrs: unknown): number;
 	XTranslateCoordinates(d: unknown, src: bigint, dst: bigint, x: number, y: number, dx: unknown, dy: unknown, child: unknown): number;
@@ -32,7 +45,17 @@ interface X11 {
 	XSetErrorHandler(cb: unknown): unknown;
 }
 interface Xext {
-	XShapeCombineRectangles(d: unknown, w: bigint, kind: number, x: number, y: number, rects: unknown, n: number, op: number, ordering: number): void;
+	XShapeCombineRectangles(
+		d: unknown,
+		w: bigint,
+		kind: number,
+		x: number,
+		y: number,
+		rects: unknown,
+		n: number,
+		op: number,
+		ordering: number,
+	): void;
 	XShapeCombineMask(d: unknown, w: bigint, kind: number, x: number, y: number, mask: bigint, op: number): void;
 }
 interface Gtk {
@@ -155,13 +178,18 @@ export const x11Available = (): boolean => xlib() != null && gtk4() != null;
 
 // ---- the GPUI window ----
 
-const u64a = new BigUint64Array(1), u64b = new BigUint64Array(1), u64c = new BigUint64Array(1), u64d = new BigUint64Array(1);
-const i32a = new Int32Array(1), i32b = new Int32Array(1);
+const u64a = new BigUint64Array(1),
+	u64b = new BigUint64Array(1),
+	u64c = new BigUint64Array(1),
+	u64d = new BigUint64Array(1);
+const i32a = new Int32Array(1),
+	i32b = new Int32Array(1);
 
 function children(w: bigint): bigint[] {
 	const s = xlib()!;
 	if (!s.lib.XQueryTree(s.dpy, w, u64a, u64b, u64c, i32a)) return [];
-	const n = i32a[0]!, p = u64c[0]!;
+	const n = i32a[0]!,
+		p = u64c[0]!;
 	if (!n || !p) return [];
 	const out: bigint[] = [];
 	for (let i = 0; i < n; i++) out.push(read.u64(Number(p) as never, i * 8));
@@ -190,7 +218,8 @@ function attributes(w: bigint): { width: number; height: number; viewable: boole
 	return { width: attrView.getInt32(8, true), height: attrView.getInt32(12, true), viewable: attrView.getInt32(92, true) === 2 };
 }
 
-const XA_CARDINAL = 6n, XA_ATOM = 4n;
+const XA_CARDINAL = 6n,
+	XA_ATOM = 4n;
 let main: bigint | null = null;
 /** Our popups' X ids, so they are never taken for the main window (they carry this process's _NET_WM_PID too). */
 const popupXids = new Set<bigint>();
@@ -205,7 +234,10 @@ export function mainWindow(): H | null {
 	const visit = (w: bigint, depth: number): bigint | null => {
 		for (const c of children(w)) {
 			if (!popupXids.has(c) && prop32(c, "_NET_WM_PID", XA_CARDINAL)[0] === pid && attributes(c)?.viewable) return c;
-			if (depth > 0) { const f = visit(c, depth - 1); if (f) return f; }
+			if (depth > 0) {
+				const f = visit(c, depth - 1);
+				if (f) return f;
+			}
 		}
 		return null;
 	};
@@ -225,7 +257,8 @@ export function dpr(): number {
 
 /** The main window's client area in root (screen) pixels, or null while it is minimised / gone. */
 export function clientOnScreen(): { x: number; y: number; width: number; height: number } | null {
-	const s = xlib(), w = mainWindow();
+	const s = xlib(),
+		w = mainWindow();
 	if (!s || w == null) return null;
 	const a = attributes(BigInt(w));
 	if (!a || !a.viewable) return null;
@@ -250,7 +283,10 @@ function xidOf(h: H): bigint | null {
 	return xid ? xid : null;
 }
 
-export const isWindow = (h: H): boolean => { const id = popups.get(key(h)) ?? xidOf(h); return id != null && attributes(id) != null; };
+export const isWindow = (h: H): boolean => {
+	const id = popups.get(key(h)) ?? xidOf(h);
+	return id != null && attributes(id) != null;
+};
 
 /**
  * Turn a freshly created webview window into a frameless popup over the main window; it starts hidden. Like win32.makeOwnedPopup it
@@ -258,7 +294,8 @@ export const isWindow = (h: H): boolean => { const id = popups.get(key(h)) ?? xi
  * it above the GPUI window and out of the taskbar, and _NET_WM_STATE_SKIP_TASKBAR / _SKIP_PAGER say so explicitly.
  */
 export function makeOwnedPopup(h: H, owner: H | null): void {
-	const s = xlib(), g = gtk4();
+	const s = xlib(),
+		g = gtk4();
 	if (!s || !g) return;
 	g.gtk_widget_set_visible(h, 0);
 	g.gtk_window_set_decorated(h, 0);
@@ -281,7 +318,16 @@ export function forgetPopup(h: H): void {
 }
 
 /** Where each popup was last asked to be, how often the request was repeated, and the focus guard after it was shown. */
-interface Want { x: number; y: number; width: number; height: number; tries: number; guardUntil: number; prevFocus: bigint; asked: boolean }
+interface Want {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	tries: number;
+	guardUntil: number;
+	prevFocus: bigint;
+	asked: boolean;
+}
 const wants = new Map<bigint, Want>();
 
 /** 0 as _NET_WM_USER_TIME tells the window manager not to give the window the focus when it is mapped (EWMH). */
@@ -297,7 +343,9 @@ function noFocusOnMap(h: H): void {
  * back to the window that had it if mapping handed it to the popup without the user asking (focusPopup).
  */
 export function keepAbove(h: H): void {
-	const s = xlib(), xid = popups.get(key(h)), w = wants.get(key(h));
+	const s = xlib(),
+		xid = popups.get(key(h)),
+		w = wants.get(key(h));
 	if (!s || !xid || !w) return;
 	if (w.tries < 40 && s.lib.XTranslateCoordinates(s.dpy, xid, s.root, 0, 0, i32a, i32b, u64a) && (i32a[0] !== w.x || i32b[0] !== w.y)) {
 		w.tries++;
@@ -313,9 +361,17 @@ export function keepAbove(h: H): void {
 
 /** Place the popup at a root-window rectangle (X pixels) and show it, without taking the focus. */
 export function placePopup(h: H, r: { x: number; y: number; width: number; height: number }): void {
-	const s = xlib(), g = gtk4(), xid = popups.get(key(h));
+	const s = xlib(),
+		g = gtk4(),
+		xid = popups.get(key(h));
 	if (!s || !g || !xid) return;
-	const w: Want = { ...r, tries: 0, guardUntil: wants.get(key(h))?.guardUntil ?? 0, prevFocus: wants.get(key(h))?.prevFocus ?? 0n, asked: false };
+	const w: Want = {
+		...r,
+		tries: 0,
+		guardUntil: wants.get(key(h))?.guardUntil ?? 0,
+		prevFocus: wants.get(key(h))?.prevFocus ?? 0n,
+		asked: false,
+	};
 	if (!g.gtk_widget_get_visible(h)) {
 		w.prevFocus = focused();
 		w.guardUntil = performance.now() + 1500;
@@ -333,19 +389,29 @@ export function hidePopup(h: H): void {
 }
 
 type PxRect = { x: number; y: number; width: number; height: number };
-const ShapeBounding = 0, ShapeInput = 2, ShapeSet = 0, ShapeSubtract = 3;
+const ShapeBounding = 0,
+	ShapeInput = 2,
+	ShapeSet = 0,
+	ShapeSubtract = 3;
 /** Clip the popup to `keep` minus `holes` (popup pixels), or show all of it; clicks outside the shape reach the window below. */
 export function clipPopup(h: H, keep: PxRect | null, holes: PxRect[] = []): void {
-	const s = xlib(), e = shape(), xid = popups.get(key(h));
+	const s = xlib(),
+		e = shape(),
+		xid = popups.get(key(h));
 	if (!s || !e || !xid) return;
 	const rect = (r: PxRect) => {
 		const b = new Int16Array(4);
-		b[0] = Math.max(-32768, Math.min(32767, r.x)); b[1] = Math.max(-32768, Math.min(32767, r.y));
-		b[2] = Math.max(0, Math.min(32767, r.width)); b[3] = Math.max(0, Math.min(32767, r.height)); // XRectangle: short x, y; unsigned short w, h
+		b[0] = Math.max(-32768, Math.min(32767, r.x));
+		b[1] = Math.max(-32768, Math.min(32767, r.y));
+		b[2] = Math.max(0, Math.min(32767, r.width));
+		b[3] = Math.max(0, Math.min(32767, r.height)); // XRectangle: short x, y; unsigned short w, h
 		return b;
 	};
 	for (const kind of [ShapeBounding, ShapeInput]) {
-		if (!keep && !holes.length) { e.XShapeCombineMask(s.dpy, xid, kind, 0, 0, 0n, ShapeSet); continue; }
+		if (!keep && !holes.length) {
+			e.XShapeCombineMask(s.dpy, xid, kind, 0, 0, 0n, ShapeSet);
+			continue;
+		}
 		e.XShapeCombineRectangles(s.dpy, xid, kind, 0, 0, rect(keep ?? { x: 0, y: 0, width: 32767, height: 32767 }), 1, ShapeSet, 0);
 		for (const hole of holes) e.XShapeCombineRectangles(s.dpy, xid, kind, 0, 0, rect(hole), 1, ShapeSubtract, 0);
 	}
@@ -361,7 +427,8 @@ function focused(): bigint {
 
 /** Give the popup keyboard focus (an explicit "edit this" from the user); only while this app is in front. */
 export function focusPopup(h: H): void {
-	const s = xlib(), xid = popups.get(key(h));
+	const s = xlib(),
+		xid = popups.get(key(h));
 	if (!s || !xid || !appIsForeground()) return;
 	const w = wants.get(key(h));
 	if (w) w.asked = true;
@@ -379,7 +446,8 @@ export function popupHasFocus(h: H): boolean {
 
 /** Give keyboard focus back to the main window. */
 export function focusMain(): void {
-	const s = xlib(), w = mainWindow();
+	const s = xlib(),
+		w = mainWindow();
 	if (!s || w == null) return;
 	s.lib.XSetInputFocus(s.dpy, BigInt(w), 2, 0);
 	s.lib.XFlush(s.dpy);
@@ -406,7 +474,15 @@ export function pump(): void {
 
 // ---- ordinary top-level windows (the sign-in helper; Windows only for now, see signin/helper.ts) ----
 
-export function showTopLevel(h: H): void { const g = gtk4(); if (g) { g.gtk_widget_set_visible(h, 1); g.gtk_window_present(h); } }
-export function hideTopLevel(h: H): void { gtk4()?.gtk_widget_set_visible(h, 0); }
+export function showTopLevel(h: H): void {
+	const g = gtk4();
+	if (g) {
+		g.gtk_widget_set_visible(h, 1);
+		g.gtk_window_present(h);
+	}
+}
+export function hideTopLevel(h: H): void {
+	gtk4()?.gtk_widget_set_visible(h, 0);
+}
 export const isShown = (h: H): boolean => !!gtk4()?.gtk_widget_get_visible(h);
 export function allowForeground(_pid: number): void {}

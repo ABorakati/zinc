@@ -12,8 +12,18 @@ export const tx = (cls: string): Style => textStyle(cls, mode());
 
 /** Collapse a box out of the layout while keeping its subtree mounted (GPUIX has no display:none that does). */
 export const HIDDEN: Style = {
-	display: "none", visibility: "hidden", width: 0, height: 0, flexGrow: 0, flexShrink: 1, overflow: "hidden",
-	padding: 0, paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0,
+	display: "none",
+	visibility: "hidden",
+	width: 0,
+	height: 0,
+	flexGrow: 0,
+	flexShrink: 1,
+	overflow: "hidden",
+	padding: 0,
+	paddingTop: 0,
+	paddingBottom: 0,
+	paddingLeft: 0,
+	paddingRight: 0,
 };
 
 /** One text node. `cls` is Tailwind classes (text-xs text-muted-foreground ...); a single string child, so it is one node. */

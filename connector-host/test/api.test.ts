@@ -29,14 +29,24 @@ beforeAll(() => {
 	repo.patchItem(db, itemKey, { abstractNote: "liver ".repeat(250_000) } as never);
 	const file = join(ROOT, "source.pdf");
 	writeFileSync(file, pdfBytes);
-	pdfKey = addFile(db, { mode: "imported_file", path: file, name: "Fixture.pdf", contentType: "application/pdf", parentKey: itemKey } as never).data.key;
+	pdfKey = addFile(db, {
+		mode: "imported_file",
+		path: file,
+		name: "Fixture.pdf",
+		contentType: "application/pdf",
+		parentKey: itemKey,
+	} as never).data.key;
 	db.close(true);
 	h = new HostClient({ ZN_DB: dbPath });
 });
 
 afterAll(async () => {
 	await h.close();
-	try { rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Windows may hold the WAL a moment */ }
+	try {
+		rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	} catch {
+		/* Windows may hold the WAL a moment */
+	}
 });
 
 describe("api method: reads", () => {
@@ -81,7 +91,12 @@ describe("api method: writes", () => {
 		expect(a.status).toBe(200);
 		expect(a.json.ok).toBe(true);
 		await h.uploadBytes("sel1", new TextEncoder().encode(JSON.stringify({ kind: "library" })));
-		const b = await h.call("api", { http: "POST", path: "/api/ui/selection", uploadUid: "sel1", headers: { "Content-Type": "application/json" } });
+		const b = await h.call("api", {
+			http: "POST",
+			path: "/api/ui/selection",
+			uploadUid: "sel1",
+			headers: { "Content-Type": "application/json" },
+		});
 		expect(b.status).toBe(200);
 		const sel = await h.call("api", { http: "GET", path: "/api/ui/selection" });
 		expect(sel.json.selection).toEqual({ kind: "library" });

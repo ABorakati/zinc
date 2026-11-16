@@ -12,8 +12,9 @@ function newestSource(): number {
 	const walk = (d: string) => {
 		for (const e of readdirSync(d, { withFileTypes: true })) {
 			const p = join(d, e.name);
-			if (e.isDirectory()) { if (e.name !== "node_modules" && e.name !== "vendor") walk(p); }
-			else if (/\.(ts|tsx|js|json)$/.test(e.name)) newest = Math.max(newest, statSync(p).mtimeMs);
+			if (e.isDirectory()) {
+				if (e.name !== "node_modules" && e.name !== "vendor") walk(p);
+			} else if (/\.(ts|tsx|js|json)$/.test(e.name)) newest = Math.max(newest, statSync(p).mtimeMs);
 		}
 	};
 	walk(join(PKG, "src"));
@@ -36,8 +37,13 @@ function hostExe(): string {
 	const out = join(dir, "zotero-next-host.exe");
 	if (existsSync(out) && statSync(out).mtimeMs >= src) return out;
 	mkdirSync(dir, { recursive: true });
-	console.warn(`[host tests] ${existsSync(dist) ? "dist/zotero-next-host.exe is older than the sources" : "no dist/zotero-next-host.exe"}: compiling the sources to ${out}`);
-	const r = Bun.spawnSync(["bun", "build", "--compile", join(PKG, "src", "main.ts"), "--outfile", out], { stdout: "pipe", stderr: "pipe" });
+	console.warn(
+		`[host tests] ${existsSync(dist) ? "dist/zotero-next-host.exe is older than the sources" : "no dist/zotero-next-host.exe"}: compiling the sources to ${out}`,
+	);
+	const r = Bun.spawnSync(["bun", "build", "--compile", join(PKG, "src", "main.ts"), "--outfile", out], {
+		stdout: "pipe",
+		stderr: "pipe",
+	});
 	if (!r.success) throw new Error(`compiling the host failed:\n${r.stderr.toString()}`);
 	return out;
 }
@@ -143,7 +149,13 @@ export class HostClient {
 	async uploadBytes(uid: string, bytes: Uint8Array, chunk = UPLOAD_CHUNK, interleave = false): Promise<void> {
 		const n = Math.max(1, Math.ceil(bytes.length / chunk));
 		for (let i = 0; i < n; i++) {
-			this.send({ t: "up", uid, seq: i, last: i === n - 1, data: Buffer.from(bytes.subarray(i * chunk, (i + 1) * chunk)).toString("base64") });
+			this.send({
+				t: "up",
+				uid,
+				seq: i,
+				last: i === n - 1,
+				data: Buffer.from(bytes.subarray(i * chunk, (i + 1) * chunk)).toString("base64"),
+			});
 			if (interleave) await Bun.sleep(0);
 		}
 	}
@@ -161,18 +173,32 @@ export class HostClient {
 			const uid = `u${id}`;
 			const n = Math.max(1, Math.ceil(o.bytes.length / UPLOAD_CHUNK));
 			for (let i = 0; i < n; i++) {
-				this.send({ t: "up", uid, seq: i, last: i === n - 1, data: Buffer.from(o.bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)).toString("base64") });
+				this.send({
+					t: "up",
+					uid,
+					seq: i,
+					last: i === n - 1,
+					data: Buffer.from(o.bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)).toString("base64"),
+				});
 			}
 			body = { kind: "upload", uid };
 		} else if (o.form) {
 			const fields: Record<string, unknown> = {};
 			for (const [k, v] of Object.entries(o.form)) {
-				if (!o.formUploads) fields[k] = typeof v === "string" ? { text: v } : { b64: Buffer.from(v.bytes).toString("base64"), type: v.type };
+				if (!o.formUploads)
+					fields[k] = typeof v === "string" ? { text: v } : { b64: Buffer.from(v.bytes).toString("base64"), type: v.type };
 				else {
 					const uid = `f${id}-${k}`;
 					const bytes = typeof v === "string" ? new TextEncoder().encode(v) : v.bytes;
 					const n = Math.max(1, Math.ceil(bytes.length / UPLOAD_CHUNK));
-					for (let i = 0; i < n; i++) this.send({ t: "up", uid, seq: i, last: i === n - 1, data: Buffer.from(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)).toString("base64") });
+					for (let i = 0; i < n; i++)
+						this.send({
+							t: "up",
+							uid,
+							seq: i,
+							last: i === n - 1,
+							data: Buffer.from(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)).toString("base64"),
+						});
 					fields[k] = typeof v === "string" ? { upload: uid, asText: true } : { upload: uid, type: v.type };
 				}
 			}

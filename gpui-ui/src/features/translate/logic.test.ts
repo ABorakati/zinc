@@ -6,7 +6,12 @@ describe("parseWebResponse", () => {
 	test("saved items", () => {
 		const r = parseWebResponse({ items: [{ key: "A", title: "T", itemType: "journalArticle" }], translator: "X", fallback: "webpage" });
 		expect(r.kind).toBe("saved");
-		if (r.kind === "saved") expect(r.saved).toEqual({ items: [{ key: "A", title: "T", itemType: "journalArticle" }], translator: "X", fallback: "webpage" });
+		if (r.kind === "saved")
+			expect(r.saved).toEqual({
+				items: [{ key: "A", title: "T", itemType: "journalArticle" }],
+				translator: "X",
+				fallback: "webpage",
+			});
 	});
 	test("choices win over items", () => {
 		const r = parseWebResponse({ choices: { session: "s1", url: "u", items: [{ key: "1", title: "a", checked: true }] } });
@@ -20,7 +25,11 @@ describe("parseWebResponse", () => {
 });
 
 describe("pick-list", () => {
-	const items = [{ key: "a", title: "A", checked: true }, { key: "b", title: "B" }, { key: "c", title: "C", checked: true }];
+	const items = [
+		{ key: "a", title: "A", checked: true },
+		{ key: "b", title: "B" },
+		{ key: "c", title: "C", checked: true },
+	];
 	test("initial, toggle, all, none, order", () => {
 		let s = initialChecked(items);
 		expect([...s]).toEqual(["a", "c"]);

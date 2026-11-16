@@ -25,7 +25,19 @@ const DUPLICATE_FIELDS = new Set(["title", "DOI", "ISBN", "creators", "date", "y
 export const affectsDuplicates = (fields: string[]): boolean => fields.some((f) => DUPLICATE_FIELDS.has(f));
 
 /** Counters for scripts/scroll-bench.ts (plain increments, no reactivity): row evaluations, skeleton evaluations, page fetches. */
-export const stats = { itemAt: 0, skeleton: 0, fetches: 0, evictions: 0, visCalls: 0, visMs: 0, visMaxMs: 0, fetchMs: 0, fetchMaxMs: 0, prefetches: 0, pageTouches: 0 };
+export const stats = {
+	itemAt: 0,
+	skeleton: 0,
+	fetches: 0,
+	evictions: 0,
+	visCalls: 0,
+	visMs: 0,
+	visMaxMs: 0,
+	fetchMs: 0,
+	fetchMaxMs: 0,
+	prefetches: 0,
+	pageTouches: 0,
+};
 
 // ------------------------------------------------------------------------------------------------ persisted UI state
 // The web UI keeps list preferences in localStorage; here they live in %APPDATA%\zotero-next-gpui\ui-state.json (one JSON
@@ -39,7 +51,11 @@ const STATE_FILE = (() => {
 	return join(configDir(), "zotero-next-gpui", "ui-state.json");
 })();
 let stateData: Record<string, unknown> = {};
-try { if (STATE_FILE) stateData = JSON.parse(readFileSync(STATE_FILE, "utf8")) ?? {}; } catch { /* first run / unreadable: defaults */ }
+try {
+	if (STATE_FILE) stateData = JSON.parse(readFileSync(STATE_FILE, "utf8")) ?? {};
+} catch {
+	/* first run / unreadable: defaults */
+}
 let writesOff = false;
 let writeTimer: ReturnType<typeof setTimeout> | undefined;
 export const uiState = {
@@ -55,11 +71,16 @@ export const uiState = {
 			try {
 				mkdirSync(dirname(STATE_FILE), { recursive: true });
 				writeFile(STATE_FILE, JSON.stringify(stateData, null, 1), () => {});
-			} catch { /* a read-only profile just loses the preferences */ }
+			} catch {
+				/* a read-only profile just loses the preferences */
+			}
 		}, 400);
 	},
 	/** Screenshot / test scripts: keep the in-memory state but never write the user's file (nor post the selection to the core). */
-	disableWrites(): void { writesOff = true; clearTimeout(writeTimer); },
+	disableWrites(): void {
+		writesOff = true;
+		clearTimeout(writeTimer);
+	},
 	writesDisabled: () => writesOff,
 };
 
@@ -85,7 +106,9 @@ export const GROUP_BY: { id: GroupBy; label: string }[] = [
 ];
 
 const isLevel = (s: unknown): s is SortLevel =>
-	!!s && typeof (s as SortLevel).key === "string" && /^[A-Za-z][A-Za-z0-9]*$/.test((s as SortLevel).key) &&
+	!!s &&
+	typeof (s as SortLevel).key === "string" &&
+	/^[A-Za-z][A-Za-z0-9]*$/.test((s as SortLevel).key) &&
 	((s as SortLevel).dir === "asc" || (s as SortLevel).dir === "desc");
 
 /** Direction a group field sorts in by default (years and months newest first, names A-Z, PDF before other files). */
@@ -93,7 +116,10 @@ const groupDir = (g: GroupBy): "asc" | "desc" => (g === "year" || g === "dateAdd
 /** Default direction when a sort key is picked. */
 export const defaultDir = (key: string): "asc" | "desc" => (/^(year|dateAdded|dateModified|accessDate)$/.test(key) ? "desc" : "asc");
 
-export interface Mods { shift: boolean; ctrl: boolean }
+export interface Mods {
+	shift: boolean;
+	ctrl: boolean;
+}
 
 export interface AppStore extends Store, ListStore {
 	/** My Library first, then the account's group libraries. */
@@ -171,18 +197,31 @@ export interface AppStore extends Store, ListStore {
 
 /** Every collection key in a tree (roots with children). */
 function flattenKeys(tree: Collection[], out = new Set<string>()): Set<string> {
-	for (const c of tree) { out.add(c.key); if (c.children) flattenKeys(c.children, out); }
+	for (const c of tree) {
+		out.add(c.key);
+		if (c.children) flattenKeys(c.children, out);
+	}
 	return out;
 }
 
-interface CachedPage { gen: number; rows: ItemRow[] }
+interface CachedPage {
+	gen: number;
+	rows: ItemRow[];
+}
 
 function createStore(): AppStore {
 	const [mode, setMode] = createSignal<Mode>("dark");
 
 	// ---- collections ----
 	const [collections, setCollections] = createSignal<Collection[]>([]);
-	const loadCollections = () => api.collections().then((c) => { setCollections(c); mark("collections-loaded"); }).catch((e) => setError(String(e?.message ?? e)));
+	const loadCollections = () =>
+		api
+			.collections()
+			.then((c) => {
+				setCollections(c);
+				mark("collections-loaded");
+			})
+			.catch((e) => setError(String(e?.message ?? e)));
 	void loadCollections();
 
 	// ---- libraries: My Library plus the group libraries zotero.org sync brought in ----
@@ -200,26 +239,40 @@ function createStore(): AppStore {
 			if (my !== libSeq) return;
 			const before = untrack(groupCollections);
 			const trees: Record<number, Collection[]> = {};
-			groupLibs.forEach((l, i) => { const a = answers[i]!; trees[l.id] = a.status === "fulfilled" ? a.value : before[l.id] ?? []; });
+			groupLibs.forEach((l, i) => {
+				const a = answers[i]!;
+				trees[l.id] = a.status === "fulfilled" ? a.value : (before[l.id] ?? []);
+			});
 			batch(() => {
 				setLibraries(list);
 				setGroupCollections(trees);
 				// the library on screen left the account (or an old core without groups answered): fall back to My Library
-				if (!list.some((l) => l.id === untrack(libraryId))) { setLibraryId(1); setViewSig({ kind: "library" }); }
+				if (!list.some((l) => l.id === untrack(libraryId))) {
+					setLibraryId(1);
+					setViewSig({ kind: "library" });
+				}
 			});
-		} catch { /* a core without groups (404) or a transient error: My Library alone */ }
+		} catch {
+			/* a core without groups (404) or a transient error: My Library alone */
+		}
 	}
 	// after the first screen: a library list is not needed to paint it. The sync service adds and renames groups in the background, so poll lightly.
 	const libraryStart = setTimeout(() => void reloadLibraries(), 800);
 	const libraryPoll = setInterval(() => void reloadLibraries(), 30_000);
-	onCleanup(() => { clearTimeout(libraryStart); clearInterval(libraryPoll); });
+	onCleanup(() => {
+		clearTimeout(libraryStart);
+		clearInterval(libraryPoll);
+	});
 	const libraryOfCollection = (key: string): number => {
 		for (const [id, tree] of Object.entries(groupCollections())) if (flattenKeys(tree).has(key)) return Number(id);
 		return 1;
 	};
 	const libraryEditable = (id: number): boolean => libraries().find((l) => l.id === id)?.editable !== false;
 	const canEdit = () => libraryEditable(libraryId());
-	const libraryFilesEditable = (id: number): boolean => { const l = libraries().find((x) => x.id === id); return l?.editable !== false && l?.filesEditable !== false; };
+	const libraryFilesEditable = (id: number): boolean => {
+		const l = libraries().find((x) => x.id === id);
+		return l?.editable !== false && l?.filesEditable !== false;
+	};
 
 	// ---- view / tag filter ----
 	const [view, setViewSig] = createSignal<View>({ kind: "library" });
@@ -232,25 +285,39 @@ function createStore(): AppStore {
 		// a collection decides the library (a group's collection opens that group); every other view is My Library's
 		const lib = v.kind === "collection" ? libraryOfCollection(v.key) : 1;
 		batch(() => {
-			if (untrack(libraryId) !== lib) { setLibraryId(lib); setTagFilter([]); } // tags belong to one library
+			if (untrack(libraryId) !== lib) {
+				setLibraryId(lib);
+				setTagFilter([]);
+			} // tags belong to one library
 			if (JSON.stringify(untrack(view)) !== JSON.stringify(v)) setViewSig(v);
 		});
 	};
 	/** Show a library's items: My Library or a group, no collection. */
-	const selectLibrary = (id: number) => batch(() => {
-		if (untrack(libraryId) !== id) setTagFilter([]);
-		setLibraryId(id);
-		setViewSig({ kind: "library" });
-	});
+	const selectLibrary = (id: number) =>
+		batch(() => {
+			if (untrack(libraryId) !== id) setTagFilter([]);
+			setLibraryId(id);
+			setViewSig({ kind: "library" });
+		});
 	/** Sidebar compat: null = My Library; "unfiled" / "trash" are library views; any other string is a collection key. */
 	const selectCollection = (key: string | null) =>
-		setView(key === null ? { kind: "library" } : key === "unfiled" ? { kind: "unfiled" } : key === "trash" ? { kind: "trash" } : { kind: "collection", key });
+		setView(
+			key === null
+				? { kind: "library" }
+				: key === "unfiled"
+					? { kind: "unfiled" }
+					: key === "trash"
+						? { kind: "trash" }
+						: { kind: "collection", key },
+		);
 
 	// ---- filter (200 ms debounce) + quick-search mode ----
 	const [filter, setFilterSig] = createSignal("");
 	const [appliedFilter, setAppliedFilter] = createSignal("");
 	const initialMode = uiState.get<string>("qmode", "titleCreatorYear");
-	const [qmode, setQModeSig] = createSignal<QMode>(initialMode === "fields" || initialMode === "everything" ? initialMode : "titleCreatorYear");
+	const [qmode, setQModeSig] = createSignal<QMode>(
+		initialMode === "fields" || initialMode === "everything" ? initialMode : "titleCreatorYear",
+	);
 	const [fulltext, setFulltextSig] = createSignal(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const setFilter = (q: string) => {
@@ -259,7 +326,10 @@ function createStore(): AppStore {
 		timer = setTimeout(() => setAppliedFilter(q.trim()), FILTER_DEBOUNCE_MS);
 	};
 	onCleanup(() => clearTimeout(timer));
-	const setQMode = (m: QMode) => { setQModeSig(m); uiState.set("qmode", m); };
+	const setQMode = (m: QMode) => {
+		setQModeSig(m);
+		uiState.set("qmode", m);
+	};
 
 	// ---- sort / group / view mode (persisted) ----
 	const savedSort = uiState.get<{ levels?: unknown; groupBy?: unknown } | null>("sort", null);
@@ -270,19 +340,32 @@ function createStore(): AppStore {
 	const normalise = (levels: SortLevel[], g: GroupBy): SortLevel[] => {
 		const seen = new Set<string>();
 		let ls = levels.filter((l) => isLevel(l) && !seen.has(l.key) && !!seen.add(l.key));
-		if (g !== "none" && ls[0]?.key !== g) ls = [ls.find((l) => l.key === g) ?? { key: g, dir: groupDir(g) }, ...ls.filter((l) => l.key !== g)];
+		if (g !== "none" && ls[0]?.key !== g)
+			ls = [ls.find((l) => l.key === g) ?? { key: g, dir: groupDir(g) }, ...ls.filter((l) => l.key !== g)];
 		if (!ls.length) ls = [{ key: "dateAdded", dir: "desc" }];
 		return ls.slice(0, MAX_LEVELS);
 	};
 	const [groupBy, setGroupBySig] = createSignal<GroupBy>(initGroup);
 	const [sortLevels, setSortLevelsSig] = createSignal<SortLevel[]>(
-		normalise(Array.isArray(savedSort?.levels) ? (savedSort!.levels as SortLevel[]) : [{ key: "year", dir: "desc" }, { key: "dateAdded", dir: "desc" }], initGroup),
+		normalise(
+			Array.isArray(savedSort?.levels)
+				? (savedSort!.levels as SortLevel[])
+				: [
+						{ key: "year", dir: "desc" },
+						{ key: "dateAdded", dir: "desc" },
+					],
+			initGroup,
+		),
 	);
 	createEffect(() => uiState.set("sort", { levels: sortLevels(), groupBy: groupBy() }));
 	/** Replace every level; while grouped, the group field is forced to stay first. */
 	const setSortLevels = (levels: SortLevel[]) => setSortLevelsSig(normalise(levels, untrack(groupBy)));
 	/** Group the list; the group field becomes sort level 1 and the old levels follow it. */
-	const setGroupBy = (g: GroupBy) => batch(() => { setGroupBySig(g); setSortLevelsSig((l) => normalise(l, g)); });
+	const setGroupBy = (g: GroupBy) =>
+		batch(() => {
+			setGroupBySig(g);
+			setSortLevelsSig((l) => normalise(l, g));
+		});
 	const sortBy = (level: SortLevel) => {
 		const g = untrack(groupBy);
 		const cur = untrack(sortLevels);
@@ -291,7 +374,10 @@ function createStore(): AppStore {
 	};
 
 	const [viewMode, setViewModeSig] = createSignal<ViewMode>(uiState.get<string>("viewMode", "cards") === "table" ? "table" : "cards");
-	const setViewMode = (m: ViewMode) => { setViewModeSig(m); uiState.set("viewMode", m); };
+	const setViewMode = (m: ViewMode) => {
+		setViewModeSig(m);
+		uiState.set("viewMode", m);
+	};
 
 	// ---- the item query ----
 	const [listFields, setListFieldsSig] = createSignal({ fields: "DOI,url", include: "creators,tags" });
@@ -300,26 +386,38 @@ function createStore(): AppStore {
 		if (c.fields !== fields || c.include !== include) setListFieldsSig({ fields, include });
 	};
 	/** Everything but fields/include: a change starts the list over (selection and scroll reset). */
-	const baseQuery = createMemo<ItemQuery>(() => {
-		const v = view();
-		const ls = sortLevels();
-		const first = ls[0]!;
-		return {
-			library: libraryId() !== 1 ? libraryId() : undefined,
-			collection: v.kind === "collection" ? v.key : undefined,
-			search: v.kind === "savedSearch" ? v.key : undefined,
-			unfiled: v.kind === "unfiled" || undefined,
-			publications: v.kind === "publications" || undefined,
-			trash: v.kind === "trash" || undefined,
-			tag: tagFilter()[0],
-			qmode: qmode() !== "titleCreatorYear" ? qmode() : undefined,
-			q: !fulltext() && appliedFilter() ? appliedFilter() : undefined,
-			sort: first.key,
-			dir: first.dir,
-			then: ls.slice(1).map((l) => `${l.key}:${l.dir}`).join(",") || undefined,
-		};
-	}, undefined as never, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
-	const query = createMemo<ItemQuery>(() => ({ ...baseQuery(), fields: listFields().fields || undefined, include: listFields().include || undefined }));
+	const baseQuery = createMemo<ItemQuery>(
+		() => {
+			const v = view();
+			const ls = sortLevels();
+			const first = ls[0]!;
+			return {
+				library: libraryId() !== 1 ? libraryId() : undefined,
+				collection: v.kind === "collection" ? v.key : undefined,
+				search: v.kind === "savedSearch" ? v.key : undefined,
+				unfiled: v.kind === "unfiled" || undefined,
+				publications: v.kind === "publications" || undefined,
+				trash: v.kind === "trash" || undefined,
+				tag: tagFilter()[0],
+				qmode: qmode() !== "titleCreatorYear" ? qmode() : undefined,
+				q: !fulltext() && appliedFilter() ? appliedFilter() : undefined,
+				sort: first.key,
+				dir: first.dir,
+				then:
+					ls
+						.slice(1)
+						.map((l) => `${l.key}:${l.dir}`)
+						.join(",") || undefined,
+			};
+		},
+		undefined as never,
+		{ equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
+	);
+	const query = createMemo<ItemQuery>(() => ({
+		...baseQuery(),
+		fields: listFields().fields || undefined,
+		include: listFields().include || undefined,
+	}));
 	/** The grouping field when the first sort level is it (groups stay contiguous), else null. */
 	const groupField = createMemo(() => {
 		const g = groupBy();
@@ -346,19 +444,30 @@ function createStore(): AppStore {
 		pendingN = f(pendingN);
 		if (pendingN > 0) {
 			if (untrack(loadingSig) || loadingTimer) return;
-			if (untrack(total) === 0) { setLoadingSig(true); return; }
-			loadingTimer = setTimeout(() => { loadingTimer = undefined; if (pendingN > 0) setLoadingSig(true); }, 250);
+			if (untrack(total) === 0) {
+				setLoadingSig(true);
+				return;
+			}
+			loadingTimer = setTimeout(() => {
+				loadingTimer = undefined;
+				if (pendingN > 0) setLoadingSig(true);
+			}, 250);
 		} else {
-			if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = undefined; }
+			if (loadingTimer) {
+				clearTimeout(loadingTimer);
+				loadingTimer = undefined;
+			}
 			if (untrack(loadingSig)) setLoadingSig(false);
 		}
 	};
 	const [error, setErrorRaw] = createSignal<string | null>(null);
 	// a refused connection means no library service is running: say that, not "ECONNREFUSED"
 	const setError = (m: string | null) =>
-		setErrorRaw(m && /ECONNREFUSED|Unable to connect|failed to fetch|connection refused/i.test(m)
-			? "Can't reach the library. Start Zinc, then reopen this window."
-			: m);
+		setErrorRaw(
+			m && /ECONNREFUSED|Unable to connect|failed to fetch|connection refused/i.test(m)
+				? "Can't reach the library. Start Zinc, then reopen this window."
+				: m,
+		);
 	const [groups, setGroups] = createSignal<ItemGroup[]>([]);
 	const [itemsRev, setItemsRev] = createSignal(0);
 
@@ -374,7 +483,8 @@ function createStore(): AppStore {
 	// page passed over queued dozens of requests on the core (in-process: the same thread that draws), and the page the drag
 	// stopped on waited behind them. While the list moves that fast nothing is fetched (rows show skeletons); SETTLE_MS after the
 	// last big jump, the pages then in view load, and requests for pages far from there are aborted.
-	const FAST_JUMP_PAGES = process.env.ZN_NO_SETTLE ? Infinity : 2, SETTLE_MS = 90; // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
+	const FAST_JUMP_PAGES = process.env.ZN_NO_SETTLE ? Infinity : 2,
+		SETTLE_MS = 90; // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
 	let fastUntil = 0;
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 	let lastRange: [number, number] = [0, 0];
@@ -386,15 +496,32 @@ function createStore(): AppStore {
 	const pageSigs = new Map<number, [() => number, (f: (n: number) => number) => void]>();
 	const pageVersion = (p: number): number => {
 		let s = pageSigs.get(p);
-		if (!s) { const [get, set] = createSignal(0); s = [get, set]; pageSigs.set(p, s); }
+		if (!s) {
+			const [get, set] = createSignal(0);
+			s = [get, set];
+			pageSigs.set(p, s);
+		}
 		return s[0]();
 	};
-	const touchPage = (p: number) => { const s = pageSigs.get(p); if (s) { stats.pageTouches++; s[1]((n) => n + 1); } };
-	const touchAllPages = () => batch(() => { for (const p of [...pageSigs.keys()]) touchPage(p); });
+	const touchPage = (p: number) => {
+		const s = pageSigs.get(p);
+		if (s) {
+			stats.pageTouches++;
+			s[1]((n) => n + 1);
+		}
+	};
+	const touchAllPages = () =>
+		batch(() => {
+			for (const p of [...pageSigs.keys()]) touchPage(p);
+		});
 	/** Wake the rows of pages [from, to] that have no current rows yet (they re-run itemAt, which fetches). */
-	const touchPagesIn = (from: number, to: number) => batch(() => {
-		for (let p = Math.max(0, from); p <= to; p++) { const e = cache.get(p); if (!e || e.gen !== gen) touchPage(p); }
-	});
+	const touchPagesIn = (from: number, to: number) =>
+		batch(() => {
+			for (let p = Math.max(0, from); p <= to; p++) {
+				const e = cache.get(p);
+				if (!e || e.gen !== gen) touchPage(p);
+			}
+		});
 	let dupCache: Promise<ItemRow[]> | null = null;
 	// Pages whose request failed: they stay skeletons, so the list says so and offers Retry (a failed page is not asked for again by
 	// the rows re-running, only by retryFailed() or a reset).
@@ -404,10 +531,29 @@ function createStore(): AppStore {
 
 	/** The duplicate sets as flat rows (one per item, sets adjacent): the core lists sets, not items. */
 	function duplicateRows(signal: AbortSignal): Promise<ItemRow[]> {
-		dupCache ??= api.duplicates(signal).then((r) => r.sets.flatMap((s) => s.keys.map((key): ItemRow => ({
-			key, itemType: s.itemType ?? "journalArticle", title: s.title ?? "", creatorsSummary: s.creatorsSummary, year: s.year ?? null,
-			publication: `Duplicate by ${s.reason}`, dateAdded: "", primaryAttachment: null, attachmentCount: 0, noteCount: 0, tags: [],
-		})))).catch((e) => { dupCache = null; throw e; });
+		dupCache ??= api
+			.duplicates(signal)
+			.then((r) =>
+				r.sets.flatMap((s) =>
+					s.keys.map((key): ItemRow => ({
+						key,
+						itemType: s.itemType ?? "journalArticle",
+						title: s.title ?? "",
+						creatorsSummary: s.creatorsSummary,
+						year: s.year ?? null,
+						publication: `Duplicate by ${s.reason}`,
+						dateAdded: "",
+						primaryAttachment: null,
+						attachmentCount: 0,
+						noteCount: 0,
+						tags: [],
+					})),
+				),
+			)
+			.catch((e) => {
+				dupCache = null;
+				throw e;
+			});
 		return dupCache;
 	}
 
@@ -443,8 +589,13 @@ function createStore(): AppStore {
 			const res = await fetchPage(p, AbortSignal.any([abort.signal, mine.signal]));
 			if (g !== gen) return;
 			const dropped: number[] = [];
-			if (hardCleared < hardGen) { // first page of a new list replaces the old list's rows
-				for (const [k, v] of cache) if (v.gen < hardGen) { cache.delete(k); dropped.push(k); }
+			if (hardCleared < hardGen) {
+				// first page of a new list replaces the old list's rows
+				for (const [k, v] of cache)
+					if (v.gen < hardGen) {
+						cache.delete(k);
+						dropped.push(k);
+					}
 				hardCleared = hardGen;
 			}
 			cache.set(p, { gen: g, rows: res.items });
@@ -464,12 +615,18 @@ function createStore(): AppStore {
 			mark("items-loaded");
 		} catch (e) {
 			if (g === gen && (e as Error)?.name !== "AbortError") {
-			failed.add(p);
-			batch(() => { syncFailed(); setError(String((e as Error)?.message ?? e)); });
+				failed.add(p);
+				batch(() => {
+					syncFailed();
+					setError(String((e as Error)?.message ?? e));
+				});
 			}
 		} finally {
 			// only this request's own bookkeeping: an aborted one may already have been replaced by a new request for the page
-			if (pageAbort.get(p) === mine) { pageAbort.delete(p); if (g === gen) inflight.delete(p); }
+			if (pageAbort.get(p) === mine) {
+				pageAbort.delete(p);
+				if (g === gen) inflight.delete(p);
+			}
 			setPending((n) => n - 1);
 		}
 	}
@@ -492,11 +649,21 @@ function createStore(): AppStore {
 		pageAbort.clear();
 		fastUntil = 0;
 		if (!keepDuplicates) dupCache = null;
-		if (failed.size) { failed.clear(); syncFailed(); setErrorRaw(null); }
+		if (failed.size) {
+			failed.clear();
+			syncFailed();
+			setErrorRaw(null);
+		}
 		if (hard) {
 			hardGen = gen;
 			centerPage = 0;
-			batch(() => { setSelectedSig(new Set<string>()); setActiveKey(null); setAnchor(-1); setFocusIndex(-1); setListVersion(gen); });
+			batch(() => {
+				setSelectedSig(new Set<string>());
+				setActiveKey(null);
+				setAnchor(-1);
+				setFocusIndex(-1);
+				setListVersion(gen);
+			});
 		}
 		// the stale rows stay on screen until the fresh page lands; itemAt() asks for every page in view (soft reset: wake the rows)
 		if (!hard) touchAllPages();
@@ -507,27 +674,62 @@ function createStore(): AppStore {
 	function loadGroups() {
 		const f = untrack(groupField);
 		const s = ++groupSeq;
-		if (!f) { setGroups([]); return; }
-		api.itemGroups(untrack(baseQuery), f).then((r) => { if (s === groupSeq) setGroups(r.groups); }).catch(() => { if (s === groupSeq) setGroups([]); });
+		if (!f) {
+			setGroups([]);
+			return;
+		}
+		api.itemGroups(untrack(baseQuery), f)
+			.then((r) => {
+				if (s === groupSeq) setGroups(r.groups);
+			})
+			.catch(() => {
+				if (s === groupSeq) setGroups([]);
+			});
 	}
 
 	// A new view / filter / sort starts over; old rows stay visible until page 0 of the new list lands.
-	createEffect(on(() => JSON.stringify([baseQuery(), view()]), () => reset(true)));
+	createEffect(
+		on(
+			() => JSON.stringify([baseQuery(), view()]),
+			() => reset(true),
+		),
+	);
 	// What the visible list shows (fields / include) changed: refetch, keep selection and scroll.
 	createEffect(on(listFields, () => reset(false), { defer: true }));
-	createEffect(on(() => [JSON.stringify(baseQuery()), groupField(), itemsRev()] as const, () => loadGroups()));
+	createEffect(
+		on(
+			() => [JSON.stringify(baseQuery()), groupField(), itemsRev()] as const,
+			() => loadGroups(),
+		),
+	);
 	// browser-extension saves go to the selected collection (best effort; not while a script runs with writes disabled)
-	createEffect(on(view, (v) => {
-		if (writesOff) return;
-		void api.postSelection(v.kind === "collection" || v.kind === "savedSearch" ? { kind: v.kind === "savedSearch" ? "search" : "collection", key: v.key } : { kind: v.kind }).catch(() => {});
-	}, { defer: true }));
+	createEffect(
+		on(
+			view,
+			(v) => {
+				if (writesOff) return;
+				void api
+					.postSelection(
+						v.kind === "collection" || v.kind === "savedSearch"
+							? { kind: v.kind === "savedSearch" ? "search" : "collection", key: v.key }
+							: { kind: v.kind },
+					)
+					.catch(() => {});
+			},
+			{ defer: true },
+		),
+	);
 
 	/** Ask again for the pages that failed: their rows wake up (itemAt) and the requests go out. */
 	function retryFailed() {
 		const pages = [...failed];
 		if (!pages.length) return;
 		failed.clear();
-		batch(() => { syncFailed(); setErrorRaw(null); for (const p of pages) touchPage(p); });
+		batch(() => {
+			syncFailed();
+			setErrorRaw(null);
+			for (const p of pages) touchPage(p);
+		});
 		for (const p of pages) void loadPage(p, gen);
 	}
 
@@ -538,7 +740,8 @@ function createStore(): AppStore {
 		listVersion();
 		const e = cache.get(p);
 		// (not during a fast move: the settle step loads the pages in view; this row re-runs when its page arrives)
-		if ((!e || e.gen !== gen) && i >= 0 && i < Math.max(untrack(total), 1) && performance.now() >= fastUntil) queueMicrotask(() => void loadPage(p, gen));
+		if ((!e || e.gen !== gen) && i >= 0 && i < Math.max(untrack(total), 1) && performance.now() >= fastUntil)
+			queueMicrotask(() => void loadPage(p, gen));
 		if (!e) stats.skeleton++;
 		return e?.rows[i - p * PAGE]; // a stale row (older generation) is returned meanwhile
 	}
@@ -548,7 +751,8 @@ function createStore(): AppStore {
 	};
 	/** The visible item range: re-centres the cache and prefetches the pages ahead in the scroll direction. */
 	function setVisible(first: number, last: number) {
-		const fp = Math.max(0, Math.floor(first / PAGE)), lp = Math.max(fp, Math.floor(last / PAGE));
+		const fp = Math.max(0, Math.floor(first / PAGE)),
+			lp = Math.max(fp, Math.floor(last / PAGE));
 		lastRange = [first, last];
 		if (lastVisible.fp >= 0 && Math.abs(fp - lastVisible.fp) > FAST_JUMP_PAGES) {
 			// a big jump: fetch nothing until the range settles (see FAST_JUMP_PAGES)
@@ -560,7 +764,8 @@ function createStore(): AppStore {
 				settleTimer = undefined;
 				fastUntil = 0;
 				const [a, b] = lastRange;
-				const sfp = Math.max(0, Math.floor(a / PAGE)), slp = Math.max(sfp, Math.floor(b / PAGE));
+				const sfp = Math.max(0, Math.floor(a / PAGE)),
+					slp = Math.max(sfp, Math.floor(b / PAGE));
 				abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
 				lastVisible = { fp: -1, lp: -1, dir: 0 }; // force the normal path below to load what is in view now
 				setVisible(a, b);
@@ -568,7 +773,10 @@ function createStore(): AppStore {
 			}, SETTLE_MS);
 			return;
 		}
-		if (performance.now() < fastUntil) { lastVisible = { fp, lp, dir: scrollDir }; return; } // still settling
+		if (performance.now() < fastUntil) {
+			lastVisible = { fp, lp, dir: scrollDir };
+			return;
+		} // still settling
 		const c = Math.max(0, Math.floor((first + last) / 2 / PAGE));
 		if (c !== centerPage) {
 			scrollDir = c > centerPage ? 1 : -1;
@@ -579,7 +787,8 @@ function createStore(): AppStore {
 		lastVisible = { fp, lp, dir: scrollDir };
 		const lastPage = Math.ceil(untrack(total) / PAGE) - 1;
 		if (lastPage < 0) return;
-		const from = Math.max(0, fp - (scrollDir < 0 ? PREFETCH_AHEAD : 1)), to = Math.min(lastPage, lp + (scrollDir > 0 ? PREFETCH_AHEAD : 1));
+		const from = Math.max(0, fp - (scrollDir < 0 ? PREFETCH_AHEAD : 1)),
+			to = Math.min(lastPage, lp + (scrollDir > 0 ? PREFETCH_AHEAD : 1));
 		for (let p = from; p <= to; p++) {
 			const e = cache.get(p);
 			if ((e && e.gen === gen) || inflight.has(p)) continue;
@@ -590,24 +799,36 @@ function createStore(): AppStore {
 		}
 	}
 	function indexOfKey(key: string): number {
-		for (const [p, e] of cache) { const j = e.rows.findIndex((r) => r.key === key); if (j >= 0) return p * PAGE + j; }
+		for (const [p, e] of cache) {
+			const j = e.rows.findIndex((r) => r.key === key);
+			if (j >= 0) return p * PAGE + j;
+		}
 		return -1;
 	}
 	function patchItem(key: string, patch: Partial<ItemRow>) {
 		for (const [p, e] of cache) {
 			const j = e.rows.findIndex((r) => r.key === key);
-			if (j >= 0) { e.rows[j] = { ...e.rows[j]!, ...patch }; touchPage(p); }
+			if (j >= 0) {
+				e.rows[j] = { ...e.rows[j]!, ...patch };
+				touchPage(p);
+			}
 		}
 	}
 
 	/** Re-fetch collections + the list (after edits, imports, trash...). Selection and scroll stay. */
 	function refresh() {
-	void loadCollections();
-	void reloadLibraries();
-	batch(() => { setItemsRev((n) => n + 1); reset(false); });
+		void loadCollections();
+		void reloadLibraries();
+		batch(() => {
+			setItemsRev((n) => n + 1);
+			reset(false);
+		});
 	}
 	function refreshItems(fields?: string[]) {
-	batch(() => { setItemsRev((n) => n + 1); reset(false, !fields || !affectsDuplicates(fields)); });
+		batch(() => {
+			setItemsRev((n) => n + 1);
+			reset(false, !fields || !affectsDuplicates(fields));
+		});
 	}
 
 	// ---- selection ----
@@ -624,7 +845,10 @@ function createStore(): AppStore {
 	/** Keys of rows a..b that are cached. */
 	function rangeKeys(a: number, b: number): string[] {
 		const out: string[] = [];
-		for (let i = a; i <= b; i++) { const r = peek(i); if (r) out.push(r.key); }
+		for (let i = a; i <= b; i++) {
+			const r = peek(i);
+			if (r) out.push(r.key);
+		}
 		return out;
 	}
 	async function loadRange(a: number, b: number) {
@@ -634,32 +858,50 @@ function createStore(): AppStore {
 		await Promise.all(need.map((p) => loadPage(p, g)));
 	}
 	function selectClick(index: number, mods: Mods) {
-	const it = peek(index);
-	const view0 = hardGen; // the list this click belongs to: an async completion for another list is dropped
+		const it = peek(index);
+		const view0 = hardGen; // the list this click belongs to: an async completion for another list is dropped
 		if (!it) return;
 		const sel = new Set(selected());
 		if (mods.shift && anchor() >= 0) {
-			const a = Math.min(anchor(), index), b = Math.max(anchor(), index);
+			const a = Math.min(anchor(), index),
+				b = Math.max(anchor(), index);
 			if (!mods.ctrl) sel.clear();
 			for (const k of rangeKeys(a, b)) sel.add(k);
 			setFocusIndex(index);
 			// a range spanning pages that are not cached: fetch them and complete the selection
-			if (b - a >= PAGE) void loadRange(a, b).then(() => { if (view0 !== hardGen) return; const s2 = new Set(untrack(selected)); for (const k of rangeKeys(a, b)) s2.add(k); setSelectedSig(s2); });
+			if (b - a >= PAGE)
+				void loadRange(a, b).then(() => {
+					if (view0 !== hardGen) return;
+					const s2 = new Set(untrack(selected));
+					for (const k of rangeKeys(a, b)) s2.add(k);
+					setSelectedSig(s2);
+				});
 		} else if (mods.ctrl) {
 			if (!sel.delete(it.key)) sel.add(it.key);
-			batch(() => { setAnchor(index); setFocusIndex(index); });
+			batch(() => {
+				setAnchor(index);
+				setFocusIndex(index);
+			});
 		} else {
 			selectOnly(it.key, index);
 			return;
 		}
-		batch(() => { setSelectedSig(sel); setActiveKey(it.key); });
+		batch(() => {
+			setSelectedSig(sel);
+			setActiveKey(it.key);
+		});
 	}
 	function focusRow(next: number, extend: boolean): boolean {
 		const it = peek(next);
 		if (!it) return false;
 		if (extend && anchor() >= 0) {
-			const a = Math.min(anchor(), next), b = Math.max(anchor(), next);
-			batch(() => { setSelectedSig(new Set(rangeKeys(a, b))); setActiveKey(it.key); setFocusIndex(next); });
+			const a = Math.min(anchor(), next),
+				b = Math.max(anchor(), next);
+			batch(() => {
+				setSelectedSig(new Set(rangeKeys(a, b)));
+				setActiveKey(it.key);
+				setFocusIndex(next);
+			});
 		} else selectOnly(it.key, next);
 		return true;
 	}
@@ -669,7 +911,9 @@ function createStore(): AppStore {
 		const view0 = hardGen; // dropped when the list changes (another view, filter or sort) before the keys arrive
 		const v = untrack(view);
 		if (v.kind === "duplicates" || n <= PAGE) {
-			void loadRange(0, n - 1).then(() => { if (view0 === hardGen) setSelectedSig(new Set(rangeKeys(0, n - 1))); });
+			void loadRange(0, n - 1).then(() => {
+				if (view0 === hardGen) setSelectedSig(new Set(rangeKeys(0, n - 1)));
+			});
 			return;
 		}
 		// the whole list: keys only, 1000 per request
@@ -680,9 +924,11 @@ function createStore(): AppStore {
 				const r = await api.items(q, off, 1000);
 				if (view0 !== hardGen) return;
 				r.items.forEach((x) => keys.add(x.key));
-				}
-				if (view0 === hardGen) setSelectedSig(keys);
-		})().catch((e) => { if (view0 === hardGen) setError(String(e?.message ?? e)); });
+			}
+			if (view0 === hardGen) setSelectedSig(keys);
+		})().catch((e) => {
+			if (view0 === hardGen) setError(String(e?.message ?? e));
+		});
 	}
 	const keysFor = (key: string): string[] => (selected().has(key) ? [...selected()] : [key]);
 
@@ -701,13 +947,18 @@ function createStore(): AppStore {
 		// the core serves it, else in their default app.
 		void api.item(attachmentKey).then(
 			(d) => {
-				const parent = itemKey || (d.data && typeof d.data === "object" && "parentItem" in d.data && typeof d.data.parentItem === "string" ? d.data.parentItem : "");
+				const parent =
+					itemKey ||
+					(d.data && typeof d.data === "object" && "parentItem" in d.data && typeof d.data.parentItem === "string"
+						? d.data.parentItem
+						: "");
 				if (parent) readState.markRead(parent);
 				const ct = String((d.data as { contentType?: unknown }).contentType ?? "");
 				if (!ct || /pdf/i.test(ct)) return openTab();
 				// a linked URL has no file for the reader (the core opens it in the browser)
 				const linked = (d.data as { linkMode?: unknown }).linkMode === "linked_url";
-				if (isWebContent(ct) && !linked && webBase()) return openTab({ id: attachmentKey, kind: "web", title, itemKey, attachmentKey, contentType: ct });
+				if (isWebContent(ct) && !linked && webBase())
+					return openTab({ id: attachmentKey, kind: "web", title, itemKey, attachmentKey, contentType: ct });
 				// program/script files ask for confirmation first (ui/openExternal); loaded lazily to keep ui out of the store's imports
 				return import("./ui/openExternal").then((m) => m.openAttachmentExternally(attachmentKey)).catch(() => openTab());
 			},
@@ -725,29 +976,74 @@ function createStore(): AppStore {
 	}
 
 	return {
-		tabs, activeTab, setActiveTab, openAttachment, closeTab,
-		mode, setMode,
+		tabs,
+		activeTab,
+		setActiveTab,
+		openAttachment,
+		closeTab,
+		mode,
+		setMode,
 		collections,
-		libraries, libraryId, selectLibrary, groupCollections, libraryOfCollection, libraryEditable, canEdit, libraryFilesEditable, reloadLibraries,
-		refreshItems, failedPages: failedCount, retryFailed,
+		libraries,
+		libraryId,
+		selectLibrary,
+		groupCollections,
+		libraryOfCollection,
+		libraryEditable,
+		canEdit,
+		libraryFilesEditable,
+		reloadLibraries,
+		refreshItems,
+		failedPages: failedCount,
+		retryFailed,
 		selectedCollection,
 		selectCollection,
-		filter, setFilter,
-		total, itemAt, listVersion,
-		selectedItem, selectItem: (key) => selectOnly(key, key ? indexOfKey(key) : -1),
-		qmode, setQMode, fulltext, setFulltext: setFulltextSig,
+		filter,
+		setFilter,
+		total,
+		itemAt,
+		listVersion,
+		selectedItem,
+		selectItem: (key) => selectOnly(key, key ? indexOfKey(key) : -1),
+		qmode,
+		setQMode,
+		fulltext,
+		setFulltext: setFulltextSig,
 		loading: loadingSig,
 		error,
-		query, groups, pagesLoaded,
+		query,
+		groups,
+		pagesLoaded,
 		// ListStore
-		view, setView, tagFilter, setTagFilter: (t) => setTagFilter([...t]),
-		selected, setSelected,
-		viewMode, setViewMode,
-		sortLevels, setSortLevels, groupBy, setGroupBy,
+		view,
+		setView,
+		tagFilter,
+		setTagFilter: (t) => setTagFilter([...t]),
+		selected,
+		setSelected,
+		viewMode,
+		setViewMode,
+		sortLevels,
+		setSortLevels,
+		groupBy,
+		setGroupBy,
 		refresh,
 		// list internals
-		setListFields, setVisible, peek, indexOfKey, patchItem, cachedPages: () => [...cache.keys()].sort((a, b) => a - b),
-		anchor, focusIndex, selectOnly, selectClick, focusRow, selectAll, keysFor, sortBy, itemsRev,
+		setListFields,
+		setVisible,
+		peek,
+		indexOfKey,
+		patchItem,
+		cachedPages: () => [...cache.keys()].sort((a, b) => a - b),
+		anchor,
+		focusIndex,
+		selectOnly,
+		selectClick,
+		focusRow,
+		selectAll,
+		keysFor,
+		sortBy,
+		itemsRev,
 	};
 }
 

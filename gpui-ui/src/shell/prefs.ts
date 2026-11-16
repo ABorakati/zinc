@@ -29,13 +29,17 @@ function all(): Record<string, unknown> {
 		try {
 			const v = JSON.parse(readFileSync(p, "utf8")) as unknown;
 			if (v && typeof v === "object" && !Array.isArray(v)) data = v as Record<string, unknown>;
-		} catch { /* first run / unreadable: defaults */ }
+		} catch {
+			/* first run / unreadable: defaults */
+		}
 	}
 	return data;
 }
 
 /** The writer: store.ts's `uiState` (structurally typed here so this module never imports the store). */
-interface Sink { set(key: string, value: unknown): void }
+interface Sink {
+	set(key: string, value: unknown): void;
+}
 let sink: Sink | undefined;
 const queued = new Map<string, unknown>();
 
@@ -45,7 +49,10 @@ export function bindUiState(s: Sink): void {
 	for (const [k, v] of queued) s.set(k, v);
 	queued.clear();
 }
-const write = (key: string, value: unknown) => { if (sink) sink.set(key, value); else queued.set(key, value); };
+const write = (key: string, value: unknown) => {
+	if (sink) sink.set(key, value);
+	else queued.set(key, value);
+};
 
 /** A stored value, or `fallback` when missing / rejected by `validate` (which may also repair it). */
 export function getPref<T>(key: string, fallback: T, validate?: (v: unknown) => T | undefined): T {
@@ -74,10 +81,19 @@ export function clearPrefs(prefix: string): void {
 /** A signal backed by a stored key. */
 export function persisted<T>(key: string, fallback: T, validate?: (v: unknown) => T | undefined): readonly [Accessor<T>, (v: T) => void] {
 	const [get, set] = createSignal<T>(getPref(key, fallback, validate), { equals: false });
-	return [get, (v: T) => { set(() => v); setPref(key, v); }] as const;
+	return [
+		get,
+		(v: T) => {
+			set(() => v);
+			setPref(key, v);
+		},
+	] as const;
 }
 
 export const isBool = (v: unknown): boolean | undefined => (typeof v === "boolean" ? v : undefined);
 export const isStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 export const isNum = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
-export const oneOf = <T extends string>(list: readonly T[]) => (v: unknown): T | undefined => (list.includes(v as T) ? (v as T) : undefined);
+export const oneOf =
+	<T extends string>(list: readonly T[]) =>
+	(v: unknown): T | undefined =>
+		list.includes(v as T) ? (v as T) : undefined;

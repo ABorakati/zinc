@@ -4,8 +4,19 @@
 export type PdfRect = [number, number, number, number];
 
 export type BlockType =
-	| "title" | "heading" | "paragraph" | "list" | "figure" | "table" | "caption"
-	| "equation" | "footnote" | "reference" | "header" | "footer" | "other";
+	| "title"
+	| "heading"
+	| "paragraph"
+	| "list"
+	| "figure"
+	| "table"
+	| "caption"
+	| "equation"
+	| "footnote"
+	| "reference"
+	| "header"
+	| "footer"
+	| "other";
 
 export interface Block {
 	id: string;

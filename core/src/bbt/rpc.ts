@@ -21,7 +21,10 @@ const PARSE_ERROR = -32700;
 const LIBRARY = "My Library";
 
 class RpcError extends Error {
-	constructor(public code: number, message: string) {
+	constructor(
+		public code: number,
+		message: string,
+	) {
 		super(message);
 	}
 }
@@ -46,7 +49,13 @@ function loadData(db: Database, key: string): ZoteroItemData | null {
 
 /** Regular, non-deleted top-level item keys. */
 function regularKeys(db: Database): string[] {
-	return (db.query("SELECT key FROM items WHERE deleted = 0 AND parent_key IS NULL AND library_id = 1 AND item_type NOT IN ('note','attachment','annotation') ORDER BY date_added, key").all() as { key: string }[]).map((r) => r.key);
+	return (
+		db
+			.query(
+				"SELECT key FROM items WHERE deleted = 0 AND parent_key IS NULL AND library_id = 1 AND item_type NOT IN ('note','attachment','annotation') ORDER BY date_added, key",
+			)
+			.all() as { key: string }[]
+	).map((r) => r.key);
 }
 
 function cslFor(db: Database, key: string): Record<string, unknown> | null {
@@ -67,29 +76,52 @@ function fieldValues(db: Database, d: ZoteroItemData, field: string, tags: strin
 	const f = field.toLowerCase();
 	const creators = (d.creators ?? []) as { firstName?: string; lastName?: string; name?: string }[];
 	switch (f) {
-		case "creator": return creators.map((c) => [c.firstName, c.lastName, c.name].filter(Boolean).join(" "));
-		case "lastname": return creators.map((c) => c.lastName ?? c.name ?? "");
-		case "firstname": return creators.map((c) => c.firstName ?? "");
-		case "tag": return tags;
-		case "citationkey": case "citekey": return [citekey, String(d.citationKey ?? "")];
-		case "year": return [String(d.date ?? "").match(/\d{4}/)?.[0] ?? ""];
-		case "itemtype": return [d.itemType];
+		case "creator":
+			return creators.map((c) => [c.firstName, c.lastName, c.name].filter(Boolean).join(" "));
+		case "lastname":
+			return creators.map((c) => c.lastName ?? c.name ?? "");
+		case "firstname":
+			return creators.map((c) => c.firstName ?? "");
+		case "tag":
+			return tags;
+		case "citationkey":
+		case "citekey":
+			return [citekey, String(d.citationKey ?? "")];
+		case "year":
+			return [String(d.date ?? "").match(/\d{4}/)?.[0] ?? ""];
+		case "itemtype":
+			return [d.itemType];
 		case "collection": {
-			const names = (d.collections ?? []).map((k) => (db.query("SELECT name FROM collections WHERE key = ?").get(k) as { name: string } | null)?.name ?? "");
+			const names = (d.collections ?? []).map(
+				(k) => (db.query("SELECT name FROM collections WHERE key = ?").get(k) as { name: string } | null)?.name ?? "",
+			);
 			return [...(d.collections ?? []), ...names];
 		}
-		case "dateadded": case "datemodified": return [String((d as Record<string, unknown>)[field] ?? "")];
+		case "dateadded":
+		case "datemodified":
+			return [String((d as Record<string, unknown>)[field] ?? "")];
 		default: {
 			const hit = Object.keys(d).find((k) => k.toLowerCase() === f);
-			return [String(hit ? (d as Record<string, unknown>)[hit] ?? "" : "")];
+			return [String(hit ? ((d as Record<string, unknown>)[hit] ?? "") : "")];
 		}
 	}
 }
 
 function quickMatch(d: ZoteroItemData, citekey: string, q: string): boolean {
 	const t = norm(q);
-	const creators = ((d.creators ?? []) as { firstName?: string; lastName?: string; name?: string }[]).map((c) => [c.firstName, c.lastName, c.name].filter(Boolean).join(" "));
-	const hay = [d.title, d.publicationTitle, d.shortTitle, d.court, String(d.date ?? "").match(/\d{4}/)?.[0], citekey, d.citationKey, ...creators];
+	const creators = ((d.creators ?? []) as { firstName?: string; lastName?: string; name?: string }[]).map((c) =>
+		[c.firstName, c.lastName, c.name].filter(Boolean).join(" "),
+	);
+	const hay = [
+		d.title,
+		d.publicationTitle,
+		d.shortTitle,
+		d.court,
+		String(d.date ?? "").match(/\d{4}/)?.[0],
+		citekey,
+		d.citationKey,
+		...creators,
+	];
 	return hay.some((h) => norm(h).includes(t));
 }
 
@@ -124,12 +156,18 @@ function searchItems(db: Database, terms: unknown, library: unknown): string[] {
 			if (field === "libraryID" || field === "library") return true;
 			const vals = fieldValues(db, d, field!, tags, ck).map(norm);
 			switch (op) {
-				case "is": return vals.some((x) => x === v);
-				case "isNot": return !vals.some((x) => x === v);
-				case "contains": return vals.some((x) => x.includes(v));
-				case "doesNotContain": return !vals.some((x) => x.includes(v));
-				case "beginsWith": return vals.some((x) => x.startsWith(v));
-				default: return invalid(`unsupported search operator ${String(op)}`);
+				case "is":
+					return vals.some((x) => x === v);
+				case "isNot":
+					return !vals.some((x) => x === v);
+				case "contains":
+					return vals.some((x) => x.includes(v));
+				case "doesNotContain":
+					return !vals.some((x) => x.includes(v));
+				case "beginsWith":
+					return vals.some((x) => x.startsWith(v));
+				default:
+					return invalid(`unsupported search operator ${String(op)}`);
 			}
 		});
 		if (!results.length || (any ? results.some(Boolean) : results.every(Boolean))) out.push(k);
@@ -139,7 +177,11 @@ function searchItems(db: Database, terms: unknown, library: unknown): string[] {
 
 // ---------------------------------------------------------------- collections by path
 
-interface CollRow { key: string; name: string; parent_key: string | null }
+interface CollRow {
+	key: string;
+	name: string;
+	parent_key: string | null;
+}
 
 function pathSegments(path: string): string[] {
 	const parts = path.split("/").filter((p, i) => !(i === 0 && p === ""));
@@ -201,7 +243,9 @@ const METHODS: Record<string, Method> = {
 			id: 1,
 			name: LIBRARY,
 			collections: includeCollections
-				? (db.query("SELECT key FROM collections WHERE library_id = 1 ORDER BY name").all() as { key: string }[]).map((c) => collectionJson(db, c.key, false))
+				? (db.query("SELECT key FROM collections WHERE library_id = 1 ORDER BY name").all() as { key: string }[]).map((c) =>
+						collectionJson(db, c.key, false),
+					)
 				: null,
 		},
 	],
@@ -244,7 +288,9 @@ const METHODS: Record<string, Method> = {
 		const out: Record<string, unknown[]> = {};
 		for (const { key, citekey } of oneItemFor(db, arrayOfStrings(citekeys, "citekeys"))) {
 			const d = loadData(db, key);
-			out[citekey] = (d?.collections ?? []).filter((c) => db.query("SELECT 1 FROM collections WHERE key = ?").get(c)).map((c) => collectionJson(db, c, !!includeParents));
+			out[citekey] = (d?.collections ?? [])
+				.filter((c) => db.query("SELECT 1 FROM collections WHERE key = ?").get(c))
+				.map((c) => collectionJson(db, c, !!includeParents));
 		}
 		return out;
 	},
@@ -252,9 +298,11 @@ const METHODS: Record<string, Method> = {
 	"item.notes": (db, [citekeys]) => {
 		const out: Record<string, string[]> = {};
 		for (const { key, citekey } of oneItemFor(db, arrayOfStrings(citekeys, "citekeys"))) {
-			out[citekey] = (db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0 ORDER BY date_added").all(key) as { data: string }[]).map(
-				(r) => String((JSON.parse(r.data) as ZoteroItemData).note ?? ""),
-			);
+			out[citekey] = (
+				db
+					.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0 ORDER BY date_added")
+					.all(key) as { data: string }[]
+			).map((r) => String((JSON.parse(r.data) as ZoteroItemData).note ?? ""));
 		}
 		return out;
 	},
@@ -263,7 +311,11 @@ const METHODS: Record<string, Method> = {
 		checkLibrary(library);
 		const f = (format ?? {}) as { quickCopy?: boolean; contentType?: "html" | "text"; locale?: string; id?: string };
 		const svc = citeService(db);
-		const style = f.id ? f.id.replace(/^https?:\/\/www\.zotero\.org\/styles\//, "") : f.quickCopy ? svc.getSettings().quickCopy.style : "";
+		const style = f.id
+			? f.id.replace(/^https?:\/\/www\.zotero\.org\/styles\//, "")
+			: f.quickCopy
+				? svc.getSettings().quickCopy.style
+				: "";
 		if (!style) invalid("no style specified");
 		const keys: string[] = [];
 		for (const ck of arrayOfStrings(citekeys, "citekeys")) keys.push(...itemsForCitekey(db, stripAt(ck)).slice(0, 1));
@@ -305,7 +357,12 @@ const METHODS: Record<string, Method> = {
 		if (missing.length || duplicates.length) {
 			throw new RpcError(
 				INVALID_PARAMETERS,
-				[missing.length ? `not found: ${missing.join(", ")}` : "", duplicates.length ? `duplicates found: ${duplicates.join(", ")}` : ""].filter(Boolean).join("\n"),
+				[
+					missing.length ? `not found: ${missing.join(", ")}` : "",
+					duplicates.length ? `duplicates found: ${duplicates.join(", ")}` : "",
+				]
+					.filter(Boolean)
+					.join("\n"),
 			);
 		}
 		const { gatherItems } = await import("../io/export");
@@ -326,7 +383,9 @@ const METHODS: Record<string, Method> = {
 				const csl = itemToCsl(d) as Record<string, unknown>;
 				csl.id = ck;
 				csl["citation-key"] = ck;
-				const authors = ((d.creators ?? []) as { creatorType: string; lastName?: string; name?: string }[]).filter((c) => c.creatorType === "author").map((c) => c.lastName ?? c.name ?? "");
+				const authors = ((d.creators ?? []) as { creatorType: string; lastName?: string; name?: string }[])
+					.filter((c) => c.creatorType === "author")
+					.map((c) => c.lastName ?? c.name ?? "");
 				result.items[ck] = { ...csl, custom: { itemID: found[0], author: authors.join(", ") } };
 			} else result.items[ck] = { ...d, citationKey: ck };
 		}
@@ -339,11 +398,14 @@ const METHODS: Record<string, Method> = {
 		if (!existsSync(aux as string)) throw new RpcError(INVALID_PARAMETERS, `${aux} does not exist`);
 		const text = readFileSync(aux as string, "utf8");
 		const cited = new Set<string>();
-		for (const m of text.matchAll(/\\citation\{([^}]*)\}/g)) for (const k of m[1]!.split(",")) if (k.trim() && k.trim() !== "*") cited.add(k.trim());
+		for (const m of text.matchAll(/\\citation\{([^}]*)\}/g))
+			for (const k of m[1]!.split(",")) if (k.trim() && k.trim() !== "*") cited.add(k.trim());
 		for (const m of text.matchAll(/\\abx@aux@cite\{[^}]*\}\{([^}]*)\}/g)) if (m[1]!.trim()) cited.add(m[1]!.trim());
 		const key = resolveCollectionPath(db, collection as string, true);
 		if (!key) throw new RpcError(INVALID_PARAMETERS, "collection path is empty");
-		const existing = (db.query("SELECT item_key FROM collection_items WHERE collection_key = ?").all(key) as { item_key: string }[]).map((r) => r.item_key);
+		const existing = (
+			db.query("SELECT item_key FROM collection_items WHERE collection_key = ?").all(key) as { item_key: string }[]
+		).map((r) => r.item_key);
 		if (existing.length) repo.removeItemsFromCollection(db, key, existing);
 		const keys = [...cited].flatMap((ck) => itemsForCitekey(db, ck).slice(0, 1));
 		if (keys.length) repo.addItemsToCollection(db, key, keys);
@@ -355,14 +417,24 @@ const METHODS: Record<string, Method> = {
 		if (!format) throw new RpcError(INVALID_PARAMETERS, `Unknown translator '${String(translator)}'`);
 		const key = resolveCollectionPath(db, String(collection), true);
 		if (!key) throw new RpcError(INVALID_PARAMETERS, "collection path is empty");
-		const existing = db.query("SELECT id, format, scope_key FROM bbt_autoexport WHERE path = ?").get(String(path)) as { id: number; format: string; scope_key: string | null } | null;
+		const existing = db.query("SELECT id, format, scope_key FROM bbt_autoexport WHERE path = ?").get(String(path)) as {
+			id: number;
+			format: string;
+			scope_key: string | null;
+		} | null;
 		if (existing) {
 			if (existing.format === format && existing.scope_key === key) return { libraryID: 1, key, id: existing.id };
-			if (!replace) throw new RpcError(INVALID_PARAMETERS, "Auto-export exists with incompatible parameters, but no 'replace' was requested");
+			if (!replace)
+				throw new RpcError(INVALID_PARAMETERS, "Auto-export exists with incompatible parameters, but no 'replace' was requested");
 			db.query("DELETE FROM bbt_autoexport WHERE id = ?").run(existing.id);
 		}
 		const opts = (displayOptions ?? {}) as { exportNotes?: boolean };
-		const ae = addAutoExport(db, { path: String(path), format, scope: { type: "collection", key }, options: { includeNotes: !!opts.exportNotes } });
+		const ae = addAutoExport(db, {
+			path: String(path),
+			format,
+			scope: { type: "collection", key },
+			options: { includeNotes: !!opts.exportNotes },
+		});
 		return { libraryID: 1, key, id: ae.id };
 	},
 };
@@ -373,7 +445,11 @@ for (const name of Object.keys(METHODS)) if (name.startsWith("item.")) METHODS[`
 const STATE_CHANGING = new Set(["autoexport.add", "collection.scanAUX", "item.regenerate_key", "items.regenerate_key"]);
 
 export function hasStateChangingMethod(body: unknown): boolean {
-	const one = (r: unknown) => !!r && typeof r === "object" && typeof (r as { method?: unknown }).method === "string" && STATE_CHANGING.has((r as { method: string }).method);
+	const one = (r: unknown) =>
+		!!r &&
+		typeof r === "object" &&
+		typeof (r as { method?: unknown }).method === "string" &&
+		STATE_CHANGING.has((r as { method: string }).method);
 	return Array.isArray(body) ? body.some(one) : one(body);
 }
 
@@ -394,7 +470,8 @@ async function handleOne(db: Database, req: unknown, readOnly = false): Promise<
 		const names = PARAM_NAMES[r.method] ?? [];
 		for (const [k, v] of Object.entries(r.params as Record<string, unknown>)) {
 			const i = names.indexOf(k);
-			if (i < 0) return { jsonrpc: "2.0", error: { code: INVALID_PARAMETERS, message: `unsupported argument ${k} for ${r.method}` }, id };
+			if (i < 0)
+				return { jsonrpc: "2.0", error: { code: INVALID_PARAMETERS, message: `unsupported argument ${k} for ${r.method}` }, id };
 			params[i] = v;
 		}
 	}
@@ -430,5 +507,9 @@ export async function handleRpc(db: Database, body: unknown, opts: { readOnly?: 
 	return handleOne(db, body, opts.readOnly);
 }
 
-export const rpcParseError = (message: string) => ({ jsonrpc: "2.0", error: { code: PARSE_ERROR, message: `Parse error: ${message}` }, id: null });
+export const rpcParseError = (message: string) => ({
+	jsonrpc: "2.0",
+	error: { code: PARSE_ERROR, message: `Parse error: ${message}` },
+	id: null,
+});
 export { cslFor };

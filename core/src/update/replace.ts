@@ -49,12 +49,17 @@ const realSpawn: NonNullable<ReplaceDeps["spawn"]> = (cmd, args, o) => {
 	child.on("error", () => {});
 	child.unref();
 };
-const realExec: NonNullable<ReplaceDeps["exec"]> = (cmd, args) => new Promise((resolve) => {
-	const child = nodeSpawn(cmd, args, { stdio: "ignore" });
-	child.on("error", () => resolve(127));
-	child.on("exit", (code) => resolve(code ?? 1));
-});
-const realCanWrite = (p: string) => access(p, constants.W_OK).then(() => true, () => false);
+const realExec: NonNullable<ReplaceDeps["exec"]> = (cmd, args) =>
+	new Promise((resolve) => {
+		const child = nodeSpawn(cmd, args, { stdio: "ignore" });
+		child.on("error", () => resolve(127));
+		child.on("exit", (code) => resolve(code ?? 1));
+	});
+const realCanWrite = (p: string) =>
+	access(p, constants.W_OK).then(
+		() => true,
+		() => false,
+	);
 
 /** Single-quote a string for sh. */
 export const shQuote = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
@@ -86,8 +91,10 @@ export function appImageReplace(o: { appimage: string; env?: Record<string, stri
 		platform: "linux-x64",
 		downloadDir: dir,
 		async manualReason() {
-			if (!existsSync(o.appimage)) return `The AppImage ${o.appimage} is not there any more, so Zinc cannot replace it. Download the new AppImage by hand.`;
-			if (!(await canWrite(dir))) return `Zinc cannot write to ${dir}, so it cannot replace its AppImage. Download the new AppImage and replace the old file by hand.`;
+			if (!existsSync(o.appimage))
+				return `The AppImage ${o.appimage} is not there any more, so Zinc cannot replace it. Download the new AppImage by hand.`;
+			if (!(await canWrite(dir)))
+				return `Zinc cannot write to ${dir}, so it cannot replace its AppImage. Download the new AppImage and replace the old file by hand.`;
 			return null;
 		},
 		async prepare(file) {
@@ -95,7 +102,10 @@ export function appImageReplace(o: { appimage: string; env?: Record<string, stri
 		},
 		apply(file, { relaunch, pid }) {
 			renameSync(file, o.appimage); // same folder: atomic; the running app keeps the old file open
-			if (relaunch) spawn("/bin/sh", ["-c", WAIT_THEN_EXEC, "zinc-relaunch", String(pid), o.appimage], { env: relaunchEnv(o.env ?? process.env) });
+			if (relaunch)
+				spawn("/bin/sh", ["-c", WAIT_THEN_EXEC, "zinc-relaunch", String(pid), o.appimage], {
+					env: relaunchEnv(o.env ?? process.env),
+				});
 		},
 	};
 }
@@ -132,7 +142,17 @@ export function macSwapScript(o: { app: string; fresh: string; stage: string; lo
 	].join("\n");
 }
 
-export function macAppReplace(o: { app: string; updatesDir: string; platform?: UpdatePlatform; open?: string; codesign?: string; ditto?: string; xattr?: string } & ReplaceDeps): SelfReplace {
+export function macAppReplace(
+	o: {
+		app: string;
+		updatesDir: string;
+		platform?: UpdatePlatform;
+		open?: string;
+		codesign?: string;
+		ditto?: string;
+		xattr?: string;
+	} & ReplaceDeps,
+): SelfReplace {
 	const parent = dirname(o.app);
 	const stage = join(parent, ".zinc-update");
 	const script = join(stage, "apply.sh");
@@ -141,7 +161,9 @@ export function macAppReplace(o: { app: string; updatesDir: string; platform?: U
 	const exec = o.exec ?? realExec;
 	const canWrite = o.canWrite ?? realCanWrite;
 	const codesign = o.codesign ?? "/usr/bin/codesign";
-	const fail = (why: string): never => { throw new Error(why); };
+	const fail = (why: string): never => {
+		throw new Error(why);
+	};
 	const signed = async (app: string) => (await exec(codesign, ["--verify", "--deep", "--strict", app])) === 0;
 
 	async function adHocSign(app: string): Promise<void> {
@@ -153,8 +175,10 @@ export function macAppReplace(o: { app: string; updatesDir: string; platform?: U
 	return {
 		platform: o.platform ?? "darwin-arm64",
 		async manualReason() {
-			if (o.app.includes("/AppTranslocation/")) return "macOS runs this Zinc from a temporary read-only copy, so it cannot replace itself. Move Zinc to Applications and open it from there.";
-			if (!(await canWrite(parent)) || !(await canWrite(o.app))) return `Zinc cannot write to ${parent}, so it cannot replace Zinc.app. Download the new disk image and drag Zinc to Applications by hand.`;
+			if (o.app.includes("/AppTranslocation/"))
+				return "macOS runs this Zinc from a temporary read-only copy, so it cannot replace itself. Move Zinc to Applications and open it from there.";
+			if (!(await canWrite(parent)) || !(await canWrite(o.app)))
+				return `Zinc cannot write to ${parent}, so it cannot replace Zinc.app. Download the new disk image and drag Zinc to Applications by hand.`;
 			return null;
 		},
 		async prepare(file, m) {
@@ -162,11 +186,13 @@ export function macAppReplace(o: { app: string; updatesDir: string; platform?: U
 			if (done.trim() === m.sha256 && existsSync(script)) return; // already unpacked for this download
 			await rm(stage, { recursive: true, force: true });
 			await mkdir(stage, { recursive: true });
-			if ((await exec(o.ditto ?? "/usr/bin/ditto", ["-x", "-k", file, stage])) !== 0) fail("the update archive could not be unpacked");
+			if ((await exec(o.ditto ?? "/usr/bin/ditto", ["-x", "-k", file, stage])) !== 0)
+				fail("the update archive could not be unpacked");
 			const apps = (await readdir(stage)).filter((n) => n.endsWith(".app"));
 			if (apps.length !== 1) fail("the update archive does not hold exactly one .app");
 			const fresh = join(stage, apps[0]!);
-			if (!existsSync(join(fresh, "Contents", "MacOS", "zotero-next-gpui"))) fail(`the update archive's ${apps[0]} has no Contents/MacOS/zotero-next-gpui`);
+			if (!existsSync(join(fresh, "Contents", "MacOS", "zotero-next-gpui")))
+				fail(`the update archive's ${apps[0]} has no Contents/MacOS/zotero-next-gpui`);
 			await exec(o.xattr ?? "/usr/bin/xattr", ["-dr", "com.apple.quarantine", fresh]); // usually not set (we downloaded it ourselves)
 			if (!(await signed(fresh))) {
 				await adHocSign(fresh);
@@ -194,8 +220,12 @@ export function manualReplace(platform: UpdatePlatform, reason: string): SelfRep
 	return {
 		platform,
 		manualReason: async () => reason,
-		prepare: async () => { throw new Error(reason); },
-		apply: () => { throw new Error(reason); },
+		prepare: async () => {
+			throw new Error(reason);
+		},
+		apply: () => {
+			throw new Error(reason);
+		},
 	};
 }
 
@@ -204,20 +234,30 @@ export function manualReplace(platform: UpdatePlatform, reason: string): SelfRep
  * replacer when APPIMAGE is set; a Zinc.app replacer when the exe is <something>.app/Contents/MacOS/<exe>; else a manual-only one.
  */
 export function detectSelfReplace(o: {
-	updatesDir: string; platform?: NodeJS.Platform; arch?: string; env?: Record<string, string | undefined>; execPath?: string;
+	updatesDir: string;
+	platform?: NodeJS.Platform;
+	arch?: string;
+	env?: Record<string, string | undefined>;
+	execPath?: string;
 }): SelfReplace | undefined {
 	const p = currentPlatform(o.platform, o.arch);
 	const env = o.env ?? process.env;
 	if (p === "linux-x64") {
 		return env.APPIMAGE
 			? appImageReplace({ appimage: env.APPIMAGE, env })
-			: manualReplace(p, "This Zinc is not running from an AppImage, so it cannot replace itself. Download the new AppImage from the release page.");
+			: manualReplace(
+					p,
+					"This Zinc is not running from an AppImage, so it cannot replace itself. Download the new AppImage from the release page.",
+				);
 	}
 	if (p === "darwin-arm64" || p === "darwin-x64") {
 		const m = /^(.+\.app)\/Contents\/MacOS\/[^/]+$/.exec(o.execPath ?? process.execPath);
 		return m
 			? macAppReplace({ app: m[1]!, updatesDir: o.updatesDir, platform: p })
-			: manualReplace(p, "This Zinc is not running from Zinc.app, so it cannot replace itself. Download the new disk image from the release page.");
+			: manualReplace(
+					p,
+					"This Zinc is not running from Zinc.app, so it cannot replace itself. Download the new disk image from the release page.",
+				);
 	}
 	return undefined;
 }

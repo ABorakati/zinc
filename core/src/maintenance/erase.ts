@@ -53,7 +53,11 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 	for (const k of keys) assertItemWritable(db, k); // a read-only library's items are not erased
 	const all = withDescendants(db, keys);
 	const existing = new Set(
-		keys.length ? (db.query(`SELECT key FROM items WHERE key IN (${keys.map(() => "?").join(",")})`).all(...keys) as { key: string }[]).map((r) => r.key) : [],
+		keys.length
+			? (db.query(`SELECT key FROM items WHERE key IN (${keys.map(() => "?").join(",")})`).all(...keys) as { key: string }[]).map(
+					(r) => r.key,
+				)
+			: [],
 	);
 	const missing = keys.filter((k) => !existing.has(k));
 	if (all.length === 0) return { erased: 0, topLevel: 0, filesRemoved: 0, filesKept: 0, missing };
@@ -64,9 +68,10 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 	let filesKept = 0;
 	for (let i = 0; i < all.length; i += 500) {
 		const chunk = all.slice(i, i + 500);
-		const rows = db
-			.query(`SELECT link_mode, path FROM attachments WHERE item_key IN (${ph(chunk.length)})`)
-			.all(...chunk) as { link_mode: string; path: string | null }[];
+		const rows = db.query(`SELECT link_mode, path FROM attachments WHERE item_key IN (${ph(chunk.length)})`).all(...chunk) as {
+			link_mode: string;
+			path: string | null;
+		}[];
 		for (const r of rows) {
 			if (!r.path) continue;
 			if (r.link_mode.startsWith("imported_") && ownStorageDir && isInside(r.path, ownStorageDir)) files.push(r.path);
@@ -91,10 +96,14 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 		for (let i = 0; i < all.length; i += 500) {
 			const chunk = all.slice(i, i + 500);
 			const p = ph(chunk.length);
-			for (const r of db.query(`SELECT parent_key FROM items WHERE key IN (${p}) AND parent_key IS NOT NULL`).all(...chunk) as { parent_key: string }[]) {
+			for (const r of db.query(`SELECT parent_key FROM items WHERE key IN (${p}) AND parent_key IS NOT NULL`).all(...chunk) as {
+				parent_key: string;
+			}[]) {
 				if (!inSet.has(r.parent_key)) parents.add(r.parent_key);
 			}
-			const rowids = (db.query(`SELECT rowid FROM items WHERE key IN (${p})`).all(...chunk) as { rowid: number }[]).map((r) => r.rowid);
+			const rowids = (db.query(`SELECT rowid FROM items WHERE key IN (${p})`).all(...chunk) as { rowid: number }[]).map(
+				(r) => r.rowid,
+			);
 			if (rowids.length) db.query(`DELETE FROM search WHERE rowid IN (${ph(rowids.length)})`).run(...rowids);
 			// Explicit child rows first so each delete is recorded by its own trigger.
 			db.query(`DELETE FROM annotations WHERE attachment_key IN (${p})`).run(...chunk);
@@ -109,7 +118,11 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 		const parentOf = new Map<string, string | null>();
 		for (let i = 0; i < all.length; i += 500) {
 			const chunk = all.slice(i, i + 500);
-			for (const r of db.query(`SELECT key, parent_key FROM items WHERE key IN (${ph(chunk.length)})`).all(...chunk) as { key: string; parent_key: string | null }[]) parentOf.set(r.key, r.parent_key);
+			for (const r of db.query(`SELECT key, parent_key FROM items WHERE key IN (${ph(chunk.length)})`).all(...chunk) as {
+				key: string;
+				parent_key: string | null;
+			}[])
+				parentOf.set(r.key, r.parent_key);
 		}
 		const d = (k: string): number => {
 			if (depth.has(k)) return depth.get(k)!;
@@ -157,7 +170,14 @@ export function eraseItems(db: Database, requested: string[], ownStorageDir: str
 		}
 	}
 	const topLevel = keys.filter((k) => existing.has(k)).length;
-	return { erased: all.length, topLevel, filesRemoved, filesKept, ...(linkedFilesRemoved !== undefined ? { linkedFilesRemoved } : {}), missing };
+	return {
+		erased: all.length,
+		topLevel,
+		filesRemoved,
+		filesKept,
+		...(linkedFilesRemoved !== undefined ? { linkedFilesRemoved } : {}),
+		missing,
+	};
 }
 
 /** Top-level keys of everything in the trash (optionally only items trashed at least `olderThanDays` ago). */
@@ -168,7 +188,10 @@ export function trashedKeys(db: Database, olderThanDays?: number, libraryId = 1)
 		where += " AND date_modified <= ?";
 		args.push(new Date(Date.now() - olderThanDays * 86400_000).toISOString().replace(/\.\d+Z$/, "Z"));
 	}
-	const rows = db.query(`SELECT key, parent_key FROM items WHERE ${where}`).all(...(args as never[])) as { key: string; parent_key: string | null }[];
+	const rows = db.query(`SELECT key, parent_key FROM items WHERE ${where}`).all(...(args as never[])) as {
+		key: string;
+		parent_key: string | null;
+	}[];
 	// A trashed child of a trashed parent is covered by the parent.
 	const set = new Set(rows.map((r) => r.key));
 	return rows.filter((r) => !r.parent_key || !set.has(r.parent_key)).map((r) => r.key);

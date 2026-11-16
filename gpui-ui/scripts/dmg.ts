@@ -73,23 +73,32 @@ const plist = {
 	CFBundleName: "Zinc",
 	CFBundlePackageType: "APPL",
 	CFBundleShortVersionString: version,
-	CFBundleVersion: BUILD_VERSION.replace(/[^0-9.]/g, ".").replace(/\.+/g, ".").replace(/^\.|\.$/g, "").split(".").slice(0, 3).join("."),
+	CFBundleVersion: BUILD_VERSION.replace(/[^0-9.]/g, ".")
+		.replace(/\.+/g, ".")
+		.replace(/^\.|\.$/g, "")
+		.split(".")
+		.slice(0, 3)
+		.join("."),
 	LSApplicationCategoryType: "public.app-category.productivity",
 	LSMinimumSystemVersion: "13.0",
 	NSHighResolutionCapable: true,
 	NSHumanReadableCopyright: "AGPL-3.0. Not affiliated with the Zotero project.",
 };
-const xml = (v: unknown): string => typeof v === "boolean" ? (v ? "<true/>" : "<false/>") : `<string>${String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</string>`;
-writeFileSync(join(app, "Contents", "Info.plist"), [
-	'<?xml version="1.0" encoding="UTF-8"?>',
-	'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
-	'<plist version="1.0">',
-	"<dict>",
-	...Object.entries(plist).map(([k, v]) => `\t<key>${k}</key>\n\t${xml(v)}`),
-	"</dict>",
-	"</plist>",
-	"",
-].join("\n"));
+const xml = (v: unknown): string =>
+	typeof v === "boolean" ? (v ? "<true/>" : "<false/>") : `<string>${String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</string>`;
+writeFileSync(
+	join(app, "Contents", "Info.plist"),
+	[
+		'<?xml version="1.0" encoding="UTF-8"?>',
+		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+		'<plist version="1.0">',
+		"<dict>",
+		...Object.entries(plist).map(([k, v]) => `\t<key>${k}</key>\n\t${xml(v)}`),
+		"</dict>",
+		"</plist>",
+		"",
+	].join("\n"),
+);
 
 // 3. signature: the libraries first, then the exe and the bundle (codesign --deep is deprecated for signing)
 const identity = process.env.ZN_MAC_SIGN_IDENTITY;
@@ -103,7 +112,9 @@ symlinkSync("/Applications", join(outDir, "stage", "Applications"));
 const arch = process.arch === "arm64" ? "arm64" : "x64";
 const dmg = join(outDir, `Zinc-${version}-${arch}.dmg`);
 run(["hdiutil", "create", "-volname", "Zinc", "-srcfolder", join(outDir, "stage"), "-ov", "-format", "UDZO", "-fs", "HFS+", dmg]);
-const sha = createHash("sha256").update(await Bun.file(dmg).bytes()).digest("hex");
+const sha = createHash("sha256")
+	.update(await Bun.file(dmg).bytes())
+	.digest("hex");
 writeFileSync(`${dmg}.sha256`, `${sha}  Zinc-${version}-${arch}.dmg\n`);
 console.log(`dmg: ${dmg}  (${(statSync(dmg).size / 1048576).toFixed(0)} MB, sha256 ${sha})`);
 
@@ -113,6 +124,8 @@ const zip = join(outDir, `Zinc-${version}-${arch}.app.zip`);
 run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, zip]);
 const stamp = existsSync(join(pkg, "version.txt")) ? (await Bun.file(join(pkg, "version.txt")).text()).trim() : BUILD_VERSION;
 writeFileSync(`${zip}.version`, `${stamp}\n`);
-const zipSha = createHash("sha256").update(await Bun.file(zip).bytes()).digest("hex");
+const zipSha = createHash("sha256")
+	.update(await Bun.file(zip).bytes())
+	.digest("hex");
 writeFileSync(`${zip}.sha256`, `${zipSha}  Zinc-${version}-${arch}.app.zip\n`);
 console.log(`update archive: ${zip}  (${(statSync(zip).size / 1048576).toFixed(0)} MB, version ${stamp})`);

@@ -7,7 +7,13 @@ import { uiState } from "../store";
 export function persisted<T>(key: string, fallback: T, valid: (v: unknown) => v is T): [Accessor<T>, (v: T) => void] {
 	const stored = uiState.get<unknown>(key, undefined);
 	const [get, set] = createSignal<T>(stored !== undefined && valid(stored) ? stored : fallback);
-	return [get, (v) => { set(() => v); uiState.set(key, v); }];
+	return [
+		get,
+		(v) => {
+			set(() => v);
+			uiState.set(key, v);
+		},
+	];
 }
 
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";

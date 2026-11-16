@@ -51,8 +51,12 @@ export function setSettings(db: Database, patch: Partial<BbtSettings>): BbtSetti
 			if (!(k in defaults)) throw new Error(`unknown setting: ${k}`);
 			if (typeof v !== typeof defaults[k]) throw new Error(`setting ${k} must be a ${typeof defaults[k]}`);
 			if (k === "doiAndUrl" && !["both", "doi", "url"].includes(v as string)) throw new Error("doiAndUrl must be both, doi or url");
-			if ((k === "autoExportDelay" || k === "autoExportIdle") && !(Number(v) >= 0 && Number(v) <= 86400)) throw new Error(`${k} must be 0-86400 seconds`);
-			db.query("INSERT INTO bbt_settings(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(k, JSON.stringify(v));
+			if ((k === "autoExportDelay" || k === "autoExportIdle") && !(Number(v) >= 0 && Number(v) <= 86400))
+				throw new Error(`${k} must be 0-86400 seconds`);
+			db.query("INSERT INTO bbt_settings(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(
+				k,
+				JSON.stringify(v),
+			);
 		}
 	})();
 	return getSettings(db);

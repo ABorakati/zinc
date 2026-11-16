@@ -98,7 +98,8 @@ export function convertItemType<T extends Record<string, unknown>>(data: T, item
 		const allowed = new Set(to.creatorTypes.map((c) => c.creatorType));
 		const primary = to.creatorTypes.find((c) => c.primary)?.creatorType ?? to.creatorTypes[0]?.creatorType;
 		out.creators = (data.creators as { creatorType: string }[]).map((c) =>
-			allowed.has(c.creatorType) || !primary ? c : { ...c, creatorType: primary });
+			allowed.has(c.creatorType) || !primary ? c : { ...c, creatorType: primary },
+		);
 	}
 	return { data: out as T, dropped };
 }

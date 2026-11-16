@@ -16,7 +16,19 @@ const SIZE = 20 * 1024 * 1024;
 const pdf = new Uint8Array(SIZE); // a dummy ~20 MB PDF
 pdf.set(new TextEncoder().encode("%PDF-1.4\n"));
 for (let i = 9; i < SIZE; i++) pdf[i] = (i * 31 + 7) & 0xff;
-const item = (i: string) => ({ id: i, itemType: "journalArticle", title: `Big PDF ${i}`, creators: [], date: "2024", DOI: `10.1/${i}`, url: `https://example.org/${i}`, tags: [], notes: [], attachments: [], seeAlso: [] });
+const item = (i: string) => ({
+	id: i,
+	itemType: "journalArticle",
+	title: `Big PDF ${i}`,
+	creators: [],
+	date: "2024",
+	DOI: `10.1/${i}`,
+	url: `https://example.org/${i}`,
+	tags: [],
+	notes: [],
+	attachments: [],
+	seeAlso: [],
+});
 const ms = (t0: number) => (performance.now() - t0).toFixed(0).padStart(5) + " ms";
 
 const c = new HostClient({ ZN_DB: dbPath });
@@ -32,7 +44,16 @@ const upload = (async () => {
 	await c.uploadBytes("pdfA", pdf, chunk, mode === "interleaved");
 	const r = await c.call("saveAttachment", {
 		uploadUid: "pdfA",
-		headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify({ id: "att", url: "https://example.org/a.pdf", contentType: "application/pdf", parentItemID: "a", title: "PDF" }) },
+		headers: {
+			"Content-Type": "application/pdf",
+			"X-Metadata": JSON.stringify({
+				id: "att",
+				url: "https://example.org/a.pdf",
+				contentType: "application/pdf",
+				parentItemID: "a",
+				title: "PDF",
+			}),
+		},
 		query: "sessionID=A",
 	});
 	console.log(`[${mode}] attachment saved (20 MB), from upload start ${ms(T1)}  status ${r.status}`);

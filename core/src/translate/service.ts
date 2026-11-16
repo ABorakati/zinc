@@ -49,7 +49,16 @@ const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ?
 
 function summary(key: string, raw: Record<string, unknown>): SavedSummary {
 	const itemType = str(raw.itemType) || "document";
-	const title = str(raw.title) || (itemType === "note" ? str(raw.note).replace(/<[^>]+>/g, " ").trim().slice(0, 80) : "") || str(raw.url) || "(untitled)";
+	const title =
+		str(raw.title) ||
+		(itemType === "note"
+			? str(raw.note)
+					.replace(/<[^>]+>/g, " ")
+					.trim()
+					.slice(0, 80)
+			: "") ||
+		str(raw.url) ||
+		"(untitled)";
 	return { key, title, itemType };
 }
 
@@ -111,7 +120,10 @@ export async function translateWeb(db: Database, req: WebRequest): Promise<WebTr
 	return finishWeb(db, r, collectionKey, req.attachments !== false);
 }
 
-export async function selectWeb(db: Database, body: { session: string; keys: string[]; collectionKey?: string | null; attachments?: boolean }): Promise<WebTranslateResponse> {
+export async function selectWeb(
+	db: Database,
+	body: { session: string; keys: string[]; collectionKey?: string | null; attachments?: boolean },
+): Promise<WebTranslateResponse> {
 	sweepSessions();
 	const s = sessions.get(body.session);
 	if (!s) throw new HttpError(404, "session expired; run the address again");
@@ -120,7 +132,14 @@ export async function selectWeb(db: Database, body: { session: string; keys: str
 	if (body.keys.some((k) => typeof k !== "string" || !offered.has(k))) throw new HttpError(409, "keys do not match the items offered");
 	const collectionKey = body.collectionKey === undefined ? s.collectionKey : checkCollection(db, body.collectionKey);
 	const { dir } = translatorsDirFor(db);
-	const r = await job<WebResult>("web", { url: s.url, translatorsDir: dir, limits: limits(), cache: s.cache, translatorID: s.translatorID, selectedKeys: body.keys });
+	const r = await job<WebResult>("web", {
+		url: s.url,
+		translatorsDir: dir,
+		limits: limits(),
+		cache: s.cache,
+		translatorID: s.translatorID,
+		selectedKeys: body.keys,
+	});
 	sessions.delete(body.session);
 	if (r.kind === "choices") throw new HttpError(502, "the translator offered the choices again instead of saving");
 	return finishWeb(db, r, collectionKey, body.attachments ?? s.attachments);
@@ -130,7 +149,16 @@ async function finishWeb(db: Database, r: WebResult, collectionKey: string | nul
 	if (r.kind === "choices") {
 		sweepSessions();
 		const id = crypto.randomUUID().replace(/-/g, "").slice(0, 15);
-		sessions.set(id, { url: r.url, translatorID: r.translator.id, label: r.translator.label, cache: r.cache, choices: r.choices, collectionKey, attachments, created: Date.now() });
+		sessions.set(id, {
+			url: r.url,
+			translatorID: r.translator.id,
+			label: r.translator.label,
+			cache: r.cache,
+			choices: r.choices,
+			collectionKey,
+			attachments,
+			created: Date.now(),
+		});
 		return { choices: { session: id, url: r.url, items: r.choices } };
 	}
 	const saved: SavedSummary[] = [];
@@ -149,7 +177,10 @@ async function saveFileAttachments(db: Database, parentKey: string, raw: Record<
 		const mime = str(a.mimeType).toLowerCase();
 		if (mime !== "application/pdf" && mime !== "application/epub+zip") continue;
 		try {
-			const res = await fetch(a.url, { signal: AbortSignal.timeout(45_000), headers: { Accept: "application/pdf,*/*", Referer: str(raw.url) || a.url } });
+			const res = await fetch(a.url, {
+				signal: AbortSignal.timeout(45_000),
+				headers: { Accept: "application/pdf,*/*", Referer: str(raw.url) || a.url },
+			});
 			if (!res.ok) continue;
 			const declared = Number(res.headers.get("content-length") ?? 0);
 			if (declared > translateLimits.maxAttachmentBytes) continue;
@@ -158,7 +189,12 @@ async function saveFileAttachments(db: Database, parentKey: string, raw: Record<
 			if (mime === "application/pdf" && new TextDecoder("latin1").decode(bytes.subarray(0, 1024)).indexOf("%PDF") < 0) continue;
 			const dir = join(tmpdir(), `zn-translate-${crypto.randomUUID().slice(0, 8)}`);
 			mkdirSync(dir, { recursive: true });
-			const file = join(dir, (str(a.title).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim() || "document") + (mime === "application/pdf" ? ".pdf" : ".epub"));
+			const file = join(
+				dir,
+				(str(a.title)
+					.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "")
+					.trim() || "document") + (mime === "application/pdf" ? ".pdf" : ".epub"),
+			);
 			writeFileSync(file, bytes);
 			try {
 				addFile(db, { mode: "imported_file", path: file, parentKey, name: basename(file), contentType: mime });
@@ -231,7 +267,13 @@ export async function translateImport(db: Database, req: TranslateImportRequest)
 		const native: ImportFormat | null = detectFormat(text);
 		if (native) {
 			try {
-				const r = importText(db, { text, format: native, collectionName: req.collectionName, collectionKey: collectionKey ?? undefined, basePath });
+				const r = importText(db, {
+					text,
+					format: native,
+					collectionName: req.collectionName,
+					collectionKey: collectionKey ?? undefined,
+					basePath,
+				});
 				if (r.created + r.skipped > 0) return { ...r, itemKeys: r.itemKeys ?? [], format: native, translator: `native:${native}` };
 			} catch {
 				/* fall through to the translators */
@@ -240,7 +282,12 @@ export async function translateImport(db: Database, req: TranslateImportRequest)
 	}
 
 	const { dir } = translatorsDirFor(db);
-	const done = await job<{ items: any[]; collections: any[]; translator: TranslatorRef }>("import", { text, translatorsDir: dir, translatorID: req.translatorID, limits: limits() });
+	const done = await job<{ items: any[]; collections: any[]; translator: TranslatorRef }>("import", {
+		text,
+		translatorsDir: dir,
+		translatorID: req.translatorID,
+		limits: limits(),
+	});
 	return saveImported(db, done, { collectionKey, collectionName: req.collectionName, basePath });
 }
 
@@ -261,7 +308,13 @@ export function saveImported(
 	const name = (opts.collectionName ?? "").trim() || `Imported ${new Date().toISOString().slice(0, 10)}`;
 
 	const seen = new Set(
-		(db.query("SELECT json_extract(data, '$.DOI') AS doi FROM items WHERE deleted = 0 AND parent_key IS NULL AND json_extract(data, '$.DOI') <> ''").all() as { doi: string | null }[])
+		(
+			db
+				.query(
+					"SELECT json_extract(data, '$.DOI') AS doi FROM items WHERE deleted = 0 AND parent_key IS NULL AND json_extract(data, '$.DOI') <> ''",
+				)
+				.all() as { doi: string | null }[]
+		)
 			.map((r) => normDoi(r.doi))
 			.filter(Boolean),
 	);
@@ -269,7 +322,9 @@ export function saveImported(
 	// translator collections: item id -> collection key path, built once
 	const byItemId = new Map<string, string[]>();
 	const makeCollection = (c: any, parent: string | null): void => {
-		const existing = db.query("SELECT key FROM collections WHERE name = ? AND parent_key IS ?").get(str(c.name), parent) as { key: string } | null;
+		const existing = db.query("SELECT key FROM collections WHERE name = ? AND parent_key IS ?").get(str(c.name), parent) as {
+			key: string;
+		} | null;
 		const key = existing?.key ?? (collectionsMade++, createCollection(db, str(c.name) || "Collection", parent).key);
 		for (const child of Array.isArray(c.children) ? c.children : []) {
 			if (child?.type === "collection") makeCollection(child, key);
@@ -312,7 +367,13 @@ export function saveImported(
 					} else if (local && opts.basePath) {
 						const file = resolve(opts.basePath, local.replace(/^file:\/*/i, ""));
 						if (statSync(file).isFile()) {
-							addFile(db, { mode: "imported_file", path: file, parentKey: out.key, name: str(a.title) || basename(file), contentType: str(a.mimeType) || guessContentType(file) });
+							addFile(db, {
+								mode: "imported_file",
+								path: file,
+								parentKey: out.key,
+								name: str(a.title) || basename(file),
+								contentType: str(a.mimeType) || guessContentType(file),
+							});
 							attachments++;
 						}
 					}
@@ -324,7 +385,17 @@ export function saveImported(
 			errors.push(`item ${i + 1}${raw.title ? ` (${String(raw.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`);
 		}
 	}
-	return { created, skipped, errors, collectionKey, format: done.translator.label, translator: done.translator.label, itemKeys, collections: collectionsMade, attachments };
+	return {
+		created,
+		skipped,
+		errors,
+		collectionKey,
+		format: done.translator.label,
+		translator: done.translator.label,
+		itemKeys,
+		collections: collectionsMade,
+		attachments,
+	};
 }
 
 // ------------------------------------------------------------------ export
@@ -347,11 +418,25 @@ export interface TranslateExportResult {
 }
 
 const CONTENT_TYPES: Record<string, string> = {
-	xml: "text/xml", html: "text/html", htm: "text/html", json: "application/json", csv: "text/csv", rdf: "application/rdf+xml",
-	bib: "application/x-bibtex", ris: "application/x-research-info-systems", txt: "text/plain", tei: "text/xml", enw: "text/plain",
+	xml: "text/xml",
+	html: "text/html",
+	htm: "text/html",
+	json: "application/json",
+	csv: "text/csv",
+	rdf: "application/rdf+xml",
+	bib: "application/x-bibtex",
+	ris: "application/x-research-info-systems",
+	txt: "text/plain",
+	tei: "text/xml",
+	enw: "text/plain",
 };
 
-const safeName = (s: string) => s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || "Exported Items";
+const safeName = (s: string) =>
+	s
+		.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 80) || "Exported Items";
 
 export async function translateExport(db: Database, req: TranslateExportRequest): Promise<TranslateExportResult> {
 	if (!req.translatorID || typeof req.translatorID !== "string") throw new HttpError(400, "translatorID is required");
@@ -362,7 +447,10 @@ export async function translateExport(db: Database, req: TranslateExportRequest)
 	const gathered = gatherItems(db, { keys: req.keys, collectionKey: req.collectionKey, format: "ris", includeNotes: !!req.includeNotes });
 	const items = gathered.map((g) => {
 		const data = g.data as unknown as Record<string, any>;
-		const tags = Array.isArray(data.tags) && data.tags.length ? data.tags : g.tags.map((tag) => ({ tag, type: g.autoTags.includes(tag) ? 1 : 0 }));
+		const tags =
+			Array.isArray(data.tags) && data.tags.length
+				? data.tags
+				: g.tags.map((tag) => ({ tag, type: g.autoTags.includes(tag) ? 1 : 0 }));
 		const notes = g.noteHtml.map((html) => ({ itemType: "note", note: html }));
 		const attachments = [
 			...g.links.map((url) => ({ itemType: "attachment", linkMode: "linked_url", url, title: url })),
@@ -370,7 +458,13 @@ export async function translateExport(db: Database, req: TranslateExportRequest)
 		];
 		return { ...data, tags, notes, attachments };
 	});
-	const out = await job<{ text: string; translator: TranslatorRef }>("export", { translatorsDir, translatorID: req.translatorID, items, displayOptions: req.displayOptions, limits: limits() });
+	const out = await job<{ text: string; translator: TranslatorRef }>("export", {
+		translatorsDir,
+		translatorID: req.translatorID,
+		items,
+		displayOptions: req.displayOptions,
+		limits: limits(),
+	});
 	const ext = (info.target || "txt").toLowerCase();
 	let base = "Exported Items";
 	if (req.collectionKey && !(req.keys && req.keys.length)) {

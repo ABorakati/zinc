@@ -36,7 +36,8 @@ export function rewriteLinks(md: string, fromDir: string): string {
 		if (!target.startsWith(DOCS_ROOT)) return all; // a repository path (core/MCP.md, LICENSE): not on the site
 		let page: string | null = null;
 		if (/\.md$/i.test(target)) page = target;
-		else if (existsSync(target) && statSync(target).isDirectory() && existsSync(path.join(target, "README.md"))) page = path.join(target, "README.md");
+		else if (existsSync(target) && statSync(target).isDirectory() && existsSync(path.join(target, "README.md")))
+			page = path.join(target, "README.md");
 		if (page) return `${bang}[${text}](${addressOf(mdPathOf(slugOf(fwd(path.relative(DOCS_ROOT, page)))))}${frag}${title})`;
 		const rel = fwd(path.relative(DOCS_ROOT, target));
 		if (rel.startsWith("screenshots/")) return `${bang}[${text}](${addressOf(rel)}${title})`;
@@ -45,7 +46,12 @@ export function rewriteLinks(md: string, fromDir: string): string {
 }
 
 type Doc = CollectionEntry<"docs">;
-export interface DocPage { slug: string; title: string; file: string; section: string }
+export interface DocPage {
+	slug: string;
+	title: string;
+	file: string;
+	section: string;
+}
 
 /** Every docs page, in the sidebar's order (pages the sidebar does not list come last, under "Other"). */
 export async function docPages(): Promise<DocPage[]> {
@@ -53,14 +59,26 @@ export async function docPages(): Promise<DocPage[]> {
 	const byId = new Map(all.map((d) => [d.id, d]));
 	const page = (d: Doc, section: string): DocPage => ({ slug: d.id, title: d.data.title, file: path.resolve(d.filePath ?? ""), section });
 	const out: DocPage[] = [];
-	for (const g of DOCS_NAV) for (const s of g.slugs) { const d = byId.get(s); if (d) { out.push(page(d, g.label)); byId.delete(s); } }
+	for (const g of DOCS_NAV)
+		for (const s of g.slugs) {
+			const d = byId.get(s);
+			if (d) {
+				out.push(page(d, g.label));
+				byId.delete(s);
+			}
+		}
 	for (const d of byId.values()) out.push(page(d, "Other"));
 	return out;
 }
 
 /** A docs page's Markdown for the site (its own "# Title" line kept). */
 export function markdownOf(p: DocPage): string {
-	return rewriteLinks(readFileSync(p.file, "utf8").replace(/^---[\s\S]*?\n---\r?\n/, "").replace(/\r\n/g, "\n"), path.dirname(p.file));
+	return rewriteLinks(
+		readFileSync(p.file, "utf8")
+			.replace(/^---[\s\S]*?\n---\r?\n/, "")
+			.replace(/\r\n/g, "\n"),
+		path.dirname(p.file),
+	);
 }
 
 /** The repository README, with its links to docs/ made into site addresses. */
@@ -73,13 +91,18 @@ export function summaryOf(md: string): string {
 	for (const block of md.split(/\n\s*\n/)) {
 		const t = block.trim();
 		if (!t || /^(#|!|-|\*|\||>|<|```|\d+\.)/.test(t)) continue;
-		const plain = t.replace(/\s+/g, " ").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/[*_`]/g, "");
+		const plain = t
+			.replace(/\s+/g, " ")
+			.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+			.replace(/\*\*([^*]+)\*\*/g, "$1")
+			.replace(/[*_`]/g, "");
 		const m = /^(.{20,240}?[.!?])(\s|$)/.exec(plain);
 		return m ? m[1] : plain.length > 240 ? `${plain.slice(0, 237).replace(/\s+\S*$/, "")}…` : plain;
 	}
 	return "";
 }
 
-export const SUMMARY = "Zinc is a fast, native, Zotero-compatible reference manager for Windows, Linux and macOS: a GPU-drawn library and PDF reader on your Zotero data, Zotero's own translators and sync, a Word add-in and a browser connector that work with the app closed (Windows), and a built-in MCP server for AI agents.";
+export const SUMMARY =
+	"Zinc is a fast, native, Zotero-compatible reference manager for Windows, Linux and macOS: a GPU-drawn library and PDF reader on your Zotero data, Zotero's own translators and sync, a Word add-in and a browser connector that work with the app closed (Windows), and a built-in MCP server for AI agents.";
 
 export const textResponse = (body: string, type: string) => new Response(body, { headers: { "content-type": `${type}; charset=utf-8` } });

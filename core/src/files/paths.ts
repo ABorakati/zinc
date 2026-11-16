@@ -122,7 +122,9 @@ export function planConversion(db: Database, direction: ConvertDirection, sample
 	if (direction === "relative") {
 		if (!base) return plan;
 		const rows = db
-			.query("SELECT item_key AS key, path FROM attachments WHERE link_mode = 'linked_file' AND path IS NOT NULL AND path NOT LIKE 'attachments:%'")
+			.query(
+				"SELECT item_key AS key, path FROM attachments WHERE link_mode = 'linked_file' AND path IS NOT NULL AND path NOT LIKE 'attachments:%'",
+			)
 			.all() as { key: string; path: string }[];
 		for (const r of rows) {
 			const rel = relativeUnder(r.path, base);
@@ -135,7 +137,10 @@ export function planConversion(db: Database, direction: ConvertDirection, sample
 			if (plan.sample.length < sampleSize) plan.sample.push({ key: r.key, from: r.path, to });
 		}
 	} else {
-		const rows = db.query("SELECT item_key AS key, path FROM attachments WHERE path LIKE 'attachments:%'").all() as { key: string; path: string }[];
+		const rows = db.query("SELECT item_key AS key, path FROM attachments WHERE path LIKE 'attachments:%'").all() as {
+			key: string;
+			path: string;
+		}[];
 		for (const r of rows) {
 			const to = resolveStoredPath(db, r.path, base);
 			if (!to) continue;
@@ -152,7 +157,8 @@ export function applyConversion(db: Database, direction: ConvertDirection): { co
 	const plan = planConversion(db, direction, 0);
 	if (direction === "absolute") {
 		// every "attachments:" row must resolve, or converting would lose its path
-		const unresolved = (db.query("SELECT count(*) AS n FROM attachments WHERE path LIKE 'attachments:%'").get() as { n: number }).n - plan.count;
+		const unresolved =
+			(db.query("SELECT count(*) AS n FROM attachments WHERE path LIKE 'attachments:%'").get() as { n: number }).n - plan.count;
 		if (unresolved > 0) throw new Error(`${unresolved} relative paths cannot be resolved because no base directory is set`);
 	}
 	updateConfig(db, { storeRelative: direction === "relative" }); // later arrivals follow the user's last choice

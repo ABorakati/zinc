@@ -44,7 +44,7 @@ test("normalizeForSearchStorage returns null for plain ASCII and the folded form
 });
 
 test("validFileName follows Zotero.File.getValidFileName", () => {
-	expect(validFileName('a/b:c*d?.pdf')).toBe("abcd.pdf");
+	expect(validFileName("a/b:c*d?.pdf")).toBe("abcd.pdf");
 	expect(validFileName(".hidden")).toBe("hidden");
 	expect(validFileName("..")).toBe("_");
 });

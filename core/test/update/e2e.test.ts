@@ -15,16 +15,23 @@ const OUT = process.env.ZN_E2E_OUT ?? join(tmpdir(), "zn-update-e2e");
 mkdirSync(OUT, { recursive: true });
 const REPORT = join(OUT, "e2e-report.txt");
 writeFileSync(REPORT, `update e2e ${new Date().toISOString()}\n`);
-const say = (s: string) => { appendFileSync(REPORT, s + "\n"); };
+const say = (s: string) => {
+	appendFileSync(REPORT, s + "\n");
+};
 
 const CURRENT = "0.1.0+b7cd9fc4-20261106";
 const NEXT = "0.2.0+1a2b3c4d-20261201";
 const feeds: Feed[] = [];
-afterAll(() => { for (const f of feeds) f.stop(); });
+afterAll(() => {
+	for (const f of feeds) f.stop();
+});
 
 async function waitFor(cond: () => boolean, ms = 8000) {
 	const t0 = Date.now();
-	while (!cond()) { if (Date.now() - t0 > ms) throw new Error("timed out"); await Bun.sleep(25); }
+	while (!cond()) {
+		if (Date.now() - t0 > ms) throw new Error("timed out");
+		await Bun.sleep(25);
+	}
 }
 
 function setup(name: string, feed: Feed, settings: Partial<UpdateSettings> = {}) {
@@ -37,10 +44,17 @@ function setup(name: string, feed: Feed, settings: Partial<UpdateSettings> = {})
 	const exits: number[] = [];
 	const trace: string[] = [];
 	const u = createUpdater({
-		currentVersion: CURRENT, publicKey: feed.keys.publicKey, env: createRealEnv({ updatesDir, exit: (c) => void exits.push(c) }),
+		currentVersion: CURRENT,
+		publicKey: feed.keys.publicKey,
+		env: createRealEnv({ updatesDir, exit: (c) => void exits.push(c) }),
 		settings: () => ({ enabled: true, autoDownload: false, feedUrl: feed.url, ...settings }),
-		prepareExit: async () => { trace.push("prepareExit"); },
-		onChange: (m: UpdateModel) => { const k = m.state.kind; if (trace[trace.length - 1] !== k) trace.push(k); },
+		prepareExit: async () => {
+			trace.push("prepareExit");
+		},
+		onChange: (m: UpdateModel) => {
+			const k = m.state.kind;
+			if (trace[trace.length - 1] !== k) trace.push(k);
+		},
 	});
 	return { u, dir, updatesDir, marker, exits, trace };
 }
@@ -175,8 +189,19 @@ describe.skipIf(process.platform !== "win32")("update e2e (local feed)", () => {
 		// async spawn: the feed is served by THIS process, so its event loop must stay free while the child talks to it
 		const run = async (exitCode: number) => {
 			const p = Bun.spawn([process.execPath, join(import.meta.dir, "exit-fixture.ts")], {
-				env: { ...process.env, ZN_STUB_MARKER: marker, ZN_FIXTURE: JSON.stringify({ feedUrl: feed.url, publicKey: feed.keys.publicKey, updatesDir, version: CURRENT, exitCode }) },
-				stdout: "pipe", stderr: "pipe",
+				env: {
+					...process.env,
+					ZN_STUB_MARKER: marker,
+					ZN_FIXTURE: JSON.stringify({
+						feedUrl: feed.url,
+						publicKey: feed.keys.publicKey,
+						updatesDir,
+						version: CURRENT,
+						exitCode,
+					}),
+				},
+				stdout: "pipe",
+				stderr: "pipe",
 			});
 			const [out] = await Promise.all([new Response(p.stdout).text(), p.exited]);
 			return { stdout: out, exitCode: p.exitCode };

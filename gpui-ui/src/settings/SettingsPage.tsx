@@ -14,7 +14,10 @@ import { queryTokens, sectionCount, sectionDef, sectionRows, setSettingsQuery, s
 
 const [currentSection, setCurrentSection] = persisted<string>("shell.settings.section", "appearance", isStr);
 /** Show a section of the Settings tab (clears the search); for links into Settings and for screenshots. */
-export function gotoSection(id: string): void { setSettingsQuery(""); setCurrentSection(id); }
+export function gotoSection(id: string): void {
+	setSettingsQuery("");
+	setCurrentSection(id);
+}
 
 /** The rows of one built-in section (SettingDefs) under their group headings, filtered by the search. */
 export function SectionBody(p: { id: string }): JSX.Element {
@@ -24,12 +27,22 @@ export function SectionBody(p: { id: string }): JSX.Element {
 				{(g) => (
 					<>
 						<Show when={g.name}>
-							<div style={t("pt-3 pb-1")}><Txt cls="text-[11px] font-semibold text-muted-foreground tracking-wide">{g.name!.toUpperCase()}</Txt></div>
+							<div style={t("pt-3 pb-1")}>
+								<Txt cls="text-[11px] font-semibold text-muted-foreground tracking-wide">{g.name!.toUpperCase()}</Txt>
+							</div>
 							<Divider />
 						</Show>
 						<For each={g.rows}>
 							{(s, i) => (
-								<SettingRow id={s.id} label={s.label} description={s.description} layout={s.layout} unavailable={s.unavailable ? s.unavailable : !s.control} control={s.control} last={i() === g.rows.length - 1} />
+								<SettingRow
+									id={s.id}
+									label={s.label}
+									description={s.description}
+									layout={s.layout}
+									unavailable={s.unavailable ? s.unavailable : !s.control}
+									control={s.control}
+									last={i() === g.rows.length - 1}
+								/>
 							)}
 						</For>
 					</>
@@ -53,12 +66,18 @@ function NavItem(p: { id: string; label: string; icon?: string; active: boolean;
 				hover: dim() || p.active ? undefined : t("bg-accent/60"),
 			}}
 		>
-			<Show when={p.icon}><Icon name={p.icon!} size={16} color={tok(p.active ? "foreground" : "muted-foreground")} /></Show>
+			<Show when={p.icon}>
+				<Icon name={p.icon!} size={16} color={tok(p.active ? "foreground" : "muted-foreground")} />
+			</Show>
 			<div style={{ minWidth: 0, flexGrow: 1, flexShrink: 1 }}>
 				<Txt cls={`text-sm ${p.active ? "font-medium text-foreground" : "text-muted-foreground"} truncate`}>{p.label}</Txt>
 			</div>
 			<Show when={p.count !== undefined && p.count > 0}>
-				<div style={t("flex items-center rounded-full bg-primary/15 px-1.5")}><Txt cls="text-[10px] text-primary" wrap={false}>{String(p.count)}</Txt></div>
+				<div style={t("flex items-center rounded-full bg-primary/15 px-1.5")}>
+					<Txt cls="text-[10px] text-primary" wrap={false}>
+						{String(p.count)}
+					</Txt>
+				</div>
 			</Show>
 		</div>
 	);
@@ -79,12 +98,17 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 	});
 	const total = () => sections().reduce((n, s) => n + (sectionDef(s.id) ? sectionCount(s.id) : 0), 0);
 
-	createEffect(() => { if (p.active) settingsShown(); });
+	createEffect(() => {
+		if (p.active) settingsShown();
+	});
 	// Escape clears the search while the tab is showing
 	createEffect(() => {
 		if (!p.active) return;
 		const off = addKeyHandler((e) => {
-			if (e.key === "escape" && settingsQuery()) { setSettingsQuery(""); return true; }
+			if (e.key === "escape" && settingsQuery()) {
+				setSettingsQuery("");
+				return true;
+			}
 			return false;
 		});
 		onCleanup(off);
@@ -92,8 +116,19 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 
 	return (
 		<div style={{ ...t("flex bg-background"), width: "100%", height: "100%", minWidth: 0 }} aria-label="Settings">
-			<div style={{ ...t("flex flex-col gap-0.5 border-r bg-card p-2"), width: 208, flexShrink: 0, height: "100%", overflowY: "scroll", scrollbarColor: tok("border") }}>
-				<div style={t("px-2 pt-1 pb-1.5")}><Txt cls="text-xs font-semibold text-muted-foreground tracking-wide">SETTINGS</Txt></div>
+			<div
+				style={{
+					...t("flex flex-col gap-0.5 border-r bg-card p-2"),
+					width: 208,
+					flexShrink: 0,
+					height: "100%",
+					overflowY: "scroll",
+					scrollbarColor: tok("border"),
+				}}
+			>
+				<div style={t("px-2 pt-1 pb-1.5")}>
+					<Txt cls="text-xs font-semibold text-muted-foreground tracking-wide">SETTINGS</Txt>
+				</div>
 				<For each={sections()}>
 					{(s) => (
 						<NavItem
@@ -102,7 +137,10 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 							icon={s.icon}
 							active={!searching() && currentSection() === s.id}
 							count={searching() ? countOf(s.id, s.label) : undefined}
-							onClick={() => { setSettingsQuery(""); setCurrentSection(s.id); }}
+							onClick={() => {
+								setSettingsQuery("");
+								setCurrentSection(s.id);
+							}}
 						/>
 					)}
 				</For>
@@ -113,10 +151,17 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 					<div style={{ ...t("flex items-center gap-2"), maxWidth: 560, flexGrow: 1 }}>
 						<Icon name="search" size={14} color={tok("muted-foreground")} />
 						<div style={{ flexGrow: 1, minWidth: 0 }}>
-							<TextInput value={settingsQuery()} onInput={setSettingsQuery} placeholder="Search settings" autofocus={p.active} />
+							<TextInput
+								value={settingsQuery()}
+								onInput={setSettingsQuery}
+								placeholder="Search settings"
+								autofocus={p.active}
+							/>
 						</div>
 						<Show when={settingsQuery()}>
-							<Button variant="ghost" size="icon" icon="x" onClick={() => setSettingsQuery("")}>{""}</Button>
+							<Button variant="ghost" size="icon" icon="x" onClick={() => setSettingsQuery("")}>
+								{""}
+							</Button>
 						</Show>
 					</div>
 					<Show when={searching()}>
@@ -132,8 +177,12 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 								return (
 									<div style={t("flex flex-col pt-6")}>
 										<Txt cls="text-base font-semibold text-foreground">{s.label}</Txt>
-										<Show when={def()?.description}><Txt cls="text-xs text-muted-foreground mt-0.5">{def()!.description!}</Txt></Show>
-										<div style={{ ...t("mt-2 flex flex-col rounded-lg border bg-card px-4"), width: "100%" }}>{s.render()}</div>
+										<Show when={def()?.description}>
+											<Txt cls="text-xs text-muted-foreground mt-0.5">{def()!.description!}</Txt>
+										</Show>
+										<div style={{ ...t("mt-2 flex flex-col rounded-lg border bg-card px-4"), width: "100%" }}>
+											{s.render()}
+										</div>
 									</div>
 								);
 							}}
@@ -142,7 +191,9 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 							<div style={t("flex flex-col items-center gap-3 py-24")}>
 								<Icon name="search" size={32} color={tok("muted-foreground")} style={{ opacity: 0.5 }} />
 								<Txt cls="text-sm text-foreground">{`No settings match "${settingsQuery().trim()}"`}</Txt>
-								<Button variant="outline" size="sm" onClick={() => setSettingsQuery("")}>Clear search</Button>
+								<Button variant="outline" size="sm" onClick={() => setSettingsQuery("")}>
+									Clear search
+								</Button>
 							</div>
 						</Show>
 					</div>

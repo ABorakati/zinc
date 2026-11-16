@@ -51,17 +51,48 @@ const formulaExpr: fc.Arbitrary<string> = fc.letrec<{ e: string }>((tie) => ({
 		{ weight: 1, arbitrary: fc.tuple(tie("e"), tie("e")).map(([a, b]) => `${a} || ${b}`) },
 		{ weight: 1, arbitrary: fc.tuple(tie("e"), tie("e")).map(([a, b]) => `${a} && ${b}`) },
 		{ weight: 1, arbitrary: fc.tuple(tie("e"), tie("e"), tie("e")).map(([a, b, c]) => `${a} ? ${b} : ${c}`) },
-		{ weight: 1, arbitrary: fc.tuple(tie("e"), fc.constantFrom(">", ">=", "<", "<=", "==", "!="), fc.integer({ min: 0, max: 9 })).map(([a, o, n]) => `${a} ${o} ${n}`) },
+		{
+			weight: 1,
+			arbitrary: fc
+				.tuple(tie("e"), fc.constantFrom(">", ">=", "<", "<=", "==", "!="), fc.integer({ min: 0, max: 9 }))
+				.map(([a, o, n]) => `${a} ${o} ${n}`),
+		},
 		{ weight: 1, arbitrary: tie("e").map((a) => `(${a})`) },
 	),
 })).e;
 const formula = fc.array(formulaExpr, { minLength: 1, maxLength: 3 }).map((a) => a.join(" ; "));
-const GOOD = ["auth.lower + shorttitle(3,3) + year", "authorsAlpha + year", "auth(0,2) + '_' + title.lower.skipwords", "Title.len(>, 3) ? shorttitle : veryshorttitle", "creators(0,'*','%(F)s') + year; DOI.default('none')", "extra.select(Citation Key) || auth"];
+const GOOD = [
+	"auth.lower + shorttitle(3,3) + year",
+	"authorsAlpha + year",
+	"auth(0,2) + '_' + title.lower.skipwords",
+	"Title.len(>, 3) ? shorttitle : veryshorttitle",
+	"creators(0,'*','%(F)s') + year; DOI.default('none')",
+	"extra.select(Citation Key) || auth",
+];
 
 // items: mostly well-formed, with hostile text and wrong-typed JSON values in the fields the formulas read
-const wrong = fc.oneof(fc.integer(), fc.constant(null), fc.boolean(), fc.array(fc.string({ maxLength: 4 }), { maxLength: 2 }), fc.dictionary(fc.string({ maxLength: 3 }), fc.string({ maxLength: 3 }), { maxKeys: 2 }));
-const text = fc.oneof(fc.string({ unit: "grapheme", maxLength: 40 }), messyText(60), fc.constantFrom("The Study of Things: A Review", "<i>Deep</i> &amp; learning", "van der Berg", "", "ÅÄÖ ßß ñ", "日本語のタイトル", "Citation Key: foo\ntex.title: bar\noriginal-date: 1999"));
-const maybeWrong = (t: fc.Arbitrary<string>) => fc.oneof({ weight: 12, arbitrary: t }, { weight: 1, arbitrary: wrong as fc.Arbitrary<unknown> });
+const wrong = fc.oneof(
+	fc.integer(),
+	fc.constant(null),
+	fc.boolean(),
+	fc.array(fc.string({ maxLength: 4 }), { maxLength: 2 }),
+	fc.dictionary(fc.string({ maxLength: 3 }), fc.string({ maxLength: 3 }), { maxKeys: 2 }),
+);
+const text = fc.oneof(
+	fc.string({ unit: "grapheme", maxLength: 40 }),
+	messyText(60),
+	fc.constantFrom(
+		"The Study of Things: A Review",
+		"<i>Deep</i> &amp; learning",
+		"van der Berg",
+		"",
+		"ÅÄÖ ßß ñ",
+		"日本語のタイトル",
+		"Citation Key: foo\ntex.title: bar\noriginal-date: 1999",
+	),
+);
+const maybeWrong = (t: fc.Arbitrary<string>) =>
+	fc.oneof({ weight: 12, arbitrary: t }, { weight: 1, arbitrary: wrong as fc.Arbitrary<unknown> });
 const creator = fc.oneof(
 	fc.record({ creatorType: fc.constantFrom("author", "editor", "translator", "contributor", "weird"), firstName: text, lastName: text }),
 	fc.record({ creatorType: fc.constantFrom("author", "editor"), name: text }),
@@ -72,13 +103,18 @@ const item: fc.Arbitrary<ZoteroItemData> = fc
 		{
 			itemType: fc.constantFrom("journalArticle", "book", "bookSection", "thesis", "webpage", "report", "note", "weird"),
 			title: maybeWrong(text),
-			date: maybeWrong(fc.oneof(text, fc.constantFrom("2020", "2020-05-17", "May 2020", "1999-13-45", "0000", "12th century", "9999-99-99", "-5"))),
+			date: maybeWrong(
+				fc.oneof(text, fc.constantFrom("2020", "2020-05-17", "May 2020", "1999-13-45", "0000", "12th century", "9999-99-99", "-5")),
+			),
 			extra: maybeWrong(text),
 			DOI: maybeWrong(text),
 			pages: maybeWrong(fc.oneof(text, fc.constantFrom("10-20", "e1234", "S45-S60"))),
 			publicationTitle: maybeWrong(text),
 			language: maybeWrong(fc.constantFrom("en", "de", "German", "", "zh")),
-			creators: fc.oneof({ weight: 10, arbitrary: fc.array(creator, { maxLength: 5 }) }, { weight: 1, arbitrary: wrong as fc.Arbitrary<unknown> }),
+			creators: fc.oneof(
+				{ weight: 10, arbitrary: fc.array(creator, { maxLength: 5 }) },
+				{ weight: 1, arbitrary: wrong as fc.Arbitrary<unknown> },
+			),
 		},
 		{ requiredKeys: ["itemType"] },
 	)
@@ -92,21 +128,40 @@ describe("formula parser", () => {
 			compile(source);
 		} catch (e) {
 			if (!(e instanceof FormulaError)) throw new Error(`compile threw ${describeError(e)} instead of a FormulaError`, { cause: e });
-			if (!Number.isInteger(e.position) || e.position < 0 || e.position > source.length) throw new Error(`error position ${e.position} is outside the formula (length ${source.length}): ${e.message}`);
+			if (!Number.isInteger(e.position) || e.position < 0 || e.position > source.length)
+				throw new Error(`error position ${e.position} is outside the formula (length ${source.length}): ${e.message}`);
 			expect(e.message.length).toBeGreaterThan(0);
 		}
 	};
-	fuzz("random text compiles or fails with a positioned FormulaError", [fc.oneof(messyText(120), fc.string({ maxLength: 60 }))], check, { normal: 400 });
-	fuzz("a mutated valid formula compiles or fails with a positioned FormulaError", [mutated(fc.oneof(fc.constantFrom(...GOOD), formula))], check, { normal: 400 });
-	fuzz("generated formulas compile", [formula], (f) => {
-		try {
-			compile(f);
-		} catch (e) {
-			// a regex literal the grammar built can be invalid; anything else is a parser bug
-			if (!(e instanceof FormulaError) || !/regular expression|unexpected|expected/.test(e.message)) throw new Error(`${f}\n -> ${describeError(e)}`, { cause: e });
-		}
-	}, { normal: 300 });
-	fuzz("deep nesting and very long formulas fail cleanly", [fc.constantFrom("(", "a.", "x ? ", "[", "!(", "'", "auth + "), fc.integer({ min: 50, max: 30000 })], (tok, n) => check(tok.repeat(n)), { normal: 25, timeBoxMs: 5000 });
+	fuzz("random text compiles or fails with a positioned FormulaError", [fc.oneof(messyText(120), fc.string({ maxLength: 60 }))], check, {
+		normal: 400,
+	});
+	fuzz(
+		"a mutated valid formula compiles or fails with a positioned FormulaError",
+		[mutated(fc.oneof(fc.constantFrom(...GOOD), formula))],
+		check,
+		{ normal: 400 },
+	);
+	fuzz(
+		"generated formulas compile",
+		[formula],
+		(f) => {
+			try {
+				compile(f);
+			} catch (e) {
+				// a regex literal the grammar built can be invalid; anything else is a parser bug
+				if (!(e instanceof FormulaError) || !/regular expression|unexpected|expected/.test(e.message))
+					throw new Error(`${f}\n -> ${describeError(e)}`, { cause: e });
+			}
+		},
+		{ normal: 300 },
+	);
+	fuzz(
+		"deep nesting and very long formulas fail cleanly",
+		[fc.constantFrom("(", "a.", "x ? ", "[", "!(", "'", "auth + "), fc.integer({ min: 50, max: 30000 })],
+		(tok, n) => check(tok.repeat(n)),
+		{ normal: 25, timeBoxMs: 5000 },
+	);
 	test.each(["", "   ", ";", ";;", "|"])("regression: %j gives a positioned error", (f) => {
 		let err: unknown;
 		try {
@@ -147,13 +202,29 @@ describe("formula evaluation", () => {
 		expect(g.text === "" || g.text.includes(MARK)).toBe(true);
 		expect(typeof g.postfix.template).toBe("string");
 	};
-	fuzz("generated formulas on random items are total", [formula, item, fc.constantFrom(0, 1)], (f, d, c) => run(f, d, cfgs[c]!), { normal: 300 });
-	fuzz("the known-good formulas on random items are total", [fc.constantFrom(...GOOD, DEFAULT_FORMULA), item, fc.constantFrom(0, 1)], (f, d, c) => run(f, d, cfgs[c]!), { normal: 300 });
-	fuzz("mutated formulas on random items are total", [mutated(fc.constantFrom(...GOOD)), item], (f, d) => run(f, d, cfgs[0]!), { normal: 300 });
-	fuzz("formatPostfix and validPostfix are total", [fc.oneof(messyText(30), fc.constantFrom("%(a)s", "%(A)s", "%(n)s", "%(n)03d", "-%(a)s-")), fc.oneof(fc.integer({ min: 0, max: 100000 }), fc.integer(), fc.double())], (t, i) => {
-		expect(typeof formatPostfix(t, i)).toBe("string");
-		expect(typeof validPostfix(t)).toBe("boolean");
+	fuzz("generated formulas on random items are total", [formula, item, fc.constantFrom(0, 1)], (f, d, c) => run(f, d, cfgs[c]!), {
+		normal: 300,
 	});
+	fuzz(
+		"the known-good formulas on random items are total",
+		[fc.constantFrom(...GOOD, DEFAULT_FORMULA), item, fc.constantFrom(0, 1)],
+		(f, d, c) => run(f, d, cfgs[c]!),
+		{ normal: 300 },
+	);
+	fuzz("mutated formulas on random items are total", [mutated(fc.constantFrom(...GOOD)), item], (f, d) => run(f, d, cfgs[0]!), {
+		normal: 300,
+	});
+	fuzz(
+		"formatPostfix and validPostfix are total",
+		[
+			fc.oneof(messyText(30), fc.constantFrom("%(a)s", "%(A)s", "%(n)s", "%(n)03d", "-%(a)s-")),
+			fc.oneof(fc.integer({ min: 0, max: 100000 }), fc.integer(), fc.double()),
+		],
+		(t, i) => {
+			expect(typeof formatPostfix(t, i)).toBe("string");
+			expect(typeof validPostfix(t)).toBe("boolean");
+		},
+	);
 });
 
 // ---------------------------------------------------------------- LaTeX
@@ -171,35 +242,109 @@ function balanced(s: string): boolean {
 }
 
 // text with a LaTeX form: ASCII, Latin-1 and Latin Extended-A letters (accents, ligatures), Greek, typographic punctuation
-const KNOWN = [..."áéíóúàèìòùâêîôûäëïöüãñõçåÅøØæÆœŒßłŁıðÞþđĐŋ", ..."ÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÄËÏÖÜÃÑÕÇ", ..."ćčďěňřšťžůýŕĺľśźżąęĆČĎĚŇŘŠŤŽŮÝ", ..."αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ", ..."–—‘’“”…©®£§°±×÷µ≤≥≠≈∞→←·•−½¿¡"];
-const known = fc.string({ unit: fc.oneof({ weight: 5, arbitrary: fc.constantFrom(..."abcXYZ019 .,;:!?-_/\\{}[]()<>&%$#~^'\"@*+=|`") }, { weight: 3, arbitrary: fc.constantFrom(...KNOWN) }), maxLength: 40 });
-const tags = fc.constantFrom("<i>", "</i>", "<b>", "</b>", "<sup>", "</sup>", "<sub>", "</sub>", "<sc>", "</sc>", "<nc>", "</nc>", "<br>", "<span class=\"nocase\">", "</span>", "<a href=x>", "</a>", "&amp;", "&lt;", "&#233;", "<", ">", "{", "}", "\\");
+const KNOWN = [
+	..."áéíóúàèìòùâêîôûäëïöüãñõçåÅøØæÆœŒßłŁıðÞþđĐŋ",
+	..."ÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÄËÏÖÜÃÑÕÇ",
+	..."ćčďěňřšťžůýŕĺľśźżąęĆČĎĚŇŘŠŤŽŮÝ",
+	..."αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ",
+	..."–—‘’“”…©®£§°±×÷µ≤≥≠≈∞→←·•−½¿¡",
+];
+const known = fc.string({
+	unit: fc.oneof(
+		{ weight: 5, arbitrary: fc.constantFrom(..."abcXYZ019 .,;:!?-_/\\{}[]()<>&%$#~^'\"@*+=|`") },
+		{ weight: 3, arbitrary: fc.constantFrom(...KNOWN) },
+	),
+	maxLength: 40,
+});
+const tags = fc.constantFrom(
+	"<i>",
+	"</i>",
+	"<b>",
+	"</b>",
+	"<sup>",
+	"</sup>",
+	"<sub>",
+	"</sub>",
+	"<sc>",
+	"</sc>",
+	"<nc>",
+	"</nc>",
+	"<br>",
+	'<span class="nocase">',
+	"</span>",
+	"<a href=x>",
+	"</a>",
+	"&amp;",
+	"&lt;",
+	"&#233;",
+	"<",
+	">",
+	"{",
+	"}",
+	"\\",
+);
 const htmlish = fc.array(fc.oneof(known, tags, text), { maxLength: 8 }).map((a) => a.join(""));
 
-const opts: fc.Arbitrary<TexOptions> = fc.record({ flavor: fc.constantFrom("bibtex", "biblatex"), ascii: fc.boolean(), protect: fc.boolean(), creator: fc.boolean() });
+const opts: fc.Arbitrary<TexOptions> = fc.record({
+	flavor: fc.constantFrom("bibtex", "biblatex"),
+	ascii: fc.boolean(),
+	protect: fc.boolean(),
+	creator: fc.boolean(),
+});
 
 describe("unicode to LaTeX", () => {
-	fuzz("textToLatex never throws and its braces are balanced", [fc.oneof(htmlish, messyText(150)), opts, fc.boolean()], (s, o, html) => {
-		const out = textToLatex(s, o, { html });
-		expect(balanced(out)).toBe(true);
-	}, { normal: 400 });
-	fuzz("with ASCII output the result is ASCII for text that has a LaTeX form", [fc.oneof(known, htmlish.map((s) => s.replace(/[^\x00-\x7f]/g, "")).map((s) => s)), opts], (s, o) => {
-		const out = textToLatex(s, { ...o, ascii: true });
-		// characters in KNOWN (and those in the tag/entity lists, which are ASCII or decode to é) must all be encoded
-		expect(/^[\x00-\x7f]*$/.test(out)).toBe(true);
-	}, { normal: 400 });
-	fuzz("encodeChars: ASCII input is only escaped, and ASCII output covers every known character", [known, opts], (s, o) => {
-		const out = encodeChars(s, { ...o, ascii: true });
-		expect(/^[\x00-\x7f]*$/.test(out)).toBe(true);
-		expect(balanced(out)).toBe(true);
-	}, { normal: 400 });
-	fuzz("characters without a LaTeX form pass through unchanged (documented fallback)", [fc.constantFrom("日", "本", "語", "한", "ж", "😀", "א", "ก", "∑", "ℵ"), opts], (ch, o) => {
-		expect(encodeChars(ch, { ...o, ascii: true })).toBe(ch);
-	});
-	fuzz("encodeChars of any text with unicode kept never changes non-special characters", [fc.string({ unit: "grapheme", maxLength: 30 }), opts], (s, o) => {
-		const out = encodeChars(s, { ...o, ascii: false });
-		expect(out.replace(/\\text(?:backslash|asciitilde|asciicircum)\{\}|\\[{}&%$#_]/g, "").normalize("NFC").length).toBeLessThanOrEqual(s.normalize("NFC").length);
-	});
+	fuzz(
+		"textToLatex never throws and its braces are balanced",
+		[fc.oneof(htmlish, messyText(150)), opts, fc.boolean()],
+		(s, o, html) => {
+			const out = textToLatex(s, o, { html });
+			expect(balanced(out)).toBe(true);
+		},
+		{ normal: 400 },
+	);
+	fuzz(
+		"with ASCII output the result is ASCII for text that has a LaTeX form",
+		[
+			fc.oneof(
+				known,
+				htmlish.map((s) => s.replace(/[^\x00-\x7f]/g, "")).map((s) => s),
+			),
+			opts,
+		],
+		(s, o) => {
+			const out = textToLatex(s, { ...o, ascii: true });
+			// characters in KNOWN (and those in the tag/entity lists, which are ASCII or decode to é) must all be encoded
+			expect(/^[\x00-\x7f]*$/.test(out)).toBe(true);
+		},
+		{ normal: 400 },
+	);
+	fuzz(
+		"encodeChars: ASCII input is only escaped, and ASCII output covers every known character",
+		[known, opts],
+		(s, o) => {
+			const out = encodeChars(s, { ...o, ascii: true });
+			expect(/^[\x00-\x7f]*$/.test(out)).toBe(true);
+			expect(balanced(out)).toBe(true);
+		},
+		{ normal: 400 },
+	);
+	fuzz(
+		"characters without a LaTeX form pass through unchanged (documented fallback)",
+		[fc.constantFrom("日", "本", "語", "한", "ж", "😀", "א", "ก", "∑", "ℵ"), opts],
+		(ch, o) => {
+			expect(encodeChars(ch, { ...o, ascii: true })).toBe(ch);
+		},
+	);
+	fuzz(
+		"encodeChars of any text with unicode kept never changes non-special characters",
+		[fc.string({ unit: "grapheme", maxLength: 30 }), opts],
+		(s, o) => {
+			const out = encodeChars(s, { ...o, ascii: false });
+			expect(
+				out.replace(/\\text(?:backslash|asciitilde|asciicircum)\{\}|\\[{}&%$#_]/g, "").normalize("NFC").length,
+			).toBeLessThanOrEqual(s.normalize("NFC").length);
+		},
+	);
 	fuzz("verbatim removes only braces, and what is left is balanced", [fc.oneof(messyText(80), fc.string({ maxLength: 30 }))], (s) => {
 		const out = verbatim(s);
 		// verbatim does not treat backslash as an escape: plain brace matching
@@ -212,7 +357,12 @@ describe("unicode to LaTeX", () => {
 		expect(out.replace(/[{}]/g, "")).toBe(s.replace(/[{}]/g, ""));
 		expect(verbatim(out)).toBe(out);
 	});
-	fuzz("long inputs stay fast", [fc.constantFrom("Aa ", "AB-", "<i>", "{{", "é", "A", " ", "<nc>"), fc.integer({ min: 500, max: 20000 })], (tok, n) => {
-		textToLatex(tok.repeat(n), { flavor: "bibtex", ascii: true, protect: true });
-	}, { normal: 20, timeBoxMs: 4000 });
+	fuzz(
+		"long inputs stay fast",
+		[fc.constantFrom("Aa ", "AB-", "<i>", "{{", "é", "A", " ", "<nc>"), fc.integer({ min: 500, max: 20000 })],
+		(tok, n) => {
+			textToLatex(tok.repeat(n), { flavor: "bibtex", ascii: true, protect: true });
+		},
+		{ normal: 20, timeBoxMs: 4000 },
+	);
 });

@@ -185,7 +185,14 @@ describe("items", () => {
 
 describe("annotations and view state", () => {
 	test("annotation roundtrip", async () => {
-		const ann = { id: "ANNO0002", type: "note", sortIndex: "00000|000000|00000", position: { pageIndex: 0 }, comment: "hi", dateModified: "2025-01-01T00:00:00Z" };
+		const ann = {
+			id: "ANNO0002",
+			type: "note",
+			sortIndex: "00000|000000|00000",
+			position: { pageIndex: 0 },
+			comment: "hi",
+			dateModified: "2025-01-01T00:00:00Z",
+		};
 		expect((await call(fx.db, "PUT", "/api/attachments/ATT00002/annotations", [ann])).status).toBe(200);
 		let list = await j(await call(fx.db, "GET", "/api/attachments/ATT00002/annotations"));
 		expect(list.map((a: any) => a.id)).toEqual(["ANNO0002", "ANNO0001"]); // sorted by sortIndex

@@ -28,7 +28,7 @@ export function startMock(port = PORT) {
 			if (p === "/__state") return json({ annotations: [...state.annotations.values()], viewState: state.viewState });
 
 			if (p.startsWith("/reader-host/")) {
-				let rel = decodeURIComponent(p.slice("/reader-host/".length)) || "index.html";
+				const rel = decodeURIComponent(p.slice("/reader-host/".length)) || "index.html";
 				const file = normalize(join(DIST, rel));
 				if (!file.startsWith(DIST)) return new Response("forbidden", { status: 403 });
 				const f = Bun.file(file);
@@ -48,7 +48,10 @@ export function startMock(port = PORT) {
 					if (m === "PUT") {
 						for (const a of body) state.annotations.set(a.id, a);
 						state.log.push({ method: m, path: p, body: body.map((a: any) => ({ id: a.id, type: a.type })), at: Date.now() });
-						console.log("PUT annotations", body.map((a: any) => `${a.type}:${a.id}`));
+						console.log(
+							"PUT annotations",
+							body.map((a: any) => `${a.type}:${a.id}`),
+						);
 						return json({ ok: true });
 					}
 					if (m === "DELETE") {
@@ -74,7 +77,10 @@ export function startMock(port = PORT) {
 				const key = item[1];
 				const base = { children: [], collections: [], tags: [] };
 				if (key === "PARENT") return json({ ...base, data: { key, itemType: "journalArticle", title: "Mock Parent Item Title" } });
-				return json({ ...base, data: { key, itemType: "attachment", title: "demo.pdf", parentItem: "PARENT", contentType: "application/pdf" } });
+				return json({
+					...base,
+					data: { key, itemType: "attachment", title: "demo.pdf", parentItem: "PARENT", contentType: "application/pdf" },
+				});
 			}
 
 			return json({ error: "not found: " + m + " " + p }, 404);

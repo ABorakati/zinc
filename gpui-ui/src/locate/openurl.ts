@@ -40,7 +40,12 @@ const text = (v: unknown): string => (typeof v === "string" ? wellFormed(v.trim(
 
 /** Book-format item types (info:ofi/fmt:kev:mtx:book), including chapters and reports; all others use the journal format. */
 const BOOK_TYPES: Record<string, true> = {
-	book: true, bookSection: true, encyclopediaArticle: true, dictionaryEntry: true, thesis: true, report: true,
+	book: true,
+	bookSection: true,
+	encyclopediaArticle: true,
+	dictionaryEntry: true,
+	thesis: true,
+	report: true,
 };
 
 /** OpenURL genre (rft.genre) per Zotero item type. */
@@ -121,7 +126,10 @@ export function openUrlParams(item: LocateItem): [string, string][] {
 	// own-property lookups: an item type of "constructor" or "toString" must not find Object.prototype members
 	const journal = !Object.hasOwn(BOOK_TYPES, item.itemType);
 	const out: [string, string][] = [];
-	const put = (k: string, v: string | undefined) => { const s = text(v); if (s) out.push([k, s]); };
+	const put = (k: string, v: string | undefined) => {
+		const s = text(v);
+		if (s) out.push([k, s]);
+	};
 
 	out.push(["url_ver", "Z39.88-2004"]);
 	out.push(["ctx_ver", "Z39.88-2004"]);

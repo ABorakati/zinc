@@ -37,7 +37,11 @@ function withFile<T>(bytes: Uint8Array, run: (file: string) => T): T {
 		return run(file);
 	} finally {
 		// the job is spooled when runOperation returns
-		try { rmSync(file, { force: true }); } catch { /* still open */ }
+		try {
+			rmSync(file, { force: true });
+		} catch {
+			/* still open */
+		}
 	}
 }
 
@@ -74,7 +78,10 @@ function printerNames(): string[] {
  * and shows an alert nobody can dismiss in a test run (the macOS CI smoke run hung there).
  */
 export function printWithMacNoPanel(bytes: Uint8Array, o: { title: string; printer?: string; output?: string }): string {
-	if (o.output) { writeFileSync(o.output, bytes); return "file"; }
+	if (o.output) {
+		writeFileSync(o.output, bytes);
+		return "file";
+	}
 	const printers = printerNames();
 	if (!printers.length) throw new Error("there is no printer");
 	if (o.printer && !printers.includes(o.printer)) throw new Error(`there is no printer "${o.printer}"`);

@@ -6,7 +6,11 @@
 // shown in the same step that hands it its pixels. ZN_LEGACY_IMG=1 restores the old behaviour (benchmarks compare the two).
 export const HIDE_UNTIL_PIXELS = process.env.ZN_LEGACY_IMG !== "1";
 
-export type ImgNode = { id: number; mounted: boolean; setImagePixels(w: number, h: number, b: Uint8Array, o?: { format?: "rgba" | "bgra" }): void };
+export type ImgNode = {
+	id: number;
+	mounted: boolean;
+	setImagePixels(w: number, h: number, b: Uint8Array, o?: { format?: "rgba" | "bgra" }): void;
+};
 
 /** Style fragment of an image that waits for its first pixels (empty once it has them). */
 export const hiddenUntil = (ready: boolean): { visibility?: string } => (HIDE_UNTIL_PIXELS && !ready ? { visibility: "hidden" } : {});
