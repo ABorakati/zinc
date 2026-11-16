@@ -8,9 +8,40 @@ import { store } from "../store";
 import { getDetail } from "./actions";
 
 const [openKeys, setOpenKeys] = createSignal<ReadonlySet<string>>(new Set());
-/** Loaded children, for one revision of the library data (store.itemsRev): an edit elsewhere drops them all. */
-const [kids, setKids] = createSignal<{ rev: number; map: ReadonlyMap<string, readonly ChildSummary[]> }>({ rev: -1, map: new Map() });
+/**
+ * Loaded children per item, each with the revision of the library data (store.itemsRev) it was loaded at. After a refresh (an edit,
+ * a sync, a save from the connector) the old list stays on screen while it is loaded again: dropping it turned every child row into
+ * a placeholder for a moment, and a click (the second half of a double-click) on a placeholder did nothing.
+ */
+const [kids, setKids] = createSignal<ReadonlyMap<string, { rev: number; list: readonly ChildSummary[] }>>(new Map());
 const loading = new Set<string>(); // "rev:key"
+
+/** Two clicks on the same child row within this many ms open it even when the system's click count did not reach 2. */
+export const DOUBLE_CLICK_MS = 500;
+let lastClick: { key: string; at: number } | null = null;
+
+/**
+ * Whether this click completes a double-click on child `key`: the system says so, or the previous click was on the same row just
+ * now (the row may have been rebuilt between the two clicks, and GPUI's count then starts again at 1).
+ */
+export function isDoubleClick(key: string, clickCount: number, now: number): boolean {
+	const twice = clickCount >= 2 || (lastClick?.key === key && now - lastClick.at <= DOUBLE_CLICK_MS);
+	// a double-click consumes the pair, so a third quick click starts again rather than opening a second time
+	lastClick = twice ? null : { key, at: now };
+	return twice;
+}
+
+/** The new list, reusing the old child objects that did not change, so the rows showing them stay mounted. */
+export function keepSame(old: readonly ChildSummary[] | undefined, next: readonly ChildSummary[]): readonly ChildSummary[] {
+	if (!old) return next;
+	const byKey = new Map(old.map((c) => [c.key, c]));
+	const same = (a: ChildSummary, b: ChildSummary) => JSON.stringify(a) === JSON.stringify(b);
+	const list = next.map((c) => {
+		const o = byKey.get(c.key);
+		return o && same(o, c) ? o : c;
+	});
+	return list.length === old.length && list.every((c, i) => c === old[i]) ? old : list;
+}
 
 /** Item keys whose children are shown. */
 export { openKeys };
@@ -21,24 +52,31 @@ export const hasChildren = (it: Pick<ItemRow, "attachmentCount" | "noteCount">) 
 function load(key: string) {
 	const rev = untrack(store.itemsRev);
 	const id = `${rev}:${key}`;
-	if (loading.has(id) || (untrack(kids).rev === rev && untrack(kids).map.has(key))) return;
+	if (loading.has(id) || untrack(kids).get(key)?.rev === rev) return;
 	loading.add(id);
 	getDetail(key).then(
 		(d) => {
 			loading.delete(id);
-			if (rev !== untrack(store.itemsRev)) return;
-			setKids((k) => ({ rev, map: new Map(k.rev === rev ? k.map : []).set(key, d.children) }));
+			if (rev !== untrack(store.itemsRev)) return; // a newer load is on its way
+			setKids((k) => {
+				const old = k.get(key);
+				const list = keepSame(old?.list, d.children);
+				if (old && old.list === list && old.rev === rev) return k;
+				return new Map(k).set(key, { rev, list });
+			});
 		},
 		() => loading.delete(id),
 	);
 }
 
-/** Loaded children of `key` (null until they arrive; reading it asks for them). Dropped when the library data changes. */
+/**
+ * Loaded children of `key` (null until they first arrive; reading it asks for them). After the library data changes the last
+ * loaded list is kept, and replaced only if the reload finds a difference.
+ */
 export function childrenOf(key: string): readonly ChildSummary[] | null {
-	const k = kids();
-	const got = k.rev === store.itemsRev() ? k.map.get(key) : undefined;
-	if (!got) queueMicrotask(() => load(key));
-	return got ?? null;
+	const got = kids().get(key);
+	if (!got || got.rev !== store.itemsRev()) queueMicrotask(() => load(key));
+	return got?.list ?? null;
 }
 
 export function setOpen(key: string, on: boolean) {

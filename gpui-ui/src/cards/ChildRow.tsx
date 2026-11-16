@@ -9,7 +9,7 @@ import { Icon } from "../icons";
 import { store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
 import { childIcon, childLabel } from "./actions";
-import { selectChild, selectedChild } from "./children";
+import { isDoubleClick, selectChild, selectedChild } from "./children";
 import { swallow, swallowed } from "./click";
 import { setListFocused } from "./keys";
 import { cardLayout, cardListWidth } from "./layout";
@@ -64,7 +64,8 @@ export function childClick(row: ChildRow) {
 		if (swallowed() || !row.child) return;
 		setListFocused(true);
 		selectChild(row.parentKey, row.parentIndex, row.child.key);
-		if ((e.clickCount ?? 1) >= 2) openChildRow(row.parentIndex, row.child);
+		// the row may have been rebuilt between the two clicks (a refresh of the list): GPUI's count then starts again at 1
+		if (isDoubleClick(row.child.key, e.clickCount ?? 1, performance.now())) openChildRow(row.parentIndex, row.child);
 	};
 }
 export const isChildSelected = (row: ChildRow) => !!row.child && selectedChild()?.key === row.child.key;
