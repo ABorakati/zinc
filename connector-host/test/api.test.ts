@@ -87,14 +87,51 @@ describe("api method: writes", () => {
 		expect(sel.json.selection).toEqual({ kind: "library" });
 	});
 
-	test("edits, deletes and openers are refused, and the library is unchanged", async () => {
-		const patch = await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "changed" } } });
-		expect(patch.status).toBe(403);
-		expect((await h.call("api", { http: "DELETE", path: `/api/collections/${collKey}` })).status).toBe(403);
+	test("item, tag and collection edits go through and reach the sync outbox", async () => {
+		const outbox = () => {
+			const db = repo.openDb(dbPath);
+			try {
+				return (db.query("SELECT count(*) n FROM sync_outbox").get() as { n: number }).n;
+			} finally {
+				db.close(true);
+			}
+		};
+		const before = outbox();
+		const patch = await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "Edited in the browser" } } });
+		expect(patch.status).toBe(200);
+		expect((await h.call("api", { http: "GET", path: `/api/items/${itemKey}` })).json.data.title).toBe("Edited in the browser");
+		expect((await h.call("api", { http: "POST", path: `/api/items/${itemKey}/tags`, json: { tags: ["from-browser"] } })).status).toBe(200);
+		const made = await h.call("api", { http: "POST", path: "/api/collections", json: { name: "Made in the browser" } });
+		expect(made.status).toBe(201);
+		expect((await h.call("api", { http: "DELETE", path: `/api/collections/${made.json.key}` })).status).toBe(200);
+		expect(outbox()).toBeGreaterThan(before);
+		// back as it was, for the other tests
+		expect((await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "Fixture article 0" } } })).status).toBe(200);
+		expect((await h.call("api", { http: "DELETE", path: `/api/items/${itemKey}/tags`, json: { tags: ["from-browser"] } })).status).toBe(200);
+	});
+
+	test("routes that act on this computer are refused", async () => {
 		expect((await h.call("api", { http: "POST", path: "/api/open-url", json: { url: "https://example.org" } })).status).toBe(403);
 		expect((await h.call("api", { http: "POST", path: `/api/attachments/${pdfKey}/open-external` })).status).toBe(403);
-		const after = await h.call("api", { http: "GET", path: `/api/items/${itemKey}` });
-		expect(after.json.data.title).toBe("Fixture article 0");
+		expect((await h.call("api", { http: "POST", path: `/api/attachments/${pdfKey}/reveal` })).status).toBe(403);
+		expect((await h.call("api", { http: "PUT", path: "/api/files/storage", json: { mode: "custom" } })).status).toBe(403);
+		expect((await h.call("api", { http: "POST", path: "/api/io/mendeley", json: {} })).status).toBe(403);
+	});
+
+	test("imports and exports that name a file or folder here are refused; text and uploaded bytes are not", async () => {
+		const file = join(ROOT, "source.pdf");
+		const linked = await h.call("api", { http: "POST", path: "/api/add/file", json: { name: "x.pdf", path: file, mode: "linked_file" } });
+		expect(linked.status).toBe(403);
+		expect(linked.json.error).toContain("`path`");
+		expect((await h.call("api", { http: "POST", path: "/api/io/export", json: { format: "ris", dir: ROOT } })).status).toBe(403);
+		expect((await h.call("api", { http: "POST", path: "/api/translate/import", json: { path: file } })).status).toBe(403);
+		const ris = "TY  - JOUR\nTI  - Imported in the browser\nPY  - 2025\nER  - \n";
+		const imp = await h.call("api", { http: "POST", path: "/api/io/import", json: { text: ris, format: "ris", collectionName: null } });
+		expect(imp.status).toBe(200);
+		expect(imp.json.created).toBe(1);
+		const exp = await h.call("api", { http: "POST", path: "/api/io/export", json: { format: "ris", keys: [itemKey] } });
+		expect(exp.status).toBe(200);
+		expect(exp.json.text).toContain("Fixture article 0");
 	});
 
 	test("sync and integrations stay closed even for reads", async () => {
@@ -145,18 +182,17 @@ describe("api method: annotations (the reader's writes)", () => {
 		expect(outbox()).toBeGreaterThan(afterCreate);
 	});
 
-	test("only the annotations route is open: the file, the item and other verbs stay refused", async () => {
-		expect((await h.call("api", { http: "PUT", path: `/api/attachments/${pdfKey}/file`, bytes: new Uint8Array([1, 2, 3]), headers: { "Content-Type": "application/pdf" } })).status).toBe(403);
-		expect((await h.call("api", { http: "POST", path: path(), json: [ann("ANNOTA02")] })).status).toBe(403);
-		expect((await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "x" } } })).status).toBe(403);
+	test("a wrong verb or a path with .. does not write", async () => {
+		expect((await h.call("api", { http: "POST", path: path(), json: [ann("ANNOTA02")] })).status).toBe(405);
 		expect((await h.call("api", { http: "PUT", path: `/api/attachments/../items/${itemKey}/annotations`, json: [] })).status).not.toBe(200);
-		const file = await h.call("api", { http: "GET", path: `/api/attachments/${pdfKey}/file` });
-		expect(Buffer.compare(Buffer.from(file.bytes), Buffer.from(pdfBytes))).toBe(0); // the PDF itself was not touched
+		expect((await h.call("api", { http: "GET", path: path() })).json).toEqual([]);
 	});
 });
 
 describe("api method: changes made by another process", () => {
 	test("`ext` from GET /api/ui/selection moves when another connection commits", async () => {
+		const total = async () => (await h.call("api", { http: "GET", path: "/api/items?sort=title&dir=asc&limit=100" })).json.total as number;
+		const count = await total();
 		const before = (await h.call("api", { http: "GET", path: "/api/ui/selection" })).json.ext;
 		const again = (await h.call("api", { http: "GET", path: "/api/ui/selection" })).json.ext;
 		expect(again).toBe(before);
@@ -165,24 +201,30 @@ describe("api method: changes made by another process", () => {
 		db.close(true);
 		const after = (await h.call("api", { http: "GET", path: "/api/ui/selection" })).json.ext;
 		expect(after).not.toBe(before);
-		const items = await h.call("api", { http: "GET", path: "/api/items?sort=title&dir=asc&limit=100" });
-		expect(items.json.total).toBe(31);
+		expect(await total()).toBe(count + 1);
 	});
 });
 
 describe("apiRefusal", () => {
-	test("reads open, writes closed except the selection", () => {
+	test("library reads and edits open; account routes and routes that act on this computer closed", () => {
 		expect(apiRefusal("GET", "/api/items")).toBeNull();
 		expect(apiRefusal("HEAD", "/api/attachments/ABCD1234/file")).toBeNull();
 		expect(apiRefusal("POST", "/api/ui/selection")).toBeNull();
-		expect(apiRefusal("POST", "/api/ui/reveal")).not.toBeNull();
-		expect(apiRefusal("PUT", "/api/tag-colors")).not.toBeNull();
+		expect(apiRefusal("PATCH", "/api/items/ABCD1234")).toBeNull();
+		expect(apiRefusal("PUT", "/api/tag-colors")).toBeNull();
 		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/annotations")).toBeNull();
-		expect(apiRefusal("DELETE", "/api/attachments/ABCD1234/annotations")).toBeNull();
-		expect(apiRefusal("POST", "/api/attachments/ABCD1234/annotations")).not.toBeNull();
-		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/file")).not.toBeNull();
-		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/annotations/extra")).not.toBeNull();
+		expect(apiRefusal("PUT", "/api/attachments/ABCD1234/file")).toBeNull();
+		expect(apiRefusal("POST", "/api/maintenance/empty-trash")).toBeNull();
+		expect(apiRefusal("POST", "/api/ui/reveal")).not.toBeNull();
+		expect(apiRefusal("POST", "/api/open-url")).not.toBeNull();
+		expect(apiRefusal("POST", "/api/attachments/ABCD1234/open-external")).not.toBeNull();
+		expect(apiRefusal("POST", "/api/files/pick-folder")).not.toBeNull();
+		expect(apiRefusal("GET", "/api/files/settings")).toBeNull();
+		expect(apiRefusal("POST", "/api/io/mendeley")).not.toBeNull();
 		expect(apiRefusal("GET", "/api/sync")).not.toBeNull();
+		expect(apiRefusal("POST", "/api/websync/start")).not.toBeNull();
+		expect(apiRefusal("GET", "/api/integrations")).not.toBeNull();
+		expect(apiRefusal("PUT", "/api/attachments/../items")).not.toBeNull();
 		expect(apiRefusal("GET", "/apix")).not.toBeNull();
 	});
 });
