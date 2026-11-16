@@ -12,6 +12,8 @@ bun gpui-ui/scripts/release.ts --installer <that exe> --notes <file> ...   # sig
 
 `installer.ts` does not rebuild the package, and `release.ts` does not build anything: it hashes the installer you give it, writes a signed manifest, and optionally uploads. The build that users run must already contain the matching public key (below) and be older than the release.
 
+The browser extension (the Zinc Connector) has its own zips, workflow and store steps: see [Releasing the browser extension](extension-release.md).
+
 ## Code signing: not used today
 
 Two different signatures exist. Do not confuse them.
@@ -129,6 +131,16 @@ With `--publish` it runs `gh release create <tag> <installer> <latest.json> --re
 ```
 
 `minVersion` is optional. The signature is Ed25519 over the manifest without `signature`, as canonical JSON: object keys sorted, no whitespace, UTF-8. Every other field is signed, so changing the URL, hash, size, version or notes invalidates it. Unknown fields are rejected. The code is `core/src/update/manifest.ts`.
+
+## The Zinc Connector's feed (`latest-extension.json`)
+
+Unpacked installs of the browser extension cannot update themselves, so the extension (`src/browserExt/updateNotice.js` in the connector repository) checks a signed feed once a day and shows a notice in its save popup. Store installs have an `update_url` in their manifest and skip the check. Pass the unpacked zip to `release.ts`:
+
+```
+bun gpui-ui/scripts/release.ts --extension-zip Zinc-Connector-<version>.zip [--installer <setup.exe>] --publish <owner>/<repo> --dry-run
+```
+
+`--installer` may be left out for a connector-only release. This writes `latest-extension.json` next to `latest.json`, with the same fields (without `minVersion`), the same key and the same signing; `url` is the release asset `Zinc-Connector-<version>.zip` (or `--extension-url`). With `--publish` the zip and the feed are uploaded to the release. The extension embeds the public key at build time: run `bun scripts/gen-update-key.ts <path to gpui-ui/update-pubkey.txt>` in the connector repository before building (an empty key means no notice). The extension compares the feed's `version` with its manifest `version_name` (else `version`), so build it with `version_name` set to the same stamp as the release.
 
 ## The feed and the update flow
 

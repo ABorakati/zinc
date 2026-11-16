@@ -23,8 +23,13 @@
 //       --tag <tag>            the release tag (default v<version>)
 //       --dry-run              with --publish: print the gh command instead of running it
 //       --force                skip the "key matches the public key built into the app" check
+//       --extension-zip <zip>  also write latest-extension.json, the signed feed of the Zinc Connector's unpacked install (the file is
+//                              Zinc-Connector-<version>.zip: the unpacked zip with the pinned key). With --publish the zip and the feed are
+//                              uploaded too. The app packages may then be left out (a connector-only release).
+//       --extension-url <url>  where the zip is downloaded from (default with --publish: the GitHub release asset URL)
 //   Each manifest: { version, releasedAt, notes, url, sha256, size, minVersion?, platform?, signature }, signed with the private key, then
-//   verified. Nothing is uploaded unless --publish is given, and `--publish --dry-run` shows the command only.
+//   verified. latest-extension.json has the same fields (no minVersion or platform), key and signing. Nothing is uploaded unless
+//   --publish is given, and `--publish --dry-run` shows the command only.
 //
 // The private key is read from the path in ZN_UPDATE_KEY and refused if that path is inside this repo. See gpui-ui/UPDATES.md.
 import { createHash } from "node:crypto";
@@ -131,14 +136,22 @@ if (macApp) {
 			die(`cannot tell the version of ${macApp}: no ${basename(macApp)}.version next to it; pass --version <stamp>`),
 	});
 }
-if (!pkgs.length)
+const extZip = arg("extension-zip");
+if (!pkgs.length && !extZip)
 	die(
-		"usage: bun gpui-ui/scripts/release.ts --installer <setup.exe> | --appimage <file> | --mac-app <file.app.zip> (see the header of this file); --keygen <folder> makes the key pair",
+		"usage: bun gpui-ui/scripts/release.ts --installer <setup.exe> | --appimage <file> | --mac-app <file.app.zip> [--extension-zip <zip>] (see the header of this file); --keygen <folder> makes the key pair",
 	);
 for (const p of pkgs) {
 	if (!existsSync(p.file)) die(`no such file: ${p.file}`);
 	if (!parseVersion(p.version)) die(`not a version: ${p.version} (${basename(p.file)})`);
 }
+if (extZip && !existsSync(extZip)) die(`no such extension zip: ${extZip}`);
+// a connector-only release is versioned by --version, else by the zip's name (Zinc-Connector-<version>.zip)
+const extVersion = (): string => {
+	const z = extZip ? /^Zinc-Connector-(.+)\.zip$/i.exec(basename(extZip)) : null;
+	const v = arg("version") ?? (z && parseVersion(z[1]!) ? z[1]! : undefined) ?? packageVersion();
+	return v ?? die(`cannot tell the version of ${extZip}: pass --version <stamp>`);
+};
 
 const keyPath = process.env.ZN_UPDATE_KEY ?? die("ZN_UPDATE_KEY (path to release-key.private.json) is not set");
 if (insideRepo(keyPath)) die(`ZN_UPDATE_KEY points inside the repository (${resolve(keyPath)}). Keep the private key outside it.`);
@@ -176,7 +189,7 @@ const minVersion = arg("min-version");
 if (minVersion && !parseVersion(minVersion)) die(`not a version: ${minVersion}`);
 
 // the release is named after its newest package (they are usually the same stamp, or the same release built on different days)
-const version = pkgs.map((p) => p.version).reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b));
+const version = pkgs.length ? pkgs.map((p) => p.version).reduce((a, b) => (compareVersions(a, b) >= 0 ? a : b)) : extVersion();
 const notesArg = arg("notes");
 const notes = notesArg === undefined ? `Zinc ${version}` : existsSync(notesArg) ? readFileSync(notesArg, "utf8") : notesArg;
 
@@ -231,6 +244,23 @@ for (const p of pkgs) {
 		`wrote ${dest}\n  ${p.platform}  version ${p.version}\n  ${basename(p.file)}  ${size} bytes  sha256 ${sha256}\n  url ${url}`,
 	);
 }
+// The Zinc Connector's feed: the same fields, key and signing, for the unpacked zip. The extension checks it once a day (browserExt/updateNotice.js).
+const extFiles: string[] = [];
+if (extZip) {
+	const url =
+		arg("extension-url") ??
+		(publishRepo
+			? `https://github.com/${publishRepo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(basename(extZip))}`
+			: die("--extension-url <https url of the zip> is required (or --publish <owner/repo>, which implies the GitHub release URL)"));
+	const sha256 = await sha256Of(extZip);
+	const size = statSync(extZip).size;
+	const manifest = await signManifest({ version, releasedAt, notes, url, sha256, size }, jwk);
+	await verifyManifest(JSON.parse(JSON.stringify(manifest)), publicKey);
+	const feed = join(out, "latest-extension.json");
+	writeFileSync(feed, JSON.stringify(manifest, null, 2) + "\n");
+	extFiles.push(resolve(extZip), feed);
+	console.log(`wrote ${feed}\n  extension  version ${version}\n  ${basename(extZip)}  ${size} bytes  sha256 ${sha256}\n  url ${url}`);
+}
 console.log(`signed with public key ${publicKey}`);
 
 // ------------------------------------------------------------------------------------------------------------ --publish
@@ -247,6 +277,7 @@ if (publishRepo) {
 		tag,
 		...pkgs.map((p) => resolve(p.file)),
 		...manifests,
+		...extFiles,
 		...attach.map((f) => resolve(f)),
 		"--repo",
 		publishRepo,
@@ -262,11 +293,14 @@ if (publishRepo) {
 		console.log(`publishing to ${publishRepo} as ${tag} ...`);
 		const r = Bun.spawnSync(cmd, { stdout: "inherit", stderr: "inherit" });
 		if (r.exitCode !== 0) die(`gh release create failed (${r.exitCode})`);
-		console.log(`published. Feed URL (if the repo is public): https://github.com/${publishRepo}/releases/latest/download/latest.json`);
-		console.log("  (Linux and macOS builds read latest-linux-x64.json / latest-darwin-arm64.json from the same place.)");
+		console.log(
+			`published. Feed URL (if the repo is public): https://github.com/${publishRepo}/releases/latest/download/${pkgs.length ? "latest.json" : "latest-extension.json"}`,
+		);
+		if (pkgs.length)
+			console.log("  (Linux and macOS builds read latest-linux-x64.json / latest-darwin-arm64.json from the same place.)");
 	}
 } else {
 	console.log(
-		`not published. Upload ${pkgs.map((p) => basename(p.file)).join(", ")} and ${manifests.map((m) => basename(m)).join(", ")} yourself, or re-run with --publish <owner/repo> (add --dry-run to preview).`,
+		`not published. Upload ${[...pkgs.map((p) => resolve(p.file)), ...manifests, ...extFiles].map((f) => basename(f)).join(", ")} yourself, or re-run with --publish <owner/repo> (add --dry-run to preview).`,
 	);
 }

@@ -6,6 +6,7 @@ import { ago, plural } from "../../shell/net";
 import { syncOwner, syncOwnerNote } from "../../sync/owner";
 import { sync, ZOTERO_LABEL } from "../../sync/state";
 import { webSync } from "../../features/websync/client";
+import { isBrowserLibrary } from "../../shell/libraryMode";
 import { Btn, Kbd, Toggle, Value } from "../controls";
 import { onSettingsShown, registerSection, registerSettings, registerSettingsProvider } from "../registry";
 import { AccountControl, FileCheckControl, FilesControl, GroupsControl, OrgStatusControl, PushControl, SourceControl } from "./sync-org";
@@ -142,7 +143,12 @@ registerSettings([
 		section: "sync",
 		label: "zotero.org account",
 		layout: "block",
-		description: "An API key from your zotero.org account. It is kept in the system's secret store, never in the library.",
+		// a getter: the browser flag is set when the page starts, after this module may first load
+		get description() {
+			return isBrowserLibrary()
+				? "The API key is stored in this browser's extension storage. Only Zinc can read it; it is never sent to web pages."
+				: "An API key from your zotero.org account. It is kept in the system's secret store, never in the library.";
+		},
 		keywords: ["api key", "key", "username", "password", "login", "account", "zotero.org", "connect"],
 		control: () => <AccountControl />,
 	},

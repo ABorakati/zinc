@@ -1,7 +1,9 @@
-// Build the browser demo of the app (web/main.tsx) into <out> (default gpui-ui/out/web-demo):
+// Build the web page of the app into <out> (default gpui-ui/out/web-demo):
 //   bun web/build.ts [--out <dir>] [--db <demo library.sqlite>] [--styles <collection-style.json>]
-// or the Zinc Connector's library page (web/extension.tsx) into gpui-ui/dist-extension:
+// or the Zinc Connector's library page into gpui-ui/dist-extension:
 //   bun web/build.ts --target extension [--out <dir>] [--docworker]
+// Both are the app's one entry, src/main.tsx. What differs is src/platform.web.ts, which stands in for src/platform.ts: when a relative
+// import resolves to X.ts or X.tsx and X.web.ts or X.web.tsx sits next to it, every browser build uses the sibling (see `shims` below).
 // Node and Bun built-ins map to the browser stand-ins in web/shims (an in-memory file system, path, os, url, a hash) and to
 // web/sqlite.ts (bun:sqlite on SQLite WebAssembly); anything else Node-only becomes a stub that throws if it is ever called, with
 // exactly the names the code imports (learned from the bundler's errors). The demo library is copied, never the real one.
@@ -15,9 +17,9 @@ const arg = (n: string) => {
 	const i = process.argv.indexOf(`--${n}`);
 	return i >= 0 ? process.argv[i + 1] : undefined;
 };
-// --target web (default): the browser demo on a demo library. --target extension: the library page of the Zinc Connector
-// (web/extension.tsx), whose data comes from the connector's native host; written to gpui-ui/dist-extension for the connector's
-// build to copy. Manifest V3 extension pages run no inline script and forbid remote code, so that build has no service worker,
+// --target web (default): the web page (the demo library with ?demo, else the page's own library). --target extension: the library
+// page of the Zinc Connector, whose data comes from the connector's native host (or the browser library); written to
+// gpui-ui/dist-extension for the connector's build to copy. Manifest V3 extension pages run no inline script and forbid remote code, so that build has no service worker,
 // no web-app manifest and no inline <script>, and every .wasm and worker file is inside the output.
 const target = arg("target") ?? "web";
 if (target !== "web" && target !== "extension") throw new Error(`--target must be web or extension, not ${target}`);
@@ -42,29 +44,64 @@ const SHIMS: Record<string, string> = {
 	url: "shims/small.ts",
 	"node:crypto": "shims/small.ts",
 	crypto: "shims/small.ts",
+	"node:zlib": "shims/zlib.ts",
+	zlib: "shims/zlib.ts",
 	"bun:sqlite": "sqlite.ts",
 };
-// util, stream, events, buffer, assert, string_decoder, querystring and timers are left to Bun's own browser polyfills (its zlib
-// polyfill lacks the *Sync functions the core imports, so zlib stays a stub)
+// util, stream, events, buffer, assert, string_decoder, querystring and timers are left to Bun's own browser polyfills. zlib is not:
+// Bun's polyfill lacks the *Sync functions the core imports, so zlib maps to shims/zlib.ts (on fflate)
 const POLYFILLED = /^(node:)?(util|stream|events|buffer|assert|string_decoder|querystring|timers)$/;
 const BUILTIN =
 	/^(node:|bun:|bun$|child_process$|worker_threads$|http$|https$|net$|module$|readline$|tty$|v8$|perf_hooks$|dns$|tls$|process$|vm$|webview-bun$)/;
 const names = new Map<string, Set<string>>();
-const READER_PDF = join(root, "src", "reader", "pdf");
-const STRUCTURE_LOAD = join(root, "src", "reader", "structure", "load");
 // layout analysis needs Zotero's document worker: its build (bash scripts/build-docworker.sh) and its structured-document-text source
 const DOCWORKER = join(root, "..", "vendor", "document-worker");
 const HAVE_STRUCTURE =
 	existsSync(join(DOCWORKER, "build", "worker.js")) &&
 	existsSync(join(DOCWORKER, "structured-document-text", "src", "pack", "reader.js"));
+// the build carries the worker (30 MB) and the loader that starts it: the web page always (when vendor/document-worker is there), the
+// extension's library page only with --docworker (PDFs in the extension are phase 3: docs/design/web-connector-wasm.md). Read by
+// src/reader/structure/load.web.ts; without it the reader says layout analysis is unavailable.
+const DOCWORKER_ON = HAVE_STRUCTURE && (!EXT || process.argv.includes("--docworker"));
+// compile-time constants of the app's browser code (src/platform.web.ts, src/reader/structure/load.web.ts)
+const DEFINE = {
+	"process.env.NODE_ENV": '"production"',
+	__ZN_EXTENSION__: String(EXT),
+	__ZN_DOCWORKER__: String(DOCWORKER_ON),
+};
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
+const shims: import("bun").BunPlugin = {
+	name: "web-demo-shims",
+	setup(b) {
+		b.onResolve({ filter: /.*/ }, (a) => (SHIMS[a.path] ? { path: join(here, SHIMS[a.path]!) } : undefined));
+		// the `X.web.ts` rule: a relative import of X (X.ts or X.tsx) gets X.web.ts / X.web.tsx instead when one sits next to it. The
+		// desktop (Bun) never looks for them. src/platform.web.ts (the start-up), src/reader/pdf.web.ts (PDFium WebAssembly in place of
+		// zn_pdf.dll over bun:ffi), src/reader/structure/load.web.ts (the document worker as a Web Worker, not a Bun Worker).
+		b.onResolve({ filter: /^\.\.?\// }, (a) => {
+			if (!a.importer || a.importer.includes("node_modules")) return undefined;
+			const base = resolve(dirname(a.importer), a.path.replace(/\.(tsx?|jsx?)$/, ""));
+			for (const ext of [".ts", ".tsx"]) if (existsSync(base + ".web" + ext)) return { path: base + ".web" + ext };
+			return undefined;
+		});
+		b.onResolve({ filter: BUILTIN }, (a) => (POLYFILLED.test(a.path) ? undefined : { path: a.path, namespace: "stub" }));
+		b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => {
+			const list = [...(names.get(a.path) ?? [])];
+			const body = list.map((n) => `export const ${n} = __stub(${JSON.stringify(`${a.path} ${n}`)});`).join("\n");
+			return {
+				contents: `const __stub = (n) => new Proxy(function () { throw new Error("not available in the browser demo: " + n); }, { get: (t, k) => (k === "prototype" ? {} : undefined) });\n${body}\nexport default {};`,
+				loader: "js",
+			};
+		});
+	},
+};
 let result: Awaited<ReturnType<typeof Bun.build>> | undefined;
 for (let pass = 0; pass < 80; pass++) {
 	result = await Bun.build({
-		// globals.ts as its own entry, run by the page before main.js: shared chunks would otherwise run before it sets `process`
-		entrypoints: [join(here, "globals.ts"), join(here, EXT ? "extension.tsx" : "main.tsx")],
+		// globals.ts as its own entry, run by the page before main.js: shared chunks would otherwise run before it sets `process`.
+		// main.js is the app's own entry for both targets (src/main.tsx; src/platform.web.ts stands in for src/platform.ts).
+		entrypoints: [join(here, "globals.ts"), join(root, "src", "main.tsx")],
 		outdir: out,
 		target: "browser",
 		format: "esm",
@@ -72,35 +109,8 @@ for (let pass = 0; pass < 80; pass++) {
 		minify: !process.argv.includes("--debug"),
 		throw: false,
 		naming: { entry: "[name].js", chunk: "chunk-[hash].js", asset: "[name]-[hash].[ext]" },
-		define: { "process.env.NODE_ENV": '"production"' },
-		plugins: [
-			solidPlugin,
-			{
-				name: "web-demo-shims",
-				setup(b) {
-					b.onResolve({ filter: /.*/ }, (a) => (SHIMS[a.path] ? { path: join(here, SHIMS[a.path]!) } : undefined));
-					// the reader's PDF engine: zn_pdf.dll over bun:ffi on the desktop, PDFium WebAssembly here (web/pdf.ts)
-					b.onResolve({ filter: /(^|\/)pdf$/ }, (a) =>
-						a.importer && resolve(dirname(a.importer), a.path) === READER_PDF ? { path: join(here, "pdf.ts") } : undefined,
-					);
-					// the reader's layout analysis: Zotero's document worker in a Bun Worker on the desktop, a Web Worker here (web/structure-load.ts)
-					b.onResolve({ filter: /(^|\/)load$/ }, (a) =>
-						a.importer && resolve(dirname(a.importer), a.path) === STRUCTURE_LOAD
-							? { path: join(here, HAVE_STRUCTURE ? "structure-load.ts" : "structure-stub.ts") }
-							: undefined,
-					);
-					b.onResolve({ filter: BUILTIN }, (a) => (POLYFILLED.test(a.path) ? undefined : { path: a.path, namespace: "stub" }));
-					b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => {
-						const list = [...(names.get(a.path) ?? [])];
-						const body = list.map((n) => `export const ${n} = __stub(${JSON.stringify(`${a.path} ${n}`)});`).join("\n");
-						return {
-							contents: `const __stub = (n) => new Proxy(function () { throw new Error("not available in the browser demo: " + n); }, { get: (t, k) => (k === "prototype" ? {} : undefined) });\n${body}\nexport default {};`,
-							loader: "js",
-						};
-					});
-				},
-			},
-		],
+		define: DEFINE,
+		plugins: [solidPlugin, shims],
 	});
 	if (result.success) break;
 	let learned = 0;
@@ -120,6 +130,77 @@ if (!result?.success) {
 	for (const l of result?.logs ?? []) console.error(String(l).slice(0, 400));
 	throw new Error("web demo build failed");
 }
+// the PDF render worker (web/pdf-worker.ts, started by web/pdf.ts): a module worker script of its own, in one file (no shared
+// chunks to import), next to pdfium.wasm which it loads itself
+{
+	const worker = await Bun.build({
+		entrypoints: [join(here, "pdf-worker.ts")],
+		outdir: out,
+		target: "browser",
+		format: "esm", // a module worker: the PDFium loader reads import.meta.url
+		minify: !process.argv.includes("--debug"),
+		throw: false,
+		naming: { entry: "[name].js", asset: "[name]-[hash].[ext]" },
+		define: DEFINE,
+		plugins: [shims],
+	});
+	if (!worker.success) {
+		for (const l of worker.logs) console.error(String(l).slice(0, 400));
+		throw new Error("PDF worker build failed");
+	}
+}
+
+// the browser library (web/browser-db, extension build only): the offscreen document that owns the database (offscreen.html +
+// offscreen.js) and the module worker it starts (db-worker.js: the core and SQLite WebAssembly on the opfs-sahpool VFS, one file, no
+// shared chunks, next to sqlite3.wasm which it loads itself). Built like the page's bundle: Node-only imports become stubs.
+if (EXT) {
+	const bdb = join(here, "browser-db");
+	for (const entry of ["db-worker", "offscreen"]) {
+		let r: Awaited<ReturnType<typeof Bun.build>> | undefined;
+		for (let pass = 0; pass < 80; pass++) {
+			r = await Bun.build({
+				entrypoints: [join(bdb, `${entry}.ts`)],
+				outdir: out,
+				target: "browser",
+				format: "esm", // a module worker: the SQLite loader reads import.meta.url
+				minify: !process.argv.includes("--debug"),
+				throw: false,
+				naming: { entry: "[name].js", asset: "[name]-[hash].[ext]" },
+				define: DEFINE,
+				plugins: [shims],
+			});
+			if (r.success) break;
+			let learned = 0;
+			for (const l of r.logs) {
+				const m = /No matching export in "stub:([^"]+)" for import "([^"]+)"/.exec(String(l));
+				if (!m) continue;
+				const s = names.get(m[1]!) ?? new Set<string>();
+				if (!s.has(m[2]!)) {
+					s.add(m[2]!);
+					learned++;
+				}
+				names.set(m[1]!, s);
+			}
+			if (!learned) break;
+		}
+		if (!r?.success) {
+			for (const l of r?.logs ?? []) console.error(String(l).slice(0, 400));
+			throw new Error(`browser library build failed (${entry})`);
+		}
+	}
+	// MV3: no inline script
+	writeFileSync(
+		join(out, "offscreen.html"),
+		`<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Zinc library database</title></head>
+<body>
+<script type="module" src="offscreen.js"></script>
+</body>
+</html>
+`,
+	);
+}
 
 // what main.tsx fetches next to the bundle: the demo library, the Lucide icons (src/icons.tsx reads them from disk), the collection
 // colours and icons
@@ -135,7 +216,7 @@ cpSync(join(root, "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm"),
 // Zotero's document worker (layout analysis; web/structure-load.ts starts docworker/boot.js the first time a PDF is analysed).
 // Optional: without vendor/document-worker the reader works and says layout analysis is unavailable. The extension build leaves it
 // out unless --docworker is given (30 MB, and PDFs in the extension are phase 3: docs/design/web-connector-wasm.md).
-if (HAVE_STRUCTURE && (!EXT || process.argv.includes("--docworker"))) {
+if (DOCWORKER_ON) {
 	cpSync(join(DOCWORKER, "build"), join(out, "docworker"), { recursive: true });
 	writeFileSync(
 		join(out, "docworker", "boot.js"),
@@ -156,11 +237,52 @@ if (EXT) {
 </head>
 <body>
 <script type="module" src="globals.js"></script>
-<script type="module" src="extension.js"></script>
+<script type="module" src="main.js"></script>
 </body>
 </html>
 `,
 	);
+	// Zotero's reader for EPUBs and web snapshots (reader-host), a page of its own: library/reader/index.html?attachment=<key>&host=<name>
+	// opens in a new tab (web/extension.tsx). Copied from reader-host/dist (--reader <dir> to pick another build), minus the document
+	// worker (30 MB, layout analysis of PDFs) and pdf/ (PDF.js, only for PDFs, which open in the GPUI reader). host.js is rebuilt from
+	// reader-host/src (it needs vendor/ for the structured-document-text version) and zn-bridge.js (web/reader-tab) is loaded first:
+	// it sends host.js's /api requests over native messaging to the host named by ?host=. No inline script anywhere.
+	const readerDist = resolve(arg("reader") ?? join(root, "..", "reader-host", "dist"));
+	if (existsSync(join(readerDist, "reader.js")) && !process.argv.includes("--no-reader")) {
+		const rdir = join(out, "reader");
+		cpSync(readerDist, rdir, {
+			recursive: true,
+			filter: (s) => {
+				const r = relative(readerDist, s).replaceAll("\\", "/");
+				return !/^(document-worker|pdf|reader\.html|index\.html|host\.js)(\/|$)/.test(r);
+			},
+		});
+		const rbuild = async (entry: string, outName: string, extra: Partial<Parameters<typeof Bun.build>[0]> = {}) => {
+			const r = await Bun.build({
+				entrypoints: [entry],
+				outdir: rdir,
+				target: "browser",
+				format: "iife",
+				minify: !process.argv.includes("--debug"),
+				throw: false,
+				naming: outName,
+				...extra,
+			});
+			if (!r.success) {
+				for (const l of r.logs) console.error(String(l).slice(0, 400));
+				throw new Error(`reader build failed: ${entry}`);
+			}
+		};
+		await rbuild(join(root, "..", "reader-host", "src", "host.js"), "host.js");
+		await rbuild(join(here, "reader-tab", "zn-bridge.ts"), "zn-bridge.js");
+		const page = readFileSync(join(root, "..", "reader-host", "src", "index.html"), "utf8");
+		if (!page.includes(`<script src="reader.js"></script>`))
+			throw new Error("reader-host/src/index.html changed: put zn-bridge.js before reader.js");
+		writeFileSync(
+			join(rdir, "index.html"),
+			page.replace(`<script src="reader.js"></script>`, `<script src="zn-bridge.js"></script>\n\t<script src="reader.js"></script>`),
+		);
+	} else console.log("extension build: reader-host/dist not found (or --no-reader), EPUBs and snapshots will not open in a tab");
 	const files: string[] = [];
 	const walk = (d: string) => {
 		for (const f of readdirSync(d, { withFileTypes: true })) {

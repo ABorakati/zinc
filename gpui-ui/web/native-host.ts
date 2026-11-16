@@ -9,6 +9,21 @@
 //   <- {t:"res", id, status, headers, n}, then n x {t:"rc", id, seq, data}   (base64 body chunks, each frame under 1 MB)
 
 export const HOST_NAME = "com.zotero_next.connector_host";
+/** What a test extension (manifest field zinc_test: true; the headless checks make these) uses in place of the real host name. Registered nowhere. */
+export const TEST_HOST_NAME = "com.zotero_next.connector_host_unregistered_test";
+/**
+ * The host a page talks to: ?host=<name> when it looks like a Zinc host name, else the installed host (HOST_NAME). A test extension
+ * never gets the installed host: Chrome for Testing also reads the real host's registration under HKCU\Software\Google\Chrome
+ * (see web/check-safety.ts), so there, no ?host= (or ?host= naming the real host) means TEST_HOST_NAME.
+ */
+export function resolveHostName(search: string, isTestExtension: boolean): string {
+	const param = new URLSearchParams(search).get("host");
+	// an explicit, valid ?host= is used as given (a check names its own host; web/check-safety.ts refuses to start one that could
+	// reach a registered host). Without one, a test extension never falls back to the real name. (Not a comparison with HOST_NAME:
+	// a check's copy of the build rewrites that literal to the check's own host name.)
+	if (param && /^com\.zotero_next\.[a-z0-9_.]+$/.test(param)) return param;
+	return isTestExtension ? TEST_HOST_NAME : HOST_NAME;
+}
 /** A body up to this size goes in the request frame; larger ones as `up` frames of UPLOAD_CHUNK bytes. */
 const INLINE_BYTES = 256 * 1024;
 const UPLOAD_CHUNK = 1024 * 1024;
@@ -43,6 +58,12 @@ const NULL_BODY = new Set([101, 204, 205, 304]);
 export function nativeApiTransport(
 	connect: () => NativePort,
 	lastError: () => string | undefined = () => undefined,
+	opts: {
+		/** a frame that answers no request: the browser library's {t:"changed", dataVersion} */
+		onNotice?: (m: any) => void;
+		/** what the other end is called in the error when it goes away (default: the Zinc Connector host) */
+		peer?: string;
+	} = {},
 ): (req: Request) => Promise<Response> {
 	let port: NativePort | null = null;
 	let nextId = 1;
@@ -66,6 +87,10 @@ export function nativeApiTransport(
 		const me = connect();
 		port = me;
 		me.onMessage.addListener((m) => {
+			if (m?.t === "changed") {
+				opts.onNotice?.(m);
+				return;
+			}
 			const p = pending.get(m?.id);
 			if (!p) return;
 			if (m.t === "res") {
@@ -79,10 +104,11 @@ export function nativeApiTransport(
 		me.onDisconnect.addListener(() => {
 			if (port === me) port = null;
 			const why = lastError() ?? "disconnected";
+			const peer = opts.peer ?? "The Zinc Connector host";
 			const err = new Error(
 				/not found|forbidden|not allowed/i.test(why)
-					? `The Zinc Connector host is not installed or does not allow this extension (${why})`
-					: `The Zinc Connector host stopped (${why})`,
+					? `${peer} is not installed or does not allow this extension (${why})`
+					: `${peer} stopped (${why})`,
 			);
 			for (const p of pending.values()) p.reject(err);
 			pending.clear();

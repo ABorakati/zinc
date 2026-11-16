@@ -116,7 +116,7 @@ if (!flag("no-connector")) {
 		.digest("hex")
 		.slice(0, 32);
 	const extId = [...hex].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
-	const psId = /\$ExtensionId = "([a-p]{32})"/.exec(readFileSync(join(connStage, "install.ps1"), "utf8"))?.[1];
+	const psId = /"unpacked"\s*=\s*"([a-p]{32})"/.exec(readFileSync(join(connStage, "install.ps1"), "utf8"))?.[1];
 	if (extId !== psId) throw new Error(`extension id from the manifest key (${extId}) differs from install.ps1's default (${psId})`);
 	console.log(
 		`browser connector: extension ${man.name} ${man.version}, id ${extId}, host ${(statSync(join(connStage, "zotero-next-host.exe")).size / 1048576).toFixed(0)} MB`,

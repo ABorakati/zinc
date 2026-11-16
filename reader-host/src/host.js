@@ -10,6 +10,10 @@ const AUTHOR_NAME = params.get("author") || "Me";
 const DOCUMENT_WORKER_BASE = "document-worker/";
 const SDT_CACHE = "zotero-next-sdt-v1";
 
+// Every request to /api/... goes through here. The browser extension's bridge (zn-bridge.js, loaded first) sets globalThis.znApiFetch to
+// answer them over native messaging; elsewhere it is not set and this is plain fetch, so the desktop app is unchanged.
+const apiFetch = (input, init) => (globalThis.znApiFetch || fetch)(input, init);
+
 const CONTENT_TYPES = { pdf: "application/pdf", epub: "application/epub+zip", snapshot: "text/html" };
 
 function postToParent(msg) {
@@ -28,7 +32,7 @@ function showError(msg) {
 }
 
 async function api(path, init) {
-	let res = await fetch(path, init);
+	let res = await apiFetch(path, init);
 	if (!res.ok) throw new Error(`${init?.method || "GET"} ${path} -> ${res.status}`);
 	return res;
 }
@@ -162,7 +166,8 @@ async function cachePut(size, bytes) {
 function makeGetSDTPack(type, fileBuf) {
 	return async function getSDTPack({ onProgress } = {}) {
 		let contentType = CONTENT_TYPES[type];
-		if (!contentType) return { ok: false, reason: "unavailable" };
+		// the extension's copy of the reader has no document worker (30 MB): reading mode is not offered there
+		if (!contentType || globalThis.znApiFetch) return { ok: false, reason: "unavailable" };
 		let packInfo = { packVersion: SDT_PACK_VERSION, schemaMajorVersion: Number(SDT_SCHEMA_VERSION.split(".")[0]) };
 		try {
 			let size = fileBuf.byteLength;
@@ -199,7 +204,7 @@ function flushSave(keepalive = false) {
 	if (!pendingSave.size) return;
 	let batch = [...pendingSave.values()];
 	pendingSave.clear();
-	fetch(API + "/annotations", {
+	apiFetch(API + "/annotations", {
 		method: "PUT",
 		keepalive,
 		headers: { "Content-Type": "application/json" },
@@ -220,7 +225,7 @@ function queueSave(annotations) {
 function deleteAnnotations(ids) {
 	for (let id of ids) pendingSave.delete(id);
 	if (!ids.length) return;
-	fetch(API + "/annotations", {
+	apiFetch(API + "/annotations", {
 		method: "DELETE",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ ids }),
@@ -235,7 +240,7 @@ function flushViewState(keepalive = false) {
 	if (!pendingViewState) return;
 	let state = pendingViewState;
 	pendingViewState = null;
-	fetch(API + "/view-state", {
+	apiFetch(API + "/view-state", {
 		method: "PUT",
 		keepalive,
 		headers: { "Content-Type": "application/json" },
@@ -265,7 +270,7 @@ addEventListener("message", async (e) => {
 			batch = [...pendingSave.values()];
 			pendingSave.clear();
 			jobs.push(
-				fetch(API + "/annotations", {
+				apiFetch(API + "/annotations", {
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(batch),
@@ -276,7 +281,11 @@ addEventListener("message", async (e) => {
 			state = pendingViewState;
 			pendingViewState = null;
 			jobs.push(
-				fetch(API + "/view-state", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) }),
+				apiFetch(API + "/view-state", {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(state),
+				}),
 			);
 		}
 		clearTimeout(saveTimer);
@@ -380,6 +389,15 @@ async function main() {
 		onChangeSidebarWidth() {},
 		onChangeSidebarView() {},
 	});
+	// In the browser extension a page's CSP forbids eval, which snapshots' Dark Reader theme needs (it is eval'd into the frame): use the
+	// reader's static dark theme there. The view reads the flag when it themes the frame, which happens after its async load.
+	if (globalThis.znApiFetch) {
+		try {
+			window._reader._primaryView._isDynamicThemeSupported = false;
+		} catch (e) {
+			console.warn("static theme", e);
+		}
+	}
 	// follow Settings > Appearance (other document -> storage event); "system" hands the choice back to the OS
 	window.addEventListener("storage", (e) => {
 		if (e.key !== "zn.theme" && e.key !== null) return;

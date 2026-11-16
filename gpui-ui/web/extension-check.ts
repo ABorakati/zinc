@@ -2,9 +2,11 @@
 //   bun web/extension-check.ts --ext <connector build/manifestv3> [--chrome <Chrome for Testing chrome.exe>] [--work <dir>] [--keep]
 // 1. Builds a fixture library (web/demo-library.ts: public papers, no personal data) in <work>/library and compiles the native host
 //    to <work>/host/zinc-e2e-host.exe.
-// 2. Registers that host under a name of its own (com.zotero_next.connector_host_e2e) in HKCU\Software\Chromium, where Chrome for
-//    Testing looks. Chrome's own key (Software\Google\Chrome) and the installed host are never touched, and the page is opened
-//    with ?host=<that name>, so it cannot reach the real library.
+// 2. Registers that host under a name of its own (com.zotero_next.connector_host_e2e) in HKCU\Software\Chromium. Chrome for Testing
+//    also reads HKCU\Software\Google\Chrome, where the installed host is registered, so the extension loaded is a COPY of the
+//    build (<work>/ext) whose default host name is registered nowhere, the page is opened with ?host=<that name>, and the check
+//    refuses to start Chrome if anything it loads could reach a Google-registered name (web/check-safety.ts). Nothing is written
+//    under the Google key.
 // 3. Loads the extension in a fresh headless profile (<work>/profile) over CDP, opens library/library.html, and checks: the
 //    host answers for the fixture, the list loads the fixture's items, a collection opens, an item's details load, and an item
 //    written to the library by this process (another program, as the desktop app would be) shows up. Screenshots: <work>/shots.
@@ -14,21 +16,20 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as repo from "../../core/src/db";
+import { assertSafeToStart, makeConnectorTestCopy } from "./check-safety";
 
 const arg = (n: string) => {
 	const i = process.argv.indexOf(`--${n}`);
 	return i >= 0 ? process.argv[i + 1] : undefined;
 };
-const EXT = resolve(arg("ext") ?? join(homedir(), "zotero-next-connector", "build", "manifestv3"));
+const EXT_BUILD = resolve(arg("ext") ?? join(homedir(), "zotero-next-connector", "build", "manifestv3"));
 const WORK = resolve(arg("work") ?? join(tmpdir(), "zinc-extension-check"));
 const KEEP = process.argv.includes("--keep");
 const ROOT = resolve(import.meta.dir, "..", "..");
 const HOST_NAME = "com.zotero_next.connector_host_e2e";
-// Chrome for Testing (151) looks hosts up under Software\Chromium, not under its own key nor Chrome's (Software\Google\Chrome):
-// a run with the host registered under "Google\Chrome for Testing" alone does not find it. So a test profile can only reach
-// hosts registered under Chromium, and the real host is never registered there.
+// Chrome for Testing reads hosts under Software\Chromium AND Software\Google\Chrome (where the real host is): only the Chromium key is written.
 const REG_KEYS = [`HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`];
-const CDP_PORT = 9341;
+const CDP_PORT = Number(arg("port") ?? 9341);
 
 function findChrome(): string {
 	const given = arg("chrome");
@@ -52,11 +53,13 @@ const check = (name: string, ok: boolean, detail: string) => {
 	console.log(`${ok ? "PASS" : "FAIL"} ${name}: ${detail}`);
 };
 
-if (!existsSync(join(EXT, "manifest.json")) || !existsSync(join(EXT, "library", "library.html")))
-	throw new Error(`${EXT} is not a connector build with library/library.html`);
+if (!existsSync(join(EXT_BUILD, "manifest.json")) || !existsSync(join(EXT_BUILD, "library", "library.html")))
+	throw new Error(`${EXT_BUILD} is not a connector build with library/library.html`);
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(join(WORK, "host"), { recursive: true });
 mkdirSync(join(WORK, "shots"), { recursive: true });
+const EXT = join(WORK, "ext");
+makeConnectorTestCopy(EXT_BUILD, EXT); // no native host by default: the real name is replaced
 
 // 1. fixture library and host
 const libDir = join(WORK, "library");
@@ -94,9 +97,10 @@ writeFileSync(
 		2,
 	),
 );
-for (const k of REG_KEYS) run(["reg", "add", k, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], WORK);
 
 const profile = join(WORK, "profile");
+assertSafeToStart({ extDir: EXT, hostNames: [HOST_NAME] });
+for (const k of REG_KEYS) run(["reg", "add", k, "/ve", "/t", "REG_SZ", "/d", manifestPath, "/f"], WORK); // the test host, under the Chromium key only
 const chrome = spawn(
 	findChrome(),
 	[

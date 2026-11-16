@@ -1,5 +1,7 @@
-// node:path for the browser demo: forward-slash paths, accepting backslashes and drive letters as the Windows app's code builds them.
-const norm = (s: string) => s.replace(/\\/g, "/");
+// node:path for the browser builds: POSIX rules for "/"-rooted paths (/opfs/...): case-sensitive, a backslash is an ordinary character.
+// Paths that look like Windows ones (a drive letter or a UNC prefix) still get their backslashes read as separators.
+const isWin = (s: string) => /^([a-zA-Z]:|\\\\)/.test(s);
+const norm = (s: string) => (isWin(s) ? s.replace(/\\/g, "/") : s);
 export const sep = "/";
 export const delimiter = ";";
 export function normalize(p: string): string {
@@ -14,7 +16,7 @@ export function normalize(p: string): string {
 	return (abs ? "/" : "") + out.join("/") || (abs ? "/" : ".");
 }
 export const join = (...parts: string[]) => normalize(parts.filter(Boolean).map(norm).join("/"));
-export const isAbsolute = (p: string) => /^([a-zA-Z]:)?[\\/]/.test(p);
+export const isAbsolute = (p: string) => p.startsWith("/") || (isWin(p) && /^([a-zA-Z]:)?[\\/]/.test(p));
 export const resolve = (...parts: string[]) => {
 	let r = "";
 	for (const p of parts) if (p) r = isAbsolute(p) ? p : r ? `${r}/${p}` : p;
@@ -38,7 +40,8 @@ export const relative = (from: string, to: string) => {
 	const a = resolve(from).split("/").filter(Boolean),
 		b = resolve(to).split("/").filter(Boolean);
 	let i = 0;
-	while (i < a.length && i < b.length && a[i]!.toLowerCase() === b[i]!.toLowerCase()) i++;
+	const win = isWin(from) || isWin(to);
+	while (i < a.length && i < b.length && (win ? a[i]!.toLowerCase() === b[i]!.toLowerCase() : a[i] === b[i])) i++;
 	return [...a.slice(i).map(() => ".."), ...b.slice(i)].join("/");
 };
 export const parse = (p: string) => ({

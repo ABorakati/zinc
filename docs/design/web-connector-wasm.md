@@ -127,9 +127,9 @@ Not verified on this branch: the app in a real window acting on a reveal (only t
 | 0 (done here) | App acts on reveal requests; host method `revealInApp`. | done |
 | 1. Open in Zinc | Extension: "Open in Zinc" after a save (check that the save session can return the new item's key) and on the toolbar menu. Host: raise the app window (`AllowSetForegroundWindow`). Installer: register `zinc://`. App: forward a `zinc://` argument to a running copy, then exit. | 2–3 days |
 | 2. Library in the extension | A `--target extension` mode for `gpui-ui/web/build.ts`: no inline script, no service worker, a manifest with `wasm-unsafe-eval`, and an entry that sets `setDirect` to the native-messaging transport instead of loading a demo database. Host: a method that forwards `/api/*` to `handleApi` (allow-list, chunked responses, uploads through the existing `up` frames). Fix `shell/net.ts` `call()`. Notice database changes from the app (`PRAGMA data_version`, as `ui.ts` does). Start read-mostly, then enable editing. | 1.5–2 weeks |
-| 3. PDFs | Attachment bytes through the host. Render in Web Workers. Save annotations through the same API. Decide whether to ship the document worker (+14 MB zipped). | 1 week |
+| 3. PDFs (done, section 8) | Attachment bytes through the host. Render in Web Workers. Save annotations through the same API. Decide whether to ship the document worker (+14 MB zipped): not shipped. | 1 week |
 | 4. macOS and Linux | Host builds and manifests, `zinc://` registration, install steps. | 3–5 days |
-| 5. Optional: Zinc on the web | Option C: the Zotero Web API in the page, OPFS storage, API-key handling. A separate product decision. | 3–6 weeks |
+| 5. Zinc in the browser | Option C, now chosen: the extension as a full app with its own library in OPFS, synced with zotero.org. Design: `browser-edition.md`. | about 4 weeks |
 
 Main risks: a GPUI code path that needs `eval` or blob workers (blocked by MV3); WebGPU missing on some machines; store review of a 20 MB WebAssembly file (check the store rules on compiled code before submitting); Chrome ending an app that the host started.
 
@@ -146,7 +146,7 @@ What was built:
 | Outside changes | `gpui-ui/src/shell/outsideChanges.ts` (+ test) | Polls `ext` (`PRAGMA data_version`) from `GET /api/ui/selection` every 2 s, while the tab is visible. When it moves, it calls `store.refresh()`. |
 | Extension build | `gpui-ui/web/extension.tsx`, `bun web/build.ts --target extension` | Writes `gpui-ui/dist-extension/` (87 files, 30.5 MB): `library.html` with module scripts only. No inline script, service worker or web-app manifest. Every `.wasm` file is inside. The document worker is left out unless `--docworker` is given. |
 | Connector | `scripts/build-win.ts` step 6, `src/browserExt/background.js`, `manifest-v3.json` | The build copies the page into `library/` (from `--library <dir>`, `ZINC_LIBRARY_DIST`, or `../zotero-next/gpui-ui/dist-extension`). The toolbar button's right-click menu gets "Open Zinc library", which opens the page or focuses an open one. The item is hidden when the build has no page. `extension_pages` CSP: `script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`. Package: 35.6 MB unpacked. |
-| Headless check | `gpui-ui/web/extension-check.ts` | Builds a fixture library (`web/demo-library.ts`) and compiles the host. Registers it as `com.zotero_next.connector_host_e2e` under `HKCU\Software\Chromium` only. That is where Chrome for Testing 151 looks: a run with the host registered under its own `Google\Chrome for Testing` key did not find it. `Software\Google\Chrome` is never touched. The check opens the page with `?host=` that name. It first confirms which library the host serves. Then it checks the list, a collection, an item's details and an outside write, takes screenshots, and removes the registration, the profile and the host. |
+| Headless check | `gpui-ui/web/extension-check.ts` | Builds a fixture library (`web/demo-library.ts`) and compiles the host. Registers it as `com.zotero_next.connector_host_e2e` under `HKCU\Software\Chromium` and never writes `Software\Google\Chrome`. Chrome for Testing reads both keys, and the installed host (`com.zotero_next.connector_host`, the user's real library) is registered under the Google one. So every headless check calls `web/check-safety.ts` before it starts Chrome: it loads a test copy of the connector (real host name replaced by an unregistered one) or an extension whose manifest has `zinc_test: true` (the library pages then never default to the real name), and it refuses to start if anything it loads could reach a name registered under the Google key. The check opens the page with `?host=` that name. It first confirms which library the host serves. Then it checks the list, a collection, an item's details and an outside write, takes screenshots, and removes the registration, the profile and the host. |
 
 Result of the headless check (Chrome for Testing 151): 7/7 checks passed. The fixture's 19 items loaded, "Thesis" opened with 6 items, the item pane showed "Attention Is All You Need", and an item written by another process appeared within the 2 s poll. There were no CSP violations and no page errors. The only refused requests were the sync status poll (403).
 
@@ -201,4 +201,78 @@ Not verified, or left:
 - Tags and a note on the saved item: the old in-page window had them, the popup does not yet. `updateSession` takes both, so it is UI work only.
 - Saving several items from a "Select items" page: the progress rows and Remove work per session, but no multi-item page was tried.
 - The popup's strings are English only (upstream's are translated).
-- Open item needs the desktop app. The browser library page cannot open PDFs yet (phase 3).
+- Open item needs the desktop app. The browser library page opens PDFs since phase 3 (section 8), but the popup's Open item still goes to the app.
+
+## 8. Phase 3 built: PDFs in the library tab
+
+Status: 2026-11-12, branch `claude/connector-library-05fc7d`. No connector changes were needed.
+
+| Piece | Where | What it does |
+|---|---|---|
+| File bytes | `gpui-ui/web/extension.tsx` (`setFileFetcher`) | The reader fetches `GET /api/attachments/<key>/file` through the host's `api` method, like every other request. PDFium starts at the same time, so its start-up overlaps the transfer. Each fetch is timed (`znPdfStats.fetches`). |
+| Render workers | `gpui-ui/web/pdf-engine.ts` (shared PDFium code), `pdf-worker.ts`, `pdf.ts` | Pages and text layers render in Web Workers. Each worker holds its own copy of the open document, and pixels come back as transferred buffers (moved, not copied). Two workers by default (one on machines with fewer than 4 cores); `?pdfworkers=N` sets 0 to 4, and 0 is the old main-thread renderer. A job queue per worker keeps the visible pages first; scrolling past a page cancels its job. If a worker cannot start, the reader falls back to the main thread and retries the jobs in flight. The worker is a package file (`pdf-worker.js`, built by `web/build.ts` next to `pdfium.wasm`), since MV3 pages cannot start workers from `blob:` URLs. It is a module worker because the PDFium loader reads `import.meta.url`: as a classic worker it failed to start, and the first headless run fell back to the main thread without failing. The check now fails if that happens. Test: `web/pdf-engine.test.ts`. |
+| Annotations | `connector-host/src/api.ts` | The allow-list now lets `PUT` and `DELETE /api/attachments/<key>/annotations` through: the reader saves new and changed annotations with `PUT` and deletes with `DELETE`. They go through `handleApi`, so the database triggers record them in the sync outbox, as for the app. Every other write still answers 403, including `POST /items` ("Add Note from Annotations"). Tests in `connector-host/test/api.test.ts`: a round trip (create, read, edit, delete, outbox count grows) and the refused neighbours (`PUT` on the file, `POST` on annotations, `PATCH` on the item, a `..` path). |
+| No document worker | `gpui-ui/web/structure-stub.ts` | See the decision below. |
+
+### Measurements
+
+Headless check `gpui-ui/web/library-pdf-check.ts` in Chrome for Testing 151 on this machine (software GPU, SwiftShader). Fixtures:
+- **small:** the demo article, 124 kB, 3 pages
+- **large:** a generated PDF, 10.8 MB, 12 pages, each with a 560 × 420 picture and 9,000 thin vector strokes, the content that makes real articles slow to render
+
+The large PDF was scrolled with 36 mouse-wheel steps, 70 ms apart. The table gives two runs per mode, in both orders.
+
+| | Main thread (`pdfworkers=0`) | 2 workers (default) |
+|---|---|---|
+| Small PDF: first page drawn | 132, 136 ms | 134, 449 ms (the second run came right after the highlight and screenshots) |
+| Small PDF: bytes through the host | 11, 16 ms | 14, 18 ms |
+| Large PDF: first page drawn | 845, 1275 ms | 1263, 3290 ms |
+| Large PDF: bytes through the host | 687, 1011 ms | 980, 2857 ms |
+| Scrolling: long tasks (main thread blocked > 50 ms) | 15, 18 (4.0 s, 4.4 s in total) | **0, 0** |
+| Scrolling: longest frame gap | 450, 367 ms | **34, 33 ms** |
+| Render time per page | 230, 235 ms | 299, 402 ms |
+| Time from asking for a page to drawing it (average) | 344, 371 ms | 378, 584 ms |
+
+What this shows:
+- **The workers fix what they were for.** On the main thread, every page render freezes the interface, about 18 times in one scroll, for up to half a second. With workers, the interface never blocks.
+- **Pages take longer to render in a worker:** 30–70% more per page here. The two workers share the CPU with the software GPU, and each has its own copy of the document. So on a heavy PDF a page appears a little later, but the page stays responsive while it waits. On a light fixture (no strokes, about 13 ms per page), the two modes were the same.
+- **Opening a large PDF is dominated by the transfer through the host:** about 0.7–2.9 s for 10.8 MB, varying between runs in both modes. That is base64 frames under 1 MB over native messaging. PDFium's start and the first render add 100–300 ms.
+
+Memory: each worker holds a copy of the open document, so a 10.8 MB PDF uses about 32 MB across the page and two workers.
+
+### Annotations
+
+The check also covers annotations:
+- An annotation stored in the fixture library before the page opened is shown.
+- A highlight made in the tab is saved: `PUT` answers 200, the row is in the fixture database (`repo.getAnnotations`), and the sync outbox grows by one.
+
+The highlight is made through the reader's own annotation session (`session.act.create`, the call the toolbar's highlight uses after a text selection). It is not a mouse drag: the check gets the first line's words from the text layer and highlights them. The selection-to-highlight gesture itself was not driven headless.
+
+Screenshots: `1-pdf-highlight-light.png`, `2-pdf-highlight-dark.png` (the new highlight with its popup, next to the stored green one) and `3-large-pdf-scrolled.png`.
+
+### The document worker: not shipped
+
+Zotero's document worker (layout analysis) would add 30 MB unpacked, about 14 MB zipped. The extension today is 35.6 MB unpacked and about 11 MB zipped, so it would more than double the download. Opening, reading, searching and annotating do not need it. `bun web/build.ts --target extension --docworker` still adds it for anyone who wants it.
+
+What the user sees without it:
+- The toolbar shows "Layout analysis unavailable".
+- **Reading view** shows: "The reading view needs layout analysis, which this browser version of Zinc does not include. Open the PDF in the Zinc app to read it in the reading view."
+- Figure and citation cards fall back to the page text (`academic/session.ts` builds its index from the text layer when the structure fails). Numbered references and captioned figures are found. Figures without a caption, and references not in a numbered list, are missed.
+- Nothing fails: the check's page-error test passes.
+
+### Snapshots and EPUB
+
+They open in Zotero's reader (`reader-host`) in a new browser tab. The tab is the extension page `library/reader/index.html?attachment=<key>&host=<name>`. A small script, `zn-bridge.js`, loads first and sends the reader's `/api` requests to the native host, the same way the library tab does. Annotations save through the host. `web/build.ts` copies the reader into `dist-extension/reader/`. It adds 4.9 MB and leaves out the document worker and PDF.js, so there is no reading mode there, and PDFs still open in the GPUI reader. Snapshot dark mode uses the reader's static theme, because the page CSP forbids `eval`.
+
+A snapshot's scripts do not run: the page CSP blocks inline scripts, and the reader adds its own CSP to the frame. No sandbox page is needed, and the connector manifest needs nothing new. The headless check is `bun web/library-reader-check.ts`.
+
+### Try it
+
+1. In `gpui-ui`: `bun web/build.ts --target extension`.
+2. Rebuild and reinstall the host (it needs the new allow-list), then rebuild the connector as in section 6.
+3. Or headless: in `gpui-ui`, `bun web/library-pdf-check.ts` (options `--modes 0,2`, `--keep`, `--host-exe`). It builds its own fixture library and host, and removes them afterwards.
+
+Left:
+- Item edits in the tab: still read-only (section 6).
+- "Add Note from Annotations" answers 403 in the tab (it creates an item).
+- Large PDFs: send file bytes in larger frames, or as a range stream that PDFium reads as needed (`FPDF_LoadCustomDocument`). Either would bring the first page forward on big files.

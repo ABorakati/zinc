@@ -1,15 +1,14 @@
-// src/reader/structure/load.ts for the browser demo: the same loadStructure / shutdownStructureWorker, with Zotero's document worker
-// (vendor/document-worker/build/worker.js, built for a browser Web Worker) running as a real Web Worker. web/build.ts maps the
-// reader's `../structure/load` import here and copies the worker's build folder to <demo>/docworker/, with a boot script that loads
-// it and says when it is ready. The worker's own requests for cmaps, standard fonts, wasm and models are fetched from that folder
-// (on the desktop src/reader/structure/worker.ts reads them from disk). The SDT pack is decoded with Zotero's reader
-// (structured-document-text, bundled from the document-worker checkout, the same file as vendor/reader's), inflating with fflate
-// where the desktop uses node:zlib. Results are kept for the tab's life (no disk cache). Without vendor/document-worker, web/build.ts
-// uses web/structure-stub.ts instead.
+// src/reader/structure/load.ts for the browser builds that have layout analysis: the same loadStructure / shutdownStructureWorker, with
+// Zotero's document worker (vendor/document-worker/build/worker.js, built for a browser Web Worker) running as a real Web Worker.
+// Only load.web.ts imports this file, and only when web/build.ts defined __ZN_DOCWORKER__ (the worker's build is there and gets copied to
+// <output>/docworker/, with a boot script that loads it and says when it is ready). The worker's own requests for cmaps, standard
+// fonts, wasm and models are fetched from that folder (on the desktop src/reader/structure/worker.ts reads them from disk). The SDT pack
+// is decoded with Zotero's reader (structured-document-text, bundled from the document-worker checkout, the same file as vendor/reader's),
+// inflating with fflate where the desktop uses node:zlib. Results are kept for the tab's life (no disk cache).
 import { inflateSync } from "fflate";
-import { openStructuredDocumentTextPack } from "../../vendor/document-worker/structured-document-text/src/pack/reader.js";
-import { convertSdt, type Sdt } from "../src/reader/structure/convert";
-import type { DocStructure } from "../src/reader/structure/types";
+import { openStructuredDocumentTextPack } from "../../../../vendor/document-worker/structured-document-text/src/pack/reader.js";
+import { convertSdt, type Sdt } from "./convert";
+import type { DocStructure } from "./types";
 
 const DIR = new URL("docworker/", import.meta.url);
 

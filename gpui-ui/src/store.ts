@@ -7,7 +7,7 @@ import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanu
 import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, GroupBy, ItemRow, Library, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
 import { mark } from "./trace";
-import { isWebContent, webBase } from "./webview/config";
+import { isWebContent, webBase, webTabOpener } from "./webview/config";
 import { readState } from "./readState";
 
 export const PAGE = 100;
@@ -957,6 +957,8 @@ function createStore(): AppStore {
 				if (!ct || /pdf/i.test(ct)) return openTab();
 				// a linked URL has no file for the reader (the core opens it in the browser)
 				const linked = (d.data as { linkMode?: unknown }).linkMode === "linked_url";
+				const newTab = webTabOpener();
+				if (isWebContent(ct) && !linked && newTab) return newTab(attachmentKey);
 				if (isWebContent(ct) && !linked && webBase())
 					return openTab({ id: attachmentKey, kind: "web", title, itemKey, attachmentKey, contentType: ct });
 				// program/script files ask for confirmation first (ui/openExternal); loaded lazily to keep ui out of the store's imports

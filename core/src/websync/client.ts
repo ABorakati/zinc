@@ -23,7 +23,9 @@ export const DEFAULT_API = "https://api.zotero.org";
 
 /** Base URL: ZN_ZOTERO_API (tests point it at a local mock server), else zotero.org. */
 export function apiBase(): string {
-	return (process.env.ZN_ZOTERO_API || DEFAULT_API).replace(/\/+$/, "");
+	// (a browser worker may have no `process`: then the default)
+	const env = typeof process !== "undefined" ? process.env?.ZN_ZOTERO_API : undefined;
+	return (env || DEFAULT_API).replace(/\/+$/, "");
 }
 
 export interface ClientOptions {
@@ -64,13 +66,14 @@ export class ZoteroWebClient {
 	private active = 0;
 	private waiters: (() => void)[] = [];
 	private readonly limit: number;
-	private readonly doFetch: typeof fetch;
+	private readonly doFetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 	private readonly sleep: (ms: number) => Promise<void>;
 	readonly now: () => number;
 
 	constructor(private readonly opts: ClientOptions) {
 		this.limit = opts.concurrency ?? 4;
-		this.doFetch = opts.fetch ?? fetch;
+		// (an arrow, not `fetch` itself: a browser's fetch throws "Illegal invocation" when called as a method of this object)
+		this.doFetch = opts.fetch ?? ((input, init) => fetch(input, init));
 		this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
 		this.now = opts.now ?? Date.now;
 	}
@@ -104,6 +107,14 @@ export class ZoteroWebClient {
 
 	private pause(ms: number): void {
 		this.pausedUntil = Math.max(this.pausedUntil, this.now() + ms);
+	}
+
+	/**
+	 * A request to a host that is not zotero.org's API (the file host a download redirects to, the upload URL the API hands out).
+	 * It goes through the same injected fetch but never carries the API key or the API headers.
+	 */
+	external(url: string | URL, init: RequestInit = {}): Promise<Response> {
+		return this.doFetch(url, init);
 	}
 
 	async request(method: string, path: string, init: RequestInitEx = {}): Promise<Response> {

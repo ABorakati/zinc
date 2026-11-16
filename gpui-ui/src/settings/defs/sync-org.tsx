@@ -4,6 +4,7 @@ import { createSignal, For, Show, type JSX } from "solid-js";
 import { ago, bytes, plural } from "../../shell/net";
 import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { webSync, type WebSyncFiles, type WebSyncMode } from "../../features/websync/client";
+import { isBrowserLibrary } from "../../shell/libraryMode";
 import { TextInput } from "../../ui";
 import { confirm } from "../../ui/dialogs";
 import { Btn, Choice, Toggle, Value } from "../controls";
@@ -15,6 +16,9 @@ const SOURCES: { value: WebSyncMode; label: string }[] = [
 	{ value: "zotero-org", label: "zotero.org" },
 	{ value: "off", label: "Off" },
 ];
+/** The browser library has no local Zotero data folder to read from, so that choice is left out there. */
+const sourcesHere = (): { value: WebSyncMode; label: string }[] =>
+	isBrowserLibrary() ? SOURCES.filter((o) => o.value !== "zotero-local") : SOURCES;
 const FILES: { value: WebSyncFiles; label: string }[] = [
 	{ value: "off", label: "Don't sync files" },
 	{ value: "download", label: "Download only" },
@@ -35,7 +39,7 @@ export function SourceControl(): JSX.Element {
 		<Show when={webSync.status()} fallback={loading()}>
 			{(s) => (
 				<div style={{ ...t("flex flex-col items-end gap-1"), maxWidth: 380 }}>
-					<Choice<WebSyncMode> value={s().mode} options={SOURCES} width={170} onChange={(m) => void webSync.setMode(m)} />
+					<Choice<WebSyncMode> value={s().mode} options={sourcesHere()} width={170} onChange={(m) => void webSync.setMode(m)} />
 					<Show when={s().mode === "zotero-org" && !s().account.keySet}>
 						<Txt cls="text-xs text-muted-foreground" style={{ textAlign: "right" }}>
 							Add an API key below to start.

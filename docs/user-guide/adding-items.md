@@ -115,7 +115,16 @@ A save started from the right-click menu opens the same popup where the browser 
 
 Right-click the Zinc button and choose **Open Zinc library**, or click **Open library** in the popup. Your library opens in a browser tab: the same interface as the app, built for the browser, reading the same library file through the helper, so it works with the app closed. Changes made in the app show up within about two seconds.
 
-For now the browser tab is **read-only**: browsing, searching, collections, tags and item details work, but edits are not saved. PDFs don't open in the browser tab yet; use **Open PDF** in the popup, or the app.
+Browsing, searching, collections, tags and item details work. Item edits are not saved yet: the tab is **read-only** for items, collections and tags.
+
+**PDFs open in the tab.** Double-click a PDF attachment to read it, as in the app: zoom, rotate, find in the document, the outline and thumbnails. Annotations work too. Highlights, underlines, notes and ink you add or change in the tab are saved to your library and synced like those made in the app. A 10 MB PDF takes about one to three seconds to open, because the file passes through the helper. Pages render in the background, so scrolling stays smooth; on long, image-heavy PDFs, pages may take a moment to appear.
+
+Not available in the browser tab:
+
+- **Reading view**, which needs layout analysis. It shows "Open the PDF in the Zinc app to read it in the reading view", and the toolbar shows **Layout analysis unavailable**. Figure and citation previews still work from the page text, but can miss figures without a caption.
+- **Add Note from Annotations**: use the app.
+- Printing and page editing (rotate or delete pages in the file).
+- EPUBs and web snapshots: they open in a new browser tab, in Zotero's reader. You can highlight and annotate there. Reading view is not available; use the app for that.
 
 Things to know:
 
@@ -125,6 +134,12 @@ Things to know:
 - Saved PDFs are stored straight away; their text may be indexed later, when the app next runs its indexer.
 
 The helper's design, protocol and test setup are described in the repository at `connector-host/README.md`. For developers, see [Architecture](../developer-guide/architecture.md).
+
+### Updates
+
+If you installed the Zinc Connector from a browser store (Chrome Web Store, Edge Add-ons), the browser updates it by itself and you see no notice.
+
+If you loaded it unpacked from a folder, the browser cannot update it. The extension checks a signed update feed about once a day and when the browser starts. When a newer version exists, the save popup shows "Zinc <version> is available. Download". The link opens the zip in a new tab. To update, unzip it over your folder, then reload the extension in `chrome://extensions` (or `edge://extensions`). A feed that is unsigned or wrongly signed is ignored, and a failed check shows nothing.
 
 ## After adding
 
