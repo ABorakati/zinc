@@ -1,0 +1,27 @@
+connector-host/test/api.test.ts
+  s_cdf1f30595ed11::t_00e49ebb772eb8 194-195,204
+  s_cdf1f30595ed11::t_cb00eec3e68a05 209,213-214,216-223,225-227
+  s_cdf1f30595ed11::t_4df4498dc895f5 90-113,116-134
+  s_cdf1f30595ed11::t_617c20e87b9ca0 185-186,188
+connector-host/test/sessions.test.ts
+  s_cdf1f30595ed11::t_0fce01d22a859d 105
+connector-host/src/api.ts
+  s_cdf1f30595ed11::t_a4f18975fce2b6 87-96
+  s_cdf1f30595ed11::t_8ddd51301809a5 5-13,17-23,25-27,33-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c23ab7e9b47a669641594fa5b46740d615b2856",
+  "prompts": {},
+  "sessions": {
+    "s_cdf1f30595ed11": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0719cea7-1eb3-4344-a1e4-a862c3bde6eb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
