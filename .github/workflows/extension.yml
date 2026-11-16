@@ -1,6 +1,6 @@
 name: Browser extension
 
-# Builds the Zinc Connector, the browser extension (a Zotero Connector fork, private repo ABorakati/zinc-connector), with the Zinc app as
+# Builds the Zinc Connector, the browser extension (a Zotero Connector fork, repo ABorakati/zinc-connector), with the Zinc app as
 # its library tab (WebAssembly). Not to be confused with web.yml, which builds the website's read-only demo of the app: that one has a
 # demo library and no extension. This one builds the library page for the extension (gpui-ui/web/build.ts --target extension) and
 # packs it into the connector (scripts/package.ts in the connector repo).
@@ -9,7 +9,8 @@ name: Browser extension
 #     Zinc-Connector-<version>-store.zip, attached to the release. The version comes from the tag: v0.2.0 -> 0.2.0, v0.2.0-beta.1 ->
 #     manifest version 0.2.0.1 with version_name 0.2.0-beta.1. Nothing is uploaded to the Chrome Web Store or Edge Add-ons: the
 #     store zip is uploaded by hand (docs/developer-guide/extension-release.md).
-# Needs the secret CONNECTOR_REPO_TOKEN: a fine-grained token with read-only "Contents" on ABorakati/zinc-connector.
+# ABorakati/zinc-connector is public, so no secret is needed. If it is made private again, add the secret CONNECTOR_REPO_TOKEN: a
+# fine-grained token with read-only "Contents" on it.
 # The runner is Windows: scripts/build-win.ts is the connector build without build.sh's Unix tools, and it is the one that has been run
 # (on Windows). It needs only Bun, and a checkout of both repositories side by side (zotero-next and zinc-connector).
 on:
@@ -56,16 +57,6 @@ jobs:
     permissions:
       contents: write # only used on a release, to attach the zips
     steps:
-      # The connector repository is private. Without the token the checkout below would fail with a vague "repository not found".
-      - name: Check the connector token
-        env:
-          CONNECTOR_REPO_TOKEN: ${{ secrets.CONNECTOR_REPO_TOKEN }}
-        run: |
-          if [ -z "$CONNECTOR_REPO_TOKEN" ]; then
-            echo "::error title=CONNECTOR_REPO_TOKEN is not set::The secret CONNECTOR_REPO_TOKEN is missing, so ABorakati/zinc-connector cannot be checked out. Add a fine-grained token with read-only Contents access to that repository as a repository secret (docs/developer-guide/extension-release.md)."
-            exit 1
-          fi
-
       - name: Check out zotero-next
         uses: actions/checkout@v4
         with:
@@ -77,7 +68,8 @@ jobs:
           repository: ABorakati/zinc-connector
           ref: zotero-next
           submodules: true
-          token: ${{ secrets.CONNECTOR_REPO_TOKEN }}
+          # the repository is public; CONNECTOR_REPO_TOKEN is only needed if it is made private again
+          token: ${{ secrets.CONNECTOR_REPO_TOKEN || github.token }}
           path: zinc-connector
 
       - name: Check the connector checkout
@@ -85,7 +77,18 @@ jobs:
           for f in zinc-connector/scripts/package.ts zinc-connector/scripts/build-win.ts zinc-connector/src/zotero/chrome/skin; do
             [ -e "$f" ] || { echo "::error title=Connector checkout incomplete::$f is missing: branch zotero-next of ABorakati/zinc-connector has no scripts/package.ts yet, or its submodules did not come with it."; exit 1; }
           done
-          [ -s zotero-next/gpui-ui/update-pubkey.txt ] || { echo "::error title=No update public key::gpui-ui/update-pubkey.txt is missing: the extension's update notice needs it (gpui-ui/UPDATES.md)."; exit 1; }
+      # A release must carry the update notice's public key. Other runs build without it (no update notice) and say so.
+      - name: Check the update public key
+        env:
+          RELEASE: ${{ github.event_name == 'release' || inputs.release_tag != '' }}
+        run: |
+          [ -s zotero-next/gpui-ui/update-pubkey.txt ] && exit 0
+          if [ "$RELEASE" = "true" ]; then
+            echo "::error title=No update public key::gpui-ui/update-pubkey.txt is missing: the extension's update notice needs it (gpui-ui/UPDATES.md)."
+            exit 1
+          fi
+          echo "::warning title=No update public key::gpui-ui/update-pubkey.txt is missing: this build shows no update notice. Releases fail until it is committed (gpui-ui/UPDATES.md)."
+          echo "ZN_ALLOW_NO_UPDATE_KEY=1" >> "$GITHUB_ENV"
 
       - uses: oven-sh/setup-bun@v2
         with:
