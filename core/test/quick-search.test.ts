@@ -19,7 +19,20 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 
-const WORDS = ["pancreatic", "resection", "survival", "cohort", "Machine", "learning", "KIDNEY", "50%_off", 'say "hi"', "naïve", "École", "x1"];
+const WORDS = [
+	"pancreatic",
+	"resection",
+	"survival",
+	"cohort",
+	"Machine",
+	"learning",
+	"KIDNEY",
+	"50%_off",
+	'say "hi"',
+	"naïve",
+	"École",
+	"x1",
+];
 function seed(n = 300): void {
 	for (let i = 0; i < n; i++) {
 		const key = `ITEM${String(i).padStart(4, "0")}`;
@@ -45,7 +58,9 @@ function viaLike(terms: string[]): string[] {
 	const params = terms.flatMap((t) => Array(4).fill(`%${esc(t)}%`));
 	return (
 		db
-			.query(`SELECT key FROM items i WHERE parent_key IS NULL AND item_type <> 'annotation' AND deleted = 0 AND ${where.join(" AND ")} ORDER BY key`)
+			.query(
+				`SELECT key FROM items i WHERE parent_key IS NULL AND item_type <> 'annotation' AND deleted = 0 AND ${where.join(" AND ")} ORDER BY key`,
+			)
 			.all(...params) as { key: string }[]
 	).map((r) => r.key);
 }
@@ -57,13 +72,36 @@ const viaApi = (q: string): string[] =>
 describe("trigram quick search", () => {
 	test("migration 3 created the index and its triggers", () => {
 		expect(db.query("SELECT 1 FROM sqlite_master WHERE name = 'quick_search'").get()).toBeTruthy();
-		const triggers = (db.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'quick_search_%'").all() as { name: string }[]).length;
+		const triggers = (
+			db.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'quick_search_%'").all() as { name: string }[]
+		).length;
 		expect(triggers).toBe(6);
 	});
 
 	test("matches what LIKE matched, for ASCII terms of any case and kind", () => {
 		seed();
-		const queries = ["pancre", "PANCRE", "resec", "sur", "cohort", "kidney", "Machine learning", "study 1", "Author1", "author17", "199", "1999", "key12", "50%", "%_o", "_off", 'say "h', '"hi"', "x1", "zzzz"];
+		const queries = [
+			"pancre",
+			"PANCRE",
+			"resec",
+			"sur",
+			"cohort",
+			"kidney",
+			"Machine learning",
+			"study 1",
+			"Author1",
+			"author17",
+			"199",
+			"1999",
+			"key12",
+			"50%",
+			"%_o",
+			"_off",
+			'say "h',
+			'"hi"',
+			"x1",
+			"zzzz",
+		];
 		for (const q of queries) {
 			const terms = q.split(/\s+/).filter(Boolean);
 			expect({ q, keys: viaApi(q) }).toEqual({ q, keys: viaLike(terms) });
@@ -95,7 +133,13 @@ describe("trigram quick search", () => {
 
 describe("the triggers keep the index current", () => {
 	test("insert, retitle, re-credit and re-date an item", () => {
-		insertItem(db, { key: "TRIG0001", itemType: "journalArticle", title: "Initial heading", date: "2001", creators: [{ creatorType: "author", lastName: "Smith" }] });
+		insertItem(db, {
+			key: "TRIG0001",
+			itemType: "journalArticle",
+			title: "Initial heading",
+			date: "2001",
+			creators: [{ creatorType: "author", lastName: "Smith" }],
+		});
 		expect(viaApi("initial")).toEqual(["TRIG0001"]);
 		db.run("UPDATE items SET title = 'Retitled paper' WHERE key = 'TRIG0001'");
 		expect(viaApi("initial")).toEqual([]);
@@ -114,7 +158,9 @@ describe("the triggers keep the index current", () => {
 		expect(viaApi("ephemeral")).toEqual([]);
 		insertItem(db, { key: "TRIG0003", itemType: "journalArticle", title: "Gamma ray" });
 		db.run("UPDATE items SET title = 'Delta wave' WHERE key = 'TRIG0003'");
-		db.run("INSERT OR REPLACE INTO items(key, item_type, title, data, date_added, date_modified) VALUES('TRIG0003', 'journalArticle', 'Epsilon band', '{}', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')");
+		db.run(
+			"INSERT OR REPLACE INTO items(key, item_type, title, data, date_added, date_modified) VALUES('TRIG0003', 'journalArticle', 'Epsilon band', '{}', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+		);
 		expect(viaApi("epsilon")).toEqual(["TRIG0003"]);
 		expect(viaApi("delta")).toEqual([]);
 		expect(viaApi("gamma")).toEqual([]);
@@ -160,7 +206,10 @@ describe("older libraries", () => {
 		db.close();
 		const raw = new Database(path);
 		raw.run("DROP TABLE quick_search");
-		for (const t of raw.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'quick_search_%'").all() as { name: string }[]) raw.run(`DROP TRIGGER ${t.name}`);
+		for (const t of raw.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'quick_search_%'").all() as {
+			name: string;
+		}[])
+			raw.run(`DROP TRIGGER ${t.name}`);
 		raw.run("UPDATE meta SET value = '2' WHERE name = 'schema_version'");
 		raw.close();
 		db = openDb(path);
@@ -174,10 +223,15 @@ describe("older libraries", () => {
 		db.close();
 		const raw = new Database(path);
 		raw.run("DROP TABLE quick_search");
-		for (const t of raw.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'quick_search_%'").all() as { name: string }[]) raw.run(`DROP TRIGGER ${t.name}`);
+		for (const t of raw.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'quick_search_%'").all() as {
+			name: string;
+		}[])
+			raw.run(`DROP TRIGGER ${t.name}`);
 		raw.close();
 		const ro = new Database(path, { readonly: true });
-		const got = listItems(ro, { q: "pancreatic", limit: 5000 }).items.map((i) => i.key).sort();
+		const got = listItems(ro, { q: "pancreatic", limit: 5000 })
+			.items.map((i) => i.key)
+			.sort();
 		ro.close();
 		db = openDb(path); // migrates again for afterEach's close()
 		expect(got).toEqual(viaLike(["pancreatic"]));
@@ -208,13 +262,26 @@ describe("search(): rank first, snippet for the page", () => {
 		}
 		rebuildSearchIndex(db);
 		for (const q of ["pancreatic", "survival cohort", "resection", "Writer3", "machine learning", "zzzz"]) {
-			const match = q.split(/\s+/).map((w) => `"${w}"`).join(" ");
-			for (const [limit, offset] of [[20, 0], [5, 10], [200, 0]]) {
+			const match = q
+				.split(/\s+/)
+				.map((w) => `"${w}"`)
+				.join(" ");
+			for (const [limit, offset] of [
+				[20, 0],
+				[5, 10],
+				[200, 0],
+			]) {
 				const want = legacy(q, limit, offset, match);
 				const got = search(db, q, { limit, offset });
 				// Hits tied on rank may come in either order, so compare in (rank, key) order.
-				const norm = (h: { key: string; rank: number; snippet: string }[]) => h.map((x) => `${x.rank}|${x.key}|${x.snippet}`).sort();
-				expect({ q, limit, offset, hits: norm(got.hits.map((h) => ({ key: h.key, rank: h.rank, snippet: h.snippet }))) }).toEqual({ q, limit, offset, hits: norm(want) });
+				const norm = (h: { key: string; rank: number; snippet: string }[]) =>
+					h.map((x) => `${x.rank}|${x.key}|${x.snippet}`).sort();
+				expect({ q, limit, offset, hits: norm(got.hits.map((h) => ({ key: h.key, rank: h.rank, snippet: h.snippet }))) }).toEqual({
+					q,
+					limit,
+					offset,
+					hits: norm(want),
+				});
 				for (let k = 1; k < got.hits.length; k++) expect(got.hits[k].rank).toBeGreaterThanOrEqual(got.hits[k - 1].rank);
 			}
 		}

@@ -164,7 +164,10 @@ async function dispatch(req: Request, db: Database, route: string): Promise<unkn
 		const stored = countStoredForms(db);
 		if (!after.effective && stored.relative > 0) {
 			setBaseDir(db, before.mode, before.configured ?? undefined); // put it back
-			throw new HttpError(409, `${stored.relative} linked files are stored relative to the base directory. Convert them to absolute paths first.`);
+			throw new HttpError(
+				409,
+				`${stored.relative} linked files are stored relative to the base directory. Convert them to absolute paths first.`,
+			);
 		}
 		return filesSettingsView(db);
 	}
@@ -223,8 +226,10 @@ async function dispatch(req: Request, db: Database, route: string): Promise<unkn
 	if (m === "POST" && route === "organize") {
 		const b = await body(req);
 		const action = b.action;
-		if (action !== "move" && action !== "copy" && action !== "to-stored") throw new HttpError(400, "action must be move, copy or to-stored");
-		if (!Array.isArray(b.keys) || !b.keys.length || b.keys.some((k) => typeof k !== "string")) throw new HttpError(400, "keys must be a list of item keys");
+		if (action !== "move" && action !== "copy" && action !== "to-stored")
+			throw new HttpError(400, "action must be move, copy or to-stored");
+		if (!Array.isArray(b.keys) || !b.keys.length || b.keys.some((k) => typeof k !== "string"))
+			throw new HttpError(400, "keys must be a list of item keys");
 		const orgReq = {
 			action,
 			keys: b.keys as string[],
@@ -303,11 +308,15 @@ async function dispatch(req: Request, db: Database, route: string): Promise<unkn
 		const what = (await body(req)).what;
 		const v = filesSettingsView(db);
 		const path =
-			what === "library" ? v.library.dbPath
-			: what === "zotero" ? v.zotero.dataDir
-			: what === "baseDir" ? v.baseDir.effective
-			: what === "storage" ? (v.storage.dir ?? v.storage.ownDir)
-			: undefined;
+			what === "library"
+				? v.library.dbPath
+				: what === "zotero"
+					? v.zotero.dataDir
+					: what === "baseDir"
+						? v.baseDir.effective
+						: what === "storage"
+							? (v.storage.dir ?? v.storage.ownDir)
+							: undefined;
 		if (path === undefined) throw new HttpError(400, "what must be library, zotero, baseDir or storage");
 		if (!path || !existsSync(path)) throw new HttpError(404, "that location does not exist yet");
 		revealer(path);

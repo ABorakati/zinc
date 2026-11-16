@@ -16,7 +16,10 @@ export async function getText(url: string, accept = "application/xml, text/xml, 
 	let last: unknown;
 	for (let attempt = 0; attempt <= net.retries; attempt++) {
 		try {
-			const res = await net.fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: accept }, signal: AbortSignal.timeout(net.timeoutMs) });
+			const res = await net.fetch(url, {
+				headers: { "User-Agent": USER_AGENT, Accept: accept },
+				signal: AbortSignal.timeout(net.timeoutMs),
+			});
 			if (res.status === 404) return null;
 			if (res.status === 429 || res.status >= 500) {
 				last = new NetError(res.status, `${res.status} from ${new URL(url).host}`);
@@ -50,7 +53,12 @@ const decodeEntities = (s: string) =>
 export function xmlAll(xml: string, tag: string): string[] {
 	const out: string[] = [];
 	const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "g");
-	for (let m = re.exec(xml); m; m = re.exec(xml)) out.push(decodeEntities(m[1].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim());
+	for (let m = re.exec(xml); m; m = re.exec(xml))
+		out.push(
+			decodeEntities(m[1].replace(/<[^>]+>/g, ""))
+				.replace(/\s+/g, " ")
+				.trim(),
+		);
 	return out;
 }
 export const xmlOne = (xml: string, tag: string): string | undefined => xmlAll(xml, tag)[0] || undefined;
@@ -81,7 +89,20 @@ function splitName(full: string): Creator {
 
 const EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 
-const MONTHS: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+const MONTHS: Record<string, string> = {
+	jan: "01",
+	feb: "02",
+	mar: "03",
+	apr: "04",
+	may: "05",
+	jun: "06",
+	jul: "07",
+	aug: "08",
+	sep: "09",
+	oct: "10",
+	nov: "11",
+	dec: "12",
+};
 
 function pubmedDate(article: string): string | undefined {
 	const d = xmlBlocks(article, "PubDate")[0];
@@ -116,12 +137,14 @@ export function pubmedToItem(article: string): ItemData {
 	const absRe = /<AbstractText\b([^>]*)>([\s\S]*?)<\/AbstractText>/g;
 	for (let m = absRe.exec(art); m; m = absRe.exec(art)) {
 		const label = m[1].match(/\bLabel="([^"]*)"/)?.[1];
-		const text = decodeEntities(m[2].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+		const text = decodeEntities(m[2].replace(/<[^>]+>/g, ""))
+			.replace(/\s+/g, " ")
+			.trim();
 		if (text) abstractParts.push(label ? `${decodeEntities(label)}: ${text}` : text);
 	}
 	const ids = xmlBlocks(article, "PubmedData")[0] ?? "";
 	const doi = normalizeDoi(
-		(ids.match(/<ArticleId\s+IdType="doi">([^<]+)</)?.[1]) ?? (art.match(/<ELocationId[^>]*EIdType="doi"[^>]*>([^<]+)</)?.[1]),
+		ids.match(/<ArticleId\s+IdType="doi">([^<]+)</)?.[1] ?? art.match(/<ELocationId[^>]*EIdType="doi"[^>]*>([^<]+)</)?.[1],
 	);
 	const pmcid = ids.match(/<ArticleId\s+IdType="pmc">([^<]+)</)?.[1];
 	const journal = xmlBlocks(art, "Journal")[0] ?? "";
@@ -172,7 +195,11 @@ export async function fetchPubmed(pmid: string, db: Database): Promise<ItemData 
 
 export function europePmcToItem(r: any): ItemData {
 	const creators: Creator[] = (r.authorList?.author ?? []).map((a: any) =>
-		a.lastName ? { creatorType: "author", firstName: a.firstName ?? a.initials ?? "", lastName: a.lastName } : a.collectiveName ? { creatorType: "author", name: a.collectiveName } : splitName(a.fullName ?? ""),
+		a.lastName
+			? { creatorType: "author", firstName: a.firstName ?? a.initials ?? "", lastName: a.lastName }
+			: a.collectiveName
+				? { creatorType: "author", name: a.collectiveName }
+				: splitName(a.fullName ?? ""),
 	);
 	const j = r.journalInfo ?? {};
 	const doi = normalizeDoi(r.doi);
@@ -216,12 +243,16 @@ export async function fetchPmc(pmcid: string): Promise<ItemData | null> {
 // ---------------------------------------------------------------- arXiv
 
 export function arxivToItem(entry: string, id: string): ItemData {
-	const creators: Creator[] = xmlBlocks(entry, "author").map((a) => splitName(xmlOne(a, "name") ?? "")).filter((c) => c.name || c.lastName);
+	const creators: Creator[] = xmlBlocks(entry, "author")
+		.map((a) => splitName(xmlOne(a, "name") ?? ""))
+		.filter((c) => c.name || c.lastName);
 	const doi = normalizeDoi(xmlOne(entry, "arxiv:doi"));
 	const published = xmlOne(entry, "published")?.slice(0, 10);
 	const category = xmlAttr(entry, "arxiv:primary_category", "term") ?? xmlAttr(entry, "category", "term");
 	const journalRef = xmlOne(entry, "arxiv:journal_ref");
-	const extra = [`arXiv:${id}${category ? ` [${category}]` : ""}`, journalRef ? `Journal reference: ${journalRef}` : ""].filter(Boolean).join("\n");
+	const extra = [`arXiv:${id}${category ? ` [${category}]` : ""}`, journalRef ? `Journal reference: ${journalRef}` : ""]
+		.filter(Boolean)
+		.join("\n");
 	const tags: { tag: string; type?: number }[] = [];
 	// <category term="cs.LG" scheme="…"/> is self-closing, so read each tag's term attribute (it has no inner text to block-match)
 	for (const m of entry.matchAll(/<category\s[^>]*\bterm="([^"]*)"/gi)) {
@@ -246,7 +277,10 @@ export function arxivToItem(entry: string, id: string): ItemData {
 }
 
 export async function fetchArxiv(id: string): Promise<ItemData | null> {
-	const xml = await getText(`https://export.arxiv.org/api/query?id_list=${encodeURIComponent(id)}&max_results=1`, "application/atom+xml, application/xml");
+	const xml = await getText(
+		`https://export.arxiv.org/api/query?id_list=${encodeURIComponent(id)}&max_results=1`,
+		"application/atom+xml, application/xml",
+	);
 	if (!xml) return null;
 	const entry = xmlBlocks(xml, "entry")[0];
 	if (!entry) return null;
@@ -273,9 +307,20 @@ export function openLibraryToItem(b: any, isbn: string): ItemData {
 			numPages: b.number_of_pages ? String(b.number_of_pages) : undefined,
 			ISBN: isbn,
 			url: b.url,
-			tags: Array.isArray(b.subjects) && b.subjects.length
-				? b.subjects.map((s: unknown) => ({ tag: typeof s === "string" ? s.trim() : s && typeof s === "object" && "name" in s ? String(s.name).trim() : "", type: 1 })).filter((t: { tag: string }) => !!t.tag)
-				: undefined,
+			tags:
+				Array.isArray(b.subjects) && b.subjects.length
+					? b.subjects
+							.map((s: unknown) => ({
+								tag:
+									typeof s === "string"
+										? s.trim()
+										: s && typeof s === "object" && "name" in s
+											? String(s.name).trim()
+											: "",
+								type: 1,
+							}))
+							.filter((t: { tag: string }) => !!t.tag)
+					: undefined,
 		}),
 	} as ItemData;
 }
@@ -294,9 +339,10 @@ export function googleBooksToItem(v: any, isbn: string): ItemData {
 			language: v.language,
 			ISBN: isbn,
 			url: v.canonicalVolumeLink ?? v.infoLink,
-			tags: Array.isArray(v.categories) && v.categories.length
-				? v.categories.map((c: unknown) => ({ tag: String(c ?? "").trim(), type: 1 })).filter((t: { tag: string }) => !!t.tag)
-				: undefined,
+			tags:
+				Array.isArray(v.categories) && v.categories.length
+					? v.categories.map((c: unknown) => ({ tag: String(c ?? "").trim(), type: 1 })).filter((t: { tag: string }) => !!t.tag)
+					: undefined,
 		}),
 	} as ItemData;
 }

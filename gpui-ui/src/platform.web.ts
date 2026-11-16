@@ -21,17 +21,19 @@ import { setBrowserLibrary } from "./shell/libraryMode";
 import { fontFamilyNames } from "./theme";
 import type { Platform } from "./start";
 
-declare const chrome: {
-	runtime: {
-		id?: string;
-		connectNative(name: string): NativePort;
-		connect(info: { name: string }): NativePort;
-		getManifest(): { zinc_test?: boolean };
-		sendMessage(msg: unknown, cb: (reply: { ok?: boolean; error?: string } | undefined) => void): void;
-		lastError?: { message?: string };
-		onMessage: { addListener(f: (msg: unknown) => void): void };
-	};
-} | undefined;
+declare const chrome:
+	| {
+			runtime: {
+				id?: string;
+				connectNative(name: string): NativePort;
+				connect(info: { name: string }): NativePort;
+				getManifest(): { zinc_test?: boolean };
+				sendMessage(msg: unknown, cb: (reply: { ok?: boolean; error?: string } | undefined) => void): void;
+				lastError?: { message?: string };
+				onMessage: { addListener(f: (msg: unknown) => void): void };
+			};
+	  }
+	| undefined;
 
 /** Defined by web/build.ts: true in the extension target. A branch on it drops the other target's code from the bundle. */
 declare const __ZN_EXTENSION__: boolean;
@@ -51,26 +53,41 @@ let hostName = "";
 let demoStored: string[] = [];
 let demoHandle: ((req: Request) => Promise<Response | null>) | undefined;
 /** The probe onStore builds (not for the demo): afterFeatures fills in what only exists once the features are in. */
-let probeOf: { notices: { at: number; dataVersion?: number }[]; outsideChanges: number; hasExportSetting: boolean; move: MoveProbe } | undefined;
+let probeOf:
+	{ notices: { at: number; dataVersion?: number }[]; outsideChanges: number; hasExportSetting: boolean; move: MoveProbe } | undefined;
 
 /** Ask the extension's service worker for the database owner (it creates the offscreen document if there is none): {zincEnsureDb: true}. */
-const ensureDb = () => new Promise<void>((resolve, reject) => {
-	chrome!.runtime.sendMessage({ zincEnsureDb: true }, (r) => {
-		if (r?.ok) resolve();
-		else reject(new Error(r?.error ?? chrome!.runtime.lastError?.message ?? "the extension did not start the library database"));
+const ensureDb = () =>
+	new Promise<void>((resolve, reject) => {
+		chrome!.runtime.sendMessage({ zincEnsureDb: true }, (r) => {
+			if (r?.ok) resolve();
+			else reject(new Error(r?.error ?? chrome!.runtime.lastError?.message ?? "the extension did not start the library database"));
+		});
 	});
-});
 
 /** The data path of the chosen source: each Request to its answer. */
 async function openTransport(): Promise<(req: Request) => Promise<Response>> {
-	if (source === "host") return nativeApiTransport(() => chrome!.runtime.connectNative(hostName), () => chrome!.runtime.lastError?.message);
+	if (source === "host")
+		return nativeApiTransport(
+			() => chrome!.runtime.connectNative(hostName),
+			() => chrome!.runtime.lastError?.message,
+		);
 	if (source === "browser") {
 		await ensureDb();
-		const port = nativeApiTransport(() => chrome!.runtime.connect({ name: "zinc-db" }), () => chrome!.runtime.lastError?.message, { onNotice: (m) => onLibraryChanged(m), peer: "The browser library" });
+		const port = nativeApiTransport(
+			() => chrome!.runtime.connect({ name: "zinc-db" }),
+			() => chrome!.runtime.lastError?.message,
+			{ onNotice: (m) => onLibraryChanged(m), peer: "The browser library" },
+		);
 		// the offscreen document can be closed by the browser: ask for it again (the service worker recreates it) and retry once
 		return async (req) => {
 			const again = req.clone();
-			try { return await port(req); } catch { await ensureDb(); return port(again); }
+			try {
+				return await port(req);
+			} catch {
+				await ensureDb();
+				return port(again);
+			}
 		};
 	}
 	// the web page: the read-only demo library (web/page-source.ts; not in the extension build, which has no such page)
@@ -98,7 +115,11 @@ export const platform: Platform = {
 		if (theme === "light" || theme === "dark") setThemePrefs({ mode: theme });
 		// the interface font through the app's own setting (Settings > Appearance): IBM Plex Sans, the one GPUI's browser build has
 		setThemePrefs({ font: "plex" });
-		if (!inExtension) addEventListener("message", (e) => { const t = (e.data as { theme?: string } | null)?.theme; if (t === "light" || t === "dark") setThemePrefs({ mode: t }); });
+		if (!inExtension)
+			addEventListener("message", (e) => {
+				const t = (e.data as { theme?: string } | null)?.theme;
+				if (t === "light" || t === "dark") setThemePrefs({ mode: t });
+			});
 	},
 	prefetch: () => false,
 	registerFonts() {},
@@ -112,7 +133,11 @@ export const platform: Platform = {
 		if (inExtension) hostName = resolveHostName(location.search, chrome!.runtime.getManifest().zinc_test === true);
 		const transport = await openTransport();
 		setDirect(async (req) => {
-			const entry: (typeof requests)[number] = { method: req.method, path: new URL(req.url).pathname + new URL(req.url).search, status: "pending" };
+			const entry: (typeof requests)[number] = {
+				method: req.method,
+				path: new URL(req.url).pathname + new URL(req.url).search,
+				status: "pending",
+			};
 			requests.push(entry);
 			if (requests.length > 200) requests.shift();
 			try {
@@ -163,37 +188,59 @@ export const platform: Platform = {
 				/** one /api call as the page makes it (for the headless check): the demo is read-only, so a write answers 403 */
 				async api(method: string, path: string, body?: unknown): Promise<{ status: number; text: string }> {
 					const { apiFetch } = await import("./api");
-					const res = await apiFetch(path, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+					const res = await apiFetch(path, {
+						method,
+						headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+						body: body === undefined ? undefined : JSON.stringify(body),
+					});
 					return { status: res.status, text: await res.text() };
 				},
 				async analyse() {
 					const key = demoStored[0]?.split("/")[0];
 					if (!key || !demoHandle) return null;
 					const { loadStructure } = await import("./reader/structure/load");
-					const bytes = new Uint8Array(await (await demoHandle(new Request(`http://127.0.0.1/api/attachments/${key}/file`)))!.arrayBuffer());
-					const s = await loadStructure(key, bytes) as unknown as Record<string, unknown>;
+					const bytes = new Uint8Array(
+						await (await demoHandle(new Request(`http://127.0.0.1/api/attachments/${key}/file`)))!.arrayBuffer(),
+					);
+					const s = (await loadStructure(key, bytes)) as unknown as Record<string, unknown>;
 					return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Array.isArray(v) ? v.length : typeof v]));
 				},
 			};
 			return;
 		}
 		const probe = {
-			store, outsideChanges: 0, requests, hostName, browser: source === "browser",
+			store,
+			outsideChanges: 0,
+			requests,
+			hostName,
+			browser: source === "browser",
 			/** browser mode: when each `changed` notice arrived (performance.now()) and its dataVersion */
 			notices: [] as { at: number; dataVersion?: number }[],
 			/** one /api call as the page makes it (for the headless check); resolves to {status, json} */
 			async api(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown; text: string }> {
 				const { apiFetch } = await import("./api");
-				const res = await apiFetch(path, { method, headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+				const res = await apiFetch(path, {
+					method,
+					headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+					body: body === undefined ? undefined : JSON.stringify(body),
+				});
 				const text = await res.text();
 				let json: unknown = null;
-				try { json = JSON.parse(text); } catch { /* a file, not JSON */ }
+				try {
+					json = JSON.parse(text);
+				} catch {
+					/* a file, not JSON */
+				}
 				return { status: res.status, json, text };
 			},
 			/** ids of the annotations the reader has loaded for an open PDF */
 			async annotationIds(attachmentKey: string): Promise<string[]> {
 				const { sessionOf } = await import("./reader/annotations/session");
-				return sessionOf(attachmentKey)?.store.list().map((a) => a.id) ?? [];
+				return (
+					sessionOf(attachmentKey)
+						?.store.list()
+						.map((a) => a.id) ?? []
+				);
 			},
 			/** light / dark, as Settings > Appearance does */
 			setTheme: (mode: "light" | "dark") => setThemePrefs({ mode }),
@@ -214,7 +261,15 @@ export const platform: Platform = {
 				const size = s.ctx.pageSize(page);
 				const words = (await s.ctx.textLayer(page)).words.filter((w) => w.l === 0).slice(0, n);
 				if (!words.length) return null;
-				const rects = words.map((w) => [w.x * size.w, (1 - w.y - w.h) * size.h, (w.x + w.w) * size.w, (1 - w.y) * size.h] as [number, number, number, number]);
+				const rects = words.map(
+					(w) =>
+						[w.x * size.w, (1 - w.y - w.h) * size.h, (w.x + w.w) * size.w, (1 - w.y) * size.h] as [
+							number,
+							number,
+							number,
+							number,
+						],
+				);
 				const a = await s.act.create("highlight", "#ffd400", textPosition(page, rects), { text: words.map((w) => w.t).join(" ") });
 				return a.id;
 			},
@@ -227,7 +282,10 @@ export const platform: Platform = {
 
 	// a new browser library asks how to start before the app is shown (no flash of an empty library)
 	async beforeApp(store, ctx) {
-		if (__ZN_EXTENSION__ && source === "browser") await import("../web/extension-ui").then((m) => m.welcomeScreenHook(ctx, store)).catch((e) => console.warn("[library] welcome screen", e));
+		if (__ZN_EXTENSION__ && source === "browser")
+			await import("../web/extension-ui")
+				.then((m) => m.welcomeScreenHook(ctx, store))
+				.catch((e) => console.warn("[library] welcome screen", e));
 	},
 
 	async afterFeatures(store) {
@@ -252,7 +310,10 @@ export const platform: Platform = {
 			onLibraryChanged = (m) => {
 				probe?.notices.push({ at: performance.now(), dataVersion: m.dataVersion });
 				clearTimeout(timer);
-				timer = setTimeout(() => { if (probe) probe.outsideChanges++; store.refresh(); }, 60);
+				timer = setTimeout(() => {
+					if (probe) probe.outsideChanges++;
+					store.refresh();
+				}, 60);
 			};
 		}
 		if (__ZN_EXTENSION__ && source === "browser" && probe) {
@@ -269,7 +330,11 @@ export const platform: Platform = {
 			// One library per computer (docs/design/browser-edition.md, section 6): this tab is the app's library. When the browser still holds a
 			// library of its own, offer to move it into the app. no background to ask (an extension without the connector's service worker,
 			// e.g. a test one): nothing to offer, quietly
-			void import("../web/extension-ui").then((m) => m.offerMove(probe, store)).catch((e) => { if (!/Receiving end does not exist/i.test(String(e?.message ?? e))) console.warn("[library] move offer", e); });
+			void import("../web/extension-ui")
+				.then((m) => m.offerMove(probe, store))
+				.catch((e) => {
+					if (!/Receiving end does not exist/i.test(String(e?.message ?? e))) console.warn("[library] move offer", e);
+				});
 		}
 		if (inExtension) {
 			// "Open library" in the connector's popup: show the item just saved. ?select=<key> when the popup opens this page, a

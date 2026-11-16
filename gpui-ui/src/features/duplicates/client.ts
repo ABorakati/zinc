@@ -12,9 +12,20 @@ export interface DuplicateSet {
 	year?: number | null;
 	itemType?: string;
 }
-export interface DuplicateList { sets: DuplicateSet[]; total: number }
-export interface DuplicateSetDetails { items: ItemDetail[]; defaultMasterKey: string; differingFields: string[] }
-export interface MergeRequest { masterKey: string; otherKeys: string[]; fieldChoices?: Record<string, string> }
+export interface DuplicateList {
+	sets: DuplicateSet[];
+	total: number;
+}
+export interface DuplicateSetDetails {
+	items: ItemDetail[];
+	defaultMasterKey: string;
+	differingFields: string[];
+}
+export interface MergeRequest {
+	masterKey: string;
+	otherKeys: string[];
+	fieldChoices?: Record<string, string>;
+}
 
 export const duplicatesApi = {
 	list: () => get<DuplicateList>("/api/duplicates?summary=1"),
@@ -26,4 +37,10 @@ export const duplicatesApi = {
 let schema: Promise<ZoteroSchema> | undefined;
 /** Field labels ("publicationTitle" -> "Publication"), fetched once. */
 export const fieldLabels = (): Promise<Record<string, string>> =>
-	(schema ??= get<ZoteroSchema>("/api/schema")).then((s) => s.fieldLabels, () => { schema = undefined; return {}; });
+	(schema ??= get<ZoteroSchema>("/api/schema")).then(
+		(s) => s.fieldLabels,
+		() => {
+			schema = undefined;
+			return {};
+		},
+	);

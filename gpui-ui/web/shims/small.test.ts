@@ -30,13 +30,19 @@ describe("md5 (RFC 1321 test suite)", () => {
 	});
 
 	test("base64 encoding", () => {
-		expect(createHash("md5").update("abc").digest("base64")).toBe(Buffer.from("900150983cd24fb0d6963f7d28e17f72", "hex").toString("base64"));
+		expect(createHash("md5").update("abc").digest("base64")).toBe(
+			Buffer.from("900150983cd24fb0d6963f7d28e17f72", "hex").toString("base64"),
+		);
 	});
 
 	test("update accepts several chunks, strings, ArrayBuffers and views, and equals the concatenation", () => {
 		const a = new TextEncoder().encode("hello, ");
 		const b = new TextEncoder().encode("world, this is a longer chunk of text for md5");
-		const h = createHash("md5").update("zotero ").update(a).update(b.buffer.slice(0)).update(new DataView(new Uint8Array([33]).buffer));
+		const h = createHash("md5")
+			.update("zotero ")
+			.update(a)
+			.update(b.buffer.slice(0))
+			.update(new DataView(new Uint8Array([33]).buffer));
 		const whole = new Uint8Array([...new TextEncoder().encode("zotero "), ...a, ...b, 33]);
 		expect(h.digest("hex")).toBe(nodeHex("md5", whole));
 	});

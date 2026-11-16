@@ -60,7 +60,10 @@ describe("resolveLibrary", () => {
 		saveLibrarySetting(join(root, "saved.sqlite"), loc);
 		touch(legacyLibraryPath(loc));
 		expect(resolveLibrary({ ...loc, env: { ZN_LIBRARY: "L.sqlite" } })).toMatchObject({ path: "L.sqlite", source: "env" });
-		expect(resolveLibrary({ ...loc, env: { ZN_LIBRARY: "L.sqlite", ZN_DB: "D.sqlite" } })).toMatchObject({ path: "D.sqlite", source: "env" });
+		expect(resolveLibrary({ ...loc, env: { ZN_LIBRARY: "L.sqlite", ZN_DB: "D.sqlite" } })).toMatchObject({
+			path: "D.sqlite",
+			source: "env",
+		});
 		expect(readLibrarySetting(loc)).toBe(join(root, "saved.sqlite")); // an override never rewrites the setting
 	});
 

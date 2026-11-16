@@ -3,18 +3,32 @@
 import { createEffect, createMemo, createSignal, on } from "solid-js";
 import { store } from "../store";
 
-export interface Group { value: string | null; label: string; count: number; start: number }
+export interface Group {
+	value: string | null;
+	label: string;
+	count: number;
+	start: number;
+}
 export type Row = { kind: "header"; group: Group } | { kind: "item"; index: number };
 
 const typeLabel = (t: string) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
 /** Group header text (ui/src/groups.ts label): depends on what the list is grouped by. */
 const NONE_LABEL: Record<string, string> = {
-	year: "No date", publication: "No publication", firstAuthor: "No author", hasPdf: "No file", language: "No language", publisher: "No publisher",
-	dateAdded: "Unknown", dateModified: "Unknown",
+	year: "No date",
+	publication: "No publication",
+	firstAuthor: "No author",
+	hasPdf: "No file",
+	language: "No language",
+	publisher: "No publisher",
+	dateAdded: "Unknown",
+	dateModified: "Unknown",
 };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "2024-03" -> "Mar 2024" (the core's month groups). */
-const monthLabel = (v: string) => { const m = /^(\d{4})-(\d{2})$/.exec(v); return m ? `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : v; };
+const monthLabel = (v: string) => {
+	const m = /^(\d{4})-(\d{2})$/.exec(v);
+	return m ? `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : v;
+};
 const label = (by: string, v: string | null) => {
 	if (v === null || v === "") return NONE_LABEL[by] ?? "Other";
 	if (by === "itemType") return typeLabel(v);
@@ -27,7 +41,13 @@ const keyOf = (g: Group) => String(g.value);
 export function createRows() {
 	const [collapsed, setCollapsed] = createSignal<ReadonlySet<string>>(new Set());
 	// a new grouping starts with every group open
-	createEffect(on(() => store.groupBy(), () => setCollapsed(new Set<string>()), { defer: true }));
+	createEffect(
+		on(
+			() => store.groupBy(),
+			() => setCollapsed(new Set<string>()),
+			{ defer: true },
+		),
+	);
 
 	/** Groups only count when they cover the whole list (a stale / missing fetch falls back to plain item rows). */
 	const active = createMemo<Group[] | null>(() => {
@@ -36,7 +56,11 @@ export function createRows() {
 		if (!raw.length) return null;
 		const by = store.groupBy();
 		let start = 0;
-		const gs = raw.map((g) => { const x = { value: g.value, label: label(by, g.value), count: g.count, start }; start += g.count; return x; });
+		const gs = raw.map((g) => {
+			const x = { value: g.value, label: label(by, g.value), count: g.count, start };
+			start += g.count;
+			return x;
+		});
 		return start === store.total() ? gs : null;
 	});
 	/** rowStart[g] = row index of group g's header; last entry = total rows. */
@@ -46,20 +70,31 @@ export function createRows() {
 		const c = collapsed();
 		const out: number[] = [];
 		let r = 0;
-		for (const g of gs) { out.push(r); r += 1 + (c.has(keyOf(g)) ? 0 : g.count); }
+		for (const g of gs) {
+			out.push(r);
+			r += 1 + (c.has(keyOf(g)) ? 0 : g.count);
+		}
 		out.push(r);
 		return out;
 	});
 	/** Last g with a[g] <= x. */
 	const floor = (a: number[], x: number, n: number) => {
-		let lo = 0, hi = n - 1;
-		while (lo < hi) { const m = (lo + hi + 1) >> 1; if (a[m]! <= x) lo = m; else hi = m - 1; }
+		let lo = 0,
+			hi = n - 1;
+		while (lo < hi) {
+			const m = (lo + hi + 1) >> 1;
+			if (a[m]! <= x) lo = m;
+			else hi = m - 1;
+		}
 		return lo;
 	};
 	const starts = createMemo(() => (active() ?? []).map((g) => g.start));
 
 	return {
-		count: () => { const rs = rowStart(); return active() ? rs[rs.length - 1]! : store.total(); },
+		count: () => {
+			const rs = rowStart();
+			return active() ? rs[rs.length - 1]! : store.total();
+		},
 		row(r: number): Row | undefined {
 			const gs = active();
 			if (!gs) return r >= 0 && r < store.total() ? { kind: "item", index: r } : undefined;

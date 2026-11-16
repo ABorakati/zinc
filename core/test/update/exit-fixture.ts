@@ -4,9 +4,17 @@
 import { createRealEnv } from "../../src/update/env";
 import { createUpdater } from "../../src/update/updater";
 
-const c = JSON.parse(process.env.ZN_FIXTURE!) as { feedUrl: string; publicKey: string; updatesDir: string; version: string; exitCode: number };
+const c = JSON.parse(process.env.ZN_FIXTURE!) as {
+	feedUrl: string;
+	publicKey: string;
+	updatesDir: string;
+	version: string;
+	exitCode: number;
+};
 const u = createUpdater({
-	currentVersion: c.version, publicKey: c.publicKey, env: createRealEnv({ updatesDir: c.updatesDir }),
+	currentVersion: c.version,
+	publicKey: c.publicKey,
+	env: createRealEnv({ updatesDir: c.updatesDir }),
 	settings: () => ({ enabled: true, autoDownload: false, feedUrl: c.feedUrl }),
 });
 process.on("exit", (code) => u.onExit(code));

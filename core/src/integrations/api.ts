@@ -33,8 +33,14 @@ export interface IntegrationsStatus {
 	word: { installed: boolean; available: boolean; wordRunning: boolean; problem?: string };
 	/** The browser connector (one extension and helper for Chrome and Edge). hostInstalled: for every browser found. */
 	chrome: {
-		hostInstalled: boolean; available: boolean; extensionDir: string; problem?: string;
-		chromeFound: boolean; edgeFound: boolean; chromeHost: boolean; edgeHost: boolean;
+		hostInstalled: boolean;
+		available: boolean;
+		extensionDir: string;
+		problem?: string;
+		chromeFound: boolean;
+		edgeFound: boolean;
+		chromeHost: boolean;
+		edgeHost: boolean;
 	};
 }
 
@@ -55,7 +61,8 @@ function browserExe(b: Browser): string | null {
 		join(process.env.ProgramFiles ?? "C:\\Program Files", vendor, product, "Application", exe),
 		join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", vendor, product, "Application", exe),
 		join(process.env.LOCALAPPDATA ?? "", vendor, product, "Application", exe),
-	]) if (existsSync(p)) return p;
+	])
+		if (existsSync(p)) return p;
 	return null;
 }
 
@@ -78,20 +85,36 @@ async function wordRunning(): Promise<boolean> {
 
 export async function integrationsStatus(): Promise<IntegrationsStatus> {
 	const p = paths();
-	const [wordInstalled, chromeHost, edgeHost, running] = await Promise.all([regKeyExists(WORD_ADDIN_KEY), regKeyExists(CHROME_HOST_KEY), regKeyExists(EDGE_HOST_KEY), wordRunning()]);
-	const chromeFound = browserExe("chrome") !== null, edgeFound = browserExe("edge") !== null;
+	const [wordInstalled, chromeHost, edgeHost, running] = await Promise.all([
+		regKeyExists(WORD_ADDIN_KEY),
+		regKeyExists(CHROME_HOST_KEY),
+		regKeyExists(EDGE_HOST_KEY),
+		wordRunning(),
+	]);
+	const chromeFound = browserExe("chrome") !== null,
+		edgeFound = browserExe("edge") !== null;
 	// installed = registered for every browser on this PC (an older install registered Chrome only)
 	const hostInstalled = (chromeHost || !chromeFound) && (edgeHost || !edgeFound) && (chromeHost || edgeHost);
 	const wordAvail = existsSync(p.wordInstall) && existsSync(p.wordBuilt);
 	const chromeAvail = existsSync(p.hostInstall) && existsSync(p.hostExe) && existsSync(join(p.extensionDir, "manifest.json"));
 	return {
 		word: {
-			installed: wordInstalled, available: wordAvail, wordRunning: running,
+			installed: wordInstalled,
+			available: wordAvail,
+			wordRunning: running,
 			...(wordAvail ? {} : { problem: `The add-in is not built (${p.wordBuilt}); run word\\build.ps1 in the repo.` }),
 		},
 		chrome: {
-			hostInstalled, available: chromeAvail, extensionDir: p.extensionDir, chromeFound, edgeFound, chromeHost, edgeHost,
-			...(chromeAvail ? {} : { problem: "The connector or its helper is not built (connector-host\\dist, zotero-next-connector\\build)." }),
+			hostInstalled,
+			available: chromeAvail,
+			extensionDir: p.extensionDir,
+			chromeFound,
+			edgeFound,
+			chromeHost,
+			edgeHost,
+			...(chromeAvail
+				? {}
+				: { problem: "The connector or its helper is not built (connector-host\\dist, zotero-next-connector\\build)." }),
 		},
 	};
 }
@@ -117,13 +140,15 @@ export async function handleIntegrationsApi(req: Request): Promise<Response | nu
 	if (what === "word" && (action === "install" || action === "uninstall")) {
 		// Word holds the add-in's files and registry while it runs (as Zotero's own installer also requires)
 		if (await wordRunning()) return json({ error: "Close Microsoft Word first, then try again." }, 409);
-		if (action === "install" && !existsSync(p.wordBuilt)) return json({ error: "The Word add-in is not built yet (run word\\build.ps1)." }, 409);
+		if (action === "install" && !existsSync(p.wordBuilt))
+			return json({ error: "The Word add-in is not built yet (run word\\build.ps1)." }, 409);
 		const r = await ps(action === "install" ? p.wordInstall : p.wordUninstall);
 		if (r.code !== 0) return json({ error: `The ${action}er failed: ${tail(r.out)}` }, 500);
 		return json({ ok: true, status: await integrationsStatus() });
 	}
 	if (what === "chrome" && (action === "install" || action === "uninstall")) {
-		if (action === "install" && !existsSync(p.hostExe)) return json({ error: "The connector helper is not built yet (connector-host: bun run build)." }, 409);
+		if (action === "install" && !existsSync(p.hostExe))
+			return json({ error: "The connector helper is not built yet (connector-host: bun run build)." }, 409);
 		const r = await ps(action === "install" ? p.hostInstall : p.hostUninstall);
 		if (r.code !== 0) return json({ error: `The ${action}er failed: ${tail(r.out)}` }, 500);
 		return json({ ok: true, status: await integrationsStatus() });
@@ -134,7 +159,8 @@ export async function handleIntegrationsApi(req: Request): Promise<Response | nu
 		const browser: Browser = asked === "edge" || (asked !== "chrome" && !browserExe("chrome")) ? "edge" : "chrome";
 		const exe = browserExe(browser);
 		if (exe) Bun.spawn([exe, `${browser}://extensions`], { stdout: "ignore", stderr: "ignore" });
-		if (existsSync(p.extensionDir)) Bun.spawn(["explorer.exe", p.extensionDir.replace(/\//g, "\\")], { stdout: "ignore", stderr: "ignore" });
+		if (existsSync(p.extensionDir))
+			Bun.spawn(["explorer.exe", p.extensionDir.replace(/\//g, "\\")], { stdout: "ignore", stderr: "ignore" });
 		return json({ ok: true, browser, opened: !!exe, chromeOpened: !!exe, extensionDir: p.extensionDir });
 	}
 	return json({ error: "not found" }, 404);

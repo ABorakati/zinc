@@ -384,11 +384,7 @@ describe("duplicate set details and merge", () => {
 			dateAdded: "2024-02-01T00:00:00Z",
 		});
 		db.query("INSERT INTO collection_items(collection_key, item_key) VALUES('COLL0002', 'DUPL0002')").run();
-		insertItem(
-			db,
-			{ key: "NOTEDUP2", itemType: "note", note: "<p>Important clinical note</p>", parentItem: "DUPL0002" },
-			"DUPL0002",
-		);
+		insertItem(db, { key: "NOTEDUP2", itemType: "note", note: "<p>Important clinical note</p>", parentItem: "DUPL0002" }, "DUPL0002");
 		insertAttachment(db, "ATTDUP02", "DUPL0002", "text/html", null, "2024-02-02T00:00:00Z");
 
 		// Link DUPL0002 to RELITEM1

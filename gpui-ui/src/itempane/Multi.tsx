@@ -55,8 +55,8 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 	const [fieldVal, setFieldVal] = createSignal("");
 	const [busy, setBusy] = createSignal(false);
 	const [progress, setProgress] = createSignal<ProgressState | null>(null);
-		/** a read-only group: every bulk action would fail one request per item, so none is offered */
-		const locked = () => !store.canEdit();
+	/** a read-only group: every bulk action would fail one request per item, so none is offered */
+	const locked = () => !store.canEdit();
 
 	const inCollection = createMemo(() => store.view().kind === "collection");
 	const currentColl = createMemo(() => {
@@ -67,12 +67,7 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 		return findCollection(store.groupCollections()[store.libraryId()] ?? [], v.key);
 	});
 
-	async function runBatched<T>(
-		items: T[],
-		label: string,
-		batchSize: number,
-		worker: (item: T) => Promise<unknown>,
-	): Promise<void> {
+	async function runBatched<T>(items: T[], label: string, batchSize: number, worker: (item: T) => Promise<unknown>): Promise<void> {
 		const total = items.length;
 		if (total > 5) setProgress({ current: 0, total, label });
 		try {
@@ -259,7 +254,9 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 
 	const collections = (q: string) => {
 		const needle = q.trim().toLowerCase();
-		return flat().filter((c) => !needle || c.path.join(" ").toLowerCase().includes(needle)).slice(0, 50);
+		return flat()
+			.filter((c) => !needle || c.path.join(" ").toLowerCase().includes(needle))
+			.slice(0, 50);
 	};
 
 	return (
@@ -274,62 +271,100 @@ export function MultiSelect(p: { keys: () => string[] }): JSX.Element {
 						<text style={{ ...tx("text-xs text-muted-foreground") }}>{`${progress()!.current} / ${progress()!.total}`}</text>
 					</div>
 					<div style={{ width: "100%", height: 4, backgroundColor: tok("border"), borderRadius: 2, overflow: "hidden" }}>
-						<div style={{ width: `${Math.round((progress()!.current / Math.max(progress()!.total, 1)) * 100)}%`, height: "100%", backgroundColor: tok("primary") }} />
+						<div
+							style={{
+								width: `${Math.round((progress()!.current / Math.max(progress()!.total, 1)) * 100)}%`,
+								height: "100%",
+								backgroundColor: tok("primary"),
+							}}
+						/>
 					</div>
 				</div>
 			</Show>
 
 			<Show when={locked()}>
-			<text style={{ ...tx("text-xs text-muted-foreground"), textAlign: "center" }}>This library is read-only: the items cannot be changed.</text>
+				<text style={{ ...tx("text-xs text-muted-foreground"), textAlign: "center" }}>
+					This library is read-only: the items cannot be changed.
+				</text>
 			</Show>
 			<Show when={!locked()}>
-			<div style={{ ...t("flex flex-col gap-3 w-full"), maxWidth: 260 }}>
-			{/* Tags */}
-				<div style={{ ...t("flex flex-col gap-1") }}>
-					<text style={{ ...tx("text-xs text-muted-foreground") }}>Add tag to all</text>
-					<Picker<string> placeholder="Tag name…" query={(q) => suggest(q)} label={(x) => x} icon={() => "tag"} onPick={(x) => void addTag(x)} onSubmitText={(x) => void addTag(x)} />
-				</div>
-				<div style={{ ...t("flex flex-col gap-1") }}>
-					<text style={{ ...tx("text-xs text-muted-foreground") }}>Remove tag from all</text>
-					<Picker<string> placeholder="Tag to remove…" query={(q) => suggest(q)} label={(x) => x} icon={() => "tag"} onPick={(x) => void removeTag(x)} onSubmitText={(x) => void removeTag(x)} />
-				</div>
-
-				{/* Collections */}
-				<div style={{ ...t("flex flex-col gap-1") }}>
-					<text style={{ ...tx("text-xs text-muted-foreground") }}>Add all to collection</text>
-					<Picker<FlatCollection> placeholder="Choose collection…" listOnFocus query={collections} label={(c) => c.path.join(" › ")} icon={() => "folder"} onPick={(c) => void addToCollection(c)} />
-				</div>
-				<Show when={inCollection()}>
+				<div style={{ ...t("flex flex-col gap-3 w-full"), maxWidth: 260 }}>
+					{/* Tags */}
 					<div style={{ ...t("flex flex-col gap-1") }}>
-						<TextBtn icon="folder-minus" label={`Remove from "${currentColl()?.name || "collection"}"`} onClick={() => void removeFromCurrentCollection()} />
+						<text style={{ ...tx("text-xs text-muted-foreground") }}>Add tag to all</text>
+						<Picker<string>
+							placeholder="Tag name…"
+							query={(q) => suggest(q)}
+							label={(x) => x}
+							icon={() => "tag"}
+							onPick={(x) => void addTag(x)}
+							onSubmitText={(x) => void addTag(x)}
+						/>
 					</div>
-				</Show>
+					<div style={{ ...t("flex flex-col gap-1") }}>
+						<text style={{ ...tx("text-xs text-muted-foreground") }}>Remove tag from all</text>
+						<Picker<string>
+							placeholder="Tag to remove…"
+							query={(q) => suggest(q)}
+							label={(x) => x}
+							icon={() => "tag"}
+							onPick={(x) => void removeTag(x)}
+							onSubmitText={(x) => void removeTag(x)}
+						/>
+					</div>
 
-				{/* Field set / clear */}
-				<div style={{ ...t("flex flex-col gap-1.5") }}>
-					<text style={{ ...tx("text-xs text-muted-foreground") }}>Set or clear field</text>
-					<Select value={field()} options={COMMON_FIELDS} onChange={setField} />
-					<BoxInput value={fieldVal()} placeholder="Value (or leave empty to clear)…" onInput={setFieldVal} onCommit={setFieldVal} />
-					<div style={{ ...t("flex gap-2") }}>
-						<TextBtn primary label="Set field" onClick={() => void applyField(field(), fieldVal())} />
-						<TextBtn label="Clear field" onClick={() => void applyField(field(), "")} />
+					{/* Collections */}
+					<div style={{ ...t("flex flex-col gap-1") }}>
+						<text style={{ ...tx("text-xs text-muted-foreground") }}>Add all to collection</text>
+						<Picker<FlatCollection>
+							placeholder="Choose collection…"
+							listOnFocus
+							query={collections}
+							label={(c) => c.path.join(" › ")}
+							icon={() => "folder"}
+							onPick={(c) => void addToCollection(c)}
+						/>
+					</div>
+					<Show when={inCollection()}>
+						<div style={{ ...t("flex flex-col gap-1") }}>
+							<TextBtn
+								icon="folder-minus"
+								label={`Remove from "${currentColl()?.name || "collection"}"`}
+								onClick={() => void removeFromCurrentCollection()}
+							/>
+						</div>
+					</Show>
+
+					{/* Field set / clear */}
+					<div style={{ ...t("flex flex-col gap-1.5") }}>
+						<text style={{ ...tx("text-xs text-muted-foreground") }}>Set or clear field</text>
+						<Select value={field()} options={COMMON_FIELDS} onChange={setField} />
+						<BoxInput
+							value={fieldVal()}
+							placeholder="Value (or leave empty to clear)…"
+							onInput={setFieldVal}
+							onCommit={setFieldVal}
+						/>
+						<div style={{ ...t("flex gap-2") }}>
+							<TextBtn primary label="Set field" onClick={() => void applyField(field(), fieldVal())} />
+							<TextBtn label="Clear field" onClick={() => void applyField(field(), "")} />
+						</div>
+					</div>
+
+					{/* Bottom actions */}
+					<div style={{ ...t("flex flex-col gap-2 pt-2 border-t border-border/60") }}>
+						<div style={{ alignSelf: "flex-start" }}>
+							<TextBtn icon="file-search" label="Find Full Text" onClick={() => void findFullText(p.keys())} />
+						</div>
+						<div style={{ alignSelf: "flex-start" }}>
+							<Button variant="destructive" size="sm" onClick={() => void moveToTrash()}>
+								<Icon name="trash-2" size={14} color="#fff" />
+								<text style={{ ...tx("text-xs font-medium"), color: "#fff" }}>Move to Trash</text>
+							</Button>
+						</div>
 					</div>
 				</div>
-
-				{/* Bottom actions */}
-				<div style={{ ...t("flex flex-col gap-2 pt-2 border-t border-border/60") }}>
-					<div style={{ alignSelf: "flex-start" }}>
-						<TextBtn icon="file-search" label="Find Full Text" onClick={() => void findFullText(p.keys())} />
-					</div>
-					<div style={{ alignSelf: "flex-start" }}>
-						<Button variant="destructive" size="sm" onClick={() => void moveToTrash()}>
-							<Icon name="trash-2" size={14} color="#fff" />
-							<text style={{ ...tx("text-xs font-medium"), color: "#fff" }}>Move to Trash</text>
-						</Button>
-						</div>
-						</div>
-						</div>
-						</Show>
-						</div>
-						);
-						}
+			</Show>
+		</div>
+	);
+}

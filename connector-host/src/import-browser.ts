@@ -25,7 +25,10 @@ import { entryTarget, readZip, ZipError, type ZipFile } from "../../core/src/web
 
 /** An error the caller answers with `status` (the zip or library is not acceptable: 400, 409, 413). */
 export class ImportError extends Error {
-	constructor(message: string, readonly status = 400) {
+	constructor(
+		message: string,
+		readonly status = 400,
+	) {
 		super(message);
 		this.name = "ImportError";
 	}
@@ -68,7 +71,9 @@ function insert(dst: Database, have: Map<string, string[]>, table: string, row: 
 	const dstCols = have.get(table);
 	if (!dstCols) return false;
 	const names = dstCols.filter((c) => c in set || c in row);
-	const stmt = dst.prepare(`INSERT OR IGNORE INTO "${table}" (${names.map((c) => `"${c}"`).join(", ")}) VALUES (${names.map(() => "?").join(", ")})`);
+	const stmt = dst.prepare(
+		`INSERT OR IGNORE INTO "${table}" (${names.map((c) => `"${c}"`).join(", ")}) VALUES (${names.map(() => "?").join(", ")})`,
+	);
 	try {
 		return stmt.run(...names.map((c) => (c in set ? set[c] : row[c]) as never)).changes > 0;
 	} finally {
@@ -107,7 +112,10 @@ export function importBrowserLibrary(db: Database, zipBytes: Uint8Array): Browse
 	try {
 		// A serialized WAL-mode database (header bytes 18 and 19 = 2) cannot be opened in memory without its -wal file. All its pages are
 		// in the image, so it is read as a rollback-journal database.
-		if (lib.data.length > 100 && lib.data[18] === 2 && lib.data[19] === 2) { lib.data[18] = 1; lib.data[19] = 1; }
+		if (lib.data.length > 100 && lib.data[18] === 2 && lib.data[19] === 2) {
+			lib.data[18] = 1;
+			lib.data[19] = 1;
+		}
 		src = Database.deserialize(lib.data, true);
 		if (!hasTable(src, "items") || !hasTable(src, "meta")) throw new Error("no items table");
 	} catch {
@@ -115,7 +123,11 @@ export function importBrowserLibrary(db: Database, zipBytes: Uint8Array): Browse
 	}
 	try {
 		const v = Number((src.query("SELECT value FROM meta WHERE name = 'schema_version'").get() as { value: string } | null)?.value ?? 0);
-		if (v > SCHEMA_HEAD) throw new ImportError(`That library was made by a newer Zinc (schema ${v}); this one understands up to ${SCHEMA_HEAD}. Update Zinc and try again.`, 409);
+		if (v > SCHEMA_HEAD)
+			throw new ImportError(
+				`That library was made by a newer Zinc (schema ${v}); this one understands up to ${SCHEMA_HEAD}. Update Zinc and try again.`,
+				409,
+			);
 		return merge(db, src, files, started);
 	} finally {
 		src.close();
@@ -134,7 +146,7 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 
 	const exists = dst.query("SELECT library_id AS lib FROM items WHERE key = ?");
 	const existsNoLib = dst.query("SELECT 1 AS lib FROM items WHERE key = ?");
-	const itemInDst = (k: string) => ((dstHasLib ? exists : existsNoLib).get(k) as { lib: number } | null);
+	const itemInDst = (k: string) => (dstHasLib ? exists : existsNoLib).get(k) as { lib: number } | null;
 	const collInDst = dst.query("SELECT 1 AS x FROM collections WHERE key = ?");
 	const annInDst = dst.query("SELECT 1 AS x FROM annotations WHERE key = ?");
 
@@ -145,7 +157,10 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 	let orphans = 0;
 	for (const r of srcItems) {
 		const key = String(r.key);
-		if (!KEY.test(key)) { warnings.push(`Skipped an item with an unusable key.`); continue; }
+		if (!KEY.test(key)) {
+			warnings.push(`Skipped an item with an unusable key.`);
+			continue;
+		}
 		if (itemInDst(key)) {
 			if (r.parent_key == null) skippedItems++;
 			continue;
@@ -155,11 +170,17 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 			const p = String(r.parent_key);
 			const inDst = itemInDst(p);
 			if (inDst) lib = Number(inDst.lib) || 1;
-			else if (!fresh.has(p)) { orphans++; continue; } // its parent is in neither library
+			else if (!fresh.has(p)) {
+				orphans++;
+				continue;
+			} // its parent is in neither library
 		}
 		fresh.set(key, { ...r, lib });
 	}
-	if (orphans) warnings.push(`${orphans} note${orphans === 1 ? "" : "s"} or attachment${orphans === 1 ? "" : "s"} without a parent item ${orphans === 1 ? "was" : "were"} not moved.`);
+	if (orphans)
+		warnings.push(
+			`${orphans} note${orphans === 1 ? "" : "s"} or attachment${orphans === 1 ? "" : "s"} without a parent item ${orphans === 1 ? "was" : "were"} not moved.`,
+		);
 
 	// ---- collections: parents first; a parent that is in neither library leaves the collection at the top
 	const srcColls = hasTable(src, "collections") ? (src.query("SELECT * FROM collections").all() as Row[]).filter(inMyLibrary) : [];
@@ -174,7 +195,11 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 			else pending.set(k, c);
 		}
 		const placed = new Set<string>();
-		const ready = (c: Row) => c.parent_key == null || placed.has(String(c.parent_key)) || !!collInDst.get(String(c.parent_key)) || !pending.has(String(c.parent_key));
+		const ready = (c: Row) =>
+			c.parent_key == null ||
+			placed.has(String(c.parent_key)) ||
+			!!collInDst.get(String(c.parent_key)) ||
+			!pending.has(String(c.parent_key));
 		while (pending.size) {
 			let progressed = false;
 			for (const [k, c] of [...pending]) {
@@ -184,35 +209,53 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 				pending.delete(k);
 				progressed = true;
 			}
-			if (!progressed) { for (const [, c] of pending) newColls.push({ ...c, parent_key: null }); break; } // a cycle: flatten it
+			if (!progressed) {
+				for (const [, c] of pending) newColls.push({ ...c, parent_key: null });
+				break;
+			} // a cycle: flatten it
 		}
 	}
 	const collKeys = new Set([...newColls.map((c) => String(c.key))]);
 
 	// ---- files: those of the attachments that are new
 	const { byKey, ignored } = storageEntries(files);
-	if (ignored) warnings.push(`${ignored} file${ignored === 1 ? "" : "s"} in the zip ${ignored === 1 ? "is" : "are"} not attachment files and ${ignored === 1 ? "was" : "were"} ignored.`);
+	if (ignored)
+		warnings.push(
+			`${ignored} file${ignored === 1 ? "" : "s"} in the zip ${ignored === 1 ? "is" : "are"} not attachment files and ${ignored === 1 ? "was" : "were"} ignored.`,
+		);
 	const root = storageRoot(dst);
 	const made: string[] = []; // folders this call created
 	let fileCount = 0;
 	let fileBytes = 0;
 	let missingFiles = 0;
-	const attachmentRows = hasTable(src, "attachments") ? (src.query("SELECT * FROM attachments").all() as Row[]).filter((a) => fresh.has(String(a.item_key))) : [];
+	const attachmentRows = hasTable(src, "attachments")
+		? (src.query("SELECT * FROM attachments").all() as Row[]).filter((a) => fresh.has(String(a.item_key)))
+		: [];
 	const attachmentPath = new Map<string, string | null>();
 	try {
 		for (const a of attachmentRows) {
 			const key = String(a.item_key);
 			const mode = String(a.link_mode ?? "");
-			if (mode !== "imported_file" && mode !== "imported_url") { attachmentPath.set(key, null); continue; }
+			if (mode !== "imported_file" && mode !== "imported_url") {
+				attachmentPath.set(key, null);
+				continue;
+			}
 			const entries = byKey.get(key.toUpperCase());
 			const name = baseName(String(a.path ?? ""));
 			const main = entries?.find((e) => e.rel === name) ?? entries?.find((e) => e.rel.toLowerCase() === name.toLowerCase());
-			if (!entries || !name || !main) { missingFiles++; attachmentPath.set(key, null); continue; }
+			if (!entries || !name || !main) {
+				missingFiles++;
+				attachmentPath.set(key, null);
+				continue;
+			}
 			const folder = join(root, key);
 			const existed = existsSync(folder);
 			for (const e of entries) {
 				const target = entryTarget(root, `${key}/${e.rel}`);
-				if (!target) { warnings.push(`A file with an unsafe name in ${key} was not moved.`); continue; }
+				if (!target) {
+					warnings.push(`A file with an unsafe name in ${key} was not moved.`);
+					continue;
+				}
 				mkdirSync(join(target, ".."), { recursive: true });
 				writeFileSync(target, e.data);
 				fileCount++;
@@ -227,7 +270,13 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 		const counts = { topLevel: 0, notes: 0, attachments: 0, annotations: 0, tags: 0, collections: 0 };
 		const run = dst.transaction(() => {
 			for (const c of newColls) {
-				if (insert(dst, have, "collections", c, { version: 0, ...(have.get("collections")!.includes("library_id") ? { library_id: 1 } : {}) })) counts.collections++;
+				if (
+					insert(dst, have, "collections", c, {
+						version: 0,
+						...(have.get("collections")!.includes("library_id") ? { library_id: 1 } : {}),
+					})
+				)
+					counts.collections++;
 			}
 			for (const r of fresh.values()) {
 				insert(dst, have, "items", r, { version: 0, ...(dstHasLib ? { library_id: r.lib } : {}) });
@@ -268,7 +317,9 @@ function merge(dst: Database, src: Database, files: ZipFile[], started: number):
 		made.length = 0; // committed: the folders stay
 
 		// the search index (fts: not kept by triggers); a child re-indexes its parent
-		dst.transaction(() => { for (const k of fresh.keys()) indexItem(dst, k); })();
+		dst.transaction(() => {
+			for (const k of fresh.keys()) indexItem(dst, k);
+		})();
 		bumpRev();
 		return {
 			topLevelItems: counts.topLevel,

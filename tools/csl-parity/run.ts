@@ -72,7 +72,10 @@ function parseArgs(argv: string[]): Args {
 					spec = { label: base, build: () => citeprocJs() };
 				} else {
 					base = raw.slice(0, eq).trim();
-					const cmd = raw.slice(eq + 1).trim().split(/\s+/);
+					const cmd = raw
+						.slice(eq + 1)
+						.trim()
+						.split(/\s+/);
 					if (!base || cmd[0] === "") die(`engine "${raw}": expected name=command`);
 					spec = { label: base, build: () => externalEngine(base, cmd) };
 				}
@@ -190,8 +193,16 @@ async function main() {
 	for (const label of labels) {
 		const times: number[] = [];
 		const s: EngineSummary = {
-			jobs: jobs.length, pass: 0, fail: 0, na: 0, errors: 0, agree: 0, differ: 0,
-			agreementPct: null, totalMs: 0, medianMs: 0,
+			jobs: jobs.length,
+			pass: 0,
+			fail: 0,
+			na: 0,
+			errors: 0,
+			agree: 0,
+			differ: 0,
+			agreementPct: null,
+			totalMs: 0,
+			medianMs: 0,
 		};
 		for (const v of verdicts) {
 			const e = v.expected[label];
@@ -221,12 +232,28 @@ async function main() {
 
 	writeFileSync(
 		`${base}.json`,
-		JSON.stringify({ corpus: args.corpus, generatedAt, normalization: args.text ? "text" : "html", reference: ref, engines: labels, summary: summaries, jobs: verdicts, results: rawResults }, null, 2),
+		JSON.stringify(
+			{
+				corpus: args.corpus,
+				generatedAt,
+				normalization: args.text ? "text" : "html",
+				reference: ref,
+				engines: labels,
+				summary: summaries,
+				jobs: verdicts,
+				results: rawResults,
+			},
+			null,
+			2,
+		),
 	);
 
 	const md: string[] = [];
 	md.push(`# CSL parity: ${args.corpus}`, "");
-	md.push(`Generated ${generatedAt}. Jobs: ${jobs.length}. Reference engine: \`${ref}\`. Normalization: ${args.text ? "text (tags removed)" : "html"}.`, "");
+	md.push(
+		`Generated ${generatedAt}. Jobs: ${jobs.length}. Reference engine: \`${ref}\`. Normalization: ${args.text ? "text (tags removed)" : "html"}.`,
+		"",
+	);
 	md.push("## Summary", "");
 	md.push("| engine | jobs | pass | fail | n/a | errors | agree w/ ref | differ | agreement | total ms | median ms |");
 	md.push("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
@@ -237,17 +264,30 @@ async function main() {
 			`| ${label}${isRef ? " (ref)" : ""} | ${s.jobs} | ${s.pass} | ${s.fail} | ${s.na} | ${s.errors} | ${isRef ? "-" : s.agree} | ${isRef ? "-" : s.differ} | ${isRef || s.agreementPct === null ? "-" : `${s.agreementPct}%`} | ${s.totalMs} | ${s.medianMs} |`,
 		);
 	}
-	md.push("", "pass/fail/n/a are against job.expected; errors are jobs where the engine failed. agreement = agree / (agree + differ) against the reference.", "");
+	md.push(
+		"",
+		"pass/fail/n/a are against job.expected; errors are jobs where the engine failed. agreement = agree / (agree + differ) against the reference.",
+		"",
+	);
 
 	const tags = [...new Set(jobs.map(firstTag))];
 	md.push("## By tag (first tag per job)", "");
 	const headerCells = [...labels.map((l) => `${l} expected p/f`), ...labels.slice(1).map((l) => `${l} vs ref a/d`)];
 	md.push(`| tag | jobs | ${headerCells.join(" | ")} |`);
-	md.push(`|---|---:|${labels.map(() => "---:").join("|")}|${labels.slice(1).map(() => "---:").join("|")}|`);
+	md.push(
+		`|---|---:|${labels.map(() => "---:").join("|")}|${labels
+			.slice(1)
+			.map(() => "---:")
+			.join("|")}|`,
+	);
 	for (const tag of tags) {
 		const vs = verdicts.filter((v) => (v.tags[0] ?? "(untagged)") === tag);
-		const exp = labels.map((l) => `${vs.filter((v) => v.expected[l] === "pass").length}/${vs.filter((v) => v.expected[l] === "fail").length}`);
-		const agr = labels.slice(1).map((l) => `${vs.filter((v) => v.agreement[l] === "agree").length}/${vs.filter((v) => v.agreement[l] === "differ").length}`);
+		const exp = labels.map(
+			(l) => `${vs.filter((v) => v.expected[l] === "pass").length}/${vs.filter((v) => v.expected[l] === "fail").length}`,
+		);
+		const agr = labels
+			.slice(1)
+			.map((l) => `${vs.filter((v) => v.agreement[l] === "agree").length}/${vs.filter((v) => v.agreement[l] === "differ").length}`);
 		md.push(`| ${tag} | ${vs.length} | ${[...exp, ...agr].join(" | ")} |`);
 	}
 	md.push("");
@@ -282,7 +322,20 @@ async function main() {
 	for (const label of labels) {
 		const s = summaries[label];
 		const isRef = label === ref;
-		out.push([label + (isRef ? " (ref)" : ""), s.pass, s.fail, s.na, s.errors, isRef ? "-" : s.agree, isRef ? "-" : s.differ, isRef || s.agreementPct === null ? "-" : `${s.agreementPct}%`, s.totalMs, s.medianMs].join("\t"));
+		out.push(
+			[
+				label + (isRef ? " (ref)" : ""),
+				s.pass,
+				s.fail,
+				s.na,
+				s.errors,
+				isRef ? "-" : s.agree,
+				isRef ? "-" : s.differ,
+				isRef || s.agreementPct === null ? "-" : `${s.agreementPct}%`,
+				s.totalMs,
+				s.medianMs,
+			].join("\t"),
+		);
 	}
 	out.push("", `report: ${base}.md`, `        ${base}.json`);
 	console.log(out.join("\n"));

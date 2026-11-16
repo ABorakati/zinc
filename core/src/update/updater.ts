@@ -74,8 +74,11 @@ export function installerArgs(o: { pid: number; file: string; relaunch: boolean 
 	if (override) {
 		try {
 			const a = JSON.parse(override) as unknown;
-			if (Array.isArray(a) && a.every((x) => typeof x === "string")) return (a as string[]).map((x) => x.replaceAll("{pid}", String(o.pid)).replaceAll("{file}", o.file));
-		} catch { /* fall through to the default */ }
+			if (Array.isArray(a) && a.every((x) => typeof x === "string"))
+				return (a as string[]).map((x) => x.replaceAll("{pid}", String(o.pid)).replaceAll("{file}", o.file));
+		} catch {
+			/* fall through to the default */
+		}
 	}
 	return ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", ...(o.relaunch ? ["/ZNRELAUNCH"] : [])];
 }
@@ -117,11 +120,20 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 
 	const dispatch = (e: UpdateEvent): UpdateModel => {
 		const next = reduce(model, e);
-		if (next !== model) { model = next; try { deps.onChange?.(model); } catch { /* a listener must not break the updater */ } }
+		if (next !== model) {
+			model = next;
+			try {
+				deps.onChange?.(model);
+			} catch {
+				/* a listener must not break the updater */
+			}
+		}
 		return model;
 	};
 	const exclusive = <T>(f: () => Promise<T>): Promise<T> => {
-		const p = f().finally(() => { if (inflight === p) inflight = undefined; });
+		const p = f().finally(() => {
+			if (inflight === p) inflight = undefined;
+		});
 		inflight = p;
 		return p;
 	};
@@ -131,7 +143,8 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 	async function verifyFile(file: string, m: Manifest): Promise<void> {
 		const size = await env.fileSize(file);
 		if (size !== m.size) throw new UpdateError("size-mismatch", `the installer is ${size ?? 0} bytes, the manifest says ${m.size}`);
-		if ((await env.sha256(file)).toLowerCase() !== m.sha256) throw new UpdateError("hash-mismatch", "the installer's SHA-256 does not match the manifest");
+		if ((await env.sha256(file)).toLowerCase() !== m.sha256)
+			throw new UpdateError("hash-mismatch", "the installer's SHA-256 does not match the manifest");
 	}
 
 	async function cleanup(): Promise<string[]> {
@@ -155,11 +168,20 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		if (inflight || k === "checking" || k === "downloading" || k === "installing" || k === "ready") return Promise.resolve(model);
 		const at = () => now().toISOString();
 		if (!s.feedUrl.trim()) {
-			if (o.manual) dispatch({ t: "check" }), dispatch({ t: "check-failed", at: at(), message: "No update feed is configured.", code: "no-feed" });
+			if (o.manual)
+				(dispatch({ t: "check" }),
+					dispatch({ t: "check-failed", at: at(), message: "No update feed is configured.", code: "no-feed" }));
 			return Promise.resolve(model);
 		}
 		if (!updatable()) {
-			if (o.manual) dispatch({ t: "check" }), dispatch({ t: "check-failed", at: at(), message: "This is a development build; it is not updated automatically.", code: "disabled" });
+			if (o.manual)
+				(dispatch({ t: "check" }),
+					dispatch({
+						t: "check-failed",
+						at: at(),
+						message: "This is a development build; it is not updated automatically.",
+						code: "disabled",
+					}));
 			return Promise.resolve(model);
 		}
 		return exclusive(async () => {
@@ -168,12 +190,20 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 				if (!deps.publicKey) throw new UpdateError("no-key", "This build has no update public key, so updates cannot be verified.");
 				const text = await env.fetchText(s.feedUrl.trim(), { maxBytes: MAX_MANIFEST });
 				let json: unknown;
-				try { json = JSON.parse(text); } catch { throw new UpdateError("malformed", "bad update manifest: not JSON"); }
+				try {
+					json = JSON.parse(text);
+				} catch {
+					throw new UpdateError("malformed", "bad update manifest: not JSON");
+				}
 				const m = await verifyManifest(json, deps.publicKey);
 				const newer = isNewer(m.version, deps.currentVersion);
 				const manualOnly = newer && !!m.minVersion && compareVersions(deps.currentVersion, m.minVersion) < 0;
 				dispatch({ t: "checked", at: at(), manifest: newer ? m : null, manualOnly });
-				logInfo("update", newer ? "update available" : "up to date", { current: deps.currentVersion, latest: m.version, manualOnly });
+				logInfo("update", newer ? "update available" : "up to date", {
+					current: deps.currentVersion,
+					latest: m.version,
+					manualOnly,
+				});
 			} catch (e) {
 				logWarn("update", `check failed: ${errMsg(e)}`, { code: errCode(e) ?? null });
 				dispatch({ t: "check-failed", at: at(), message: errMsg(e), code: errCode(e) });
@@ -194,25 +224,43 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		try {
 			// already downloaded and intact (an earlier run): nothing to fetch
 			if ((await env.fileSize(final)) !== null) {
-				try { await verifyFile(final, m); dispatch({ t: "downloaded", file: final }); logInfo("update", "installer already downloaded", { version: m.version }); return; }
-				catch { await env.remove(final); }
+				try {
+					await verifyFile(final, m);
+					dispatch({ t: "downloaded", file: final });
+					logInfo("update", "installer already downloaded", { version: m.version });
+					return;
+				} catch {
+					await env.remove(final);
+				}
 			}
 			for (let attempt = 0; attempt < 2; attempt++) {
 				let offset = (await env.fileSize(part)) ?? 0;
-				if (offset > m.size) { await env.remove(part); offset = 0; }
+				if (offset > m.size) {
+					await env.remove(part);
+					offset = 0;
+				}
 				logInfo("update", offset ? "resuming download" : "downloading", { version: m.version, offset, size: m.size });
 				let last = 0;
 				if (offset < m.size) {
 					await env.download(m.url, part, {
 						offset,
-						onProgress: (r, t) => { const n = Date.now(); if (n - last > 100 || r >= t) { last = n; dispatch({ t: "progress", received: r, total: t || m.size }); } },
+						onProgress: (r, t) => {
+							const n = Date.now();
+							if (n - last > 100 || r >= t) {
+								last = n;
+								dispatch({ t: "progress", received: r, total: t || m.size });
+							}
+						},
 					});
 				}
 				try {
 					await verifyFile(part, m);
 				} catch (e) {
 					await env.remove(part).catch(() => {});
-					if (offset > 0 && attempt === 0) { logWarn("update", `resumed download failed verification (${errMsg(e)}); starting over`); continue; }
+					if (offset > 0 && attempt === 0) {
+						logWarn("update", `resumed download failed verification (${errMsg(e)}); starting over`);
+						continue;
+					}
 					throw e;
 				}
 				await env.rename(part, final);
@@ -227,7 +275,11 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 	}
 
 	const download = (): Promise<UpdateModel> => {
-		if (inflight) return inflight.then(() => model, () => model);
+		if (inflight)
+			return inflight.then(
+				() => model,
+				() => model,
+			);
 		const s = model.state;
 		const can = (s.kind === "available" && !s.manualOnly) || (s.kind === "error" && s.phase !== "check" && !!s.manifest);
 		if (!can) return Promise.resolve(model);
@@ -276,7 +328,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 		exitVerified = false;
 		const st = model.state;
 		if (!model.installOnExit || st.kind !== "ready" || started) return;
-		try { await verifyFile(st.file, st.manifest); exitVerified = true; } catch (e) { logWarn("update", `install on exit skipped: ${errMsg(e)}`); }
+		try {
+			await verifyFile(st.file, st.manifest);
+			exitVerified = true;
+		} catch (e) {
+			logWarn("update", `install on exit skipped: ${errMsg(e)}`);
+		}
 	}
 
 	function onExit(code: number): void {
@@ -293,9 +350,14 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 	}
 
 	function schedule(ms: number) {
-		timer = setTimeout(() => {
-			void check({ manual: false }).finally(() => { if (timer !== undefined) schedule(deps.intervalMs ?? DAY); });
-		}, Math.max(0, ms));
+		timer = setTimeout(
+			() => {
+				void check({ manual: false }).finally(() => {
+					if (timer !== undefined) schedule(deps.intervalMs ?? DAY);
+				});
+			},
+			Math.max(0, ms),
+		);
 		(timer as { unref?: () => void }).unref?.();
 	}
 	function start() {

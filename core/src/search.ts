@@ -38,9 +38,7 @@ function insertRow(db: Database, r: ItemRow): void {
 		.map((c) => s(c.name) || [s(c.firstName), s(c.lastName)].filter(Boolean).join(" "))
 		.filter(Boolean)
 		.join(" ");
-	const tags = (db.query("SELECT tag FROM item_tags WHERE item_key = ?").all(r.key) as { tag: string }[])
-		.map((t) => t.tag)
-		.join(" ");
+	const tags = (db.query("SELECT tag FROM item_tags WHERE item_key = ?").all(r.key) as { tag: string }[]).map((t) => t.tag).join(" ");
 	const notes = (
 		db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0").all(r.key) as {
 			data: string;
@@ -57,9 +55,16 @@ function insertRow(db: Database, r: ItemRow): void {
 				)
 				.get(r.key) as { t: string | null }
 		).t ?? "";
-	db.query(
-		"INSERT INTO search(rowid, title, creators, abstract, publication, tags, notes, fulltext) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-	).run(r.rowid, r.title ?? "", creators, s(data.abstractNote), r.publication ?? "", tags, notes, fulltext);
+	db.query("INSERT INTO search(rowid, title, creators, abstract, publication, tags, notes, fulltext) VALUES(?, ?, ?, ?, ?, ?, ?, ?)").run(
+		r.rowid,
+		r.title ?? "",
+		creators,
+		s(data.abstractNote),
+		r.publication ?? "",
+		tags,
+		notes,
+		fulltext,
+	);
 }
 
 export function rebuildSearchIndex(db: Database): void {
@@ -79,8 +84,7 @@ export function rebuildSearchIndex(db: Database): void {
 export function indexItem(db: Database, key: string): void {
 	db.transaction(() => {
 		let row = db.query("SELECT rowid, key, title, publication, data, parent_key, item_type FROM items WHERE key = ?").get(key) as
-			| (ItemRow & { parent_key: string | null; item_type: string })
-			| null;
+			(ItemRow & { parent_key: string | null; item_type: string }) | null;
 		if (row?.parent_key) {
 			row = db
 				.query("SELECT rowid, key, title, publication, data, parent_key, item_type FROM items WHERE key = ?")
@@ -158,7 +162,9 @@ export function search(db: Database, q: string, opts: { limit?: number; offset?:
 	const library = opts.library ?? 1; // My Library unless a library is named
 	const total = (
 		db
-			.query("SELECT count(*) AS n FROM search s JOIN items i ON i.rowid = s.rowid WHERE search MATCH ? AND i.deleted = 0 AND i.library_id = ?")
+			.query(
+				"SELECT count(*) AS n FROM search s JOIN items i ON i.rowid = s.rowid WHERE search MATCH ? AND i.deleted = 0 AND i.library_id = ?",
+			)
 			.get(match, library) as { n: number }
 	).n;
 	const ranked = db
@@ -170,31 +176,36 @@ export function search(db: Database, q: string, opts: { limit?: number; offset?:
 		)
 		.all(match, library, limit, offset) as { rowid: number; rank: number }[];
 	const details = new Map(
-		(
-			ranked.length
-				? (db
-						.query(
-							`SELECT s.rowid AS rowid, i.key, i.title, i.creators_summary, i.year,
+		(ranked.length
+			? (db
+					.query(
+						`SELECT s.rowid AS rowid, i.key, i.title, i.creators_summary, i.year,
 								snippet(search, -1, '<mark>', '</mark>', '…', 16) AS snippet
 							 FROM search s JOIN items i ON i.rowid = s.rowid
 							 WHERE search MATCH ?1 AND s.rowid IN (SELECT value FROM json_each(?2))`,
-						)
-						.all(match, JSON.stringify(ranked.map((r) => r.rowid))) as {
-						rowid: number;
-						key: string;
-						title: string | null;
-						creators_summary: string | null;
-						year: number | null;
-						snippet: string;
-					}[])
-				: []
+					)
+					.all(match, JSON.stringify(ranked.map((r) => r.rowid))) as {
+					rowid: number;
+					key: string;
+					title: string | null;
+					creators_summary: string | null;
+					year: number | null;
+					snippet: string;
+				}[])
+			: []
 		).map((r) => [r.rowid, r]),
 	);
 	const rows = ranked.flatMap((r) => {
 		const d = details.get(r.rowid);
 		return d ? [{ ...d, rank: r.rank }] : [];
 	});
-	const matched = rows.length ? matchedInAll(db, rows.map((r) => r.rowid), match) : new Map();
+	const matched = rows.length
+		? matchedInAll(
+				db,
+				rows.map((r) => r.rowid),
+				match,
+			)
+		: new Map();
 	const hits: SearchHit[] = rows.map((r) => ({
 		key: r.key,
 		title: r.title ?? "",

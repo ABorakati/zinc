@@ -1,6 +1,13 @@
 // Client for /api/cite/* (contract: core/src/cite/types.ts).
 import { createSignal } from "solid-js";
-import type { CiteFormat, CiteFormatResult, CiteMode, CiteSettings, CiteStyleInfo, CiteStylePreview } from "../../../../core/src/cite/types";
+import type {
+	CiteFormat,
+	CiteFormatResult,
+	CiteMode,
+	CiteSettings,
+	CiteStyleInfo,
+	CiteStylePreview,
+} from "../../../../core/src/cite/types";
 import { call, callRaw, get } from "../http";
 
 export type { CiteFormat, CiteFormatResult, CiteMode, CiteSettings, CiteStyleInfo, CiteStylePreview };
@@ -44,7 +51,11 @@ export const citeApi = {
 		try {
 			const res = await callRaw("GET", path, signal);
 			const styles = (await res.json()) as CiteStyleInfo[];
-			return { styles, total: Number(res.headers.get("X-Total")) || styles.length, index: res.headers.get("X-Styles-Index") ?? "none" };
+			return {
+				styles,
+				total: Number(res.headers.get("X-Total")) || styles.length,
+				index: res.headers.get("X-Styles-Index") ?? "none",
+			};
 		} catch (e) {
 			if (signal?.aborted) throw e;
 			// no HTTP core (ZN_CORE_DIRECT): the list without the X-Total / X-Styles-Index headers
@@ -57,7 +68,10 @@ export const citeApi = {
 	install: (id: string) => call<CiteStyleInfo>("POST", "/api/cite/styles/install", { id }),
 	remove: (id: string) => call<{ id: string; removed: boolean }>("DELETE", `/api/cite/styles/${encodeURIComponent(id)}`),
 	preview: (id: string, keys: string[] = [], signal?: AbortSignal) =>
-		get<CiteStylePreview>(`/api/cite/styles/preview?id=${encodeURIComponent(id)}${keys.length ? `&items=${encodeURIComponent(keys.slice(0, 3).join(","))}` : ""}`, signal),
+		get<CiteStylePreview>(
+			`/api/cite/styles/preview?id=${encodeURIComponent(id)}${keys.length ? `&items=${encodeURIComponent(keys.slice(0, 3).join(","))}` : ""}`,
+			signal,
+		),
 	format: (b: { keys: string[]; style?: string; locale?: string; mode?: CiteMode; format?: CiteFormat | CiteFormat[] }) =>
 		call<CiteFormatResult>("POST", "/api/cite/format", b),
 	settings: () => get<CiteSettings>("/api/cite/settings"),
@@ -65,9 +79,20 @@ export const citeApi = {
 };
 
 export const LOCALES: [string, string][] = [
-	["", "Style default"], ["en-US", "English (US)"], ["en-GB", "English (UK)"], ["de-DE", "Deutsch"], ["fr-FR", "Francais"],
-	["es-ES", "Espanol"], ["it-IT", "Italiano"], ["nl-NL", "Nederlands"], ["pt-BR", "Portugues (Brasil)"], ["sv-SE", "Svenska"],
-	["pl-PL", "Polski"], ["ru-RU", "Russian"], ["zh-CN", "Chinese (Simplified)"], ["ja-JP", "Japanese"],
+	["", "Style default"],
+	["en-US", "English (US)"],
+	["en-GB", "English (UK)"],
+	["de-DE", "Deutsch"],
+	["fr-FR", "Francais"],
+	["es-ES", "Espanol"],
+	["it-IT", "Italiano"],
+	["nl-NL", "Nederlands"],
+	["pt-BR", "Portugues (Brasil)"],
+	["sv-SE", "Svenska"],
+	["pl-PL", "Polski"],
+	["ru-RU", "Russian"],
+	["zh-CN", "Chinese (Simplified)"],
+	["ja-JP", "Japanese"],
 ];
 export const FILE: Record<CiteFormat, { ext: string; label: string }> = {
 	html: { ext: "html", label: "HTML" },

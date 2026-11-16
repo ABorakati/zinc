@@ -42,7 +42,21 @@ export async function emptyBrowserLibrary(db: CoreDb): Promise<EmptyResult> {
 		if (flagged) db.exec("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
 		try {
 			// children first, then the rows they point at (foreign keys cascade, but the lists below are explicit about what goes)
-			for (const t of ["annotations", "fulltext", "view_state", "item_tags", "collection_items", "attachments", "duplicate_exclusions", "saved_searches", "bbt_keys", "websync_versions", "sync_outbox", "sync_base", "sync_conflicts"]) {
+			for (const t of [
+				"annotations",
+				"fulltext",
+				"view_state",
+				"item_tags",
+				"collection_items",
+				"attachments",
+				"duplicate_exclusions",
+				"saved_searches",
+				"bbt_keys",
+				"websync_versions",
+				"sync_outbox",
+				"sync_base",
+				"sync_conflicts",
+			]) {
 				if (hasTable(db, t)) db.run(`DELETE FROM "${t}"`);
 			}
 			db.run("DELETE FROM items WHERE parent_key IS NOT NULL");
@@ -59,12 +73,16 @@ export async function emptyBrowserLibrary(db: CoreDb): Promise<EmptyResult> {
 	try {
 		const { rebuildSearchIndex } = await import("../../../core/src/search");
 		rebuildSearchIndex(db);
-	} catch { /* the index is rebuilt by the next import or save */ }
+	} catch {
+		/* the index is rebuilt by the next import or save */
+	}
 
 	let files = false;
 	try {
 		rmSync(STORAGE_ROOT);
 		files = true;
-	} catch { /* no files */ }
+	} catch {
+		/* no files */
+	}
 	return { ...before, files, signedOut };
 }

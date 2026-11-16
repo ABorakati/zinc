@@ -26,7 +26,7 @@ import { tw } from "./theme";
 import { mark } from "./trace";
 
 /** The store, as src/store.ts exports it (a type only: the module itself is imported after the splash is up). */
-export type Store = typeof import("./store")["store"];
+export type Store = (typeof import("./store"))["store"];
 
 /** What start() hands to a platform's hooks. */
 export interface StartContext {
@@ -83,10 +83,22 @@ function Splash(props: { t: (cls: string) => Style }) {
 			<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }} />
 			<div style={{ ...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3 pl-3"), width: "100%" }}>
 				<div style={{ ...t("flex flex-col gap-3 p-3"), width: "18%", flexShrink: 0, minWidth: 0, height: "100%" }}>
-					{[70, 55, 80, 60, 65].map((w) => <div style={bar(`${w}%`)} />)}
+					{[70, 55, 80, 60, 65].map((w) => (
+						<div style={bar(`${w}%`)} />
+					))}
 				</div>
-				<div style={{ ...t("min-w-0 rounded-[14px] bg-background shadow-raised flex flex-col gap-4 p-4 overflow-hidden"), flexGrow: 1, flexShrink: 1, minWidth: 0, height: "100%" }}>
-					{[90, 70, 85, 60, 80, 75, 65, 88, 72].map((w) => <div style={bar(`${w}%`, 12)} />)}
+				<div
+					style={{
+						...t("min-w-0 rounded-[14px] bg-background shadow-raised flex flex-col gap-4 p-4 overflow-hidden"),
+						flexGrow: 1,
+						flexShrink: 1,
+						minWidth: 0,
+						height: "100%",
+					}}
+				>
+					{[90, 70, 85, 60, 80, 75, 65, 88, 72].map((w) => (
+						<div style={bar(`${w}%`, 12)} />
+					))}
 				</div>
 				<div style={{ width: 12, flexShrink: 0 }} />
 				<div style={{ ...t("min-w-0 rounded-[14px] bg-background shadow-raised"), width: "28%", flexShrink: 0, height: "100%" }} />
@@ -109,7 +121,14 @@ export async function start(platform: Platform): Promise<void> {
 	const [overlay, setOverlay] = createSignal<Component | null>(null);
 	function Root() {
 		const screen = () => (
-			<Show when={overlay()} fallback={<Show when={app()} fallback={<Splash t={t} />}>{(C) => createComponent(C(), {})}</Show>}>
+			<Show
+				when={overlay()}
+				fallback={
+					<Show when={app()} fallback={<Splash t={t} />}>
+						{(C) => createComponent(C(), {})}
+					</Show>
+				}
+			>
 				{(W) => createComponent(W(), {})}
 			</Show>
 		);
@@ -153,15 +172,17 @@ export async function start(platform: Platform): Promise<void> {
 	mark("app-mounted");
 
 	// The App is mounted; this resolves when its first page of items is in (or the load failed): the next frame paints it.
-	await new Promise<void>((resolve) => createRoot((dispose) => {
-		createEffect(() => {
-			if (store.pagesLoaded() > 0 || store.error()) {
-				mark("first-items");
-				dispose();
-				resolve();
-			}
-		});
-	}));
+	await new Promise<void>((resolve) =>
+		createRoot((dispose) => {
+			createEffect(() => {
+				if (store.pagesLoaded() > 0 || store.error()) {
+					mark("first-items");
+					dispose();
+					resolve();
+				}
+			});
+		}),
+	);
 
 	// Everything below is off the path to the first items. Let the frame go out first.
 	await new Promise((r) => setTimeout(r, 16));

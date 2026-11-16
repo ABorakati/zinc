@@ -14,7 +14,13 @@ import { fromNRect, toNRect } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
 import { CitedByCard, CiteGroup, FigureCard, RefCard, SuppCard } from "./Cards";
 import {
-	expandCitationGroup, isInReferences, markerOf, parseCitationNumbers, resolveAuthorYear, resolveCitation, type Resolution,
+	expandCitationGroup,
+	isInReferences,
+	markerOf,
+	parseCitationNumbers,
+	resolveAuthorYear,
+	resolveCitation,
+	type Resolution,
 } from "./citations";
 import { findByKey } from "./figures";
 import { captionStart, findAuthorYear, findFigureMentions, findSupplementaryMentions } from "./mentions";
@@ -23,7 +29,13 @@ import { charsInRect, computeLines, lineAt, lineRect, rangeRects, type Line } fr
 
 type HotKind = "cite" | "figure" | "supp" | "author-year" | "bib";
 /** go: what a click on the mention does besides pinning its card (bibliography entries jump to their first citation). */
-interface Hot { kind: HotKind; rects: PdfRect[]; key: string; content: () => JSX.Element; go?: () => void }
+interface Hot {
+	kind: HotKind;
+	rects: PdfRect[];
+	key: string;
+	content: () => JSX.Element;
+	go?: () => void;
+}
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
 const BRACKET_GROUP = /\[\s*\d{1,3}(?:\s*[,;–—−\-]\s*\d{1,3})*\s*\]/g;
@@ -49,8 +61,12 @@ export function CiteContent(p: { s: AcademicSession; k: Kit; spec: CiteSpec; jum
 			const single = p.spec.nums.length === 1;
 			const dpage = p.spec.dest?.page;
 			const res = resolveCitation({
-				refs, page: dpage ?? rs?.page ?? 0, top: single ? p.spec.dest?.top : undefined,
-				pageText: dpage !== undefined ? await s.pageText(dpage) : null, structure: s.structure(), number: n,
+				refs,
+				page: dpage ?? rs?.page ?? 0,
+				top: single ? p.spec.dest?.top : undefined,
+				pageText: dpage !== undefined ? await s.pageText(dpage) : null,
+				structure: s.structure(),
+				number: n,
 				maxY: rs && dpage === rs.page ? rs.y : undefined,
 			});
 			out.push({ n, res });
@@ -66,13 +82,23 @@ export function CiteContent(p: { s: AcademicSession; k: Kit; spec: CiteSpec; jum
 						<RefCard
 							s={p.s}
 							opts={{
-								ref: d()[0]?.res.ref ?? null, rawText: d()[0]?.res.entry?.text,
+								ref: d()[0]?.res.ref ?? null,
+								rawText: d()[0]?.res.entry?.text,
 								onJump: d()[0]?.res.entry ? () => jump(d()[0]!.res.entry!.page, d()[0]!.res.entry!.rect) : undefined,
 							}}
 						/>
 					}
 				>
-					<CiteGroup s={p.s} k={p.k} text={p.spec.groupText} entries={d().map((x) => ({ n: x.n, ref: x.res.ref, onJump: x.res.entry ? () => jump(x.res.entry!.page, x.res.entry!.rect) : undefined }))} />
+					<CiteGroup
+						s={p.s}
+						k={p.k}
+						text={p.spec.groupText}
+						entries={d().map((x) => ({
+							n: x.n,
+							ref: x.res.ref,
+							onJump: x.res.entry ? () => jump(x.res.entry!.page, x.res.entry!.rect) : undefined,
+						}))}
+					/>
 				</Show>
 			)}
 		</Show>
@@ -82,10 +108,16 @@ export function CiteContent(p: { s: AcademicSession; k: Kit; spec: CiteSpec; jum
 /** A figure / table mention found before the figure index exists: the card appears when the index does. */
 function LazyFigureCard(p: { s: AcademicSession; fkey: string; label: string }): JSX.Element {
 	const k = kit(p.s.ctx.mode);
-	const [item] = createResource(async () => { await p.s.start(); return findByKey(p.s.figItems(), p.fkey) ?? null; });
+	const [item] = createResource(async () => {
+		await p.s.start();
+		return findByKey(p.s.figItems(), p.fkey) ?? null;
+	});
 	return (
 		<Show when={!item.loading} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>{`Looking for ${p.label}...`}</text>}>
-			<Show when={item()} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>{`${p.label} was not found in this document.`}</text>}>
+			<Show
+				when={item()}
+				fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>{`${p.label} was not found in this document.`}</text>}
+			>
 				{(it) => <FigureCard s={p.s} item={it()} />}
 			</Show>
 		</Show>
@@ -149,7 +181,9 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 		if (it && capLine && it.page === page && it.caption && norm(it.caption).startsWith(norm(capLine.text).slice(0, 15))) continue; // the caption's own label
 		covered.push([m.start, m.end]);
 		hots.push({
-			kind: "figure", rects: rangeRects(pt.rects, m.start, m.end), key: `fig:${page}:${m.start}`,
+			kind: "figure",
+			rects: rangeRects(pt.rects, m.start, m.end),
+			key: `fig:${page}:${m.start}`,
 			content: () => (it ? <FigureCard s={s} item={it} /> : <LazyFigureCard s={s} fkey={m.key} label={m.label} />),
 		});
 	}
@@ -157,7 +191,12 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 	for (const m of findSupplementaryMentions(pt.text)) {
 		if (overlaps(m.start, m.end) || startsCaption(m.start)) continue;
 		covered.push([m.start, m.end]);
-		hots.push({ kind: "supp", rects: rangeRects(pt.rects, m.start, m.end), key: `supp:${page}:${m.start}`, content: () => <SuppCard s={s} mention={m} /> });
+		hots.push({
+			kind: "supp",
+			rects: rangeRects(pt.rects, m.start, m.end),
+			key: `supp:${page}:${m.start}`,
+			content: () => <SuppCard s={s} mention={m} />,
+		});
 	}
 
 	// in-text citation links of the PDF
@@ -170,21 +209,29 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 		const destSize = ctx.pageSize(l.target.page);
 		const top = l.target.y >= 0 ? (1 - l.target.y) * destSize.h : undefined;
 		// before the analysis the reference list is not located: a link whose own text reads as citation numbers ("[3]", "4,5") is one
-		const refLike = rs ? isInReferences(rs, l.target.page, top) || (l.target.page === rs.page && parseCitationNumbers(text).length > 0) : parseCitationNumbers(text).length > 0;
+		const refLike = rs
+			? isInReferences(rs, l.target.page, top) || (l.target.page === rs.page && parseCitationNumbers(text).length > 0)
+			: parseCitationNumbers(text).length > 0;
 		if (!refLike) continue;
 		let nums = parseCitationNumbers(text);
 		let groupText = text;
 		if (idx) {
 			const g = expandCitationGroup(pt.text, idx);
 			const gn = parseCitationNumbers(g);
-			if (gn.length >= nums.length) { nums = gn; groupText = g; }
+			if (gn.length >= nums.length) {
+				nums = gn;
+				groupText = g;
+			}
 		}
 		if (idx) covered.push([idx[0], idx[1]]);
 		const spec: CiteSpec = { nums: nums.length ? nums : [], groupText: groupText || text, dest: { page: l.target.page, top } };
 		// the zone sits above the PDF's own link, so it does the link's job on a click: go to the reference (the card has the details)
 		const dest = l.target;
 		hots.push({
-			kind: "cite", rects: [rect], key: `link:${page}:${rect.map((n) => Math.round(n)).join(",")}`, content: () => <CiteContent s={s} k={k} spec={spec} />,
+			kind: "cite",
+			rects: [rect],
+			key: `link:${page}:${rect.map((n) => Math.round(n)).join(",")}`,
+			content: () => <CiteContent s={s} k={k} spec={spec} />,
 			go: () => s.jump(dest.page, top !== undefined ? [0, top - 10, 0, top] : null),
 		});
 	}
@@ -194,13 +241,19 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 		BRACKET_GROUP.lastIndex = 0;
 		let m: RegExpExecArray | null;
 		while ((m = BRACKET_GROUP.exec(pt.text))) {
-			const a = m.index, b = m.index + m[0].length;
+			const a = m.index,
+				b = m.index + m[0].length;
 			if (overlaps(a, b) || inRefList(a)) continue;
 			const nums = parseCitationNumbers(m[0]);
 			if (!nums.length) continue;
 			covered.push([a, b]);
 			const spec: CiteSpec = { nums, groupText: m[0] };
-			hots.push({ kind: "cite", rects: rangeRects(pt.rects, a, b), key: `br:${page}:${a}`, content: () => <CiteContent s={s} k={k} spec={spec} /> });
+			hots.push({
+				kind: "cite",
+				rects: rangeRects(pt.rects, a, b),
+				key: `br:${page}:${a}`,
+				content: () => <CiteContent s={s} k={k} spec={spec} />,
+			});
 		}
 	}
 
@@ -212,7 +265,12 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 				if (overlaps(ay.start, ay.end) || inRefList(ay.start)) continue;
 				const ref = resolveAuthorYear(refs, ay);
 				if (!ref) continue;
-				hots.push({ kind: "author-year", rects: rangeRects(pt.rects, ay.start, ay.end), key: `ay:${page}:${ay.start}`, content: () => <RefCard s={s} opts={{ ref }} /> });
+				hots.push({
+					kind: "author-year",
+					rects: rangeRects(pt.rects, ay.start, ay.end),
+					key: `ay:${page}:${ay.start}`,
+					content: () => <RefCard s={s} opts={{ ref }} />,
+				});
 			}
 		}
 	}
@@ -226,7 +284,9 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 			if (n === undefined || (page === rs.page && line.y2 > rs.y + 2)) continue;
 			const sites = cites.get(n) ?? [];
 			hots.push({
-				kind: "bib", rects: minusLinks(lineRect(line), uriRects), key: `bib:${page}:${n}`,
+				kind: "bib",
+				rects: minusLinks(lineRect(line), uriRects),
+				key: `bib:${page}:${n}`,
 				content: () => <CitedByCard s={s} k={k} n={n} sites={sites} onJump={(site) => s.jump(site.page, site.rect)} />,
 				go: sites[0] ? () => s.jump(sites[0]!.page, sites[0]!.rect) : undefined,
 			});
@@ -244,11 +304,13 @@ const CARD_W = 380;
 
 /** Escape closes the card while it is shown (hover cards never take keyboard focus, so this is a window-level handler). */
 export function EscapeCloses(p: { close: () => void }): JSX.Element {
-	onCleanup(addKeyHandler((e) => {
-		if (e.key !== "escape" || e.modifiers?.ctrl || e.modifiers?.alt || e.modifiers?.cmd) return false;
-		p.close();
-		return true;
-	}));
+	onCleanup(
+		addKeyHandler((e) => {
+			if (e.key !== "escape" || e.modifiers?.ctrl || e.modifiers?.alt || e.modifiers?.cmd) return false;
+			p.close();
+			return true;
+		}),
+	);
 	return undefined as unknown as JSX.Element;
 }
 
@@ -258,7 +320,14 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 	const size = () => p.ctx.pageSize(p.page);
 	const sc = () => p.box().width / size().w; // px per PDF point
 	// scanned at once, and again when the document analysis (reference list, figure index) lands; the old zones stay until the new ones are in
-	const [hots] = createResource(() => ({ analysed: s.analysed() }), () => computeHots(s, p.ctx, p.page).catch((e) => { console.warn("[academic] page scan failed:", (e as Error).message); return [] as Hot[]; }));
+	const [hots] = createResource(
+		() => ({ analysed: s.analysed() }),
+		() =>
+			computeHots(s, p.ctx, p.page).catch((e) => {
+				console.warn("[academic] page scan failed:", (e as Error).message);
+				return [] as Hot[];
+			}),
+	);
 	const [hover, setHover] = createSignal<string | null>(null);
 	const timers = new Map<string, ReturnType<typeof setTimeout>>();
 	const open = (h: Hot, pinned: boolean) => s.showPopup({ key: h.key, page: p.page, rect: h.rects[0]!, content: h.content, pinned });
@@ -272,7 +341,10 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 					s.cancelHide();
 					if (s.popup()?.key === q.h.key) return;
 					clearTimeout(timers.get(q.h.key));
-					timers.set(q.h.key, setTimeout(() => open(q.h, false), 350));
+					timers.set(
+						q.h.key,
+						setTimeout(() => open(q.h, false), 350),
+					);
 				}}
 				onMouseLeave={() => {
 					setHover(null);
@@ -282,12 +354,23 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 				// a click pins the card (it then stays until closed)
 				onClick={() => {
 					clearTimeout(timers.get(q.h.key));
-					if (q.h.go) { s.hidePopup(); q.h.go(); } else open(q.h, true);
+					if (q.h.go) {
+						s.hidePopup();
+						q.h.go();
+					} else open(q.h, true);
 				}}
 				style={{
-					position: "absolute", left: q.r[0] * sc() - 1, top: (size().h - q.r[3]) * sc() - 1, width: (q.r[2] - q.r[0]) * sc() + 2, height: (q.r[3] - q.r[1]) * sc() + 2,
-					backgroundColor: withAlpha(TINT[q.h.kind], on() ? 0.22 : q.h.kind === "bib" ? 0.04 : 0.1), borderRadius: 2, cursor: "pointer", pointerEvents: "auto",
-					borderBottomWidth: q.h.kind === "bib" ? 0 : 1.5, borderColor: withAlpha(TINT[q.h.kind], on() ? 1 : 0.85),
+					position: "absolute",
+					left: q.r[0] * sc() - 1,
+					top: (size().h - q.r[3]) * sc() - 1,
+					width: (q.r[2] - q.r[0]) * sc() + 2,
+					height: (q.r[3] - q.r[1]) * sc() + 2,
+					backgroundColor: withAlpha(TINT[q.h.kind], on() ? 0.22 : q.h.kind === "bib" ? 0.04 : 0.1),
+					borderRadius: 2,
+					cursor: "pointer",
+					pointerEvents: "auto",
+					borderBottomWidth: q.h.kind === "bib" ? 0 : 1.5,
+					borderColor: withAlpha(TINT[q.h.kind], on() ? 1 : 0.85),
 				}}
 			/>
 		);
@@ -298,8 +381,9 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 		const pp = s.popup();
 		if (!pp || pp.page !== p.page) return undefined;
 		const r = pp.rect;
-		const left = Math.max(4, Math.min((r[0] * sc()), p.box().width - CARD_W - 4));
-		const rectTop = (size().h - r[3]) * sc(), rectBottom = (size().h - r[1]) * sc();
+		const left = Math.max(4, Math.min(r[0] * sc(), p.box().width - CARD_W - 4));
+		const rectTop = (size().h - r[3]) * sc(),
+			rectBottom = (size().h - r[1]) * sc();
 		// below the mention when the window has room there (a card is up to ~430 px tall), else above it; the page box is taller than the window
 		p.ctx.viewTick?.();
 		const w = p.ctx.rectToWindow?.(p.page, toNRect(r, size().w, size().h));
@@ -312,13 +396,22 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 				// a press anywhere else closes the card, a hover card as much as a pinned one (pressing its own mention pins it again)
 				onMouseDownOutside={() => s.hidePopup()}
 				style={{
-					...k.t("flex flex-col rounded-lg border bg-popover"), position: "absolute", left, width: CARD_W, padding: 12,
+					...k.t("flex flex-col rounded-lg border bg-popover"),
+					position: "absolute",
+					left,
+					width: CARD_W,
+					padding: 12,
 					...(below ? { top: Math.min(rectBottom + 6, p.box().height - 80) } : { bottom: p.box().height - rectTop + 6 }),
-					borderColor: k.tok("border"), pointerEvents: "auto", boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" }],
+					borderColor: k.tok("border"),
+					pointerEvents: "auto",
+					boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" }],
 				}}
 			>
 				<Show when={pp.pinned}>
-					<div onClick={() => s.hidePopup()} style={{ position: "absolute", right: 6, top: 6, display: "flex", cursor: "pointer" }}>
+					<div
+						onClick={() => s.hidePopup()}
+						style={{ position: "absolute", right: 6, top: 6, display: "flex", cursor: "pointer" }}
+					>
 						<Icon name="x" size={14} color={k.tok("muted-foreground")} />
 					</div>
 				</Show>
@@ -346,19 +439,21 @@ export function AcademicHost(p: { ctx: ReaderContext }): JSX.Element {
 	const k = kit(p.ctx.mode);
 	return (
 		<>
-		<Show when={s.struct().phase === "loading"}>
-			{/* the layout analysis runs in a worker thread; citations and mentions already work from the page text meanwhile */}
-			<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>{`Analysing layout ${Math.round((s.struct() as { pct?: number }).pct ?? 0)}%`}</text>
-		</Show>
-		<Show when={s.struct().phase === "error"}>
-			{/* the layout analysis failed (the worker is missing or crashed): citations found in the text still work, the reading view shows the error */}
-			<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Layout analysis unavailable</text>
-		</Show>
-		<Show when={s.backStack().length > 0}>
-			<Button size="sm" variant="outline" icon="arrow-left" onClick={() => s.goBack()}>
-				{`Back to page ${(s.backStack()[s.backStack().length - 1] ?? 0) + 1}`}
-			</Button>
-		</Show>
+			<Show when={s.struct().phase === "loading"}>
+				{/* the layout analysis runs in a worker thread; citations and mentions already work from the page text meanwhile */}
+				<text
+					style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}
+				>{`Analysing layout ${Math.round((s.struct() as { pct?: number }).pct ?? 0)}%`}</text>
+			</Show>
+			<Show when={s.struct().phase === "error"}>
+				{/* the layout analysis failed (the worker is missing or crashed): citations found in the text still work, the reading view shows the error */}
+				<text style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}>Layout analysis unavailable</text>
+			</Show>
+			<Show when={s.backStack().length > 0}>
+				<Button size="sm" variant="outline" icon="arrow-left" onClick={() => s.goBack()}>
+					{`Back to page ${(s.backStack()[s.backStack().length - 1] ?? 0) + 1}`}
+				</Button>
+			</Show>
 		</>
 	);
 }

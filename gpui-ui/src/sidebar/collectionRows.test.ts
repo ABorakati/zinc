@@ -4,7 +4,11 @@ import type { Collection } from "../contracts";
 import { buildRows, sortLevel, type Row, type RowInput } from "./collectionRows";
 
 const c = (key: string, name: string, itemCount: number, children?: Collection[]): Collection => ({
-	key, name, parentKey: null, itemCount, ...(children ? { children } : {}),
+	key,
+	name,
+	parentKey: null,
+	itemCount,
+	...(children ? { children } : {}),
 });
 // Alpha(5) > [Zed(1), Bee(9)], Beta(20), Gamma(0) > [Inner(3)], delta(7)
 const tree = (): Collection[] => [
@@ -14,11 +18,24 @@ const tree = (): Collection[] => [
 	c("D", "delta", 7),
 ];
 const input = (o: Partial<RowInput> = {}): RowInput => ({
-	collections: tree(), sort: "name-asc", group: "none", styles: {}, stamps: {}, sections: [], pins: [],
-	expanded: new Set(["A", "G"]), collapsed: new Set(), ...o,
+	collections: tree(),
+	sort: "name-asc",
+	group: "none",
+	styles: {},
+	stamps: {},
+	sections: [],
+	pins: [],
+	expanded: new Set(["A", "G"]),
+	collapsed: new Set(),
+	...o,
 });
 /** "Header" for headers, key for rows (depth as leading dots, p: for pinned copies). */
-const show = (rows: Row[]) => rows.map((r) => (r.kind === "header" ? `[${r.label} ${r.count}${r.collapsed ? " collapsed" : ""}]` : `${".".repeat(r.depth)}${r.id.startsWith("p:") ? "p:" : ""}${r.c.key}`));
+const show = (rows: Row[]) =>
+	rows.map((r) =>
+		r.kind === "header"
+			? `[${r.label} ${r.count}${r.collapsed ? " collapsed" : ""}]`
+			: `${".".repeat(r.depth)}${r.id.startsWith("p:") ? "p:" : ""}${r.c.key}`,
+	);
 
 describe("sorting", () => {
 	test("name A-Z is case-insensitive and keeps children under their parent", () => {
@@ -33,13 +50,19 @@ describe("sorting", () => {
 	});
 	test("date created / modified: newest first, from stamps, ties by name", () => {
 		const stamps = {
-			A: { c: 10, m: 50, sig: "" }, B: { c: 30, m: 20, sig: "" }, G: { c: 30, m: 5, sig: "" }, D: { c: 0, m: 0, sig: "" },
+			A: { c: 10, m: 50, sig: "" },
+			B: { c: 30, m: 20, sig: "" },
+			G: { c: 30, m: 5, sig: "" },
+			D: { c: 0, m: 0, sig: "" },
 		};
 		expect(show(buildRows(input({ sort: "created", stamps, expanded: new Set() })))).toEqual(["B", "G", "A", "D"]);
 		expect(show(buildRows(input({ sort: "modified", stamps, expanded: new Set() })))).toEqual(["A", "B", "G", "D"]);
 	});
 	test("a date from the core wins over the stamp", () => {
-		const list = [{ ...c("x", "x", 0), dateAdded: "2024-01-02T00:00:00Z" }, { ...c("y", "y", 0), dateAdded: "2024-01-01T00:00:00Z" }];
+		const list = [
+			{ ...c("x", "x", 0), dateAdded: "2024-01-02T00:00:00Z" },
+			{ ...c("y", "y", 0), dateAdded: "2024-01-01T00:00:00Z" },
+		];
 		expect(sortLevel(list, "created", { y: { c: 9e12, m: 0, sig: "" } }).map((k) => k.key)).toEqual(["x", "y"]);
 	});
 	test("collapsed parents hide their children", () => {
@@ -76,7 +99,13 @@ describe("group by section", () => {
 		expect(show(buildRows(input({ group: "section", sections: ["Empty"] }))).slice(0, 2)).toEqual(["[Empty 0]", "[Collections 4]"]);
 		expect(show(rows)[0]).toBe("[Empty 1]");
 		const all = { A: { section: "S" }, B: { section: "S" }, G: { section: "S" }, D: { section: "S" } };
-		expect(show(buildRows(input({ group: "section", sections: ["S"], styles: all, expanded: new Set() })))).toEqual(["[S 4]", "A", "B", "D", "G"]);
+		expect(show(buildRows(input({ group: "section", sections: ["S"], styles: all, expanded: new Set() })))).toEqual([
+			"[S 4]",
+			"A",
+			"B",
+			"D",
+			"G",
+		]);
 	});
 });
 
@@ -91,7 +120,14 @@ describe("pinned", () => {
 		expect(show(rows)).toEqual(["[Pinned 1]", "p:B", "[Blue 1]", "B", "[No colour 3]", "A", "D", "G"]);
 	});
 	test("collapsed Pinned hides its rows; unknown / deleted pins are ignored; no pins, no section", () => {
-		expect(show(buildRows(input({ pins: ["B"], collapsed: new Set(["pinned"]), expanded: new Set() })))).toEqual(["[Pinned 1 collapsed]", "[All collections 4]", "A", "B", "D", "G"]);
+		expect(show(buildRows(input({ pins: ["B"], collapsed: new Set(["pinned"]), expanded: new Set() })))).toEqual([
+			"[Pinned 1 collapsed]",
+			"[All collections 4]",
+			"A",
+			"B",
+			"D",
+			"G",
+		]);
 		expect(show(buildRows(input({ pins: ["nope"], expanded: new Set() })))).toEqual(["A", "B", "D", "G"]);
 	});
 });

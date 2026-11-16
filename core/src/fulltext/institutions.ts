@@ -55,10 +55,25 @@ export const WARM_TARGET = "https://www.nature.com/";
 
 /** KCL's EZproxy host list (zotero-fulltext research/04 section 2.4). */
 const KCL_EZPROXY_HOSTS = [
-	"doi.org", "dx.doi.org", "www.bmj.com", "www.webofscience.com", "www.liebertpub.com", "www.jneurosci.org",
-	"www.psychiatryonline.org", "psychiatryonline.org", "www.atsjournals.org", "www.ajronline.org", "www.jospt.org",
-	"www.jove.com", "www.elgaronline.com", "infoweb.newsbank.com", "global.factiva.com", "www.portal.euromonitor.com",
-	"institutions.newscientist.com", "www.lrb.co.uk", "libguides.kcl.ac.uk",
+	"doi.org",
+	"dx.doi.org",
+	"www.bmj.com",
+	"www.webofscience.com",
+	"www.liebertpub.com",
+	"www.jneurosci.org",
+	"www.psychiatryonline.org",
+	"psychiatryonline.org",
+	"www.atsjournals.org",
+	"www.ajronline.org",
+	"www.jospt.org",
+	"www.jove.com",
+	"www.elgaronline.com",
+	"infoweb.newsbank.com",
+	"global.factiva.com",
+	"www.portal.euromonitor.com",
+	"institutions.newscientist.com",
+	"www.lrb.co.uk",
+	"libguides.kcl.ac.uk",
 ];
 
 const KCL_ENGINE: EngineInstitution = {
@@ -87,11 +102,22 @@ function preset(id: string, name: string, o: { oa?: string; saml?: string; proxy
 	if (o.oa) methods.push("openathens");
 	if (o.saml) methods.push("saml");
 	if (o.proxyHost) methods.push("ezproxy");
-	return { id, name, methods, openathensDomain: o.oa, shibbolethEntityId: o.saml, proxyPrefix: o.proxyHost ? proxy(o.proxyHost) : undefined };
+	return {
+		id,
+		name,
+		methods,
+		openathensDomain: o.oa,
+		shibbolethEntityId: o.saml,
+		proxyPrefix: o.proxyHost ? proxy(o.proxyHost) : undefined,
+	};
 }
 
 export const PRESETS: InstitutionPreset[] = [
-	preset("kcl", "King's College London", { oa: "kcl.ac.uk", saml: "https://kclidp.kcl.ac.uk/idp/shibboleth", proxyHost: "login.kcl.idm.oclc.org" }),
+	preset("kcl", "King's College London", {
+		oa: "kcl.ac.uk",
+		saml: "https://kclidp.kcl.ac.uk/idp/shibboleth",
+		proxyHost: "login.kcl.idm.oclc.org",
+	}),
 	preset("bath", "University of Bath", { saml: "https://idp.bath.ac.uk/shibboleth" }),
 	preset("birmingham", "University of Birmingham", { saml: "https://idp.bham.ac.uk/shibboleth" }),
 	preset("bristol", "University of Bristol", { saml: "https://idp.bris.ac.uk/shibboleth" }),
@@ -144,11 +170,22 @@ export function searchPresets(q: string): InstitutionPreset[] {
 const HOSTNAME_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 export function normHost(s: string): string {
-	return String(s).trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/[/?#].*$/, "").replace(/\.+$/, "");
+	return String(s)
+		.trim()
+		.toLowerCase()
+		.replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
+		.replace(/[/?#].*$/, "")
+		.replace(/\.+$/, "");
 }
 
 export function isEntityId(s: unknown): boolean {
-	return typeof s === "string" && s.length > 0 && s.length <= 1024 && !/[\s\u0000-\u001f\u007f]/.test(s) && /^(?:https?:\/\/[^/]+|urn:\S+)/i.test(s);
+	return (
+		typeof s === "string" &&
+		s.length > 0 &&
+		s.length <= 1024 &&
+		!/[\s\u0000-\u001f\u007f]/.test(s) &&
+		/^(?:https?:\/\/[^/]+|urn:\S+)/i.test(s)
+	);
 }
 
 function entityIdHost(entityId: string): string {
@@ -157,7 +194,9 @@ function entityIdHost(entityId: string): string {
 }
 
 /** Accepts "login.x.idm.oclc.org", "https://login.x.idm.oclc.org/login?url=" and similar. */
-export function parseProxyPrefix(raw: unknown): { ok: true; loginHost: string; suffix: string; prefix: string } | { ok: false; error: string } {
+export function parseProxyPrefix(
+	raw: unknown,
+): { ok: true; loginHost: string; suffix: string; prefix: string } | { ok: false; error: string } {
 	const text = String(raw ?? "").trim();
 	if (!text) return { ok: false, error: "the library proxy address is empty" };
 	const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`;
@@ -168,13 +207,19 @@ export function parseProxyPrefix(raw: unknown): { ok: true; loginHost: string; s
 	const host = normHost(m[2]);
 	if (!HOSTNAME_RE.test(host) || !host.includes(".")) return { ok: false, error: "the library proxy address is not a valid host name" };
 	const path = m[3].replace(/\/+$/, "").toLowerCase();
-	if (path !== "" && path !== "/login") return { ok: false, error: "the library proxy address must be the login address (host or host/login)" };
+	if (path !== "" && path !== "/login")
+		return { ok: false, error: "the library proxy address must be the login address (host or host/login)" };
 	const suffix = /^login\..+\..+/.test(host) ? host.slice("login.".length) : host;
 	return { ok: true, loginHost: host, suffix, prefix: proxy(host) };
 }
 
 const slug = (s: string) =>
-	s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+	s
+		.toLowerCase()
+		.normalize("NFKD")
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 40);
 
 /** Validate and normalise what the user typed. Throws Error with a message fit for the UI. */
 export function normalizeInstitution(input: unknown): InstitutionSettings {
@@ -252,7 +297,13 @@ export function resolveInstitution(s: InstitutionSettings | undefined): Resolved
 	const prefix = pick(s.proxyPrefix, base?.proxyPrefix);
 	let engine: EngineInstitution;
 	if (id === "kcl") {
-		engine = { ...KCL_ENGINE, name: s.name || KCL_ENGINE.name, openathens_domain: domain, saml_entity_id: saml || null, ezproxy: proxyOf(prefix) };
+		engine = {
+			...KCL_ENGINE,
+			name: s.name || KCL_ENGINE.name,
+			openathens_domain: domain,
+			saml_entity_id: saml || null,
+			ezproxy: proxyOf(prefix),
+		};
 		const hosts = new Set(engine.idp_hosts);
 		const sh = saml ? entityIdHost(saml) : "";
 		if (sh) hosts.add(sh);
@@ -285,7 +336,13 @@ function blankEngine(name: string, domain: string, saml: string, ez: { login_hos
 	};
 }
 
-function describe(id: string, realm: string, enabled: boolean, loginMode: LoginMode | undefined, engine: EngineInstitution): ResolvedInstitution {
+function describe(
+	id: string,
+	realm: string,
+	enabled: boolean,
+	loginMode: LoginMode | undefined,
+	engine: EngineInstitution,
+): ResolvedInstitution {
 	const methods: SignInMethod[] = [];
 	if (engine.openathens_domain) methods.push("openathens");
 	if (engine.saml_entity_id) methods.push("saml");
@@ -312,11 +369,18 @@ export function warmupTarget(inst: EngineInstitution): { url: string; realm: str
 	if (custom) return /^https?:\/\//i.test(custom) ? { url: custom, realm: "openathens" } : null;
 	const domain = String(inst.openathens_domain || "").trim();
 	if (domain) {
-		return { url: `https://go.openathens.net/redirector/${encodeURIComponent(domain)}?url=${encodeURIComponent(WARM_TARGET)}`, realm: "openathens" };
+		return {
+			url: `https://go.openathens.net/redirector/${encodeURIComponent(domain)}?url=${encodeURIComponent(WARM_TARGET)}`,
+			realm: "openathens",
+		};
 	}
-	if (inst.ezproxy?.login_host) return { url: `https://${inst.ezproxy.login_host}/login?url=${encodeURIComponent(WARM_TARGET)}`, realm: "ezproxy" };
+	if (inst.ezproxy?.login_host)
+		return { url: `https://${inst.ezproxy.login_host}/login?url=${encodeURIComponent(WARM_TARGET)}`, realm: "ezproxy" };
 	if (inst.saml_entity_id) {
-		return { url: `https://sp.nature.com/saml/login?idp=${encodeURIComponent(inst.saml_entity_id)}&targetUrl=${encodeURIComponent(WARM_TARGET)}`, realm: "saml" };
+		return {
+			url: `https://sp.nature.com/saml/login?idp=${encodeURIComponent(inst.saml_entity_id)}&targetUrl=${encodeURIComponent(WARM_TARGET)}`,
+			realm: "saml",
+		};
 	}
 	return null;
 }
@@ -357,9 +421,14 @@ export function parseFederationSearch(json: unknown): FederationHit[] {
 		seen.add(entityID);
 		const en = e.title_langs && typeof e.title_langs.en === "string" ? e.title_langs.en : "";
 		const title = String(typeof e.title === "string" && e.title.trim() ? e.title : en).trim() || entityID;
-		const domain = String(e.domain || e.scope || "").split(",")[0].trim();
+		const domain = String(e.domain || e.scope || "")
+			.split(",")[0]
+			.trim();
 		const auth: unknown[] = Array.isArray(e.registrationAuthority) ? e.registrationAuthority : [];
 		out.push({ name: title, shibbolethEntityId: entityID, domain, ukFederation: auth.includes(UK_FEDERATION) });
 	}
-	return out.filter((x) => x.ukFederation).concat(out.filter((x) => !x.ukFederation)).slice(0, 30);
+	return out
+		.filter((x) => x.ukFederation)
+		.concat(out.filter((x) => !x.ukFederation))
+		.slice(0, 30);
 }

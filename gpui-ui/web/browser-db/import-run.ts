@@ -52,15 +52,23 @@ export interface ImportResult {
 let state: ImportState = { running: false, phase: "idle" };
 export const importState = (): ImportState => state;
 
-const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-const fail = (status: number, error: string): never => { throw Object.assign(new Error(error), { status }); };
+const json = (body: unknown, status = 200): Response =>
+	new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const fail = (status: number, error: string): never => {
+	throw Object.assign(new Error(error), { status });
+};
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
 /** A path the tab sent: <kind>/<segments>, nothing that climbs out of the import folder. */
 function safeRel(p: string | null): string {
 	if (!p) return fail(400, "path is required");
 	const parts = p.split("/");
-	if (parts.length < 2 || (parts[0] !== "zotero" && parts[0] !== "zinc") || parts.some((s) => !s || s === "." || s === ".." || s.includes("\\") || s.includes("\0"))) return fail(400, "malformed path");
+	if (
+		parts.length < 2 ||
+		(parts[0] !== "zotero" && parts[0] !== "zinc") ||
+		parts.some((s) => !s || s === "." || s === ".." || s.includes("\\") || s.includes("\0"))
+	)
+		return fail(400, "malformed path");
 	return parts.join("/");
 }
 
@@ -68,7 +76,11 @@ export async function browserApi(req: Request, url: URL, db: CoreDb): Promise<Re
 	const route = url.pathname.slice("/api/browser".length).replace(/\/+$/, "");
 	try {
 		if (route === "/state" && req.method === "GET") {
-			const n = db.query("SELECT (SELECT count(*) FROM items) AS items, (SELECT count(*) FROM items WHERE parent_key IS NULL) AS topLevelItems, (SELECT count(*) FROM collections) AS collections").get() as { items: number; topLevelItems: number; collections: number };
+			const n = db
+				.query(
+					"SELECT (SELECT count(*) FROM items) AS items, (SELECT count(*) FROM items WHERE parent_key IS NULL) AS topLevelItems, (SELECT count(*) FROM collections) AS collections",
+				)
+				.get() as { items: number; topLevelItems: number; collections: number };
 			// leftover: is a temporary import copy still there (the headless check)
 			return json({ ...n, leftover: existsSync(IMPORT_ROOT) });
 		}
@@ -93,7 +105,10 @@ export async function browserApi(req: Request, url: URL, db: CoreDb): Promise<Re
 		}
 		if (route === "/export" && req.method === "GET") {
 			const z = exportLibraryZip(db);
-			return new Response(z.bytes as BlobPart, { status: 200, headers: { "Content-Type": "application/zip", "X-Zinc-Export": JSON.stringify(z.summary) } });
+			return new Response(z.bytes as BlobPart, {
+				status: 200,
+				headers: { "Content-Type": "application/zip", "X-Zinc-Export": JSON.stringify(z.summary) },
+			});
 		}
 		if (route === "/empty" && req.method === "POST") {
 			// after the library was moved into the Zinc app (the connector's "Move your browser library into Zinc"): everything goes, nothing is
@@ -114,12 +129,25 @@ export async function browserApi(req: Request, url: URL, db: CoreDb): Promise<Re
 // ---- the copy of a library's rows into the open one
 
 /** The tables that carry the user's data (the same list for both sources). Everything else is this machine's state (sync, view positions, search indexes). */
-const DATA_TABLES = ["collections", "items", "collection_items", "item_tags", "attachments", "annotations", "fulltext", "saved_searches", "duplicate_exclusions", "bbt_keys"];
+const DATA_TABLES = [
+	"collections",
+	"items",
+	"collection_items",
+	"item_tags",
+	"attachments",
+	"annotations",
+	"fulltext",
+	"saved_searches",
+	"duplicate_exclusions",
+	"bbt_keys",
+];
 /** meta rows that are the library's own (the rest is schema bookkeeping and this machine's state). */
 const META_KEEP = ["tagColors", "zotero_import_at"];
 
-const tableCols = (d: { query(s: string): { all(): unknown[] } }, t: string): string[] => (d.query(`PRAGMA table_info("${t}")`).all() as { name: string }[]).map((c) => c.name);
-const hasTable = (d: { query(s: string): { get(...a: unknown[]): unknown } }, t: string): boolean => !!d.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
+const tableCols = (d: { query(s: string): { all(): unknown[] } }, t: string): string[] =>
+	(d.query(`PRAGMA table_info("${t}")`).all() as { name: string }[]).map((c) => c.name);
+const hasTable = (d: { query(s: string): { get(...a: unknown[]): unknown } }, t: string): boolean =>
+	!!d.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(t);
 
 /** Copy the rows of `src` into `dst` (one transaction, sync triggers off): the columns both have, so a library from an older or newer schema still goes in. */
 function copyRows(src: CoreDb, dst: CoreDb): Record<string, number> {
@@ -151,13 +179,18 @@ function copyRows(src: CoreDb, dst: CoreDb): Record<string, number> {
 				const cols = tableCols(src, "libraries").filter((c) => have.has(c) && !/version$/.test(c));
 				const list = cols.map((c) => `"${c}"`).join(", ");
 				const ins = dst.prepare(`INSERT OR IGNORE INTO libraries (${list}) VALUES (${cols.map(() => "?").join(", ")})`);
-				for (const row of src.query(`SELECT ${list} FROM libraries WHERE id <> 1`).iterate() as Iterable<Record<string, unknown>>) ins.run(...cols.map((c) => row[c] as never));
+				for (const row of src.query(`SELECT ${list} FROM libraries WHERE id <> 1`).iterate() as Iterable<Record<string, unknown>>)
+					ins.run(...cols.map((c) => row[c] as never));
 				ins.finalize();
 			}
 			if (hasTable(src, "meta")) {
 				for (const name of META_KEEP) {
 					const m = src.query("SELECT value FROM meta WHERE name = ?").get(name) as { value: string } | null;
-					if (m) dst.query("INSERT INTO meta(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(name, m.value);
+					if (m)
+						dst.query("INSERT INTO meta(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(
+							name,
+							m.value,
+						);
 				}
 			}
 		} finally {
@@ -184,10 +217,16 @@ function relocateFiles(dst: CoreDb, from: string, keys: string[]): { moved: numb
 	for (const key of keys) {
 		const r = rows.get(key) as { key: string; mode: string; path: string | null } | null;
 		if (!r) continue;
-		if (r.mode === "linked_file") { linked++; continue; }
+		if (r.mode === "linked_file") {
+			linked++;
+			continue;
+		}
 		if (r.mode !== "imported_file" && r.mode !== "imported_url") continue;
 		const name = r.path ? baseName(r.path) : "";
-		if (!name || !existsSync(`${from}/storage/${key}/${name}`)) { missing++; continue; }
+		if (!name || !existsSync(`${from}/storage/${key}/${name}`)) {
+			missing++;
+			continue;
+		}
 		set.push({ key, path: `${STORAGE_ROOT}/${key}/${name}` });
 	}
 	mkdirSync(STORAGE_ROOT);
@@ -201,7 +240,11 @@ function relocateFiles(dst: CoreDb, from: string, keys: string[]): { moved: numb
 	dst.transaction(() => {
 		const flagged = hasTable(dst, "sync_flags");
 		if (flagged) dst.exec("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
-		try { for (const s of set) up.run(s.path, s.key); } finally { if (flagged) dst.exec("DELETE FROM sync_flags WHERE name = 'suppress'"); }
+		try {
+			for (const s of set) up.run(s.path, s.key);
+		} finally {
+			if (flagged) dst.exec("DELETE FROM sync_flags WHERE name = 'suppress'");
+		}
 	})();
 	return { moved, missing, linked };
 }
@@ -216,7 +259,11 @@ async function readFulltextCaches(db: CoreDb, from: string, keys: string[]): Pro
 		const f = `${from}/storage/${key}/.zotero-ft-cache`;
 		if (have.get(key) || !existsSync(f)) continue;
 		let text = "";
-		try { text = readFileSync(f, "utf8") as string; } catch { continue; }
+		try {
+			text = readFileSync(f, "utf8") as string;
+		} catch {
+			continue;
+		}
 		if (!text.trim()) continue;
 		ins.run(key, text, now);
 		n++;
@@ -257,12 +304,17 @@ async function runImport(db: CoreDb, kind: "zotero" | "zinc"): Promise<ImportRes
 				searchRoots: false,
 				fuzzyMatch: false,
 				replace: true,
-				onProgress: (p) => { state = { ...state, running: true, phase: p.phase, done: p.done, total: p.total, message: p.message }; },
+				onProgress: (p) => {
+					state = { ...state, running: true, phase: p.phase, done: p.done, total: p.total, message: p.message };
+				},
 			});
 		} else {
 			// a library written by a newer Zinc than this build understands is refused (its schema may carry things this build would drop)
 			const wal = `${main}-wal`;
-			if (existsSync(wal) && statSync(wal).size > 0) warnings.push("library.sqlite-wal was not empty: changes Zinc had not yet written into library.sqlite are not in this import. Close Zinc and import again to include them.");
+			if (existsSync(wal) && statSync(wal).size > 0)
+				warnings.push(
+					"library.sqlite-wal was not empty: changes Zinc had not yet written into library.sqlite are not in this import. Close Zinc and import again to include them.",
+				);
 		}
 		state = { ...state, running: true, phase: "copy", done: undefined, total: undefined, message: "Copying into the browser library" };
 		await tick();
@@ -270,8 +322,11 @@ async function runImport(db: CoreDb, kind: "zotero" | "zinc"): Promise<ImportRes
 		if (!hasTable(src, "items") || !hasTable(src, "meta")) fail(400, "That file is not a Zinc library.");
 		if (kind === "zinc") {
 			const { SCHEMA_HEAD } = await import("../../../core/src/migrations");
-			const v = Number((src.query("SELECT value FROM meta WHERE name = 'schema_version'").get() as { value: string } | null)?.value ?? 0);
-			if (v > SCHEMA_HEAD) fail(400, `That library was made by a newer version of Zinc (schema ${v}); this one understands up to ${SCHEMA_HEAD}.`);
+			const v = Number(
+				(src.query("SELECT value FROM meta WHERE name = 'schema_version'").get() as { value: string } | null)?.value ?? 0,
+			);
+			if (v > SCHEMA_HEAD)
+				fail(400, `That library was made by a newer version of Zinc (schema ${v}); this one understands up to ${SCHEMA_HEAD}.`);
 		}
 		const copied = copyRows(src, db);
 		const keys = (src.query("SELECT item_key AS key FROM attachments").all() as { key: string }[]).map((r) => r.key);
@@ -287,8 +342,16 @@ async function runImport(db: CoreDb, kind: "zotero" | "zinc"): Promise<ImportRes
 		await tick();
 		const { rebuildSearchIndex } = await import("../../../core/src/search");
 		rebuildSearchIndex(db);
-		if (report?.skipped && Object.keys(report.skipped).length) warnings.push(`Skipped: ${Object.entries(report.skipped).map(([k, v]) => `${v} ${k}`).join(", ")}`);
-		if (files.linked) warnings.push(`${files.linked} linked file${files.linked === 1 ? "" : "s"} (files that stay in a folder on the computer) cannot be opened in a browser.`);
+		if (report?.skipped && Object.keys(report.skipped).length)
+			warnings.push(
+				`Skipped: ${Object.entries(report.skipped)
+					.map(([k, v]) => `${v} ${k}`)
+					.join(", ")}`,
+			);
+		if (files.linked)
+			warnings.push(
+				`${files.linked} linked file${files.linked === 1 ? "" : "s"} (files that stay in a folder on the computer) cannot be opened in a browser.`,
+			);
 		const one = (sql: string) => (db.query(sql).get() as { n: number }).n;
 		const result: ImportResult = {
 			kind,
@@ -309,10 +372,18 @@ async function runImport(db: CoreDb, kind: "zotero" | "zinc"): Promise<ImportRes
 		state = { running: false, phase: "failed", error: e instanceof Error ? e.message : String(e) };
 		throw e;
 	} finally {
-		try { src?.close(); } catch { /* closed */ }
+		try {
+			src?.close();
+		} catch {
+			/* closed */
+		}
 		setDatabaseHooks({ resolve: null, sink: null });
 		dropDatabaseImages();
 		// the temporary copy goes (an unfinished import leaves nothing behind)
-		try { rmSync(IMPORT_ROOT); } catch { /* nothing there */ }
+		try {
+			rmSync(IMPORT_ROOT);
+		} catch {
+			/* nothing there */
+		}
 	}
 }

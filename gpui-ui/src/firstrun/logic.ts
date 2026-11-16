@@ -1,7 +1,12 @@
 // Pure helpers of the first-run screen: how the importer's progress reads, and how a found Zotero library is described.
 
 /** What core/src/import/zotero.ts reports through onProgress. */
-export interface ImportProgress { phase: string; done?: number; total?: number; message?: string }
+export interface ImportProgress {
+	phase: string;
+	done?: number;
+	total?: number;
+	message?: string;
+}
 
 /** A Zotero data folder as the screen shows it (core/src/files/zotero-locate.ts DataDirInfo, trimmed). */
 export interface ZoteroFound {
@@ -20,7 +25,15 @@ const n = (v: number) => v.toLocaleString("en-GB");
 const plural = (v: number, one: string, many = `${one}s`) => `${n(v)} ${v === 1 ? one : many}`;
 
 /** Where each importer phase sits on the bar (0..1): the items phase is the long one and fills most of it. */
-const PHASE_START: Record<string, number> = { snapshot: 0, read: 0.12, write: 0.18, files: 0.2, items: 0.2, annotations: 0.9, fulltext: 0.94 };
+const PHASE_START: Record<string, number> = {
+	snapshot: 0,
+	read: 0.12,
+	write: 0.18,
+	files: 0.2,
+	items: 0.2,
+	annotations: 0.9,
+	fulltext: 0.94,
+};
 
 /** Overall progress, 0..1. */
 export function progressFraction(p: ImportProgress | null): number {
@@ -34,14 +47,22 @@ export function progressFraction(p: ImportProgress | null): number {
 export function progressText(p: ImportProgress | null): string {
 	if (!p) return "Starting…";
 	switch (p.phase) {
-		case "snapshot": return "Copying your Zotero database (Zotero itself is not changed)…";
-		case "read": return "Reading your items…";
-		case "write": return "Creating the new library…";
-		case "files": return "Looking for attachment files that moved…";
-		case "items": return p.total ? `Importing items: ${n(p.done ?? 0)} of ${n(p.total)}` : "Importing items…";
-		case "annotations": return "Importing annotations…";
-		case "fulltext": return "Importing full-text caches…";
-		default: return p.message ?? "Working…";
+		case "snapshot":
+			return "Copying your Zotero database (Zotero itself is not changed)…";
+		case "read":
+			return "Reading your items…";
+		case "write":
+			return "Creating the new library…";
+		case "files":
+			return "Looking for attachment files that moved…";
+		case "items":
+			return p.total ? `Importing items: ${n(p.done ?? 0)} of ${n(p.total)}` : "Importing items…";
+		case "annotations":
+			return "Importing annotations…";
+		case "fulltext":
+			return "Importing full-text caches…";
+		default:
+			return p.message ?? "Working…";
 	}
 }
 

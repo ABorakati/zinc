@@ -46,7 +46,12 @@ export async function resolveStyle(src: StyleSource, id: string, depth = 0): Pro
 }
 
 function decodeXml(s: string): string {
-	return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+	return s
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&amp;/g, "&");
 }
 
 /** Locale to run with: explicit, else the style's default, else en-US; "de" -> "de-DE" like citeproc-js does. */
@@ -137,7 +142,13 @@ export class CslFormatter {
 	 * forms come out as a whole-document Refresh would), then the bibliography of everything cited plus `uncited`.
 	 * items: CSL item by CSL id. A citation item whose id is missing from `items` is skipped.
 	 */
-	format(citations: DocCitation[], items: Map<string, CslItem>, uncited: string[] = [], wantBibliography = true, edits: BibliographyEdits = {}): FormatResult {
+	format(
+		citations: DocCitation[],
+		items: Map<string, CslItem>,
+		uncited: string[] = [],
+		wantBibliography = true,
+		edits: BibliographyEdits = {},
+	): FormatResult {
 		const engine = this.newEngine((id) => items.get(id));
 		const latest = new Map<string, string>();
 		const pre: [string, number][] = [];
@@ -171,7 +182,13 @@ export class CslFormatter {
 	 * format() would for the same arguments.
 	 * Use it only for a formatter that serves one document; one-off previews keep using format().
 	 */
-	formatDocument(citations: DocCitation[], items: Map<string, CslItem>, uncited: string[] = [], wantBibliography = true, edits: BibliographyEdits = {}): FormatResult {
+	formatDocument(
+		citations: DocCitation[],
+		items: Map<string, CslItem>,
+		uncited: string[] = [],
+		wantBibliography = true,
+		edits: BibliographyEdits = {},
+	): FormatResult {
 		const itemSig = new Map<string, string>();
 		for (const [id, it] of items) itemSig.set(id, JSON.stringify(it));
 		const sig = new Map<string, string>();
@@ -198,7 +215,10 @@ export class CslFormatter {
 			for (const c of todo) {
 				const i = citations.indexOf(c);
 				const pre = citations.slice(0, i).map((x) => [x.citationID, x.noteIndex] as [string, number]);
-				const post = citations.slice(i + 1).filter((x) => !pending.has(x.citationID)).map((x) => [x.citationID, x.noteIndex] as [string, number]);
+				const post = citations
+					.slice(i + 1)
+					.filter((x) => !pending.has(x.citationID))
+					.map((x) => [x.citationID, x.noteIndex] as [string, number]);
 				const [, changed] = st.engine.processCitationCluster(cluster(c, resolvable(c)), pre, post);
 				for (const [, text, cid] of changed) st.html.set(cid, text);
 				pending.delete(c.citationID);
@@ -221,7 +241,13 @@ export class CslFormatter {
 	}
 
 	/** Whether the kept engine can take this call incrementally: same item data, citations only inserted, edited or deleted. */
-	private canUpdate(st: DocState, citations: DocCitation[], itemSig: Map<string, string>, sig: Map<string, string>, resolvable: (c: DocCitation) => DocCitationItem[]): boolean {
+	private canUpdate(
+		st: DocState,
+		citations: DocCitation[],
+		itemSig: Map<string, string>,
+		sig: Map<string, string>,
+		resolvable: (c: DocCitation) => DocCitationItem[],
+	): boolean {
 		// only author-date and other un-numbered in-text styles: after some edits a kept engine numbers a numeric style's items in
 		// the wrong order, and note styles' ibid./subsequent forms were not tested. Both are cheap to rebuild (10-20 ms).
 		if (this.numbered || this.style.xclass === "note") return false;
@@ -232,7 +258,9 @@ export class CslFormatter {
 		const common = citations.filter((c) => known.has(c.citationID)).map((c) => c.citationID);
 		const before = st.order.filter((cid) => sig.has(cid));
 		if (common.length !== before.length || common.some((cid, i) => cid !== before[i])) return false; // moved
-		const changes = citations.filter((c) => !known.has(c.citationID) || st.sig.get(c.citationID) !== sig.get(c.citationID)).length + (st.order.length - common.length);
+		const changes =
+			citations.filter((c) => !known.has(c.citationID) || st.sig.get(c.citationID) !== sig.get(c.citationID)).length +
+			(st.order.length - common.length);
 		if (changes > Math.max(5, Math.floor(citations.length / 4))) return false;
 		return true;
 	}
@@ -323,7 +351,11 @@ interface DocState {
 }
 
 function cluster(c: DocCitation, citationItems: DocCitationItem[]) {
-	return { citationID: c.citationID, citationItems, properties: c.unsorted ? { noteIndex: c.noteIndex, unsorted: true } : { noteIndex: c.noteIndex } };
+	return {
+		citationID: c.citationID,
+		citationItems,
+		properties: c.unsorted ? { noteIndex: c.noteIndex, unsorted: true } : { noteIndex: c.noteIndex },
+	};
 }
 function citationSig(c: DocCitation): string {
 	return JSON.stringify([c.noteIndex, !!c.unsorted, c.items]);

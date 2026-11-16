@@ -23,7 +23,19 @@ import { handleUiApi } from "./connector/ui";
 import { handleIntegrationsApi } from "./integrations/api";
 import { handleBbtApi } from "./bbt/api";
 import { handleTranslateApi } from "./translate/api";
-const FEATURE_HANDLERS = [handleCiteApi, handleAddItemsApi, handleDuplicatesApi, handleIoApi, handleSearchesApi, handleMaintenanceApi, handleFilesApi, handleUiApi, handleIntegrationsApi, handleTranslateApi, handleBbtApi];
+const FEATURE_HANDLERS = [
+	handleCiteApi,
+	handleAddItemsApi,
+	handleDuplicatesApi,
+	handleIoApi,
+	handleSearchesApi,
+	handleMaintenanceApi,
+	handleFilesApi,
+	handleUiApi,
+	handleIntegrationsApi,
+	handleTranslateApi,
+	handleBbtApi,
+];
 import { getSchema } from "./schema-data";
 import { handleSyncApi } from "./sync/api";
 import { logError } from "./log";
@@ -175,7 +187,15 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			if (m === "POST") {
 				const body = await readBody(req);
 				if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "body must be an object");
-				return json(repo.createCollection(db, body.name, body.parentKey, body.library !== undefined ? resolveLibrary(db, body.library) : undefined), 201);
+				return json(
+					repo.createCollection(
+						db,
+						body.name,
+						body.parentKey,
+						body.library !== undefined ? resolveLibrary(db, body.library) : undefined,
+					),
+					201,
+				);
 			}
 			return methodNotAllowed();
 		}
@@ -227,12 +247,20 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 					limit: intParam(p.get("limit")),
 					offset: intParam(p.get("offset")),
 					search: p.get("search") || undefined,
-						qmode: p.get("qmode") || undefined,
-						unfiled: p.get("unfiled") === "1",
+					qmode: p.get("qmode") || undefined,
+					unfiled: p.get("unfiled") === "1",
 					publications: p.get("publications") === "1",
 					trash: p.get("trash") === "1",
-					fields: p.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean),
-					include: p.get("include")?.split(",").map((f) => f.trim()).filter(Boolean),
+					fields: p
+						.get("fields")
+						?.split(",")
+						.map((f) => f.trim())
+						.filter(Boolean),
+					include: p
+						.get("include")
+						?.split(",")
+						.map((f) => f.trim())
+						.filter(Boolean),
 				}),
 			);
 		}
@@ -323,7 +351,10 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 			else {
 				// Explorer would run an executable / script. Only an explicit confirm (body {"confirm": true} or ?confirm=1) opens one.
 				if (isExecutableName(path) && !(await openConfirmed(req))) {
-					throw new HttpError(409, "this file type can run code; it was not opened. Reveal it in the folder instead, or confirm to open it anyway");
+					throw new HttpError(
+						409,
+						"this file type can run code; it was not opened. Reveal it in the folder instead, or confirm to open it anyway",
+					);
 				}
 				opener.openFile(path);
 			}
@@ -357,7 +388,9 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 	if (a === "search" && n === 1) {
 		if (m !== "GET") return methodNotAllowed();
 		const p = url.searchParams;
-		return json(search(db, p.get("q") ?? "", { limit: intParam(p.get("limit")), offset: intParam(p.get("offset")), library: libParam(p) }));
+		return json(
+			search(db, p.get("q") ?? "", { limit: intParam(p.get("limit")), offset: intParam(p.get("offset")), library: libParam(p) }),
+		);
 	}
 
 	return null;
@@ -374,16 +407,23 @@ export function fileStream(path: string, start: number, end: number, first?: Uin
 	let pos = start;
 	return new ReadableStream<Uint8Array>({
 		start(ctrl) {
-			if (first?.length) { ctrl.enqueue(first); pos += first.length; }
+			if (first?.length) {
+				ctrl.enqueue(first);
+				pos += first.length;
+			}
 		},
 		async pull(ctrl) {
 			try {
 				const chunk = await readChunk(path, pos, Math.min(1024 * 1024, end + 1 - pos));
-				if (!chunk.length) { ctrl.close(); return; }
+				if (!chunk.length) {
+					ctrl.close();
+					return;
+				}
 				pos += chunk.length;
 				ctrl.enqueue(chunk);
+			} catch (e) {
+				ctrl.error(e);
 			}
-			catch (e) { ctrl.error(e); }
 		},
 	});
 }
@@ -397,8 +437,9 @@ async function readChunk(path: string, pos: number, want: number): Promise<Uint8
 		const buf = new Uint8Array(want);
 		const { bytesRead } = await fh.read(buf, 0, want, pos);
 		return bytesRead === want ? buf : buf.subarray(0, bytesRead);
+	} finally {
+		await fh?.close().catch(() => {});
 	}
-	finally { await fh?.close().catch(() => {}); }
 }
 
 /**
@@ -406,9 +447,13 @@ async function readChunk(path: string, pos: number, want: number): Promise<Uint8
  * a failure (OneDrive offline or timing out) becomes a clear 503 instead of a response that breaks midway.
  */
 async function firstChunk(path: string, start: number, end: number): Promise<Uint8Array> {
-	try { return await readChunk(path, start, Math.min(1024 * 1024, end + 1 - start)); }
-	catch (e) {
-		throw new HttpError(503, `The file could not be read${/onedrive/i.test(path) ? " (OneDrive could not download it; check OneDrive is signed in and online, or mark the folder 'Always keep on this device')" : ""}: ${e instanceof Error ? e.message : String(e)}`);
+	try {
+		return await readChunk(path, start, Math.min(1024 * 1024, end + 1 - start));
+	} catch (e) {
+		throw new HttpError(
+			503,
+			`The file could not be read${/onedrive/i.test(path) ? " (OneDrive could not download it; check OneDrive is signed in and online, or mark the folder 'Always keep on this device')" : ""}: ${e instanceof Error ? e.message : String(e)}`,
+		);
 	}
 }
 
@@ -449,8 +494,11 @@ async function serveFile(req: Request, db: Database, key: string): Promise<Respo
 			},
 		});
 	}
-	return new Response(req.method === "HEAD" || size === 0 ? null : fileStream(att.path, 0, size - 1, await firstChunk(att.path, 0, size - 1)), {
-		status: 200,
-		headers: { ...headers, "Content-Length": String(size) },
-	});
+	return new Response(
+		req.method === "HEAD" || size === 0 ? null : fileStream(att.path, 0, size - 1, await firstChunk(att.path, 0, size - 1)),
+		{
+			status: 200,
+			headers: { ...headers, "Content-Length": String(size) },
+		},
+	);
 }

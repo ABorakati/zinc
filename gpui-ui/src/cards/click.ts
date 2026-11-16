@@ -7,7 +7,9 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 export function swallow(): void {
 	flag = true;
 	clearTimeout(timer);
-	timer = setTimeout(() => { flag = false; }, 0);
+	timer = setTimeout(() => {
+		flag = false;
+	}, 0);
 }
 
 /** true while the click in flight was handled by an inner control. */

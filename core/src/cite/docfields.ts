@@ -55,10 +55,7 @@ export interface BibliographyData {
 
 // ---------------------------------------------------------------- field codes
 
-export type ParsedField =
-	| { kind: "item"; data: CitationData }
-	| { kind: "bibl"; data: BibliographyData }
-	| null;
+export type ParsedField = { kind: "item"; data: CitationData } | { kind: "bibl"; data: BibliographyData } | null;
 
 const isPlainObject = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -147,7 +144,12 @@ export function mergeCitationData(first: CitationData, others: CitationData[]): 
 export function splitCitationData(data: CitationData): CitationData[] {
 	return data.citationItems.map((ci) => {
 		const { custom: _c, dontUpdate: _d, plainCitation: _p, formattedCitation: _f, ...props } = data.properties;
-		return { ...data, citationID: newCitationID(), properties: { ...props, formattedCitation: "", plainCitation: "" }, citationItems: [ci] };
+		return {
+			...data,
+			citationID: newCitationID(),
+			properties: { ...props, formattedCitation: "", plainCitation: "" },
+			citationItems: [ci],
+		};
 	});
 }
 
@@ -219,7 +221,13 @@ export interface DocPrefs {
 }
 
 const xmlAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const unXmlAttr = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+const unXmlAttr = (s: string) =>
+	s
+		.replace(/&quot;/g, '"')
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&apos;/g, "'")
+		.replace(/&amp;/g, "&");
 
 export function styleIdToUrl(id: string): string {
 	return /^https?:\/\//.test(id) ? id : ZOTERO_STYLE_PREFIX + id;
@@ -245,7 +253,7 @@ export function defaultPrefs(styleId: string, locale: string): DocPrefs {
 	};
 }
 
-const bool =(v: string | undefined) => v === "1" || v === "true";
+const bool = (v: string | undefined) => v === "1" || v === "true";
 
 /** Document data: Zotero's XML form, or the JSON form (data version 4) some word processors store. */
 export function parsePrefsXml(xml: string | null | undefined): DocPrefs | null {
@@ -303,7 +311,12 @@ function parsePrefsJson(text: string): DocPrefs | null {
 			extraPrefs: {},
 		};
 		for (const [k, v] of Object.entries(p)) {
-			if (["fieldType", "noteType", "automaticJournalAbbreviations", "delayCitationUpdates", "dontAskDelayCitationUpdates"].includes(k)) continue;
+			if (
+				["fieldType", "noteType", "automaticJournalAbbreviations", "delayCitationUpdates", "dontAskDelayCitationUpdates"].includes(
+					k,
+				)
+			)
+				continue;
 			prefs.extraPrefs[k] = String(v);
 		}
 		return prefs;
@@ -477,7 +490,7 @@ export function rtfToRuns(rtf: string): Run[] {
 		else runs.push({ t, ...cur });
 	};
 	const s = rtf.replace(/^\{\\rtf\d*\s*/, "").replace(/\}$/, "");
-	for (let p = 0; p < s.length; ) {
+	for (let p = 0; p < s.length;) {
 		const ch = s[p]!;
 		if (ch === "{") {
 			stack.push({ ...cur });
@@ -560,4 +573,3 @@ export function runsToHtml(runs: Run[]): string {
 		})
 		.join("");
 }
-

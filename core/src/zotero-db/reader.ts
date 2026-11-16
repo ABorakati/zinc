@@ -45,8 +45,7 @@ export class ZoteroDbReader implements ZoteroReader {
 	constructor(private opts: ZoteroDbOptions = {}) {
 		this.dataDir = opts.dataDir ?? findZoteroDataDir(opts.profilesDir);
 		this.dbPath = join(this.dataDir, "zotero.sqlite");
-		this.baseAttach =
-			opts.baseAttachmentPath !== undefined ? opts.baseAttachmentPath : findBaseAttachmentPath(opts.profilesDir);
+		this.baseAttach = opts.baseAttachmentPath !== undefined ? opts.baseAttachmentPath : findBaseAttachmentPath(opts.profilesDir);
 	}
 
 	private async running(): Promise<boolean> {
@@ -199,9 +198,7 @@ export class ZoteroDbReader implements ZoteroReader {
 		try {
 			log = (
 				sinceSql
-					? db
-							.query("SELECT syncObjectTypeID, key FROM syncDeleteLog WHERE libraryID = ? AND dateDeleted > ?")
-							.all(lib, sinceSql)
+					? db.query("SELECT syncObjectTypeID, key FROM syncDeleteLog WHERE libraryID = ? AND dateDeleted > ?").all(lib, sinceSql)
 					: []
 			) as Row[];
 		} catch {

@@ -55,20 +55,32 @@ type MaybeClipboard = { writeToClipboard?(t: string): void; copyText?(t: string)
 /** Put text on the system clipboard. Returns whether it worked. */
 export function copyText(text: string, renderer?: MaybeClipboard): boolean {
 	try {
-		if (renderer?.writeToClipboard) { renderer.writeToClipboard(text); return true; }
-		if (renderer?.copyText) { renderer.copyText(text); return true; }
-	} catch { /* fall through */ }
+		if (renderer?.writeToClipboard) {
+			renderer.writeToClipboard(text);
+			return true;
+		}
+		if (renderer?.copyText) {
+			renderer.copyText(text);
+			return true;
+		}
+	} catch {
+		/* fall through */
+	}
 	const w = win32();
 	if (w) {
 		const bytes = Buffer.from(text + "\0", "utf16le");
 		const mem = w.GlobalAlloc(GMEM_MOVEABLE, bytes.byteLength);
 		if (!mem) return false;
 		const dst = w.GlobalLock(mem);
-		if (!dst) { w.GlobalFree(mem); return false; }
+		if (!dst) {
+			w.GlobalFree(mem);
+			return false;
+		}
 		new Uint8Array(toArrayBuffer(dst as never, 0, bytes.byteLength)).set(bytes);
 		w.GlobalUnlock(mem);
 		let ok = false;
-		for (let i = 0; i < 5 && !ok; i++) { // another process may hold the clipboard for a moment
+		for (let i = 0; i < 5 && !ok; i++) {
+			// another process may hold the clipboard for a moment
 			if (w.OpenClipboard(0)) {
 				w.EmptyClipboard();
 				ok = !!w.SetClipboardData(CF_UNICODETEXT, mem);
@@ -101,8 +113,12 @@ export function pasteText(): string | null {
 			let n = 0;
 			while (u16[n] !== 0 && n < u16.length - 1) n++;
 			return Buffer.from(u16.buffer, 0, n * 2).toString("utf16le");
-		} finally { w.GlobalUnlock(h); }
-	} finally { w.CloseClipboard(); }
+		} finally {
+			w.GlobalUnlock(h);
+		}
+	} finally {
+		w.CloseClipboard();
+	}
 }
 
 /** http(s) only: a PDF is attacker-authored, so file:, smb:, javascript: and app-registered schemes never reach the OS. */

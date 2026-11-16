@@ -20,9 +20,13 @@ import { extractFulltext } from "../../../core/src/extract";
 // Full-text extraction as the host does it, minus the PDF pool: that is a Bun worker (new Worker with env), which a database worker in a
 // browser cannot start; the attempt only logged "full-text extraction failed: worker error" after every PDF save. HTML needs no pool.
 hooks.afterImport = (db: Database, attachmentKey: string) => {
-	const row = db.query("SELECT content_type FROM attachments WHERE item_key = ?").get(attachmentKey) as { content_type: string | null } | null;
+	const row = db.query("SELECT content_type FROM attachments WHERE item_key = ?").get(attachmentKey) as {
+		content_type: string | null;
+	} | null;
 	if (!/html/i.test(row?.content_type ?? "")) return;
-	void extractFulltext(db, attachmentKey).catch((e) => console.error("[browser-db] full-text extraction failed:", e instanceof Error ? e.message : e));
+	void extractFulltext(db, attachmentKey).catch((e) =>
+		console.error("[browser-db] full-text extraction failed:", e instanceof Error ? e.message : e),
+	);
 };
 
 /** The version the extension sees as the "Zotero" version (as the host does: it only shows it in a few messages). */
@@ -33,7 +37,10 @@ export type WireBody =
 	| { kind: "b64"; data: string }
 	| { kind: "upload"; uid: string }
 	| { kind: "form"; fields: Record<string, WireField> };
-export type WireField = { text: string } | { b64: string; type?: string; filename?: string } | { upload: string; type?: string; filename?: string; asText?: boolean };
+export type WireField =
+	| { text: string }
+	| { b64: string; type?: string; filename?: string }
+	| { upload: string; type?: string; filename?: string; asText?: boolean };
 export interface WireRequest {
 	t: "req";
 	id: string | number;
@@ -57,7 +64,16 @@ const API_REFUSED = /^\/api\/(sync|integrations)(\/|$)/;
 const LIBRARY_FREE = new Set(["ping", "getClientHostnames", "proxies"]);
 const NOT_SERVED = new Set(["getTranslators", "getTranslatorCode", "revealInApp"]);
 const SELECTION_METHODS = new Set(["getSelectedCollection", "saveItems", "saveSnapshot", "saveStandaloneAttachment", "import"]);
-const SESSION_MUTATING = new Set(["saveItems", "saveSnapshot", "saveSingleFile", "saveAttachment", "saveStandaloneAttachment", "saveAttachmentFromResolver", "updateSession", "import"]);
+const SESSION_MUTATING = new Set([
+	"saveItems",
+	"saveSnapshot",
+	"saveSingleFile",
+	"saveAttachment",
+	"saveStandaloneAttachment",
+	"saveAttachmentFromResolver",
+	"updateSession",
+	"import",
+]);
 const SESSION_READING = new Set(["saveSingleFile", "saveAttachment", "saveAttachmentFromResolver", "updateSession", "getRecognizedItem"]);
 const SESSION_ACTIONS = new Set(["sessionItems", "trashSession", "cancelSession"]);
 
@@ -100,7 +116,8 @@ function bodyToInit(body: WireBody | undefined, uploads: Map<string, Uint8Array>
 }
 
 // ---- what the host keeps in its state file: here, rows of the library's `meta` table
-const metaGet = (db: Database, name: string): string | undefined => (db.query("SELECT value FROM meta WHERE name = ?").get(name) as { value: string } | null)?.value;
+const metaGet = (db: Database, name: string): string | undefined =>
+	(db.query("SELECT value FROM meta WHERE name = ?").get(name) as { value: string } | null)?.value;
 const metaSet = (db: Database, name: string, value: string): void => {
 	db.query("INSERT INTO meta(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(name, value);
 };
@@ -164,7 +181,8 @@ export async function handleRequest(getDb: () => Database, msg: WireRequest, upl
 	const method = String(msg.method ?? "");
 	const http = msg.http === "GET" ? "GET" : "POST";
 	const path = `/connector/${method}`;
-	const busy = (e: unknown) => isBusyError(e) ? done(503, JSON.stringify({ error: "The Zinc library is busy. Try again in a moment." })) : null;
+	const busy = (e: unknown) =>
+		isBusyError(e) ? done(503, JSON.stringify({ error: "The Zinc library is busy. Try again in a moment." })) : null;
 
 	const headers = new Headers();
 	for (const [k, v] of Object.entries(msg.headers ?? {})) headers.set(k, String(v));
@@ -192,7 +210,8 @@ export async function handleRequest(getDb: () => Database, msg: WireRequest, upl
 		}
 		if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return done(400, JSON.stringify({ error: "not an /api path" }));
 		if (url.pathname.split("/").some((s) => s === ".." || s === ".")) return done(400, JSON.stringify({ error: "malformed path" }));
-		if (API_REFUSED.test(url.pathname)) return done(403, JSON.stringify({ error: "not available in the browser library", method: http, path: url.pathname }));
+		if (API_REFUSED.test(url.pathname))
+			return done(403, JSON.stringify({ error: "not available in the browser library", method: http, path: url.pathname }));
 		const req = new Request(url, { method: http, headers, body: http === "GET" || http === "HEAD" ? undefined : init.body });
 		try {
 			// /api/browser/*: what only the browser library has (import of a data folder, export as a zip; import-run.ts)
@@ -221,7 +240,8 @@ export async function handleRequest(getDb: () => Database, msg: WireRequest, upl
 		try {
 			const db = getDb();
 			loadSessionsFor(db, msg);
-			const r = method === "sessionItems" ? sessionItems(db, id) : method === "trashSession" ? trashSession(db, id) : cancelSession(db, id);
+			const r =
+				method === "sessionItems" ? sessionItems(db, id) : method === "trashSession" ? trashSession(db, id) : cancelSession(db, id);
 			return done(r.status, JSON.stringify(r.body));
 		} catch (e) {
 			const b = busy(e);

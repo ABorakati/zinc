@@ -5,14 +5,30 @@ import { isPermanentFailure, MAX_RETRIES, retryDelay } from "./store";
 let puts = 0;
 let answer: () => Response = () => new Response("{}", { status: 200 });
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
-const ann = (id: string) => ({ id, type: "highlight", color: "#ffd400", comment: "", text: "t", sortIndex: "00000|000000|00000", pageLabel: "1", position: { pageIndex: 0, rects: [[0, 0, 1, 1]] }, dateCreated: "", dateModified: "", tags: [] }) as never;
+const ann = (id: string) =>
+	({
+		id,
+		type: "highlight",
+		color: "#ffd400",
+		comment: "",
+		text: "t",
+		sortIndex: "00000|000000|00000",
+		pageLabel: "1",
+		position: { pageIndex: 0, rects: [[0, 0, 1, 1]] },
+		dateCreated: "",
+		dateModified: "",
+		tags: [],
+	}) as never;
 
 beforeAll(async () => {
 	const api = await import("../../api");
 	api.setDirect(async (req) => {
 		const u = new URL(req.url);
 		if (u.pathname.endsWith("/annotations")) {
-			if (req.method === "PUT") { puts++; return answer(); }
+			if (req.method === "PUT") {
+				puts++;
+				return answer();
+			}
 			return new Response("[]", { status: 200 });
 		}
 		return null;

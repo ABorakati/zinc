@@ -16,8 +16,14 @@ export const errMsg = (e: unknown): string => (e instanceof Error ? e.message : 
 export const sidebarApi = {
 	// collections
 	collections: (library?: number) => A.api.collections(library),
-	createCollection: (name: string, parentKey?: string | null, library?: number) => request<Collection>("POST", "/collections", { name, parentKey: parentKey ?? undefined, library: library && library > 1 ? library : undefined }),
-	patchCollection: (key: string, patch: { name?: string; parentKey?: string | null }) => request<Collection>("PATCH", `/collections/${key}`, patch),
+	createCollection: (name: string, parentKey?: string | null, library?: number) =>
+		request<Collection>("POST", "/collections", {
+			name,
+			parentKey: parentKey ?? undefined,
+			library: library && library > 1 ? library : undefined,
+		}),
+	patchCollection: (key: string, patch: { name?: string; parentKey?: string | null }) =>
+		request<Collection>("PATCH", `/collections/${key}`, patch),
 	deleteCollection: (key: string) => request<{ ok: true }>("DELETE", `/collections/${key}`),
 	addToCollection: (key: string, keys: string[]) => request<{ ok: true }>("POST", `/collections/${key}/items`, { keys }),
 	// tags
@@ -26,13 +32,18 @@ export const sidebarApi = {
 	putTagColors: (colors: TagColor[]) => request<TagColor[]>("PUT", "/tag-colors", colors),
 	// tag maintenance acts on one library (`library`, default My Library: core/src/maintenance/api.ts)
 	automaticTags: (library = 1) => request<{ tag: string; count: number }[]>("GET", "/maintenance/tags/automatic?library=" + library),
-	renameTag: (from: string, to: string, library = 1) => request<{ items: number; merged: boolean }>("POST", "/maintenance/tags/rename", { from, to, library }),
-	deleteTags: (tags: string[], library = 1) => request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete", { tags, library }),
-	deleteAutomaticTags: (library = 1) => request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete-automatic", { library }),
+	renameTag: (from: string, to: string, library = 1) =>
+		request<{ items: number; merged: boolean }>("POST", "/maintenance/tags/rename", { from, to, library }),
+	deleteTags: (tags: string[], library = 1) =>
+		request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete", { tags, library }),
+	deleteAutomaticTags: (library = 1) =>
+		request<{ tags: number; items: number }>("POST", "/maintenance/tags/delete-automatic", { library }),
 	// saved searches
 	savedSearches: () => request<SavedSearch[]>("GET", "/searches"),
-	createSavedSearch: (name: string, conditions: SearchCondition[], options: SearchOptions) => request<SavedSearch>("POST", "/searches", { name, conditions, options }),
-	patchSavedSearch: (key: string, patch: { name?: string; conditions?: SearchCondition[]; options?: SearchOptions }) => request<SavedSearch>("PATCH", `/searches/${key}`, patch),
+	createSavedSearch: (name: string, conditions: SearchCondition[], options: SearchOptions) =>
+		request<SavedSearch>("POST", "/searches", { name, conditions, options }),
+	patchSavedSearch: (key: string, patch: { name?: string; conditions?: SearchCondition[]; options?: SearchOptions }) =>
+		request<SavedSearch>("PATCH", `/searches/${key}`, patch),
 	deleteSavedSearch: (key: string) => request<{ ok: true }>("DELETE", `/searches/${key}`),
 	runSearch: (conditions: SearchCondition[], options: SearchOptions, limit = 100, offset = 0, signal?: AbortSignal) =>
 		request<ItemList>("POST", "/searches/run", { conditions, options, limit, offset, sort: "title", dir: "asc" }, signal),

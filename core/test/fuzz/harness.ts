@@ -25,7 +25,7 @@ export function runs(normal = 150): number {
 }
 
 /** Seed for this process: ZN_FUZZ_SEED, else random (printed on failure so it can be replayed). */
-export const SEED: number = envInt("ZN_FUZZ_SEED") ?? (Math.floor(Math.random() * 2 ** 31) | 0);
+export const SEED: number = envInt("ZN_FUZZ_SEED") ?? Math.floor(Math.random() * 2 ** 31) | 0;
 const PATH: string | undefined = process.env.ZN_FUZZ_PATH || undefined;
 
 export interface PropOptions {
@@ -76,9 +76,74 @@ export function fuzz<T extends unknown[]>(
 
 /** Fragments that tend to break parsers: delimiters of every format we read, controls, astral and lookalike code points. */
 export const NASTY = [
-	"{", "}", "(", ")", "[", "]", "<", ">", '"', "'", "\\", "/", "&", "&amp;", "&#x0;", "&#65;", "&lt;", "<![CDATA[", "]]>", "<!--", "-->", "<?xml", "<!DOCTYPE",
-	"@", "#", "%", "$", "=", ",", ";", ":", "|", "\n", "\r\n", "\r", "\t", "\0", "\u0001", "\u007f", "​", "﻿", "‮", "😀", "\ud800", "\udfff",
-	"é", "ß", "ø", "Ł", "—", "–", "−", "．", "／", "  ", "ER  - ", "TY  - JOUR", "AU  - ", "@article{", "}}", "{{", "\\'", '\\"', "\\{", "\\}", "$$", "--", "...",
+	"{",
+	"}",
+	"(",
+	")",
+	"[",
+	"]",
+	"<",
+	">",
+	'"',
+	"'",
+	"\\",
+	"/",
+	"&",
+	"&amp;",
+	"&#x0;",
+	"&#65;",
+	"&lt;",
+	"<![CDATA[",
+	"]]>",
+	"<!--",
+	"-->",
+	"<?xml",
+	"<!DOCTYPE",
+	"@",
+	"#",
+	"%",
+	"$",
+	"=",
+	",",
+	";",
+	":",
+	"|",
+	"\n",
+	"\r\n",
+	"\r",
+	"\t",
+	"\0",
+	"\u0001",
+	"\u007f",
+	"​",
+	"﻿",
+	"‮",
+	"😀",
+	"\ud800",
+	"\udfff",
+	"é",
+	"ß",
+	"ø",
+	"Ł",
+	"—",
+	"–",
+	"−",
+	"．",
+	"／",
+	"  ",
+	"ER  - ",
+	"TY  - JOUR",
+	"AU  - ",
+	"@article{",
+	"}}",
+	"{{",
+	"\\'",
+	'\\"',
+	"\\{",
+	"\\}",
+	"$$",
+	"--",
+	"...",
 ];
 
 export const nastyToken: fc.Arbitrary<string> = fc.constantFrom(...NASTY);
@@ -114,18 +179,32 @@ export function mutated(seed: string | fc.Arbitrary<string>, maxEdits = 6): fc.A
 			const i = Math.min(s.length, Math.floor(e.at * (s.length + 1)));
 			const j = Math.min(s.length, i + e.len);
 			switch (e.op) {
-				case "delete": s = s.slice(0, i) + s.slice(j); break;
-				case "insert": s = s.slice(0, i) + e.ch + s.slice(i); break;
-				case "token": s = s.slice(0, i) + e.tok + s.slice(i); break;
-				case "dup": s = s.slice(0, j) + s.slice(i, j) + s.slice(j); break;
+				case "delete":
+					s = s.slice(0, i) + s.slice(j);
+					break;
+				case "insert":
+					s = s.slice(0, i) + e.ch + s.slice(i);
+					break;
+				case "token":
+					s = s.slice(0, i) + e.tok + s.slice(i);
+					break;
+				case "dup":
+					s = s.slice(0, j) + s.slice(i, j) + s.slice(j);
+					break;
 				case "swap": {
 					const k = Math.min(s.length, Math.floor(e.to * (s.length + 1)));
 					if (k > i) s = s.slice(0, i) + s.slice(k, k + e.len) + s.slice(i, k) + s.slice(k + e.len);
 					break;
 				}
-				case "flip": s = s.slice(0, i) + e.ch + s.slice(i + 1); break;
-				case "truncate": s = s.slice(0, i); break;
-				case "repeat": s = s.slice(0, i) + s.slice(i, j).repeat(1 + (e.len % 20)) + s.slice(j); break;
+				case "flip":
+					s = s.slice(0, i) + e.ch + s.slice(i + 1);
+					break;
+				case "truncate":
+					s = s.slice(0, i);
+					break;
+				case "repeat":
+					s = s.slice(0, i) + s.slice(i, j).repeat(1 + (e.len % 20)) + s.slice(j);
+					break;
 			}
 		}
 		return s;
@@ -146,14 +225,33 @@ export function mutatedBytes(seed: Uint8Array, maxEdits = 6): fc.Arbitrary<Uint8
 		for (const e of edits) {
 			const i = Math.min(Math.max(b.length - 1, 0), Math.floor(e.at * b.length));
 			switch (e.op) {
-				case "flip": if (b.length) b[i] = b[i]! ^ (1 << (e.byte % 8)); break;
-				case "set": if (b.length) b[i] = e.byte; break;
-				case "delete": b.splice(i, e.len); break;
-				case "insert": b.splice(i, 0, ...Array.from({ length: e.len }, (_, k) => (e.byte + k) & 255)); break;
-				case "truncate": b = b.slice(0, i); break;
-				case "dup": b.splice(i, 0, ...b.slice(i, i + e.len)); break;
-				case "u16": if (b.length > i + 1) { b[i] = e.val & 255; b[i + 1] = (e.val >>> 8) & 255; } break;
-				case "u32": if (b.length > i + 3) for (let k = 0; k < 4; k++) b[i + k] = (e.val >>> (8 * k)) & 255; break;
+				case "flip":
+					if (b.length) b[i] = b[i]! ^ (1 << (e.byte % 8));
+					break;
+				case "set":
+					if (b.length) b[i] = e.byte;
+					break;
+				case "delete":
+					b.splice(i, e.len);
+					break;
+				case "insert":
+					b.splice(i, 0, ...Array.from({ length: e.len }, (_, k) => (e.byte + k) & 255));
+					break;
+				case "truncate":
+					b = b.slice(0, i);
+					break;
+				case "dup":
+					b.splice(i, 0, ...b.slice(i, i + e.len));
+					break;
+				case "u16":
+					if (b.length > i + 1) {
+						b[i] = e.val & 255;
+						b[i + 1] = (e.val >>> 8) & 255;
+					}
+					break;
+				case "u32":
+					if (b.length > i + 3) for (let k = 0; k < 4; k++) b[i + k] = (e.val >>> (8 * k)) & 255;
+					break;
 			}
 		}
 		return new Uint8Array(b);

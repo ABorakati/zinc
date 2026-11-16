@@ -35,7 +35,10 @@ const url = arg("url", "http://127.0.0.1:23160");
 const port = Number(arg("port", "23160"));
 const innerPort = Number(arg("inproc-port", "23162"));
 const modes = arg("modes", "external,inproc").split(",");
-const dbSource = arg("db-source", "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-core/lib.sqlite");
+const dbSource = arg(
+	"db-source",
+	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-core/lib.sqlite",
+);
 const outDir = join(root, "out");
 
 if (/zotero-next\/data\//i.test(dbSource.replaceAll("\\", "/"))) {
@@ -43,7 +46,11 @@ if (/zotero-next\/data\//i.test(dbSource.replaceAll("\\", "/"))) {
 	process.exit(2);
 }
 
-interface Variant { id: string; exe: string; args: string[] }
+interface Variant {
+	id: string;
+	exe: string;
+	args: string[];
+}
 const ALL: Variant[] = [
 	{ id: "sources", exe: process.execPath, args: ["src/main.tsx"] },
 	{ id: "plain", exe: join(outDir, "zotero-next-gpui-plain.exe"), args: [] },
@@ -56,7 +63,11 @@ const ALL: Variant[] = [
 ];
 const wantedV = arg("variants", ALL.map((v) => v.id).join(",")).split(",");
 const variants = ALL.filter((v) => wantedV.includes(v.id));
-for (const v of variants) if (!existsSync(v.exe)) { console.error(`missing ${v.exe}; run: bun scripts/build.ts`); process.exit(2); }
+for (const v of variants)
+	if (!existsSync(v.exe)) {
+		console.error(`missing ${v.exe}; run: bun scripts/build.ts`);
+		process.exit(2);
+	}
 
 const PS1 = String.raw`
 param([string]$Exe, [string]$ExeArgs, [string]$Cwd, [string]$Url, [string]$Db, [int]$WaitS, [int]$Port, [int]$InnerPort, [string]$LogBase)
@@ -144,8 +155,20 @@ mkdirSync(work, { recursive: true });
 const ps1 = join(work, "measure.ps1");
 writeFileSync(ps1, PS1);
 
-interface Proc { pid: number; name: string; privateMB: number; wsMB: number }
-interface Run { windowMs: number | null; exitedEarly: boolean; gracefulClose: boolean; procs: Proc[]; coreProc: Proc | null; innerListening: boolean }
+interface Proc {
+	pid: number;
+	name: string;
+	privateMB: number;
+	wsMB: number;
+}
+interface Run {
+	windowMs: number | null;
+	exitedEarly: boolean;
+	gracefulClose: boolean;
+	procs: Proc[];
+	coreProc: Proc | null;
+	innerListening: boolean;
+}
 
 // ---- the library copy for in-process mode ---------------------------------------------------------------------------------------
 const benchDir = join(outDir, "bench");
@@ -155,11 +178,19 @@ function makeBaseCopy() {
 	if (existsSync(baseCopy) && statSync(baseCopy).size > 0) return;
 	rmSync(baseCopy, { force: true });
 	const src = new Database(dbSource, { readonly: true });
-	try { src.run(`VACUUM INTO '${baseCopy.replaceAll("\\", "/").replaceAll("'", "''")}'`); } finally { src.close(); }
+	try {
+		src.run(`VACUUM INTO '${baseCopy.replaceAll("\\", "/").replaceAll("'", "''")}'`);
+	} finally {
+		src.close();
+	}
 	// VACUUM INTO writes a rollback-journal database; the real library is WAL. Switch the copy once, or every run pays the core's
 	// ~200 ms WAL conversion at start-up (the per-run copies are file copies of this one, so they start in WAL mode too).
 	const c = new Database(baseCopy);
-	try { c.run("PRAGMA journal_mode = WAL"); } finally { c.close(); }
+	try {
+		c.run("PRAGMA journal_mode = WAL");
+	} finally {
+		c.close();
+	}
 	console.log(`library copy: ${baseCopy} (${(statSync(baseCopy).size / 1048576).toFixed(0)} MB) from ${dbSource}`);
 }
 function freshDb(tag: string): string {
@@ -176,9 +207,33 @@ async function measure(v: Variant, mode: string, tag: string): Promise<{ r: Run;
 	const db = mode === "inproc" ? freshDb(tag) : "";
 	try {
 		const p = Bun.spawn(
-			["pwsh", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ps1,
-				"-Exe", v.exe, "-ExeArgs", v.args.join(" "), "-Cwd", v.id === "sources" ? root : outDir, "-Url", url, "-Db", db,
-				"-WaitS", String(waitS), "-Port", String(port), "-InnerPort", String(innerPort), "-LogBase", logBase],
+			[
+				"pwsh",
+				"-NoProfile",
+				"-NonInteractive",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				ps1,
+				"-Exe",
+				v.exe,
+				"-ExeArgs",
+				v.args.join(" "),
+				"-Cwd",
+				v.id === "sources" ? root : outDir,
+				"-Url",
+				url,
+				"-Db",
+				db,
+				"-WaitS",
+				String(waitS),
+				"-Port",
+				String(port),
+				"-InnerPort",
+				String(innerPort),
+				"-LogBase",
+				logBase,
+			],
 			{ stdout: Bun.file(outFile), stderr: Bun.file(`${outFile}.err`) },
 		);
 		const code = await p.exited;
@@ -198,45 +253,104 @@ const sum = (a: Proc[], k: "privateMB" | "wsMB") => +a.reduce((s, p) => s + p[k]
 const f = (n: number | null | undefined, d = 0) => (n == null ? "-" : n.toFixed(d));
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)]! : null);
 
-interface Cell { win: number[]; items: number[]; priv: number[]; ws: number[]; cpriv: number[]; cws: number[]; early: string[]; sizeMB: number | null }
+interface Cell {
+	win: number[];
+	items: number[];
+	priv: number[];
+	ws: number[];
+	cpriv: number[];
+	cws: number[];
+	early: string[];
+	sizeMB: number | null;
+}
 const cells = new Map<string, Cell>();
 const key = (mode: string, v: string) => `${mode}|${v}`;
-for (const m of modes) for (const v of variants) {
-	cells.set(key(m, v.id), { win: [], items: [], priv: [], ws: [], cpriv: [], cws: [], early: [], sizeMB: v.id === "sources" ? null : +(statSync(v.exe).size / 1048576).toFixed(1) });
-}
+for (const m of modes)
+	for (const v of variants) {
+		cells.set(key(m, v.id), {
+			win: [],
+			items: [],
+			priv: [],
+			ws: [],
+			cpriv: [],
+			cws: [],
+			early: [],
+			sizeMB: v.id === "sources" ? null : +(statSync(v.exe).size / 1048576).toFixed(1),
+		});
+	}
 
 if (modes.includes("inproc")) makeBaseCopy();
-console.log(`variants=${variants.map((v) => v.id).join(",")} modes=${modes.join(",")} runs=${runs} wait=${waitS}s (visible windows open; do not touch them)`);
+console.log(
+	`variants=${variants.map((v) => v.id).join(",")} modes=${modes.join(",")} runs=${runs} wait=${waitS}s (visible windows open; do not touch them)`,
+);
 for (let i = 1; i <= runs; i++) {
-	for (const mode of modes) for (const v of variants) {
-		const tag = `${mode}-${v.id}-${i}`;
-		const { r, err, marks } = await measure(v, mode, tag);
-		const c = cells.get(key(mode, v.id))!;
-		const priv = sum(r.procs, "privateMB"), ws = sum(r.procs, "wsMB");
-		if (r.windowMs != null) c.win.push(r.windowMs);
-		const items = marks["first-items"] ?? marks["items-loaded"];
-		if (items != null) c.items.push(items);
-		if (r.procs.length) { c.priv.push(priv); c.ws.push(ws); }
-		if (r.coreProc) { c.cpriv.push(r.coreProc.privateMB); c.cws.push(r.coreProc.wsMB); }
-		if (r.exitedEarly) c.early.push(err.split("\n").slice(-4).join(" | ") || "(no stderr)");
-		console.log(`run ${i} ${mode.padEnd(8)} ${v.id.padEnd(13)} window=${r.windowMs ?? "none"} ms items=${items ?? "-"} ms procs=${r.procs.length} priv=${priv} MB ws=${ws} MB${r.coreProc ? ` core=${r.coreProc.privateMB}/${r.coreProc.wsMB}` : ""}${mode === "inproc" ? ` inprocCore=${r.innerListening}` : ""}${r.exitedEarly ? " EXITED EARLY: " + err.split("\n").slice(-3).join(" | ") : ""}`);
-		await Bun.sleep(1500);
-	}
+	for (const mode of modes)
+		for (const v of variants) {
+			const tag = `${mode}-${v.id}-${i}`;
+			const { r, err, marks } = await measure(v, mode, tag);
+			const c = cells.get(key(mode, v.id))!;
+			const priv = sum(r.procs, "privateMB"),
+				ws = sum(r.procs, "wsMB");
+			if (r.windowMs != null) c.win.push(r.windowMs);
+			const items = marks["first-items"] ?? marks["items-loaded"];
+			if (items != null) c.items.push(items);
+			if (r.procs.length) {
+				c.priv.push(priv);
+				c.ws.push(ws);
+			}
+			if (r.coreProc) {
+				c.cpriv.push(r.coreProc.privateMB);
+				c.cws.push(r.coreProc.wsMB);
+			}
+			if (r.exitedEarly) c.early.push(err.split("\n").slice(-4).join(" | ") || "(no stderr)");
+			console.log(
+				`run ${i} ${mode.padEnd(8)} ${v.id.padEnd(13)} window=${r.windowMs ?? "none"} ms items=${items ?? "-"} ms procs=${r.procs.length} priv=${priv} MB ws=${ws} MB${r.coreProc ? ` core=${r.coreProc.privateMB}/${r.coreProc.wsMB}` : ""}${mode === "inproc" ? ` inprocCore=${r.innerListening}` : ""}${r.exitedEarly ? " EXITED EARLY: " + err.split("\n").slice(-3).join(" | ") : ""}`,
+			);
+			await Bun.sleep(1500);
+		}
 }
 
-console.log("\nMedian (min..max) over " + runs + " runs; window/items = ms from process start; memory sampled at " + waitS + " s (PrivateMemorySize64 / WorkingSet64, process tree).");
+console.log(
+	"\nMedian (min..max) over " +
+		runs +
+		" runs; window/items = ms from process start; memory sampled at " +
+		waitS +
+		" s (PrivateMemorySize64 / WorkingSet64, process tree).",
+);
 for (const mode of modes) {
-	const head = ["variant", "exe MB", "window ms", "items ms", "private MB", "WS MB", ...(mode === "external" ? ["core priv MB", "core WS MB"] : []), "notes"];
+	const head = [
+		"variant",
+		"exe MB",
+		"window ms",
+		"items ms",
+		"private MB",
+		"WS MB",
+		...(mode === "external" ? ["core priv MB", "core WS MB"] : []),
+		"notes",
+	];
 	const rows: string[][] = [head];
 	for (const v of variants) {
 		const c = cells.get(key(mode, v.id))!;
 		const rng = (a: number[]) => (a.length ? `${f(median(a))} (${f(Math.min(...a))}..${f(Math.max(...a))})` : "-");
-		rows.push([v.id, c.sizeMB == null ? "-" : String(c.sizeMB), rng(c.win), rng(c.items), rng(c.priv), rng(c.ws),
+		rows.push([
+			v.id,
+			c.sizeMB == null ? "-" : String(c.sizeMB),
+			rng(c.win),
+			rng(c.items),
+			rng(c.priv),
+			rng(c.ws),
 			...(mode === "external" ? [f(median(c.cpriv)), f(median(c.cws))] : []),
-			c.early.length ? `EXITED EARLY x${c.early.length}: ${c.early[0]}` : c.win.length < runs ? `window in ${c.win.length}/${runs}` : ""]);
+			c.early.length
+				? `EXITED EARLY x${c.early.length}: ${c.early[0]}`
+				: c.win.length < runs
+					? `window in ${c.win.length}/${runs}`
+					: "",
+		]);
 	}
 	const w = head.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
-	console.log(`\n[${mode === "external" ? `external core at ${url} (core is a separate process)` : "in-process core (ZN_DB = copy of " + dbSource.split(/[\\/]/).slice(-2).join("/") + ")"}]`);
+	console.log(
+		`\n[${mode === "external" ? `external core at ${url} (core is a separate process)` : "in-process core (ZN_DB = copy of " + dbSource.split(/[\\/]/).slice(-2).join("/") + ")"}]`,
+	);
 	for (const [n, r] of rows.entries()) {
 		console.log(r.map((cell, i) => (i === 0 || i === r.length - 1 ? cell.padEnd(w[i]!) : cell.padStart(w[i]!))).join("  "));
 		if (n === 0) console.log(w.map((x) => "-".repeat(x)).join("  "));
@@ -248,7 +362,9 @@ for (const mode of modes) {
 			if (v.id === "sources") continue;
 			const c = cells.get(key(mode, v.id))!;
 			if (!c.priv.length) continue;
-			console.log(`  ${v.id.padEnd(13)} vs sources: private ${f(median(c.priv)! - median(s.priv)!)} MB (${f((median(c.priv)! / median(s.priv)! - 1) * 100)}%), window ${f(median(c.win) == null || median(s.win) == null ? null : median(c.win)! - median(s.win)!)} ms`);
+			console.log(
+				`  ${v.id.padEnd(13)} vs sources: private ${f(median(c.priv)! - median(s.priv)!)} MB (${f((median(c.priv)! / median(s.priv)! - 1) * 100)}%), window ${f(median(c.win) == null || median(s.win) == null ? null : median(c.win)! - median(s.win)!)} ms`,
+			);
 		}
 	}
 }

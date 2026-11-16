@@ -15,7 +15,13 @@ const { store } = await import("../src/store");
 const { openDialog } = await import("../src/ui");
 const { hostState, evalInPage } = await import("../src/webview/host");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const u = dlopen("user32.dll", { SetWindowPos: { args: [FFIType.ptr, FFIType.ptr, FFIType.i32, FFIType.i32, FFIType.i32, FFIType.i32, FFIType.u32], returns: FFIType.i32 }, GetWindowRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 } }).symbols;
+const u = dlopen("user32.dll", {
+	SetWindowPos: {
+		args: [FFIType.ptr, FFIType.ptr, FFIType.i32, FFIType.i32, FFIType.i32, FFIType.i32, FFIType.u32],
+		returns: FFIType.i32,
+	},
+	GetWindowRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+}).symbols;
 
 async function ps(file: string, args: string[]): Promise<string> {
 	const p = Bun.spawn(["pwsh", "-NoProfile", "-File", file, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -23,18 +29,34 @@ async function ps(file: string, args: string[]): Promise<string> {
 	await p.exited;
 	return out.trim();
 }
-const shot = async (name: string) => console.log(`[shot] ${name}:`, await ps(cap, ["-ProcId", String(process.pid), "-Out", `${outDir}/${name}.png`]));
+const shot = async (name: string) =>
+	console.log(`[shot] ${name}:`, await ps(cap, ["-ProcId", String(process.pid), "-Out", `${outDir}/${name}.png`]));
 const memory = async (label: string) => console.log(`[mem] ${label}:\n${await ps(mem, ["-ProcId", String(process.pid)])}`);
 
 while (store.pagesLoaded() === 0) await sleep(100);
 await sleep(3000);
 await memory("baseline, no web tab");
-const cpu = async (label: string) => { const a = process.cpuUsage(); await sleep(5000); const b = process.cpuUsage(a); console.log(`[cpu] ${label}: ${((b.user + b.system) / 5000 / 10).toFixed(2)} % of one core over 5 s`); };
+const cpu = async (label: string) => {
+	const a = process.cpuUsage();
+	await sleep(5000);
+	const b = process.cpuUsage(a);
+	console.log(`[cpu] ${label}: ${((b.user + b.system) / 5000 / 10).toFixed(2)} % of one core over 5 s`);
+};
 await cpu("idle, no web tab");
 
 store.openAttachment(key, "Snapshot test", "");
 await sleep(7000);
-console.log("[webview] state", hostState(), "tabs", store.tabs().map((t) => `${t.id}:${"kind" in t ? t.kind : "-"}`).join(","), "active", store.activeTab());
+console.log(
+	"[webview] state",
+	hostState(),
+	"tabs",
+	store
+		.tabs()
+		.map((t) => `${t.id}:${"kind" in t ? t.kind : "-"}`)
+		.join(","),
+	"active",
+	store.activeTab(),
+);
 await memory("web tab open");
 await cpu("web tab open and shown (10 ms message pump)");
 // the page's bridge: reader-host posts to window.parent; the stub forwards it to the app (open-item -> Library tab + selection)
@@ -61,9 +83,20 @@ await shot("3-library");
 store.setActiveTab(key);
 await sleep(1200);
 let closeDialog = () => {};
-void openDialog((close) => (
-	<div ref={() => { closeDialog = () => close(); }} onClick={() => close()} style={{ padding: 24 }}><text style={{ color: "#e2e2e2" }}>A dialog open above the web tab (click to close)</text></div>
-), { title: "Overlay test", width: 420 });
+void openDialog(
+	(close) => (
+		<div
+			ref={() => {
+				closeDialog = () => close();
+			}}
+			onClick={() => close()}
+			style={{ padding: 24 }}
+		>
+			<text style={{ color: "#e2e2e2" }}>A dialog open above the web tab (click to close)</text>
+		</div>
+	),
+	{ title: "Overlay test", width: 420 },
+);
 await sleep(1500);
 await shot("4-dialog-over-web");
 closeDialog();

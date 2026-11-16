@@ -7,15 +7,30 @@ const g = globalThis as any;
 if (typeof g.DOMMatrix === "undefined") {
 	// Minimal affine matrix; text extraction never renders, it only needs the class to exist.
 	g.DOMMatrix = class DOMMatrix {
-		a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+		a = 1;
+		b = 0;
+		c = 0;
+		d = 1;
+		e = 0;
+		f = 0;
 		constructor(init?: number[]) {
 			if (Array.isArray(init) && init.length >= 6) [this.a, this.b, this.c, this.d, this.e, this.f] = init as number[];
 		}
-		multiplySelf() { return this; }
-		preMultiplySelf() { return this; }
-		translate() { return this; }
-		scale() { return this; }
-		invertSelf() { return this; }
+		multiplySelf() {
+			return this;
+		}
+		preMultiplySelf() {
+			return this;
+		}
+		translate() {
+			return this;
+		}
+		scale() {
+			return this;
+		}
+		invertSelf() {
+			return this;
+		}
 	};
 }
 if (typeof g.Path2D === "undefined") g.Path2D = class Path2D {};

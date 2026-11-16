@@ -162,14 +162,79 @@ describe("dateToMultipart agrees with Zotero's own Zotero.Date.strToMultipart", 
 	// Not in the list: ordinal day suffixes ("26th June 2010"). Zotero's client reads them (its Node build, which
 	// the oracle runs, has no localized suffix list); zotero-next follows the client.
 	const corpus = [
-		"2021-05-13", "2021/2026", "2021-05/2021-06", "2004-06~", "ca. 1900", "429 CE", "-500/-750", "1996-1995", "-0429", "429 BCE",
-		"June 26, 2010", "26 June 2010", "Jun 26, 2010", "June 2010", "2010", "001", "0001", "012", "0123", "01/01/08", "1/1/68",
-		"1/1/19", "8/2020", "08/2020", "1", "25", "Spring 2020", "in press", "forthcoming 2021", "2020 Feb 15", "15 Feb 2020",
-		"Feb. 15, 2020", "Sept 5, 2019", "Sep. 2019", "2019-5-3", "2019/05/03", "13/05/2019", "05/13/2019", "12/25/2019",
-		"25/12/2019", "May 2020-June 2020", "2019-2020", "c. 1950", "1950s", "n.d.", "Winter 2019", "2020-02", "2020-02-30",
-		"  2020  ", "2020-05-04T10:00:00Z", "2020-05-04 10:00:00", "Monday, June 3, 2019", "3 June, 2019", "Mar 3", "2012, March 3",
-		"1000-900 BCE", "AD 429", "~1995", "1995-96", "1995–1996", "2024-02-29", "2023-02-29", "2021-13", "196X", "2021/..",
-		"May 13, 2021", "Summer 429 BCE", "January 10, 200 BCE", "12 March", "March 12", "Sunday", "Q3 2019", "2019 Q3",
+		"2021-05-13",
+		"2021/2026",
+		"2021-05/2021-06",
+		"2004-06~",
+		"ca. 1900",
+		"429 CE",
+		"-500/-750",
+		"1996-1995",
+		"-0429",
+		"429 BCE",
+		"June 26, 2010",
+		"26 June 2010",
+		"Jun 26, 2010",
+		"June 2010",
+		"2010",
+		"001",
+		"0001",
+		"012",
+		"0123",
+		"01/01/08",
+		"1/1/68",
+		"1/1/19",
+		"8/2020",
+		"08/2020",
+		"1",
+		"25",
+		"Spring 2020",
+		"in press",
+		"forthcoming 2021",
+		"2020 Feb 15",
+		"15 Feb 2020",
+		"Feb. 15, 2020",
+		"Sept 5, 2019",
+		"Sep. 2019",
+		"2019-5-3",
+		"2019/05/03",
+		"13/05/2019",
+		"05/13/2019",
+		"12/25/2019",
+		"25/12/2019",
+		"May 2020-June 2020",
+		"2019-2020",
+		"c. 1950",
+		"1950s",
+		"n.d.",
+		"Winter 2019",
+		"2020-02",
+		"2020-02-30",
+		"  2020  ",
+		"2020-05-04T10:00:00Z",
+		"2020-05-04 10:00:00",
+		"Monday, June 3, 2019",
+		"3 June, 2019",
+		"Mar 3",
+		"2012, March 3",
+		"1000-900 BCE",
+		"AD 429",
+		"~1995",
+		"1995-96",
+		"1995–1996",
+		"2024-02-29",
+		"2023-02-29",
+		"2021-13",
+		"196X",
+		"2021/..",
+		"May 13, 2021",
+		"Summer 429 BCE",
+		"January 10, 200 BCE",
+		"12 March",
+		"March 12",
+		"Sunday",
+		"Q3 2019",
+		"2019 Q3",
 	];
 
 	test("on a corpus of real-world date strings", async () => {
@@ -177,7 +242,8 @@ describe("dateToMultipart agrees with Zotero's own Zotero.Date.strToMultipart", 
 		for (const c of corpus) {
 			const zotero = await oracle.call<string>("strToMultipart", c);
 			const znext = dateToMultipart(c);
-			if (zotero !== znext) diffs.push(`${JSON.stringify(c)}: zotero ${JSON.stringify(zotero)} vs zotero-next ${JSON.stringify(znext)}`);
+			if (zotero !== znext)
+				diffs.push(`${JSON.stringify(c)}: zotero ${JSON.stringify(zotero)} vs zotero-next ${JSON.stringify(znext)}`);
 		}
 		expect(diffs).toEqual([]);
 	});
@@ -200,12 +266,18 @@ describe("dateToMultipart agrees with Zotero's own Zotero.Date.strToMultipart", 
 		let n = 0;
 		for (const form of forms) {
 			for (let mi = 0; mi < months.length; mi++) {
-				for (const [d, y] of [[1, 1999], [13, 2005], [28, 2020], [31, 1870]] as const) {
+				for (const [d, y] of [
+					[1, 1999],
+					[13, 2005],
+					[28, 2020],
+					[31, 1870],
+				] as const) {
 					const s = form(months[mi]!, mi, d, y);
 					const zotero = await oracle.call<string>("strToMultipart", s);
 					const znext = dateToMultipart(s);
 					n++;
-					if (zotero !== znext) diffs.push(`${JSON.stringify(s)}: zotero ${JSON.stringify(zotero)} vs zotero-next ${JSON.stringify(znext)}`);
+					if (zotero !== znext)
+						diffs.push(`${JSON.stringify(s)}: zotero ${JSON.stringify(zotero)} vs zotero-next ${JSON.stringify(znext)}`);
 				}
 			}
 		}

@@ -13,7 +13,17 @@ import { store } from "../store";
 import { Button, confirm, openDialog, openMenu, toast, type MenuItem } from "../ui";
 import { boundsOf } from "../ui/core";
 import {
-	isAutomaticOnly, loadTags, setTagColor, tagColor, tags, tagsAge, tagsLoaded, tagsLoading, TAG_PALETTE, toggleTag, type TagCount,
+	isAutomaticOnly,
+	loadTags,
+	setTagColor,
+	tagColor,
+	tags,
+	tagsAge,
+	tagsLoaded,
+	tagsLoading,
+	TAG_PALETTE,
+	toggleTag,
+	type TagCount,
 } from "./state";
 
 /** Same cap as the web UI: tens of thousands of pills would be too many nodes. */
@@ -37,14 +47,24 @@ function reload() {
 }
 
 async function renameTag(tag: string) {
-	const to = await promptText({ title: "Rename tag", description: "If a tag with the new name exists, the two are merged.", initial: tag, confirmLabel: "Rename" });
+	const to = await promptText({
+		title: "Rename tag",
+		description: "If a tag with the new name exists, the two are merged.",
+		initial: tag,
+		confirmLabel: "Rename",
+	});
 	if (!to || to === tag) return;
 	try {
 		const r = await sidebarApi.renameTag(tag, to, store.libraryId());
 		if (tagFilter().includes(tag)) setTagFilter(tagFilter().map((x) => (x === tag ? to : x)));
 		reload();
-		toast(r.merged ? `Merged "${tag}" into "${to}"` : `Renamed "${tag}" to "${to}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
-	} catch (e) { toast("Could not rename tag", { kind: "error", description: errMsg(e) }); }
+		toast(r.merged ? `Merged "${tag}" into "${to}"` : `Renamed "${tag}" to "${to}"`, {
+			kind: "success",
+			description: plural(r.items, "item") + " updated",
+		});
+	} catch (e) {
+		toast("Could not rename tag", { kind: "error", description: errMsg(e) });
+	}
 }
 
 async function deleteTag(tag: string, count?: number) {
@@ -60,7 +80,9 @@ async function deleteTag(tag: string, count?: number) {
 		setTagFilter(tagFilter().filter((x) => x !== tag));
 		reload();
 		toast(`Deleted tag "${tag}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
-	} catch (e) { toast("Could not delete tag", { kind: "error", description: errMsg(e) }); }
+	} catch (e) {
+		toast("Could not delete tag", { kind: "error", description: errMsg(e) });
+	}
 }
 
 async function deleteAutomaticTags() {
@@ -79,7 +101,9 @@ async function deleteAutomaticTags() {
 		setTagFilter(tagFilter().filter((x) => !names.has(x)));
 		reload();
 		toast(`Deleted ${plural(r.tags, "automatic tag")}`, { kind: "success", description: plural(r.items, "item") + " updated" });
-	} catch (e) { toast("Could not delete automatic tags", { kind: "error", description: errMsg(e) }); }
+	} catch (e) {
+		toast("Could not delete automatic tags", { kind: "error", description: errMsg(e) });
+	}
 }
 
 // ---- colour dialog ----
@@ -89,27 +113,45 @@ function ColorPicker(p: { tag: string; close: () => void }): JSX.Element {
 	return (
 		<div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>
 			<div style={t("flex flex-wrap gap-2")}>
-				<For each={TAG_PALETTE}>{(c) => (
-					<div
-						role="button"
-						aria-label={c.name}
-						onClick={() => { void setTagColor(p.tag, c.color); p.close(); }}
-						style={{
-							...t("flex w-20 cursor-pointer flex-col items-center gap-1 rounded-lg py-2 hover:bg-accent"),
-							cursor: "pointer",
-							...(cur() === c.color.toLowerCase() ? { outlineWidth: 2, outlineColor: tok("primary"), outlineOffset: -2 } : {}),
-						}}
-					>
-						<div style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: c.color }} />
-						<text style={tx("text-xs text-secondary-foreground")}>{c.name}</text>
-					</div>
-				)}</For>
+				<For each={TAG_PALETTE}>
+					{(c) => (
+						<div
+							role="button"
+							aria-label={c.name}
+							onClick={() => {
+								void setTagColor(p.tag, c.color);
+								p.close();
+							}}
+							style={{
+								...t("flex w-20 cursor-pointer flex-col items-center gap-1 rounded-lg py-2 hover:bg-accent"),
+								cursor: "pointer",
+								...(cur() === c.color.toLowerCase()
+									? { outlineWidth: 2, outlineColor: tok("primary"), outlineOffset: -2 }
+									: {}),
+							}}
+						>
+							<div style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: c.color }} />
+							<text style={tx("text-xs text-secondary-foreground")}>{c.name}</text>
+						</div>
+					)}
+				</For>
 			</div>
 			<div style={t("flex justify-end gap-2")}>
 				<Show when={tagColor(p.tag)}>
-					<Button variant="outline" size="sm" onClick={() => { void setTagColor(p.tag, null); p.close(); }}>Remove colour</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => {
+							void setTagColor(p.tag, null);
+							p.close();
+						}}
+					>
+						Remove colour
+					</Button>
 				</Show>
-				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Cancel
+				</Button>
 			</div>
 		</div>
 	);
@@ -122,7 +164,9 @@ function assignColour(tag: string) {
 function tagMenu(tag: TagCount): MenuItem[] {
 	return [
 		{ label: "Assign Colour…", icon: "palette", onSelect: () => assignColour(tag.tag) },
-		...(tagColor(tag.tag) ? [{ label: "Remove colour", icon: "circle-slash", onSelect: () => void setTagColor(tag.tag, null) } satisfies MenuItem] : []),
+		...(tagColor(tag.tag)
+			? [{ label: "Remove colour", icon: "circle-slash", onSelect: () => void setTagColor(tag.tag, null) } satisfies MenuItem]
+			: []),
 		{ separator: true },
 		{ label: "Rename Tag…", icon: "pencil", onSelect: () => void renameTag(tag.tag) },
 		{ label: "Delete Tag…", icon: "trash-2", danger: true, onSelect: () => void deleteTag(tag.tag, tag.count) },
@@ -147,7 +191,10 @@ function Pill(p: { tag: TagCount; onEl?: (el: HostElement | undefined) => void }
 	const [menu, setMenu] = createSignal(false);
 	return (
 		<div
-			ref={(el: HostElement) => { p.onEl?.(el); onCleanup(() => p.onEl?.(undefined)); }}
+			ref={(el: HostElement) => {
+				p.onEl?.(el);
+				onCleanup(() => p.onEl?.(undefined));
+			}}
 			role="button"
 			aria-pressed={sel()}
 			aria-label={`${p.tag.tag}, ${p.tag.count} items`}
@@ -159,7 +206,9 @@ function Pill(p: { tag: TagCount; onEl?: (el: HostElement | undefined) => void }
 				openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, tagMenu(p.tag));
 			}}
 			style={{
-				...t("inline-flex h-6 max-w-full cursor-default items-center gap-1.5 rounded-full bg-background px-2.5 ring-1 ring-border hover:ring-primary/50"),
+				...t(
+					"inline-flex h-6 max-w-full cursor-default items-center gap-1.5 rounded-full bg-background px-2.5 ring-1 ring-border hover:ring-primary/50",
+				),
 				flexShrink: 0,
 				cursor: "pointer",
 				...(sel() ? { ...t("bg-primary-tint ring-primary-line"), hover: t("ring-primary-line") } : {}),
@@ -191,24 +240,52 @@ export function TagList(): JSX.Element {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let revTimer: ReturnType<typeof setTimeout> | undefined;
 	onCleanup(() => clearTimeout(timer));
-	createEffect(on(tagsOpen, (open) => {
-		if (open && (!tagsLoaded() || tagsAge() > 30_000)) void loadTags({ wantAutomatic: !showAutoTags() });
-	}));
-	createEffect(on(() => store.listVersion(), () => {
-		clearTimeout(timer);
-		if (!tagsOpen() || !tagsLoaded() || tagsAge() < 30_000) return;
-		timer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
-	}, { defer: true }));
+	createEffect(
+		on(tagsOpen, (open) => {
+			if (open && (!tagsLoaded() || tagsAge() > 30_000)) void loadTags({ wantAutomatic: !showAutoTags() });
+		}),
+	);
+	createEffect(
+		on(
+			() => store.listVersion(),
+			() => {
+				clearTimeout(timer);
+				if (!tagsOpen() || !tagsLoaded() || tagsAge() < 30_000) return;
+				timer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
+			},
+			{ defer: true },
+		),
+	);
 	// an edit in the item pane (tags added or removed) changes the counts: reload shortly after, whatever the age of the list
-	createEffect(on(() => store.itemsRev(), () => {
-	clearTimeout(revTimer);
-	if (!tagsOpen() || !tagsLoaded()) return;
-	revTimer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
-	}, { defer: true }));
+	createEffect(
+		on(
+			() => store.itemsRev(),
+			() => {
+				clearTimeout(revTimer);
+				if (!tagsOpen() || !tagsLoaded()) return;
+				revTimer = setTimeout(() => void loadTags({ wantAutomatic: !showAutoTags() }), 1500);
+			},
+			{ defer: true },
+		),
+	);
 	onCleanup(() => clearTimeout(revTimer));
 	// another library has other tags
-	createEffect(on(() => store.libraryId(), () => void loadTags({ wantAutomatic: !showAutoTags() }), { defer: true }));
-	createEffect(on(showAutoTags, (show) => { if (!show && tagsOpen() && tagsLoaded()) void loadTags({ wantAutomatic: true }); }, { defer: true }));
+	createEffect(
+		on(
+			() => store.libraryId(),
+			() => void loadTags({ wantAutomatic: !showAutoTags() }),
+			{ defer: true },
+		),
+	);
+	createEffect(
+		on(
+			showAutoTags,
+			(show) => {
+				if (!show && tagsOpen() && tagsLoaded()) void loadTags({ wantAutomatic: true });
+			},
+			{ defer: true },
+		),
+	);
 
 	const lower = createMemo(() => tags().map((x) => x.tag.toLowerCase()));
 	// Coloured tags first in Zotero's position order, then the rest as the API lists them (alphabetical).
@@ -229,7 +306,9 @@ export function TagList(): JSX.Element {
 		const top = filtered().slice(0, TAG_LIMIT);
 		// selected tags stay visible even when they fall beyond the cap
 		const have = new Set(top.map((x) => x.tag));
-		const extra = tagFilter().filter((x) => !have.has(x)).map((x) => tags().find((y) => y.tag === x) ?? { tag: x, count: 0 });
+		const extra = tagFilter()
+			.filter((x) => !have.has(x))
+			.map((x) => tags().find((y) => y.tag === x) ?? { tag: x, count: 0 });
 		return [...extra, ...top];
 	});
 
@@ -251,11 +330,27 @@ export function TagList(): JSX.Element {
 		if (b.y < c.y + c.height * 2) setLimit(Math.min(shown().length, n + TAG_CHUNK));
 	}
 	// bounds exist once a frame has painted: look again shortly after anything that changes what is mounted or how much room there is
-	const soon = () => { clearTimeout(check); check = setTimeout(more, 60); };
-	createEffect(() => { limit(); shown().length; tagsOpen(); tagsLoaded(); soon(); });
+	const soon = () => {
+		clearTimeout(check);
+		check = setTimeout(more, 60);
+	};
+	createEffect(() => {
+		limit();
+		shown().length;
+		tagsOpen();
+		tagsLoaded();
+		soon();
+	});
 
 	return (
-		<div style={{ ...t("flex min-h-0 flex-col"), flexGrow: tagsOpen() ? 1 - collectionsFraction() : 0, flexShrink: tagsOpen() ? 1 : 0, flexBasis: tagsOpen() ? 0 : undefined }}>
+		<div
+			style={{
+				...t("flex min-h-0 flex-col"),
+				flexGrow: tagsOpen() ? 1 - collectionsFraction() : 0,
+				flexShrink: tagsOpen() ? 1 : 0,
+				flexBasis: tagsOpen() ? 0 : undefined,
+			}}
+		>
 			<SectionHeader
 				label="Tags"
 				open={tagsOpen()}
@@ -266,13 +361,28 @@ export function TagList(): JSX.Element {
 			/>
 			<Show when={tagsOpen()}>
 				{/* a white field with a visible edge, so the filter reads as an input against the sidebar */}
-				<div style={{ ...t("mb-2 flex h-7 flex-none items-center gap-1.5 rounded-lg bg-background pl-2.5 ring-1 ring-input"), marginRight: SCROLLBAR_GUTTER + 8, position: "relative" }}>
+				<div
+					style={{
+						...t("mb-2 flex h-7 flex-none items-center gap-1.5 rounded-lg bg-background pl-2.5 ring-1 ring-input"),
+						marginRight: SCROLLBAR_GUTTER + 8,
+						position: "relative",
+					}}
+				>
 					<Icon name="search" size={13} color={muted()} />
 					<input
 						value={filter()}
 						placeholder="Filter tags"
 						onChange={(e) => setFilter((e as { value?: string }).value ?? "")}
-						style={{ flexGrow: 1, minWidth: 0, height: 26, paddingLeft: 0, paddingRight: 10, fontSize: 13, fontFamily: "Inter", color: tok("foreground") }}
+						style={{
+							flexGrow: 1,
+							minWidth: 0,
+							height: 26,
+							paddingLeft: 0,
+							paddingRight: 10,
+							fontSize: 13,
+							fontFamily: "Inter",
+							color: tok("foreground"),
+						}}
 						theme={{
 							appearance: mode(),
 							bg: tok("background"),
@@ -287,10 +397,17 @@ export function TagList(): JSX.Element {
 					/>
 				</div>
 				<div
-					ref={(el: HostElement) => { box = el; }}
+					ref={(el: HostElement) => {
+						box = el;
+					}}
 					onScrollChange={more}
 					onLayout={soon}
-					style={{ ...t("flex min-h-0 flex-wrap content-start gap-1.5 overflow-y-auto px-2.5 pb-2"), flexGrow: 1, flexShrink: 1, flexBasis: 0 }}
+					style={{
+						...t("flex min-h-0 flex-wrap content-start gap-1.5 overflow-y-auto px-2.5 pb-2"),
+						flexGrow: 1,
+						flexShrink: 1,
+						flexBasis: 0,
+					}}
 				>
 					<Show
 						when={tagsLoaded()}
@@ -299,10 +416,22 @@ export function TagList(): JSX.Element {
 						}
 					>
 						{/* Index, not For: GPUIX loses a moved element's event handlers, and a tag that gets a colour or is selected changes position */}
-						<Index each={mounted()}>{(x, i) => <Pill tag={x()} onEl={(el) => { if (el) pillEls.set(i, el); else pillEls.delete(i); }} />}</Index>
+						<Index each={mounted()}>
+							{(x, i) => (
+								<Pill
+									tag={x()}
+									onEl={(el) => {
+										if (el) pillEls.set(i, el);
+										else pillEls.delete(i);
+									}}
+								/>
+							)}
+						</Index>
 						<Show when={filtered().length > TAG_LIMIT && limit() >= shown().length}>
 							<div style={t("inline-flex h-6 items-center px-2")}>
-								<text style={tx("text-xs text-muted-foreground")}>{`+ ${(filtered().length - TAG_LIMIT).toLocaleString("en-US")} more`}</text>
+								<text
+									style={tx("text-xs text-muted-foreground")}
+								>{`+ ${(filtered().length - TAG_LIMIT).toLocaleString("en-US")} more`}</text>
 							</div>
 						</Show>
 						<Show when={tagsLoaded() && !tagsLoading() && filtered().length === 0}>

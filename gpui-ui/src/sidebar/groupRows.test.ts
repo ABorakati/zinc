@@ -3,8 +3,21 @@ import { describe, expect, test } from "bun:test";
 import type { Collection, Library } from "../contracts";
 import { buildGroupRows, libraryRowKey, type GroupRow, type GroupRowInput } from "./groupRows";
 
-const lib = (id: number, name: string, editable = true, type: Library["type"] = "group"): Library => ({ id, type, name, editable, filesEditable: editable, ...(type === "group" ? { groupId: 1000 + id } : {}) });
-const c = (key: string, name: string, children?: Collection[]): Collection => ({ key, name, parentKey: null, itemCount: 1, ...(children ? { children } : {}) });
+const lib = (id: number, name: string, editable = true, type: Library["type"] = "group"): Library => ({
+	id,
+	type,
+	name,
+	editable,
+	filesEditable: editable,
+	...(type === "group" ? { groupId: 1000 + id } : {}),
+});
+const c = (key: string, name: string, children?: Collection[]): Collection => ({
+	key,
+	name,
+	parentKey: null,
+	itemCount: 1,
+	...(children ? { children } : {}),
+});
 const input = (o: Partial<GroupRowInput> = {}): GroupRowInput => ({
 	libraries: [lib(1, "My Library", true, "user"), lib(2, "Lab"), lib(3, "Journal club", false)],
 	trees: { 2: [c("A", "Papers", [c("A1", "2025"), c("A2", "2026", [c("A21", "Drafts")])]), c("B", "Data")], 3: [] },
@@ -12,7 +25,14 @@ const input = (o: Partial<GroupRowInput> = {}): GroupRowInput => ({
 	expanded: new Set<string>(),
 	...o,
 });
-const show = (rows: GroupRow[]) => rows.map((r) => (r.kind === "header" ? "[Group Libraries]" : r.kind === "library" ? `${r.lib.name}${r.hasCollections ? "+" : ""}${r.open ? "*" : ""}` : `${".".repeat(r.depth)}${r.c.name}`));
+const show = (rows: GroupRow[]) =>
+	rows.map((r) =>
+		r.kind === "header"
+			? "[Group Libraries]"
+			: r.kind === "library"
+				? `${r.lib.name}${r.hasCollections ? "+" : ""}${r.open ? "*" : ""}`
+				: `${".".repeat(r.depth)}${r.c.name}`,
+	);
 
 describe("Group Libraries rows", () => {
 	test("nothing when the account has no groups (My Library alone is not a group)", () => {
@@ -27,9 +47,32 @@ describe("Group Libraries rows", () => {
 	});
 	test("an expanded group shows its collections, and expanded collections their children", () => {
 		const e = (...k: string[]) => new Set(k);
-		expect(show(buildGroupRows(input({ expanded: e(libraryRowKey(2)) })))).toEqual(["[Group Libraries]", "Lab+*", ".Papers", ".Data", "Journal club"]);
-		expect(show(buildGroupRows(input({ expanded: e(libraryRowKey(2), "A") })))).toEqual(["[Group Libraries]", "Lab+*", ".Papers", "..2025", "..2026", ".Data", "Journal club"]);
-		expect(show(buildGroupRows(input({ expanded: e(libraryRowKey(2), "A", "A2") })))).toEqual(["[Group Libraries]", "Lab+*", ".Papers", "..2025", "..2026", "...Drafts", ".Data", "Journal club"]);
+		expect(show(buildGroupRows(input({ expanded: e(libraryRowKey(2)) })))).toEqual([
+			"[Group Libraries]",
+			"Lab+*",
+			".Papers",
+			".Data",
+			"Journal club",
+		]);
+		expect(show(buildGroupRows(input({ expanded: e(libraryRowKey(2), "A") })))).toEqual([
+			"[Group Libraries]",
+			"Lab+*",
+			".Papers",
+			"..2025",
+			"..2026",
+			".Data",
+			"Journal club",
+		]);
+		expect(show(buildGroupRows(input({ expanded: e(libraryRowKey(2), "A", "A2") })))).toEqual([
+			"[Group Libraries]",
+			"Lab+*",
+			".Papers",
+			"..2025",
+			"..2026",
+			"...Drafts",
+			".Data",
+			"Journal club",
+		]);
 		// a collection key expanded while its group is closed shows nothing
 		expect(show(buildGroupRows(input({ expanded: e("A") })))).toEqual(["[Group Libraries]", "Lab+", "Journal club"]);
 	});
@@ -43,6 +86,10 @@ describe("Group Libraries rows", () => {
 		expect(first.kind === "collection" && first.hasChildren).toBe(true);
 	});
 	test("a group whose tree has not loaded yet has no expander and no rows", () => {
-		expect(show(buildGroupRows(input({ trees: {}, expanded: new Set([libraryRowKey(2)]) })))).toEqual(["[Group Libraries]", "Lab*", "Journal club"]);
+		expect(show(buildGroupRows(input({ trees: {}, expanded: new Set([libraryRowKey(2)]) })))).toEqual([
+			"[Group Libraries]",
+			"Lab*",
+			"Journal club",
+		]);
 	});
 });

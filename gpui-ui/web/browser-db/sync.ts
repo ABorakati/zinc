@@ -23,7 +23,11 @@ export async function startBrowserSync(db: Database, client: StorageClient, extr
 	const area = direct ?? client.area;
 	setDefaultKeyStore(chromeKeyStore(area));
 	let override: unknown;
-	try { override = (await area.get(TEST_API_BASE_NAME))[TEST_API_BASE_NAME]; } catch { /* no override */ }
+	try {
+		override = (await area.get(TEST_API_BASE_NAME))[TEST_API_BASE_NAME];
+	} catch {
+		/* no override */
+	}
 	const apiBase = apiBaseFrom(override);
 	const opts: WebSyncOptions = { fileRedirect: "follow", apiBase: () => apiBase, ...extra };
 	const mode = syncMode(db);

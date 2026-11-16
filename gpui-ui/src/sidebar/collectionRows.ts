@@ -48,15 +48,20 @@ const byName = (a: Collection, b: Collection) => a.name.localeCompare(b.name, un
 
 /** One level of siblings, sorted (a new array). Ties fall back to the name. */
 export function sortLevel(list: readonly Collection[], sort: SortKey, stamps: Record<string, Stamp>): Collection[] {
-	const created = (c: Collection) => c.dateAdded ? Date.parse(c.dateAdded) || 0 : stamps[c.key]?.c ?? 0;
-	const modified = (c: Collection) => c.dateModified ? Date.parse(c.dateModified) || 0 : stamps[c.key]?.m ?? 0;
+	const created = (c: Collection) => (c.dateAdded ? Date.parse(c.dateAdded) || 0 : (stamps[c.key]?.c ?? 0));
+	const modified = (c: Collection) => (c.dateModified ? Date.parse(c.dateModified) || 0 : (stamps[c.key]?.m ?? 0));
 	const out = [...list];
 	switch (sort) {
-		case "name-asc": return out.sort(byName);
-		case "name-desc": return out.sort((a, b) => byName(b, a));
-		case "created": return out.sort((a, b) => created(b) - created(a) || byName(a, b));
-		case "modified": return out.sort((a, b) => modified(b) - modified(a) || byName(a, b));
-		case "items": return out.sort((a, b) => (b.itemCount ?? 0) - (a.itemCount ?? 0) || byName(a, b));
+		case "name-asc":
+			return out.sort(byName);
+		case "name-desc":
+			return out.sort((a, b) => byName(b, a));
+		case "created":
+			return out.sort((a, b) => created(b) - created(a) || byName(a, b));
+		case "modified":
+			return out.sort((a, b) => modified(b) - modified(a) || byName(a, b));
+		case "items":
+			return out.sort((a, b) => (b.itemCount ?? 0) - (a.itemCount ?? 0) || byName(a, b));
 	}
 }
 
@@ -106,15 +111,36 @@ export function buildRows(i: RowInput): Row[] {
 
 	if (i.group === "colour") {
 		const colourOf = (c: Collection) => (paletteHex(i.styles[c.key]?.color) ? i.styles[c.key]!.color! : "");
-		for (const p of PALETTE) group(`col:${p.id}`, p.name, roots.filter((c) => colourOf(c) === p.id), { color: p.id });
-		group("col-none", "No colour", roots.filter((c) => !colourOf(c)));
+		for (const p of PALETTE)
+			group(
+				`col:${p.id}`,
+				p.name,
+				roots.filter((c) => colourOf(c) === p.id),
+				{ color: p.id },
+			);
+		group(
+			"col-none",
+			"No colour",
+			roots.filter((c) => !colourOf(c)),
+		);
 	} else {
 		// "" is the default group, not a section (it would list every unsectioned collection twice); repeated names would repeat the group
 		const sections = [...new Set(i.sections.filter((s) => s !== ""))];
 		const sectionOf = (c: Collection) => (sections.includes(i.styles[c.key]?.section ?? "") ? i.styles[c.key]!.section! : "");
 		// a user-made section shows even when empty (otherwise a new one could not be seen); the default group only when used
-		for (const s of sections) group(`sec:${s}`, s, roots.filter((c) => sectionOf(c) === s), { section: s }, true);
-		group("sec-default", "Collections", roots.filter((c) => !sectionOf(c)));
+		for (const s of sections)
+			group(
+				`sec:${s}`,
+				s,
+				roots.filter((c) => sectionOf(c) === s),
+				{ section: s },
+				true,
+			);
+		group(
+			"sec-default",
+			"Collections",
+			roots.filter((c) => !sectionOf(c)),
+		);
 	}
 	return out;
 }

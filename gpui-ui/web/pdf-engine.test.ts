@@ -17,7 +17,10 @@ function twoPagePdf(): Uint8Array {
 	];
 	let out = "%PDF-1.4\n";
 	const offs: number[] = [];
-	objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+	objs.forEach((o, i) => {
+		offs.push(out.length);
+		out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+	});
 	const xref = out.length;
 	out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
 	out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
@@ -25,10 +28,15 @@ function twoPagePdf(): Uint8Array {
 }
 
 test("open, sizes, render and text through the shared engine", async () => {
-	await initEngine(readFileSync(join(import.meta.dir, "..", "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm")).buffer as ArrayBuffer);
+	await initEngine(
+		readFileSync(join(import.meta.dir, "..", "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm")).buffer as ArrayBuffer,
+	);
 	const h = openDoc(twoPagePdf());
 	expect(h.pageCount).toBe(2);
-	expect(h.sizes).toEqual([[612, 792], [595, 842]]);
+	expect(h.sizes).toEqual([
+		[612, 792],
+		[595, 842],
+	]);
 	const d = drawPage(h, 0, 0.5, {});
 	expect([d.width, d.height]).toEqual([306, 396]);
 	expect(d.pixels.length).toBe(306 * 396 * 4);

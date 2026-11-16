@@ -56,7 +56,11 @@ if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) run(["bun", join(root, "n
 if (!existsSync(join(pdfiumDir, "bin", "pdfium.dll"))) throw new Error("pdfium.dll missing in " + pdfiumDir);
 
 // 2. the exe
-run(aot ? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", "--hide-console"] : ["bun", "scripts/build.ts", "--variant", "bytecode", "--hide-console"]);
+run(
+	aot
+		? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", "--hide-console"]
+		: ["bun", "scripts/build.ts", "--variant", "bytecode", "--hide-console"],
+);
 const exe = join(root, "out", aot ? "zotero-next-gpui-aot.exe" : "zotero-next-gpui-bytecode.exe");
 
 // 2b. the Zotero translation worker, pre-bundled (jsdom and friends inside; see scripts/translate-worker.ts)
@@ -78,40 +82,58 @@ if (!aot) {
 	cpSync(translateWorker, join(app, "translate-worker.js"));
 }
 // Zotero translate framework + utilities + schema + translators (core/vendor/zotero; the worker reads them from disk), with their licences
-for (const part of aot ? ["zotero-schema", "translators"] : ["translate", "utilities", "zotero-schema", "translators"]) cpSync(join(repo, "core", "vendor", "zotero", part), join(app, "vendor", "zotero", part), { recursive: true });
+for (const part of aot ? ["zotero-schema", "translators"] : ["translate", "utilities", "zotero-schema", "translators"])
+	cpSync(join(repo, "core", "vendor", "zotero", part), join(app, "vendor", "zotero", part), { recursive: true });
 cpSync(join(repo, "core", "vendor", "zotero", "README.md"), join(app, "vendor", "zotero", "README.md"));
-cpSync(join(repo, "core", "vendor", "zotero", "translation-server", "COPYING"), join(app, "vendor", "zotero", "translation-server", "COPYING"));
+cpSync(
+	join(repo, "core", "vendor", "zotero", "translation-server", "COPYING"),
+	join(app, "vendor", "zotero", "translation-server", "COPYING"),
+);
 // aot: worker.js (the engine) and the structured-document-text reader are compiled into the exe; the build folder keeps the data the engine fetches
-cpSync(join(repo, "vendor", "document-worker", "build"), join(app, "vendor", "document-worker", "build"), { recursive: true, filter: (src) => !(aot && basename(src) === "worker.js") });
-if (!aot) cpSync(join(repo, "vendor", "reader", "structured-document-text", "src"), join(app, "vendor", "reader", "structured-document-text", "src"), { recursive: true });
+cpSync(join(repo, "vendor", "document-worker", "build"), join(app, "vendor", "document-worker", "build"), {
+	recursive: true,
+	filter: (src) => !(aot && basename(src) === "worker.js"),
+});
+if (!aot)
+	cpSync(
+		join(repo, "vendor", "reader", "structured-document-text", "src"),
+		join(app, "vendor", "reader", "structured-document-text", "src"),
+		{ recursive: true },
+	);
 // the web reader and note editor builds (reader-host/build.sh, note-host/build.sh); without them snapshots/EPUBs open in their default app
-for (const [name, index] of [["reader-host", "index.html"], ["note-host", "editor.html"]] as const) {
+for (const [name, index] of [
+	["reader-host", "index.html"],
+	["note-host", "editor.html"],
+] as const) {
 	const dist = join(repo, name, "dist");
 	if (existsSync(join(dist, index))) cpSync(dist, join(app, name, "dist"), { recursive: true });
 	else console.warn(`package: ${name}/dist not built (bash ${name}/build.sh); web tabs will be off`);
 }
-writeFileSync(join(app, "README.txt"), [
-	"Zinc (GPUI)",
-	"",
-	"Start zotero-next-gpui.exe. It does not need another Zinc: it opens the library itself (ZN_LIBRARY, default",
-	"C:/Users/abora/zotero-next/data/library.sqlite), after making one backup copy (library.backup-gpui-*.sqlite next to it), and runs",
-	"the same services: HTTP API on 127.0.0.1:23120 (Word add-in, MCP), Zotero Connector port 23119, two-way sync with",
-	"Zotero (reading always, writing opt-in) and PDF full-text extraction.",
-	"",
-	"Do not run it together with another Zinc on the same library for sync: if port 23120 is taken, this app still opens the",
-	"library but leaves Zotero sync and port 23119 to the other app (the sync indicator says so). Institution sign-in for",
-	"Find Full Text opens a sign-in window of its own (a helper process started from a link to this exe, zotero-next-signin.exe in",
+writeFileSync(
+	join(app, "README.txt"),
+	[
+		"Zinc (GPUI)",
+		"",
+		"Start zotero-next-gpui.exe. It does not need another Zinc: it opens the library itself (ZN_LIBRARY, default",
+		"C:/Users/abora/zotero-next/data/library.sqlite), after making one backup copy (library.backup-gpui-*.sqlite next to it), and runs",
+		"the same services: HTTP API on 127.0.0.1:23120 (Word add-in, MCP), Zotero Connector port 23119, two-way sync with",
+		"Zotero (reading always, writing opt-in) and PDF full-text extraction.",
+		"",
+		"Do not run it together with another Zinc on the same library for sync: if port 23120 is taken, this app still opens the",
+		"library but leaves Zotero sync and port 23119 to the other app (the sync indicator says so). Institution sign-in for",
+		"Find Full Text opens a sign-in window of its own (a helper process started from a link to this exe, zotero-next-signin.exe in",
 		"%LOCALAPPDATA%\\zotero-next-gpui\\signin; its WebView2 profile is %APPDATA%\\zotero-next-signin.exe\\EBWebView). ZN_SIGNIN=0 turns it off.",
-	"",
-	"Environment overrides: ZN_LIBRARY, ZN_DB (another database), ZN_URL (use an external core, run nothing here), ZN_PORT,",
-	"ZN_SYNC=0, ZN_ZPORT=0|<port>, ZN_ZOTERO_DIR, ZN_PDF_DLL, ZN_PDFIUM_DLL, ZN_PDF_BACKEND=hayro (render with hayro instead of PDFium), ZN_ROOT, ZN_DOCWORKER_ENTRY, ZN_TRACE=1 (start-up timings).",
-	"ZN_TRANSLATE_WORKER / ZN_ZOTERO_VENDOR / ZN_TRANSLATORS_DIR point the Zotero translators (import, export, web capture) at other copies.",
-	"ZN_READER_HOST / ZN_NOTE_HOST point the core at other reader-host / note-host builds.",
-	"HTML snapshots and EPUBs open in a web tab (Zotero's reader in a WebView2 window over the tab; needs the Microsoft Edge WebView2 runtime,",
-	"preinstalled on Windows 11; its profile is %APPDATA%\zotero-next-gpui.exe\EBWebView).",
-	"Settings and window state: %APPDATA%\\zotero-next-gpui\\",
-	"",
-].join("\r\n"));
+		"",
+		"Environment overrides: ZN_LIBRARY, ZN_DB (another database), ZN_URL (use an external core, run nothing here), ZN_PORT,",
+		"ZN_SYNC=0, ZN_ZPORT=0|<port>, ZN_ZOTERO_DIR, ZN_PDF_DLL, ZN_PDFIUM_DLL, ZN_PDF_BACKEND=hayro (render with hayro instead of PDFium), ZN_ROOT, ZN_DOCWORKER_ENTRY, ZN_TRACE=1 (start-up timings).",
+		"ZN_TRANSLATE_WORKER / ZN_ZOTERO_VENDOR / ZN_TRANSLATORS_DIR point the Zotero translators (import, export, web capture) at other copies.",
+		"ZN_READER_HOST / ZN_NOTE_HOST point the core at other reader-host / note-host builds.",
+		"HTML snapshots and EPUBs open in a web tab (Zotero's reader in a WebView2 window over the tab; needs the Microsoft Edge WebView2 runtime,",
+		"preinstalled on Windows 11; its profile is %APPDATA%\zotero-next-gpui.exe\EBWebView).",
+		"Settings and window state: %APPDATA%\\zotero-next-gpui\\",
+		"",
+	].join("\r\n"),
+);
 
 writeFileSync(join(app, "version.txt"), BUILD_VERSION + "\n"); // the stamp scripts/installer.ts and the updater read
 // Authenticode (scripts/sign.ts): signs the exe and our native DLL when a certificate is configured, else prints "unsigned: ..." and moves on

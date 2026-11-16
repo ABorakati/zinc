@@ -33,9 +33,18 @@ export function subsections(body: string): { title: string; body: string }[] {
 	return parts;
 }
 
-export interface Table { head: string[]; rows: string[][] }
+export interface Table {
+	head: string[];
+	rows: string[][];
+}
 
-const cells = (l: string) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+const cells = (l: string) =>
+	l
+		.trim()
+		.replace(/^\|/, "")
+		.replace(/\|$/, "")
+		.split("|")
+		.map((c) => c.trim());
 
 /** Every pipe table in a block of Markdown. */
 export function tables(body: string): Table[] {
@@ -67,7 +76,10 @@ export function bullets(body: string): string[] {
 export function paragraphs(body: string): string[] {
 	const out: string[] = [];
 	let cur: string[] = [];
-	const flush = () => { if (cur.length) out.push(cur.join(" ")); cur = []; };
+	const flush = () => {
+		if (cur.length) out.push(cur.join(" "));
+		cur = [];
+	};
 	for (const l of body.split("\n")) {
 		const t = l.trim();
 		if (!t || /^(\||- |#|!\[|<!--|```|\d+\. )/.test(t)) flush();

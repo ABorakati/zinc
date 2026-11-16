@@ -16,8 +16,10 @@ const LABEL: Record<RetrieveRow["state"], string> = {
 };
 
 function RowIcon(p: { state: RetrieveRow["state"] }): JSX.Element {
-	const name = () => ({ retrieved: "check", existing: "link-2", failed: "circle-slash", running: "loader-circle", queued: "circle" })[p.state];
-	const color = () => (p.state === "retrieved" || p.state === "existing" ? "#16a34a" : p.state === "running" ? tok("primary") : tok("muted-foreground"));
+	const name = () =>
+		({ retrieved: "check", existing: "link-2", failed: "circle-slash", running: "loader-circle", queued: "circle" })[p.state];
+	const color = () =>
+		p.state === "retrieved" || p.state === "existing" ? "#16a34a" : p.state === "running" ? tok("primary") : tok("muted-foreground");
 	return <Icon name={name()} size={16} color={color()} />;
 }
 
@@ -26,7 +28,8 @@ export function RetrievePanel(): JSX.Element {
 	const finished = () => retrieveRows().filter((r) => r.state !== "queued" && r.state !== "running").length;
 	const found = () => retrieveRows().filter((r) => r.state === "retrieved" || r.state === "existing").length;
 	const missed = () => retrieveRows().filter((r) => r.state === "failed").length;
-	const subtitle = () => (retrieveActive() ? `${finished()} of ${total()}` : `Recognised ${found()}${missed() ? `, not found ${missed()}` : ""}`);
+	const subtitle = () =>
+		retrieveActive() ? `${finished()} of ${total()}` : `Recognised ${found()}${missed() ? `, not found ${missed()}` : ""}`;
 	return (
 		<Show when={total() > 0}>
 			<FloatingPanel
@@ -41,10 +44,14 @@ export function RetrievePanel(): JSX.Element {
 				<For each={retrieveRows()}>
 					{(r) => (
 						<div style={{ ...t("flex flex-row items-start gap-2 px-3 py-1.5"), flexShrink: 0 }}>
-							<div style={{ marginTop: 1 }}><RowIcon state={r.state} /></div>
+							<div style={{ marginTop: 1 }}>
+								<RowIcon state={r.state} />
+							</div>
 							<div style={{ ...t("flex flex-col"), flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
 								<Line class="text-xs text-foreground">{r.title}</Line>
-								<Line class="text-xs text-muted-foreground">{r.state === "failed" && r.message ? `${LABEL.failed} · ${r.message}` : LABEL[r.state]}</Line>
+								<Line class="text-xs text-muted-foreground">
+									{r.state === "failed" && r.message ? `${LABEL.failed} · ${r.message}` : LABEL[r.state]}
+								</Line>
 							</div>
 						</div>
 					)}

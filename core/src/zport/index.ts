@@ -34,7 +34,8 @@ export function withCors(res: Response, allowedOrigin: string | null = null): Re
 	return res;
 }
 
-const forbidden = (why: string) => new Response(why, { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8", "X-Zotero-Version": "7.0.0" } });
+const forbidden = (why: string) =>
+	new Response(why, { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8", "X-Zotero-Version": "7.0.0" } });
 
 /** The Zotero port's gate: loopback Host, and no web page except /connector/ping navigation and the integration origins. */
 function gate(req: Request, url: URL): Response | null {
@@ -42,7 +43,8 @@ function gate(req: Request, url: URL): Response | null {
 	if (!isWebRequest(req)) return null;
 	const origin = req.headers.get("origin");
 	// Opening http://127.0.0.1:23119/connector/ping in a tab (Zotero's "is it running" check) stays possible.
-	if (url.pathname === "/connector/ping" && req.method === "GET" && req.headers.get("sec-fetch-mode") === "navigate" && origin === null) return null;
+	if (url.pathname === "/connector/ping" && req.method === "GET" && req.headers.get("sec-fetch-mode") === "navigate" && origin === null)
+		return null;
 	if ((url.pathname.startsWith("/connector/document/") || url.pathname === "/connector/ping") && isIntegrationOrigin(origin)) return null;
 	return forbidden("web pages may not access this endpoint");
 }
@@ -59,8 +61,7 @@ export async function handleZRequest(req: Request, db: Database, server: Bun.Ser
 		try {
 			const res = await r.handler(req, { db, url, server });
 			if (res) return withCors(res, cors);
-		}
-		catch (e) {
+		} catch (e) {
 			console.error(`[zport] ${req.method} ${url.pathname} failed:`, e);
 			return withCors(Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 }), cors);
 		}
@@ -80,15 +81,20 @@ export function startZoteroPort(db: Database, opts: { port?: number; retryMs?: n
 		try {
 			server = Bun.serve({ port, hostname: "127.0.0.1", idleTimeout: 120, fetch: (req, srv) => handleZRequest(req, db, srv) });
 			opts.onStart?.(port);
-		}
-		catch {
+		} catch {
 			server = null; // in use (Zotero is running)
 			if (opts.retryMs) timer = setTimeout(tryStart, opts.retryMs);
 		}
 	};
 	tryStart();
 	return {
-		get listening() { return !!server; },
-		stop() { clearTimeout(timer); server?.stop(true); server = null; },
+		get listening() {
+			return !!server;
+		},
+		stop() {
+			clearTimeout(timer);
+			server?.stop(true);
+			server = null;
+		},
 	};
 }

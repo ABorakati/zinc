@@ -12,27 +12,58 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const flag = (n: string) => process.argv.includes(`--${n}`);
-const opt = (n: string, d: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1]! : d; };
+const opt = (n: string, d: string) => {
+	const i = process.argv.indexOf(`--${n}`);
+	return i >= 0 ? process.argv[i + 1]! : d;
+};
 const stages = opt("stages", "bare,import,empty,fonts,hello,app").split(",");
 const runs = Number(opt("runs", "3"));
 const extra = [...(flag("window") ? ["--window"] : []), ...(flag("gc") ? ["--gc"] : []), "--wait", opt("wait", "6")];
-const envExtra = Object.fromEntries(opt("env", "").split(",").filter(Boolean).map((kv) => kv.split("=") as [string, string]));
+const envExtra = Object.fromEntries(
+	opt("env", "")
+		.split(",")
+		.filter(Boolean)
+		.map((kv) => kv.split("=") as [string, string]),
+);
 const entry = opt("script", "scripts/profile-stage.tsx");
 const exe = opt("exe", ""); // a scripts/build.ts compile of profile-stage.tsx: runs without Babel/bunfig preload (the shipped shape)
-const med = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]!; };
+const med = (a: number[]) => {
+	const s = [...a].sort((x, y) => x - y);
+	return s[Math.floor(s.length / 2)]!;
+};
 
 const rows: Record<string, unknown>[] = [];
 for (const s of stages) {
 	const samples: Record<string, number>[] = [];
 	for (let i = 0; i < runs; i++) {
-		const r = spawnSync(exe || "bun", [...(exe ? [] : [entry]), s, ...extra], { cwd: root, encoding: "utf8", env: { ...process.env, ZN_URL: process.env.ZN_URL ?? "http://127.0.0.1:23160", ...envExtra }, timeout: 60_000 });
-		const last = (r.stdout ?? "").split("\n").filter((l) => l.startsWith("SAMPLE ")).at(-1);
-		if (!last) { console.error(`stage ${s} produced no sample`, r.stderr?.slice(0, 500)); continue; }
+		const r = spawnSync(exe || "bun", [...(exe ? [] : [entry]), s, ...extra], {
+			cwd: root,
+			encoding: "utf8",
+			env: { ...process.env, ZN_URL: process.env.ZN_URL ?? "http://127.0.0.1:23160", ...envExtra },
+			timeout: 60_000,
+		});
+		const last = (r.stdout ?? "")
+			.split("\n")
+			.filter((l) => l.startsWith("SAMPLE "))
+			.at(-1);
+		if (!last) {
+			console.error(`stage ${s} produced no sample`, r.stderr?.slice(0, 500));
+			continue;
+		}
 		samples.push(JSON.parse(last.slice(7)));
 	}
 	if (!samples.length) continue;
 	const m = (k: string) => med(samples.map((x) => x[k] as number));
 	const pr = samples.map((x) => x.privateMB as number);
-	rows.push({ stage: s, privateMB: m("privateMB"), "priv min-max": `${Math.min(...pr)}-${Math.max(...pr)}`, wsMB: m("wsMB"), peakWsMB: m("peakWsMB"), jsHeapMB: m("jsHeapMB"), jsExtraMB: m("jsExtraMB"), objects: m("objects") });
+	rows.push({
+		stage: s,
+		privateMB: m("privateMB"),
+		"priv min-max": `${Math.min(...pr)}-${Math.max(...pr)}`,
+		wsMB: m("wsMB"),
+		peakWsMB: m("peakWsMB"),
+		jsHeapMB: m("jsHeapMB"),
+		jsExtraMB: m("jsExtraMB"),
+		objects: m("objects"),
+	});
 }
 console.table(rows);

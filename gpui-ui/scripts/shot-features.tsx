@@ -25,7 +25,9 @@ import { showShortcutHelp } from "../src/features/maintenance/shortcutHelp";
 import { ReferencesPanel } from "../src/features/references/ReferencesPanel";
 
 const args = process.argv.slice(2);
-const outDir = args.find((a) => /[\\/]/.test(a)) ?? "C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots";
+const outDir =
+	args.find((a) => /[\\/]/.test(a)) ??
+	"C:/Users/abora/AppData/Local/Temp/claude/C--Users-abora-Hecate/0719cea7-1eb3-4344-a1e4-a862c3bde6eb/scratchpad/gpui-shots";
 const mode = args.includes("light") ? "light" : "dark";
 const only = args.filter((a) => !/[\\/]/.test(a) && a !== "light" && a !== "dark");
 mkdirSync(outDir, { recursive: true });
@@ -36,7 +38,15 @@ const t = createTestRoot({ width: 1400, height: 900 });
 registerFonts(t.renderer);
 const r = t.renderer;
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-const frames = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { r.flush(); r.dispatchNativeEvents(); r.flush(); await sleep(16); } };
+const frames = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		r.flush();
+		r.dispatchNativeEvents();
+		r.flush();
+		await sleep(16);
+	}
+};
 
 t.render(() => (
 	<div style={{ ...tw("flex flex-col bg-canvas", store.mode()), position: "relative", width: "100%", height: "100%" }}>
@@ -49,10 +59,16 @@ t.render(() => (
 for (let i = 0; i < 100 && store.total() === 0; i++) await sleep(100);
 await frames(600);
 const keys: string[] = [];
-for (let i = 0; i < 30 && keys.length < 3; i++) { const it = store.itemAt(i); if (it && it.itemType !== "attachment" && it.itemType !== "note") keys.push(it.key); else if (!it) await frames(100); }
+for (let i = 0; i < 30 && keys.length < 3; i++) {
+	const it = store.itemAt(i);
+	if (it && it.itemType !== "attachment" && it.itemType !== "note") keys.push(it.key);
+	else if (!it) await frames(100);
+}
 console.log("sample items:", keys.join(","));
 
-const closeAll = () => { for (const l of overlayLayers()) (l as unknown as { close?: (v?: unknown) => void }).close?.(undefined); };
+const closeAll = () => {
+	for (const l of overlayLayers()) (l as unknown as { close?: (v?: unknown) => void }).close?.(undefined);
+};
 let failed = 0;
 async function shot(name: string, open: () => unknown, wait = 1500) {
 	if (only.length && !only.includes(name)) return;
@@ -79,34 +95,64 @@ await shot("bibliography", () => openBibliography("3 selected items", keys), 350
 await shot("citesettings", () => openCiteSettings(keys), 4000);
 await shot("duplicates", () => openDuplicates(), 6000);
 await shot("shortcuts", () => showShortcutHelp(), 600);
-await shot("references", () => openDialog<void>(() => <ReferencesPanel itemKey={keys[1]!} height={560} focus={{ index: 2 }} />, { title: "References", width: 600 }), 7000);
+await shot(
+	"references",
+	() =>
+		openDialog<void>(() => <ReferencesPanel itemKey={keys[1]!} height={560} focus={{ index: 2 }} />, {
+			title: "References",
+			width: 600,
+		}),
+	7000,
+);
 await shot("fulltextsettings", () => openFullTextSettings(), 2500);
-await shot("panels", () => {
-	_seedRetrieveRows([
-		{ key: "A", title: "smith-2021-trial.pdf", state: "retrieved" },
-		{ key: "B", title: "scan0042.pdf", state: "failed", message: "Not found" },
-		{ key: "C", title: "lancet-review.pdf", state: "running" },
-		{ key: "D", title: "guidelines.pdf", state: "queued" },
-	]);
-	_seedJobs([{
-		openAccessOnly: false, cancelling: false, startedAt: Date.now(),
-		job: { id: "demo", done: false, items: [
-			{ key: "K1", title: "Surgical outcomes after pancreatoduodenectomy", state: "attached", source: "Unpaywall" },
-			{ key: "K2", title: "A randomised trial of early feeding", state: "needs-sign-in", source: "KCL OpenAthens", handoffUrl: "https://doi.org/10.1000/x" },
-			{ key: "K3", title: "Registry-based cohort study of sepsis", state: "downloading", source: "Europe PMC" },
-			{ key: "K4", title: "Machine learning in perioperative care", state: "not-found" },
-		] },
-	}]);
-	toast("Bibliography copied (3 items, vancouver)", { kind: "success" });
-}, 800);
+await shot(
+	"panels",
+	() => {
+		_seedRetrieveRows([
+			{ key: "A", title: "smith-2021-trial.pdf", state: "retrieved" },
+			{ key: "B", title: "scan0042.pdf", state: "failed", message: "Not found" },
+			{ key: "C", title: "lancet-review.pdf", state: "running" },
+			{ key: "D", title: "guidelines.pdf", state: "queued" },
+		]);
+		_seedJobs([
+			{
+				openAccessOnly: false,
+				cancelling: false,
+				startedAt: Date.now(),
+				job: {
+					id: "demo",
+					done: false,
+					items: [
+						{ key: "K1", title: "Surgical outcomes after pancreatoduodenectomy", state: "attached", source: "Unpaywall" },
+						{
+							key: "K2",
+							title: "A randomised trial of early feeding",
+							state: "needs-sign-in",
+							source: "KCL OpenAthens",
+							handoffUrl: "https://doi.org/10.1000/x",
+						},
+						{ key: "K3", title: "Registry-based cohort study of sepsis", state: "downloading", source: "Europe PMC" },
+						{ key: "K4", title: "Machine learning in perioperative care", state: "not-found" },
+					],
+				},
+			},
+		]);
+		toast("Bibliography copied (3 items, vancouver)", { kind: "success" });
+	},
+	800,
+);
 // the three settings sections the features contribute
 for (const id of ["cite", "export", "fulltext"]) {
-	await shot(`settings-${id}`, () => {
-		const s = settingsSections().find((x) => x.id === id)!;
-		_seedRetrieveRows([]);
-		_seedJobs([]);
-		return openDialog<void>(() => s.render(), { title: `Settings > ${s.label}`, width: 760 });
-	}, 2500);
+	await shot(
+		`settings-${id}`,
+		() => {
+			const s = settingsSections().find((x) => x.id === id)!;
+			_seedRetrieveRows([]);
+			_seedJobs([]);
+			return openDialog<void>(() => s.render(), { title: `Settings > ${s.label}`, width: 760 });
+		},
+		2500,
+	);
 }
 console.log(failed ? `${failed} failed` : "done");
 t.unmount();

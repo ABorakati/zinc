@@ -12,16 +12,34 @@ export function ListRetry(): JSX.Element {
 		<Show when={store.failedPages() > 0 && store.total() > 0}>
 			<div
 				role="alert"
-				style={{ ...tw("flex flex-row items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-raised", m()), position: "absolute", left: 12, right: 12, bottom: 12, borderColor: tokens[m()]["destructive"] }}
+				style={{
+					...tw("flex flex-row items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-raised", m()),
+					position: "absolute",
+					left: 12,
+					right: 12,
+					bottom: 12,
+					borderColor: tokens[m()]["destructive"],
+				}}
 			>
 				<Icon name="circle-alert" size={14} color={tokens[m()]["destructive"] ?? "#d33"} />
 				<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
 					<text style={textStyle("text-xs font-medium text-foreground", m())}>Some items could not be loaded</text>
 					<Show when={store.error()}>
-						<text style={{ ...textStyle("text-[11px] text-muted-foreground", m()), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{store.error() ?? ""}</text>
+						<text
+							style={{
+								...textStyle("text-[11px] text-muted-foreground", m()),
+								whiteSpace: "nowrap",
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+							}}
+						>
+							{store.error() ?? ""}
+						</text>
 					</Show>
 				</div>
-				<Button size="sm" variant="outline" onClick={() => store.retryFailed()}>Retry</Button>
+				<Button size="sm" variant="outline" onClick={() => store.retryFailed()}>
+					Retry
+				</Button>
 			</div>
 		</Show>
 	);

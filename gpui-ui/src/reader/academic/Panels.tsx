@@ -12,7 +12,9 @@ import { supplementaryItems } from "./supp";
 import type { Reference } from "./types";
 
 const emptyNote = (s: AcademicSession, text: string): JSX.Element => (
-	<div style={{ padding: 16 }}><text style={kit(s.ctx.mode).tx("text-[12px] text-muted-foreground")}>{text}</text></div>
+	<div style={{ padding: 16 }}>
+		<text style={kit(s.ctx.mode).tx("text-[12px] text-muted-foreground")}>{text}</text>
+	</div>
 );
 
 // ---------------------------------------------------------------------------------------------------- figures & tables
@@ -23,7 +25,15 @@ function FigRow(p: { s: AcademicSession; it: FigItem }): JSX.Element {
 	return (
 		<div
 			onClick={() => p.s.jump(p.it.page, p.it.rect)}
-			style={{ ...k.t("flex flex-row border-b"), width: "100%", padding: 8, gap: 8, cursor: "pointer", hover: k.t("bg-accent/60"), alignItems: "flex-start" }}
+			style={{
+				...k.t("flex flex-row border-b"),
+				width: "100%",
+				padding: 8,
+				gap: 8,
+				cursor: "pointer",
+				hover: k.t("bg-accent/60"),
+				alignItems: "flex-start",
+			}}
 		>
 			<div style={{ width: 76, flexShrink: 0 }}>
 				<RegionThumb k={k} s={p.s} it={p.it} />
@@ -33,7 +43,9 @@ function FigRow(p: { s: AcademicSession; it: FigItem }): JSX.Element {
 					<text style={{ ...k.tx("text-[12.5px] font-medium text-foreground"), whiteSpace: "nowrap" }}>{p.it.label}</text>
 					<text style={{ ...k.tx("text-[10.5px] text-muted-foreground"), whiteSpace: "nowrap" }}>{`p. ${p.it.page + 1}`}</text>
 				</div>
-				<Show when={cap()}><text style={{ ...k.tx("text-[11.5px] text-muted-foreground"), ...clampTx(4) }}>{cap()}</text></Show>
+				<Show when={cap()}>
+					<text style={{ ...k.tx("text-[11.5px] text-muted-foreground"), ...clampTx(4) }}>{cap()}</text>
+				</Show>
 			</div>
 		</div>
 	);
@@ -57,7 +69,15 @@ export function FiguresPanel(p: { ctx: ReaderContext }): JSX.Element {
 	);
 	return (
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0 }}>
-			<Show when={s.analysed()} fallback={emptyNote(s, s.struct().phase === "loading" ? `Analysing document... ${Math.round((s.struct() as { pct?: number }).pct ?? 0)}%` : "Analysing document...")}>
+			<Show
+				when={s.analysed()}
+				fallback={emptyNote(
+					s,
+					s.struct().phase === "loading"
+						? `Analysing document... ${Math.round((s.struct() as { pct?: number }).pct ?? 0)}%`
+						: "Analysing document...",
+				)}
+			>
 				<Show when={s.figItems().length > 0} fallback={emptyNote(s, "No figures or tables were detected in this PDF.")}>
 					<virtual-list estimatedItemHeight={84} overdraw={300} style={{ width: "100%", flexGrow: 1, minHeight: 0 }}>
 						<Show when={figures().length}>{section("Figures", figures().length)}</Show>
@@ -77,28 +97,49 @@ function RefRow(p: { s: AcademicSession; r: Reference; onJump: (r: Reference) =>
 	const k = kit(p.s.ctx.mode);
 	const [open, setOpen] = createSignal(false);
 	const [inLib, setInLib] = createSignal(p.r.inLibraryKey);
-	const meta = () => [p.r.authors?.[0] && (p.r.authors.length > 1 ? `${p.r.authors[0]} et al.` : p.r.authors[0]), p.r.year, p.r.venue].filter(Boolean).join(" · ");
+	const meta = () =>
+		[p.r.authors?.[0] && (p.r.authors.length > 1 ? `${p.r.authors[0]} et al.` : p.r.authors[0]), p.r.year, p.r.venue]
+			.filter(Boolean)
+			.join(" · ");
 	return (
 		<div style={{ ...k.t("flex flex-col border-b"), width: "100%", padding: 8, gap: 6 }}>
-			<div onClick={() => setOpen(!open())} style={{ display: "flex", flexDirection: "row", gap: 8, cursor: "pointer", alignItems: "flex-start" }}>
+			<div
+				onClick={() => setOpen(!open())}
+				style={{ display: "flex", flexDirection: "row", gap: 8, cursor: "pointer", alignItems: "flex-start" }}
+			>
 				<div style={{ width: 30, flexShrink: 0 }}>
-					<text style={{ ...k.tx("text-[11px] font-medium text-muted-foreground"), whiteSpace: "nowrap" }}>{`[${p.r.index}]`}</text>
+					<text
+						style={{ ...k.tx("text-[11px] font-medium text-muted-foreground"), whiteSpace: "nowrap" }}
+					>{`[${p.r.index}]`}</text>
 				</div>
 				<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0, gap: 2 }}>
 					<div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "flex-start" }}>
 						<div style={{ display: "flex", flexGrow: 1, minWidth: 0 }}>
-							<text style={{ ...k.tx("text-[12.5px] font-medium text-foreground"), ...clampTx(3) }}>{p.r.title ?? p.r.raw ?? ""}</text>
+							<text style={{ ...k.tx("text-[12.5px] font-medium text-foreground"), ...clampTx(3) }}>
+								{p.r.title ?? p.r.raw ?? ""}
+							</text>
 						</div>
 						<Show when={inLib()}>
 							<Icon name="library" size={13} color={k.tok("primary")} />
 						</Show>
 					</div>
-					<Show when={meta()}><text style={{ ...k.tx("text-[11px] text-muted-foreground"), ...clampTx(1) }}>{meta()}</text></Show>
+					<Show when={meta()}>
+						<text style={{ ...k.tx("text-[11px] text-muted-foreground"), ...clampTx(1) }}>{meta()}</text>
+					</Show>
 				</div>
 			</div>
 			<Show when={open()}>
 				<div style={{ paddingLeft: 38, width: "100%", minWidth: 0 }}>
-					<RefCard s={p.s} opts={{ ref: p.r, compact: true, bare: true, onJump: () => p.onJump(p.r), onChange: () => setInLib(p.r.inLibraryKey) }} />
+					<RefCard
+						s={p.s}
+						opts={{
+							ref: p.r,
+							compact: true,
+							bare: true,
+							onJump: () => p.onJump(p.r),
+							onChange: () => setInLib(p.r.inLibraryKey),
+						}}
+					/>
 				</div>
 			</Show>
 		</div>
@@ -115,11 +156,26 @@ export function ReferencesPanel(p: { ctx: ReaderContext }): JSX.Element {
 	const shown = createMemo(() => {
 		const q = query().trim().toLowerCase().split(/\s+/).filter(Boolean);
 		const all = refs() ?? [];
-		return all.filter((r) => !q.length || q.every((t) => [r.index, r.title, r.raw, r.authors?.join(" "), r.year, r.venue, r.doi].filter((x) => x != null).join(" ").toLowerCase().includes(t)));
+		return all.filter(
+			(r) =>
+				!q.length ||
+				q.every((t) =>
+					[r.index, r.title, r.raw, r.authors?.join(" "), r.year, r.venue, r.doi]
+						.filter((x) => x != null)
+						.join(" ")
+						.toLowerCase()
+						.includes(t),
+				),
+		);
 	});
 	async function refresh() {
 		setRefreshing(true);
-		try { await s.api.refList(true); await refetch(); } catch (e) { console.warn("[academic] refresh failed:", (e as Error).message); }
+		try {
+			await s.api.refList(true);
+			await refetch();
+		} catch (e) {
+			console.warn("[academic] refresh failed:", (e as Error).message);
+		}
 		setRefreshing(false);
 	}
 	function jumpToEntry(r: Reference) {
@@ -130,7 +186,9 @@ export function ReferencesPanel(p: { ctx: ReaderContext }): JSX.Element {
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0 }}>
 			<div style={{ ...k.t("flex flex-none flex-row items-center border-b"), padding: 8, gap: 6 }}>
 				<Field k={k} icon="search" value={query()} placeholder="Filter references" onInput={setQuery} style={{ flexGrow: 1 }} />
-				<Button size="sm" disabled={refreshing()} onClick={() => void refresh()}>{refreshing() ? "..." : "Refresh"}</Button>
+				<Button size="sm" disabled={refreshing()} onClick={() => void refresh()}>
+					{refreshing() ? "..." : "Refresh"}
+				</Button>
 			</div>
 			<Show when={!refs.loading} fallback={emptyNote(s, "Loading...")}>
 				<Show when={(refs() ?? []).length > 0} fallback={emptyNote(s, "No bibliography could be resolved for this paper.")}>
@@ -150,11 +208,19 @@ export function ReferencesPanel(p: { ctx: ReaderContext }): JSX.Element {
 export function SupplementaryPanel(p: { ctx: ReaderContext }): JSX.Element {
 	const s = academicFor(p.ctx);
 	const k = kit(p.ctx.mode);
-	const [items] = createResource(() => s.api.children().then((c) => supplementaryItems(c, p.ctx.attachmentKey)).catch(() => []));
+	const [items] = createResource(() =>
+		s.api
+			.children()
+			.then((c) => supplementaryItems(c, p.ctx.attachmentKey))
+			.catch(() => []),
+	);
 	return (
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, padding: 8, gap: 6 }}>
 			<Show when={!items.loading} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>Loading...</text>}>
-				<Show when={(items() ?? []).length > 0} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>This item has no other attachments.</text>}>
+				<Show
+					when={(items() ?? []).length > 0}
+					fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>This item has no other attachments.</text>}
+				>
 					<For each={items()}>{(it) => <SuppRow s={s} item={it} />}</For>
 				</Show>
 			</Show>

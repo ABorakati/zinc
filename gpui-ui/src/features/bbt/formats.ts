@@ -3,7 +3,9 @@ import { BBT_FORMATS, type BbtExportFormat } from "../../../../core/src/bbt/type
 
 export type { BbtExportFormat };
 
-export const BBT_EXPORT_FORMATS: { id: BbtExportFormat; label: string; hint: string }[] = (Object.keys(BBT_FORMATS) as BbtExportFormat[]).map((id) => ({
+export const BBT_EXPORT_FORMATS: { id: BbtExportFormat; label: string; hint: string }[] = (
+	Object.keys(BBT_FORMATS) as BbtExportFormat[]
+).map((id) => ({
 	id,
 	label: BBT_FORMATS[id].label,
 	hint: `.${BBT_FORMATS[id].ext}, with citation keys${id.includes("csl") ? " as ids" : ""}`,

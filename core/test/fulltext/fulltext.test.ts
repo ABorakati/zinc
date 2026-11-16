@@ -15,7 +15,9 @@ import { HAVE_FULLTEXT_WASM } from "../needs";
 
 const DOI = "10.1371/journal.pmed.1000097";
 const PDF_URL = "https://oa.example.test/paper.pdf";
-const PDF = new TextEncoder().encode(`%PDF-1.4\n${"% filler line of ordinary pdf comment text................\n".repeat(900)}trailer\n<< /Root 1 0 R >>\n%%EOF\n`);
+const PDF = new TextEncoder().encode(
+	`%PDF-1.4\n${"% filler line of ordinary pdf comment text................\n".repeat(900)}trailer\n<< /Root 1 0 R >>\n%%EOF\n`,
+);
 
 const loc = {
 	is_oa: true,
@@ -79,7 +81,14 @@ function env(mock: Mock): Env {
 }
 
 function article(db: Database, key: string, doi: string, title = "Cold-stored whole blood") {
-	insertItem(db, { key, itemType: "journalArticle", title, DOI: doi, date: "2009-07-21", creators: [{ creatorType: "author", lastName: "Moher", firstName: "David" }] });
+	insertItem(db, {
+		key,
+		itemType: "journalArticle",
+		title,
+		DOI: doi,
+		date: "2009-07-21",
+		creators: [{ creatorType: "author", lastName: "Moher", firstName: "David" }],
+	});
 }
 
 const openAccessMock: Mock = (url) => {
@@ -114,7 +123,13 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text: open access hit", () => {
 		expect(row.item_type).toBe("attachment");
 		expect(row.parent_key).toBe("ITEM0001");
 		const data = JSON.parse(row.data);
-		expect(data).toMatchObject({ itemType: "attachment", parentItem: "ITEM0001", linkMode: "imported_url", contentType: "application/pdf", title: "Full Text PDF" });
+		expect(data).toMatchObject({
+			itemType: "attachment",
+			parentItem: "ITEM0001",
+			linkMode: "imported_url",
+			contentType: "application/pdf",
+			title: "Full Text PDF",
+		});
 
 		await e.svc.idle();
 		expect(e.extracted).toEqual([it.attachmentKey!]);
@@ -180,7 +195,9 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text: institutional hand-off", (
 	const paywall: Mock = (url) => {
 		if (url.includes("openalex")) return Response.json(OPENALEX_CLOSED);
 		if (url.includes("librarysearch.kcl.ac.uk")) return Response.json({});
-		return new Response("<html><body>Please sign in to access this article</body></html>", { headers: { "content-type": "text/html" } });
+		return new Response("<html><body>Please sign in to access this article</body></html>", {
+			headers: { "content-type": "text/html" },
+		});
 	};
 
 	test("a paywalled paper ends in needs-sign-in with the OpenAthens link", async () => {
@@ -283,7 +300,9 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("HTTP routes", () => {
 		expect((await handleFulltextApi(post({ keys: [] }), e.db))!.status).toBe(400);
 		expect((await handleFulltextApi(new Request("http://x/api/fulltext/jobs/nope"), e.db))!.status).toBe(404);
 		expect((await handleFulltextApi(new Request("http://x/api/fulltext/jobs/nope/events"), e.db))!.status).toBe(404);
-		expect((await handleFulltextApi(new Request("http://x/api/fulltext/jobs/nope/cancel", { method: "POST" }), e.db))!.status).toBe(404);
+		expect((await handleFulltextApi(new Request("http://x/api/fulltext/jobs/nope/cancel", { method: "POST" }), e.db))!.status).toBe(
+			404,
+		);
 		expect((await handleFulltextApi(new Request("http://x/api/fulltext/find"), e.db))!.status).toBe(405);
 		expect(await handleFulltextApi(new Request("http://x/api/items"), e.db)).toBeNull();
 	});
@@ -307,7 +326,15 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("host pieces", () => {
 		});
 		const ac = new AbortController();
 		const raw = await client.request(
-			{ method: "get", url: "https://a.example.test/start", headers: {}, ua: "default", timeout_ms: 5000, follow_redirects: true, max_bytes: 1000 },
+			{
+				method: "get",
+				url: "https://a.example.test/start",
+				headers: {},
+				ua: "default",
+				timeout_ms: 5000,
+				follow_redirects: true,
+				max_bytes: 1000,
+			},
 			{ signal: ac.signal, sink: "memory" },
 		);
 		expect(raw.status).toBe(200);
@@ -324,7 +351,18 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("host pieces", () => {
 		const client = new HttpClient({ fetch: async () => new Response(new Uint8Array(5000)) });
 		const ac = new AbortController();
 		await expect(
-			client.request({ method: "get", url: "https://a.example.test/x", headers: {}, ua: "default", timeout_ms: 5000, follow_redirects: true, max_bytes: 1000 }, { signal: ac.signal, sink: "memory" }),
+			client.request(
+				{
+					method: "get",
+					url: "https://a.example.test/x",
+					headers: {},
+					ua: "default",
+					timeout_ms: 5000,
+					follow_redirects: true,
+					max_bytes: 1000,
+				},
+				{ signal: ac.signal, sink: "memory" },
+			),
 		).rejects.toMatchObject({ kind: "too_large" });
 	});
 

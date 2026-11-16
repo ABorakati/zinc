@@ -54,7 +54,10 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 	const [schema, setSchema] = createSignal<ZoteroSchema | undefined>(undefined);
 	const [tagColors, setTagColors] = createSignal<Map<string, string>>(new Map());
 	void ipApi.schema().then(setSchema, (e) => fail("Could not load the item schema", e));
-	void ipApi.tagColors().then((l: TagColor[]) => setTagColors(new Map(l.map((c) => [c.name, c.color]))), () => {});
+	void ipApi.tagColors().then(
+		(l: TagColor[]) => setTagColors(new Map(l.map((c) => [c.name, c.color]))),
+		() => {},
+	);
 
 	let seq = 0;
 	async function load(k: string, keepOld: boolean) {
@@ -68,7 +71,15 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 			if (my === seq) setError(errMsg(e));
 		}
 	}
-	createEffect(on(key, (k) => { if (k) void load(k, false); else { seq++; setDetailSig(undefined); } }));
+	createEffect(
+		on(key, (k) => {
+			if (k) void load(k, false);
+			else {
+				seq++;
+				setDetailSig(undefined);
+			}
+		}),
+	);
 
 	// Saves run one at a time so a slow response can't clobber a later optimistic edit.
 	let chain: Promise<void> = Promise.resolve();
@@ -86,7 +97,7 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 				const r = await ipApi.patchItem(k, patch);
 				if (detail()?.data.key === k) setDetailSig(r);
 				refreshItemsStore(Object.keys(patch)); // an edit of the item's own fields: the list refetches, nothing else
-				} catch (e) {
+			} catch (e) {
 				const cur = detail();
 				if (cur?.data.key === k) setDetailSig({ ...cur, data: { ...cur.data, ...prev } });
 				fail("Could not save changes", e);
@@ -95,13 +106,25 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 	};
 
 	return {
-		key, detail, itemKey: createMemo(() => detail()?.data.key), error, schema, tagColors,
+		key,
+		detail,
+		itemKey: createMemo(() => detail()?.data.key),
+		error,
+		schema,
+		tagColors,
 		setDetail: setDetailSig,
 		save,
-		reload: async () => { const k = detail()?.data.key ?? key(); if (k) await load(k, true); },
+		reload: async () => {
+			const k = detail()?.data.key ?? key();
+			if (k) await load(k, true);
+		},
 		refreshList: refreshStore,
 		copyText: (text) => {
-			try { (gp?.renderer as unknown as { writeToClipboard?: (s: string) => void } | undefined)?.writeToClipboard?.(text); } catch { /* no clipboard */ }
+			try {
+				(gp?.renderer as unknown as { writeToClipboard?: (s: string) => void } | undefined)?.writeToClipboard?.(text);
+			} catch {
+				/* no clipboard */
+			}
 		},
 	};
 }

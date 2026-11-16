@@ -15,7 +15,11 @@ const FALLBACK = "circle-help";
 
 function kebab(name: string): string {
 	// accept lucide-solid component names too: FileText -> file-text, Table2 -> table-2
-	if (/[A-Z]/.test(name)) return name.replace(/([a-z\d])([A-Z])/g, "$1-$2").replace(/([A-Za-z])(\d)/g, "$1-$2").toLowerCase();
+	if (/[A-Z]/.test(name))
+		return name
+			.replace(/([a-z\d])([A-Z])/g, "$1-$2")
+			.replace(/([A-Za-z])(\d)/g, "$1-$2")
+			.toLowerCase();
 	return name;
 }
 
@@ -55,7 +59,9 @@ export function iconSvg(name: string, strokeWidth = 2): string {
 
 export function Icon(p: { name: string; size?: number; color: string; strokeWidth?: number; style?: Style }) {
 	const size = () => p.size ?? 16;
-	return <svg source={iconSvg(p.name, p.strokeWidth)} style={{ flexShrink: 0, ...p.style, width: size(), height: size(), color: p.color }} />;
+	return (
+		<svg source={iconSvg(p.name, p.strokeWidth)} style={{ flexShrink: 0, ...p.style, width: size(), height: size(), color: p.color }} />
+	);
 }
 
 // Convenience mappings mirroring ui/src/lib/icons.tsx (names only; draw with <Icon name=... />).
@@ -76,4 +82,10 @@ const TYPE_ICONS: Record<string, string> = {
 export const itemTypeIconName = (t: string): string => TYPE_ICONS[t] ?? "file";
 /** Lucide name for an attachment by content type (ui/src/lib/icons.tsx attachmentIcon). */
 export const attachmentIconName = (contentType: string | null | undefined, linkMode?: string | null): string =>
-	/pdf/i.test(contentType ?? "") ? "file-text" : /epub/i.test(contentType ?? "") ? "book-open" : linkMode === "linked_url" ? "link" : "paperclip";
+	/pdf/i.test(contentType ?? "")
+		? "file-text"
+		: /epub/i.test(contentType ?? "")
+			? "book-open"
+			: linkMode === "linked_url"
+				? "link"
+				: "paperclip";

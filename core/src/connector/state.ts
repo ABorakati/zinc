@@ -23,7 +23,8 @@ export function setSelection(v: unknown): boolean {
 	const { kind, key } = v as { kind?: unknown; key?: unknown };
 	if (typeof kind !== "string" || !KINDS.includes(kind as SelectionKind)) return false;
 	if ((kind === "collection" || kind === "search") && (typeof key !== "string" || !/^[A-Za-z0-9]{1,32}$/.test(key))) return false;
-	selection = kind === "collection" || kind === "search" ? { kind: kind as SelectionKind, key: key as string } : { kind: kind as SelectionKind };
+	selection =
+		kind === "collection" || kind === "search" ? { kind: kind as SelectionKind, key: key as string } : { kind: kind as SelectionKind };
 	return true;
 }
 

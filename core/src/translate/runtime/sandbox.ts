@@ -70,7 +70,9 @@ export class SandboxManager {
 			if (typeof value === "function" || (typeof value === "object" && value !== null)) {
 				const fn = value;
 				const bound = this.wrap(function (this: unknown, ...args: any[]) {
-					return typeof fn === "function" ? fn.apply(object, passAsFirstArgument ? [passAsFirstArgument, ...args] : args) : undefined;
+					return typeof fn === "function"
+						? fn.apply(object, passAsFirstArgument ? [passAsFirstArgument, ...args] : args)
+						: undefined;
 				});
 				attachTo[key] = typeof value === "function" ? bound : Object.assign({}, attachTo[key]);
 				this.importObject(value, passAsFirstArgument ? passAsFirstArgument : null, attachTo[key]);

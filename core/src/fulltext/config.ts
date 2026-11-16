@@ -22,7 +22,12 @@ export interface FulltextSettings {
 	/** Items processed at once. Default 4. */
 	concurrency?: number;
 	/** Deep-merged over the generated EngineConfig (oa / inst / run / institution), for anything else. */
-	engine?: { oa?: Record<string, unknown>; inst?: Record<string, unknown>; run?: Record<string, unknown>; institution?: Record<string, unknown> };
+	engine?: {
+		oa?: Record<string, unknown>;
+		inst?: Record<string, unknown>;
+		run?: Record<string, unknown>;
+		institution?: Record<string, unknown>;
+	};
 }
 
 export function settingsPath(dataDir: string): string {

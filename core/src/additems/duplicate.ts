@@ -33,14 +33,21 @@ export function duplicateItem(db: Database, key: string): ItemDetail {
 	if (row.item_type === "annotation") throw new HttpError(400, "annotations cannot be duplicated");
 
 	const data = JSON.parse(row.data) as ZoteroItemData & Record<string, unknown>;
-	const collections = (db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(key) as {
-		collection_key: string;
-	}[]).map((r) => r.collection_key);
-	const tags = (db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag COLLATE NOCASE").all(key) as {
-		tag: string;
-		type: number;
-	}[]).map((t) => (t.type ? { tag: t.tag, type: t.type } : { tag: t.tag }));
-	const relations = data.relations && typeof data.relations === "object" ? (JSON.parse(JSON.stringify(data.relations)) as Record<string, string | string[]>) : {};
+	const collections = (
+		db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(key) as {
+			collection_key: string;
+		}[]
+	).map((r) => r.collection_key);
+	const tags = (
+		db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag COLLATE NOCASE").all(key) as {
+			tag: string;
+			type: number;
+		}[]
+	).map((t) => (t.type ? { tag: t.tag, type: t.type } : { tag: t.tag }));
+	const relations =
+		data.relations && typeof data.relations === "object"
+			? (JSON.parse(JSON.stringify(data.relations)) as Record<string, string | string[]>)
+			: {};
 
 	if (row.item_type === "attachment") {
 		const title = typeof data.title === "string" ? data.title : "";
@@ -86,11 +93,24 @@ export function duplicateItem(db: Database, key: string): ItemDetail {
 	// Everything the Web API data object holds except this item's own bookkeeping; tags and collections come from the tables
 	// (they are the source of truth), and the child list is not copied.
 	const {
-		key: _k, version: _v, dateAdded: _a, dateModified: _m, deleted: _d, parentItem: _p,
-		tags: _t, collections: _c, relations: _r, itemType: _it, ...fields
+		key: _k,
+		version: _v,
+		dateAdded: _a,
+		dateModified: _m,
+		deleted: _d,
+		parentItem: _p,
+		tags: _t,
+		collections: _c,
+		relations: _r,
+		itemType: _it,
+		...fields
 	} = data;
 	// a copy stays in the original's library (the duplicate button never moves an item between libraries)
-	const detail = createItem(db, { ...fields, itemType: row.item_type, tags, collections, relations } as Partial<ZoteroItemData>, libraryOfItem(db, key) ?? undefined);
+	const detail = createItem(
+		db,
+		{ ...fields, itemType: row.item_type, tags, collections, relations } as Partial<ZoteroItemData>,
+		libraryOfItem(db, key) ?? undefined,
+	);
 	indexItem(db, detail.data.key);
 	return getItemDetail(db, detail.data.key)!;
 }

@@ -13,8 +13,12 @@ async function ensureOffscreen() {
 	if (await chrome.offscreen.hasDocument?.()) return;
 	creating ??= chrome.offscreen
 		.createDocument({ url: OFFSCREEN, reasons: ["WORKERS"], justification: "Zinc library database" })
-		.catch((e) => { if (!/single offscreen|already exists/i.test(String(e?.message ?? e))) throw e; })
-		.finally(() => { creating = null; });
+		.catch((e) => {
+			if (!/single offscreen|already exists/i.test(String(e?.message ?? e))) throw e;
+		})
+		.finally(() => {
+			creating = null;
+		});
 	await creating;
 }
 
@@ -23,16 +27,26 @@ const WRITABLE = ["zincZoteroApiKey"];
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 	if (msg && msg.zincEnsureDb === true) {
-		ensureOffscreen().then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
+		ensureOffscreen().then(
+			() => sendResponse({ ok: true }),
+			(e) => sendResponse({ ok: false, error: String(e?.message ?? e) }),
+		);
 		return true;
 	}
 	if (msg && msg.zincStorage) {
 		const { op, name, value } = msg.zincStorage;
-		const fromOffscreen = sender.id === chrome.runtime.id && /^chrome-extension:\/\/[a-p]{32}\/library\/offscreen\.html(\?|#|$)/.test(sender.url || "");
-		if (!fromOffscreen || !NAMES.includes(name) || (op !== "get" && !WRITABLE.includes(name))) { sendResponse({ ok: false, error: "refused" }); return false; }
-		const done = op === "get" ? chrome.storage.local.get(name).then((o) => ({ ok: true, value: o[name] }))
-			: op === "set" ? chrome.storage.local.set({ [name]: value }).then(() => ({ ok: true }))
-			: chrome.storage.local.remove(name).then(() => ({ ok: true }));
+		const fromOffscreen =
+			sender.id === chrome.runtime.id && /^chrome-extension:\/\/[a-p]{32}\/library\/offscreen\.html(\?|#|$)/.test(sender.url || "");
+		if (!fromOffscreen || !NAMES.includes(name) || (op !== "get" && !WRITABLE.includes(name))) {
+			sendResponse({ ok: false, error: "refused" });
+			return false;
+		}
+		const done =
+			op === "get"
+				? chrome.storage.local.get(name).then((o) => ({ ok: true, value: o[name] }))
+				: op === "set"
+					? chrome.storage.local.set({ [name]: value }).then(() => ({ ok: true }))
+					: chrome.storage.local.remove(name).then(() => ({ ok: true }));
 		done.then(sendResponse, (e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
 		return true;
 	}

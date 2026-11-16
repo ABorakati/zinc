@@ -12,14 +12,25 @@ import { Database, forgetDatabase, registerDatabase } from "../sqlite";
 const STORAGE = "/opfs/zinc/storage";
 const PREFIX = `${STORAGE}/`;
 
-export interface ExportSummary { items: number; collections: number; attachments: number; files: number; fileBytes: number; databaseBytes: number; serializeMs: number; zipMs: number; totalMs: number }
+export interface ExportSummary {
+	items: number;
+	collections: number;
+	attachments: number;
+	files: number;
+	fileBytes: number;
+	databaseBytes: number;
+	serializeMs: number;
+	zipMs: number;
+	totalMs: number;
+}
 
 /** Every file under `dir` (paths relative to it, as the file store reports them, in the case they were written with). */
 function walk(dir: string, rel = ""): string[] {
 	const out: string[] = [];
 	for (const e of readdirSync(`${dir}${rel}`, { withFileTypes: true }) as { name: string; isDirectory(): boolean }[]) {
 		const r = `${rel}/${e.name}`;
-		if (e.isDirectory()) out.push(...walk(dir, r)); else out.push(r.slice(1));
+		if (e.isDirectory()) out.push(...walk(dir, r));
+		else out.push(r.slice(1));
 	}
 	return out;
 }
@@ -37,11 +48,17 @@ export function exportLibraryZip(db: CoreDb): { bytes: Uint8Array; summary: Expo
 	// the original-case names of the files the library points at (for a file store that predates case-preserving names)
 	const names = new Map<string, string>();
 	try {
-		const rows = copy.query("SELECT item_key AS key, path FROM attachments WHERE path LIKE ?").all(`${PREFIX}%`) as { key: string; path: string }[];
+		const rows = copy.query("SELECT item_key AS key, path FROM attachments WHERE path LIKE ?").all(`${PREFIX}%`) as {
+			key: string;
+			path: string;
+		}[];
 		for (const r of rows) names.set(r.path.slice(PREFIX.length).toLowerCase(), r.path.slice(PREFIX.length));
 		const hasFlags = !!copy.query("SELECT 1 FROM sqlite_master WHERE name = 'sync_flags'").get();
 		if (hasFlags) copy.exec("INSERT OR IGNORE INTO sync_flags(name) VALUES('suppress')");
-		copy.query("UPDATE attachments SET path = 'attachments:storage/' || substr(path, ?) WHERE path LIKE ?").run(PREFIX.length + 1, `${PREFIX}%`);
+		copy.query("UPDATE attachments SET path = 'attachments:storage/' || substr(path, ?) WHERE path LIKE ?").run(
+			PREFIX.length + 1,
+			`${PREFIX}%`,
+		);
 		if (hasFlags) copy.exec("DELETE FROM sync_flags WHERE name = 'suppress'");
 		counts.items = (copy.query("SELECT count(*) AS n FROM items").get() as { n: number }).n;
 		counts.collections = (copy.query("SELECT count(*) AS n FROM collections").get() as { n: number }).n;
@@ -58,12 +75,18 @@ export function exportLibraryZip(db: CoreDb): { bytes: Uint8Array; summary: Expo
 	let fileBytes = 0;
 	if (existsSync(STORAGE) && statSync(STORAGE).isDirectory()) {
 		const keys = new Map<string, string>(); // lower-case folder -> KEY as the rows spell it
-		for (const orig of names.values()) { const k = orig.split("/")[0]!; keys.set(k.toLowerCase(), k); }
+		for (const orig of names.values()) {
+			const k = orig.split("/")[0]!;
+			keys.set(k.toLowerCase(), k);
+		}
 		for (const rel of walk(STORAGE)) {
 			const lower = rel.toLowerCase();
 			const key = rel.split("/")[0]!;
 			// the file store keeps the case it was written with; a library from before that is all lower-case, so fall back to the rows' spelling
-			const orig = rel !== lower ? rel : names.get(lower) ?? `${keys.get(key.toLowerCase()) ?? key.toUpperCase()}/${rel.slice(key.length + 1)}`;
+			const orig =
+				rel !== lower
+					? rel
+					: (names.get(lower) ?? `${keys.get(key.toLowerCase()) ?? key.toUpperCase()}/${rel.slice(key.length + 1)}`);
 			const bytes = readFileSync(`${STORAGE}/${rel}`) as Uint8Array;
 			// attachments are mostly PDFs, EPUBs and images: already compressed
 			entries[`storage/${orig}`] = [new Uint8Array(bytes), { level: 0 }];
@@ -71,18 +94,31 @@ export function exportLibraryZip(db: CoreDb): { bytes: Uint8Array; summary: Expo
 			fileBytes += bytes.length;
 		}
 	}
-	entries["README.txt"] = strToU8([
-		"A Zinc library exported from the browser.",
-		"",
-		"library.sqlite   the library (items, collections, tags, notes, annotations).",
-		"storage/         the attachment files, one folder per attachment: storage/<KEY>/<file>.",
-		"",
-		"Attachment paths in library.sqlite are relative (attachments:storage/<KEY>/<file>). To use the library in the Zinc desktop app, keep",
-		"library.sqlite and storage/ in one folder and set that folder as the attachment base folder (Settings > Files and folders).",
-		"To bring it back into a browser, use Import a Zotero or Zinc data folder on the welcome screen of an empty library.",
-		"",
-	].join("\n"));
+	entries["README.txt"] = strToU8(
+		[
+			"A Zinc library exported from the browser.",
+			"",
+			"library.sqlite   the library (items, collections, tags, notes, annotations).",
+			"storage/         the attachment files, one folder per attachment: storage/<KEY>/<file>.",
+			"",
+			"Attachment paths in library.sqlite are relative (attachments:storage/<KEY>/<file>). To use the library in the Zinc desktop app, keep",
+			"library.sqlite and storage/ in one folder and set that folder as the attachment base folder (Settings > Files and folders).",
+			"To bring it back into a browser, use Import a Zotero or Zinc data folder on the welcome screen of an empty library.",
+			"",
+		].join("\n"),
+	);
 	const t1 = performance.now();
 	const bytes = zipSync(entries);
-	return { bytes, summary: { ...counts, files, fileBytes, databaseBytes: database.length, serializeMs, zipMs: Math.round(performance.now() - t1), totalMs: Math.round(performance.now() - t0) } };
+	return {
+		bytes,
+		summary: {
+			...counts,
+			files,
+			fileBytes,
+			databaseBytes: database.length,
+			serializeMs,
+			zipMs: Math.round(performance.now() - t1),
+			totalMs: Math.round(performance.now() - t0),
+		},
+	};
 }

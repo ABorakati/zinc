@@ -22,7 +22,11 @@ import { signConfig, signFiles, verifySignature } from "./sign";
 
 const root = resolve(import.meta.dir, "..");
 const repo = resolve(root, "..");
-const arg = (name: string): string | undefined => { const i = process.argv.indexOf(`--${name}`); const v = i >= 0 ? process.argv[i + 1] : undefined; return v && !v.startsWith("--") ? v : undefined; };
+const arg = (name: string): string | undefined => {
+	const i = process.argv.indexOf(`--${name}`);
+	const v = i >= 0 ? process.argv[i + 1] : undefined;
+	return v && !v.startsWith("--") ? v : undefined;
+};
 const flag = (name: string) => process.argv.includes(`--${name}`);
 const win = (p: string) => resolve(p).replaceAll("/", "\\");
 
@@ -31,7 +35,8 @@ const outDir = win(arg("out") ?? join(root, "out", "installer"));
 const test = flag("test");
 const publisher = process.env.ZN_PUBLISHER ?? "Aditya Borakati";
 
-if (!existsSync(join(pkg, "zotero-next-gpui.exe"))) throw new Error(`no packaged app in ${pkg}: run  bun gpui-ui/scripts/package.ts --aot  first`);
+if (!existsSync(join(pkg, "zotero-next-gpui.exe")))
+	throw new Error(`no packaged app in ${pkg}: run  bun gpui-ui/scripts/package.ts --aot  first`);
 const stampFile = join(pkg, "version.txt");
 const version = arg("version") ?? (existsSync(stampFile) ? readFileSync(stampFile, "utf8").trim() : BUILD_VERSION);
 const numeric = numericVersion(version);
@@ -52,7 +57,10 @@ function findIscc(): string {
 		Bun.which("ISCC") ?? undefined,
 	].filter(Boolean) as string[];
 	const hit = cands.find((p) => existsSync(p));
-	if (!hit) throw new Error("Inno Setup 7 (ISCC.exe) not found. Install it without admin: download innosetup-7.1.1-x64.exe from https://github.com/jrsoftware/issrc/releases and run it with /VERYSILENT /CURRENTUSER /PORTABLE=1 /NOICONS /DIR=<folder>, then set ZN_ISCC=<folder>\\ISCC.exe");
+	if (!hit)
+		throw new Error(
+			"Inno Setup 7 (ISCC.exe) not found. Install it without admin: download innosetup-7.1.1-x64.exe from https://github.com/jrsoftware/issrc/releases and run it with /VERYSILENT /CURRENTUSER /PORTABLE=1 /NOICONS /DIR=<folder>, then set ZN_ISCC=<folder>\\ISCC.exe",
+		);
 	return hit;
 }
 
@@ -64,7 +72,8 @@ if (!flag("no-word")) {
 		rmSync(wordStage, { recursive: true, force: true });
 		run(["pwsh", "-NoProfile", "-File", join(repo, "word", "build.ps1"), "-OutDir", wordStage]);
 	}
-	if (!existsSync(join(wordStage, "addin", "ZoteroNextWord.dll")) || !existsSync(join(wordStage, "addin", "sidebar", "index.html"))) throw new Error(`Word add-in build incomplete in ${wordStage}`);
+	if (!existsSync(join(wordStage, "addin", "ZoteroNextWord.dll")) || !existsSync(join(wordStage, "addin", "sidebar", "index.html")))
+		throw new Error(`Word add-in build incomplete in ${wordStage}`);
 	wordDir = win(wordStage);
 }
 
@@ -77,7 +86,8 @@ if (!flag("no-connector")) {
 	const hostDir = join(repo, "connector-host");
 	const stagedExe = join(connStage, "zotero-next-host.exe");
 	if (!flag("reuse-connector") || !existsSync(stagedExe) || !existsSync(join(connStage, "extension", "manifest.json"))) {
-		if (!existsSync(join(connDir, "scripts", "build-win.ts"))) throw new Error(`browser connector sources not found in ${connDir} (set ZN_CONNECTOR_DIR, or pass --no-connector)`);
+		if (!existsSync(join(connDir, "scripts", "build-win.ts")))
+			throw new Error(`browser connector sources not found in ${connDir} (set ZN_CONNECTOR_DIR, or pass --no-connector)`);
 		// the same command as connector-host's `bun run build`, but straight into the staging folder: connector-host/dist/zotero-next-host.exe is
 		// the exe a browser may be running right now (the dev registration points there), and a running exe cannot be overwritten
 		rmSync(connStage, { recursive: true, force: true });
@@ -93,24 +103,43 @@ if (!flag("no-connector")) {
 		for (const f of ["install.ps1", "uninstall.ps1"]) copyFileSync(join(hostDir, f), join(connStage, f));
 		copyFileSync(join(root, "installer", "connector-howto.html"), join(connStage, "connector-howto.html"));
 		// _metadata is written by Chrome into a folder it loads (generated_indexed_rulesets); Chrome also rejects other "_" names, so it is not shipped
-		cpSync(join(connDir, "build", "manifestv3"), join(connStage, "extension"), { recursive: true, filter: (s) => !/[\\/]_metadata$/.test(s) });
+		cpSync(join(connDir, "build", "manifestv3"), join(connStage, "extension"), {
+			recursive: true,
+			filter: (s) => !/[\\/]_metadata$/.test(s),
+		});
 	}
 	// The extension id is fixed by the manifest "key" (sha256 of the public key, first 16 bytes, hex digits 0-f written as a-p). install.ps1 allows exactly this id.
 	const man = JSON.parse(readFileSync(join(connStage, "extension", "manifest.json"), "utf8"));
-	if (!man.key) throw new Error("the extension manifest has no \"key\": its id would change on every machine");
-	const hex = new Bun.CryptoHasher("sha256").update(new Uint8Array(Buffer.from(man.key, "base64"))).digest("hex").slice(0, 32);
+	if (!man.key) throw new Error('the extension manifest has no "key": its id would change on every machine');
+	const hex = new Bun.CryptoHasher("sha256")
+		.update(new Uint8Array(Buffer.from(man.key, "base64")))
+		.digest("hex")
+		.slice(0, 32);
 	const extId = [...hex].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join("");
 	const psId = /"unpacked"\s*=\s*"([a-p]{32})"/.exec(readFileSync(join(connStage, "install.ps1"), "utf8"))?.[1];
 	if (extId !== psId) throw new Error(`extension id from the manifest key (${extId}) differs from install.ps1's default (${psId})`);
-	console.log(`browser connector: extension ${man.name} ${man.version}, id ${extId}, host ${(statSync(join(connStage, "zotero-next-host.exe")).size / 1048576).toFixed(0)} MB`);
+	console.log(
+		`browser connector: extension ${man.name} ${man.version}, id ${extId}, host ${(statSync(join(connStage, "zotero-next-host.exe")).size / 1048576).toFixed(0)} MB`,
+	);
 	connectorDir = win(connStage);
 }
 
 // ---- signing: package files (if not yet), the add-in dll; the setup and uninstaller go through ISCC's SignTool hook ----------------------
 const cfg = signConfig();
 if (cfg) {
-	const ours = [join(pkg, "zotero-next-gpui.exe"), join(pkg, "zn_pdf.dll"), ...(wordDir ? [join(wordDir, "addin", "ZoteroNextWord.dll")] : []), ...(connectorDir ? [join(connectorDir, "zotero-next-host.exe")] : [])];
-	const todo = ours.filter((f) => { try { return !verifySignature(f).present; } catch { return true; } });
+	const ours = [
+		join(pkg, "zotero-next-gpui.exe"),
+		join(pkg, "zn_pdf.dll"),
+		...(wordDir ? [join(wordDir, "addin", "ZoteroNextWord.dll")] : []),
+		...(connectorDir ? [join(connectorDir, "zotero-next-host.exe")] : []),
+	];
+	const todo = ours.filter((f) => {
+		try {
+			return !verifySignature(f).present;
+		} catch {
+			return true;
+		}
+	});
 	if (todo.length) signFiles(todo);
 } else console.log("unsigned: no certificate configured");
 
@@ -123,8 +152,15 @@ const stampDir = join(outDir, ".stamp");
 mkdirSync(stampDir, { recursive: true });
 writeFileSync(join(stampDir, "version.txt"), version + "\n");
 const defs: Record<string, string> = {
-	StampFile: win(join(stampDir, "version.txt")), AppVer: version, NumVer: numeric, Publisher: publisher, PkgDir: pkg, IconFile: win(join(repo, "gpui-ui", "assets", "icon.ico")),
-	OutDir: outDir, OutName: outName, WordScripts: win(join(repo, "word")),
+	StampFile: win(join(stampDir, "version.txt")),
+	AppVer: version,
+	NumVer: numeric,
+	Publisher: publisher,
+	PkgDir: pkg,
+	IconFile: win(join(repo, "gpui-ui", "assets", "icon.ico")),
+	OutDir: outDir,
+	OutName: outName,
+	WordScripts: win(join(repo, "word")),
 };
 if (wordDir) defs.WordDir = wordDir;
 if (connectorDir) defs.ConnDir = connectorDir;
@@ -140,8 +176,18 @@ if (!existsSync(setup)) throw new Error(`ISCC reported success but ${setup} is m
 const bytes = new Uint8Array(readFileSync(setup));
 const sha256 = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 const info = {
-	version, numericVersion: numeric, file: `${outName}.exe`, size: statSync(setup).size, sha256, signed: !!cfg, word: !!wordDir, connector: !!connectorDir, test,
+	version,
+	numericVersion: numeric,
+	file: `${outName}.exe`,
+	size: statSync(setup).size,
+	sha256,
+	signed: !!cfg,
+	word: !!wordDir,
+	connector: !!connectorDir,
+	test,
 	silentInstall: `"${outName}.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`,
 };
 writeFileSync(join(outDir, `${outName}.json`), JSON.stringify(info, null, 2) + "\n");
-console.log(`installer: ${setup}  (${(info.size / 1048576).toFixed(0)} MB, ${((performance.now() - t0) / 1000).toFixed(0)} s, version ${version} = ${numeric}, ${cfg ? "signed" : "unsigned"}, sha256 ${sha256.slice(0, 16)}...)`);
+console.log(
+	`installer: ${setup}  (${(info.size / 1048576).toFixed(0)} MB, ${((performance.now() - t0) / 1000).toFixed(0)} s, version ${version} = ${numeric}, ${cfg ? "signed" : "unsigned"}, sha256 ${sha256.slice(0, 16)}...)`,
+);

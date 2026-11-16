@@ -111,7 +111,13 @@ export function resolveLibrary(o: ResolveOptions = {}): ResolvedLibrary {
 	const env = o.env ?? process.env;
 	const exists = existsOf(o);
 	const defaultPath = defaultLibraryPath(o);
-	const found = (path: string | null, source: LibrarySource, adopted = false): ResolvedLibrary => ({ path, source, exists: path ? exists(path) : false, adopted, defaultPath });
+	const found = (path: string | null, source: LibrarySource, adopted = false): ResolvedLibrary => ({
+		path,
+		source,
+		exists: path ? exists(path) : false,
+		adopted,
+		defaultPath,
+	});
 
 	const fromEnv = env.ZN_DB || env.ZN_LIBRARY;
 	if (fromEnv) return found(fromEnv, "env");

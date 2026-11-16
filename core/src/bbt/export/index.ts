@@ -13,7 +13,10 @@ export const isBbtFormat = (f: unknown): f is BbtExportFormat => typeof f === "s
 
 /** The citation keys of exported items, in order (an item without a key, which cannot happen for regular items, gets its item key). */
 export function keysFor(db: Database, items: { data: { key: string } }[]): string[] {
-	const keys = keyMap(db, items.map((i) => i.data.key));
+	const keys = keyMap(
+		db,
+		items.map((i) => i.data.key),
+	);
 	return items.map((i) => keys.get(i.data.key) ?? i.data.key);
 }
 
@@ -28,9 +31,13 @@ export function exportBetterFormat(
 	const keys = keysFor(db, items);
 	const list: BbtExportItem[] = items.map((i) => ({ data: i.data, tags: i.tags, noteHtml: i.noteHtml, files: i.files }));
 	switch (format) {
-		case "betterbibtex": return exportBetterBib(list, keys, "bibtex", st, opts);
-		case "betterbiblatex": return exportBetterBib(list, keys, "biblatex", st, opts);
-		case "bettercsljson": return exportBetterCslJson(list, keys);
-		case "bettercslyaml": return exportBetterCslYaml(list, keys);
+		case "betterbibtex":
+			return exportBetterBib(list, keys, "bibtex", st, opts);
+		case "betterbiblatex":
+			return exportBetterBib(list, keys, "biblatex", st, opts);
+		case "bettercsljson":
+			return exportBetterCslJson(list, keys);
+		case "bettercslyaml":
+			return exportBetterCslYaml(list, keys);
 	}
 }

@@ -4,8 +4,16 @@
 // it to the table and writes the table's change requests back.
 import { createComputed, createMemo, createSignal } from "solid-js";
 import {
-	createTable, getCoreRowModel, type ColumnDef, type ColumnOrderState, type ColumnSizingInfoState, type ColumnSizingState, type SortingState,
-	type Table, type TableOptionsResolved, type VisibilityState,
+	createTable,
+	getCoreRowModel,
+	type ColumnDef,
+	type ColumnOrderState,
+	type ColumnSizingInfoState,
+	type ColumnSizingState,
+	type SortingState,
+	type Table,
+	type TableOptionsResolved,
+	type VisibilityState,
 } from "@tanstack/table-core";
 import type { ItemRow } from "../contracts";
 import { store } from "../store";
@@ -13,7 +21,12 @@ import { getColumn, MENU_COLUMNS, moreColumns, schema } from "./defs";
 import { columnLayout as layout } from "./layout";
 
 const EMPTY_SIZING_INFO: ColumnSizingInfoState = {
-	startOffset: null, startSize: null, deltaOffset: null, deltaPercentage: null, isResizingColumn: false, columnSizingStart: [],
+	startOffset: null,
+	startSize: null,
+	deltaOffset: null,
+	deltaPercentage: null,
+	isResizingColumn: false,
+	columnSizingStart: [],
 };
 
 export function createColumnTable() {
@@ -58,32 +71,34 @@ export function createColumnTable() {
 		sorting: sorting(),
 	});
 
-	const options = (): TableOptionsResolved<ItemRow> => ({
-		data: [], // rows come from the store's page cache
-		columns: defs(),
-		getCoreRowModel: getCoreRowModel(),
-		manualSorting: true,
-		columnResizeMode: "onChange",
-		state: state(),
-		onStateChange: () => {},
-		renderFallbackValue: "",
-		onColumnVisibilityChange: (u) => {
-			const cur = state().columnVisibility;
-			const next = typeof u === "function" ? u(cur) : u;
-			for (const id of allIds()) if (id !== "title" && (next[id] !== false) !== layout.has(id)) layout.toggle(id, next[id] !== false);
-		},
-		onColumnOrderChange: (u) => {
-			const cur = state().columnOrder;
-			const next = typeof u === "function" ? u(cur) : u;
-			next.filter((id) => layout.has(id)).forEach((id, i) => layout.move(id, i));
-		},
-		onColumnSizingChange: (u) => {
-			const cur = state().columnSizing;
-			const next = typeof u === "function" ? u(cur) : u;
-			for (const [id, w] of Object.entries(next)) if (w !== cur[id]) layout.setWidth(id, w);
-		},
-		onColumnSizingInfoChange: (u) => setSizingInfo(typeof u === "function" ? u(sizingInfo()) : u),
-	} as TableOptionsResolved<ItemRow>);
+	const options = (): TableOptionsResolved<ItemRow> =>
+		({
+			data: [], // rows come from the store's page cache
+			columns: defs(),
+			getCoreRowModel: getCoreRowModel(),
+			manualSorting: true,
+			columnResizeMode: "onChange",
+			state: state(),
+			onStateChange: () => {},
+			renderFallbackValue: "",
+			onColumnVisibilityChange: (u) => {
+				const cur = state().columnVisibility;
+				const next = typeof u === "function" ? u(cur) : u;
+				for (const id of allIds())
+					if (id !== "title" && (next[id] !== false) !== layout.has(id)) layout.toggle(id, next[id] !== false);
+			},
+			onColumnOrderChange: (u) => {
+				const cur = state().columnOrder;
+				const next = typeof u === "function" ? u(cur) : u;
+				next.filter((id) => layout.has(id)).forEach((id, i) => layout.move(id, i));
+			},
+			onColumnSizingChange: (u) => {
+				const cur = state().columnSizing;
+				const next = typeof u === "function" ? u(cur) : u;
+				for (const [id, w] of Object.entries(next)) if (w !== cur[id]) layout.setWidth(id, w);
+			},
+			onColumnSizingInfoChange: (u) => setSizingInfo(typeof u === "function" ? u(sizingInfo()) : u),
+		}) as TableOptionsResolved<ItemRow>;
 
 	const table: Table<ItemRow> = createTable(options());
 	// keep the table's options (state + columns) in step with the signals, then tell readers
@@ -93,12 +108,18 @@ export function createColumnTable() {
 		setRev((n) => n + 1);
 	});
 	/** The table; reading it in a reactive scope subscribes to state changes. */
-	const t = (): Table<ItemRow> => { rev(); return table; };
+	const t = (): Table<ItemRow> => {
+		rev();
+		return table;
+	};
 
 	return {
 		table: t,
 		/** Visible columns in order, with their clamped widths. */
-		columns: () => t().getVisibleLeafColumns().map((c) => ({ id: c.id, def: getColumn(c.id), width: c.getSize(), sorted: c.getIsSorted(), sortIndex: c.getSortIndex() })),
+		columns: () =>
+			t()
+				.getVisibleLeafColumns()
+				.map((c) => ({ id: c.id, def: getColumn(c.id), width: c.getSize(), sorted: c.getIsSorted(), sortIndex: c.getSortIndex() })),
 		/** Ask the table to size a column (clamped by min / max on read). */
 		setWidth: (id: string, w: number) => table.setColumnSizing((old) => ({ ...old, [id]: w })),
 		/** Move a column to a position of the visible order. */

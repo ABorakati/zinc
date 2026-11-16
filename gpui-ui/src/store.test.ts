@@ -8,10 +8,21 @@ type Handler = (url: URL) => Promise<Response> | Response | null;
 let handler: Handler = () => null;
 const allPaths: string[] = []; // every /api request the fake core got
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
-const rows = (from: number, n: number) => Array.from({ length: n }, (_, i) => ({ key: `K${String(from + i).padStart(6, "0")}`, itemType: "journalArticle", title: `T${from + i}`, year: 2020, dateAdded: "", attachmentCount: 0, noteCount: 0, tags: [] }));
+const rows = (from: number, n: number) =>
+	Array.from({ length: n }, (_, i) => ({
+		key: `K${String(from + i).padStart(6, "0")}`,
+		itemType: "journalArticle",
+		title: `T${from + i}`,
+		year: 2020,
+		dateAdded: "",
+		attachmentCount: 0,
+		noteCount: 0,
+		tags: [],
+	}));
 /** A list of `total` items: pages answered from the offset. */
 const list = (total: number) => (u: URL) => {
-	const off = Number(u.searchParams.get("offset") ?? 0), lim = Number(u.searchParams.get("limit") ?? 100);
+	const off = Number(u.searchParams.get("offset") ?? 0),
+		lim = Number(u.searchParams.get("limit") ?? 100);
 	return json({ total, items: rows(off, Math.max(0, Math.min(lim, total - off))) });
 };
 const tick = (ms = 15) => new Promise((r) => setTimeout(r, ms));
@@ -27,14 +38,17 @@ beforeAll(async () => {
 		if (u.pathname === "/api/items" && req.method === "GET") return handler(u);
 		if (u.pathname === "/api/items/groups") return json({ groups: [] });
 		if (u.pathname === "/api/collections") return json([]);
-		if (u.pathname === "/api/libraries") return json({ libraries: [{ id: 1, type: "user", name: "My Library", editable: true, filesEditable: true }] });
+		if (u.pathname === "/api/libraries")
+			return json({ libraries: [{ id: 1, type: "user", name: "My Library", editable: true, filesEditable: true }] });
 		if (u.pathname === "/api/ui/selection") return json({});
 		return null;
 	});
 	({ store } = await import("./store"));
 	({ PAGE } = await import("./store"));
 });
-afterAll(() => { handler = () => null; });
+afterAll(() => {
+	handler = () => null;
+});
 
 describe("failed list pages", () => {
 	test("a failed page is counted, shown as an error, and Retry loads it", async () => {
@@ -80,9 +94,17 @@ describe("selection that completes after the view changed", () => {
 		store.setView({ kind: "trash" });
 		await tick();
 		let release!: () => void;
-		const gate = new Promise<void>((r) => { release = r; });
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
 		// the keys-only request (limit 1000) waits; the new list's page 0 does not
-		handler = async (u) => { if (u.searchParams.get("limit") === "1000") { await gate; return list(150)(u); } return list(7)(u); };
+		handler = async (u) => {
+			if (u.searchParams.get("limit") === "1000") {
+				await gate;
+				return list(150)(u);
+			}
+			return list(7)(u);
+		};
 		store.selectAll();
 		store.setView({ kind: "unfiled" });
 		await tick();
@@ -96,9 +118,16 @@ describe("selection that completes after the view changed", () => {
 		store.setView({ kind: "trash" });
 		await tick();
 		let release!: () => void;
-		const gate = new Promise<void>((r) => { release = r; });
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
 		// selectAll reloads the page through loadPage (the old generation): hold that request, change the list, then release it
-		handler = async (u) => { if (u.searchParams.get("limit") === String(PAGE) && !u.searchParams.has("hold")) { await gate; } return list(40)(u); };
+		handler = async (u) => {
+			if (u.searchParams.get("limit") === String(PAGE) && !u.searchParams.has("hold")) {
+				await gate;
+			}
+			return list(40)(u);
+		};
 		store.selectAll();
 		store.setView({ kind: "library" });
 		await tick();
@@ -113,15 +142,23 @@ describe("selection that completes after the view changed", () => {
 		await tick();
 		store.selectOnly(store.peek(0)!.key, 0);
 		let release!: () => void;
-		const gate = new Promise<void>((r) => { release = r; });
-		handler = async (u) => { if (Number(u.searchParams.get("offset")) > 0) await gate; return list(400)(u); };
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		handler = async (u) => {
+			if (Number(u.searchParams.get("offset")) > 0) await gate;
+			return list(400)(u);
+		};
 		store.selectClick(0, { shift: false, ctrl: false });
 		store.itemAt(0);
 		// the click the range ends at must be loaded to be clicked: load page 3, then hold the pages in between
 		handler = list(400);
 		store.itemAt(3 * PAGE + 1);
 		await tick();
-		handler = async (u) => { if (Number(u.searchParams.get("offset")) > 0) await gate; return list(400)(u); };
+		handler = async (u) => {
+			if (Number(u.searchParams.get("offset")) > 0) await gate;
+			return list(400)(u);
+		};
 		store.selectClick(3 * PAGE + 1, { shift: true, ctrl: false });
 		store.setView({ kind: "unfiled" });
 		handler = () => new Promise<Response>(() => {}); // the new list never lands: its rows are the old ones, as far as the cache knows

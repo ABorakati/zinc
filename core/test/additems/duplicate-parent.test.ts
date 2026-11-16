@@ -25,7 +25,7 @@ afterEach(() => {
 	db.close(true);
 });
 
-const post = async <T,>(path: string, body: unknown, status = 200): Promise<T> => {
+const post = async <T>(path: string, body: unknown, status = 200): Promise<T> => {
 	const res = await call(db, "POST", path, body);
 	if (res.status !== status) throw new Error(`${path}: ${res.status} ${await res.text()}`);
 	return (await res.json()) as T;
@@ -104,11 +104,15 @@ describe("POST /api/items/:key/duplicate", () => {
 	});
 
 	test("a standalone attachment's copy gets its own file", async () => {
-		const att = await post<ItemDetail>("/api/add/file", {
-			name: "scan.pdf",
-			contentType: "application/pdf",
-			dataBase64: Buffer.from("%PDF-1.4 duplicate me").toString("base64"),
-		}, 201);
+		const att = await post<ItemDetail>(
+			"/api/add/file",
+			{
+				name: "scan.pdf",
+				contentType: "application/pdf",
+				dataBase64: Buffer.from("%PDF-1.4 duplicate me").toString("base64"),
+			},
+			201,
+		);
 		const copy = await post<ItemDetail>(`/api/items/${att.data.key}/duplicate`, {}, 201);
 		expect(copy.data.itemType).toBe("attachment");
 		expect(copy.data.contentType).toBe("application/pdf");
@@ -136,18 +140,26 @@ describe("POST /api/items/:key/duplicate", () => {
 
 describe("POST /api/add/create-parent", () => {
 	async function standalonePdf(): Promise<ItemDetail> {
-		return post<ItemDetail>("/api/add/file", {
-			name: "scan.pdf",
-			contentType: "application/pdf",
-			dataBase64: Buffer.from("%PDF-1.4 scan").toString("base64"),
-			collectionKey: "COLLAAA1",
-		}, 201);
+		return post<ItemDetail>(
+			"/api/add/file",
+			{
+				name: "scan.pdf",
+				contentType: "application/pdf",
+				dataBase64: Buffer.from("%PDF-1.4 scan").toString("base64"),
+				collectionKey: "COLLAAA1",
+			},
+			201,
+		);
 	}
 
 	test("an identifier that is already in the library becomes the parent, which inherits the collections", async () => {
 		const known = createItem(db, { itemType: "journalArticle", title: "The work", DOI: "10.1136/bmj-2023-078378" });
 		const pdf = await standalonePdf();
-		const r = await post<{ parent: ItemDetail; item: ItemDetail }>("/api/add/create-parent", { itemKey: pdf.data.key, text: "10.1136/bmj-2023-078378" }, 201);
+		const r = await post<{ parent: ItemDetail; item: ItemDetail }>(
+			"/api/add/create-parent",
+			{ itemKey: pdf.data.key, text: "10.1136/bmj-2023-078378" },
+			201,
+		);
 		expect(r.parent.data.key).toBe(known.data.key);
 		expect(r.item.data.parentItem).toBe(known.data.key);
 		expect(r.parent.children.map((c) => c.key)).toEqual([pdf.data.key]);
@@ -158,7 +170,11 @@ describe("POST /api/add/create-parent", () => {
 
 	test("manual entry creates an empty parent of the chosen type under the child's collection", async () => {
 		const pdf = await standalonePdf();
-		const r = await post<{ parent: ItemDetail; item: ItemDetail }>("/api/add/create-parent", { itemKey: pdf.data.key, itemType: "book" }, 201);
+		const r = await post<{ parent: ItemDetail; item: ItemDetail }>(
+			"/api/add/create-parent",
+			{ itemKey: pdf.data.key, itemType: "book" },
+			201,
+		);
 		expect(r.parent.data.itemType).toBe("book");
 		expect(r.parent.collections).toEqual(["COLLAAA1"]);
 		expect(r.item.data.parentItem).toBe(r.parent.data.key);
@@ -171,7 +187,11 @@ describe("POST /api/add/create-parent", () => {
 
 	test("a standalone note can get a parent too", async () => {
 		const note = createItem(db, { itemType: "note", note: "<p>standalone</p>" });
-		const r = await post<{ parent: ItemDetail; item: ItemDetail }>("/api/add/create-parent", { itemKey: note.data.key, itemType: "document" }, 201);
+		const r = await post<{ parent: ItemDetail; item: ItemDetail }>(
+			"/api/add/create-parent",
+			{ itemKey: note.data.key, itemType: "document" },
+			201,
+		);
 		expect(r.parent.children.map((c) => c.key)).toEqual([note.data.key]);
 	});
 
@@ -184,7 +204,11 @@ describe("POST /api/add/create-parent", () => {
 			return ((await res.json()) as { error: string }).error;
 		};
 		expect(await errMsg({ itemKey: src.data.key, itemType: "book" })).toContain("standalone attachment or note");
-		const r = await post<{ parent: ItemDetail; item: ItemDetail }>("/api/add/create-parent", { itemKey: pdf.data.key, itemType: "book" }, 201);
+		const r = await post<{ parent: ItemDetail; item: ItemDetail }>(
+			"/api/add/create-parent",
+			{ itemKey: pdf.data.key, itemType: "book" },
+			201,
+		);
 		expect(await errMsg({ itemKey: pdf.data.key, itemType: "book" })).toContain("already has a parent");
 		const note = createItem(db, { itemType: "note", note: "<p>n</p>" });
 		expect(await errMsg({ itemKey: note.data.key })).toContain("itemType is required");
@@ -195,7 +219,11 @@ describe("POST /api/add/create-parent", () => {
 
 	test("an attachment's data keeps the parent, and the item detail lists it", async () => {
 		const pdf = await standalonePdf();
-		const r = await post<{ parent: ItemDetail; item: ItemDetail }>("/api/add/create-parent", { itemKey: pdf.data.key, itemType: "journalArticle" }, 201);
+		const r = await post<{ parent: ItemDetail; item: ItemDetail }>(
+			"/api/add/create-parent",
+			{ itemKey: pdf.data.key, itemType: "journalArticle" },
+			201,
+		);
 		expect(dataOf(pdf.data.key).parentItem).toBe(r.parent.data.key);
 		expect((await call(db, "GET", `/api/items/${r.parent.data.key}`).then((x) => x.json())) as ItemDetail).toMatchObject({
 			children: [expect.objectContaining({ key: pdf.data.key })],

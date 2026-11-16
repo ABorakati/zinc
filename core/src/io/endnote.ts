@@ -4,17 +4,51 @@ import { appendExtra, creatorTypeFor, normalizeDate, setBase, setFirst, splitKey
 import { parseXml, path as find, textOf as txt, type XmlNode } from "./xml";
 
 const TYPES: Record<string, string> = {
-	"journal article": "journalArticle", "book": "book", "edited book": "book", "book section": "bookSection",
-	"conference proceedings": "conferencePaper", "conference paper": "conferencePaper", "thesis": "thesis", "report": "report",
-	"web page": "webpage", "electronic article": "journalArticle", "magazine article": "magazineArticle",
-	"newspaper article": "newspaperArticle", "patent": "patent", "computer program": "computerProgram", "generic": "document",
-	"manuscript": "manuscript", "unpublished work": "manuscript", "dataset": "dataset", "blog": "blogPost", "film or broadcast": "film",
-	"artwork": "artwork", "map": "map", "online database": "document", "online multimedia": "videoRecording",
+	"journal article": "journalArticle",
+	book: "book",
+	"edited book": "book",
+	"book section": "bookSection",
+	"conference proceedings": "conferencePaper",
+	"conference paper": "conferencePaper",
+	thesis: "thesis",
+	report: "report",
+	"web page": "webpage",
+	"electronic article": "journalArticle",
+	"magazine article": "magazineArticle",
+	"newspaper article": "newspaperArticle",
+	patent: "patent",
+	"computer program": "computerProgram",
+	generic: "document",
+	manuscript: "manuscript",
+	"unpublished work": "manuscript",
+	dataset: "dataset",
+	blog: "blogPost",
+	"film or broadcast": "film",
+	artwork: "artwork",
+	map: "map",
+	"online database": "document",
+	"online multimedia": "videoRecording",
 };
 const TYPE_BY_NUMBER: Record<string, string> = {
-	"17": "journalArticle", "6": "book", "28": "book", "5": "bookSection", "10": "conferencePaper", "47": "conferencePaper",
-	"32": "thesis", "27": "report", "12": "webpage", "19": "magazineArticle", "23": "newspaperArticle", "25": "patent",
-	"9": "computerProgram", "13": "document", "36": "manuscript", "59": "dataset", "56": "blogPost", "21": "film", "2": "artwork",
+	"17": "journalArticle",
+	"6": "book",
+	"28": "book",
+	"5": "bookSection",
+	"10": "conferencePaper",
+	"47": "conferencePaper",
+	"32": "thesis",
+	"27": "report",
+	"12": "webpage",
+	"19": "magazineArticle",
+	"23": "newspaperArticle",
+	"25": "patent",
+	"9": "computerProgram",
+	"13": "document",
+	"36": "manuscript",
+	"59": "dataset",
+	"56": "blogPost",
+	"21": "film",
+	"2": "artwork",
 };
 
 function recordToItem(rec: XmlNode): ParsedItem | null {
@@ -84,7 +118,10 @@ function recordToItem(rec: XmlNode): ParsedItem | null {
 	names(["contributors", "translated-authors", "author"], "translator", "contributor");
 	if (creators.length) data.creators = creators;
 
-	const kws = find(rec, "keywords", "keyword").map(txt).flatMap((k) => (k.includes(";") ? splitKeywords(k) : [k])).filter(Boolean);
+	const kws = find(rec, "keywords", "keyword")
+		.map(txt)
+		.flatMap((k) => (k.includes(";") ? splitKeywords(k) : [k]))
+		.filter(Boolean);
 	if (kws.length) data.tags = [...new Set(kws)].map((tag) => ({ tag }));
 	const note = one("notes");
 	if (note) notes.push(textToNoteHtml(note));

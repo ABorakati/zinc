@@ -140,7 +140,11 @@ const PROTECTED_FIELDS: Record<string, string> = {
 
 function collectionNames(db: Database): Map<string, Collection> {
 	// every library's collections: an item's collection keys can belong to a group
-	return new Map(listLibraries(db).flatMap((l) => repo.listCollections(db, l.id)).map((c) => [c.key, c]));
+	return new Map(
+		listLibraries(db)
+			.flatMap((l) => repo.listCollections(db, l.id))
+			.map((c) => [c.key, c]),
+	);
 }
 
 // ---------------------------------------------------------------- server
@@ -166,13 +170,20 @@ export function createMcpServer(db: Database): McpServer {
 		"list_libraries",
 		{
 			title: "List libraries",
-			description: "My Library and the group libraries synced from zotero.org, with their ids (pass an id as library to other tools), whether this user can edit them and how many changes await pushing.",
+			description:
+				"My Library and the group libraries synced from zotero.org, with their ids (pass an id as library to other tools), whether this user can edit them and how many changes await pushing.",
 			inputSchema: {},
 			annotations: readOnly,
 		},
 		guard(() =>
 			jsonResult({
-				libraries: listLibraries(db).map((l) => ({ id: l.id, name: l.name, type: l.type, editable: l.editable, pendingChanges: pendingCount(db, l.id) })),
+				libraries: listLibraries(db).map((l) => ({
+					id: l.id,
+					name: l.name,
+					type: l.type,
+					editable: l.editable,
+					pendingChanges: pendingCount(db, l.id),
+				})),
 			}),
 		),
 	);
@@ -183,7 +194,7 @@ export function createMcpServer(db: Database): McpServer {
 			title: "Search library",
 			description:
 				"Full-text search across item metadata (title, authors, abstract, journal, tags), child notes, and the extracted full text of attached PDFs. " +
-				"Words are AND-ed; use \"double quotes\" for an exact phrase and a trailing * for a prefix match. Results are ranked by relevance. " +
+				'Words are AND-ed; use "double quotes" for an exact phrase and a trailing * for a prefix match. Results are ranked by relevance. ' +
 				"Returns key, title, creators, year, a snippet with matches in **bold**, and matchedIn (which of metadata/notes/fulltext matched). " +
 				"Use get_item with a key for details.",
 			inputSchema: {
@@ -195,7 +206,11 @@ export function createMcpServer(db: Database): McpServer {
 			annotations: readOnly,
 		},
 		guard(({ query, limit, offset, library }) => {
-			const r = search(db, query, { limit: limit ?? DEFAULT_LIMIT, offset, library: library === undefined ? undefined : resolveLibrary(db, library) });
+			const r = search(db, query, {
+				limit: limit ?? DEFAULT_LIMIT,
+				offset,
+				library: library === undefined ? undefined : resolveLibrary(db, library),
+			});
 			return jsonResult({
 				total: r.total,
 				offset: offset ?? 0,
@@ -235,7 +250,11 @@ export function createMcpServer(db: Database): McpServer {
 			annotations: readOnly,
 		},
 		guard((a) => {
-			const r = repo.listItems(db, { ...a, library: a.library === undefined ? undefined : resolveLibrary(db, a.library), limit: a.limit ?? DEFAULT_LIMIT });
+			const r = repo.listItems(db, {
+				...a,
+				library: a.library === undefined ? undefined : resolveLibrary(db, a.library),
+				limit: a.limit ?? DEFAULT_LIMIT,
+			});
 			return jsonResult({
 				total: r.total,
 				offset: a.offset ?? 0,
@@ -273,9 +292,7 @@ export function createMcpServer(db: Database): McpServer {
 			const noteRows = db
 				.query("SELECT key, data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0 ORDER BY date_added, key")
 				.all(key) as { key: string; data: string }[];
-			const noteText = new Map(
-				noteRows.map((n) => [n.key, stripHtml(String((JSON.parse(n.data) as ZoteroItemData).note ?? ""))]),
-			);
+			const noteText = new Map(noteRows.map((n) => [n.key, stripHtml(String((JSON.parse(n.data) as ZoteroItemData).note ?? ""))]));
 			const paths = new Map(attachmentsOf(db, key).map((a) => [a.key, a.path]));
 			const children = d.children.map((c: ChildSummary) =>
 				c.itemType === "note"
@@ -310,7 +327,13 @@ export function createMcpServer(db: Database): McpServer {
 				"If no text is indexed the tool says so; then use get_file_path and read the file directly.",
 			inputSchema: {
 				key: keySchema.describe("Attachment key, or parent item key"),
-				maxChars: z.number().int().min(1).max(MAX_TEXT_CHARS).optional().describe(`Characters to return (default ${DEFAULT_TEXT_CHARS}, max ${MAX_TEXT_CHARS})`),
+				maxChars: z
+					.number()
+					.int()
+					.min(1)
+					.max(MAX_TEXT_CHARS)
+					.optional()
+					.describe(`Characters to return (default ${DEFAULT_TEXT_CHARS}, max ${MAX_TEXT_CHARS})`),
 				offset: offsetSchema.describe("Character offset to start from"),
 			},
 			annotations: readOnly,
@@ -374,7 +397,9 @@ export function createMcpServer(db: Database): McpServer {
 		guard(({ library }) => {
 			type Node = { key: string; name: string; itemCount: number; children: Node[] };
 			const all = repo.listCollections(db, library === undefined ? 1 : resolveLibrary(db, library));
-			const nodes = new Map<string, Node>(all.map((c) => [c.key, { key: c.key, name: c.name, itemCount: c.itemCount, children: [] }]));
+			const nodes = new Map<string, Node>(
+				all.map((c) => [c.key, { key: c.key, name: c.name, itemCount: c.itemCount, children: [] }]),
+			);
 			const roots: Node[] = [];
 			for (const c of all) {
 				const parent = c.parentKey ? nodes.get(c.parentKey) : undefined;
@@ -396,7 +421,9 @@ export function createMcpServer(db: Database): McpServer {
 			},
 			annotations: { ...write, idempotentHint: false },
 		},
-		guard(({ name, parentKey, library }) => jsonResult(repo.createCollection(db, name, parentKey, library === undefined ? undefined : resolveLibrary(db, library)))),
+		guard(({ name, parentKey, library }) =>
+			jsonResult(repo.createCollection(db, name, parentKey, library === undefined ? undefined : resolveLibrary(db, library))),
+		),
 	);
 
 	server.registerTool(
@@ -470,7 +497,7 @@ export function createMcpServer(db: Database): McpServer {
 			description:
 				"Edit metadata fields of an item (PATCH semantics: only the fields you pass change). Use Zotero field names, e.g. " +
 				"title, date, DOI, abstractNote, publicationTitle, volume, pages, url, extra, creators (full replacement array of " +
-				"{creatorType, firstName, lastName}). Set a field to \"\" to clear it. key, itemType, tags, collections and trash " +
+				'{creatorType, firstName, lastName}). Set a field to "" to clear it. key, itemType, tags, collections and trash ' +
 				"state cannot be changed here (use the dedicated tools). Search is re-indexed.",
 			inputSchema: {
 				key: keySchema,
@@ -551,7 +578,10 @@ export function createMcpServer(db: Database): McpServer {
 				keys: z.array(keySchema).min(1).max(500).describe("Item keys, in the order they should appear"),
 				style: z.string().optional().describe("zotero.org style id (default: Quick Copy style)"),
 				format: z.enum(["text", "html", "rtf"]).optional().describe("Output format (default text)"),
-				mode: z.enum(["bibliography", "citation"]).optional().describe("bibliography (default) or one in-text citation for all items"),
+				mode: z
+					.enum(["bibliography", "citation"])
+					.optional()
+					.describe("bibliography (default) or one in-text citation for all items"),
 			},
 			annotations: readOnly,
 		},

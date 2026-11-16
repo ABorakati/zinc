@@ -17,7 +17,20 @@ import { OverlayHost } from "../src/ui";
 
 const args = process.argv.slice(2);
 const mode = args.includes("light") ? "light" : "dark";
-const ALL = ["appearance", "general", "reader", "sync", "shortcuts", "files", "integrations", "system", "search", "sync-popover", "scheme", "font"];
+const ALL = [
+	"appearance",
+	"general",
+	"reader",
+	"sync",
+	"shortcuts",
+	"files",
+	"integrations",
+	"system",
+	"search",
+	"sync-popover",
+	"scheme",
+	"font",
+];
 const wanted = args.filter((a) => ALL.includes(a));
 const scenes = wanted.length ? wanted : ALL;
 const suffix = mode === "light" ? "-light" : "";
@@ -27,8 +40,20 @@ const h = await boot({
 	view: () => (
 		<div style={{ ...tw("flex flex-col bg-canvas", store.mode()), width: "100%", height: "100%" }}>
 			<TopBar />
-			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: "transparent" }}>
-				<Show when={store.activeTab() === "settings"} fallback={<text style={textStyle("text-foreground", store.mode())}>library tab</text>}>
+			<div
+				style={{
+					display: "flex",
+					flexDirection: "column",
+					flexGrow: 1,
+					minHeight: 0,
+					width: "100%",
+					backgroundColor: "transparent",
+				}}
+			>
+				<Show
+					when={store.activeTab() === "settings"}
+					fallback={<text style={textStyle("text-foreground", store.mode())}>library tab</text>}
+				>
 					<SettingsPage active />
 				</Show>
 			</div>

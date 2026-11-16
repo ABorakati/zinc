@@ -12,8 +12,20 @@ import type { DocStructure } from "./types";
 
 const DIR = new URL("docworker/", import.meta.url);
 
-interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: number) => void }
-interface WorkerMessage { __ready?: boolean; progressID?: number; responseID?: number; id?: number; action?: string; data?: any; error?: unknown } // eslint-disable-line @typescript-eslint/no-explicit-any
+interface Pending {
+	resolve: (v: unknown) => void;
+	reject: (e: Error) => void;
+	onProgress?: (p: number) => void;
+}
+interface WorkerMessage {
+	__ready?: boolean;
+	progressID?: number;
+	responseID?: number;
+	id?: number;
+	action?: string;
+	data?: any;
+	error?: unknown;
+} // eslint-disable-line @typescript-eslint/no-explicit-any
 
 class DocumentWorker {
 	private worker: Worker | null;
@@ -26,7 +38,12 @@ class DocumentWorker {
 		this.worker = w;
 		this.ready = new Promise<void>((resolve, reject) => {
 			const timer = setTimeout(() => reject(new Error("The document worker did not start")), 60_000);
-			w.addEventListener("message", (ev: MessageEvent) => { if ((ev.data as WorkerMessage)?.__ready) { clearTimeout(timer); resolve(); } });
+			w.addEventListener("message", (ev: MessageEvent) => {
+				if ((ev.data as WorkerMessage)?.__ready) {
+					clearTimeout(timer);
+					resolve();
+				}
+			});
 			w.addEventListener("error", (ev: ErrorEvent) => {
 				clearTimeout(timer);
 				for (const p of this.pending.values()) p.reject(new Error("Document worker unavailable"));
@@ -41,7 +58,10 @@ class DocumentWorker {
 
 	private async onMessage(m: WorkerMessage): Promise<void> {
 		if (m.__ready) return;
-		if (m.progressID) { this.pending.get(m.progressID)?.onProgress?.(m.data?.progress); return; }
+		if (m.progressID) {
+			this.pending.get(m.progressID)?.onProgress?.(m.data?.progress);
+			return;
+		}
 		if (m.responseID) {
 			const p = this.pending.get(m.responseID);
 			if (!p) return;
@@ -53,14 +73,28 @@ class DocumentWorker {
 		if (m.id) {
 			let data: unknown = null;
 			try {
-				const bytes = async (path: string) => { const r = await fetch(new URL(path, DIR)); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); };
+				const bytes = async (path: string) => {
+					const r = await fetch(new URL(path, DIR));
+					if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+					return new Uint8Array(await r.arrayBuffer());
+				};
 				switch (m.action) {
-					case "FetchBuiltInCMap": data = { isCompressed: true, cMapData: await bytes(`cmaps/${m.data}.bcmap`) }; break;
-					case "FetchStandardFontData": data = await bytes(`standard_fonts/${m.data}`); break;
-					case "FetchWasm": data = await bytes(`wasm/${m.data}`); break;
-					case "FetchData": data = await bytes(String(m.data)); break;
+					case "FetchBuiltInCMap":
+						data = { isCompressed: true, cMapData: await bytes(`cmaps/${m.data}.bcmap`) };
+						break;
+					case "FetchStandardFontData":
+						data = await bytes(`standard_fonts/${m.data}`);
+						break;
+					case "FetchWasm":
+						data = await bytes(`wasm/${m.data}`);
+						break;
+					case "FetchData":
+						data = await bytes(String(m.data));
+						break;
 				}
-			} catch (e) { console.warn(`[structure] document worker ${m.action} failed:`, e); }
+			} catch (e) {
+				console.warn(`[structure] document worker ${m.action} failed:`, e);
+			}
 			this.worker?.postMessage({ responseID: m.id, data });
 		}
 	}
@@ -88,7 +122,10 @@ class DocumentWorker {
 async function sourceHash(key: string): Promise<string> {
 	if (/^[0-9a-f]{32}$/.test(key)) return key;
 	const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`zotero-next:${key}`));
-	return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+	return [...new Uint8Array(d)]
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("")
+		.slice(0, 32);
 }
 
 let worker: DocumentWorker | null = null;
@@ -96,7 +133,9 @@ const inflight = new Map<string, Promise<DocStructure>>();
 const listeners = new Map<string, Set<(pct: number) => void>>();
 
 async function build(key: string, pdf: Uint8Array): Promise<DocStructure> {
-	const emit = (pct: number) => { for (const f of listeners.get(key) ?? []) f(pct); };
+	const emit = (pct: number) => {
+		for (const f of listeners.get(key) ?? []) f(pct);
+	};
 	emit(0);
 	worker ??= new DocumentWorker();
 	const buf = pdf.slice().buffer as ArrayBuffer; // the worker takes (detaches) its copy
@@ -122,7 +161,9 @@ export function loadStructure(attachmentKey: string, pdfBytes: Uint8Array, onPro
 	}
 	let p = inflight.get(attachmentKey);
 	if (!p) {
-		p = build(attachmentKey, pdfBytes).finally(() => { listeners.delete(attachmentKey); });
+		p = build(attachmentKey, pdfBytes).finally(() => {
+			listeners.delete(attachmentKey);
+		});
 		inflight.set(attachmentKey, p);
 		p.catch(() => inflight.delete(attachmentKey));
 	}

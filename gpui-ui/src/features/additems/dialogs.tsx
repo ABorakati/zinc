@@ -27,11 +27,24 @@ function IdentifierDialog(p: { initial: string; close: () => void }): JSX.Elemen
 	}
 	return (
 		<Body>
-			<Para class="text-sm text-muted-foreground">DOI, PMID, PMCID, arXiv ID or ISBN. Separate several with new lines or commas.</Para>
-			<TextInput multiline autofocus value={text()} onInput={setText} placeholder={"10.1136/bmj-2023-078378\n31452104\narXiv:1706.03762\n978-0-13-468599-1"} style={{ height: 128 }} />
+			<Para class="text-sm text-muted-foreground">
+				DOI, PMID, PMCID, arXiv ID or ISBN. Separate several with new lines or commas.
+			</Para>
+			<TextInput
+				multiline
+				autofocus
+				value={text()}
+				onInput={setText}
+				placeholder={"10.1136/bmj-2023-078378\n31452104\narXiv:1706.03762\n978-0-13-468599-1"}
+				style={{ height: 128 }}
+			/>
 			<Footer>
-				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
-				<Button variant="primary" size="sm" disabled={busy() || !text().trim()} onClick={() => void submit()}>{busy() ? "Adding…" : "Add"}</Button>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Cancel
+				</Button>
+				<Button variant="primary" size="sm" disabled={busy() || !text().trim()} onClick={() => void submit()}>
+					{busy() ? "Adding…" : "Add"}
+				</Button>
 			</Footer>
 		</Body>
 	);
@@ -46,9 +59,14 @@ export async function openIdentifierDialog(initial?: string): Promise<void> {
 			if (clip === null) clip = await readClipboardText();
 			clip = (clip ?? "").trim();
 			if (looksLikeIdentifiers(clip)) text = clip;
-		} catch { /* no clipboard access: start empty */ }
+		} catch {
+			/* no clipboard access: start empty */
+		}
 	}
-	await openDialog<void>((close) => <IdentifierDialog initial={text} close={() => close()} />, { title: "Add Item by Identifier", width: 480 });
+	await openDialog<void>((close) => <IdentifierDialog initial={text} close={() => close()} />, {
+		title: "Add Item by Identifier",
+		width: 480,
+	});
 }
 
 function NewItemDialog(p: { close: () => void }): JSX.Element {
@@ -62,13 +80,32 @@ function NewItemDialog(p: { close: () => void }): JSX.Element {
 			.filter((x) => !["attachment", "note", "annotation"].includes(x.itemType))
 			.filter((x) => !s || x.label.toLowerCase().includes(s) || x.itemType.toLowerCase().includes(s));
 	});
-	const pick = (type: string) => { p.close(); void createNewItem(type); };
+	const pick = (type: string) => {
+		p.close();
+		void createNewItem(type);
+	};
 	return (
 		<Body>
 			<Txt class="text-sm text-muted-foreground">Choose an item type.</Txt>
-			<TextInput autofocus value={q()} onInput={setQ} placeholder="Search item types…" onEnter={() => { const f = types()[0]; if (f) pick(f.itemType); }} />
+			<TextInput
+				autofocus
+				value={q()}
+				onInput={setQ}
+				placeholder="Search item types…"
+				onEnter={() => {
+					const f = types()[0];
+					if (f) pick(f.itemType);
+				}}
+			/>
 			<Scroll height={288} border>
-				<For each={types()} fallback={<div style={t("px-2 py-3")}><Txt class="text-xs text-muted-foreground">{error() || (schema() ? "No matching item types" : "Loading…")}</Txt></div>}>
+				<For
+					each={types()}
+					fallback={
+						<div style={t("px-2 py-3")}>
+							<Txt class="text-xs text-muted-foreground">{error() || (schema() ? "No matching item types" : "Loading…")}</Txt>
+						</div>
+					}
+				>
 					{(x) => (
 						<Row onClick={() => pick(x.itemType)} style={{ flexShrink: 0 }}>
 							<Icon name={itemTypeIconName(x.itemType)} size={16} color={tok("muted-foreground")} />
@@ -80,7 +117,8 @@ function NewItemDialog(p: { close: () => void }): JSX.Element {
 		</Body>
 	);
 }
-export const openNewItemDialog = () => openDialog<void>((close) => <NewItemDialog close={() => close()} />, { title: "New Item", width: 380 });
+export const openNewItemDialog = () =>
+	openDialog<void>((close) => <NewItemDialog close={() => close()} />, { title: "New Item", width: 380 });
 
 function LinkFileDialog(p: { parentKey?: string; close: () => void }): JSX.Element {
 	const [path, setPath] = createSignal("");
@@ -100,17 +138,32 @@ function LinkFileDialog(p: { parentKey?: string; close: () => void }): JSX.Eleme
 		<Body>
 			<Para class="text-sm text-muted-foreground">Full path of a file on this computer. The file stays where it is.</Para>
 			<div style={t("flex flex-row items-center gap-2")}>
-				<div style={{ flexGrow: 1, minWidth: 0 }}><TextInput autofocus value={path()} onInput={setPath} onEnter={() => void submit()} placeholder="C:\Users\you\Documents\paper.pdf" /></div>
-				<Button variant="outline" size="sm" icon="folder-open" onClick={() => void browse()}>Browse…</Button>
+				<div style={{ flexGrow: 1, minWidth: 0 }}>
+					<TextInput
+						autofocus
+						value={path()}
+						onInput={setPath}
+						onEnter={() => void submit()}
+						placeholder="C:\Users\you\Documents\paper.pdf"
+					/>
+				</div>
+				<Button variant="outline" size="sm" icon="folder-open" onClick={() => void browse()}>
+					Browse…
+				</Button>
 			</div>
 			<Footer>
-				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
-				<Button variant="primary" size="sm" disabled={busy() || !path().trim()} onClick={() => void submit()}>Link</Button>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Cancel
+				</Button>
+				<Button variant="primary" size="sm" disabled={busy() || !path().trim()} onClick={() => void submit()}>
+					Link
+				</Button>
 			</Footer>
 		</Body>
 	);
 }
-export const openLinkFileDialog = (parentKey?: string) => openDialog<void>((close) => <LinkFileDialog parentKey={parentKey} close={() => close()} />, { title: "Link to File", width: 480 });
+export const openLinkFileDialog = (parentKey?: string) =>
+	openDialog<void>((close) => <LinkFileDialog parentKey={parentKey} close={() => close()} />, { title: "Link to File", width: 480 });
 
 function LinkUriDialog(p: { parentKey?: string; close: () => void }): JSX.Element {
 	const [url, setUrl] = createSignal("");
@@ -129,16 +182,25 @@ function LinkUriDialog(p: { parentKey?: string; close: () => void }): JSX.Elemen
 	return (
 		<Body>
 			<Para class="text-sm text-muted-foreground">Web address or other URI to attach.</Para>
-			<Field label="Address"><TextInput autofocus value={url()} onInput={setUrl} onEnter={() => void submit()} placeholder="https://…" /></Field>
-			<Field label="Title (optional)"><TextInput value={title()} onInput={setTitle} onEnter={() => void submit()} /></Field>
+			<Field label="Address">
+				<TextInput autofocus value={url()} onInput={setUrl} onEnter={() => void submit()} placeholder="https://…" />
+			</Field>
+			<Field label="Title (optional)">
+				<TextInput value={title()} onInput={setTitle} onEnter={() => void submit()} />
+			</Field>
 			<ErrorLine>{err()}</ErrorLine>
 			<Footer>
-				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
-				<Button variant="primary" size="sm" disabled={busy() || !url().trim()} onClick={() => void submit()}>Add</Button>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Cancel
+				</Button>
+				<Button variant="primary" size="sm" disabled={busy() || !url().trim()} onClick={() => void submit()}>
+					Add
+				</Button>
 			</Footer>
 		</Body>
 	);
 }
-export const openLinkUriDialog = (parentKey?: string) => openDialog<void>((close) => <LinkUriDialog parentKey={parentKey} close={() => close()} />, { title: "Link to URI", width: 440 });
+export const openLinkUriDialog = (parentKey?: string) =>
+	openDialog<void>((close) => <LinkUriDialog parentKey={parentKey} close={() => close()} />, { title: "Link to URI", width: 440 });
 
 export { Show };

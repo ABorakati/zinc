@@ -4,13 +4,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import {
-	configureLog, flushLog, formatReport, installConsoleMirror, lastLogTime, listLogFiles, log, logError, makeZip, markCleanExit, markRunning,
-	pruneLogs, readRecentLogs, redact, resetLog, summarizeErrors,
+	configureLog,
+	flushLog,
+	formatReport,
+	installConsoleMirror,
+	lastLogTime,
+	listLogFiles,
+	log,
+	logError,
+	makeZip,
+	markCleanExit,
+	markRunning,
+	pruneLogs,
+	readRecentLogs,
+	redact,
+	resetLog,
+	summarizeErrors,
 } from "../src/log";
 
 let dir: string;
 let clock: Date;
-const lines = (f: string) => readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const lines = (f: string) =>
+	readFileSync(f, "utf8")
+		.split("\n")
+		.filter(Boolean)
+		.map((l) => JSON.parse(l));
 const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 beforeEach(() => {
@@ -31,7 +49,9 @@ describe("redaction", () => {
 		expect(redact("header Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SflKxwRJSMeKKF2QT4fw")).toBe("header Bearer [redacted]");
 		expect(redact("Zotero-API-Key: Qm4yT8bP0wLk3VnX9sRz7HcA")).toBe("Zotero-API-Key: [redacted]");
 		expect(redact('{"apiKey":"Qm4yT8bP0wLk3VnX9sRz7HcA","x":1}')).toBe('{"apiKey":"[redacted]","x":1}');
-		expect(redact("GET https://api.zotero.org/users/1/items?key=Qm4yT8bP0wLk3VnX9sRz7HcA&limit=5")).toBe("GET https://api.zotero.org/users/1/items?key=[redacted]&limit=5");
+		expect(redact("GET https://api.zotero.org/users/1/items?key=Qm4yT8bP0wLk3VnX9sRz7HcA&limit=5")).toBe(
+			"GET https://api.zotero.org/users/1/items?key=[redacted]&limit=5",
+		);
 		expect(redact("token=abc123 password: hunter2")).toBe("token=[redacted] password: [redacted]");
 		expect(redact("using sk-abcdefghijklmnopqrstuv0123 now")).toBe("using [redacted-key] now");
 		expect(redact("ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toBe("[redacted-key]");
@@ -49,7 +69,9 @@ describe("redaction", () => {
 		expect(out).toContain('"itemType":"book"');
 	});
 	test("the user's folder becomes %USERPROFILE%, in all spellings", () => {
-		expect(redact("open C:\\Users\\alice\\zotero-next\\data\\library.sqlite")).toBe("open %USERPROFILE%\\zotero-next\\data\\library.sqlite");
+		expect(redact("open C:\\Users\\alice\\zotero-next\\data\\library.sqlite")).toBe(
+			"open %USERPROFILE%\\zotero-next\\data\\library.sqlite",
+		);
 		expect(redact("at file:///C:/Users/alice/x.ts:1")).toBe("at file:///%USERPROFILE%/x.ts:1");
 		expect(redact("json C:\\\\Users\\\\alice\\\\a")).toBe("json %USERPROFILE%\\\\a");
 		expect(redact("c:\\users\\ALICE\\a")).toBe("%USERPROFILE%\\a");
@@ -60,7 +82,13 @@ describe("redaction", () => {
 		expect(redact(once)).toBe(once);
 	});
 	test("log lines are redacted when written", async () => {
-		log("error", "core", "request failed for C:\\Users\\alice\\a.pdf with Bearer abcdefgh12345678", new Error("boom at C:\\Users\\alice\\b.ts"), { url: "https://x/?key=Qm4yT8bP0wLk3VnX9sRz7HcA" });
+		log(
+			"error",
+			"core",
+			"request failed for C:\\Users\\alice\\a.pdf with Bearer abcdefgh12345678",
+			new Error("boom at C:\\Users\\alice\\b.ts"),
+			{ url: "https://x/?key=Qm4yT8bP0wLk3VnX9sRz7HcA" },
+		);
 		await flushLog();
 		const text = readFileSync(listLogFiles(dir)[0]!.file, "utf8");
 		expect(text).not.toContain("alice");
@@ -77,13 +105,25 @@ describe("log lines", () => {
 		const files = listLogFiles(dir);
 		expect(files.map((f) => f.day)).toEqual([day(clock)]);
 		const [r] = lines(files[0]!.file);
-		expect(r).toMatchObject({ level: "error", area: "sync", message: "pull: Error: kaboom", version: "1.2.3", build: "source", os: "TestOS 1.0 x64", ctx: { count: 3 } });
+		expect(r).toMatchObject({
+			level: "error",
+			area: "sync",
+			message: "pull: Error: kaboom",
+			version: "1.2.3",
+			build: "source",
+			os: "TestOS 1.0 x64",
+			ctx: { count: 3 },
+		});
 		expect(r.time).toBe(clock.toISOString());
 		expect(r.stack).toContain("kaboom");
 		expect(r.ctx.note).toBeUndefined();
 	});
 	test("never throws, whatever it is given", () => {
-		const evil = { get message(): string { throw new Error("getter"); } };
+		const evil = {
+			get message(): string {
+				throw new Error("getter");
+			},
+		};
 		expect(() => logError("core", evil)).not.toThrow();
 		expect(() => log("info", "ui", undefined as unknown as string)).not.toThrow();
 		configureLog({ dir: join(dir, "a\0b") }); // an impossible folder
@@ -172,7 +212,9 @@ describe("rotation and size cap", () => {
 			log("info", "core", `line ${i} ${"x".repeat(60)}`);
 			await flushLog();
 		}
-		const names = readdirSync(dir).filter((f) => f.endsWith(".log")).sort();
+		const names = readdirSync(dir)
+			.filter((f) => f.endsWith(".log"))
+			.sort();
 		expect(names).toEqual(["zotero-next-2026-11-06.log", "zotero-next-2026-11-06.old.log"]);
 		const [current, rolled] = names as [string, string];
 		for (const n of names) expect(readFileSync(join(dir, n)).length).toBeLessThanOrEqual(2000);
@@ -195,7 +237,11 @@ describe("rotation and size cap", () => {
 
 describe("reading and reports", () => {
 	test("the last two days only, oldest first, capped to the newest lines", () => {
-		const w = (d: string, msgs: string[]) => writeFileSync(join(dir, `zotero-next-${d}.log`), msgs.map((m) => JSON.stringify({ time: `${d}T10:00:00.000Z`, level: "info", area: "core", message: m })).join("\n") + "\n");
+		const w = (d: string, msgs: string[]) =>
+			writeFileSync(
+				join(dir, `zotero-next-${d}.log`),
+				msgs.map((m) => JSON.stringify({ time: `${d}T10:00:00.000Z`, level: "info", area: "core", message: m })).join("\n") + "\n",
+			);
 		w("2026-11-04", ["too old"]);
 		w("2026-11-05", ["y1", "y2"]);
 		w("2026-11-06", ["t1", "t2"]);
@@ -204,12 +250,22 @@ describe("reading and reports", () => {
 		expect(r.lines.map((l) => JSON.parse(l).message)).toEqual(["y2", "t1", "t2"]);
 	});
 	test("lines are redacted again on the way out", () => {
-		writeFileSync(join(dir, "zotero-next-2026-11-06.log"), JSON.stringify({ time: "t", level: "info", area: "core", message: "C:\\Users\\alice\\a Bearer abcdefgh12345678" }) + "\n");
+		writeFileSync(
+			join(dir, "zotero-next-2026-11-06.log"),
+			JSON.stringify({ time: "t", level: "info", area: "core", message: "C:\\Users\\alice\\a Bearer abcdefgh12345678" }) + "\n",
+		);
 		expect(readRecentLogs(2, 10, dir, clock).lines[0]).not.toMatch(/alice|abcdefgh12345678/);
 	});
 	test("summary and report text", () => {
-		const rec = (level: string, area: string, message: string) => JSON.stringify({ time: "2026-11-06T10:00:00Z", level, area, message });
-		const ls = [rec("error", "core", "a"), rec("error", "core", "a"), rec("warn", "ui", "w"), rec("fatal", "ui", "dead"), rec("error", "sync", "b")];
+		const rec = (level: string, area: string, message: string) =>
+			JSON.stringify({ time: "2026-11-06T10:00:00Z", level, area, message });
+		const ls = [
+			rec("error", "core", "a"),
+			rec("error", "core", "a"),
+			rec("warn", "ui", "w"),
+			rec("fatal", "ui", "dead"),
+			rec("error", "sync", "b"),
+		];
 		const s = summarizeErrors(ls);
 		expect(s).toMatchObject({ errors: 3, fatal: 1, warnings: 1, byArea: { core: 2, ui: 1, sync: 1 } });
 		expect(s.recent).toHaveLength(3); // "a" once
@@ -222,7 +278,10 @@ describe("reading and reports", () => {
 
 describe("zip", () => {
 	test("local headers, central directory and contents round-trip", () => {
-		const zip = makeZip([{ name: "a.txt", data: "hello hello hello" }, { name: "dir/b.log", data: new Uint8Array([1, 2, 3, 4]) }]);
+		const zip = makeZip([
+			{ name: "a.txt", data: "hello hello hello" },
+			{ name: "dir/b.log", data: new Uint8Array([1, 2, 3, 4]) },
+		]);
 		const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
 		expect(dv.getUint32(zip.length - 22, true)).toBe(0x06054b50);
 		expect(dv.getUint16(zip.length - 22 + 10, true)).toBe(2);
@@ -255,7 +314,11 @@ describe("crash marker", () => {
 		expect(markers()).toEqual(["running-222.json"]); // the old marker is consumed, so the next start is quiet
 		await flushLog();
 		const rows = lines(join(dir, "zotero-next-2026-11-07.log"));
-		expect(rows.at(-1)).toMatchObject({ level: "error", message: "previous session ended unexpectedly", ctx: { prevPid: 111, lastLogAt: lastAt } });
+		expect(rows.at(-1)).toMatchObject({
+			level: "error",
+			message: "previous session ended unexpectedly",
+			ctx: { prevPid: 111, lastLogAt: lastAt },
+		});
 		markCleanExit(222);
 		expect(markRunning({ pid: 333, alive: () => false })).toBeNull();
 	});

@@ -58,7 +58,14 @@ export async function handleTranslateApi(req: Request, db: Database): Promise<Re
 		const b = await readJson(req);
 		const collectionKey = b.collectionKey === null ? null : optString(b.collectionKey, "collectionKey");
 		if (route === "web") {
-			return json(await translateWeb(db, { url: b.url, collectionKey, attachments: b.attachments !== false, translatorID: optString(b.translatorID, "translatorID") }));
+			return json(
+				await translateWeb(db, {
+					url: b.url,
+					collectionKey,
+					attachments: b.attachments !== false,
+					translatorID: optString(b.translatorID, "translatorID"),
+				}),
+			);
 		}
 		if (route === "web/select") {
 			if (typeof b.session !== "string") throw new HttpError(400, "session must be a string");
@@ -79,7 +86,8 @@ export async function handleTranslateApi(req: Request, db: Database): Promise<Re
 		}
 		let keys: string[] | undefined;
 		if (b.keys !== undefined) {
-			if (!Array.isArray(b.keys) || b.keys.some((k: unknown) => typeof k !== "string")) throw new HttpError(400, "keys must be an array of strings");
+			if (!Array.isArray(b.keys) || b.keys.some((k: unknown) => typeof k !== "string"))
+				throw new HttpError(400, "keys must be an array of strings");
 			keys = b.keys;
 		}
 		return json(

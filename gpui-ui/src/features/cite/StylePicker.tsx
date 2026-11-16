@@ -9,13 +9,40 @@ import { errMsg, htmlToText } from "../text";
 import { bumpCite, citeApi, type CiteStyleInfo, type CiteStylePreview } from "./client";
 
 const FORMATS: { value: string; label: string }[] = [
-	{ value: "", label: "Any format" }, { value: "author-date", label: "Author-date" }, { value: "numeric", label: "Numeric" },
-	{ value: "note", label: "Note" }, { value: "label", label: "Label" }, { value: "author", label: "Author" },
+	{ value: "", label: "Any format" },
+	{ value: "author-date", label: "Author-date" },
+	{ value: "numeric", label: "Numeric" },
+	{ value: "note", label: "Note" },
+	{ value: "label", label: "Label" },
+	{ value: "author", label: "Author" },
 ];
 const FIELDS = [
-	"medicine", "biology", "science", "psychology", "social_science", "humanities", "engineering", "physics", "chemistry", "law",
-	"history", "philosophy", "political_science", "sociology", "communications", "anthropology", "geography", "linguistics",
-	"literature", "theology", "geology", "zoology", "botany", "math", "astronomy", "generic-base",
+	"medicine",
+	"biology",
+	"science",
+	"psychology",
+	"social_science",
+	"humanities",
+	"engineering",
+	"physics",
+	"chemistry",
+	"law",
+	"history",
+	"philosophy",
+	"political_science",
+	"sociology",
+	"communications",
+	"anthropology",
+	"geography",
+	"linguistics",
+	"literature",
+	"theology",
+	"geology",
+	"zoology",
+	"botany",
+	"math",
+	"astronomy",
+	"generic-base",
 ];
 const fieldLabel = (f: string) => (f === "generic-base" ? "Generic" : f.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()));
 const formatLabel = (f: string) => FORMATS.find((x) => x.value === f)?.label ?? f;
@@ -53,15 +80,27 @@ export function StylePicker(props: {
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
 	let pvTimer: ReturnType<typeof setTimeout> | undefined;
 	const pvCache = new Map<string, CiteStylePreview>();
-	onCleanup(() => { searchCtl?.abort(); pvCtl?.abort(); clearTimeout(searchTimer); clearTimeout(pvTimer); });
+	onCleanup(() => {
+		searchCtl?.abort();
+		pvCtl?.abort();
+		clearTimeout(searchTimer);
+		clearTimeout(pvTimer);
+	});
 
 	const rows = createMemo<ListRow[]>(() => {
 		const l = list();
-		const inst = l.filter((s) => s.installed), repo = l.filter((s) => !s.installed);
+		const inst = l.filter((s) => s.installed),
+			repo = l.filter((s) => !s.installed);
 		const out: ListRow[] = [];
-		if (inst.length) { out.push({ kind: "head", label: `INSTALLED (${inst.length})` }); for (const s of inst) out.push({ kind: "style", s }); }
+		if (inst.length) {
+			out.push({ kind: "head", label: `INSTALLED (${inst.length})` });
+			for (const s of inst) out.push({ kind: "style", s });
+		}
 		if (repo.length && !instOnly()) {
-			out.push({ kind: "head", label: `ZOTERO STYLE REPOSITORY${q() || format() || field() ? ` (${Math.max(total() - inst.length, repo.length)})` : ""}` });
+			out.push({
+				kind: "head",
+				label: `ZOTERO STYLE REPOSITORY${q() || format() || field() ? ` (${Math.max(total() - inst.length, repo.length)})` : ""}`,
+			});
 			for (const s of repo) out.push({ kind: "style", s });
 		}
 		return out;
@@ -75,7 +114,10 @@ export function StylePicker(props: {
 		setLoading(true);
 		setError("");
 		citeApi
-			.searchStyles({ q: q().trim(), format: format(), field: field(), installed: instOnly(), limit: PAGE, offset: append ? list().length : 0 }, ctl.signal)
+			.searchStyles(
+				{ q: q().trim(), format: format(), field: field(), installed: instOnly(), limit: PAGE, offset: append ? list().length : 0 },
+				ctl.signal,
+			)
 			.then((r) => {
 				if (ctl.signal.aborted) return;
 				const merged = append ? [...list(), ...r.styles.filter((s) => !list().some((x) => x.id === s.id))] : r.styles;
@@ -83,7 +125,8 @@ export function StylePicker(props: {
 				setTotal(r.total);
 				setIndex(r.index);
 				setLoading(false);
-				if (!append && !merged.some((s) => s.id === hi())) setHi(merged.find((s) => s.id === props.value)?.id ?? merged[0]?.id ?? "");
+				if (!append && !merged.some((s) => s.id === hi()))
+					setHi(merged.find((s) => s.id === props.value)?.id ?? merged[0]?.id ?? "");
 			})
 			.catch((e) => {
 				if (ctl.signal.aborted) return;
@@ -91,11 +134,20 @@ export function StylePicker(props: {
 				setError(errMsg(e));
 			});
 	};
-	onMount(() => { setHi(props.value); run(false); });
-	createEffect(on([q, format, field, instOnly], () => {
-		clearTimeout(searchTimer);
-		searchTimer = setTimeout(() => run(false), 150);
-	}, { defer: true }));
+	onMount(() => {
+		setHi(props.value);
+		run(false);
+	});
+	createEffect(
+		on(
+			[q, format, field, instOnly],
+			() => {
+				clearTimeout(searchTimer);
+				searchTimer = setTimeout(() => run(false), 150);
+			},
+			{ defer: true },
+		),
+	);
 
 	// ---- live preview of the highlighted style (debounced; a newer selection cancels the older request)
 	const keysKey = () => (props.itemKeys ?? []).slice(0, 3).join(",");
@@ -104,15 +156,35 @@ export function StylePicker(props: {
 		const kk = keysKey();
 		clearTimeout(pvTimer);
 		pvCtl?.abort();
-		if (!id) { setPreview(null); setPvLoading(false); return; }
+		if (!id) {
+			setPreview(null);
+			setPvLoading(false);
+			return;
+		}
 		const hit = pvCache.get(`${id}|${kk}`);
-		if (hit) { setPreview(hit); setPvError(""); setPvLoading(false); return; }
+		if (hit) {
+			setPreview(hit);
+			setPvError("");
+			setPvLoading(false);
+			return;
+		}
 		setPvLoading(true);
 		pvTimer = setTimeout(() => {
 			const ctl = (pvCtl = new AbortController());
 			citeApi.preview(id, kk ? kk.split(",") : [], ctl.signal).then(
-				(p) => { if (ctl.signal.aborted) return; pvCache.set(`${id}|${kk}`, p); setPreview(p); setPvError(""); setPvLoading(false); },
-				(e) => { if (ctl.signal.aborted) return; setPreview(null); setPvError(errMsg(e)); setPvLoading(false); },
+				(p) => {
+					if (ctl.signal.aborted) return;
+					pvCache.set(`${id}|${kk}`, p);
+					setPreview(p);
+					setPvError("");
+					setPvLoading(false);
+				},
+				(e) => {
+					if (ctl.signal.aborted) return;
+					setPreview(null);
+					setPvError(errMsg(e));
+					setPvLoading(false);
+				},
 			);
 		}, 200);
 	});
@@ -143,19 +215,34 @@ export function StylePicker(props: {
 		const s = current();
 		if (!s || busy()) return;
 		setBusy("install");
-		try { await install(s); toast(`Installed "${s.title}"`, { kind: "success" }); }
-		catch (e) { toast(`Could not install "${s.title}"`, { kind: "error", description: errMsg(e) }); }
-		finally { setBusy(null); }
+		try {
+			await install(s);
+			toast(`Installed "${s.title}"`, { kind: "success" });
+		} catch (e) {
+			toast(`Could not install "${s.title}"`, { kind: "error", description: errMsg(e) });
+		} finally {
+			setBusy(null);
+		}
 	};
 	const doRemove = async () => {
 		const s = current();
 		if (!s || busy()) return;
-		if (confirmRemove() !== s.id) { setConfirmRemove(s.id); return; }
+		if (confirmRemove() !== s.id) {
+			setConfirmRemove(s.id);
+			return;
+		}
 		setConfirmRemove("");
 		setBusy("remove");
-		try { await citeApi.remove(s.id); toast(`Removed "${s.title}"`, { kind: "success" }); bumpCite(); run(false); }
-		catch (e) { toast(`Could not remove "${s.title}"`, { kind: "error", description: errMsg(e) }); }
-		finally { setBusy(null); }
+		try {
+			await citeApi.remove(s.id);
+			toast(`Removed "${s.title}"`, { kind: "success" });
+			bumpCite();
+			run(false);
+		} catch (e) {
+			toast(`Could not remove "${s.title}"`, { kind: "error", description: errMsg(e) });
+		} finally {
+			setBusy(null);
+		}
 	};
 
 	const chips = (s: CiteStyleInfo) => {
@@ -168,31 +255,77 @@ export function StylePicker(props: {
 
 	return (
 		<div style={{ ...t("flex flex-col gap-2"), width: "100%" }}>
-			<TextInput value={q()} onInput={setQ} autofocus placeholder="Search installed styles and the Zotero Style Repository (e.g. lancet, harvard, nature)" />
+			<TextInput
+				value={q()}
+				onInput={setQ}
+				autofocus
+				placeholder="Search installed styles and the Zotero Style Repository (e.g. lancet, harvard, nature)"
+			/>
 			<div style={t("flex flex-row items-center gap-2")}>
 				<Select value={format()} onChange={setFormat} width={140} options={FORMATS} />
-				<Select value={field()} onChange={setField} width={160} options={[{ value: "", label: "Any field" }, ...FIELDS.map((f) => ({ value: f, label: fieldLabel(f) }))]} />
+				<Select
+					value={field()}
+					onChange={setField}
+					width={160}
+					options={[{ value: "", label: "Any field" }, ...FIELDS.map((f) => ({ value: f, label: fieldLabel(f) }))]}
+				/>
 				<Checkbox checked={instOnly()} onChange={setInstOnly} label="Installed only" />
 			</div>
 			<Show when={index() === "none" && !instOnly()}>
 				<div style={t("flex flex-row items-center gap-1.5 rounded-md border bg-warning px-2 py-1")}>
 					<Icon name="wifi-off" size={14} color={tok("warning-foreground")} />
-					<Txt class="text-xs text-warning-foreground">The Zotero Style Repository could not be reached; only installed and default styles are listed.</Txt>
+					<Txt class="text-xs text-warning-foreground">
+						The Zotero Style Repository could not be reached; only installed and default styles are listed.
+					</Txt>
 				</div>
 			</Show>
 			<div style={{ ...t("flex flex-row gap-2"), width: "100%", height: H }}>
 				{/* ---- list */}
 				<Scroll border style={{ width: "42%", height: H, flexShrink: 0 }}>
-					<Show when={!error()} fallback={<div style={t("p-3")}><Para class="text-[13px] text-destructive">{error()}</Para></div>}>
-						<For each={rows()} fallback={<div style={t("p-3")}><Txt class="text-[13px] text-muted-foreground">{loading() ? "Searching…" : "No styles match."}</Txt></div>}>
+					<Show
+						when={!error()}
+						fallback={
+							<div style={t("p-3")}>
+								<Para class="text-[13px] text-destructive">{error()}</Para>
+							</div>
+						}
+					>
+						<For
+							each={rows()}
+							fallback={
+								<div style={t("p-3")}>
+									<Txt class="text-[13px] text-muted-foreground">{loading() ? "Searching…" : "No styles match."}</Txt>
+								</div>
+							}
+						>
 							{(r) =>
 								r.kind === "head" ? (
-									<div style={{ ...t("border-b bg-muted px-2 py-0.5"), flexShrink: 0 }}><Txt class="text-[11px] font-semibold text-muted-foreground">{r.label}</Txt></div>
+									<div style={{ ...t("border-b bg-muted px-2 py-0.5"), flexShrink: 0 }}>
+										<Txt class="text-[11px] font-semibold text-muted-foreground">{r.label}</Txt>
+									</div>
 								) : (
-									<Row selected={hi() === r.s.id} onClick={() => { setHi(r.s.id); setConfirmRemove(""); }} style={{ flexShrink: 0, flexDirection: "column", alignItems: "stretch", gap: 2, paddingTop: 4, paddingBottom: 4 }}>
+									<Row
+										selected={hi() === r.s.id}
+										onClick={() => {
+											setHi(r.s.id);
+											setConfirmRemove("");
+										}}
+										style={{
+											flexShrink: 0,
+											flexDirection: "column",
+											alignItems: "stretch",
+											gap: 2,
+											paddingTop: 4,
+											paddingBottom: 4,
+										}}
+									>
 										<div style={t("flex flex-row items-center gap-1.5")}>
-											<div style={{ width: 16, flexShrink: 0 }}>{props.value === r.s.id ? <Icon name="check" size={14} color={tok("foreground")} /> : null}</div>
-											<Line class="text-[13px] text-foreground" style={{ flexGrow: 1 }}>{r.s.title}</Line>
+											<div style={{ width: 16, flexShrink: 0 }}>
+												{props.value === r.s.id ? <Icon name="check" size={14} color={tok("foreground")} /> : null}
+											</div>
+											<Line class="text-[13px] text-foreground" style={{ flexGrow: 1 }}>
+												{r.s.title}
+											</Line>
 										</div>
 										<div style={{ ...t("flex flex-row items-center gap-1"), paddingLeft: 22 }}>
 											<For each={chips(r.s)}>{(c) => <Chip>{c}</Chip>}</For>
@@ -203,14 +336,23 @@ export function StylePicker(props: {
 						</For>
 						<Show when={list().length < total()}>
 							<Row onClick={() => !loading() && run(true)} style={{ flexShrink: 0, justifyContent: "center" }}>
-								<Txt class="text-xs text-muted-foreground">{loading() ? "Loading…" : `Show more (${list().length} of ${total()})`}</Txt>
+								<Txt class="text-xs text-muted-foreground">
+									{loading() ? "Loading…" : `Show more (${list().length} of ${total()})`}
+								</Txt>
 							</Row>
 						</Show>
 					</Show>
 				</Scroll>
 				{/* ---- preview */}
 				<div style={{ ...t("flex flex-col rounded-md border"), flexGrow: 1, flexShrink: 1, minWidth: 0, height: H }}>
-					<Show when={current()} fallback={<div style={t("p-3")}><Txt class="text-[13px] text-muted-foreground">Select a style to preview it.</Txt></div>}>
+					<Show
+						when={current()}
+						fallback={
+							<div style={t("p-3")}>
+								<Txt class="text-[13px] text-muted-foreground">Select a style to preview it.</Txt>
+							</div>
+						}
+					>
 						{(s) => (
 							<>
 								<div style={t("flex flex-col gap-1 border-b px-3 py-2")}>
@@ -220,21 +362,48 @@ export function StylePicker(props: {
 										<Txt class="text-[10px] text-muted-foreground">{s().installed ? "Installed" : "Not installed"}</Txt>
 									</div>
 								</div>
-								<Scroll style={{ flexGrow: 1, flexShrink: 1, paddingLeft: 12, paddingRight: 12, paddingTop: 8, paddingBottom: 8 }}>
-									<Show when={!pvError()} fallback={<Para class="text-[13px] text-destructive">{`Preview unavailable: ${pvError()}`}</Para>}>
-										<Show when={preview()} fallback={<Txt class="text-[13px] text-muted-foreground">{pvLoading() ? "Loading preview…" : ""}</Txt>}>
+								<Scroll
+									style={{
+										flexGrow: 1,
+										flexShrink: 1,
+										paddingLeft: 12,
+										paddingRight: 12,
+										paddingTop: 8,
+										paddingBottom: 8,
+									}}
+								>
+									<Show
+										when={!pvError()}
+										fallback={<Para class="text-[13px] text-destructive">{`Preview unavailable: ${pvError()}`}</Para>}
+									>
+										<Show
+											when={preview()}
+											fallback={
+												<Txt class="text-[13px] text-muted-foreground">{pvLoading() ? "Loading preview…" : ""}</Txt>
+											}
+										>
 											{(pv) => (
 												<div style={{ ...t("flex flex-col gap-1"), opacity: pvLoading() ? 0.5 : 1 }}>
-													<Txt class="text-[11px] font-semibold text-muted-foreground">{pv().note ? "FOOTNOTES" : "IN-TEXT CITATIONS"}</Txt>
-													<For each={pv().citations}>{(c) => <Para class="text-[13px] text-foreground">{htmlToText(c)}</Para>}</For>
+													<Txt class="text-[11px] font-semibold text-muted-foreground">
+														{pv().note ? "FOOTNOTES" : "IN-TEXT CITATIONS"}
+													</Txt>
+													<For each={pv().citations}>
+														{(c) => <Para class="text-[13px] text-foreground">{htmlToText(c)}</Para>}
+													</For>
 													<Show when={pv().bibliography}>
 														<div style={{ height: 6 }} />
 														<Txt class="text-[11px] font-semibold text-muted-foreground">BIBLIOGRAPHY</Txt>
-														<For each={htmlToText(pv().bibliography).split("\n")}>{(l) => <Para class="text-[13px] text-foreground">{l}</Para>}</For>
+														<For each={htmlToText(pv().bibliography).split("\n")}>
+															{(l) => <Para class="text-[13px] text-foreground">{l}</Para>}
+														</For>
 													</Show>
 													<div style={{ height: 6 }} />
 													<Para class="text-[11px] text-muted-foreground">
-														{pv().sample ? "Built-in sample references (add items to your library to preview with them)." : props.itemKeys?.length ? "Previewed with your selected items." : "Previewed with items from your library."}
+														{pv().sample
+															? "Built-in sample references (add items to your library to preview with them)."
+															: props.itemKeys?.length
+																? "Previewed with your selected items."
+																: "Previewed with items from your library."}
 													</Para>
 												</div>
 											)}
@@ -243,13 +412,24 @@ export function StylePicker(props: {
 								</Scroll>
 								<div style={t("flex flex-row items-center gap-2 border-t px-3 py-2")}>
 									<Show when={s().removable}>
-										<Button variant="outline" size="sm" disabled={!!busy()} onClick={() => void doRemove()}>{confirmRemove() === s().id ? "Confirm remove" : "Remove"}</Button>
+										<Button variant="outline" size="sm" disabled={!!busy()} onClick={() => void doRemove()}>
+											{confirmRemove() === s().id ? "Confirm remove" : "Remove"}
+										</Button>
 									</Show>
 									<div style={{ flexGrow: 1 }} />
 									<Show when={!s().installed}>
-										<Button variant="outline" size="sm" disabled={!!busy()} onClick={() => void doInstall()}>{busy() === "install" ? "Installing…" : "Install"}</Button>
+										<Button variant="outline" size="sm" disabled={!!busy()} onClick={() => void doInstall()}>
+											{busy() === "install" ? "Installing…" : "Install"}
+										</Button>
 									</Show>
-									<Button variant="primary" size="sm" disabled={!!busy() || props.value === s().id} onClick={() => void use()}>{props.value === s().id ? "In use" : busy() === "use" ? "Working…" : "Use this style"}</Button>
+									<Button
+										variant="primary"
+										size="sm"
+										disabled={!!busy() || props.value === s().id}
+										onClick={() => void use()}
+									>
+										{props.value === s().id ? "In use" : busy() === "use" ? "Working…" : "Use this style"}
+									</Button>
 								</div>
 							</>
 						)}

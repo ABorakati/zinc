@@ -48,13 +48,30 @@ export const PRIO_AHEAD = 1e6;
 export const PRIO_BEHIND = 2e6;
 export const PRIO_BACKGROUND = 4e6;
 
-export interface ViewRect { x0: number; y0: number; x1: number; y1: number }
-export interface LinkInfo { rect: NRect; target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string } }
+export interface ViewRect {
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+}
+export interface LinkInfo {
+	rect: NRect;
+	target: { kind: "page"; page: number; y: number } | { kind: "uri"; uri: string };
+}
 
 export interface PageStats {
-	renders: number; lastRenderMs: number; lastUploadMs: number; totalRenderMs: number; cancelled: number; tiles: number; peakTiles: number;
+	renders: number;
+	lastRenderMs: number;
+	lastUploadMs: number;
+	totalRenderMs: number;
+	cancelled: number;
+	tiles: number;
+	peakTiles: number;
 	/** per-job breakdown sums (ms): waiting in the native queue + the poll delay, waiting for the <img> host node, handing the pixels to GPUIX; and the job count */
-	jobs?: number; queueMs?: number; mountWaitMs?: number; uploadMs?: number;
+	jobs?: number;
+	queueMs?: number;
+	mountWaitMs?: number;
+	uploadMs?: number;
 }
 
 /**
@@ -62,7 +79,13 @@ export interface PageStats {
  * the scroll direction is the long one), `keep` the extra distance a tile survives outside its margin, `ahead` the direction (1 down, -1 up).
  * `axis` "x" (horizontal scrolling): the same margins lie left / right of the viewport instead (up = left, down = right).
  */
-export interface Margins { up: number; down: number; keep: number; ahead: number; axis?: "x" | "y" }
+export interface Margins {
+	up: number;
+	down: number;
+	keep: number;
+	ahead: number;
+	axis?: "x" | "y";
+}
 
 export interface PageEnv {
 	doc: PdfDoc;
@@ -89,7 +112,13 @@ export interface PageEnv {
 }
 
 type Bitmap = NonNullable<Awaited<RenderTask["promise"]>>;
-interface BitmapEntry { key: string; page: number; r: Bitmap; uses: number; doomed: boolean }
+interface BitmapEntry {
+	key: string;
+	page: number;
+	r: Bitmap;
+	uses: number;
+	doomed: boolean;
+}
 
 /**
  * The most recently rendered whole-page bitmaps (native memory, BGRA, ~7.7 MB for a Letter page at DPR 2), kept so that a band tile that
@@ -102,11 +131,16 @@ export class BitmapCache {
 	private map = new Map<string, BitmapEntry>();
 	bytes = 0;
 	constructor(readonly budget = (Number(process.env.ZN_BITMAP_MB) || 24) * 1048576) {}
-	get size(): number { return this.map.size; }
+	get size(): number {
+		return this.map.size;
+	}
 	/** takes ownership of `r`; the caller holds one use of the returned entry and must call unuse() */
 	put(key: string, page: number, r: Bitmap): BitmapEntry {
 		const e: BitmapEntry = { key, page, r, uses: 1, doomed: false };
-		if (this.budget <= 0) { e.doomed = true; return e; }
+		if (this.budget <= 0) {
+			e.doomed = true;
+			return e;
+		}
 		for (const o of [...this.map.values()]) if (o.page === page) this.drop(o); // an older resolution / look of the same page
 		const len = r.pixels.length;
 		while (this.map.size && this.bytes + len > this.budget) this.drop(this.map.values().next().value!);
@@ -131,7 +165,9 @@ export class BitmapCache {
 		e.doomed = true;
 		if (e.uses <= 0) e.r.release();
 	}
-	clear(): void { for (const e of [...this.map.values()]) this.drop(e); }
+	clear(): void {
+		for (const e of [...this.map.values()]) this.drop(e);
+	}
 }
 
 /** Fractions (0..1) of the part of the page inside `view` that is blank paper, shows a stretched / lower resolution image, or is sharp; `vis` is the visible area in css px^2. */
@@ -140,8 +176,12 @@ export type PageProbe = (view: ViewRect) => { vis: number; blank: number; soft: 
 interface TileSpec {
 	key: string;
 	sk: string;
-	x: number; y: number; w: number; h: number;
-	W: number; H: number;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	W: number;
+	H: number;
 	scale: number;
 	rot: number;
 	look: Look;
@@ -158,12 +198,35 @@ interface TileSpec {
 	busy?: boolean;
 }
 
-interface Grid { sk: string; W: number; H: number; scale: number; rot: number; look: Look; cols: number; rows: number; TW: number; TH: number; whole: boolean }
+interface Grid {
+	sk: string;
+	W: number;
+	H: number;
+	scale: number;
+	rot: number;
+	look: Look;
+	cols: number;
+	rows: number;
+	TW: number;
+	TH: number;
+	whole: boolean;
+}
 
 /** A render job in flight and the tiles waiting for it. */
-interface Inflight { key: string; tiles: Set<TileSpec>; task: RenderTask | null; update(): void }
+interface Inflight {
+	key: string;
+	tiles: Set<TileSpec>;
+	task: RenderTask | null;
+	update(): void;
+}
 
-function TileView(p: { env: PageEnv; spec: TileSpec; boxW: Accessor<number>; boxH: Accessor<number>; onGone(t: TileSpec): void }): JSX.Element {
+function TileView(p: {
+	env: PageEnv;
+	spec: TileSpec;
+	boxW: Accessor<number>;
+	boxH: Accessor<number>;
+	onGone(t: TileSpec): void;
+}): JSX.Element {
 	const { env, spec } = p;
 	env.stats.tiles++;
 	env.stats.peakTiles = Math.max(env.stats.peakTiles, env.stats.tiles);
@@ -174,13 +237,17 @@ function TileView(p: { env: PageEnv; spec: TileSpec; boxW: Accessor<number>; box
 	});
 	// css box of the tile inside the page box (rounded outwards so neighbours never leave a seam)
 	const geo = () => {
-		const kx = p.boxW() / spec.W, ky = p.boxH() / spec.H;
-		const l = Math.floor(spec.x * kx), t = Math.floor(spec.y * ky);
+		const kx = p.boxW() / spec.W,
+			ky = p.boxH() / spec.H;
+		const l = Math.floor(spec.x * kx),
+			t = Math.floor(spec.y * ky);
 		return { left: l, top: t, width: Math.ceil((spec.x + spec.w) * kx) - l, height: Math.ceil((spec.y + spec.h) * ky) - t };
 	};
 	return (
 		<img
-			ref={(el: ImgNode) => { spec.img = el; }}
+			ref={(el: ImgNode) => {
+				spec.img = el;
+			}}
 			objectFit="fill"
 			style={{ position: "absolute", pointerEvents: "none", ...geo(), ...hiddenUntil(spec.ready()) }}
 		/>
@@ -188,22 +255,47 @@ function TileView(p: { env: PageEnv; spec: TileSpec; boxW: Accessor<number>; box
 }
 
 /** The page's preview: one image over the whole page box, hidden until it has its pixels. */
-function PreviewImg(p: { data: { w: number; h: number; px: Uint8Array }; boxW: Accessor<number>; boxH: Accessor<number>; onShown(v: boolean): void }): JSX.Element {
+function PreviewImg(p: {
+	data: { w: number; h: number; px: Uint8Array };
+	boxW: Accessor<number>;
+	boxH: Accessor<number>;
+	onShown(v: boolean): void;
+}): JSX.Element {
 	let img: ImgNode | undefined;
 	let alive = true;
 	const [ready, setReady] = createSignal(false);
-	onCleanup(() => { alive = false; p.onShown(false); });
+	onCleanup(() => {
+		alive = false;
+		p.onShown(false);
+	});
 	void (async () => {
-		if (!(await whenMounted(() => img, () => alive)) || !img) return;
+		if (
+			!(await whenMounted(
+				() => img,
+				() => alive,
+			)) ||
+			!img
+		)
+			return;
 		img.setImagePixels(p.data.w, p.data.h, p.data.px, { format: "bgra" });
 		setReady(true);
 		p.onShown(true);
 	})();
 	return (
 		<img
-			ref={(el: ImgNode) => { img = el; }}
+			ref={(el: ImgNode) => {
+				img = el;
+			}}
 			objectFit="fill"
-			style={{ position: "absolute", left: 0, top: 0, width: p.boxW(), height: p.boxH(), pointerEvents: "none", ...hiddenUntil(ready()) }}
+			style={{
+				position: "absolute",
+				left: 0,
+				top: 0,
+				width: p.boxW(),
+				height: p.boxH(),
+				pointerEvents: "none",
+				...hiddenUntil(ready()),
+			}}
 		/>
 	);
 }
@@ -240,59 +332,102 @@ export function PageSlot(p: {
 	let first = true;
 	createEffect(() => {
 		const w = wantW();
-		if (first) { first = false; return; }
+		if (first) {
+			first = false;
+			return;
+		}
 		clearTimeout(zt);
 		zt = setTimeout(() => setRenderW(w), ZOOM_DEBOUNCE);
 	});
 	onCleanup(() => clearTimeout(zt));
 
 	const grid = createMemo<Grid>(() => {
-		const rot = p.rot(), look = env.look();
+		const rot = p.rot(),
+			look = env.look();
 		const base = rot % 180 === 0 ? pw : ph;
 		const scale = renderW() / base;
 		const [W, H] = env.doc.renderSize2(p.index, scale, rot);
 		const cols = W <= SINGLE_COL_MAX ? 1 : Math.ceil(W / MAX_TILE);
 		const whole = cols === 1 && W * H <= WHOLE_MAX_PX;
 		const rows = Math.max(1, Math.ceil(H / (whole ? WHOLE_BAND : MAX_TILE)));
-		return { sk: `${W}x${H}.${rot}.${lookKey(look)}`, W, H, scale, rot, look, cols, rows, TW: Math.ceil(W / cols), TH: Math.ceil(H / rows), whole };
+		return {
+			sk: `${W}x${H}.${rot}.${lookKey(look)}`,
+			W,
+			H,
+			scale,
+			rot,
+			look,
+			cols,
+			rows,
+			TW: Math.ceil(W / cols),
+			TH: Math.ceil(H / rows),
+			whole,
+		};
 	});
 
 	/**
 	 * Tiles of the current grid worth having: zone 0 touches the viewport, 1 is inside the margin (created, rendered), 2 only inside
 	 * the keep distance (an existing tile stays, a missing one is not created).
 	 */
-	interface Want { key: string; c: number; r: number; tier: number; zone: number }
-	const wanted = createMemo(() => {
-		const g = grid(), v = p.view(), m = env.margins();
-		if (!env.laidOut()) return [];
-		const kx = g.W / p.boxW(), ky = g.H / p.boxH(); // css -> device px
-		const ix0 = v.x0 * kx, ix1 = v.x1 * kx, iy0 = v.y0 * ky, iy1 = v.y1 * ky;
-		// zoomed in (a grid of tiles, every tile re-interprets the page) the margins are shorter: the pixel bytes per css px are far higher
-		const f = g.whole ? 1 : 0.25;
-		const xa = m.axis === "x"; // scrolling horizontally: the long margins are left / right
-		const wx0 = (v.x0 - (xa ? m.up * f : MARGIN_X)) * kx, wx1 = (v.x1 + (xa ? m.down * f : MARGIN_X)) * kx;
-		const wy0 = (v.y0 - (xa ? MARGIN_X : m.up * f)) * ky, wy1 = (v.y1 + (xa ? MARGIN_X : m.down * f)) * ky;
-		const kp = (xa ? MARGIN_X : m.keep * f) * ky, kpx = (xa ? m.keep * f : MARGIN_X) * kx;
-		const out: Want[] = [];
-		// nothing of this page is near enough to matter
-		if (wy1 + kp <= 0 || wy0 - kp >= g.H || wx1 + kpx <= 0 || wx0 - kpx >= g.W) return out;
-		const c0 = Math.max(0, Math.floor((wx0 - kpx) / g.TW)), c1 = Math.min(g.cols - 1, Math.floor((wx1 + kpx - 1) / g.TW));
-		const r0 = Math.max(0, Math.floor((wy0 - kp) / g.TH)), r1 = Math.min(g.rows - 1, Math.floor((wy1 + kp - 1) / g.TH));
-		for (let r = r0; r <= r1; r++) {
-			for (let c = c0; c <= c1; c++) {
-				const tx0 = c * g.TW, tx1 = tx0 + g.TW, ty0 = r * g.TH, ty1 = ty0 + g.TH;
-				const inside = tx1 > ix0 && tx0 < ix1 && ty1 > iy0 && ty0 < iy1;
-				const near = tx1 > wx0 && tx0 < wx1 && ty1 > wy0 && ty0 < wy1;
-				const kept = tx1 > wx0 - kpx && tx0 < wx1 + kpx && ty1 > wy0 - kp && ty0 < wy1 + kp;
-				const zone = inside ? 0 : near ? 1 : kept ? 2 : 3;
-				if (zone === 3) continue;
-				const below = xa ? tx0 >= ix1 : ty0 >= iy1;
-				const tier = inside ? 0 : (below ? (m.ahead >= 0 ? 1 : 2) : (m.ahead < 0 ? 1 : 2));
-				out.push({ key: `${g.sk}:${c}:${r}`, c, r, tier, zone });
+	interface Want {
+		key: string;
+		c: number;
+		r: number;
+		tier: number;
+		zone: number;
+	}
+	const wanted = createMemo(
+		() => {
+			const g = grid(),
+				v = p.view(),
+				m = env.margins();
+			if (!env.laidOut()) return [];
+			const kx = g.W / p.boxW(),
+				ky = g.H / p.boxH(); // css -> device px
+			const ix0 = v.x0 * kx,
+				ix1 = v.x1 * kx,
+				iy0 = v.y0 * ky,
+				iy1 = v.y1 * ky;
+			// zoomed in (a grid of tiles, every tile re-interprets the page) the margins are shorter: the pixel bytes per css px are far higher
+			const f = g.whole ? 1 : 0.25;
+			const xa = m.axis === "x"; // scrolling horizontally: the long margins are left / right
+			const wx0 = (v.x0 - (xa ? m.up * f : MARGIN_X)) * kx,
+				wx1 = (v.x1 + (xa ? m.down * f : MARGIN_X)) * kx;
+			const wy0 = (v.y0 - (xa ? MARGIN_X : m.up * f)) * ky,
+				wy1 = (v.y1 + (xa ? MARGIN_X : m.down * f)) * ky;
+			const kp = (xa ? MARGIN_X : m.keep * f) * ky,
+				kpx = (xa ? m.keep * f : MARGIN_X) * kx;
+			const out: Want[] = [];
+			// nothing of this page is near enough to matter
+			if (wy1 + kp <= 0 || wy0 - kp >= g.H || wx1 + kpx <= 0 || wx0 - kpx >= g.W) return out;
+			const c0 = Math.max(0, Math.floor((wx0 - kpx) / g.TW)),
+				c1 = Math.min(g.cols - 1, Math.floor((wx1 + kpx - 1) / g.TW));
+			const r0 = Math.max(0, Math.floor((wy0 - kp) / g.TH)),
+				r1 = Math.min(g.rows - 1, Math.floor((wy1 + kp - 1) / g.TH));
+			for (let r = r0; r <= r1; r++) {
+				for (let c = c0; c <= c1; c++) {
+					const tx0 = c * g.TW,
+						tx1 = tx0 + g.TW,
+						ty0 = r * g.TH,
+						ty1 = ty0 + g.TH;
+					const inside = tx1 > ix0 && tx0 < ix1 && ty1 > iy0 && ty0 < iy1;
+					const near = tx1 > wx0 && tx0 < wx1 && ty1 > wy0 && ty0 < wy1;
+					const kept = tx1 > wx0 - kpx && tx0 < wx1 + kpx && ty1 > wy0 - kp && ty0 < wy1 + kp;
+					const zone = inside ? 0 : near ? 1 : kept ? 2 : 3;
+					if (zone === 3) continue;
+					const below = xa ? tx0 >= ix1 : ty0 >= iy1;
+					const tier = inside ? 0 : below ? (m.ahead >= 0 ? 1 : 2) : m.ahead < 0 ? 1 : 2;
+					out.push({ key: `${g.sk}:${c}:${r}`, c, r, tier, zone });
+				}
 			}
-		}
-		return out;
-	}, undefined, { equals: (a, b) => a.length === b.length && a.every((t, i) => t.key === b[i]!.key && t.tier === b[i]!.tier && t.zone === b[i]!.zone) });
+			return out;
+		},
+		undefined,
+		{
+			equals: (a, b) =>
+				a.length === b.length && a.every((t, i) => t.key === b[i]!.key && t.tier === b[i]!.tier && t.zone === b[i]!.zone),
+		},
+	);
 
 	// ---- preview under the tiles
 	const [pvShown, setPvShown] = createSignal(false);
@@ -304,11 +439,31 @@ export function PageSlot(p: {
 	const make = (g: Grid, c: number, r: number, key: string, tier: number): TileSpec => {
 		const [ready, setReady] = createSignal(false);
 		const [t, setT] = createSignal(tier);
-		const x = c * g.TW, y = r * g.TH;
-		return { key, sk: g.sk, x, y, w: Math.min(g.TW, g.W - x), h: Math.min(g.TH, g.H - y), W: g.W, H: g.H, scale: g.scale, rot: g.rot, look: g.look, whole: g.whole, ready, setReady, tier: t, setTier: setT, alive: true };
+		const x = c * g.TW,
+			y = r * g.TH;
+		return {
+			key,
+			sk: g.sk,
+			x,
+			y,
+			w: Math.min(g.TW, g.W - x),
+			h: Math.min(g.TH, g.H - y),
+			W: g.W,
+			H: g.H,
+			scale: g.scale,
+			rot: g.rot,
+			look: g.look,
+			whole: g.whole,
+			ready,
+			setReady,
+			tier: t,
+			setTier: setT,
+			alive: true,
+		};
 	};
 	createEffect(() => {
-		const g = grid(), want = wanted();
+		const g = grid(),
+			want = wanted();
 		tick();
 		untrack(() => {
 			const cur = tiles();
@@ -316,8 +471,10 @@ export function PageSlot(p: {
 			const fresh: TileSpec[] = [];
 			for (const w of want) {
 				const old = byKey.get(w.key);
-				if (old) { if (old.tier() !== w.tier) old.setTier(w.tier); fresh.push(old); }
-				else if (w.zone <= 1) fresh.push(make(g, w.c, w.r, w.key, w.tier));
+				if (old) {
+					if (old.tier() !== w.tier) old.setTier(w.tier);
+					fresh.push(old);
+				} else if (w.zone <= 1) fresh.push(make(g, w.c, w.r, w.key, w.tier));
 			}
 			// older resolutions stay (under the new tiles) until everything on screen is redrawn at the new one; only drawn ones are worth keeping
 			const covered = fresh.every((t) => t.tier() !== 0 || t.ready());
@@ -331,10 +488,12 @@ export function PageSlot(p: {
 	const dist = (s: TileSpec): number => {
 		const v = untrack(p.view);
 		const bh = untrack(p.boxH);
-		const cy = ((s.y + s.h / 2) / s.H) * bh, vy = (v.y0 + v.y1) / 2;
+		const cy = ((s.y + s.h / 2) / s.H) * bh,
+			vy = (v.y0 + v.y1) / 2;
 		if (untrack(env.margins).axis === "x") {
 			// scrolling horizontally the pages ahead are to the side: distance along x first, then within the page
-			const cx = ((s.x + s.w / 2) / s.W) * untrack(p.boxW), vx = (v.x0 + v.x1) / 2;
+			const cx = ((s.x + s.w / 2) / s.W) * untrack(p.boxW),
+				vx = (v.x0 + v.x1) / 2;
 			return Math.abs(cx - vx) + Math.abs(cy - vy);
 		}
 		return Math.abs(cy - vy);
@@ -357,7 +516,14 @@ export function PageSlot(p: {
 			if (t.ready()) continue;
 			// the element may not be inserted yet right after mount: wait for it (a few frames at most)
 			const m0 = performance.now();
-			if (!(await whenMounted(() => t.img, () => t.alive)) || !t.img) continue;
+			if (
+				!(await whenMounted(
+					() => t.img,
+					() => t.alive,
+				)) ||
+				!t.img
+			)
+				continue;
 			const u0 = performance.now();
 			env.stats.mountWaitMs = (env.stats.mountWaitMs ?? 0) + (u0 - m0);
 			if (t.whole) t.img.setImagePixels(r.width, t.h, r.slice(t.y, t.h), { format: "bgra" });
@@ -373,7 +539,12 @@ export function PageSlot(p: {
 		env.pending.n++;
 		let task: RenderTask;
 		try {
-			task = env.doc.render3(p.index, first.scale, { rot: first.rot, look: first.look, region: first.whole ? undefined : { x: first.x, y: first.y, w: first.w, h: first.h }, prio: prioOf(inf) });
+			task = env.doc.render3(p.index, first.scale, {
+				rot: first.rot,
+				look: first.look,
+				region: first.whole ? undefined : { x: first.x, y: first.y, w: first.w, h: first.h },
+				prio: prioOf(inf),
+			});
 		} catch (e) {
 			inflight.delete(key);
 			env.pending.n--;
@@ -400,7 +571,10 @@ export function PageSlot(p: {
 						env.stats.totalRenderMs += r.renderMs;
 						setTick((n) => n + 1);
 					}
-				} finally { if (entry) bitmaps.unuse(entry); else r.release(); } // GPUIX holds its own copy of what it got
+				} finally {
+					if (entry) bitmaps.unuse(entry);
+					else r.release();
+				} // GPUIX holds its own copy of what it got
 			} catch (e) {
 				console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
 			} finally {
@@ -417,11 +591,17 @@ export function PageSlot(p: {
 			if (t.ready() || t.busy || !t.alive || t.sk !== untrack(grid).sk) continue;
 			const key = t.whole ? t.sk : t.key;
 			const inf = inflight.get(key);
-			if (inf) { if (!inf.tiles.has(t)) inf.tiles.add(t); continue; }
+			if (inf) {
+				if (!inf.tiles.has(t)) inf.tiles.add(t);
+				continue;
+			}
 			const cached = t.whole ? bitmaps.acquire(bmKey(t.sk)) : undefined;
 			if (cached) {
 				t.busy = true;
-				void uploadTiles([t], cached.r).finally(() => { t.busy = false; bitmaps.unuse(cached); });
+				void uploadTiles([t], cached.r).finally(() => {
+					t.busy = false;
+					bitmaps.unuse(cached);
+				});
 			} else startJob(key, t);
 		}
 	}
@@ -439,14 +619,21 @@ export function PageSlot(p: {
 		}
 	}
 	onCleanup(() => {
-		for (const inf of inflight.values()) { inf.tiles.clear(); inf.task?.cancel(); }
+		for (const inf of inflight.values()) {
+			inf.tiles.clear();
+			inf.task?.cancel();
+		}
 		inflight.clear();
 	});
 
 	// ---- coverage probe (benchmarks only; costs nothing unless called)
 	p.env.probe.set(p.index, (v) => {
-		const bw = untrack(p.boxW), bh = untrack(p.boxH);
-		const x0 = Math.max(0, v.x0), x1 = Math.min(bw, v.x1), y0 = Math.max(0, v.y0), y1 = Math.min(bh, v.y1);
+		const bw = untrack(p.boxW),
+			bh = untrack(p.boxH);
+		const x0 = Math.max(0, v.x0),
+			x1 = Math.min(bw, v.x1),
+			y0 = Math.max(0, v.y0),
+			y1 = Math.min(bh, v.y1);
 		if (x1 <= x0 || y1 <= y0) return { vis: 0, blank: 0, soft: 0, sharp: 0, noSrc: 0 };
 		const sk = untrack(grid).sk;
 		const all = untrack(tiles);
@@ -456,22 +643,30 @@ export function PageSlot(p: {
 		if (!HIDE_UNTIL_PIXELS) {
 			for (const t of all) {
 				if (untrack(t.ready) || !t.img?.mounted) continue;
-				if ((t.x + t.w) / t.W * bw > x0 && (t.x / t.W) * bw < x1 && (t.y + t.h) / t.H * bh > y0 && (t.y / t.H) * bh < y1) noSrc++;
+				if (((t.x + t.w) / t.W) * bw > x0 && (t.x / t.W) * bw < x1 && ((t.y + t.h) / t.H) * bh > y0 && (t.y / t.H) * bh < y1)
+					noSrc++;
 			}
 		}
 		const pvOn = untrack(pvShown);
-		let blank = 0, soft = 0, sharp = 0;
-		const NY = 16, NX = 3;
+		let blank = 0,
+			soft = 0,
+			sharp = 0;
+		const NY = 16,
+			NX = 3;
 		for (let a = 0; a < NY; a++) {
 			for (let b = 0; b < NX; b++) {
-				const x = x0 + ((b + 0.5) / NX) * (x1 - x0), y = y0 + ((a + 0.5) / NY) * (y1 - y0);
+				const x = x0 + ((b + 0.5) / NX) * (x1 - x0),
+					y = y0 + ((a + 0.5) / NY) * (y1 - y0);
 				let best = 0;
 				for (const t of ts) {
-					if (x < (t.x / t.W) * bw || x >= ((t.x + t.w) / t.W) * bw || y < (t.y / t.H) * bh || y >= ((t.y + t.h) / t.H) * bh) continue;
+					if (x < (t.x / t.W) * bw || x >= ((t.x + t.w) / t.W) * bw || y < (t.y / t.H) * bh || y >= ((t.y + t.h) / t.H) * bh)
+						continue;
 					best = Math.max(best, t.sk === sk ? 2 : 1);
 					if (best === 2) break;
 				}
-				if (best === 2) sharp++; else if (best === 1 || pvOn) soft++; else blank++;
+				if (best === 2) sharp++;
+				else if (best === 1 || pvOn) soft++;
+				else blank++;
 			}
 		}
 		const n = NX * NY;
@@ -489,10 +684,16 @@ export function PageSlot(p: {
 		<div
 			ref={(el: { id: number }) => {
 				p.env.reg.boxes.set(p.index, el);
-				onCleanup(() => { if (p.env.reg.boxes.get(p.index) === el) p.env.reg.boxes.delete(p.index); });
+				onCleanup(() => {
+					if (p.env.reg.boxes.get(p.index) === el) p.env.reg.boxes.delete(p.index);
+				});
 			}}
 			style={{
-				position: "relative", width: p.boxW(), height: p.boxH(), flexShrink: 0, backgroundColor: env.paper(),
+				position: "relative",
+				width: p.boxW(),
+				height: p.boxH(),
+				flexShrink: 0,
+				backgroundColor: env.paper(),
 				boxShadow: [
 					{ offsetX: 0, offsetY: 4, blurRadius: 6, spreadRadius: -1, color: "rgba(0, 0, 0, 0.1)" },
 					{ offsetX: 0, offsetY: 2, blurRadius: 4, spreadRadius: -2, color: "rgba(0, 0, 0, 0.1)" },
@@ -505,36 +706,67 @@ export function PageSlot(p: {
 			<Show when={pv()} keyed>
 				{(d) => <PreviewImg data={d} boxW={p.boxW} boxH={p.boxH} onShown={setPvShown} />}
 			</Show>
-			<For each={tiles()}>
-				{(spec) => <TileView env={env} spec={spec} boxW={p.boxW} boxH={p.boxH} onGone={onGone} />}
-			</For>
+			<For each={tiles()}>{(spec) => <TileView env={env} spec={spec} boxW={p.boxW} boxH={p.boxH} onGone={onGone} />}</For>
 			<For each={p.hits()}>
 				{(h) => (
 					<For each={h.rects}>
-						{(r) => <div style={{ ...place(r), backgroundColor: p.currentHit() === h.id ? p.hitCurColor : p.hitColor, borderRadius: 2, pointerEvents: "none" }} />}
+						{(r) => (
+							<div
+								style={{
+									...place(r),
+									backgroundColor: p.currentHit() === h.id ? p.hitCurColor : p.hitColor,
+									borderRadius: 2,
+									pointerEvents: "none",
+								}}
+							/>
+						)}
 					</For>
 				)}
 			</For>
-			<For each={p.selection()}>
-				{(r) => <div style={{ ...place(r), backgroundColor: p.selColor(), pointerEvents: "none" }} />}
-			</For>
+			<For each={p.selection()}>{(r) => <div style={{ ...place(r), backgroundColor: p.selColor(), pointerEvents: "none" }} />}</For>
 			<Show when={p.debugWords()}>
 				<For each={p.debugWords()!}>
-					{(r) => <div style={{ ...place(r), borderWidth: 1, borderColor: "#e5484d", backgroundColor: "#e5484d1f", pointerEvents: "none" }} />}
+					{(r) => (
+						<div
+							style={{
+								...place(r),
+								borderWidth: 1,
+								borderColor: "#e5484d",
+								backgroundColor: "#e5484d1f",
+								pointerEvents: "none",
+							}}
+						/>
+					)}
 				</For>
 			</Show>
 			<For each={p.links()}>
 				{(l) => (
 					<div
 						onClick={(e) => p.onLink(l, e)}
-						style={{ ...place(l.rect), cursor: "pointer", pointerEvents: "auto", hover: { backgroundColor: "rgba(60, 120, 230, 0.14)" } }}
+						style={{
+							...place(l.rect),
+							cursor: "pointer",
+							pointerEvents: "auto",
+							hover: { backgroundColor: "rgba(60, 120, 230, 0.14)" },
+						}}
 					/>
 				)}
 			</For>
 			{/* the plugins' overlays sit ABOVE the link zones: a plugin's hover / click zone over a citation link (academic popovers) must win the pointer; the links draw first and still catch everything the overlays leave free */}
 			{p.overlays()}
 			{/* the web reader's ring-1 ring-black/10 */}
-			<div style={{ position: "absolute", left: 0, top: 0, width: p.boxW(), height: p.boxH(), borderWidth: 1, borderColor: "rgba(0, 0, 0, 0.1)", pointerEvents: "none" }} />
+			<div
+				style={{
+					position: "absolute",
+					left: 0,
+					top: 0,
+					width: p.boxW(),
+					height: p.boxH(),
+					borderWidth: 1,
+					borderColor: "rgba(0, 0, 0, 0.1)",
+					pointerEvents: "none",
+				}}
+			/>
 		</div>
 	);
 }

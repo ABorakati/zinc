@@ -2,19 +2,103 @@
 // Extra-field parsing. Behaviour modelled on Better BibTeX (MIT, see NOTICE); written from its documented behaviour.
 
 const SPECIAL: Record<string, string> = {
-	ø: "o", Ø: "O", ł: "l", Ł: "L", ß: "ss", æ: "ae", Æ: "AE", œ: "oe", Œ: "OE", đ: "d", Đ: "D", ð: "d", Ð: "D", þ: "th", Þ: "Th",
-	ı: "i", ħ: "h", Ħ: "H", ŋ: "ng", Ŋ: "NG", ĸ: "k", ŧ: "t", Ŧ: "T", "’": "'", "‘": "'", "“": '"', "”": '"',
-	"–": "-", "—": "-", " ": " ",
+	ø: "o",
+	Ø: "O",
+	ł: "l",
+	Ł: "L",
+	ß: "ss",
+	æ: "ae",
+	Æ: "AE",
+	œ: "oe",
+	Œ: "OE",
+	đ: "d",
+	Đ: "D",
+	ð: "d",
+	Ð: "D",
+	þ: "th",
+	Þ: "Th",
+	ı: "i",
+	ħ: "h",
+	Ħ: "H",
+	ŋ: "ng",
+	Ŋ: "NG",
+	ĸ: "k",
+	ŧ: "t",
+	Ŧ: "T",
+	"’": "'",
+	"‘": "'",
+	"“": '"',
+	"”": '"',
+	"–": "-",
+	"—": "-",
+	" ": " ",
 };
 const GERMAN: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", Ä: "Ae", Ö: "Oe", Ü: "Ue" };
 const CYRILLIC: Record<string, string> = {
-	а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o",
-	п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e",
-	ю: "yu", я: "ya", і: "i", ї: "yi", є: "ye", ґ: "g",
+	а: "a",
+	б: "b",
+	в: "v",
+	г: "g",
+	д: "d",
+	е: "e",
+	ё: "e",
+	ж: "zh",
+	з: "z",
+	и: "i",
+	й: "i",
+	к: "k",
+	л: "l",
+	м: "m",
+	н: "n",
+	о: "o",
+	п: "p",
+	р: "r",
+	с: "s",
+	т: "t",
+	у: "u",
+	ф: "f",
+	х: "kh",
+	ц: "ts",
+	ч: "ch",
+	ш: "sh",
+	щ: "shch",
+	ъ: "",
+	ы: "y",
+	ь: "",
+	э: "e",
+	ю: "yu",
+	я: "ya",
+	і: "i",
+	ї: "yi",
+	є: "ye",
+	ґ: "g",
 };
 const GREEK: Record<string, string> = {
-	α: "a", β: "b", γ: "g", δ: "d", ε: "e", ζ: "z", η: "e", θ: "th", ι: "i", κ: "k", λ: "l", μ: "m", ν: "n", ξ: "x", ο: "o", π: "p",
-	ρ: "r", σ: "s", ς: "s", τ: "t", υ: "u", φ: "ph", χ: "ch", ψ: "ps", ω: "o",
+	α: "a",
+	β: "b",
+	γ: "g",
+	δ: "d",
+	ε: "e",
+	ζ: "z",
+	η: "e",
+	θ: "th",
+	ι: "i",
+	κ: "k",
+	λ: "l",
+	μ: "m",
+	ν: "n",
+	ξ: "x",
+	ο: "o",
+	π: "p",
+	ρ: "r",
+	σ: "s",
+	ς: "s",
+	τ: "t",
+	υ: "u",
+	φ: "ph",
+	χ: "ch",
+	ψ: "ps",
+	ω: "o",
 };
 
 /** Unicode -> ASCII (BBT: transliterate / fold). Characters with no ASCII form become U+FFFD (removed as unsafe by the key step). */
@@ -49,7 +133,13 @@ export function nopunct(text: string, dash = "-"): string {
 export function stripHtml(s: string): string {
 	if (!s) return "";
 	if (!s.includes("<")) return s;
-	return s.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+	return s
+		.replace(/<[^>]*>/g, "")
+		.replace(/&amp;/g, "&")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'");
 }
 
 export const DEFAULT_SKIP_WORDS =
@@ -71,7 +161,9 @@ export function titleWords(title: string, o: TitleWordOptions): string[] {
 		.map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
 		.filter((w) => w && !o.skipWords.has(w.toLowerCase()));
 	if (o.nopunct) words = words.map((w) => nopunct(w, ""));
-	words = words.filter((w) => w && !(Array.from(w).length === 1 && !/^\d+$/.test(w) && !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(w)));
+	words = words.filter(
+		(w) => w && !(Array.from(w).length === 1 && !/^\d+$/.test(w) && !/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(w)),
+	);
 	if (o.skipWords.size) words = words.filter((w) => !o.skipWords.has(w.toLowerCase()));
 	if (o.fold) words = words.map((w) => transliterate(w));
 	return words;

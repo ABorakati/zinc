@@ -71,11 +71,16 @@ class Bad extends Error {
 }
 
 /** SQLite refused the write because another process (the app, a second host) holds the library. */
-export const isBusyError = (e: unknown): boolean => /SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(String((e as { code?: unknown })?.code ?? "") + " " + (e instanceof Error ? e.message : String(e)));
+export const isBusyError = (e: unknown): boolean =>
+	/SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(
+		String((e as { code?: unknown })?.code ?? "") + " " + (e instanceof Error ? e.message : String(e)),
+	);
 
 /** What a failed save answers: 503 (the extension may retry) when the library is busy, else Zotero's plain 500. */
 function failure(e: unknown): Response {
-	return isBusyError(e) ? errorReply(503, "The Zinc library is busy (another program is writing to it). Try again in a moment.") : reply(500);
+	return isBusyError(e)
+		? errorReply(503, "The Zinc library is busy (another program is writing to it). Try again in a moment.")
+		: reply(500);
 }
 
 const mediaType = (req: Request) => (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
@@ -131,12 +136,14 @@ function metadata(req: Request): Record<string, any> {
 export function browserGuard(req: Request, url: URL): Response | null {
 	const h = req.headers;
 	if (isWebRequest(req)) {
-		if (url.pathname === "/connector/ping" && (h.get("sec-fetch-mode") === "navigate" || isIntegrationOrigin(h.get("origin")))) return null;
+		if (url.pathname === "/connector/ping" && (h.get("sec-fetch-mode") === "navigate" || isIntegrationOrigin(h.get("origin"))))
+			return null;
 		return new Response(null, { status: 403 });
 	}
 	// a browser-looking client with no extension origin and no connector header: Zotero refuses it as well
 	const isBrowser = (h.get("user-agent") ?? "").startsWith("Mozilla/");
-	if (!isBrowser || h.has("x-zotero-connector-api-version") || h.has("zotero-allowed-request") || isExtensionOrigin(h.get("origin"))) return null;
+	if (!isBrowser || h.has("x-zotero-connector-api-version") || h.has("zotero-allowed-request") || isExtensionOrigin(h.get("origin")))
+		return null;
 	if (url.pathname === "/connector/ping" && h.get("sec-fetch-mode") === "navigate") return null;
 	return new Response(null, { status: 403 });
 }
@@ -357,7 +364,11 @@ export const saveStandaloneAttachment: Handler = async (req, { db, url }) => {
 		});
 		session.addItem(db, String(meta.url ?? key), key);
 		const canRecognize = contentType === "application/pdf";
-		if (canRecognize) session.autoRecognize = deps.recognize(db, key).then(() => bumpRev()).catch((e) => console.error("[connector] recognize failed:", e instanceof Error ? e.message : e));
+		if (canRecognize)
+			session.autoRecognize = deps
+				.recognize(db, key)
+				.then(() => bumpRev())
+				.catch((e) => console.error("[connector] recognize failed:", e instanceof Error ? e.message : e));
 		bumpRev();
 		return jsonReply(201, { canRecognize });
 	} catch (e) {
@@ -374,7 +385,9 @@ export const getRecognizedItem: Handler = async (req, { db }) => {
 	if (!s) return errorReply(400, "SESSION_NOT_FOUND");
 	await s.autoRecognize;
 	const first = [...s.items.values()][0];
-	const parent = first ? (db.query("SELECT parent_key FROM items WHERE key = ?").get(first) as { parent_key: string | null } | null)?.parent_key : null;
+	const parent = first
+		? (db.query("SELECT parent_key FROM items WHERE key = ?").get(first) as { parent_key: string | null } | null)?.parent_key
+		: null;
 	const d = parent ? getItemDetail(db, parent) : null;
 	if (!d) return reply(204);
 	return jsonReply(200, { title: String(d.data.title ?? ""), itemType: d.data.itemType });
@@ -429,7 +442,15 @@ export const importHandler: Handler = async (req, { db, url }) => {
 	const format = detectFormat(text);
 	if (!format) return reply(400);
 	const parsed: { items: ParsedItem[] } =
-		format === "bibtex" ? parseBibtex(text) : format === "ris" ? parseRis(text) : format === "csljson" ? parseCslJson(text) : format === "pubmed-nbib" ? parseNbib(text) : parseEndnoteXml(text);
+		format === "bibtex"
+			? parseBibtex(text)
+			: format === "ris"
+				? parseRis(text)
+				: format === "csljson"
+					? parseCslJson(text)
+					: format === "pubmed-nbib"
+						? parseNbib(text)
+						: parseEndnoteXml(text);
 	if (!parsed.items.length) return reply(400);
 	const session = newSession(url.searchParams.get("session") ?? undefined, "import");
 	if (session instanceof Response) return session;
@@ -463,7 +484,8 @@ export const installStyle: Handler = async (req, { db, url }) => {
 	const id = xml.match(/<id>\s*([^<]+?)\s*<\/id>/)?.[1];
 	const title = xml.match(/<info>[\s\S]*?<title>\s*([^<]+?)\s*<\/title>/)?.[1];
 	const styleId = id?.replace(/\/+$/, "").split("/").pop() ?? "";
-	if (!/<style[\s>]/.test(xml) || !title || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(styleId)) return reply(400, "text/plain", "Invalid style\n");
+	if (!/<style[\s>]/.test(xml) || !title || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(styleId))
+		return reply(400, "text/plain", "Invalid style\n");
 	void url;
 	const dir = join(citeService(db).store.dir, "styles");
 	mkdirSync(dir, { recursive: true });

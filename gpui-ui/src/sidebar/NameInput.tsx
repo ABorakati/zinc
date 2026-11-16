@@ -18,9 +18,16 @@ export function NameInput(p: { value: string; placeholder?: string; onDone: (v: 
 				value={p.value}
 				placeholder={p.placeholder}
 				autoFocus
-				onChange={(e) => { cur = (e as { value?: string }).value ?? ""; }}
-				onSubmit={(e) => { cur = (e as { value?: string }).value ?? cur; done(true); }}
-				onKeyDown={(e) => { if (e.key === "escape") done(false); }}
+				onChange={(e) => {
+					cur = (e as { value?: string }).value ?? "";
+				}}
+				onSubmit={(e) => {
+					cur = (e as { value?: string }).value ?? cur;
+					done(true);
+				}}
+				onKeyDown={(e) => {
+					if (e.key === "escape") done(false);
+				}}
 				onBlur={() => done(true)}
 				style={{ flexGrow: 1, minWidth: 0, height: 18, fontSize: 13, fontFamily: "Inter", color: tok("foreground") }}
 				theme={{

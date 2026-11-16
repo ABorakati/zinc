@@ -3,8 +3,23 @@ import type { Creator, ZoteroItemData } from "../api-types";
 import { parseYear } from "../db";
 import { toCslDate } from "../cite/csl";
 import {
-	appendExtra, creatorFamilyGiven, creatorLast, creatorTypeFor, dateParts, getBase, hasField, isSingleField, normDoi,
-	normalizeDate, monthNum, parseName, setBase, setFirst, splitKeywords, textToNoteHtml, type ParsedItem,
+	appendExtra,
+	creatorFamilyGiven,
+	creatorLast,
+	creatorTypeFor,
+	dateParts,
+	getBase,
+	hasField,
+	isSingleField,
+	normDoi,
+	normalizeDate,
+	monthNum,
+	parseName,
+	setBase,
+	setFirst,
+	splitKeywords,
+	textToNoteHtml,
+	type ParsedItem,
 } from "./common";
 import { fromLatex, toLatex } from "./latex";
 
@@ -17,8 +32,18 @@ export interface BibRecord {
 }
 
 const MONTH_MACROS: Record<string, string> = {
-	jan: "January", feb: "February", mar: "March", apr: "April", may: "May", jun: "June",
-	jul: "July", aug: "August", sep: "September", oct: "October", nov: "November", dec: "December",
+	jan: "January",
+	feb: "February",
+	mar: "March",
+	apr: "April",
+	may: "May",
+	jun: "June",
+	jul: "July",
+	aug: "August",
+	sep: "September",
+	oct: "October",
+	nov: "November",
+	dec: "December",
 };
 
 /** Tokenise BibTeX text into raw records. Malformed entries are skipped and reported in errors. */
@@ -234,13 +259,40 @@ function bibNames(raw: string, creatorType: string): Creator[] {
 }
 
 const TYPE_MAP: Record<string, string> = {
-	article: "journalArticle", book: "book", booklet: "book", inbook: "bookSection", incollection: "bookSection",
-	inproceedings: "conferencePaper", conference: "conferencePaper", proceedings: "book", mvproceedings: "book",
-	phdthesis: "thesis", mastersthesis: "thesis", thesis: "thesis", techreport: "report", report: "report", manual: "report",
-	misc: "document", online: "webpage", electronic: "webpage", www: "webpage", unpublished: "manuscript", patent: "patent",
-	software: "computerProgram", dataset: "dataset", periodical: "magazineArticle", suppperiodical: "journalArticle",
-	collection: "book", mvbook: "book", mvcollection: "book", bookinbook: "bookSection", suppbook: "bookSection",
-	suppcollection: "bookSection", review: "journalArticle", standard: "standard", set: "document",
+	article: "journalArticle",
+	book: "book",
+	booklet: "book",
+	inbook: "bookSection",
+	incollection: "bookSection",
+	inproceedings: "conferencePaper",
+	conference: "conferencePaper",
+	proceedings: "book",
+	mvproceedings: "book",
+	phdthesis: "thesis",
+	mastersthesis: "thesis",
+	thesis: "thesis",
+	techreport: "report",
+	report: "report",
+	manual: "report",
+	misc: "document",
+	online: "webpage",
+	electronic: "webpage",
+	www: "webpage",
+	unpublished: "manuscript",
+	patent: "patent",
+	software: "computerProgram",
+	dataset: "dataset",
+	periodical: "magazineArticle",
+	suppperiodical: "journalArticle",
+	collection: "book",
+	mvbook: "book",
+	mvcollection: "book",
+	bookinbook: "bookSection",
+	suppbook: "bookSection",
+	suppcollection: "bookSection",
+	review: "journalArticle",
+	standard: "standard",
+	set: "document",
 };
 
 function clean(raw: string | undefined): string {
@@ -314,7 +366,16 @@ export function bibRecordToItem(r: BibRecord): ParsedItem | null {
 	setBase(data, "url", url);
 	if (itemType === "thesis") {
 		const t = clean(f.type);
-		const tt = r.type === "phdthesis" ? "PhD thesis" : r.type === "mastersthesis" ? "Master's thesis" : /^phd/i.test(t) ? "PhD thesis" : /^(ma|master|mathesis)/i.test(t) ? "Master's thesis" : t;
+		const tt =
+			r.type === "phdthesis"
+				? "PhD thesis"
+				: r.type === "mastersthesis"
+					? "Master's thesis"
+					: /^phd/i.test(t)
+						? "PhD thesis"
+						: /^(ma|master|mathesis)/i.test(t)
+							? "Master's thesis"
+							: t;
 		setBase(data, "type", tt);
 	} else if (f.type) setFirst(data, ["type"], clean(f.type));
 	if (itemType === "preprint") {
@@ -369,20 +430,55 @@ export function parseBibtex(text: string): { items: ParsedItem[]; errors: string
 export type BibFlavor = "bibtex" | "biblatex";
 
 const STOP_WORDS = new Set([
-	"a", "an", "the", "on", "of", "in", "for", "and", "or", "to", "with", "from", "by", "at", "is", "are", "as", "its", "into",
-	"using", "towards", "toward", "via", "their", "this", "that", "do", "does", "how", "what", "why",
+	"a",
+	"an",
+	"the",
+	"on",
+	"of",
+	"in",
+	"for",
+	"and",
+	"or",
+	"to",
+	"with",
+	"from",
+	"by",
+	"at",
+	"is",
+	"are",
+	"as",
+	"its",
+	"into",
+	"using",
+	"towards",
+	"toward",
+	"via",
+	"their",
+	"this",
+	"that",
+	"do",
+	"does",
+	"how",
+	"what",
+	"why",
 ]);
 
-const ascii = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[øØ]/g, "o").replace(/[łŁ]/g, "l").replace(/ß/g, "ss").replace(/[æÆ]/g, "ae");
+const ascii = (s: string) =>
+	s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[øØ]/g, "o").replace(/[łŁ]/g, "l").replace(/ß/g, "ss").replace(/[æÆ]/g, "ae");
 
 export function citationKeyFor(data: ZoteroItemData): string {
 	const creators = data.creators ?? [];
 	const c = creators.find((x) => x.creatorType === "author") ?? creators.find((x) => x.creatorType === "editor") ?? creators[0];
 	let author = c ? creatorLast(c) : "";
 	if (c && isSingleField(c)) author = author.split(/\s+/)[0] ?? author; // "World Health Organization" -> world
-	author = ascii(author).toLowerCase().replace(/[^a-z0-9]/g, "");
+	author = ascii(author)
+		.toLowerCase()
+		.replace(/[^a-z0-9]/g, "");
 	const year = parseYear(data.date) ?? "";
-	const words = ascii(String(data.title ?? "")).toLowerCase().match(/[a-z0-9]+/g) ?? [];
+	const words =
+		ascii(String(data.title ?? ""))
+			.toLowerCase()
+			.match(/[a-z0-9]+/g) ?? [];
 	const word = words.find((w) => w.length > 2 && !STOP_WORDS.has(w)) ?? words[0] ?? "";
 	return `${author}${year}${word}` || data.key;
 }
@@ -421,25 +517,42 @@ const MONTH_ABBR = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep
 function entryType(data: ZoteroItemData, flavor: BibFlavor): { type: string; thesisType?: string } {
 	const bl = flavor === "biblatex";
 	switch (data.itemType) {
-		case "journalArticle": case "magazineArticle": case "newspaperArticle": return { type: "article" };
-		case "book": return { type: "book" };
-		case "bookSection": return { type: "incollection" };
-		case "conferencePaper": return { type: "inproceedings" };
+		case "journalArticle":
+		case "magazineArticle":
+		case "newspaperArticle":
+			return { type: "article" };
+		case "book":
+			return { type: "book" };
+		case "bookSection":
+			return { type: "incollection" };
+		case "conferencePaper":
+			return { type: "inproceedings" };
 		case "thesis": {
 			const t = String(data.thesisType ?? data.type ?? "");
 			const master = /master|msc|\bma\b|mphil/i.test(t);
 			if (bl) return { type: "thesis", thesisType: master ? "mathesis" : "phdthesis" };
 			return { type: master ? "mastersthesis" : "phdthesis" };
 		}
-		case "report": return { type: bl ? "report" : "techreport" };
-		case "webpage": case "blogPost": case "forumPost": return { type: bl ? "online" : "misc" };
-		case "manuscript": return { type: "unpublished" };
-		case "patent": return { type: bl ? "patent" : "misc" };
-		case "computerProgram": return { type: bl ? "software" : "misc" };
-		case "dataset": return { type: bl ? "dataset" : "misc" };
-		case "preprint": return { type: bl ? "online" : "misc" };
-		case "standard": return { type: bl ? "standard" : "misc" };
-		default: return { type: "misc" };
+		case "report":
+			return { type: bl ? "report" : "techreport" };
+		case "webpage":
+		case "blogPost":
+		case "forumPost":
+			return { type: bl ? "online" : "misc" };
+		case "manuscript":
+			return { type: "unpublished" };
+		case "patent":
+			return { type: bl ? "patent" : "misc" };
+		case "computerProgram":
+			return { type: bl ? "software" : "misc" };
+		case "dataset":
+			return { type: bl ? "dataset" : "misc" };
+		case "preprint":
+			return { type: bl ? "online" : "misc" };
+		case "standard":
+			return { type: bl ? "standard" : "misc" };
+		default:
+			return { type: "misc" };
 	}
 }
 
@@ -468,7 +581,9 @@ export function bibEntry(item: ExportItem, key: string, flavor: BibFlavor): stri
 	const { type, thesisType } = entryType(d, flavor);
 	const creators = d.creators ?? [];
 	const NOT_AUTHOR = ["editor", "seriesEditor", "translator", "bookAuthor", "reviewedAuthor"];
-	const authorish = creators.some((c) => c.creatorType === "author") ? creators.filter((c) => c.creatorType === "author") : creators.filter((c) => !NOT_AUTHOR.includes(c.creatorType));
+	const authorish = creators.some((c) => c.creatorType === "author")
+		? creators.filter((c) => c.creatorType === "author")
+		: creators.filter((c) => !NOT_AUTHOR.includes(c.creatorType));
 	const authors = nameList(authorish);
 	if (authors) fields.push(["author", authors]);
 	const editors = nameList(creators.filter((c) => c.creatorType === "editor" || c.creatorType === "seriesEditor"));
@@ -488,11 +603,28 @@ export function bibEntry(item: ExportItem, key: string, flavor: BibFlavor): stri
 	if (type === "inproceedings") put(bl ? "eventtitle" : "organization", String(d.conferenceName ?? ""));
 	put("series", getBase(d, "series") || String(d.seriesTitle ?? ""));
 	put("volume", String(d.volume ?? ""));
-	const number = type === "article" ? String(d.issue ?? "") : String(d.reportNumber ?? d.patentNumber ?? d.issue ?? d.seriesNumber ?? d.number ?? "");
+	const number =
+		type === "article"
+			? String(d.issue ?? "")
+			: String(d.reportNumber ?? d.patentNumber ?? d.issue ?? d.seriesNumber ?? d.number ?? "");
 	put("number", number);
-	put("pages", String(d.pages ?? "").replace(/[–—]/g, "--").replace(/(?<!-)-(?!-)/g, "--"));
+	put(
+		"pages",
+		String(d.pages ?? "")
+			.replace(/[–—]/g, "--")
+			.replace(/(?<!-)-(?!-)/g, "--"),
+	);
 	const publisher = getBase(d, "publisher");
-	put(type === "phdthesis" || type === "mastersthesis" ? "school" : bl && (type === "thesis" || type === "report") ? "institution" : type === "techreport" ? "institution" : "publisher", publisher);
+	put(
+		type === "phdthesis" || type === "mastersthesis"
+			? "school"
+			: bl && (type === "thesis" || type === "report")
+				? "institution"
+				: type === "techreport"
+					? "institution"
+					: "publisher",
+		publisher,
+	);
 	put(bl ? "location" : "address", String(d.place ?? ""));
 	put("edition", String(d.edition ?? ""));
 	// date
@@ -520,7 +652,11 @@ export function bibEntry(item: ExportItem, key: string, flavor: BibFlavor): stri
 	put("shorttitle", String(d.shortTitle ?? ""));
 	if (d.itemType === "preprint" && d.number) {
 		put("eprint", String(d.number), true);
-		put(bl ? "eprinttype" : "archiveprefix", /arxiv/i.test(String(d.publisher ?? d.repository ?? "")) ? "arXiv" : String(d.publisher ?? d.repository ?? ""), true);
+		put(
+			bl ? "eprinttype" : "archiveprefix",
+			/arxiv/i.test(String(d.publisher ?? d.repository ?? "")) ? "arXiv" : String(d.publisher ?? d.repository ?? ""),
+			true,
+		);
 	}
 	if (item.tags.length) put("keywords", item.tags.join(", "));
 	const extra = String(d.extra ?? "")

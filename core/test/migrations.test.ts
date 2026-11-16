@@ -23,7 +23,10 @@ afterEach(() => {
 	}
 });
 
-const backups = () => readdirSync(dir).filter((f) => /^library\.backup-v/.test(f)).sort();
+const backups = () =>
+	readdirSync(dir)
+		.filter((f) => /^library\.backup-v/.test(f))
+		.sort();
 const version = (db: Database) => (db.query("SELECT value FROM meta WHERE name = 'schema_version'").get() as { value: string }).value;
 const itemRows = (db: Database) => db.query("SELECT key, item_type, title, publication, data FROM items ORDER BY key").all();
 const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
@@ -32,7 +35,14 @@ const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("
 function makeV1Library(): void {
 	const db = openDb(path);
 	for (let i = 0; i < 5; i++) {
-		const data = { key: `ITEM000${i}`, itemType: "journalArticle", title: `Paper ${i}`, publicationTitle: "Nature", tags: [], collections: [] };
+		const data = {
+			key: `ITEM000${i}`,
+			itemType: "journalArticle",
+			title: `Paper ${i}`,
+			publicationTitle: "Nature",
+			tags: [],
+			collections: [],
+		};
 		db.run(
 			"INSERT INTO items(key, item_type, title, creators_summary, publication, data, date_added, date_modified, deleted) VALUES(?, 'journalArticle', ?, '', 'Nature', ?, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 0)",
 			[data.key, data.title, JSON.stringify(data)],
@@ -60,7 +70,17 @@ describe("fresh library", () => {
 		const db = openDb(path);
 		expect(version(db)).toBe(String(SCHEMA_HEAD));
 		const names = new Set((db.query("SELECT name FROM sqlite_master").all() as { name: string }[]).map((r) => r.name));
-		for (const n of ["items", "sync_outbox", "websync_versions", "bbt_keys", "items_top_title", "items_top_added", "sync_items_ai", "bbt_dirty_ai", "search"]) {
+		for (const n of [
+			"items",
+			"sync_outbox",
+			"websync_versions",
+			"bbt_keys",
+			"items_top_title",
+			"items_top_added",
+			"sync_items_ai",
+			"bbt_dirty_ai",
+			"search",
+		]) {
 			expect(names.has(n)).toBe(true);
 		}
 		expect((db.query("PRAGMA journal_mode").get() as { journal_mode: string }).journal_mode).toBe("wal");
@@ -205,7 +225,12 @@ describe("failures", () => {
 
 	test("a failing first-ever run (empty file) says no backup was needed", () => {
 		const db = new Database(path);
-		const list = [MIGRATIONS[0], create(2, "boom", () => { throw new Error("nope"); })];
+		const list = [
+			MIGRATIONS[0],
+			create(2, "boom", () => {
+				throw new Error("nope");
+			}),
+		];
 		try {
 			migrate(db, path, { migrations: list });
 			throw new Error("should have thrown");
@@ -249,7 +274,12 @@ describe("reopen", () => {
 		openDb(path).close();
 		const n = backups().length;
 		let ran = 0;
-		const spy: Migration[] = MIGRATIONS.map((m) => ({ ...m, up: () => { ran++; } }));
+		const spy: Migration[] = MIGRATIONS.map((m) => ({
+			...m,
+			up: () => {
+				ran++;
+			},
+		}));
 		for (let i = 0; i < 3; i++) openDb(path).close();
 		const db = new Database(path);
 		expect(migrate(db, path, { migrations: spy })).toMatchObject({ applied: [] });

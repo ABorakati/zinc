@@ -122,24 +122,63 @@ mkdirSync(join(tmpdir(), "zn-memory"), { recursive: true });
 const ps1 = join(tmpdir(), "zn-memory", "measure.ps1");
 writeFileSync(ps1, PS1);
 
-interface Proc { pid: number; name: string; privateMB: number; wsMB: number }
-interface Run { windowMs: number | null; exitedEarly: boolean; gracefulClose: boolean; procs: Proc[]; coreProc: Proc | null; coreInProc: boolean }
+interface Proc {
+	pid: number;
+	name: string;
+	privateMB: number;
+	wsMB: number;
+}
+interface Run {
+	windowMs: number | null;
+	exitedEarly: boolean;
+	gracefulClose: boolean;
+	procs: Proc[];
+	coreProc: Proc | null;
+	coreInProc: boolean;
+}
 
 async function measure(i: number): Promise<{ r: Run; err: string; marks: Record<string, number> }> {
 	const logBase = join(tmpdir(), "zn-memory", `run${i}`);
 	const outFile = join(tmpdir(), "zn-memory", `run${i}.json`);
 	for (const f of [outFile, `${outFile}.err`, `${logBase}.out.log`, `${logBase}.err.log`]) writeFileSync(f, ""); // Bun.file stdout overwrites in place without truncating
 	const p = Bun.spawn(
-		["pwsh", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ps1,
-			"-Bun", process.execPath, "-Entry", entry, "-Cwd", root, "-Url", url, "-WaitS", String(waitS), "-Port", String(port), "-LogBase", logBase, "-Db", db],
+		[
+			"pwsh",
+			"-NoProfile",
+			"-NonInteractive",
+			"-ExecutionPolicy",
+			"Bypass",
+			"-File",
+			ps1,
+			"-Bun",
+			process.execPath,
+			"-Entry",
+			entry,
+			"-Cwd",
+			root,
+			"-Url",
+			url,
+			"-WaitS",
+			String(waitS),
+			"-Port",
+			String(port),
+			"-LogBase",
+			logBase,
+			"-Db",
+			db,
+		],
 		{ stdout: Bun.file(outFile), stderr: Bun.file(`${outFile}.err`) }, // files, not pipes (a child that outlives us must not hold them)
 	);
 	const code = await p.exited;
 	const raw = readFileSync(outFile, "utf8").trim();
-	if (code !== 0 || !raw) throw new Error(`measure.ps1 failed (exit ${code}): ${raw}\n${existsSync(`${outFile}.err`) ? readFileSync(`${outFile}.err`, "utf8") : ""}`);
+	if (code !== 0 || !raw)
+		throw new Error(
+			`measure.ps1 failed (exit ${code}): ${raw}\n${existsSync(`${outFile}.err`) ? readFileSync(`${outFile}.err`, "utf8") : ""}`,
+		);
 	const errLog = existsSync(`${logBase}.err.log`) ? readFileSync(`${logBase}.err.log`, "utf8").trim() : "";
 	const marks: Record<string, number> = {};
-	if (existsSync(`${logBase}.out.log`)) for (const m of readFileSync(`${logBase}.out.log`, "utf8").matchAll(/\[zn-t\] (\S+) (\d+)/g)) marks[m[1]!] = Number(m[2]);
+	if (existsSync(`${logBase}.out.log`))
+		for (const m of readFileSync(`${logBase}.out.log`, "utf8").matchAll(/\[zn-t\] (\S+) (\d+)/g)) marks[m[1]!] = Number(m[2]);
 	return { r: JSON.parse(raw.split("\n").pop()!) as Run, err: errLog, marks };
 }
 
@@ -147,10 +186,35 @@ const sum = (a: Proc[], k: "privateMB" | "wsMB") => +a.reduce((s, p) => s + p[k]
 const f = (n: number | null | undefined, d = 1) => (n == null ? "-" : n.toFixed(d));
 const avg = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)]! : null);
-const rows: string[][] = [["run", "window ms", "colls ms", "items ms", "procs", "GPUI private MB", "GPUI WS MB", "core private MB", "core WS MB", "total private MB", "total WS MB", "closed"]];
-const nums = { win: [] as number[], colls: [] as number[], items: [] as number[], priv: [] as number[], ws: [] as number[], cpriv: [] as number[], cws: [] as number[] };
+const rows: string[][] = [
+	[
+		"run",
+		"window ms",
+		"colls ms",
+		"items ms",
+		"procs",
+		"GPUI private MB",
+		"GPUI WS MB",
+		"core private MB",
+		"core WS MB",
+		"total private MB",
+		"total WS MB",
+		"closed",
+	],
+];
+const nums = {
+	win: [] as number[],
+	colls: [] as number[],
+	items: [] as number[],
+	priv: [] as number[],
+	ws: [] as number[],
+	cpriv: [] as number[],
+	cws: [] as number[],
+};
 
-console.log(`entry=${entry} mode=${db ? `in-process core, ZN_DB=${db}` : `external core, ZN_URL=${url}`} wait=${waitS}s runs=${runs} (a visible GPUI window opens each run; do not touch it)`);
+console.log(
+	`entry=${entry} mode=${db ? `in-process core, ZN_DB=${db}` : `external core, ZN_URL=${url}`} wait=${waitS}s runs=${runs} (a visible GPUI window opens each run; do not touch it)`,
+);
 for (let i = 1; i <= runs; i++) {
 	const { r, err, marks } = await measure(i);
 	const priv = sum(r.procs, "privateMB");
@@ -161,24 +225,52 @@ for (let i = 1; i <= runs; i++) {
 	if (r.windowMs != null) nums.win.push(r.windowMs);
 	if (marks["collections-loaded"] != null) nums.colls.push(marks["collections-loaded"]!);
 	if ((marks["first-items"] ?? marks["items-loaded"]) != null) nums.items.push((marks["first-items"] ?? marks["items-loaded"])!);
-	if (r.procs.length) { nums.priv.push(priv); nums.ws.push(ws); }
+	if (r.procs.length) {
+		nums.priv.push(priv);
+		nums.ws.push(ws);
+	}
 	if (cp != null) nums.cpriv.push(cp);
 	if (cw != null) nums.cws.push(cw);
 	rows.push([
-		String(i), r.windowMs == null ? "no window" : String(r.windowMs), String(marks["collections-loaded"] ?? "-"), String((marks["first-items"] ?? marks["items-loaded"]) ?? "-"),
-		String(r.procs.length), f(priv), f(ws), f(cp), f(cw),
-		f(cp == null ? priv : priv + cp), f(cw == null ? ws : ws + cw), r.exitedEarly ? "EXITED EARLY" : r.gracefulClose ? "graceful" : "killed",
+		String(i),
+		r.windowMs == null ? "no window" : String(r.windowMs),
+		String(marks["collections-loaded"] ?? "-"),
+		String(marks["first-items"] ?? marks["items-loaded"] ?? "-"),
+		String(r.procs.length),
+		f(priv),
+		f(ws),
+		f(cp),
+		f(cw),
+		f(cp == null ? priv : priv + cp),
+		f(cw == null ? ws : ws + cw),
+		r.exitedEarly ? "EXITED EARLY" : r.gracefulClose ? "graceful" : "killed",
 	]);
-	console.log(`run ${i}: window=${r.windowMs ?? "none"} ${r.procs.map((p) => `${p.name}#${p.pid} ${p.privateMB}/${p.wsMB}`).join(", ") || "(no process left)"} | core ${r.coreInProc ? "in-process" : r.coreProc ? `${r.coreProc.name}#${r.coreProc.pid}` : "not found"} | marks ${JSON.stringify(marks)}`);
+	console.log(
+		`run ${i}: window=${r.windowMs ?? "none"} ${r.procs.map((p) => `${p.name}#${p.pid} ${p.privateMB}/${p.wsMB}`).join(", ") || "(no process left)"} | core ${r.coreInProc ? "in-process" : r.coreProc ? `${r.coreProc.name}#${r.coreProc.pid}` : "not found"} | marks ${JSON.stringify(marks)}`,
+	);
 	if (r.exitedEarly && err) console.log(`  stderr: ${err.split("\n").slice(-8).join("\n          ")}`);
 	await Bun.sleep(1500);
 }
 
-rows.push(["avg", f(avg(nums.win), 0), f(avg(nums.colls), 0), f(avg(nums.items), 0), "", f(avg(nums.priv)), f(avg(nums.ws)), f(avg(nums.cpriv)), f(avg(nums.cws)),
-	f(avg(nums.priv) == null ? null : avg(nums.priv)! + (avg(nums.cpriv) ?? 0)), f(avg(nums.ws) == null ? null : avg(nums.ws)! + (avg(nums.cws) ?? 0)), ""]);
+rows.push([
+	"avg",
+	f(avg(nums.win), 0),
+	f(avg(nums.colls), 0),
+	f(avg(nums.items), 0),
+	"",
+	f(avg(nums.priv)),
+	f(avg(nums.ws)),
+	f(avg(nums.cpriv)),
+	f(avg(nums.cws)),
+	f(avg(nums.priv) == null ? null : avg(nums.priv)! + (avg(nums.cpriv) ?? 0)),
+	f(avg(nums.ws) == null ? null : avg(nums.ws)! + (avg(nums.cws) ?? 0)),
+	"",
+]);
 
 if (startupOnly) {
-	console.log(`\nstartup (ms since process start), ${nums.win.length} runs: time-to-window median ${f(median(nums.win), 0)} (avg ${f(avg(nums.win), 0)}, min ${f(Math.min(...nums.win), 0)}), collections ${f(median(nums.colls), 0)}, first items median ${f(median(nums.items), 0)} (avg ${f(avg(nums.items), 0)}, min ${f(Math.min(...nums.items), 0)})`);
+	console.log(
+		`\nstartup (ms since process start), ${nums.win.length} runs: time-to-window median ${f(median(nums.win), 0)} (avg ${f(avg(nums.win), 0)}, min ${f(Math.min(...nums.win), 0)}), collections ${f(median(nums.colls), 0)}, first items median ${f(median(nums.items), 0)} (avg ${f(avg(nums.items), 0)}, min ${f(Math.min(...nums.items), 0)})`,
+	);
 } else {
 	const widths = rows[0]!.map((_, c) => Math.max(...rows.map((r) => r[c]!.length)));
 	console.log("");
@@ -186,7 +278,13 @@ if (startupOnly) {
 		console.log(r.map((cell, c) => cell.padStart(widths[c]!)).join("  "));
 		if (n === 0) console.log(widths.map((w) => "-".repeat(w)).join("  "));
 	}
-	console.log("\nReference (Electrobun app, library only): ~580 MB private / ~710 MB WS total (bun main incl. core ~230 MB + 6 WebView2 ~350 MB).");
-	console.log("GPUI figures are the GPUI process tree only; in external mode the core (separate process on the port) is its own column and 'total' adds it; in-process mode has no core column (it is inside the GPUI figure).");
-	console.log("window ms = first visible window; items ms = first page of items in the store (the next frame paints it); both from process start.");
+	console.log(
+		"\nReference (Electrobun app, library only): ~580 MB private / ~710 MB WS total (bun main incl. core ~230 MB + 6 WebView2 ~350 MB).",
+	);
+	console.log(
+		"GPUI figures are the GPUI process tree only; in external mode the core (separate process on the port) is its own column and 'total' adds it; in-process mode has no core column (it is inside the GPUI figure).",
+	);
+	console.log(
+		"window ms = first visible window; items ms = first page of items in the store (the next frame paints it); both from process start.",
+	);
 }

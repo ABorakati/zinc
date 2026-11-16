@@ -34,7 +34,15 @@ function makeObject(lib: LibState, type: "item" | "collection", key: string, fie
 	const v = ++lib.version;
 	const base =
 		type === "item"
-			? { itemType: "journalArticle", title: key, dateAdded: "2026-01-01T00:00:00Z", dateModified: "2026-06-01T10:00:00Z", tags: [], collections: [], relations: {} }
+			? {
+					itemType: "journalArticle",
+					title: key,
+					dateAdded: "2026-01-01T00:00:00Z",
+					dateModified: "2026-06-01T10:00:00Z",
+					tags: [],
+					collections: [],
+					relations: {},
+				}
 			: { name: key, parentCollection: false, relations: {} };
 	lib.objects.set(`${type}:${key}`, { version: v, data: { ...base, ...fields, key, version: v } });
 	return v;
@@ -170,7 +178,13 @@ export class MockZotero implements LibState {
 			if (this.delayMs) await Bun.sleep(this.delayMs);
 			const url = new URL(req.url);
 			const query = Object.fromEntries(url.searchParams);
-			const entry: Logged = { method: req.method, path: url.pathname, query, ifUnmodified: req.headers.get("if-unmodified-since-version"), status: 0 };
+			const entry: Logged = {
+				method: req.method,
+				path: url.pathname,
+				query,
+				ifUnmodified: req.headers.get("if-unmodified-since-version"),
+				status: 0,
+			};
 			this.log.push(entry);
 			const res = await this.route(req, url, query, entry);
 			entry.status = res.status;
@@ -187,7 +201,7 @@ export class MockZotero implements LibState {
 			if (req.headers.get("zotero-api-key")) return new Response("key leaked to the file host", { status: 400 });
 			const blobKey = path.slice("/blob/".length);
 			const bytes = this.files.get(blobKey) ?? [...this.groups.values()].map((g) => g.files.get(blobKey)).find(Boolean);
-			return bytes ? new Response(Buffer.from(bytes)) :new Response("gone", { status: 404 });
+			return bytes ? new Response(Buffer.from(bytes)) : new Response("gone", { status: 404 });
 		}
 		if (path.startsWith("/upload/")) {
 			this.uploads.set(path.slice("/upload/".length), new Uint8Array(await req.arrayBuffer()));
@@ -202,12 +216,22 @@ export class MockZotero implements LibState {
 		}
 
 		if (path === "/keys/current") {
-			return this.reply({ key: "x", userID: USER_ID, username: "tester", access: { user: { library: true, files: true, notes: true, write: this.canWrite }, groups: this.groupAccess ?? { all: { library: true, write: this.canWrite } } } });
+			return this.reply({
+				key: "x",
+				userID: USER_ID,
+				username: "tester",
+				access: {
+					user: { library: true, files: true, notes: true, write: this.canWrite },
+					groups: this.groupAccess ?? { all: { library: true, write: this.canWrite } },
+				},
+			});
 		}
 		if (path === `/users/${USER_ID}/groups`) {
 			const list = [...this.groups.values()];
 			if (query.format === "versions") return this.reply(Object.fromEntries(list.map((g) => [String(g.id), g.recordVersion])));
-			return this.reply(list.map((g) => ({ id: g.id, version: g.recordVersion, data: { ...g.record, id: g.id, version: g.recordVersion } })));
+			return this.reply(
+				list.map((g) => ({ id: g.id, version: g.recordVersion, data: { ...g.record, id: g.id, version: g.recordVersion } })),
+			);
 		}
 		const m = path.match(new RegExp(`^/(?:users/${USER_ID}|groups/(\\d+))/(items|collections|deleted)(?:/([A-Z0-9]{8})/file)?$`));
 		if (!m) return new Response("not found", { status: 404 });
@@ -223,16 +247,25 @@ export class MockZotero implements LibState {
 		if (kind === "deleted") {
 			const since = Number(query.since) || 0;
 			const d = lib.deleted.filter((x) => x.version > since);
-			return r({ collections: d.filter((x) => x.type === "collection").map((x) => x.key), items: d.filter((x) => x.type === "item").map((x) => x.key), searches: [], tags: [], settings: [] });
+			return r({
+				collections: d.filter((x) => x.type === "collection").map((x) => x.key),
+				items: d.filter((x) => x.type === "item").map((x) => x.key),
+				searches: [],
+				tags: [],
+				settings: [],
+			});
 		}
 		const type = kind === "items" ? "item" : "collection";
 
 		if (req.method === "GET") {
 			const since = Number(query.since) || 0;
-			const all = [...lib.objects.entries()].filter(([k]) => k.startsWith(`${type}:`)).map(([k, o]) => [k.slice(type.length + 1), o] as const);
+			const all = [...lib.objects.entries()]
+				.filter(([k]) => k.startsWith(`${type}:`))
+				.map(([k, o]) => [k.slice(type.length + 1), o] as const);
 			if (query.format === "versions") {
 				const out: Record<string, number> = {};
-				for (const [k, o] of all) if (o.version > since && (type !== "item" || !o.data.deleted || query.includeTrashed === "1")) out[k] = o.version;
+				for (const [k, o] of all)
+					if (o.version > since && (type !== "item" || !o.data.deleted || query.includeTrashed === "1")) out[k] = o.version;
 				return r(out);
 			}
 			const wanted = (query.itemKey ?? query.collectionKey ?? "").split(",").filter(Boolean);
@@ -241,7 +274,11 @@ export class MockZotero implements LibState {
 
 		// writes
 		if (!keyWrites) return new Response("read-only key", { status: 403 });
-		if (Number(req.headers.get("if-unmodified-since-version")) !== lib.version) return new Response("Library has been modified since specified version", { status: 412, headers: { "Last-Modified-Version": String(lib.version) } });
+		if (Number(req.headers.get("if-unmodified-since-version")) !== lib.version)
+			return new Response("Library has been modified since specified version", {
+				status: 412,
+				headers: { "Last-Modified-Version": String(lib.version) },
+			});
 		if (req.method === "DELETE") {
 			const keys = (query.itemKey ?? query.collectionKey ?? "").split(",").filter(Boolean);
 			entry.size = keys.length;
@@ -252,7 +289,12 @@ export class MockZotero implements LibState {
 		if (req.method === "POST") {
 			const objs = (await req.json()) as Record<string, any>[];
 			entry.size = objs.length;
-			const out: { successful: Record<string, unknown>; success: Record<string, string>; unchanged: Record<string, string>; failed: Record<string, unknown> } = { successful: {}, success: {}, unchanged: {}, failed: {} };
+			const out: {
+				successful: Record<string, unknown>;
+				success: Record<string, string>;
+				unchanged: Record<string, string>;
+				failed: Record<string, unknown>;
+			} = { successful: {}, success: {}, unchanged: {}, failed: {} };
 			const newVersion = lib.version + 1;
 			let wrote = false;
 			objs.forEach((o, i) => {
@@ -283,7 +325,14 @@ export class MockZotero implements LibState {
 		return new Response("method not allowed", { status: 405 });
 	}
 
-	private async fileRoute(req: Request, url: URL, key: string, lib: LibState, r: (body: unknown, status?: number, extra?: Record<string, string>) => Response, keyWrites: boolean): Promise<Response> {
+	private async fileRoute(
+		req: Request,
+		url: URL,
+		key: string,
+		lib: LibState,
+		r: (body: unknown, status?: number, extra?: Record<string, string>) => Response,
+		keyWrites: boolean,
+	): Promise<Response> {
 		if (req.method === "GET") {
 			const forced = this.fileStatus.get(key);
 			if (forced) return new Response("forced", { status: forced });
@@ -298,16 +347,30 @@ export class MockZotero implements LibState {
 			lib.files.set(key, bytes);
 			const o = lib.objects.get(`item:${key}`)!;
 			const v = ++lib.version;
-			lib.objects.set(`item:${key}`, { version: v, data: { ...o.data, version: v, md5: createHash("md5").update(bytes).digest("hex"), mtime: Date.now() } });
+			lib.objects.set(`item:${key}`, {
+				version: v,
+				data: { ...o.data, version: v, md5: createHash("md5").update(bytes).digest("hex"), mtime: Date.now() },
+			});
 			return r(null, 204);
 		}
 		if (lib.files.has(key) && createHash("md5").update(lib.files.get(key)!).digest("hex") === form.get("md5")) return r({ exists: 1 });
-		return r({ url: `${url.origin}/upload/${key}`, contentType: "application/octet-stream", prefix: "", suffix: "", uploadKey: `UP-${key}` });
+		return r({
+			url: `${url.origin}/upload/${key}`,
+			contentType: "application/octet-stream",
+			prefix: "",
+			suffix: "",
+			uploadKey: `UP-${key}`,
+		});
 	}
 }
 
 function sortKeys(v: any): any {
 	if (Array.isArray(v)) return v.map(sortKeys);
-	if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])]));
+	if (v && typeof v === "object")
+		return Object.fromEntries(
+			Object.keys(v)
+				.sort()
+				.map((k) => [k, sortKeys(v[k])]),
+		);
 	return v;
 }

@@ -89,10 +89,12 @@ class Transaction {
 				this.abandoned = new Error(`the word processor did not answer "${command}" in time; the transaction was abandoned`);
 				reject(this.abandoned);
 			}, integrationOptions.clientAnswerTimeoutMs);
-			const done = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
-				clearTimeout(t);
-				f(...a);
-			};
+			const done =
+				<A extends unknown[]>(f: (...a: A) => void) =>
+				(...a: A) => {
+					clearTimeout(t);
+					f(...a);
+				};
 			const fail = done(reject);
 			this.waiting = { resolve: done(resolve), reject: fail };
 			try {
@@ -132,17 +134,46 @@ let current: { tx: Transaction } | null = null;
 export interface CitationDialog {
 	isNote: boolean;
 	/** the citation being edited (empty for a new one) */
-	items: { key: string | null; title: string; creators: string; year: string; locator: string; label: string; prefix: string; suffix: string; suppressAuthor: boolean; authorOnly: boolean }[];
+	items: {
+		key: string | null;
+		title: string;
+		creators: string;
+		year: string;
+		locator: string;
+		label: string;
+		prefix: string;
+		suffix: string;
+		suppressAuthor: boolean;
+		authorOnly: boolean;
+	}[];
 	unsorted: boolean;
 	style: string;
 }
 export interface CitationChoice {
 	/** `key`: a library item; `existing`: index into the dialog's items (an embedded item that is not in the library) */
-	items: { key?: string; existing?: number; locator?: string; label?: string; prefix?: string; suffix?: string; suppressAuthor?: boolean; authorOnly?: boolean }[];
+	items: {
+		key?: string;
+		existing?: number;
+		locator?: string;
+		label?: string;
+		prefix?: string;
+		suffix?: string;
+		suppressAuthor?: boolean;
+		authorOnly?: boolean;
+	}[];
 	unsorted?: boolean;
 }
 export interface BibliographyDialog {
-	entries: { id: string; key: string | null; text: string; defaultText: string; cited: boolean; uncited: boolean; omitted: boolean; custom: boolean }[];
+	entries: {
+		id: string;
+		key: string | null;
+		text: string;
+		defaultText: string;
+		cited: boolean;
+		uncited: boolean;
+		omitted: boolean;
+		custom: boolean;
+	}[];
 }
 export interface BibliographyChoice {
 	/** CSL ids (item keys) left out */
@@ -281,7 +312,16 @@ class Doc {
 		return this.c("Document.setDocumentData", this.id, data);
 	}
 	setBibliographyStyle(firstLineIndent: number, indent: number, lineSpacing: number, entrySpacing: number, tabStops: number[]) {
-		return this.c("Document.setBibliographyStyle", this.id, firstLineIndent, indent, lineSpacing, entrySpacing, tabStops, tabStops.length);
+		return this.c(
+			"Document.setBibliographyStyle",
+			this.id,
+			firstLineIndent,
+			indent,
+			lineSpacing,
+			entrySpacing,
+			tabStops,
+			tabStops.length,
+		);
 	}
 	canInsertField(fieldType: string): Promise<boolean> {
 		return this.c("Document.canInsertField", this.id, fieldType);
@@ -348,7 +388,11 @@ class Library {
 		this.uriBase = `http://zotero.org/users/local/${k ?? "znlocal0"}`;
 	}
 	get(key: string): ZoteroItemData | null {
-		const row = this.db.query("SELECT key, data, deleted FROM items WHERE key = ?").get(key) as { key: string; data: string; deleted: number } | null;
+		const row = this.db.query("SELECT key, data, deleted FROM items WHERE key = ?").get(key) as {
+			key: string;
+			data: string;
+			deleted: number;
+		} | null;
 		if (!row || row.deleted) return null;
 		const d = JSON.parse(row.data) as ZoteroItemData;
 		d.key = row.key;
@@ -401,7 +445,10 @@ class Session {
 	styles: StyleSource;
 	private store;
 
-	constructor(readonly doc: Doc, readonly db: Database) {
+	constructor(
+		readonly doc: Doc,
+		readonly db: Database,
+	) {
 		this.lib = new Library(db);
 		this.store = citeService(db).store;
 		this.styles = {
@@ -439,7 +486,12 @@ class Session {
 		const cached = docFormatters.get(k);
 		if (cached) {
 			const f = await cached.catch(() => null);
-			const xml = f && (await resolveStyle(this.styles, id).then((s) => s.xml, () => null));
+			const xml =
+				f &&
+				(await resolveStyle(this.styles, id).then(
+					(s) => s.xml,
+					() => null,
+				));
 			docFormatters.delete(k);
 			if (f && xml === f.style.xml) {
 				docFormatters.set(k, cached); // most recently used last
@@ -457,7 +509,8 @@ class Session {
 
 	async load() {
 		const raw = await this.doc.getDocumentData();
-		if (raw === "ZOTERO_TRANSFER_DOCUMENT") throw new Alert("This document was exported for transfer between word processors. Importing it is not supported by Zinc.");
+		if (raw === "ZOTERO_TRANSFER_DOCUMENT")
+			throw new Alert("This document was exported for transfer between word processors. Importing it is not supported by Zinc.");
 		const p = parsePrefsXml(raw);
 		this.isNew = !p || !p.fieldType;
 		this.prefs = p ?? defaultPrefs("vancouver", "");
@@ -551,10 +604,23 @@ class Session {
 					continue;
 				}
 				cslById.set(r.cslId, r.csl);
-				dcItems.push({ id: r.cslId, locator: ci.locator, label: ci.locator ? ci.label ?? "page" : undefined, prefix: ci.prefix, suffix: ci.suffix, "suppress-author": ci["suppress-author"], "author-only": ci["author-only"] });
+				dcItems.push({
+					id: r.cslId,
+					locator: ci.locator,
+					label: ci.locator ? (ci.label ?? "page") : undefined,
+					prefix: ci.prefix,
+					suffix: ci.suffix,
+					"suppress-author": ci["suppress-author"],
+					"author-only": ci["author-only"],
+				});
 			}
 			// the engine id is unique per field so copy-pasted citations (same citationID) stay independent
-			docCitations.push({ citationID: `${f.cite!.citationID}~${f.index}`, noteIndex: isNote ? f.noteIndex || f.index + 1 : 0, items: dcItems, unsorted: !!f.cite!.properties.unsorted });
+			docCitations.push({
+				citationID: `${f.cite!.citationID}~${f.index}`,
+				noteIndex: isNote ? f.noteIndex || f.index + 1 : 0,
+				items: dcItems,
+				unsorted: !!f.cite!.properties.unsorted,
+			});
 		}
 		const idOf = (uris: string[]) => {
 			const r = this.lib.resolve({ id: "", uris });
@@ -577,7 +643,10 @@ class Session {
 	 * Format the whole document and write back what changed (Session.updateFromDocument + updateDocument).
 	 * Fields are updated last to first, like Zotero does.
 	 */
-	async update(mode: Mode, opts: { forceBibliography?: boolean; ignoreEdits?: boolean } = {}): Promise<{ updated: number; missing: string[] }> {
+	async update(
+		mode: Mode,
+		opts: { forceBibliography?: boolean; ignoreEdits?: boolean } = {},
+	): Promise<{ updated: number; missing: string[] }> {
 		const fields = await this.readFields();
 		const items = fields.filter((f) => f.kind === "item");
 		const bibls = fields.filter((f) => f.kind === "bibl");
@@ -639,7 +708,11 @@ class Session {
 			const edited = isHandEdited(props, f.wire.text) && !props.dontUpdate;
 			if (edited && mode !== "reset" && !opts.ignoreEdits) {
 				await this.doc.select(f.wire).catch(() => {});
-				const keep = await this.doc.alert(`The citation was edited since Zotero created it. Do you want to keep your changes?\n\nOriginal: ${props.plainCitation}\nModified: ${f.wire.text}`, ICON_CAUTION, BTN_YES_NO);
+				const keep = await this.doc.alert(
+					`The citation was edited since Zotero created it. Do you want to keep your changes?\n\nOriginal: ${props.plainCitation}\nModified: ${f.wire.text}`,
+					ICON_CAUTION,
+					BTN_YES_NO,
+				);
 				if (keep) props.dontUpdate = true;
 			}
 			let textChanged = false;
@@ -688,7 +761,10 @@ class Session {
 				await this.doc.setBibliographyStyle(-indent, indent, 240, 240 * bib.entrySpacing, []);
 				this.prefs.bibliographyStyleHasBeenSet = true;
 			}
-			const html = bib.all.filter((e) => !e.omitted).map((e) => `<div class="csl-entry">${runsToHtml(e.runs)}</div>`).join("");
+			const html = bib.all
+				.filter((e) => !e.omitted)
+				.map((e) => `<div class="csl-entry">${runsToHtml(e.runs)}</div>`)
+				.join("");
 			await this.doc.setText(b.wire, html || "{Bibliography}");
 			updated++;
 		}
@@ -707,9 +783,22 @@ class Session {
 			const r = this.lib.resolve(ci);
 			if (!r) continue;
 			cslById.set(r.cslId, r.csl);
-			items.push({ id: r.cslId, locator: ci.locator, label: ci.locator ? ci.label ?? "page" : undefined, prefix: ci.prefix, suffix: ci.suffix, "suppress-author": ci["suppress-author"], "author-only": ci["author-only"] });
+			items.push({
+				id: r.cslId,
+				locator: ci.locator,
+				label: ci.locator ? (ci.label ?? "page") : undefined,
+				prefix: ci.prefix,
+				suffix: ci.suffix,
+				"suppress-author": ci["suppress-author"],
+				"author-only": ci["author-only"],
+			});
 		}
-		const out = fmt.format([{ citationID: "d", noteIndex: fmt.style.xclass === "note" ? 1 : 0, items, unsorted: !!data.properties.unsorted }], cslById, [], false);
+		const out = fmt.format(
+			[{ citationID: "d", noteIndex: fmt.style.xclass === "note" ? 1 : 0, items, unsorted: !!data.properties.unsorted }],
+			cslById,
+			[],
+			false,
+		);
 		const runs = out.citations.get("d")?.runs ?? [{ t: "{Citation}" }];
 		const formatted = this.outputFormat === "rtf" ? runsToRtf(runs) : runsToHtml(runs);
 		await this.doc.setText(field, this.outputFormat === "rtf" ? `{\\rtf ${formatted}}` : formatted);
@@ -759,7 +848,11 @@ class Session {
 		return (data?.citationItems ?? []).map((ci) => {
 			const r = this.lib.resolve(ci);
 			const csl = (r?.csl ?? ci.itemData ?? {}) as CslItem;
-			const authors = ((csl.author as { family?: string; literal?: string }[] | undefined) ?? []).map((a) => a.family ?? a.literal ?? "").filter(Boolean).slice(0, 3).join(", ");
+			const authors = ((csl.author as { family?: string; literal?: string }[] | undefined) ?? [])
+				.map((a) => a.family ?? a.literal ?? "")
+				.filter(Boolean)
+				.slice(0, 3)
+				.join(", ");
 			const issued = (csl.issued as { "date-parts"?: number[][] } | undefined)?.["date-parts"]?.[0]?.[0];
 			return {
 				key: r?.key ?? null,
@@ -802,11 +895,21 @@ async function cite(s: Session, field: WireField | null, opts: { note?: boolean 
 		isNew = true;
 	}
 	if (old && (old.properties.dontUpdate || isHandEdited(old.properties, field.text))) {
-		const ok = await doc.alert(`The citation was edited since Zotero created it. Editing it will discard those changes.\n\nOriginal: ${old.properties.plainCitation ?? ""}\nModified: ${field.text}`, ICON_WARNING, BTN_OK_CANCEL);
+		const ok = await doc.alert(
+			`The citation was edited since Zotero created it. Editing it will discard those changes.\n\nOriginal: ${old.properties.plainCitation ?? ""}\nModified: ${field.text}`,
+			ICON_WARNING,
+			BTN_OK_CANCEL,
+		);
 		if (!ok) throw new UserCancelled("editing citation");
 	}
 	let choice: CitationChoice | null = null;
-	if (uiAvailable()) choice = await ui.citation({ isNote: !!opts.note, items: s.dialogItems(old), unsorted: !!old?.properties.unsorted, style: styleUrlToId(s.prefs.styleId) });
+	if (uiAvailable())
+		choice = await ui.citation({
+			isNote: !!opts.note,
+			items: s.dialogItems(old),
+			unsorted: !!old?.properties.unsorted,
+			style: styleUrlToId(s.prefs.styleId),
+		});
 	else await doc.alert("Zinc is not showing its citation dialog. Open Zinc and try again.", ICON_STOP, BTN_OK);
 	if (!choice || !choice.items.length) {
 		if (isNew) await doc.del(field).catch(() => {});
@@ -886,7 +989,8 @@ async function addEditBibliography(s: Session, mode: { create: boolean; edit: bo
 	if (!existing || mode.create) {
 		if (!(await s.doc.canInsertField(s.fieldType))) throw new Alert("Citations cannot be inserted at the current cursor position.");
 		const at = await s.doc.cursorInField(s.fieldType);
-		if (at && !(await s.doc.alert("Replace the selected field with a bibliography?", ICON_STOP, BTN_OK_CANCEL))) throw new UserCancelled("inserting bibliography");
+		if (at && !(await s.doc.alert("Replace the selected field with a bibliography?", ICON_STOP, BTN_OK_CANCEL)))
+			throw new UserCancelled("inserting bibliography");
 		const f = at ?? (await s.doc.insertField(s.fieldType, 0));
 		await s.doc.setCode(f, `BIBL ${JSON.stringify({ uncited: [], omitted: [], custom: [] })} CSL_BIBLIOGRAPHY`);
 	}
@@ -949,7 +1053,13 @@ async function dispatch(s: Session, command: string): Promise<void> {
 		case "removeCodes": {
 			await s.init(true);
 			const fields = await s.readFields();
-			if (await doc.alert("Are you sure you want to unlink citations? This prevents Zotero from updating citations and bibliographies in this document.", ICON_WARNING, BTN_OK_CANCEL)) {
+			if (
+				await doc.alert(
+					"Are you sure you want to unlink citations? This prevents Zotero from updating citations and bibliographies in this document.",
+					ICON_WARNING,
+					BTN_OK_CANCEL,
+				)
+			) {
 				for (let i = fields.length - 1; i >= 0; i--) await doc.removeCode(fields[i]!.wire);
 			}
 			break;
@@ -993,7 +1103,8 @@ async function execute(command: string, tx: Transaction, db: Database): Promise<
 		await runCommand(command, doc, db);
 	} catch (e) {
 		if (!(e instanceof UserCancelled)) {
-			const msg = e instanceof Alert ? e.message : "Zinc could not complete the command. " + (e instanceof Error ? e.message : String(e));
+			const msg =
+				e instanceof Alert ? e.message : "Zinc could not complete the command. " + (e instanceof Error ? e.message : String(e));
 			if (!(e instanceof Alert)) console.error(`[zport] integration ${command} failed:`, e);
 			if (opened) await doc.alert(msg, ICON_STOP, BTN_OK).catch(() => {});
 		}
@@ -1023,7 +1134,8 @@ async function jsonBody(req: Request): Promise<Json> {
 registerZRoute("POST", "/connector/document/execCommand", async (req, { db }) => {
 	const body = await jsonBody(req);
 	if (!body || typeof body.command !== "string") return new Response("Invalid request", { status: 400 });
-	if (current) return new Response("Integration transaction is already in progress", { status: 503, headers: { "Content-Type": "text/plain" } });
+	if (current)
+		return new Response("Integration transaction is already in progress", { status: 503, headers: { "Content-Type": "text/plain" } });
 	const tx = new Transaction();
 	current = { tx };
 	const first = tx.hold();
@@ -1035,13 +1147,17 @@ registerZRoute("POST", "/connector/document/execCommand", async (req, { db }) =>
 
 registerZRoute("POST", "/connector/document/respond", async (req) => {
 	const body = await jsonBody(req);
-	if (!current) return new Response("No integration transaction is in progress", { status: 409, headers: { "Content-Type": "text/plain" } });
+	if (!current)
+		return new Response("No integration transaction is in progress", { status: 409, headers: { "Content-Type": "text/plain" } });
 	return current.tx.answer(body);
 });
 
 registerZRoute("GET", "/zotero-next/integration/dialogs", () => {
 	lastPoll = Date.now();
-	return Response.json({ pending: [...pending.values()].map(({ id, kind, payload, secret }) => ({ id, kind, payload, secret })), inProgress: !!current });
+	return Response.json({
+		pending: [...pending.values()].map(({ id, kind, payload, secret }) => ({ id, kind, payload, secret })),
+		inProgress: !!current,
+	});
 });
 
 registerZRoute("POST", /^\/zotero-next\/integration\/dialogs\/[A-Za-z0-9]+$/, async (req, { url }) => {

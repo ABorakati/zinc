@@ -82,25 +82,53 @@ function create() {
 		timer = setTimeout(() => void refresh(), FAST_MS);
 		(timer as unknown as { unref?: () => void }).unref?.();
 	}
-	const apply = (s: WebSyncStatus) => { setStatus(s); setReachable(true); schedule(); };
+	const apply = (s: WebSyncStatus) => {
+		setStatus(s);
+		setReachable(true);
+		schedule();
+	};
 
 	async function refresh(): Promise<void> {
-		try { apply(await webSyncApi.status()); } catch { setReachable(false); schedule(); }
+		try {
+			apply(await webSyncApi.status());
+		} catch {
+			setReachable(false);
+			schedule();
+		}
 	}
 	async function run(fn: () => Promise<WebSyncStatus>): Promise<boolean> {
 		setWorking(true);
 		setError("");
 		setOtherAccount(false);
-		try { apply(await fn()); return true; } catch (e) { setError(errMsg(e)); setOtherAccount((e as { status?: number }).status === 409); return false; } finally { setWorking(false); }
+		try {
+			apply(await fn());
+			return true;
+		} catch (e) {
+			setError(errMsg(e));
+			setOtherAccount((e as { status?: number }).status === 409);
+			return false;
+		} finally {
+			setWorking(false);
+		}
 	}
 
 	return {
-		status, working, error, check, reachable, jobRunning, otherAccount,
+		status,
+		working,
+		error,
+		check,
+		reachable,
+		jobRunning,
+		otherAccount,
 		refresh,
 		clearError: () => setError(""),
 		setKey: (apiKey: string) => run(() => webSyncApi.setKey(apiKey)),
 		/** Unlink the current account, then connect this key (another zotero.org account). */
-		switchAccount: (apiKey: string) => run(async () => { await webSyncApi.resetAccount(); return webSyncApi.setKey(apiKey); }),
+		switchAccount: (apiKey: string) =>
+			run(async () => {
+				await webSyncApi.resetAccount();
+				return webSyncApi.setKey(apiKey);
+			}),
 		removeKey: () => run(() => webSyncApi.removeKey()),
 		setMode: (mode: WebSyncMode) => run(() => webSyncApi.setMode(mode)),
 		setOptions: (o: { push?: boolean; files?: WebSyncFiles }) => run(() => webSyncApi.setOptions(o)),
@@ -109,7 +137,13 @@ function create() {
 		async checkFiles(): Promise<void> {
 			setWorking(true);
 			setError("");
-			try { setCheck(await webSyncApi.checkFiles()); } catch (e) { setError(errMsg(e)); } finally { setWorking(false); }
+			try {
+				setCheck(await webSyncApi.checkFiles());
+			} catch (e) {
+				setError(errMsg(e));
+			} finally {
+				setWorking(false);
+			}
 		},
 	};
 }

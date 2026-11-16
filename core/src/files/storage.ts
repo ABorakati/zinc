@@ -12,7 +12,19 @@
 import type { Database } from "bun:sqlite";
 import { dlopen, FFIType } from "bun:ffi";
 import { createHash } from "node:crypto";
-import { closeSync, copyFileSync, createReadStream, existsSync, mkdirSync, openSync, readSync, renameSync, rmSync, statSync, utimesSync } from "node:fs";
+import {
+	closeSync,
+	copyFileSync,
+	createReadStream,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readSync,
+	renameSync,
+	rmSync,
+	statSync,
+	utimesSync,
+} from "node:fs";
 import { copyFile, rename } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { addTags, deriveColumns, nowIso, removeTags } from "../db";
@@ -122,7 +134,10 @@ function folderOf(v: string, what: string): string {
 export function normalizeExtensions(list: string[]): string[] {
 	const out: string[] = [];
 	for (const raw of list) {
-		const e = String(raw).trim().replace(/^\*?\./, "").toLowerCase();
+		const e = String(raw)
+			.trim()
+			.replace(/^\*?\./, "")
+			.toLowerCase();
 		if (!e) continue;
 		if (!/^[a-z0-9]{1,12}$/.test(e)) throw new Error(`"${raw}" is not a file extension`);
 		if (!out.includes(e)) out.push(e);
@@ -237,7 +252,12 @@ function fitName(dir: string, name: string): string {
 }
 
 /** The file name a file gets in the storage folder: from the parent item when renaming is on, else `name`. */
-export function plannedName(db: Database, s: StorageView, name: string, parentKey: string | null | undefined): { name: string; renamed: boolean } {
+export function plannedName(
+	db: Database,
+	s: StorageView,
+	name: string,
+	parentKey: string | null | undefined,
+): { name: string; renamed: boolean } {
 	let out = name;
 	let renamed = false;
 	if (s.rename && parentKey) {
@@ -279,7 +299,9 @@ export function storageTargetFor(db: Database, req: TargetRequest): StorageTarge
 	const meta = metaOfItem(db, req.parentKey, { collectionKey: req.collectionKey });
 	const dir = join(s.dir, ...expandPattern(s.subfolder, meta, { undefinedStr: s.undefinedStr, stripDiacritics: s.stripDiacritics }));
 	if (resolve(dir) !== resolve(s.dir) && !isInside(dir, s.dir)) throw new Error("the subfolder pattern leaves the storage folder");
-	const planned = req.keepName ? { name: s.stripDiacritics ? stripAccents(name) : name, renamed: false } : plannedName(db, s, name, req.parentKey);
+	const planned = req.keepName
+		? { name: s.stripDiacritics ? stripAccents(name) : name, renamed: false }
+		: plannedName(db, s, name, req.parentKey);
 	const fileName = uniqueName(dir, fitName(dir, planned.name));
 	if (s.behavior === "copy") return { ...own(), copyTo: { dir, path: join(dir, fileName) } };
 	return {
@@ -300,7 +322,8 @@ export function sha256Sync(path: string): string {
 	const fd = openSync(path, "r");
 	try {
 		const buf = Buffer.allocUnsafe(1 << 20);
-		for (let n = readSync(fd, buf, 0, buf.length, null); n > 0; n = readSync(fd, buf, 0, buf.length, null)) h.update(buf.subarray(0, n));
+		for (let n = readSync(fd, buf, 0, buf.length, null); n > 0; n = readSync(fd, buf, 0, buf.length, null))
+			h.update(buf.subarray(0, n));
 	} finally {
 		closeSync(fd);
 	}
@@ -374,7 +397,9 @@ function renameLockProbe(path: string): boolean {
 	try {
 		renameSync(probe, path);
 	} catch (e) {
-		throw new Error(`could not restore ${path} after checking it is not open (it is called ${probe}): ${e instanceof Error ? e.message : e}`);
+		throw new Error(
+			`could not restore ${path} after checking it is not open (it is called ${probe}): ${e instanceof Error ? e.message : e}`,
+		);
 	}
 	return false;
 }
@@ -468,7 +493,14 @@ export function planRelocate(db: Database, opts: RelocateOptions = {}): MovePlan
 			 WHERE i.deleted = 0 AND a.link_mode IN ('imported_file', 'imported_url', 'linked_file') AND a.path IS NOT NULL
 			 ORDER BY i.date_added, i.key`,
 		)
-		.all() as { key: string; link_mode: string; path: string; content_type: string | null; parent_key: string | null; library_id: number }[];
+		.all() as {
+		key: string;
+		link_mode: string;
+		path: string;
+		content_type: string | null;
+		parent_key: string | null;
+		library_id: number;
+	}[];
 	const plan: MovePlan = {
 		target: { dir: toOwn ? (own as string) : (dest as string), subfolder, linked },
 		items: [],
@@ -490,7 +522,8 @@ export function planRelocate(db: Database, opts: RelocateOptions = {}): MovePlan
 	for (const r of rows) {
 		if (wanted && !wanted.has(r.key)) continue;
 		const from = resolved.get(r.key) ?? null;
-		const skip = (reason: string, extra: Partial<MoveSkip> = {}) => void plan.skipped.push({ key: r.key, path: from ?? r.path, reason, ...extra });
+		const skip = (reason: string, extra: Partial<MoveSkip> = {}) =>
+			void plan.skipped.push({ key: r.key, path: from ?? r.path, reason, ...extra });
 		if (!from) {
 			skip("the base directory for this relative path is not set");
 			continue;
@@ -549,7 +582,13 @@ export function planRelocate(db: Database, opts: RelocateOptions = {}): MovePlan
 			dir = join(own as string, r.key);
 			name = cleanSegment(name, 150) || "file";
 		} else {
-			dir = join(dest as string, ...expandPattern(subfolder, metaOfItem(db, r.parent_key, { collectionKey: opts.collectionKey }), { undefinedStr: s.undefinedStr, stripDiacritics: s.stripDiacritics }));
+			dir = join(
+				dest as string,
+				...expandPattern(subfolder, metaOfItem(db, r.parent_key, { collectionKey: opts.collectionKey }), {
+					undefinedStr: s.undefinedStr,
+					stripDiacritics: s.stripDiacritics,
+				}),
+			);
 			if (resolve(dir) !== resolve(dest as string) && !isInside(dir, dest as string)) {
 				skip("the subfolder pattern leaves the storage folder");
 				continue;
@@ -642,7 +681,8 @@ export interface MoveReport {
 export async function placeCopy(from: string, to: string): Promise<{ to: string; created: boolean }> {
 	mkdirSync(dirname(to), { recursive: true });
 	const srcHash = await sha256(from);
-	if (existsSync(to) && (statSync(to).size !== statSync(from).size || (await sha256(to)) !== srcHash)) to = join(dirname(to), uniqueName(dirname(to), basename(to)));
+	if (existsSync(to) && (statSync(to).size !== statSync(from).size || (await sha256(to)) !== srcHash))
+		to = join(dirname(to), uniqueName(dirname(to), basename(to)));
 	if (existsSync(to)) return { to, created: false };
 	const tmp = `${to}.zn-part`;
 	rmSync(tmp, { force: true });
@@ -670,7 +710,16 @@ const running = new WeakSet<Database>();
 export async function runMove(db: Database, plan: MovePlan = planMove(db), hooks: MoveHooks = {}): Promise<MoveReport> {
 	if (running.has(db)) throw new Error("a move is already running");
 	running.add(db);
-	const report: MoveReport = { moved: 0, copied: 0, failed: [], leftBehind: [], skipped: [...plan.skipped], onlineOnly: plan.onlineOnly, locked: 0, bytes: 0 };
+	const report: MoveReport = {
+		moved: 0,
+		copied: 0,
+		failed: [],
+		leftBehind: [],
+		skipped: [...plan.skipped],
+		onlineOnly: plan.onlineOnly,
+		locked: 0,
+		bytes: 0,
+	};
 	const own = ownStorageDir(db);
 	const s = storageView(db);
 	try {
@@ -683,7 +732,12 @@ export async function runMove(db: Database, plan: MovePlan = planMove(db), hooks
 				if (!existsSync(item.from)) throw new Error("file is missing");
 				if (isOnlineOnly(item.from)) {
 					report.onlineOnly++;
-					report.skipped.push({ key: item.key, path: item.from, reason: "online-only OneDrive file (not downloaded)", onlineOnly: true });
+					report.skipped.push({
+						key: item.key,
+						path: item.from,
+						reason: "online-only OneDrive file (not downloaded)",
+						onlineOnly: true,
+					});
 					continue;
 				}
 				if (!item.copyOnly && isFileLocked(item.from)) {
@@ -746,14 +800,18 @@ function commitMove(db: Database, item: MoveItem, to: string, hooks: MoveHooks, 
 	const linkMode = linked ? "linked_file" : item.toOwn || item.fromMode !== "imported_url" ? "imported_file" : "imported_url";
 	data.filename = basename(to);
 	data.linkMode = linkMode;
-	if (linked) data.path = to; // sync hands Zotero the absolute path; its writer relativises against Zotero's base directory
+	if (linked)
+		data.path = to; // sync hands Zotero the absolute path; its writer relativises against Zotero's base directory
 	else delete data.path;
 	if (item.title) data.title = item.title;
 	data.dateModified = now;
 	const stored = linked ? storedFormForNewLink(db, to) : to;
 	db.transaction(() => {
 		// the attachment must still be the one that was planned: same path and mode, and the original unchanged since it was copied
-		const cur = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(item.key) as { path: string | null; link_mode: string } | null;
+		const cur = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(item.key) as {
+			path: string | null;
+			link_mode: string;
+		} | null;
 		const curPath = cur ? resolveStoredPath(db, cur.path) : null;
 		if (!cur || cur.link_mode !== item.fromMode || !curPath || resolve(curPath).toLowerCase() !== resolve(item.from).toLowerCase()) {
 			throw new Error("the attachment changed while it was being moved; the original was kept");
@@ -772,7 +830,12 @@ function commitMove(db: Database, item: MoveItem, to: string, hooks: MoveHooks, 
 		}
 		db.query("UPDATE attachments SET path = ?, link_mode = ? WHERE item_key = ?").run(stored, linkMode, item.key);
 		if (item.title) {
-			db.query("UPDATE items SET data = ?, title = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), deriveColumns(data as never).title, now, item.key);
+			db.query("UPDATE items SET data = ?, title = ?, date_modified = ? WHERE key = ?").run(
+				JSON.stringify(data),
+				deriveColumns(data as never).title,
+				now,
+				item.key,
+			);
 		} else db.query("UPDATE items SET data = ?, date_modified = ? WHERE key = ?").run(JSON.stringify(data), now, item.key);
 		if (item.tag && !item.toOwn) addTags(db, item.key, [item.tag]);
 		if (item.tag && item.toOwn) removeTags(db, item.key, [item.tag]);

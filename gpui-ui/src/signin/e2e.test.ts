@@ -42,7 +42,11 @@ describe.skipIf(!wanted)("sign-in browser against a mock institution", () => {
 		setBrowserBridge(bridge);
 		return new LoginController({
 			bridge: () => bridge,
-			wasm: { loginState: ({ url }: { url: string }) => (new URL(url).pathname === "/landed" ? { state: "landed" } : { state: "pending" }), inspect: () => ({ expect: "none" }) } as any,
+			wasm: {
+				loginState: ({ url }: { url: string }) =>
+					new URL(url).pathname === "/landed" ? { state: "landed" } : { state: "pending" },
+				inspect: () => ({ expect: "none" }),
+			} as any,
 			bodies: new BodyStore(join(mkdtempSync(join(tmpdir(), "zn-e2e-")), "storage", ".tmp")),
 			pollMs: 100,
 			lingerMs: 50,
@@ -68,14 +72,22 @@ describe.skipIf(!wanted)("sign-in browser against a mock institution", () => {
 						return new Response(null, { status: 302, headers: h });
 					}
 					case "/landed":
-						return new Response("<html><body>Welcome to the mock institution</body></html>", { headers: { "content-type": "text/html" } });
+						return new Response("<html><body>Welcome to the mock institution</body></html>", {
+							headers: { "content-type": "text/html" },
+						});
 					case "/whoami":
-						return new Response(`<html><body><p id=c>cookie:${req.headers.get("cookie") ?? ""}</p></body></html>`, { headers: { "content-type": "text/html" } });
+						return new Response(`<html><body><p id=c>cookie:${req.headers.get("cookie") ?? ""}</p></body></html>`, {
+							headers: { "content-type": "text/html" },
+						});
 					case "/paper.pdf":
-						return has ? new Response(PDF, { headers: { "content-type": "application/pdf" } }) : new Response("login required", { status: 401 });
+						return has
+							? new Response(PDF, { headers: { "content-type": "application/pdf" } })
+							: new Response("login required", { status: 401 });
 					case "/download.pdf":
 						return has
-							? new Response(PDF, { headers: { "content-type": "application/pdf", "content-disposition": 'attachment; filename="dl.pdf"' } })
+							? new Response(PDF, {
+									headers: { "content-type": "application/pdf", "content-disposition": 'attachment; filename="dl.pdf"' },
+								})
 							: new Response("login required", { status: 401 });
 					default:
 						return new Response("not found", { status: 404 });
@@ -97,7 +109,11 @@ describe.skipIf(!wanted)("sign-in browser against a mock institution", () => {
 	test("sign in through the window, then the core downloads the PDF with the session cookie", async () => {
 		const bridge = newBridge();
 		const c = controller(bridge);
-		const ok = await c.open(1, { entry_url: `${base}/login`, realm: "mock", kind: "openathens", waiting: 1, timeout_ms: 30_000, capture_pdf: false } as any, new AbortController().signal);
+		const ok = await c.open(
+			1,
+			{ entry_url: `${base}/login`, realm: "mock", kind: "openathens", waiting: 1, timeout_ms: 30_000, capture_pdf: false } as any,
+			new AbortController().signal,
+		);
 		expect(ok.result).toBe("landed");
 		expect(ok.final_url).toBe(`${base}/landed`);
 		expect(hits.slice(0, 2)).toEqual(["/login", "/landed"]);
@@ -110,7 +126,11 @@ describe.skipIf(!wanted)("sign-in browser against a mock institution", () => {
 		const req = { url: `${base}/paper.pdf`, method: "GET", timeout_ms: 10_000 } as any;
 		const signedOut = await http.request(req, { signal: new AbortController().signal, sink: "memory" });
 		expect(signedOut.status).toBe(401);
-		const signedIn = await new HttpClient().request(req, { signal: new AbortController().signal, sink: "memory", cookieSource: (u) => bridge.cookiesFor(u) });
+		const signedIn = await new HttpClient().request(req, {
+			signal: new AbortController().signal,
+			sink: "memory",
+			cookieSource: (u) => bridge.cookiesFor(u),
+		});
 		expect(signedIn.status).toBe(200);
 		expect(hasPdfMagic(signedIn.body!)).toBe(true);
 		expect(signedIn.body!.length).toBe(PDF.length);
@@ -120,13 +140,20 @@ describe.skipIf(!wanted)("sign-in browser against a mock institution", () => {
 	test("hidden page loads share the session: the browser sends the cookie, PDF viewer and attachment are captured", async () => {
 		const bridge = newBridge();
 		const c = controller(bridge);
-		await c.open(2, { entry_url: `${base}/login`, realm: "mock", kind: "openathens", waiting: 0, timeout_ms: 30_000, capture_pdf: false } as any, new AbortController().signal);
+		await c.open(
+			2,
+			{ entry_url: `${base}/login`, realm: "mock", kind: "openathens", waiting: 0, timeout_ms: 30_000, capture_pdf: false } as any,
+			new AbortController().signal,
+		);
 		const page = await bridge.load({ url: `${base}/whoami`, timeoutMs: 10_000, capturePdf: false }, new AbortController().signal);
 		expect(page.pageHtml).toContain(`sess=${token}`);
 		const viewer = await bridge.load({ url: `${base}/paper.pdf`, timeoutMs: 15_000, capturePdf: true }, new AbortController().signal);
 		expect(viewer.pdf).toBeTruthy();
 		expect(hasPdfMagic(viewer.pdf!.bytes)).toBe(true);
-		const attach = await bridge.load({ url: `${base}/download.pdf`, timeoutMs: 15_000, capturePdf: true }, new AbortController().signal);
+		const attach = await bridge.load(
+			{ url: `${base}/download.pdf`, timeoutMs: 15_000, capturePdf: true },
+			new AbortController().signal,
+		);
 		expect(attach.pdf).toBeTruthy();
 		expect(hasPdfMagic(attach.pdf!.bytes)).toBe(true);
 		await bridge.dispose();
@@ -135,7 +162,11 @@ describe.skipIf(!wanted)("sign-in browser against a mock institution", () => {
 	test("the sign-in survives the browser ending and the app restarting", async () => {
 		// one app run: the browser ends when idle; the session cookie (which the browser forgets) is put back from memory
 		const bridge = newBridge({ idleMs: 400 });
-		await controller(bridge).open(3, { entry_url: `${base}/login`, realm: "mock", kind: "openathens", waiting: 0, timeout_ms: 30_000, capture_pdf: false } as any, new AbortController().signal);
+		await controller(bridge).open(
+			3,
+			{ entry_url: `${base}/login`, realm: "mock", kind: "openathens", waiting: 0, timeout_ms: 30_000, capture_pdf: false } as any,
+			new AbortController().signal,
+		);
 		bridge.closeAll();
 		for (let i = 0; i < 100 && bridge.helperRunning; i++) await sleep(100);
 		expect(bridge.helperRunning).toBe(false);

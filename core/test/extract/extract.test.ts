@@ -53,7 +53,10 @@ describe.skipIf(!HAVE_DOCUMENT_WORKER)("extractFulltext", () => {
 		expect(r.pages).toBe(1);
 		expect(r.chars).toBeGreaterThan(30);
 
-		const row = db.query("SELECT content, source FROM fulltext WHERE attachment_key = 'ATTPDF01'").get() as { content: string; source: string };
+		const row = db.query("SELECT content, source FROM fulltext WHERE attachment_key = 'ATTPDF01'").get() as {
+			content: string;
+			source: string;
+		};
 		expect(row.source).toBe("document-worker");
 		expect(row.content).toContain("xenotransplantation");
 		const hits = search(db, "quokka cohort");

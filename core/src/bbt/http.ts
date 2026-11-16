@@ -23,7 +23,10 @@ const text = (body: string, status = 200, extra: Record<string, string> = {}) =>
 	new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8", ...extra } });
 
 class HttpFail extends Error {
-	constructor(public status: number, message: string) {
+	constructor(
+		public status: number,
+		message: string,
+	) {
 		super(message);
 	}
 }
@@ -74,7 +77,10 @@ function register(path: string | RegExp, handler: (req: Request, db: Database, u
 // ---------------------------------------------------------------- cayw
 
 function picksFor(db: Database, tokens: string[]): Pick[] {
-	const infos = getKeyInfos(db, tokens.filter((t) => /^[A-Z0-9]{8}$/.test(t)));
+	const infos = getKeyInfos(
+		db,
+		tokens.filter((t) => /^[A-Z0-9]{8}$/.test(t)),
+	);
 	const out: Pick[] = [];
 	for (const raw of tokens) {
 		const t = raw.replace(/^@/, "");
@@ -90,7 +96,10 @@ register("/better-bibtex/cayw", async (req, db, url) => {
 	const { params } = queryParams(url);
 	if ("probe" in params) return text("ready");
 	let picks: Pick[];
-	const list = (params.items ?? params.citekeys ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+	const list = (params.items ?? params.citekeys ?? "")
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
 	if (list.length) picks = picksFor(db, list);
 	else if ("selected" in params && isOn(params.selected || "true")) {
 		const keys = await selectedItemKeys();
@@ -101,7 +110,10 @@ register("/better-bibtex/cayw", async (req, db, url) => {
 		if (!hasPicker()) return text("no citation picker is available in this Zinc window; pass ?selected=1 or ?items=<citekey,...>", 503);
 		const r = await pickInteractively({ format: params.format || "cite", params });
 		if (!r || !r.length) return text("");
-		const infos = getKeyInfos(db, r.map((p) => p.itemKey));
+		const infos = getKeyInfos(
+			db,
+			r.map((p) => p.itemKey),
+		);
 		picks = r.map((p) => ({ ...p, citationKey: p.citationKey || infos[p.itemKey]?.key || p.itemKey }));
 	}
 	const out = await cawyOutput(db, picks, params);
@@ -125,7 +137,15 @@ register("/better-bibtex/json-rpc", async (req, db, url) => {
 	// Methods that change data or write files are POST-only with a JSON body: a GET (an <img> tag, a link) must never run them.
 	if (!isGet && hasStateChangingMethod(body)) {
 		const type = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-		if (!/(^|[/+])json(-rpc)?$/.test(type)) return Response.json({ jsonrpc: "2.0", error: { code: -32600, message: "state-changing methods need Content-Type: application/json" }, id: null }, { status: 415 });
+		if (!/(^|[/+])json(-rpc)?$/.test(type))
+			return Response.json(
+				{
+					jsonrpc: "2.0",
+					error: { code: -32600, message: "state-changing methods need Content-Type: application/json" },
+					id: null,
+				},
+				{ status: 415 },
+			);
 	}
 	return Response.json(await handleRpc(db, body, { readOnly: isGet }));
 });
@@ -134,11 +154,20 @@ register("/better-bibtex/json-rpc", async (req, db, url) => {
 
 function formatFor(ext: string): BbtExportFormat {
 	const f = translatorFormat(ext);
-	if (!f) throw new HttpFail(404, `Could not export bibliography: unsupported format "${ext}" (use bibtex, biblatex, bib, json, csljson, yaml, cslyaml)`);
+	if (!f)
+		throw new HttpFail(
+			404,
+			`Could not export bibliography: unsupported format "${ext}" (use bibtex, biblatex, bib, json, csljson, yaml, cslyaml)`,
+		);
 	return f;
 }
 
-function render(db: Database, format: BbtExportFormat, params: Record<string, string>, scope: { collectionKey?: string; keys?: string[] }): string {
+function render(
+	db: Database,
+	format: BbtExportFormat,
+	params: Record<string, string>,
+	scope: { collectionKey?: string; keys?: string[] },
+): string {
 	const includeNotes = isOn(params.exportNotes) && "exportNotes" in params;
 	const items = gatherItems(db, { format: "bibtex", includeNotes, ...scope });
 	return exportBetterFormat(db, format, items, { includeNotes });
@@ -189,7 +218,11 @@ register("/better-bibtex/export/item", async (_req, db, url) => {
 	if (!params.translator) throw new HttpFail(500, "no translator selected");
 	const format = translatorFormat(params.translator);
 	if (!format) throw new HttpFail(500, `translator ${params.translator} not found`);
-	const response: { items: Record<string, unknown>; zotero: Record<string, { itemID: string; uri: string }>; errors: Record<string, string> } = { items: {}, zotero: {}, errors: {} };
+	const response: {
+		items: Record<string, unknown>;
+		zotero: Record<string, { itemID: string; uri: string }>;
+		errors: Record<string, string>;
+	} = { items: {}, zotero: {}, errors: {} };
 	const keys: Record<string, string> = {};
 	for (const ck of citationKeys) {
 		const found = itemsForCitekey(db, ck);
@@ -206,7 +239,10 @@ register("/better-bibtex/export/item", async (_req, db, url) => {
 		if (format === "bettercsljson") filtered = JSON.parse(contents) as Record<string, unknown>[];
 		else {
 			// the filter wants CSL data keyed by citation key whatever the requested translator
-			filtered = items.map((i) => ({ ...(itemToCsl(i.data) as Record<string, unknown>), id: Object.entries(keys).find(([, k]) => k === i.data.key)?.[0] }));
+			filtered = items.map((i) => ({
+				...(itemToCsl(i.data) as Record<string, unknown>),
+				id: Object.entries(keys).find(([, k]) => k === i.data.key)?.[0],
+			}));
 		}
 		for (const item of filtered) {
 			const ck = String(item["citation-key"] ?? item.id);
@@ -229,7 +265,8 @@ register("/better-bibtex/export", async (_req, db, url) => {
 	path = path.slice(0, -ext[0].length);
 	const lib = path.match(/^(group|library);(id|name):([^/]+)[/]/);
 	if (lib) {
-		if (lib[1] === "group") throw new HttpFail(404, `Could not export bibliography: group ${lib[3]} does not exist (Zinc has a single library)`);
+		if (lib[1] === "group")
+			throw new HttpFail(404, `Could not export bibliography: group ${lib[3]} does not exist (Zinc has a single library)`);
 		path = path.slice(lib[0].length);
 	}
 	const coll = path.match(/^collection(?:;(id|key):(.+?)[/])?/);

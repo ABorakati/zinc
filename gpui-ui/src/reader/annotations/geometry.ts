@@ -26,7 +26,10 @@ export function mergeLineRects(rects: PdfRect[]): PdfRect[] {
 			const l = out[k]!;
 			if (!sameLine(l, r)) continue;
 			const gap = r[0] >= l[2] ? r[0] - l[2] : l[0] >= r[2] ? l[0] - r[2] : 0;
-			if (gap <= Math.max(h(l), h(r)) * 1.2) { out[k] = union(l, r); merged = true; }
+			if (gap <= Math.max(h(l), h(r)) * 1.2) {
+				out[k] = union(l, r);
+				merged = true;
+			}
 			break;
 		}
 		if (!merged) out.push([...r] as PdfRect);
@@ -35,8 +38,13 @@ export function mergeLineRects(rects: PdfRect[]): PdfRect[] {
 }
 
 /** Rects of a selection on several pages: the first page becomes `rects`, the next `nextPageRects` (Zotero's limit is two pages). */
-export function selectionToPosition(pages: { page: number; rects: PdfRect[] }[]): { pageIndex: number; rects: PdfRect[]; nextPageRects?: PdfRect[] } | null {
-	const used = pages.filter((p) => p.rects.length).sort((a, b) => a.page - b.page).slice(0, 2);
+export function selectionToPosition(
+	pages: { page: number; rects: PdfRect[] }[],
+): { pageIndex: number; rects: PdfRect[]; nextPageRects?: PdfRect[] } | null {
+	const used = pages
+		.filter((p) => p.rects.length)
+		.sort((a, b) => a.page - b.page)
+		.slice(0, 2);
 	if (!used.length) return null;
 	const first = used[0]!;
 	const rects = mergeLineRects(first.rects);
@@ -46,11 +54,13 @@ export function selectionToPosition(pages: { page: number; rects: PdfRect[] }[])
 	return next.length ? { pageIndex: first.page, rects, nextPageRects: next } : { pageIndex: first.page, rects };
 }
 
-export const rectContains = (r: PdfRect, x: number, y: number, tol = 0) => x >= r[0] - tol && x <= r[2] + tol && y >= r[1] - tol && y <= r[3] + tol;
+export const rectContains = (r: PdfRect, x: number, y: number, tol = 0) =>
+	x >= r[0] - tol && x <= r[2] + tol && y >= r[1] - tol && y <= r[3] + tol;
 
 /** Distance from point (x, y) to segment (ax, ay)-(bx, by). */
 export function segmentDistance(x: number, y: number, ax: number, ay: number, bx: number, by: number): number {
-	const dx = bx - ax, dy = by - ay;
+	const dx = bx - ax,
+		dy = by - ay;
 	const len2 = dx * dx + dy * dy;
 	const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2));
 	return Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
@@ -71,17 +81,21 @@ export function hitsAnnotation(a: Annotation, page: number, x: number, y: number
 		}
 		return false;
 	}
-	return (onNext ? p.nextPageRects! : p.rects ?? []).some((r) => rectContains(r, x, y, a.type === "underline" ? tol : 0));
+	return (onNext ? p.nextPageRects! : (p.rects ?? [])).some((r) => rectContains(r, x, y, a.type === "underline" ? tol : 0));
 }
 
 /** The topmost annotation under the point: the smallest area wins (a note over a highlight). */
 export function annotationAt(anns: Annotation[], page: number, x: number, y: number, tol = 2): Annotation | null {
-	let best: Annotation | null = null, bestArea = Infinity;
+	let best: Annotation | null = null,
+		bestArea = Infinity;
 	for (const a of anns) {
 		if (!hitsAnnotation(a, page, x, y, tol)) continue;
 		const b = boundingRect(a.position);
 		const area = Math.max(1, w(b) * h(b));
-		if (area <= bestArea) { best = a; bestArea = area; }
+		if (area <= bestArea) {
+			best = a;
+			bestArea = area;
+		}
 	}
 	return best;
 }
@@ -107,7 +121,9 @@ export function thinInk(path: number[], minDist = 0.6): number[] {
 /** Resize a rect by dragging one corner/edge handle ("nw", "ne", "sw", "se") to (x, y); keeps at least min points. */
 export function resizeRect(r: PdfRect, handle: "nw" | "ne" | "sw" | "se", x: number, y: number, min = 8): PdfRect {
 	let [x1, y1, x2, y2] = r;
-	if (handle.includes("w")) x1 = Math.min(x, x2 - min); else x2 = Math.max(x, x1 + min);
-	if (handle.includes("n")) y2 = Math.max(y, y1 + min); else y1 = Math.min(y, y2 - min);
+	if (handle.includes("w")) x1 = Math.min(x, x2 - min);
+	else x2 = Math.max(x, x1 + min);
+	if (handle.includes("n")) y2 = Math.max(y, y1 + min);
+	else y1 = Math.min(y, y2 - min);
 	return [x1, y1, x2, y2];
 }

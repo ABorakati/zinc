@@ -42,8 +42,20 @@ const h = await boot({
 	view: () => (
 		<div style={{ ...tw("flex flex-col bg-canvas", store.mode()), width: "100%", height: "100%" }}>
 			<TopBar />
-			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: "transparent" }}>
-				<Show when={store.activeTab() === "settings"} fallback={<text style={textStyle("text-foreground", store.mode())}>library tab</text>}>
+			<div
+				style={{
+					display: "flex",
+					flexDirection: "column",
+					flexGrow: 1,
+					minHeight: 0,
+					width: "100%",
+					backgroundColor: "transparent",
+				}}
+			>
+				<Show
+					when={store.activeTab() === "settings"}
+					fallback={<text style={textStyle("text-foreground", store.mode())}>library tab</text>}
+				>
 					<SettingsPage active />
 				</Show>
 			</div>

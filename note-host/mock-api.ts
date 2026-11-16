@@ -12,7 +12,9 @@ export const state = {
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const detail = (key: string) => ({
 	data: { key, itemType: "note", note: state.note, title: "Mock note", version: 1 },
-	children: [], collections: [], tags: [],
+	children: [],
+	collections: [],
+	tags: [],
 });
 
 export function startMock(port = PORT) {
@@ -36,7 +38,11 @@ export function startMock(port = PORT) {
 
 			const item = p.match(/^\/api\/items\/([^/]+)$/);
 			if (item && item[1] === "TESTNOTE") {
-				if (m === "GET") { state.log.push({ method: m, path: p, at: Date.now() }); console.log("GET", p); return json(detail(item[1])); }
+				if (m === "GET") {
+					state.log.push({ method: m, path: p, at: Date.now() });
+					console.log("GET", p);
+					return json(detail(item[1]));
+				}
 				if (m === "PATCH") {
 					const body = (await req.json()) as { data?: { note?: string } };
 					if (typeof body.data?.note === "string") state.note = body.data.note;

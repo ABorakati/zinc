@@ -96,7 +96,10 @@ export function readZip(bytes: Uint8Array, limits: Partial<ZipLimits> = {}): Zip
 	} catch (e) {
 		if (e instanceof ZipError) throw e;
 		// RangeError from a read past the end of the buffer, zlib errors, ...
-		throw new ZipError(e instanceof RangeError ? "truncated or corrupt zip" : `corrupt zip entry: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+		throw new ZipError(
+			e instanceof RangeError ? "truncated or corrupt zip" : `corrupt zip entry: ${e instanceof Error ? e.message : String(e)}`,
+			{ cause: e },
+		);
 	}
 }
 

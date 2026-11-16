@@ -8,10 +8,12 @@ const query = process.argv[3] ?? "liver transplant frailty";
 
 const client = new Client({ name: "mcp-smoke", version: "0.0.0" });
 let t = performance.now();
-await client.connect(new StdioClientTransport({
-	command: process.execPath,
-	args: [`${import.meta.dir}/mcp-stdio.ts`, "--db", db],
-}));
+await client.connect(
+	new StdioClientTransport({
+		command: process.execPath,
+		args: [`${import.meta.dir}/mcp-stdio.ts`, "--db", db],
+	}),
+);
 console.log(`connected in ${Math.round(performance.now() - t)} ms`);
 
 const { tools } = await client.listTools();

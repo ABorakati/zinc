@@ -19,7 +19,13 @@ test("converts Zotero saved search conditions", () => {
 		{ condition: "savedSearch", operator: "is", value: "XXXXXXXX" }, // unsupported
 		{ condition: "tag", operator: "weirdOp", value: "x" },
 	]);
-	expect(s.options).toEqual({ match: "any", includeParentsAndChildren: false, searchSubcollections: true, topLevelOnly: true, includeTrash: false });
+	expect(s.options).toEqual({
+		match: "any",
+		includeParentsAndChildren: false,
+		searchSubcollections: true,
+		topLevelOnly: true,
+		includeTrash: false,
+	});
 	expect(s.conditions.map((c) => `${c.field} ${c.operator} ${c.value}`)).toEqual([
 		"tag is imaging",
 		"title contains kidney",
@@ -35,13 +41,16 @@ test("reads saved searches from a Zotero-shaped database and imports them", () =
 	z.run("CREATE TABLE savedSearches (savedSearchID INTEGER PRIMARY KEY, savedSearchName TEXT)");
 	z.run("CREATE TABLE savedSearchConditions (savedSearchID INT, searchConditionID INT, condition TEXT, operator TEXT, value TEXT)");
 	z.run("INSERT INTO savedSearches VALUES (1, 'Zebras'), (2, 'Empty')");
-	z.run("INSERT INTO savedSearchConditions VALUES (1, 1, 'title', 'contains', 'zebra'), (1, 2, 'creator', 'is', 'Lee'), (2, 1, 'libraryID', 'is', '1')");
+	z.run(
+		"INSERT INTO savedSearchConditions VALUES (1, 1, 'title', 'contains', 'zebra'), (1, 2, 'creator', 'is', 'Lee'), (2, 1, 'libraryID', 'is', '1')",
+	);
 	const found = readZoteroSavedSearches(z);
 	z.close(true);
 	expect(found.map((f) => f.name)).toEqual(["Empty", "Zebras"]);
 
 	const db = openDb(join(tempDir(), "imp.sqlite"));
-	for (const f of found.filter((x) => x.conditions.length)) createSavedSearch(db, { name: f.name, conditions: f.conditions, options: f.options });
+	for (const f of found.filter((x) => x.conditions.length))
+		createSavedSearch(db, { name: f.name, conditions: f.conditions, options: f.options });
 	const saved = listSavedSearches(db);
 	expect(saved.map((s) => s.name)).toEqual(["Zebras"]);
 	expect(saved[0].conditions).toHaveLength(2);

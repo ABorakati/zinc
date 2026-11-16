@@ -31,11 +31,19 @@ export function createApi(attachmentKey: string, itemKey: string | null): Academ
 			failedAt = 0;
 			refsP = apiRequest<ReferenceList>("GET", `/references/${owner}`)
 				.then((l) => l.references)
-				.catch((e) => { failedAt = Date.now(); console.warn("[academic] references unavailable:", (e as Error).message); return [] as Reference[]; });
+				.catch((e) => {
+					failedAt = Date.now();
+					console.warn("[academic] references unavailable:", (e as Error).message);
+					return [] as Reference[];
+				});
 			return refsP;
 		},
 		refList(refresh = false) {
-			return apiRequest<ReferenceList>("GET", `/references/${owner}${refresh ? "?refresh=1" : ""}`).then((l) => { refsP = Promise.resolve(l.references); failedAt = 0; return l; });
+			return apiRequest<ReferenceList>("GET", `/references/${owner}${refresh ? "?refresh=1" : ""}`).then((l) => {
+				refsP = Promise.resolve(l.references);
+				failedAt = 0;
+				return l;
+			});
 		},
 		lookup(r) {
 			const k = (r.doi ?? r.title ?? "").toLowerCase();
@@ -67,17 +75,28 @@ export function createApi(attachmentKey: string, itemKey: string | null): Academ
 				// 409: already in the library; the fresh reference list knows which item it is
 				const list = await api.refList(true).catch(() => null);
 				const doi = (body.doi ?? body.reference?.doi ?? "").toLowerCase();
-				const hit = list?.references.find((r) => (doi && r.doi?.toLowerCase() === doi) || (body.reference && r.index === body.reference.index));
+				const hit = list?.references.find(
+					(r) => (doi && r.doi?.toLowerCase() === doi) || (body.reference && r.index === body.reference.index),
+				);
 				if (hit?.inLibraryKey) return hit.inLibraryKey;
 				throw e;
 			}
 		},
-		async openUrl(url) { await apiRequest("POST", "/open-url", { url }); },
-		async openExternal(key) { await (await import("../../ui/openExternal")).openAttachmentExternally(key); },
-		item(key) { return apiRequest<ItemDetail>("GET", `/items/${encodeURIComponent(key)}`); },
+		async openUrl(url) {
+			await apiRequest("POST", "/open-url", { url });
+		},
+		async openExternal(key) {
+			await (await import("../../ui/openExternal")).openAttachmentExternally(key);
+		},
+		item(key) {
+			return apiRequest<ItemDetail>("GET", `/items/${encodeURIComponent(key)}`);
+		},
 		async children() {
 			if (!itemKey) return [];
-			itemP ??= api.item(itemKey).catch((e) => { itemP = null; throw e; });
+			itemP ??= api.item(itemKey).catch((e) => {
+				itemP = null;
+				throw e;
+			});
 			return (await itemP).children;
 		},
 	};

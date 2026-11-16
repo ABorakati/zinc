@@ -18,12 +18,23 @@ const details = new Map<string, Promise<ItemDetail>>();
 const resolved = new Map<string, ItemDetail>();
 export function getDetail(key: string): Promise<ItemDetail> {
 	const rev = store.itemsRev();
-	if (rev !== cacheRev) { details.clear(); resolved.clear(); cacheRev = rev; }
+	if (rev !== cacheRev) {
+		details.clear();
+		resolved.clear();
+		cacheRev = rev;
+	}
 	let p = details.get(key);
 	if (!p) {
 		p = api.item(key);
 		details.set(key, p);
-		p.then((d) => { if (details.get(key) === p) resolved.set(key, d); }, () => { if (details.get(key) === p) details.delete(key); });
+		p.then(
+			(d) => {
+				if (details.get(key) === p) resolved.set(key, d);
+			},
+			() => {
+				if (details.get(key) === p) details.delete(key);
+			},
+		);
 	}
 	return p;
 }
@@ -61,13 +72,25 @@ export function childLabel(c: ChildSummary): string {
 // ---- opening ----
 /** Open an http(s) URL in the system browser (through the core). */
 export async function openUrl(url: string): Promise<void> {
-	try { await api.openUrl(url); } catch (e) { fail("Could not open link", e); }
+	try {
+		await api.openUrl(url);
+	} catch (e) {
+		fail("Could not open link", e);
+	}
 }
 export async function openExternal(attachmentKey: string): Promise<void> {
-	try { await openAttachmentExternally(attachmentKey); } catch (e) { fail("Could not open file", e); }
+	try {
+		await openAttachmentExternally(attachmentKey);
+	} catch (e) {
+		fail("Could not open file", e);
+	}
 }
 export async function revealAttachment(attachmentKey: string): Promise<void> {
-	try { await api.reveal(attachmentKey); } catch (e) { fail("Could not show file", e); }
+	try {
+		await api.reveal(attachmentKey);
+	} catch (e) {
+		fail("Could not show file", e);
+	}
 }
 
 const NOTHING = "No attachment or link to open";
@@ -75,17 +98,23 @@ const NOTHING = "No attachment or link to open";
 /** Open one child row / menu entry: reader tab, browser, default app. Notes are shown in the item pane (the pane's selection). */
 export async function openChild(parent: { key: string; title: string }, c: ChildSummary): Promise<void> {
 	switch (childKind(c)) {
-		case "note": return void store.selectItem(parent.key);
-		case "reader": return store.openAttachment(c.key, c.title || parent.title, parent.key);
-		case "file": return openExternal(c.key);
+		case "note":
+			return void store.selectItem(parent.key);
+		case "reader":
+			return store.openAttachment(c.key, c.title || parent.title, parent.key);
+		case "file":
+			return openExternal(c.key);
 		case "url": {
 			try {
 				const url = webUrl((await getDetail(c.key)).data.url);
 				if (url) return openUrl(url);
-			} catch (e) { return fail("Could not open link", e); }
+			} catch (e) {
+				return fail("Could not open link", e);
+			}
 			return void toast(NOTHING);
 		}
-		default: return void toast(NOTHING);
+		default:
+			return void toast(NOTHING);
 	}
 }
 
@@ -96,12 +125,22 @@ export async function openChild(parent: { key: string; title: string }, c: Child
 export async function openItem(it: ItemRow): Promise<void> {
 	if (it.itemType === "note") return void store.selectItem(it.key);
 	if (it.primaryAttachment) return store.openAttachment(it.primaryAttachment.key, it.title || "Reader", it.key);
-	if (it.itemType === "attachment") { // a standalone attachment: open the file itself (the list row carries no content type)
+	if (it.itemType === "attachment") {
+		// a standalone attachment: open the file itself (the list row carries no content type)
 		try {
 			const d = await getDetail(it.key);
-			const child = { key: it.key, itemType: "attachment", title: it.title, contentType: d.data.contentType as string | undefined, linkMode: d.data.linkMode as string | undefined, hasFile: d.data.linkMode !== "linked_url" };
+			const child = {
+				key: it.key,
+				itemType: "attachment",
+				title: it.title,
+				contentType: d.data.contentType as string | undefined,
+				linkMode: d.data.linkMode as string | undefined,
+				hasFile: d.data.linkMode !== "linked_url",
+			};
 			return openChild({ key: it.key, title: it.title }, child);
-		} catch (e) { return fail("Could not open item", e); }
+		} catch (e) {
+			return fail("Could not open item", e);
+		}
 	}
 	// Nothing attached: a URL or DOI the list already carries needs no extra request.
 	if ((it.attachmentCount ?? 0) === 0) {
@@ -147,15 +186,29 @@ export async function findFullText(keys: string[], opts: { openAccessOnly?: bool
 	try {
 		const { jobId } = await api.findFullText(keys, opts.openAccessOnly === true);
 		toast(`Finding full text for ${plural(keys.length, "item")}…`);
-		for (let i = 0; i < 600; i++) { // up to 10 minutes
+		for (let i = 0; i < 600; i++) {
+			// up to 10 minutes
 			await new Promise((r) => setTimeout(r, 1000));
 			const job = await api.fullTextJob(jobId);
 			if (!job.done) continue;
 			const n = (s: string) => job.items.filter((x) => x.state === s).length;
-			const attached = n("attached"), signIn = n("needs-sign-in"), notFound = n("not-found"), failed = n("failed"), already = n("already-has-pdf");
-			const parts = [already && `${already} already had a PDF`, signIn && `${signIn} need sign-in`, notFound && `${notFound} not found`, failed && `${failed} failed`].filter(Boolean);
+			const attached = n("attached"),
+				signIn = n("needs-sign-in"),
+				notFound = n("not-found"),
+				failed = n("failed"),
+				already = n("already-has-pdf");
+			const parts = [
+				already && `${already} already had a PDF`,
+				signIn && `${signIn} need sign-in`,
+				notFound && `${notFound} not found`,
+				failed && `${failed} failed`,
+			].filter(Boolean);
 			if (attached) toast(`Attached ${plural(attached, "PDF")}`, { kind: "success", description: parts.join(", ") || undefined });
-			else toast(signIn ? "Sign-in needed for full text" : "No full text found", { kind: signIn ? "info" : "error", description: parts.join(", ") || undefined });
+			else
+				toast(signIn ? "Sign-in needed for full text" : "No full text found", {
+					kind: signIn ? "info" : "error",
+					description: parts.join(", ") || undefined,
+				});
 			if (attached) store.refresh();
 			return;
 		}
@@ -183,7 +236,9 @@ export async function trashItems(keys: string[], trashed: boolean): Promise<void
 		await Promise.all(keys.map((k) => api.setDeleted(k, trashed)));
 		store.setSelected(new Set());
 		store.refresh();
-		toast(`${trashed ? "Moved" : "Restored"} ${plural(keys.length, "item")} ${trashed ? "to Trash" : "from Trash"}`, { kind: "success" });
+		toast(`${trashed ? "Moved" : "Restored"} ${plural(keys.length, "item")} ${trashed ? "to Trash" : "from Trash"}`, {
+			kind: "success",
+		});
 	} catch (e) {
 		fail(trashed ? "Could not move to Trash" : "Could not restore", e);
 	}
@@ -194,7 +249,9 @@ export async function setInPublications(keys: string[], inPublications: boolean)
 	try {
 		await Promise.all(keys.map((k) => api.setInPublications(k, inPublications)));
 		store.refresh();
-		toast(`${inPublications ? "Added" : "Removed"} ${plural(keys.length, "item")} ${inPublications ? "to" : "from"} My Publications`, { kind: "success" });
+		toast(`${inPublications ? "Added" : "Removed"} ${plural(keys.length, "item")} ${inPublications ? "to" : "from"} My Publications`, {
+			kind: "success",
+		});
 	} catch (e) {
 		fail(inPublications ? "Could not add to My Publications" : "Could not remove from My Publications", e);
 	}

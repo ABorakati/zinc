@@ -19,7 +19,11 @@ describe("Zotero.Utilities", () => {
 		test("should parse author names", () => {
 			for (const useComma of [false, true]) {
 				// pairs that Zotero keeps as typed; the others in upstream's list expand initials ("F.R.S." -> "F. R. S.")
-				for (const [first, expected] of [["First", "First"], ["First Middle", "First Middle"], ["F. R. S.", "F. R. S."]] as const) {
+				for (const [first, expected] of [
+					["First", "First"],
+					["First Middle", "First Middle"],
+					["F. R. S.", "F. R. S."],
+				] as const) {
 					const str = useComma ? `Last, ${first}` : `${first} Last`;
 					const author = clean(str);
 					expect(author.firstName).toBe(expected);
@@ -57,14 +61,27 @@ describe("Zotero.Utilities", () => {
 
 		test("given/family order and comma order", async () => {
 			const names = [
-				"First Last", "First Middle Last", "F. R. S. Last", "Last, First", "Last, First Middle", "Last, F. R. S.", "Ąžuolas Žolynas",
-				"Madonna", "de la Fontaine, Jean", "O'Brien, Pat", "Mary-Jane Smith", "Smith, Mary-Jane", "J. R. R. Tolkien", "Tolkien, J. R. R.",
+				"First Last",
+				"First Middle Last",
+				"F. R. S. Last",
+				"Last, First",
+				"Last, First Middle",
+				"Last, F. R. S.",
+				"Ąžuolas Žolynas",
+				"Madonna",
+				"de la Fontaine, Jean",
+				"O'Brien, Pat",
+				"Mary-Jane Smith",
+				"Smith, Mary-Jane",
+				"J. R. R. Tolkien",
+				"Tolkien, J. R. R.",
 			];
 			const problems: string[] = [];
 			for (const n of names) {
 				const z = await oracle.call<{ firstName: string; lastName: string }>("cleanAuthor", n, "author", n.includes(","));
 				const m = clean(n);
-				if (z.firstName !== (m.firstName ?? "") || z.lastName !== m.lastName) problems.push(`${n}: zotero ${z.firstName}|${z.lastName} vs zotero-next ${m.firstName}|${m.lastName}`);
+				if (z.firstName !== (m.firstName ?? "") || z.lastName !== m.lastName)
+					problems.push(`${n}: zotero ${z.firstName}|${z.lastName} vs zotero-next ${m.firstName}|${m.lastName}`);
 			}
 			expect(problems).toEqual([]);
 		});

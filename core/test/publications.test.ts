@@ -4,12 +4,43 @@ import { buildFixture, call, insertItem, type Fixture } from "./fixture";
 let fx: Fixture;
 beforeEach(() => {
 	fx = buildFixture();
-	insertItem(fx.db, { key: "PPPPPPP1", itemType: "journalArticle", title: "Pub Beta", creators: [{ creatorType: "author", lastName: "Zed" }], date: "2020", inPublications: true, dateAdded: "2024-06-01T00:00:00Z" });
-	insertItem(fx.db, { key: "PPPPPPP2", itemType: "book", title: "Pub Alpha", creators: [{ creatorType: "author", lastName: "Abel" }], date: "2018", inPublications: true, dateAdded: "2024-06-02T00:00:00Z" });
-	insertItem(fx.db, { key: "PPPPPPP3", itemType: "journalArticle", title: "Pub Trashed", inPublications: true, dateAdded: "2024-06-03T00:00:00Z" }, undefined, 1);
-	insertItem(fx.db, { key: "PPPPPPP4", itemType: "journalArticle", title: "Not Published", inPublications: false, dateAdded: "2024-06-04T00:00:00Z" });
+	insertItem(fx.db, {
+		key: "PPPPPPP1",
+		itemType: "journalArticle",
+		title: "Pub Beta",
+		creators: [{ creatorType: "author", lastName: "Zed" }],
+		date: "2020",
+		inPublications: true,
+		dateAdded: "2024-06-01T00:00:00Z",
+	});
+	insertItem(fx.db, {
+		key: "PPPPPPP2",
+		itemType: "book",
+		title: "Pub Alpha",
+		creators: [{ creatorType: "author", lastName: "Abel" }],
+		date: "2018",
+		inPublications: true,
+		dateAdded: "2024-06-02T00:00:00Z",
+	});
+	insertItem(
+		fx.db,
+		{ key: "PPPPPPP3", itemType: "journalArticle", title: "Pub Trashed", inPublications: true, dateAdded: "2024-06-03T00:00:00Z" },
+		undefined,
+		1,
+	);
+	insertItem(fx.db, {
+		key: "PPPPPPP4",
+		itemType: "journalArticle",
+		title: "Not Published",
+		inPublications: false,
+		dateAdded: "2024-06-04T00:00:00Z",
+	});
 	// A flagged child note never counts: My Publications is top-level regular items only.
-	insertItem(fx.db, { key: "PPPPPPP5", itemType: "note", note: "<p>child</p>", parentItem: "PPPPPPP1", inPublications: true }, "PPPPPPP1");
+	insertItem(
+		fx.db,
+		{ key: "PPPPPPP5", itemType: "note", note: "<p>child</p>", parentItem: "PPPPPPP1", inPublications: true },
+		"PPPPPPP1",
+	);
 	// And neither does a flagged standalone note.
 	insertItem(fx.db, { key: "PPPPPPP6", itemType: "note", note: "<p>standalone</p>", inPublications: true });
 });

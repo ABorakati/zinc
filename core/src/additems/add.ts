@@ -29,13 +29,21 @@ function setIfNew(m: Map<string, string>, k: string | null | undefined, key: str
 }
 
 /** Identifiers of an item (as stored in Zotero fields / Extra), lower-cased and normalised. */
-export function identifiersOf(data: Record<string, unknown>): { doi?: string; pmid?: string; pmcid?: string; isbns: string[]; arxiv?: string } {
+export function identifiersOf(data: Record<string, unknown>): {
+	doi?: string;
+	pmid?: string;
+	pmcid?: string;
+	isbns: string[];
+	arxiv?: string;
+} {
 	const extra = typeof data.extra === "string" ? data.extra : "";
 	const url = typeof data.url === "string" ? data.url : "";
 	const doi = itemDoi(data) ?? undefined;
 	const pmid = extra.match(/^\s*PMID:\s*(\d+)/im)?.[1] ?? url.match(/pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)/i)?.[1];
 	const pmcid = extra.match(/^\s*PMCID:\s*(PMC\d+)/im)?.[1]?.toUpperCase() ?? url.match(/\b(PMC\d+)\b/i)?.[1]?.toUpperCase();
-	const isbns = (typeof data.ISBN === "string" ? data.ISBN.split(/[\s,;]+/) : []).map((s) => normalizeIsbn(s)).filter((s): s is string => !!s);
+	const isbns = (typeof data.ISBN === "string" ? data.ISBN.split(/[\s,;]+/) : [])
+		.map((s) => normalizeIsbn(s))
+		.filter((s): s is string => !!s);
 	const archive = typeof data.archiveID === "string" ? data.archiveID : "";
 	let arxiv = findArxivId(archive) ?? findArxivId(extra) ?? findArxivId(url) ?? undefined;
 	if (!arxiv && doi) arxiv = doi.match(/^10\.48550\/arxiv\.(.+)$/i)?.[1];
@@ -117,7 +125,14 @@ export async function fetchByIdentifier(db: Database, p: ParsedId): Promise<Item
 const KIND_LABEL = { doi: "DOI", pmid: "PMID", pmcid: "PMCID", arxiv: "arXiv ID", isbn: "ISBN" } as const;
 
 /** Resolve a single identifier to a new item, or to the existing item that already has it. */
-export async function addOne(db: Database, p: ParsedId, known: Known, collectionKey?: string, autoTag = true, libraryId?: number): Promise<{ added?: ItemDetail; existing?: string }> {
+export async function addOne(
+	db: Database,
+	p: ParsedId,
+	known: Known,
+	collectionKey?: string,
+	autoTag = true,
+	libraryId?: number,
+): Promise<{ added?: ItemDetail; existing?: string }> {
 	const have = knownFor(known, p);
 	if (have) return { existing: have };
 	const data = await fetchByIdentifier(db, p);
@@ -132,11 +147,22 @@ export async function addOne(db: Database, p: ParsedId, known: Known, collection
 	return { added: detail };
 }
 
-export async function addByIdentifier(db: Database, text: unknown, collectionKey?: string, autoTag = true, libraryId?: number): Promise<AddByIdentifierResult> {
+export async function addByIdentifier(
+	db: Database,
+	text: unknown,
+	collectionKey?: string,
+	autoTag = true,
+	libraryId?: number,
+): Promise<AddByIdentifierResult> {
 	if (typeof text !== "string" || !text.trim()) throw new HttpError(400, "text is required");
-	if (collectionKey !== undefined && collectionKey !== null && typeof collectionKey !== "string") throw new HttpError(400, "collectionKey must be a string");
+	if (collectionKey !== undefined && collectionKey !== null && typeof collectionKey !== "string")
+		throw new HttpError(400, "collectionKey must be a string");
 	const { ids, unknown } = parseIdentifiers(text);
-	const result: AddByIdentifierResult = { added: [], failed: unknown.map((id) => ({ id, error: "not a recognised identifier (DOI, PMID, PMCID, arXiv ID or ISBN)" })), existing: [] };
+	const result: AddByIdentifierResult = {
+		added: [],
+		failed: unknown.map((id) => ({ id, error: "not a recognised identifier (DOI, PMID, PMCID, arXiv ID or ISBN)" })),
+		existing: [],
+	};
 	if (ids.length === 0 && unknown.length === 0) throw new HttpError(400, "no identifiers found");
 	// the library: the one named, else the collection's, else My Library
 	const lib = libraryId ?? (collectionKey ? (libraryOfCollection(db, collectionKey) ?? 1) : 1);

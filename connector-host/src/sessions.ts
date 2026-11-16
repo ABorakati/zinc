@@ -35,15 +35,17 @@ export function sessionItems(db: Database, id: string): SessionResult {
 	const items = s.topLevelKeys(db).flatMap((key) => {
 		const d = getItemDetail(db, key);
 		if (!d) return [];
-		return [{
-			key,
-			itemType: d.data.itemType,
-			title: String(d.data.title ?? ""),
-			collections: d.collections,
-			attachments: d.children
-				.filter((c) => c.itemType === "attachment")
-				.map((c) => ({ key: c.key, title: c.title ?? "", contentType: c.contentType ?? null, linkMode: c.linkMode ?? null })),
-		}];
+		return [
+			{
+				key,
+				itemType: d.data.itemType,
+				title: String(d.data.title ?? ""),
+				collections: d.collections,
+				attachments: d.children
+					.filter((c) => c.itemType === "attachment")
+					.map((c) => ({ key: c.key, title: c.title ?? "", contentType: c.contentType ?? null, linkMode: c.linkMode ?? null })),
+			},
+		];
 	});
 	return { status: 200, body: { sessionID: id, targetId: s.targetId, cancelled: cancelled.has(id), items } };
 }

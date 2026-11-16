@@ -7,7 +7,9 @@ import { tempDir } from "../fixture";
 function run(withTriggers: boolean): number {
 	const db = openDb(join(tempDir(), "lib.sqlite"));
 	if (!withTriggers) {
-		const names = (db.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync_%'").all() as { name: string }[]).map((r) => r.name);
+		const names = (
+			db.query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync_%'").all() as { name: string }[]
+		).map((r) => r.name);
 		for (const n of names) db.run(`DROP TRIGGER ${n}`);
 	}
 	db.run("INSERT INTO collections(key, name) VALUES('COLL0001', 'c')");

@@ -78,7 +78,13 @@ const text = (s: string) => new TextEncoder().encode(s);
 function library(mock: MockZotero) {
 	mock.put("collection", "COLL0001", { name: "Reading" });
 	mock.put("item", "PARENT01", { title: "Parent", collections: ["COLL0001"] });
-	mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt" });
+	mock.put("item", "ATT00001", {
+		itemType: "attachment",
+		parentItem: "PARENT01",
+		linkMode: "imported_file",
+		contentType: "text/plain",
+		filename: "one.txt",
+	});
 	mock.put("item", "PARENT02", { title: "Second" });
 	mock.files.set("ATT00001", text("browser file"));
 }
@@ -158,7 +164,13 @@ describe("websync with a browser-like fetch", () => {
 		try {
 			await t.svc.setKey(API_KEY);
 			t.mock.put("item", "PARENT01", { title: "P" });
-			t.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt" });
+			t.mock.put("item", "ATT00001", {
+				itemType: "attachment",
+				parentItem: "PARENT01",
+				linkMode: "imported_file",
+				contentType: "text/plain",
+				filename: "one.txt",
+			});
 			mkdirSync(join(t.dir, "storage", "ATT00001"), { recursive: true });
 			writeFileSync(join(t.dir, "storage", "ATT00001", "one.txt"), "local bytes");
 			await t.svc.setOptions({ files: "sync" });

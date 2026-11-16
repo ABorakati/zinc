@@ -7,7 +7,10 @@ import type { DocStructure, PdfRect } from "../structure/types";
 import { expandCitationGroup, isInReferences, parseCitationNumbers, type RefStart } from "./citations";
 import { charsInRect, rangeRects, unionRects } from "./textlines";
 
-export interface CiteSite { page: number; rect: PdfRect }
+export interface CiteSite {
+	page: number;
+	rect: PdfRect;
+}
 export type CiteIndex = Map<number, CiteSite[]>;
 
 interface Deps {
@@ -42,7 +45,8 @@ export async function buildCiteIndex(d: Deps): Promise<CiteIndex> {
 			const text = idx ? pt.text.slice(idx[0], idx[1]) : "";
 			const dsize = d.ctx.pageSize(l.target.page);
 			const top = l.target.y >= 0 ? (1 - l.target.y) * dsize.h : undefined;
-			if (!(isInReferences(rs, l.target.page, top) || (!!rs && l.target.page === rs.page && parseCitationNumbers(text).length > 0))) continue;
+			if (!(isInReferences(rs, l.target.page, top) || (!!rs && l.target.page === rs.page && parseCitationNumbers(text).length > 0)))
+				continue;
 			let nums = parseCitationNumbers(text);
 			if (idx) {
 				const gn = parseCitationNumbers(expandCitationGroup(pt.text, idx));
@@ -65,13 +69,19 @@ export async function buildCiteIndex(d: Deps): Promise<CiteIndex> {
 	// page text inside the paragraph's area, in order
 	for (const b of d.structure().blocks) {
 		if (!b.html?.includes('data-kind="ref"') || b.type === "reference") continue;
-		const anchors = [...b.html.matchAll(/<a class="rx-cite"[^>]*data-kind="ref"[^>]*>(.*?)<\/a>/g)].map((m) => m[1]!.replace(/<[^>]*>/g, "").trim());
+		const anchors = [...b.html.matchAll(/<a class="rx-cite"[^>]*data-kind="ref"[^>]*>(.*?)<\/a>/g)].map((m) =>
+			m[1]!.replace(/<[^>]*>/g, "").trim(),
+		);
 		if (!anchors.some((t) => /\d/.test(t))) continue;
 		const pt = await d.pageText(b.page);
-		let lo = Infinity, hi = -1;
+		let lo = Infinity,
+			hi = -1;
 		for (const r of b.rects) {
 			const ix = charsInRect(pt.rects, r, 1);
-			if (ix) { lo = Math.min(lo, ix[0]); hi = Math.max(hi, ix[1]); }
+			if (ix) {
+				lo = Math.min(lo, ix[0]);
+				hi = Math.max(hi, ix[1]);
+			}
 		}
 		if (hi < 0) continue;
 		let cursor = lo;

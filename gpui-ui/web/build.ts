@@ -13,7 +13,10 @@ import solidPlugin from "@gpuix/solid/bun-plugin";
 
 const here = import.meta.dir;
 const root = resolve(here, "..");
-const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1] : undefined; };
+const arg = (n: string) => {
+	const i = process.argv.indexOf(`--${n}`);
+	return i >= 0 ? process.argv[i + 1] : undefined;
+};
 // --target web (default): the web page (the demo library with ?demo, else the page's own library). --target extension: the library
 // page of the Zinc Connector, whose data comes from the connector's native host (or the browser library); written to
 // gpui-ui/dist-extension for the connector's build to copy. Manifest V3 extension pages run no inline script and forbid remote code, so that build has no service worker,
@@ -23,24 +26,39 @@ if (target !== "web" && target !== "extension") throw new Error(`--target must b
 const EXT = target === "extension";
 const out = resolve(arg("out") ?? (EXT ? join(root, "dist-extension") : join(root, "out", "web-demo")));
 const db = EXT ? undefined : arg("db");
-if (db && /zotero-next[\\/]data[\\/]library\.sqlite$/i.test(db)) throw new Error("refusing to publish the real library: pass a demo library");
+if (db && /zotero-next[\\/]data[\\/]library\.sqlite$/i.test(db))
+	throw new Error("refusing to publish the real library: pass a demo library");
 
 const SHIMS: Record<string, string> = {
-	"node:fs": "shims/fs.ts", fs: "shims/fs.ts",
-	"node:fs/promises": "shims/fs-promises.ts", "fs/promises": "shims/fs-promises.ts",
-	"node:path": "shims/path.ts", path: "shims/path.ts", "node:path/win32": "shims/path.ts", "node:path/posix": "shims/path.ts",
-	"node:os": "shims/small.ts", os: "shims/small.ts", "node:url": "shims/small.ts", url: "shims/small.ts", "node:crypto": "shims/small.ts", crypto: "shims/small.ts",
-	"node:zlib": "shims/zlib.ts", zlib: "shims/zlib.ts",
+	"node:fs": "shims/fs.ts",
+	fs: "shims/fs.ts",
+	"node:fs/promises": "shims/fs-promises.ts",
+	"fs/promises": "shims/fs-promises.ts",
+	"node:path": "shims/path.ts",
+	path: "shims/path.ts",
+	"node:path/win32": "shims/path.ts",
+	"node:path/posix": "shims/path.ts",
+	"node:os": "shims/small.ts",
+	os: "shims/small.ts",
+	"node:url": "shims/small.ts",
+	url: "shims/small.ts",
+	"node:crypto": "shims/small.ts",
+	crypto: "shims/small.ts",
+	"node:zlib": "shims/zlib.ts",
+	zlib: "shims/zlib.ts",
 	"bun:sqlite": "sqlite.ts",
 };
 // util, stream, events, buffer, assert, string_decoder, querystring and timers are left to Bun's own browser polyfills. zlib is not:
 // Bun's polyfill lacks the *Sync functions the core imports, so zlib maps to shims/zlib.ts (on fflate)
 const POLYFILLED = /^(node:)?(util|stream|events|buffer|assert|string_decoder|querystring|timers)$/;
-const BUILTIN = /^(node:|bun:|bun$|child_process$|worker_threads$|http$|https$|net$|module$|readline$|tty$|v8$|perf_hooks$|dns$|tls$|process$|vm$|webview-bun$)/;
+const BUILTIN =
+	/^(node:|bun:|bun$|child_process$|worker_threads$|http$|https$|net$|module$|readline$|tty$|v8$|perf_hooks$|dns$|tls$|process$|vm$|webview-bun$)/;
 const names = new Map<string, Set<string>>();
 // layout analysis needs Zotero's document worker: its build (bash scripts/build-docworker.sh) and its structured-document-text source
 const DOCWORKER = join(root, "..", "vendor", "document-worker");
-const HAVE_STRUCTURE = existsSync(join(DOCWORKER, "build", "worker.js")) && existsSync(join(DOCWORKER, "structured-document-text", "src", "pack", "reader.js"));
+const HAVE_STRUCTURE =
+	existsSync(join(DOCWORKER, "build", "worker.js")) &&
+	existsSync(join(DOCWORKER, "structured-document-text", "src", "pack", "reader.js"));
 // the build carries the worker (30 MB) and the loader that starts it: the web page always (when vendor/document-worker is there), the
 // extension's library page only with --docworker (PDFs in the extension are phase 3: docs/design/web-connector-wasm.md). Read by
 // src/reader/structure/load.web.ts; without it the reader says layout analysis is unavailable.
@@ -100,7 +118,10 @@ for (let pass = 0; pass < 80; pass++) {
 		const m = /No matching export in "stub:([^"]+)" for import "([^"]+)"/.exec(String(l));
 		if (!m) continue;
 		const s = names.get(m[1]!) ?? new Set<string>();
-		if (!s.has(m[2]!)) { s.add(m[2]!); learned++; }
+		if (!s.has(m[2]!)) {
+			s.add(m[2]!);
+			learned++;
+		}
 		names.set(m[1]!, s);
 	}
 	if (!learned) break;
@@ -154,7 +175,10 @@ if (EXT) {
 				const m = /No matching export in "stub:([^"]+)" for import "([^"]+)"/.exec(String(l));
 				if (!m) continue;
 				const s = names.get(m[1]!) ?? new Set<string>();
-				if (!s.has(m[2]!)) { s.add(m[2]!); learned++; }
+				if (!s.has(m[2]!)) {
+					s.add(m[2]!);
+					learned++;
+				}
 				names.set(m[1]!, s);
 			}
 			if (!learned) break;
@@ -165,14 +189,17 @@ if (EXT) {
 		}
 	}
 	// MV3: no inline script
-	writeFileSync(join(out, "offscreen.html"), `<!doctype html>
+	writeFileSync(
+		join(out, "offscreen.html"),
+		`<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8" /><title>Zinc library database</title></head>
 <body>
 <script type="module" src="offscreen.js"></script>
 </body>
 </html>
-`);
+`,
+	);
 }
 
 // what main.tsx fetches next to the bundle: the demo library, the Lucide icons (src/icons.tsx reads them from disk), the collection
@@ -191,11 +218,16 @@ cpSync(join(root, "node_modules", "@embedpdf", "pdfium", "dist", "pdfium.wasm"),
 // out unless --docworker is given (30 MB, and PDFs in the extension are phase 3: docs/design/web-connector-wasm.md).
 if (DOCWORKER_ON) {
 	cpSync(join(DOCWORKER, "build"), join(out, "docworker"), { recursive: true });
-	writeFileSync(join(out, "docworker", "boot.js"), `// Starts Zotero's document worker (a UMD bundle for a Web Worker) and tells the page it is ready (web/structure-load.ts).\nimportScripts("worker.js");\npostMessage({ __ready: true });\n`);
+	writeFileSync(
+		join(out, "docworker", "boot.js"),
+		`// Starts Zotero's document worker (a UMD bundle for a Web Worker) and tells the page it is ready (web/structure-load.ts).\nimportScripts("worker.js");\npostMessage({ __ready: true });\n`,
+	);
 } else console.log("web demo: vendor/document-worker not found, layout analysis left out");
 if (EXT) {
 	// the connector's full-tab page: module scripts only, and nothing fetched from outside the extension
-	writeFileSync(join(out, "library.html"), `<!doctype html>
+	writeFileSync(
+		join(out, "library.html"),
+		`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -208,7 +240,8 @@ if (EXT) {
 <script type="module" src="main.js"></script>
 </body>
 </html>
-`);
+`,
+	);
 	// Zotero's reader for EPUBs and web snapshots (reader-host), a page of its own: library/reader/index.html?attachment=<key>&host=<name>
 	// opens in a new tab (web/extension.tsx). Copied from reader-host/dist (--reader <dir> to pick another build), minus the document
 	// worker (30 MB, layout analysis of PDFs) and pdf/ (PDF.js, only for PDFs, which open in the GPUI reader). host.js is rebuilt from
@@ -217,22 +250,52 @@ if (EXT) {
 	const readerDist = resolve(arg("reader") ?? join(root, "..", "reader-host", "dist"));
 	if (existsSync(join(readerDist, "reader.js")) && !process.argv.includes("--no-reader")) {
 		const rdir = join(out, "reader");
-		cpSync(readerDist, rdir, { recursive: true, filter: (s) => { const r = relative(readerDist, s).replaceAll("\\", "/"); return !/^(document-worker|pdf|reader\.html|index\.html|host\.js)(\/|$)/.test(r); } });
+		cpSync(readerDist, rdir, {
+			recursive: true,
+			filter: (s) => {
+				const r = relative(readerDist, s).replaceAll("\\", "/");
+				return !/^(document-worker|pdf|reader\.html|index\.html|host\.js)(\/|$)/.test(r);
+			},
+		});
 		const rbuild = async (entry: string, outName: string, extra: Partial<Parameters<typeof Bun.build>[0]> = {}) => {
-			const r = await Bun.build({ entrypoints: [entry], outdir: rdir, target: "browser", format: "iife", minify: !process.argv.includes("--debug"), throw: false, naming: outName, ...extra });
-			if (!r.success) { for (const l of r.logs) console.error(String(l).slice(0, 400)); throw new Error(`reader build failed: ${entry}`); }
+			const r = await Bun.build({
+				entrypoints: [entry],
+				outdir: rdir,
+				target: "browser",
+				format: "iife",
+				minify: !process.argv.includes("--debug"),
+				throw: false,
+				naming: outName,
+				...extra,
+			});
+			if (!r.success) {
+				for (const l of r.logs) console.error(String(l).slice(0, 400));
+				throw new Error(`reader build failed: ${entry}`);
+			}
 		};
 		await rbuild(join(root, "..", "reader-host", "src", "host.js"), "host.js");
 		await rbuild(join(here, "reader-tab", "zn-bridge.ts"), "zn-bridge.js");
 		const page = readFileSync(join(root, "..", "reader-host", "src", "index.html"), "utf8");
-		if (!page.includes(`<script src="reader.js"></script>`)) throw new Error("reader-host/src/index.html changed: put zn-bridge.js before reader.js");
-		writeFileSync(join(rdir, "index.html"), page.replace(`<script src="reader.js"></script>`, `<script src="zn-bridge.js"></script>\n\t<script src="reader.js"></script>`));
+		if (!page.includes(`<script src="reader.js"></script>`))
+			throw new Error("reader-host/src/index.html changed: put zn-bridge.js before reader.js");
+		writeFileSync(
+			join(rdir, "index.html"),
+			page.replace(`<script src="reader.js"></script>`, `<script src="zn-bridge.js"></script>\n\t<script src="reader.js"></script>`),
+		);
 	} else console.log("extension build: reader-host/dist not found (or --no-reader), EPUBs and snapshots will not open in a tab");
 	const files: string[] = [];
-	const walk = (d: string) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else files.push(p); } };
+	const walk = (d: string) => {
+		for (const f of readdirSync(d, { withFileTypes: true })) {
+			const p = join(d, f.name);
+			if (f.isDirectory()) walk(p);
+			else files.push(p);
+		}
+	};
 	walk(out);
 	const mb = files.reduce((n, f) => n + statSync(f).size, 0) / 2 ** 20;
-	console.log(`extension library page -> ${out} (${files.length} files, ${mb.toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
+	console.log(
+		`extension library page -> ${out} (${files.length} files, ${mb.toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`,
+	);
 	process.exit(0);
 }
 // the demo library's stored attachments (<library folder>/storage), and a list of them for main.tsx to put in its file system
@@ -240,7 +303,13 @@ const storage = db ? join(dirname(db), "storage") : "";
 const stored: string[] = [];
 if (storage && existsSync(storage)) {
 	cpSync(storage, join(out, "storage"), { recursive: true });
-	const walk = (d: string) => { for (const f of readdirSync(d, { withFileTypes: true })) { const p = join(d, f.name); if (f.isDirectory()) walk(p); else stored.push(relative(storage, p).replaceAll("\\", "/")); } };
+	const walk = (d: string) => {
+		for (const f of readdirSync(d, { withFileTypes: true })) {
+			const p = join(d, f.name);
+			if (f.isDirectory()) walk(p);
+			else stored.push(relative(storage, p).replaceAll("\\", "/"));
+		}
+	};
 	walk(storage);
 }
 writeFileSync(join(out, "storage.json"), JSON.stringify(stored));
@@ -248,7 +317,9 @@ const styles = arg("styles");
 if (styles && existsSync(styles)) cpSync(styles, join(out, "collection-style.json"));
 // the page: GPUI's canvas fills it (GPUIX appends the canvas to <body>). It is an installable web app (PWA): manifest.webmanifest,
 // icons, and sw.js (written last, below) so an installed copy starts offline.
-writeFileSync(join(out, "index.html"), `<!doctype html>
+writeFileSync(
+	join(out, "index.html"),
+	`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -268,27 +339,37 @@ writeFileSync(join(out, "index.html"), `<!doctype html>
 <script>if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>
 </html>
-`);
+`,
+);
 mkdirSync(join(out, "icons"), { recursive: true });
 for (const s of [192, 512]) cpSync(join(here, "icons", `icon-${s}.png`), join(out, "icons", `icon-${s}.png`));
-writeFileSync(join(out, "manifest.webmanifest"), JSON.stringify({
-	name: "Zinc",
-	short_name: "Zinc",
-	description: "The Zinc desktop app's interface and core, compiled to WebAssembly, on a demo library.",
-	id: "./",
-	start_url: "./",
-	scope: "./",
-	display: "standalone",
-	background_color: "#F7F6F3",
-	theme_color: "#F1EFEA",
-	categories: ["education", "productivity"],
-	icons: [
-		{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-		{ src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-	],
-}, null, 2));
+writeFileSync(
+	join(out, "manifest.webmanifest"),
+	JSON.stringify(
+		{
+			name: "Zinc",
+			short_name: "Zinc",
+			description: "The Zinc desktop app's interface and core, compiled to WebAssembly, on a demo library.",
+			id: "./",
+			start_url: "./",
+			scope: "./",
+			display: "standalone",
+			background_color: "#F7F6F3",
+			theme_color: "#F1EFEA",
+			categories: ["education", "productivity"],
+			icons: [
+				{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+				{ src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+			],
+		},
+		null,
+		2,
+	),
+);
 // how to run a downloaded copy (the release zip): WebAssembly and workers need http://, not a file opened from disk
-writeFileSync(join(out, "README.txt"), `Zinc in the browser
+writeFileSync(
+	join(out, "README.txt"),
+	`Zinc in the browser
 ==========================
 
 The desktop app's interface and core, built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), with a demo
@@ -307,7 +388,8 @@ Dock). The installed app opens in its own window and starts without a network co
 
 Add ?open=demo to open the demo article in the PDF reader, &view=reading for its reading view, ?theme=dark or ?theme=light.
 Not in the browser build: web tabs, sync, importing files and anything else that needs your disk.
-`);
+`,
+);
 // the service worker: every file of the build except Zotero's document worker is stored when the app is installed (or first
 // visited), so it starts offline; the document worker (~30 MB) is stored the first time a PDF is analysed. A new build has a
 // new cache name, and the old cache is dropped when it takes over.
@@ -317,14 +399,17 @@ Not in the browser build: web tabs, sync, importing files and anything else that
 		for (const f of readdirSync(d, { withFileTypes: true })) {
 			const p = join(d, f.name);
 			const rel = relative(out, p).replaceAll("\\", "/");
-			if (f.isDirectory()) { if (rel !== "docworker") walk(p); }
-			else if (rel !== "sw.js" && rel !== "README.txt") precache.push(rel.split("/").map(encodeURIComponent).join("/"));
+			if (f.isDirectory()) {
+				if (rel !== "docworker") walk(p);
+			} else if (rel !== "sw.js" && rel !== "README.txt") precache.push(rel.split("/").map(encodeURIComponent).join("/"));
 		}
 	};
 	walk(out);
 	precache.sort();
 	const id = Bun.hash(precache.map((p) => `${p}:${statSync(join(out, decodeURIComponent(p))).size}`).join("|")).toString(36);
-	writeFileSync(join(out, "sw.js"), `// Zinc (browser build) service worker, written by gpui-ui/web/build.ts.
+	writeFileSync(
+		join(out, "sw.js"),
+		`// Zinc (browser build) service worker, written by gpui-ui/web/build.ts.
 const CACHE = "zn-web-${id}";
 const PRECACHE = ${JSON.stringify(["./", ...precache])};
 self.addEventListener("install", (e) => {
@@ -346,7 +431,10 @@ self.addEventListener("fetch", (e) => {
 		return res;
 	})());
 });
-`);
+`,
+	);
 }
 const size = result.outputs.reduce((n, o) => n + o.size, 0);
-console.log(`web demo -> ${out} (${result.outputs.length} files, ${(size / 2 ** 20).toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`);
+console.log(
+	`web demo -> ${out} (${result.outputs.length} files, ${(size / 2 ** 20).toFixed(1)} MB; stubs: ${[...names.keys()].join(", ") || "none"})`,
+);

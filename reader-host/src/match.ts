@@ -22,7 +22,9 @@ export function normalizeText(s: string | undefined | null): string {
 const STOP = new Set(["the", "of", "and", "a", "an", "in", "on", "for", "to", "with", "by", "from", "at", "is", "are"]);
 
 function tokens(s: string): string[] {
-	return normalizeText(s).split(" ").filter((t) => t.length > 2 && !STOP.has(t));
+	return normalizeText(s)
+		.split(" ")
+		.filter((t) => t.length > 2 && !STOP.has(t));
 }
 
 function surname(author: string): string {
@@ -89,7 +91,10 @@ export function matchReference(refs: Reference[], q: MatchQuery): Reference | nu
 	let bestScore = 0;
 	for (const r of refs) {
 		const s = scoreReference(r, q);
-		if (s > bestScore) { best = r; bestScore = s; }
+		if (s > bestScore) {
+			best = r;
+			bestScore = s;
+		}
 	}
 	return bestScore >= MATCH_THRESHOLD ? best : null;
 }

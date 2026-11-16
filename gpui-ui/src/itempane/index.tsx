@@ -118,16 +118,30 @@ function Body(): JSX.Element {
 	};
 
 	const count = (id: string) =>
-		id === "notes" ? d().children.filter((c) => c.itemType === "note").length
-		: id === "attachments" ? d().children.filter((c) => c.itemType === "attachment").length
-		: id === "tags" ? d().tags.length
-		: id === "collections" ? d().collections.length
-		: id === "related" ? (d().related?.length ?? 0)
-		: 0;
+		id === "notes"
+			? d().children.filter((c) => c.itemType === "note").length
+			: id === "attachments"
+				? d().children.filter((c) => c.itemType === "attachment").length
+				: id === "tags"
+					? d().tags.length
+					: id === "collections"
+						? d().collections.length
+						: id === "related"
+							? (d().related?.length ?? 0)
+							: 0;
 
 	return (
 		<>
-			<div style={{ ...t("flex flex-none gap-3.5 px-5"), width: "100%", height: 38, overflowX: "scroll", borderBottomWidth: 1, borderColor: tok("border-soft") }}>
+			<div
+				style={{
+					...t("flex flex-none gap-3.5 px-5"),
+					width: "100%",
+					height: 38,
+					overflowX: "scroll",
+					borderBottomWidth: 1,
+					borderColor: tok("border-soft"),
+				}}
+			>
 				<For each={SECTIONS}>
 					{(s) => (
 						<div
@@ -137,12 +151,26 @@ function Body(): JSX.Element {
 							testId={`ip-nav-${s.id}`}
 							onClick={() => goTo(s.id)}
 							style={{
-								...t("flex flex-none items-center"), height: 38, cursor: "pointer",
-								borderBottomWidth: 2, borderColor: active() === s.id ? tok("foreground") : "transparent",
+								...t("flex flex-none items-center"),
+								height: 38,
+								cursor: "pointer",
+								borderBottomWidth: 2,
+								borderColor: active() === s.id ? tok("foreground") : "transparent",
 							}}
 						>
 							<Icon name={s.icon} size={14} color={tok(active() === s.id ? "foreground" : "muted-foreground")} />
-							<Show when={active() === s.id}><text style={{ ...tx("text-[12.5px] font-semibold"), color: tok("foreground"), whiteSpace: "nowrap", marginLeft: 6 }}>{s.tab}</text></Show>
+							<Show when={active() === s.id}>
+								<text
+									style={{
+										...tx("text-[12.5px] font-semibold"),
+										color: tok("foreground"),
+										whiteSpace: "nowrap",
+										marginLeft: 6,
+									}}
+								>
+									{s.tab}
+								</text>
+							</Show>
 							<Show when={count(s.id)}>
 								<text style={{ ...tx("text-[12.5px] text-muted-foreground"), marginLeft: 4 }}>{String(count(s.id))}</text>
 							</Show>
@@ -151,21 +179,34 @@ function Body(): JSX.Element {
 				</For>
 			</div>
 			<div
-				ref={(el: HostElement) => { listBox = el; }}
-				onLayout={(e) => { const w = (e as { width?: number }).width; if (w) setLabelW(Math.min(112, Math.max(64, Math.round(0.28 * (w - 40))))); }}
+				ref={(el: HostElement) => {
+					listBox = el;
+				}}
+				onLayout={(e) => {
+					const w = (e as { width?: number }).width;
+					if (w) setLabelW(Math.min(112, Math.max(64, Math.round(0.28 * (w - 40)))));
+				}}
 				style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0, width: "100%", display: "flex", flexDirection: "column" }}
 			>
 				<NoteClip.Provider value={{ el: () => listBox, scrollBy }}>
-				<virtual-list
-					ref={(el: HostElement) => { list = el; }}
-					testId="ip-list"
-					estimatedItemHeight={28}
-					overdraw={80}
-					onVisibleRange={spy}
-					style={{ width: "100%", flexGrow: 1, minHeight: 0, scrollbarColor: withAlpha(tok("foreground"), 0.25), scrollbarWidth: 6 }}
-				>
-					<For each={entries()}>{(e) => e.render()}</For>
-				</virtual-list>
+					<virtual-list
+						ref={(el: HostElement) => {
+							list = el;
+						}}
+						testId="ip-list"
+						estimatedItemHeight={28}
+						overdraw={80}
+						onVisibleRange={spy}
+						style={{
+							width: "100%",
+							flexGrow: 1,
+							minHeight: 0,
+							scrollbarColor: withAlpha(tok("foreground"), 0.25),
+							scrollbarWidth: 6,
+						}}
+					>
+						<For each={entries()}>{(e) => e.render()}</For>
+					</virtual-list>
 				</NoteClip.Provider>
 			</div>
 		</>
@@ -179,16 +220,46 @@ function NotePane(): JSX.Element {
 	const title = () => firstLine((d().data.note as string | undefined) ?? "") || "Untitled note";
 	return (
 		<div style={{ ...t("flex flex-col w-full h-full") }}>
-			<div style={{ ...t("flex flex-col flex-none gap-2.5 px-5 pt-5 pb-4"), backgroundColor: tok("header-tint"), borderTopLeftRadius: 14, borderTopRightRadius: 14, borderBottomWidth: 1, borderColor: tok("border-soft") }}>
-				<div style={{ ...t("flex items-center gap-1.5 rounded-full px-2.5 py-1"), alignSelf: "flex-start", backgroundColor: tok("primary-tint") }}>
+			<div
+				style={{
+					...t("flex flex-col flex-none gap-2.5 px-5 pt-5 pb-4"),
+					backgroundColor: tok("header-tint"),
+					borderTopLeftRadius: 14,
+					borderTopRightRadius: 14,
+					borderBottomWidth: 1,
+					borderColor: tok("border-soft"),
+				}}
+			>
+				<div
+					style={{
+						...t("flex items-center gap-1.5 rounded-full px-2.5 py-1"),
+						alignSelf: "flex-start",
+						backgroundColor: tok("primary-tint"),
+					}}
+				>
 					<Icon name="sticky-note" size={14} color={tok("primary-deep")} />
 					<text style={{ ...tx("text-[11px] font-semibold"), color: tok("primary-deep") }}>NOTE</text>
 				</div>
 				<text style={{ ...tx("font-title text-[21px] font-semibold"), paddingLeft: 6 }}>{title()}</text>
 			</div>
 			{/* Zotero's editor scrolls itself and fills the pane; the Markdown fallback scrolls here */}
-			<div style={{ flexGrow: 1, minHeight: 0, width: "100%", padding: 16, ...(richNotesAvailable() ? { display: "flex", flexDirection: "column" } : { overflow: "scroll" }) }}>
-				<NoteEditor noteKey={d().data.key} fill onSaved={() => { void pane.reload(); pane.refreshList(); }} />
+			<div
+				style={{
+					flexGrow: 1,
+					minHeight: 0,
+					width: "100%",
+					padding: 16,
+					...(richNotesAvailable() ? { display: "flex", flexDirection: "column" } : { overflow: "scroll" }),
+				}}
+			>
+				<NoteEditor
+					noteKey={d().data.key}
+					fill
+					onSaved={() => {
+						void pane.reload();
+						pane.refreshList();
+					}}
+				/>
 			</div>
 		</div>
 	);

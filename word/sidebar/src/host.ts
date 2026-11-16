@@ -45,7 +45,11 @@ export function createWebViewHost(timeoutMs = CALL_TIMEOUT_MS): Host {
 			return new Promise((resolve, reject) => {
 				const timer = setTimeout(() => {
 					pending.delete(id);
-					reject(new Error(`Word did not answer "${method}" in ${Math.round(timeoutMs / 1000)} s (is a dialog open in Word?). Close it and try again; the action may still have completed, so check the document.`));
+					reject(
+						new Error(
+							`Word did not answer "${method}" in ${Math.round(timeoutMs / 1000)} s (is a dialog open in Word?). Close it and try again; the action may still have completed, so check the document.`,
+						),
+					);
 				}, timeoutMs);
 				pending.set(id, {
 					resolve: (v) => (clearTimeout(timer), resolve(v)),

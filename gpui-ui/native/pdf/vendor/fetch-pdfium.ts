@@ -47,5 +47,7 @@ try {
 	mkdirSync(join(dest, LIB, ".."), { recursive: true });
 	cpSync(join(tmp, LIB), join(dest, LIB));
 	for (const f of ["licenses", "LICENSE", "VERSION", "args.gn"]) cpSync(join(tmp, f), join(dest, f), { recursive: true });
-} finally { rmSync(tmp, { recursive: true, force: true }); }
+} finally {
+	rmSync(tmp, { recursive: true, force: true });
+}
 console.log("PDFium installed:", join(dest, LIB));

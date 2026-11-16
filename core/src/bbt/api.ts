@@ -40,7 +40,8 @@ export async function handleBbtApi(req: Request, db: Database): Promise<Response
 				const bad = checkFormula(patch.citekeyFormat);
 				if (bad) throw new HttpError(400, `invalid formula: ${bad.error}`);
 			}
-			if (typeof patch.postfix === "string" && !validPostfix(patch.postfix)) throw new HttpError(400, "postfix must contain exactly one of %(a)s, %(A)s or %(n)s");
+			if (typeof patch.postfix === "string" && !validPostfix(patch.postfix))
+				throw new HttpError(400, "postfix must contain exactly one of %(a)s, %(A)s or %(n)s");
 			try {
 				const settings = setSettings(db, patch);
 				return json({ settings, staleKeys: staleKeyCount(db), formulaError: null });
@@ -54,7 +55,10 @@ export async function handleBbtApi(req: Request, db: Database): Promise<Response
 			return json(previewFormula(db, b.formula, typeof b.itemKey === "string" ? b.itemKey : undefined));
 		}
 		if (route === "keys" && req.method === "GET") {
-			const items = (url.searchParams.get("items") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+			const items = (url.searchParams.get("items") ?? "")
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
 			if (items.length > 5000) throw new HttpError(400, "too many items");
 			return json({ keys: getKeyInfos(db, items) });
 		}
@@ -68,12 +72,14 @@ export async function handleBbtApi(req: Request, db: Database): Promise<Response
 		}
 		if (route === "refresh" && req.method === "POST") {
 			const b = await readBody(req);
-			if (b.items !== undefined && (!Array.isArray(b.items) || b.items.some((x: unknown) => typeof x !== "string"))) throw new HttpError(400, "items must be an array of strings");
+			if (b.items !== undefined && (!Array.isArray(b.items) || b.items.some((x: unknown) => typeof x !== "string")))
+				throw new HttpError(400, "items must be an array of strings");
 			return json({ updated: refreshKeys(db, b.items) });
 		}
 		if (route === "cite" && req.method === "POST") {
 			const b = await readBody(req);
-			if (!Array.isArray(b.items) || b.items.some((x: unknown) => typeof x !== "string")) throw new HttpError(400, "items must be an array of strings");
+			if (!Array.isArray(b.items) || b.items.some((x: unknown) => typeof x !== "string"))
+				throw new HttpError(400, "items must be an array of strings");
 			const s = getSettings(db);
 			const format = typeof b.format === "string" && b.format ? b.format : s.quickCopy;
 			const command = typeof b.command === "string" && b.command ? b.command : s.citeCommand;
@@ -83,7 +89,15 @@ export async function handleBbtApi(req: Request, db: Database): Promise<Response
 			if (req.method === "GET") return json({ exports: listAutoExports(db) });
 			if (req.method === "POST") {
 				const b = await readBody(req);
-				return json(addAutoExport(db, { path: str(b.path, "path"), format: str(b.format, "format"), scope: b.scope ?? { type: "library" }, trigger: b.trigger, options: b.options }));
+				return json(
+					addAutoExport(db, {
+						path: str(b.path, "path"),
+						format: str(b.format, "format"),
+						scope: b.scope ?? { type: "library" },
+						trigger: b.trigger,
+						options: b.options,
+					}),
+				);
 			}
 			throw new HttpError(405, "method not allowed");
 		}

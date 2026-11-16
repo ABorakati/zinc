@@ -14,8 +14,15 @@ let seq = 0;
 export function refreshSavedSearches(): Promise<void> {
 	const my = ++seq;
 	return sidebarApi.savedSearches().then(
-		(l) => { if (my === seq) { setSearches(l); setLoaded(true); } },
-		() => { if (my === seq) setLoaded(true); },
+		(l) => {
+			if (my === seq) {
+				setSearches(l);
+				setLoaded(true);
+			}
+		},
+		() => {
+			if (my === seq) setLoaded(true);
+		},
 	);
 }
 

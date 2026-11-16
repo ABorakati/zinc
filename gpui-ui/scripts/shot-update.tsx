@@ -22,28 +22,50 @@ const suffix = mode === "light" ? "-light" : "";
 // ---- a fake feed: signed manifest, in-memory "installer", a download that waits at 40 % until released
 const kp = await generateKeyPair();
 const installer = new Uint8Array(3_000_000).map((_, i) => (i * 31) % 251);
-const manifest = await signManifest({
-	version: "0.2.0+1a2b3c4d-20261201", releasedAt: "2026-12-01T09:00:00Z", url: "https://updates.example.org/Zinc-Setup-0.2.0-1a2b3c4d-20261201.exe",
-	sha256: createHash("sha256").update(installer).digest("hex"), size: installer.length,
-	notes: "# Zinc 0.2.0\n\n- Automatic updates: signed, verified, installed when you choose\n- Faster start-up with large libraries\n- The reader remembers your zoom per document\n\n## Fixes\n\n- Duplicate detection no longer stalls on very large libraries\n- Word add-in reconnects after Word restarts",
-}, kp.privateJwk);
+const manifest = await signManifest(
+	{
+		version: "0.2.0+1a2b3c4d-20261201",
+		releasedAt: "2026-12-01T09:00:00Z",
+		url: "https://updates.example.org/Zinc-Setup-0.2.0-1a2b3c4d-20261201.exe",
+		sha256: createHash("sha256").update(installer).digest("hex"),
+		size: installer.length,
+		notes: "# Zinc 0.2.0\n\n- Automatic updates: signed, verified, installed when you choose\n- Faster start-up with large libraries\n- The reader remembers your zoom per document\n\n## Fixes\n\n- Duplicate detection no longer stalls on very large libraries\n- Word add-in reconnects after Word restarts",
+	},
+	kp.privateJwk,
+);
 const files = new Map<string, Uint8Array>();
 let release!: () => void;
-const gate = new Promise<void>((r) => { release = r; });
+const gate = new Promise<void>((r) => {
+	release = r;
+});
 const env: UpdateEnv = {
-	updatesDir: "C:/shot/updates", pid: 1,
-	async fetchText() { return JSON.stringify(manifest); },
+	updatesDir: "C:/shot/updates",
+	pid: 1,
+	async fetchText() {
+		return JSON.stringify(manifest);
+	},
 	async download(_url, dest, { onProgress }) {
 		onProgress(installer.length * 0.4, installer.length);
 		await gate;
 		files.set(dest, installer);
 		onProgress(installer.length, installer.length);
 	},
-	async fileSize(p) { return files.get(p)?.length ?? null; },
-	async sha256(p) { return createHash("sha256").update(files.get(p)!).digest("hex"); },
-	async rename(a, b) { files.set(b, files.get(a)!); files.delete(a); },
-	async remove(p) { files.delete(p); },
-	async list() { return []; },
+	async fileSize(p) {
+		return files.get(p)?.length ?? null;
+	},
+	async sha256(p) {
+		return createHash("sha256").update(files.get(p)!).digest("hex");
+	},
+	async rename(a, b) {
+		files.set(b, files.get(a)!);
+		files.delete(a);
+	},
+	async remove(p) {
+		files.delete(p);
+	},
+	async list() {
+		return [];
+	},
 	runInstaller() {},
 	exit() {},
 };
@@ -53,8 +75,20 @@ const h = await boot({
 	view: () => (
 		<div style={{ ...tw("flex flex-col bg-canvas", store.mode()), width: "100%", height: "100%" }}>
 			<TopBar />
-			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", backgroundColor: "transparent" }}>
-				<Show when={store.activeTab() === "settings"} fallback={<text style={textStyle("text-foreground", store.mode())}>library tab</text>}>
+			<div
+				style={{
+					display: "flex",
+					flexDirection: "column",
+					flexGrow: 1,
+					minHeight: 0,
+					width: "100%",
+					backgroundColor: "transparent",
+				}}
+			>
+				<Show
+					when={store.activeTab() === "settings"}
+					fallback={<text style={textStyle("text-foreground", store.mode())}>library tab</text>}
+				>
 					<SettingsPage active />
 				</Show>
 			</div>
@@ -88,7 +122,9 @@ await h.clickText("Later");
 await h.settle(400);
 
 toast.dismiss();
-void (async () => { await h.clickText("Install on exit"); })(); // starts the download (installOnExit) and stays at 40 % until released
+void (async () => {
+	await h.clickText("Install on exit");
+})(); // starts the download (installOnExit) and stays at 40 % until released
 await sleep(500);
 await h.settle(600);
 console.log("state while downloading:", updateModel().state.kind);

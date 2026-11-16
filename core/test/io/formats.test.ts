@@ -37,8 +37,8 @@ const byTitle = (db: Database, title: string): ZoteroItemData => {
 	return dataOf(db, row.key);
 };
 const childNotes = (db: Database, key: string): string[] =>
-	(db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note'").all(key) as { data: string }[]).map(
-		(r) => String(JSON.parse(r.data).note ?? ""),
+	(db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note'").all(key) as { data: string }[]).map((r) =>
+		String(JSON.parse(r.data).note ?? ""),
 	);
 
 async function importInto(db: Database, text: string, extra: Record<string, unknown> = {}) {
@@ -199,14 +199,24 @@ describe("Zotero RDF", () => {
 			extra: "Citation Key: smith2023outcomes",
 		});
 		expect((article.creators ?? []).map((c) => `${c.creatorType}:${c.lastName}`)).toEqual([
-			"author:Smith", "author:Müller-García", "editor:Patel",
+			"author:Smith",
+			"author:Müller-García",
+			"editor:Patel",
 		]);
 		expect((article.tags ?? []).map((t) => `${t.tag}|${t.type ?? 0}`)).toEqual(["transplant|0", "liver|1"]);
 		expect(childNotes(db, article.key)).toEqual(["<p>Remember this</p>"]);
 
 		const attachments = db
-			.query("SELECT i.title, a.link_mode, a.content_type, a.path, a.url FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.parent_key = ? ORDER BY i.title")
-			.all(article.key) as { title: string; link_mode: string; content_type: string | null; path: string | null; url: string | null }[];
+			.query(
+				"SELECT i.title, a.link_mode, a.content_type, a.path, a.url FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.parent_key = ? ORDER BY i.title",
+			)
+			.all(article.key) as {
+			title: string;
+			link_mode: string;
+			content_type: string | null;
+			path: string | null;
+			url: string | null;
+		}[];
 		expect(attachments.map((a) => a.link_mode).sort()).toEqual(["imported_file", "linked_url"]);
 		const file = attachments.find((a) => a.link_mode === "imported_file")!;
 		expect(file.content_type).toBe("application/pdf");
@@ -215,16 +225,28 @@ describe("Zotero RDF", () => {
 		expect(link.url).toBe("https://example.org/supplement");
 
 		const book = byTitle(db, "Surgical Anatomy");
-		expect(book).toMatchObject({ itemType: "book", publisher: "Oxford University Press", place: "Oxford", date: "2018", ISBN: "9780198000000" });
+		expect(book).toMatchObject({
+			itemType: "book",
+			publisher: "Oxford University Press",
+			place: "Oxford",
+			date: "2018",
+			ISBN: "9780198000000",
+		});
 
 		// collection tree: root + nested, each with its item
-		const names = db.query("SELECT key, name, parent_key FROM collections ORDER BY name").all() as { key: string; name: string; parent_key: string | null }[];
+		const names = db.query("SELECT key, name, parent_key FROM collections ORDER BY name").all() as {
+			key: string;
+			name: string;
+			parent_key: string | null;
+		}[];
 		expect(names.map((c) => c.name)).toEqual(["Imported", "Trials"]);
 		const root = names.find((c) => c.name === "Imported")!;
 		const sub = names.find((c) => c.name === "Trials")!;
 		expect(sub.parent_key).toBe(root.key);
 		expect(listItems(db, { collection: sub.key, limit: 10 }).items.map((i) => i.title)).toEqual(["Surgical Anatomy"]);
-		expect(listItems(db, { collection: root.key, limit: 10 }).items.map((i) => i.title)).toEqual(["Outcomes after liver transplantation"]);
+		expect(listItems(db, { collection: root.key, limit: 10 }).items.map((i) => i.title)).toEqual([
+			"Outcomes after liver transplantation",
+		]);
 		expect(r.body.collectionKey).toBe(root.key);
 	});
 
@@ -336,7 +358,12 @@ describe("MODS", () => {
 		expect((d.creators ?? []).map((c) => `${c.creatorType}:${c.lastName}`)).toEqual(["author:Lee", "editor:Kim"]);
 		expect((d.tags ?? []).map((t) => t.tag)).toEqual(["anatomy", "surgery"]);
 		expect(childNotes(db, d.key)).toEqual(["<p>Remember this</p>"]);
-		expect(byTitle(db, "Surgical Anatomy")).toMatchObject({ itemType: "book", ISBN: "9780198000001", publisher: "Oxford University Press", date: "2018" });
+		expect(byTitle(db, "Surgical Anatomy")).toMatchObject({
+			itemType: "book",
+			ISBN: "9780198000001",
+			publisher: "Oxford University Press",
+			date: "2018",
+		});
 	});
 
 	test("export and re-import round trips the fields", async () => {
@@ -392,7 +419,11 @@ describe("MODS", () => {
 
 	test("a bare mods element is detected too", async () => {
 		const db = freshDb();
-		const r = await importInto(db, MODS_SAMPLE.replace(/<\/?modsCollection[^>]*>/g, "").replace('<?xml version="1.0" encoding="UTF-8"?>', ""), { collectionName: null });
+		const r = await importInto(
+			db,
+			MODS_SAMPLE.replace(/<\/?modsCollection[^>]*>/g, "").replace('<?xml version="1.0" encoding="UTF-8"?>', ""),
+			{ collectionName: null },
+		);
 		expect(r.body).toMatchObject({ created: 2, format: "mods" });
 	});
 
@@ -438,10 +469,18 @@ function mendeleyFixture(): MendeleyFixture {
 		CREATE TABLE Files (hash TEXT, localUrl TEXT);
 		CREATE TABLE DocumentUrls (documentId INTEGER, url BLOB, position INTEGER);
 	`);
-	m.query("INSERT INTO Documents VALUES (1, '{AAAAAAAA-1111-2222-3333-444444444444}', 'JournalArticle', 'Mendeley paper', 'An abstract', '2019', '3', '7', 'The Lancet', '12', '4', '77-88', '10.1000/men.1', NULL, '0140-6736', 'Elsevier', 'London', 'UK', '<p>Mendeley <m:italic>note</m:italic></p>', '1560000000', '1560000000', 'false', 'true', 'men2019paper', '31452104')").run();
-	m.query("INSERT INTO Documents VALUES (2, '{BBBBBBBB-1111-2222-3333-444444444444}', 'Book', 'A Mendeley book', '', '2001', '', '', '', '', '', '', '', '9780198000000', NULL, 'OUP', '', '', '', '1560000000', '1560000000', 'false', 'false', '', '')").run();
-	m.query("INSERT INTO Documents VALUES (3, '{CCCCCCCC-1111-2222-3333-444444444444}', 'JournalArticle', 'Deleted paper', '', '2001', '', '', '', '', '', '', '', NULL, NULL, '', '', '', '', '1560000000', '1560000000', 'true', 'false', '', '')").run();
-	m.query("INSERT INTO DocumentContributors VALUES (1, 'DocumentAuthor', 'Jane', 'Smith'), (1, 'DocumentEditor', '', 'Patel'), (2, 'DocumentAuthor', 'Cara', 'Brown')").run();
+	m.query(
+		"INSERT INTO Documents VALUES (1, '{AAAAAAAA-1111-2222-3333-444444444444}', 'JournalArticle', 'Mendeley paper', 'An abstract', '2019', '3', '7', 'The Lancet', '12', '4', '77-88', '10.1000/men.1', NULL, '0140-6736', 'Elsevier', 'London', 'UK', '<p>Mendeley <m:italic>note</m:italic></p>', '1560000000', '1560000000', 'false', 'true', 'men2019paper', '31452104')",
+	).run();
+	m.query(
+		"INSERT INTO Documents VALUES (2, '{BBBBBBBB-1111-2222-3333-444444444444}', 'Book', 'A Mendeley book', '', '2001', '', '', '', '', '', '', '', '9780198000000', NULL, 'OUP', '', '', '', '1560000000', '1560000000', 'false', 'false', '', '')",
+	).run();
+	m.query(
+		"INSERT INTO Documents VALUES (3, '{CCCCCCCC-1111-2222-3333-444444444444}', 'JournalArticle', 'Deleted paper', '', '2001', '', '', '', '', '', '', '', NULL, NULL, '', '', '', '', '1560000000', '1560000000', 'true', 'false', '', '')",
+	).run();
+	m.query(
+		"INSERT INTO DocumentContributors VALUES (1, 'DocumentAuthor', 'Jane', 'Smith'), (1, 'DocumentEditor', '', 'Patel'), (2, 'DocumentAuthor', 'Cara', 'Brown')",
+	).run();
 	m.query("INSERT INTO DocumentTags VALUES (1, 'manual tag')").run();
 	m.query("INSERT INTO DocumentKeywords VALUES (1, 'auto tag')").run();
 	m.query("INSERT INTO Folders VALUES (10, 'Parent', -1, 0), (11, 'Child', 10, 0)").run();
@@ -480,13 +519,15 @@ describe("Mendeley Desktop", () => {
 		});
 		expect((paper.creators ?? []).map((c) => `${c.creatorType}:${c.lastName ?? c.name}`)).toEqual(["author:Smith", "editor:Patel"]);
 		expect((paper.tags ?? []).map((t) => `${t.tag}|${t.type ?? 0}`).sort()).toEqual(["auto tag|1", "manual tag|0", "★|0"]);
-		expect((paper.extra ?? "")).toContain("PMID: 31452104");
-		expect((paper.extra ?? "")).toContain("Citation Key: men2019paper");
+		expect(paper.extra ?? "").toContain("PMID: 31452104");
+		expect(paper.extra ?? "").toContain("Citation Key: men2019paper");
 		expect((paper.relations ?? {})["mendeleyDB:documentUUID"]).toBe("AAAAAAAA-1111-2222-3333-444444444444");
 		expect(childNotes(db, paper.key)).toEqual(["<p>Mendeley <i>note</i></p>"]);
 
 		const attachments = db
-			.query("SELECT a.link_mode, a.path, a.content_type FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.parent_key = ?")
+			.query(
+				"SELECT a.link_mode, a.path, a.content_type FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.parent_key = ?",
+			)
 			.all(paper.key) as { link_mode: string; path: string | null; content_type: string | null }[];
 		expect(attachments.map((a) => a.link_mode).sort()).toEqual(["imported_file", "linked_url"]);
 		expect(existsSync(attachments.find((a) => a.link_mode === "imported_file")!.path!)).toBe(true);
@@ -496,7 +537,10 @@ describe("Mendeley Desktop", () => {
 
 		// trashed documents are left behind; folders become a nested collection tree under the import collection
 		expect(db.query("SELECT count(*) AS n FROM items WHERE title = 'Deleted paper'").get()).toEqual({ n: 0 });
-		const folders = db.query("SELECT name, parent_key FROM collections ORDER BY name").all() as { name: string; parent_key: string | null }[];
+		const folders = db.query("SELECT name, parent_key FROM collections ORDER BY name").all() as {
+			name: string;
+			parent_key: string | null;
+		}[];
 		expect(folders.map((f) => f.name)).toEqual(["Child", `Imported ${new Date().toISOString().slice(0, 10)}`, "Parent"]);
 		expect(folders.find((f) => f.name === "Parent")!.parent_key).toMatch(/^[A-Z0-9]{8}$/);
 		expect(folders.find((f) => f.name === "Child")!.parent_key).not.toBeNull();

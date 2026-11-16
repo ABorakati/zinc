@@ -15,7 +15,26 @@ afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 const shell = Bun.which("pwsh") ?? Bun.which("powershell");
 const run = (name: string, extra: string[] = []) => {
 	const dir = join(ROOT, name);
-	const p = Bun.spawnSync([shell!, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-ManifestOnly", "-ManifestDir", dir, "-HostExe", fakeExe, "-HostName", "com.zotero_next.connector_host_test", ...extra], { stdout: "pipe", stderr: "pipe" });
+	const p = Bun.spawnSync(
+		[
+			shell!,
+			"-NoProfile",
+			"-NonInteractive",
+			"-ExecutionPolicy",
+			"Bypass",
+			"-File",
+			script,
+			"-ManifestOnly",
+			"-ManifestDir",
+			dir,
+			"-HostExe",
+			fakeExe,
+			"-HostName",
+			"com.zotero_next.connector_host_test",
+			...extra,
+		],
+		{ stdout: "pipe", stderr: "pipe" },
+	);
 	const file = join(dir, "com.zotero_next.connector_host_test.json");
 	return { code: p.exitCode, err: p.stderr.toString(), manifest: existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null };
 };

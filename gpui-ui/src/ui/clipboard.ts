@@ -8,7 +8,12 @@ type ClipNative = { writeToClipboard?: (s: string) => void; readFromClipboard?: 
 const nat = () => native() as unknown as ClipNative | undefined;
 
 async function ps(args: string[], stdin?: string): Promise<string> {
-	const p = Bun.spawn(["powershell", "-NoProfile", "-NonInteractive", "-Command", ...args], { stdin: stdin === undefined ? "ignore" : new Blob([stdin]), stdout: "pipe", stderr: "ignore", windowsHide: true });
+	const p = Bun.spawn(["powershell", "-NoProfile", "-NonInteractive", "-Command", ...args], {
+		stdin: stdin === undefined ? "ignore" : new Blob([stdin]),
+		stdout: "pipe",
+		stderr: "ignore",
+		windowsHide: true,
+	});
 	const out = await new Response(p.stdout).text();
 	await p.exited;
 	return out;
@@ -18,7 +23,10 @@ export const clipboard = {
 	/** Put plain text on the clipboard. */
 	async writeText(text: string): Promise<void> {
 		const n = nat();
-		if (n?.writeToClipboard) { n.writeToClipboard(text); return; }
+		if (n?.writeToClipboard) {
+			n.writeToClipboard(text);
+			return;
+		}
 		if (writeClipboard(text)) return;
 		await ps(["Set-Clipboard -Value ([Console]::In.ReadToEnd())"], text);
 	},

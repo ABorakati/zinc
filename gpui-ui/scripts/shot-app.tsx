@@ -12,7 +12,10 @@ import { openSettings } from "../src/shell/layout";
 import { setThemePrefs } from "../src/shell/appearance";
 
 const args = process.argv.slice(2);
-const val = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+const val = (name: string) => {
+	const i = args.indexOf(name);
+	return i >= 0 ? args[i + 1] : undefined;
+};
 const out = args.find((a) => a.endsWith(".png")) ?? `${SHOTS}/shell-app.png`;
 const mode = val("--mode") as "light" | "dark" | undefined;
 const scheme = val("--scheme");
@@ -20,10 +23,25 @@ const panels = val("--panels");
 
 const h = await boot({ prefs: { ...(mode ? { mode } : { mode: "dark" }), ...(scheme ? { scheme } : {}) } });
 const live = val("--live-scheme"); // switch the scheme after the app is up: every drawn component must restyle
-if (live) { setThemePrefs({ scheme: live }); await h.settle(800); }
-if (flag(args, "--select")) { const it = h.store.itemAt(1); if (it) h.store.selectItem(it.key); await h.settle(1500); }
-if (flag(args, "--settings")) { openSettings(); gotoSection(val("--settings-section") ?? "appearance"); await h.settle(800); }
-if (panels) { setLeftOpen(panels[0] === "1"); setRightOpen(panels[1] === "1"); await h.settle(); }
+if (live) {
+	setThemePrefs({ scheme: live });
+	await h.settle(800);
+}
+if (flag(args, "--select")) {
+	const it = h.store.itemAt(1);
+	if (it) h.store.selectItem(it.key);
+	await h.settle(1500);
+}
+if (flag(args, "--settings")) {
+	openSettings();
+	gotoSection(val("--settings-section") ?? "appearance");
+	await h.settle(800);
+}
+if (panels) {
+	setLeftOpen(panels[0] === "1");
+	setRightOpen(panels[1] === "1");
+	await h.settle();
+}
 await h.settle(400);
 h.t.renderer.captureScreenshot(out);
 console.log("wrote", out);
@@ -35,12 +53,22 @@ if (flag(args, "--drag")) {
 	const x0 = Math.round(0.18 * (win.width - 12 - 24) + 6);
 	const y = Math.round(win.height / 2);
 	h.t.renderer.nativeSimulateMouseDown(x0, y);
-	for (let i = 1; i <= 7; i++) { h.t.renderer.nativeSimulateMouseMove(x0 + i * 20, y, 0); await sleep(30); }
+	for (let i = 1; i <= 7; i++) {
+		h.t.renderer.nativeSimulateMouseMove(x0 + i * 20, y, 0);
+		await sleep(30);
+	}
 	h.t.renderer.nativeSimulateMouseUp(x0 + 140, y);
 	await h.settle(500);
 	const resized = out.replace(/\.png$/, "-resized.png");
 	h.t.renderer.captureScreenshot(resized);
-	console.log("wrote", resized, "cols before", before.map((n) => +n.toFixed(3)), "after", getCols("11").map((n) => +n.toFixed(3)));
+	console.log(
+		"wrote",
+		resized,
+		"cols before",
+		before.map((n) => +n.toFixed(3)),
+		"after",
+		getCols("11").map((n) => +n.toFixed(3)),
+	);
 }
 await sleep(800); // the ui-state.json write is debounced
 const saved = JSON.parse(readFileSync(STATE_FILE, "utf8")) as Record<string, unknown>;

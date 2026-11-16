@@ -1,22 +1,50 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="color-scheme" content="light dark">
-	<title>Note</title>
-	<style>
-		html, body { margin: 0; height: 100%; }
-		body { background: Canvas; color: CanvasText; }
-		#editor-frame { border: 0; width: 100%; height: 100%; display: block; background: transparent; }
-		#host-error { display: none; position: fixed; inset: 0; align-items: center; justify-content: center;
-			padding: 24px; text-align: center; font: 14px system-ui, sans-serif; background: Canvas; color: CanvasText; z-index: 99999; }
-		#host-error.show { display: flex; }
-	</style>
-</head>
-<body>
-	<iframe id="editor-frame" title="Note editor"></iframe>
-	<div id="host-error"></div>
-	<script src="host.js"></script>
-</body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>Note</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+			}
+			body {
+				background: Canvas;
+				color: CanvasText;
+			}
+			#editor-frame {
+				border: 0;
+				width: 100%;
+				height: 100%;
+				display: block;
+				background: transparent;
+			}
+			#host-error {
+				display: none;
+				position: fixed;
+				inset: 0;
+				align-items: center;
+				justify-content: center;
+				padding: 24px;
+				text-align: center;
+				font:
+					14px system-ui,
+					sans-serif;
+				background: Canvas;
+				color: CanvasText;
+				z-index: 99999;
+			}
+			#host-error.show {
+				display: flex;
+			}
+		</style>
+	</head>
+	<body>
+		<iframe id="editor-frame" title="Note editor"></iframe>
+		<div id="host-error"></div>
+		<script src="host.js"></script>
+	</body>
 </html>

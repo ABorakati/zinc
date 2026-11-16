@@ -23,7 +23,10 @@ export const REAL_HOST_NAME = "com.zotero_next.connector_host";
 /** Registered nowhere: what a copy of the connector uses so that it has no native host. */
 export const UNREGISTERED_HOST_NAME = "com.zotero_next.connector_host_unregistered_check";
 const GUARD_MARKER = "zinc_test"; // appears in library pages built from a source with the guard (native-host.ts resolveHostName)
-const KEYS = { chromium: "HKCU\\Software\\Chromium\\NativeMessagingHosts", google: "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts" } as const;
+const KEYS = {
+	chromium: "HKCU\\Software\\Chromium\\NativeMessagingHosts",
+	google: "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts",
+} as const;
 
 /** The host names registered under each key (`reg query`, read-only). */
 export function registeredHosts(): { chromium: string[]; google: string[] } {
@@ -32,9 +35,14 @@ export function registeredHosts(): { chromium: string[]; google: string[] } {
 		if (r.error) throw new Error(`check-safety: cannot run reg query: ${r.error.message}`);
 		// reg prints the subkeys with the long root name (HKEY_CURRENT_USER\...), whatever form was asked for
 		const prefix = key.replace(/^HKCU/i, "HKEY_CURRENT_USER").toLowerCase() + "\\";
-		const out = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.toLowerCase().startsWith(prefix)).map((l) => l.slice(prefix.length));
+		const out = r.stdout
+			.split(/\r?\n/)
+			.map((l) => l.trim())
+			.filter((l) => l.toLowerCase().startsWith(prefix))
+			.map((l) => l.slice(prefix.length));
 		// exit 1 with nothing printed = the key does not exist (no hosts registered there); anything else unexpected must not pass as "none"
-		if (r.status !== 0 && !/unable to find|cannot find/i.test(r.stderr)) throw new Error(`check-safety: reg query ${key} failed: ${r.stderr || r.stdout}`);
+		if (r.status !== 0 && !/unable to find|cannot find/i.test(r.stderr))
+			throw new Error(`check-safety: reg query ${key} failed: ${r.stderr || r.stdout}`);
 		return out;
 	};
 	return { chromium: list(KEYS.chromium), google: list(KEYS.google) };
@@ -48,7 +56,11 @@ function* files(dir: string): Generator<string> {
 	for (const name of readdirSync(dir)) {
 		const p = join(dir, name);
 		let st;
-		try { st = statSync(p); } catch { continue; } // follows junctions and links, as Chrome does
+		try {
+			st = statSync(p);
+		} catch {
+			continue;
+		} // follows junctions and links, as Chrome does
 		if (st.isDirectory()) yield* files(p);
 		else if (SCRIPT.test(name)) yield p;
 	}
@@ -65,7 +77,10 @@ export function makeConnectorTestCopy(src: string, dest: string, replacement = U
 	let changed = 0;
 	for (const f of files(dest)) {
 		const t = readFileSync(f, "utf8");
-		const u = t.replace(re, (_m, q: string) => { changed++; return q + replacement + q; });
+		const u = t.replace(re, (_m, q: string) => {
+			changed++;
+			return q + replacement + q;
+		});
 		if (u !== t) writeFileSync(f, u);
 	}
 	if (!changed) throw new Error(`check-safety: no use of ${REAL_HOST_NAME} found in ${src}; is it a connector build?`);
@@ -81,9 +96,12 @@ export function assertSafeToStart(opts: { extDir: string; hostNames?: string[] }
 	const reg = registeredHosts();
 	const google = new Set(reg.google);
 	const refuse = (why: string): never => {
-		throw new Error(`REFUSING TO START CHROME (web/check-safety.ts): ${why}\n  Chrome for Testing reads native hosts registered under HKCU\\Software\\Google\\Chrome too (here: ${[...google].join(", ") || "none"}), so this run could reach the user's real host and library.`);
+		throw new Error(
+			`REFUSING TO START CHROME (web/check-safety.ts): ${why}\n  Chrome for Testing reads native hosts registered under HKCU\\Software\\Google\\Chrome too (here: ${[...google].join(", ") || "none"}), so this run could reach the user's real host and library.`,
+		);
 	};
-	for (const n of opts.hostNames ?? []) if (google.has(n)) refuse(`the test host name "${n}" is registered under HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts`);
+	for (const n of opts.hostNames ?? [])
+		if (google.has(n)) refuse(`the test host name "${n}" is registered under HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts`);
 	const mf = join(opts.extDir, "manifest.json");
 	if (!existsSync(mf)) refuse(`${mf} does not exist`);
 	const manifest = JSON.parse(readFileSync(mf, "utf8")) as { zinc_test?: boolean };
@@ -96,7 +114,10 @@ export function assertSafeToStart(opts: { extDir: string; hostNames?: string[] }
 	const guarded = new Set(all.filter(({ t }) => t.includes(GUARD_MARKER)).map(({ f }) => dirname(f)));
 	for (const { f, t } of all) {
 		const hit = names.find(({ re }) => re.test(t));
-		if (hit && !guarded.has(dirname(f))) refuse(`${f} names the registered host "${hit.n}" and has no zinc_test guard (rebuild the library page with this source, or make a test copy of the connector with makeConnectorTestCopy)`);
+		if (hit && !guarded.has(dirname(f)))
+			refuse(
+				`${f} names the registered host "${hit.n}" and has no zinc_test guard (rebuild the library page with this source, or make a test copy of the connector with makeConnectorTestCopy)`,
+			);
 	}
 	return reg;
 }

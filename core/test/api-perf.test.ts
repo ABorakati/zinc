@@ -30,7 +30,14 @@ test.skipIf(!!process.env.CI)("30k items: json-field sorts and fields= under 150
 		}
 	})();
 
-	const cases: [string, string][] = [["DOI", "asc"], ["volume", "desc"], ["date", "asc"], ["itemType", "asc"], ["publication", "desc"], ["noteCount", "desc"]];
+	const cases: [string, string][] = [
+		["DOI", "asc"],
+		["volume", "desc"],
+		["date", "asc"],
+		["itemType", "asc"],
+		["publication", "desc"],
+		["noteCount", "desc"],
+	];
 	for (const [sort, dir] of cases) {
 		listItems(db, { sort, dir, limit: 100, fields: ["DOI", "volume", "date"] }); // warm up
 		const t = performance.now();

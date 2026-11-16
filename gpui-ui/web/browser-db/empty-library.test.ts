@@ -8,7 +8,13 @@ import { indexItem, search } from "../../../core/src/search";
 import { emptyBrowserLibrary } from "./empty-library";
 
 const dir = mkdtempSync(join(tmpdir(), "zn-empty-"));
-afterAll(() => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* WAL */ } });
+afterAll(() => {
+	try {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	} catch {
+		/* WAL */
+	}
+});
 
 test("empties every table, queues no delete for zotero.org, and signs out of sync", async () => {
 	const db = repo.openDb(join(dir, "library.sqlite"));
@@ -17,7 +23,9 @@ test("empties every table, queues no delete for zotero.org, and signs out of syn
 	const it = repo.createItem(db, { itemType: "book", title: "Quokkas", collections: [c.key] } as never);
 	repo.addTags(db, it.data.key, ["a"]);
 	repo.createItem(db, { itemType: "note", note: "<p>n</p>", parentItem: it.data.key } as never);
-	db.query("INSERT INTO sync_state(name, value) VALUES('mode', 'zotero-org') ON CONFLICT(name) DO UPDATE SET value = excluded.value").run();
+	db.query(
+		"INSERT INTO sync_state(name, value) VALUES('mode', 'zotero-org') ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+	).run();
 	db.query("INSERT INTO websync_versions(type, key, version) VALUES ('item', ?, 5)").run(it.data.key);
 	indexItem(db, it.data.key);
 	expect(search(db, "quokkas").hits.length).toBe(1);
@@ -26,7 +34,19 @@ test("empties every table, queues no delete for zotero.org, and signs out of syn
 	expect(r.items).toBe(2);
 	expect(r.collections).toBe(2);
 	const n = (t: string) => (db.query(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n;
-	for (const t of ["items", "collections", "collection_items", "item_tags", "attachments", "annotations", "fulltext", "sync_outbox", "websync_versions", "search"]) expect(n(t)).toBe(0);
+	for (const t of [
+		"items",
+		"collections",
+		"collection_items",
+		"item_tags",
+		"attachments",
+		"annotations",
+		"fulltext",
+		"sync_outbox",
+		"websync_versions",
+		"search",
+	])
+		expect(n(t)).toBe(0);
 	expect((db.query("SELECT value FROM sync_state WHERE name = 'mode'").get() as { value: string }).value).toBe("off");
 	expect(search(db, "quokkas").hits.length).toBe(0);
 	void sub;

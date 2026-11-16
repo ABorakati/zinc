@@ -11,12 +11,37 @@ import type { Creator, ItemDetail } from "../types";
 import { store } from "../../store";
 import { duplicatesApi, fieldLabels, type DuplicateReason, type DuplicateSet, type DuplicateSetDetails } from "./client";
 
-const INTERNAL_FIELDS = new Set(["key", "version", "dateAdded", "dateModified", "deleted", "parentItem", "tags", "collections", "relations"]);
+const INTERNAL_FIELDS = new Set([
+	"key",
+	"version",
+	"dateAdded",
+	"dateModified",
+	"deleted",
+	"parentItem",
+	"tags",
+	"collections",
+	"relations",
+]);
 const PRIORITY: Record<string, number> = {
-	itemType: 1, title: 2, creators: 3, date: 4, publicationTitle: 5, bookTitle: 6, proceedingsTitle: 7, DOI: 8, ISBN: 9,
-	volume: 10, issue: 11, pages: 12, publisher: 13, place: 14, url: 15, abstractNote: 16, extra: 17,
+	itemType: 1,
+	title: 2,
+	creators: 3,
+	date: 4,
+	publicationTitle: 5,
+	bookTitle: 6,
+	proceedingsTitle: 7,
+	DOI: 8,
+	ISBN: 9,
+	volume: 10,
+	issue: 11,
+	pages: 12,
+	publisher: 13,
+	place: 14,
+	url: 15,
+	abstractNote: 16,
+	extra: 17,
 };
-const byPriority = (a: string, b: string) => ((PRIORITY[a] ?? 100) - (PRIORITY[b] ?? 100)) || a.localeCompare(b);
+const byPriority = (a: string, b: string) => (PRIORITY[a] ?? 100) - (PRIORITY[b] ?? 100) || a.localeCompare(b);
 const REASON: Record<DuplicateReason, string> = { doi: "DOI", isbn: "ISBN", title: "Title" };
 
 function label(field: string, labels: Record<string, string>): string {
@@ -47,7 +72,9 @@ function defaultChoices(items: ItemDetail[], masterKey: string, differing: strin
 }
 
 const SectionHead = (p: { children: string }) => (
-	<div style={{ ...t("border-b bg-muted px-3 py-1.5"), width: "100%" }}><Txt class="text-[11px] font-semibold text-muted-foreground">{p.children}</Txt></div>
+	<div style={{ ...t("border-b bg-muted px-3 py-1.5"), width: "100%" }}>
+		<Txt class="text-[11px] font-semibold text-muted-foreground">{p.children}</Txt>
+	</div>
 );
 const LABEL_W = 130;
 const Cols = (p: { head?: JSX.Element; children: JSX.Element; border?: boolean }) => (
@@ -76,9 +103,21 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 
 	const load = () => {
 		setLoading(true);
-		duplicatesApi.list().then((l) => { setSets(l.sets); setListError(""); }, (e) => setListError(errMsg(e))).finally(() => setLoading(false));
+		duplicatesApi
+			.list()
+			.then(
+				(l) => {
+					setSets(l.sets);
+					setListError("");
+				},
+				(e) => setListError(errMsg(e)),
+			)
+			.finally(() => setLoading(false));
 	};
-	onMount(() => { load(); void fieldLabels().then(setLabels); });
+	onMount(() => {
+		load();
+		void fieldLabels().then(setLabels);
+	});
 
 	const all = createMemo<DuplicateSet[]>(() => {
 		const m = manual();
@@ -91,24 +130,34 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 			if (manual() && i === 0) return true;
 			if (rf !== "all" && s.reason !== rf) return false;
 			if (!q) return true;
-			return [s.title, s.creatorsSummary, s.year ? String(s.year) : ""].some((x) => (x ?? "").toLowerCase().includes(q)) || s.keys.some((k) => k.toLowerCase().includes(q));
+			return (
+				[s.title, s.creatorsSummary, s.year ? String(s.year) : ""].some((x) => (x ?? "").toLowerCase().includes(q)) ||
+				s.keys.some((k) => k.toLowerCase().includes(q))
+			);
 		});
 	});
 	const active = createMemo<DuplicateSet | null>(() => filtered()[idx()] ?? filtered()[0] ?? null);
 
-	createEffect(on(active, (s) => {
-		const my = ++detailSeq;
-		setDetails(null);
-		setDetailError("");
-		if (!s) return;
-		duplicatesApi.setDetails(s.keys).then((d) => {
-			if (my !== detailSeq) return;
-			const m = d.defaultMasterKey || d.items[0]?.data.key || "";
-			setDetails(d);
-			setMaster(m);
-			setChoices(defaultChoices(d.items, m, d.differingFields));
-		}, (e) => { if (my === detailSeq) setDetailError(errMsg(e)); });
-	}));
+	createEffect(
+		on(active, (s) => {
+			const my = ++detailSeq;
+			setDetails(null);
+			setDetailError("");
+			if (!s) return;
+			duplicatesApi.setDetails(s.keys).then(
+				(d) => {
+					if (my !== detailSeq) return;
+					const m = d.defaultMasterKey || d.items[0]?.data.key || "";
+					setDetails(d);
+					setMaster(m);
+					setChoices(defaultChoices(d.items, m, d.differingFields));
+				},
+				(e) => {
+					if (my === detailSeq) setDetailError(errMsg(e));
+				},
+			);
+		}),
+	);
 
 	const pickMaster = (key: string) => {
 		setMaster(key);
@@ -121,7 +170,8 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 		if (!d?.items.length) return [];
 		const diff = new Set(d.differingFields);
 		const names = new Set<string>();
-		for (const it of d.items) for (const k of Object.keys(it.data)) if (!INTERNAL_FIELDS.has(k) && !diff.has(k) && !isEmpty(it.data[k])) names.add(k);
+		for (const it of d.items)
+			for (const k of Object.keys(it.data)) if (!INTERNAL_FIELDS.has(k) && !diff.has(k) && !isEmpty(it.data[k])) names.add(k);
 		return [...names].sort(byPriority);
 	});
 	const union = createMemo(() => {
@@ -129,7 +179,10 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 		if (!d) return { tags: [] as string[], collections: [] as string[], children: 0, related: 0 };
 		const names = new Map<string, string>();
 		const walk = (l: Collection[]): void => {
-			for (const c of l) { names.set(c.key, c.name); if (c.children) walk(c.children); }
+			for (const c of l) {
+				names.set(c.key, c.name);
+				if (c.children) walk(c.children);
+			}
 		};
 		walk(store.collections());
 		const keys = new Set(d.items.map((i) => i.data.key));
@@ -147,7 +200,11 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 		const m = master() || d.defaultMasterKey;
 		setBusy(true);
 		try {
-			await duplicatesApi.merge({ masterKey: m, otherKeys: d.items.map((i) => i.data.key).filter((k) => k !== m), fieldChoices: choices() });
+			await duplicatesApi.merge({
+				masterKey: m,
+				otherKeys: d.items.map((i) => i.data.key).filter((k) => k !== m),
+				fieldChoices: choices(),
+			});
 			setManual(null);
 			refresh();
 			selectOnly(m);
@@ -181,12 +238,32 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 			{/* ---- left: duplicate sets */}
 			<div style={{ ...t("flex flex-col border-r bg-card"), width: 300, flexShrink: 0, height: H }}>
 				<div style={t("flex flex-col gap-2 border-b p-2.5")}>
-					<TextInput value={query()} onInput={(v) => { setQuery(v); setIdx(0); }} placeholder="Filter duplicate sets…" />
+					<TextInput
+						value={query()}
+						onInput={(v) => {
+							setQuery(v);
+							setIdx(0);
+						}}
+						placeholder="Filter duplicate sets…"
+					/>
 					<div style={t("flex flex-row items-center gap-1")}>
 						<For each={["all", "doi", "isbn", "title"] as const}>
 							{(r) => (
-								<div onClick={() => { setReasonFilter(r); setIdx(0); }} style={{ ...t(`rounded px-2 py-0.5 ${reasonFilter() === r ? "bg-primary" : "bg-muted hover:bg-accent"}`), cursor: "pointer" }}>
-									<Txt class={`text-[11px] font-medium ${reasonFilter() === r ? "text-primary-foreground" : "text-muted-foreground"}`}>{r === "all" ? "All" : REASON[r]}</Txt>
+								<div
+									onClick={() => {
+										setReasonFilter(r);
+										setIdx(0);
+									}}
+									style={{
+										...t(`rounded px-2 py-0.5 ${reasonFilter() === r ? "bg-primary" : "bg-muted hover:bg-accent"}`),
+										cursor: "pointer",
+									}}
+								>
+									<Txt
+										class={`text-[11px] font-medium ${reasonFilter() === r ? "text-primary-foreground" : "text-muted-foreground"}`}
+									>
+										{r === "all" ? "All" : REASON[r]}
+									</Txt>
 								</div>
 							)}
 						</For>
@@ -195,19 +272,36 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 					</div>
 				</div>
 				<Scroll style={{ flexGrow: 1, flexShrink: 1 }}>
-					<For each={filtered().slice(0, 300)} fallback={
-						<div style={t("flex flex-col items-center justify-center p-4")}>
-							<Txt class="text-xs text-muted-foreground">{listError() || (loading() ? "Looking for duplicates…" : "No duplicate sets found.")}</Txt>
-						</div>
-					}>
+					<For
+						each={filtered().slice(0, 300)}
+						fallback={
+							<div style={t("flex flex-col items-center justify-center p-4")}>
+								<Txt class="text-xs text-muted-foreground">
+									{listError() || (loading() ? "Looking for duplicates…" : "No duplicate sets found.")}
+								</Txt>
+							</div>
+						}
+					>
 						{(s, i) => (
-							<Row selected={idx() === i()} onClick={() => setIdx(i())} class="border-b" style={{ flexShrink: 0, flexDirection: "column", alignItems: "stretch", gap: 4, padding: 10 }}>
+							<Row
+								selected={idx() === i()}
+								onClick={() => setIdx(i())}
+								class="border-b"
+								style={{ flexShrink: 0, flexDirection: "column", alignItems: "stretch", gap: 4, padding: 10 }}
+							>
 								<div style={t("flex flex-row items-start gap-2")}>
-									<Para class="text-xs font-medium text-foreground" style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, lineClamp: 2, overflow: "hidden" }}>{s.title || s.keys.join(", ")}</Para>
+									<Para
+										class="text-xs font-medium text-foreground"
+										style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, lineClamp: 2, overflow: "hidden" }}
+									>
+										{s.title || s.keys.join(", ")}
+									</Para>
 									<Chip>{String(s.keys.length)}</Chip>
 								</div>
 								<div style={t("flex flex-row items-center gap-2")}>
-									<Line class="text-[11px] text-muted-foreground" style={{ flexGrow: 1 }}>{[s.creatorsSummary, s.year].filter(Boolean).join(" · ") || s.itemType || "Items"}</Line>
+									<Line class="text-[11px] text-muted-foreground" style={{ flexGrow: 1 }}>
+										{[s.creatorsSummary, s.year].filter(Boolean).join(" · ") || s.itemType || "Items"}
+									</Line>
 									<Chip>{REASON[s.reason].toUpperCase()}</Chip>
 								</div>
 							</Row>
@@ -217,42 +311,96 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 			</div>
 			{/* ---- right: side-by-side merge */}
 			<div style={{ ...t("flex flex-col bg-background"), flexGrow: 1, flexShrink: 1, minWidth: 0, height: H }}>
-				<Show when={active()} fallback={
-					<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-8"), flexGrow: 1 }}>
-						<Icon name="git-merge" size={40} color={tok("muted-foreground")} style={{ opacity: 0.3 }} />
-						<Txt class="text-sm font-medium text-muted-foreground">No duplicate set selected</Txt>
-						<Txt class="text-xs text-muted-foreground">Select a duplicate set on the left to review and merge items.</Txt>
-					</div>
-				}>
+				<Show
+					when={active()}
+					fallback={
+						<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-8"), flexGrow: 1 }}>
+							<Icon name="git-merge" size={40} color={tok("muted-foreground")} style={{ opacity: 0.3 }} />
+							<Txt class="text-sm font-medium text-muted-foreground">No duplicate set selected</Txt>
+							<Txt class="text-xs text-muted-foreground">Select a duplicate set on the left to review and merge items.</Txt>
+						</div>
+					}
+				>
 					{(cur) => (
 						<>
 							<div style={t("flex flex-row items-center gap-3 border-b bg-card px-4 py-2.5")}>
 								<div style={{ ...t("flex flex-row items-center gap-2"), flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
-									<Line class="text-sm font-semibold text-foreground">{String(details()?.items[0]?.data.title || cur().title || "Duplicate Set")}</Line>
+									<Line class="text-sm font-semibold text-foreground">
+										{String(details()?.items[0]?.data.title || cur().title || "Duplicate Set")}
+									</Line>
 									<Chip>{`Matched by ${REASON[cur().reason]}`}</Chip>
 								</div>
-								<Button variant="outline" size="sm" disabled={busy() || !details()} onClick={() => void notDuplicates()}>Not Duplicates</Button>
-								<Button variant="primary" size="sm" icon="git-merge" disabled={busy() || !details()} onClick={() => void merge()}>{`Merge ${cur().keys.length} items`}</Button>
+								<Button variant="outline" size="sm" disabled={busy() || !details()} onClick={() => void notDuplicates()}>
+									Not Duplicates
+								</Button>
+								<Button
+									variant="primary"
+									size="sm"
+									icon="git-merge"
+									disabled={busy() || !details()}
+									onClick={() => void merge()}
+								>{`Merge ${cur().keys.length} items`}</Button>
 							</div>
 							<Scroll style={{ flexGrow: 1, flexShrink: 1, padding: 16, gap: 16 }}>
-								<Show when={details()} fallback={<Txt class="text-xs text-muted-foreground">{detailError() || "Loading…"}</Txt>}>
+								<Show
+									when={details()}
+									fallback={<Txt class="text-xs text-muted-foreground">{detailError() || "Loading…"}</Txt>}
+								>
 									{(d) => (
 										<>
 											<div style={{ ...t("flex flex-col rounded-lg border bg-card overflow-hidden"), flexShrink: 0 }}>
-												<SectionHead>MASTER ITEM (KEPT; THE OTHERS MOVE TO THE TRASH AND PASS ON THEIR CHILDREN, TAGS AND COLLECTIONS)</SectionHead>
+												<SectionHead>
+													MASTER ITEM (KEPT; THE OTHERS MOVE TO THE TRASH AND PASS ON THEIR CHILDREN, TAGS AND
+													COLLECTIONS)
+												</SectionHead>
 												<Cols head={<Txt class="text-xs font-medium text-muted-foreground">Master Version</Txt>}>
 													<For each={d().items}>
 														{(item, i) => (
-															<div onClick={() => pickMaster(item.data.key)} style={{ ...t(`flex flex-col gap-1 p-3 border-l ${master() === item.data.key ? "bg-primary/10" : "hover:bg-accent/50"}`), ...colStyle, cursor: "pointer" }}>
+															<div
+																onClick={() => pickMaster(item.data.key)}
+																style={{
+																	...t(
+																		`flex flex-col gap-1 p-3 border-l ${master() === item.data.key ? "bg-primary/10" : "hover:bg-accent/50"}`,
+																	),
+																	...colStyle,
+																	cursor: "pointer",
+																}}
+															>
 																<div style={t("flex flex-row items-center gap-2")}>
-																	<div style={{ ...t("flex items-center justify-center rounded-full border"), width: 14, height: 14, borderColor: master() === item.data.key ? tok("primary") : tok("input"), flexShrink: 0 }}>
-																		<Show when={master() === item.data.key}><div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tok("primary") }} /></Show>
+																	<div
+																		style={{
+																			...t("flex items-center justify-center rounded-full border"),
+																			width: 14,
+																			height: 14,
+																			borderColor:
+																				master() === item.data.key ? tok("primary") : tok("input"),
+																			flexShrink: 0,
+																		}}
+																	>
+																		<Show when={master() === item.data.key}>
+																			<div
+																				style={{
+																					width: 8,
+																					height: 8,
+																					borderRadius: 4,
+																					backgroundColor: tok("primary"),
+																				}}
+																			/>
+																		</Show>
 																	</div>
 																	<Line class="text-xs font-semibold text-foreground">{`Version ${i() + 1} (${item.data.key})`}</Line>
-																	<Show when={i() === 0}><Chip>Oldest</Chip></Show>
+																	<Show when={i() === 0}>
+																		<Chip>Oldest</Chip>
+																	</Show>
 																</div>
-																<Txt class="text-[11px] text-muted-foreground" style={{ paddingLeft: 22 }}>{`Added: ${dateShort(item.data.dateAdded)}`}</Txt>
-																<Txt class="text-[11px] text-muted-foreground" style={{ paddingLeft: 22 }}>{`${item.children.filter((c) => c.itemType === "attachment").length} attachments · ${item.children.filter((c) => c.itemType === "note").length} notes`}</Txt>
+																<Txt
+																	class="text-[11px] text-muted-foreground"
+																	style={{ paddingLeft: 22 }}
+																>{`Added: ${dateShort(item.data.dateAdded)}`}</Txt>
+																<Txt
+																	class="text-[11px] text-muted-foreground"
+																	style={{ paddingLeft: 22 }}
+																>{`${item.children.filter((c) => c.itemType === "attachment").length} attachments · ${item.children.filter((c) => c.itemType === "note").length} notes`}</Txt>
 															</div>
 														)}
 													</For>
@@ -261,20 +409,58 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 
 											<div style={{ ...t("flex flex-col rounded-lg border bg-card overflow-hidden"), flexShrink: 0 }}>
 												<SectionHead>{`DIFFERING FIELDS (${differing().length}) — CLICK A VALUE TO CHOOSE WHICH VERSION TO KEEP`}</SectionHead>
-												<Show when={differing().length > 0} fallback={<div style={t("px-3 py-4")}><Txt class="text-xs text-muted-foreground">All metadata fields are identical across these versions.</Txt></div>}>
+												<Show
+													when={differing().length > 0}
+													fallback={
+														<div style={t("px-3 py-4")}>
+															<Txt class="text-xs text-muted-foreground">
+																All metadata fields are identical across these versions.
+															</Txt>
+														</div>
+													}
+												>
 													<For each={differing()}>
 														{(field) => {
 															const chosen = () => choices()[field] ?? master();
 															return (
-																<Cols border head={<Txt class="text-xs font-medium text-foreground">{label(field, labels())}</Txt>}>
+																<Cols
+																	border
+																	head={
+																		<Txt class="text-xs font-medium text-foreground">
+																			{label(field, labels())}
+																		</Txt>
+																	}
+																>
 																	<For each={d().items}>
 																		{(item) => {
 																			const v = () => valueText(field, item.data[field]);
 																			const sel = () => chosen() === item.data.key;
 																			return (
-																				<div onClick={() => setChoices({ ...choices(), [field]: item.data.key })} style={{ ...t(`flex flex-row items-start gap-2 p-2.5 border-l ${sel() ? "bg-primary/10" : "hover:bg-accent/50"}`), ...colStyle, cursor: "pointer" }}>
-																					<Para class={`text-xs ${v() ? (sel() ? "font-medium text-foreground" : "text-foreground") : "text-muted-foreground"}`} style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}>{v() || "Empty"}</Para>
-																					<Show when={sel()}><Icon name="check" size={14} color={tok("primary")} /></Show>
+																				<div
+																					onClick={() =>
+																						setChoices({ ...choices(), [field]: item.data.key })
+																					}
+																					style={{
+																						...t(
+																							`flex flex-row items-start gap-2 p-2.5 border-l ${sel() ? "bg-primary/10" : "hover:bg-accent/50"}`,
+																						),
+																						...colStyle,
+																						cursor: "pointer",
+																					}}
+																				>
+																					<Para
+																						class={`text-xs ${v() ? (sel() ? "font-medium text-foreground" : "text-foreground") : "text-muted-foreground"}`}
+																						style={{ flexGrow: 1, flexShrink: 1, minWidth: 0 }}
+																					>
+																						{v() || "Empty"}
+																					</Para>
+																					<Show when={sel()}>
+																						<Icon
+																							name="check"
+																							size={14}
+																							color={tok("primary")}
+																						/>
+																					</Show>
 																				</div>
 																			);
 																		}}
@@ -293,10 +479,20 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 												<Para class="text-xs text-foreground">{`Children (${union().children}): notes and attachments move to the master`}</Para>
 												<Para class="text-xs text-foreground">{`Relations: ${union().related} related + dc:replaces`}</Para>
 												<Show when={identical().length > 0}>
-													<div style={{ ...t("border-t"), height: 1, width: "100%", marginTop: 4, marginBottom: 4 }} />
+													<div
+														style={{
+															...t("border-t"),
+															height: 1,
+															width: "100%",
+															marginTop: 4,
+															marginBottom: 4,
+														}}
+													/>
 													<Txt class="text-[11px] font-medium text-muted-foreground">{`Identical fields (${identical().length})`}</Txt>
 													<For each={identical()}>
-														{(f) => <Line class="text-xs text-foreground">{`${label(f, labels())}: ${valueText(f, d().items[0]!.data[f])}`}</Line>}
+														{(f) => (
+															<Line class="text-xs text-foreground">{`${label(f, labels())}: ${valueText(f, d().items[0]!.data[f])}`}</Line>
+														)}
 													</For>
 												</Show>
 											</div>
@@ -314,5 +510,8 @@ export function DuplicatesDialog(p: { manualKeys?: string[]; close: () => void }
 
 /** Open the merge UI: no keys = every detected set; with keys, those items first as a manual set. */
 export function openDuplicates(manualKeys?: string[]): Promise<void> {
-	return openDialog<void>((close) => <DuplicatesDialog manualKeys={manualKeys} close={() => close()} />, { title: "Duplicate Items", width: 1120 }).then(() => undefined);
+	return openDialog<void>((close) => <DuplicatesDialog manualKeys={manualKeys} close={() => close()} />, {
+		title: "Duplicate Items",
+		width: 1120,
+	}).then(() => undefined);
 }

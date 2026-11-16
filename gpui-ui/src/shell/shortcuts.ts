@@ -5,12 +5,31 @@
 import type { KeyEvent } from "@gpuix/native/host";
 import { appActions } from "../registry";
 
-export interface Chord { ctrl: boolean; shift: boolean; alt: boolean; key: string }
+export interface Chord {
+	ctrl: boolean;
+	shift: boolean;
+	alt: boolean;
+	key: string;
+}
 
 const KEY_ALIASES: Record<string, string> = {
-	esc: "escape", return: "enter", del: "delete", ins: "insert", space: " ", spacebar: " ",
-	arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down", pageup: "pageup", pagedown: "pagedown",
-	comma: ",", period: ".", slash: "/", plus: "+", minus: "-",
+	esc: "escape",
+	return: "enter",
+	del: "delete",
+	ins: "insert",
+	space: " ",
+	spacebar: " ",
+	arrowleft: "left",
+	arrowright: "right",
+	arrowup: "up",
+	arrowdown: "down",
+	pageup: "pageup",
+	pagedown: "pagedown",
+	comma: ",",
+	period: ".",
+	slash: "/",
+	plus: "+",
+	minus: "-",
 };
 
 /** "Ctrl+Shift+A" -> {ctrl, shift, alt, key:"a"}; undefined when it has no key. "Ctrl" also means Cmd. */
@@ -62,20 +81,30 @@ const locals: LocalHandler[] = [];
  */
 export function addKeyHandler(fn: LocalHandler): () => void {
 	locals.unshift(fn);
-	return () => { const i = locals.indexOf(fn); if (i >= 0) locals.splice(i, 1); };
+	return () => {
+		const i = locals.indexOf(fn);
+		if (i >= 0) locals.splice(i, 1);
+	};
 }
 
 /** `onKeyDown` of render(): runs a view's local handlers, then the first registered app action whose shortcut matches. */
 export function handleWindowKeyDown(e: KeyEvent): void {
 	if (e.defaultPrevented) return;
 	for (const h of locals) {
-		if (h(e)) { e.preventDefault(); return; }
+		if (h(e)) {
+			e.preventDefault();
+			return;
+		}
 	}
 	for (const a of appActions()) {
 		if (a.shortcut && matchesChord(a.shortcut, e)) {
 			e.preventDefault();
 			if (a.when && !a.when()) return;
-			try { a.run(); } catch (err) { console.error(`[shortcut] ${a.id} failed:`, err instanceof Error ? err.message : err); }
+			try {
+				a.run();
+			} catch (err) {
+				console.error(`[shortcut] ${a.id} failed:`, err instanceof Error ? err.message : err);
+			}
 			return;
 		}
 	}

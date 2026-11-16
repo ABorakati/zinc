@@ -15,7 +15,15 @@ import { childKind, creatorFull, creatorLast, MONTH_ABBR, parseDate } from "./ut
 const MAX_AUTHORS = 6;
 
 /** `h-8 rounded-[7px] border px-3 text-[13px]` header action button. */
-function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kind?: "primary" | "tint" | "plain"; title?: string; square?: boolean; testId?: string }): JSX.Element {
+function HeaderBtn(p: {
+	icon?: string;
+	label?: string;
+	onClick?: () => void;
+	kind?: "primary" | "tint" | "plain";
+	title?: string;
+	square?: boolean;
+	testId?: string;
+}): JSX.Element {
 	const kind = () => p.kind ?? "plain";
 	const fg = () => (kind() === "primary" ? tok("primary-foreground") : kind() === "tint" ? tok("primary-deep") : tok("foreground"));
 	return (
@@ -27,7 +35,8 @@ function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kin
 			// click a wrapping DropdownMenu (the "More actions" button) needs
 			onClick={p.onClick}
 			style={{
-				...t("flex h-8 flex-none items-center justify-center"), marginRight: 8,
+				...t("flex h-8 flex-none items-center justify-center"),
+				marginRight: 8,
 				borderRadius: 7,
 				paddingLeft: p.square ? 0 : kind() === "primary" ? 14 : 12,
 				paddingRight: p.square ? 0 : kind() === "primary" ? 14 : 12,
@@ -37,12 +46,26 @@ function HeaderBtn(p: { icon?: string; label?: string; onClick?: () => void; kin
 				backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-soft") : tok("background"),
 				cursor: "pointer",
 				...(kind() === "primary" ? { boxShadow: shadows[store.mode()].primary } : {}),
-				hover: { backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-tint") : tok("muted"), opacity: kind() === "primary" ? 0.92 : 1 },
+				hover: {
+					backgroundColor: kind() === "primary" ? tok("primary") : kind() === "tint" ? tok("primary-tint") : tok("muted"),
+					opacity: kind() === "primary" ? 0.92 : 1,
+				},
 			}}
 		>
-			<Show when={p.icon}><Icon name={p.icon!} size={14} color={fg()} /></Show>
+			<Show when={p.icon}>
+				<Icon name={p.icon!} size={14} color={fg()} />
+			</Show>
 			<Show when={p.label}>
-				<text style={{ ...tx(kind() === "primary" ? "text-[13px] font-medium" : "text-[13px]"), color: fg(), whiteSpace: "nowrap", marginLeft: p.icon ? 6 : 0 }}>{p.label!}</text>
+				<text
+					style={{
+						...tx(kind() === "primary" ? "text-[13px] font-medium" : "text-[13px]"),
+						color: fg(),
+						whiteSpace: "nowrap",
+						marginLeft: p.icon ? 6 : 0,
+					}}
+				>
+					{p.label!}
+				</text>
 			</Show>
 		</div>
 	);
@@ -66,7 +89,13 @@ export function Header(): JSX.Element {
 	void creatorLast;
 
 	const str = (k: string) => (data()[k] as string | undefined) ?? "";
-	const container = () => str("publicationTitle") || str("bookTitle") || str("proceedingsTitle") || str("websiteTitle") || str("blogTitle") || str("publisher");
+	const container = () =>
+		str("publicationTitle") ||
+		str("bookTitle") ||
+		str("proceedingsTitle") ||
+		str("websiteTitle") ||
+		str("blogTitle") ||
+		str("publisher");
 	const rest = () => {
 		const vi = [str("volume"), str("issue") ? `(${str("issue")})` : ""].filter(Boolean).join("");
 		const date = parseDate(str("date"));
@@ -90,7 +119,8 @@ export function Header(): JSX.Element {
 	const moreItems = (): MenuItem[] => {
 		const items: MenuItem[] = [
 			{
-				label: "Locate", icon: "globe",
+				label: "Locate",
+				icon: "globe",
 				submenu: locateMenu(locateItemOf(data()), fileKey(), {
 					openUrl: (url) => void openLink(url),
 					revealFile: (key) => void revealAttachment(key),
@@ -106,12 +136,31 @@ export function Header(): JSX.Element {
 	return (
 		<div
 			data-testid="ip-header"
-			style={{ ...t("flex flex-col flex-none w-full"), paddingLeft: 20, paddingRight: 20, paddingTop: 20, paddingBottom: 16, backgroundColor: tok("header-tint"), borderTopLeftRadius: 14, borderTopRightRadius: 14, borderBottomWidth: 1, borderColor: tok("border-soft") }}
+			style={{
+				...t("flex flex-col flex-none w-full"),
+				paddingLeft: 20,
+				paddingRight: 20,
+				paddingTop: 20,
+				paddingBottom: 16,
+				backgroundColor: tok("header-tint"),
+				borderTopLeftRadius: 14,
+				borderTopRightRadius: 14,
+				borderBottomWidth: 1,
+				borderColor: tok("border-soft"),
+			}}
 		>
 			{/* item type badge */}
-			<div style={{ ...t("flex items-center gap-1.5 rounded-full px-2.5 py-1"), alignSelf: "flex-start", backgroundColor: tok("primary-tint") }}>
+			<div
+				style={{
+					...t("flex items-center gap-1.5 rounded-full px-2.5 py-1"),
+					alignSelf: "flex-start",
+					backgroundColor: tok("primary-tint"),
+				}}
+			>
 				<Icon name={itemTypeIconName(data().itemType)} size={14} color={tok("primary-deep")} />
-				<text style={{ ...tx("text-[11px] font-semibold"), color: tok("primary-deep"), whiteSpace: "nowrap" }}>{(st()?.label ?? data().itemType).toUpperCase()}</text>
+				<text style={{ ...tx("text-[11px] font-semibold"), color: tok("primary-deep"), whiteSpace: "nowrap" }}>
+					{(st()?.label ?? data().itemType).toUpperCase()}
+				</text>
 			</div>
 			<Field
 				bare
@@ -126,12 +175,22 @@ export function Header(): JSX.Element {
 			/>
 			<Show when={authors().length}>
 				<div style={{ ...t("flex items-start"), paddingLeft: 6, paddingRight: 6, width: "100%", marginTop: 10 }}>
-					<text style={{ ...tx("text-[13px] text-secondary-foreground"), lineHeight: 19, flexShrink: 1, minWidth: 0 }} aria-label="Creators">
+					<text
+						style={{ ...tx("text-[13px] text-secondary-foreground"), lineHeight: 19, flexShrink: 1, minWidth: 0 }}
+						aria-label="Creators"
+					>
 						{authors().slice(0, MAX_AUTHORS).join(", ")}
 					</text>
 					<Show when={authors().length > MAX_AUTHORS}>
-						<div role="button" aria-label="Show all creators" onClick={() => goToSection("info")} style={{ cursor: "pointer", marginLeft: 6, flexShrink: 0 }}>
-							<text style={{ ...tx("text-[13px]"), color: tok("primary"), hover: { color: tok("primary-deep") } }}>{`+${authors().length - MAX_AUTHORS}`}</text>
+						<div
+							role="button"
+							aria-label="Show all creators"
+							onClick={() => goToSection("info")}
+							style={{ cursor: "pointer", marginLeft: 6, flexShrink: 0 }}
+						>
+							<text
+								style={{ ...tx("text-[13px]"), color: tok("primary"), hover: { color: tok("primary-deep") } }}
+							>{`+${authors().length - MAX_AUTHORS}`}</text>
 						</div>
 					</Show>
 				</div>
@@ -142,17 +201,32 @@ export function Header(): JSX.Element {
 						<text style={{ ...tx("text-[13px] font-semibold"), color: tok("journal"), lineHeight: 19 }}>{container()}</text>
 					</Show>
 					<For each={rest()}>
-						{(r, i) => <text style={{ ...tx("text-[13px] text-muted-foreground"), lineHeight: 19, whiteSpace: "nowrap" }}>{(i() > 0 || container() ? " · " : "") + r}</text>}
+						{(r, i) => (
+							<text style={{ ...tx("text-[13px] text-muted-foreground"), lineHeight: 19, whiteSpace: "nowrap" }}>
+								{(i() > 0 || container() ? " · " : "") + r}
+							</text>
+						)}
 					</For>
 				</div>
 			</Show>
 			<div style={{ ...t("flex flex-wrap"), marginTop: 14 }}>
 				<Show when={reader()}>
-					<HeaderBtn kind="primary" icon="book-open" label={readerLabel()} onClick={() => store.openAttachment(reader()!.key, data().title || reader()!.title || "Reader", data().key)} />
+					<HeaderBtn
+						kind="primary"
+						icon="book-open"
+						label={readerLabel()}
+						onClick={() => store.openAttachment(reader()!.key, data().title || reader()!.title || "Reader", data().key)}
+					/>
 				</Show>
 				<HeaderBtn icon="quote" label="Cite" onClick={() => void quickCopy(data().key, "citation", pane.copyText)} />
 				<Show when={!hasPdf()}>
-					<HeaderBtn kind="tint" icon="download" label="Find full text" title="Find an open-access or institutional PDF and attach it" onClick={find} />
+					<HeaderBtn
+						kind="tint"
+						icon="download"
+						label="Find full text"
+						title="Find an open-access or institutional PDF and attach it"
+						onClick={find}
+					/>
 				</Show>
 				<DropdownMenu
 					align="start"

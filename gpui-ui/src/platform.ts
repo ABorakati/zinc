@@ -47,17 +47,22 @@ export const platform: Platform = {
 	},
 
 	async connect(_ctx, earlyData) {
-		if (earlyData) startCoreOnDemand(bootCore); else bootCore();
+		if (earlyData) startCoreOnDemand(bootCore);
+		else bootCore();
 	},
 
 	// the Windows title bar follows the theme too (after startAppearance's effect, so the scheme's tokens are already rewritten)
 	onAppearance(store) {
-		void import("./shell/windowFrame").then(({ applyFrameTheme }) => createRoot(() => createEffect(() => {
-			const m = store.mode();
-			themePrefs(); // re-run on a scheme change: applyColours rewrites tokens in place
-			const t = tokens[m];
-			applyFrameTheme(m === "dark", { caption: t.canvas, text: t.foreground, border: t.border });
-		})));
+		void import("./shell/windowFrame").then(({ applyFrameTheme }) =>
+			createRoot(() =>
+				createEffect(() => {
+					const m = store.mode();
+					themePrefs(); // re-run on a scheme change: applyColours rewrites tokens in place
+					const t = tokens[m];
+					applyFrameTheme(m === "dark", { caption: t.canvas, text: t.foreground, border: t.border });
+				}),
+			),
+		);
 	},
 
 	settled() {
@@ -69,11 +74,13 @@ export const platform: Platform = {
 	afterFeatures(store) {
 		void openTabsFromEnv(store.openAttachment);
 		// "Open in Zinc" from the Word sidebar or the browser connector: POST /api/ui/reveal, acted on here (src/shell/revealRequests.ts)
-		void import("./shell/revealRequests").then((m) => m.startRevealPolling((key, open) => {
-			store.setActiveTab("library");
-			store.selectItem(key);
-			if (open) store.openAttachment(open.key, open.title, key); // "Open item" from the connector popup
-		}));
+		void import("./shell/revealRequests").then((m) =>
+			m.startRevealPolling((key, open) => {
+				store.setActiveTab("library");
+				store.selectItem(key);
+				if (open) store.openAttachment(open.key, open.title, key); // "Open item" from the connector popup
+			}),
+		);
 		void import("./features/report/crashToast").then((m) => m.showCrashToast()); // "closed unexpectedly last time", if the crash marker found one
 		void import("./update/service").then((m) => m.startUpdates()); // auto-update: timer + install-on-exit hooks; no network unless a feed is configured (src/update/)
 	},

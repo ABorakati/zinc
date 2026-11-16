@@ -18,7 +18,9 @@ const article = (id: string) => ({
 	title: `Popup fixture ${id}`,
 	creators: [{ firstName: "Ana", lastName: "Lopez", creatorType: "author" }],
 	date: "2025",
-	attachments: [{ id: `${id}-pdf`, title: "Full Text PDF", url: `https://example.org/${id}.pdf`, mimeType: "application/pdf", parentItem: id }],
+	attachments: [
+		{ id: `${id}-pdf`, title: "Full Text PDF", url: `https://example.org/${id}.pdf`, mimeType: "application/pdf", parentItem: id },
+	],
 });
 const pdfBytes = new TextEncoder().encode("%PDF-1.4\n% fixture\n");
 const row = (key: string) => {
@@ -38,14 +40,32 @@ beforeAll(() => {
 });
 afterAll(async () => {
 	await h.close();
-	try { rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Windows may hold the WAL */ }
+	try {
+		rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	} catch {
+		/* Windows may hold the WAL */
+	}
 });
 
 describe("sessionItems and trashSession", () => {
 	test("lists the items a save created, with their attachments", async () => {
 		expect((await h.call("saveItems", { json: { sessionID: "P1", items: [article("a1"), article("a2")] } })).status).toBe(201);
-		const meta = JSON.stringify({ id: "a1-pdf", url: "https://example.org/a1.pdf", contentType: "application/pdf", parentItemID: "a1", title: "Full Text PDF" });
-		expect((await h.call("saveAttachment", { bytes: pdfBytes, headers: { "Content-Type": "application/pdf", "X-Metadata": meta }, query: "sessionID=P1" })).status).toBe(201);
+		const meta = JSON.stringify({
+			id: "a1-pdf",
+			url: "https://example.org/a1.pdf",
+			contentType: "application/pdf",
+			parentItemID: "a1",
+			title: "Full Text PDF",
+		});
+		expect(
+			(
+				await h.call("saveAttachment", {
+					bytes: pdfBytes,
+					headers: { "Content-Type": "application/pdf", "X-Metadata": meta },
+					query: "sessionID=P1",
+				})
+			).status,
+		).toBe(201);
 		const r = await h.call("sessionItems", { json: { sessionID: "P1" } });
 		expect(r.status).toBe(200);
 		expect(r.json.items.map((i: { title: string }) => i.title).sort()).toEqual(["Popup fixture a1", "Popup fixture a2"]);
@@ -82,8 +102,18 @@ describe("cancelSession", () => {
 		expect(c.status).toBe(200);
 		expect(c.json).toMatchObject({ cancelled: true, trashed: [key] });
 		expect(row(key)?.deleted).toBe(1);
-		const meta = JSON.stringify({ id: "c1-pdf", url: "https://example.org/c1.pdf", contentType: "application/pdf", parentItemID: "c1", title: "Full Text PDF" });
-		const att = await h.call("saveAttachment", { bytes: pdfBytes, headers: { "Content-Type": "application/pdf", "X-Metadata": meta }, query: "sessionID=C1" });
+		const meta = JSON.stringify({
+			id: "c1-pdf",
+			url: "https://example.org/c1.pdf",
+			contentType: "application/pdf",
+			parentItemID: "c1",
+			title: "Full Text PDF",
+		});
+		const att = await h.call("saveAttachment", {
+			bytes: pdfBytes,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": meta },
+			query: "sessionID=C1",
+		});
 		expect(att.status).toBe(409);
 		expect(att.json.error).toBe("SESSION_CANCELLED");
 		expect((await h.call("updateSession", { json: { sessionID: "C1", target: "L1" } })).status).toBe(409);

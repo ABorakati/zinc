@@ -63,19 +63,28 @@ export function detectFormat(text: string): ImportFormat | null {
 
 function parse(text: string, format: ImportFormat): { items: ParsedItem[]; errors: string[] } {
 	switch (format) {
-		case "bibtex": return parseBibtex(text);
-		case "ris": return parseRis(text);
-		case "csljson": return parseCslJson(text);
-		case "pubmed-nbib": return parseNbib(text);
-		case "endnote-xml": return parseEndnoteXml(text);
-		case "rdf": return parseZoteroRdf(text);
-		case "mods": return parseMods(text);
+		case "bibtex":
+			return parseBibtex(text);
+		case "ris":
+			return parseRis(text);
+		case "csljson":
+			return parseCslJson(text);
+		case "pubmed-nbib":
+			return parseNbib(text);
+		case "endnote-xml":
+			return parseEndnoteXml(text);
+		case "rdf":
+			return parseZoteroRdf(text);
+		case "mods":
+			return parseMods(text);
 	}
 }
 
 function existingDois(db: Database): Set<string> {
 	const rows = db
-		.query("SELECT json_extract(data, '$.DOI') AS doi FROM items WHERE deleted = 0 AND parent_key IS NULL AND json_extract(data, '$.DOI') <> ''")
+		.query(
+			"SELECT json_extract(data, '$.DOI') AS doi FROM items WHERE deleted = 0 AND parent_key IS NULL AND json_extract(data, '$.DOI') <> ''",
+		)
 		.all() as { doi: string | null }[];
 	return new Set(rows.map((r) => normDoi(r.doi)).filter(Boolean));
 }
@@ -106,7 +115,8 @@ function attachmentRefusal(file: string, basePath: string | undefined): string |
 	if (!basePath) return "give the import folder so attachments next to the file can be found";
 	if (relativeUnder(file, basePath) === null) return "it is outside the folder the import file came from";
 	try {
-		if (existsSync(file) && relativeUnder(realpathSync(file), realpathSync(basePath)) === null) return "it links to a file outside the import folder";
+		if (existsSync(file) && relativeUnder(realpathSync(file), realpathSync(basePath)) === null)
+			return "it links to a file outside the import folder";
 	} catch {
 		return "it could not be checked";
 	}
@@ -118,7 +128,11 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 	let format: ImportFormat;
 	if (!req.format || req.format === "auto") {
 		const d = detectFormat(req.text);
-		if (!d) throw new HttpError(400, "could not recognise the format; expected BibTeX, RIS, CSL JSON, PubMed (.nbib), EndNote XML, Zotero RDF or MODS");
+		if (!d)
+			throw new HttpError(
+				400,
+				"could not recognise the format; expected BibTeX, RIS, CSL JSON, PubMed (.nbib), EndNote XML, Zotero RDF or MODS",
+			);
 		format = d;
 	} else if (IMPORT_FORMATS.includes(req.format)) format = req.format;
 	else throw new HttpError(400, `unknown format: ${String(req.format)}`);
@@ -157,7 +171,9 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 				parent = known;
 				continue;
 			}
-			const existing = db.query("SELECT key FROM collections WHERE name = ? AND parent_key IS ?").get(name, parent) as { key: string } | null;
+			const existing = db.query("SELECT key FROM collections WHERE name = ? AND parent_key IS ?").get(name, parent) as {
+				key: string;
+			} | null;
 			if (existing) parent = existing.key;
 			else {
 				parent = createCollection(db, name, parent).key;
@@ -230,7 +246,9 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 				created++;
 				itemKeys.push(parentKey);
 			} catch (e) {
-				errors.push(`item ${i + 1}${it.data.title ? ` (${String(it.data.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`);
+				errors.push(
+					`item ${i + 1}${it.data.title ? ` (${String(it.data.title).slice(0, 60)})` : ""}: ${e instanceof Error ? e.message : e}`,
+				);
 			}
 		}
 	})();

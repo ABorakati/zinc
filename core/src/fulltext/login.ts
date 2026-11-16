@@ -258,7 +258,13 @@ export class LoginController {
 		if (this.busy) return this.busy.done;
 		if (!isHttpUrl(url)) return { result: "closed_by_user", finalUrl: "" };
 		const params: DriveParams = {
-			entryUrl: url, realm, kind: "warmup", waiting: 0, timeoutMs: timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS, capturePdf: false, warm: true,
+			entryUrl: url,
+			realm,
+			kind: "warmup",
+			waiting: 0,
+			timeoutMs: timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS,
+			capturePdf: false,
+			warm: true,
 		};
 		const ctl: Ctl = { setWaiting: () => {} };
 		return this.claim(params.realm, ctl, () => this.drive(bridge, params, signal, ctl).then(summary));
@@ -292,7 +298,15 @@ export class LoginController {
 			// institutionName is read by the app at runtime; the BrowserBridge contract has no field for it yet
 			const institutionName = this.deps.institutionName?.();
 			session = await bridge.openLogin(
-				{ entryUrl: p.entryUrl, realm: p.realm, kind: p.kind, itemTitle: p.itemTitle, waiting, capturePdf: p.capturePdf, ...(institutionName ? { institutionName } : {}) },
+				{
+					entryUrl: p.entryUrl,
+					realm: p.realm,
+					kind: p.kind,
+					itemTitle: p.itemTitle,
+					waiting,
+					capturePdf: p.capturePdf,
+					...(institutionName ? { institutionName } : {}),
+				},
 				signal,
 			);
 		} catch (e) {
@@ -392,7 +406,13 @@ export class LoginController {
 					continue;
 				}
 				if (r.done) {
-					outcome = { result: r.done, finalUrl: url, caError: r.caError ?? null, html: r.done === "landed" ? html : "", pdf: null };
+					outcome = {
+						result: r.done,
+						finalUrl: url,
+						caError: r.caError ?? null,
+						html: r.done === "landed" ? html : "",
+						pdf: null,
+					};
 					break;
 				}
 				// until the classifier has said anything, a challenge window keeps the hint it opened with
@@ -418,7 +438,8 @@ export class LoginController {
 				outcome.finalUrl = outcome.pdf?.url || outcome.finalUrl;
 			}
 			if ((outcome.result === "ca_blocked" || (p.warm && outcome.result === "landed")) && !session.closed()) {
-				if (outcome.result === "ca_blocked") banner({ status: `Sign-in was refused by your institution (${outcome.caError ?? "unknown"})` });
+				if (outcome.result === "ca_blocked")
+					banner({ status: `Sign-in was refused by your institution (${outcome.caError ?? "unknown"})` });
 				await sleep(this.deps.lingerMs ?? LINGER_MS, signal);
 				if (signal.aborted) {
 					aborted = true;
@@ -485,7 +506,9 @@ export class LoginController {
 					bodies.release(ok.pdf.handle);
 					delete ok.pdf;
 				}
-				throw e instanceof OpError ? e : new OpError("io", `login: could not store the captured PDF: ${e instanceof Error ? e.message : e}`);
+				throw e instanceof OpError
+					? e
+					: new OpError("io", `login: could not store the captured PDF: ${e instanceof Error ? e.message : e}`);
 			}
 		}
 		return ok;
@@ -493,5 +516,9 @@ export class LoginController {
 }
 
 function summary(o: Outcome): SignInResult {
-	return { result: o.result, finalUrl: o.result === "landed" || o.result === "pdf" ? stripUrl(o.finalUrl) : "", ...(o.caError ? { caError: o.caError } : {}) };
+	return {
+		result: o.result,
+		finalUrl: o.result === "landed" || o.result === "pdf" ? stripUrl(o.finalUrl) : "",
+		...(o.caError ? { caError: o.caError } : {}),
+	};
 }

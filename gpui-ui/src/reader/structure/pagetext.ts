@@ -3,8 +3,18 @@
 // box evenly (the text layer has word boxes only); spaces and line breaks get empty rects.
 import type { PdfRect } from "./types";
 
-export interface PagePt { text: string; rects: PdfRect[] }
-export interface LayerWord { t: string; x: number; y: number; w: number; h: number; l: number }
+export interface PagePt {
+	text: string;
+	rects: PdfRect[];
+}
+export interface LayerWord {
+	t: string;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	l: number;
+}
 
 export function buildPageText(words: LayerWord[], pageW: number, pageH: number): PagePt {
 	const parts: string[] = [];
@@ -14,10 +24,16 @@ export function buildPageText(words: LayerWord[], pageW: number, pageH: number):
 	let first = true;
 	for (const wd of words) {
 		if (!wd.t) continue;
-		if (!first) { parts.push(wd.l !== lastLine ? "\n" : " "); rects.push(none); }
+		if (!first) {
+			parts.push(wd.l !== lastLine ? "\n" : " ");
+			rects.push(none);
+		}
 		first = false;
 		lastLine = wd.l;
-		const x1 = wd.x * pageW, x2 = (wd.x + wd.w) * pageW, y1 = (1 - wd.y - wd.h) * pageH, y2 = (1 - wd.y) * pageH;
+		const x1 = wd.x * pageW,
+			x2 = (wd.x + wd.w) * pageW,
+			y1 = (1 - wd.y - wd.h) * pageH,
+			y2 = (1 - wd.y) * pageH;
 		const n = wd.t.length;
 		for (let i = 0; i < n; i++) rects.push([x1 + ((x2 - x1) * i) / n, y1, x1 + ((x2 - x1) * (i + 1)) / n, y2]);
 		parts.push(wd.t);

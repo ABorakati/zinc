@@ -12,7 +12,11 @@ export function getState(db: Database, name: string): string | undefined {
 
 export function setState(db: Database, name: string, value: string | null): void {
 	if (value === null) db.query("DELETE FROM sync_state WHERE name = ?").run(name);
-	else db.query("INSERT INTO sync_state(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(name, value);
+	else
+		db.query("INSERT INTO sync_state(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(
+			name,
+			value,
+		);
 }
 
 /** Which route syncs this library: "zotero-local" (default), "zotero-org" or "off". Exactly one runs. */

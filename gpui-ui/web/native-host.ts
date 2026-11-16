@@ -74,7 +74,10 @@ export function nativeApiTransport(
 		const size = p.chunks.reduce((n, c) => n + c.length, 0);
 		const body = new Uint8Array(size);
 		let at = 0;
-		for (const c of p.chunks) { body.set(c, at); at += c.length; }
+		for (const c of p.chunks) {
+			body.set(c, at);
+			at += c.length;
+		}
 		const status = p.head!.status;
 		p.resolve(new Response(NULL_BODY.has(status) ? null : body, { status, headers: p.head!.headers }));
 	};
@@ -84,7 +87,10 @@ export function nativeApiTransport(
 		const me = connect();
 		port = me;
 		me.onMessage.addListener((m) => {
-			if (m?.t === "changed") { opts.onNotice?.(m); return; }
+			if (m?.t === "changed") {
+				opts.onNotice?.(m);
+				return;
+			}
 			const p = pending.get(m?.id);
 			if (!p) return;
 			if (m.t === "res") {
@@ -99,9 +105,11 @@ export function nativeApiTransport(
 			if (port === me) port = null;
 			const why = lastError() ?? "disconnected";
 			const peer = opts.peer ?? "The Zinc Connector host";
-			const err = new Error(/not found|forbidden|not allowed/i.test(why)
-				? `${peer} is not installed or does not allow this extension (${why})`
-				: `${peer} stopped (${why})`);
+			const err = new Error(
+				/not found|forbidden|not allowed/i.test(why)
+					? `${peer} is not installed or does not allow this extension (${why})`
+					: `${peer} stopped (${why})`,
+			);
 			for (const p of pending.values()) p.reject(err);
 			pending.clear();
 		});
@@ -119,15 +127,30 @@ export function nativeApiTransport(
 		if (bytes.length > INLINE_BYTES) {
 			const uid = `lib${id}`;
 			const n = Math.ceil(bytes.length / UPLOAD_CHUNK);
-			for (let i = 0; i < n; i++) p.postMessage({ t: "up", uid, seq: i, last: i === n - 1, data: toB64(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)) });
+			for (let i = 0; i < n; i++)
+				p.postMessage({
+					t: "up",
+					uid,
+					seq: i,
+					last: i === n - 1,
+					data: toB64(bytes.subarray(i * UPLOAD_CHUNK, (i + 1) * UPLOAD_CHUNK)),
+				});
 			body = { kind: "upload", uid };
 		} else if (bytes.length) {
 			// JSON and text inline as they are; anything else (file bytes) as base64
-			body = /json|^text\//i.test(headers["content-type"] ?? "") ? { kind: "text", text: new TextDecoder().decode(bytes) } : { kind: "b64", data: toB64(bytes) };
+			body = /json|^text\//i.test(headers["content-type"] ?? "")
+				? { kind: "text", text: new TextDecoder().decode(bytes) }
+				: { kind: "b64", data: toB64(bytes) };
 		}
 		return new Promise<Response>((resolve, reject) => {
 			pending.set(id, { resolve, reject, chunks: [], got: 0 });
-			req.signal?.addEventListener("abort", () => { if (pending.delete(id)) reject(req.signal.reason ?? new DOMException("aborted", "AbortError")); }, { once: true });
+			req.signal?.addEventListener(
+				"abort",
+				() => {
+					if (pending.delete(id)) reject(req.signal.reason ?? new DOMException("aborted", "AbortError"));
+				},
+				{ once: true },
+			);
 			p.postMessage({ t: "req", id, method: "api", http: req.method, path: url.pathname + url.search, headers, body });
 		});
 	};

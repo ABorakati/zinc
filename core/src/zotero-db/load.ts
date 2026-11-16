@@ -1,12 +1,6 @@
 // Reads Zotero's lookup tables and bulk-loads items (any type) into the shared mapping shapes.
 import type { Database } from "bun:sqlite";
-import {
-	type AnnotationInput,
-	type Creator,
-	type ItemInput,
-	type Row,
-	toIso,
-} from "./mapping";
+import { type AnnotationInput, type Creator, type ItemInput, type Row, toIso } from "./mapping";
 
 export interface Lookups {
 	typeName: Map<number, string>;
@@ -141,9 +135,7 @@ function loadChunk(db: Database, lk: Lookups, ids: number[], out: Map<number, Lo
 	);
 	const deleted = new Set(q("SELECT itemID FROM deletedItems WHERE itemID IN ({IDS})").map((r) => r.itemID as number));
 	const fields = group(
-		q(
-			"SELECT d.itemID, d.fieldID, v.value FROM itemData d JOIN itemDataValues v ON v.valueID = d.valueID WHERE d.itemID IN ({IDS})",
-		),
+		q("SELECT d.itemID, d.fieldID, v.value FROM itemData d JOIN itemDataValues v ON v.valueID = d.valueID WHERE d.itemID IN ({IDS})"),
 		"itemID",
 	);
 	const creators = group(

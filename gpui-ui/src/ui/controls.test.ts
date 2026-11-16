@@ -2,7 +2,19 @@
 import { describe, expect, test } from "bun:test";
 import { isActivateKey, onActivate } from "./controls";
 
-const key = (k: string, extra: object = {}) => ({ key: k, elementId: 1, eventType: "keyDown", preventDefault() { (this as { prevented?: boolean }).prevented = true; }, stopPropagation() { (this as { stopped?: boolean }).stopped = true; }, ...extra }) as never;
+const key = (k: string, extra: object = {}) =>
+	({
+		key: k,
+		elementId: 1,
+		eventType: "keyDown",
+		preventDefault() {
+			(this as { prevented?: boolean }).prevented = true;
+		},
+		stopPropagation() {
+			(this as { stopped?: boolean }).stopped = true;
+		},
+		...extra,
+	}) as never;
 
 describe("activation keys", () => {
 	test("Enter and Space activate, other keys do not", () => {
@@ -24,7 +36,10 @@ describe("activation keys", () => {
 	});
 	test("a disabled control swallows the key but does nothing", () => {
 		let n = 0;
-		const h = onActivate(() => n++, () => true);
+		const h = onActivate(
+			() => n++,
+			() => true,
+		);
 		h(key("enter"));
 		expect(n).toBe(0);
 	});

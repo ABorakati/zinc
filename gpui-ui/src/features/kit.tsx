@@ -19,12 +19,23 @@ export function Txt(p: { class?: string; style?: Style; children: string | undef
 
 /** Single-line truncated text that can shrink inside a row. */
 export function Line(p: { class?: string; style?: Style; children: string | undefined }): JSX.Element {
-	return <Txt class={p.class} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1, ...p.style }}>{p.children}</Txt>;
+	return (
+		<Txt
+			class={p.class}
+			style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1, ...p.style }}
+		>
+			{p.children}
+		</Txt>
+	);
 }
 
 /** Wrapping paragraph. */
 export function Para(p: { class?: string; style?: Style; children: string | undefined }): JSX.Element {
-	return <Txt class={p.class} style={{ whiteSpace: "normal", ...p.style }}>{p.children}</Txt>;
+	return (
+		<Txt class={p.class} style={{ whiteSpace: "normal", ...p.style }}>
+			{p.children}
+		</Txt>
+	);
 }
 
 export function Gap(p: { h?: number; w?: number }): JSX.Element {
@@ -37,7 +48,9 @@ export function Field(p: { label: string; hint?: string; children: JSX.Element; 
 		<div style={{ ...t("flex flex-col gap-1"), minWidth: 0, ...p.style }}>
 			<Txt class="text-xs font-medium text-foreground">{p.label}</Txt>
 			{p.children}
-			<Show when={p.hint}><Txt class="text-xs text-muted-foreground">{p.hint}</Txt></Show>
+			<Show when={p.hint}>
+				<Txt class="text-xs text-muted-foreground">{p.hint}</Txt>
+			</Show>
 		</div>
 	);
 }
@@ -56,7 +69,11 @@ export function Row(p: { selected?: boolean; onClick?: () => void; children: JSX
 	return (
 		<div
 			onClick={() => p.onClick?.()}
-			style={{ ...t(`flex items-center gap-2 px-2 py-1.5 ${p.selected ? "bg-accent" : "hover:bg-accent/60"} ${p.class ?? ""}`), cursor: p.onClick ? "pointer" : undefined, ...p.style }}
+			style={{
+				...t(`flex items-center gap-2 px-2 py-1.5 ${p.selected ? "bg-accent" : "hover:bg-accent/60"} ${p.class ?? ""}`),
+				cursor: p.onClick ? "pointer" : undefined,
+				...p.style,
+			}}
 		>
 			{p.children}
 		</div>
@@ -66,7 +83,8 @@ export function Row(p: { selected?: boolean; onClick?: () => void; children: JSX
 /** A small outlined tag ("author-date", "installed"). */
 export function Chip(p: { children: string; tone?: "muted" | "success" | "warning" }): JSX.Element {
 	const bg = () => (p.tone === "success" ? "bg-success" : p.tone === "warning" ? "bg-warning" : "bg-muted");
-	const fg = () => (p.tone === "success" ? "text-success-foreground" : p.tone === "warning" ? "text-warning-foreground" : "text-muted-foreground");
+	const fg = () =>
+		p.tone === "success" ? "text-success-foreground" : p.tone === "warning" ? "text-warning-foreground" : "text-muted-foreground";
 	return (
 		<div style={t(`flex flex-none items-center rounded border px-1 ${bg()}`)}>
 			<Txt class={`text-[10px] ${fg()}`}>{p.children}</Txt>
@@ -86,11 +104,22 @@ export function Progress(p: { value: number }): JSX.Element {
 export function Choice(p: { selected: boolean; label: string; hint?: string; onClick: () => void }): JSX.Element {
 	return (
 		<Row selected={p.selected} onClick={p.onClick} style={{ borderRadius: 6 }}>
-			<div style={{ ...t("flex flex-none items-center justify-center rounded-full border"), width: 14, height: 14, borderColor: p.selected ? tok("primary") : tok("input") }}>
-				<Show when={p.selected}><div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tok("primary") }} /></Show>
+			<div
+				style={{
+					...t("flex flex-none items-center justify-center rounded-full border"),
+					width: 14,
+					height: 14,
+					borderColor: p.selected ? tok("primary") : tok("input"),
+				}}
+			>
+				<Show when={p.selected}>
+					<div style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tok("primary") }} />
+				</Show>
 			</div>
 			<Txt class="text-sm font-medium text-foreground">{p.label}</Txt>
-			<Show when={p.hint}><Line class="text-xs text-muted-foreground">{p.hint}</Line></Show>
+			<Show when={p.hint}>
+				<Line class="text-xs text-muted-foreground">{p.hint}</Line>
+			</Show>
 		</Row>
 	);
 }
@@ -106,7 +135,11 @@ export function Footer(p: { children: JSX.Element; left?: JSX.Element }): JSX.El
 }
 
 export function ErrorLine(p: { children: string | undefined }): JSX.Element {
-	return <Show when={p.children}><Txt class="text-xs text-destructive">{p.children}</Txt></Show>;
+	return (
+		<Show when={p.children}>
+			<Txt class="text-xs text-destructive">{p.children}</Txt>
+		</Show>
+	);
 }
 
 /** Static "busy" glyph (GPUIX has no CSS animation). */
@@ -117,7 +150,15 @@ export function Spinner(p: { size?: number }): JSX.Element {
 /** Small square icon button for panel headers. */
 export function IconBtn(p: { icon: string; title?: string; onClick: () => void }): JSX.Element {
 	return (
-		<div onClick={() => p.onClick()} style={{ ...t("flex flex-none items-center justify-center rounded-md hover:bg-accent"), width: 24, height: 24, cursor: "pointer" }}>
+		<div
+			onClick={() => p.onClick()}
+			style={{
+				...t("flex flex-none items-center justify-center rounded-md hover:bg-accent"),
+				width: 24,
+				height: 24,
+				cursor: "pointer",
+			}}
+		>
 			<Icon name={p.icon} size={14} color={tok("muted-foreground")} />
 		</div>
 	);
@@ -136,19 +177,31 @@ export function FloatingPanel(p: {
 	children: JSX.Element;
 }): JSX.Element {
 	return (
-		<div style={{
-			...t("flex flex-col overflow-hidden rounded-lg border bg-background"),
-			position: "absolute", bottom: 12, [p.side]: 12, width: 352, maxHeight: 420,
-			boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 24, spreadRadius: 0, color: "rgba(0,0,0,0.28)" }],
-		}}>
+		<div
+			style={{
+				...t("flex flex-col overflow-hidden rounded-lg border bg-background"),
+				position: "absolute",
+				bottom: 12,
+				[p.side]: 12,
+				width: 352,
+				maxHeight: 420,
+				boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 24, spreadRadius: 0, color: "rgba(0,0,0,0.28)" }],
+			}}
+		>
 			<div style={t("flex flex-row items-center gap-2 px-3 py-2")}>
 				<div style={{ ...t("flex flex-col gap-1"), flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
 					<Line class="text-sm font-medium text-foreground">{p.subtitle ? `${p.title} · ${p.subtitle}` : p.title}</Line>
-					<Show when={p.progress !== undefined}><Progress value={p.progress ?? 0} /></Show>
+					<Show when={p.progress !== undefined}>
+						<Progress value={p.progress ?? 0} />
+					</Show>
 				</div>
 				{p.actions}
-				<Show when={p.onToggle}><IconBtn icon={p.collapsed ? "chevron-up" : "chevron-down"} onClick={() => p.onToggle!()} /></Show>
-				<Show when={p.onClose}><IconBtn icon="x" onClick={() => p.onClose!()} /></Show>
+				<Show when={p.onToggle}>
+					<IconBtn icon={p.collapsed ? "chevron-up" : "chevron-down"} onClick={() => p.onToggle!()} />
+				</Show>
+				<Show when={p.onClose}>
+					<IconBtn icon="x" onClick={() => p.onClose!()} />
+				</Show>
 			</div>
 			<Show when={!p.collapsed}>
 				<div style={{ ...t("flex flex-col border-t overflow-y-auto"), maxHeight: 340 }}>{p.children}</div>
@@ -158,21 +211,39 @@ export function FloatingPanel(p: {
 }
 
 /** Ask for a line of text; resolves undefined when cancelled. */
-export function promptText(o: { title: string; description?: string; initial?: string; confirmLabel: string; placeholder?: string }): Promise<string | undefined> {
-	return openDialog<string>((close) => {
-		const [v, setV] = createSignal(o.initial ?? "");
-		const ok = () => { const s = v().trim(); if (s) close(s); };
-		return (
-			<div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>
-				<Show when={o.description}><Para class="text-sm text-muted-foreground">{o.description}</Para></Show>
-				<TextInput value={v()} onInput={setV} onEnter={ok} autofocus placeholder={o.placeholder} />
-				<Footer>
-					<Button variant="outline" size="sm" onClick={() => close()}>Cancel</Button>
-					<Button variant="primary" size="sm" disabled={!v().trim()} onClick={ok}>{o.confirmLabel}</Button>
-				</Footer>
-			</div>
-		);
-	}, { title: o.title, width: 400 });
+export function promptText(o: {
+	title: string;
+	description?: string;
+	initial?: string;
+	confirmLabel: string;
+	placeholder?: string;
+}): Promise<string | undefined> {
+	return openDialog<string>(
+		(close) => {
+			const [v, setV] = createSignal(o.initial ?? "");
+			const ok = () => {
+				const s = v().trim();
+				if (s) close(s);
+			};
+			return (
+				<div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>
+					<Show when={o.description}>
+						<Para class="text-sm text-muted-foreground">{o.description}</Para>
+					</Show>
+					<TextInput value={v()} onInput={setV} onEnter={ok} autofocus placeholder={o.placeholder} />
+					<Footer>
+						<Button variant="outline" size="sm" onClick={() => close()}>
+							Cancel
+						</Button>
+						<Button variant="primary" size="sm" disabled={!v().trim()} onClick={ok}>
+							{o.confirmLabel}
+						</Button>
+					</Footer>
+				</div>
+			);
+		},
+		{ title: o.title, width: 400 },
+	);
 }
 
 /** One row of a settings section: label + description on the left, the control on the right. */
@@ -181,10 +252,14 @@ export function SettingRow(p: { label: string; description?: string; children: J
 		<div style={{ ...t("flex flex-row items-center gap-4 py-3 border-b"), width: "100%" }}>
 			<div style={{ ...t("flex flex-col gap-0.5"), flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
 				<Txt class="text-[13px] font-medium text-foreground">{p.label}</Txt>
-				<Show when={p.description}><Para class="text-xs text-muted-foreground">{p.description}</Para></Show>
+				<Show when={p.description}>
+					<Para class="text-xs text-muted-foreground">{p.description}</Para>
+				</Show>
 			</div>
 			<div style={{ ...t("flex flex-row items-center gap-2"), flexShrink: 0 }}>{p.children}</div>
 		</div>
 	);
 }
-export const SettingsBody = (p: { children: JSX.Element }): JSX.Element => <div style={{ ...t("flex flex-col"), width: "100%" }}>{p.children}</div>;
+export const SettingsBody = (p: { children: JSX.Element }): JSX.Element => (
+	<div style={{ ...t("flex flex-col"), width: "100%" }}>{p.children}</div>
+);

@@ -5,7 +5,21 @@ import { Icon } from "../icons";
 import { currentView, refreshStore, setView } from "../sidebar/bridge";
 import { errMsg, sidebarApi, type SavedSearch } from "../sidebar/client";
 import { NameInput } from "../sidebar/NameInput";
-import { type Entry, HEADER_BAND, HEADER_TEXT_BAND, IconButton, labelCls, ListItem, pill, SPECIAL, t, tok, TRUNCATE, tracked, tx } from "../sidebar/parts";
+import {
+	type Entry,
+	HEADER_BAND,
+	HEADER_TEXT_BAND,
+	IconButton,
+	labelCls,
+	ListItem,
+	pill,
+	SPECIAL,
+	t,
+	tok,
+	TRUNCATE,
+	tracked,
+	tx,
+} from "../sidebar/parts";
 import { confirm, openMenu, toast } from "../ui";
 import { openAdvancedSearch } from "./AdvancedSearch";
 import { refreshSavedSearches, savedSearches } from "./state";
@@ -20,7 +34,9 @@ async function commitRename(s: SavedSearch, name: string) {
 	try {
 		await sidebarApi.patchSavedSearch(s.key, { name: n });
 		await refreshSavedSearches();
-	} catch (e) { toast("Could not rename search", { kind: "error", description: errMsg(e) }); }
+	} catch (e) {
+		toast("Could not rename search", { kind: "error", description: errMsg(e) });
+	}
 }
 
 async function remove(s: SavedSearch) {
@@ -38,7 +54,9 @@ async function remove(s: SavedSearch) {
 		await refreshSavedSearches();
 		refreshStore();
 		toast(`Deleted saved search "${s.name}"`, { kind: "success" });
-	} catch (e) { toast("Could not delete search", { kind: "error", description: errMsg(e) }); }
+	} catch (e) {
+		toast("Could not delete search", { kind: "error", description: errMsg(e) });
+	}
 }
 
 function showMenu(s: SavedSearch, x: number, y: number) {
@@ -68,7 +86,9 @@ function SavedSearchRow(p: { s: SavedSearch }): JSX.Element {
 				if ((e.clickCount ?? 1) >= 2) void openAdvancedSearch(s.key);
 				else setView({ kind: "savedSearch", key: s.key });
 			}}
-			onAuxClick={(e) => { if (e.isRightClick) showMenu(s, e.x ?? 0, e.y ?? 0); }}
+			onAuxClick={(e) => {
+				if (e.isRightClick) showMenu(s, e.x ?? 0, e.y ?? 0);
+			}}
 			style={{
 				...t(SPECIAL),
 				...(menuKey() === s.key && !active(s.key) ? { backgroundColor: tok("accent") } : {}),
@@ -92,18 +112,20 @@ function SavedSearchRow(p: { s: SavedSearch }): JSX.Element {
  */
 export function savedSearchEntries(): Entry[] {
 	const list = savedSearches();
-	const out: Entry[] = [{
-		id: "ss:header",
-		render: () => (
-			<ListItem gap={0}>
-				{/* the same accent band as the sidebar's section headers (SectionHeader) */}
-				<div style={{ ...t("mt-2 flex items-center justify-between pl-2.5 pr-1"), ...t(HEADER_BAND) }}>
-					<text style={tx(HEADER_TEXT_BAND)}>{tracked("Saved Searches")}</text>
-					<IconButton name="plus" box={20} icon={14} label="Advanced search" onClick={() => void openAdvancedSearch()} />
-				</div>
-			</ListItem>
-		),
-	}];
+	const out: Entry[] = [
+		{
+			id: "ss:header",
+			render: () => (
+				<ListItem gap={0}>
+					{/* the same accent band as the sidebar's section headers (SectionHeader) */}
+					<div style={{ ...t("mt-2 flex items-center justify-between pl-2.5 pr-1"), ...t(HEADER_BAND) }}>
+						<text style={tx(HEADER_TEXT_BAND)}>{tracked("Saved Searches")}</text>
+						<IconButton name="plus" box={20} icon={14} label="Advanced search" onClick={() => void openAdvancedSearch()} />
+					</div>
+				</ListItem>
+			),
+		},
+	];
 	if (!list.length) {
 		out.push({
 			id: "ss:empty",
@@ -116,6 +138,14 @@ export function savedSearchEntries(): Entry[] {
 			),
 		});
 	}
-	for (const s of list) out.push({ id: `ss:${s.key}`, render: () => <ListItem gap={0}><SavedSearchRow s={s} /></ListItem> });
+	for (const s of list)
+		out.push({
+			id: `ss:${s.key}`,
+			render: () => (
+				<ListItem gap={0}>
+					<SavedSearchRow s={s} />
+				</ListItem>
+			),
+		});
 	return out;
 }

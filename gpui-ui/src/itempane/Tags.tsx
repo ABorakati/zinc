@@ -14,7 +14,10 @@ export function createTagSource() {
 		const needle = q.trim().toLowerCase();
 		if (!needle) return [];
 		const all = await ipApi.tags(store.libraryId()).catch(() => []);
-		return all.filter((x) => x.tag.toLowerCase().includes(needle) && !exclude.includes(x.tag)).slice(0, 12).map((x) => x.tag);
+		return all
+			.filter((x) => x.tag.toLowerCase().includes(needle) && !exclude.includes(x.tag))
+			.slice(0, 12)
+			.map((x) => x.tag);
 	};
 }
 
@@ -24,15 +27,26 @@ export function TagChip(p: { tag: string; automatic?: boolean; color?: string; o
 		<div
 			style={{
 				...t("flex items-center rounded-full"),
-				maxWidth: "100%", paddingTop: 1, paddingBottom: 1, paddingLeft: 8, paddingRight: p.onRemove ? 2 : 8, gap: 2,
+				maxWidth: "100%",
+				paddingTop: 1,
+				paddingBottom: 1,
+				paddingLeft: 8,
+				paddingRight: p.onRemove ? 2 : 8,
+				gap: 2,
 				backgroundColor: p.color ? withAlpha(p.color, 0.18) : p.automatic ? "transparent" : tok("secondary"),
 				borderWidth: p.color || p.automatic ? 1 : 0,
 				borderStyle: p.automatic ? "dashed" : "solid",
 				borderColor: p.color ? withAlpha(p.color, 0.5) : tok("input"),
 			}}
 		>
-			<Show when={p.color}><div style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: p.color, marginRight: 3, flexShrink: 0 }} /></Show>
-			<text style={{ ...tx("text-xs"), color: fg(), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{p.tag}</text>
+			<Show when={p.color}>
+				<div style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: p.color, marginRight: 3, flexShrink: 0 }} />
+			</Show>
+			<text
+				style={{ ...tx("text-xs"), color: fg(), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}
+			>
+				{p.tag}
+			</text>
 			<Show when={p.onRemove}>
 				<IconBtn icon="x" size={11} box={16} title={`Remove tag ${p.tag}`} onClick={p.onRemove} />
 			</Show>
@@ -76,14 +90,28 @@ export function TagsSection(): JSX.Element {
 		<Section id="tags" title="Tags" icon="tag" count={pane.detail()?.tags.length ?? 0}>
 			<Show when={tags().length}>
 				<div style={{ ...t("flex flex-wrap gap-1"), marginBottom: 6, width: "100%" }}>
-					<For each={tags()}>{(x) => <TagChip tag={x.tag} automatic={x.type === 1} color={pane.tagColors().get(x.tag)} onRemove={locked() ? undefined : () => void remove(x.tag)} />}</For>
+					<For each={tags()}>
+						{(x) => (
+							<TagChip
+								tag={x.tag}
+								automatic={x.type === 1}
+								color={pane.tagColors().get(x.tag)}
+								onRemove={locked() ? undefined : () => void remove(x.tag)}
+							/>
+						)}
+					</For>
 				</div>
 			</Show>
 			<Show when={!locked()}>
 				<Picker<string>
 					placeholder="Add tag…"
 					keepOpen
-					query={(q) => suggest(q, (pane.detail()?.tags ?? []).map((x) => x.tag))}
+					query={(q) =>
+						suggest(
+							q,
+							(pane.detail()?.tags ?? []).map((x) => x.tag),
+						)
+					}
 					label={(x) => x}
 					icon={() => "tag"}
 					onPick={(x) => void add(x)}

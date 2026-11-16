@@ -7,8 +7,12 @@ import { BbtSettingsSection } from "./Settings";
 
 export function register(): void {
 	registerItemAction({
-		id: "bbt.copy-citation-key", label: "Copy Citation Key", icon: "key-round", group: "cite",
-		visible: (ctx) => hasCitationKey(ctx.item.itemType), run: (ctx) => void copyCitationKeys(ctx.keys),
+		id: "bbt.copy-citation-key",
+		label: "Copy Citation Key",
+		icon: "key-round",
+		group: "cite",
+		visible: (ctx) => hasCitationKey(ctx.item.itemType),
+		run: (ctx) => void copyCitationKeys(ctx.keys),
 	});
 	registerSettingsSection({ id: "bbt", label: "Better BibTeX", icon: "book-marked", order: 61, render: () => <BbtSettingsSection /> });
 }

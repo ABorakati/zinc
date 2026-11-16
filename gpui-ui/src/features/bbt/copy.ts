@@ -10,7 +10,10 @@ export async function copyCitationKeys(keys: string[]): Promise<void> {
 	try {
 		const { text } = await bbtApi.cite(citeRequest(keys, await bbtApi.settings()));
 		await copyText(text);
-		toast(`Copied the citation key${keys.length === 1 ? "" : "s"} of ${plural(keys.length, "item")}`, { kind: "success", description: text.length > 120 ? `${text.slice(0, 117)}…` : text });
+		toast(`Copied the citation key${keys.length === 1 ? "" : "s"} of ${plural(keys.length, "item")}`, {
+			kind: "success",
+			description: text.length > 120 ? `${text.slice(0, 117)}…` : text,
+		});
 	} catch (e) {
 		toast("Could not copy the citation key", { kind: "error", description: errMsg(e) });
 	}

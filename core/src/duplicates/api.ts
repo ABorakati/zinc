@@ -49,7 +49,12 @@ export async function handleDuplicatesApi(req: Request, db: Database): Promise<R
 		if (parts.length === 0) {
 			if (m === "GET") {
 				const includeSummary = url.searchParams.get("summary") === "1";
-				return json(detectDuplicates(db, { includeSummary, library: url.searchParams.has("library") ? resolveLibrary(db, url.searchParams.get("library")) : undefined }));
+				return json(
+					detectDuplicates(db, {
+						includeSummary,
+						library: url.searchParams.has("library") ? resolveLibrary(db, url.searchParams.get("library")) : undefined,
+					}),
+				);
 			}
 			throw new HttpError(405, "method not allowed");
 		}

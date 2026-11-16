@@ -83,7 +83,10 @@ export class SyncService {
 
 	private setState(name: string, value: string | null): void {
 		if (value === null) this.db.query("DELETE FROM sync_state WHERE name = ?").run(name);
-		else this.db.query("INSERT INTO sync_state(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value").run(name, value);
+		else
+			this.db
+				.query("INSERT INTO sync_state(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value")
+				.run(name, value);
 	}
 
 	get enabled(): boolean {
@@ -122,7 +125,10 @@ export class SyncService {
 				if (report.failed?.length) {
 					// Objects that could not be applied (a parent that is not here yet, ...): keep the checkpoint where it was, so the
 					// next pull reads them again instead of losing them behind the watermark. What did apply is idempotent.
-					this.setState("pull_incomplete", `${report.failed.length} object(s) not applied yet; first: ${report.failed[0].type} ${report.failed[0].key}`);
+					this.setState(
+						"pull_incomplete",
+						`${report.failed.length} object(s) not applied yet; first: ${report.failed[0].type} ${report.failed[0].key}`,
+					);
 				} else {
 					this.setState("last_pull_at", ch.at);
 					this.setState("pull_incomplete", null);
@@ -230,7 +236,9 @@ export class SyncService {
 	}
 
 	conflicts(): SyncConflict[] {
-		const rows = this.db.query("SELECT id, type, key, local, remote, resolved, at FROM sync_conflicts ORDER BY id DESC LIMIT 500").all() as {
+		const rows = this.db
+			.query("SELECT id, type, key, local, remote, resolved, at FROM sync_conflicts ORDER BY id DESC LIMIT 500")
+			.all() as {
 			id: number;
 			type: string;
 			key: string;
@@ -243,7 +251,20 @@ export class SyncService {
 			const local = r.local ? JSON.parse(r.local) : null;
 			const remote = r.remote ? JSON.parse(r.remote) : null;
 			const o = (local ?? remote ?? {}) as Record<string, unknown>;
-			const title = String(o.title ?? o.name ?? o.text ?? o.comment ?? (typeof o.note === "string" ? o.note.replace(/<[^>]*>/g, " ").trim().slice(0, 80) : "") ?? "") || r.key;
+			const title =
+				String(
+					o.title ??
+						o.name ??
+						o.text ??
+						o.comment ??
+						(typeof o.note === "string"
+							? o.note
+									.replace(/<[^>]*>/g, " ")
+									.trim()
+									.slice(0, 80)
+							: "") ??
+						"",
+				) || r.key;
 			return { id: r.id, type: r.type, key: r.key, title, local, remote, resolved: r.resolved, at: r.at };
 		});
 	}

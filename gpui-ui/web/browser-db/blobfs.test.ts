@@ -9,7 +9,15 @@ import * as fsp from "../shims/fs-promises";
 import { createBlobBackend, type BlobDb } from "./blobfs";
 
 const scratch = mkdtempSync(join(tmpdir(), "zinc-blobfs-"));
-afterAll(() => { fs.installDurableFs(null); try { db.close(); } catch {} try { rmSync(scratch, { recursive: true, force: true }); } catch {} });
+afterAll(() => {
+	fs.installDurableFs(null);
+	try {
+		db.close();
+	} catch {}
+	try {
+		rmSync(scratch, { recursive: true, force: true });
+	} catch {}
+});
 
 let db: Database;
 function fresh(file = ":memory:") {
@@ -17,7 +25,11 @@ function fresh(file = ":memory:") {
 	fs.installDurableFs(createBlobBackend(db as unknown as BlobDb));
 }
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
-const bytes = (n: number, seed = 1) => { const b = new Uint8Array(n); for (let i = 0; i < n; i++) b[i] = (i * 31 + seed + (i >> 8)) & 255; return b; };
+const bytes = (n: number, seed = 1) => {
+	const b = new Uint8Array(n);
+	for (let i = 0; i < n; i++) b[i] = (i * 31 + seed + (i >> 8)) & 255;
+	return b;
+};
 
 beforeEach(() => fresh());
 
@@ -59,7 +71,10 @@ describe("durable files", () => {
 		expect(fs.readdirSync("/opfs/zinc/storage")).toEqual(["ABCD1234"]);
 		expect(fs.readdirSync("/opfs/zinc/storage/abcd1234")).toEqual(["My Paper.PDF", "Notes"]);
 		const t = fs.readdirSync("/opfs/zinc/storage/Abcd1234", { withFileTypes: true });
-		expect(t.map((e: any) => [e.name, e.isFile(), e.isDirectory()])).toEqual([["My Paper.PDF", true, false], ["Notes", false, true]]);
+		expect(t.map((e: any) => [e.name, e.isFile(), e.isDirectory()])).toEqual([
+			["My Paper.PDF", true, false],
+			["Notes", false, true],
+		]);
 		expect(fs.readdirSync("/opfs/zinc/storage/abcd1234/NOTES")).toEqual(["Sub.TXT"]);
 		// stat through either case
 		expect(fs.statSync("/opfs/zinc/storage/ABCD1234/My Paper.PDF").size).toBe(3);
@@ -118,7 +133,10 @@ describe("durable files", () => {
 		expect(fs.readdirSync("/opfs/a")).toEqual(["b", "f.txt"]);
 		expect(fs.readdirSync("/opfs/deep")).toEqual(["er"]);
 		const t = fs.readdirSync("/opfs/a", { withFileTypes: true });
-		expect(t.map((e: any) => [e.name, e.isFile(), e.isDirectory()])).toEqual([["b", false, true], ["f.txt", true, false]]);
+		expect(t.map((e: any) => [e.name, e.isFile(), e.isDirectory()])).toEqual([
+			["b", false, true],
+			["f.txt", true, false],
+		]);
 		expect(fs.readdirSync("/opfs")).toEqual(["a", "deep"]);
 		expect(() => fs.readdirSync("/opfs/nope")).toThrow(/ENOENT/);
 		expect(() => fs.readdirSync("/opfs/a/f.txt")).toThrow(/ENOTDIR/);
@@ -236,7 +254,10 @@ describe("durable files", () => {
 		expect(fs.statSync("/opfs/t/f").size).toBe(0);
 
 		const ws = fs.createWriteStream("/opfs/t/stream.bin");
-		const done = new Promise<void>((res, rej) => { ws.on("error", rej); ws.on("finish", () => res()); });
+		const done = new Promise<void>((res, rej) => {
+			ws.on("error", rej);
+			ws.on("finish", () => res());
+		});
 		ws.write(new Uint8Array([1, 2, 3]));
 		ws.write("ab");
 		ws.end();
@@ -244,9 +265,17 @@ describe("durable files", () => {
 		expect([...(fs.readFileSync("/opfs/t/stream.bin") as Uint8Array)]).toEqual([1, 2, 3, 97, 98]);
 
 		const chunks: Uint8Array[] = [];
-		await new Promise<void>((res, rej) => fs.createReadStream("/opfs/t/stream.bin", { highWaterMark: 2 }).on("data", (c: any) => chunks.push(c)).on("error", rej).on("end", () => res()));
+		await new Promise<void>((res, rej) =>
+			fs
+				.createReadStream("/opfs/t/stream.bin", { highWaterMark: 2 })
+				.on("data", (c: any) => chunks.push(c))
+				.on("error", rej)
+				.on("end", () => res()),
+		);
 		expect(chunks.map((c) => c.length)).toEqual([2, 2, 1]);
-		await expect(new Promise((res, rej) => fs.createReadStream("/opfs/t/none").on("error", rej).on("end", res))).rejects.toThrow(/ENOENT/);
+		await expect(new Promise((res, rej) => fs.createReadStream("/opfs/t/none").on("error", rej).on("end", res))).rejects.toThrow(
+			/ENOENT/,
+		);
 	});
 	test("a 20 MB file: write, read, stat, and range reads at the start, middle and end", async () => {
 		const n = 20 * 1024 * 1024;
@@ -340,8 +369,14 @@ describe("persistence", () => {
 	test("a database made by the schema without `name` is migrated and keeps working", () => {
 		const file = join(scratch, "old.sqlite");
 		const old = new Database(file);
-		old.exec("CREATE TABLE files (path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL); CREATE TABLE dirs (path TEXT PRIMARY KEY);");
-		old.query("INSERT INTO files(path, data, mtime) VALUES (?, ?, ?)").run("/opfs/zinc/storage/abcd1234/old paper.pdf", new TextEncoder().encode("OLD"), 42);
+		old.exec(
+			"CREATE TABLE files (path TEXT PRIMARY KEY, data BLOB NOT NULL, mtime INTEGER NOT NULL); CREATE TABLE dirs (path TEXT PRIMARY KEY);",
+		);
+		old.query("INSERT INTO files(path, data, mtime) VALUES (?, ?, ?)").run(
+			"/opfs/zinc/storage/abcd1234/old paper.pdf",
+			new TextEncoder().encode("OLD"),
+			42,
+		);
 		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs/zinc/storage");
 		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs/zinc/storage/abcd1234");
 		old.query("INSERT INTO dirs(path) VALUES (?)").run("/opfs/zinc");
@@ -413,7 +448,11 @@ describe("timings", () => {
 	test("20 MB and 50 MB writes, reads, a range read, and append", async () => {
 		const file = join(scratch, "timings.sqlite");
 		fresh(file);
-		const ms = async (f: () => unknown) => { const t = performance.now(); await f(); return +(performance.now() - t).toFixed(1); };
+		const ms = async (f: () => unknown) => {
+			const t = performance.now();
+			await f();
+			return +(performance.now() - t).toFixed(1);
+		};
 		const rows: Record<string, number> = {};
 		for (const mb of [20, 50]) {
 			const data = bytes(mb * 1024 * 1024, mb);
@@ -432,7 +471,9 @@ describe("timings", () => {
 		}
 		// many small appends to a growing file, versus rewriting it each time from JS
 		const small = bytes(100);
-		rows["1000 x 100 B appends (SQL concat)"] = await ms(() => { for (let i = 0; i < 1000; i++) fs.appendFileSync("/opfs/perf/small.log", small); });
+		rows["1000 x 100 B appends (SQL concat)"] = await ms(() => {
+			for (let i = 0; i < 1000; i++) fs.appendFileSync("/opfs/perf/small.log", small);
+		});
 		expect(fs.statSync("/opfs/perf/small.log").size).toBe(100_000);
 		console.log("blobfs timings (ms):", JSON.stringify(rows, null, 1));
 		db.close();

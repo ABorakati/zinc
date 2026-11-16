@@ -19,9 +19,21 @@ const dependent = (id: string, parent: string, title: string) => `<?xml version=
   <updated>2020-01-01T00:00:00+00:00</updated></info>
 </style>`;
 
-type E = { title: string; name: string; titleShort?: string; dependent: number; categories: { format?: string; fields?: string[] }; updated?: string };
+type E = {
+	title: string;
+	name: string;
+	titleShort?: string;
+	dependent: number;
+	categories: { format?: string; fields?: string[] };
+	updated?: string;
+};
 const entry = (name: string, title: string, format: string | undefined, fields: string[], dep = 0, titleShort?: string): E => ({
-	title, name, titleShort, dependent: dep, categories: { format, fields }, updated: "2024-01-01 00:00:00",
+	title,
+	name,
+	titleShort,
+	dependent: dep,
+	categories: { format, fields },
+	updated: "2024-01-01 00:00:00",
 });
 const INDEX: E[] = [
 	entry("vancouver", "Vancouver", "numeric", ["medicine"]),
@@ -62,13 +74,27 @@ beforeAll(() => {
 	dir = tempDir();
 	db = openDb(join(dir, "library.sqlite"));
 	insertItem(db, {
-		key: "JOURNAL1", itemType: "journalArticle", title: "Enhanced recovery after surgery in liver transplantation",
-		creators: [{ creatorType: "author", firstName: "Jane", lastName: "Smith" }, { creatorType: "author", firstName: "Alan B", lastName: "Jones" }],
-		publicationTitle: "New England Journal of Medicine", volume: "382", issue: "5", pages: "123-130", date: "2020-03-15",
+		key: "JOURNAL1",
+		itemType: "journalArticle",
+		title: "Enhanced recovery after surgery in liver transplantation",
+		creators: [
+			{ creatorType: "author", firstName: "Jane", lastName: "Smith" },
+			{ creatorType: "author", firstName: "Alan B", lastName: "Jones" },
+		],
+		publicationTitle: "New England Journal of Medicine",
+		volume: "382",
+		issue: "5",
+		pages: "123-130",
+		date: "2020-03-15",
 	});
 	insertItem(db, {
-		key: "BOOK0001", itemType: "book", title: "Principles of Surgery",
-		creators: [{ creatorType: "author", firstName: "Seymour", lastName: "Schwartz" }], publisher: "McGraw-Hill", place: "New York", date: "2019",
+		key: "BOOK0001",
+		itemType: "book",
+		title: "Principles of Surgery",
+		creators: [{ creatorType: "author", firstName: "Seymour", lastName: "Schwartz" }],
+		publisher: "McGraw-Hill",
+		place: "New York",
+		date: "2019",
 	});
 });
 afterAll(() => db.close(true));
@@ -81,7 +107,12 @@ const fresh = () => {
 describe("catalogue search", () => {
 	test("ranking: exact id/short title, prefix, word prefix, all words", async () => {
 		const s = fresh();
-		expect((await s.search("apa"))[0]).toMatchObject({ id: "apa", titleShort: "APA", format: "author-date", fields: ["psychology", "social_science"] });
+		expect((await s.search("apa"))[0]).toMatchObject({
+			id: "apa",
+			titleShort: "APA",
+			format: "author-date",
+			fields: ["psychology", "social_science"],
+		});
 		expect((await s.search("nature")).map((x) => x.id)).toEqual(["nature", "nature-communications"]); // exact before prefix
 		expect((await s.search("oncology"))[0]!.id).toBe("lancet-oncology"); // word prefix
 		const hv = (await s.search("harvard cite")).map((x) => x.id);
@@ -141,7 +172,9 @@ describe("catalogue search", () => {
 
 	test("styles installed outside the repository (browser connector) are searchable", async () => {
 		const s = fresh();
-		const xml = read("vancouver.csl").replace(/<id>[^<]*<\/id>/, "<id>http://example.org/my-own-style</id>").replace(/<title>[^<]*<\/title>/, "<title>My Department Style</title>");
+		const xml = read("vancouver.csl")
+			.replace(/<id>[^<]*<\/id>/, "<id>http://example.org/my-own-style</id>")
+			.replace(/<title>[^<]*<\/title>/, "<title>My Department Style</title>");
 		const { mkdirSync, writeFileSync } = await import("node:fs");
 		mkdirSync(join(s.dir, "styles"), { recursive: true });
 		writeFileSync(join(s.dir, "styles", "my-own-style.csl"), xml);
@@ -320,7 +353,11 @@ describe("HTTP routes", () => {
 	const call = async (method: string, path: string, body?: unknown) => {
 		citeService(db, { dir: d, fetch: mockFetch });
 		const res = await handleCiteApi(
-			new Request("http://x" + path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }),
+			new Request("http://x" + path, {
+				method,
+				headers: { "Content-Type": "application/json" },
+				body: body === undefined ? undefined : JSON.stringify(body),
+			}),
 			db,
 		);
 		return { status: res!.status, json: (await res!.json()) as any, headers: res!.headers };
@@ -342,7 +379,10 @@ describe("HTTP routes", () => {
 
 		const inst = await call("POST", "/api/cite/styles/install", { id: "lancet-oncology" });
 		expect(inst.json).toMatchObject({ id: "lancet-oncology", installed: true, removable: true });
-		expect((await call("GET", "/api/cite/styles?installed=1")).json.map((x: any) => x.id).sort()).toEqual(["lancet-oncology", "the-lancet"]);
+		expect((await call("GET", "/api/cite/styles?installed=1")).json.map((x: any) => x.id).sort()).toEqual([
+			"lancet-oncology",
+			"the-lancet",
+		]);
 
 		expect((await call("DELETE", "/api/cite/styles/the-lancet")).status).toBe(409);
 		expect((await call("DELETE", "/api/cite/styles/lancet-oncology")).json).toEqual({ id: "lancet-oncology", removed: true });

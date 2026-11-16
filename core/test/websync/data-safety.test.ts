@@ -11,7 +11,8 @@ import { connect, makeRig, stopAll, type Rig } from "./rig";
 afterEach(stopAll);
 
 const rows = (r: Rig, sql: string, ...p: any[]) => r.db.query(sql).all(...p) as any[];
-const state = (r: Rig, name: string) => (r.db.query("SELECT value FROM sync_state WHERE name = ?").get(name) as { value: string } | null)?.value;
+const state = (r: Rig, name: string) =>
+	(r.db.query("SELECT value FROM sync_state WHERE name = ?").get(name) as { value: string } | null)?.value;
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
 const localItem = (key: string, title: string) => ({
 	key,
@@ -115,7 +116,14 @@ describe("changed attachment files (GPT #14)", () => {
 	async function setup(r: Rig, local: string, remote: string, mode: "download" | "sync") {
 		await connect(r);
 		r.mock.put("item", "PARENT01", { title: "P" });
-		r.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt", md5: md5(remote) });
+		r.mock.put("item", "ATT00001", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "text/plain",
+			filename: "one.txt",
+			md5: md5(remote),
+		});
 		r.mock.files.set("ATT00001", new TextEncoder().encode(remote));
 		const dir = join(r.dir, "storage", "ATT00001");
 		mkdirSync(dir, { recursive: true });
@@ -132,7 +140,14 @@ describe("changed attachment files (GPT #14)", () => {
 		await r.svc.fileJobDone;
 		expect(readFileSync(file, "utf8")).toBe("v1"); // baseline recorded: both sides equal
 		// someone replaces the file on zotero.org
-		r.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt", md5: md5("v2") });
+		r.mock.put("item", "ATT00001", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "text/plain",
+			filename: "one.txt",
+			md5: md5("v2"),
+		});
 		r.mock.files.set("ATT00001", new TextEncoder().encode("v2"));
 		await r.svc.syncNow();
 		await r.svc.fileJobDone;
@@ -161,7 +176,14 @@ describe("changed attachment files (GPT #14)", () => {
 		await r.svc.syncNow();
 		await r.svc.fileJobDone;
 		writeFileSync(file, "local edit");
-		r.mock.put("item", "ATT00001", { itemType: "attachment", parentItem: "PARENT01", linkMode: "imported_file", contentType: "text/plain", filename: "one.txt", md5: md5("server edit") });
+		r.mock.put("item", "ATT00001", {
+			itemType: "attachment",
+			parentItem: "PARENT01",
+			linkMode: "imported_file",
+			contentType: "text/plain",
+			filename: "one.txt",
+			md5: md5("server edit"),
+		});
 		r.mock.files.set("ATT00001", new TextEncoder().encode("server edit"));
 		await r.svc.syncNow();
 		await r.svc.fileJobDone;

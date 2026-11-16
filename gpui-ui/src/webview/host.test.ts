@@ -12,7 +12,7 @@ describe.skipIf(!wanted)("WebHost", () => {
 		const host = new WebHost({ init: "" });
 		for (let round = 0; round < 3; round++) {
 			host.load("data:text/html,<h1>probe</h1>");
-			for (let i = 0; i < 100 && host.state() === "starting" || host.state() === "idle"; i++) await sleep(50);
+			for (let i = 0; (i < 100 && host.state() === "starting") || host.state() === "idle"; i++) await sleep(50);
 			expect(host.error()).toBe("");
 			expect(host.state()).toBe("ready");
 			host.release(0);

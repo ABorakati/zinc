@@ -35,11 +35,14 @@ afterEach(() => setBrowserBridge(null));
 // ---------------------------------------------------------------- fakes
 
 const ARTICLE_URL = "https://www.nature.com/articles/s41586-020-2649-2";
-const ARTICLE_HTML = "<html><head><meta name='citation_pdf_url' content='https://www.nature.com/a.pdf'><title>x</title></head><body>article</body></html>";
+const ARTICLE_HTML =
+	"<html><head><meta name='citation_pdf_url' content='https://www.nature.com/a.pdf'><title>x</title></head><body>article</body></html>";
 const CA_URL = "https://login.microsoftonline.com/x/login?secret=1";
 const CA_HTML = "<html><body>AADSTS53000: Device is not in required device state: compliant.</body></html>";
 const IDP_URL = "https://login.openathens.net/auth/x";
-const PDF = new TextEncoder().encode(`%PDF-1.4\n${"% filler line of ordinary pdf comment text................\n".repeat(900)}trailer\n<< /Root 1 0 R >>\n%%EOF\n`);
+const PDF = new TextEncoder().encode(
+	`%PDF-1.4\n${"% filler line of ordinary pdf comment text................\n".repeat(900)}trailer\n<< /Root 1 0 R >>\n%%EOF\n`,
+);
 
 type Script = (n: number, s: FakeSession) => void;
 
@@ -166,28 +169,47 @@ const req = (o: Partial<LoginReq> = {}): LoginReq => ({
 });
 
 /** pending on the IdP for `n` polls, then `then` */
-const landAfter = (n: number): Script => (i, s) => {
-	if (i < n) s.cur = IDP_URL;
-	else {
-		s.cur = ARTICLE_URL;
-		s.htmlOf[ARTICLE_URL] = ARTICLE_HTML;
-	}
-};
+const landAfter =
+	(n: number): Script =>
+	(i, s) => {
+		if (i < n) s.cur = IDP_URL;
+		else {
+			s.cur = ARTICLE_URL;
+			s.htmlOf[ARTICLE_URL] = ARTICLE_HTML;
+		}
+	};
 
 const signal = () => new AbortController().signal;
 
 // ---------------------------------------------------------------- decide (pure table)
 
 describe.skipIf(!HAVE_FULLTEXT_WASM)("decide", () => {
-	const base: DecideInput = { state: { state: "pending" }, elapsedMs: 0, timeoutMs: 60000, extended: false, windowClosed: false, userAction: null, pdfCaptured: false };
+	const base: DecideInput = {
+		state: { state: "pending" },
+		elapsedMs: 0,
+		timeoutMs: 60000,
+		extended: false,
+		windowClosed: false,
+		userAction: null,
+		pdfCaptured: false,
+	};
 	const d = (o: Partial<DecideInput>) => decide({ ...base, ...o });
 	test("priority: pdf > closed/skip > handoff > refused > landed > timeout", () => {
-		const all: Partial<DecideInput> = { pdfCaptured: true, windowClosed: true, userAction: "handoff", state: { state: "landed" }, elapsedMs: 99999 };
+		const all: Partial<DecideInput> = {
+			pdfCaptured: true,
+			windowClosed: true,
+			userAction: "handoff",
+			state: { state: "landed" },
+			elapsedMs: 99999,
+		};
 		expect(d(all).done).toBe("pdf");
 		expect(d({ ...all, pdfCaptured: false }).done).toBe("closed_by_user");
 		expect(d({ ...all, pdfCaptured: false, windowClosed: false }).done).toBe("handoff");
 		expect(d({ userAction: "skip", state: { state: "landed" } }).done).toBe("closed_by_user");
-		expect(d({ state: { state: "refused", code: "AADSTS53000" }, elapsedMs: 99999 })).toEqual({ done: "ca_blocked", caError: "AADSTS53000" });
+		expect(d({ state: { state: "refused", code: "AADSTS53000" }, elapsedMs: 99999 })).toEqual({
+			done: "ca_blocked",
+			caError: "AADSTS53000",
+		});
 		expect(d({ state: { state: "refused" } })).toEqual({ done: "ca_blocked", caError: null });
 		expect(d({ state: { state: "landed" }, elapsedMs: 99999 }).done).toBe("landed");
 		expect(d({ elapsedMs: 60000 }).done).toBe("timeout");
@@ -221,7 +243,13 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("LoginController", () => {
 		const s = bridge.opened[0];
 		expect(s.polls).toBe(4);
 		expect(s.finished).toEqual([{ mode: "standby", ms: 120000 }]);
-		expect(bridge.opens[0]).toMatchObject({ entryUrl: req().entry_url, realm: "openathens", kind: "login", waiting: 2, capturePdf: false });
+		expect(bridge.opens[0]).toMatchObject({
+			entryUrl: req().entry_url,
+			realm: "openathens",
+			kind: "login",
+			waiting: 2,
+			capturePdf: false,
+		});
 		expect(s.banners[0]).toMatchObject({ waiting: 2, challengeHint: false });
 		expect(c.signedInAt).toBeGreaterThan(0);
 	});
@@ -462,7 +490,11 @@ async function until(f: () => boolean, ms = 3000) {
 	}
 }
 
-function runner(eng: WasmHost, bridge: BrowserBridge | null, http = new HttpClient({ fetch: async () => new Response("no", { status: 404 }) })) {
+function runner(
+	eng: WasmHost,
+	bridge: BrowserBridge | null,
+	http = new HttpClient({ fetch: async () => new Response("no", { status: 404 }) }),
+) {
 	const { dir, bodies } = tmpBodies();
 	const r = new Runner(
 		{
@@ -530,7 +562,19 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: login_window / browser_load / cook
 
 	test("browser_load without a bridge is unsupported", async () => {
 		const { eng, completions } = fakeEngine((n) =>
-			n === 1 ? [{ type: "browser_load", op: 31, run: 1, item: 1, route: "inst", req: { url: "https://x.test/", timeout_ms: 1000 }, inspect: { expect: "page", requested: {}, route: "inst" } }] : [],
+			n === 1
+				? [
+						{
+							type: "browser_load",
+							op: 31,
+							run: 1,
+							item: 1,
+							route: "inst",
+							req: { url: "https://x.test/", timeout_ms: 1000 },
+							inspect: { expect: "page", requested: {}, route: "inst" },
+						},
+					]
+				: [],
 		);
 		const { r } = runner(eng, null);
 		r.send(kick);
@@ -541,10 +585,26 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: login_window / browser_load / cook
 
 	test("browser_load PDF becomes a PDF body with an {expect: 'pdf'} inspect", async () => {
 		const bridge = new FakeBridge();
-		bridge.loadResult = { finalUrl: "https://pub.example.org/p.pdf", status: 200, urlTrail: ["https://a.test/x", "https://pub.example.org/p.pdf"], pdf: { bytes: PDF, url: "https://pub.example.org/p.pdf" }, ms: 40 };
+		bridge.loadResult = {
+			finalUrl: "https://pub.example.org/p.pdf",
+			status: 200,
+			urlTrail: ["https://a.test/x", "https://pub.example.org/p.pdf"],
+			pdf: { bytes: PDF, url: "https://pub.example.org/p.pdf" },
+			ms: 40,
+		};
 		const { eng, completions } = fakeEngine((n) =>
 			n === 1
-				? [{ type: "browser_load", op: 32, run: 1, item: 1, route: "inst", req: { url: "https://x.test/a", timeout_ms: 9000, capture_pdf: true, ua: "plain" }, inspect: { expect: "page", requested: {}, route: "inst" } }]
+				? [
+						{
+							type: "browser_load",
+							op: 32,
+							run: 1,
+							item: 1,
+							route: "inst",
+							req: { url: "https://x.test/a", timeout_ms: 9000, capture_pdf: true, ua: "plain" },
+							inspect: { expect: "page", requested: {}, route: "inst" },
+						},
+					]
 				: [],
 		);
 		const { r, bodies } = runner(eng, bridge);
@@ -566,7 +626,19 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: login_window / browser_load / cook
 		const bridge = new FakeBridge();
 		bridge.loadResult = { finalUrl: ARTICLE_URL, status: 0, urlTrail: [ARTICLE_URL], pageHtml: ARTICLE_HTML, ms: 12 };
 		const { eng, completions } = fakeEngine((n) =>
-			n === 1 ? [{ type: "browser_load", op: 33, run: 1, item: 1, route: "inst", req: { url: ARTICLE_URL, timeout_ms: 9000 }, inspect: { expect: "page", requested: {}, route: "inst" } }] : [],
+			n === 1
+				? [
+						{
+							type: "browser_load",
+							op: 33,
+							run: 1,
+							item: 1,
+							route: "inst",
+							req: { url: ARTICLE_URL, timeout_ms: 9000 },
+							inspect: { expect: "page", requested: {}, route: "inst" },
+						},
+					]
+				: [],
 		);
 		const { r, bodies } = runner(eng, bridge);
 		r.send(kick);
@@ -614,7 +686,14 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: login_window / browser_load / cook
 });
 
 describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: institutional fetches after a sign-in go through the browser", () => {
-	const httpEff = (op: number, route: "oa" | "inst", url: string, expect: string, retain: "none" | "page" | "pdf", method: "get" | "post" = "get"): Effect => ({
+	const httpEff = (
+		op: number,
+		route: "oa" | "inst",
+		url: string,
+		expect: string,
+		retain: "none" | "page" | "pdf",
+		method: "get" | "post" = "get",
+	): Effect => ({
 		type: "http",
 		op,
 		run: 1,
@@ -653,8 +732,16 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: institutional fetches after a sign
 
 	test("signed in: a PDF the browser gets is returned as a retained PDF body with a Pdf inspect", async () => {
 		const bridge = new FakeBridge();
-		bridge.loadResult = { finalUrl: "https://pub.example.org/p.pdf", status: 200, urlTrail: [], pdf: { bytes: PDF, url: "https://pub.example.org/p.pdf" }, ms: 9 };
-		const { eng, completions } = fakeEngine((n) => (n === 1 ? [httpEff(52, "inst", "https://pub.example.org/p.pdf", "pdf", "pdf")] : []));
+		bridge.loadResult = {
+			finalUrl: "https://pub.example.org/p.pdf",
+			status: 200,
+			urlTrail: [],
+			pdf: { bytes: PDF, url: "https://pub.example.org/p.pdf" },
+			ms: 9,
+		};
+		const { eng, completions } = fakeEngine((n) =>
+			n === 1 ? [httpEff(52, "inst", "https://pub.example.org/p.pdf", "pdf", "pdf")] : [],
+		);
 		const { r, bodies } = runner(eng, bridge, http());
 		r.login.markSignedIn();
 		r.send(kick);
@@ -676,7 +763,10 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: institutional fetches after a sign
 						httpEff(62, "oa", "https://b.test/page", "page", "none"),
 					]
 				: n === 2
-					? [httpEff(63, "inst", "https://c.test/post", "page", "none", "post"), httpEff(64, "inst", "https://d.test/api", "api", "none")]
+					? [
+							httpEff(63, "inst", "https://c.test/post", "page", "none", "post"),
+							httpEff(64, "inst", "https://d.test/api", "api", "none"),
+						]
 					: [],
 		);
 		const { r } = runner(eng, bridge, http());
@@ -714,7 +804,15 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Runner: institutional fetches after a sign
 });
 
 describe("CookieJar.merge", () => {
-	const c = (o: Partial<BridgeCookie>): BridgeCookie => ({ name: "n", value: "v", domain: ".example.org", path: "/", secure: false, httpOnly: false, ...o });
+	const c = (o: Partial<BridgeCookie>): BridgeCookie => ({
+		name: "n",
+		value: "v",
+		domain: ".example.org",
+		path: "/",
+		secure: false,
+		httpOnly: false,
+		...o,
+	});
 	test("domain, host-only, path, secure and expiry are respected", () => {
 		const jar = new CookieJar();
 		const future = Math.floor(Date.now() / 1000) + 3600;
@@ -759,18 +857,42 @@ describe("CookieJar.merge", () => {
 describe("institutions and settings", () => {
 	test("no institution configured = the engine default, unchanged", () => {
 		const cfg = buildEngineConfig({});
-		expect(cfg.institution).toMatchObject({ name: "King's College London", openathens_domain: "kcl.ac.uk", ezproxy: { login_host: "login.kcl.idm.oclc.org", suffix: "kcl.idm.oclc.org" }, libkey_library_id: 286 });
-		expect(cfg.inst).toMatchObject({ enabled: true, use_openathens: true, use_saml: true, use_ezproxy: true, check_alma: true, login_mode: "handoff" });
+		expect(cfg.institution).toMatchObject({
+			name: "King's College London",
+			openathens_domain: "kcl.ac.uk",
+			ezproxy: { login_host: "login.kcl.idm.oclc.org", suffix: "kcl.idm.oclc.org" },
+			libkey_library_id: 286,
+		});
+		expect(cfg.inst).toMatchObject({
+			enabled: true,
+			use_openathens: true,
+			use_saml: true,
+			use_ezproxy: true,
+			check_alma: true,
+			login_mode: "handoff",
+		});
 	});
 
 	test("login_mode becomes window with an embedded browser unless the settings force a hand-off", () => {
 		expect(buildEngineConfig({}, { embeddedBrowser: true }).inst).toMatchObject({ login_mode: "window" });
-		expect(buildEngineConfig({ institution: { name: "X", loginMode: "handoff" } }, { embeddedBrowser: true }).inst).toMatchObject({ login_mode: "handoff" });
-		expect(buildEngineConfig({ engine: { inst: { login_mode: "handoff" } } }, { embeddedBrowser: true }).inst).toMatchObject({ login_mode: "handoff" });
+		expect(buildEngineConfig({ institution: { name: "X", loginMode: "handoff" } }, { embeddedBrowser: true }).inst).toMatchObject({
+			login_mode: "handoff",
+		});
+		expect(buildEngineConfig({ engine: { inst: { login_mode: "handoff" } } }, { embeddedBrowser: true }).inst).toMatchObject({
+			login_mode: "handoff",
+		});
 	});
 
 	test("a chosen institution drives the engine config; nothing of KCL leaks in", () => {
-		const cfg = buildEngineConfig({ institution: normalizeInstitution({ id: "ucl", name: "University College London", openathensDomain: "ucl.ac.uk", shibbolethEntityId: "https://shib-idp.ucl.ac.uk/shibboleth", proxyPrefix: "" }) });
+		const cfg = buildEngineConfig({
+			institution: normalizeInstitution({
+				id: "ucl",
+				name: "University College London",
+				openathensDomain: "ucl.ac.uk",
+				shibbolethEntityId: "https://shib-idp.ucl.ac.uk/shibboleth",
+				proxyPrefix: "",
+			}),
+		});
 		const i = cfg.institution as any;
 		expect(i.name).toBe("University College London");
 		expect(i.openathens_domain).toBe("ucl.ac.uk");
@@ -785,7 +907,9 @@ describe("institutions and settings", () => {
 
 	test("none = open access only; custom proxy needs a valid address", () => {
 		expect(buildEngineConfig({ institution: normalizeInstitution({ id: "none", name: "" }) }).inst).toMatchObject({ enabled: false });
-		const r = resolveInstitution(normalizeInstitution({ id: "other", name: "Uni of Nowhere", proxyPrefix: "https://login.nowhere.idm.oclc.org/login?url=" }));
+		const r = resolveInstitution(
+			normalizeInstitution({ id: "other", name: "Uni of Nowhere", proxyPrefix: "https://login.nowhere.idm.oclc.org/login?url=" }),
+		);
 		expect(r.engine.ezproxy).toEqual({ login_host: "login.nowhere.idm.oclc.org", suffix: "nowhere.idm.oclc.org" });
 		expect(r.engine.ezproxy_all_hosts).toBe(true);
 		expect(() => normalizeInstitution({ id: "other", name: "X", proxyPrefix: "https://a.b.org/some/path" })).toThrow();
@@ -802,7 +926,9 @@ describe("institutions and settings", () => {
 			realm: "openathens",
 		});
 		expect(t({ proxyPrefix: "login.x.idm.oclc.org", shibbolethEntityId: "https://idp.x.org/shib" })?.realm).toBe("ezproxy");
-		expect(t({ shibbolethEntityId: "https://idp.x.org/shib" })?.url).toContain("sp.nature.com/saml/login?idp=https%3A%2F%2Fidp.x.org%2Fshib");
+		expect(t({ shibbolethEntityId: "https://idp.x.org/shib" })?.url).toContain(
+			"sp.nature.com/saml/login?idp=https%3A%2F%2Fidp.x.org%2Fshib",
+		);
 		expect(t({})).toBeNull();
 	});
 
@@ -828,7 +954,13 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions
 		dbs.push(db);
 		const svc = fulltextService(db, { wasm, fetch: async (url) => fetchMock(url) });
 		const call = async (method: string, path: string, body?: unknown) =>
-			handleFulltextApi(new Request(`http://localhost/api/fulltext${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }), db);
+			handleFulltextApi(
+				new Request(`http://localhost/api/fulltext${path}`, {
+					method,
+					body: body === undefined ? undefined : JSON.stringify(body),
+				}),
+				db,
+			);
 		return { dir, svc, call };
 	}
 
@@ -840,12 +972,26 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions
 		expect(v0.embeddedBrowser).toBe(false);
 
 		const put = await call("PUT", "/settings", {
-			institution: { id: "ucl", name: "University College London", openathensDomain: "ucl.ac.uk", shibbolethEntityId: "https://shib-idp.ucl.ac.uk/shibboleth", proxyPrefix: "", loginMode: "window" },
+			institution: {
+				id: "ucl",
+				name: "University College London",
+				openathensDomain: "ucl.ac.uk",
+				shibbolethEntityId: "https://shib-idp.ucl.ac.uk/shibboleth",
+				proxyPrefix: "",
+				loginMode: "window",
+			},
 			unpaywallEmail: "me@ucl.ac.uk",
 		});
 		expect(put!.status).toBe(200);
 		const v1 = (await put!.json()) as FullTextSettingsView;
-		expect(v1.institution).toMatchObject({ id: "ucl", name: "University College London", openathensDomain: "ucl.ac.uk", proxyPrefix: "", realm: "ucl", loginMode: "window" });
+		expect(v1.institution).toMatchObject({
+			id: "ucl",
+			name: "University College London",
+			openathensDomain: "ucl.ac.uk",
+			proxyPrefix: "",
+			realm: "ucl",
+			loginMode: "window",
+		});
 		expect(v1.methods).toEqual(["openathens", "saml"]);
 		expect(v1.unpaywallEmail).toBe("me@ucl.ac.uk");
 		expect(v1.isDefaultInstitution).toBe(false);
@@ -854,7 +1000,9 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions
 		expect(file.unpaywallEmail).toBe("me@ucl.ac.uk");
 
 		expect((await call("PUT", "/settings", { unpaywallEmail: "nope" }))!.status).toBe(400);
-		expect((await call("PUT", "/settings", { institution: { id: "other", name: "X", openathensDomain: "bad domain" } }))!.status).toBe(400);
+		expect((await call("PUT", "/settings", { institution: { id: "other", name: "X", openathensDomain: "bad domain" } }))!.status).toBe(
+			400,
+		);
 		expect((await call("PUT", "/settings", { concurrency: 99 }))!.status).toBe(400);
 
 		const back = (await (await call("PUT", "/settings", { institution: null }))!.json()) as FullTextSettingsView;
@@ -867,7 +1015,13 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions
 		const { call } = setup((url) => {
 			urls.push(url);
 			return Response.json([
-				{ type: "idp", entityID: "https://idp.nowhere.ac.uk/shibboleth", title: "University of Nowhere", domain: "nowhere.ac.uk", registrationAuthority: ["http://ukfederation.org.uk"] },
+				{
+					type: "idp",
+					entityID: "https://idp.nowhere.ac.uk/shibboleth",
+					title: "University of Nowhere",
+					domain: "nowhere.ac.uk",
+					registrationAuthority: ["http://ukfederation.org.uk"],
+				},
 				{ type: "idp", entityID: "https://kclidp.kcl.ac.uk/idp/shibboleth", title: "King's College London" },
 				{ type: "idp", entityID: "https://hidden.example/idp", title: "Hidden", hidden: true },
 			]);
@@ -878,7 +1032,11 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions
 		const hits = (await (await call("GET", "/institutions?q=king"))!.json()) as any[];
 		expect(urls[0]).toBe("https://md.seamlessaccess.org/entities/?q=king");
 		expect(hits[0]).toMatchObject({ id: "kcl", source: "preset", methods: ["openathens", "saml", "ezproxy"] });
-		expect(hits.find((h) => h.name === "University of Nowhere")).toMatchObject({ source: "federation", shibbolethEntityId: "https://idp.nowhere.ac.uk/shibboleth", methods: ["saml"] });
+		expect(hits.find((h) => h.name === "University of Nowhere")).toMatchObject({
+			source: "federation",
+			shibbolethEntityId: "https://idp.nowhere.ac.uk/shibboleth",
+			methods: ["saml"],
+		});
 		expect(hits.filter((h) => h.shibbolethEntityId === "https://kclidp.kcl.ac.uk/idp/shibboleth")).toHaveLength(1); // deduplicated against the preset
 		expect(hits.some((h) => h.name === "Hidden")).toBe(false);
 
@@ -901,7 +1059,15 @@ describe.skipIf(!HAVE_FULLTEXT_WASM)("Find Full Text API: settings, institutions
 		setBrowserBridge(bridge);
 		bridge.scripts.push(landAfter(2));
 		const { call } = setup();
-		await call("PUT", "/settings", { institution: { id: "ucl", name: "University College London", openathensDomain: "ucl.ac.uk", shibbolethEntityId: "", proxyPrefix: "" } });
+		await call("PUT", "/settings", {
+			institution: {
+				id: "ucl",
+				name: "University College London",
+				openathensDomain: "ucl.ac.uk",
+				shibbolethEntityId: "",
+				proxyPrefix: "",
+			},
+		});
 		const st0 = (await (await call("GET", "/sign-in/status"))!.json()) as FullTextSignInStatus;
 		expect(st0).toMatchObject({ available: true, signedIn: false, realm: "ucl", institution: "University College London" });
 		const r = (await (await call("POST", "/sign-in"))!.json()) as FullTextSignInResult;

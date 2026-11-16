@@ -48,7 +48,10 @@ export function attachmentKeysOf(db: Database, keys: string[]): string[] {
 		if (!row) continue;
 		if (row.item_type === "attachment") out.add(k);
 		else
-			for (const c of db.query("SELECT key FROM items WHERE parent_key = ? AND item_type = 'attachment' AND deleted = 0 ORDER BY date_added, key").all(k) as { key: string }[]) out.add(c.key);
+			for (const c of db
+				.query("SELECT key FROM items WHERE parent_key = ? AND item_type = 'attachment' AND deleted = 0 ORDER BY date_added, key")
+				.all(k) as { key: string }[])
+				out.add(c.key);
 	}
 	return [...out];
 }
@@ -136,11 +139,16 @@ function newestFor(db: Database, parentKey: string): { file: NewestFile; dir: st
 	if (!s.attachDir) throw new HttpError(400, "choose the folder to attach files from first (Settings > Files and folders)");
 	const dir = resolve(s.attachDir);
 	if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new HttpError(404, `${dir} is not a folder`);
-	const parent = db.query("SELECT item_type, parent_key FROM items WHERE key = ? AND deleted = 0").get(parentKey) as { item_type: string; parent_key: string | null } | null;
+	const parent = db.query("SELECT item_type, parent_key FROM items WHERE key = ? AND deleted = 0").get(parentKey) as {
+		item_type: string;
+		parent_key: string | null;
+	} | null;
 	if (!parent) throw new HttpError(404, "item not found");
-	if (parent.parent_key || parent.item_type === "attachment" || parent.item_type === "note") throw new HttpError(400, "choose a regular top-level item");
+	if (parent.parent_key || parent.item_type === "attachment" || parent.item_type === "note")
+		throw new HttpError(400, "choose a regular top-level item");
 	const file = findNewestFile(dir, s.allowedExt);
-	if (!file) throw new HttpError(404, `no file to attach in ${dir}${s.allowedExt.length ? ` (allowed types: ${s.allowedExt.join(", ")})` : ""}`);
+	if (!file)
+		throw new HttpError(404, `no file to attach in ${dir}${s.allowedExt.length ? ` (allowed types: ${s.allowedExt.join(", ")})` : ""}`);
 	const p = plannedName(db, s, basename(file.path), parentKey);
 	return { file, dir, proposed: p.name, renamed: p.renamed };
 }
@@ -159,7 +167,10 @@ export function attachNewest(db: Database, req: AttachNewestRequest): AttachNewe
 	let name = n.proposed;
 	let renamed = n.renamed;
 	if (req.name !== undefined && req.name.trim()) {
-		const base = cleanSegment(req.name.trim().toLowerCase().endsWith(ext.toLowerCase()) ? req.name.trim().slice(0, -ext.length) : req.name.trim(), 150);
+		const base = cleanSegment(
+			req.name.trim().toLowerCase().endsWith(ext.toLowerCase()) ? req.name.trim().slice(0, -ext.length) : req.name.trim(),
+			150,
+		);
 		if (!base) throw new HttpError(400, "that is not a usable file name");
 		name = base + ext;
 		renamed = name !== basename(source);
@@ -181,7 +192,10 @@ export function attachNewest(db: Database, req: AttachNewestRequest): AttachNewe
 		sourceRemoved: false,
 	};
 	// ...and only then does the original leave the folder it was downloaded to.
-	const copy = resolveStoredPath(db, (db.query("SELECT path FROM attachments WHERE item_key = ?").get(detail.data.key) as { path: string } | null)?.path);
+	const copy = resolveStoredPath(
+		db,
+		(db.query("SELECT path FROM attachments WHERE item_key = ?").get(detail.data.key) as { path: string } | null)?.path,
+	);
 	if (s.dir && isInside(source, s.dir)) {
 		result.note = "the file already was in the storage folder";
 		return result;

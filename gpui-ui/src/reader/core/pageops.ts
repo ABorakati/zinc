@@ -48,20 +48,29 @@ const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 export function shiftAnnotations(anns: WireAnnotation[], deleted: number[]): { changed: WireAnnotation[]; removed: string[] } {
 	const del = [...new Set(deleted)].sort((a, b) => a - b);
 	const gone = new Set(del);
-	const before = (p: number) => { let k = 0; while (k < del.length && del[k]! < p) k++; return k; };
-	const changed: WireAnnotation[] = [], removed: string[] = [];
+	const before = (p: number) => {
+		let k = 0;
+		while (k < del.length && del[k]! < p) k++;
+		return k;
+	};
+	const changed: WireAnnotation[] = [],
+		removed: string[] = [];
 	for (const a of anns) {
 		const pos = a.position;
 		const pi = pos?.pageIndex;
 		if (!pos || typeof pi !== "number") continue;
-		if (gone.has(pi)) { removed.push(a.id); continue; }
+		if (gone.has(pi)) {
+			removed.push(a.id);
+			continue;
+		}
 		const shift = before(pi);
 		const dropNext = pos.nextPageRects !== undefined && gone.has(pi + 1);
 		if (!shift && !dropNext) continue;
 		const np: WireAnnotation["position"] = { ...pos, pageIndex: pi - shift };
 		if (dropNext) delete np.nextPageRects;
 		const b: WireAnnotation = { ...a, position: np, dateModified: nowIso() };
-		if (shift && typeof a.sortIndex === "string" && /^\d{5}\|/.test(a.sortIndex)) b.sortIndex = String(pi - shift).padStart(5, "0") + a.sortIndex.slice(5);
+		if (shift && typeof a.sortIndex === "string" && /^\d{5}\|/.test(a.sortIndex))
+			b.sortIndex = String(pi - shift).padStart(5, "0") + a.sortIndex.slice(5);
 		if (shift && a.pageLabel === String(pi + 1)) b.pageLabel = String(pi - shift + 1);
 		changed.push(b);
 	}
@@ -81,8 +90,17 @@ export function replaceFileAtomic(path: string, bytes: Uint8Array): void {
 		fd = -1;
 		renameSync(tmp, path);
 	} catch (e) {
-		if (fd >= 0) try { closeSync(fd); } catch { /* ignore */ }
-		try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
+		if (fd >= 0)
+			try {
+				closeSync(fd);
+			} catch {
+				/* ignore */
+			}
+		try {
+			rmSync(tmp, { force: true });
+		} catch {
+			/* ignore */
+		}
 		throw e;
 	}
 }
@@ -127,6 +145,11 @@ export async function deletePages(t: PageOpsTarget, pages: number[]): Promise<vo
 	if (!ps.length) return;
 	if (ps.length >= t.pageCount) throw new Error("A PDF must keep at least one page.");
 	const gone = new Set(ps);
-	const map = (p: number) => { if (gone.has(p)) return -1; let k = 0; for (const d of ps) if (d < p) k++; return p - k; };
+	const map = (p: number) => {
+		if (gone.has(p)) return -1;
+		let k = 0;
+		for (const d of ps) if (d < p) k++;
+		return p - k;
+	};
 	await apply(t, { delete: ps }, map);
 }

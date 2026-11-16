@@ -16,11 +16,7 @@ export interface ContextMenuOpts {
  * Return menu items for an annotation's context menu.
  * For image annotations, includes "Copy Image" and "Export Image…".
  */
-export function annotationContextMenu(
-	ctx: ReaderContext,
-	a: Annotation,
-	opts: ContextMenuOpts = {},
-): MenuItem[] {
+export function annotationContextMenu(ctx: ReaderContext, a: Annotation, opts: ContextMenuOpts = {}): MenuItem[] {
 	const s = sessionFor(ctx);
 	const items: MenuItem[] = [];
 

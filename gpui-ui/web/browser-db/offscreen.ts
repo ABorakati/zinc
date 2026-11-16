@@ -25,8 +25,14 @@ const worker = new Worker(new URL("db-worker.js", location.href), { type: "modul
 worker.onmessage = (e: MessageEvent) => {
 	const d = e.data as { p?: number; m?: unknown; t?: string; error?: string };
 	// the worker has no `chrome`: it asks this page for the few storage values sync needs (sync.ts)
-	if (d.t === "storage") { void answerStorage(chrome as never, d as never).then((r) => worker.postMessage(r)); return; }
-	if (d.p !== undefined) { ports.get(d.p)?.postMessage(d.m); return; }
+	if (d.t === "storage") {
+		void answerStorage(chrome as never, d as never).then((r) => worker.postMessage(r));
+		return;
+	}
+	if (d.p !== undefined) {
+		ports.get(d.p)?.postMessage(d.m);
+		return;
+	}
 	if (d.t === "ready") state = { t: "ready" };
 	else if (d.t === "failed") state = { t: "failed", error: String(d.error) };
 	else if (d.t === "changed") {
@@ -34,15 +40,28 @@ worker.onmessage = (e: MessageEvent) => {
 		for (const p of ports.values()) p.postMessage(d);
 	}
 };
-worker.onerror = (e) => { state = { t: "failed", error: e.message || "the database worker stopped" }; };
+worker.onerror = (e) => {
+	state = { t: "failed", error: e.message || "the database worker stopped" };
+};
 
 chrome.runtime.onConnect.addListener((port) => {
 	if (port.name !== "zinc-db") return;
 	const id = nextPort++;
 	ports.set(id, port);
 	port.onMessage.addListener((m) => worker.postMessage({ p: id, m }));
-	port.onDisconnect.addListener(() => { ports.delete(id); worker.postMessage({ p: id, gone: true }); });
+	port.onDisconnect.addListener(() => {
+		ports.delete(id);
+		worker.postMessage({ p: id, gone: true });
+	});
 });
 
 // for automated checks (the offscreen document's own page)
-(globalThis as Record<string, unknown>).znOffscreen = { ports, get state() { return state; }, get lastChanged() { return lastChanged; } };
+(globalThis as Record<string, unknown>).znOffscreen = {
+	ports,
+	get state() {
+		return state;
+	},
+	get lastChanged() {
+		return lastChanged;
+	},
+};

@@ -22,7 +22,9 @@ import { packaged } from "./packaged";
 import { setSyncOwner } from "./sync/owner";
 import { mark } from "./trace";
 
-interface Stoppable { stop(): void | Promise<void> }
+interface Stoppable {
+	stop(): void | Promise<void>;
+}
 
 export interface ServicesInput {
 	db: Database;
@@ -45,7 +47,10 @@ export const servicesWanted = (): boolean => packaged || process.env.ZN_SERVICES
 export function portInUse(port: number, timeoutMs = 600): Promise<boolean> {
 	return new Promise((resolve) => {
 		const s = createConnection({ port, host: "127.0.0.1" });
-		const done = (v: boolean) => { s.destroy(); resolve(v); };
+		const done = (v: boolean) => {
+			s.destroy();
+			resolve(v);
+		};
 		s.setTimeout(timeoutMs, () => done(false));
 		s.once("connect", () => done(true));
 		s.once("error", () => done(false));
@@ -64,10 +69,20 @@ export function shutdown(limitMs = 5000): Promise<void> {
 	closing ??= (async () => {
 		const all = (async () => {
 			for (const c of closers.splice(0).reverse()) {
-				try { await c.run(); } catch (e) { console.warn(`[shutdown] ${c.name}:`, e instanceof Error ? e.message : e); }
+				try {
+					await c.run();
+				} catch (e) {
+					console.warn(`[shutdown] ${c.name}:`, e instanceof Error ? e.message : e);
+				}
 			}
 		})();
-		await Promise.race([all, new Promise((r) => { const t = setTimeout(r, limitMs); (t as { unref?: () => void }).unref?.(); })]);
+		await Promise.race([
+			all,
+			new Promise((r) => {
+				const t = setTimeout(r, limitMs);
+				(t as { unref?: () => void }).unref?.();
+			}),
+		]);
 	})();
 	return closing;
 }
@@ -110,7 +125,9 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 	// Settings > Files and folders > Browse...: the GPUI window's native folder dialog
 	void (async () => {
 		const [{ setFolderPicker }, { pickFolder }] = await Promise.all([
-			import("../../core/src/files/api" as string) as Promise<{ setFolderPicker(f: ((startIn?: string) => Promise<string | null>) | null): void }>,
+			import("../../core/src/files/api" as string) as Promise<{
+				setFolderPicker(f: ((startIn?: string) => Promise<string | null>) | null): void;
+			}>,
 			import("./shell/native"),
 		]);
 		setFolderPicker(() => pickFolder("Choose folder"));
@@ -118,7 +135,7 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 
 	// PDF full-text extraction: the exe's loose worker + document-worker build (the repo defaults inside core/ only work from sources)
 	const ex = extractPaths();
-	const { configureExtractPool, shutdownExtractPool } = await import("../../core/src/extract" as string) as unknown as {
+	const { configureExtractPool, shutdownExtractPool } = (await import("../../core/src/extract" as string)) as unknown as {
 		configureExtractPool(o: { buildDir?: string; workerEntry?: string }): void;
 		shutdownExtractPool(): void;
 	};
@@ -142,8 +159,11 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 	} else {
 		// Zotero's port (23119) for the browser Connector and Word: taken only while Zotero itself isn't running, re-checked every 30 s
 		if (process.env.ZN_ZPORT !== "0") {
-			const { startZoteroPort } = await import("../../core/src/zport" as string) as unknown as {
-				startZoteroPort(db: Database, o: { port?: number; retryMs?: number; onStart?: (p: number) => void }): { stop(): void; readonly listening: boolean };
+			const { startZoteroPort } = (await import("../../core/src/zport" as string)) as unknown as {
+				startZoteroPort(
+					db: Database,
+					o: { port?: number; retryMs?: number; onStart?: (p: number) => void },
+				): { stop(): void; readonly listening: boolean };
 			};
 			const zport = startZoteroPort(db, {
 				port: Number(process.env.ZN_ZPORT) || undefined,
@@ -157,7 +177,10 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 		// Better BibTeX: backfills citation keys, runs the auto-export scheduler, and tells the /better-bibtex endpoints
 		// which items are selected in this window
 		try {
-			const bbt = await import("../../core/src/bbt" as string) as unknown as { startBbt(db: Database): { stop(): void }; setSelectionProvider(f: (() => string[]) | null): void };
+			const bbt = (await import("../../core/src/bbt" as string)) as unknown as {
+				startBbt(db: Database): { stop(): void };
+				setSelectionProvider(f: (() => string[]) | null): void;
+			};
 			const running = bbt.startBbt(db);
 			const { store } = await import("./store");
 			bbt.setSelectionProvider(() => [...store.selected()]);
@@ -178,7 +201,7 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 		let webSync: WebSyncModule | undefined;
 		if (process.env.ZN_SYNC !== "0") {
 			try {
-				webSync = await import("../../core/src/websync" as string) as WebSyncModule;
+				webSync = (await import("../../core/src/websync" as string)) as WebSyncModule;
 				mode = webSync.syncMode(db);
 			} catch (e) {
 				console.warn("[websync] sync mode unavailable, using the local Zotero sync:", e instanceof Error ? e.message : e);
@@ -210,7 +233,9 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 						createZoteroBackends(dir: string, o: { keepBackups: number }): { reader: unknown; writer: unknown };
 						isZoteroProcessRunning(): Promise<boolean>;
 					}>,
-					import("../../core/src/files/config" as string) as Promise<{ configuredZoteroDataDir(dbFile: string): string | undefined }>,
+					import("../../core/src/files/config" as string) as Promise<{
+						configuredZoteroDataDir(dbFile: string): string | undefined;
+					}>,
 				]);
 				// Zotero data folder: ZN_ZOTERO_DIR, else the one chosen in Settings, else what Zotero's own prefs say. Each write session
 				// backs up zotero.sqlite (~180 MB); keep only the last 2 because disk space is tight.
@@ -229,7 +254,11 @@ export async function startServices(o: ServicesInput): Promise<Services> {
 	return {
 		async stop() {
 			for (const s of stoppers.splice(0).reverse()) {
-				try { await s.run(); } catch (e) { console.warn(`[services] stop ${s.name}:`, e instanceof Error ? e.message : e); }
+				try {
+					await s.run();
+				} catch (e) {
+					console.warn(`[services] stop ${s.name}:`, e instanceof Error ? e.message : e);
+				}
 			}
 		},
 	};

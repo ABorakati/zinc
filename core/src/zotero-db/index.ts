@@ -9,10 +9,7 @@ import { ZoteroDbReader } from "./reader";
 import { ZoteroDbWriter } from "./writer";
 
 /** Reader + writer for one Zotero data directory (the shape core/src/sync looks for). */
-export function createZoteroBackends(
-	dataDir?: string,
-	opts: ZoteroDbOptions = {},
-): { reader: ZoteroReader; writer: ZoteroWriter } {
+export function createZoteroBackends(dataDir?: string, opts: ZoteroDbOptions = {}): { reader: ZoteroReader; writer: ZoteroWriter } {
 	const o = { ...opts, ...(dataDir ? { dataDir } : {}) };
 	return { reader: new ZoteroDbReader(o), writer: new ZoteroDbWriter(o) };
 }

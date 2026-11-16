@@ -66,8 +66,25 @@ class FakeDriver implements Driver {
 	}
 }
 
-const REQ: LoginRequest = { entryUrl: "https://login.example.org/start?token=SECRET1", realm: "r1", institutionName: "Example University", kind: "openathens", waiting: 2, capturePdf: false };
-const ck = (o: Partial<RawCookie>): RawCookie => ({ name: "n", value: "v", domain: "example.org", path: "/", secure: false, httpOnly: false, expires: -1, session: true, ...o });
+const REQ: LoginRequest = {
+	entryUrl: "https://login.example.org/start?token=SECRET1",
+	realm: "r1",
+	institutionName: "Example University",
+	kind: "openathens",
+	waiting: 2,
+	capturePdf: false,
+};
+const ck = (o: Partial<RawCookie>): RawCookie => ({
+	name: "n",
+	value: "v",
+	domain: "example.org",
+	path: "/",
+	secure: false,
+	httpOnly: false,
+	expires: -1,
+	session: true,
+	...o,
+});
 
 function make(d = new FakeDriver(), extra: Partial<Parameters<typeof createSigninBridge>[0]> = {}) {
 	const lines: string[] = [];
@@ -114,7 +131,10 @@ describe("pure helpers", () => {
 			ck({ name: "future", domain: ".example.org", session: false, expires: 4102444800, httpOnly: true }),
 			ck({ name: "suffix", domain: "ample.org" }),
 		];
-		const names = (u: string) => cookiesForUrl(all, u, 1000).map((c) => c.name).sort();
+		const names = (u: string) =>
+			cookiesForUrl(all, u, 1000)
+				.map((c) => c.name)
+				.sort();
 		expect(names("https://www.example.org/")).toEqual(["dom", "future", "host", "sec"]);
 		expect(names("http://www.example.org/")).toEqual(["dom", "future", "host"]);
 		expect(names("https://example.org/a/b/c")).toEqual(["deep", "dom", "future", "sec"]);
@@ -180,7 +200,10 @@ describe("sign-in window", () => {
 		await expect(bridge.openLogin({ ...REQ, realm: "r2" }, new AbortController().signal)).rejects.toThrow(/already open/);
 		s1.finish("standby", 60_000);
 		await until(() => d.of("banner").some((c) => c.args.state?.standby === true));
-		const s2 = await bridge.openLogin({ ...REQ, entryUrl: "https://publisher.example.com/a", realm: "r2", waiting: 1 }, new AbortController().signal);
+		const s2 = await bridge.openLogin(
+			{ ...REQ, entryUrl: "https://publisher.example.com/a", realm: "r2", waiting: 1 },
+			new AbortController().signal,
+		);
 		expect(d.of("open").length).toBe(1); // the parked window was reused
 		expect(d.of("navigate")[0]!.args.url).toBe("https://publisher.example.com/a");
 		await until(() => s2.url() === "https://publisher.example.com/a");
@@ -263,7 +286,9 @@ describe("hidden page load", () => {
 
 	test("rejects non-http addresses and honours the abort", async () => {
 		const { bridge, d } = make();
-		await expect(bridge.load({ url: "file:///c:/x", timeoutMs: 100, capturePdf: false }, new AbortController().signal)).rejects.toThrow();
+		await expect(
+			bridge.load({ url: "file:///c:/x", timeoutMs: 100, capturePdf: false }, new AbortController().signal),
+		).rejects.toThrow();
 		d.onNavigate = () => {};
 		const ac = new AbortController();
 		const p = bridge.load({ url: "https://pub.example.org/a", timeoutMs: 5000, capturePdf: false }, ac.signal);
@@ -305,7 +330,10 @@ describe("cookies", () => {
 	test("the idle end keeps the session cookies in memory and puts them back into the next browser", async () => {
 		const { bridge, d, drivers } = make(new FakeDriver(), { idleMs: 30 });
 		await bridge.openLogin(REQ, new AbortController().signal);
-		d.cookies = [ck({ name: "sessionOnly", domain: ".example.org", httpOnly: true }), ck({ name: "kept", domain: ".example.org", session: false, expires: 4102444800 })];
+		d.cookies = [
+			ck({ name: "sessionOnly", domain: ".example.org", httpOnly: true }),
+			ck({ name: "kept", domain: ".example.org", session: false, expires: 4102444800 }),
+		];
 		await bridge.cookiesFor("https://example.org/");
 		// the window is still open: not idle
 		await sleep(80);
@@ -357,7 +385,18 @@ describe("with the core's LoginController", () => {
 		});
 	};
 	const open = (c: LoginController, signal = new AbortController().signal) =>
-		c.open(1, { entry_url: "https://login.example.org/start", realm: "r1", kind: "openathens", waiting: 1, timeout_ms: 5000, capture_pdf: false } as any, signal);
+		c.open(
+			1,
+			{
+				entry_url: "https://login.example.org/start",
+				realm: "r1",
+				kind: "openathens",
+				waiting: 1,
+				timeout_ms: 5000,
+				capture_pdf: false,
+			} as any,
+			signal,
+		);
 
 	test("sign-in that reaches a landing page ends 'landed' and parks the window", async () => {
 		const { bridge, d } = make();

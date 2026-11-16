@@ -24,15 +24,23 @@ export const isScrolling = (): boolean => performance.now() - lastScroll < QUIET
 function flush(): void {
 	flushTimer = undefined;
 	const wait = QUIET_MS - (performance.now() - lastScroll);
-	if (wait > 0) { flushTimer = setTimeout(flush, wait + 1); return; } // scrolled again meanwhile
+	if (wait > 0) {
+		flushTimer = setTimeout(flush, wait + 1);
+		return;
+	} // scrolled again meanwhile
 	const run = [...pending];
 	pending.clear();
-	batch(() => { for (const f of run) f(); });
+	batch(() => {
+		for (const f of run) f();
+	});
 }
 
 /** Run `f` now, or once the scroll has been quiet (batched with the other deferred work). */
 export function whenQuiet(f: () => void): void {
-	if (!isScrolling()) { f(); return; }
+	if (!isScrolling()) {
+		f();
+		return;
+	}
 	pending.add(f);
 	flushTimer ??= setTimeout(flush, QUIET_MS + 1);
 }
@@ -42,9 +50,19 @@ export function whenQuiet(f: () => void): void {
  * the row's signal (`set`) is written when the scroll has been quiet for QUIET_MS, so a scroll commits nothing for hover.
  */
 export function gatedHover(set: (v: boolean) => void): { enter: () => void; leave: () => void } {
-	let want = false, shown = false;
-	const apply = () => { if (want !== shown) { shown = want; set(want); } };
-	const to = (v: boolean) => () => { want = v; if (isScrolling()) whenQuiet(apply); else apply(); };
+	let want = false,
+		shown = false;
+	const apply = () => {
+		if (want !== shown) {
+			shown = want;
+			set(want);
+		}
+	};
+	const to = (v: boolean) => () => {
+		want = v;
+		if (isScrolling()) whenQuiet(apply);
+		else apply();
+	};
 	return { enter: to(true), leave: to(false) };
 }
 
@@ -56,10 +74,22 @@ export function gatedHover(set: (v: boolean) => void): { enter: () => void; leav
 export function throttledCommit(commit: () => void, gapMs = 100): (urgent: boolean) => void {
 	let last = -1e9;
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const run = () => { timer = undefined; last = performance.now(); commit(); };
+	const run = () => {
+		timer = undefined;
+		last = performance.now();
+		commit();
+	};
 	return (urgent) => {
 		const now = performance.now();
-		if (urgent || now - last >= gapMs) { if (timer) { clearTimeout(timer); timer = undefined; } last = now; commit(); return; }
+		if (urgent || now - last >= gapMs) {
+			if (timer) {
+				clearTimeout(timer);
+				timer = undefined;
+			}
+			last = now;
+			commit();
+			return;
+		}
 		timer ??= setTimeout(run, gapMs - (now - last));
 	};
 }

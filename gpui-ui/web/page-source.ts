@@ -31,7 +31,10 @@ export function readOnly(handle: (req: Request) => Promise<Response | null>): (r
 		const res = (await handle(req)) ?? new Response('{"error":"not found"}', { status: 404 });
 		if (req.method === "GET" && path === "/api/libraries" && res.ok) {
 			const body = (await res.json()) as { libraries: { id: number; editable?: boolean; filesEditable?: boolean }[] };
-			return Response.json({ ...body, libraries: body.libraries.map((l) => (l.id === 1 ? { ...l, editable: false, filesEditable: false } : l)) });
+			return Response.json({
+				...body,
+				libraries: body.libraries.map((l) => (l.id === 1 ? { ...l, editable: false, filesEditable: false } : l)),
+			});
 		}
 		return res;
 	};
@@ -45,7 +48,11 @@ export async function openDemoSource(): Promise<DemoSource> {
 		fetch(here("storage.json")).then((r) => (r.ok ? (r.json() as Promise<string[]>) : [])),
 	]);
 	// the library's stored attachments (the demo article's PDF), where the core looks for them: <library folder>/storage/<key>/<file>
-	await Promise.all(stored.map(async (rel) => seedFile(`/demo/storage/${rel}`, await bytes(`storage/${rel.split("/").map(encodeURIComponent).join("/")}`))));
+	await Promise.all(
+		stored.map(async (rel) =>
+			seedFile(`/demo/storage/${rel}`, await bytes(`storage/${rel.split("/").map(encodeURIComponent).join("/")}`)),
+		),
+	);
 	if (styles) seedFile("/appdata/zotero-next-gpui/collection-style.json", styles, true);
 	const { initSqlite, registerDatabase, Database } = await import("./sqlite");
 	await initSqlite();

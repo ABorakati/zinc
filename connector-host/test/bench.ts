@@ -13,8 +13,18 @@ openDb(dbPath).close(true);
 const med = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)]!;
 const fmt = (n: number) => n.toFixed(1).padStart(7) + " ms";
 const item = (i: number) => ({
-	id: `b${i}`, itemType: "journalArticle", title: `Bench article ${i}`, creators: [{ firstName: "A", lastName: "B", creatorType: "author" }],
-	date: "2024", publicationTitle: "J", DOI: `10.1/bench-${i}`, url: `https://example.org/${i}`, tags: ["x"], notes: [], attachments: [], seeAlso: [],
+	id: `b${i}`,
+	itemType: "journalArticle",
+	title: `Bench article ${i}`,
+	creators: [{ firstName: "A", lastName: "B", creatorType: "author" }],
+	date: "2024",
+	publicationTitle: "J",
+	DOI: `10.1/bench-${i}`,
+	url: `https://example.org/${i}`,
+	tags: ["x"],
+	notes: [],
+	attachments: [],
+	seeAlso: [],
 });
 
 const t0 = performance.now();

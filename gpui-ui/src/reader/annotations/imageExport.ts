@@ -61,11 +61,7 @@ export interface RenderedAnnotationImage {
 /**
  * Render the region of an image annotation at high resolution (~216 DPI, 3x) through the PDF rendering path.
  */
-export async function renderAnnotationImage(
-	ctx: ReaderContext,
-	a: Annotation,
-	scale = 3,
-): Promise<RenderedAnnotationImage | null> {
+export async function renderAnnotationImage(ctx: ReaderContext, a: Annotation, scale = 3): Promise<RenderedAnnotationImage | null> {
 	const pos = a.position;
 	const page = pos.pageIndex;
 	const rect = pos.rects?.[0] ?? boundingRect(pos);
@@ -85,11 +81,7 @@ export async function renderAnnotationImage(
 /**
  * Copy an image annotation to the Windows clipboard as both PNG and CF_DIB.
  */
-export async function copyAnnotationImage(
-	ctx: ReaderContext,
-	a: Annotation,
-	notify?: (msg: string) => void,
-): Promise<boolean> {
+export async function copyAnnotationImage(ctx: ReaderContext, a: Annotation, notify?: (msg: string) => void): Promise<boolean> {
 	try {
 		const rendered = await renderAnnotationImage(ctx, a, 3);
 		if (!rendered) {

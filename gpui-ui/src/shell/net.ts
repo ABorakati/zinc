@@ -14,7 +14,11 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
 	});
 	if (!res.ok) {
 		let msg = res.statusText;
-		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* keep status text */ }
+		try {
+			msg = ((await res.json()) as { error?: string }).error ?? msg;
+		} catch {
+			/* keep status text */
+		}
 		throw Object.assign(new Error(msg), { status: res.status }); // callers tell a refusal (e.g. 409) from a failure
 	}
 	return (await res.json()) as T;
@@ -39,7 +43,11 @@ export function bytes(n: number | null | undefined): string {
 	if (n == null) return "";
 	if (n < 1024) return `${n} B`;
 	const u = ["KB", "MB", "GB", "TB"];
-	let v = n / 1024, i = 0;
-	while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+	let v = n / 1024,
+		i = 0;
+	while (v >= 1024 && i < u.length - 1) {
+		v /= 1024;
+		i++;
+	}
 	return `${v.toFixed(v < 10 ? 1 : 0)} ${u[i]}`;
 }

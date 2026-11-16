@@ -22,9 +22,28 @@ export function register(): void {
 		{ group: "General", keys: "Ctrl+/", description: "Show keyboard shortcuts" },
 	]);
 
-	registerAppAction({ id: "maintenance-empty-trash", label: "Empty Trash…", icon: "eraser", menu: "tools", run: () => void emptyTrash() });
-	registerAppAction({ id: "maintenance-delete-auto-tags", label: "Delete Automatic Tags…", icon: "tags", menu: "tools", run: () => void deleteAutomaticTags() });
-	registerAppAction({ id: "maintenance-shortcuts", label: "Keyboard Shortcuts", icon: "keyboard", menu: "tools", shortcut: "Ctrl+/", run: showShortcutHelp });
+	registerAppAction({
+		id: "maintenance-empty-trash",
+		label: "Empty Trash…",
+		icon: "eraser",
+		menu: "tools",
+		run: () => void emptyTrash(),
+	});
+	registerAppAction({
+		id: "maintenance-delete-auto-tags",
+		label: "Delete Automatic Tags…",
+		icon: "tags",
+		menu: "tools",
+		run: () => void deleteAutomaticTags(),
+	});
+	registerAppAction({
+		id: "maintenance-shortcuts",
+		label: "Keyboard Shortcuts",
+		icon: "keyboard",
+		menu: "tools",
+		shortcut: "Ctrl+/",
+		run: showShortcutHelp,
+	});
 
 	registerItemAction({
 		id: "maintenance-delete-permanently",

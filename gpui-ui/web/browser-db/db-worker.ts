@@ -57,7 +57,10 @@ async function open(): Promise<void> {
 
 const ready = open().then(
 	() => post({ t: "ready" }),
-	(e) => { post({ t: "failed", error: String(e instanceof Error ? e.message : e) }); throw e; },
+	(e) => {
+		post({ t: "failed", error: String(e instanceof Error ? e.message : e) });
+		throw e;
+	},
 );
 ready.catch(() => {});
 
@@ -70,7 +73,15 @@ const portState = (p: number) => {
 };
 
 // for automated checks (web/browser-library-check.ts reads the journal mode and schema version through the DevTools protocol)
-(globalThis as Record<string, unknown>).znDb = { get db() { return db; }, get sync() { return syncInfo; }, hasChrome: typeof (globalThis as { chrome?: unknown }).chrome !== "undefined" };
+(globalThis as Record<string, unknown>).znDb = {
+	get db() {
+		return db;
+	},
+	get sync() {
+		return syncInfo;
+	},
+	hasChrome: typeof (globalThis as { chrome?: unknown }).chrome !== "undefined",
+};
 
 let announced = 0;
 /** After a request: rows changed since the last notice? (SQLite's total_changes() counts this connection's writes, which are all of them.) */
@@ -95,18 +106,36 @@ async function serve(p: number, msg: WireRequest): Promise<void> {
 		reply(msg.id, r.status, r.headers, r.body);
 	} catch (e) {
 		console.error("[browser-db] request failed:", e);
-		reply(msg.id, e instanceof Error && /not open yet|storage/.test(e.message) ? 503 : 500, { "Content-Type": "application/json", "X-Zotero-Version": ZOTERO_VERSION_HEADER }, new TextEncoder().encode(JSON.stringify({ error: e instanceof Error ? e.message : String(e) })));
+		reply(
+			msg.id,
+			e instanceof Error && /not open yet|storage/.test(e.message) ? 503 : 500,
+			{ "Content-Type": "application/json", "X-Zotero-Version": ZOTERO_VERSION_HEADER },
+			new TextEncoder().encode(JSON.stringify({ error: e instanceof Error ? e.message : String(e) })),
+		);
 	} finally {
 		// whatever upload this request did not consume is not kept
-		for (const uid of uploadIdsOf(msg.body)) { st.done.delete(uid); st.partial.delete(uid); }
-		try { announceChanges(); } catch { /* closing */ }
+		for (const uid of uploadIdsOf(msg.body)) {
+			st.done.delete(uid);
+			st.partial.delete(uid);
+		}
+		try {
+			announceChanges();
+		} catch {
+			/* closing */
+		}
 	}
 }
 
 self.onmessage = (e: MessageEvent) => {
-	if ((e.data as { t?: string })?.t === "storage-res") { storage.onReply(e.data); return; }
+	if ((e.data as { t?: string })?.t === "storage-res") {
+		storage.onReply(e.data);
+		return;
+	}
 	const { p, m, gone } = e.data as { p: number; m?: Record<string, any>; gone?: boolean };
-	if (gone) { uploadsOf.delete(p); return; }
+	if (gone) {
+		uploadsOf.delete(p);
+		return;
+	}
 	switch (m?.t) {
 		case "hello":
 			post({ p, m: { t: "hello", id: m.id, version: "browser-0.1", db: LIBRARY, pid: 0, proto: 2 } });
@@ -121,7 +150,10 @@ self.onmessage = (e: MessageEvent) => {
 				const size = list.reduce((n, c) => n + c.length, 0);
 				const all = new Uint8Array(size);
 				let at = 0;
-				for (const c of list) { all.set(c, at); at += c.length; }
+				for (const c of list) {
+					all.set(c, at);
+					at += c.length;
+				}
 				st.done.set(uid, all);
 				st.partial.delete(uid);
 			}

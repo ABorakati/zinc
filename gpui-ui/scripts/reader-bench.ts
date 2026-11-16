@@ -28,7 +28,10 @@ import { fetchAttachment } from "../src/reader/library";
 import type { ReaderController } from "../src/reader/Reader";
 
 const args = process.argv.slice(2);
-const val = (n: string, d?: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
+const val = (n: string, d?: string) => {
+	const i = args.indexOf(`--${n}`);
+	return i >= 0 ? args[i + 1]! : d;
+};
 const vals = (n: string) => args.flatMap((a, i) => (a === `--${n}` ? [args[i + 1]!] : []));
 const has = (n: string) => args.includes(`--${n}`);
 
@@ -56,10 +59,15 @@ function mem(): { privMB: number; wsMB: number } {
 const r1 = (x: number) => Math.round(x * 10) / 10;
 
 // ---------------------------------------------------------------------------------------------------------------- stats
-const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] ?? 0; };
+const q = (xs: number[], p: number) => {
+	const s = [...xs].sort((a, b) => a - b);
+	return s[Math.min(s.length - 1, Math.floor(p * s.length))] ?? 0;
+};
 const spread = (n: number, k: number) => Array.from({ length: Math.min(n, k) }, (_, i) => Math.floor((i * n) / Math.min(n, k)));
-const bytesOf = async (spec: string): Promise<Uint8Array> => (spec.startsWith("key:") ? fetchAttachment(spec.slice(4)) : new Uint8Array(await Bun.file(spec).arrayBuffer()));
-const split = (spec: string): [string, string] => (spec.includes("=") ? [spec.split("=")[0]!, spec.slice(spec.indexOf("=") + 1)] : [spec, spec]);
+const bytesOf = async (spec: string): Promise<Uint8Array> =>
+	spec.startsWith("key:") ? fetchAttachment(spec.slice(4)) : new Uint8Array(await Bun.file(spec).arrayBuffer());
+const split = (spec: string): [string, string] =>
+	spec.includes("=") ? [spec.split("=")[0]!, spec.slice(spec.indexOf("=") + 1)] : [spec, spec];
 
 // ---------------------------------------------------------------------------------------------------------------- timing
 async function timing(pdfs: string[]) {
@@ -78,10 +86,22 @@ async function timing(pdfs: string[]) {
 		const doc2 = PdfDoc.openBytes(data);
 		const warmOpenMs = performance.now() - t;
 		const pages = spread(doc2.pageCount, 12);
-		const row: Record<string, unknown> = { pdf: label, MB: r1(bytes / 1e6), pages: doc2.pageCount, "open ms (1st)": r1(openMs), "open ms (warm)": r1(warmOpenMs) };
+		const row: Record<string, unknown> = {
+			pdf: label,
+			MB: r1(bytes / 1e6),
+			pages: doc2.pageCount,
+			"open ms (1st)": r1(openMs),
+			"open ms (warm)": r1(warmOpenMs),
+		};
 		// "1x first" is the first touch of each page (decodes images, parses fonts, fills hayro's caches); "1x" repeats it warm
-		for (const [name, scale] of [["1x first", 1], ["1x", 1], ["2x", 2], ["4x", 4]] as const) {
-			const ms: number[] = [], px: number[] = [];
+		for (const [name, scale] of [
+			["1x first", 1],
+			["1x", 1],
+			["2x", 2],
+			["4x", 4],
+		] as const) {
+			const ms: number[] = [],
+				px: number[] = [];
 			for (const p of pages) {
 				const r = doc2.renderSync(p, scale);
 				ms.push(r.renderMs);
@@ -98,14 +118,22 @@ async function timing(pdfs: string[]) {
 			row["p1 cold"] = r1(r.renderMs);
 			r.release();
 		}
-		const tx: number[] = [], nw: number[] = [];
-		for (const p of pages) { const t0 = performance.now(); const l = doc2.textLayer(p); tx.push(performance.now() - t0); nw.push(l.words.length); }
+		const tx: number[] = [],
+			nw: number[] = [];
+		for (const p of pages) {
+			const t0 = performance.now();
+			const l = doc2.textLayer(p);
+			tx.push(performance.now() - t0);
+			nw.push(l.words.length);
+		}
 		row["text med ms"] = r1(q(tx, 0.5));
 		row["words/page"] = Math.round(q(nw, 0.5));
 		rows.push(row);
 		doc2.close();
 	}
-	console.log("Render time per page in ms, measured inside the worker thread (hayro rasterization + BGRA conversion), over 12 evenly spaced pages.");
+	console.log(
+		"Render time per page in ms, measured inside the worker thread (hayro rasterization + BGRA conversion), over 12 evenly spaced pages.",
+	);
 	console.log("1x = 1 device px per PDF point (about a 600x800 bitmap for A4/Letter); 2x/4x are 4x/16x the pixels.\n");
 	console.table(rows);
 	return rows;
@@ -122,7 +150,22 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	const { createComponent, createSignal } = await import("solid-js");
 	// no JSX here (this is a .ts file). The window starts empty (baseline sample), then the Reader (which fills its parent) is shown.
 	const [go, setGo] = createSignal(false);
-	const tree = () => (() => (go() ? createComponent(Reader, { attachmentKey: spec.replace(/^key:/, ""), path: spec.startsWith("key:") ? undefined : spec, title: "reader-bench", dpr: has("auto-dpr") ? undefined : dpr, ephemeral: true, itemKey: "", zoom: name === "zoom4" ? 4 : undefined, controller: (c: ReaderController) => { ctl = c; } }) : null)) as never;
+	const tree = () =>
+		(() =>
+			go()
+				? createComponent(Reader, {
+						attachmentKey: spec.replace(/^key:/, ""),
+						path: spec.startsWith("key:") ? undefined : spec,
+						title: "reader-bench",
+						dpr: has("auto-dpr") ? undefined : dpr,
+						ephemeral: true,
+						itemKey: "",
+						zoom: name === "zoom4" ? 4 : undefined,
+						controller: (c: ReaderController) => {
+							ctl = c;
+						},
+					})
+				: null) as never;
 	const base0 = mem();
 	if (windowMode) {
 		const { render } = await import("@gpuix/solid");
@@ -132,7 +175,14 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		const { createTestRoot } = await import("@gpuix/solid/testing");
 		const t = createTestRoot({ width: 1000, height: 880 });
 		t.render(tree);
-		pump = async (ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { t.renderer.flush(); t.renderer.dispatchNativeEvents(); await Bun.sleep(16); } };
+		pump = async (ms) => {
+			const t0 = performance.now();
+			while (performance.now() - t0 < ms) {
+				t.renderer.flush();
+				t.renderer.dispatchNativeEvents();
+				await Bun.sleep(16);
+			}
+		};
 	}
 	await pump(windowMode ? 1500 : 300);
 	Bun.gc(true);
@@ -153,11 +203,24 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		await pump(300);
 	};
 	let peak = mem();
-	const sample = () => { const m = mem(); if (m.privMB > peak.privMB) peak = m; return m; };
+	const sample = () => {
+		const m = mem();
+		if (m.privMB > peak.privMB) peak = m;
+		return m;
+	};
 	await settle(1);
 	Bun.gc(true);
 	const afterFirst = sample();
-	const out: Record<string, unknown> = { scenario: name, pdf: spec, dpr, windowMode, pages: ctl.doc()!.pageCount, startPrivMB: r1(base0.privMB), emptyPrivMB: r1(base.privMB), emptyWsMB: r1(base.wsMB) };
+	const out: Record<string, unknown> = {
+		scenario: name,
+		pdf: spec,
+		dpr,
+		windowMode,
+		pages: ctl.doc()!.pageCount,
+		startPrivMB: r1(base0.privMB),
+		emptyPrivMB: r1(base.privMB),
+		emptyWsMB: r1(base.wsMB),
+	};
 	out.firstPageMs = r1(ctl.stats.lastRenderMs);
 	out.openedDeltaMB = r1(openedMem.privMB - base.privMB); // doc open + reader chrome, before any tile
 	out.detectedDpr = ctl.dpr(); // with --auto-dpr: the real window's scale factor (src/reader/env.ts)
@@ -172,7 +235,10 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 			await ctl.idle();
 			await pump(150);
 			sample();
-			if (i === 4 || i === 9 || i === 24) { Bun.gc(true); at[i + 1] = sample(); }
+			if (i === 4 || i === 9 || i === 24) {
+				Bun.gc(true);
+				at[i + 1] = sample();
+			}
 		}
 		out.sampledAtPage = Object.fromEntries(Object.entries(at).map(([k, v]) => [k, { privMB: r1(v.privMB), wsMB: r1(v.wsMB) }]));
 		out.scrollSeconds = r1((performance.now() - t0) / 1000);
@@ -180,7 +246,13 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 	if (name.startsWith("lat-")) Object.assign(out, await latency(ctl, name.slice(4), pump, sample));
 	if (name === "zoom4") {
 		const N = Math.min(6, ctl.doc()!.pageCount);
-		for (let i = 1; i < N; i++) { ctl.scrollToPage(i); await pump(150); await ctl.idle(); await pump(150); sample(); }
+		for (let i = 1; i < N; i++) {
+			ctl.scrollToPage(i);
+			await pump(150);
+			await ctl.idle();
+			await pump(150);
+			sample();
+		}
 		out.zoom = ctl.zoom();
 	}
 	await pump(500);
@@ -203,14 +275,24 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
 		out.cacheMB = r1(end.privMB - mem().privMB);
 	}
 	out.mountedNow = ctl.mounted();
-	{ const d = ctl.debug() as { win: number[]; vis: number[]; sp: unknown; vp: unknown; view: { i: number; h: number }[] }; out.dbg = { win: d.win, vis: d.vis, sp: d.sp, vp: d.vp, hs: d.view.map((v) => `${v.i}:${v.h}`) }; }
+	{
+		const d = ctl.debug() as { win: number[]; vis: number[]; sp: unknown; vp: unknown; view: { i: number; h: number }[] };
+		out.dbg = { win: d.win, vis: d.vis, sp: d.sp, vp: d.vp, hs: d.view.map((v) => `${v.i}:${v.h}`) };
+	}
 	out.peakTiles = ctl.stats.peakTiles;
 	out.tilesNow = ctl.tiles();
 	out.renders = ctl.stats.renders;
 	out.cancelled = ctl.stats.cancelled;
 	out.avgRenderMs = r1(ctl.stats.totalRenderMs / Math.max(1, ctl.stats.renders));
 	out.lastUploadMs = r1(ctl.stats.lastUploadMs);
-	{ const st = ctl.stats, j = Math.max(1, st.jobs ?? 0); out.jobs = st.jobs ?? 0; out.avgQueueMs = r1((st.queueMs ?? 0) / j); out.avgMountMs = r1((st.mountWaitMs ?? 0) / j); out.avgUploadMs = r1((st.uploadMs ?? 0) / j); }
+	{
+		const st = ctl.stats,
+			j = Math.max(1, st.jobs ?? 0);
+		out.jobs = st.jobs ?? 0;
+		out.avgQueueMs = r1((st.queueMs ?? 0) / j);
+		out.avgMountMs = r1((st.mountWaitMs ?? 0) / j);
+		out.avgUploadMs = r1((st.uploadMs ?? 0) / j);
+	}
 	if (windowMode) out.gpu = await gpuMemory();
 	console.log("RESULT " + JSON.stringify(out));
 	process.exit(0);
@@ -225,7 +307,12 @@ async function scenario(name: string, spec: string, windowMode: boolean) {
  *   blank% / soft%  area-time share of everything that was visible during the run
  * modes: slow (500 css px/s), fast (4000 px/s), jump (PageDown every 900 ms)
  */
-async function latency(ctl: ReaderController, mode: string, pump: (ms: number) => Promise<void>, sample: () => unknown): Promise<Record<string, unknown>> {
+async function latency(
+	ctl: ReaderController,
+	mode: string,
+	pump: (ms: number) => Promise<void>,
+	sample: () => unknown,
+): Promise<Record<string, unknown>> {
 	const n = ctl.doc()!.pageCount;
 	const start = Math.max(0, Number(val("start", String(n > 100 ? 200 : 0))));
 	const pagesToScroll = Math.max(1, Math.min(Number(val("pages", "8")), n - start - 2));
@@ -236,62 +323,107 @@ async function latency(ctl: ReaderController, mode: string, pump: (ms: number) =
 	const speed = mode === "slow" ? Number(val("slow", "500")) : mode === "fast" ? Number(val("fast", "4000")) : 0;
 	type PS = { enter: number; first?: number; full?: number; sharp?: number; lastSoft: number; last: number; fullPre: boolean };
 	const ps = new Map<number, PS>();
-	let blankT = 0, softT = 0, visT = 0, noSrcT = 0, noSrcTicks = 0, ticks = 0, noSrcMax = 0;
+	let blankT = 0,
+		softT = 0,
+		visT = 0,
+		noSrcT = 0,
+		noSrcTicks = 0,
+		ticks = 0,
+		noSrcMax = 0;
 	const seen0 = new Set(ctl.coverage().map((c) => c.page)); // visible when the run starts: not an "entry"
 	let tPrev = performance.now();
 	const t0 = tPrev;
 	const obs = () => {
-		const now = performance.now(), dt = now - tPrev;
+		const now = performance.now(),
+			dt = now - tPrev;
 		tPrev = now;
 		let ns = 0;
 		ticks++;
 		for (const c of ctl.coverage()) {
 			ns += c.noSrc;
 			let s = ps.get(c.page);
-			if (!s) { s = { enter: now, lastSoft: now, last: now, fullPre: seen0.has(c.page) }; ps.set(c.page, s); }
+			if (!s) {
+				s = { enter: now, lastSoft: now, last: now, fullPre: seen0.has(c.page) };
+				ps.set(c.page, s);
+			}
 			s.last = now;
 			const px = c.blank + c.soft + c.sharp;
 			if (s.first === undefined && c.soft + c.sharp > 0 && px > 0) s.first = now - s.enter;
 			if (s.full === undefined && c.blank === 0) s.full = now - s.enter;
 			if (c.sharp < 1) s.lastSoft = now;
 			if (s.sharp === undefined && c.sharp === 1) s.sharp = now - s.enter;
-			visT += c.vis * dt; blankT += c.vis * c.blank * dt; softT += c.vis * c.soft * dt;
+			visT += c.vis * dt;
+			blankT += c.vis * c.blank * dt;
+			softT += c.vis * c.soft * dt;
 		}
-		if (ns > 0) { noSrcT += dt; noSrcTicks++; noSrcMax = Math.max(noSrcMax, ns); }
+		if (ns > 0) {
+			noSrcT += dt;
+			noSrcTicks++;
+			noSrcMax = Math.max(noSrcMax, ns);
+		}
 	};
 	const a0 = ctl.debug() as { raw: number[] | null };
 	let moved = 0;
 	if (mode === "jump") {
 		for (let j = 0; j < pagesToScroll; j++) {
-			ctl.key({ key: "pagedown" }); ctl.key({ key: "pagedown" });
+			ctl.key({ key: "pagedown" });
+			ctl.key({ key: "pagedown" });
 			const end = performance.now() + 900;
-			while (performance.now() < end) { obs(); sample(); await Bun.sleep(4); }
+			while (performance.now() < end) {
+				obs();
+				sample();
+				await Bun.sleep(4);
+			}
 		}
 	} else {
 		const rowH = (ctl.debug() as { view: { h: number }[] }).view[0]?.h ?? 900;
 		const total = pagesToScroll * (rowH + 12);
 		let last = performance.now();
 		while (moved < total) {
-			const now = performance.now(), dy = (speed * (now - last)) / 1000;
+			const now = performance.now(),
+				dy = (speed * (now - last)) / 1000;
 			last = now;
-			if (dy > 0) { ctl.wheel(dy); moved += dy; }
-			obs(); sample();
+			if (dy > 0) {
+				ctl.wheel(dy);
+				moved += dy;
+			}
+			obs();
+			sample();
 			await Bun.sleep(4);
 		}
 	}
 	const tScroll = performance.now() - t0;
 	const end = performance.now() + 2500;
-	while (performance.now() < end) { obs(); sample(); await Bun.sleep(4); }
+	while (performance.now() < end) {
+		obs();
+		sample();
+		await Bun.sleep(4);
+	}
 	const a1 = ctl.debug() as { raw: number[] | null };
 	const rows = [...ps.entries()].filter(([, s]) => !s.fullPre);
 	const col = (f: (s: PS) => number | undefined) => rows.map(([, s]) => f(s)).filter((x): x is number => x !== undefined);
-	const stat = (xs: number[]) => (xs.length ? { n: xs.length, med: r1(q(xs, 0.5)), p95: r1(q(xs, 0.95)), max: r1(Math.max(...xs)) } : { n: 0 });
+	const stat = (xs: number[]) =>
+		xs.length ? { n: xs.length, med: r1(q(xs, 0.5)), p95: r1(q(xs, 0.95)), max: r1(Math.max(...xs)) } : { n: 0 };
 	return {
-		mode, speed, start, pagesEntered: rows.length, scrollMs: Math.round(tScroll), raw0: a0.raw, raw1: a1.raw,
-		first: stat(col((s) => s.first)), full: stat(col((s) => s.full)), sharp: stat(col((s) => s.sharp)),
-		neverFull: rows.filter(([, s]) => s.full === undefined).length, neverSharp: rows.filter(([, s]) => s.sharp === undefined).length,
-		blankPct: r1((100 * blankT) / Math.max(1, visT)), softPct: r1((100 * softT) / Math.max(1, visT)),
-		noSrcMs: Math.round(noSrcT), noSrcPct: r1((100 * noSrcTicks) / Math.max(1, ticks)), noSrcMax, backend: ctl.doc()!.backend(), previews: ctl.previews().made,
+		mode,
+		speed,
+		start,
+		pagesEntered: rows.length,
+		scrollMs: Math.round(tScroll),
+		raw0: a0.raw,
+		raw1: a1.raw,
+		first: stat(col((s) => s.first)),
+		full: stat(col((s) => s.full)),
+		sharp: stat(col((s) => s.sharp)),
+		neverFull: rows.filter(([, s]) => s.full === undefined).length,
+		neverSharp: rows.filter(([, s]) => s.sharp === undefined).length,
+		blankPct: r1((100 * blankT) / Math.max(1, visT)),
+		softPct: r1((100 * softT) / Math.max(1, visT)),
+		noSrcMs: Math.round(noSrcT),
+		noSrcPct: r1((100 * noSrcTicks) / Math.max(1, ticks)),
+		noSrcMax,
+		backend: ctl.doc()!.backend(),
+		previews: ctl.previews().made,
 	};
 }
 
@@ -301,7 +433,9 @@ async function gpuMemory(): Promise<unknown> {
 	try {
 		const r = Bun.spawnSync(["pwsh", "-NoProfile", "-NonInteractive", "-Command", ps]);
 		return JSON.parse(r.stdout.toString().trim() || "{}");
-	} catch { return {}; }
+	} catch {
+		return {};
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------- orchestrator
@@ -311,9 +445,30 @@ async function memory(pdfs: string[], windowMode: boolean, scenarios = ["open", 
 		const [label, src] = split(spec);
 		for (const sc of scenarios) {
 			const t0 = performance.now();
-			const p = Bun.spawnSync([process.execPath, import.meta.path, "--scenario", sc, "--pdf", src, "--dpr", String(dpr), ...(windowMode ? ["--window"] : []), ...(has("auto-dpr") ? ["--auto-dpr"] : []), ...["start", "pages", "slow", "fast"].flatMap((n) => (val(n) ? [`--${n}`, val(n)!] : []))], { stdout: "pipe", stderr: "pipe", timeout: 180000 });
-			const line = p.stdout.toString().split("\n").find((l) => l.startsWith("RESULT "));
-			if (!line) { console.error(`[${label}/${sc}] failed:\n${p.stdout.toString().slice(-600)}\n${p.stderr.toString().slice(-600)}`); continue; }
+			const p = Bun.spawnSync(
+				[
+					process.execPath,
+					import.meta.path,
+					"--scenario",
+					sc,
+					"--pdf",
+					src,
+					"--dpr",
+					String(dpr),
+					...(windowMode ? ["--window"] : []),
+					...(has("auto-dpr") ? ["--auto-dpr"] : []),
+					...["start", "pages", "slow", "fast"].flatMap((n) => (val(n) ? [`--${n}`, val(n)!] : [])),
+				],
+				{ stdout: "pipe", stderr: "pipe", timeout: 180000 },
+			);
+			const line = p.stdout
+				.toString()
+				.split("\n")
+				.find((l) => l.startsWith("RESULT "));
+			if (!line) {
+				console.error(`[${label}/${sc}] failed:\n${p.stdout.toString().slice(-600)}\n${p.stderr.toString().slice(-600)}`);
+				continue;
+			}
 			const r = JSON.parse(line.slice(7)) as Record<string, unknown>;
 			r.label = label;
 			results.push(r);
@@ -322,16 +477,58 @@ async function memory(pdfs: string[], windowMode: boolean, scenarios = ["open", 
 	}
 	if (scenarios.some((x) => x.startsWith("lat-"))) {
 		console.log(`\nScroll latency (ms after a page's first visible pixel row), real window=${windowMode}, dpr=${dpr}`);
-		const f = (o: unknown) => { const x = o as { n: number; med?: number; p95?: number; max?: number }; return x.n ? `${x.med} / ${x.p95} / ${x.max} (n=${x.n})` : "-"; };
-		console.table(results.map((r) => ({ pdf: r.label, mode: r.mode, pages: r.pagesEntered, "first med/p95/max": f(r.first), "full med/p95/max": f(r.full), "sharp med/p95/max": f(r.sharp), neverFull: r.neverFull, neverSharp: r.neverSharp, "blank%": r.blankPct, "soft%": r.softPct, "noSrc ms": r.noSrcMs, "noSrc ticks%": r.noSrcPct, be: r.backend, pv: r.previews, jobs: r.jobs, "render/queue/mount/upload ms": `${r.avgRenderMs}/${r.avgQueueMs}/${r.avgMountMs}/${r.avgUploadMs}`, "delta priv": r.deltaPrivMB, "peak priv": r.peakPrivMB })));
+		const f = (o: unknown) => {
+			const x = o as { n: number; med?: number; p95?: number; max?: number };
+			return x.n ? `${x.med} / ${x.p95} / ${x.max} (n=${x.n})` : "-";
+		};
+		console.table(
+			results.map((r) => ({
+				pdf: r.label,
+				mode: r.mode,
+				pages: r.pagesEntered,
+				"first med/p95/max": f(r.first),
+				"full med/p95/max": f(r.full),
+				"sharp med/p95/max": f(r.sharp),
+				neverFull: r.neverFull,
+				neverSharp: r.neverSharp,
+				"blank%": r.blankPct,
+				"soft%": r.softPct,
+				"noSrc ms": r.noSrcMs,
+				"noSrc ticks%": r.noSrcPct,
+				be: r.backend,
+				pv: r.previews,
+				jobs: r.jobs,
+				"render/queue/mount/upload ms": `${r.avgRenderMs}/${r.avgQueueMs}/${r.avgMountMs}/${r.avgUploadMs}`,
+				"delta priv": r.deltaPrivMB,
+				"peak priv": r.peakPrivMB,
+			})),
+		);
 		return results;
 	}
-	console.log(`\nProcess memory of the whole bun process (MB), mode=${windowMode ? "real window" : "headless test renderer"}, dpr=${dpr}. "empty" = the same window/test root before the reader is shown; delta = end - empty.`);
-	console.table(results.map((r) => ({
-		pdf: r.label, scenario: r.scenario, pagesAlive: r.mountedNow, "empty priv": r.emptyPrivMB, "end priv": r.privMB, "end ws": r.wsMB, "peak priv": r.peakPrivMB, "delta priv": r.deltaPrivMB, "delta ws": r.deltaWsMB,
-		"doc open MB": r.openedDeltaMB, "hayro cache MB": r.cacheMB, renders: r.renders, "avg render ms": r.avgRenderMs, ...(windowMode ? { gpu: JSON.stringify(r.gpu) } : {}),
-	})));
-	for (const r of results) if (r.sampledAtPage) console.log(`${r.label} scroll50 samples (priv/ws MB at page N):`, JSON.stringify(r.sampledAtPage), `in ${r.scrollSeconds}s`);
+	console.log(
+		`\nProcess memory of the whole bun process (MB), mode=${windowMode ? "real window" : "headless test renderer"}, dpr=${dpr}. "empty" = the same window/test root before the reader is shown; delta = end - empty.`,
+	);
+	console.table(
+		results.map((r) => ({
+			pdf: r.label,
+			scenario: r.scenario,
+			pagesAlive: r.mountedNow,
+			"empty priv": r.emptyPrivMB,
+			"end priv": r.privMB,
+			"end ws": r.wsMB,
+			"peak priv": r.peakPrivMB,
+			"delta priv": r.deltaPrivMB,
+			"delta ws": r.deltaWsMB,
+			"doc open MB": r.openedDeltaMB,
+			"hayro cache MB": r.cacheMB,
+			renders: r.renders,
+			"avg render ms": r.avgRenderMs,
+			...(windowMode ? { gpu: JSON.stringify(r.gpu) } : {}),
+		})),
+	);
+	for (const r of results)
+		if (r.sampledAtPage)
+			console.log(`${r.label} scroll50 samples (priv/ws MB at page N):`, JSON.stringify(r.sampledAtPage), `in ${r.scrollSeconds}s`);
 	return results;
 }
 
@@ -341,10 +538,18 @@ if (scen) {
 	await scenario(scen, val("pdf")!, has("window"));
 } else {
 	const pdfs = vals("pdf").length ? vals("pdf") : DEFAULT_PDFS;
-	const onlyT = has("timing"), onlyM = has("memory") || has("latency");
+	const onlyT = has("timing"),
+		onlyM = has("memory") || has("latency");
 	const result: Record<string, unknown> = { when: new Date().toISOString(), dpr, native: nativeVersion() };
 	if (!onlyM) result.timing = await timing(pdfs);
-	if (has("latency")) result.latency = await memory(pdfs, has("window"), val("modes", "slow,fast,jump")!.split(",").map((m) => `lat-${m}`));
+	if (has("latency"))
+		result.latency = await memory(
+			pdfs,
+			has("window"),
+			val("modes", "slow,fast,jump")!
+				.split(",")
+				.map((m) => `lat-${m}`),
+		);
 	else if (!onlyT) result.memory = await memory(pdfs, has("window"));
 	const out = val("out", `${SCRATCH}/reader-bench.json`)!;
 	mkdirSync(dirname(out), { recursive: true });

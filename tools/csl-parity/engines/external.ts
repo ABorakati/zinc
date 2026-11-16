@@ -24,7 +24,11 @@ export function externalEngine(name: string, cmd: string[]): Engine {
 			try {
 				proc = Bun.spawn(cmd, { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
 			} catch (e) {
-				return jobs.map((job) => ({ id: job.id, ok: false, error: `could not start ${name} (${cmd.join(" ")}): ${errorMessage(e)}` }));
+				return jobs.map((job) => ({
+					id: job.id,
+					ok: false,
+					error: `could not start ${name} (${cmd.join(" ")}): ${errorMessage(e)}`,
+				}));
 			}
 
 			// Read stdout and stderr while writing stdin, so a chatty engine cannot deadlock the pipe.

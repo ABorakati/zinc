@@ -15,11 +15,40 @@ let collKey: string;
 
 beforeAll(() => {
 	db = openDb(join(tempDir(), "lib.sqlite"));
-	insertItem(db, { key: "AAAAAAA1", itemType: "journalArticle", title: "Deep learning for radiology", creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }], date: "2020-05-01", dateAdded: "2024-01-01T00:00:00Z", tags: [{ tag: "ml" }] });
-	insertItem(db, { key: "BBBBBBB2", itemType: "book", title: "Surgical anatomy", creators: [{ creatorType: "author", firstName: "Cara", lastName: "Brown" }], date: "2018", dateAdded: "2024-01-02T00:00:00Z", citationKey: "brown-anatomy" });
+	insertItem(db, {
+		key: "AAAAAAA1",
+		itemType: "journalArticle",
+		title: "Deep learning for radiology",
+		creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }],
+		date: "2020-05-01",
+		dateAdded: "2024-01-01T00:00:00Z",
+		tags: [{ tag: "ml" }],
+	});
+	insertItem(db, {
+		key: "BBBBBBB2",
+		itemType: "book",
+		title: "Surgical anatomy",
+		creators: [{ creatorType: "author", firstName: "Cara", lastName: "Brown" }],
+		date: "2018",
+		dateAdded: "2024-01-02T00:00:00Z",
+		citationKey: "brown-anatomy",
+	});
 	insertItem(db, { key: "NOTE0001", itemType: "note", note: "<p>my note</p>", parentItem: "AAAAAAA1" }, "AAAAAAA1");
-	insertItem(db, { key: "ATT00001", itemType: "attachment", title: "pdf", contentType: "application/pdf", linkMode: "imported_file", parentItem: "AAAAAAA1" }, "AAAAAAA1");
-	db.query("INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES('ATT00001', 'imported_file', 'application/pdf', 'C:/x/p.pdf')").run();
+	insertItem(
+		db,
+		{
+			key: "ATT00001",
+			itemType: "attachment",
+			title: "pdf",
+			contentType: "application/pdf",
+			linkMode: "imported_file",
+			parentItem: "AAAAAAA1",
+		},
+		"AAAAAAA1",
+	);
+	db.query(
+		"INSERT INTO attachments(item_key, link_mode, content_type, path) VALUES('ATT00001', 'imported_file', 'application/pdf', 'C:/x/p.pdf')",
+	).run();
 	collKey = createCollection(db, "Thesis").key;
 	addItemsToCollection(db, collKey, ["AAAAAAA1"]);
 	zport = startZoteroPort(db, { port: PORT });
@@ -31,7 +60,14 @@ afterAll(() => {
 });
 
 const get = (path: string, init?: RequestInit) => fetch(`${BASE}${path}`, init);
-const rpc = async (method: string, params?: unknown) => (await (await get("/better-bibtex/json-rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 7 }) })).json()) as any;
+const rpc = async (method: string, params?: unknown) =>
+	(await (
+		await get("/better-bibtex/json-rpc", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 7 }),
+		})
+	).json()) as any;
 
 const KEY_A = "smithDeepLearningRadiology2020";
 
@@ -56,7 +92,7 @@ describe("cayw", () => {
 	});
 
 	test("an item key works as well as a citation key; json gives the pick data", async () => {
-		const r = await (await get("/better-bibtex/cayw?items=BBBBBBB2&format=json")).json() as any[];
+		const r = (await (await get("/better-bibtex/cayw?items=BBBBBBB2&format=json")).json()) as any[];
 		expect(r[0].citationKey).toBe("brown-anatomy");
 		expect(r[0].itemData.title).toBe("Surgical anatomy");
 	});
@@ -118,7 +154,13 @@ describe("json-rpc", () => {
 	test("item.search with condition tuples", async () => {
 		const r = await rpc("item.search", [[["creator", "contains", "brown"]]]);
 		expect(r.result.map((x: any) => x.citekey)).toEqual(["brown-anatomy"]);
-		const any = await rpc("item.search", [[["joinMode", "any"], ["creator", "contains", "brown"], ["title", "contains", "radiology"]]]);
+		const any = await rpc("item.search", [
+			[
+				["joinMode", "any"],
+				["creator", "contains", "brown"],
+				["title", "contains", "radiology"],
+			],
+		]);
 		expect(any.result).toHaveLength(2);
 		expect((await rpc("item.search", [[["tag", "is", "ml"]]])).result).toHaveLength(1);
 	});
@@ -145,7 +187,9 @@ describe("json-rpc", () => {
 	});
 
 	test("item.attachments, item.notes, item.collections", async () => {
-		expect((await rpc("item.attachments", [KEY_A])).result).toEqual([{ open: "zotero://open-pdf/library/items/ATT00001", path: "C:/x/p.pdf" }]);
+		expect((await rpc("item.attachments", [KEY_A])).result).toEqual([
+			{ open: "zotero://open-pdf/library/items/ATT00001", path: "C:/x/p.pdf" },
+		]);
 		expect((await rpc("item.notes", [[KEY_A]])).result[KEY_A]).toEqual(["<p>my note</p>"]);
 		expect((await rpc("item.collections", [[KEY_A]])).result[KEY_A][0].name).toBe("Thesis");
 	});
@@ -159,11 +203,28 @@ describe("json-rpc", () => {
 
 	test("errors: unknown method, invalid request, parse error, batches", async () => {
 		expect((await rpc("no.such")).error.code).toBe(-32601);
-		const bad = (await (await get("/better-bibtex/json-rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: "x" }) })).json()) as any;
+		const bad = (await (
+			await get("/better-bibtex/json-rpc", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ method: "x" }),
+			})
+		).json()) as any;
 		expect(bad.error.code).toBe(-32600);
-		const parse = (await (await get("/better-bibtex/json-rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{not json" })).json()) as any;
+		const parse = (await (
+			await get("/better-bibtex/json-rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{not json" })
+		).json()) as any;
 		expect(parse.error.code).toBe(-32700);
-		const batch = (await (await get("/better-bibtex/json-rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([{ jsonrpc: "2.0", method: "api.ready", id: 1 }, { jsonrpc: "2.0", method: "user.groups", id: 2 }]) })).json()) as any[];
+		const batch = (await (
+			await get("/better-bibtex/json-rpc", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify([
+					{ jsonrpc: "2.0", method: "api.ready", id: 1 },
+					{ jsonrpc: "2.0", method: "user.groups", id: 2 },
+				]),
+			})
+		).json()) as any[];
 		expect(batch.map((b) => b.id)).toEqual([1, 2]);
 		const lib = await rpc("item.search", ["x", "Some Group"]);
 		expect(lib.error.message).toContain("could not find library");
@@ -193,7 +254,7 @@ describe("pull exports", () => {
 		const t = await r.text();
 		expect(t).toContain(`@article{${KEY_A},`);
 		expect(t).toContain("@book{brown-anatomy,");
-		expect((await (await get("/better-bibtex/library?/1/library.bibtex")).text())).toContain("@book{brown-anatomy,");
+		expect(await (await get("/better-bibtex/library?/1/library.bibtex")).text()).toContain("@book{brown-anatomy,");
 		expect(JSON.parse(await (await get("/better-bibtex/export/library?/0/library.json")).text())).toHaveLength(2);
 		expect(await (await get("/better-bibtex/export/library?/0/library.yaml")).text()).toStartWith("---\nreferences:");
 		expect((await get("/better-bibtex/export/library?/0/library.nonsense")).status).toBe(404);
@@ -210,7 +271,11 @@ describe("pull exports", () => {
 	test("item with citation keys, optionally as pandoc filter data", async () => {
 		const t = await (await get(`/better-bibtex/export/item?libraryID=1&citationKeys=${KEY_A}&translator=biblatex`)).text();
 		expect(t).toContain(`@article{${KEY_A},`);
-		const p = JSON.parse(await (await get(`/better-bibtex/export/item?libraryID=1&citationKeys=${KEY_A},missing&translator=json&pandocFilterData=true`)).text());
+		const p = JSON.parse(
+			await (
+				await get(`/better-bibtex/export/item?libraryID=1&citationKeys=${KEY_A},missing&translator=json&pandocFilterData=true`)
+			).text(),
+		);
 		expect(p.errors.missing).toBe("not found");
 		expect(p.items[KEY_A].title).toBe("Deep learning for radiology");
 		expect(p.zotero[KEY_A].itemID).toBe("AAAAAAA1");

@@ -7,7 +7,13 @@ import { inspectLibraryFile } from "./libraryFile";
 import { canImport, describeZotero, progressFraction, progressText, type ZoteroFound } from "./logic";
 
 const zotero = (over: Partial<ZoteroFound> = {}): ZoteroFound => ({
-	dir: "D:/Zotero", hasDatabase: true, readable: true, itemCount: 12419, collectionCount: 310, attachmentCount: 9882, ...over,
+	dir: "D:/Zotero",
+	hasDatabase: true,
+	readable: true,
+	itemCount: 12419,
+	collectionCount: 310,
+	attachmentCount: 9882,
+	...over,
 });
 
 describe("progress", () => {
@@ -19,7 +25,16 @@ describe("progress", () => {
 	});
 	test("the bar only moves forward through the phases and ends the item phase at 90%", () => {
 		const f = (phase: string, done?: number, total?: number) => progressFraction({ phase, done, total });
-		const seq = [f("snapshot"), f("read"), f("write"), f("items", 0, 1000), f("items", 500, 1000), f("items", 1000, 1000), f("annotations"), f("fulltext")];
+		const seq = [
+			f("snapshot"),
+			f("read"),
+			f("write"),
+			f("items", 0, 1000),
+			f("items", 500, 1000),
+			f("items", 1000, 1000),
+			f("annotations"),
+			f("fulltext"),
+		];
 		expect(seq).toEqual([...seq].sort((a, b) => a - b));
 		expect(f("items", 1000, 1000)).toBeCloseTo(0.9, 5);
 		expect(progressFraction(null)).toBe(0);
@@ -57,8 +72,11 @@ describe("inspectLibraryFile", () => {
 	};
 
 	test("a zotero-next library", () => {
-		const p = make("zn.sqlite", `CREATE TABLE items (key TEXT, parent_key TEXT, deleted INTEGER); CREATE TABLE attachments (item_key TEXT); CREATE TABLE collections (key TEXT);
-			INSERT INTO items VALUES ('A', NULL, 0), ('B', 'A', 0), ('C', NULL, 1), ('D', NULL, 0);`);
+		const p = make(
+			"zn.sqlite",
+			`CREATE TABLE items (key TEXT, parent_key TEXT, deleted INTEGER); CREATE TABLE attachments (item_key TEXT); CREATE TABLE collections (key TEXT);
+			INSERT INTO items VALUES ('A', NULL, 0), ('B', 'A', 0), ('C', NULL, 1), ('D', NULL, 0);`,
+		);
 		expect(inspectLibraryFile(p)).toEqual({ kind: "zotero-next", items: 2 });
 	});
 	test("Zotero's own database is recognised and refused with a pointer to the importer", () => {

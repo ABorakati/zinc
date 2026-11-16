@@ -59,7 +59,8 @@ export async function handleIoApi(req: Request, db: Database): Promise<Response 
 		if (route === "export") {
 			let keys: string[] | undefined;
 			if (b.keys !== undefined) {
-				if (!Array.isArray(b.keys) || b.keys.some((k: unknown) => typeof k !== "string")) throw new HttpError(400, "keys must be an array of strings");
+				if (!Array.isArray(b.keys) || b.keys.some((k: unknown) => typeof k !== "string"))
+					throw new HttpError(400, "keys must be an array of strings");
 				keys = b.keys;
 			}
 			return json(

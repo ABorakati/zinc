@@ -107,7 +107,10 @@ async function exportOne(db: Database, key: string, format: string, includeNotes
 }
 async function importInto(db: Database, text: string, extra: Record<string, unknown> = {}) {
 	const res = await call(db, "POST", "/api/io/import", { text, ...extra });
-	return { status: res.status, body: (await res.json()) as { created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string } };
+	return {
+		status: res.status,
+		body: (await res.json()) as { created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string },
+	};
 }
 function firstItem(db: Database): ZoteroItemData {
 	const list = listItems(db, { limit: 100 });
@@ -116,7 +119,8 @@ function firstItem(db: Database): ZoteroItemData {
 function mk0(db: Database, key: string): ZoteroItemData {
 	return JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(key) as { data: string }).data);
 }
-const lastNames = (d: ZoteroItemData, type = "author") => (d.creators ?? []).filter((c) => c.creatorType === type).map((c) => c.lastName ?? c.name);
+const lastNames = (d: ZoteroItemData, type = "author") =>
+	(d.creators ?? []).filter((c) => c.creatorType === type).map((c) => c.lastName ?? c.name);
 
 describe("round trips", () => {
 	for (const fmt of ["bibtex", "biblatex", "ris", "csljson"] as Fmt[]) {
@@ -137,7 +141,20 @@ describe("round trips", () => {
 				// BibTeX has year + month only; every other format keeps the day
 				const want = fmt === "bibtex" ? String(sample.date).slice(0, 7) : sample.date!;
 				if (String(sample.date).length > 4) expect(d.date).toBe(want);
-				for (const f of ["publicationTitle", "bookTitle", "proceedingsTitle", "websiteTitle", "volume", "pages", "publisher", "university", "place", "DOI", "url", "ISBN"]) {
+				for (const f of [
+					"publicationTitle",
+					"bookTitle",
+					"proceedingsTitle",
+					"websiteTitle",
+					"volume",
+					"pages",
+					"publisher",
+					"university",
+					"place",
+					"DOI",
+					"url",
+					"ISBN",
+				]) {
 					const want = (sample as Record<string, unknown>)[f];
 					if (want === undefined) continue;
 					// pages with an en dash must survive in every format; the rest should be unchanged
@@ -163,9 +180,24 @@ describe("round trips", () => {
 describe("BibTeX", () => {
 	test("keys are authorYearTitleword and deduplicated", async () => {
 		const a = freshDb();
-		const k1 = mk(a, { itemType: "journalArticle", title: "The Deep Learning Method", date: "2020", creators: [{ creatorType: "author", firstName: "A", lastName: "Smith" }] });
-		const k2 = mk(a, { itemType: "journalArticle", title: "A deep dive", date: "2020", creators: [{ creatorType: "author", firstName: "B", lastName: "Smith" }] });
-		const k3 = mk(a, { itemType: "journalArticle", title: "Deep sea", date: "2020", creators: [{ creatorType: "author", firstName: "C", lastName: "Smith" }] });
+		const k1 = mk(a, {
+			itemType: "journalArticle",
+			title: "The Deep Learning Method",
+			date: "2020",
+			creators: [{ creatorType: "author", firstName: "A", lastName: "Smith" }],
+		});
+		const k2 = mk(a, {
+			itemType: "journalArticle",
+			title: "A deep dive",
+			date: "2020",
+			creators: [{ creatorType: "author", firstName: "B", lastName: "Smith" }],
+		});
+		const k3 = mk(a, {
+			itemType: "journalArticle",
+			title: "Deep sea",
+			date: "2020",
+			creators: [{ creatorType: "author", firstName: "C", lastName: "Smith" }],
+		});
 		const res = await call(a, "POST", "/api/io/export", { keys: [k1.data.key, k2.data.key, k3.data.key], format: "bibtex" });
 		const text = ((await res.json()) as { text: string }).text;
 		const keys = [...text.matchAll(/^@\w+\{([^,]+),/gm)].map((m) => m[1]);
@@ -177,7 +209,10 @@ describe("BibTeX", () => {
 		const item = mk(a, {
 			itemType: "journalArticle",
 			title: "R&D costs of 50% of drugs: Müller's ß_test #1 {braces}",
-			creators: [{ creatorType: "author", firstName: "Søren", lastName: "Kierkegård" }, { creatorType: "author", name: "World Health Organization" }],
+			creators: [
+				{ creatorType: "author", firstName: "Søren", lastName: "Kierkegård" },
+				{ creatorType: "author", name: "World Health Organization" },
+			],
 			date: "2021",
 		});
 		const text = await exportOne(a, item.data.key, "bibtex");
@@ -196,7 +231,9 @@ describe("BibTeX", () => {
 
 	test("latex helpers", () => {
 		expect(toLatex("café naïve Čapek Łódź")).toBe("caf{\\'e} na{\\\"{\\i}}ve {\\v{C}}apek {\\L}{\\'o}d{\\'z}");
-		expect(fromLatex("caf\\'e na\\\"{\\i}ve {\\v C}apek \\L\\'od\\'z J{\\\"o}rg \\o{} --- 1--2")).toBe("café naïve Čapek Łódź Jörg ø — 1–2");
+		expect(fromLatex("caf\\'e na\\\"{\\i}ve {\\v C}apek \\L\\'od\\'z J{\\\"o}rg \\o{} --- 1--2")).toBe(
+			"café naïve Čapek Łódź Jörg ø — 1–2",
+		);
 		expect(fromLatex("{\\'{E}}cole \\& 50\\% \\textit{x}")).toBe("École & 50% x");
 	});
 
@@ -225,8 +262,11 @@ describe("BibTeX", () => {
 
 	test("imports names in every BibTeX form", async () => {
 		const db = freshDb();
-		const r = await importInto(db, `@article{x, title={T}, year={2020},
-  author={van der Berg, Jan and Jr Smith, Bob and Anna Maria de la Cruz and {Cochrane Collaboration} and others}}`);
+		const r = await importInto(
+			db,
+			`@article{x, title={T}, year={2020},
+  author={van der Berg, Jan and Jr Smith, Bob and Anna Maria de la Cruz and {Cochrane Collaboration} and others}}`,
+		);
 		expect(r.body.created).toBe(1);
 		const d = firstItem(db);
 		expect(d.creators!.map((c) => c.lastName ?? c.name)).toEqual(["van der Berg", "Jr Smith", "de la Cruz", "Cochrane Collaboration"]);
@@ -335,15 +375,38 @@ describe("CSL-JSON", () => {
 	test("imports CSL-JSON with particles, ranges and keywords", async () => {
 		const db = freshDb();
 		const csl = JSON.stringify([
-			{ id: "x1", type: "article-journal", title: "T1", author: [{ family: "Berg", "non-dropping-particle": "van der", given: "Jan" }, { literal: "Consortium" }], issued: { "date-parts": [[2020, 3, 4]] }, "container-title": "Nature", page: "10-20", DOI: "10.1/abc", keyword: "a, b" },
-			{ id: "x2", type: "book", title: "T2", author: [{ family: "Doe", given: "Jane" }], issued: { "date-parts": [[2001]] }, publisher: "P" },
+			{
+				id: "x1",
+				type: "article-journal",
+				title: "T1",
+				author: [{ family: "Berg", "non-dropping-particle": "van der", given: "Jan" }, { literal: "Consortium" }],
+				issued: { "date-parts": [[2020, 3, 4]] },
+				"container-title": "Nature",
+				page: "10-20",
+				DOI: "10.1/abc",
+				keyword: "a, b",
+			},
+			{
+				id: "x2",
+				type: "book",
+				title: "T2",
+				author: [{ family: "Doe", given: "Jane" }],
+				issued: { "date-parts": [[2001]] },
+				publisher: "P",
+			},
 		]);
 		expect(detectFormat(csl)).toBe("csljson");
 		const r = await importInto(db, csl, { collectionName: null });
 		expect(r.body).toMatchObject({ created: 2, collectionKey: null });
 		const items = listItems(db, { limit: 10, sort: "title", dir: "asc" }).items;
 		const d = mk0(db, items[0]!.key);
-		expect(d).toMatchObject({ itemType: "journalArticle", date: "2020-03-04", pages: "10–20", publicationTitle: "Nature", DOI: "10.1/abc" });
+		expect(d).toMatchObject({
+			itemType: "journalArticle",
+			date: "2020-03-04",
+			pages: "10–20",
+			publicationTitle: "Nature",
+			DOI: "10.1/abc",
+		});
 		expect(d.creators![0]).toMatchObject({ lastName: "van der Berg", firstName: "Jan" });
 		expect(d.creators![1]).toMatchObject({ name: "Consortium" });
 		expect(d.tags!.map((t) => t.tag)).toEqual(["a", "b"]);
@@ -353,7 +416,12 @@ describe("CSL-JSON", () => {
 		const a = freshDb();
 		const item = mk(a, SAMPLES.bookSection!);
 		const arr = JSON.parse(await exportOne(a, item.data.key, "csljson")) as Record<string, any>[];
-		expect(arr[0]).toMatchObject({ type: "chapter", title: "The spleen", "container-title": "Textbook of Surgery", publisher: "Elsevier" });
+		expect(arr[0]).toMatchObject({
+			type: "chapter",
+			title: "The spleen",
+			"container-title": "Textbook of Surgery",
+			publisher: "Elsevier",
+		});
 		expect(arr[0]!.editor[0]).toMatchObject({ family: "Kim", given: "Bo" });
 		expect(arr[0]!.issued).toEqual({ "date-parts": [[2020, 5]] });
 	});
@@ -392,7 +460,15 @@ DP  - 2019
 		const r = await importInto(db, nbib, { format: "pubmed-nbib", collectionName: "PM" });
 		expect(r.body).toMatchObject({ created: 2, errors: [] });
 		const d = firstItemByTitle(db, "Fetal growth: a new chart");
-		expect(d).toMatchObject({ itemType: "journalArticle", date: "2020-02", volume: "55", issue: "2", pages: "150–160", DOI: "10.1002/uog.20000", PMID: "31452104" });
+		expect(d).toMatchObject({
+			itemType: "journalArticle",
+			date: "2020-02",
+			volume: "55",
+			issue: "2",
+			pages: "150–160",
+			DOI: "10.1002/uog.20000",
+			PMID: "31452104",
+		});
 		expect(d.abstractNote).toBe("Background text that wraps onto a second line.");
 		expect(d.creators!.map((c) => c.lastName)).toEqual(["Smith", "Lee"]);
 		expect(d.tags!.map((t) => t.tag)).toEqual(["Female", "Fetal Development"]);
@@ -418,7 +494,16 @@ DP  - 2019
 		const r = await importInto(db, xml);
 		expect(r.body).toMatchObject({ created: 2, errors: [], format: "endnote-xml" });
 		const d = firstItemByTitle(db, "Cells & tissues");
-		expect(d).toMatchObject({ itemType: "journalArticle", publicationTitle: "Journal of Cells", pages: "11–19", volume: "4", issue: "2", date: "2019", DOI: "10.5555/cells.1", url: "https://example.org/cells" });
+		expect(d).toMatchObject({
+			itemType: "journalArticle",
+			publicationTitle: "Journal of Cells",
+			pages: "11–19",
+			volume: "4",
+			issue: "2",
+			date: "2019",
+			DOI: "10.5555/cells.1",
+			url: "https://example.org/cells",
+		});
 		expect(d.tags!.map((t) => t.tag)).toEqual(["cell", "tissue"]);
 		expect(firstItemByTitle(db, "A book")).toMatchObject({ itemType: "book", publisher: "Pub" });
 	});
@@ -429,7 +514,11 @@ DP  - 2019
 		mk(a, { itemType: "note", note: "<p>Hello <b>note</b></p>", parentItem: item.data.key });
 		const text = await exportOne(a, item.data.key, "csv", true);
 		const [head, row] = text.trim().split("\r\n");
-		expect(head!.startsWith('"Key","Item Type","Publication Year","Author","Title","Publication Title","ISBN","ISSN","DOI","Url","Abstract Note","Date"')).toBe(true);
+		expect(
+			head!.startsWith(
+				'"Key","Item Type","Publication Year","Author","Title","Publication Title","ISBN","ISSN","DOI","Url","Abstract Note","Date"',
+			),
+		).toBe(true);
 		expect(row).toContain('"journalArticle","2023","Smith, Jane; Müller-García, José"');
 		expect(row).toContain('"transplant; liver"'.replace("transplant; liver", "liver; transplant"));
 		expect(row).toContain('"Hello note"');
@@ -501,7 +590,9 @@ describe("import behaviour", () => {
 		const badFormat = await importInto(db, "@book{a,title={x}}", { format: "nope" });
 		expect(badFormat.status).toBe(400);
 		// a broken entry is reported and the good ones still import
-		const mixed = await importInto(db, "@article{bad, title={Unclosed\n@article{ok, title={Fine}, year={2020}}", { collectionName: null });
+		const mixed = await importInto(db, "@article{bad, title={Unclosed\n@article{ok, title={Fine}, year={2020}}", {
+			collectionName: null,
+		});
 		expect(mixed.body.created).toBeGreaterThanOrEqual(1);
 	});
 
@@ -525,14 +616,18 @@ describe("export selection", () => {
 		mk(db, { itemType: "book", title: "In sub", date: "2002", collections: [sub] });
 		mk(db, { itemType: "book", title: "Outside", date: "2003" });
 		mk(db, { itemType: "note", note: "<p>Child note text</p>", parentItem: a.data.key });
-		const col = (await (await call(db, "POST", "/api/io/export", { collectionKey: root, format: "ris", includeNotes: true })).json()) as { filename: string; text: string; count: number };
+		const col = (await (
+			await call(db, "POST", "/api/io/export", { collectionKey: root, format: "ris", includeNotes: true })
+		).json()) as { filename: string; text: string; count: number };
 		expect(col.filename).toBe("Root.ris");
 		expect(col.count).toBe(2);
 		expect(col.text).toContain("TI  - In root");
 		expect(col.text).toContain("TI  - In sub");
 		expect(col.text).not.toContain("Outside");
 		expect(col.text).toContain("N1  - Child note text");
-		const noNotes = (await (await call(db, "POST", "/api/io/export", { collectionKey: root, format: "ris" })).json()) as { text: string };
+		const noNotes = (await (await call(db, "POST", "/api/io/export", { collectionKey: root, format: "ris" })).json()) as {
+			text: string;
+		};
 		expect(noNotes.text).not.toContain("N1  -");
 		const lib = (await (await call(db, "POST", "/api/io/export", { format: "bibtex" })).json()) as { filename: string; count: number };
 		expect(lib).toMatchObject({ filename: "My Library.bib", count: 3 });

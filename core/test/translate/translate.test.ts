@@ -39,7 +39,8 @@ const ARTICLES: Record<string, { title: string; author: string; first: string }>
 const tocPage = `<!doctype html><html><head><title>Volume 12 Issue 3</title></head><body><div class="table-of-content">
 ${Object.entries(ARTICLES)
 	.map(
-		([id, a]) => `<div class="articleEntry"><div class="art_title">${a.title}</div><div><a href="/doi/abs/10.1234/${id}">Abstract</a></div></div>`,
+		([id, a]) =>
+			`<div class="articleEntry"><div class="art_title">${a.title}</div><div><a href="/doi/abs/10.1234/${id}">Abstract</a></div></div>`,
 	)
 	.join("\n")}
 </div></body></html>`;
@@ -59,7 +60,10 @@ beforeAll(() => {
 			const u = new URL(req.url);
 			const html = (body: string) => new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
 			if (u.pathname === "/article/1") return html(journalPage);
-			if (u.pathname === "/plain") return html("<html><head><title>Just a page</title><meta name=\"description\" content=\"About nothing\"></head><body>hi</body></html>");
+			if (u.pathname === "/plain")
+				return html(
+					'<html><head><title>Just a page</title><meta name="description" content="About nothing"></head><body>hi</body></html>',
+				);
 			if (u.pathname === "/toc/jtest/12/3") return html(tocPage);
 			const doi = /^\/doi\/abs\/10\.1234\/(a\d)$/.exec(u.pathname);
 			if (doi) return html(articlePage(doi[1]!));
@@ -69,7 +73,8 @@ beforeAll(() => {
 				return new Response(risFor(id), { headers: { "content-type": "application/x-research-info-systems" } });
 			}
 			if (u.pathname === "/pdf/1.pdf") return new Response(PDF, { headers: { "content-type": "application/pdf" } });
-			if (u.pathname === "/refs.ris") return new Response(risFor("a1") + risFor("a2"), { headers: { "content-type": "application/x-research-info-systems" } });
+			if (u.pathname === "/refs.ris")
+				return new Response(risFor("a1") + risFor("a2"), { headers: { "content-type": "application/x-research-info-systems" } });
 			if (u.pathname === "/slow") {
 				await Bun.sleep(5000);
 				return html("<html><head><title>slow</title></head></html>");
@@ -100,7 +105,11 @@ afterEach(() => {
 
 async function api(method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
 	const res = await handleTranslateApi(
-		new Request(`http://127.0.0.1:23120${path}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }),
+		new Request(`http://127.0.0.1:23120${path}`, {
+			method,
+			headers: { "Content-Type": "application/json" },
+			body: body === undefined ? undefined : JSON.stringify(body),
+		}),
 		db,
 	);
 	if (!res) throw new Error("route not handled");
@@ -109,8 +118,18 @@ async function api(method: string, path: string, body?: unknown): Promise<{ stat
 	return { status: res.status, json };
 }
 
-const items = () => (db.query("SELECT key FROM items WHERE parent_key IS NULL AND item_type NOT IN ('note','attachment') AND deleted = 0 ORDER BY date_added, key").all() as { key: string }[]).map((r) => getItemDetail(db, r.key)!.data as any);
-const children = (parent: string) => (db.query("SELECT key FROM items WHERE parent_key = ?").all(parent) as { key: string }[]).map((r) => getItemDetail(db, r.key)!.data as any);
+const items = () =>
+	(
+		db
+			.query(
+				"SELECT key FROM items WHERE parent_key IS NULL AND item_type NOT IN ('note','attachment') AND deleted = 0 ORDER BY date_added, key",
+			)
+			.all() as { key: string }[]
+	).map((r) => getItemDetail(db, r.key)!.data as any);
+const children = (parent: string) =>
+	(db.query("SELECT key FROM items WHERE parent_key = ?").all(parent) as { key: string }[]).map(
+		(r) => getItemDetail(db, r.key)!.data as any,
+	);
 
 describe("translators and formats", () => {
 	test("vendored translators load, by type", async () => {
@@ -150,7 +169,8 @@ describe("translators and formats", () => {
 
 describe("Add from URL", () => {
 	test("a journal page with Highwire meta tags is translated by Embedded Metadata and saved like a connector save", async () => {
-		const col = (db.query("INSERT INTO collections(key, name) VALUES('COLLAAA1', 'Reading') RETURNING key").get() as { key: string }).key;
+		const col = (db.query("INSERT INTO collections(key, name) VALUES('COLLAAA1', 'Reading') RETURNING key").get() as { key: string })
+			.key;
 		const r = await api("POST", "/api/translate/web", { url: `${base}/article/1`, collectionKey: col });
 		expect(r.status).toBe(200);
 		expect(r.json.translator).toBe("Embedded Metadata");
@@ -185,7 +205,11 @@ describe("Add from URL", () => {
 		expect(r.status).toBe(200);
 		expect(r.json.items).toBeUndefined();
 		const { session, items: choices } = r.json.choices;
-		expect(choices.map((c: any) => c.title).sort()).toEqual(Object.values(ARTICLES).map((a) => a.title).sort());
+		expect(choices.map((c: any) => c.title).sort()).toEqual(
+			Object.values(ARTICLES)
+				.map((a) => a.title)
+				.sort(),
+		);
 		expect(items()).toHaveLength(0);
 
 		const bad = await api("POST", "/api/translate/web/select", { session, keys: ["nope"] });
@@ -206,7 +230,11 @@ describe("Add from URL", () => {
 		const r = await api("POST", "/api/translate/web", { url: `${base}/refs.ris` });
 		expect(r.status).toBe(200);
 		expect(r.json.items).toHaveLength(2);
-		expect(items().map((i) => i.title).sort()).toEqual([ARTICLES.a1!.title, ARTICLES.a2!.title].sort());
+		expect(
+			items()
+				.map((i) => i.title)
+				.sort(),
+		).toEqual([ARTICLES.a1!.title, ARTICLES.a2!.title].sort());
 	});
 
 	test("rejects bad input", async () => {
@@ -265,7 +293,10 @@ function doWeb(doc, url) {
 }
 `,
 		);
-		const probeServer = Bun.serve({ port: 0, fetch: () => new Response("<html><head><title>p</title></head></html>", { headers: { "content-type": "text/html" } }) });
+		const probeServer = Bun.serve({
+			port: 0,
+			fetch: () => new Response("<html><head><title>p</title></head></html>", { headers: { "content-type": "text/html" } }),
+		});
 		try {
 			const r = await api("POST", "/api/translate/web", { url: `http://127.0.0.1:${probeServer.port}/probe`, attachments: false });
 			expect(r.status).toBe(200);
@@ -310,7 +341,9 @@ describe("import through translators", () => {
 		["Crossref Unixref XML.js", "Crossref Unixref XML"],
 	] as const) {
 		test(`${label}: the translator's own test cases import`, async () => {
-			const cases = testCases(file).filter((c) => c.type === "import" && typeof c.input === "string" && Array.isArray(c.items) && c.items.length).slice(0, 3);
+			const cases = testCases(file)
+				.filter((c) => c.type === "import" && typeof c.input === "string" && Array.isArray(c.items) && c.items.length)
+				.slice(0, 3);
 			expect(cases.length).toBeGreaterThan(0);
 			for (const c of cases) {
 				const fresh = openDb(join(tempDir(), "lib.sqlite"));
@@ -328,7 +361,9 @@ describe("import through translators", () => {
 					const firstWanted = wanted.find((i) => i.creators?.length);
 					if (firstWanted) {
 						const match = got.find((i) => i.title === firstWanted.title)!;
-						expect(match.creators?.[0]?.lastName ?? match.creators?.[0]?.name).toBe(firstWanted.creators[0].lastName ?? firstWanted.creators[0].name);
+						expect(match.creators?.[0]?.lastName ?? match.creators?.[0]?.name).toBe(
+							firstWanted.creators[0].lastName ?? firstWanted.creators[0].name,
+						);
 					}
 				} finally {
 					db = prev;
@@ -350,7 +385,11 @@ describe("import through translators", () => {
 	});
 
 	test("translatorID forces a translator and collectionName files the items", async () => {
-		const r = await api("POST", "/api/translate/import", { text: risFor("a2"), translatorID: "32d59d2d-b65a-4da4-b0a3-bdd3cfb979e7", collectionName: "From RIS translator" });
+		const r = await api("POST", "/api/translate/import", {
+			text: risFor("a2"),
+			translatorID: "32d59d2d-b65a-4da4-b0a3-bdd3cfb979e7",
+			collectionName: "From RIS translator",
+		});
 		expect(r.status).toBe(200);
 		expect(r.json.translator).toBe("RIS");
 		expect(r.json.created).toBe(1);
@@ -367,7 +406,10 @@ function seed(): string[] {
 	const a = createItem(db, {
 		itemType: "journalArticle",
 		title: "Round trip of a transplant study",
-		creators: [{ creatorType: "author", firstName: "Jane", lastName: "Smith" }, { creatorType: "author", firstName: "John", lastName: "Doe" }],
+		creators: [
+			{ creatorType: "author", firstName: "Jane", lastName: "Smith" },
+			{ creatorType: "author", firstName: "John", lastName: "Doe" },
+		],
 		date: "2021",
 		publicationTitle: "Journal of Tests",
 		volume: "12",
@@ -375,7 +417,13 @@ function seed(): string[] {
 		pages: "100-110",
 		abstractNote: "An abstract.",
 	} as any);
-	const b = createItem(db, { itemType: "book", title: "A book about surgery", creators: [{ creatorType: "author", firstName: "Cara", lastName: "Brown" }], date: "2018", publisher: "Surgical Press" } as any);
+	const b = createItem(db, {
+		itemType: "book",
+		title: "A book about surgery",
+		creators: [{ creatorType: "author", firstName: "Cara", lastName: "Brown" }],
+		date: "2018",
+		publisher: "Surgical Press",
+	} as any);
 	createItem(db, { itemType: "note", note: "<p>child note</p>", parentItem: a.data.key } as any);
 	return [a.data.key, b.data.key];
 }
@@ -391,7 +439,10 @@ describe("export through translators", () => {
 		expect(readFileSync(r.json.path, "utf8")).toBe(r.json.text);
 	});
 
-	for (const [name, id] of [["Refer/BibIX", ids.refer], ["RefWorks Tagged", ids.refworks]] as const) {
+	for (const [name, id] of [
+		["Refer/BibIX", ids.refer],
+		["RefWorks Tagged", ids.refworks],
+	] as const) {
 		test(`${name}: export then import returns the same items`, async () => {
 			const keys = seed();
 			const out = await api("POST", "/api/translate/export", { translatorID: id, keys });

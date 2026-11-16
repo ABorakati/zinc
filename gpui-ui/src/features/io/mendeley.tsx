@@ -8,7 +8,8 @@ import { pickPaths } from "../platform";
 import { errMsg } from "../text";
 import { importFromMendeley, ioApi, type MendeleyDatabase } from "./client";
 
-const kb = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+const kb = (bytes: number) =>
+	bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 const when = (iso: string) => (iso ? iso.slice(0, 10) : "");
 
 function MendeleyDialog(p: { close: () => void }): JSX.Element {
@@ -36,7 +37,8 @@ function MendeleyDialog(p: { close: () => void }): JSX.Element {
 		if (!paths?.[0]) return;
 		const path = paths[0];
 		const known = databases().find((d) => d.path.toLowerCase() === path.toLowerCase());
-		if (!known) setDatabases([...databases(), { path, account: basename(path), sizeBytes: 0, modified: "", encrypted: false, inUse: false }]);
+		if (!known)
+			setDatabases([...databases(), { path, account: basename(path), sizeBytes: 0, modified: "", encrypted: false, inUse: false }]);
 		setSelected(path);
 	}
 
@@ -52,8 +54,8 @@ function MendeleyDialog(p: { close: () => void }): JSX.Element {
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
 			<Para class="text-sm text-muted-foreground">
-				Items, authors, tags, folders, notes and file links are copied from a Mendeley Desktop library. The online
-				Mendeley Reference Manager is not supported.
+				Items, authors, tags, folders, notes and file links are copied from a Mendeley Desktop library. The online Mendeley
+				Reference Manager is not supported.
 			</Para>
 			<Show
 				when={!loaded() || databases().length > 0}
@@ -65,7 +67,14 @@ function MendeleyDialog(p: { close: () => void }): JSX.Element {
 							<Choice
 								selected={selected() === d.path}
 								label={d.account.length > 20 ? `${d.account.slice(0, 18)}…` : d.account}
-								hint={[d.sizeBytes ? kb(d.sizeBytes) : "", when(d.modified), d.encrypted ? "encrypted (read and decrypted)" : "", d.inUse ? "Mendeley is running" : ""].filter(Boolean).join(" · ")}
+								hint={[
+									d.sizeBytes ? kb(d.sizeBytes) : "",
+									when(d.modified),
+									d.encrypted ? "encrypted (read and decrypted)" : "",
+									d.inUse ? "Mendeley is running" : "",
+								]
+									.filter(Boolean)
+									.join(" · ")}
 								onClick={() => setSelected(d.path)}
 							/>
 						)}
@@ -76,8 +85,16 @@ function MendeleyDialog(p: { close: () => void }): JSX.Element {
 				</Show>
 			</Show>
 			<ErrorLine>{error()}</ErrorLine>
-			<Footer left={<Button variant="outline" size="sm" onClick={() => void chooseFile()}>Choose database…</Button>}>
-				<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
+			<Footer
+				left={
+					<Button variant="outline" size="sm" onClick={() => void chooseFile()}>
+						Choose database…
+					</Button>
+				}
+			>
+				<Button variant="outline" size="sm" onClick={p.close}>
+					Cancel
+				</Button>
 				<Button variant="primary" size="sm" disabled={busy() || !selected()} onClick={() => void submit()}>
 					{busy() ? "Importing…" : "Import"}
 				</Button>

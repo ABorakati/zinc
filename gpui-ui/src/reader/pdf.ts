@@ -81,7 +81,12 @@ function openOps() {
 }
 function ops() {
 	if (opsLib === undefined) {
-		try { opsLib = openOps(); } catch (e) { opsLib = null; opsError = e instanceof Error ? e.message : String(e); }
+		try {
+			opsLib = openOps();
+		} catch (e) {
+			opsLib = null;
+			opsError = e instanceof Error ? e.message : String(e);
+		}
 	}
 	return opsLib?.symbols ?? null;
 }
@@ -102,24 +107,42 @@ async function opJob(job: number | bigint | null, what: string, ms: number): Pro
 		if (st !== 1) throw new Error(lastError() || `${what} failed`);
 		const len = Number(s.zpdf_job_len(job as never));
 		return new Uint8Array(toBuffer(s.zpdf_job_data(job as never) as never, 0, len)).slice();
-	} finally { s.zpdf_job_free(job as never); }
+	} finally {
+		s.zpdf_job_free(job as never);
+	}
 }
 
 /** Page edits as Zotero makes them: rotations add quarter turns clockwise to a page's /Rotate (negative: anticlockwise); deletions are indexes of the original document. */
-export interface PdfEdit { rotate?: { page: number; turns: number }[]; delete?: number[] }
+export interface PdfEdit {
+	rotate?: { page: number; turns: number }[];
+	delete?: number[];
+}
 
 /** Apply `e` to the PDF in `bytes` (PDFium, on a thread of its own) and return the whole new file (not an incremental update). */
 export async function editPdf(bytes: Uint8Array, e: PdfEdit): Promise<Uint8Array> {
 	const o = ops();
 	if (!o) throw new Error(pdfOpsUnavailable()!);
-	const rp = new Int32Array((e.rotate ?? []).map((r) => r.page)), rt = new Int32Array((e.rotate ?? []).map((r) => r.turns));
+	const rp = new Int32Array((e.rotate ?? []).map((r) => r.page)),
+		rt = new Int32Array((e.rotate ?? []).map((r) => r.turns));
 	const dp = new Int32Array(e.delete ?? []);
 	const one = new Int32Array(1); // bun:ffi needs a real pointer even for an empty array
-	const job = o.zpdf_edit_begin(ptr(bytes), bytes.byteLength, ptr(rp.length ? rp : one), ptr(rt.length ? rt : one), rp.length, ptr(dp.length ? dp : one), dp.length);
+	const job = o.zpdf_edit_begin(
+		ptr(bytes),
+		bytes.byteLength,
+		ptr(rp.length ? rp : one),
+		ptr(rt.length ? rt : one),
+		rp.length,
+		ptr(dp.length ? dp : one),
+		dp.length,
+	);
 	return opJob(job as never, "editing the PDF", 5);
 }
 
-export interface PrintResult { result: "printed" | "cancelled"; pages: number; printer: string }
+export interface PrintResult {
+	result: "printed" | "cancelled";
+	pages: number;
+	printer: string;
+}
 
 /**
  * Show the system print dialog and print. Windows: the dialog is owned by this app's window and PDFium draws the chosen pages into the
@@ -136,14 +159,18 @@ export async function printPdf(bytes: Uint8Array, o: { title: string; currentPag
 }
 
 /** Print without a dialog: pages first..last (1-based; last 0 = to the end) on `printer` (default printer when omitted), into the file `output` when given (tests: "Microsoft Print to PDF"). */
-export async function printPdfTo(bytes: Uint8Array, o: { title: string; printer?: string; output?: string; first?: number; last?: number }): Promise<PrintResult> {
+export async function printPdfTo(
+	bytes: Uint8Array,
+	o: { title: string; printer?: string; output?: string; first?: number; last?: number },
+): Promise<PrintResult> {
 	if (process.platform === "linux" || process.platform === "darwin") {
 		// the page range is applied by cutting the other pages out (PDFium); then CUPS (Linux, printGtk.ts printWithLp) or PDFKit (macOS,
 		// printMac.ts) prints the file
 		const doc = PdfDoc.openBytes(bytes);
 		const n = doc.pageCount;
 		doc.close();
-		const a = Math.min(Math.max(o.first ?? 1, 1), Math.max(n, 1)), b = !o.last || o.last <= 0 ? n : Math.min(o.last, n);
+		const a = Math.min(Math.max(o.first ?? 1, 1), Math.max(n, 1)),
+			b = !o.last || o.last <= 0 ? n : Math.min(o.last, n);
 		const drop = [...Array(n).keys()].filter((i) => i < a - 1 || i > b - 1);
 		const cut = drop.length ? await editPdf(bytes, { delete: drop }) : bytes;
 		const printer = process.platform === "darwin" ? printWithMacNoPanel(cut, o) : await printWithLp(cut, o);
@@ -151,7 +178,15 @@ export async function printPdfTo(bytes: Uint8Array, o: { title: string; printer?
 	}
 	const f = ops();
 	if (!f) throw new Error(pdfOpsUnavailable()!);
-	const job = f.zpdf_print_to_begin(ptr(bytes), bytes.byteLength, ptr(cstr(o.title)), o.printer ? ptr(cstr(o.printer)) : null, o.output ? ptr(cstr(o.output)) : null, o.first ?? 1, o.last ?? 0);
+	const job = f.zpdf_print_to_begin(
+		ptr(bytes),
+		bytes.byteLength,
+		ptr(cstr(o.title)),
+		o.printer ? ptr(cstr(o.printer)) : null,
+		o.output ? ptr(cstr(o.output)) : null,
+		o.first ?? 1,
+		o.last ?? 0,
+	);
 	return JSON.parse(Buffer.from(await opJob(job as never, "printing", 50)).toString("utf8")) as PrintResult;
 }
 const sym = () => (lib ??= open()).symbols;
@@ -162,11 +197,26 @@ export const pdfiumStatus = (): string => String(sym().zpdf_pdfium_status());
 const lastError = (): string => String(sym().zpdf_last_error());
 
 /** One word of a page's text layer; x/y/w/h are fractions (0..1) of the page, origin top-left; l = line index. */
-export interface TextWord { t: string; x: number; y: number; w: number; h: number; l: number }
-export interface TextLayer { pw: number; ph: number; words: TextWord[] }
+export interface TextWord {
+	t: string;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	l: number;
+}
+export interface TextLayer {
+	pw: number;
+	ph: number;
+	words: TextWord[];
+}
 
 /** How the page is recoloured while it is rasterized (page appearance): 0 normal, 1 dark, 2 multiply by c0, 3 dark + screen onto c0, 4 duotone c0 (black) -> c1 (white). Colours are 0xRRGGBB. */
-export interface Look { mode: 0 | 1 | 2 | 3 | 4; c0?: number; c1?: number }
+export interface Look {
+	mode: 0 | 1 | 2 | 3 | 4;
+	c0?: number;
+	c1?: number;
+}
 
 /** Queue priority of work nobody is waiting for on screen (thumbnails, ...): behind every tile of the page list. */
 export const PRIO_BACKGROUND = 4e6;
@@ -182,7 +232,12 @@ export interface RenderOpts {
 }
 
 /** One bookmark: page is 0-based (-1 when it could not be resolved), y a fraction (0..1) of the page height, -1 when unknown. */
-export interface OutlineEntry { t: string; l: number; p: number; y: number }
+export interface OutlineEntry {
+	t: string;
+	l: number;
+	p: number;
+	y: number;
+}
 /** A link annotation: x/y/w/h are fractions of the page as rendered (unrotated view). */
 export type PdfLink = { x: number; y: number; w: number; h: number } & ({ k: "page"; p: number; ty: number } | { k: "uri"; u: string });
 
@@ -215,7 +270,10 @@ function pollTick(): void {
 	const s = sym();
 	for (const [job, done] of watching) {
 		const st = s.zpdf_job_poll(job as never);
-		if (st !== 0) { watching.delete(job); done(st); }
+		if (st !== 0) {
+			watching.delete(job);
+			done(st);
+		}
 	}
 	if (watching.size) pollTimer = setTimeout(pollTick, pollSpins++ < 8 ? 1 : 2);
 }
@@ -258,7 +316,10 @@ export class PdfDoc {
 		const n = s.zpdf_page_count(h as never);
 		const sizes: [number, number][] = [];
 		const f = new Float32Array(2);
-		for (let i = 0; i < n; i++) { s.zpdf_page_size(h as never, i, ptr(f)); sizes.push([f[0]!, f[1]!]); }
+		for (let i = 0; i < n; i++) {
+			s.zpdf_page_size(h as never, i, ptr(f));
+			sizes.push([f[0]!, f[1]!]);
+		}
 		return new PdfDoc(h as number, n, sizes);
 	}
 
@@ -282,13 +343,29 @@ export class PdfDoc {
 	}
 
 	/** Like render(), rotated, recoloured and/or restricted to a region of the full bitmap (tiles). */
-	render2(page: number, scale: number, o: RenderOpts = {}): RenderTask { return this.render3(page, scale, o); }
+	render2(page: number, scale: number, o: RenderOpts = {}): RenderTask {
+		return this.render3(page, scale, o);
+	}
 
 	/** render2 with a queue priority (o.prio, lower runs first) */
 	render3(page: number, scale: number, o: RenderOpts = {}): RenderTask {
 		const s = sym();
-		const r = o.region, k = o.look;
-		const job = s.zpdf_render3(this.h() as never, page, scale, o.rot ?? 0, r?.x ?? 0, r?.y ?? 0, r?.w ?? 0, r?.h ?? 0, k?.mode ?? 0, k?.c0 ?? 0, k?.c1 ?? 0, o.prio ?? PRIO_BACKGROUND);
+		const r = o.region,
+			k = o.look;
+		const job = s.zpdf_render3(
+			this.h() as never,
+			page,
+			scale,
+			o.rot ?? 0,
+			r?.x ?? 0,
+			r?.y ?? 0,
+			r?.w ?? 0,
+			r?.h ?? 0,
+			k?.mode ?? 0,
+			k?.c0 ?? 0,
+			k?.c1 ?? 0,
+			o.prio ?? PRIO_BACKGROUND,
+		);
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
 		return this.task(job, page);
 	}
@@ -300,10 +377,14 @@ export class PdfDoc {
 	}
 
 	/** Which rasteriser draws this document: PDFium (pdfium.dll next to zn_pdf.dll) or hayro (the fallback). */
-	backend(): "pdfium" | "hayro" { return sym().zpdf_backend(this.h() as never) === 1 ? "pdfium" : "hayro"; }
+	backend(): "pdfium" | "hayro" {
+		return sym().zpdf_backend(this.h() as never) === 1 ? "pdfium" : "hayro";
+	}
 
 	/** Worker threads this document renders with. */
-	poolSize(): number { return sym().zpdf_pool_size(this.h() as never); }
+	poolSize(): number {
+		return sym().zpdf_pool_size(this.h() as never);
+	}
 
 	/** cancel / setPrio must not touch a job that was freed (release() or a failed / cancelled finish) */
 	private task(job: number | bigint, page: number): RenderTask {
@@ -311,8 +392,12 @@ export class PdfDoc {
 		const ref = { freed: false };
 		return {
 			promise: this.finish(job, page, ref),
-			cancel: () => { if (!ref.freed) s.zpdf_job_cancel(job as never); },
-			setPrio: (p) => { if (!ref.freed) s.zpdf_job_prio(job as never, p); },
+			cancel: () => {
+				if (!ref.freed) s.zpdf_job_cancel(job as never);
+			},
+			setPrio: (p) => {
+				if (!ref.freed) s.zpdf_job_prio(job as never, p);
+			},
 		};
 	}
 
@@ -326,10 +411,16 @@ export class PdfDoc {
 			if (st !== 1) throw new Error(`${what} failed: ${lastError()}`);
 			const len = Number(s.zpdf_job_len(job as never));
 			return JSON.parse(toBuffer(s.zpdf_job_data(job as never) as never, 0, len).toString("utf8")) as T;
-		} finally { s.zpdf_job_free(job as never); }
+		} finally {
+			s.zpdf_job_free(job as never);
+		}
 	}
-	outlineAsync(): Promise<OutlineEntry[]> { return this.jsonJob(() => sym().zpdf_outline_begin(this.h() as never) as never, "outline"); }
-	linksAsync(page: number): Promise<PdfLink[]> { return this.jsonJob(() => sym().zpdf_links_begin(this.h() as never, page) as never, `links of page ${page}`); }
+	outlineAsync(): Promise<OutlineEntry[]> {
+		return this.jsonJob(() => sym().zpdf_outline_begin(this.h() as never) as never, "outline");
+	}
+	linksAsync(page: number): Promise<PdfLink[]> {
+		return this.jsonJob(() => sym().zpdf_links_begin(this.h() as never, page) as never, `links of page ${page}`);
+	}
 
 	/**
 	 * Queue a rasterization. `promise` resolves when the worker is done (polled every few ms, so the JS thread is never
@@ -341,7 +432,9 @@ export class PdfDoc {
 		return this.task(job, page);
 	}
 
-	renderAsync(page: number, scale: number): Promise<Rendered | null> { return this.render(page, scale).promise; }
+	renderAsync(page: number, scale: number): Promise<Rendered | null> {
+		return this.render(page, scale).promise;
+	}
 
 	private async poll(job: number | bigint): Promise<number> {
 		const st = sym().zpdf_job_poll(job as never);
@@ -362,7 +455,10 @@ export class PdfDoc {
 		const s = sym();
 		const job = s.zpdf_render_begin(this.h() as never, page, scale);
 		if (!job) throw new Error(`render_begin failed: ${lastError()}`);
-		if (s.zpdf_job_wait(job, 0xffffffff) !== 1) { s.zpdf_job_free(job); throw new Error(`render page ${page} failed: ${lastError()}`); }
+		if (s.zpdf_job_wait(job, 0xffffffff) !== 1) {
+			s.zpdf_job_free(job);
+			throw new Error(`render page ${page} failed: ${lastError()}`);
+		}
 		return this.collect(job, { freed: false });
 	}
 
@@ -373,12 +469,20 @@ export class PdfDoc {
 		const len = Number(s.zpdf_job_len(job as never));
 		const data = s.zpdf_job_data(job as never);
 		const pixels = toBuffer(data as never, 0, len);
-		const width = wh[0]!, height = wh[1]!;
+		const width = wh[0]!,
+			height = wh[1]!;
 		return {
-			width, height, pixels,
+			width,
+			height,
+			pixels,
 			renderMs: Number(s.zpdf_job_micros(job as never)) / 1000,
 			slice: (y, h) => toBuffer(data as never, y * width * 4, Math.min(h, height - y) * width * 4),
-			release: () => { if (!ref.freed) { ref.freed = true; s.zpdf_job_free(job as never); } },
+			release: () => {
+				if (!ref.freed) {
+					ref.freed = true;
+					s.zpdf_job_free(job as never);
+				}
+			},
 		};
 	}
 
@@ -392,7 +496,9 @@ export class PdfDoc {
 			if (st !== 1) throw new Error(`text layer of page ${page} failed: ${lastError()}`);
 			const len = Number(s.zpdf_job_len(job as never));
 			return JSON.parse(toBuffer(s.zpdf_job_data(job as never) as never, 0, len).toString("utf8")) as TextLayer;
-		} finally { s.zpdf_job_free(job as never); }
+		} finally {
+			s.zpdf_job_free(job as never);
+		}
 	}
 
 	/** Blocking variant (waits for the worker's queue). */
@@ -400,14 +506,22 @@ export class PdfDoc {
 		const s = sym();
 		const p = s.zpdf_text_layer(this.h() as never, page);
 		if (!p) throw new Error(`text layer failed: ${lastError()}`);
-		try { return JSON.parse(new CString(p as never).toString()) as TextLayer; }
-		finally { s.zpdf_str_free(p as never); }
+		try {
+			return JSON.parse(new CString(p as never).toString()) as TextLayer;
+		} finally {
+			s.zpdf_str_free(p as never);
+		}
 	}
 
 	/** Drop hayro's per-document caches (fonts, glyphs, decoded images). */
-	clearCache(): void { sym().zpdf_clear_cache(this.h() as never); }
+	clearCache(): void {
+		sym().zpdf_clear_cache(this.h() as never);
+	}
 
 	close(): void {
-		if (this.handle != null) { sym().zpdf_close(this.handle as never); this.handle = null; }
+		if (this.handle != null) {
+			sym().zpdf_close(this.handle as never);
+			this.handle = null;
+		}
 	}
 }

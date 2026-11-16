@@ -10,8 +10,25 @@
 import { installConsoleMirror, log, logError, markCleanExit, markRunning, type LogArea, type PreviousCrash } from "../../../core/src/log";
 
 export {
-	appVersion, buildVariant, flushLog, flushLogSync, formatReport, listLogFiles, log, logDir, logError, logInfo, logWarn, makeZip, osVersion, readRecentLogs, redact, summarizeErrors,
-	type LogArea, type LogLevel, type PreviousCrash,
+	appVersion,
+	buildVariant,
+	flushLog,
+	flushLogSync,
+	formatReport,
+	listLogFiles,
+	log,
+	logDir,
+	logError,
+	logInfo,
+	logWarn,
+	makeZip,
+	osVersion,
+	readRecentLogs,
+	redact,
+	summarizeErrors,
+	type LogArea,
+	type LogLevel,
+	type PreviousCrash,
 } from "../../../core/src/log";
 
 let started = false;
@@ -36,8 +53,14 @@ function selfTest(): void {
 	console.warn("[sync] selftest console.warn");
 	logError("reader", new Error("selftest logError"), "selftest");
 	if (mode === "error") setTimeout(() => process.exit(0), 6000);
-	if (mode === "throw") setTimeout(() => { throw new Error("selftest uncaught"); }, 3000);
-	if (mode === "reject") setTimeout(() => { void Promise.reject(new Error("selftest rejection")); }, 3000);
+	if (mode === "throw")
+		setTimeout(() => {
+			throw new Error("selftest uncaught");
+		}, 3000);
+	if (mode === "reject")
+		setTimeout(() => {
+			void Promise.reject(new Error("selftest rejection"));
+		}, 3000);
 }
 
 /** Start logging. Safe to call twice. */
@@ -47,20 +70,30 @@ export function initErrorLog(): void {
 	try {
 		crashed = markRunning();
 		installConsoleMirror("ui");
-		log("info", "ui", "start", undefined, { pid: process.pid, bun: Bun.version, packaged: /^zotero-next-gpui/i.test(process.execPath.split(/[\\/]/).pop() ?? "") });
+		log("info", "ui", "start", undefined, {
+			pid: process.pid,
+			bun: Bun.version,
+			packaged: /^zotero-next-gpui/i.test(process.execPath.split(/[\\/]/).pop() ?? ""),
+		});
 		// Monitor listeners only observe: Bun's own handling (message, exit code 1) follows.
 		process.on("uncaughtExceptionMonitor", (e) => fatal("uncaughtException", e));
 		// A rejection listener replaces Bun's default (print, exit 1), so do that here when nobody else handles it.
 		process.on("unhandledRejection", (reason) => {
 			fatal("unhandledRejection", reason);
 			if (process.listenerCount("unhandledRejection") <= 1) {
-				try { process.stderr.write(`${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}\n`); } catch { /* no stderr */ }
+				try {
+					process.stderr.write(`${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`);
+				} catch {
+					/* no stderr */
+				}
 				process.exit(1);
 			}
 		});
 		process.on("exit", () => markCleanExit());
 		selfTest();
-	} catch { /* logging must never stop the app */ }
+	} catch {
+		/* logging must never stop the app */
+	}
 }
 
 /** An <ErrorBoundary> caught `err` while rendering `where`. */

@@ -12,7 +12,12 @@ import { allKeys, initialChecked, normaliseUrl, selectedKeys, summarise, toggleK
 function done(items: SavedItem[], fallback?: string): void {
 	refresh();
 	const s = summarise(items);
-	const note = fallback === "webpage" ? "No translator matched; saved as a web page." : fallback === "embedded" ? "Read from the page's embedded metadata." : "";
+	const note =
+		fallback === "webpage"
+			? "No translator matched; saved as a web page."
+			: fallback === "embedded"
+				? "Read from the page's embedded metadata."
+				: "";
 	toast(s.title, { kind: "success", description: [s.description, note].filter(Boolean).join("\n") || undefined, durationMs: 6000 });
 	if (items[0]) selectOnly(items[0].key);
 	if (items.length && autoAttachPdfs()) findFullText(items.map((i) => i.key));
@@ -69,12 +74,18 @@ function WebDialog(p: { initial: string; close: () => void }): JSX.Element {
 				when={choices()}
 				fallback={
 					<>
-						<Para class="text-sm text-muted-foreground">Address of an article, book or other page. The item is saved with its metadata, as the Zotero Connector would.</Para>
+						<Para class="text-sm text-muted-foreground">
+							Address of an article, book or other page. The item is saved with its metadata, as the Zotero Connector would.
+						</Para>
 						<TextInput autofocus value={url()} onInput={setUrl} onEnter={() => void submit()} placeholder="https://…" />
 						<ErrorLine>{err()}</ErrorLine>
 						<Footer>
-							<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
-							<Button variant="primary" size="sm" disabled={busy() || !url().trim()} onClick={() => void submit()}>{busy() ? "Fetching…" : "Add"}</Button>
+							<Button variant="outline" size="sm" onClick={p.close}>
+								Cancel
+							</Button>
+							<Button variant="primary" size="sm" disabled={busy() || !url().trim()} onClick={() => void submit()}>
+								{busy() ? "Fetching…" : "Add"}
+							</Button>
 						</Footer>
 					</>
 				}
@@ -83,22 +94,34 @@ function WebDialog(p: { initial: string; close: () => void }): JSX.Element {
 					<>
 						<Para class="text-sm text-muted-foreground">{`This page lists several items. Choose the ones to add (${checked().size} of ${c().items.length} selected).`}</Para>
 						<div style={t("flex flex-row items-center gap-2")}>
-							<Button variant="outline" size="sm" onClick={() => setChecked(allKeys(c().items))}>Select all</Button>
-							<Button variant="outline" size="sm" onClick={() => setChecked(new Set())}>Select none</Button>
+							<Button variant="outline" size="sm" onClick={() => setChecked(allKeys(c().items))}>
+								Select all
+							</Button>
+							<Button variant="outline" size="sm" onClick={() => setChecked(new Set())}>
+								Select none
+							</Button>
 						</div>
 						<Scroll height={288} border>
 							<For each={c().items}>
 								{(i) => (
 									<div style={{ ...t("flex flex-col px-2 py-1.5"), flexShrink: 0 }}>
-										<Checkbox checked={checked().has(i.key)} onChange={() => setChecked(toggleKey(checked(), i.key))} label={i.title || "(untitled)"} />
+										<Checkbox
+											checked={checked().has(i.key)}
+											onChange={() => setChecked(toggleKey(checked(), i.key))}
+											label={i.title || "(untitled)"}
+										/>
 									</div>
 								)}
 							</For>
 						</Scroll>
 						<ErrorLine>{err()}</ErrorLine>
 						<Footer>
-							<Button variant="outline" size="sm" onClick={p.close}>Cancel</Button>
-							<Button variant="primary" size="sm" disabled={busy() || !checked().size} onClick={() => void confirm()}>{busy() ? "Adding…" : `Add ${checked().size}`}</Button>
+							<Button variant="outline" size="sm" onClick={p.close}>
+								Cancel
+							</Button>
+							<Button variant="primary" size="sm" disabled={busy() || !checked().size} onClick={() => void confirm()}>
+								{busy() ? "Adding…" : `Add ${checked().size}`}
+							</Button>
 						</Footer>
 					</>
 				)}

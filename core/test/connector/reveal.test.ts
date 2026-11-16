@@ -31,7 +31,11 @@ describe("/api/ui/reveal", () => {
 	});
 
 	test("reveal of an existing item is published with a rising seq and bumps rev", async () => {
-		const key = (db.query("SELECT key FROM items WHERE parent_key IS NULL AND item_type NOT IN ('note','attachment') AND deleted = 0 LIMIT 1").get() as { key: string }).key;
+		const key = (
+			db
+				.query("SELECT key FROM items WHERE parent_key IS NULL AND item_type NOT IN ('note','attachment') AND deleted = 0 LIMIT 1")
+				.get() as { key: string }
+		).key;
 		const rev0 = getRev();
 		const r1 = await ui("/api/ui/reveal", "POST", { key });
 		expect(r1.status).toBe(200);
@@ -47,7 +51,10 @@ describe("/api/ui/reveal", () => {
 	});
 
 	test("a child resolves to its parent", async () => {
-		const child = db.query("SELECT key, parent_key FROM items WHERE parent_key IS NOT NULL AND deleted = 0 LIMIT 1").get() as { key: string; parent_key: string } | null;
+		const child = db.query("SELECT key, parent_key FROM items WHERE parent_key IS NOT NULL AND deleted = 0 LIMIT 1").get() as {
+			key: string;
+			parent_key: string;
+		} | null;
 		if (!child) return; // fixture without children
 		await ui("/api/ui/reveal", "POST", { key: child.key });
 		const sel = (await (await ui("/api/ui/selection")).json()) as { reveal: { key: string } };
@@ -68,8 +75,20 @@ describe("/api/ui/reveal", () => {
 	test("open: true picks the item's PDF (or the attachment asked for); without a readable file it only selects", async () => {
 		const { createItem } = await import("../../src/db");
 		const parent = createItem(db, { itemType: "journalArticle", title: "Reveal with open" } as never).data.key;
-		const html = createItem(db, { itemType: "attachment", parentItem: parent, title: "Snapshot", linkMode: "imported_url", contentType: "text/html" } as never).data.key;
-		const pdf = createItem(db, { itemType: "attachment", parentItem: parent, title: "Full Text PDF", linkMode: "imported_file", contentType: "application/pdf" } as never).data.key;
+		const html = createItem(db, {
+			itemType: "attachment",
+			parentItem: parent,
+			title: "Snapshot",
+			linkMode: "imported_url",
+			contentType: "text/html",
+		} as never).data.key;
+		const pdf = createItem(db, {
+			itemType: "attachment",
+			parentItem: parent,
+			title: "Full Text PDF",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		} as never).data.key;
 		const bare = createItem(db, { itemType: "book", title: "No files" } as never).data.key;
 		type Sel = { reveal: { key: string; open?: { key: string; title: string } } };
 		const sel = async () => ((await (await ui("/api/ui/selection")).json()) as Sel).reveal;

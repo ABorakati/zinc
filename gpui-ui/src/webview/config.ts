@@ -8,7 +8,9 @@ import { webViewSupported } from "./host";
 let base: string | null | undefined;
 
 /** core.ts: the core's HTTP URL when it serves /reader-host/, null when it cannot. */
-export function setWebBase(url: string | null): void { base = url ? url.replace(/\/+$/, "") : null; }
+export function setWebBase(url: string | null): void {
+	base = url ? url.replace(/\/+$/, "") : null;
+}
 
 /** Base URL of the core that serves the web reader, or null when web tabs are unavailable. An external core (no ZN_DB) is assumed to serve it, as zotero-next's own does. */
 export function webBase(): string | null {
@@ -19,7 +21,9 @@ export function webBase(): string | null {
 
 /** The extension build (src/platform.web.ts) sets this: EPUBs and snapshots open in a new browser tab instead of a web tab. */
 let tabOpener: ((attachmentKey: string) => void) | null = null;
-export function setWebTabOpener(f: ((attachmentKey: string) => void) | null): void { tabOpener = f; }
+export function setWebTabOpener(f: ((attachmentKey: string) => void) | null): void {
+	tabOpener = f;
+}
 export const webTabOpener = (): ((attachmentKey: string) => void) | null => tabOpener;
 
 /** Content types the web reader opens (snapshots and EPUBs); PDFs go to the native reader. */
@@ -37,7 +41,9 @@ const [noteSig, setNoteSig] = createSignal<string | null | undefined>(undefined)
 let probed = false;
 
 /** core.ts: the core's HTTP URL when it serves /note-host/, null when it cannot (direct mode, build missing). */
-export function setNoteBase(url: string | null): void { setNoteSig(url ? url.replace(/\/+$/, "") : null); }
+export function setNoteBase(url: string | null): void {
+	setNoteSig(url ? url.replace(/\/+$/, "") : null);
+}
 
 /** Base URL of the core that serves the note editor; null when notes must use the built-in Markdown editor; undefined while unknown. */
 export function noteBase(): string | null | undefined {
@@ -47,8 +53,13 @@ export function noteBase(): string | null | undefined {
 	probed = true;
 	const b = BASE_URL;
 	void fetch(`${b}/note-host/editor.html`, { signal: AbortSignal.timeout(4000) }).then(
-		(r) => { void r.body?.cancel(); if (noteSig() === undefined) setNoteSig(r.ok ? b : null); },
-		() => { if (noteSig() === undefined) setNoteSig(null); },
+		(r) => {
+			void r.body?.cancel();
+			if (noteSig() === undefined) setNoteSig(r.ok ? b : null);
+		},
+		() => {
+			if (noteSig() === undefined) setNoteSig(null);
+		},
 	);
 	return undefined;
 }

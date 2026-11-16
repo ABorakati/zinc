@@ -16,10 +16,19 @@ import { shutdownStructureWorker } from "../src/reader/structure/load";
 import { OverlayHost } from "../src/ui";
 
 const args = process.argv.slice(2);
-const val = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1]! : d; };
+const val = (n: string, d: string) => {
+	const i = args.indexOf(`--${n}`);
+	return i >= 0 ? args[i + 1]! : d;
+};
 const KEY = args.find((a, i) => !a.startsWith("--") && !(i > 0 && ["--out", "--tag", "--n"].includes(args[i - 1]!)));
-if (!KEY) { console.error("usage: bun scripts/shot-reflow-figs.tsx <attachment key> [--tag NAME] [--out DIR] [--n 4]"); process.exit(2); }
-if (!process.env.ZN_READING_SETTINGS) { console.error("set ZN_READING_SETTINGS=<scratch json>: the probe changes the reading settings"); process.exit(2); }
+if (!KEY) {
+	console.error("usage: bun scripts/shot-reflow-figs.tsx <attachment key> [--tag NAME] [--out DIR] [--n 4]");
+	process.exit(2);
+}
+if (!process.env.ZN_READING_SETTINGS) {
+	console.error("set ZN_READING_SETTINGS=<scratch json>: the probe changes the reading settings");
+	process.exit(2);
+}
 const OUT = val("out", "C:/Users/abora/zn-ws/_tmp/reflow-figs");
 const TAG = val("tag", "fig");
 const N = Number(val("n", "4"));
@@ -31,7 +40,12 @@ setReaderMode("light");
 
 let ctx: ReaderContext | null = null;
 register();
-registerReaderPlugin({ id: "probe", onOpen: (c) => { ctx = c; } });
+registerReaderPlugin({
+	id: "probe",
+	onOpen: (c) => {
+		ctx = c;
+	},
+});
 const t = createTestRoot({ width: 1440, height: 880 });
 const r = t.renderer;
 let ctl!: ReaderController;
@@ -39,14 +53,39 @@ registerFonts(r);
 t.render(() => (
 	<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%" }}>
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-			<Reader attachmentKey={KEY} title="Reader" ephemeral controller={(c) => { ctl = c; }} />
+			<Reader
+				attachmentKey={KEY}
+				title="Reader"
+				ephemeral
+				controller={(c) => {
+					ctl = c;
+				}}
+			/>
 		</div>
 		<OverlayHost />
 	</div>
 ));
-const pump = () => { r.flush(); r.dispatchNativeEvents(); r.flush(); };
-const frame = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { pump(); await Bun.sleep(16); } };
-async function until(cond: () => boolean, ms = 20000): Promise<boolean> { const t0 = performance.now(); while (performance.now() - t0 < ms) { pump(); if (cond()) return true; await Bun.sleep(30); } return false; }
+const pump = () => {
+	r.flush();
+	r.dispatchNativeEvents();
+	r.flush();
+};
+const frame = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		pump();
+		await Bun.sleep(16);
+	}
+};
+async function until(cond: () => boolean, ms = 20000): Promise<boolean> {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		pump();
+		if (cond()) return true;
+		await Bun.sleep(30);
+	}
+	return false;
+}
 type Probe = { items: () => { id: string; kind: string; page: number }[]; goToIndex: (i: number, remember?: boolean) => void };
 const probe = () => (globalThis as Record<string, unknown>).__znReflow as Probe | undefined;
 
@@ -66,7 +105,11 @@ try {
 	const idx = its.map((it, i) => (it.kind === "figure" ? i : -1)).filter((i) => i >= 0);
 	console.log("figure items:", idx.length, "of", its.length, " pages:", ctx!.pageCount());
 	const pick = idx.length <= N ? idx : Array.from({ length: N }, (_, k) => idx[Math.round((k * (idx.length - 1)) / (N - 1))]!);
-	for (const [name, width] of [["narrow", 480], ["default", 680], ["wide", 1000]] as const) {
+	for (const [name, width] of [
+		["narrow", 480],
+		["default", 680],
+		["wide", 1000],
+	] as const) {
 		setReflowSettings({ width });
 		await frame(800);
 		for (const i of pick) {

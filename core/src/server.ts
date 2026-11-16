@@ -129,15 +129,18 @@ export function startServer(opts: ServerOptions) {
 		hostname: opts.hostname ?? "127.0.0.1",
 		// a PDF that OneDrive keeps online-only can take a while to arrive; the default 10 s cut it off
 		idleTimeout: 255,
-			// anything the handlers did not catch: into the local log, then a plain 500
-			error(err) {
-				logError("core", err, "server");
-				return new Response("internal error", { status: 500 });
-			},
+		// anything the handlers did not catch: into the local log, then a plain 500
+		error(err) {
+			logError("core", err, "server");
+			return new Response("internal error", { status: 500 });
+		},
 		async fetch(req, srv) {
 			if (live) {
 				const sse = live.handle(req);
-				if (sse) { srv.timeout(req, 0); return sse; } // long-lived event stream
+				if (sse) {
+					srv.timeout(req, 0);
+					return sse;
+				} // long-lived event stream
 			}
 			const mcp = await handleMcp(req, db);
 			if (mcp) return mcp;
@@ -194,6 +197,6 @@ if (import.meta.main) {
 		process.exit(2);
 	}
 	installConsoleMirror("core"); // standalone core: console.error / warn also go to the local log
-		const s = startServer({ dbPath, port, hostname, mounts });
+	const s = startServer({ dbPath, port, hostname, mounts });
 	console.log(`Zinc core listening on ${s.url}`);
 }

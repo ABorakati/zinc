@@ -31,7 +31,8 @@ const plural = (v: number, one: string, many = `${one}s`) => `${n(v)} ${v === 1 
 /** Where the bar is: files going over fill the first half, the worker's phases the rest. */
 export function importFraction(p: Progress | null): number {
 	if (!p) return 0;
-	if (p.phase === "upload") return p.totalBytes ? 0.45 * Math.min(1, (p.bytes ?? 0) / p.totalBytes) : p.total ? 0.45 * Math.min(1, (p.done ?? 0) / p.total) : 0;
+	if (p.phase === "upload")
+		return p.totalBytes ? 0.45 * Math.min(1, (p.bytes ?? 0) / p.totalBytes) : p.total ? 0.45 * Math.min(1, (p.done ?? 0) / p.total) : 0;
 	if (p.phase === "copy") return 0.9;
 	if (p.phase === "files") return 0.95;
 	if (p.phase === "finish") return 0.98;
@@ -40,16 +41,25 @@ export function importFraction(p: Progress | null): number {
 export function importText(p: Progress | null): string {
 	if (!p) return "Starting…";
 	switch (p.phase) {
-		case "upload": return p.total ? `Copying files from the folder: ${n(p.done ?? 0)} of ${n(p.total)}` : (p.message ?? "Looking through the folder…");
-		case "copy": return "Putting the library into this browser…";
-		case "files": return "Moving attachment files…";
-		case "finish": return "Building the search index…";
-		default: return progressText(p);
+		case "upload":
+			return p.total
+				? `Copying files from the folder: ${n(p.done ?? 0)} of ${n(p.total)}`
+				: (p.message ?? "Looking through the folder…");
+		case "copy":
+			return "Putting the library into this browser…";
+		case "files":
+			return "Moving attachment files…";
+		case "finish":
+			return "Building the search index…";
+		default:
+			return progressText(p);
 	}
 }
 
 export function summaryLines(s: ImportSummary): string[] {
-	const out = [`${plural(s.topLevelItems, "item")} (${plural(s.items - s.topLevelItems, "attachment, note and annotation", "attachments, notes and annotations")} inside them), ${plural(s.collections, "collection")}.`];
+	const out = [
+		`${plural(s.topLevelItems, "item")} (${plural(s.items - s.topLevelItems, "attachment, note and annotation", "attachments, notes and annotations")} inside them), ${plural(s.collections, "collection")}.`,
+	];
 	if (s.fileFolders) out.push(`${plural(s.fileFolders, "attachment folder")} copied.`);
 	if (s.missingFiles) out.push(`${plural(s.missingFiles, "attachment")} had no file in the folder.`);
 	return [...out, ...s.warnings];
@@ -72,8 +82,17 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 		setError("");
 		setBusy(true);
 		let handle: unknown | null;
-		try { handle = await api.pickFolder(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); return; }
-		if (!handle) { setBusy(false); return; }
+		try {
+			handle = await api.pickFolder();
+		} catch (e) {
+			setError(e instanceof Error ? e.message : String(e));
+			setBusy(false);
+			return;
+		}
+		if (!handle) {
+			setBusy(false);
+			return;
+		}
 		setProgress(null);
 		setStage("importing");
 		try {
@@ -86,7 +105,9 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 		setBusy(false);
 	}
 
-	const Txt = (q: { cls: string; children: string; style?: Style }): JSX.Element => <text style={{ ...tx(q.cls), ...q.style }}>{q.children}</text>;
+	const Txt = (q: { cls: string; children: string; style?: Style }): JSX.Element => (
+		<text style={{ ...tx(q.cls), ...q.style }}>{q.children}</text>
+	);
 
 	/** One way to start. The whole card is the button (a filled box, so it has a hit area). */
 	function Choice(q: { icon: string; title: string; text: string; action: string; primary?: boolean; onClick: () => void }): JSX.Element {
@@ -110,11 +131,21 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 				</div>
 				<div
 					style={{
-						...t(`flex flex-none items-center justify-center rounded-md h-8 px-3.5 ${q.primary ? "bg-primary" : "bg-secondary"}`),
+						...t(
+							`flex flex-none items-center justify-center rounded-md h-8 px-3.5 ${q.primary ? "bg-primary" : "bg-secondary"}`,
+						),
 						...(q.primary ? { boxShadow: shadows[p.mode].primary } : {}),
 					}}
 				>
-					<text style={{ ...tx("text-[13px] font-medium"), color: tok(q.primary ? "primary-foreground" : "secondary-foreground"), whiteSpace: "nowrap" }}>{q.action}</text>
+					<text
+						style={{
+							...tx("text-[13px] font-medium"),
+							color: tok(q.primary ? "primary-foreground" : "secondary-foreground"),
+							whiteSpace: "nowrap",
+						}}
+					>
+						{q.action}
+					</text>
 				</div>
 			</div>
 		);
@@ -126,24 +157,37 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 		<div style={{ ...t("flex flex-col items-center justify-center bg-canvas"), width: "100%", height: "100%" }}>
 			<div style={{ ...t("flex flex-col gap-5"), width: "100%", maxWidth: 660, padding: 24 }}>
 				<div style={t("flex flex-col gap-1.5")}>
-					<Txt cls="text-[26px] font-semibold text-foreground" style={{ fontFamily: "Source Serif 4" }}>Welcome to Zinc</Txt>
+					<Txt cls="text-[26px] font-semibold text-foreground" style={{ fontFamily: "Source Serif 4" }}>
+						Welcome to Zinc
+					</Txt>
 					<Txt cls="text-sm text-muted-foreground">Choose how to start your library. You can import or sign in later too.</Txt>
 				</div>
 
 				<Show when={stage() === "choose"}>
 					<div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>
 						<Choice
-							icon="plus" title="Start with an empty library" primary action="Start"
+							icon="plus"
+							title="Start with an empty library"
+							primary
+							action="Start"
 							text="Begin with nothing and add papers with the connector, or import files later."
-							onClick={() => { if (!busy()) api.startEmpty(); }}
+							onClick={() => {
+								if (!busy()) api.startEmpty();
+							}}
 						/>
 						<Choice
-							icon="log-in" title="Sign in to zotero.org" action="Sign in"
+							icon="log-in"
+							title="Sign in to zotero.org"
+							action="Sign in"
 							text="Fetch your library from your Zotero account, and keep it in step. You will enter your API key in Settings, under Sync."
-							onClick={() => { if (!busy()) api.signIn(); }}
+							onClick={() => {
+								if (!busy()) api.signIn();
+							}}
 						/>
 						<Choice
-							icon="folder-open" title="Import a Zotero or Zinc data folder" action="Choose a folder…"
+							icon="folder-open"
+							title="Import a Zotero or Zinc data folder"
+							action="Choose a folder…"
 							text="Pick a Zotero data folder (with zotero.sqlite and storage) or a Zinc library folder (library.sqlite and storage). It is only read."
 							onClick={() => void onImport()}
 						/>
@@ -151,7 +195,13 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 				</Show>
 
 				<Show when={stage() === "importing"}>
-					<div style={{ ...t("flex flex-col gap-3 rounded-[14px] bg-background p-5"), boxShadow: shadows[p.mode].raised, width: "100%" }}>
+					<div
+						style={{
+							...t("flex flex-col gap-3 rounded-[14px] bg-background p-5"),
+							boxShadow: shadows[p.mode].raised,
+							width: "100%",
+						}}
+					>
 						<Txt cls="text-[15px] font-semibold text-foreground">Importing your library</Txt>
 						<Txt cls="text-xs text-muted-foreground">{importText(progress())}</Txt>
 						<div style={{ ...t("rounded-full bg-muted"), width: "100%", height: 8, overflow: "hidden" }}>
@@ -162,12 +212,29 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 				</Show>
 
 				<Show when={stage() === "imported" && summary()}>
-					<div style={{ ...t("flex flex-col gap-3 rounded-[14px] bg-background p-5"), boxShadow: shadows[p.mode].raised, width: "100%" }}>
+					<div
+						style={{
+							...t("flex flex-col gap-3 rounded-[14px] bg-background p-5"),
+							boxShadow: shadows[p.mode].raised,
+							width: "100%",
+						}}
+					>
 						<Txt cls="text-[15px] font-semibold text-foreground">Your library is imported</Txt>
-						{summaryLines(summary()!).map((l) => <Txt cls="text-xs text-muted-foreground">{l}</Txt>)}
+						{summaryLines(summary()!).map((l) => (
+							<Txt cls="text-xs text-muted-foreground">{l}</Txt>
+						))}
 						<div style={t("flex items-center gap-2")}>
-							<div onClick={() => api.done()} style={{ ...t("flex flex-none items-center justify-center rounded-md h-8 px-3.5 bg-primary hover:bg-primary"), boxShadow: shadows[p.mode].primary, cursor: "pointer" }}>
-								<text style={{ ...tx("text-[13px] font-medium"), color: tok("primary-foreground"), whiteSpace: "nowrap" }}>Open the library</text>
+							<div
+								onClick={() => api.done()}
+								style={{
+									...t("flex flex-none items-center justify-center rounded-md h-8 px-3.5 bg-primary hover:bg-primary"),
+									boxShadow: shadows[p.mode].primary,
+									cursor: "pointer",
+								}}
+							>
+								<text style={{ ...tx("text-[13px] font-medium"), color: tok("primary-foreground"), whiteSpace: "nowrap" }}>
+									Open the library
+								</text>
 							</div>
 						</div>
 					</div>
@@ -181,7 +248,10 @@ export function BrowserWelcome(p: { api: WelcomeApi; mode: Mode }): JSX.Element 
 
 				<div style={{ ...t("flex items-start gap-2.5 rounded-md bg-muted p-3"), width: "100%" }}>
 					<Icon name="info" size={15} color={tok("muted-foreground")} />
-					<text style={{ ...tx("text-xs text-muted-foreground"), flexShrink: 1, minWidth: 0 }}>Your library is stored in this browser. Removing the extension deletes it. Sync with zotero.org or use Export library to keep a copy.</text>
+					<text style={{ ...tx("text-xs text-muted-foreground"), flexShrink: 1, minWidth: 0 }}>
+						Your library is stored in this browser. Removing the extension deletes it. Sync with zotero.org or use Export
+						library to keep a copy.
+					</text>
 				</div>
 			</div>
 		</div>

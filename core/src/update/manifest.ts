@@ -20,13 +20,29 @@ export interface UnsignedManifest {
 	size: number;
 	minVersion?: string;
 }
-export interface Manifest extends UnsignedManifest { signature: string }
+export interface Manifest extends UnsignedManifest {
+	signature: string;
+}
 
 export type UpdateErrorCode =
-	| "malformed" | "bad-signature" | "no-key" | "insecure-url" | "too-large" | "hash-mismatch" | "size-mismatch"
-	| "network" | "http" | "installer" | "disabled" | "no-feed" | "busy";
+	| "malformed"
+	| "bad-signature"
+	| "no-key"
+	| "insecure-url"
+	| "too-large"
+	| "hash-mismatch"
+	| "size-mismatch"
+	| "network"
+	| "http"
+	| "installer"
+	| "disabled"
+	| "no-feed"
+	| "busy";
 export class UpdateError extends Error {
-	constructor(readonly code: UpdateErrorCode, message: string) {
+	constructor(
+		readonly code: UpdateErrorCode,
+		message: string,
+	) {
 		super(message);
 		this.name = "UpdateError";
 	}
@@ -40,7 +56,11 @@ function canon(v: unknown): string {
 	if (v === null || typeof v !== "object") return JSON.stringify(v);
 	if (Array.isArray(v)) return `[${v.map(canon).join(",")}]`;
 	const o = v as Record<string, unknown>;
-	return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canon(o[k])}`).join(",")}}`;
+	return `{${Object.keys(o)
+		.filter((k) => o[k] !== undefined)
+		.sort()
+		.map((k) => `${JSON.stringify(k)}:${canon(o[k])}`)
+		.join(",")}}`;
 }
 
 /** The bytes that are signed: the manifest minus "signature", canonical JSON, UTF-8. */
@@ -54,7 +74,12 @@ export function canonicalBytes(m: object): Uint8Array<ArrayBuffer> {
 const b64 = (b: ArrayBuffer | Uint8Array): string => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString("base64");
 const unb64 = (s: string): Uint8Array<ArrayBuffer> => new Uint8Array(Buffer.from(s, "base64"));
 
-export interface PrivateJwk { kty: "OKP"; crv: "Ed25519"; d: string; x: string }
+export interface PrivateJwk {
+	kty: "OKP";
+	crv: "Ed25519";
+	d: string;
+	x: string;
+}
 export interface KeyPair {
 	/** Raw 32-byte public key, base64: this is what the app embeds. */
 	publicKey: string;
@@ -87,15 +112,22 @@ const HEX64 = /^[0-9a-f]{64}$/;
 /** https only; plain http only to the machine itself (tests, a local mirror). */
 export function assertSecureUrl(u: string): URL {
 	let url: URL;
-	try { url = new URL(u); } catch { throw new UpdateError("insecure-url", "not a valid URL"); }
+	try {
+		url = new URL(u);
+	} catch {
+		throw new UpdateError("insecure-url", "not a valid URL");
+	}
 	const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
-	if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new UpdateError("insecure-url", `updates need an https URL (got ${url.protocol}//${url.hostname})`);
+	if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))
+		throw new UpdateError("insecure-url", `updates need an https URL (got ${url.protocol}//${url.hostname})`);
 	return url;
 }
 
 /** Check the shape and the values of a manifest (not the signature). Throws UpdateError("malformed"). */
 export function validateShape(raw: unknown): Manifest {
-	const bad = (why: string): never => { throw new UpdateError("malformed", `bad update manifest: ${why}`); };
+	const bad = (why: string): never => {
+		throw new UpdateError("malformed", `bad update manifest: ${why}`);
+	};
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return bad("not an object");
 	const m = raw as Record<string, unknown>;
 	for (const k of Object.keys(m)) if (!FIELDS.has(k)) bad(`unknown field "${k}"`);
@@ -112,9 +144,19 @@ export function validateShape(raw: unknown): Manifest {
 	const size = m.size;
 	if (typeof size !== "number" || !Number.isSafeInteger(size) || size <= 0) bad('"size" is not a positive integer');
 	const minVersion = m.minVersion;
-	if (minVersion !== undefined && (typeof minVersion !== "string" || !parseVersion(minVersion))) bad("minVersion is not a version number");
+	if (minVersion !== undefined && (typeof minVersion !== "string" || !parseVersion(minVersion)))
+		bad("minVersion is not a version number");
 	const signature = str("signature");
-	return { version, releasedAt, notes: m.notes as string, url, sha256, size: size as number, ...(minVersion ? { minVersion: minVersion as string } : {}), signature };
+	return {
+		version,
+		releasedAt,
+		notes: m.notes as string,
+		url,
+		sha256,
+		size: size as number,
+		...(minVersion ? { minVersion: minVersion as string } : {}),
+		signature,
+	};
 }
 
 /** Sign a manifest with the private JWK. */
@@ -131,7 +173,11 @@ export async function verifyManifest(raw: unknown, publicKey: string): Promise<M
 	const m = validateShape(raw);
 	const key = await importPublic(publicKey);
 	let ok = false;
-	try { ok = await crypto.subtle.verify("Ed25519", key, unb64(m.signature), canonicalBytes(m)); } catch { ok = false; }
+	try {
+		ok = await crypto.subtle.verify("Ed25519", key, unb64(m.signature), canonicalBytes(m));
+	} catch {
+		ok = false;
+	}
 	if (!ok) throw new UpdateError("bad-signature", "the update manifest's signature is not valid");
 	return m;
 }

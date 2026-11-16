@@ -95,6 +95,7 @@ export function mendeleyDataDirs(o: DirInput = {}): string[] {
 	const local = nonEmpty(env.LOCALAPPDATA) ?? (platform === "win32" ? join(homeDir(o), "AppData", "Local") : undefined);
 	if (local) dirs.push(join(local, "Mendeley Ltd", "Mendeley Desktop"), join(local, "Mendeley Ltd.", "Mendeley Desktop"));
 	if (platform === "darwin") dirs.push(join(homeDir(o), "Library", "Application Support", "Mendeley Desktop"));
-	else if (platform !== "win32") dirs.push(join(nonEmpty(env.XDG_DATA_HOME) ?? join(homeDir(o), ".local", "share"), "data", "Mendeley Ltd.", "Mendeley Desktop"));
+	else if (platform !== "win32")
+		dirs.push(join(nonEmpty(env.XDG_DATA_HOME) ?? join(homeDir(o), ".local", "share"), "data", "Mendeley Ltd.", "Mendeley Desktop"));
 	return dirs;
 }

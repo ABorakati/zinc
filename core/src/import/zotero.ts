@@ -2,15 +2,7 @@
 // Reads a snapshot of zotero.sqlite (never the live file), rebuilds Zotero Web API item JSON
 // from the EAV tables and writes it into a fresh library database (core/schema.sql).
 import { Database } from "bun:sqlite";
-import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -28,13 +20,7 @@ import { zoteroProfilesDir } from "../platform-dirs";
 import { venueOf } from "../venue";
 import { rebuildSearchIndex } from "../search";
 import bundledSchema from "../../schema.sql" with { type: "text" };
-import {
-	buildFileIndex,
-	defaultSearchRoots,
-	type FileIndex,
-	resolveAttachmentFile,
-	zoteroRawPathFilename,
-} from "./resolve-files";
+import { buildFileIndex, defaultSearchRoots, type FileIndex, resolveAttachmentFile, zoteroRawPathFilename } from "./resolve-files";
 
 export interface ImportProgress {
 	phase: string;
@@ -118,9 +104,7 @@ function findBaseAttachmentPath(profilesDir: string): string | null {
 	for (const d of readdirSync(profilesDir)) {
 		const p = join(profilesDir, d, "prefs.js");
 		if (!existsSync(p)) continue;
-		const m = /user_pref\("extensions\.zotero\.baseAttachmentPath",\s*("(?:[^"\\]|\\.)*")\)/.exec(
-			readFileSync(p, "utf8"),
-		);
+		const m = /user_pref\("extensions\.zotero\.baseAttachmentPath",\s*("(?:[^"\\]|\\.)*")\)/.exec(readFileSync(p, "utf8"));
 		if (m) {
 			try {
 				const v = JSON.parse(m[1]);
@@ -213,7 +197,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 	let failed = false;
 	try {
 		progress({ phase: "snapshot", message: "snapshotting zotero.sqlite" });
-			await yieldThread();
+		await yieldThread();
 		const snap = snapshot(zoteroDir, workDir);
 		src = new Database(snap.path);
 		progress({ phase: "snapshot", message: `snapshot via ${snap.method}` });
@@ -221,9 +205,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		const lib = src.query("SELECT libraryID FROM libraries WHERE type = 'user' ORDER BY libraryID LIMIT 1").get() as Row | null;
 		if (!lib) throw new Error("no user library in zotero.sqlite");
 		const libraryID: number = lib.libraryID;
-		const groupLibraries = (
-			src.query("SELECT libraryID FROM libraries WHERE type = 'group'").all() as Row[]
-		).map((g) => ({
+		const groupLibraries = (src.query("SELECT libraryID FROM libraries WHERE type = 'group'").all() as Row[]).map((g) => ({
 			libraryID: g.libraryID as number,
 			items: (src!.query("SELECT COUNT(*) c FROM items WHERE libraryID = ?").get(g.libraryID) as Row).c as number,
 		}));
@@ -253,9 +235,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		// items
 		progress({ phase: "read", message: "reading items" });
 		await yieldThread();
-		const trashed = new Set(
-			(src.query("SELECT itemID FROM deletedItems").all() as Row[]).map((r) => r.itemID as number),
-		);
+		const trashed = new Set((src.query("SELECT itemID FROM deletedItems").all() as Row[]).map((r) => r.itemID as number));
 		interface SrcItem {
 			itemID: number;
 			type: string;
@@ -336,7 +316,9 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 
 		// collections
 		const collRows = src
-			.query("SELECT collectionID, collectionName, parentCollectionID, key, version FROM collections WHERE libraryID = ? ORDER BY collectionID")
+			.query(
+				"SELECT collectionID, collectionName, parentCollectionID, key, version FROM collections WHERE libraryID = ? ORDER BY collectionID",
+			)
 			.all(libraryID) as Row[];
 		const collKey = new Map<number, string>();
 		for (const c of collRows) collKey.set(c.collectionID, c.key);
@@ -354,7 +336,9 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		// relations
 		const relations = new Map<number, Record<string, string | string[]>>();
 		for (const r of src
-			.query("SELECT ir.itemID, rp.predicate, ir.object FROM itemRelations ir JOIN relationPredicates rp ON rp.predicateID = ir.predicateID ORDER BY ir.itemID, rp.predicate, ir.object")
+			.query(
+				"SELECT ir.itemID, rp.predicate, ir.object FROM itemRelations ir JOIN relationPredicates rp ON rp.predicateID = ir.predicateID ORDER BY ir.itemID, rp.predicate, ir.object",
+			)
 			.iterate() as Iterable<Row>) {
 			if (!items.has(r.itemID)) continue;
 			let m = relations.get(r.itemID);
@@ -394,14 +378,14 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			`INSERT INTO items (key, item_type, parent_key, title, creators_summary, year, publication, data, date_added, date_modified, version, deleted)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		);
-		const insAtt = out.prepare(
-			"INSERT INTO attachments (item_key, link_mode, content_type, path, url) VALUES (?, ?, ?, ?, ?)",
-		);
+		const insAtt = out.prepare("INSERT INTO attachments (item_key, link_mode, content_type, path, url) VALUES (?, ?, ?, ?, ?)");
 		const insTag = out.prepare("INSERT OR IGNORE INTO item_tags (item_key, tag, type) VALUES (?, ?, ?)");
 		const insColl = out.prepare("INSERT INTO collections (key, name, parent_key, version) VALUES (?, ?, ?, ?)");
 		const insCollItem = out.prepare("INSERT OR IGNORE INTO collection_items (collection_key, item_key) VALUES (?, ?)");
 		const insAnn = out.prepare("INSERT OR REPLACE INTO annotations (key, attachment_key, data, date_modified) VALUES (?, ?, ?, ?)");
-		const insFt = out.prepare("INSERT OR REPLACE INTO fulltext (attachment_key, content, source, indexed_at) VALUES (?, ?, 'zotero-cache', ?)");
+		const insFt = out.prepare(
+			"INSERT OR REPLACE INTO fulltext (attachment_key, content, source, indexed_at) VALUES (?, ?, 'zotero-cache', ?)",
+		);
 
 		// collections
 		for (const c of collRows) {
@@ -432,7 +416,9 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 				progress({ phase: "files", message: "indexing fallback file locations" });
 				// searchRoots: false disables the fallback search (empty index).
 				const roots =
-					opts.searchRoots === false ? [] : (opts.searchRoots ?? defaultSearchRoots({ zoteroDir, baseAttachmentPath: baseAttach }));
+					opts.searchRoots === false
+						? []
+						: (opts.searchRoots ?? defaultSearchRoots({ zoteroDir, baseAttachmentPath: baseAttach }));
 				fileIndex = buildFileIndex(roots);
 			}
 			return fileIndex;
@@ -445,7 +431,8 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 			parent?: { title?: string; author?: string },
 			md5?: string | null,
 		) => {
-			if (linkMode === "linked_url" || !rawPath) return { path: null as string | null, filename: undefined as string | undefined, missing: false };
+			if (linkMode === "linked_url" || !rawPath)
+				return { path: null as string | null, filename: undefined as string | undefined, missing: false };
 			const filename = zoteroRawPathFilename(rawPath);
 			const m = resolveAttachmentFile(
 				{ key, rawPath, filename, md5, parentTitle: parent?.title, parentAuthor: parent?.author },
@@ -469,9 +456,9 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		for (const it of items.values()) {
 			done++;
 			if (done % 500 === 0) {
-					progress({ phase: "items", done, total });
-					await yieldThread();
-				}
+				progress({ phase: "items", done, total });
+				await yieldThread();
+			}
 			const f = fields.get(it.itemID) ?? {};
 			const n = notes.get(it.itemID);
 			const a = atts.get(it.itemID);
@@ -533,10 +520,7 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 				attachment: attInput,
 			});
 
-			const title =
-				it.type === "note"
-					? (n?.title ?? "")
-					: ((f.title ?? "") as string);
+			const title = it.type === "note" ? (n?.title ?? "") : ((f.title ?? "") as string);
 			const publication = venueOf(f, it.type); // same rule as every other writer (core/src/venue.ts)
 			const deleted = trashed.has(it.itemID) ? 1 : 0;
 			insItem.run(
@@ -579,7 +563,9 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		// annotations
 		progress({ phase: "annotations" });
 		for (const r of src
-			.query("SELECT itemID, parentItemID, type, authorName, text, comment, color, pageLabel, sortIndex, position FROM itemAnnotations")
+			.query(
+				"SELECT itemID, parentItemID, type, authorName, text, comment, color, pageLabel, sortIndex, position FROM itemAnnotations",
+			)
 			.iterate() as Iterable<Row>) {
 			const row = annotationRows.get(r.itemID);
 			if (!row) continue;
@@ -647,7 +633,8 @@ export async function importZotero(opts: ImportOptions): Promise<ImportReport> {
 		// the search index has no triggers: build it for every imported item (quick_search, when the schema has it, is rebuilt too)
 		rebuildSearchIndex(out);
 		const integrity = out.query("PRAGMA integrity_check").all() as { integrity_check: string }[];
-		if (integrity.length !== 1 || integrity[0].integrity_check !== "ok") throw new Error("the imported database failed its integrity check; the existing library was not touched");
+		if (integrity.length !== 1 || integrity[0].integrity_check !== "ok")
+			throw new Error("the imported database failed its integrity check; the existing library was not touched");
 		out.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 		out.close(true);
 		out = null;

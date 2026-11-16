@@ -19,20 +19,72 @@ export interface Column {
 }
 
 export const FALLBACK_LABELS: Record<string, string> = {
-	title: "Title", creator: "Creator", itemType: "Item Type", date: "Date", year: "Year", publisher: "Publisher",
-	publicationTitle: "Publication", journalAbbreviation: "Journal Abbr", language: "Language", accessDate: "Accessed",
-	libraryCatalog: "Library Catalog", callNumber: "Call Number", rights: "Rights", dateAdded: "Date Added",
-	dateModified: "Date Modified", archive: "Archive", archiveLocation: "Loc. in Archive", place: "Place",
-	volume: "Volume", edition: "Edition", number: "Number", pages: "Pages", issue: "Issue", series: "Series",
-	section: "Section", shortTitle: "Short Title", extra: "Extra", citationKey: "Citation Key", attachments: "Attachments", notes: "Notes", DOI: "DOI",
+	title: "Title",
+	creator: "Creator",
+	itemType: "Item Type",
+	date: "Date",
+	year: "Year",
+	publisher: "Publisher",
+	publicationTitle: "Publication",
+	journalAbbreviation: "Journal Abbr",
+	language: "Language",
+	accessDate: "Accessed",
+	libraryCatalog: "Library Catalog",
+	callNumber: "Call Number",
+	rights: "Rights",
+	dateAdded: "Date Added",
+	dateModified: "Date Modified",
+	archive: "Archive",
+	archiveLocation: "Loc. in Archive",
+	place: "Place",
+	volume: "Volume",
+	edition: "Edition",
+	number: "Number",
+	pages: "Pages",
+	issue: "Issue",
+	series: "Series",
+	section: "Section",
+	shortTitle: "Short Title",
+	extra: "Extra",
+	citationKey: "Citation Key",
+	attachments: "Attachments",
+	notes: "Notes",
+	DOI: "DOI",
 };
 
 /** The columns listed directly in the picker, in Zotero's order (also the "Restore Column Order" order). */
 export const MENU_COLUMNS = [
-	"title", "creator", "itemType", "date", "year", "publisher", "publicationTitle", "journalAbbreviation", "language",
-	"accessDate", "libraryCatalog", "callNumber", "rights", "dateAdded", "dateModified", "archive", "archiveLocation",
-	"place", "volume", "edition", "number", "pages", "issue", "series", "section", "shortTitle", "extra",
-	"citationKey", "attachments", "notes", "DOI",
+	"title",
+	"creator",
+	"itemType",
+	"date",
+	"year",
+	"publisher",
+	"publicationTitle",
+	"journalAbbreviation",
+	"language",
+	"accessDate",
+	"libraryCatalog",
+	"callNumber",
+	"rights",
+	"dateAdded",
+	"dateModified",
+	"archive",
+	"archiveLocation",
+	"place",
+	"volume",
+	"edition",
+	"number",
+	"pages",
+	"issue",
+	"series",
+	"section",
+	"shortTitle",
+	"extra",
+	"citationKey",
+	"attachments",
+	"notes",
+	"DOI",
 ];
 export const DEFAULT_COLUMNS = ["title", "creator", "year", "publicationTitle", "dateAdded", "attachments"];
 /** Fields that are not columns in their own right (collections, internal bookkeeping). */
@@ -45,12 +97,16 @@ let requested = false;
 export function loadSchema() {
 	if (requested) return;
 	requested = true;
-	api.schema().then(setSchema).catch(() => { requested = false; });
+	api.schema()
+		.then(setSchema)
+		.catch(() => {
+			requested = false;
+		});
 }
 
 const date10 = (s: string | null | undefined) => (s ? s.slice(0, 10) : "");
 /** A Zotero data field of a row (requested through `fields=`). */
-export const fieldOf = (it: ItemRow, f: string): string => ((it.fields as Record<string, string | null> | undefined)?.[f]) ?? "";
+export const fieldOf = (it: ItemRow, f: string): string => (it.fields as Record<string, string | null> | undefined)?.[f] ?? "";
 const field = (f: string) => (it: ItemRow) => fieldOf(it, f);
 
 /** "journalArticle" -> "Journal Article" (the schema label once it has loaded). */
@@ -66,7 +122,13 @@ const SPECIAL: Record<string, Partial<Column> & Pick<Column, "get" | "sort">> = 
 	dateAdded: { sort: "dateAdded", width: 112, get: (it) => date10(it.dateAdded) },
 	dateModified: { sort: "dateModified", field: "dateModified", width: 112, get: (it) => date10(fieldOf(it, "dateModified")) },
 	accessDate: { sort: "accessDate", field: "accessDate", width: 112, get: (it) => date10(fieldOf(it, "accessDate")) },
-	attachments: { sort: "attachmentCount", width: 40, align: "center", icon: "attachments", get: (it) => (it.attachmentCount ? String(it.attachmentCount) : "") },
+	attachments: {
+		sort: "attachmentCount",
+		width: 40,
+		align: "center",
+		icon: "attachments",
+		get: (it) => (it.attachmentCount ? String(it.attachmentCount) : ""),
+	},
 	notes: { sort: "noteCount", width: 48, align: "center", icon: "notes", get: (it) => (it.noteCount ? String(it.noteCount) : "") },
 	citationKey: { sort: "citationKey", field: "citationKey", width: 160, get: (it) => fieldOf(it, "citationKey") },
 };

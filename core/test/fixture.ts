@@ -90,9 +90,9 @@ export function buildFixture(): Fixture {
 	);
 	insertAttachment(db, "ATT00001", "AAAAAAA1", "text/html", null, "2024-01-01T00:00:00Z");
 	insertAttachment(db, "ATT00002", "AAAAAAA1", "application/pdf", pdfPath, "2024-01-02T00:00:00Z");
-	db.query("INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('ATT00002', ?, 'zotero-cache', '2024-01-01T00:00:00Z')").run(
-		"convolutional segmentation of pulmonary nodules in lung scans",
-	);
+	db.query(
+		"INSERT INTO fulltext(attachment_key, content, source, indexed_at) VALUES('ATT00002', ?, 'zotero-cache', '2024-01-01T00:00:00Z')",
+	).run("convolutional segmentation of pulmonary nodules in lung scans");
 
 	insertItem(db, {
 		key: "BBBBBBB2",
@@ -129,7 +129,15 @@ export function buildFixture(): Fixture {
 
 	db.query(
 		"INSERT INTO annotations(key, attachment_key, data, date_modified) VALUES('ANNO0001', 'ATT00002', ?, '2024-01-01T00:00:00Z')",
-	).run(JSON.stringify({ id: "ANNO0001", type: "highlight", sortIndex: "00001|000100|00200", position: {}, dateModified: "2024-01-01T00:00:00Z" }));
+	).run(
+		JSON.stringify({
+			id: "ANNO0001",
+			type: "highlight",
+			sortIndex: "00001|000100|00200",
+			position: {},
+			dateModified: "2024-01-01T00:00:00Z",
+		}),
+	);
 
 	rebuildSearchIndex(db);
 	return { db, dir, pdfPath };

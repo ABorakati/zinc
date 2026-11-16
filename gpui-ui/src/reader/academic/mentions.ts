@@ -12,7 +12,8 @@ export interface Mention {
 	end: number;
 }
 
-const HEAD = /\b(Supplementary\s+|Supplemental\s+|Supp\.\s*|Extended\s+Data\s+|e)?(Figures?|Figs?\.?|Tables?|Tabs?\.)\s*(S?\d{1,3})(?:([A-Za-z](?:\s?[-–]\s?[A-Za-z])?)(?![A-Za-z]))?/gi;
+const HEAD =
+	/\b(Supplementary\s+|Supplemental\s+|Supp\.\s*|Extended\s+Data\s+|e)?(Figures?|Figs?\.?|Tables?|Tabs?\.)\s*(S?\d{1,3})(?:([A-Za-z](?:\s?[-–]\s?[A-Za-z])?)(?![A-Za-z]))?/gi;
 const CONT = /^(?:\s*(?:,|and|&|–|-|to)\s*)(S?\d{1,3})(?:([A-Za-z])(?![A-Za-z]))?/i;
 
 function canon(kind: "figure" | "table", num: string): { label: string; key: string } {
@@ -35,7 +36,16 @@ export function findFigureMentions(text: string): Mention[] {
 		const kind = word.startsWith("t") ? "table" : "figure";
 		const supplementary = prefix !== "";
 		const { label, key } = canon(kind, m[3]!);
-		out.push({ kind, number: m[3]!.toUpperCase(), panel: m[4]?.replace(/\s/g, ""), label, key, supplementary, start: m.index, end: m.index + m[0].length });
+		out.push({
+			kind,
+			number: m[3]!.toUpperCase(),
+			panel: m[4]?.replace(/\s/g, ""),
+			label,
+			key,
+			supplementary,
+			start: m.index,
+			end: m.index + m[0].length,
+		});
 		// continuation: "Figures 2 and 3", "Tables 1, 2"
 		if (/^(figures|figs|tables)/i.test(m[2]!)) {
 			let pos = m.index + m[0].length;
@@ -44,7 +54,16 @@ export function findFigureMentions(text: string): Mention[] {
 				if (!c) break;
 				const s = pos + (c[0].length - c[0].replace(/^\s*(?:,|and|&|–|-|to)\s*/i, "").length);
 				const c2 = canon(kind, c[1]!);
-				out.push({ kind, number: c[1]!.toUpperCase(), panel: c[2], label: c2.label, key: c2.key, supplementary, start: s, end: pos + c[0].length });
+				out.push({
+					kind,
+					number: c[1]!.toUpperCase(),
+					panel: c[2],
+					label: c2.label,
+					key: c2.key,
+					supplementary,
+					start: s,
+					end: pos + c[0].length,
+				});
 				pos += c[0].length;
 			}
 		}
@@ -61,7 +80,10 @@ export function labelKey(label: string | undefined | null): string | null {
 
 /** A caption-start line: "Figure 1. Foo", "Fig. 2: Foo", "Table 3 | Foo". */
 export function captionStart(line: string): { kind: "figure" | "table"; number: string; key: string; label: string; end: number } | null {
-	const m = /^\s*(Supplementary\s+|Supplemental\s+|Extended\s+Data\s+)?(Figure|FIGURE|Fig\.?|FIG\.?|Table|TABLE|Tab\.)\s*(S?\d{1,3})\s*(?:[.:|]|\s{1,2}[A-Z(])/.exec(line);
+	const m =
+		/^\s*(Supplementary\s+|Supplemental\s+|Extended\s+Data\s+)?(Figure|FIGURE|Fig\.?|FIG\.?|Table|TABLE|Tab\.)\s*(S?\d{1,3})\s*(?:[.:|]|\s{1,2}[A-Z(])/.exec(
+			line,
+		);
 	if (!m) return null;
 	const kind = m[2]!.toLowerCase().startsWith("t") ? "table" : "figure";
 	const { label, key } = canon(kind, m[3]!);
@@ -111,8 +133,16 @@ export function findSupplementaryMentions(text: string): SuppMention[] {
 		else if (/video|movie/.test(low)) kind = "video";
 		else if (/method/.test(low)) kind = "method";
 		else if (/data/.test(low)) kind = "data";
-		const num = /(?:S?[A-Z]?\d{1,3}[A-Za-z]?|\b[A-Z])\s*$/.exec(raw.replace(/^(?:Supplementary|Supplemental|Extended Data|Online|Additional)/i, ""))?.[0]?.trim();
-		out.push({ label: raw, kind, number: kind === "appendix" ? /([A-Z]\d?|\d+)$/.exec(raw)?.[1] : num, start: m.index, end: m.index + m[0].length });
+		const num = /(?:S?[A-Z]?\d{1,3}[A-Za-z]?|\b[A-Z])\s*$/
+			.exec(raw.replace(/^(?:Supplementary|Supplemental|Extended Data|Online|Additional)/i, ""))?.[0]
+			?.trim();
+		out.push({
+			label: raw,
+			kind,
+			number: kind === "appendix" ? /([A-Z]\d?|\d+)$/.exec(raw)?.[1] : num,
+			start: m.index,
+			end: m.index + m[0].length,
+		});
 	}
 	return out;
 }
@@ -137,7 +167,15 @@ export function findAuthorYear(text: string): AuthorYear[] {
 	AY_RE.lastIndex = 0;
 	let m: RegExpExecArray | null;
 	while ((m = AY_RE.exec(text))) {
-		out.push({ surname: m[1]!, etAl: !!m[2], second: m[3], year: Number(m[4]), suffix: m[5], start: m.index, end: m.index + m[0].length });
+		out.push({
+			surname: m[1]!,
+			etAl: !!m[2],
+			second: m[3],
+			year: Number(m[4]),
+			suffix: m[5],
+			start: m.index,
+			end: m.index + m[0].length,
+		});
 	}
 	return out;
 }

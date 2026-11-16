@@ -27,10 +27,23 @@ export const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string }[]
 	...BBT_EXPORT_FORMATS,
 ];
 
-export interface ExportResult { filename: string; contentType: string; text: string; count: number; path?: string; files?: number }
+export interface ExportResult {
+	filename: string;
+	contentType: string;
+	text: string;
+	count: number;
+	path?: string;
+	files?: number;
+}
 export interface ImportResult {
-	created: number; skipped: number; errors: string[]; collectionKey: string | null; format: string;
-	collections?: number; attachments?: number; itemKeys?: string[];
+	created: number;
+	skipped: number;
+	errors: string[];
+	collectionKey: string | null;
+	format: string;
+	collections?: number;
+	attachments?: number;
+	itemKeys?: string[];
 }
 
 export interface MendeleyDatabase {
@@ -51,8 +64,14 @@ export interface MendeleyResult extends ImportResult {
 export const ioApi = {
 	export: (b: { keys?: string[]; collectionKey?: string; format: ExportFormat; includeNotes?: boolean; dir?: string }) =>
 		post<ExportResult>("/api/io/export", b),
-	import: (b: { text: string; format?: string; collectionName?: string | null; collectionKey?: string; autoTag?: boolean; basePath?: string }) =>
-		post<ImportResult>("/api/io/import", b),
+	import: (b: {
+		text: string;
+		format?: string;
+		collectionName?: string | null;
+		collectionKey?: string;
+		autoTag?: boolean;
+		basePath?: string;
+	}) => post<ImportResult>("/api/io/import", b),
 	mendeley: {
 		list: () => get<{ databases: MendeleyDatabase[]; available: boolean }>("/api/io/mendeley"),
 		import: (b: { path?: string; collectionName?: string | null; collectionKey?: string; linkFiles?: boolean }) =>
@@ -61,12 +80,14 @@ export const ioApi = {
 };
 
 /** Defaults remembered between exports and edited in Settings > Export. */
-export const [exportFormat, setExportFormat] = persisted<ExportFormat>("features.io.format", "bibtex", (v) => (EXPORT_FORMATS.some((f) => f.id === v) ? (v as ExportFormat) : undefined));
-export const [exportNotes, setExportNotes] = persisted<boolean>("features.io.notes", false, (v) => (typeof v === "boolean" ? v : undefined));
+export const [exportFormat, setExportFormat] = persisted<ExportFormat>("features.io.format", "bibtex", (v) =>
+	EXPORT_FORMATS.some((f) => f.id === v) ? (v as ExportFormat) : undefined,
+);
+export const [exportNotes, setExportNotes] = persisted<boolean>("features.io.notes", false, (v) =>
+	typeof v === "boolean" ? v : undefined,
+);
 
-export type ExportTarget =
-	| { kind: "items"; keys: string[] }
-	| { kind: "collection"; collectionKey: string; name: string };
+export type ExportTarget = { kind: "items"; keys: string[] } | { kind: "collection"; collectionKey: string; name: string };
 
 const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
 const [lastDir, setLastDir] = createSignal<string | undefined>(undefined);
@@ -106,7 +127,12 @@ export async function runExport(target: ExportTarget, format: ExportFormat, incl
 }
 
 /** Import text (a file's contents or the clipboard). The new collection is named after the file. */
-export async function runImport(text: string, collectionName: string, collectionKey?: string, basePath?: string): Promise<ImportResult | null> {
+export async function runImport(
+	text: string,
+	collectionName: string,
+	collectionKey?: string,
+	basePath?: string,
+): Promise<ImportResult | null> {
 	toast("Importing…", { durationMs: 2500 });
 	try {
 		const body = {
@@ -120,7 +146,11 @@ export async function runImport(text: string, collectionName: string, collection
 		// auto-detect failed: let the Zotero translators try (keeps the original error when they cannot read it either)
 		const r = await ioApi.import(body).catch(async (e) => {
 			if (!isUnrecognisedFormat(errMsg(e))) throw e;
-			try { return await translateApi.import({ text, collectionName: body.collectionName, collectionKey: body.collectionKey }); } catch { throw e; }
+			try {
+				return await translateApi.import({ text, collectionName: body.collectionName, collectionKey: body.collectionKey });
+			} catch {
+				throw e;
+			}
 		});
 		refresh();
 		const parts = [`Imported ${plural(r.created, "item")}`];
@@ -128,9 +158,16 @@ export async function runImport(text: string, collectionName: string, collection
 		if (r.attachments) parts.push(plural(r.attachments, "attachment"));
 		const description = r.errors.length
 			? `${plural(r.errors.length, "problem")}: ${r.errors[0]}`
-			: r.collectionKey ? `Added to the collection "${collectionName}"` : undefined;
+			: r.collectionKey
+				? `Added to the collection "${collectionName}"`
+				: undefined;
 		if (r.errors.length && r.created === 0 && r.skipped === 0) toast("Nothing imported", { kind: "error", description });
-		else toast(parts.join(", "), { kind: r.errors.length ? "info" : "success", description, durationMs: r.errors.length ? 10_000 : 5000 });
+		else
+			toast(parts.join(", "), {
+				kind: r.errors.length ? "info" : "success",
+				description,
+				durationMs: r.errors.length ? 10_000 : 5000,
+			});
 		if (r.collectionKey && r.created > 0 && !collectionKey) setView({ kind: "collection", key: r.collectionKey });
 		if (r.created > 0 && autoAttachPdfs() && r.itemKeys?.length) {
 			findFullText(r.itemKeys);
@@ -148,14 +185,23 @@ export async function pickAndImport(): Promise<void> {
 	if (!paths) return;
 	for (const p of paths) {
 		let text: string;
-		try { text = await Bun.file(p).text(); } catch (e) { fail(`Could not read ${basename(p)}`, e); continue; }
+		try {
+			text = await Bun.file(p).text();
+		} catch (e) {
+			fail(`Could not read ${basename(p)}`, e);
+			continue;
+		}
 		await runImport(text, stripExt(basename(p)), undefined, dirname(p));
 	}
 }
 
 export async function importFromClipboard(): Promise<void> {
 	let text = "";
-	try { text = await readClipboardText(); } catch (e) { return void fail("Could not read the clipboard", e); }
+	try {
+		text = await readClipboardText();
+	} catch (e) {
+		return void fail("Could not read the clipboard", e);
+	}
 	if (!text.trim()) return void toast("The clipboard is empty", { kind: "info" });
 	await runImport(text, `Clipboard import ${new Date().toISOString().slice(0, 10)}`);
 }
@@ -171,7 +217,9 @@ export async function importFromMendeley(path: string): Promise<boolean> {
 		if (r.collections) parts.push(plural(r.collections, "collection"));
 		if (r.attachments) parts.push(plural(r.attachments, "attachment"));
 		if (r.missingFiles) parts.push(`${plural(r.missingFiles, "file")} not found on disk`);
-		const description = r.errors.length ? `${plural(r.errors.length, "problem")}: ${r.errors[0]}` : "Added to the collection \"Mendeley\"";
+		const description = r.errors.length
+			? `${plural(r.errors.length, "problem")}: ${r.errors[0]}`
+			: 'Added to the collection "Mendeley"';
 		toast(parts.join(", "), { kind: r.errors.length ? "info" : "success", description, durationMs: r.errors.length ? 10_000 : 6000 });
 		if (r.collectionKey) setView({ kind: "collection", key: r.collectionKey });
 		return true;

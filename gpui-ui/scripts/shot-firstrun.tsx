@@ -17,9 +17,20 @@ import type { FirstRunApi } from "../src/firstrun/FirstRun";
 mkdirSync(outDir, { recursive: true });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const FOUND = { dir: "C:/Users/example/Zotero", hasDatabase: true, readable: true, itemCount: 12419, collectionCount: 310, attachmentCount: 9882 };
+const FOUND = {
+	dir: "C:/Users/example/Zotero",
+	hasDatabase: true,
+	readable: true,
+	itemCount: 12419,
+	collectionCount: 310,
+	attachmentCount: 9882,
+};
 
-async function shoot(name: string, api: Partial<FirstRunApi>, then?: (h: { click: (label: string) => Promise<void>; settle: () => Promise<void> }) => Promise<void>) {
+async function shoot(
+	name: string,
+	api: Partial<FirstRunApi>,
+	then?: (h: { click: (label: string) => Promise<void>; settle: () => Promise<void> }) => Promise<void>,
+) {
 	const t = createTestRoot({ width: 1400, height: 900 });
 	setThemePrefs({ mode });
 	const m = applyAppearance();
@@ -37,7 +48,11 @@ async function shoot(name: string, api: Partial<FirstRunApi>, then?: (h: { click
 	};
 	t.render(() => <FirstRun api={full} mode={m} />);
 	const settle = async () => {
-		for (let i = 0; i < 4; i++) { t.renderer.flush(); t.renderer.dispatchNativeEvents(); await sleep(150); }
+		for (let i = 0; i < 4; i++) {
+			t.renderer.flush();
+			t.renderer.dispatchNativeEvents();
+			await sleep(150);
+		}
 		t.renderer.flush();
 	};
 	const click = async (label: string) => {
@@ -57,11 +72,35 @@ async function shoot(name: string, api: Partial<FirstRunApi>, then?: (h: { click
 }
 
 await shoot("choose", {});
-await shoot("no-zotero", { detectZotero: async () => null, notice: "no library was found at D:/Backups/zotero-next/library.sqlite. Choose a library below; the missing file is left alone." });
-await shoot("importing", {
-	importFromZotero: (_dir, onProgress) => { onProgress({ phase: "items", done: 5200, total: 12419 }); return new Promise(() => {}); },
-}, async (h) => { await h.click("Import from Zotero"); await sleep(300); await h.settle(); });
-await shoot("error", {
-	importFromZotero: async () => { throw new Error("Zotero has the database locked. Close Zotero to read it."); },
-}, async (h) => { await h.click("Import from Zotero"); await sleep(300); await h.settle(); });
+await shoot("no-zotero", {
+	detectZotero: async () => null,
+	notice: "no library was found at D:/Backups/zotero-next/library.sqlite. Choose a library below; the missing file is left alone.",
+});
+await shoot(
+	"importing",
+	{
+		importFromZotero: (_dir, onProgress) => {
+			onProgress({ phase: "items", done: 5200, total: 12419 });
+			return new Promise(() => {});
+		},
+	},
+	async (h) => {
+		await h.click("Import from Zotero");
+		await sleep(300);
+		await h.settle();
+	},
+);
+await shoot(
+	"error",
+	{
+		importFromZotero: async () => {
+			throw new Error("Zotero has the database locked. Close Zotero to read it.");
+		},
+	},
+	async (h) => {
+		await h.click("Import from Zotero");
+		await sleep(300);
+		await h.settle();
+	},
+);
 process.exit(0);

@@ -104,11 +104,22 @@ export interface FormatEntry {
 
 // translator label (lowercase) -> native id in core/src/io, for the formats zotero-next handles itself
 const NATIVE_EXPORT: Record<string, string> = {
-	bibtex: "bibtex", biblatex: "biblatex", ris: "ris", "csl json": "csljson", csv: "csv", "zotero rdf": "rdf", mods: "mods",
+	bibtex: "bibtex",
+	biblatex: "biblatex",
+	ris: "ris",
+	"csl json": "csljson",
+	csv: "csv",
+	"zotero rdf": "rdf",
+	mods: "mods",
 };
 const NATIVE_IMPORT: Record<string, string> = {
-	bibtex: "bibtex", ris: "ris", "csl json": "csljson", "pubmed / medline (nbib)": "pubmed-nbib", "endnote xml": "endnote-xml",
-	"zotero rdf": "rdf", mods: "mods",
+	bibtex: "bibtex",
+	ris: "ris",
+	"csl json": "csljson",
+	"pubmed / medline (nbib)": "pubmed-nbib",
+	"endnote xml": "endnote-xml",
+	"zotero rdf": "rdf",
+	mods: "mods",
 };
 
 function formats(list: TranslatorInfo[], bit: number, nativeMap: Record<string, string>, extra: boolean): FormatEntry[] {
@@ -120,5 +131,7 @@ function formats(list: TranslatorInfo[], bit: number, nativeMap: Record<string, 
 }
 
 /** Export translators. By default the ones zotero-next already exports natively are left out. */
-export const exportFormats = (list: TranslatorInfo[], includeNative = false): FormatEntry[] => formats(list, TYPE_EXPORT, NATIVE_EXPORT, !includeNative);
-export const importFormats = (list: TranslatorInfo[], includeNative = false): FormatEntry[] => formats(list, TYPE_IMPORT, NATIVE_IMPORT, !includeNative);
+export const exportFormats = (list: TranslatorInfo[], includeNative = false): FormatEntry[] =>
+	formats(list, TYPE_EXPORT, NATIVE_EXPORT, !includeNative);
+export const importFormats = (list: TranslatorInfo[], includeNative = false): FormatEntry[] =>
+	formats(list, TYPE_IMPORT, NATIVE_IMPORT, !includeNative);

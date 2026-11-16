@@ -12,10 +12,17 @@ const PRIMARY_CREATOR = new Map<string, string>();
 // itemType -> (field -> base field), so a value stored in a type-specific field (caseName, codePages, format ...)
 // is found under the base field the CSL mapping is written in terms of
 const BASE_FIELDS = new Map<string, [string, string][]>();
-for (const t of raw.itemTypes as { itemType: string; fields: { field: string; baseField?: string }[]; creatorTypes: { creatorType: string; primary?: boolean }[] }[]) {
+for (const t of raw.itemTypes as {
+	itemType: string;
+	fields: { field: string; baseField?: string }[];
+	creatorTypes: { creatorType: string; primary?: boolean }[];
+}[]) {
 	const primary = t.creatorTypes.find((c) => c.primary)?.creatorType;
 	if (primary) PRIMARY_CREATOR.set(t.itemType, primary);
-	BASE_FIELDS.set(t.itemType, t.fields.filter((f) => f.baseField).map((f) => [f.field, f.baseField!]));
+	BASE_FIELDS.set(
+		t.itemType,
+		t.fields.filter((f) => f.baseField).map((f) => [f.field, f.baseField!]),
+	);
 }
 
 export const CSL_TYPE_MAP: Record<string, string> = {
@@ -63,57 +70,90 @@ export const CSL_TYPE_MAP: Record<string, string> = {
 // CSL text variable -> Zotero fields (first non-empty wins). Zotero base-field mappings are included explicitly
 // (bookTitle -> publicationTitle etc.) because the Web API JSON uses the item-type-specific field names.
 const TEXT_MAP: Record<string, string[]> = {
-	"title": ["title"],
+	title: ["title"],
 	"container-title": [
-		"publicationTitle", "reporter", "code", "bookTitle", "proceedingsTitle", "encyclopediaTitle",
-		"dictionaryTitle", "websiteTitle", "blogTitle", "forumTitle", "programTitle",
+		"publicationTitle",
+		"reporter",
+		"code",
+		"bookTitle",
+		"proceedingsTitle",
+		"encyclopediaTitle",
+		"dictionaryTitle",
+		"websiteTitle",
+		"blogTitle",
+		"forumTitle",
+		"programTitle",
 	],
 	"collection-title": ["seriesTitle", "series"],
 	"collection-number": ["seriesNumber"],
-	"publisher": ["publisher", "distributor", "institution", "university", "studio", "label", "company", "repository"],
+	publisher: ["publisher", "distributor", "institution", "university", "studio", "label", "company", "repository"],
 	"publisher-place": ["place"],
-	"authority": ["authority", "court", "legislativeBody", "issuingAuthority"],
-	"page": ["pages"],
-	"volume": ["volume", "codeNumber", "codeVolume", "reporterVolume"],
-	"issue": ["issue", "priorityNumbers"],
+	authority: ["authority", "court", "legislativeBody", "issuingAuthority"],
+	page: ["pages"],
+	volume: ["volume", "codeNumber", "codeVolume", "reporterVolume"],
+	issue: ["issue", "priorityNumbers"],
 	"number-of-volumes": ["numberOfVolumes"],
 	"number-of-pages": ["numPages"],
-	"edition": ["edition"],
-	"version": ["versionNumber"],
-	"section": ["section", "committee"],
-	"genre": ["type", "programmingLanguage", "reportType", "thesisType", "letterType", "manuscriptType", "mapType", "presentationType", "websiteType", "postType", "genre"],
-	"medium": ["medium", "system", "interviewMedium", "artworkMedium", "audioFileType"],
-	"archive": ["archive"],
-	"archive_location": ["archiveLocation"],
-	"event": ["meetingName", "conferenceName"],
+	edition: ["edition"],
+	version: ["versionNumber"],
+	section: ["section", "committee"],
+	genre: [
+		"type",
+		"programmingLanguage",
+		"reportType",
+		"thesisType",
+		"letterType",
+		"manuscriptType",
+		"mapType",
+		"presentationType",
+		"websiteType",
+		"postType",
+		"genre",
+	],
+	medium: ["medium", "system", "interviewMedium", "artworkMedium", "audioFileType"],
+	archive: ["archive"],
+	archive_location: ["archiveLocation"],
+	event: ["meetingName", "conferenceName"],
 	"event-title": ["conferenceName", "meetingName"],
 	"original-publisher": ["originalPublisher"],
 	"original-publisher-place": ["originalPlace"],
 	"part-number": ["partNumber"],
 	"part-title": ["partTitle"],
-	"source": ["libraryCatalog"],
-	"license": ["rights"],
+	source: ["libraryCatalog"],
+	license: ["rights"],
 	"citation-key": ["citationKey"],
-	"PMID": ["PMID"],
-	"PMCID": ["PMCID"],
-	"abstract": ["abstractNote"],
-	"URL": ["url"],
-	"DOI": ["DOI"],
-	"ISBN": ["ISBN"],
-	"ISSN": ["ISSN"],
+	PMID: ["PMID"],
+	PMCID: ["PMCID"],
+	abstract: ["abstractNote"],
+	URL: ["url"],
+	DOI: ["DOI"],
+	ISBN: ["ISBN"],
+	ISSN: ["ISSN"],
 	"call-number": ["callNumber", "applicationNumber"],
-	"note": ["extra"],
+	note: ["extra"],
 	// codeNumber is a statute's volume only (Zotero's schema: volume <- volume, codeNumber), never also its number
-	"number": ["number", "patentNumber", "reportNumber", "billNumber", "docketNumber", "documentNumber", "publicLawNumber", "episodeNumber", "archiveID", "identifier", "issueNumber"],
+	number: [
+		"number",
+		"patentNumber",
+		"reportNumber",
+		"billNumber",
+		"docketNumber",
+		"documentNumber",
+		"publicLawNumber",
+		"episodeNumber",
+		"archiveID",
+		"identifier",
+		"issueNumber",
+	],
 	"chapter-number": ["session"],
-	"references": ["history", "references"],
+	references: ["history", "references"],
 	"title-short": ["shortTitle"],
 	"container-title-short": ["journalAbbreviation"],
-	"status": ["status", "legalStatus"],
-	"language": ["language"],
-	"dimensions": ["artworkSize", "runningTime"],
-	"scale": ["scale"],
-	"jurisdiction": ["jurisdiction"],
+	status: ["status", "legalStatus"],
+	language: ["language"],
+	dimensions: ["artworkSize", "runningTime"],
+	scale: ["scale"],
+	jurisdiction: ["jurisdiction"],
 };
 
 /** CSL name variable for a creator type (Zotero's schema mapping; the item type's primary creator type is the author). */
@@ -134,27 +174,108 @@ const DATE_MAP: Record<string, string> = {
 
 // Variables a "Name: value" line in the Extra field may set (Zotero.Utilities.Internal.extractExtraFields + CSL spec).
 const EXTRA_TEXT_VARS = [
-	"abstract", "annote", "archive", "archive_location", "archive-place", "authority", "call-number", "chapter-number",
-	"citation-key", "citation-label", "collection-number", "collection-title", "container-title", "container-title-short",
-	"dimensions", "division", "DOI", "event", "event-title", "event-place", "genre", "ISBN", "ISSN", "issue", "jurisdiction",
-	"keyword", "language", "license", "locator", "medium", "names", "number", "number-of-pages", "number-of-volumes",
-	"original-publisher", "original-publisher-place", "original-title", "page", "page-first", "PMCID", "PMID", "publisher",
-	"publisher-place", "references", "reviewed-genre", "reviewed-title", "scale", "section", "source", "status", "title",
-	"title-short", "URL", "version", "volume", "volume-title", "year-suffix",
+	"abstract",
+	"annote",
+	"archive",
+	"archive_location",
+	"archive-place",
+	"authority",
+	"call-number",
+	"chapter-number",
+	"citation-key",
+	"citation-label",
+	"collection-number",
+	"collection-title",
+	"container-title",
+	"container-title-short",
+	"dimensions",
+	"division",
+	"DOI",
+	"event",
+	"event-title",
+	"event-place",
+	"genre",
+	"ISBN",
+	"ISSN",
+	"issue",
+	"jurisdiction",
+	"keyword",
+	"language",
+	"license",
+	"locator",
+	"medium",
+	"names",
+	"number",
+	"number-of-pages",
+	"number-of-volumes",
+	"original-publisher",
+	"original-publisher-place",
+	"original-title",
+	"page",
+	"page-first",
+	"PMCID",
+	"PMID",
+	"publisher",
+	"publisher-place",
+	"references",
+	"reviewed-genre",
+	"reviewed-title",
+	"scale",
+	"section",
+	"source",
+	"status",
+	"title",
+	"title-short",
+	"URL",
+	"version",
+	"volume",
+	"volume-title",
+	"year-suffix",
 ];
 const EXTRA_DATE_VARS = ["accessed", "available-date", "event-date", "issued", "original-date", "submitted"];
 const EXTRA_NAME_VARS = [
-	"author", "chair", "collection-editor", "compiler", "composer", "container-author", "contributor", "curator",
-	"director", "editor", "editorial-director", "executive-producer", "guest", "host", "illustrator", "interviewer",
-	"narrator", "organizer", "original-author", "performer", "producer", "recipient", "reviewed-author", "script-writer",
-	"series-creator", "translator",
+	"author",
+	"chair",
+	"collection-editor",
+	"compiler",
+	"composer",
+	"container-author",
+	"contributor",
+	"curator",
+	"director",
+	"editor",
+	"editorial-director",
+	"executive-producer",
+	"guest",
+	"host",
+	"illustrator",
+	"interviewer",
+	"narrator",
+	"organizer",
+	"original-author",
+	"performer",
+	"producer",
+	"recipient",
+	"reviewed-author",
+	"script-writer",
+	"series-creator",
+	"translator",
 ];
 const EXTRA_ALIASES: Record<string, string> = {
 	"original-container-title": "original-title", // not valid CSL; keep a sane target
-	"pmid": "PMID", "pmcid": "PMCID", "doi": "DOI", "isbn": "ISBN", "issn": "ISSN", "url": "URL",
+	pmid: "PMID",
+	pmcid: "PMCID",
+	doi: "DOI",
+	isbn: "ISBN",
+	issn: "ISSN",
+	url: "URL",
 };
 
-const canonVar = (k: string): string => k.trim().toLowerCase().replace(/[\s_]+/g, "-");
+const canonVar = (k: string): string =>
+	k
+		.trim()
+		.toLowerCase()
+		.replace(/[\s_]+/g, "-");
 const VAR_LOOKUP = new Map<string, { name: string; kind: "text" | "date" | "name" | "type" }>();
 for (const v of EXTRA_TEXT_VARS) VAR_LOOKUP.set(canonVar(v), { name: v, kind: "text" });
 for (const v of EXTRA_DATE_VARS) VAR_LOOKUP.set(canonVar(v), { name: v, kind: "date" });
@@ -164,18 +285,50 @@ VAR_LOOKUP.set("archive_location", { name: "archive_location", kind: "text" });
 VAR_LOOKUP.set("archive-location", { name: "archive_location", kind: "text" });
 VAR_LOOKUP.set("original-date", { name: "original-date", kind: "date" });
 
-export const CSL_TYPES = new Set(Object.values(CSL_TYPE_MAP).concat([
-	"article-journal", "article-magazine", "article-newspaper", "bill", "book", "broadcast", "chapter", "dataset", "entry",
-	"entry-dictionary", "entry-encyclopedia", "figure", "graphic", "hearing", "interview", "legal_case", "legislation",
-	"manuscript", "map", "motion_picture", "musical_score", "pamphlet", "paper-conference", "patent", "personal_communication",
-	"post", "post-weblog", "report", "review", "review-book", "song", "speech", "standard", "thesis", "treaty", "webpage",
-]));
+export const CSL_TYPES = new Set(
+	Object.values(CSL_TYPE_MAP).concat([
+		"article-journal",
+		"article-magazine",
+		"article-newspaper",
+		"bill",
+		"book",
+		"broadcast",
+		"chapter",
+		"dataset",
+		"entry",
+		"entry-dictionary",
+		"entry-encyclopedia",
+		"figure",
+		"graphic",
+		"hearing",
+		"interview",
+		"legal_case",
+		"legislation",
+		"manuscript",
+		"map",
+		"motion_picture",
+		"musical_score",
+		"pamphlet",
+		"paper-conference",
+		"patent",
+		"personal_communication",
+		"post",
+		"post-weblog",
+		"report",
+		"review",
+		"review-book",
+		"song",
+		"speech",
+		"standard",
+		"thesis",
+		"treaty",
+		"webpage",
+	]),
+);
 
 // ---------------------------------------------------------------- dates
 
-const MONTHS = [
-	"january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
-];
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 
 function monthNumber(s: string): number | null {
 	const t = s.toLowerCase().replace(/\.$/, "");
@@ -196,7 +349,9 @@ function parseSingleDate(s: string): number[] | null {
 	}
 	// Zotero multipart "2020-00-00 2020" / "2020-05-04 May 4, 2020": use the ISO prefix
 	if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2}) /))) {
-		const y = +m[1]!, mo = +m[2]!, d = +m[3]!;
+		const y = +m[1]!,
+			mo = +m[2]!,
+			d = +m[3]!;
 		return [y, ...(mo ? [mo] : []), ...(mo && d ? [d] : [])];
 	}
 	// "May 4 2020", "May 2020", "4 May 2020", "4th May 2020"
@@ -214,7 +369,8 @@ function parseSingleDate(s: string): number[] | null {
 	}
 	if ((m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/))) {
 		// ambiguous d/m/y vs m/d/y: Zotero defaults to the US reading unless the first number cannot be a month
-		const a = +m[1]!, b = +m[2]!;
+		const a = +m[1]!,
+			b = +m[2]!;
 		if (a > 12 && b <= 12) return [+m[3]!, b, a];
 		if (a <= 12 && b <= 31) return [+m[3]!, a, b];
 	}
@@ -235,7 +391,8 @@ export function toCslDate(raw: string): Record<string, unknown> | null {
 	// range "2019-2020", "May 3 - May 5, 2020", "2019/2020"
 	const parts = s.split(/\s+[-–—]\s+|(?<=\d)[–—](?=\d)/);
 	if (parts.length === 2) {
-		const a = parseSingleDate(parts[0]!), b = parseSingleDate(parts[1]!);
+		const a = parseSingleDate(parts[0]!),
+			b = parseSingleDate(parts[1]!);
 		if (a && b) return { "date-parts": [a, b] };
 	}
 	const years = s.match(/^(\d{4})\s*[-/–—]\s*(\d{4})$/);

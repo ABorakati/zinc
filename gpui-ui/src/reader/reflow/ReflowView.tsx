@@ -32,10 +32,7 @@ import { ensureFamily } from "../../fonts";
 import { fontFamilyOf, palette, type Palette, type ReadingSettings } from "./settings";
 import { makeChip, SettingsPanel } from "./SettingsPanel";
 
-export type LoadState =
-	| { phase: "loading"; pct: number }
-	| { phase: "error"; message: string }
-	| { phase: "ready"; doc: DocStructure };
+export type LoadState = { phase: "loading"; pct: number } | { phase: "error"; message: string } | { phase: "ready"; doc: DocStructure };
 
 export interface ReflowProps {
 	ctx: ReaderContext;
@@ -48,14 +45,30 @@ export interface ReflowProps {
 
 const MONO = "Cascadia Mono";
 const CARD_W = 380;
-const HOVER_OPEN_MS = 350, HOVER_HIDE_MS = 450;
+const HOVER_OPEN_MS = 350,
+	HOVER_HIDE_MS = 450;
 
 /** One <markdown> of the view and the structure blocks its text came from (the unit annotations are mapped through). */
-interface UnitSpec { key: string; html: string; blockIds: string[] }
+interface UnitSpec {
+	key: string;
+	html: string;
+	blockIds: string[];
+}
 /** GPUIX's getSelectionSpans() entry (the local fork's renderer method). */
-interface SelSpan { elementId: number; sub: number; text: string; start: number; end: number }
+interface SelSpan {
+	elementId: number;
+	sub: number;
+	text: string;
+	start: number;
+	end: number;
+}
 /** A card over the text: a citation's reference, a figure, where a bibliography entry is cited. */
-interface Card { key: string; rect: { x: number; y: number; width: number; height: number }; content: () => JSX.Element; pinned: boolean }
+interface Card {
+	key: string;
+	rect: { x: number; y: number; width: number; height: number };
+	content: () => JSX.Element;
+	pinned: boolean;
+}
 
 /** Where an annotation is: its page's rects, and the next page's for a highlight that runs on. */
 function whereOf(a: Annotation): PageRects[] {
@@ -71,11 +84,25 @@ const pad = (r: PdfRect, d: number): PdfRect => [r[0] - d, r[1] - d, r[2] + d, r
 function mdTheme(st: ReadingSettings, pal: Palette, scale = 1) {
 	const size = st.size * scale;
 	return {
-		appearance: (pal.dark ? "dark" : "light") as "dark" | "light", bg: pal.bg, border: pal.rule, text: pal.fg, textMuted: pal.muted, textFaint: pal.muted, textDim: pal.muted,
-		accent: pal.cite, link: pal.cite, fontSans: fontFamilyOf(st), fontMono: MONO, codeText: pal.fg, codeWash: pal.panel,
+		appearance: (pal.dark ? "dark" : "light") as "dark" | "light",
+		bg: pal.bg,
+		border: pal.rule,
+		text: pal.fg,
+		textMuted: pal.muted,
+		textFaint: pal.muted,
+		textDim: pal.muted,
+		accent: pal.cite,
+		link: pal.cite,
+		fontSans: fontFamilyOf(st),
+		fontMono: MONO,
+		codeText: pal.fg,
+		codeWash: pal.panel,
 		metrics: {
-			mdTextSize: size, mdLineHeight: Math.round(size * st.lineHeight * 10) / 10, mdBlockGap: Math.round(size * 0.55),
-			mdHeadingSizes: [size * 1.5, size * 1.3, size * 1.15, size * 1.05], mdHeadingLineHeights: [size * 1.9, size * 1.7, size * 1.55, size * 1.45],
+			mdTextSize: size,
+			mdLineHeight: Math.round(size * st.lineHeight * 10) / 10,
+			mdBlockGap: Math.round(size * 0.55),
+			mdHeadingSizes: [size * 1.5, size * 1.3, size * 1.15, size * 1.05],
+			mdHeadingLineHeights: [size * 1.9, size * 1.7, size * 1.55, size * 1.45],
 		},
 	};
 }
@@ -86,8 +113,14 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	const k = kit(p.ctx.mode);
 	const st = p.settings;
 	const pal = createMemo(() => palette(st()));
-	const items = createMemo<ReflowItem[]>(() => { const x = p.state(); return x.phase === "ready" ? buildItems(x.doc) : []; });
-	const blockById = createMemo(() => { const x = p.state(); return new Map<string, Block>(x.phase === "ready" ? x.doc.blocks.map((b) => [b.id, b]) : []); });
+	const items = createMemo<ReflowItem[]>(() => {
+		const x = p.state();
+		return x.phase === "ready" ? buildItems(x.doc) : [];
+	});
+	const blockById = createMemo(() => {
+		const x = p.state();
+		return new Map<string, Block>(x.phase === "ready" ? x.doc.blocks.map((b) => [b.id, b]) : []);
+	});
 	const toc = createMemo(() => tocEntries(items()));
 	const indexOf = createMemo(() => new Map(items().map((it, i) => [it.id, i])));
 
@@ -101,7 +134,9 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	const pointer = { x: 0, y: 0 };
 
 	// ---- scrolling / position
-	const scrollToIndex = (i: number, offset = 0) => { if (list) gpuix?.renderer.scrollToItem?.(list.id, i, offset); };
+	const scrollToIndex = (i: number, offset = 0) => {
+		if (list) gpuix?.renderer.scrollToItem?.(list.id, i, offset);
+	};
 	function goToIndex(i: number, remember = true) {
 		if (remember) setBack((b) => [...b.slice(-29), top()]);
 		scrollToIndex(i);
@@ -116,7 +151,11 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	function targetIndex(page: number, y?: number): number {
 		const map = blockById();
 		const its = items();
-		const i = bestTarget(its.map((it) => ({ blocks: it.blockIds.flatMap((id) => map.get(id) ?? []) })), page, y);
+		const i = bestTarget(
+			its.map((it) => ({ blocks: it.blockIds.flatMap((id) => map.get(id) ?? []) })),
+			page,
+			y,
+		);
 		return its.length ? (i >= 0 ? i : firstItemOnPage(its, page)) : -1;
 	}
 	function goTo(page: number, y?: number): boolean {
@@ -157,12 +196,33 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	let openTimer: ReturnType<typeof setTimeout> | undefined;
 	let hideTimer: ReturnType<typeof setTimeout> | undefined;
 	let inCard = false;
-	const cancelHide = () => { clearTimeout(hideTimer); hideTimer = undefined; };
-	const closeCard = () => { clearTimeout(openTimer); cancelHide(); inCard = false; setCard(null); };
-	const scheduleHide = (ms: number) => { cancelHide(); hideTimer = setTimeout(() => { if (!card()?.pinned && !inCard) setCard(null); }, ms); };
-	onCleanup(() => { clearTimeout(openTimer); cancelHide(); });
+	const cancelHide = () => {
+		clearTimeout(hideTimer);
+		hideTimer = undefined;
+	};
+	const closeCard = () => {
+		clearTimeout(openTimer);
+		cancelHide();
+		inCard = false;
+		setCard(null);
+	};
+	const scheduleHide = (ms: number) => {
+		cancelHide();
+		hideTimer = setTimeout(() => {
+			if (!card()?.pinned && !inCard) setCard(null);
+		}, ms);
+	};
+	onCleanup(() => {
+		clearTimeout(openTimer);
+		cancelHide();
+	});
 
-	interface CiteLink { kind: string; page: number; top?: number; text: string }
+	interface CiteLink {
+		kind: string;
+		page: number;
+		top?: number;
+		text: string;
+	}
 	const parseCite = (url: string): CiteLink | null => {
 		if (!url.startsWith("zn-cite:")) return null;
 		const [, kind, pageS, topS, textS] = url.split(":");
@@ -173,13 +233,26 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		// (the link text keeps the PDF's superscript digits: "⁷³–⁷⁶")
 		const nums = l.kind === "ref" ? parseCitationNumbers(l.text.normalize("NFKC")) : [];
 		if (nums.length) {
-			return () => <CiteContent s={s} k={k} spec={{ nums, groupText: l.text.normalize("NFKC"), dest: { page: l.page, top: l.top } }} jump={(pg, r) => { closeCard(); goTo(pg, r[3]); }} />;
+			return () => (
+				<CiteContent
+					s={s}
+					k={k}
+					spec={{ nums, groupText: l.text.normalize("NFKC"), dest: { page: l.page, top: l.top } }}
+					jump={(pg, r) => {
+						closeCard();
+						goTo(pg, r[3]);
+					}}
+				/>
+			);
 		}
 		if (l.kind === "fig" || l.kind === "other") {
 			const key = findFigureMentions(l.text)[0]?.key;
 			const items = s.figItems();
-			const it = (key ? findByKey(items, key) : undefined)
-				?? (l.kind === "fig" && l.top !== undefined ? items.find((f) => f.page === l.page && l.top! <= f.rect[3] + 12 && l.top! >= f.rect[1] - 12) : undefined);
+			const it =
+				(key ? findByKey(items, key) : undefined) ??
+				(l.kind === "fig" && l.top !== undefined
+					? items.find((f) => f.page === l.page && l.top! <= f.rect[3] + 12 && l.top! >= f.rect[1] - 12)
+					: undefined);
 			if (it) return () => <FigureCard s={s} item={it} />;
 		}
 		return null;
@@ -197,7 +270,9 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		if (card()?.key === key) return;
 		clearTimeout(openTimer);
 		const rect = rectOf(e);
-		openTimer = setTimeout(() => { if (!inCard) setCard({ key, rect, content, pinned: false }); }, HOVER_OPEN_MS);
+		openTimer = setTimeout(() => {
+			if (!inCard) setCard({ key, rect, content, pinned: false });
+		}, HOVER_OPEN_MS);
 	}
 	function onLinkLeave(e: EventPayload) {
 		if (!e.value) return;
@@ -211,23 +286,46 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 			const content = cardContent(l);
 			if (content) {
 				const at = card()?.rect ?? { x: pointer.x, y: pointer.y, width: 0, height: 0 };
-				setCard({ key: `${url}@pinned`, rect: card() ? at : { x: pointer.x - 4, y: pointer.y - 10, width: 8, height: 16 }, content, pinned: true });
+				setCard({
+					key: `${url}@pinned`,
+					rect: card() ? at : { x: pointer.x - 4, y: pointer.y - 10, width: 8, height: 16 },
+					content,
+					pinned: true,
+				});
 			} else if (Number.isFinite(l.page)) goTo(l.page, l.top);
 			return;
 		}
-		if (/^https?:/i.test(url)) { if (!p.ctx.openUrl?.(url)) void s.api.openUrl(url).catch(() => {}); }
+		if (/^https?:/i.test(url)) {
+			if (!p.ctx.openUrl?.(url)) void s.api.openUrl(url).catch(() => {});
+		}
 	}
 
 	/** Click on a bibliography entry: where the paper cites it (the reading-view counterpart of hovering an entry in the PDF). */
 	function showCitedBy(blockId: string, position: number) {
 		const n = markerOf(blockById().get(blockId)?.text ?? "") ?? position;
 		setCard({
-			key: `bib:${blockId}`, rect: { x: pointer.x - 4, y: pointer.y - 10, width: 8, height: 16 }, pinned: true,
+			key: `bib:${blockId}`,
+			rect: { x: pointer.x - 4, y: pointer.y - 10, width: 8, height: 16 },
+			pinned: true,
 			content: () => {
 				const [sites] = createResource(() => s.citeIndex().then((m) => m.get(n) ?? []));
 				return (
-					<Show when={sites()} fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>Looking for the citations...</text>}>
-						{(ss) => <CitedByCard s={s} k={k} n={n} sites={ss()} onJump={(site) => { closeCard(); goTo(site.page, site.rect[3]); }} />}
+					<Show
+						when={sites()}
+						fallback={<text style={k.tx("text-[12px] text-muted-foreground")}>Looking for the citations...</text>}
+					>
+						{(ss) => (
+							<CitedByCard
+								s={s}
+								k={k}
+								n={n}
+								sites={ss()}
+								onJump={(site) => {
+									closeCard();
+									goTo(site.page, site.rect[3]);
+								}}
+							/>
+						)}
 					</Show>
 				);
 			},
@@ -239,17 +337,37 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		return (
 			<anchored position={{ x: pos().x, y: pos().y }} anchor={pos().anchor} fit="snap" priority={4000}>
 				<div
-					onMouseEnter={() => { inCard = true; cancelHide(); }}
-					onMouseLeave={() => { inCard = false; if (!card()?.pinned) scheduleHide(600); }}
+					onMouseEnter={() => {
+						inCard = true;
+						cancelHide();
+					}}
+					onMouseLeave={() => {
+						inCard = false;
+						if (!card()?.pinned) scheduleHide(600);
+					}}
 					onMouseDownOutside={closeCard}
 					style={{
-						...k.t("flex flex-col rounded-lg border bg-popover"), width: CARD_W, padding: 12, borderColor: k.tok("border"),
+						...k.t("flex flex-col rounded-lg border bg-popover"),
+						width: CARD_W,
+						padding: 12,
+						borderColor: k.tok("border"),
 						boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" }],
 					}}
 				>
 					<EscapeCloses close={closeCard} />
 					<Show when={c.pinned}>
-						<div onClick={closeCard} style={{ position: "absolute", right: 6, top: 6, display: "flex", cursor: "pointer", padding: 2, backgroundColor: "rgba(128, 128, 128, 0.02)" }}>
+						<div
+							onClick={closeCard}
+							style={{
+								position: "absolute",
+								right: 6,
+								top: 6,
+								display: "flex",
+								cursor: "pointer",
+								padding: 2,
+								backgroundColor: "rgba(128, 128, 128, 0.02)",
+							}}
+						>
 							<Icon name="x" size={14} color={k.tok("muted-foreground")} />
 						</div>
 					</Show>
@@ -260,13 +378,26 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	};
 
 	/** ZN_REFLOW_PROBE=1: state for the headless probe (scripts/shot-reflow-annot.tsx) */
-	const probe = process.env.ZN_REFLOW_PROBE === "1"
-		? ((globalThis as Record<string, unknown>).__znReflow = {
-			card, lastLink: null as null | { url: string; x: number; y: number; width: number; height: number }, selPop: () => selPop(),
-			top, flash, backLength: () => back().length, targetIndex, itemCount: () => items().length, goBack, goToIndex,
-			family: () => family(), size: () => st().size, theme: () => st().theme, items, toc,
-		}) as { lastLink: unknown; card: typeof card; selPop: () => unknown }
-		: null;
+	const probe =
+		process.env.ZN_REFLOW_PROBE === "1"
+			? (((globalThis as Record<string, unknown>).__znReflow = {
+					card,
+					lastLink: null as null | { url: string; x: number; y: number; width: number; height: number },
+					selPop: () => selPop(),
+					top,
+					flash,
+					backLength: () => back().length,
+					targetIndex,
+					itemCount: () => items().length,
+					goBack,
+					goToIndex,
+					family: () => family(),
+					size: () => st().size,
+					theme: () => st().theme,
+					items,
+					toc,
+				}) as { lastLink: unknown; card: typeof card; selPop: () => unknown })
+			: null;
 
 	// ---- annotations: the document's, drawn in the text; new ones from a selection here (see anchor.ts)
 	const ann = annotationsFor(p.ctx);
@@ -281,7 +412,10 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				const pages = new Map<number, Awaited<ReturnType<typeof s.pageText>>>();
 				for (const pg of new Set(blocks.map((b) => b.page))) pages.set(pg, await s.pageText(pg));
 				return buildUnit(htmlText(u.html), blocks, pages);
-			})().catch((e) => { console.warn("[reflow] text mapping failed:", (e as Error).message); return null; });
+			})().catch((e) => {
+				console.warn("[reflow] text mapping failed:", (e as Error).message);
+				return null;
+			});
 			units.set(u.key, pr);
 		}
 		return pr;
@@ -289,19 +423,25 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	/** painted <markdown> element id -> its unit, for the selection */
 	// (the host element, not its id: a ref runs before the element is mounted, when its id is still 0)
 	const mdEls = new Set<{ el: { id: number }; u: UnitSpec }>();
-	const unitByEl = { get: (id: number) => [...mdEls].find((x) => x.el.id === id)?.u, has: (id: number) => [...mdEls].some((x) => x.el.id === id) };
+	const unitByEl = {
+		get: (id: number) => [...mdEls].find((x) => x.el.id === id)?.u,
+		has: (id: number) => [...mdEls].some((x) => x.el.id === id),
+	};
 	const blocksOf = (ids: string[]) => ids.flatMap((id) => blockById().get(id) ?? []);
-	const markColor = (a: Annotation) => (a.type === "underline" ? withAlpha(a.color, 0.95) : withAlpha(a.color, ann.ui.selectedId() === a.id ? 0.6 : 0.4));
+	const markColor = (a: Annotation) =>
+		a.type === "underline" ? withAlpha(a.color, 0.95) : withAlpha(a.color, ann.ui.selectedId() === a.id ? 0.6 : 0.4);
 
 	/** Sticky notes, each in the margin of the item nearest to it (same page, overlapping its lines, else the closest one there). */
 	const notesByItem = createMemo(() => {
 		const out = new Map<string, Annotation[]>();
-		const its = items(), map = blockById();
+		const its = items(),
+			map = blockById();
 		for (const a of ann.store.list()) {
 			if (a.type !== "note") continue;
 			const r = a.position.rects?.[0];
 			if (!r) continue;
-			let best: string | null = null, bestD = Infinity;
+			let best: string | null = null,
+				bestD = Infinity;
 			for (const it of its) {
 				for (const id of it.blockIds) {
 					const b = map.get(id);
@@ -310,7 +450,10 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 						const dy = r[3] < br[1] ? br[1] - r[3] : r[1] > br[3] ? r[1] - br[3] : 0;
 						const dx = r[2] < br[0] ? br[0] - r[2] : r[0] > br[2] ? r[0] - br[2] : 0;
 						const d = dy * 3 + dx;
-						if (d < bestD) { bestD = d; best = it.id; }
+						if (d < bestD) {
+							bestD = d;
+							best = it.id;
+						}
 					}
 				}
 			}
@@ -323,20 +466,26 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 		p.ctx.setSidebar?.(true, "annotations");
 	};
 	// the annotations panel's "jump" scrolls this view while it is shown
-	onCleanup(ann.act.setJumpOverride((a) => {
-		const r = a.position.rects?.[0];
-		return goTo(a.position.pageIndex, r ? r[3] : undefined);
-	}));
+	onCleanup(
+		ann.act.setJumpOverride((a) => {
+			const r = a.position.rects?.[0];
+			return goTo(a.position.pageIndex, r ? r[3] : undefined);
+		}),
+	);
 
 	// ---- a selection in the text: the popup with the annotation actions
 	/** the popup and the selection it acts on (kept: pressing one of its buttons may already clear the native selection) */
 	const [selPop, setSelPop] = createSignal<{ x: number; y: number; spans: SelSpan[] } | null>(null);
-	let inPop = false, popPressed = false;
+	let inPop = false,
+		popPressed = false;
 	const [selMsg, setSelMsg] = createSignal<string | null>(null);
 	type SelHost = { getSelectionSpans?(): SelSpan[]; clearSelection?(): void };
 	const renderer = () => gpuix?.renderer as unknown as (SelHost & { native?: SelHost }) | undefined;
 	// (the headless test renderer wraps the native one and does not forward this method)
-	const spansNow = (): SelSpan[] => { const r = renderer(); return r?.getSelectionSpans?.() ?? r?.native?.getSelectionSpans?.() ?? []; };
+	const spansNow = (): SelSpan[] => {
+		const r = renderer();
+		return r?.getSelectionSpans?.() ?? r?.native?.getSelectionSpans?.() ?? [];
+	};
 	const selSpans = (): SelSpan[] => spansNow().filter((sp) => unitByEl.has(sp.elementId) && sp.end > sp.start);
 	// The popup opens when a selection in the text settles: on the mouse-up that ends the drag, or (should that release land on
 	// something that keeps it) once the selection has stopped changing with no button held. It closes when the selection goes.
@@ -344,7 +493,12 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 	const showSelPop = (at: { x: number; y: number }) => {
 		const spans = selSpans();
-		if (!pressed && spans.length) { setSelMsg(null); inPop = false; popPressed = false; setSelPop({ ...at, spans }); }
+		if (!pressed && spans.length) {
+			setSelMsg(null);
+			inPop = false;
+			popPressed = false;
+			setSelPop({ ...at, spans });
+		}
 	};
 	function onRootMouseUp(e: EventPayload) {
 		pressed = false;
@@ -355,10 +509,20 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	const unsubscribe = gpuix?.subscribeSelection?.((text) => {
 		clearTimeout(settleTimer);
 		// (a press on the popup's own buttons clears the native selection too: the popup keeps its snapshot then)
-		if (!text) { settleTimer = setTimeout(() => { if (!inPop && !popPressed) setSelPop(null); }, 120); return; }
-		settleTimer = setTimeout(() => { if (!selPop()) showSelPop({ x: pointer.x, y: pointer.y }); }, 350);
+		if (!text) {
+			settleTimer = setTimeout(() => {
+				if (!inPop && !popPressed) setSelPop(null);
+			}, 120);
+			return;
+		}
+		settleTimer = setTimeout(() => {
+			if (!selPop()) showSelPop({ x: pointer.x, y: pointer.y });
+		}, 350);
 	});
-	onCleanup(() => { clearTimeout(settleTimer); unsubscribe?.(); });
+	onCleanup(() => {
+		clearTimeout(settleTimer);
+		unsubscribe?.();
+	});
 	/** The selected glyphs, in text order, with the selected text. */
 	async function selectedGlyphs(): Promise<{ glyphs: Glyph[]; text: string; missed: boolean }> {
 		const glyphs: Glyph[] = [];
@@ -369,10 +533,16 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 			const spec = unitByEl.get(sp.elementId)!;
 			const u = await unitOf(spec);
 			const at = u ? locateRun(u, sp.text, from.get(spec.key) ?? 0) : -1;
-			if (!u || at < 0) { missed = true; continue; }
+			if (!u || at < 0) {
+				missed = true;
+				continue;
+			}
 			from.set(spec.key, at);
 			const g = glyphsOfRunRange(u, sp.text, at, sp.start, sp.end);
-			if (!g.length) { missed = true; continue; }
+			if (!g.length) {
+				missed = true;
+				continue;
+			}
 			glyphs.push(...g);
 			texts.push(sp.text.slice(sp.start, sp.end));
 		}
@@ -381,18 +551,26 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	async function annotateSelection(type: "highlight" | "underline" | "note", color: string, comment = false) {
 		ann.ui.setColor(color);
 		const { glyphs, text, missed } = await selectedGlyphs();
-		if (!glyphs.length) { setSelMsg("This text could not be found on the PDF page, so it cannot be annotated here."); return; }
+		if (!glyphs.length) {
+			setSelMsg("This text could not be found on the PDF page, so it cannot be annotated here.");
+			return;
+		}
 		setSelPop(null);
 		renderer()?.clearSelection?.();
 		const pages = byPage(glyphs);
 		if (type === "note") {
 			// a sticky note in the page margin beside the line the selection starts on (left of a left-hand column, right of a
 			// right-hand one, so it covers no text), its top level with that line
-			const first = pages[0]!, r = first.rects[0]!, size = p.ctx.pageSize(first.page);
-			const cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2;
-			const col = [...blockById().values()].find((b) => b.page === first.page && b.rects.some((br) => cx >= br[0] && cx <= br[2] && cy >= br[1] && cy <= br[3]))
+			const first = pages[0]!,
+				r = first.rects[0]!,
+				size = p.ctx.pageSize(first.page);
+			const cx = (r[0] + r[2]) / 2,
+				cy = (r[1] + r[3]) / 2;
+			const col = [...blockById().values()]
+				.find((b) => b.page === first.page && b.rects.some((br) => cx >= br[0] && cx <= br[2] && cy >= br[1] && cy <= br[3]))
 				?.rects.find((br) => cy >= br[1] - 2 && cy <= br[3] + 2);
-			const left = col ? col[0] : r[0], right = col ? col[2] : r[2];
+			const left = col ? col[0] : r[0],
+				right = col ? col[2] : r[2];
 			const x = (left + right) / 2 < size.w / 2 ? left - NOTE_SIZE / 2 - 3 : right + NOTE_SIZE / 2 + 3;
 			await ann.act.create("note", color, notePosition(first.page, x, r[3] - NOTE_SIZE / 2, size.w, size.h), { focusComment: true });
 			openAnnotations();
@@ -406,7 +584,16 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	}
 	const selectionPopup = (at: { x: number; y: number }): JSX.Element => {
 		const action = (label: string, icon: string, run: () => void): JSX.Element => (
-			<div onClick={run} style={{ ...k.t("flex flex-row items-center rounded-md px-2"), height: 28, gap: 5, cursor: "pointer", hover: k.t("bg-accent") }}>
+			<div
+				onClick={run}
+				style={{
+					...k.t("flex flex-row items-center rounded-md px-2"),
+					height: 28,
+					gap: 5,
+					cursor: "pointer",
+					hover: k.t("bg-accent"),
+				}}
+			>
 				<Icon name={icon} size={14} color={k.tok("foreground")} />
 				<text style={{ ...k.tx("text-xs text-foreground"), whiteSpace: "nowrap" }}>{label}</text>
 			</div>
@@ -415,15 +602,32 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 			<anchored position={{ x: at.x, y: at.y + 14 }} anchor="topLeft" fit="snap" priority={3900}>
 				<div
 					onMouseDownOutside={() => setSelPop(null)}
-					onMouseEnter={() => { inPop = true; }}
-					onMouseDown={() => { popPressed = true; }}
-					onMouseLeave={() => { inPop = false; }}
-					style={{ ...k.t("flex flex-col rounded-lg border bg-popover p-1"), gap: 4, borderColor: k.tok("border"), boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 12, spreadRadius: 0, color: "rgba(0,0,0,0.25)" }] }}
+					onMouseEnter={() => {
+						inPop = true;
+					}}
+					onMouseDown={() => {
+						popPressed = true;
+					}}
+					onMouseLeave={() => {
+						inPop = false;
+					}}
+					style={{
+						...k.t("flex flex-col rounded-lg border bg-popover p-1"),
+						gap: 4,
+						borderColor: k.tok("border"),
+						boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 12, spreadRadius: 0, color: "rgba(0,0,0,0.25)" }],
+					}}
 				>
 					<EscapeCloses close={() => setSelPop(null)} />
 					<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 4, userSelect: "none" }}>
 						<div style={{ marginLeft: 4, marginRight: 4 }}>
-							<Swatches k={k} colors={COLORS} value={ann.ui.color()} size={16} onPick={(c) => void annotateSelection("highlight", c)} />
+							<Swatches
+								k={k}
+								colors={COLORS}
+								value={ann.ui.color()}
+								size={16}
+								onPick={(c) => void annotateSelection("highlight", c)}
+							/>
 						</div>
 						<div style={{ width: 1, height: 18, backgroundColor: k.tok("border") }} />
 						{action("Highlight", "highlighter", () => void annotateSelection("highlight", ann.ui.color()))}
@@ -443,19 +647,43 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 
 	// ---- rendering of the items
 	/** the reading family; a bundled one (Literata) is registered before the text names it */
-	const family = () => { const f = fontFamilyOf(st()); ensureFamily(f); return f; };
-	const base = () => ({ color: pal().fg, fontFamily: family(), fontSize: st().size, lineHeight: Math.round(st().size * st().lineHeight * 10) / 10 });
+	const family = () => {
+		const f = fontFamilyOf(st());
+		ensureFamily(f);
+		return f;
+	};
+	const base = () => ({
+		color: pal().fg,
+		fontFamily: family(),
+		fontSize: st().size,
+		lineHeight: Math.round(st().size * st().lineHeight * 10) / 10,
+	});
 
 	function Row(r: { id: string; gap?: number; children: JSX.Element }): JSX.Element {
 		const notes = () => notesByItem().get(r.id) ?? [];
 		return (
 			<div
 				style={{
-					display: "flex", flexDirection: "row", justifyContent: "center", width: "100%", paddingBottom: Math.round(st().size * (r.gap ?? 0.8)),
+					display: "flex",
+					flexDirection: "row",
+					justifyContent: "center",
+					width: "100%",
+					paddingBottom: Math.round(st().size * (r.gap ?? 0.8)),
 					backgroundColor: flash() === r.id ? pal().panel : "transparent",
 				}}
 			>
-				<div style={{ display: "flex", flexDirection: "column", width: "100%", maxWidth: st().width, minWidth: 0, paddingLeft: 28, paddingRight: 28, position: "relative" }}>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						width: "100%",
+						maxWidth: st().width,
+						minWidth: 0,
+						paddingLeft: 28,
+						paddingRight: 28,
+						position: "relative",
+					}}
+				>
 					{r.children}
 					{/* the item's sticky notes, in its right margin: hover shows the comment, a click selects it in the annotations panel */}
 					<Show when={notes().length > 0}>
@@ -463,7 +691,17 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 							<For each={notes()}>
 								{(a) => (
 									<Tooltip label={(a.comment || "Note").slice(0, 120)}>
-										<div onClick={() => openAnnotations(a.id)} testId={`reflow-note-${a.id}`} style={{ display: "flex", cursor: "pointer", padding: 2, borderRadius: 4, backgroundColor: withAlpha(a.color, ann.ui.selectedId() === a.id ? 0.45 : 0.25) }}>
+										<div
+											onClick={() => openAnnotations(a.id)}
+											testId={`reflow-note-${a.id}`}
+											style={{
+												display: "flex",
+												cursor: "pointer",
+												padding: 2,
+												borderRadius: 4,
+												backgroundColor: withAlpha(a.color, ann.ui.selectedId() === a.id ? 0.45 : 0.25),
+											}}
+										>
 											<Icon name="message-square-text" size={14} color={pal().fg} />
 										</div>
 									</Tooltip>
@@ -480,11 +718,16 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	function Md(q: { u: UnitSpec; scale?: number }): JSX.Element {
 		const blocks = createMemo(() => blocksOf(q.u.blockIds));
 		const relevant = createMemo(() => ann.store.list().filter((a) => textual(a) && touches(blocks(), whereOf(a))));
-		const [unit] = createResource(() => (relevant().length ? q.u : false), (u) => unitOf(u));
+		const [unit] = createResource(
+			() => (relevant().length ? q.u : false),
+			(u) => unitOf(u),
+		);
 		const plain = htmlToMarkdown(q.u.html);
 		const marked = createMemo(() => {
-			const u = unit(), rel = relevant();
-			if (!u || !rel.length) return { source: plain, marks: [] as { start: number; end: number; color: string; kind: "highlight" | "underline" }[] };
+			const u = unit(),
+				rel = relevant();
+			if (!u || !rel.length)
+				return { source: plain, marks: [] as { start: number; end: number; color: string; kind: "highlight" | "underline" }[] };
 			const ranges: [number, number][] = [];
 			const specs: { color: string; kind: "highlight" | "underline" }[] = [];
 			for (const a of rel) {
@@ -494,13 +737,22 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				}
 			}
 			const m = htmlToMarkedMarkdown(q.u.html, ranges);
-			return { source: m.source, marks: m.marks.map(([start, end], i) => ({ start, end, ...specs[i]! })).filter((x) => x.end > x.start) };
+			return {
+				source: m.source,
+				marks: m.marks.map(([start, end], i) => ({ start, end, ...specs[i]! })).filter((x) => x.end > x.start),
+			};
 		});
 		let entry: { el: { id: number }; u: UnitSpec } | undefined;
-		onCleanup(() => { if (entry) mdEls.delete(entry); });
+		onCleanup(() => {
+			if (entry) mdEls.delete(entry);
+		});
 		return (
 			<markdown
-				ref={(el: { id: number }) => { if (entry) mdEls.delete(entry); entry = { el, u: q.u }; mdEls.add(entry); }}
+				ref={(el: { id: number }) => {
+					if (entry) mdEls.delete(entry);
+					entry = { el, u: q.u };
+					mdEls.add(entry);
+				}}
 				source={marked().source}
 				marks={marked().marks}
 				linkHover
@@ -526,7 +778,16 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 			<Switch>
 				<Match when={it.kind === "title"}>
 					<Row id={it.id} gap={1.2}>
-						<text style={{ ...base(), fontSize: Math.round(st().size * 1.75), lineHeight: Math.round(st().size * 2.2), fontWeight: 700 }}>{htmlToPlain((it as { html: string }).html)}</text>
+						<text
+							style={{
+								...base(),
+								fontSize: Math.round(st().size * 1.75),
+								lineHeight: Math.round(st().size * 2.2),
+								fontWeight: 700,
+							}}
+						>
+							{htmlToPlain((it as { html: string }).html)}
+						</text>
 					</Row>
 				</Match>
 				<Match when={it.kind === "heading"}>
@@ -534,9 +795,12 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 						<div style={{ height: Math.round(st().size * 0.9) }} />
 						<text
 							style={{
-								...base(), fontWeight: 650,
+								...base(),
+								fontWeight: 650,
 								fontSize: Math.round(st().size * ([1.45, 1.3, 1.15, 1.05, 1][(it as { level: number }).level - 1] ?? 1)),
-								lineHeight: Math.round(st().size * ([1.9, 1.7, 1.55, 1.45, 1.4][(it as { level: number }).level - 1] ?? 1.4)),
+								lineHeight: Math.round(
+									st().size * ([1.9, 1.7, 1.55, 1.45, 1.4][(it as { level: number }).level - 1] ?? 1.4),
+								),
 							}}
 						>
 							{htmlToPlain((it as { html: string }).html)}
@@ -548,13 +812,26 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				</Match>
 				<Match when={it.kind === "code"}>
 					<Row id={it.id}>
-						<div style={{ display: "flex", flexDirection: "column", padding: 10, borderRadius: 6, backgroundColor: pal().panel }}>
-							<text style={{ ...base(), fontFamily: MONO, fontSize: Math.round(st().size * 0.82), lineHeight: Math.round(st().size * 1.25) }}>{(it as { text: string }).text}</text>
+						<div
+							style={{ display: "flex", flexDirection: "column", padding: 10, borderRadius: 6, backgroundColor: pal().panel }}
+						>
+							<text
+								style={{
+									...base(),
+									fontFamily: MONO,
+									fontSize: Math.round(st().size * 0.82),
+									lineHeight: Math.round(st().size * 1.25),
+								}}
+							>
+								{(it as { text: string }).text}
+							</text>
 						</div>
 					</Row>
 				</Match>
 				<Match when={it.kind === "equation"}>
-					<Row id={it.id}><Region page={it.page} rect={(it as { rect: PdfRect }).rect} zoom={1.7} maxH={160} /></Row>
+					<Row id={it.id}>
+						<Region page={it.page} rect={(it as { rect: PdfRect }).rect} zoom={1.7} maxH={160} />
+					</Row>
 				</Match>
 				<Match when={it.kind === "figure"}>
 					<Row id={it.id} gap={1}>
@@ -568,14 +845,25 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				<Match when={it.kind === "notes"}>
 					<Row id={it.id} gap={1}>
 						<div style={{ height: 1, backgroundColor: pal().rule, marginBottom: 8 }} />
-						<For each={(it as { html: string[] }).html}>{(h, i) => <div style={{ paddingBottom: 4 }}>{md(`${it.id}:n${i()}`, h, it.blockIds.slice(i(), i() + 1), 0.82)}</div>}</For>
+						<For each={(it as { html: string[] }).html}>
+							{(h, i) => (
+								<div style={{ paddingBottom: 4 }}>{md(`${it.id}:n${i()}`, h, it.blockIds.slice(i(), i() + 1), 0.82)}</div>
+							)}
+						</For>
 					</Row>
 				</Match>
 				<Match when={it.kind === "refs"}>
 					<Row id={it.id} gap={1.2}>
 						<For each={(it as { entries: { id: string; html: string }[] }).entries}>
 							{(e, i) => (
-								<div onClick={() => { if (!selSpans().length) showCitedBy(e.id, i() + 1); }} style={{ paddingBottom: Math.round(st().size * 0.35), cursor: "pointer", backgroundColor: hitFill() }}>{md(e.id, e.html, [e.id], 0.84)}</div>
+								<div
+									onClick={() => {
+										if (!selSpans().length) showCitedBy(e.id, i() + 1);
+									}}
+									style={{ paddingBottom: Math.round(st().size * 0.35), cursor: "pointer", backgroundColor: hitFill() }}
+								>
+									{md(e.id, e.html, [e.id], 0.84)}
+								</div>
 							)}
 						</For>
 					</Row>
@@ -593,42 +881,97 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	let rootEl: { id: number } | undefined;
 	let tocBtn: { id: number } | undefined;
 	let tocClosedAt = 0;
-	const closeToc = () => { if (tocOpen()) { tocClosedAt = Date.now(); setTocOpen(false); } };
+	const closeToc = () => {
+		if (tocOpen()) {
+			tocClosedAt = Date.now();
+			setTocOpen(false);
+		}
+	};
 	/** the Contents dropdown (reader-next: a floating contents panel): anchored under the toolbar chip, scrolls, closes on pick / outside / Escape */
 	const tocPanel = (): JSX.Element => {
-		const rb = boundsOf(rootEl as never), bb = boundsOf(tocBtn as never);
+		const rb = boundsOf(rootEl as never),
+			bb = boundsOf(tocBtn as never);
 		const left = rb && bb ? Math.max(6, bb.x - rb.x) : 76;
 		const cur = createMemo(() => {
 			let c: string | null = null;
-			for (const e of toc()) { if ((indexOf().get(e.id) ?? 0) <= top()) c = e.id; else break; }
+			for (const e of toc()) {
+				if ((indexOf().get(e.id) ?? 0) <= top()) c = e.id;
+				else break;
+			}
 			return c;
 		});
 		return (
 			<div
 				tabIndex={0}
 				autoFocus
-				onKeyDown={(e) => { if (e.key === "escape") closeToc(); }}
+				onKeyDown={(e) => {
+					if (e.key === "escape") closeToc();
+				}}
 				onMouseDownOutside={closeToc}
 				style={{
-					position: "absolute", left, top: 40, width: 300, maxHeight: 440, display: "flex", flexDirection: "column", borderRadius: 8, borderWidth: 1,
-					borderColor: pal().rule, backgroundColor: pal().bg, overflow: "hidden", keyboardFocusDim: false,
+					position: "absolute",
+					left,
+					top: 40,
+					width: 300,
+					maxHeight: 440,
+					display: "flex",
+					flexDirection: "column",
+					borderRadius: 8,
+					borderWidth: 1,
+					borderColor: pal().rule,
+					backgroundColor: pal().bg,
+					overflow: "hidden",
+					keyboardFocusDim: false,
 					boxShadow: [{ offsetX: 0, offsetY: 10, blurRadius: 30, spreadRadius: 0, color: "rgba(0, 0, 0, 0.28)" }],
 				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", height: 30, paddingLeft: 14, flexShrink: 0 }}>
 					<text style={{ color: pal().muted, fontFamily: "Inter", fontSize: 11, fontWeight: 600 }}>CONTENTS</text>
 				</div>
-				<div style={{ display: "flex", flexDirection: "column", minHeight: 0, maxHeight: 400, overflowY: "scroll", scrollbarColor: "rgba(128, 128, 128, 0.4)", scrollbarWidth: 5, paddingBottom: 8 }}>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						minHeight: 0,
+						maxHeight: 400,
+						overflowY: "scroll",
+						scrollbarColor: "rgba(128, 128, 128, 0.4)",
+						scrollbarWidth: 5,
+						paddingBottom: 8,
+					}}
+				>
 					<For each={toc()}>
 						{(e) => (
 							<div
-								onClick={() => { const i = indexOf().get(e.id); closeToc(); if (i !== undefined) goToIndex(i); }}
+								onClick={() => {
+									const i = indexOf().get(e.id);
+									closeToc();
+									if (i !== undefined) goToIndex(i);
+								}}
 								style={{
-									display: "flex", paddingTop: 4, paddingBottom: 4, paddingRight: 10, paddingLeft: 14 + (e.level - 1) * 12, cursor: "pointer",
-									backgroundColor: cur() === e.id ? pal().panel : hitFill(), borderLeftWidth: 2, borderColor: cur() === e.id ? pal().cite : "transparent", hover: { backgroundColor: pal().panel },
+									display: "flex",
+									paddingTop: 4,
+									paddingBottom: 4,
+									paddingRight: 10,
+									paddingLeft: 14 + (e.level - 1) * 12,
+									cursor: "pointer",
+									backgroundColor: cur() === e.id ? pal().panel : hitFill(),
+									borderLeftWidth: 2,
+									borderColor: cur() === e.id ? pal().cite : "transparent",
+									hover: { backgroundColor: pal().panel },
 								}}
 							>
-								<text style={{ color: cur() === e.id ? pal().fg : pal().muted, fontFamily: "Inter", fontSize: 12, fontWeight: cur() === e.id ? 600 : 400, ...clampTx(2) }}>{e.text}</text>
+								<text
+									style={{
+										color: cur() === e.id ? pal().fg : pal().muted,
+										fontFamily: "Inter",
+										fontSize: 12,
+										fontWeight: cur() === e.id ? 600 : 400,
+										...clampTx(2),
+									}}
+								>
+									{e.text}
+								</text>
 							</div>
 						)}
 					</For>
@@ -638,15 +981,47 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 	};
 
 	const bar = (): JSX.Element => (
-		<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6, height: 42, paddingLeft: 10, paddingRight: 10, flexShrink: 0, borderBottomWidth: 1, borderColor: pal().rule }}>
+		<div
+			style={{
+				display: "flex",
+				flexDirection: "row",
+				alignItems: "center",
+				gap: 6,
+				height: 42,
+				paddingLeft: 10,
+				paddingRight: 10,
+				flexShrink: 0,
+				borderBottomWidth: 1,
+				borderColor: pal().rule,
+			}}
+		>
 			<Chip icon="arrow-left" label="PDF" onClick={() => p.ctx.setAltView(null)} />
-			<Chip icon="list" label="Contents" on={tocOpen()} refEl={(el) => { tocBtn = el; }} onClick={() => { if (tocOpen()) closeToc(); else if (Date.now() - tocClosedAt > 250) setTocOpen(true); }} disabled={toc().length === 0} />
-			<Show when={back().length > 0}><Chip icon="undo-2" label="Back" onClick={goBack} /></Show>
+			<Chip
+				icon="list"
+				label="Contents"
+				on={tocOpen()}
+				refEl={(el) => {
+					tocBtn = el;
+				}}
+				onClick={() => {
+					if (tocOpen()) closeToc();
+					else if (Date.now() - tocClosedAt > 250) setTocOpen(true);
+				}}
+				disabled={toc().length === 0}
+			/>
+			<Show when={back().length > 0}>
+				<Chip icon="undo-2" label="Back" onClick={goBack} />
+			</Show>
 			<div style={{ flexGrow: 1 }} />
 			<Show when={p.ctx.setSidebar}>
 				<Chip
-					icon="highlighter" label={ann.store.list().length ? `Annotations ${ann.store.list().length}` : "Annotations"} on={p.ctx.sidebarTab?.() === "annotations"}
-					onClick={() => { if (p.ctx.sidebarTab?.() === "annotations") p.ctx.setSidebar!(false); else openAnnotations(); }}
+					icon="highlighter"
+					label={ann.store.list().length ? `Annotations ${ann.store.list().length}` : "Annotations"}
+					on={p.ctx.sidebarTab?.() === "annotations"}
+					onClick={() => {
+						if (p.ctx.sidebarTab?.() === "annotations") p.ctx.setSidebar!(false);
+						else openAnnotations();
+					}}
 				/>
 			</Show>
 			<text style={{ color: pal().muted, fontFamily: "Inter", fontSize: 11.5, whiteSpace: "nowrap" }}>Reading view</text>
@@ -665,20 +1040,41 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 					<div style={{ width: Math.round((240 * (pct ?? 0)) / 100), height: 4, borderRadius: 2, backgroundColor: pal().fg }} />
 				</div>
 			</Show>
-			<Show when={retry}><Chip label="Retry" onClick={p.retry} /></Show>
+			<Show when={retry}>
+				<Chip label="Retry" onClick={p.retry} />
+			</Show>
 		</div>
 	);
 
 	return (
 		<div
-			ref={(el: { id: number }) => { rootEl = el; }}
-			onMouseMove={(e) => { pointer.x = e.x ?? pointer.x; pointer.y = e.y ?? pointer.y; if (e.pressedButton === undefined) pressed = false; }}
-			onMouseDown={() => { pressed = true; }}
+			ref={(el: { id: number }) => {
+				rootEl = el;
+			}}
+			onMouseMove={(e) => {
+				pointer.x = e.x ?? pointer.x;
+				pointer.y = e.y ?? pointer.y;
+				if (e.pressedButton === undefined) pressed = false;
+			}}
+			onMouseDown={() => {
+				pressed = true;
+			}}
 			onMouseUp={onRootMouseUp}
-			style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0, minWidth: 0, backgroundColor: pal().bg, position: "relative" }}
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				width: "100%",
+				height: "100%",
+				minHeight: 0,
+				minWidth: 0,
+				backgroundColor: pal().bg,
+				position: "relative",
+			}}
 		>
 			{bar()}
-			<Show when={settingsOpen()}><SettingsPanel pal={pal} settings={st} setSettings={p.setSettings} reset={p.resetSettings} Chip={Chip} /></Show>
+			<Show when={settingsOpen()}>
+				<SettingsPanel pal={pal} settings={st} setSettings={p.setSettings} reset={p.resetSettings} Chip={Chip} />
+			</Show>
 			<Switch>
 				<Match when={p.state().phase === "loading"}>
 					{message("loader-circle", "Analysing the document layout...", false, (p.state() as { pct: number }).pct)}
@@ -693,7 +1089,10 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 								ref={onListRef}
 								estimatedItemHeight={Math.round(st().size * 5)}
 								overdraw={600}
-								onVisibleRange={(e) => { setTop(Math.max(0, Math.floor(e.startIndex ?? 0))); if (card() && !card()!.pinned) closeCard(); }}
+								onVisibleRange={(e) => {
+									setTop(Math.max(0, Math.floor(e.startIndex ?? 0)));
+									if (card() && !card()!.pinned) closeCard();
+								}}
 								style={{ flexGrow: 1, minWidth: 0, height: "100%", paddingTop: 28, paddingBottom: 80 }}
 							>
 								<For each={items()}>{(it) => <ItemView it={it} />}</For>
@@ -703,8 +1102,12 @@ export function ReflowView(p: ReflowProps): JSX.Element {
 				</Match>
 			</Switch>
 			<Show when={tocOpen() && toc().length > 0}>{tocPanel()}</Show>
-			<Show when={card()} keyed>{(c) => cardView(c)}</Show>
-			<Show when={selPop()} keyed>{(at) => selectionPopup(at)}</Show>
+			<Show when={card()} keyed>
+				{(c) => cardView(c)}
+			</Show>
+			<Show when={selPop()} keyed>
+				{(at) => selectionPopup(at)}
+			</Show>
 		</div>
 	);
 }

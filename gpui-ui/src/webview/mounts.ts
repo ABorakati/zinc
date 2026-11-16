@@ -7,7 +7,10 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { packaged } from "../packaged";
 
-export interface Mount { prefix: string; dir: string }
+export interface Mount {
+	prefix: string;
+	dir: string;
+}
 
 const here = import.meta.dir; // gpui-ui/src/webview (the exe build rewrites this to the embedded repo-relative location, which is not on disk)
 const root = (): string => (packaged ? dirname(process.execPath) : resolve(here, "..", "..", ".."));

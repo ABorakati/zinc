@@ -3,29 +3,110 @@ import type { Creator, ZoteroItemData } from "../api-types";
 import { parseYear } from "../db";
 import { toCslDate } from "../cite/csl";
 import {
-	appendExtra, creatorFamilyGiven, creatorTypeFor, getBase, isSingleField, normalizeDate, parseName, setBase,
-	setFirst, textToNoteHtml, type ParsedItem,
+	appendExtra,
+	creatorFamilyGiven,
+	creatorTypeFor,
+	getBase,
+	isSingleField,
+	normalizeDate,
+	parseName,
+	setBase,
+	setFirst,
+	textToNoteHtml,
+	type ParsedItem,
 } from "./common";
 import type { ExportItem } from "./bibtex";
 
 const TY_TO_TYPE: Record<string, string> = {
-	JOUR: "journalArticle", JFULL: "journalArticle", EJOUR: "journalArticle", ABST: "journalArticle", INPR: "journalArticle",
-	BOOK: "book", EBOOK: "book", EDBOOK: "book", SER: "book", CHAP: "bookSection", ECHAP: "bookSection",
-	CONF: "conferencePaper", CPAPER: "conferencePaper", THES: "thesis", RPRT: "report", ELEC: "webpage", WEB: "webpage",
-	BLOG: "blogPost", MGZN: "magazineArticle", NEWS: "newspaperArticle", UNPB: "manuscript", MANSCPT: "manuscript",
-	PAT: "patent", COMP: "computerProgram", DATA: "dataset", ENCYC: "encyclopediaArticle", DICT: "dictionaryEntry",
-	SLIDE: "presentation", MAP: "map", CARTO: "map", MPCT: "film", VIDEO: "videoRecording", SOUND: "audioRecording",
-	MUSIC: "audioRecording", ART: "artwork", ICOMM: "email", PCOMM: "letter", STAT: "statute", BILL: "bill", CASE: "case",
-	HEAR: "hearing", PPRINT: "preprint", STAND: "standard", GEN: "document", GOVDOC: "report", AGGR: "document",
-	ADVS: "videoRecording", CTLG: "document", CLSWK: "document", DBASE: "dataset", EQUA: "document", FIGURE: "artwork",
-	GRANT: "document", MULTI: "document", PAMP: "document", UNBILL: "bill",
+	JOUR: "journalArticle",
+	JFULL: "journalArticle",
+	EJOUR: "journalArticle",
+	ABST: "journalArticle",
+	INPR: "journalArticle",
+	BOOK: "book",
+	EBOOK: "book",
+	EDBOOK: "book",
+	SER: "book",
+	CHAP: "bookSection",
+	ECHAP: "bookSection",
+	CONF: "conferencePaper",
+	CPAPER: "conferencePaper",
+	THES: "thesis",
+	RPRT: "report",
+	ELEC: "webpage",
+	WEB: "webpage",
+	BLOG: "blogPost",
+	MGZN: "magazineArticle",
+	NEWS: "newspaperArticle",
+	UNPB: "manuscript",
+	MANSCPT: "manuscript",
+	PAT: "patent",
+	COMP: "computerProgram",
+	DATA: "dataset",
+	ENCYC: "encyclopediaArticle",
+	DICT: "dictionaryEntry",
+	SLIDE: "presentation",
+	MAP: "map",
+	CARTO: "map",
+	MPCT: "film",
+	VIDEO: "videoRecording",
+	SOUND: "audioRecording",
+	MUSIC: "audioRecording",
+	ART: "artwork",
+	ICOMM: "email",
+	PCOMM: "letter",
+	STAT: "statute",
+	BILL: "bill",
+	CASE: "case",
+	HEAR: "hearing",
+	PPRINT: "preprint",
+	STAND: "standard",
+	GEN: "document",
+	GOVDOC: "report",
+	AGGR: "document",
+	ADVS: "videoRecording",
+	CTLG: "document",
+	CLSWK: "document",
+	DBASE: "dataset",
+	EQUA: "document",
+	FIGURE: "artwork",
+	GRANT: "document",
+	MULTI: "document",
+	PAMP: "document",
+	UNBILL: "bill",
 };
 const TYPE_TO_TY: Record<string, string> = {
-	journalArticle: "JOUR", book: "BOOK", bookSection: "CHAP", conferencePaper: "CPAPER", thesis: "THES", report: "RPRT",
-	webpage: "ELEC", blogPost: "BLOG", magazineArticle: "MGZN", newspaperArticle: "NEWS", manuscript: "UNPB", patent: "PAT",
-	computerProgram: "COMP", dataset: "DATA", encyclopediaArticle: "ENCYC", dictionaryEntry: "DICT", presentation: "SLIDE",
-	map: "MAP", film: "MPCT", videoRecording: "VIDEO", audioRecording: "SOUND", artwork: "ART", email: "ICOMM", letter: "PCOMM",
-	statute: "STAT", bill: "BILL", case: "CASE", hearing: "HEAR", preprint: "PPRINT", standard: "STAND", document: "GEN",
+	journalArticle: "JOUR",
+	book: "BOOK",
+	bookSection: "CHAP",
+	conferencePaper: "CPAPER",
+	thesis: "THES",
+	report: "RPRT",
+	webpage: "ELEC",
+	blogPost: "BLOG",
+	magazineArticle: "MGZN",
+	newspaperArticle: "NEWS",
+	manuscript: "UNPB",
+	patent: "PAT",
+	computerProgram: "COMP",
+	dataset: "DATA",
+	encyclopediaArticle: "ENCYC",
+	dictionaryEntry: "DICT",
+	presentation: "SLIDE",
+	map: "MAP",
+	film: "MPCT",
+	videoRecording: "VIDEO",
+	audioRecording: "SOUND",
+	artwork: "ART",
+	email: "ICOMM",
+	letter: "PCOMM",
+	statute: "STAT",
+	bill: "BILL",
+	case: "CASE",
+	hearing: "HEAR",
+	preprint: "PPRINT",
+	standard: "STAND",
+	document: "GEN",
 };
 
 // ================================================================ parsing
@@ -71,7 +152,11 @@ function risDate(s: string): { y: number; m?: number; d?: number } | null {
 	return m2 ? { y: +m2[1]!, m: m2[2] ? +m2[2] : undefined, d: m2[3] ? +m2[3] : undefined } : null;
 }
 const risIso = (d: { y: number; m?: number; d?: number }) =>
-	d.m ? (d.d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : `${d.y}-${String(d.m).padStart(2, "0")}`) : String(d.y);
+	d.m
+		? d.d
+			? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`
+			: `${d.y}-${String(d.m).padStart(2, "0")}`
+		: String(d.y);
 
 export function risRecordToItem(r: RisRecord): ParsedItem | null {
 	const itemType = TY_TO_TYPE[r.ty] ?? "document";
@@ -155,7 +240,7 @@ export function risRecordToItem(r: RisRecord): ParsedItem | null {
 	const py = risDate(first("PY"));
 	const da = risDate(first("DA"));
 	const y1 = risDate(first("Y1"));
-	const date = da && (!py || da.y === py.y) ? da : py ?? da ?? y1;
+	const date = da && (!py || da.y === py.y) ? da : (py ?? da ?? y1);
 	if (date) setBase(data, "date", risIso(date));
 	else if (first("PY", "DA", "Y1")) setBase(data, "date", first("PY", "DA", "Y1"));
 
@@ -199,7 +284,17 @@ export function risRecord(item: ExportItem): string {
 	const hasAuthor = creators.some((c) => c.creatorType === "author");
 	for (const c of creators) {
 		const isAuthor = hasAuthor ? c.creatorType === "author" : !NOT_AUTHOR.includes(c.creatorType);
-		const tag = isAuthor ? "AU" : c.creatorType === "editor" ? "ED" : c.creatorType === "seriesEditor" ? "A3" : c.creatorType === "translator" ? "A4" : c.creatorType === "bookAuthor" ? "A1" : null;
+		const tag = isAuthor
+			? "AU"
+			: c.creatorType === "editor"
+				? "ED"
+				: c.creatorType === "seriesEditor"
+					? "A3"
+					: c.creatorType === "translator"
+						? "A4"
+						: c.creatorType === "bookAuthor"
+							? "A1"
+							: null;
 		if (tag) put(tag, isSingleField(c) ? `${c.name},` : creatorFamilyGiven(c)); // trailing comma marks an institutional name
 	}
 	const container = getBase(d, "publicationTitle");

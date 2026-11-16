@@ -72,7 +72,8 @@ async function dispatch(req: Request, db: Database): Promise<Response> {
 	const route = url.pathname.slice("/api/maintenance/".length).replace(/\/$/, "");
 	const m = req.method;
 
-	if (m === "GET" && route === "trash") return Response.json(trashCounts(db, days(url.searchParams.get("olderThanDays")), libOf(db, url.searchParams.get("library"))));
+	if (m === "GET" && route === "trash")
+		return Response.json(trashCounts(db, days(url.searchParams.get("olderThanDays")), libOf(db, url.searchParams.get("library"))));
 	if (m === "GET" && route === "tags/automatic") return Response.json(automaticTags(db, libOf(db, url.searchParams.get("library"))));
 	if (m === "POST" && route === "empty-trash") {
 		const b = await body(req);
@@ -94,7 +95,8 @@ async function dispatch(req: Request, db: Database): Promise<Response> {
 		const b = await body(req);
 		return Response.json(deleteTags(db, b.tags, libOf(db, b.library)));
 	}
-	if (m === "POST" && route === "tags/delete-automatic") return Response.json(deleteAutomaticTags(db, libOf(db, (await body(req)).library)));
+	if (m === "POST" && route === "tags/delete-automatic")
+		return Response.json(deleteAutomaticTags(db, libOf(db, (await body(req)).library)));
 	if (m === "POST" && route === "rename-files") {
 		const keys = strings((await body(req)).attachmentKeys, "attachmentKeys");
 		return Response.json({ results: renameFiles(db, keys, ownStorage(db)) });

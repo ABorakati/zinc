@@ -20,7 +20,13 @@ const DEPENDENT = `<?xml version="1.0" encoding="utf-8"?>
 const INDEX = JSON.stringify([
 	{ title: "Vancouver", name: "vancouver", dependent: 0, categories: { format: "numeric" } },
 	{ title: "Vancouver Dependent", name: "vancouver-dep", dependent: 1, categories: { format: "numeric" } },
-	{ title: "American Psychological Association 7th edition", name: "apa", titleShort: "APA", dependent: 0, categories: { format: "author-date" } },
+	{
+		title: "American Psychological Association 7th edition",
+		name: "apa",
+		titleShort: "APA",
+		dependent: 0,
+		categories: { format: "author-date" },
+	},
 	{ title: "Journal of Obscure Studies", name: "obscure", dependent: 1 },
 ]);
 
@@ -70,7 +76,18 @@ beforeAll(() => {
 		date: "2019",
 		edition: "11",
 	});
-	insertItem(db, { key: "ATTACH01", itemType: "attachment", title: "x.pdf", parentItem: "JOURNAL1", linkMode: "imported_file", contentType: "application/pdf" }, "JOURNAL1");
+	insertItem(
+		db,
+		{
+			key: "ATTACH01",
+			itemType: "attachment",
+			title: "x.pdf",
+			parentItem: "JOURNAL1",
+			linkMode: "imported_file",
+			contentType: "application/pdf",
+		},
+		"JOURNAL1",
+	);
 	insertItem(db, { key: "TRASHED1", itemType: "book", title: "Gone", date: "2000" }, undefined, 1);
 });
 
@@ -139,7 +156,9 @@ describe("format", () => {
 		const svc = citeService(db, { dir, fetch: mockFetch });
 		const r = await svc.format(db, { keys: ["JOURNAL1", "BOOK0001"], style: "vancouver", format: ["text", "html"] });
 		expect(r.keys).toEqual(["JOURNAL1", "BOOK0001"]);
-		expect(r.text).toContain("1. Smith J, Jones AB. Enhanced recovery after surgery in liver transplantation. N Engl J Med. 2020 Mar 15;382(5):123–30. doi:10.1000/xyz123");
+		expect(r.text).toContain(
+			"1. Smith J, Jones AB. Enhanced recovery after surgery in liver transplantation. N Engl J Med. 2020 Mar 15;382(5):123–30. doi:10.1000/xyz123",
+		);
 		expect(r.text).toContain("2. Schwartz S. Principles of Surgery. 11th ed. New York: McGraw-Hill; 2019.");
 		expect(r.html).toContain('<div class="csl-bib-body">');
 		expect(r.html).toContain('<div class="csl-entry">');
@@ -148,7 +167,9 @@ describe("format", () => {
 	test("APA bibliography and citation", async () => {
 		const svc = citeService(db, { dir, fetch: mockFetch });
 		const r = await svc.format(db, { keys: ["JOURNAL1"], style: "apa", format: ["text", "html"] });
-		expect(r.text).toContain("Smith, J., & Jones, A. B. (2020). Enhanced recovery after surgery in liver transplantation. New England Journal of Medicine, 382(5), 123–130.");
+		expect(r.text).toContain(
+			"Smith, J., & Jones, A. B. (2020). Enhanced recovery after surgery in liver transplantation. New England Journal of Medicine, 382(5), 123–130.",
+		);
 		expect(r.text).toContain("https://doi.org/10.1000/xyz123");
 		expect(r.html).toContain("<i>New England Journal of Medicine</i>");
 		const c = await svc.format(db, { keys: ["JOURNAL1", "BOOK0001"], style: "apa", mode: "citation", format: "text" });
@@ -184,7 +205,11 @@ describe("HTTP routes", () => {
 		// the handler builds its service from the db, which uses the real fetch: install the mock service first
 		citeService(db, { dir, fetch: mockFetch });
 		const res = await handleCiteApi(
-			new Request("http://x" + path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }),
+			new Request("http://x" + path, {
+				method,
+				headers: { "Content-Type": "application/json" },
+				body: body === undefined ? undefined : JSON.stringify(body),
+			}),
 			db,
 		);
 		return { status: res!.status, json: (await res!.json()) as any };

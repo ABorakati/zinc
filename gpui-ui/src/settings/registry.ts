@@ -45,7 +45,10 @@ export const registerSection = (s: SectionDef) => setSections((l) => upsert(l, s
 export const registerSetting = (s: SettingDef) => setSettings((l) => upsert(l, s));
 export const registerSettings = (list: SettingDef[]) => list.forEach(registerSetting);
 /** Settings computed from reactive state (e.g. one row per registered keyboard shortcut). */
-export const registerSettingsProvider = (fn: () => SettingDef[]) => { providers.push(fn); setProviderRev((n) => n + 1); };
+export const registerSettingsProvider = (fn: () => SettingDef[]) => {
+	providers.push(fn);
+	setProviderRev((n) => n + 1);
+};
 
 /** All settings in registration order, then provided ones. Reactive. */
 export function allSettings(): SettingDef[] {
@@ -68,7 +71,9 @@ export const queryTokens = (q: string) => norm(q).split(/\s+/).filter(Boolean);
 /** True when every token occurs in the setting's label, description, keywords, group or section. */
 export function matches(s: SettingDef, sec: SectionDef | undefined, tokens: string[]): boolean {
 	if (!tokens.length) return true;
-	const hay = norm([s.label, s.description ?? "", s.group ?? "", ...(s.keywords ?? []), sec?.label ?? "", ...(sec?.keywords ?? [])].join(" \n "));
+	const hay = norm(
+		[s.label, s.description ?? "", s.group ?? "", ...(s.keywords ?? []), sec?.label ?? "", ...(sec?.keywords ?? [])].join(" \n "),
+	);
 	return tokens.every((t) => hay.includes(t));
 }
 
@@ -91,5 +96,7 @@ export const sectionCount = (sectionId: string): number => sectionRows(sectionId
 
 const openHooks: (() => void)[] = [];
 /** Run `fn` each time the Settings tab is shown (and once at start): server-backed settings re-read their state. */
-export const onSettingsShown = (fn: () => void) => { openHooks.push(fn); };
+export const onSettingsShown = (fn: () => void) => {
+	openHooks.push(fn);
+};
 export const settingsShown = () => openHooks.forEach((f) => f());

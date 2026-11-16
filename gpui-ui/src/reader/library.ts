@@ -20,7 +20,9 @@ import { PdfDoc } from "./pdf";
 export type FileFetcher = (attachmentKey: string, signal?: AbortSignal) => Promise<Response>;
 let fetcher: FileFetcher | undefined;
 /** Override how attachment files are fetched (the in-process direct-handler mode, tests). */
-export function setFileFetcher(f: FileFetcher | undefined): void { fetcher = f; }
+export function setFileFetcher(f: FileFetcher | undefined): void {
+	fetcher = f;
+}
 
 export class PdfLoadError extends Error {}
 
@@ -36,7 +38,11 @@ export async function fetchAttachment(key: string, signal?: AbortSignal): Promis
 	}
 	if (!res.ok) {
 		let msg = res.statusText || `HTTP ${res.status}`;
-		try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not JSON */ }
+		try {
+			msg = ((await res.json()) as { error?: string }).error ?? msg;
+		} catch {
+			/* not JSON */
+		}
 		throw new PdfLoadError(res.status === 404 ? `no file for this attachment (${msg})` : msg);
 	}
 	const type = res.headers.get("content-type") ?? "";
@@ -51,7 +57,11 @@ export async function openPdf(spec: string, signal?: AbortSignal): Promise<PdfDo
 	if (process.env.ZN_READER_SQLITE === "1") return PdfDoc.open(sqlitePath(key));
 	const bytes = await fetchAttachment(key, signal);
 	if (bytes.byteLength < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") throw new PdfLoadError("the file is not a PDF");
-	try { return PdfDoc.openBytes(bytes); } catch (e) { throw new PdfLoadError(`cannot open the PDF: ${(e as Error).message}`); }
+	try {
+		return PdfDoc.openBytes(bytes);
+	} catch (e) {
+		throw new PdfLoadError(`cannot open the PDF: ${(e as Error).message}`);
+	}
 }
 
 /** @deprecated kept so older callers still compile: openPdf() resolves "key:" specs through the core itself, so this is the identity. */
@@ -68,8 +78,11 @@ function sqlitePath(key: string): string {
 	try {
 		const row = db.query("SELECT path FROM attachments WHERE item_key = ?").get(key) as { path: string } | null;
 		if (!row?.path) throw new PdfLoadError(`no path for attachment ${key}`);
-		if (row.path.startsWith("attachments:")) throw new PdfLoadError(`attachment ${key} uses a relative path (${row.path}); the core must resolve it`);
+		if (row.path.startsWith("attachments:"))
+			throw new PdfLoadError(`attachment ${key} uses a relative path (${row.path}); the core must resolve it`);
 		if (!existsSync(row.path)) throw new PdfLoadError(`file missing: ${row.path}`);
 		return row.path;
-	} finally { db.close(); }
+	} finally {
+		db.close();
+	}
 }

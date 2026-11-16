@@ -10,7 +10,10 @@ declare const chrome: {
 };
 
 const hostName = resolveHostName(location.search, chrome.runtime.getManifest().zinc_test === true);
-const transport = nativeApiTransport(() => chrome.runtime.connectNative(hostName), () => chrome.runtime.lastError?.message);
+const transport = nativeApiTransport(
+	() => chrome.runtime.connectNative(hostName),
+	() => chrome.runtime.lastError?.message,
+);
 
 (globalThis as Record<string, unknown>).znApiFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
 	transport(new Request(new URL(typeof input === "string" || input instanceof URL ? input : input.url, location.href), init));

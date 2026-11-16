@@ -20,7 +20,8 @@ async function loadBackends(dataDir: string): Promise<{ reader: ZoteroReader; wr
 		// The copy is never open in Zotero, even while the real Zotero runs: skip the reader's and writer's own process check too.
 		const opts = { isRunning: async () => false };
 		if (typeof m.createZoteroBackends === "function") return await m.createZoteroBackends(dataDir, opts);
-		if (m.createZoteroReader && m.createZoteroWriter) return { reader: await m.createZoteroReader(dataDir, opts), writer: await m.createZoteroWriter(dataDir, opts) };
+		if (m.createZoteroReader && m.createZoteroWriter)
+			return { reader: await m.createZoteroReader(dataDir, opts), writer: await m.createZoteroWriter(dataDir, opts) };
 	} catch {
 		// not available yet
 	}
@@ -34,36 +35,40 @@ function copyDb(src: string, dst: string): void {
 const present = existsSync(join(ZOTERO, "zotero.sqlite")) && existsSync(LIBRARY);
 
 describe("real Zotero copy", () => {
-	test.skipIf(!present)("pull is a no-op-ish, push writes a new item into the copy", async () => {
-		const work = tempDir();
-		const zdir = join(work, "Zotero");
-		mkdirSync(join(zdir, "storage"), { recursive: true });
-		copyDb(join(ZOTERO, "zotero.sqlite"), join(zdir, "zotero.sqlite"));
-		const backends = await loadBackends(zdir);
-		if (!backends) {
-			console.log("zotero-db backends not available: integration test skipped");
-			return;
-		}
-		copyDb(LIBRARY, join(work, "library.sqlite"));
-		const db = repo.openDb(join(work, "library.sqlite"));
-		const svc = new SyncService(db, { dataDir: zdir, ...backends, isZoteroRunning: async () => false, pollMs: 0, watch: false });
-		await svc.pull();
-		let st = await svc.status();
-		expect(st.lastError).toBeUndefined();
-		// The copied library may hold the user's own queued edits (writing into Zotero is opt-in),
-		// so pending can be > 0 here; the push below must clear all of them.
+	test.skipIf(!present)(
+		"pull is a no-op-ish, push writes a new item into the copy",
+		async () => {
+			const work = tempDir();
+			const zdir = join(work, "Zotero");
+			mkdirSync(join(zdir, "storage"), { recursive: true });
+			copyDb(join(ZOTERO, "zotero.sqlite"), join(zdir, "zotero.sqlite"));
+			const backends = await loadBackends(zdir);
+			if (!backends) {
+				console.log("zotero-db backends not available: integration test skipped");
+				return;
+			}
+			copyDb(LIBRARY, join(work, "library.sqlite"));
+			const db = repo.openDb(join(work, "library.sqlite"));
+			const svc = new SyncService(db, { dataDir: zdir, ...backends, isZoteroRunning: async () => false, pollMs: 0, watch: false });
+			await svc.pull();
+			let st = await svc.status();
+			expect(st.lastError).toBeUndefined();
+			// The copied library may hold the user's own queued edits (writing into Zotero is opt-in),
+			// so pending can be > 0 here; the push below must clear all of them.
 
-		const key = repo.createItem(db, { itemType: "journalArticle", title: "zotero-next sync integration test" }).data.key;
-		await svc.setEnabled(true);
-		st = await svc.syncNow();
-		expect(st.lastError).toBeUndefined();
-		expect(st.pending).toBe(0);
-		db.close(true);
+			const key = repo.createItem(db, { itemType: "journalArticle", title: "zotero-next sync integration test" }).data.key;
+			await svc.setEnabled(true);
+			st = await svc.syncNow();
+			expect(st.lastError).toBeUndefined();
+			expect(st.pending).toBe(0);
+			db.close(true);
 
-		const z = new Database(join(zdir, "zotero.sqlite"), { readonly: true });
-		const row = z.query("SELECT itemID FROM items WHERE key = ?").get(key);
-		expect(row).not.toBeNull();
-		expect(z.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
-		z.close(true);
-	}, 60_000); // a write session backs up the ~180 MB library first (~5 s)
+			const z = new Database(join(zdir, "zotero.sqlite"), { readonly: true });
+			const row = z.query("SELECT itemID FROM items WHERE key = ?").get(key);
+			expect(row).not.toBeNull();
+			expect(z.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
+			z.close(true);
+		},
+		60_000,
+	); // a write session backs up the ~180 MB library first (~5 s)
 });

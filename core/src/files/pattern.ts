@@ -85,7 +85,11 @@ export function cleanSegment(s: string, max = 80): string {
 		.replace(/\s+/g, " ")
 		.trim()
 		.replace(/^[.\s]+|[.\s]+$/g, "");
-	if (out.length > max) out = out.slice(0, max).trim().replace(/[.\s]+$/, "");
+	if (out.length > max)
+		out = out
+			.slice(0, max)
+			.trim()
+			.replace(/[.\s]+$/, "");
 	if (RESERVED.test(out)) out = `_${out}`;
 	return out;
 }
@@ -94,46 +98,82 @@ const SEP = "\u0001"; // joins the folders of a collection path inside one subst
 
 function raw(t: string, m: PatternMeta, undef: string): string {
 	switch (t) {
-		case "a": return m.author;
-		case "b": return m.citekey ?? "";
-		case "I": return (m.authorInitials ?? "").toUpperCase();
+		case "a":
+			return m.author;
+		case "b":
+			return m.citekey ?? "";
+		case "I":
+			return (m.authorInitials ?? "").toUpperCase();
 		case "A":
-		case "F": return m.author ? m.author.charAt(0).toUpperCase() : "";
-		case "d": return m.editor ?? "";
-		case "D": return m.editor ? m.editor.charAt(0).toUpperCase() : "";
-		case "L": return m.editorLastF ?? "";
-		case "l": return m.editorInitials ?? "";
-		case "y": return m.year;
-		case "t": return m.title;
-		case "T": return m.itemType;
-		case "j": return m.publication;
-		case "p": return m.publisher ?? "";
-		case "w": return m.publication || (m.publisher ?? "");
-		case "s": return m.journalAbbrev ?? "";
-		case "v": return m.volume ?? "";
-		case "e": return m.issue ?? "";
-		case "f": return m.pages ?? "";
-		case "c": return (m.collectionPath ?? []).map((n) => cleanSegment(n)).filter(Boolean).join(SEP);
-		case "Y": return m.addedYear ?? "";
-		case "M": return m.addedMonth ?? "";
-		case "R": return m.addedDay ?? "";
-		case "m": return m.month ?? "";
-		case "r": return m.day ?? "";
-		case "U": return undef;
-		default: return "";
+		case "F":
+			return m.author ? m.author.charAt(0).toUpperCase() : "";
+		case "d":
+			return m.editor ?? "";
+		case "D":
+			return m.editor ? m.editor.charAt(0).toUpperCase() : "";
+		case "L":
+			return m.editorLastF ?? "";
+		case "l":
+			return m.editorInitials ?? "";
+		case "y":
+			return m.year;
+		case "t":
+			return m.title;
+		case "T":
+			return m.itemType;
+		case "j":
+			return m.publication;
+		case "p":
+			return m.publisher ?? "";
+		case "w":
+			return m.publication || (m.publisher ?? "");
+		case "s":
+			return m.journalAbbrev ?? "";
+		case "v":
+			return m.volume ?? "";
+		case "e":
+			return m.issue ?? "";
+		case "f":
+			return m.pages ?? "";
+		case "c":
+			return (m.collectionPath ?? [])
+				.map((n) => cleanSegment(n))
+				.filter(Boolean)
+				.join(SEP);
+		case "Y":
+			return m.addedYear ?? "";
+		case "M":
+			return m.addedMonth ?? "";
+		case "R":
+			return m.addedDay ?? "";
+		case "m":
+			return m.month ?? "";
+		case "r":
+			return m.day ?? "";
+		case "U":
+			return undef;
+		default:
+			return "";
 	}
 }
 
 /** What an empty %a, %y ... used to give before the wildcard language grew (kept so existing folders stay stable). */
 function legacyFallback(t: string, m: PatternMeta): string {
 	switch (t) {
-		case "a": return "Unknown author";
-		case "y": return "undated"; // not "n.d.": Windows folder names cannot end with a dot
-		case "t": return "Untitled";
-		case "j": return "No publication";
-		case "T": return m.itemType || "item";
-		case "F": return "?";
-		default: return "";
+		case "a":
+			return "Unknown author";
+		case "y":
+			return "undated"; // not "n.d.": Windows folder names cannot end with a dot
+		case "t":
+			return "Untitled";
+		case "j":
+			return "No publication";
+		case "T":
+			return m.itemType || "item";
+		case "F":
+			return "?";
+		default:
+			return "";
 	}
 }
 
@@ -213,17 +253,27 @@ export function monthDayOf(date: unknown): { month: string; day: string } {
 	return { month: "", day: "" };
 }
 
-interface Creator { creatorType?: string; lastName?: string; name?: string; firstName?: string }
+interface Creator {
+	creatorType?: string;
+	lastName?: string;
+	name?: string;
+	firstName?: string;
+}
 
 function collectionPathOf(db: Database, itemKey: string, preferred?: string | null): string[] {
-	const rows = db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(itemKey) as { collection_key: string }[];
+	const rows = db.query("SELECT collection_key FROM collection_items WHERE item_key = ? ORDER BY collection_key").all(itemKey) as {
+		collection_key: string;
+	}[];
 	if (!rows.length) return [];
 	let start = rows[0]!.collection_key;
 	if (preferred && rows.some((r) => r.collection_key === preferred)) start = preferred;
 	const names: string[] = [];
 	let cur: string | null = start;
 	for (let i = 0; i < 10 && cur; i++) {
-		const c = db.query("SELECT name, parent_key FROM collections WHERE key = ?").get(cur) as { name: string; parent_key: string | null } | null;
+		const c = db.query("SELECT name, parent_key FROM collections WHERE key = ?").get(cur) as {
+			name: string;
+			parent_key: string | null;
+		} | null;
 		if (!c) break;
 		names.unshift(c.name);
 		cur = c.parent_key;
@@ -234,11 +284,22 @@ function collectionPathOf(db: Database, itemKey: string, preferred?: string | nu
 export function metaOfItem(db: Database, itemKey: string | null | undefined, opts: { collectionKey?: string | null } = {}): PatternMeta {
 	const blank: PatternMeta = { author: "", year: "", title: "", publication: "", itemType: "" };
 	if (!itemKey) return blank;
-	const row = db.query("SELECT item_type, title, year, publication, data, date_added FROM items WHERE key = ?").get(itemKey) as
-		| { item_type: string; title: string | null; year: number | null; publication: string | null; data: string; date_added: string | null }
-		| null;
+	const row = db.query("SELECT item_type, title, year, publication, data, date_added FROM items WHERE key = ?").get(itemKey) as {
+		item_type: string;
+		title: string | null;
+		year: number | null;
+		publication: string | null;
+		data: string;
+		date_added: string | null;
+	} | null;
 	if (!row) return blank;
-	const meta: PatternMeta = { ...blank, year: row.year ? String(row.year) : "", title: row.title ?? "", publication: row.publication ?? "", itemType: row.item_type };
+	const meta: PatternMeta = {
+		...blank,
+		year: row.year ? String(row.year) : "",
+		title: row.title ?? "",
+		publication: row.publication ?? "",
+		itemType: row.item_type,
+	};
 	let d: Record<string, unknown> = {};
 	try {
 		d = JSON.parse(row.data) as Record<string, unknown>;

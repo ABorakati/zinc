@@ -36,21 +36,40 @@ export function storageClient(send: (m: { t: "storage"; rid: number } & StorageO
 	const ask = (o: StorageOp) =>
 		new Promise<unknown>((ok, fail) => {
 			const rid = next++;
-			const timer = setTimeout(() => { waiting.delete(rid); fail(new Error("the extension did not answer a storage request")); }, 10_000);
-			waiting.set(rid, { ok: (v) => { clearTimeout(timer); ok(v); }, fail: (e) => { clearTimeout(timer); fail(e); } });
+			const timer = setTimeout(() => {
+				waiting.delete(rid);
+				fail(new Error("the extension did not answer a storage request"));
+			}, 10_000);
+			waiting.set(rid, {
+				ok: (v) => {
+					clearTimeout(timer);
+					ok(v);
+				},
+				fail: (e) => {
+					clearTimeout(timer);
+					fail(e);
+				},
+			});
 			send({ t: "storage", rid, ...o });
 		});
 	return {
 		area: {
-			async get(name) { return { [name]: await ask({ op: "get", name }) }; },
-			async set(items) { for (const [name, value] of Object.entries(items)) await ask({ op: "set", name, value }); },
-			async remove(name) { await ask({ op: "remove", name }); },
+			async get(name) {
+				return { [name]: await ask({ op: "get", name }) };
+			},
+			async set(items) {
+				for (const [name, value] of Object.entries(items)) await ask({ op: "set", name, value });
+			},
+			async remove(name) {
+				await ask({ op: "remove", name });
+			},
 		},
 		onReply(m) {
 			const w = waiting.get(m.rid);
 			if (!w) return;
 			waiting.delete(m.rid);
-			if (m.error) w.fail(new Error(m.error)); else w.ok(m.value);
+			if (m.error) w.fail(new Error(m.error));
+			else w.ok(m.value);
 		},
 	};
 }
@@ -60,7 +79,10 @@ interface ChromeLike {
 	runtime: { sendMessage(m: unknown): Promise<unknown> };
 }
 
-export async function answerStorage(chrome: ChromeLike, m: { rid: number } & StorageOp): Promise<{ t: "storage-res"; rid: number; value?: unknown; error?: string }> {
+export async function answerStorage(
+	chrome: ChromeLike,
+	m: { rid: number } & StorageOp,
+): Promise<{ t: "storage-res"; rid: number; value?: unknown; error?: string }> {
 	const rid = m.rid;
 	try {
 		if (!STORAGE_NAMES.includes(m.name)) throw new Error("storage name not allowed");
@@ -72,7 +94,8 @@ export async function answerStorage(chrome: ChromeLike, m: { rid: number } & Sto
 			else await area.remove(m.name);
 			return { t: "storage-res", rid };
 		}
-		const r = (await chrome.runtime.sendMessage({ zincStorage: { op: m.op, name: m.name, value: m.value } })) as { ok?: boolean; value?: unknown; error?: string } | undefined;
+		const r = (await chrome.runtime.sendMessage({ zincStorage: { op: m.op, name: m.name, value: m.value } })) as
+			{ ok?: boolean; value?: unknown; error?: string } | undefined;
 		if (!r?.ok) throw new Error(r?.error ?? "the extension's service worker did not handle zincStorage");
 		return { t: "storage-res", rid, value: r.value };
 	} catch (e) {

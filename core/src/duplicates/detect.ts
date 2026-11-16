@@ -153,13 +153,7 @@ export function titleTokenSet(normTitle: string): Set<string> {
  * - One normalised title contains the other (handles subtitles and truncated titles).
  * When `strict` is true (shared/supplement DOI with > 5 items), requires non-trivial length for substring containment.
  */
-export function titlesSimilar(
-	normA: string,
-	normB: string,
-	tokensA?: Set<string>,
-	tokensB?: Set<string>,
-	strict = false,
-): boolean {
+export function titlesSimilar(normA: string, normB: string, tokensA?: Set<string>, tokensB?: Set<string>, strict = false): boolean {
 	if (!normA || !normB) return false;
 	if (normA === normB) return true;
 	const shorterLen = Math.min(normA.length, normB.length);

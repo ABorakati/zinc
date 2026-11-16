@@ -7,7 +7,9 @@ import { citeApi, type CiteSettings } from "./client";
 import { dropText, formatRequest, planQuickCopy, type QuickCopyPlan } from "./logic";
 
 /** "" = format with the Quick Copy citation style; otherwise an export format id (BibTeX, RIS, CSL JSON…). */
-export const [quickExport, setQuickExport] = persisted<string>("features.cite.quickExport", "", (v) => (typeof v === "string" && (v === "" || EXPORT_FORMATS.some((f) => f.id === v)) ? v : undefined));
+export const [quickExport, setQuickExport] = persisted<string>("features.cite.quickExport", "", (v) =>
+	typeof v === "string" && (v === "" || EXPORT_FORMATS.some((f) => f.id === v)) ? v : undefined,
+);
 
 export interface QuickCopyContent {
 	plan: QuickCopyPlan;
@@ -32,6 +34,9 @@ export async function formatQuickCopy(keys: string[], plan: QuickCopyPlan): Prom
 }
 
 /** Plan and format in one go: `how.mode` for the explicit shortcuts, `how.shift` for a drag. */
-export async function quickCopyContent(keys: string[], how: { mode?: "bibliography" | "citation"; shift?: boolean } = {}): Promise<QuickCopyContent> {
+export async function quickCopyContent(
+	keys: string[],
+	how: { mode?: "bibliography" | "citation"; shift?: boolean } = {},
+): Promise<QuickCopyContent> {
 	return formatQuickCopy(keys, planQuickCopy(await quickCopySettings(), quickExport(), how));
 }

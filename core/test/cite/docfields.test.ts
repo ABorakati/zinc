@@ -29,7 +29,12 @@ describe("rtf <-> runs", () => {
 		expect(richToRuns("1 < 2")).toEqual([{ t: "1 < 2" }]);
 	});
 	test("runsToHtml escapes and nests", () => {
-		expect(runsToHtml([{ t: "a<b", i: 1 }, { t: "2", sup: 1 }])).toBe("<i>a&lt;b</i><sup>2</sup>");
+		expect(
+			runsToHtml([
+				{ t: "a<b", i: 1 },
+				{ t: "2", sup: 1 },
+			]),
+		).toBe("<i>a&lt;b</i><sup>2</sup>");
 	});
 });
 
@@ -48,7 +53,17 @@ describe("document data", () => {
 		expect(back.extraPrefs).toEqual({});
 	});
 	test("reads the JSON form (data version 4)", () => {
-		const j = JSON.stringify({ style: { styleID: "http://www.zotero.org/styles/apa", locale: "en-US", hasBibliography: true, bibliographyStyleHasBeenSet: false }, prefs: { fieldType: "Bookmark", noteType: 1, automaticJournalAbbreviations: true }, sessionID: "abc", dataVersion: 4 });
+		const j = JSON.stringify({
+			style: {
+				styleID: "http://www.zotero.org/styles/apa",
+				locale: "en-US",
+				hasBibliography: true,
+				bibliographyStyleHasBeenSet: false,
+			},
+			prefs: { fieldType: "Bookmark", noteType: 1, automaticJournalAbbreviations: true },
+			sessionID: "abc",
+			dataVersion: 4,
+		});
 		const p = parsePrefsXml(j)!;
 		expect(p.styleId).toBe("http://www.zotero.org/styles/apa");
 		expect(p.fieldType).toBe("Bookmark");
@@ -60,13 +75,21 @@ describe("document data", () => {
 
 describe("field codes", () => {
 	test("citation code round trip keeps unknown keys", () => {
-		const code = buildItemCode({ citationID: "abc12345", properties: { noteIndex: 0, custom: "see x", unsorted: true }, citationItems: [{ id: 1, uris: ["http://zotero.org/users/1/items/ABCD2345"] }] });
+		const code = buildItemCode({
+			citationID: "abc12345",
+			properties: { noteIndex: 0, custom: "see x", unsorted: true },
+			citationItems: [{ id: 1, uris: ["http://zotero.org/users/1/items/ABCD2345"] }],
+		});
 		const p = parseFieldCode(code);
 		expect(p?.kind).toBe("item");
 		if (p?.kind === "item") expect(p.data.properties.custom).toBe("see x");
 	});
 	test("bibliography code with omitted and custom", () => {
-		const code = buildBiblCode({ uncited: [], omitted: [["http://zotero.org/users/1/items/ABCD2345"]], custom: [[["http://zotero.org/users/1/items/EFGH2345"], "My text"]] });
+		const code = buildBiblCode({
+			uncited: [],
+			omitted: [["http://zotero.org/users/1/items/ABCD2345"]],
+			custom: [[["http://zotero.org/users/1/items/EFGH2345"], "My text"]],
+		});
 		const p = parseFieldCode(code);
 		expect(p?.kind).toBe("bibl");
 		if (p?.kind === "bibl") {
@@ -90,7 +113,9 @@ describe("merging citations", () => {
 
 	test("the same work at different pages keeps both locators", async () => {
 		const { mergeCitationData } = await import("../../src/cite/docfields");
-		const merged = mergeCitationData(cite("a", { locator: "5", label: "page" }) as never, [cite("b", { locator: "9", label: "page" }) as never]);
+		const merged = mergeCitationData(cite("a", { locator: "5", label: "page" }) as never, [
+			cite("b", { locator: "9", label: "page" }) as never,
+		]);
 		expect(merged.citationItems.map((i) => i.locator)).toEqual(["5", "9"]);
 	});
 

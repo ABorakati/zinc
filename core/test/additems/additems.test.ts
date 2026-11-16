@@ -37,7 +37,10 @@ const CROSSREF = {
 	message: {
 		type: "journal-article",
 		title: ["Outcomes after liver transplantation"],
-		author: [{ given: "Jane", family: "Smith" }, { given: "Raj", family: "Patel" }],
+		author: [
+			{ given: "Jane", family: "Smith" },
+			{ given: "Raj", family: "Patel" },
+		],
 		"container-title": ["BMJ"],
 		issued: { "date-parts": [[2023, 11, 2]] },
 		volume: "383",
@@ -58,9 +61,32 @@ const ARXIV_XML = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom
  All You Need</title><summary>The dominant sequence transduction models.</summary><author><name>Ashish Vaswani</name></author><author><name>Noam Shazeer</name></author>
 <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.CL" scheme="x"/></entry></feed>`;
 
-const OPENLIB = { "ISBN:9780134685991": { title: "Effective Java", authors: [{ name: "Joshua Bloch" }], publishers: [{ name: "Addison-Wesley" }], publish_date: "2018", number_of_pages: 412, publish_places: [{ name: "Boston" }] } };
+const OPENLIB = {
+	"ISBN:9780134685991": {
+		title: "Effective Java",
+		authors: [{ name: "Joshua Bloch" }],
+		publishers: [{ name: "Addison-Wesley" }],
+		publish_date: "2018",
+		number_of_pages: 412,
+		publish_places: [{ name: "Boston" }],
+	},
+};
 
-const EPMC = { resultList: { result: [{ title: "A PMC paper.", pmid: "111", pmcid: "PMC1234567", doi: "10.1000/pmc.1", authorList: { author: [{ firstName: "Ann", lastName: "Lee" }] }, journalInfo: { volume: "5", issue: "1", yearOfPublication: 2021, journal: { title: "Gut" } }, abstractText: "Abstract here" }] } };
+const EPMC = {
+	resultList: {
+		result: [
+			{
+				title: "A PMC paper.",
+				pmid: "111",
+				pmcid: "PMC1234567",
+				doi: "10.1000/pmc.1",
+				authorList: { author: [{ firstName: "Ann", lastName: "Lee" }] },
+				journalInfo: { volume: "5", issue: "1", yearOfPublication: 2021, journal: { title: "Gut" } },
+				abstractText: "Abstract here",
+			},
+		],
+	},
+};
 
 // Smallest useful PDF: one page of Helvetica text.
 function tinyPdf(lines: string[]): Uint8Array {
@@ -103,7 +129,22 @@ beforeEach(() => {
 		[/europepmc.*PMCID%3APMC1234567/, () => EPMC],
 		[/export\.arxiv\.org.*id_list=1706\.03762/, () => xml(ARXIV_XML)],
 		[/openlibrary\.org\/api\/books.*9780134685991/, () => OPENLIB],
-		[/googleapis\.com\/books.*isbn:9780306406157/, () => ({ items: [{ volumeInfo: { title: "Gb Book", subtitle: "Sub", authors: ["Zed Quill"], publisher: "P", publishedDate: "1999-01-01" } }] })],
+		[
+			/googleapis\.com\/books.*isbn:9780306406157/,
+			() => ({
+				items: [
+					{
+						volumeInfo: {
+							title: "Gb Book",
+							subtitle: "Sub",
+							authors: ["Zed Quill"],
+							publisher: "P",
+							publishedDate: "1999-01-01",
+						},
+					},
+				],
+			}),
+		],
 	];
 	mock();
 });
@@ -125,7 +166,9 @@ const post = async <T = any>(path: string, body: unknown, status = 200): Promise
 
 describe("identifier parsing", () => {
 	test("recognises DOI, PMID, PMCID, arXiv and ISBN in mixed input", () => {
-		const { ids, unknown } = parseIdentifiers("10.1136/BMJ-2023-078378, PMID: 31452104\nPMC1234567; arXiv:1706.03762v5\nISBN 978-0-13-468599-1 https://doi.org/10.1000/xyz\nblargh");
+		const { ids, unknown } = parseIdentifiers(
+			"10.1136/BMJ-2023-078378, PMID: 31452104\nPMC1234567; arXiv:1706.03762v5\nISBN 978-0-13-468599-1 https://doi.org/10.1000/xyz\nblargh",
+		);
 		expect(ids.map((i) => `${i.kind}:${i.id}`)).toEqual([
 			"doi:10.1136/bmj-2023-078378",
 			"pmid:31452104",
@@ -137,8 +180,16 @@ describe("identifier parsing", () => {
 		expect(unknown).toEqual(["blargh"]);
 	});
 	test("bare numbers, URLs and ISBN-10", () => {
-		const { ids } = parseIdentifiers("31452104\nhttps://pubmed.ncbi.nlm.nih.gov/123456/\nhttps://arxiv.org/abs/2101.01234v2\n0306406152\nhep-th/9901001");
-		expect(ids.map((i) => `${i.kind}:${i.id}`)).toEqual(["pmid:31452104", "pmid:123456", "arxiv:2101.01234", "isbn:9780306406157", "arxiv:hep-th/9901001"]);
+		const { ids } = parseIdentifiers(
+			"31452104\nhttps://pubmed.ncbi.nlm.nih.gov/123456/\nhttps://arxiv.org/abs/2101.01234v2\n0306406152\nhep-th/9901001",
+		);
+		expect(ids.map((i) => `${i.kind}:${i.id}`)).toEqual([
+			"pmid:31452104",
+			"pmid:123456",
+			"arxiv:2101.01234",
+			"isbn:9780306406157",
+			"arxiv:hep-th/9901001",
+		]);
 		expect(normalizeIsbn("0-306-40615-2")).toBe("9780306406157");
 		expect(normalizeIsbn("0-306-40615-3")).toBeNull();
 		expect(findArxivId("see arXiv:1706.03762v7 [cs.CL]")).toBe("1706.03762");
@@ -234,7 +285,10 @@ describe("attachments", () => {
 		expect(d.data.linkMode).toBe("imported_file");
 		expect(d.data.parentItem).toBe("PARENT01");
 		expect(d.data.filename).toBe("myfile.bin");
-		const row = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(d.data.key) as { path: string; link_mode: string };
+		const row = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(d.data.key) as {
+			path: string;
+			link_mode: string;
+		};
 		expect(row.path).toBe(join(dir, "storage", d.data.key, "myfile.bin"));
 		expect([...readFileSync(row.path)]).toEqual([...bytes]);
 	});
@@ -242,11 +296,18 @@ describe("attachments", () => {
 	test("standalone import goes into the collection; linked file keeps its path", async () => {
 		const local = join(dir, "paper.pdf");
 		writeFileSync(local, tinyPdf(["x"]));
-		const imp = await post<ItemDetail>("/api/add/file", { name: "paper.pdf", dataBase64: b64(tinyPdf(["x"])), collectionKey: "COLLAAA1" }, 201);
+		const imp = await post<ItemDetail>(
+			"/api/add/file",
+			{ name: "paper.pdf", dataBase64: b64(tinyPdf(["x"])), collectionKey: "COLLAAA1" },
+			201,
+		);
 		expect(imp.collections).toEqual(["COLLAAA1"]);
 		expect(imp.data.contentType).toBe("application/pdf");
 		const lnk = await post<ItemDetail>("/api/add/file", { mode: "linked_file", path: local, collectionKey: "COLLAAA1" }, 201);
-		const row = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(lnk.data.key) as { path: string; link_mode: string };
+		const row = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(lnk.data.key) as {
+			path: string;
+			link_mode: string;
+		};
 		expect(row).toEqual({ path: local, link_mode: "linked_file" });
 		expect(existsSync(join(dir, "storage", lnk.data.key))).toBe(false);
 		expect((await call(db, "POST", "/api/add/file", { mode: "linked_file", path: "relative.pdf" })).status).toBe(400);
@@ -260,7 +321,10 @@ describe("attachments", () => {
 		const custom = join(dir, "custom-store");
 		setStorage(db, { dir: custom, subfolder: "{%y}" });
 		const a = await post<ItemDetail>("/api/add/file", { name: "a.pdf", dataBase64: "AA==", parentKey: "PARENT01" }, 201);
-		const rowA = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(a.data.key) as { path: string; link_mode: string };
+		const rowA = db.query("SELECT path, link_mode FROM attachments WHERE item_key = ?").get(a.data.key) as {
+			path: string;
+			link_mode: string;
+		};
 		expect(a.data.linkMode).toBe("linked_file");
 		expect(rowA.link_mode).toBe("linked_file");
 		expect(a.data.path).toBe(join(custom, "2021", "a.pdf"));
@@ -294,14 +358,22 @@ describe("attachments", () => {
 		expect((await call(db, "POST", "/api/add/link", { url: "" })).status).toBe(400);
 		const n = await post<ItemDetail>("/api/items", { data: { itemType: "note", note: "<p>hi</p>", parentItem: "PARENT01" } }, 201);
 		expect(n.data.parentItem).toBe("PARENT01");
-		const sn = await post<ItemDetail>("/api/items", { data: { itemType: "note", note: "<p>solo</p>", collections: ["COLLAAA1"] } }, 201);
+		const sn = await post<ItemDetail>(
+			"/api/items",
+			{ data: { itemType: "note", note: "<p>solo</p>", collections: ["COLLAAA1"] } },
+			201,
+		);
 		expect(sn.collections).toEqual(["COLLAAA1"]);
 	});
 });
 
 describe.skipIf(!HAVE_DOCUMENT_WORKER)("retrieve metadata for PDFs", () => {
 	async function importPdf(lines: string[], coll = "COLLAAA1"): Promise<string> {
-		const d = await post<ItemDetail>("/api/add/file", { name: "scan.pdf", dataBase64: Buffer.from(tinyPdf(lines)).toString("base64"), collectionKey: coll }, 201);
+		const d = await post<ItemDetail>(
+			"/api/add/file",
+			{ name: "scan.pdf", dataBase64: Buffer.from(tinyPdf(lines)).toString("base64"), collectionKey: coll },
+			201,
+		);
 		return d.data.key;
 	}
 
@@ -320,7 +392,10 @@ describe.skipIf(!HAVE_DOCUMENT_WORKER)("retrieve metadata for PDFs", () => {
 		expect(existsSync(path)).toBe(true);
 		expect(r.results[0].renamed).toBe(true);
 		expect(basename(path)).toBe("Smith and Patel - 2023 - Outcomes after liver transplantation.pdf");
-		expect((JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(att) as { data: string }).data) as { filename: string }).filename).toBe(basename(path));
+		expect(
+			(JSON.parse((db.query("SELECT data FROM items WHERE key = ?").get(att) as { data: string }).data) as { filename: string })
+				.filename,
+		).toBe(basename(path));
 		// a second PDF with the same DOI attaches to the existing item
 		const att2 = await importPdf(["doi: 10.1136/bmj-2023-078378"]);
 		const r2 = await post("/api/add/retrieve-metadata", { attachmentKeys: [att2] });
@@ -337,7 +412,17 @@ describe.skipIf(!HAVE_DOCUMENT_WORKER)("retrieve metadata for PDFs", () => {
 	test("falls back to a Crossref bibliographic query on the title", async () => {
 		routes.unshift([
 			/api\.crossref\.org\/works\?query\.bibliographic/,
-			() => ({ message: { items: [{ DOI: "10.1136/bmj-2023-078378", title: ["Outcomes after liver transplantation"], issued: { "date-parts": [[2023]] } }] } }),
+			() => ({
+				message: {
+					items: [
+						{
+							DOI: "10.1136/bmj-2023-078378",
+							title: ["Outcomes after liver transplantation"],
+							issued: { "date-parts": [[2023]] },
+						},
+					],
+				},
+			}),
 		]);
 		const att = await importPdf(["Outcomes after liver transplantation", "Jane Smith and Raj Patel", "Department of Surgery"]);
 		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [att] });
@@ -352,7 +437,8 @@ describe.skipIf(!HAVE_DOCUMENT_WORKER)("retrieve metadata for PDFs", () => {
 		const r = await post("/api/add/retrieve-metadata", { attachmentKeys: [a, b, c] });
 		expect(r.results.map((x: any) => x.status)).toEqual(["retrieved", "retrieved", "failed"]);
 		expect(r.items.length).toBe(2);
-		const parentOf = (k: string) => (db.query("SELECT parent_key FROM items WHERE key = ?").get(k) as { parent_key: string | null }).parent_key;
+		const parentOf = (k: string) =>
+			(db.query("SELECT parent_key FROM items WHERE key = ?").get(k) as { parent_key: string | null }).parent_key;
 		expect(parentOf(a)).toBe(r.results[0].itemKey);
 		expect(parentOf(b)).toBe(r.results[1].itemKey);
 		// the failed PDF: still standalone, in its collection, file name untouched

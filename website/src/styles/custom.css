@@ -17,7 +17,12 @@
 	--sl-font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
 }
 /* headings in the app's Manrope, as on the product pages */
-.sl-markdown-content :is(h1, h2, h3), h1#_top { font-family: "Manrope Variable", "Manrope", "Inter Variable", sans-serif; font-weight: 750; letter-spacing: -0.025em; }
+.sl-markdown-content :is(h1, h2, h3),
+h1#_top {
+	font-family: "Manrope Variable", "Manrope", "Inter Variable", sans-serif;
+	font-weight: 750;
+	letter-spacing: -0.025em;
+}
 :root[data-theme="light"] {
 	--sl-color-accent-low: #E3ECF9;
 	--sl-color-accent: #2B5FA8;
@@ -32,5 +37,11 @@
 	--sl-color-gray-7: #F7F6F3;
 	--sl-color-black: #FFFFFF;
 }
-.sl-markdown-content img { border-radius: 8px; border: 1px solid var(--sl-color-hairline); }
-.sl-markdown-content table { display: table; width: 100%; }
+.sl-markdown-content img {
+	border-radius: 8px;
+	border: 1px solid var(--sl-color-hairline);
+}
+.sl-markdown-content table {
+	display: table;
+	width: 100%;
+}

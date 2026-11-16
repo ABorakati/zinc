@@ -19,7 +19,10 @@ export const academicPlugin: ReaderPlugin = {
 			void s.start();
 			void s.api.refs().then((r) => s.api.prefetch(r.slice(0, 60)));
 		}, 800);
-		return () => { clearTimeout(t); closeAcademic(ctx.attachmentKey); };
+		return () => {
+			clearTimeout(t);
+			closeAcademic(ctx.attachmentKey);
+		};
 	},
 };
 

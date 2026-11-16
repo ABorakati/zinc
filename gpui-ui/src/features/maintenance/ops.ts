@@ -6,8 +6,20 @@ import { currentView, libraryId, refresh, selectOnly, selectedKeys } from "../sh
 import { errMsg, plural } from "../text";
 import type { ItemDetail } from "../types";
 
-export interface EraseReport { erased: number; topLevel: number; filesRemoved: number; filesKept: number; linkedFilesRemoved?: number; missing: string[] }
-export interface RenameFileResult { key: string; status: "renamed" | "skipped"; reason?: string; path?: string }
+export interface EraseReport {
+	erased: number;
+	topLevel: number;
+	filesRemoved: number;
+	filesKept: number;
+	linkedFilesRemoved?: number;
+	missing: string[];
+}
+export interface RenameFileResult {
+	key: string;
+	status: "renamed" | "skipped";
+	reason?: string;
+	path?: string;
+}
 
 export const maintenance = {
 	trashCounts: () => get<{ items: number; total: number }>("/api/maintenance/trash"),
@@ -15,7 +27,8 @@ export const maintenance = {
 	erase: (keys: string[]) => post<EraseReport>("/api/maintenance/erase", { keys }),
 	emptyTrash: (olderThanDays?: number) => post<EraseReport>("/api/maintenance/empty-trash", { olderThanDays }),
 	// tag routes act on one library (core/src/maintenance/api.ts: `library`, default My Library; 403 for a read-only group)
-	renameTag: (from: string, to: string, library = 1) => post<{ items: number; merged: boolean }>("/api/maintenance/tags/rename", { from, to, library }),
+	renameTag: (from: string, to: string, library = 1) =>
+		post<{ items: number; merged: boolean }>("/api/maintenance/tags/rename", { from, to, library }),
 	deleteTags: (tags: string[], library = 1) => post<{ tags: number; items: number }>("/api/maintenance/tags/delete", { tags, library }),
 	automaticTags: (library = 1) => get<{ tag: string; count: number }[]>("/api/maintenance/tags/automatic?library=" + library),
 	deleteAutomaticTags: (library = 1) => post<{ tags: number; items: number }>("/api/maintenance/tags/delete-automatic", { library }),
@@ -25,7 +38,10 @@ export const maintenance = {
 const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
 
 function reportErase(r: { erased: number; filesRemoved: number; linkedFilesRemoved?: number }) {
-	const parts = [r.filesRemoved ? `${plural(r.filesRemoved, "stored file")} removed` : "", r.linkedFilesRemoved ? `${plural(r.linkedFilesRemoved, "file")} removed from the storage folder` : ""].filter(Boolean);
+	const parts = [
+		r.filesRemoved ? `${plural(r.filesRemoved, "stored file")} removed` : "",
+		r.linkedFilesRemoved ? `${plural(r.linkedFilesRemoved, "file")} removed from the storage folder` : "",
+	].filter(Boolean);
 	toast(`Permanently deleted ${plural(r.erased, "item")}`, { kind: "success", description: parts.join(", ") || undefined });
 }
 
@@ -36,7 +52,9 @@ export async function trashItems(keys: string[], trashed: boolean): Promise<void
 	try {
 		await Promise.all(keys.map((k) => call("PATCH", `/api/items/${encodeURIComponent(k)}`, { data: { deleted: trashed ? 1 : 0 } })));
 		refresh();
-		toast(`${trashed ? "Moved" : "Restored"} ${plural(keys.length, "item")} ${trashed ? "to Trash" : "from Trash"}`, { kind: "success" });
+		toast(`${trashed ? "Moved" : "Restored"} ${plural(keys.length, "item")} ${trashed ? "to Trash" : "from Trash"}`, {
+			kind: "success",
+		});
 	} catch (e) {
 		fail(trashed ? "Could not move to Trash" : "Could not restore", e);
 	}
@@ -94,7 +112,11 @@ export async function deleteSelected(permanent: boolean): Promise<void> {
 	if (!keys.length) return;
 	if (permanent || currentView().kind === "trash") return deletePermanently(keys);
 	if (keys.length > 1) {
-		const ok = await confirm({ title: `Move ${plural(keys.length, "item")} to the Trash?`, body: "You can restore them from the Trash later.", confirmLabel: "Move to Trash" });
+		const ok = await confirm({
+			title: `Move ${plural(keys.length, "item")} to the Trash?`,
+			body: "You can restore them from the Trash later.",
+			confirmLabel: "Move to Trash",
+		});
 		if (!ok) return;
 	}
 	await trashItems(keys, true);
@@ -104,12 +126,20 @@ export async function deleteSelected(permanent: boolean): Promise<void> {
 // ---------------------------------------------------------------- tags (the tag pane calls these from its menu)
 
 export async function renameTag(tag: string): Promise<void> {
-	const to = await promptText({ title: "Rename tag", description: "If a tag with the new name exists, the two are merged.", initial: tag, confirmLabel: "Rename" });
+	const to = await promptText({
+		title: "Rename tag",
+		description: "If a tag with the new name exists, the two are merged.",
+		initial: tag,
+		confirmLabel: "Rename",
+	});
 	if (!to || to === tag) return;
 	try {
 		const r = await maintenance.renameTag(tag, to, libraryId());
 		refresh();
-		toast(r.merged ? `Merged "${tag}" into "${to}"` : `Renamed "${tag}" to "${to}"`, { kind: "success", description: plural(r.items, "item") + " updated" });
+		toast(r.merged ? `Merged "${tag}" into "${to}"` : `Renamed "${tag}" to "${to}"`, {
+			kind: "success",
+			description: plural(r.items, "item") + " updated",
+		});
 	} catch (e) {
 		fail("Could not rename tag", e);
 	}
@@ -163,7 +193,11 @@ export async function renameFilesFromParent(itemKeys: string[]): Promise<void> {
 		const renamed = results.filter((r) => r.status === "renamed").length;
 		const skipped = results.filter((r) => r.status === "skipped");
 		refresh();
-		if (renamed) toast(`Renamed ${plural(renamed, "file")}`, { kind: "success", description: skipped.length ? `${skipped.length} skipped: ${skipped[0]!.reason}` : undefined });
+		if (renamed)
+			toast(`Renamed ${plural(renamed, "file")}`, {
+				kind: "success",
+				description: skipped.length ? `${skipped.length} skipped: ${skipped[0]!.reason}` : undefined,
+			});
 		else toast("No files were renamed", { kind: "info", description: skipped[0]?.reason });
 	} catch (e) {
 		fail("Could not rename files", e);

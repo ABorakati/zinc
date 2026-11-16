@@ -31,11 +31,23 @@ export const WINDOW = 40;
 export function GroupHeader(p: { group: Group; collapsed: boolean; onToggle: () => void }): JSX.Element {
 	const m = () => store.mode();
 	return (
-		<div onClick={() => p.onToggle()} style={{ ...tw("flex w-full flex-none items-center gap-2 border-b border-border/60 bg-muted/50 px-5 pb-1.5 pt-3 cursor-pointer", m()) }}>
+		<div
+			onClick={() => p.onToggle()}
+			style={{
+				...tw(
+					"flex w-full flex-none items-center gap-2 border-b border-border/60 bg-muted/50 px-5 pb-1.5 pt-3 cursor-pointer",
+					m(),
+				),
+			}}
+		>
 			{/* 16.7px instead of text-base (16px): same serif optical-size compensation as the card titles */}
-			<text style={{ ...textStyle("select-none font-title text-base font-semibold text-primary-deep", m()), fontSize: 16.7 }}>{p.group.label}</text>
+			<text style={{ ...textStyle("select-none font-title text-base font-semibold text-primary-deep", m()), fontSize: 16.7 }}>
+				{p.group.label}
+			</text>
 			<div style={tw("flex items-center rounded-full bg-primary/10 px-2 py-px", m())}>
-				<text style={textStyle("select-none text-[11.5px] font-medium tabular-nums text-primary", m())}>{p.group.count.toLocaleString("en-US")}</text>
+				<text style={textStyle("select-none text-[11.5px] font-medium tabular-nums text-primary", m())}>
+					{p.group.count.toLocaleString("en-US")}
+				</text>
 			</div>
 			<div style={{ flexGrow: 1 }} />
 			<Icon name={p.collapsed ? "chevron-right" : "chevron-down"} size={16} color={tok("muted-foreground", m())} />
@@ -64,8 +76,14 @@ function ItemRowView(p: { index: number }): JSX.Element {
 	// no JS hover here: the card's hover wash and buttons use GPUI's native hover (see Card.tsx), which neither flickers over
 	// children nor commits anything while the list scrolls
 	const src = dragSource(
-		() => { const it = untrack(item); return it ? store.keysFor(it.key) : []; },
-		() => { const it = untrack(item); if (it && !store.selected().has(it.key)) store.selectOnly(it.key, p.index); },
+		() => {
+			const it = untrack(item);
+			return it ? store.keysFor(it.key) : [];
+		},
+		() => {
+			const it = untrack(item);
+			if (it && !store.selected().has(it.key)) store.selectOnly(it.key, p.index);
+		},
 	);
 	return (
 		<div
@@ -91,7 +109,9 @@ function ItemRowView(p: { index: number }): JSX.Element {
 			<Show when={item()} fallback={<CardSkeleton />}>
 				{(x) => (
 					<Card
-						item={x()} index={p.index} hovered={false}
+						item={x()}
+						index={p.index}
+						hovered={false}
 						focused={listFocused() && store.focusIndex() === p.index}
 						onMore={(r) => openItemMenu({ x: r.x, y: r.y + r.height }, x(), p.index)}
 					/>
@@ -105,9 +125,13 @@ function RowView(p: { row: number; rows: Rows }): JSX.Element {
 	const r = createMemo(() => p.rows.row(p.row));
 	return (
 		<Show when={r()} keyed>
-			{(rw) => rw.kind === "header"
-				? <GroupHeader group={rw.group} collapsed={p.rows.isCollapsed(rw.group)} onToggle={() => p.rows.toggle(rw.group)} />
-				: <ItemRowView index={rw.index} />}
+			{(rw) =>
+				rw.kind === "header" ? (
+					<GroupHeader group={rw.group} collapsed={p.rows.isCollapsed(rw.group)} onToggle={() => p.rows.toggle(rw.group)} />
+				) : (
+					<ItemRowView index={rw.index} />
+				)
+			}
 		</Show>
 	);
 }
@@ -128,11 +152,13 @@ export function CardsView(): JSX.Element {
 	const count = () => rows.count();
 	const first = createMemo(() => Math.max(0, Math.min(start(), count() - WINDOW)));
 	const indices = createMemo(() => {
-		const s = first(), e = Math.min(count(), s + WINDOW);
+		const s = first(),
+			e = Math.min(count(), s + WINDOW);
 		return Array.from({ length: Math.max(0, e - s) }, (_, i) => s + i);
 	});
 
-	let visA = 0, visB = 0;
+	let visA = 0,
+		visB = 0;
 	/** Item index shown at a row (a header stands for the group's first item). */
 	const itemAtRow = (r: number): number => {
 		const rw = rows.row(Math.max(0, Math.min(r, count() - 1)));
@@ -140,12 +166,19 @@ export function CardsView(): JSX.Element {
 	};
 	// Keep the mounted window around the visible rows. Moving it is a JS commit (a full, uncached frame), so while scrolling it
 	// happens at most every 100 ms, and at once only when the view is about to run off the mounted rows.
-	const nearEdge = (rows: number) => { const s = untrack(first); return (visA < s + rows && s > 0) || visB > s + WINDOW - rows; };
-	const recentre = throttledCommit(() => { if (nearEdge(8)) setStart(Math.max(0, visA - WINDOW / 4)); }, 100);
+	const nearEdge = (rows: number) => {
+		const s = untrack(first);
+		return (visA < s + rows && s > 0) || visB > s + WINDOW - rows;
+	};
+	const recentre = throttledCommit(() => {
+		if (nearEdge(8)) setStart(Math.max(0, visA - WINDOW / 4));
+	}, 100);
 	// The group popup: while the list scrolls, a pill beside the scrollbar thumb names the group at the top of the view ("2019").
 	// It only commits when its text or (4 px-rounded) position changes, at most every 60 ms, and hides 700 ms after the scroll stops.
 	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
-	let listH = 0, quietUntil = 0, hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let listH = 0,
+		quietUntil = 0,
+		hideTimer: ReturnType<typeof setTimeout> | undefined;
 	let want: { label: string; top: number } | null = null;
 	const showBubble = throttledCommit(() => {
 		const cur = untrack(bubble);
@@ -159,31 +192,46 @@ export function CardsView(): JSX.Element {
 		want = { label: g.label, top: Math.round((14 + frac * (listH - 56)) / 4) * 4 };
 		showBubble(false);
 		if (hideTimer) clearTimeout(hideTimer);
-		hideTimer = setTimeout(() => { want = null; setBubble(null); }, 700);
+		hideTimer = setTimeout(() => {
+			want = null;
+			setBubble(null);
+		}, 700);
 	};
-	onCleanup(() => { if (hideTimer) clearTimeout(hideTimer); });
+	onCleanup(() => {
+		if (hideTimer) clearTimeout(hideTimer);
+	});
 
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
-		const a = Math.floor(e.startIndex ?? 0), b = Math.ceil(e.endIndex ?? a + 1);
+		const a = Math.floor(e.startIndex ?? 0),
+			b = Math.ceil(e.endIndex ?? a + 1);
 		if (a !== visA) trackBubble(a, b); // the top row moved: a scroll (not the first layout or a resize)
-		visA = a; visB = b;
+		visA = a;
+		visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(3)) recentre(true);
 		else if (nearEdge(8)) recentre(false);
 		const d = performance.now() - t0;
-		stats.visCalls++; stats.visMs += d; stats.visMaxMs = Math.max(stats.visMaxMs, d);
+		stats.visCalls++;
+		stats.visMs += d;
+		stats.visMaxMs = Math.max(stats.visMaxMs, d);
 	};
 
 	// a new list (view / filter / sort) starts at the top
-	createEffect(on(() => store.listVersion(), () => {
-		quietUntil = performance.now() + 400; // the jump back to the top is not a scroll: no popup for it
-		want = null;
-		setBubble(null);
-		setStart(0);
-		if (list) gpuix?.renderer.scrollToItem?.(list.id, 0);
-	}, { defer: true }));
+	createEffect(
+		on(
+			() => store.listVersion(),
+			() => {
+				quietUntil = performance.now() + 400; // the jump back to the top is not a scroll: no popup for it
+				want = null;
+				setBubble(null);
+				setStart(0);
+				if (list) gpuix?.renderer.scrollToItem?.(list.id, 0);
+			},
+			{ defer: true },
+		),
+	);
 
 	/** Scroll so row `r` is on screen (only when it is outside the visible range). */
 	function reveal(r: number) {
@@ -206,8 +254,13 @@ export function CardsView(): JSX.Element {
 	const keys = listKeyHandler({
 		move,
 		page: () => Math.max(1, Math.floor((visB - visA) * 0.9)),
-		open: () => { const it = store.peek(store.focusIndex()); if (it) void openItem(it); },
-		toggle: () => { if (store.focusIndex() >= 0) store.selectClick(store.focusIndex(), { shift: false, ctrl: true }); },
+		open: () => {
+			const it = store.peek(store.focusIndex());
+			if (it) void openItem(it);
+		},
+		toggle: () => {
+			if (store.focusIndex() >= 0) store.selectClick(store.focusIndex(), { shift: false, ctrl: true });
+		},
 	});
 	onMount(() => onCleanup(() => setListFocused(false)));
 
@@ -219,11 +272,17 @@ export function CardsView(): JSX.Element {
 			onFocus={() => setListFocused(true)}
 			onBlur={() => setListFocused(false)}
 			onScroll={markScroll}
-			onLayout={(e: EventPayload) => { listH = e.height ?? listH; const w = Math.round(e.width ?? 0); if (w !== untrack(cardListWidthNow)) setCardListWidth(w); }}
+			onLayout={(e: EventPayload) => {
+				listH = e.height ?? listH;
+				const w = Math.round(e.width ?? 0);
+				if (w !== untrack(cardListWidthNow)) setCardListWidth(w);
+			}}
 			style={{ ...tw("flex flex-col flex-1 min-h-0 w-full h-full bg-card", store.mode()), keyboardFocusDim: false }}
 		>
 			<virtual-list
-				ref={(el: { id: number }) => { list = el; }}
+				ref={(el: { id: number }) => {
+					list = el;
+				}}
 				testId="card-list"
 				itemCount={count()}
 				windowStart={first()}
@@ -231,23 +290,43 @@ export function CardsView(): JSX.Element {
 				overdraw={400}
 				onVisibleRange={onVisibleRange}
 				// the overlaid thumb at the list's right edge (as the sidebar's list); the rows' px-2.5 keeps cards clear of it
-				style={{ width: "100%", height: "100%", scrollbarColor: tok("input", store.mode()), scrollbarWidth: 6 }}>
+				style={{ width: "100%", height: "100%", scrollbarColor: tok("input", store.mode()), scrollbarWidth: 6 }}
+			>
 				<For each={indices()}>{(i) => <RowView row={i} rows={rows} />}</For>
 			</virtual-list>
 			<Show when={bubble()}>
 				{(bb) => (
-					<div style={{ ...tw("flex items-center rounded-full bg-primary px-3 py-1 shadow-raised", store.mode()), position: "absolute", right: 18, top: bb().top, pointerEvents: "none" }}>
-						<text style={{ ...textStyle("select-none font-title text-sm font-semibold", store.mode()), color: tok("primary-foreground", store.mode()) }}>{bb().label}</text>
+					<div
+						style={{
+							...tw("flex items-center rounded-full bg-primary px-3 py-1 shadow-raised", store.mode()),
+							position: "absolute",
+							right: 18,
+							top: bb().top,
+							pointerEvents: "none",
+						}}
+					>
+						<text
+							style={{
+								...textStyle("select-none font-title text-sm font-semibold", store.mode()),
+								color: tok("primary-foreground", store.mode()),
+							}}
+						>
+							{bb().label}
+						</text>
 					</div>
 				)}
 			</Show>
 			<ListRetry />
 			<Show when={count() === 0 && !store.loading()}>
-			<div style={tw("flex flex-col absolute top-10 inset-x-0 items-center gap-1", store.mode())}>
-					<text style={textStyle("text-muted-foreground", store.mode())}>{store.view().kind === "publications" ? "No items in My Publications" : "No items"}</text>
+				<div style={tw("flex flex-col absolute top-10 inset-x-0 items-center gap-1", store.mode())}>
+					<text style={textStyle("text-muted-foreground", store.mode())}>
+						{store.view().kind === "publications" ? "No items in My Publications" : "No items"}
+					</text>
 					<Show when={store.error()}>
-					<text style={textStyle("text-xs text-destructive", store.mode())}>{store.error() ?? ""}</text>
-					<Button size="sm" variant="outline" onClick={() => store.retryFailed()}>Retry</Button>
+						<text style={textStyle("text-xs text-destructive", store.mode())}>{store.error() ?? ""}</text>
+						<Button size="sm" variant="outline" onClick={() => store.retryFailed()}>
+							Retry
+						</Button>
 					</Show>
 				</div>
 			</Show>

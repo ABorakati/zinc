@@ -15,7 +15,8 @@ export function ensureHelperExe(exe = process.execPath, target = helperExePath()
 	mkdirSync(dirname(target), { recursive: true });
 	if (existsSync(target)) {
 		try {
-			const a = statSync(target), b = statSync(exe);
+			const a = statSync(target),
+				b = statSync(exe);
 			if ((a.ino === b.ino && a.dev === b.dev && a.ino !== 0) || (a.size === b.size && a.mtimeMs === b.mtimeMs)) return target;
 		} catch {
 			/* look again below */
@@ -49,7 +50,10 @@ export class HelperLink implements Driver {
 	 * Start the helper and wait for it to say it is ready (its first, hidden window and the browser are up).
 	 * `command` is the argv after the exe: [helper.ts] unpackaged, ["--signin-helper"] packaged.
 	 */
-	static async start(command: string[], o: { exe?: string; timeoutMs?: number; env?: Record<string, string | undefined>; exeName?: string } = {}): Promise<HelperLink> {
+	static async start(
+		command: string[],
+		o: { exe?: string; timeoutMs?: number; env?: Record<string, string | undefined>; exeName?: string } = {},
+	): Promise<HelperLink> {
 		const exe = ensureHelperExe(o.exe, helperExePath(undefined, o.exeName));
 		let link!: HelperLink;
 		const proc = Bun.spawn([exe, ...command], {

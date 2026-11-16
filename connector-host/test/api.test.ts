@@ -29,14 +29,24 @@ beforeAll(() => {
 	repo.patchItem(db, itemKey, { abstractNote: "liver ".repeat(250_000) } as never);
 	const file = join(ROOT, "source.pdf");
 	writeFileSync(file, pdfBytes);
-	pdfKey = addFile(db, { mode: "imported_file", path: file, name: "Fixture.pdf", contentType: "application/pdf", parentKey: itemKey } as never).data.key;
+	pdfKey = addFile(db, {
+		mode: "imported_file",
+		path: file,
+		name: "Fixture.pdf",
+		contentType: "application/pdf",
+		parentKey: itemKey,
+	} as never).data.key;
 	db.close(true);
 	h = new HostClient({ ZN_DB: dbPath });
 });
 
 afterAll(async () => {
 	await h.close();
-	try { rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Windows may hold the WAL a moment */ }
+	try {
+		rmSync(ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	} catch {
+		/* Windows may hold the WAL a moment */
+	}
 });
 
 describe("api method: reads", () => {
@@ -81,7 +91,12 @@ describe("api method: writes", () => {
 		expect(a.status).toBe(200);
 		expect(a.json.ok).toBe(true);
 		await h.uploadBytes("sel1", new TextEncoder().encode(JSON.stringify({ kind: "library" })));
-		const b = await h.call("api", { http: "POST", path: "/api/ui/selection", uploadUid: "sel1", headers: { "Content-Type": "application/json" } });
+		const b = await h.call("api", {
+			http: "POST",
+			path: "/api/ui/selection",
+			uploadUid: "sel1",
+			headers: { "Content-Type": "application/json" },
+		});
 		expect(b.status).toBe(200);
 		const sel = await h.call("api", { http: "GET", path: "/api/ui/selection" });
 		expect(sel.json.selection).toEqual({ kind: "library" });
@@ -97,17 +112,27 @@ describe("api method: writes", () => {
 			}
 		};
 		const before = outbox();
-		const patch = await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "Edited in the browser" } } });
+		const patch = await h.call("api", {
+			http: "PATCH",
+			path: `/api/items/${itemKey}`,
+			json: { data: { title: "Edited in the browser" } },
+		});
 		expect(patch.status).toBe(200);
 		expect((await h.call("api", { http: "GET", path: `/api/items/${itemKey}` })).json.data.title).toBe("Edited in the browser");
-		expect((await h.call("api", { http: "POST", path: `/api/items/${itemKey}/tags`, json: { tags: ["from-browser"] } })).status).toBe(200);
+		expect((await h.call("api", { http: "POST", path: `/api/items/${itemKey}/tags`, json: { tags: ["from-browser"] } })).status).toBe(
+			200,
+		);
 		const made = await h.call("api", { http: "POST", path: "/api/collections", json: { name: "Made in the browser" } });
 		expect(made.status).toBe(201);
 		expect((await h.call("api", { http: "DELETE", path: `/api/collections/${made.json.key}` })).status).toBe(200);
 		expect(outbox()).toBeGreaterThan(before);
 		// back as it was, for the other tests
-		expect((await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "Fixture article 0" } } })).status).toBe(200);
-		expect((await h.call("api", { http: "DELETE", path: `/api/items/${itemKey}/tags`, json: { tags: ["from-browser"] } })).status).toBe(200);
+		expect(
+			(await h.call("api", { http: "PATCH", path: `/api/items/${itemKey}`, json: { data: { title: "Fixture article 0" } } })).status,
+		).toBe(200);
+		expect((await h.call("api", { http: "DELETE", path: `/api/items/${itemKey}/tags`, json: { tags: ["from-browser"] } })).status).toBe(
+			200,
+		);
 	});
 
 	test("routes that act on this computer are refused", async () => {
@@ -120,7 +145,11 @@ describe("api method: writes", () => {
 
 	test("imports and exports that name a file or folder here are refused; text and uploaded bytes are not", async () => {
 		const file = join(ROOT, "source.pdf");
-		const linked = await h.call("api", { http: "POST", path: "/api/add/file", json: { name: "x.pdf", path: file, mode: "linked_file" } });
+		const linked = await h.call("api", {
+			http: "POST",
+			path: "/api/add/file",
+			json: { name: "x.pdf", path: file, mode: "linked_file" },
+		});
 		expect(linked.status).toBe(403);
 		expect(linked.json.error).toContain("`path`");
 		expect((await h.call("api", { http: "POST", path: "/api/io/export", json: { format: "ris", dir: ROOT } })).status).toBe(403);
@@ -184,14 +213,17 @@ describe("api method: annotations (the reader's writes)", () => {
 
 	test("a wrong verb or a path with .. does not write", async () => {
 		expect((await h.call("api", { http: "POST", path: path(), json: [ann("ANNOTA02")] })).status).toBe(405);
-		expect((await h.call("api", { http: "PUT", path: `/api/attachments/../items/${itemKey}/annotations`, json: [] })).status).not.toBe(200);
+		expect((await h.call("api", { http: "PUT", path: `/api/attachments/../items/${itemKey}/annotations`, json: [] })).status).not.toBe(
+			200,
+		);
 		expect((await h.call("api", { http: "GET", path: path() })).json).toEqual([]);
 	});
 });
 
 describe("api method: changes made by another process", () => {
 	test("`ext` from GET /api/ui/selection moves when another connection commits", async () => {
-		const total = async () => (await h.call("api", { http: "GET", path: "/api/items?sort=title&dir=asc&limit=100" })).json.total as number;
+		const total = async () =>
+			(await h.call("api", { http: "GET", path: "/api/items?sort=title&dir=asc&limit=100" })).json.total as number;
 		const count = await total();
 		const before = (await h.call("api", { http: "GET", path: "/api/ui/selection" })).json.ext;
 		const again = (await h.call("api", { http: "GET", path: "/api/ui/selection" })).json.ext;

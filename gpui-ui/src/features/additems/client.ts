@@ -39,12 +39,22 @@ export interface CreateParentResult {
 const library = (): number | undefined => (store.libraryId() > 1 ? store.libraryId() : undefined);
 
 export const addApi = {
-	identifier: (text: string, collectionKey?: string, autoTag?: boolean) => post<IdentifierResult>("/api/add/identifier", { text, collectionKey, autoTag, library: library() }),
-	file: (b: { name?: string; contentType?: string; path: string; mode?: "imported_file" | "linked_file"; parentKey?: string; collectionKey?: string }) =>
-		post<ItemDetail>("/api/add/file", { name: "", library: library(), ...b }),
-	link: (b: { url: string; title?: string; parentKey?: string; collectionKey?: string }) => post<ItemDetail>("/api/add/link", { library: library(), ...b }),
-	retrieve: (attachmentKeys: string[], opts?: { rename?: boolean; autoTag?: boolean }) => post<{ results: RetrieveResult[]; items: ItemDetail[] }>("/api/add/retrieve-metadata", { attachmentKeys, ...opts }),
-	createItem: (data: Record<string, unknown>) => post<ItemDetail>("/api/items", { data, library: data.parentItem ? undefined : library() }),
+	identifier: (text: string, collectionKey?: string, autoTag?: boolean) =>
+		post<IdentifierResult>("/api/add/identifier", { text, collectionKey, autoTag, library: library() }),
+	file: (b: {
+		name?: string;
+		contentType?: string;
+		path: string;
+		mode?: "imported_file" | "linked_file";
+		parentKey?: string;
+		collectionKey?: string;
+	}) => post<ItemDetail>("/api/add/file", { name: "", library: library(), ...b }),
+	link: (b: { url: string; title?: string; parentKey?: string; collectionKey?: string }) =>
+		post<ItemDetail>("/api/add/link", { library: library(), ...b }),
+	retrieve: (attachmentKeys: string[], opts?: { rename?: boolean; autoTag?: boolean }) =>
+		post<{ results: RetrieveResult[]; items: ItemDetail[] }>("/api/add/retrieve-metadata", { attachmentKeys, ...opts }),
+	createItem: (data: Record<string, unknown>) =>
+		post<ItemDetail>("/api/items", { data, library: data.parentItem ? undefined : library() }),
 	duplicate: (key: string) => post<ItemDetail>(`/api/items/${encodeURIComponent(key)}/duplicate`, {}),
 	createParent: (b: { itemKey: string; text?: string; itemType?: string }) => post<CreateParentResult>("/api/add/create-parent", b),
 };
@@ -96,7 +106,11 @@ export async function createNewItem(itemType: string): Promise<void> {
 export async function createNote(parentKey?: string): Promise<void> {
 	try {
 		const coll = currentCollection();
-		const d = await addApi.createItem({ itemType: "note", note: "", ...(parentKey ? { parentItem: parentKey } : coll ? { collections: [coll] } : {}) });
+		const d = await addApi.createItem({
+			itemType: "note",
+			note: "",
+			...(parentKey ? { parentItem: parentKey } : coll ? { collections: [coll] } : {}),
+		});
 		refresh();
 		selectOnly(parentKey ?? d.data.key);
 	} catch (e) {
@@ -119,7 +133,11 @@ export async function duplicateItems(keys: string[]): Promise<void> {
 			errors.push(errMsg(e));
 		}
 	}
-	if (errors.length) toast(keys.length > 1 ? "Some items could not be duplicated" : "Could not duplicate the item", { kind: "error", description: errors.join("\n") });
+	if (errors.length)
+		toast(keys.length > 1 ? "Some items could not be duplicated" : "Could not duplicate the item", {
+			kind: "error",
+			description: errors.join("\n"),
+		});
 	if (!made.length) return;
 	refresh();
 	selectMany(made);
@@ -140,7 +158,10 @@ export async function createParentFor(itemKey: string, choice: { text?: string; 
 const isPdfPath = (p: string) => /\.pdf$/i.test(p);
 
 /** Import files (stored copies) with progress toasts; standalone PDFs then get "Retrieve Metadata" in the background when the preference is on. */
-export async function importPaths(paths: string[], opts: { parentKey?: string; retrieve?: boolean; collectionKey?: string } = {}): Promise<void> {
+export async function importPaths(
+	paths: string[],
+	opts: { parentKey?: string; retrieve?: boolean; collectionKey?: string } = {},
+): Promise<void> {
 	if (!paths.length) return;
 	toast(`Importing ${plural(paths.length, "file")}…`, { durationMs: 2500 });
 	const pdfs: { key: string; title: string }[] = [];
@@ -149,7 +170,12 @@ export async function importPaths(paths: string[], opts: { parentKey?: string; r
 	for (const path of paths) {
 		const name = path.split(/[\\/]/).pop() ?? path;
 		try {
-			const d = await addApi.file({ path, mode: "imported_file", parentKey: opts.parentKey, collectionKey: opts.parentKey ? undefined : (opts.collectionKey ?? currentCollection()) });
+			const d = await addApi.file({
+				path,
+				mode: "imported_file",
+				parentKey: opts.parentKey,
+				collectionKey: opts.parentKey ? undefined : (opts.collectionKey ?? currentCollection()),
+			});
 			last = d;
 			if (isPdfPath(path) && !opts.parentKey) pdfs.push({ key: d.data.key, title: name });
 		} catch (e) {
@@ -174,7 +200,10 @@ const IMPORTER_EXTS = /\.(bib|bibtex|ris|rdf|json)$/i;
 /** Handle file drops anywhere on the window or onto a sidebar collection. */
 export async function handleFileDrop(paths: string[], target?: { x?: number; y?: number; collectionKey?: string }): Promise<void> {
 	if (!paths.length) return;
-	const colKey = target?.collectionKey ?? (target?.x !== undefined && target?.y !== undefined ? collectionAt(target.x, target.y) : null) ?? currentCollection();
+	const colKey =
+		target?.collectionKey ??
+		(target?.x !== undefined && target?.y !== undefined ? collectionAt(target.x, target.y) : null) ??
+		currentCollection();
 
 	const importerPaths: string[] = [];
 	const attachmentPaths: string[] = [];
@@ -197,13 +226,18 @@ export async function handleFileDrop(paths: string[], target?: { x?: number; y?:
 	}
 }
 
-
 export async function addLinkedFile(path: string, parentKey?: string): Promise<boolean> {
 	const p = path.trim().replace(/^"|"$/g, "");
 	try {
-		const d = await addApi.file({ mode: "linked_file", path: p, parentKey, collectionKey: parentKey ? undefined : currentCollection() });
+		const d = await addApi.file({
+			mode: "linked_file",
+			path: p,
+			parentKey,
+			collectionKey: parentKey ? undefined : currentCollection(),
+		});
 		refresh();
-		if (!parentKey && isPdfPath(p) && autoRetrieveMetadata()) enqueueRetrieve([{ key: d.data.key, title: String(d.data.filename || d.data.title || p) }]);
+		if (!parentKey && isPdfPath(p) && autoRetrieveMetadata())
+			enqueueRetrieve([{ key: d.data.key, title: String(d.data.filename || d.data.title || p) }]);
 		else selectOnly(parentKey ?? d.data.key);
 		toast("Linked file added", { kind: "success" });
 		return true;
@@ -215,7 +249,12 @@ export async function addLinkedFile(path: string, parentKey?: string): Promise<b
 
 export async function addLinkedUri(url: string, title: string, parentKey?: string): Promise<boolean> {
 	try {
-		const d = await addApi.link({ url: url.trim(), title: title.trim() || undefined, parentKey, collectionKey: parentKey ? undefined : currentCollection() });
+		const d = await addApi.link({
+			url: url.trim(),
+			title: title.trim() || undefined,
+			parentKey,
+			collectionKey: parentKey ? undefined : currentCollection(),
+		});
 		refresh();
 		selectOnly(parentKey ?? d.data.key);
 		toast("Link added", { kind: "success" });
@@ -254,11 +293,16 @@ export function enqueueRetrieve(items: { key: string; title?: string }[]): void 
 	setRetrieveRows((l) => {
 		const keep = l.some((r) => r.state === "queued" || r.state === "running") ? l : []; // a finished run is replaced
 		const have = new Set(keep.map((r) => r.key));
-		return [...keep, ...fresh.filter((i) => !have.has(i.key)).map((i): RetrieveRow => ({ key: i.key, title: i.title ?? i.key, state: "queued" }))];
+		return [
+			...keep,
+			...fresh.filter((i) => !have.has(i.key)).map((i): RetrieveRow => ({ key: i.key, title: i.title ?? i.key, state: "queued" })),
+		];
 	});
 	for (const i of fresh) {
 		if (i.title) continue;
-		detail(i.key).then((d) => patchRow(i.key, { title: String(d.data.filename || d.data.title || i.key) })).catch(() => {});
+		detail(i.key)
+			.then((d) => patchRow(i.key, { title: String(d.data.filename || d.data.title || i.key) }))
+			.catch(() => {});
 	}
 	void drainRetrieve();
 }
@@ -275,7 +319,12 @@ async function drainRetrieve(): Promise<void> {
 			patchRow(next.key, { state: "running" });
 			try {
 				const r = (await addApi.retrieve([next.key], { autoTag: autoTag() })).results[0];
-				if (r && r.status !== "failed") patchRow(next.key, { state: r.status, itemKey: r.itemKey, message: r.status === "existing" ? "Attached to an item already in the library" : undefined });
+				if (r && r.status !== "failed")
+					patchRow(next.key, {
+						state: r.status,
+						itemKey: r.itemKey,
+						message: r.status === "existing" ? "Attached to an item already in the library" : undefined,
+					});
 				else patchRow(next.key, { state: "failed", message: r?.error ?? "Not found" });
 				refresh();
 			} catch (e) {
@@ -314,7 +363,11 @@ const detail = (key: string): Promise<ItemDetail> => {
 export async function isStandalonePdf(key: string): Promise<boolean | undefined> {
 	try {
 		const d = await detail(key);
-		return d.data.itemType === "attachment" && !d.data.parentItem && (/pdf/i.test(String(d.data.contentType ?? "")) || /\.pdf$/i.test(String(d.data.filename ?? "")));
+		return (
+			d.data.itemType === "attachment" &&
+			!d.data.parentItem &&
+			(/pdf/i.test(String(d.data.contentType ?? "")) || /\.pdf$/i.test(String(d.data.filename ?? "")))
+		);
 	} catch {
 		return undefined;
 	}

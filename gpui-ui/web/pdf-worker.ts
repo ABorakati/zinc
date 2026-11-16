@@ -25,7 +25,11 @@ let ready = false;
 
 // the engine sits next to this script; the page sends its open/render messages right away, they wait in the queue until it loads
 initEngine(new URL("pdfium.wasm", self.location.href).href).then(
-	() => { ready = true; post({ t: "ready" }); schedule(); },
+	() => {
+		ready = true;
+		post({ t: "ready" });
+		schedule();
+	},
 	(e) => post({ t: "failed", error: String(e instanceof Error ? e.message : e) }),
 );
 
@@ -42,7 +46,11 @@ function schedule(): void {
 function pump(): void {
 	ticking = false;
 	for (const o of pendingOpens.splice(0)) {
-		try { docs.set(o.doc, openDoc(new Uint8Array(o.bytes))); } catch (e) { post({ t: "openfailed", doc: o.doc, error: String(e instanceof Error ? e.message : e) }); }
+		try {
+			docs.set(o.doc, openDoc(new Uint8Array(o.bytes)));
+		} catch (e) {
+			post({ t: "openfailed", doc: o.doc, error: String(e instanceof Error ? e.message : e) });
+		}
 	}
 	queue.sort((a, b) => a.prio - b.prio);
 	const job = queue.shift();
@@ -52,7 +60,9 @@ function pump(): void {
 			if (!h) throw new Error("document not open in the render worker");
 			if (job.t === "render") {
 				const d = drawPage(h, job.page, job.scale, job.opts);
-				post({ t: "rendered", job: job.job, width: d.width, height: d.height, pixels: d.pixels, renderMs: d.renderMs }, [d.pixels.buffer]);
+				post({ t: "rendered", job: job.job, width: d.width, height: d.height, pixels: d.pixels, renderMs: d.renderMs }, [
+					d.pixels.buffer,
+				]);
 			} else post({ t: "text", job: job.job, layer: pageText(h, job.page) });
 		} catch (e) {
 			post({ t: "error", job: job.job, error: String(e instanceof Error ? e.message : e) });
@@ -64,18 +74,38 @@ function pump(): void {
 self.onmessage = (e: MessageEvent<In>) => {
 	const m = e.data;
 	switch (m.t) {
-		case "open": pendingOpens.push({ doc: m.doc, bytes: m.bytes }); break;
+		case "open":
+			pendingOpens.push({ doc: m.doc, bytes: m.bytes });
+			break;
 		case "close": {
 			const i = pendingOpens.findIndex((o) => o.doc === m.doc);
 			if (i >= 0) pendingOpens.splice(i, 1);
 			const h = docs.get(m.doc);
-			if (h) { closeDoc(h); docs.delete(m.doc); }
-			for (let j = queue.length - 1; j >= 0; j--) if (queue[j]!.doc === m.doc) post({ t: "cancelled", job: queue.splice(j, 1)[0]!.job });
+			if (h) {
+				closeDoc(h);
+				docs.delete(m.doc);
+			}
+			for (let j = queue.length - 1; j >= 0; j--)
+				if (queue[j]!.doc === m.doc) post({ t: "cancelled", job: queue.splice(j, 1)[0]!.job });
 			break;
 		}
-		case "render": case "text": queue.push(m); break;
-		case "cancel": { const j = queue.findIndex((q) => q.job === m.job); if (j >= 0) { queue.splice(j, 1); post({ t: "cancelled", job: m.job }); } break; }
-		case "prio": { const q = queue.find((x) => x.job === m.job); if (q) q.prio = m.prio; break; }
+		case "render":
+		case "text":
+			queue.push(m);
+			break;
+		case "cancel": {
+			const j = queue.findIndex((q) => q.job === m.job);
+			if (j >= 0) {
+				queue.splice(j, 1);
+				post({ t: "cancelled", job: m.job });
+			}
+			break;
+		}
+		case "prio": {
+			const q = queue.find((x) => x.job === m.job);
+			if (q) q.prio = m.prio;
+			break;
+		}
 	}
 	schedule();
 };

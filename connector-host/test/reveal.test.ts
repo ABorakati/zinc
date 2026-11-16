@@ -81,7 +81,11 @@ describe("revealInApp", () => {
 
 	test("app not running and not installed: 503, nothing started", async () => {
 		const launched: string[] = [];
-		const r = await revealInApp(freePort(), "ABCD2345", { candidates: ["C:/nowhere/zotero-next-gpui.exe"], exists: () => false, launch: (e) => launched.push(e) });
+		const r = await revealInApp(freePort(), "ABCD2345", {
+			candidates: ["C:/nowhere/zotero-next-gpui.exe"],
+			exists: () => false,
+			launch: (e) => launched.push(e),
+		});
 		expect(r.status).toBe(503);
 		expect(launched).toEqual([]);
 	});
@@ -116,11 +120,21 @@ describe("revealInApp", () => {
 });
 
 describe("host method revealInApp", () => {
-	const env = (appPort: number) => ({ appPort, dbPath: null, getDb: () => { throw new Error("no library needed"); } });
+	const env = (appPort: number) => ({
+		appPort,
+		dbPath: null,
+		getDb: () => {
+			throw new Error("no library needed");
+		},
+	});
 
 	test("goes through handleRequest without opening the library", async () => {
 		const app = fakeApp();
-		const res = await handleRequest(env(app.port), { t: "req", id: 1, method: "revealInApp", body: { kind: "text", text: JSON.stringify({ key: "ABCD2345" }) } }, new Map());
+		const res = await handleRequest(
+			env(app.port),
+			{ t: "req", id: 1, method: "revealInApp", body: { kind: "text", text: JSON.stringify({ key: "ABCD2345" }) } },
+			new Map(),
+		);
 		expect(res.status).toBe(200);
 		expect(JSON.parse(new TextDecoder().decode(res.body))).toMatchObject({ ok: true, started: false });
 		expect(app.reveals).toEqual(["ABCD2345"]);

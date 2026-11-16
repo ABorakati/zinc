@@ -8,8 +8,9 @@ const pathOnly = proxyFrom({ toProperScheme: "proxy.example.org/www.jstor.org/%p
 
 describe("proxied URL -> publisher URL (port of Zotero.Proxy.toProper)", () => {
 	test("EZproxy host-name style, https with dashes for dots (HttpsHyphens)", () => {
-		expect(toProper(ezHost, "https://www-nature-com.ezproxy.kcl.ac.uk/articles/s41586-020-2012-7"))
-			.toBe("https://www.nature.com/articles/s41586-020-2012-7");
+		expect(toProper(ezHost, "https://www-nature-com.ezproxy.kcl.ac.uk/articles/s41586-020-2012-7")).toBe(
+			"https://www.nature.com/articles/s41586-020-2012-7",
+		);
 	});
 	test("EZproxy host-name style over http keeps dots", () => {
 		expect(toProper(ezHost, "http://www.nature.com.ezproxy.kcl.ac.uk/articles/x?y=1")).toBe("http://www.nature.com/articles/x?y=1");

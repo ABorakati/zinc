@@ -24,12 +24,65 @@ export interface BibOptions {
 type Flavor = "bibtex" | "biblatex";
 
 const FIELD_ORDER = [
-	"type", "entrysubtype", "ids", "title", "shorttitle", "booktitle", "author", "authortype", "editor", "editortype", "editora",
-	"editoratype", "editorb", "editorbtype", "editorc", "editorctype", "translator", "translatortype", "holder", "holdertype", "with",
-	"namea", "nameatype", "nameb", "namebtype", "namec", "nameatype", "options", "date", "origdate", "year", "month", "journal",
-	"journaltitle", "shortjournal", "series", "edition", "volume", "number", "eprint", "eprinttype", "eprintclass", "primaryclass",
-	"pages", "publisher", "address", "institution", "location", "issn", "doi", "url", "urldate",
-	"-keywords", "-annotation", "-note", "-groups", "-timestamp", "-files", "-file",
+	"type",
+	"entrysubtype",
+	"ids",
+	"title",
+	"shorttitle",
+	"booktitle",
+	"author",
+	"authortype",
+	"editor",
+	"editortype",
+	"editora",
+	"editoratype",
+	"editorb",
+	"editorbtype",
+	"editorc",
+	"editorctype",
+	"translator",
+	"translatortype",
+	"holder",
+	"holdertype",
+	"with",
+	"namea",
+	"nameatype",
+	"nameb",
+	"namebtype",
+	"namec",
+	"nameatype",
+	"options",
+	"date",
+	"origdate",
+	"year",
+	"month",
+	"journal",
+	"journaltitle",
+	"shortjournal",
+	"series",
+	"edition",
+	"volume",
+	"number",
+	"eprint",
+	"eprinttype",
+	"eprintclass",
+	"primaryclass",
+	"pages",
+	"publisher",
+	"address",
+	"institution",
+	"location",
+	"issn",
+	"doi",
+	"url",
+	"urldate",
+	"-keywords",
+	"-annotation",
+	"-note",
+	"-groups",
+	"-timestamp",
+	"-files",
+	"-file",
 ].reduce<Record<string, number>>((acc, f, i) => {
 	if (f[0] === "-") acc[f.slice(1)] = -(i + 1);
 	else acc[f] = i + 1;
@@ -46,28 +99,90 @@ function fieldCompare(a: string, b: string): number {
 }
 
 const TYPE_BIBTEX: Record<string, string> = {
-	artwork: "misc", audioRecording: "misc", bill: "misc", blogPost: "misc", book: "book", bookSection: "incollection", case: "misc",
-	computerProgram: "misc", conferencePaper: "inproceedings", dictionaryEntry: "misc", document: "misc", email: "misc",
-	encyclopediaArticle: "article", film: "misc", forumPost: "misc", hearing: "misc", instantMessage: "misc", interview: "misc",
-	journalArticle: "article", letter: "misc", magazineArticle: "article", manuscript: "unpublished", map: "misc",
-	newspaperArticle: "article", patent: "patent", podcast: "misc", preprint: "misc", presentation: "misc", radioBroadcast: "misc",
-	report: "techreport", standard: "standard", statute: "misc", thesis: "phdthesis", tvBroadcast: "misc", videoRecording: "misc",
-	webpage: "misc", dataset: "misc",
+	artwork: "misc",
+	audioRecording: "misc",
+	bill: "misc",
+	blogPost: "misc",
+	book: "book",
+	bookSection: "incollection",
+	case: "misc",
+	computerProgram: "misc",
+	conferencePaper: "inproceedings",
+	dictionaryEntry: "misc",
+	document: "misc",
+	email: "misc",
+	encyclopediaArticle: "article",
+	film: "misc",
+	forumPost: "misc",
+	hearing: "misc",
+	instantMessage: "misc",
+	interview: "misc",
+	journalArticle: "article",
+	letter: "misc",
+	magazineArticle: "article",
+	manuscript: "unpublished",
+	map: "misc",
+	newspaperArticle: "article",
+	patent: "patent",
+	podcast: "misc",
+	preprint: "misc",
+	presentation: "misc",
+	radioBroadcast: "misc",
+	report: "techreport",
+	standard: "standard",
+	statute: "misc",
+	thesis: "phdthesis",
+	tvBroadcast: "misc",
+	videoRecording: "misc",
+	webpage: "misc",
+	dataset: "misc",
 };
 const TYPE_BIBLATEX: Record<string, string | { type: string; subtype: string }> = {
-	artwork: "artwork", audioRecording: "audio", bill: "legislation", blogPost: "online", book: "book", bookSection: "incollection",
-	case: "jurisdiction", computerProgram: "software", conferencePaper: "inproceedings", dictionaryEntry: "inreference", dataset: "dataset",
-	document: "misc", email: "letter", encyclopediaArticle: "inreference", film: "video", forumPost: "online", hearing: "jurisdiction",
-	instantMessage: "misc", interview: "misc", journalArticle: "article", letter: "letter",
-	magazineArticle: { type: "article", subtype: "magazine" }, manuscript: "unpublished", map: "misc",
-	newspaperArticle: { type: "article", subtype: "newspaper" }, patent: "patent", podcast: "audio", preprint: "online",
-	presentation: "unpublished", radioBroadcast: "audio", report: "report", standard: "standard", statute: "legislation", thesis: "thesis",
-	tvBroadcast: "video", videoRecording: "video", webpage: "online",
+	artwork: "artwork",
+	audioRecording: "audio",
+	bill: "legislation",
+	blogPost: "online",
+	book: "book",
+	bookSection: "incollection",
+	case: "jurisdiction",
+	computerProgram: "software",
+	conferencePaper: "inproceedings",
+	dictionaryEntry: "inreference",
+	dataset: "dataset",
+	document: "misc",
+	email: "letter",
+	encyclopediaArticle: "inreference",
+	film: "video",
+	forumPost: "online",
+	hearing: "jurisdiction",
+	instantMessage: "misc",
+	interview: "misc",
+	journalArticle: "article",
+	letter: "letter",
+	magazineArticle: { type: "article", subtype: "magazine" },
+	manuscript: "unpublished",
+	map: "misc",
+	newspaperArticle: { type: "article", subtype: "newspaper" },
+	patent: "patent",
+	podcast: "audio",
+	preprint: "online",
+	presentation: "unpublished",
+	radioBroadcast: "audio",
+	report: "report",
+	standard: "standard",
+	statute: "legislation",
+	thesis: "thesis",
+	tvBroadcast: "video",
+	videoRecording: "video",
+	webpage: "online",
 };
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 function thesisType(t: string, phd: string, masters: string, bachelors?: string, cand?: string): string | undefined {
-	const k = t.toLowerCase().replace(/[^a-z]/g, "").replace(/thesis$/, "");
+	const k = t
+		.toLowerCase()
+		.replace(/[^a-z]/g, "")
+		.replace(/thesis$/, "");
 	if (["phd", "dissertation", "phddissertation", "doctoraldissertation", "phddiss", "doctoral", "doctorate"].includes(k)) return phd;
 	if (["ma", "master", "masters", "mphil", "msc"].includes(k)) return masters;
 	if (["ba", "bachelor", "bachelors", "undergrad", "undergraduate"].includes(k)) return bachelors;
@@ -148,7 +263,11 @@ class Entry {
 	}
 
 	/** add a field: literal (escaped, optionally case-protected), verbatim or raw; first write wins unless `replace` */
-	add(name: string, value: string | number | undefined | null, o: { enc?: "literal" | "verbatim" | "raw"; protect?: boolean; bare?: boolean; replace?: boolean; html?: boolean } = {}): void {
+	add(
+		name: string,
+		value: string | number | undefined | null,
+		o: { enc?: "literal" | "verbatim" | "raw"; protect?: boolean; bare?: boolean; replace?: boolean; html?: boolean } = {},
+	): void {
 		if (value === undefined || value === null) return;
 		const v = typeof value === "number" ? String(value) : value;
 		if (!v.trim()) return;
@@ -161,7 +280,11 @@ class Entry {
 			if (enc === "raw") body = v;
 			else if (enc === "verbatim") body = verbatim(v);
 			else {
-				body = textToLatex(v.replace(/\r?\n+/g, " "), { ...this.tex, protect: !!o.protect && this.english && this.st.exportBraceProtection }, { html: o.html !== false });
+				body = textToLatex(
+					v.replace(/\r?\n+/g, " "),
+					{ ...this.tex, protect: !!o.protect && this.english && this.st.exportBraceProtection },
+					{ html: o.html !== false },
+				);
 			}
 			bibtex = `{${body.trim()}}`;
 		}
@@ -204,17 +327,34 @@ class Entry {
 	}
 
 	names(list: Creator[]): string {
-		return list.map((c) => this.encName(c)).filter(Boolean).join(" and ");
+		return list
+			.map((c) => this.encName(c))
+			.filter(Boolean)
+			.join(" and ");
 	}
 
 	addCreators(): void {
 		const creators = (this.item.data.creators ?? []) as Creator[];
 		if (!creators.length) return;
-		const by: Record<string, Creator[]> = { author: [], editor: [], translator: [], bookauthor: [], commentator: [], editora: [], namea: [] };
+		const by: Record<string, Creator[]> = {
+			author: [],
+			editor: [],
+			translator: [],
+			bookauthor: [],
+			commentator: [],
+			editora: [],
+			namea: [],
+		};
 		const video = ["video", "movie"].includes(this.type);
 		for (const c of creators) {
 			switch (c.creatorType) {
-				case "author": case "inventor": case "interviewer": case "programmer": case "artist": case "podcaster": case "presenter":
+				case "author":
+				case "inventor":
+				case "interviewer":
+				case "programmer":
+				case "artist":
+				case "podcaster":
+				case "presenter":
 					by.author!.push(c);
 					break;
 				case "director":
@@ -353,10 +493,17 @@ function bibtexEntry(e: Entry): void {
 	else if (t === "bookSection") e.add("booktitle", pub || e.g("conferenceName"), { protect: true });
 	else e.add("journal", pub || abbr);
 	switch (t === "thesis" ? "thesis" : t) {
-		case "thesis": e.add("school", e.g("publisher")); break;
-		case "report": e.add("institution", e.g("publisher")); break;
-		case "computerProgram": e.add("howpublished", e.g("publisher")); break;
-		default: e.add("publisher", e.g("publisher"));
+		case "thesis":
+			e.add("school", e.g("publisher"));
+			break;
+		case "report":
+			e.add("institution", e.g("publisher"));
+			break;
+		case "computerProgram":
+			e.add("howpublished", e.g("publisher"));
+			break;
+		default:
+			e.add("publisher", e.g("publisher"));
 	}
 	const doi = normDoi(e.g("DOI") || e.extra.kv.doi || "");
 	const url = e.g("url") || e.extra.kv.url || "";
@@ -432,12 +579,23 @@ function biblatexEntry(e: Entry): void {
 	const pub = e.g("publicationTitle");
 	const abbr = e.g("journalAbbreviation");
 	switch (e.type) {
-		case "jurisdiction": e.add("journaltitle", e.g("reporter") || pub); break;
-		case "legislation": e.add("journaltitle", e.g("code") || pub); break;
-		case "incollection": case "inproceedings": case "inreference": case "movie": case "video": case "inbook":
+		case "jurisdiction":
+			e.add("journaltitle", e.g("reporter") || pub);
+			break;
+		case "legislation":
+			e.add("journaltitle", e.g("code") || pub);
+			break;
+		case "incollection":
+		case "inproceedings":
+		case "inreference":
+		case "movie":
+		case "video":
+		case "inbook":
 			e.add("booktitle", pub, { protect: true });
 			break;
-		case "online": e.add("organization", pub); break;
+		case "online":
+			e.add("organization", pub);
+			break;
 		case "article":
 			e.add("journaltitle", pub || abbr);
 			if (e.subtype === "newspaper") e.add("journalsubtitle", e.g("section"));
@@ -448,16 +606,33 @@ function biblatexEntry(e: Entry): void {
 	}
 	e.add("series", e.g("series") || e.g("seriesTitle"), { protect: true });
 	switch (e.type) {
-		case "report": case "thesis": e.add("institution", e.g("publisher")); break;
-		case "jurisdiction": e.add("institution", e.g("court") || e.g("authority")); break;
-		case "software": case "misc": e.add("organization", e.g("publisher")); break;
-		default: if (!pre) e.add("publisher", e.g("publisher"));
+		case "report":
+		case "thesis":
+			e.add("institution", e.g("publisher"));
+			break;
+		case "jurisdiction":
+			e.add("institution", e.g("court") || e.g("authority"));
+			break;
+		case "software":
+		case "misc":
+			e.add("organization", e.g("publisher"));
+			break;
+		default:
+			if (!pre) e.add("publisher", e.g("publisher"));
 	}
 	switch (e.type) {
-		case "letter": e.add("type", e.g("type") || (t === "email" ? "E-mail" : "Letter")); break;
-		case "thesis": e.add("type", thesisType(e.g("type"), "phdthesis", "mathesis", "bathesis", "candthesis") || e.g("type"), { enc: "raw" }); break;
-		case "report": e.add("type", e.g("type")); break;
-		case "dataset": e.add("type", e.g("type") || e.g("medium")); break;
+		case "letter":
+			e.add("type", e.g("type") || (t === "email" ? "E-mail" : "Letter"));
+			break;
+		case "thesis":
+			e.add("type", thesisType(e.g("type"), "phdthesis", "mathesis", "bathesis", "candthesis") || e.g("type"), { enc: "raw" });
+			break;
+		case "report":
+			e.add("type", e.g("type"));
+			break;
+		case "dataset":
+			e.add("type", e.g("type") || e.g("medium"));
+			break;
 		default:
 			if (e.type === "unpublished" && t !== "presentation") e.add("howpublished", e.g("type"));
 			else e.add("type", e.g("type"));
@@ -509,7 +684,10 @@ export function bibEntry(item: BbtExportItem, key: string, flavor: Flavor, st: B
 		if (notes) e.add("note", notes, { html: true });
 	}
 	if (st.exportExtraAsNote && typeof item.data.extra === "string") {
-		const rest = item.data.extra.split(/\r?\n/).filter((l) => l.trim() && !/^\s*(citation\s*key|(bib)?(la)?tex\.)/i.test(l)).join("\n");
+		const rest = item.data.extra
+			.split(/\r?\n/)
+			.filter((l) => l.trim() && !/^\s*(citation\s*key|(bib)?(la)?tex\.)/i.test(l))
+			.join("\n");
 		if (rest) e.add("annotation", rest);
 	}
 	e.applyTex();

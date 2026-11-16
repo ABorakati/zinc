@@ -3,7 +3,8 @@ import type { ChildSummary } from "./types";
 import { normalizeText } from "./match";
 import type { SuppMention } from "./mentions";
 
-export type SuppKind = "pdf" | "epub" | "doc" | "sheet" | "slides" | "image" | "video" | "audio" | "archive" | "text" | "link" | "snapshot" | "other";
+export type SuppKind =
+	"pdf" | "epub" | "doc" | "sheet" | "slides" | "image" | "video" | "audio" | "archive" | "text" | "link" | "snapshot" | "other";
 
 export interface SuppItem {
 	key: string;
@@ -37,7 +38,14 @@ export function classifyAttachment(c: Pick<ChildSummary, "title" | "contentType"
 export function supplementaryItems(children: ChildSummary[], openKey: string): SuppItem[] {
 	return children
 		.filter((c) => c.itemType === "attachment" && c.key !== openKey)
-		.map((c) => ({ key: c.key, title: c.title || "(untitled)", contentType: c.contentType, linkMode: c.linkMode, hasFile: c.hasFile, kind: classifyAttachment(c) }));
+		.map((c) => ({
+			key: c.key,
+			title: c.title || "(untitled)",
+			contentType: c.contentType,
+			linkMode: c.linkMode,
+			hasFile: c.hasFile,
+			kind: classifyAttachment(c),
+		}));
 }
 
 export function formatSize(bytes: number): string {
@@ -46,10 +54,33 @@ export function formatSize(bytes: number): string {
 	return (bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + " MB";
 }
 
-const GENERIC = new Set(["supplementary", "supplemental", "supporting", "information", "material", "materials", "file", "files", "data", "online", "additional", "the", "of", "and", "for"]);
+const GENERIC = new Set([
+	"supplementary",
+	"supplemental",
+	"supporting",
+	"information",
+	"material",
+	"materials",
+	"file",
+	"files",
+	"data",
+	"online",
+	"additional",
+	"the",
+	"of",
+	"and",
+	"for",
+]);
 
 function toks(s: string): string[] {
-	return normalizeText(s.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/([a-z])([A-Z0-9])/g, "$1 $2").replace(/[_-]/g, " ")).split(" ").filter(Boolean);
+	return normalizeText(
+		s
+			.replace(/\.[a-z0-9]{1,5}$/i, "")
+			.replace(/([a-z])([A-Z0-9])/g, "$1 $2")
+			.replace(/[_-]/g, " "),
+	)
+		.split(" ")
+		.filter(Boolean);
 }
 
 const KIND_WORDS: Record<SuppMention["kind"], string[]> = {
@@ -83,14 +114,21 @@ export function matchSupplement(m: SuppMention, items: SuppItem[]): { item: Supp
 		if (wanted.some((w) => tset.has(w))) score += 2;
 		if (num) {
 			const compact = t.join("");
-			if (tset.has(num) || tset.has("s" + num.replace(/^s/, "")) && /^s?\d/.test(num)) score += 3;
+			if (tset.has(num) || (tset.has("s" + num.replace(/^s/, "")) && /^s?\d/.test(num))) score += 3;
 			else if (compact.includes((wanted[0] ?? "") + num)) score += 3;
 		}
 		if (PREFERRED_TYPES[m.kind]?.includes(item.kind)) score += 1;
 		if (t.some((w) => w.startsWith("supp") || w === "esm" || w === "moesm" || w === "si" || w === "appendix")) score += 1;
 		if (m.kind === "material" && score === 0 && items.length === 1) score = 1;
 		// numbered mention but the item names a different number -> not a match
-		if (num && t.some((w) => /^s?\d+$/.test(w)) && !tset.has(num) && !tset.has(num.replace(/^s/, "")) && !tset.has("s" + num.replace(/^s/, ""))) score -= 2;
+		if (
+			num &&
+			t.some((w) => /^s?\d+$/.test(w)) &&
+			!tset.has(num) &&
+			!tset.has(num.replace(/^s/, "")) &&
+			!tset.has("s" + num.replace(/^s/, ""))
+		)
+			score -= 2;
 		if (score > 0) out.push({ item, score });
 	}
 	return out.sort((a, b) => b.score - a.score);

@@ -94,11 +94,12 @@ export function InkOverlay(p: InkOverlayProps): JSX.Element {
 		for (const a of inkAnns) {
 			let changed = false;
 			const newPaths: number[][] = [];
-			for (const stroke of (a.position.paths ?? [])) {
+			for (const stroke of a.position.paths ?? []) {
 				let cur: number[] = [];
 				let strokeHit = false;
 				for (let i = 0; i + 1 < stroke.length; i += 2) {
-					const px = stroke[i]!, py = stroke[i + 1]!;
+					const px = stroke[i]!,
+						py = stroke[i + 1]!;
 					if (Math.hypot(px - ex, py - ey) <= radius) {
 						strokeHit = true;
 						if (cur.length >= 4) {
@@ -143,13 +144,20 @@ export function InkOverlay(p: InkOverlayProps): JSX.Element {
 
 	return (
 		<div
-			ref={(el: { id: number }) => { catcherEl = el; }}
+			ref={(el: { id: number }) => {
+				catcherEl = el;
+			}}
 			onMouseDown={onMouseDown}
 			onMouseMove={onMouseMove}
 			onMouseUp={onMouseUp}
 			style={{
-				position: "absolute", left: 0, top: 0, width: p.box().width, height: p.box().height,
-				cursor: "crosshair", pointerEvents: "auto",
+				position: "absolute",
+				left: 0,
+				top: 0,
+				width: p.box().width,
+				height: p.box().height,
+				cursor: "crosshair",
+				pointerEvents: "auto",
 			}}
 		>
 			<Show when={livePath() && livePath()!.length >= 4}>

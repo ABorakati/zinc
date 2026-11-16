@@ -13,7 +13,14 @@ import { hostRenderer } from "../shell/native";
 import { objc, runLoopOnce, type Id } from "../shell/objc";
 
 type H = number | bigint;
-interface Popup { win: Id; web: Id; box: Id; rect: Rect | null; keep: Rect | null; shown: boolean }
+interface Popup {
+	win: Id;
+	web: Id;
+	box: Id;
+	rect: Rect | null;
+	keep: Rect | null;
+	shown: boolean;
+}
 type Rect = { x: number; y: number; width: number; height: number };
 
 const popups = new Map<bigint, Popup>();
@@ -38,14 +45,19 @@ export function mainWindow(): H | null {
 	return null;
 }
 
-const contentView = (): Id => { const r = objc(), w = mainWindow(); return r && w != null ? r.send.m0(w, r.sel("contentView")) : null; };
+const contentView = (): Id => {
+	const r = objc(),
+		w = mainWindow();
+	return r && w != null ? r.send.m0(w, r.sel("contentView")) : null;
+};
 
 /** Window pixels are AppKit points here. */
 export const dpr = (): number => 1;
 
 /** The content area, at (0, 0) in window coordinates, or null while the window is minimised / gone. */
 export function clientOnScreen(): { x: number; y: number; width: number; height: number } | null {
-	const r = objc(), w = mainWindow();
+	const r = objc(),
+		w = mainWindow();
 	if (!r || w == null || r.send.b0(w, r.sel("isMiniaturized"))) return null;
 	const size = hostRenderer()?.getWindowSize?.();
 	if (!size?.width || !size.height) return null;
@@ -63,7 +75,17 @@ export function newWebviewWindow(): Id {
 	const r = objc();
 	if (!r) return null;
 	const { send: s, sel } = r;
-	const win = s.mwin(s.m0(r.cls("NSWindow"), sel("alloc")), sel("initWithContentRect:styleMask:backing:defer:"), 0, 0, 800, 600, 0 /* borderless */, 2 /* buffered */, 1);
+	const win = s.mwin(
+		s.m0(r.cls("NSWindow"), sel("alloc")),
+		sel("initWithContentRect:styleMask:backing:defer:"),
+		0,
+		0,
+		800,
+		600,
+		0 /* borderless */,
+		2 /* buffered */,
+		1,
+	);
 	if (win) s.mi(win, sel("setReleasedWhenClosed:"), 0);
 	return win;
 }
@@ -87,7 +109,8 @@ function webViewOf(h: H): Id {
 
 /** Move the webview library's WKWebView into a clipping container on GPUI's content view; the library's own window is hidden. */
 export function makeOwnedPopup(h: H, _owner: H | null): void {
-	const r = objc(), view = contentView();
+	const r = objc(),
+		view = contentView();
 	if (!r || view == null) return;
 	const { send: s, sel } = r;
 	const web = webViewOf(h);
@@ -107,7 +130,8 @@ export function makeOwnedPopup(h: H, _owner: H | null): void {
 }
 
 export function forgetPopup(h: H): void {
-	const r = objc(), p = popups.get(key(h));
+	const r = objc(),
+		p = popups.get(key(h));
 	popups.delete(key(h));
 	if (!r || !p) return;
 	r.send.m0(p.box, r.sel("removeFromSuperview"));
@@ -117,7 +141,8 @@ export function forgetPopup(h: H): void {
 
 /** Lay the container (the visible part) and the page inside it (its full size, shifted) out in GPUI's view. */
 function apply(p: Popup): void {
-	const r = objc(), view = contentView();
+	const r = objc(),
+		view = contentView();
 	if (!r || !p.rect || view == null) return;
 	const { send: s, sel } = r;
 	const rect = p.rect;
@@ -131,15 +156,20 @@ function apply(p: Popup): void {
 }
 
 export function placePopup(h: H, rect: { x: number; y: number; width: number; height: number }): void {
-	const r = objc(), p = popups.get(key(h));
+	const r = objc(),
+		p = popups.get(key(h));
 	if (!r || !p) return;
 	p.rect = rect;
 	apply(p);
-	if (!p.shown) { r.send.mi(p.box, r.sel("setHidden:"), 0); p.shown = true; }
+	if (!p.shown) {
+		r.send.mi(p.box, r.sel("setHidden:"), 0);
+		p.shown = true;
+	}
 }
 
 export function hidePopup(h: H): void {
-	const r = objc(), p = popups.get(key(h));
+	const r = objc(),
+		p = popups.get(key(h));
 	if (!r || !p) return;
 	r.send.mi(p.box, r.sel("setHidden:"), 1);
 	p.shown = false;
@@ -156,21 +186,31 @@ export function clipPopup(h: H, keep: Rect | null, _holes: Rect[] = []): void {
 /** Inside GPUI's window: nothing to keep above. */
 export function keepAbove(_h: H): void {}
 
-const responder = (): Id => { const r = objc(), w = mainWindow(); return r && w != null ? r.send.m0(w, r.sel("firstResponder")) : null; };
+const responder = (): Id => {
+	const r = objc(),
+		w = mainWindow();
+	return r && w != null ? r.send.m0(w, r.sel("firstResponder")) : null;
+};
 
 export function popupHasFocus(h: H): boolean {
-	const r = objc(), p = popups.get(key(h)), f = responder();
+	const r = objc(),
+		p = popups.get(key(h)),
+		f = responder();
 	if (!r || !p || f == null) return false;
 	return r.send.b1(f, r.sel("isKindOfClass:"), r.cls("NSView")) && r.send.b1(f, r.sel("isDescendantOf:"), p.web);
 }
 
 export function focusPopup(h: H): void {
-	const r = objc(), p = popups.get(key(h)), w = mainWindow();
+	const r = objc(),
+		p = popups.get(key(h)),
+		w = mainWindow();
 	if (r && p && w != null && appIsForeground()) r.send.b1(w, r.sel("makeFirstResponder:"), p.web);
 }
 
 export function focusMain(): void {
-	const r = objc(), w = mainWindow(), view = contentView();
+	const r = objc(),
+		w = mainWindow(),
+		view = contentView();
 	if (r && w != null && view != null) r.send.b1(w, r.sel("makeFirstResponder:"), view);
 }
 

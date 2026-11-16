@@ -49,7 +49,9 @@ function LibraryTabChip(p: { active: boolean; onClick: () => void }) {
 			}}
 		>
 			<Icon name="library" size={14} color={fg()} />
-			<text style={{ ...textStyle(`text-[13px] ${p.active ? "font-medium" : ""}`, mode()), color: fg(), whiteSpace: "nowrap" }}>Library</text>
+			<text style={{ ...textStyle(`text-[13px] ${p.active ? "font-medium" : ""}`, mode()), color: fg(), whiteSpace: "nowrap" }}>
+				Library
+			</text>
 		</div>
 	);
 }
@@ -73,8 +75,21 @@ function ReaderTabChip(p: { tab: ReaderTab | WebTab; active: boolean }) {
 				onClick={(e: EventPayload) => (e.button === 1 ? store.closeTab(p.tab.id) : store.setActiveTab(p.tab.id))}
 				style={{ ...tw("flex h-full min-w-0 flex-1 items-center gap-1.5 pl-3 pr-1 cursor-pointer", mode()) }}
 			>
-				<Icon name={p.tab.kind === "web" ? (/epub/i.test(p.tab.contentType) ? "book-open" : "globe") : "file-text"} size={14} color={fg()} style={{ flexShrink: 0 }} />
-				<text style={{ ...textStyle(`min-w-0 truncate text-[13px] ${p.active ? "font-medium" : ""}`, mode()), color: fg(), flexShrink: 1 }}>{p.tab.title || "Reader"}</text>
+				<Icon
+					name={p.tab.kind === "web" ? (/epub/i.test(p.tab.contentType) ? "book-open" : "globe") : "file-text"}
+					size={14}
+					color={fg()}
+					style={{ flexShrink: 0 }}
+				/>
+				<text
+					style={{
+						...textStyle(`min-w-0 truncate text-[13px] ${p.active ? "font-medium" : ""}`, mode()),
+						color: fg(),
+						flexShrink: 1,
+					}}
+				>
+					{p.tab.title || "Reader"}
+				</text>
 			</div>
 			<div
 				onClick={() => store.closeTab(p.tab.id)}
@@ -106,9 +121,14 @@ function SettingsTabChip(p: { active: boolean }) {
 				...(p.active ? tw("bg-background shadow-sm ring-1 ring-border", mode()) : hover() ? tw("bg-foreground/5", mode()) : {}),
 			}}
 		>
-			<div onClick={() => store.setActiveTab(SETTINGS_TAB)} style={{ ...tw("flex h-full min-w-0 flex-1 items-center gap-1.5 pl-3 pr-1 cursor-pointer", mode()) }}>
+			<div
+				onClick={() => store.setActiveTab(SETTINGS_TAB)}
+				style={{ ...tw("flex h-full min-w-0 flex-1 items-center gap-1.5 pl-3 pr-1 cursor-pointer", mode()) }}
+			>
 				<Icon name="settings" size={14} color={fg()} style={{ flexShrink: 0 }} />
-				<text style={{ ...textStyle(`text-[13px] ${p.active ? "font-medium" : ""}`, mode()), color: fg(), whiteSpace: "nowrap" }}>Settings</text>
+				<text style={{ ...textStyle(`text-[13px] ${p.active ? "font-medium" : ""}`, mode()), color: fg(), whiteSpace: "nowrap" }}>
+					Settings
+				</text>
 			</div>
 			<div
 				onClick={closeSettings}
@@ -144,7 +164,9 @@ export function TopBar() {
 			<div style={t("flex min-w-0 items-center gap-1 py-1 pr-1 pl-0.5")}>
 				<LibraryTabChip active={onLibrary()} onClick={() => store.setActiveTab("library")} />
 				<For each={readers()}>{(tab) => <ReaderTabChip tab={tab} active={store.activeTab() === tab.id} />}</For>
-				<Show when={settingsOpen()}><SettingsTabChip active={store.activeTab() === SETTINGS_TAB} /></Show>
+				<Show when={settingsOpen()}>
+					<SettingsTabChip active={store.activeTab() === SETTINGS_TAB} />
+				</Show>
 			</div>
 			<div style={{ flexGrow: 1 }} />
 			<div style={t("flex flex-none items-center gap-1")}>

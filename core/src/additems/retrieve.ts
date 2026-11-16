@@ -68,11 +68,18 @@ async function resolve(db: Database, text: string): Promise<{ id: ParsedId; via:
 	return out;
 }
 
-export async function retrieveOne(db: Database, attachmentKey: string, known?: Known, opts: RetrieveOptions = {}): Promise<{ result: RetrieveResult; item?: ItemDetail }> {
+export async function retrieveOne(
+	db: Database,
+	attachmentKey: string,
+	known?: Known,
+	opts: RetrieveOptions = {},
+): Promise<{ result: RetrieveResult; item?: ItemDetail }> {
 	const fail = (error: string): { result: RetrieveResult } => ({ result: { attachmentKey, status: "failed", error } });
-	const row = db.query("SELECT i.parent_key, i.deleted, a.content_type, a.path FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.key = ?").get(attachmentKey) as
-		| { parent_key: string | null; deleted: number; content_type: string | null; path: string | null }
-		| null;
+	const row = db
+		.query(
+			"SELECT i.parent_key, i.deleted, a.content_type, a.path FROM items i JOIN attachments a ON a.item_key = i.key WHERE i.key = ?",
+		)
+		.get(attachmentKey) as { parent_key: string | null; deleted: number; content_type: string | null; path: string | null } | null;
 	if (!row) return fail("attachment not found");
 	if (row.parent_key) return fail("the attachment already has a parent item");
 	if (!/pdf/i.test(row.content_type ?? "") && !/\.pdf$/i.test(row.path ?? "")) return fail("not a PDF");
@@ -92,10 +99,14 @@ export async function retrieveOne(db: Database, attachmentKey: string, known?: K
 	} catch (e) {
 		return fail(`could not read the PDF text: ${e instanceof Error ? e.message : e}`);
 	}
-	const text = ((db.query("SELECT content FROM fulltext WHERE attachment_key = ?").get(attachmentKey) as { content: string } | null)?.content ?? "").slice(0, HEAD_CHARS);
+	const text = (
+		(db.query("SELECT content FROM fulltext WHERE attachment_key = ?").get(attachmentKey) as { content: string } | null)?.content ?? ""
+	).slice(0, HEAD_CHARS);
 	if (!text.trim()) return fail("the PDF has no text layer (scanned?)");
 
-	const colls = (db.query("SELECT collection_key FROM collection_items WHERE item_key = ?").all(attachmentKey) as { collection_key: string }[]).map((r) => r.collection_key);
+	const colls = (
+		db.query("SELECT collection_key FROM collection_items WHERE item_key = ?").all(attachmentKey) as { collection_key: string }[]
+	).map((r) => r.collection_key);
 	const candidates = await resolve(db, text);
 	const guess = titleGuess(text);
 	let lastError = "no DOI, arXiv ID or matching title found in the PDF";
@@ -105,7 +116,8 @@ export async function retrieveOne(db: Database, attachmentKey: string, known?: K
 		const parent = r.added?.data.key ?? r.existing!;
 		reparentItem(db, attachmentKey, parent);
 		if (r.added) {
-			for (const c of colls.slice(1)) db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parent);
+			for (const c of colls.slice(1))
+				db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parent);
 		}
 		let renamed = false;
 		if (opts.rename !== false) {
@@ -116,7 +128,13 @@ export async function retrieveOne(db: Database, attachmentKey: string, known?: K
 			}
 		}
 		return {
-			result: { attachmentKey, status: r.added ? ("retrieved" as const) : ("existing" as const), itemKey: parent, via, ...(renamed ? { renamed } : {}) },
+			result: {
+				attachmentKey,
+				status: r.added ? ("retrieved" as const) : ("existing" as const),
+				itemKey: parent,
+				via,
+				...(renamed ? { renamed } : {}),
+			},
 			item: getItemDetail(db, parent) ?? undefined,
 		};
 	};

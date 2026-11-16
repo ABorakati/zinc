@@ -29,7 +29,10 @@ export type WireBody =
 	| { kind: "form"; fields: Record<string, WireField> };
 
 /** One multipart field: inline text, inline base64 bytes, or bytes/text sent earlier as `up` frames (uid). */
-export type WireField = { text: string } | { b64: string; type?: string; filename?: string } | { upload: string; type?: string; filename?: string; asText?: boolean };
+export type WireField =
+	| { text: string }
+	| { b64: string; type?: string; filename?: string }
+	| { upload: string; type?: string; filename?: string; asText?: boolean };
 
 export interface WireRequest {
 	t: "req";
@@ -73,7 +76,9 @@ const canExtractPdf = !!DOC_WORKER && existsSync(WORKER_ENTRY);
 export const extractions = new Set<Promise<unknown>>();
 
 hooks.afterImport = (db: Database, attachmentKey: string) => {
-	const row = db.query("SELECT content_type FROM attachments WHERE item_key = ?").get(attachmentKey) as { content_type: string | null } | null;
+	const row = db.query("SELECT content_type FROM attachments WHERE item_key = ?").get(attachmentKey) as {
+		content_type: string | null;
+	} | null;
 	const ct = row?.content_type ?? "";
 	if (!/html/i.test(ct) && !(canExtractPdf && /pdf/i.test(ct))) return;
 	const p = extractFulltext(db, attachmentKey)
@@ -108,7 +113,16 @@ const LIBRARY_FREE = new Set(["ping", "getClientHostnames", "proxies"]);
 // Answered by the host itself from the bundled translators (see translators.ts).
 const TRANSLATOR_METHODS = new Set(["getTranslators", "getTranslatorCode"]);
 // Methods that create, change or finish a save session: the only ones whose result is written to the state file.
-const SESSION_MUTATING = new Set(["saveItems", "saveSnapshot", "saveSingleFile", "saveAttachment", "saveStandaloneAttachment", "saveAttachmentFromResolver", "updateSession", "import"]);
+const SESSION_MUTATING = new Set([
+	"saveItems",
+	"saveSnapshot",
+	"saveSingleFile",
+	"saveAttachment",
+	"saveStandaloneAttachment",
+	"saveAttachmentFromResolver",
+	"updateSession",
+	"import",
+]);
 // Methods that look an existing session up (and so may need the persisted copy, after a host restart). The ones that
 // start a session (saveItems, saveSnapshot, saveStandaloneAttachment, import) name a new id: nothing to load.
 // The save popup's own methods (sessions.ts): not Zotero connector methods.
@@ -254,7 +268,8 @@ export async function handleRequest(env: HostEnv, msg: WireRequest, uploads: Map
 		try {
 			const db = env.getDb();
 			loadSessionsFor(env, msg);
-			const r = method === "sessionItems" ? sessionItems(db, id) : method === "trashSession" ? trashSession(db, id) : cancelSession(db, id);
+			const r =
+				method === "sessionItems" ? sessionItems(db, id) : method === "trashSession" ? trashSession(db, id) : cancelSession(db, id);
 			return done(r.status, JSON.stringify(r.body));
 		} catch (e) {
 			if (isBusyError(e)) return done(503, JSON.stringify({ error: BUSY_MESSAGE }));

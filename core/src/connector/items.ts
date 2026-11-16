@@ -12,9 +12,34 @@ type SchemaType = ReturnType<typeof getSchema>["itemTypes"][number];
 
 // Keys of translator JSON that are not item fields.
 const NOT_FIELDS = new Set([
-	"id", "sessionID", "attachments", "notes", "seeAlso", "tags", "creators", "key", "version", "dateAdded", "dateModified",
-	"complete", "itemID", "libraryID", "collections", "relations", "mimeType", "proxy", "hasAttachmentResolvers",
-	"hasPrimaryAttachment", "deleted", "parentItem", "itemType", "uri", "isOpenAccess", "referrer", "snapshot", "linkMode",
+	"id",
+	"sessionID",
+	"attachments",
+	"notes",
+	"seeAlso",
+	"tags",
+	"creators",
+	"key",
+	"version",
+	"dateAdded",
+	"dateModified",
+	"complete",
+	"itemID",
+	"libraryID",
+	"collections",
+	"relations",
+	"mimeType",
+	"proxy",
+	"hasAttachmentResolvers",
+	"hasPrimaryAttachment",
+	"deleted",
+	"parentItem",
+	"itemType",
+	"uri",
+	"isOpenAccess",
+	"referrer",
+	"snapshot",
+	"linkMode",
 ]);
 
 let types: Map<string, SchemaType> | null = null;
@@ -119,7 +144,10 @@ export function userNoteToHtml(s: string): string {
 	if (!t) return "";
 	if (t.startsWith("<")) return t;
 	const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-	return t.split(/\r?\n/).map((l) => `<p>${esc(l)}</p>`).join("");
+	return t
+		.split(/\r?\n/)
+		.map((l) => `<p>${esc(l)}</p>`)
+		.join("");
 }
 
 export interface SavedItem {
@@ -131,7 +159,13 @@ export interface SavedItem {
 }
 
 /** Create one translated item (with its notes and link attachments) in `collectionKey`. */
-export function saveTranslatedItem(db: Database, raw: Record<string, unknown>, collectionKey: string | null, tags: { tag: string; type: number }[] = [], proxy: ProxyInfo | null = null): SavedItem {
+export function saveTranslatedItem(
+	db: Database,
+	raw: Record<string, unknown>,
+	collectionKey: string | null,
+	tags: { tag: string; type: number }[] = [],
+	proxy: ProxyInfo | null = null,
+): SavedItem {
 	const requested = str(raw.itemType);
 	const itemType = hasItemType(requested) && requested !== "attachment" ? requested : "document";
 	const fields = convertFields(raw, itemType);
@@ -157,7 +191,13 @@ export function saveTranslatedItem(db: Database, raw: Record<string, unknown>, c
 		if (itemType === "note") return;
 		for (const n of Array.isArray(raw.notes) ? raw.notes : []) {
 			const html = noteHtml(n);
-			if (html) createItem(db, { itemType: "note", note: html, parentItem: saved.key, tags: convertTags((n as { tags?: unknown })?.tags, 1) });
+			if (html)
+				createItem(db, {
+					itemType: "note",
+					note: html,
+					parentItem: saved.key,
+					tags: convertTags((n as { tags?: unknown })?.tags, 1),
+				});
 		}
 		// Only link-only attachments (snapshot: false) come with the item; files are uploaded afterwards.
 		for (const a of Array.isArray(raw.attachments) ? raw.attachments : []) {

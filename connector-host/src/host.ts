@@ -13,7 +13,9 @@ export interface HostOptions {
 
 export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffer) => void, opts: HostOptions = {}): Promise<void> {
 	const dbPath = opts.dbPath === undefined ? resolveDbPath() : opts.dbPath;
-	const appPort = opts.appPort ?? (process.env.ZNH_APP_PORT !== undefined ? Number(process.env.ZNH_APP_PORT) || 0 : Number(process.env.ZN_PORT) || 23120);
+	const appPort =
+		opts.appPort ??
+		(process.env.ZNH_APP_PORT !== undefined ? Number(process.env.ZNH_APP_PORT) || 0 : Number(process.env.ZN_PORT) || 23120);
 	let db: Database | null = null;
 	// Opened on the first call that needs it: ping and the translator calls are answered without the library.
 	const getDb = (): Database => {
@@ -45,9 +47,15 @@ export async function runHost(input: AsyncIterable<Uint8Array>, write: (b: Buffe
 	sweep.unref?.();
 	const inflight = new Set<Promise<void>>();
 
-	const reply = (id: string | number, status: number, headers: Record<string, string>, body: Uint8Array) => write(responseFrames(id, status, headers, body));
+	const reply = (id: string | number, status: number, headers: Record<string, string>, body: Uint8Array) =>
+		write(responseFrames(id, status, headers, body));
 	const fail = (id: string | number, status: number, error: string) =>
-		reply(id, status, { "Content-Type": "application/json", "X-Zotero-Version": ZOTERO_VERSION_HEADER }, Buffer.from(JSON.stringify({ error })));
+		reply(
+			id,
+			status,
+			{ "Content-Type": "application/json", "X-Zotero-Version": ZOTERO_VERSION_HEADER },
+			Buffer.from(JSON.stringify({ error })),
+		);
 
 	const onRequest = async (msg: WireRequest) => {
 		const env: HostEnv = { getDb, dbPath, appPort };

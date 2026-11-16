@@ -86,5 +86,11 @@ export function textOf(n: XmlNode | undefined): string {
 
 /** Trimmed text with its line structure kept. */
 export function blockText(n: XmlNode | undefined): string {
-	return n ? n.text.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim() : "";
+	return n
+		? n.text
+				.replace(/\r\n?/g, "\n")
+				.replace(/[ \t]+/g, " ")
+				.replace(/\n{3,}/g, "\n\n")
+				.trim()
+		: "";
 }

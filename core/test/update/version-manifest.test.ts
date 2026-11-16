@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { UpdateError, canonicalBytes, generateKeyPair, publicKeyOf, signManifest, verifyManifest, type UnsignedManifest } from "../../src/update/manifest";
+import {
+	UpdateError,
+	canonicalBytes,
+	generateKeyPair,
+	publicKeyOf,
+	signManifest,
+	verifyManifest,
+	type UnsignedManifest,
+} from "../../src/update/manifest";
 import { compareVersions, displayVersion, isNewer, parseVersion } from "../../src/update/version";
 
 describe("version compare", () => {
@@ -73,7 +81,8 @@ describe("manifest signature", () => {
 		await expect(verifyManifest(without, kp.publicKey)).rejects.toMatchObject({ code: "bad-signature" });
 	});
 	test("a signature from another key is rejected", async () => {
-		const a = await generateKeyPair(), b = await generateKeyPair();
+		const a = await generateKeyPair(),
+			b = await generateKeyPair();
 		const m = await signManifest(base, a.privateJwk);
 		await expect(verifyManifest(m, b.publicKey)).rejects.toMatchObject({ code: "bad-signature" });
 	});
@@ -88,7 +97,8 @@ describe("manifest signature", () => {
 			{ ...m, notes: m.notes + " " },
 			{ ...m, releasedAt: "2027-01-01T00:00:00Z" },
 		];
-		for (const t of tampered) await expect(verifyManifest(t, kp.publicKey)).rejects.toMatchObject({ name: "UpdateError", code: "bad-signature" });
+		for (const t of tampered)
+			await expect(verifyManifest(t, kp.publicKey)).rejects.toMatchObject({ name: "UpdateError", code: "bad-signature" });
 	});
 	test("a corrupted or truncated signature is rejected", async () => {
 		const kp = await generateKeyPair();
@@ -107,7 +117,9 @@ describe("manifest signature", () => {
 		await expect(verifyManifest({ ...m, size: -1 }, kp.publicKey)).rejects.toMatchObject({ code: "malformed" });
 		await expect(verifyManifest({ ...m, sha256: "xyz" }, kp.publicKey)).rejects.toMatchObject({ code: "malformed" });
 		await expect(verifyManifest("nope", kp.publicKey)).rejects.toMatchObject({ code: "malformed" });
-		await expect(signManifest({ ...base, url: "http://example.org/a.exe" }, kp.privateJwk)).rejects.toMatchObject({ code: "insecure-url" });
+		await expect(signManifest({ ...base, url: "http://example.org/a.exe" }, kp.privateJwk)).rejects.toMatchObject({
+			code: "insecure-url",
+		});
 		// plain http to loopback is allowed (tests, local mirror)
 		await expect(signManifest({ ...base, url: "http://127.0.0.1:1234/a.exe" }, kp.privateJwk)).resolves.toBeTruthy();
 	});

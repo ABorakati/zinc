@@ -12,7 +12,9 @@ export interface Task {
 	/** called when the task is dropped from the queue before it ran */
 	dropped?: () => void;
 }
-export interface Handle { cancel(): void }
+export interface Handle {
+	cancel(): void;
+}
 
 export class Scheduler {
 	private queue: Task[] = [];
@@ -28,12 +30,17 @@ export class Scheduler {
 		return {
 			cancel: () => {
 				const i = this.queue.indexOf(t);
-				if (i >= 0) { this.queue.splice(i, 1); t.dropped?.(); }
+				if (i >= 0) {
+					this.queue.splice(i, 1);
+					t.dropped?.();
+				}
 			},
 		};
 	}
 
-	get pending(): number { return this.queue.length + this.running; }
+	get pending(): number {
+		return this.queue.length + this.running;
+	}
 
 	clear(): void {
 		const q = this.queue;
@@ -43,19 +50,26 @@ export class Scheduler {
 
 	private pump(): void {
 		while (this.running < this.max && this.queue.length) {
-			let best = 0, bp = Infinity;
+			let best = 0,
+				bp = Infinity;
 			for (let i = 0; i < this.queue.length; i++) {
 				const p = this.queue[i]!.pri();
-				if (p < bp) { bp = p; best = i; }
+				if (p < bp) {
+					bp = p;
+					best = i;
+				}
 			}
 			const t = this.queue.splice(best, 1)[0]!;
 			this.running++;
 			this.started++;
-			void t.run().catch((e) => console.error("[reader]", e instanceof Error ? e.message : e)).finally(() => {
-				this.running--;
-				this.finished++;
-				this.pump();
-			});
+			void t
+				.run()
+				.catch((e) => console.error("[reader]", e instanceof Error ? e.message : e))
+				.finally(() => {
+					this.running--;
+					this.finished++;
+					this.pump();
+				});
 		}
 	}
 }

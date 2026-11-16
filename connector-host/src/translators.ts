@@ -13,7 +13,10 @@ import { listTranslators, translatorsDirFor, type TranslatorInfo } from "../../c
 // In the compiled exe core's own "vendored" path points into the exe, so look for the checkout / install as well
 // (ZN_ZOTERO_VENDOR for a packaged app, else ZNH_REPO, default <home>/zotero-next, like the PDF worker in dispatch.ts).
 const REPO = (process.env.ZNH_REPO ?? join(process.env.USERPROFILE ?? homedir(), "zotero-next")).replace(/[\/]+$/, "");
-const FALLBACKS = [process.env.ZN_ZOTERO_VENDOR && join(process.env.ZN_ZOTERO_VENDOR, "translators"), `${REPO}/core/vendor/zotero/translators`].filter(Boolean) as string[];
+const FALLBACKS = [
+	process.env.ZN_ZOTERO_VENDOR && join(process.env.ZN_ZOTERO_VENDOR, "translators"),
+	`${REPO}/core/vendor/zotero/translators`,
+].filter(Boolean) as string[];
 
 /** The translators folder in use, or null when there is none. translatorsDirFor only reads the library's file name, so the library need not be opened. */
 function dirFor(dbPath: string | null): string | null {

@@ -22,14 +22,25 @@ async function shot(name: string, start: Partial<ReadingSettings>) {
 	const pal = () => palette(st());
 	t.render(() => (
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", backgroundColor: pal().bg }}>
-			<SettingsPanel pal={pal} settings={st} setSettings={(p) => setSt({ ...st(), ...p })} reset={() => setSt({ ...DEFAULT_SETTINGS })} Chip={makeChip(pal)} />
+			<SettingsPanel
+				pal={pal}
+				settings={st}
+				setSettings={(p) => setSt({ ...st(), ...p })}
+				reset={() => setSt({ ...DEFAULT_SETTINGS })}
+				Chip={makeChip(pal)}
+			/>
 			<div style={{ padding: 24, maxWidth: 680 }}>
 				<text style={{ color: pal().fg, fontFamily: "Inter", fontSize: 15 }}>(reading text below the panel)</text>
 			</div>
 		</div>
 	));
 	const t0 = performance.now();
-	while (performance.now() - t0 < 1200) { r.flush(); r.dispatchNativeEvents(); r.flush(); await Bun.sleep(16); }
+	while (performance.now() - t0 < 1200) {
+		r.flush();
+		r.dispatchNativeEvents();
+		r.flush();
+		await Bun.sleep(16);
+	}
 	const file = join(out, `${name}.png`);
 	r.captureScreenshot(file);
 	console.log("shot", file);

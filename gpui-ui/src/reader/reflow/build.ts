@@ -8,7 +8,17 @@ export type ReflowItem =
 	| { kind: "list"; id: string; blockIds: string[]; page: number; html: string }
 	| { kind: "code"; id: string; blockIds: string[]; page: number; text: string }
 	| { kind: "equation"; id: string; blockIds: string[]; page: number; rect: PdfRect; text: string }
-	| { kind: "figure"; id: string; blockIds: string[]; page: number; rect: PdfRect; type: "figure" | "table"; label?: string; captionHtml: string; wide: boolean }
+	| {
+			kind: "figure";
+			id: string;
+			blockIds: string[];
+			page: number;
+			rect: PdfRect;
+			type: "figure" | "table";
+			label?: string;
+			captionHtml: string;
+			wide: boolean;
+	  }
 	| { kind: "notes"; id: string; blockIds: string[]; page: number; html: string[] }
 	| { kind: "refs"; id: string; blockIds: string[]; page: number; entries: { id: string; html: string; page: number }[] };
 
@@ -18,7 +28,10 @@ export const stripTags = (h: string) => h.replace(/<[^>]*>/g, "");
 
 /** Remove soft hyphens and join leftover "hy-\nphen" line breaks; collapse whitespace. */
 export function dehyphenate(s: string): string {
-	return s.replace(/­/g, "").replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, "$1$2").replace(/[ \t]*\r?\n[ \t]*/g, " ");
+	return s
+		.replace(/­/g, "")
+		.replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, "$1$2")
+		.replace(/[ \t]*\r?\n[ \t]*/g, " ");
 }
 
 /** Join the end of a paragraph with the start of its continuation (next column or page). */
@@ -81,12 +94,19 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 		const prev = lastParaBlock;
 		if (!prev) return false;
 		if (prev.page !== b.page) return true;
-		const px = prev.rects[0]?.[0], bx = b.rects[0]?.[0];
+		const px = prev.rects[0]?.[0],
+			bx = b.rects[0]?.[0];
 		return px !== undefined && bx !== undefined && Math.abs(px - bx) > 100;
 	};
 	const flushNotes = () => {
 		if (!notes.length) return;
-		out.push({ kind: "notes", id: "n" + notes[0].id, blockIds: notes.map((n) => n.id), page: notes[0].page, html: notes.map((n) => n.html) });
+		out.push({
+			kind: "notes",
+			id: "n" + notes[0].id,
+			blockIds: notes.map((n) => n.id),
+			page: notes[0].page,
+			html: notes.map((n) => n.html),
+		});
 		notes = [];
 	};
 
@@ -102,7 +122,14 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				break;
 			case "heading":
 				flushNotes();
-				out.push({ kind: "heading", id: "r" + b.id, blockIds: [b.id], page: b.page, level: Math.min(Math.max(b.level ?? 2, 1), 5), html: html(b) });
+				out.push({
+					kind: "heading",
+					id: "r" + b.id,
+					blockIds: [b.id],
+					page: b.page,
+					level: Math.min(Math.max(b.level ?? 2, 1), 5),
+					html: html(b),
+				});
 				lastPara = null;
 				break;
 			case "paragraph": {
@@ -110,8 +137,7 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				if (lastPara && continuesInto(stripTags(lastPara.html), stripTags(h), crossBreak(b))) {
 					lastPara.html = joinHtml(lastPara.html, h);
 					lastPara.blockIds.push(b.id);
-				}
-				else {
+				} else {
 					lastPara = { kind: "para", id: "r" + b.id, blockIds: [b.id], page: b.page, html: h };
 					out.push(lastPara);
 				}
@@ -119,7 +145,13 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				break;
 			}
 			case "list":
-				out.push({ kind: "list", id: "r" + b.id, blockIds: [b.id], page: b.page, html: fixGlyphs(b.html || `<p>${escapeHtml(b.text)}</p>`) });
+				out.push({
+					kind: "list",
+					id: "r" + b.id,
+					blockIds: [b.id],
+					page: b.page,
+					html: fixGlyphs(b.html || `<p>${escapeHtml(b.text)}</p>`),
+				});
 				lastPara = null;
 				break;
 			case "other":
@@ -127,7 +159,8 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				break;
 			case "equation": {
 				const r = b.rects[0];
-				if (r) out.push({ kind: "equation", id: "r" + b.id, blockIds: [b.id], page: b.page, rect: [...r] as PdfRect, text: b.text });
+				if (r)
+					out.push({ kind: "equation", id: "r" + b.id, blockIds: [b.id], page: b.page, rect: [...r] as PdfRect, text: b.text });
 				lastPara = null; // text after an equation is a new paragraph
 				break;
 			}
@@ -138,9 +171,15 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				if (!rect || (!f && isTiny(rect))) break; // logos, rules
 				const cap = f?.captionBlockId ? blockById.get(f.captionBlockId) : undefined;
 				out.push({
-					kind: "figure", id: "r" + b.id, blockIds: [b.id, ...(cap ? [cap.id] : [])], page: b.page, rect: [...rect] as PdfRect,
-					type: f?.kind ?? (b.type === "table" ? "table" : "figure"), label: f?.label,
-					captionHtml: cap ? html(cap) : "", wide: rect[2] - rect[0] > 330,
+					kind: "figure",
+					id: "r" + b.id,
+					blockIds: [b.id, ...(cap ? [cap.id] : [])],
+					page: b.page,
+					rect: [...rect] as PdfRect,
+					type: f?.kind ?? (b.type === "table" ? "table" : "figure"),
+					label: f?.label,
+					captionHtml: cap ? html(cap) : "",
+					wide: rect[2] - rect[0] > 330,
 				});
 				break;
 			}
@@ -152,13 +191,17 @@ export function buildItems(doc: DocStructure): ReflowItem[] {
 				notes.push({ html: html(b), id: b.id, page: b.page });
 				break;
 			case "reference": {
-				if (!refs) { refs = { kind: "refs", id: "r" + b.id, blockIds: [], page: b.page, entries: [] }; out.push(refs); }
+				if (!refs) {
+					refs = { kind: "refs", id: "r" + b.id, blockIds: [], page: b.page, entries: [] };
+					out.push(refs);
+				}
 				refs.blockIds.push(b.id);
 				refs.entries.push({ id: b.id, html: html(b), page: b.page });
 				lastPara = null;
 				break;
 			}
-			default: break;
+			default:
+				break;
 		}
 	}
 	flushNotes();
@@ -178,17 +221,23 @@ export function bestTarget(cands: { blocks: Block[] }[], page: number, top?: num
 		for (const b of c.blocks) {
 			if (b.page !== page) continue;
 			for (const r of b.rects) {
-				const score = (top === undefined ? -r[3]
-					: top <= r[3] + 3 && top >= r[1] - 3 ? -1e6
-					: Math.abs(r[3] - top)) + c.blocks.length * 1e-3; // ties: the more specific candidate
-				if (score < bestScore) { bestScore = score; best = i; }
+				const score =
+					(top === undefined ? -r[3] : top <= r[3] + 3 && top >= r[1] - 3 ? -1e6 : Math.abs(r[3] - top)) + c.blocks.length * 1e-3; // ties: the more specific candidate
+				if (score < bestScore) {
+					bestScore = score;
+					best = i;
+				}
 			}
 		}
 	});
 	return best;
 }
 
-export interface TocEntry { id: string; text: string; level: number }
+export interface TocEntry {
+	id: string;
+	text: string;
+	level: number;
+}
 
 /**
  * Contents for the reading view, from the headings the layout analysis detected (works without PDF bookmarks).
@@ -204,8 +253,7 @@ export function tocEntries(items: ReflowItem[]): TocEntry[] {
 			if (!text || text.length > 120) continue;
 			if (/^(references|bibliography|works cited|literature cited)\b/i.test(text)) refsNamed = true;
 			out.push({ id: it.id, text, level: it.level });
-		}
-		else if (it.kind === "refs" && !refsNamed) {
+		} else if (it.kind === "refs" && !refsNamed) {
 			out.push({ id: it.id, text: "References", level: 0 });
 			refsNamed = true;
 		}

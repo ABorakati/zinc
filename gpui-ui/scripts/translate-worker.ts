@@ -20,17 +20,22 @@ const result = await Bun.build({
 	sourcemap: "none",
 	// optional native peer of jsdom (try { require("canvas") }): leave it out, jsdom then runs without canvas support
 	external: ["canvas"],
-	plugins: [{
-		name: "translate-dom-static-require",
-		setup(build) {
-			build.onLoad({ filter: /dom\.ts$/ }, async ({ path }) => {
-				if (resolve(path) !== domPath) return undefined;
-				// req("jsdom") is a createRequire() call the bundler cannot see: make the three requires static
-				const src = (await Bun.file(path).text()).replace(/\breq\(("jsdom"|"wicked-good-xpath"|"w3c-xmlserializer")\)/g, "require($1)");
-				return { contents: src, loader: "ts" };
-			});
+	plugins: [
+		{
+			name: "translate-dom-static-require",
+			setup(build) {
+				build.onLoad({ filter: /dom\.ts$/ }, async ({ path }) => {
+					if (resolve(path) !== domPath) return undefined;
+					// req("jsdom") is a createRequire() call the bundler cannot see: make the three requires static
+					const src = (await Bun.file(path).text()).replace(
+						/\breq\(("jsdom"|"wicked-good-xpath"|"w3c-xmlserializer")\)/g,
+						"require($1)",
+					);
+					return { contents: src, loader: "ts" };
+				});
+			},
 		},
-	}],
+	],
 });
 if (!result.success) {
 	for (const m of result.logs) console.error(m);

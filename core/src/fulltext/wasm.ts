@@ -184,7 +184,8 @@ export function loadModule(): Promise<WebAssembly.Module> {
 			.then((bytes) => WebAssembly.compile(bytes))
 			.then((m) => {
 				const imports = WebAssembly.Module.imports(m);
-				if (imports.length) throw new Error(`wasm module must import nothing, found: ${imports.map((i) => `${i.module}.${i.name}`).join(", ")}`);
+				if (imports.length)
+					throw new Error(`wasm module must import nothing, found: ${imports.map((i) => `${i.module}.${i.name}`).join(", ")}`);
 				return m;
 			});
 		modulePromise.catch(() => {

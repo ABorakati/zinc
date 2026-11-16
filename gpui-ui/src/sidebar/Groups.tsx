@@ -9,7 +9,22 @@ import { store } from "../store";
 import { openMenu, toast } from "../ui";
 import { currentView, setView } from "./bridge";
 import { errMsg, sidebarApi } from "./client";
-import { CountBadge, type Entry, folderSvg, labelCls, ListItem, muted, pill, ROW_HOVER, ROW_STATIC, SectionHeader, SPECIAL_STATIC, t, tok, tx } from "./parts";
+import {
+	CountBadge,
+	type Entry,
+	folderSvg,
+	labelCls,
+	ListItem,
+	muted,
+	pill,
+	ROW_HOVER,
+	ROW_STATIC,
+	SectionHeader,
+	SPECIAL_STATIC,
+	t,
+	tok,
+	tx,
+} from "./parts";
 import { buildGroupRows, libraryRowKey } from "./groupRows";
 import { expandedKeys, groupsOpen, setExpandedKeys, setGroupsOpen } from "./state";
 
@@ -45,7 +60,12 @@ function LibraryRow(p: { lib: Library; hasCollections: boolean }): JSX.Element {
 				onAuxClick={(e) => {
 					if (!e.isRightClick) return;
 					openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, [
-						{ label: "New Collection…", icon: "folder-plus", disabled: !p.lib.editable, onSelect: () => void newCollection(p.lib) },
+						{
+							label: "New Collection…",
+							icon: "folder-plus",
+							disabled: !p.lib.editable,
+							onSelect: () => void newCollection(p.lib),
+						},
 						{ label: "Refresh", icon: "refresh-cw", onSelect: () => store.refresh() }, // refresh() re-reads the libraries too
 					]);
 				}}
@@ -53,13 +73,21 @@ function LibraryRow(p: { lib: Library; hasCollections: boolean }): JSX.Element {
 				onMouseLeave={() => setHov(false)}
 				style={{ ...t(SPECIAL_STATIC), paddingLeft: 6, ...(hov() ? t(ROW_HOVER) : {}), ...pill(sel()) }}
 			>
-				<div onClick={(e) => { stop(e); if (p.hasCollections) toggle(libKey(p.lib.id)); }} style={t("flex size-4 flex-none items-center justify-center")}>
+				<div
+					onClick={(e) => {
+						stop(e);
+						if (p.hasCollections) toggle(libKey(p.lib.id));
+					}}
+					style={t("flex size-4 flex-none items-center justify-center")}
+				>
 					<Show when={p.hasCollections}>
 						<Icon name={isOpen(libKey(p.lib.id)) ? "chevron-down" : "chevron-right"} size={14} color={muted()} />
 					</Show>
 				</div>
 				<Icon name="users" size={16} color={tok(sel() ? "primary" : "muted-foreground")} />
-				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>{p.lib.name}</text>
+				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>
+					{p.lib.name}
+				</text>
 				<Show when={!p.lib.editable}>
 					<Icon name="lock" size={12} color={muted()} />
 				</Show>
@@ -84,19 +112,40 @@ function CollectionRow(p: { lib: Library; c: Collection; depth: number }): JSX.E
 				onClick={() => setView({ kind: "collection", key: p.c.key })}
 				onAuxClick={(e) => {
 					if (!e.isRightClick) return;
-					openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, [{ label: "New Subcollection…", icon: "folder-plus", disabled: !p.lib.editable, onSelect: () => void newCollection(p.lib, p.c.key) }]);
+					openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, [
+						{
+							label: "New Subcollection…",
+							icon: "folder-plus",
+							disabled: !p.lib.editable,
+							onSelect: () => void newCollection(p.lib, p.c.key),
+						},
+					]);
 				}}
 				onMouseEnter={() => setHov(true)}
 				onMouseLeave={() => setHov(false)}
-				style={{ ...t(ROW_STATIC), cursor: "pointer", paddingLeft: 6 + p.depth * 14, ...(hov() ? t(ROW_HOVER) : {}), ...pill(sel()) }}
+				style={{
+					...t(ROW_STATIC),
+					cursor: "pointer",
+					paddingLeft: 6 + p.depth * 14,
+					...(hov() ? t(ROW_HOVER) : {}),
+					...pill(sel()),
+				}}
 			>
-				<div onClick={(e) => { stop(e); if (kids().length) toggle(p.c.key); }} style={t("flex size-4 flex-none items-center justify-center")}>
+				<div
+					onClick={(e) => {
+						stop(e);
+						if (kids().length) toggle(p.c.key);
+					}}
+					style={t("flex size-4 flex-none items-center justify-center")}
+				>
 					<Show when={kids().length}>
 						<Icon name={isOpen(p.c.key) ? "chevron-down" : "chevron-right"} size={14} color={muted()} />
 					</Show>
 				</div>
 				<svg source={folderSvg(isOpen(p.c.key) || sel())} style={{ width: 15, height: 15, flexShrink: 0, color: muted() }} />
-				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>{p.c.name}</text>
+				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>
+					{p.c.name}
+				</text>
 				<CountBadge n={p.c.itemCount} />
 			</div>
 		</ListItem>
@@ -105,7 +154,12 @@ function CollectionRow(p: { lib: Library; c: Collection; depth: number }): JSX.E
 
 /** The block's entries for the sidebar's virtual list; nothing when the account has no groups. */
 export function groupEntries(top: number): Entry[] {
-	const rows = buildGroupRows({ libraries: store.libraries(), trees: store.groupCollections(), open: groupsOpen(), expanded: new Set(expandedKeys()) });
+	const rows = buildGroupRows({
+		libraries: store.libraries(),
+		trees: store.groupCollections(),
+		open: groupsOpen(),
+		expanded: new Set(expandedKeys()),
+	});
 	return rows.map((r): Entry => {
 		if (r.kind === "header") {
 			return {

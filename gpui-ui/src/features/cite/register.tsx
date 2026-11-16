@@ -20,8 +20,22 @@ async function collectionKeys(collectionKey: string): Promise<string[]> {
 export function register(): void {
 	// dragging items out of the window drops a Quick Copy citation / bibliography into other apps (Shift: the other of the two)
 	installOutDrag();
-	registerItemAction({ id: "cite.copy-bibliography", label: "Copy Bibliography", icon: "clipboard-copy", group: "cite", shortcut: "Ctrl+Shift+C", run: (ctx) => void quickCopy(ctx.keys, "bibliography") });
-	registerItemAction({ id: "cite.copy-citation", label: "Copy Citation", icon: "quote", group: "cite", shortcut: "Ctrl+Shift+A", run: (ctx) => void quickCopy(ctx.keys, "citation") });
+	registerItemAction({
+		id: "cite.copy-bibliography",
+		label: "Copy Bibliography",
+		icon: "clipboard-copy",
+		group: "cite",
+		shortcut: "Ctrl+Shift+C",
+		run: (ctx) => void quickCopy(ctx.keys, "bibliography"),
+	});
+	registerItemAction({
+		id: "cite.copy-citation",
+		label: "Copy Citation",
+		icon: "quote",
+		group: "cite",
+		shortcut: "Ctrl+Shift+A",
+		run: (ctx) => void quickCopy(ctx.keys, "citation"),
+	});
 	registerItemAction({
 		id: "cite.create-bibliography",
 		label: "Create Bibliography from Items…",
@@ -37,11 +51,29 @@ export function register(): void {
 		run: (ctx) => void openBibliography(`Collection "${ctx.name}"`, () => collectionKeys(ctx.collectionKey)),
 	});
 
-	registerAppAction({ id: "cite.settings", label: "Citation Style Settings…", icon: "settings-2", menu: "tools", run: () => void openCiteSettings(selectedKeys().slice(0, 3)) });
+	registerAppAction({
+		id: "cite.settings",
+		label: "Citation Style Settings…",
+		icon: "settings-2",
+		menu: "tools",
+		run: () => void openCiteSettings(selectedKeys().slice(0, 3)),
+	});
 
 	// The keyboard shortcuts act on the selection (the shell binds an app action's shortcut globally).
-	registerAppAction({ id: "cite.shortcut-bibliography", label: "Copy Bibliography", menu: "none", shortcut: "Ctrl+Shift+C", run: () => void quickCopy(selectedKeys(), "bibliography") });
-	registerAppAction({ id: "cite.shortcut-citation", label: "Copy Citation", menu: "none", shortcut: "Ctrl+Shift+A", run: () => void quickCopy(selectedKeys(), "citation") });
+	registerAppAction({
+		id: "cite.shortcut-bibliography",
+		label: "Copy Bibliography",
+		menu: "none",
+		shortcut: "Ctrl+Shift+C",
+		run: () => void quickCopy(selectedKeys(), "bibliography"),
+	});
+	registerAppAction({
+		id: "cite.shortcut-citation",
+		label: "Copy Citation",
+		menu: "none",
+		shortcut: "Ctrl+Shift+A",
+		run: () => void quickCopy(selectedKeys(), "citation"),
+	});
 
 	registerSettingsSection({ id: "cite", label: "Cite", icon: "quote", order: 60, render: () => <CiteSettingsSection /> });
 }

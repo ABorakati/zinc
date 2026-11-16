@@ -51,7 +51,11 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 		api.detectZotero().then(setZotero, () => setZotero(null));
 	});
 
-	const fail = (e: unknown) => { setError(e instanceof Error ? e.message : String(e)); setStage("choose"); setBusy(false); };
+	const fail = (e: unknown) => {
+		setError(e instanceof Error ? e.message : String(e));
+		setStage("choose");
+		setBusy(false);
+	};
 
 	async function runImport(dir: string) {
 		setError("");
@@ -61,11 +65,16 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 		try {
 			const path = await api.importFromZotero(dir, setProgress);
 			api.done(path);
-		} catch (e) { fail(e); }
+		} catch (e) {
+			fail(e);
+		}
 	}
 
 	async function chooseFolder(): Promise<ZoteroFound | null> {
-		if (!api.canPick) { setError("There is no folder dialog in this window."); return null; }
+		if (!api.canPick) {
+			setError("There is no folder dialog in this window.");
+			return null;
+		}
 		const z = await api.pickZoteroFolder();
 		if (z) setZotero(z);
 		return z;
@@ -78,10 +87,18 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 		if (!canImport(z ?? null)) {
 			// nothing usable found: ask for the folder, and go on straight away when it is a Zotero library
 			setBusy(true);
-			try { z = await chooseFolder(); } catch (e) { fail(e); return; }
+			try {
+				z = await chooseFolder();
+			} catch (e) {
+				fail(e);
+				return;
+			}
 			setBusy(false);
 			if (!z) return;
-			if (!canImport(z)) { setError(describeZotero(z)); return; }
+			if (!canImport(z)) {
+				setError(describeZotero(z));
+				return;
+			}
 		}
 		await runImport(z!.dir);
 	}
@@ -89,33 +106,73 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 	async function onOpen() {
 		if (busy()) return;
 		setError("");
-		if (!api.canPick) { setError("There is no file dialog in this window."); return; }
+		if (!api.canPick) {
+			setError("There is no file dialog in this window.");
+			return;
+		}
 		setBusy(true);
 		try {
 			const r = await api.pickLibrary();
-			if (!r) { setBusy(false); return; }
-			if ("problem" in r) { setError(r.problem); setBusy(false); return; }
+			if (!r) {
+				setBusy(false);
+				return;
+			}
+			if ("problem" in r) {
+				setError(r.problem);
+				setBusy(false);
+				return;
+			}
 			api.done(r.path);
-		} catch (e) { fail(e); }
+		} catch (e) {
+			fail(e);
+		}
 	}
 
 	async function onEmpty() {
 		if (busy()) return;
 		setError("");
 		setBusy(true);
-		try { api.done(await api.createEmpty()); } catch (e) { fail(e); }
+		try {
+			api.done(await api.createEmpty());
+		} catch (e) {
+			fail(e);
+		}
 	}
 
 	// ---- pieces
 
-	const Txt = (q: { cls: string; children: string; style?: Style }): JSX.Element => <text style={{ ...tx(q.cls), ...q.style }}>{q.children}</text>;
+	const Txt = (q: { cls: string; children: string; style?: Style }): JSX.Element => (
+		<text style={{ ...tx(q.cls), ...q.style }}>{q.children}</text>
+	);
 	/** A path on one line; when it does not fit, the start is cut (the end of a path is the informative part). */
 	const PathLine = (q: { children: string; cls?: string }): JSX.Element => (
-		<text style={{ ...tx(q.cls ?? "text-xs text-muted-foreground"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis-start", minWidth: 0, flexShrink: 1, maxWidth: "100%" }}>{q.children}</text>
+		<text
+			style={{
+				...tx(q.cls ?? "text-xs text-muted-foreground"),
+				whiteSpace: "nowrap",
+				overflow: "hidden",
+				textOverflow: "ellipsis-start",
+				minWidth: 0,
+				flexShrink: 1,
+				maxWidth: "100%",
+			}}
+		>
+			{q.children}
+		</text>
 	);
 
 	/** One way to start. The whole card is the button (a filled box, so it has a hit area). */
-	function Choice(q: { icon: string; title: string; text: string; detail?: () => string; detailTone?: () => "ok" | "warn"; path?: () => string | undefined; action: string; primary?: boolean; onClick: () => void }): JSX.Element {
+	function Choice(q: {
+		icon: string;
+		title: string;
+		text: string;
+		detail?: () => string;
+		detailTone?: () => "ok" | "warn";
+		path?: () => string | undefined;
+		action: string;
+		primary?: boolean;
+		onClick: () => void;
+	}): JSX.Element {
 		return (
 			<div
 				onClick={q.onClick}
@@ -134,7 +191,9 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 					<Txt cls="text-[15px] font-semibold text-foreground">{q.title}</Txt>
 					<Txt cls="text-xs text-muted-foreground">{q.text}</Txt>
 					<Show when={q.detail?.()}>
-						<Txt cls={`text-xs ${q.detailTone?.() === "warn" ? "text-warning-foreground" : "text-foreground"}`}>{q.detail!()}</Txt>
+						<Txt cls={`text-xs ${q.detailTone?.() === "warn" ? "text-warning-foreground" : "text-foreground"}`}>
+							{q.detail!()}
+						</Txt>
 					</Show>
 					<Show when={q.path?.()}>
 						<PathLine>{q.path!()!}</PathLine>
@@ -142,11 +201,21 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 				</div>
 				<div
 					style={{
-						...t(`flex flex-none items-center justify-center rounded-md h-8 px-3.5 ${q.primary ? "bg-primary" : "bg-secondary"}`),
+						...t(
+							`flex flex-none items-center justify-center rounded-md h-8 px-3.5 ${q.primary ? "bg-primary" : "bg-secondary"}`,
+						),
 						...(q.primary ? { boxShadow: shadows[p.mode].primary } : {}),
 					}}
 				>
-					<text style={{ ...tx("text-[13px] font-medium"), color: tok(q.primary ? "primary-foreground" : "secondary-foreground"), whiteSpace: "nowrap" }}>{q.action}</text>
+					<text
+						style={{
+							...tx("text-[13px] font-medium"),
+							color: tok(q.primary ? "primary-foreground" : "secondary-foreground"),
+							whiteSpace: "nowrap",
+						}}
+					>
+						{q.action}
+					</text>
 				</div>
 			</div>
 		);
@@ -166,8 +235,12 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 		<div style={{ ...t("flex flex-col items-center justify-center bg-canvas"), width: "100%", height: "100%" }}>
 			<div style={{ ...t("flex flex-col gap-5"), width: "100%", maxWidth: 660, padding: 24 }}>
 				<div style={t("flex flex-col gap-1.5")}>
-					<Txt cls="text-[26px] font-semibold text-foreground" style={{ fontFamily: "Source Serif 4" }}>Welcome to Zinc</Txt>
-					<Txt cls="text-sm text-muted-foreground">Choose where your library comes from. You can change this later in Settings, under Files and folders.</Txt>
+					<Txt cls="text-[26px] font-semibold text-foreground" style={{ fontFamily: "Source Serif 4" }}>
+						Welcome to Zinc
+					</Txt>
+					<Txt cls="text-sm text-muted-foreground">
+						Choose where your library comes from. You can change this later in Settings, under Files and folders.
+					</Txt>
 				</div>
 
 				<Show when={api.notice}>
@@ -179,18 +252,27 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 				<Show when={stage() === "choose"}>
 					<div style={{ ...t("flex flex-col gap-3"), width: "100%" }}>
 						<Choice
-							icon="import" title="Import from Zotero" primary action="Import"
+							icon="import"
+							title="Import from Zotero"
+							primary
+							action="Import"
 							text="Copy your Zotero library into a new Zinc library. Zotero is only read, never changed."
-							detail={zoteroDetail} path={zoteroPath} detailTone={() => (zotero() && canImport(zotero() ?? null) ? "ok" : "warn")}
+							detail={zoteroDetail}
+							path={zoteroPath}
+							detailTone={() => (zotero() && canImport(zotero() ?? null) ? "ok" : "warn")}
 							onClick={() => void onImport()}
 						/>
 						<Choice
-							icon="folder-open" title="Open an existing library…" action="Browse…"
+							icon="folder-open"
+							title="Open an existing library…"
+							action="Browse…"
 							text="Use a Zinc library file you already have, on this computer or on a drive you moved it to."
 							onClick={() => void onOpen()}
 						/>
 						<Choice
-							icon="plus" title="Start an empty library" action="Start"
+							icon="plus"
+							title="Start an empty library"
+							action="Start"
 							text="Begin with nothing and add papers, or import files later."
 							onClick={() => void onEmpty()}
 						/>
@@ -198,23 +280,38 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 					<Show when={zotero() && api.canPick}>
 						<div style={t("flex items-center gap-2")}>
 							<div
-								onClick={() => { if (!busy()) void chooseFolder().then((z) => z && setError(canImport(z) ? "" : describeZotero(z))); }}
-								style={{ ...t("flex flex-none items-center rounded-md bg-muted px-2.5 h-7 hover:bg-accent"), cursor: "pointer" }}
+								onClick={() => {
+									if (!busy()) void chooseFolder().then((z) => z && setError(canImport(z) ? "" : describeZotero(z)));
+								}}
+								style={{
+									...t("flex flex-none items-center rounded-md bg-muted px-2.5 h-7 hover:bg-accent"),
+									cursor: "pointer",
+								}}
 							>
-								<text style={{ ...tx("text-xs font-medium text-foreground"), whiteSpace: "nowrap" }}>Use a different Zotero folder…</text>
+								<text style={{ ...tx("text-xs font-medium text-foreground"), whiteSpace: "nowrap" }}>
+									Use a different Zotero folder…
+								</text>
 							</div>
 						</div>
 					</Show>
 				</Show>
 
 				<Show when={stage() === "importing"}>
-					<div style={{ ...t("flex flex-col gap-3 rounded-[14px] bg-background p-5"), boxShadow: shadows[p.mode].raised, width: "100%" }}>
+					<div
+						style={{
+							...t("flex flex-col gap-3 rounded-[14px] bg-background p-5"),
+							boxShadow: shadows[p.mode].raised,
+							width: "100%",
+						}}
+					>
 						<Txt cls="text-[15px] font-semibold text-foreground">Importing from Zotero</Txt>
 						<Txt cls="text-xs text-muted-foreground">{progressText(progress())}</Txt>
 						<div style={{ ...t("rounded-full bg-muted"), width: "100%", height: 8, overflow: "hidden" }}>
 							<div style={{ ...t("rounded-full bg-primary"), width: pct(), height: 8 }} />
 						</div>
-						<Txt cls="text-xs text-muted-foreground">This can take a few minutes for a large library. Keep this window open.</Txt>
+						<Txt cls="text-xs text-muted-foreground">
+							This can take a few minutes for a large library. Keep this window open.
+						</Txt>
 					</div>
 				</Show>
 
@@ -225,7 +322,9 @@ export function FirstRun(p: { api: FirstRunApi; mode: Mode }): JSX.Element {
 				</Show>
 
 				<div style={{ ...t("flex items-center gap-1.5"), width: "100%", minWidth: 0 }}>
-					<Txt cls="text-xs text-muted-foreground" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>A new library is created at</Txt>
+					<Txt cls="text-xs text-muted-foreground" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+						A new library is created at
+					</Txt>
 					<PathLine>{api.defaultPath}</PathLine>
 				</div>
 			</div>

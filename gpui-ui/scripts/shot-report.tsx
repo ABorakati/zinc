@@ -17,11 +17,26 @@ const mode = args.includes("light") ? "light" : "dark";
 mkdirSync(outDir, { recursive: true });
 
 const rec = (time: string, level: string, area: string, message: string, stack?: string) =>
-	JSON.stringify({ time, level, area, message, ...(stack ? { stack } : {}), version: "0.9.0-test", build: "bytecode", os: "Windows_NT 10.0.26300 x64" });
+	JSON.stringify({
+		time,
+		level,
+		area,
+		message,
+		...(stack ? { stack } : {}),
+		version: "0.9.0-test",
+		build: "bytecode",
+		os: "Windows_NT 10.0.26300 x64",
+	});
 const fake = [
 	rec("2026-11-05T21:14:02.118Z", "info", "ui", "start"),
 	rec("2026-11-05T21:14:09.502Z", "warn", "worker", "[structure] document worker failed: out of memory"),
-	rec("2026-11-06T08:02:41.007Z", "error", "websync", "Error: zotero.org answered 503 (backing off 60 s)", "Error: zotero.org answered 503\n    at pullOnce (%USERPROFILE%\\zotero-next\\core\\src\\websync\\pull.ts:88:11)"),
+	rec(
+		"2026-11-06T08:02:41.007Z",
+		"error",
+		"websync",
+		"Error: zotero.org answered 503 (backing off 60 s)",
+		"Error: zotero.org answered 503\n    at pullOnce (%USERPROFILE%\\zotero-next\\core\\src\\websync\\pull.ts:88:11)",
+	),
 	rec("2026-11-06T08:03:12.300Z", "error", "core", "GET /api/items/ABCD1234/children: TypeError: undefined is not an object"),
 	rec("2026-11-06T09:30:00.000Z", "error", "ui", "error boundary (item pane): Error: render failed"),
 	rec("2026-11-06T09:31:10.250Z", "fatal", "ui", "uncaughtException: RangeError: Maximum call stack size exceeded"),
@@ -29,7 +44,17 @@ const fake = [
 ];
 const seed: Report = (() => {
 	const text = formatReport(
-		{ "App version": "0.9.0-test", "Build": "bytecode", "OS": "Windows_NT 10.0.26300 x64", "Bun": Bun.version, "Library items": "6287", "Sync mode": "zotero-org, push on, files download", "Log folder": "%USERPROFILE%\\AppData\\Roaming\\zotero-next-gpui\\logs", "Log range": `last ${REPORT_DAYS} days`, "Created": "2026-11-06T09:40:00.000Z" },
+		{
+			"App version": "0.9.0-test",
+			Build: "bytecode",
+			OS: "Windows_NT 10.0.26300 x64",
+			Bun: Bun.version,
+			"Library items": "6287",
+			"Sync mode": "zotero-org, push on, files download",
+			"Log folder": "%USERPROFILE%\\AppData\\Roaming\\zotero-next-gpui\\logs",
+			"Log range": `last ${REPORT_DAYS} days`,
+			Created: "2026-11-06T09:40:00.000Z",
+		},
 		fake,
 		fake.length,
 	);
@@ -41,7 +66,15 @@ const t = createTestRoot({ width: 1400, height: 900 });
 registerFonts(t.renderer);
 const r = t.renderer;
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-const frames = async (ms: number) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { r.flush(); r.dispatchNativeEvents(); r.flush(); await sleep(16); } };
+const frames = async (ms: number) => {
+	const t0 = performance.now();
+	while (performance.now() - t0 < ms) {
+		r.flush();
+		r.dispatchNativeEvents();
+		r.flush();
+		await sleep(16);
+	}
+};
 
 t.render(() => (
 	<div style={{ ...tw("flex flex-col bg-canvas", store.mode()), position: "relative", width: "100%", height: "100%" }}>

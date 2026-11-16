@@ -80,7 +80,14 @@ describe("tag colours", () => {
 		const put = (b: unknown) => call(fx.db, "PUT", "/api/tag-colors", b);
 		expect((await put([{ name: "a", color: "red" }])).status).toBe(400);
 		expect((await put([{ name: "a", color: "#12345" }])).status).toBe(400);
-		expect((await put([{ name: "a", color: "#fff" }, { name: "a", color: "#000000" }])).status).toBe(400);
+		expect(
+			(
+				await put([
+					{ name: "a", color: "#fff" },
+					{ name: "a", color: "#000000" },
+				])
+			).status,
+		).toBe(400);
 		expect((await put([{ name: " ", color: "#fff" }])).status).toBe(400);
 		expect((await put({ name: "a", color: "#fff" })).status).toBe(400);
 		expect((await call(fx.db, "POST", "/api/tag-colors", [])).status).toBe(405);
@@ -106,7 +113,11 @@ test("30k items: page of 100 with include=creators,tags is fast", () => {
 				itemType: "journalArticle",
 				title: `study ${i}`,
 				abstractNote: "word ".repeat(120),
-				creators: Array.from({ length: 6 }, (_, k) => ({ creatorType: "author", firstName: "Given", lastName: `Author${(i + k) % 900}` })),
+				creators: Array.from({ length: 6 }, (_, k) => ({
+					creatorType: "author",
+					firstName: "Given",
+					lastName: `Author${(i + k) % 900}`,
+				})),
 			};
 			ins.run(key, data.title, "Author" + (i % 900), 1980 + (i % 45), "J", JSON.stringify(data), added, added);
 			for (let t = 0; t < 3; t++) tag.run(key, `tag${(i + t) % 200}`);

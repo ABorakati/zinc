@@ -67,7 +67,9 @@ for (const it of job.items) {
 	const row = db.query("SELECT parent_key, item_type FROM items WHERE key = ?").get(it.attachmentKey!) as any;
 	const fine = att && existsSync(att.path) && readFileSync(att.path).subarray(0, 5).toString() === "%PDF-" && row.parent_key === it.key;
 	const ft = db.query("SELECT length(content) n FROM fulltext WHERE attachment_key = ?").get(it.attachmentKey!) as { n: number } | null;
-	console.log(`${it.key} -> ${it.attachmentKey} ${att?.path} ${att ? statSync(att.path).size : 0} bytes, parent ok=${row?.parent_key === it.key}, fulltext chars=${ft?.n ?? "none"}`);
+	console.log(
+		`${it.key} -> ${it.attachmentKey} ${att?.path} ${att ? statSync(att.path).size : 0} bytes, parent ok=${row?.parent_key === it.key}, fulltext chars=${ft?.n ?? "none"}`,
+	);
 	if (!fine) ok = false;
 }
 const after = (db.query("SELECT count(*) n FROM attachments").get() as { n: number }).n;

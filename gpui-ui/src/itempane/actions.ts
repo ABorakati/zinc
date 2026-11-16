@@ -16,8 +16,16 @@ export async function findFullText(keys: string[], done?: () => void): Promise<v
 			const attached = job.items.filter((x) => x.state === "attached").length;
 			const have = job.items.filter((x) => x.state === "already-has-pdf").length;
 			const signIn = job.items.filter((x) => x.state === "needs-sign-in").length;
-			if (attached) toast(attached === 1 ? "PDF attached" : `${attached} PDFs attached`, { kind: "success", description: job.items.find((x) => x.source)?.source });
-			else if (signIn) toast("Sign-in needed for a full text", { kind: "info", description: "Set up your institution in Settings, then try again." });
+			if (attached)
+				toast(attached === 1 ? "PDF attached" : `${attached} PDFs attached`, {
+					kind: "success",
+					description: job.items.find((x) => x.source)?.source,
+				});
+			else if (signIn)
+				toast("Sign-in needed for a full text", {
+					kind: "info",
+					description: "Set up your institution in Settings, then try again.",
+				});
 			else if (have === job.items.length) toast("Already has a PDF", { kind: "info" });
 			else toast("No full text found", { kind: "info", description: job.items[0]?.message });
 			if (attached) done?.();
@@ -42,12 +50,20 @@ export async function quickCopy(key: string, mode: "citation" | "bibliography", 
 
 /** Open a http(s) URL (or a DOI link) in the OS browser. */
 export async function openLink(url: string): Promise<void> {
-	try { await ipApi.openUrl(url); } catch (e) { fail("Could not open link", e); }
+	try {
+		await ipApi.openUrl(url);
+	} catch (e) {
+		fail("Could not open link", e);
+	}
 }
 
 /** Show the attachment's file in Explorer. */
 export async function revealAttachment(attachmentKey: string): Promise<void> {
-	try { await ipApi.reveal(attachmentKey); } catch (e) { fail("Could not show file", e); }
+	try {
+		await ipApi.reveal(attachmentKey);
+	} catch (e) {
+		fail("Could not show file", e);
+	}
 }
 
 export { errMsg };

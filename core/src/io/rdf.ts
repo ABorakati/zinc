@@ -3,8 +3,15 @@
 import type { Creator, ZoteroItemData } from "../api-types";
 import { getSchema } from "../schema-data";
 import {
-	creatorTypeFor, getBase, isSingleField, parseName, setBase, setFirst, textToNoteHtml,
-	type ParsedAttachment, type ParsedItem,
+	creatorTypeFor,
+	getBase,
+	isSingleField,
+	parseName,
+	setBase,
+	setFirst,
+	textToNoteHtml,
+	type ParsedAttachment,
+	type ParsedItem,
 } from "./common";
 import type { ExportItem } from "./bibtex";
 import { parseXml, local, textOf, type XmlNode } from "./xml";
@@ -203,41 +210,116 @@ class RdfGraph {
 // ---------------------------------------------------------------- type maps
 
 const BIB_TYPES: Record<string, string> = {
-	book: "book", booksection: "bookSection", thesis: "thesis", letter: "letter", manuscript: "manuscript",
-	interview: "interview", report: "report", patent: "patent", map: "map", motionpicture: "film",
-	illustration: "artwork", image: "artwork", legislation: "statute", recording: "audioRecording",
-	memo: "note", conferenceproceedings: "presentation", data: "computerProgram", part: "bookSection",
+	book: "book",
+	booksection: "bookSection",
+	thesis: "thesis",
+	letter: "letter",
+	manuscript: "manuscript",
+	interview: "interview",
+	report: "report",
+	patent: "patent",
+	map: "map",
+	motionpicture: "film",
+	illustration: "artwork",
+	image: "artwork",
+	legislation: "statute",
+	recording: "audioRecording",
+	memo: "note",
+	conferenceproceedings: "presentation",
+	data: "computerProgram",
+	part: "bookSection",
 	courtReporter: "case",
 };
 
 const DC_TYPES: Record<string, string> = {
-	book: "book", patent: "patent", report: "report", thesis: "thesis", bookitem: "bookSection",
-	booksection: "bookSection", conferenceitem: "conferencePaper", conferencepaper: "conferencePaper",
-	dataset: "dataset", article: "journalArticle", journalitem: "journalArticle", journalarticle: "journalArticle",
-	newsitem: "newspaperArticle", scholarlytext: "journalArticle", workingpaper: "report", authoredbook: "book",
-	bookchapter: "bookSection", bachelorthesis: "thesis", masterthesis: "thesis", doctoralthesis: "thesis",
-	electronicbook: "book", homepage: "webpage", webpage: "webpage", illustration: "artwork", map: "map",
-	software: "computerProgram", movingimage: "videoRecording", sound: "audioRecording", stillimage: "artwork",
-	image: "artwork", text: "journalArticle",
+	book: "book",
+	patent: "patent",
+	report: "report",
+	thesis: "thesis",
+	bookitem: "bookSection",
+	booksection: "bookSection",
+	conferenceitem: "conferencePaper",
+	conferencepaper: "conferencePaper",
+	dataset: "dataset",
+	article: "journalArticle",
+	journalitem: "journalArticle",
+	journalarticle: "journalArticle",
+	newsitem: "newspaperArticle",
+	scholarlytext: "journalArticle",
+	workingpaper: "report",
+	authoredbook: "book",
+	bookchapter: "bookSection",
+	bachelorthesis: "thesis",
+	masterthesis: "thesis",
+	doctoralthesis: "thesis",
+	electronicbook: "book",
+	homepage: "webpage",
+	webpage: "webpage",
+	illustration: "artwork",
+	map: "map",
+	software: "computerProgram",
+	movingimage: "videoRecording",
+	sound: "audioRecording",
+	stillimage: "artwork",
+	image: "artwork",
+	text: "journalArticle",
 };
 
 const SCHEMA_TYPES: Record<string, string> = {
-	scholarlyarticle: "journalArticle", medicalscholarlyarticle: "journalArticle", newsarticle: "newspaperArticle",
-	chapter: "bookSection", book: "book", blogposting: "blogPost", blogpost: "blogPost", discussionforumposting: "forumPost",
-	techarticle: "report", apireference: "report", dataset: "dataset", datacatalog: "dataset", movie: "film",
-	musicrecording: "audioRecording", musicalbum: "audioRecording", audiobook: "audioRecording", audioobject: "audioRecording",
-	softwareapplication: "computerProgram", mobileapplication: "computerProgram", videogame: "computerProgram",
-	webapplication: "computerProgram", softwaresourcecode: "computerProgram", painting: "artwork", photograph: "artwork",
-	visualartwork: "artwork", sculpture: "artwork", message: "email", emailmessage: "email", thesis: "thesis",
-	report: "report", presentationdigitaldocument: "presentation", tvclip: "tvBroadcast", tvepisode: "tvBroadcast",
+	scholarlyarticle: "journalArticle",
+	medicalscholarlyarticle: "journalArticle",
+	newsarticle: "newspaperArticle",
+	chapter: "bookSection",
+	book: "book",
+	blogposting: "blogPost",
+	blogpost: "blogPost",
+	discussionforumposting: "forumPost",
+	techarticle: "report",
+	apireference: "report",
+	dataset: "dataset",
+	datacatalog: "dataset",
+	movie: "film",
+	musicrecording: "audioRecording",
+	musicalbum: "audioRecording",
+	audiobook: "audioRecording",
+	audioobject: "audioRecording",
+	softwareapplication: "computerProgram",
+	mobileapplication: "computerProgram",
+	videogame: "computerProgram",
+	webapplication: "computerProgram",
+	softwaresourcecode: "computerProgram",
+	painting: "artwork",
+	photograph: "artwork",
+	visualartwork: "artwork",
+	sculpture: "artwork",
+	message: "email",
+	emailmessage: "email",
+	thesis: "thesis",
+	report: "report",
+	presentationdigitaldocument: "presentation",
+	tvclip: "tvBroadcast",
+	tvepisode: "tvBroadcast",
 };
 
 /** Containers whose title is a publication title. */
 const CONTAINER_TYPES: Record<string, true> = {
-	"bib:Journal": true, "bibo:Journal": true, "bib:Periodical": true, "bibo:Periodical": true,
-	"bib:Newspaper": true, "bibo:Newspaper": true, "bib:Book": true, "bibo:Book": true,
-	"bib:CourtReporter": true, "bibo:CourtReporter": true, "z:Website": true, "z:Blog": true, "z:Forum": true,
-	"so:Periodical": true, "so:PublicationIssue": true, "so:PublicationVolume": true, "so:Book": true,
+	"bib:Journal": true,
+	"bibo:Journal": true,
+	"bib:Periodical": true,
+	"bibo:Periodical": true,
+	"bib:Newspaper": true,
+	"bibo:Newspaper": true,
+	"bib:Book": true,
+	"bibo:Book": true,
+	"bib:CourtReporter": true,
+	"bibo:CourtReporter": true,
+	"z:Website": true,
+	"z:Blog": true,
+	"z:Forum": true,
+	"so:Periodical": true,
+	"so:PublicationIssue": true,
+	"so:PublicationVolume": true,
+	"so:Book": true,
 };
 
 const KNOWN_ITEM_TYPES = new Set(getSchema().itemTypes.map((t) => t.itemType));
@@ -264,8 +346,10 @@ function creatorOf(v: RdfResource | string, graph: RdfGraph, type: string): Crea
 /** Creator container predicates to try for a creator type, in Zotero's order. */
 function creatorPreds(creatorType: string): string[] {
 	const out = [`z:${creatorType}s`];
-	if (creatorType === "author") out.push("bib:authors", "dc:creator", "dcterms:creator", "so:author", "so:creator", "eprints:creators_name", "dc:contributor");
-	else if (creatorType === "editor" || creatorType === "contributor") out.push(`bib:${creatorType}s`, `eprints:${creatorType}s_name`, `so:${creatorType}`);
+	if (creatorType === "author")
+		out.push("bib:authors", "dc:creator", "dcterms:creator", "so:author", "so:creator", "eprints:creators_name", "dc:contributor");
+	else if (creatorType === "editor" || creatorType === "contributor")
+		out.push(`bib:${creatorType}s`, `eprints:${creatorType}s_name`, `so:${creatorType}`);
 	return out;
 }
 
@@ -286,14 +370,42 @@ function itemFromResource(res: RdfResource, graph: RdfGraph, container: RdfResou
 	const notes: string[] = [];
 	const attachments: ParsedAttachment[] = [];
 
-	setBase(data, "title", graph.lit(res, "dc:title", "dc10:title", "dcterms:title", "eprints:title", "og:title", "so:headline", "so:name"));
+	setBase(
+		data,
+		"title",
+		graph.lit(res, "dc:title", "dc10:title", "dcterms:title", "eprints:title", "og:title", "so:headline", "so:name"),
+	);
 	setBase(data, "shortTitle", graph.lit(res, "bibo:shortTitle", "z:shortTitle"));
 
 	// creators
 	const creators: Creator[] = [];
-	for (const ct of ["author", "editor", "contributor", "translator", "seriesEditor", "presenter", "composer", "wordsBy",
-		"performer", "programmer", "director", "interviewee", "interviewer", "recipient", "reviewedAuthor", "bookAuthor",
-		"castMember", "scriptwriter", "producer", "counsel", "commenter", "guest", "host", "narrator", "podcaster"]) {
+	for (const ct of [
+		"author",
+		"editor",
+		"contributor",
+		"translator",
+		"seriesEditor",
+		"presenter",
+		"composer",
+		"wordsBy",
+		"performer",
+		"programmer",
+		"director",
+		"interviewee",
+		"interviewer",
+		"recipient",
+		"reviewedAuthor",
+		"bookAuthor",
+		"castMember",
+		"scriptwriter",
+		"producer",
+		"counsel",
+		"commenter",
+		"guest",
+		"host",
+		"narrator",
+		"podcaster",
+	]) {
 		for (const v of graph.container(res, ...creatorPreds(ct))) {
 			const c = creatorOf(v, graph, creatorTypeFor(itemType, ct, "author", "contributor", "editor"));
 			if (c) creators.push(c);
@@ -314,20 +426,40 @@ function itemFromResource(res: RdfResource, graph: RdfGraph, container: RdfResou
 		setBase(data, "publicationTitle", graph.lit(res, "prism:publicationName", "dc:source", "dcterms:source", "eprints:publication"));
 	}
 	setBase(data, "journalAbbreviation", graph.lit(container, "dcterms:alternative"));
-	setFirst(data, ["volume", "seriesNumber"], graph.lit(container, "prism:volume", "bibo:volume") || graph.lit(res, "prism:volume", "bibo:volume"));
+	setFirst(
+		data,
+		["volume", "seriesNumber"],
+		graph.lit(container, "prism:volume", "bibo:volume") || graph.lit(res, "prism:volume", "bibo:volume"),
+	);
 	setFirst(data, ["issue", "number"], graph.lit(container, "prism:number", "bibo:issue") || graph.lit(res, "prism:number", "bibo:issue"));
 
 	// pages, extents
 	const pageStart = graph.lit(res, "prism:startingPage", "bibo:pageStart");
 	const pageEnd = graph.lit(res, "prism:endingPage", "bibo:pageEnd");
-	const pages = graph.lit(res, "bib:pages", "bibo:pages", "prism:pageRange", "so:pagination") || (pageStart ? (pageEnd ? `${pageStart}–${pageEnd}` : pageStart) : "");
+	const pages =
+		graph.lit(res, "bib:pages", "bibo:pages", "prism:pageRange", "so:pagination") ||
+		(pageStart ? (pageEnd ? `${pageStart}–${pageEnd}` : pageStart) : "");
 	if (!setBase(data, "pages", pages.replace(/\s*-\s*/g, "–"))) setBase(data, "numPages", pages);
 	setBase(data, "numPages", graph.lit(res, "bibo:numPages", "so:numberOfPages"));
 	setBase(data, "numberOfVolumes", graph.lit(res, "bibo:numVolumes"));
 	setBase(data, "edition", graph.lit(res, "prism:edition", "bibo:edition", "so:bookEdition"));
 
 	// dates
-	setBase(data, "date", graph.lit(res, "dc:date", "dc10:date", "dcterms:date", "dcterms:issued", "prism:publicationDate", "eprints:date", "so:datePublished", "og:published_time"));
+	setBase(
+		data,
+		"date",
+		graph.lit(
+			res,
+			"dc:date",
+			"dc10:date",
+			"dcterms:date",
+			"dcterms:issued",
+			"prism:publicationDate",
+			"eprints:date",
+			"so:datePublished",
+			"og:published_time",
+		),
+	);
 	setBase(data, "accessDate", graph.lit(res, "dcterms:dateSubmitted", "dcterms:dateCaptured").slice(0, 10));
 
 	// abstract, extra, rights, coverage
@@ -346,7 +478,9 @@ function itemFromResource(res: RdfResource, graph: RdfGraph, container: RdfResou
 
 	// publisher and place
 	const publisherRes = graph.ref(res, "dc:publisher", "dc10:publisher", "dcterms:publisher", "so:publisher", "so:publishedBy");
-	const publisher = (publisherRes && (graph.lit(publisherRes, "foaf:name", "so:name", "vcard2:organization-name") || textOf(publisherRes.node))) || graph.lit(res, "dc:publisher");
+	const publisher =
+		(publisherRes && (graph.lit(publisherRes, "foaf:name", "so:name", "vcard2:organization-name") || textOf(publisherRes.node))) ||
+		graph.lit(res, "dc:publisher");
 	setBase(data, "publisher", publisher);
 	const org = publisherRes ? graph.ref(publisherRes, "vcard:adr", "vcard2:adr") : undefined;
 	setBase(data, "place", graph.lit(org, "vcard:locality", "vcard2:label") || graph.lit(publisherRes, "so:location"));
@@ -410,12 +544,14 @@ function itemFromResource(res: RdfResource, graph: RdfGraph, container: RdfResou
 		if (!path) continue;
 		const title = att ? graph.lit(att, "dc:title", "z:title") : "";
 		const contentType = att ? graph.lit(att, "link:type") : "";
-		if (/^(https?|file):/i.test(path)) attachments.push({ title: title || undefined, url: path, contentType: contentType || undefined });
+		if (/^(https?|file):/i.test(path))
+			attachments.push({ title: title || undefined, url: path, contentType: contentType || undefined });
 		else attachments.push({ title: title || undefined, path, contentType: contentType || undefined });
 	}
 
 	// related items
-	const related = graph.refIds(res, "dc:relation", "dc10:relation", "dcterms:relation")
+	const related = graph
+		.refIds(res, "dc:relation", "dc10:relation", "dcterms:relation")
 		.filter((id) => /^#?item_\d+$/.test(id) || /^https?:/.test(id));
 	if (related.length) data.relations = { "dc:relation": related };
 
@@ -466,8 +602,15 @@ export function parseZoteroRdf(xml: string): { items: ParsedItem[]; errors: stri
 	// resources that are parts of, attachments to or creators of another resource
 	const nested = new Set<string>();
 	const nestedPreds = [
-		"dcterms:isPartOf", "so:isPartOf", "bib:presentedAt", "link:link", "dcterms:creator", "dcterms:isReferencedBy",
-		"dc:publisher", "dcterms:publisher", "bibo:authorList",
+		"dcterms:isPartOf",
+		"so:isPartOf",
+		"bib:presentedAt",
+		"link:link",
+		"dcterms:creator",
+		"dcterms:isReferencedBy",
+		"dc:publisher",
+		"dcterms:publisher",
+		"bibo:authorList",
 	];
 	for (const r of graph.byId.values()) {
 		for (const p of r.props) if (p.resId && nestedPreds.includes(p.pred)) nested.add(p.resId);
@@ -475,7 +618,12 @@ export function parseZoteroRdf(xml: string): { items: ParsedItem[]; errors: stri
 
 	const isCollection = (r: RdfResource) => r.type === "z:Collection" || r.type === "bib:Collection" || r.type === "bibo:Collection";
 	const collectionOf = (r: RdfResource): CollectionNode => {
-		const node: CollectionNode = { res: r, title: graph.lit(r, "dc:title", "dcterms:title") || textOf(r.node), children: [], items: [] };
+		const node: CollectionNode = {
+			res: r,
+			title: graph.lit(r, "dc:title", "dcterms:title") || textOf(r.node),
+			children: [],
+			items: [],
+		};
 		for (const part of graph.refs(r, "dcterms:hasPart", "dc:hasPart", "bib:hasPart")) {
 			if (isCollection(part)) node.children.push(collectionOf(part));
 			else node.items.push(part);
@@ -487,9 +635,7 @@ export function parseZoteroRdf(xml: string): { items: ParsedItem[]; errors: stri
 	for (const r of graph.byId.values()) {
 		for (const part of graph.refs(r, "dcterms:hasPart", "bib:hasPart")) if (isCollection(part)) childCollectionIds.add(part.id);
 	}
-	const roots = [...graph.byId.values()]
-		.filter((r) => isCollection(r) && !childCollectionIds.has(r.id))
-		.map(collectionOf);
+	const roots = [...graph.byId.values()].filter((r) => isCollection(r) && !childCollectionIds.has(r.id)).map(collectionOf);
 
 	// item id -> collection path (nested collections become "Parent/Child")
 	const paths = new Map<string, string[][]>();
@@ -553,14 +699,37 @@ export interface RdfCollection {
 }
 
 const RDF_TYPE: Record<string, string> = {
-	book: "bib:Book", bookSection: "bib:BookSection", journalArticle: "bib:Article", magazineArticle: "bib:Article",
-	newspaperArticle: "bib:Article", thesis: "bib:Thesis", letter: "bib:Letter", manuscript: "bib:Manuscript",
-	interview: "bib:Interview", film: "bib:MotionPicture", artwork: "bib:Illustration", map: "bib:Image",
-	report: "bib:Report", bill: "bib:Legislation", statute: "bib:Legislation", hearing: "bib:Report",
-	patent: "bib:Patent", email: "bib:Letter", instantMessage: "bib:Letter", audioRecording: "bib:Recording",
-	podcast: "bib:Recording", radioBroadcast: "bib:Recording", tvBroadcast: "bib:Recording",
-	videoRecording: "bib:Recording", presentation: "bib:ConferenceProceedings", computerProgram: "bib:Data",
-	dataset: "bib:Data", case: "bib:Document", webpage: "bib:Document", blogPost: "bib:Document", forumPost: "bib:Document",
+	book: "bib:Book",
+	bookSection: "bib:BookSection",
+	journalArticle: "bib:Article",
+	magazineArticle: "bib:Article",
+	newspaperArticle: "bib:Article",
+	thesis: "bib:Thesis",
+	letter: "bib:Letter",
+	manuscript: "bib:Manuscript",
+	interview: "bib:Interview",
+	film: "bib:MotionPicture",
+	artwork: "bib:Illustration",
+	map: "bib:Image",
+	report: "bib:Report",
+	bill: "bib:Legislation",
+	statute: "bib:Legislation",
+	hearing: "bib:Report",
+	patent: "bib:Patent",
+	email: "bib:Letter",
+	instantMessage: "bib:Letter",
+	audioRecording: "bib:Recording",
+	podcast: "bib:Recording",
+	radioBroadcast: "bib:Recording",
+	tvBroadcast: "bib:Recording",
+	videoRecording: "bib:Recording",
+	presentation: "bib:ConferenceProceedings",
+	computerProgram: "bib:Data",
+	dataset: "bib:Data",
+	case: "bib:Document",
+	webpage: "bib:Document",
+	blogPost: "bib:Document",
+	forumPost: "bib:Document",
 };
 
 /** Containers written for item types that live inside a larger work. */
@@ -663,7 +832,19 @@ export function exportZoteroRdf(items: RdfExportItem[], collections: RdfCollecti
 		put("bibo:numVolumes", d.numberOfVolumes);
 		put("prism:edition", d.edition ?? d.versionNumber);
 		if (containerSpec && d.itemType === "conferencePaper") put("bib:conferenceName", d.conferenceName);
-		for (const key of ["thesisType", "reportType", "websiteType", "artworkMedium", "letterType", "manuscriptType", "mapType", "videoRecordingType", "audioRecordingType", "presentationType", "postType"]) {
+		for (const key of [
+			"thesisType",
+			"reportType",
+			"websiteType",
+			"artworkMedium",
+			"letterType",
+			"manuscriptType",
+			"mapType",
+			"videoRecordingType",
+			"audioRecordingType",
+			"presentationType",
+			"postType",
+		]) {
 			if (d[key]) lines.push(`    <dc:type>${xmlEscape(String(d[key]))}</dc:type>`);
 		}
 
@@ -695,10 +876,14 @@ export function exportZoteroRdf(items: RdfExportItem[], collections: RdfCollecti
 		for (const line of idLines) lines.push(`    <dc:identifier>${xmlEscape(line)}</dc:identifier>`);
 		// omitted only when this item's own rdf:about already is the URL (another item may have taken it first)
 		if (d.url && uri !== String(d.url).trim()) {
-			lines.push("    <dc:identifier><dcterms:URI><rdf:value>" + xmlEscape(String(d.url)) + "</rdf:value></dcterms:URI></dc:identifier>");
+			lines.push(
+				"    <dc:identifier><dcterms:URI><rdf:value>" + xmlEscape(String(d.url)) + "</rdf:value></dcterms:URI></dc:identifier>",
+			);
 		}
 		if (d.callNumber) {
-			lines.push("    <dc:subject><dcterms:LCC><rdf:value>" + xmlEscape(String(d.callNumber)) + "</rdf:value></dcterms:LCC></dc:subject>");
+			lines.push(
+				"    <dc:subject><dcterms:LCC><rdf:value>" + xmlEscape(String(d.callNumber)) + "</rdf:value></dcterms:LCC></dc:subject>",
+			);
 		}
 		if (!containerUri && containerSpec) put("dc:source", containerTitle);
 
@@ -709,7 +894,10 @@ export function exportZoteroRdf(items: RdfExportItem[], collections: RdfCollecti
 			lines.push("    <dc:publisher><foaf:Organization>");
 			lines.push(`      <rdf:type rdf:resource="http://xmlns.com/foaf/0.1/Organization"/>`);
 			if (publisher) lines.push(`      <foaf:name>${xmlEscape(publisher)}</foaf:name>`);
-			if (place) lines.push(`      <vcard:adr><vcard:Address><vcard:locality>${xmlEscape(place)}</vcard:locality></vcard:Address></vcard:adr>`);
+			if (place)
+				lines.push(
+					`      <vcard:adr><vcard:Address><vcard:locality>${xmlEscape(place)}</vcard:locality></vcard:Address></vcard:adr>`,
+				);
 			lines.push("    </foaf:Organization></dc:publisher>");
 		}
 

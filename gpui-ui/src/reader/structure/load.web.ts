@@ -14,8 +14,13 @@ let real: Promise<Real> | undefined;
 
 export function loadStructure(attachmentKey: string, pdfBytes: Uint8Array, onProgress?: (pct: number) => void): Promise<DocStructure> {
 	// (an `if` on the define, so a build without the worker drops the import, and the vendored files it needs, altogether)
-	if (__ZN_DOCWORKER__) return (real ??= import("./load.docworker.web")).then((m) => m.loadStructure(attachmentKey, pdfBytes, onProgress));
-	return Promise.reject(new Error("The reading view needs layout analysis, which this browser version of Zinc does not include. Open the PDF in the Zinc app to read it in the reading view."));
+	if (__ZN_DOCWORKER__)
+		return (real ??= import("./load.docworker.web")).then((m) => m.loadStructure(attachmentKey, pdfBytes, onProgress));
+	return Promise.reject(
+		new Error(
+			"The reading view needs layout analysis, which this browser version of Zinc does not include. Open the PDF in the Zinc app to read it in the reading view.",
+		),
+	);
 }
 
 export function shutdownStructureWorker(): void {

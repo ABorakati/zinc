@@ -71,7 +71,14 @@ const article = (over: Record<string, unknown> = {}) => ({
 	notes: [{ note: "<p>Translator note</p>" }],
 	attachments: [
 		{ id: "att1", title: "Full Text PDF", url: "https://www.bmj.com/x.pdf", mimeType: "application/pdf", parentItem: "item1" },
-		{ id: "att2", title: "Publisher link", url: "https://www.bmj.com/content/383/bmj-2023-078378", mimeType: "text/html", snapshot: false, parentItem: "item1" },
+		{
+			id: "att2",
+			title: "Publisher link",
+			url: "https://www.bmj.com/content/383/bmj-2023-078378",
+			mimeType: "text/html",
+			snapshot: false,
+			parentItem: "item1",
+		},
 	],
 	seeAlso: [],
 	...over,
@@ -80,7 +87,14 @@ const article = (over: Record<string, unknown> = {}) => ({
 const saveBody = (items: unknown[], sessionID = "S1") => ({ sessionID, uri: "https://www.bmj.com/content/383", items });
 
 function children(key: string) {
-	return (db.query("SELECT key, item_type, data, deleted FROM items WHERE parent_key = ? ORDER BY date_added, rowid").all(key) as { key: string; item_type: string; data: string; deleted: number }[]).map((r) => ({
+	return (
+		db.query("SELECT key, item_type, data, deleted FROM items WHERE parent_key = ? ORDER BY date_added, rowid").all(key) as {
+			key: string;
+			item_type: string;
+			data: string;
+			deleted: number;
+		}[]
+	).map((r) => ({
 		...r,
 		d: JSON.parse(r.data),
 	}));
@@ -99,7 +113,12 @@ describe("ping", () => {
 		expect(g.headers.get("x-zotero-version")).toBeTruthy();
 		const p = await zjson("/connector/ping", {});
 		expect(p.status).toBe(200);
-		expect(p.json.prefs).toMatchObject({ automaticSnapshots: true, downloadAssociatedFiles: true, canUserAddNote: true, supportsTagsAutocomplete: true });
+		expect(p.json.prefs).toMatchObject({
+			automaticSnapshots: true,
+			downloadAssociatedFiles: true,
+			canUserAddNote: true,
+			supportsTagsAutocomplete: true,
+		});
 		expect(p.json.prefs.translatorsHash).toBeUndefined();
 	});
 
@@ -122,8 +141,20 @@ describe("getSelectedCollection", () => {
 	test("library by default, with the collection tree and tags", async () => {
 		const r = await zjson("/connector/getSelectedCollection", {});
 		expect(r.status).toBe(200);
-		expect(r.json).toMatchObject({ libraryID: 1, libraryName: "My Library", libraryEditable: true, filesEditable: true, editable: true, id: null, name: "My Library" });
-		expect(r.json.targets.map((t: any) => [t.id, t.level])).toEqual([["L1", 0], ["CCOLLAAA1", 1], ["CCOLLAAA2", 2]]);
+		expect(r.json).toMatchObject({
+			libraryID: 1,
+			libraryName: "My Library",
+			libraryEditable: true,
+			filesEditable: true,
+			editable: true,
+			id: null,
+			name: "My Library",
+		});
+		expect(r.json.targets.map((t: any) => [t.id, t.level])).toEqual([
+			["L1", 0],
+			["CCOLLAAA1", 1],
+			["CCOLLAAA2", 2],
+		]);
 		expect(r.json.targets.every((t: any) => t.filesEditable === true)).toBe(true);
 		expect(r.json.tags.L1.map((t: any) => t.tag).sort()).toEqual(["imaging", "ml"]);
 	});
@@ -181,14 +212,22 @@ describe("saveItems", () => {
 		expect(it.data.DOI).toBe("10.1136/bmj-2023-078378");
 		expect(it.data.accessDate).toMatch(/^\d{4}-\d\d-\d\dT/);
 		expect(it.collections).toEqual(["COLLAAA1"]);
-		expect(it.tags).toEqual([{ tag: "liver", type: 1 }, { tag: "transplant", type: 1 }]);
+		expect(it.tags).toEqual([
+			{ tag: "liver", type: 1 },
+			{ tag: "transplant", type: 1 },
+		]);
 		expect(it.data.id).toBeUndefined();
 		expect(it.data.attachments).toBeUndefined();
 
 		const kids = children(it.data.key);
 		expect(kids.map((k) => k.item_type)).toEqual(["note", "attachment"]); // only the link-only attachment is created now
 		expect(kids[0].d.note).toBe("<p>Translator note</p>");
-		expect(kids[1].d).toMatchObject({ linkMode: "linked_url", url: "https://www.bmj.com/content/383/bmj-2023-078378", title: "Publisher link", contentType: "text/html" });
+		expect(kids[1].d).toMatchObject({
+			linkMode: "linked_url",
+			url: "https://www.bmj.com/content/383/bmj-2023-078378",
+			title: "Publisher link",
+			contentType: "text/html",
+		});
 		// shows up in the normal item list for the collection
 		const list = await (await call(db, "GET", "/api/items?collection=COLLAAA1")).json();
 		expect(list.items.some((i: any) => i.title === "Outcomes after liver transplantation")).toBe(true);
@@ -201,7 +240,10 @@ describe("saveItems", () => {
 		const dup = await zjson("/connector/saveItems", saveBody([article({ id: "x" })], "S9"));
 		expect(dup.status).toBe(409);
 		expect(dup.json).toEqual({ error: "SESSION_EXISTS" });
-		const old = await z("/connector/saveItems", { json: saveBody([article()], "S10"), headers: { "X-Zotero-Connector-API-Version": "2" } });
+		const old = await z("/connector/saveItems", {
+			json: saveBody([article()], "S10"),
+			headers: { "X-Zotero-Connector-API-Version": "2" },
+		});
 		expect(old.status).toBe(400);
 		expect(await old.json()).toEqual({ error: "CONNECTOR_VERSION_OUTDATED" });
 	});
@@ -209,21 +251,27 @@ describe("saveItems", () => {
 	test("maps base fields, parks unknown fields in Extra, fixes bad creator types, keeps single-field names", async () => {
 		await zjson(
 			"/connector/saveItems",
-			saveBody([
-				{
-					id: "c1",
-					itemType: "conferencePaper",
-					title: "A paper at a conference",
-					publicationTitle: "Proc. of Things", // base field -> proceedingsTitle
-					creators: [{ lastName: "ACME Consortium", fieldMode: 1, creatorType: "author" }, { firstName: "A", lastName: "B", creatorType: "bogus" }],
-					numPages: "12", // not a conferencePaper field -> Extra
-					extra: "PMID: 1",
-					libraryCatalog: "Crossref",
-					complete: true,
-					mimeType: "x",
-					attachments: [],
-				},
-			], "S2"),
+			saveBody(
+				[
+					{
+						id: "c1",
+						itemType: "conferencePaper",
+						title: "A paper at a conference",
+						publicationTitle: "Proc. of Things", // base field -> proceedingsTitle
+						creators: [
+							{ lastName: "ACME Consortium", fieldMode: 1, creatorType: "author" },
+							{ firstName: "A", lastName: "B", creatorType: "bogus" },
+						],
+						numPages: "12", // not a conferencePaper field -> Extra
+						extra: "PMID: 1",
+						libraryCatalog: "Crossref",
+						complete: true,
+						mimeType: "x",
+						attachments: [],
+					},
+				],
+				"S2",
+			),
 		);
 		const it = topByTitle("A paper at a conference")!;
 		expect(it.data.proceedingsTitle).toBe("Proc. of Things");
@@ -231,11 +279,17 @@ describe("saveItems", () => {
 		expect(it.data.libraryCatalog).toBe("Crossref");
 		expect(it.data.extra).toBe("PMID: 1\n# of Pages: 12");
 		expect(it.data.complete).toBeUndefined();
-		expect(it.data.creators).toEqual([{ creatorType: "author", name: "ACME Consortium" }, { creatorType: "author", firstName: "A", lastName: "B" }]);
+		expect(it.data.creators).toEqual([
+			{ creatorType: "author", name: "ACME Consortium" },
+			{ creatorType: "author", firstName: "A", lastName: "B" },
+		]);
 	});
 
 	test("several items in one save", async () => {
-		await zjson("/connector/saveItems", saveBody([article({ id: "a", title: "One" }), article({ id: "b", title: "Two", DOI: "10.1/two" })], "S3"));
+		await zjson(
+			"/connector/saveItems",
+			saveBody([article({ id: "a", title: "One" }), article({ id: "b", title: "Two", DOI: "10.1/two" })], "S3"),
+		);
 		expect(topByTitle("One")).toBeTruthy();
 		expect(topByTitle("Two")).toBeTruthy();
 	});
@@ -251,11 +305,25 @@ describe("attachments", () => {
 
 	test("saveAttachment stores the PDF under the item as imported_url, naming it like Zotero", async () => {
 		const it = await saveOne();
-		const meta = { id: "att1", url: "https://www.bmj.com/x.pdf", contentType: "application/pdf", parentItemID: "item1", title: "Full Text PDF" };
-		const res = await z("/connector/saveAttachment?sessionID=S1", { body: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) } });
+		const meta = {
+			id: "att1",
+			url: "https://www.bmj.com/x.pdf",
+			contentType: "application/pdf",
+			parentItemID: "item1",
+			title: "Full Text PDF",
+		};
+		const res = await z("/connector/saveAttachment?sessionID=S1", {
+			body: pdf,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) },
+		});
 		expect(res.status).toBe(201);
 		const att = children(it.data.key).find((k) => k.d.contentType === "application/pdf")!;
-		expect(att.d).toMatchObject({ linkMode: "imported_url", url: "https://www.bmj.com/x.pdf", title: "Full Text PDF", filename: "Smith and Patel - 2023 - Outcomes after liver transplantation.pdf" });
+		expect(att.d).toMatchObject({
+			linkMode: "imported_url",
+			url: "https://www.bmj.com/x.pdf",
+			title: "Full Text PDF",
+			filename: "Smith and Patel - 2023 - Outcomes after liver transplantation.pdf",
+		});
 		const row = db.query("SELECT link_mode, path, url, content_type FROM attachments WHERE item_key = ?").get(att.key) as any;
 		expect(row).toMatchObject({ link_mode: "imported_url", url: "https://www.bmj.com/x.pdf", content_type: "application/pdf" });
 		expect(existsSync(row.path)).toBe(true);
@@ -271,18 +339,33 @@ describe("attachments", () => {
 
 	test("RFC 2047 encoded titles are decoded; unknown session / missing metadata / missing parent", async () => {
 		const it = await saveOne();
-		const meta = { id: "att1", url: "https://www.bmj.com/x.pdf", contentType: "application/pdf", parentItemID: "item1", title: "=?UTF-8?Q?Full_Text_PDF_=E2=80=93_caf=C3=A9?=" };
-		const ok = await z("/connector/saveAttachment?sessionID=S1", { body: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) } });
+		const meta = {
+			id: "att1",
+			url: "https://www.bmj.com/x.pdf",
+			contentType: "application/pdf",
+			parentItemID: "item1",
+			title: "=?UTF-8?Q?Full_Text_PDF_=E2=80=93_caf=C3=A9?=",
+		};
+		const ok = await z("/connector/saveAttachment?sessionID=S1", {
+			body: pdf,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) },
+		});
 		expect(ok.status).toBe(201);
 		expect(children(it.data.key).some((k) => k.d.title === "Full Text PDF – café")).toBe(true);
 
 		const noMeta = await z("/connector/saveAttachment?sessionID=S1", { body: pdf, headers: { "Content-Type": "application/pdf" } });
 		expect(noMeta.status).toBe(400);
 		expect(await noMeta.json()).toEqual({ error: "METADATA_NOT_PROVIDED" });
-		const noSession = await z("/connector/saveAttachment", { body: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) } });
+		const noSession = await z("/connector/saveAttachment", {
+			body: pdf,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) },
+		});
 		expect(noSession.status).toBe(400);
 		expect(await noSession.json()).toEqual({ error: "SESSION_ID_NOT_PROVIDED" });
-		const badSession = await z("/connector/saveAttachment?sessionID=nope", { body: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) } });
+		const badSession = await z("/connector/saveAttachment?sessionID=nope", {
+			body: pdf,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) },
+		});
 		expect(await badSession.json()).toEqual({ error: "SESSION_NOT_FOUND" });
 	});
 
@@ -311,13 +394,26 @@ describe("attachments", () => {
 	test("saveSingleFile after saveItems finds the item by data.items[0].id; empty content falls back to fetching the page", async () => {
 		const it = await saveOne("S4");
 		deps.fetch = async () => new Response("<html><body>fetched</body></html>");
-		const sf = await zjson("/connector/saveSingleFile", { sessionID: "S4", snapshotContent: "", url: "https://www.bmj.com/content/383/bmj-2023-078378", title: "Snapshot", items: [{ id: "item1" }] });
+		const sf = await zjson("/connector/saveSingleFile", {
+			sessionID: "S4",
+			snapshotContent: "",
+			url: "https://www.bmj.com/content/383/bmj-2023-078378",
+			title: "Snapshot",
+			items: [{ id: "item1" }],
+		});
 		expect(sf.status).toBe(201);
 		const snapshot = children(it.data.key).find((k) => k.d.contentType === "text/html" && k.d.linkMode === "imported_url")!;
 		const row = db.query("SELECT path FROM attachments WHERE item_key = ?").get(snapshot.key) as any;
 		expect(readFileSync(row.path, "utf8")).toContain("fetched");
 		deps.fetch = async () => new Response("no", { status: 500 });
-		const fail = await z("/connector/saveSingleFile", { json: { sessionID: "S4", snapshotContent: "", url: "https://www.bmj.com/content/383/bmj-2023-078378", items: [{ id: "item1" }] } });
+		const fail = await z("/connector/saveSingleFile", {
+			json: {
+				sessionID: "S4",
+				snapshotContent: "",
+				url: "https://www.bmj.com/content/383/bmj-2023-078378",
+				items: [{ id: "item1" }],
+			},
+		});
 		expect(fail.status).toBe(500);
 	});
 
@@ -326,11 +422,18 @@ describe("attachments", () => {
 		let fetched: string[] = [];
 		deps.fetch = async (u) => (fetched.push(String(u)), new Response("<html>x</html>"));
 		for (const url of ["http://127.0.0.1:23119/connector/ping", "file:///C:/Windows/win.ini", "https://evil.example/"]) {
-			const r = await z("/connector/saveSingleFile", { json: { sessionID: "S5", snapshotContent: "", url, items: [{ id: "item1" }] } });
+			const r = await z("/connector/saveSingleFile", {
+				json: { sessionID: "S5", snapshotContent: "", url, items: [{ id: "item1" }] },
+			});
 			expect(r.status).toBe(500);
 		}
 		expect(fetched).toEqual([]);
-		const ok = await zjson("/connector/saveSingleFile", { sessionID: "S5", snapshotContent: "", url: "https://www.bmj.com/content/383/bmj-2023-078378#section", items: [{ id: "item1" }] });
+		const ok = await zjson("/connector/saveSingleFile", {
+			sessionID: "S5",
+			snapshotContent: "",
+			url: "https://www.bmj.com/content/383/bmj-2023-078378#section",
+			items: [{ id: "item1" }],
+		});
 		expect(ok.status).toBe(201);
 		expect(fetched).toEqual(["https://www.bmj.com/content/383/bmj-2023-078378#section"]);
 	});
@@ -340,11 +443,18 @@ describe("attachments", () => {
 		let recognizedFor = "";
 		deps.recognize = async (_d, key) => {
 			recognizedFor = key;
-			const p = (await import("../../src/db")).createItem(db, { itemType: "journalArticle", title: "Recognized paper", collections: ["COLLAAA1"] });
+			const p = (await import("../../src/db")).createItem(db, {
+				itemType: "journalArticle",
+				title: "Recognized paper",
+				collections: ["COLLAAA1"],
+			});
 			reparentItem(db, key, p.data.key);
 		};
 		const meta = { url: "https://arxiv.org/pdf/1234.pdf", contentType: "application/pdf", title: "1234.pdf" };
-		const res = await z("/connector/saveStandaloneAttachment?sessionID=P1", { body: pdf, headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) } });
+		const res = await z("/connector/saveStandaloneAttachment?sessionID=P1", {
+			body: pdf,
+			headers: { "Content-Type": "application/pdf", "X-Metadata": JSON.stringify(meta) },
+		});
 		expect(res.status).toBe(201);
 		expect(await res.json()).toEqual({ canRecognize: true });
 		expect(recognizedFor).toBeTruthy();
@@ -359,9 +469,14 @@ describe("attachments", () => {
 
 	test("standalone non-PDF is not recognizable; getRecognizedItem is 204", async () => {
 		const meta = { url: "https://example.org/pic.png", contentType: "image/png", title: "pic" };
-		const res = await z("/connector/saveStandaloneAttachment?sessionID=P2", { body: new Uint8Array([137, 80, 78, 71, 1, 2, 3]), headers: { "Content-Type": "image/png", "X-Metadata": JSON.stringify(meta) } });
+		const res = await z("/connector/saveStandaloneAttachment?sessionID=P2", {
+			body: new Uint8Array([137, 80, 78, 71, 1, 2, 3]),
+			headers: { "Content-Type": "image/png", "X-Metadata": JSON.stringify(meta) },
+		});
 		expect(await res.json()).toEqual({ canRecognize: false });
-		const att = db.query("SELECT data FROM items WHERE item_type = 'attachment' AND json_extract(data, '$.url') = 'https://example.org/pic.png'").get() as any;
+		const att = db
+			.query("SELECT data FROM items WHERE item_type = 'attachment' AND json_extract(data, '$.url') = 'https://example.org/pic.png'")
+			.get() as any;
 		expect(JSON.parse(att.data)).toMatchObject({ linkMode: "imported_url", contentType: "image/png", filename: "pic.png" });
 		expect((await z("/connector/getRecognizedItem", { json: { sessionID: "P2" } })).status).toBe(204);
 	});
@@ -369,12 +484,19 @@ describe("attachments", () => {
 
 describe("resolvers", () => {
 	test("hasAttachmentResolvers needs a DOI; saveAttachmentFromResolver returns the attached title", async () => {
-		await zjson("/connector/saveItems", saveBody([article(), article({ id: "nodoi", title: "No doi here", DOI: undefined, url: "" })], "R1"));
+		await zjson(
+			"/connector/saveItems",
+			saveBody([article(), article({ id: "nodoi", title: "No doi here", DOI: undefined, url: "" })], "R1"),
+		);
 		expect((await zjson("/connector/hasAttachmentResolvers", { sessionID: "R1", itemID: "item1" })).json).toBe(true);
 		expect((await zjson("/connector/hasAttachmentResolvers", { sessionID: "R1", itemID: "nodoi" })).json).toBe(false);
 		deps.findFullText = async (d, key) => {
 			const { addFile } = await import("../../src/additems/files");
-			return addFile(d, { mode: "imported_file", name: "oa.pdf", contentType: "application/pdf", parentKey: key }, new Uint8Array([1, 2, 3])).data.key;
+			return addFile(
+				d,
+				{ mode: "imported_file", name: "oa.pdf", contentType: "application/pdf", parentKey: key },
+				new Uint8Array([1, 2, 3]),
+			).data.key;
 		};
 		const ok = await z("/connector/saveAttachmentFromResolver", { json: { sessionID: "R1", itemID: "item1" } });
 		expect(ok.status).toBe(201);
@@ -391,12 +513,24 @@ describe("updateSession", () => {
 	test("moves the saved items to another collection, adds tags (keeping automatic ones) and a note, then removes the note", async () => {
 		await zjson("/connector/saveItems", saveBody([article()], "U1"));
 		const key = topByTitle("Outcomes after liver transplantation")!.data.key;
-		const upd = await zjson("/connector/updateSession", { sessionID: "U1", target: "CCOLLAAA2", tags: ["alpha", "beta, gamma"], note: "My *comment*" });
+		const upd = await zjson("/connector/updateSession", {
+			sessionID: "U1",
+			target: "CCOLLAAA2",
+			tags: ["alpha", "beta, gamma"],
+			note: "My *comment*",
+		});
 		expect(upd.status).toBe(200);
 		expect(upd.json).toEqual({});
 		let it = getItemDetail(db, key)!;
 		expect(it.collections).toEqual(["COLLAAA2"]);
-		expect(it.tags).toEqual(expect.arrayContaining([{ tag: "liver", type: 1 }, { tag: "transplant", type: 1 }, { tag: "alpha", type: 0 }, { tag: "beta, gamma", type: 0 }]));
+		expect(it.tags).toEqual(
+			expect.arrayContaining([
+				{ tag: "liver", type: 1 },
+				{ tag: "transplant", type: 1 },
+				{ tag: "alpha", type: 0 },
+				{ tag: "beta, gamma", type: 0 },
+			]),
+		);
 		expect(it.tags).toHaveLength(4);
 		const note = children(key).find((k) => k.item_type === "note" && String(k.d.note).includes("comment"))!;
 		expect(note.d.note).toBe("<p>My *comment*</p>");
@@ -414,7 +548,11 @@ describe("updateSession", () => {
 		await zjson("/connector/updateSession", { sessionID: "U1", target: "L1", tags: [], note: "" });
 		const after = children(key).filter((k) => k.item_type === "note" && !k.deleted);
 		expect(after.map((n) => n.d.note)).toEqual(["<p>Translator note</p>"]);
-		expect(getItemDetail(db, key)!.tags.map((t) => t.tag).sort()).toEqual(["liver", "transplant"]);
+		expect(
+			getItemDetail(db, key)!
+				.tags.map((t) => t.tag)
+				.sort(),
+		).toEqual(["liver", "transplant"]);
 	});
 
 	test("old connectors send tags as one comma separated string; errors match Zotero", async () => {
@@ -442,7 +580,10 @@ describe("import, styles, misc", () => {
 	test("import (RIS) creates items in the selected collection and answers with the items", async () => {
 		setSelection({ kind: "collection", key: "COLLAAA1" });
 		const ris = "TY  - JOUR\nTI  - Imported via RIS\nAU  - Doe, John\nPY  - 2021\nJO  - Journal of Tests\nKW  - imported\nER  - \n";
-		const res = await z("/connector/import?session=I1", { body: ris, headers: { "Content-Type": "application/x-research-info-systems" } });
+		const res = await z("/connector/import?session=I1", {
+			body: ris,
+			headers: { "Content-Type": "application/x-research-info-systems" },
+		});
 		expect(res.status).toBe(201);
 		const out = await res.json();
 		expect(out).toHaveLength(1);
@@ -450,12 +591,17 @@ describe("import, styles, misc", () => {
 		const it = topByTitle("Imported via RIS")!;
 		expect(it.collections).toEqual(["COLLAAA1"]);
 		expect(it.tags).toEqual([{ tag: "imported", type: 1 }]);
-		expect((await z("/connector/import?session=I2", { body: "not a bibliography", headers: { "Content-Type": "text/plain" } })).status).toBe(400);
+		expect(
+			(await z("/connector/import?session=I2", { body: "not a bibliography", headers: { "Content-Type": "text/plain" } })).status,
+		).toBe(400);
 	});
 
 	test("installStyle stores the CSL file", async () => {
 		const csl = `<?xml version="1.0" encoding="utf-8"?><style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"><info><title>Test &amp; Style</title><id>http://www.zotero.org/styles/test-style</id></info><citation><layout><text variable="title"/></layout></citation></style>`;
-		const res = await z("/connector/installStyle?origin=https%3A%2F%2Fexample.org", { body: csl, headers: { "Content-Type": "application/vnd.citationstyles.style+xml" } });
+		const res = await z("/connector/installStyle?origin=https%3A%2F%2Fexample.org", {
+			body: csl,
+			headers: { "Content-Type": "application/vnd.citationstyles.style+xml" },
+		});
 		expect(res.status).toBe(201);
 		expect(await res.json()).toEqual({ name: "Test & Style" });
 		const { citeService } = await import("../../src/cite/api");

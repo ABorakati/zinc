@@ -120,7 +120,17 @@ export interface RunReport {
 }
 
 export type Effect =
-	| { type: "http"; op: OpId; run: RunId; item: ItemId; route: "oa" | "inst"; barrier?: boolean; req: HttpReq; retain: "none" | "page" | "pdf"; inspect: any }
+	| {
+			type: "http";
+			op: OpId;
+			run: RunId;
+			item: ItemId;
+			route: "oa" | "inst";
+			barrier?: boolean;
+			req: HttpReq;
+			retain: "none" | "page" | "pdf";
+			inspect: any;
+	  }
 	| { type: "browser_load"; op: OpId; run: RunId; item: ItemId; route: "oa" | "inst"; barrier?: boolean; req: any; inspect: any }
 	| { type: "login_window"; op: OpId; run: RunId; item?: ItemId; req: LoginReq }
 	| { type: "login_update"; op: OpId; waiting: number }
@@ -131,7 +141,15 @@ export type Effect =
 			op: OpId;
 			run: RunId;
 			item: ItemId;
-			req: { item: ItemId; body: BodyRef; trim_prefix: number; version: string; url_to_store: string; route: "oa" | "inst"; source: string };
+			req: {
+				item: ItemId;
+				body: BodyRef;
+				trim_prefix: number;
+				version: string;
+				url_to_store: string;
+				route: "oa" | "inst";
+				source: string;
+			};
 	  }
 	| { type: "confirm"; op: OpId; run: RunId; req: unknown }
 	| { type: "cancel"; op: OpId }
@@ -199,7 +217,7 @@ export interface LoginOk {
 	inspect: Inspection;
 }
 
-export type Inspection ={ expect: string; [k: string]: unknown };
+export type Inspection = { expect: string; [k: string]: unknown };
 
 export interface EngineConfig {
 	oa: Record<string, unknown>;

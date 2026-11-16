@@ -239,8 +239,7 @@ export interface ReferenceDetail extends Reference {
 }
 
 export type FullTextItemState =
-	| "queued" | "searching" | "downloading" | "attached" | "already-has-pdf"
-	| "needs-sign-in" | "not-found" | "failed" | "cancelled";
+	"queued" | "searching" | "downloading" | "attached" | "already-has-pdf" | "needs-sign-in" | "not-found" | "failed" | "cancelled";
 
 export interface FullTextJob {
 	id: string;

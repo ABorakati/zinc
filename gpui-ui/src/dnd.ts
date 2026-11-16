@@ -23,9 +23,14 @@ export { dragging, dragPoint };
  * Observer of the drag's life, installed by features/cite/dragout.ts: when the pointer leaves the window with items held, that file
  * hands the drag to the OS (Quick Copy text dropped into other apps). In-app drags (onto collections) never involve it.
  */
-export interface DragHook { start(payload: DragPayload): void; end(): void }
+export interface DragHook {
+	start(payload: DragPayload): void;
+	end(): void;
+}
 let hook: DragHook | undefined;
-export const setDragHook = (h: DragHook | undefined): void => { hook = h; };
+export const setDragHook = (h: DragHook | undefined): void => {
+	hook = h;
+};
 
 /** Begin a drag of these item keys (no-op for an empty list). */
 export function startDrag(payload: DragPayload): void {
@@ -55,7 +60,12 @@ export function dragLabel(d: DragPayload | null = dragging()): string {
 /** Pixels the pointer must travel with the button held before a press becomes a drag. */
 export const DRAG_THRESHOLD = 5;
 
-interface PressEvent { x?: number; y?: number; button?: number; pressedButton?: number }
+interface PressEvent {
+	x?: number;
+	y?: number;
+	button?: number;
+	pressedButton?: number;
+}
 
 /**
  * Helper for drag sources: returns mouse handlers to spread on a row.
@@ -72,14 +82,24 @@ export function dragSource(keys: () => string[], onStart?: () => void) {
 			press = { x: e.x ?? 0, y: e.y ?? 0 };
 		},
 		onMouseMove(e: PressEvent) {
-			if (dragging()) { moveDrag(e.x ?? 0, e.y ?? 0); if (e.pressedButton === undefined) endDrag(); return; }
+			if (dragging()) {
+				moveDrag(e.x ?? 0, e.y ?? 0);
+				if (e.pressedButton === undefined) endDrag();
+				return;
+			}
 			if (!press) return;
-			if (e.pressedButton !== 0) { press = null; return; }
+			if (e.pressedButton !== 0) {
+				press = null;
+				return;
+			}
 			if (Math.hypot((e.x ?? 0) - press.x, (e.y ?? 0) - press.y) < DRAG_THRESHOLD) return;
 			press = null;
 			onStart?.();
 			const k = keys();
-			if (k.length) { startDrag({ kind: "items", keys: k }); justDragged = true; }
+			if (k.length) {
+				startDrag({ kind: "items", keys: k });
+				justDragged = true;
+			}
 		},
 		onMouseUp() {
 			press = null;

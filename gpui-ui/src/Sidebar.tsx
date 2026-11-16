@@ -15,7 +15,15 @@ import { errMsg, sidebarApi } from "./sidebar/client";
 import { collectionEntries, creating, onBeforeCreate, reloadCollections, setCollectionsPane } from "./sidebar/Collections";
 import { groupEntries } from "./sidebar/Groups";
 import { CountBadge, type Entry, labelCls, ListItem, pill, ROW_HOVER, SectionHeader, SPECIAL_STATIC, t, tok, tx } from "./sidebar/parts";
-import { collectionsFraction, libraryOpen, setCollectionsFraction, setLibraryOpen, setSidebarWidth, sidebarWidth, tagsOpen } from "./sidebar/state";
+import {
+	collectionsFraction,
+	libraryOpen,
+	setCollectionsFraction,
+	setLibraryOpen,
+	setSidebarWidth,
+	sidebarWidth,
+	tagsOpen,
+} from "./sidebar/state";
 import { clipText, textWidth } from "./clip";
 import { TagList } from "./tags/TagList";
 import { confirm, openMenu, toast } from "./ui";
@@ -39,7 +47,9 @@ async function emptyTrash() {
 		const r = await sidebarApi.emptyTrash();
 		toast(`Permanently deleted ${r.erased} item${r.erased === 1 ? "" : "s"}`, { kind: "success" });
 		await reloadCollections();
-	} catch (e) { toast("Could not empty the Trash", { kind: "error", description: errMsg(e) }); }
+	} catch (e) {
+		toast("Could not empty the Trash", { kind: "error", description: errMsg(e) });
+	}
 }
 
 function Special(p: { view: View; label: string; icon: string; count?: number; onMenu?: (x: number, y: number) => void }): JSX.Element {
@@ -63,11 +73,15 @@ function Special(p: { view: View; label: string; icon: string; count?: number; o
 				onMouseEnter={() => setHov(true)}
 				onMouseLeave={() => setHov(false)}
 				onClick={() => setView(p.view)}
-				onAuxClick={(e) => { if (e.isRightClick) p.onMenu?.(e.x ?? 0, e.y ?? 0); }}
+				onAuxClick={(e) => {
+					if (e.isRightClick) p.onMenu?.(e.x ?? 0, e.y ?? 0);
+				}}
 				style={{ ...t(SPECIAL_STATIC), ...(hov() ? t(ROW_HOVER) : {}), ...pill(sel()) }}
 			>
 				<Icon name={p.icon} size={16} color={tok(sel() ? "primary" : "muted-foreground")} />
-				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>{label()}</text>
+				<text style={{ ...tx(labelCls(sel())), overflow: "hidden", whiteSpace: "nowrap", minWidth: 0, flexGrow: 1, flexBasis: 0 }}>
+					{label()}
+				</text>
 				<CountBadge n={p.count} />
 			</div>
 		</ListItem>
@@ -79,7 +93,14 @@ export function Sidebar(): JSX.Element {
 	// the duplicate scan takes a moment on a big library: fetch it after the first frames, not at startup
 	onMount(() => {
 		ensureSavedSearches();
-		setTimeout(() => void sidebarApi.duplicateCount().then(setDupCount).catch(() => {}), 1200);
+		setTimeout(
+			() =>
+				void sidebarApi
+					.duplicateCount()
+					.then(setDupCount)
+					.catch(() => {}),
+			1200,
+		);
 	});
 
 	// ---- the scrolling part (Library group + Collections group) as the entries of ONE virtual list ----
@@ -88,19 +109,24 @@ export function Sidebar(): JSX.Element {
 	// row shows (selection, counts, hover tints) is read inside its own render function, so it updates without rebuilding the list.
 	const entries = createMemo<Entry[]>(() => {
 		const open = libraryOpen();
-		const out: Entry[] = [{
-			id: "l:header",
-			render: () => (
-				<ListItem>
-					<SectionHeader label="Library" open={libraryOpen()} onToggle={() => setLibraryOpen(!libraryOpen())} />
-				</ListItem>
-			),
-		}];
+		const out: Entry[] = [
+			{
+				id: "l:header",
+				render: () => (
+					<ListItem>
+						<SectionHeader label="Library" open={libraryOpen()} onToggle={() => setLibraryOpen(!libraryOpen())} />
+					</ListItem>
+				),
+			},
+		];
 		if (open) {
 			out.push(
 				{ id: "l:library", render: () => <Special view={{ kind: "library" }} label="My Library" icon="library" /> },
 				{ id: "l:unfiled", render: () => <Special view={{ kind: "unfiled" }} label="Unfiled" icon="inbox" /> },
-				{ id: "l:publications", render: () => <Special view={{ kind: "publications" }} label="My Publications" icon="book-user" /> },
+				{
+					id: "l:publications",
+					render: () => <Special view={{ kind: "publications" }} label="My Publications" icon="book-user" />,
+				},
 				{
 					id: "l:trash",
 					render: () => (
@@ -108,14 +134,22 @@ export function Sidebar(): JSX.Element {
 							view={{ kind: "trash" }}
 							label="Trash"
 							icon="trash-2"
-							onMenu={(x, y) => openMenu({ x, y }, [{ label: "Empty Trash…", icon: "trash-2", danger: true, onSelect: () => void emptyTrash() }])}
+							onMenu={(x, y) =>
+								openMenu({ x, y }, [
+									{ label: "Empty Trash…", icon: "trash-2", danger: true, onSelect: () => void emptyTrash() },
+								])
+							}
 						/>
 					),
 				},
 				// duplicates/DuplicateDialog.tsx DuplicateSidebarEntry
-				{ id: "l:duplicates", render: () => <Special view={{ kind: "duplicates" }} label="Duplicate Items" icon="copy" count={dupCount()} /> },
+				{
+					id: "l:duplicates",
+					render: () => <Special view={{ kind: "duplicates" }} label="Duplicate Items" icon="copy" count={dupCount()} />,
+				},
 			);
-			for (const s of sidebarSections()) if (!BUILT_IN_SECTIONS.has(s.id)) out.push({ id: `l:reg:${s.id}`, render: () => <ListItem>{s.render()}</ListItem> });
+			for (const s of sidebarSections())
+				if (!BUILT_IN_SECTIONS.has(s.id)) out.push({ id: `l:reg:${s.id}`, render: () => <ListItem>{s.render()}</ListItem> });
 			out.push(...savedSearchEntries());
 		}
 		// 16px (`gap-4`) between the groups; the Library block ends in a row with no bottom gap when open
@@ -132,19 +166,27 @@ export function Sidebar(): JSX.Element {
 	const gpuix = useGpuix();
 	let list: { id: number } | undefined;
 	let top: number[] | null = null;
-	onBeforeCreate(() => { top = list ? (gpuix?.renderer.getListScrollTop?.(list.id) ?? null) : null; });
+	onBeforeCreate(() => {
+		top = list ? (gpuix?.renderer.getListScrollTop?.(list.id) ?? null) : null;
+	});
 	onCleanup(() => onBeforeCreate(undefined));
-	createEffect(on(creating, (key) => {
-		const snap = top;
-		top = null;
-		if (!key || !snap || !list) return;
-		const at = entries().findIndex((e) => e.id.startsWith("c:create:"));
-		if (at < 0) return;
-		const [ix = 0, off = 0, viewport = 0] = snap;
-		const first = ix >= at ? ix + 1 : ix; // rows at or after the insertion point moved down by one
-		if ((at - first) * 29 - off + 28 > viewport) return; // off screen: let GPUIX bring it into view
-		gpuix?.renderer.scrollToItem?.(list.id, first, off);
-	}, { defer: true }));
+	createEffect(
+		on(
+			creating,
+			(key) => {
+				const snap = top;
+				top = null;
+				if (!key || !snap || !list) return;
+				const at = entries().findIndex((e) => e.id.startsWith("c:create:"));
+				if (at < 0) return;
+				const [ix = 0, off = 0, viewport = 0] = snap;
+				const first = ix >= at ? ix + 1 : ix; // rows at or after the insertion point moved down by one
+				if ((at - first) * 29 - off + 28 > viewport) return; // off screen: let GPUIX bring it into view
+				gpuix?.renderer.scrollToItem?.(list.id, first, off);
+			},
+			{ defer: true },
+		),
+	);
 
 	// ---- split between the collections and tags panes ----
 	// While the handle is dragged a transparent window-sized layer takes the pointer (as ui/resizable.tsx), so the drag keeps
@@ -152,12 +194,19 @@ export function Sidebar(): JSX.Element {
 	let box = { y: 0, h: 1 };
 	const [splitting, setSplitting] = createSignal(false);
 	const [hot, setHot] = createSignal(false);
-	const stop = () => { setSplitting(false); setHot(false); };
+	const stop = () => {
+		setSplitting(false);
+		setHot(false);
+	};
 
 	return (
 		// App.tsx: `zn-sidebar flex h-full min-h-0 flex-col gap-3 px-2.5 pt-1.5 pb-1`; the 12px gap is the split handle between the panes
 		<div
-			onLayout={(e) => { box = { y: e.y ?? 0, h: Math.max(1, e.height ?? 1) }; const w = Math.round(e.width ?? 0); if (w !== sidebarWidth()) setSidebarWidth(w); }}
+			onLayout={(e) => {
+				box = { y: e.y ?? 0, h: Math.max(1, e.height ?? 1) };
+				const w = Math.round(e.width ?? 0);
+				if (w !== sidebarWidth()) setSidebarWidth(w);
+			}}
 			style={{ ...t("flex h-full min-h-0 w-full flex-col px-2.5 pt-1.5 pb-1"), userSelect: "none" }}
 		>
 			{/* CollectionsPane: `flex min-h-0 flex-col overflow-y-auto pr-2`, flex 3 1 0% (open). The pane box itself no longer scrolls: the
@@ -173,7 +222,9 @@ export function Sidebar(): JSX.Element {
 				}}
 			>
 				<virtual-list
-					ref={(el: { id: number }) => { list = el; }}
+					ref={(el: { id: number }) => {
+						list = el;
+					}}
 					testId="sidebar-list"
 					estimatedItemHeight={29}
 					overdraw={60}
@@ -184,10 +235,24 @@ export function Sidebar(): JSX.Element {
 			</div>
 			{/* the split handle: a 12px gap between the panes; draggable while the tags pane is open */}
 			<div
-				onMouseDown={(e) => { if (tagsOpen() && e.button === 0) { setSplitting(true); setHot(true); } }}
+				onMouseDown={(e) => {
+					if (tagsOpen() && e.button === 0) {
+						setSplitting(true);
+						setHot(true);
+					}
+				}}
 				onMouseEnter={() => tagsOpen() && setHot(true)}
-				onMouseLeave={() => { if (!splitting()) setHot(false); }}
-				style={{ flexShrink: 0, height: 12, display: "flex", alignItems: "center", justifyContent: "center", cursor: tagsOpen() ? "row-resize" : "default" }}
+				onMouseLeave={() => {
+					if (!splitting()) setHot(false);
+				}}
+				style={{
+					flexShrink: 0,
+					height: 12,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					cursor: tagsOpen() ? "row-resize" : "default",
+				}}
 			>
 				<Show when={tagsOpen() && hot()}>
 					<div style={{ width: 36, height: 3, borderRadius: 2, backgroundColor: tok(splitting() ? "primary" : "border") }} />

@@ -39,20 +39,27 @@ export function hexToRgb(h: string): [number, number, number] | null {
 	const n = parseInt(m[1]!, 16);
 	return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
-const num = (h: string, d = 0xffffff): number => { const c = hexToRgb(h); return c ? (c[0] << 16) | (c[1] << 8) | c[2] : d; };
+const num = (h: string, d = 0xffffff): number => {
+	const c = hexToRgb(h);
+	return c ? (c[0] << 16) | (c[1] << 8) | c[2] : d;
+};
 const luminance = (c: [number, number, number]) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
 
 /** The rasterizer look for an appearance. */
 export function lookOf(a: Appearance): Look {
 	switch (a.mode) {
-		case "dark": return { mode: 1 };
-		case "sepia": return { mode: 2, c0: num(SEPIA) };
+		case "dark":
+			return { mode: 1 };
+		case "sepia":
+			return { mode: 2, c0: num(SEPIA) };
 		case "custom": {
 			const c = hexToRgb(a.custom) ?? [255, 255, 255];
 			return luminance(c) > 0.5 ? { mode: 2, c0: num(a.custom) } : { mode: 3, c0: num(a.custom) };
 		}
-		case "reading": return a.fg && a.bg ? { mode: 4, c0: num(a.fg, 0), c1: num(a.bg) } : { mode: 0 };
-		default: return { mode: 0 };
+		case "reading":
+			return a.fg && a.bg ? { mode: 4, c0: num(a.fg, 0), c1: num(a.bg) } : { mode: 0 };
+		default:
+			return { mode: 0 };
 	}
 }
 export const lookKey = (l: Look): string => `${l.mode}.${l.c0 ?? 0}.${l.c1 ?? 0}`;
@@ -60,11 +67,16 @@ export const lookKey = (l: Look): string => `${l.mode}.${l.c0 ?? 0}.${l.c1 ?? 0}
 /** Approximate paper colour (shown where a tile has not been drawn yet, and around the pages). */
 export function paperColor(a: Appearance): string {
 	switch (a.mode) {
-		case "dark": return "#111111";
-		case "sepia": return SEPIA;
-		case "custom": return hexToRgb(a.custom) ? a.custom : "#ffffff";
-		case "reading": return a.bg && a.fg ? a.bg : "#ffffff";
-		default: return "#ffffff";
+		case "dark":
+			return "#111111";
+		case "sepia":
+			return SEPIA;
+		case "custom":
+			return hexToRgb(a.custom) ? a.custom : "#ffffff";
+		case "reading":
+			return a.bg && a.fg ? a.bg : "#ffffff";
+		default:
+			return "#ffffff";
 	}
 }
 /** Whether the paper is dark, so overlays (selection, search) pick a visible colour. */

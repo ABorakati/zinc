@@ -14,7 +14,11 @@ export function register(): void {
 		icon: "library",
 		group: "open",
 		visible: (ctx) => ctx.keys.length === 1 && regular(ctx.item.itemType),
-		run: (ctx) => void openReferences(ctx.item.key, (key) => { selectOnly(key); store.selectItem(key); }),
+		run: (ctx) =>
+			void openReferences(ctx.item.key, (key) => {
+				selectOnly(key);
+				store.selectItem(key);
+			}),
 	});
 }
 

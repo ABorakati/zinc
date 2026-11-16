@@ -47,7 +47,10 @@ export function snapshotItems(db: Database, keys: string[], firstId = 1): { item
 			if (primary) {
 				const c = children.find((x) => x.key === primary.key)!;
 				// A linked_url attachment has no file at all: it does not count as a downloaded PDF.
-				best = { kind: primary.contentType === "application/pdf" ? "pdf" : "other", exists: fileExists(resolveStoredPath(db, c.path)) };
+				best = {
+					kind: primary.contentType === "application/pdf" ? "pdf" : "other",
+					exists: fileExists(resolveStoredPath(db, c.path)),
+				};
 			} else if (children.length) {
 				best = { kind: "other", exists: false };
 			}

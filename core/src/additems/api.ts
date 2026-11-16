@@ -41,7 +41,15 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 
 		if (route === "identifier") {
 			const b = await readJson(req);
-			return json(await addByIdentifier(db, b.text, b.collectionKey, b.autoTag !== false, b.library !== undefined ? resolveLibrary(db, b.library) : undefined));
+			return json(
+				await addByIdentifier(
+					db,
+					b.text,
+					b.collectionKey,
+					b.autoTag !== false,
+					b.library !== undefined ? resolveLibrary(db, b.library) : undefined,
+				),
+			);
 		}
 		if (route === "create-parent") return json(await createParent(db, await readJson(req)), 201);
 		if (route === "link") {
@@ -59,9 +67,22 @@ export async function handleAddItemsApi(req: Request, db: Database): Promise<Res
 			const form = await req.formData();
 			const f = form.get("file");
 			const str = (k: string) => (typeof form.get(k) === "string" && form.get(k) ? (form.get(k) as string) : undefined);
-			const opts = { mode: str("mode") as any, parentKey: str("parentKey"), collectionKey: str("collectionKey"), path: str("path"), libraryId: str("library") ? resolveLibrary(db, str("library")) : undefined };
+			const opts = {
+				mode: str("mode") as any,
+				parentKey: str("parentKey"),
+				collectionKey: str("collectionKey"),
+				path: str("path"),
+				libraryId: str("library") ? resolveLibrary(db, str("library")) : undefined,
+			};
 			if (f && typeof f !== "string") {
-				return json(addFile(db, { ...opts, name: (f as File).name, contentType: (f as File).type }, new Uint8Array(await (f as File).arrayBuffer())), 201);
+				return json(
+					addFile(
+						db,
+						{ ...opts, name: (f as File).name, contentType: (f as File).type },
+						new Uint8Array(await (f as File).arrayBuffer()),
+					),
+					201,
+				);
 			}
 			return json(addFile(db, opts), 201);
 		}

@@ -6,7 +6,11 @@
 // then `POST /api/browser/import/run` runs the import in the worker while this polls `GET /api/browser/import/status`.
 import { apiFetch } from "../../src/api";
 
-export interface FileHandleLike { kind: "file"; name: string; getFile(): Promise<{ size: number; arrayBuffer(): Promise<ArrayBuffer> }> }
+export interface FileHandleLike {
+	kind: "file";
+	name: string;
+	getFile(): Promise<{ size: number; arrayBuffer(): Promise<ArrayBuffer> }>;
+}
 export interface DirHandleLike {
 	kind: "directory";
 	name: string;
@@ -14,11 +18,31 @@ export interface DirHandleLike {
 	values?(): AsyncIterable<FileHandleLike | DirHandleLike>;
 }
 export type FolderKind = "zotero" | "zinc";
-export interface FolderInfo { kind: FolderKind; root: DirHandleLike; /** the folder that holds the database: the one picked, or a folder inside it */ where: string }
-export interface Progress { phase: string; done?: number; total?: number; message?: string; bytes?: number; totalBytes?: number }
+export interface FolderInfo {
+	kind: FolderKind;
+	root: DirHandleLike;
+	/** the folder that holds the database: the one picked, or a folder inside it */ where: string;
+}
+export interface Progress {
+	phase: string;
+	done?: number;
+	total?: number;
+	message?: string;
+	bytes?: number;
+	totalBytes?: number;
+}
 export interface ImportSummary {
-	kind: FolderKind; items: number; topLevelItems: number; collections: number; attachments: number; annotations: number;
-	fileFolders: number; missingFiles: number; linkedFiles: number; warnings: string[]; ms: number;
+	kind: FolderKind;
+	items: number;
+	topLevelItems: number;
+	collections: number;
+	attachments: number;
+	annotations: number;
+	fileFolders: number;
+	missingFiles: number;
+	linkedFiles: number;
+	warnings: string[];
+	ms: number;
 }
 
 async function* children(dir: DirHandleLike): AsyncGenerator<FileHandleLike | DirHandleLike> {
@@ -50,7 +74,10 @@ export async function inspectFolder(dir: DirHandleLike): Promise<FolderInfo | { 
 	return { problem: "That folder has no zotero.sqlite (a Zotero data folder) or library.sqlite (a Zinc library folder) in it." };
 }
 
-interface Entry { rel: string; file: FileHandleLike }
+interface Entry {
+	rel: string;
+	file: FileHandleLike;
+}
 /** The database, and everything under storage/ (without Zotero's housekeeping files; the full-text cache is kept). */
 async function collect(info: FolderInfo): Promise<Entry[]> {
 	const out: Entry[] = [];
@@ -60,7 +87,10 @@ async function collect(info: FolderInfo): Promise<Entry[]> {
 	}
 	const walk = async (dir: DirHandleLike, rel: string): Promise<void> => {
 		for await (const h of children(dir)) {
-			if (h.kind === "directory") { await walk(h, `${rel}/${h.name}`); continue; }
+			if (h.kind === "directory") {
+				await walk(h, `${rel}/${h.name}`);
+				continue;
+			}
 			if (h.name.startsWith(".") && h.name !== ".zotero-ft-cache") continue;
 			out.push({ rel: `${rel}/${h.name}`, file: h });
 		}
@@ -71,7 +101,11 @@ async function collect(info: FolderInfo): Promise<Entry[]> {
 
 const text = async (res: Response): Promise<string> => {
 	const t = await res.text();
-	try { return String((JSON.parse(t) as { error?: string }).error ?? t); } catch { return t; }
+	try {
+		return String((JSON.parse(t) as { error?: string }).error ?? t);
+	} catch {
+		return t;
+	}
 };
 
 /**
@@ -85,13 +119,21 @@ export async function importFolder(dir: DirHandleLike, onProgress: (p: Progress)
 	const entries = await collect(info);
 	let totalBytes = 0;
 	const sizes = new Map<string, number>();
-	for (const e of entries) { const s = (await e.file.getFile()).size; sizes.set(e.rel, s); totalBytes += s; }
+	for (const e of entries) {
+		const s = (await e.file.getFile()).size;
+		sizes.set(e.rel, s);
+		totalBytes += s;
+	}
 	let done = 0;
 	let bytes = 0;
 	const put = async (e: Entry): Promise<void> => {
 		const f = await e.file.getFile();
 		const body = new Uint8Array(await f.arrayBuffer());
-		const res = await apiFetch(`/browser/import/file?path=${encodeURIComponent(`${info.kind}/${e.rel}`).replace(/%2F/g, "/")}`, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body });
+		const res = await apiFetch(`/browser/import/file?path=${encodeURIComponent(`${info.kind}/${e.rel}`).replace(/%2F/g, "/")}`, {
+			method: "PUT",
+			headers: { "Content-Type": "application/octet-stream" },
+			body,
+		});
 		if (!res.ok) throw new Error(`Could not copy ${e.rel}: ${await text(res)}`);
 		done++;
 		bytes += body.length;
@@ -102,7 +144,11 @@ export async function importFolder(dir: DirHandleLike, onProgress: (p: Progress)
 		for (const e of entries.filter((x) => !x.rel.includes("/"))) await put(e);
 		const rest = entries.filter((x) => x.rel.includes("/"));
 		let next = 0;
-		await Promise.all(Array.from({ length: 3 }, async () => { while (next < rest.length) await put(rest[next++]!); }));
+		await Promise.all(
+			Array.from({ length: 3 }, async () => {
+				while (next < rest.length) await put(rest[next++]!);
+			}),
+		);
 
 		onProgress({ phase: "snapshot", message: "Reading the database" });
 		let finished = false;
@@ -111,15 +157,30 @@ export async function importFolder(dir: DirHandleLike, onProgress: (p: Progress)
 				await new Promise((r) => setTimeout(r, 250));
 				if (finished) break;
 				try {
-					const s = (await (await apiFetch("/browser/import/status")).json()) as { phase: string; done?: number; total?: number; message?: string };
-					if (!finished && s.phase !== "idle" && s.phase !== "done") onProgress({ phase: s.phase, done: s.done, total: s.total, message: s.message });
-				} catch { /* the next poll */ }
+					const s = (await (await apiFetch("/browser/import/status")).json()) as {
+						phase: string;
+						done?: number;
+						total?: number;
+						message?: string;
+					};
+					if (!finished && s.phase !== "idle" && s.phase !== "done")
+						onProgress({ phase: s.phase, done: s.done, total: s.total, message: s.message });
+				} catch {
+					/* the next poll */
+				}
 			}
 		})();
 		let res: Response;
 		try {
-			res = await apiFetch("/browser/import/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: info.kind }) });
-		} finally { finished = true; await poll; }
+			res = await apiFetch("/browser/import/run", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ kind: info.kind }),
+			});
+		} finally {
+			finished = true;
+			await poll;
+		}
 		if (!res.ok) throw new Error(await text(res));
 		return (await res.json()) as ImportSummary;
 	} catch (e) {
@@ -131,12 +192,26 @@ export async function importFolder(dir: DirHandleLike, onProgress: (p: Progress)
 // ---- the first-run flag: chrome.storage.local "zincBrowserLibrary" = {firstRunDone} (browser-db/CONTRACT.md)
 
 const KEY = "zincBrowserLibrary";
-interface Store { get(k: string): Promise<Record<string, unknown>>; set(o: Record<string, unknown>): Promise<void> }
+interface Store {
+	get(k: string): Promise<Record<string, unknown>>;
+	set(o: Record<string, unknown>): Promise<void>;
+}
 const storage = (): Store => {
 	const c = (globalThis as { chrome?: { storage?: { local?: Store } } }).chrome?.storage?.local;
 	if (c) return c;
 	// no storage permission (a page outside the extension): this tab's own storage
-	return { get: async (k) => { try { return { [k]: JSON.parse(localStorage.getItem(k) ?? "null") }; } catch { return {}; } }, set: async (o) => { for (const [k, v] of Object.entries(o)) localStorage.setItem(k, JSON.stringify(v)); } };
+	return {
+		get: async (k) => {
+			try {
+				return { [k]: JSON.parse(localStorage.getItem(k) ?? "null") };
+			} catch {
+				return {};
+			}
+		},
+		set: async (o) => {
+			for (const [k, v] of Object.entries(o)) localStorage.setItem(k, JSON.stringify(v));
+		},
+	};
 };
 export async function readFirstRunDone(): Promise<boolean> {
 	const v = (await storage().get(KEY))[KEY] as { firstRunDone?: boolean } | undefined;
@@ -172,6 +247,10 @@ export async function exportLibrary(): Promise<{ bytes: number; name: string; su
 	a.remove();
 	setTimeout(() => URL.revokeObjectURL(url), 60_000);
 	let summary: Record<string, number> = {};
-	try { summary = JSON.parse(res.headers.get("X-Zinc-Export") ?? "{}"); } catch { /* none */ }
+	try {
+		summary = JSON.parse(res.headers.get("X-Zinc-Export") ?? "{}");
+	} catch {
+		/* none */
+	}
 	return { bytes: data.byteLength, name, summary };
 }

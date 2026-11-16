@@ -16,7 +16,12 @@ beforeEach(() => {
 	setSettings(db, { autoExportDelay: 0.05, autoExportIdle: 0.15 });
 });
 
-const paper = (title: string) => ({ itemType: "journalArticle", title, creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }], date: "2020" });
+const paper = (title: string) => ({
+	itemType: "journalArticle",
+	title,
+	creators: [{ creatorType: "author", firstName: "Ann", lastName: "Smith" }],
+	date: "2020",
+});
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("adding and running", () => {
@@ -33,7 +38,9 @@ describe("adding and running", () => {
 	test("validation: format, absolute path, collection", () => {
 		expect(() => addAutoExport(db, { path: join(dir, "a.bib"), format: "ris", scope: { type: "library" } })).toThrow("format");
 		expect(() => addAutoExport(db, { path: "relative.bib", format: "betterbibtex", scope: { type: "library" } })).toThrow("absolute");
-		expect(() => addAutoExport(db, { path: join(dir, "a.bib"), format: "betterbibtex", scope: { type: "collection", key: "NOPE" } })).toThrow("collection");
+		expect(() =>
+			addAutoExport(db, { path: join(dir, "a.bib"), format: "betterbibtex", scope: { type: "collection", key: "NOPE" } }),
+		).toThrow("collection");
 	});
 
 	test("a collection scope only writes that collection (and its sub-collections)", () => {
@@ -159,12 +166,26 @@ describe("rewrite on change", () => {
 
 describe("HTTP API (/api/bbt)", () => {
 	const call = (path: string, method = "GET", body?: unknown) =>
-		handleApi(new Request(`http://127.0.0.1/api/bbt/${path}`, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }), db).then((r) => r!.json() as Promise<any>);
+		handleApi(
+			new Request(`http://127.0.0.1/api/bbt/${path}`, {
+				method,
+				headers: { "Content-Type": "application/json" },
+				body: body === undefined ? undefined : JSON.stringify(body),
+			}),
+			db,
+		).then((r) => r!.json() as Promise<any>);
 
 	test("settings, formula check, keys, pin/unpin/refresh, cite and auto-exports", async () => {
 		const a = createItem(db, paper("Alpha beta gamma")).data.key;
 		expect((await call("settings")).citekeyFormat).toBe("auth.lower + shorttitle(3,3) + year");
-		const bad = await handleApi(new Request("http://x/api/bbt/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patch: { citekeyFormat: "auth.nope" } }) }), db);
+		const bad = await handleApi(
+			new Request("http://x/api/bbt/settings", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ patch: { citekeyFormat: "auth.nope" } }),
+			}),
+			db,
+		);
 		expect(bad!.status).toBe(400);
 		expect((await call("formula", "POST", { formula: "auth.upper + year", itemKey: a })).preview).toBe("SMITH2020");
 		expect((await call("formula", "POST", { formula: "(" })).ok).toBe(false);
