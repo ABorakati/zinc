@@ -3,8 +3,19 @@ import { createSignal, For, Show, type JSX } from "solid-js";
 import { Button, openDialog, toast } from "../../ui";
 import { logError } from "../../shell/errorlog";
 import { revealInFolder } from "../../shell/native";
-import { Footer, Line, Para, Scroll, t, Txt } from "../kit";
+import { markdownTheme } from "../../itempane/Notes";
+import { Footer, Line, Para, Scroll, t, tok, tx, Txt } from "../kit";
+import { openUrl } from "../platform";
+
+/** The size of the dialog's other text (text-sm), for the <markdown> paragraph. */
+const smallText = () => {
+	const s = tx("text-sm") as { fontSize?: number; lineHeight?: number };
+	return { fontSize: s.fontSize ?? 13, lineHeight: s.lineHeight ?? 19 };
+};
 import { collectReport, copyReport, openLogsFolder, REPORT_DAYS, saveReportZip, type Report } from "./report";
+
+/** Where problems are reported: a new issue on the app's GitHub repository. */
+export const ISSUE_URL = "https://github.com/ABorakati/zinc/issues/new";
 
 /** `seed`: a ready report (screenshot scripts); normally it is collected when the dialog opens. */
 function ReportDialog(p: { close: () => void; seed?: Report }): JSX.Element {
@@ -27,6 +38,19 @@ function ReportDialog(p: { close: () => void; seed?: Report }): JSX.Element {
 			toast.error("Could not copy the report");
 		}
 	};
+	// copies the report, then opens a new issue on GitHub for the user to describe the problem and paste the log into
+	const fileIssue = async () => {
+		const r = report();
+		if (!r) return;
+		try {
+			await copyReport(r);
+			toast.success("Report copied", { description: "Describe the problem in the new issue, then paste the log below it." });
+		} catch (e) {
+			logError("ui", e, "copy report");
+			toast.error("Could not copy the report", { description: "Use Copy to clipboard, then paste it into the issue." });
+		}
+		void openUrl(ISSUE_URL);
+	};
 	const save = async () => {
 		const r = report();
 		if (!r) return;
@@ -47,6 +71,18 @@ function ReportDialog(p: { close: () => void; seed?: Report }): JSX.Element {
 			<Para class="text-sm text-muted-foreground">
 				{`Nothing is sent anywhere. This is what a report contains: the last ${REPORT_DAYS} days of the error log with keys, tokens, item titles and your user folder removed. Copy it or save it as a zip, then send it yourself.`}
 			</Para>
+			{/* <markdown>, not <Para>: GPUIX <text> holds one plain run, so a clickable link inside a sentence needs the markdown element */}
+			<markdown
+				source={`To report it, [file an issue on GitHub](${ISSUE_URL}): say what you did and what went wrong, then paste the copied log below. **File an issue** copies the log and opens the page.`}
+				theme={{
+					...markdownTheme(),
+					text: tok("muted-foreground"),
+					link: tok("primary"),
+					metrics: { ...markdownTheme().metrics, mdTextSize: smallText().fontSize, mdLineHeight: smallText().lineHeight },
+				}}
+				onLinkClick={(e) => void openUrl(String((e as { value?: string }).value || ISSUE_URL))}
+				style={{ width: "100%" }}
+			/>
 			<Show
 				when={report()}
 				fallback={<Txt class="text-xs text-muted-foreground">{err() ? `Could not read the logs: ${err()}` : "Collecting…"}</Txt>}
@@ -80,6 +116,9 @@ function ReportDialog(p: { close: () => void; seed?: Report }): JSX.Element {
 					</Button>
 				}
 			>
+				<Button variant="outline" size="sm" icon="external-link" disabled={!report()} onClick={() => void fileIssue()}>
+					File an issue
+				</Button>
 				<Button variant="outline" size="sm" disabled={!report()} onClick={() => void copy()}>
 					Copy to clipboard
 				</Button>

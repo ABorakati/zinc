@@ -62,6 +62,10 @@ const ALL: Variant[] = [
 	{ id: "installed", exe: join(process.env.USERPROFILE ?? "", "ZoteroNext", "gpui", "zotero-next-gpui.exe"), args: [] },
 ];
 const wantedV = arg("variants", ALL.map((v) => v.id).join(",")).split(",");
+// aot-<name>: another AOT build kept as out/zotero-next-gpui-aot-<name>.exe (e.g. one per Bun canary, to compare them)
+for (const id of wantedV)
+	if (/^aot-[\w-]+$/.test(id) && !ALL.some((v) => v.id === id))
+		ALL.push({ id, exe: join(outDir, `zotero-next-gpui-${id}.exe`), args: [] });
 const variants = ALL.filter((v) => wantedV.includes(v.id));
 for (const v of variants)
 	if (!existsSync(v.exe)) {
@@ -114,6 +118,9 @@ function Listener([int]$port) {
 	return $null
 }
 $env:ZN_TRACE = '1'
+# a benchmark copy must not answer the browser Connector / Word on Zotero's port 23119, nor sync the library copy
+$env:ZN_ZPORT = '0'
+$env:ZN_SYNC = '0'
 if ($Db) { $env:ZN_DB = $Db; $env:ZN_PORT = [string]$InnerPort; Remove-Item Env:ZN_URL -ErrorAction SilentlyContinue }
 else { $env:ZN_URL = $Url; Remove-Item Env:ZN_DB -ErrorAction SilentlyContinue; Remove-Item Env:ZN_PORT -ErrorAction SilentlyContinue }
 $sw = [System.Diagnostics.Stopwatch]::StartNew()

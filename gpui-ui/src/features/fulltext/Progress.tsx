@@ -1,7 +1,7 @@
 // Find Full Text progress panel (bottom-right): one block per job, one row per item with state, source, an "Open" action for
 // hand-offs, a "Sign in" action for items waiting on the institution, and Cancel. The header row opens the institution
 // sign-in window and the Find Full Text settings.
-import { For, Show, onMount, type JSX } from "solid-js";
+import { For, Show, createEffect, on, type JSX } from "solid-js";
 import { Icon } from "../../icons";
 import { Button } from "../../ui";
 import { FloatingPanel, IconBtn, Line, Progress, t, tok, Txt } from "../kit";
@@ -121,7 +121,16 @@ function JobBlock(p: { tracked: TrackedJob }): JSX.Element {
 export function FullTextProgress(): JSX.Element {
 	const running = () => jobs().filter((j) => !j.job.done).length;
 	const status = () => signInStatus();
-	onMount(() => void refreshSignInStatus());
+	// Asked when the panel appears, not when the app starts: the overlay is created at start-up, and the status check reads the
+	// sign-in browser's cookies, which starts that browser (the helper and WebView2, ~400 MB) whenever a sign-in profile exists.
+	createEffect(
+		on(
+			() => jobs().length > 0,
+			(shown) => {
+				if (shown) void refreshSignInStatus();
+			},
+		),
+	);
 	return (
 		<Show when={jobs().length > 0}>
 			<FloatingPanel
