@@ -5,7 +5,7 @@
 **Zinc is a fast, modern, Zotero-compatible reference manager for Windows, Linux and macOS. It reads and writes your Zotero library.** It opens in half a second, searches a 12,000-item library in tens of milliseconds, uses less than half of Zotero's working memory, and keeps saving references and inserting Word citations when the app is closed. It reads and syncs your Zotero data, runs Zotero's own translators, and has a built-in MCP server for AI agents.
 
 [![CI](https://github.com/ABorakati/zinc/actions/workflows/ci.yml/badge.svg)](https://github.com/ABorakati/zinc/actions/workflows/ci.yml)
-<!-- The CI badge above only renders for people who have access to this private repository. The badges below are static, so they work for everyone. -->
+<!-- The badges below are static. -->
 ![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-0078D4)
 ![Zotero-compatible](https://img.shields.io/badge/Zotero-compatible-CC2936?logo=zotero&logoColor=white)
 ![UI: Zed GPUI via GPUIX](https://img.shields.io/badge/UI-Zed%20GPUI%20%2B%20GPUIX-084CCF?logo=zedindustries&logoColor=white)

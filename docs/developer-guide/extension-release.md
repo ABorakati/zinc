@@ -1,6 +1,6 @@
 # Releasing the browser extension
 
-The Zinc Connector is the browser extension: it saves pages, and its library tab is the full Zinc app (WebAssembly). It lives in a private repository, `ABorakati/zinc-connector` (a Zotero Connector fork). This page covers building its zips, what the CI workflow does, the update feed, and the manual steps to get automatic updates through the Chrome Web Store and Microsoft Edge Add-ons. The desktop installer and its update feed are in [Releasing](releasing.md).
+The Zinc Connector is the browser extension: it saves pages, and its library tab is the full Zinc app (WebAssembly). It lives in its own public repository, `ABorakati/zinc-connector` (a Zotero Connector fork). This page covers building its zips, what the CI workflow does, the update feed, and the manual steps to get automatic updates through the Chrome Web Store and Microsoft Edge Add-ons. The desktop installer and its update feed are in [Releasing](releasing.md).
 
 **What updates itself and what does not.**
 
@@ -54,11 +54,11 @@ bun scripts/package.ts --tag v0.2.0 --library ../zotero-next/gpui-ui/dist-extens
 - **Steps:** checks out zotero-next and the connector (branch `zotero-next`, submodules) with the secret `CONNECTOR_REPO_TOKEN`; installs Bun 1.4.4; fetches the vendored Zotero code (`core/vendor`, as `web.yml` does) and builds the Zotero reader and document worker into `reader-host/dist` (the reader repository is cloned at the commit pinned as `READER_COMMIT` in the workflow); builds the library page; packages the connector.
 - **Every run** uploads the unpacked zip as the artifact `zinc-connector-unpacked` (kept 7 days). Its version is `0.0.0.<run number>` (`v0.0.0-ci.<run number>`).
 - **A release** builds both zips with the version from the tag and attaches both to the release with `gh release upload`.
-- It fails with a clear message if `CONNECTOR_REPO_TOKEN` is not set, if the connector checkout lacks `scripts/package.ts` or its submodules, or if `gpui-ui/update-pubkey.txt` is missing.
+- It fails with a clear message if the connector checkout lacks `scripts/package.ts` or its submodules. Without `gpui-ui/update-pubkey.txt` it warns and builds zips that show no update notice.
 
-### The secret `CONNECTOR_REPO_TOKEN`
+### The secret `CONNECTOR_REPO_TOKEN` (only for a private connector repository)
 
-The connector repository is private, so the default workflow token cannot read it. Create a **fine-grained personal access token** with the one repository `ABorakati/zinc-connector` and the single permission **Contents: read-only**, and save it as the Actions secret `CONNECTOR_REPO_TOKEN` in the zotero-next repository (Settings, Secrets and variables, Actions). Give it an expiry and put the renewal date in your calendar; when it expires the first step of the workflow fails and says so. Nothing in the workflow can write to the connector repository.
+The connector repository is public, so the workflow checks it out with its own token and needs no secret. If the repository is made private again, the default workflow token cannot read it: create a **fine-grained personal access token** with the one repository `ABorakati/zinc-connector` and the single permission **Contents: read-only**, and save it as the Actions secret `CONNECTOR_REPO_TOKEN` in the zotero-next repository (Settings, Secrets and variables, Actions). Give it an expiry and put the renewal date in your calendar; when it expires the first step of the workflow fails and says so. Nothing in the workflow can write to the connector repository.
 
 ## The update feed for unpacked installs
 

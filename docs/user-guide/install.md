@@ -80,12 +80,14 @@ The steps below are written for the agent.
 
 1. **Find the system.** Windows (x64), Linux (x86-64) or macOS (Apple Silicon). Any other system or CPU is not supported: tell the user and stop.
 2. **Ask the user first.** On Windows, ask which parts they want: the app, the Word add-in and the browser connector (the default is all three). If they want the Word add-in, ask them to close Word. A silent install leaves the add-in as it is while Word is open.
-3. **Download the release asset.** The repository is private, so use the GitHub CLI, signed in with an account that can read it. If `gh` is missing or not signed in, stop and ask the user to sign in (`gh auth login`). Never handle their password or token.
+3. **Download the release asset** from the latest release, https://github.com/ABorakati/zinc/releases/latest (public, no sign-in needed). With the GitHub CLI:
 
    ```sh
    # pattern: Windows "Zinc-Setup-*.exe", Linux "Zinc-*-x86_64.AppImage", macOS "Zinc-*-arm64.dmg"
    gh release download --repo ABorakati/zinc --pattern "<pattern>" --dir <temporary folder> --clobber
    ```
+
+   Without `gh`, read the file names from https://api.github.com/repos/ABorakati/zinc/releases/latest (`assets[].browser_download_url`) and download the one that matches.
 
 4. **Install it.**
    - **Windows** (PowerShell), with the parts the user chose:

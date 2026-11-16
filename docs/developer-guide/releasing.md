@@ -146,7 +146,7 @@ bun gpui-ui/scripts/release.ts --extension-zip Zinc-Connector-<version>.zip [--i
 
 The feed is `latest.json` at an https URL (plain http is accepted for localhost only, for tests). It must be fetchable by the installed apps without credentials, so the hosting choice matters:
 
-- If the source repository is private, its release assets cannot be downloaded anonymously. Publish the installer and `latest.json` somewhere users can reach, for example a separate public releases repository (then only the installer and manifest are public). The signature on the manifest, not the host, protects users.
+- `ABorakati/zinc` is public, so its release assets download without credentials: the default feed can be `https://github.com/ABorakati/zinc/releases/latest/download/latest.json`. (A private repository's assets cannot be downloaded anonymously; it would need the feed hosted elsewhere.) The signature on the manifest, not the host, protects users.
 - For your own machine only, `ZN_UPDATE_TOKEN` (a GitHub token) is sent as a bearer token to the feed's own origin and nowhere else. Do not ship a token to users.
 
 What the app does (`core/src/update/`, `gpui-ui/src/update/`):
@@ -188,8 +188,8 @@ gh workflow run desktop-packages.yml -f release_tag=v0.1.10
 
 With an empty `release_tag` a manual run only builds and keeps the artifacts. Pinning a new `zotero/reader` commit means changing `ZOTERO_READER_COMMIT` in the workflow; the reader cache key includes it.
 
-The workflow does not run on every push, because macOS minutes cost several times the Linux ones on a private repository. A separate workflow, `macos.yml`, runs the tests, builds the native PDF library and smoke-tests the app window on `macos-15`; it runs by hand and when code that differs per OS changes on `main`.
+The workflow does not run on every push, only on releases and by hand: the macOS job can wait a long time for a runner. A separate workflow, `macos.yml`, runs the tests, builds the native PDF library and smoke-tests the app window on `macos-15`; it runs by hand and when code that differs per OS changes on `main`.
 
-The disk image is signed ad hoc and not notarised, and the AppImage is not signed. GitHub Actions is blocked at present by an account billing problem, so no workflow runs, including this one, until that is fixed.
+The disk image is signed ad hoc and not notarised, and the AppImage is not signed.
 
-The repository is private and this documentation is not published anywhere; no step above publishes documentation.
+The website, with this documentation, is published on GitHub Pages at https://aborakati.github.io/zinc/ by `web.yml` on every push to `main` that changes it.
