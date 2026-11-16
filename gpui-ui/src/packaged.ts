@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { resolveLibrary } from "../../core/src/library-location";
 import { configDir } from "../../core/src/platform-dirs";
+import { leftByOtherPackage } from "./packagedEnv";
 import { mark } from "./trace";
 
 mark("boot");
@@ -70,8 +71,11 @@ export const packageDataDir = (): string => {
 if (packaged) {
 	const exeDir = dirname(exe);
 	const dir = packageDataDir();
+	// an explicit value wins, unless it points into ANOTHER Zinc package (the previous version left it when it relaunched us after a
+	// self-update, packagedEnv.ts) or at nothing (that install was removed since)
 	const set = (k: string, v: string) => {
-		if (!process.env[k]) process.env[k] = v;
+		const cur = process.env[k];
+		if (!cur || (cur !== v && (!existsSync(cur) || leftByOtherPackage(cur, exeDir)))) process.env[k] = v;
 	};
 	// vendor/document-worker and vendor/reader/structured-document-text are copied under the package folder
 	if (existsSync(join(dir, "vendor"))) set("ZN_ROOT", dir);
