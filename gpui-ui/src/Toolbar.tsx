@@ -271,6 +271,18 @@ export function Toolbar() {
 // ------------------------------------------------------------------------------------------------ Group / Sort bar
 
 const chipBase = "flex h-[26px] flex-none items-center rounded-full border";
+/** Below this sort-bar width the "Group", "Sort", "Add level" and "Customise" labels give way to their icons. */
+const COMPACT_SORT_W = 800;
+const [sortBarWidth, setSortBarWidth] = createSignal(0);
+const compactSort = createMemo(() => sortBarWidth() > 0 && sortBarWidth() < COMPACT_SORT_W);
+/** A label that is hidden in the compact sort bar; it carries its own left margin (no gap), so a hidden one leaves no space. */
+function SortLabel(p: { text: string; cls?: string }) {
+	return (
+		<Show when={!compactSort()}>
+			<text style={{ ...tx(p.cls ?? "text-xs text-muted-foreground"), whiteSpace: "nowrap", marginLeft: 6 }}>{p.text}</text>
+		</Show>
+	);
+}
 const KNOWN = new Set(SORT_OPTIONS.map((o) => o.key));
 const dirLabel = (l: SortLevel) => (isNumericKey(l.key) ? (l.dir === "asc" ? "↑" : "↓") : l.dir === "asc" ? "A–Z" : "Z–A");
 
@@ -308,19 +320,42 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 		if (removable()) out.push({ separator: true }, { label: "Remove level", danger: true, onSelect: () => replace(null) });
 		return out;
 	};
+	// the chip may shrink (its field name then ends in "…") rather than run past the bar's edge in a narrow list
 	const label = (
-		<div style={t("flex h-full items-center gap-1.5 pl-2.5 pr-1")}>
+		<div style={{ ...t("flex h-full items-center gap-1.5 pl-2.5 pr-1"), minWidth: 0, flexShrink: 1 }}>
 			<text style={tx("text-xs font-semibold text-foreground/90")}>{String(p.index + 1)}</text>
-			<text style={{ ...tx("text-xs text-foreground/90"), whiteSpace: "nowrap" }}>{sortLabel(p.level.key)}</text>
+			<text
+				style={{
+					...tx("text-xs text-foreground/90"),
+					whiteSpace: "nowrap",
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					minWidth: 0,
+					flexShrink: 1,
+				}}
+			>
+				{sortLabel(p.level.key)}
+			</text>
 		</div>
 	);
 	return (
-		<div role="group" aria-label={`Sort level ${p.index + 1}`} style={t(`${chipBase} border-border bg-card`)}>
+		<div
+			role="group"
+			aria-label={`Sort level ${p.index + 1}`}
+			style={{ ...t(`${chipBase} border-border bg-card`), flexShrink: 1, minWidth: 0 }}
+		>
 			<Show when={!locked()} fallback={label}>
 				<DropdownMenu
 					items={menu}
 					width={208}
-					trigger={<div style={{ ...t("flex h-full rounded-l-full hover:bg-accent/60"), cursor: "pointer" }}>{label}</div>}
+					style={{ minWidth: 0, flexShrink: 1 }}
+					trigger={
+						<div
+							style={{ ...t("flex h-full rounded-l-full hover:bg-accent/60"), cursor: "pointer", minWidth: 0, flexShrink: 1 }}
+						>
+							{label}
+						</div>
+					}
 				/>
 			</Show>
 			<div
@@ -328,7 +363,7 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 				aria-label="Reverse sort direction"
 				onClick={flip}
 				style={{
-					...t("flex h-full min-w-6 items-center justify-center rounded-r-full pl-1 pr-2.5 hover:bg-accent/60"),
+					...t("flex h-full min-w-6 flex-none items-center justify-center rounded-r-full pl-1 pr-2.5 hover:bg-accent/60"),
 					cursor: "pointer",
 				}}
 			>
@@ -386,10 +421,10 @@ function AddLevel() {
 					<div
 						role="button"
 						aria-label="Add sort level"
-						style={{ ...t(`${chipBase} gap-1 border-dashed border-border px-2`), cursor: "pointer" }}
+						style={{ ...t(`${chipBase} border-dashed border-border px-2`), cursor: "pointer" }}
 					>
 						<Icon name="plus" size={12} color={tok("muted-foreground")} />
-						<text style={{ ...tx("text-xs text-muted-foreground"), whiteSpace: "nowrap" }}>Add level</text>
+						<SortLabel text="Add level" />
 					</div>
 				}
 			/>
@@ -408,6 +443,10 @@ export function SortBar() {
 	// the sort bar belongs to the item list: the full-text results have their own header-less list
 	return (
 		<div
+			onLayout={(e: { width?: number }) => {
+				const w = Math.round(e.width ?? 0);
+				if (w && w !== sortBarWidth()) setSortBarWidth(w);
+			}}
 			style={{
 				...t("flex flex-none items-center gap-2 border-b px-5 py-1.5"),
 				width: "100%",
@@ -416,19 +455,19 @@ export function SortBar() {
 				...(store.fulltext() ? HIDDEN : {}),
 			}}
 		>
-			<div style={t("flex items-center gap-1.5")}>
+			<div style={t("flex flex-none items-center")}>
 				<Icon name="layout-panel-top" size={14} color={tok("muted-foreground")} />
-				<text style={tx("text-xs text-muted-foreground")}>Group</text>
+				<SortLabel text="Group" />
 			</div>
 			<GroupChip />
-			<div style={t("h-4 w-px bg-border mx-1")} />
-			<div style={t("flex items-center gap-1.5")}>
+			<div style={t("h-4 w-px flex-none bg-border mx-1")} />
+			<div style={t("flex flex-none items-center")}>
 				<Icon name="arrow-down-up" size={14} color={tok("muted-foreground")} />
-				<text style={tx("text-xs text-muted-foreground")}>Sort</text>
+				<SortLabel text="Sort" />
 			</div>
 			<For each={store.sortLevels()}>
 				{(l, i) => (
-					<div style={{ display: "flex", flexDirection: "row", alignItems: "center" }}>
+					<div style={{ display: "flex", flexDirection: "row", alignItems: "center", minWidth: 0, flexShrink: 1 }}>
 						<text
 							style={
 								i() > 0
@@ -450,7 +489,8 @@ export function SortBar() {
 					whiteSpace: "nowrap",
 					overflow: "hidden",
 					textOverflow: "ellipsis",
-					flexShrink: 1,
+					// gives way well before the sort chips do (flex shrinks in proportion to this weight)
+					flexShrink: 10,
 					minWidth: 0,
 				}}
 			>
@@ -462,14 +502,14 @@ export function SortBar() {
 				aria-label="Customise rows"
 				onClick={() => openCustomize()}
 				style={{
-					...t("flex h-6 items-center gap-1.5 rounded-md px-2"),
+					...t("flex h-6 flex-none items-center rounded-md px-2"),
 					cursor: "pointer",
 					hover: t("bg-foreground/5"),
 					...(store.viewMode() === "cards" ? {} : HIDDEN),
 				}}
 			>
 				<Icon name="settings-2" size={14} color={tok("muted-foreground")} />
-				<text style={tx("text-xs text-muted-foreground")}>Customise</text>
+				<SortLabel text="Customise" />
 			</div>
 		</div>
 	);
