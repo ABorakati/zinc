@@ -37,7 +37,7 @@ import solidPreset from "babel-preset-solid";
 import solidBunPlugin from "@gpuix/solid/bun-plugin";
 import { fixExeIcon } from "./fix-exe-icon";
 import { BUILD_VERSION } from "./_version";
-import { updatePubkey } from "./_update-key";
+import { DEFAULT_UPDATE_URL, updatePubkey } from "./_update-key";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -404,7 +404,8 @@ for (const v of todo) {
 			"process.env.ZN_VERSION": JSON.stringify(BUILD_VERSION),
 			"process.env.ZN_BUILD_VARIANT": JSON.stringify(v.aot ? "aot" : "bytecode"),
 			"process.env.ZN_UPDATE_PUBKEY": JSON.stringify(updatePubkey()),
-			"process.env.ZN_UPDATE_URL": JSON.stringify(process.env.ZN_UPDATE_URL ?? ""),
+			// an empty ZN_UPDATE_URL (an unset CI variable) counts as unset: the latest release's feed (Linux/macOS read latest-<platform>.json next to it)
+			"process.env.ZN_UPDATE_URL": JSON.stringify(process.env.ZN_UPDATE_URL || DEFAULT_UPDATE_URL),
 		},
 		bytecode: v.bytecode && !v.aot, // AOT replaces bytecode
 		sourcemap: "none",

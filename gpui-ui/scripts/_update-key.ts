@@ -11,6 +11,9 @@ import { resolve } from "node:path";
 
 const checkedIn = resolve(import.meta.dir, "..", "update-pubkey.txt");
 
+/** The feed builds check when ZN_UPDATE_URL is not set: latest.json of the latest release (the repository is public). */
+export const DEFAULT_UPDATE_URL = "https://github.com/ABorakati/zinc/releases/latest/download/latest.json";
+
 export function updatePubkey(): string {
 	// an EMPTY ZN_UPDATE_PUBKEY counts as unset (CI passes an unset repository variable as "")
 	const raw = (
