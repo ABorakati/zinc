@@ -82,7 +82,10 @@ jobs:
         env:
           RELEASE: ${{ github.event_name == 'release' || inputs.release_tag != '' }}
         run: |
-          [ -s zotero-next/gpui-ui/update-pubkey.txt ] && exit 0
+          if [ -s zotero-next/gpui-ui/update-pubkey.txt ]; then
+            echo "ZN_UPDATE_PUBKEY_FILE=$GITHUB_WORKSPACE/zotero-next/gpui-ui/update-pubkey.txt" >> "$GITHUB_ENV"
+            exit 0
+          fi
           if [ "$RELEASE" = "true" ]; then
             echo "::error title=No update public key::gpui-ui/update-pubkey.txt is missing: the extension's update notice needs it (gpui-ui/UPDATES.md)."
             exit 1
@@ -159,7 +162,6 @@ jobs:
         id: pkg
         env:
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
-          ZN_UPDATE_PUBKEY_FILE: ${{ github.workspace }}/zotero-next/gpui-ui/update-pubkey.txt
         working-directory: zinc-connector
         run: |
           # no release: a throw-away pre-release version, so the artifact's manifest says which run built it
