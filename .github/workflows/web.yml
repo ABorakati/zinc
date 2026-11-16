@@ -4,7 +4,9 @@ name: Browser build
 # PDFium WebAssembly and the reader's layout analysis on Zotero's document worker, with the demo library (gpui-ui/web/demo-library.ts).
 # It runs whenever the app, the core or the website changes, so the demo on the website always matches the app:
 #   - every run: the browser build (artifact "zotero-next-web") and the website with it in /app-demo/ (artifact "website"),
-#     kept for a few days to download. Nothing is deployed: the website stays private.
+#     kept for a few days to download.
+#   - a push to main: also deploys that website to GitHub Pages, https://aborakati.github.io/zinc/ (job "pages"; the repository's
+#     Pages source is "GitHub Actions"). The site is built under DOCS_BASE /zinc/ for that.
 #   - a published release: also attaches Zinc-Web-<tag>.zip to it, the browser build to run on Linux and macOS (README.txt
 #     inside says how: serve the folder over HTTP and open it in a browser). For a release that already exists, run the workflow
 #     by hand with release_tag (gh workflow run web.yml -f release_tag=v0.1.1).
@@ -44,7 +46,9 @@ permissions:
 
 env:
   BUN_VERSION: 1.4.4
-  DOCS_BASE: /
+  # GitHub Pages serves a project repository under /<repo>/
+  DOCS_BASE: /zinc/
+  DOCS_SITE: https://aborakati.github.io
 
 defaults:
   run:
@@ -143,6 +147,12 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Keep the website for GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
       - name: Attach the browser build to the release
         if: github.event_name == 'release' || inputs.release_tag != ''
         env:
@@ -151,3 +161,21 @@ jobs:
         run: |
           (cd gpui-ui/out && mv web-demo "Zinc-Web-$TAG" && zip -qr "Zinc-Web-$TAG.zip" "Zinc-Web-$TAG")
           gh release upload "$TAG" "gpui-ui/out/Zinc-Web-$TAG.zip" --clobber
+
+  # The website (built above under /zinc/) on GitHub Pages: https://aborakati.github.io/zinc/
+  pages:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
