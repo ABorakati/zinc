@@ -23,6 +23,7 @@ import { TagsSection } from "./Tags";
 import { Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx, type Entry } from "./kit";
 import { createPaneModel, PaneContext, usePane } from "./model";
 import { firstLine } from "./util";
+import { rightLayout, visible } from "../shell/sidebarLayout";
 
 export { showNote } from "./Notes";
 
@@ -64,7 +65,7 @@ function Body(): JSX.Element {
 	const pane = usePane();
 	const gp = useGpuix();
 	const d = () => pane.detail()!;
-	const [active, setActive] = createSignal("info");
+	const [active, setActive] = createSignal(visible(rightLayout.layout())[0] ?? "info");
 	let list: HostElement | undefined;
 	let listBox: HostElement | undefined; // the list's painted area (a <virtual-list> itself reports no bounds)
 
@@ -73,30 +74,39 @@ function Body(): JSX.Element {
 	// section's header and rows, then one entry per other section.
 	const infoEntries = useInfoEntries();
 	const entryOf = (id: string, render: () => JSX.Element): Entry => ({ id, section: id, render });
-	const rest: Entry[] = [
-		entryOf("abstract", () => <AbstractSection />),
-		entryOf("notes", () => <NotesSection />),
-		entryOf("attachments", () => <AttachmentsSection />),
-		entryOf("collections", () => <CollectionsSection />),
-		entryOf("tags", () => <TagsSection />),
-		entryOf("related", () => <RelatedSection />),
-		{ id: "spacer", section: "related", render: () => <div style={{ width: "100%", height: 192, flexShrink: 0 }} /> },
-	];
-	const entries = createMemo(() => [...infoEntries(), ...rest]);
+	const others: Record<string, Entry> = {
+		abstract: entryOf("abstract", () => <AbstractSection />),
+		notes: entryOf("notes", () => <NotesSection />),
+		attachments: entryOf("attachments", () => <AttachmentsSection />),
+		collections: entryOf("collections", () => <CollectionsSection />),
+		tags: entryOf("tags", () => <TagsSection />),
+		related: entryOf("related", () => <RelatedSection />),
+	};
+	// the sections shown, in the order Settings > Appearance > Sidebars sets (shell/sidebarLayout.ts)
+	const sections = createMemo(() => visible(rightLayout.layout()).map((id) => SECTIONS.find((s) => s.id === id)!));
+	const entries = createMemo(() => {
+		const out: Entry[] = [];
+		for (const s of sections()) out.push(...(s.id === "info" ? infoEntries() : [others[s.id]!]));
+		// room below the last section, so it can scroll to the top
+		const last = sections().at(-1)?.id ?? "info";
+		out.push({ id: "spacer", section: last, render: () => <div style={{ width: "100%", height: 192, flexShrink: 0 }} /> });
+		return out;
+	});
 	const indexOf = (id: string) => entries().findIndex((e) => e.section === id);
 
 	let lockUntil = 0; // a tab click scrolls programmatically; the highlight stays on the clicked tab meanwhile
 	const spy = (e: EventPayload) => {
 		if (Date.now() < lockUntil) return;
 		const first = Math.floor(e.startIndex ?? 0);
-		let cur = SECTIONS[0]!.id;
-		for (const s of SECTIONS) {
+		let cur = sections()[0]?.id ?? "info";
+		for (const s of sections()) {
 			const i = indexOf(s.id);
 			if (i >= 0 && i <= first) cur = s.id;
 		}
 		setActive(cur);
 	};
 	const goTo = (id: string) => {
+		if (indexOf(id) < 0) return; // a hidden section (Settings > Appearance > Sidebars)
 		setCollapsed(id, false);
 		lockUntil = Date.now() + 500;
 		setActive(id);
@@ -142,7 +152,7 @@ function Body(): JSX.Element {
 					borderColor: tok("border-soft"),
 				}}
 			>
-				<For each={SECTIONS}>
+				<For each={sections()}>
 					{(s) => (
 						<div
 							role="tab"

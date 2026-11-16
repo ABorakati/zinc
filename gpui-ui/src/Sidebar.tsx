@@ -26,6 +26,7 @@ import {
 } from "./sidebar/state";
 import { clipText, textWidth } from "./clip";
 import { TagList } from "./tags/TagList";
+import { leftLayout, visible } from "./shell/sidebarLayout";
 import { confirm, openMenu, toast } from "./ui";
 
 export { collectionColor } from "./sidebar/parts";
@@ -107,19 +108,44 @@ export function Sidebar(): JSX.Element {
 	// The Library header; while open the built-in rows, the registry's sections and the Saved Searches block; then the Collections
 	// group. The memo reads only what changes WHICH rows exist (open / closed groups, the tree, the saved searches); everything a
 	// row shows (selection, counts, hover tints) is read inside its own render function, so it updates without rebuilding the list.
+	// The groups come in the order Settings > Appearance > Sidebars sets (shell/sidebarLayout.ts); a hidden one is left out.
 	const entries = createMemo<Entry[]>(() => {
-		const open = libraryOpen();
-		const out: Entry[] = [
-			{
-				id: "l:header",
-				render: () => (
-					<ListItem>
-						<SectionHeader label="Library" open={libraryOpen()} onToggle={() => setLibraryOpen(!libraryOpen())} />
-					</ListItem>
-				),
-			},
-		];
-		if (open) {
+		const out: Entry[] = [];
+		let prev: "none" | "open" | "closed" = "none"; // how the previous group ended: sets the gap above the next one
+		for (const id of visible(leftLayout.layout())) {
+			// 16px (`gap-4`) between the groups; a closed Library ends in a row with no bottom gap
+			const top = prev === "none" ? 0 : prev === "closed" ? 15 : 16;
+			if (id === "library") {
+				libraryBlock(out, top);
+				prev = libraryOpen() ? "open" : "closed";
+			} else if (id === "searches") {
+				out.push(...savedSearchEntries());
+				prev = "open";
+			} else if (id === "collections") {
+				out.push(...collectionEntries(top));
+				prev = "open";
+			} else if (id === "groups") {
+				const g = groupEntries(top); // Zotero's "Group Libraries" heading; empty without groups
+				out.push(...g);
+				if (g.length) prev = "open";
+			}
+		}
+		out.push({ id: "end", render: () => <div style={{ height: 4, width: "100%" }} /> }); // the old `pb-1`
+		return out;
+	});
+	const tagsShown = () => visible(leftLayout.layout()).includes("tags");
+
+	/** The Library header and, while open, its built-in rows and the registry's sections. */
+	function libraryBlock(out: Entry[], top: number): void {
+		out.push({
+			id: "l:header",
+			render: () => (
+				<ListItem top={top}>
+					<SectionHeader label="Library" open={libraryOpen()} onToggle={() => setLibraryOpen(!libraryOpen())} />
+				</ListItem>
+			),
+		});
+		if (libraryOpen()) {
 			out.push(
 				{ id: "l:library", render: () => <Special view={{ kind: "library" }} label="My Library" icon="library" /> },
 				{ id: "l:unfiled", render: () => <Special view={{ kind: "unfiled" }} label="Unfiled" icon="inbox" /> },
@@ -150,14 +176,8 @@ export function Sidebar(): JSX.Element {
 			);
 			for (const s of sidebarSections())
 				if (!BUILT_IN_SECTIONS.has(s.id)) out.push({ id: `l:reg:${s.id}`, render: () => <ListItem>{s.render()}</ListItem> });
-			out.push(...savedSearchEntries());
 		}
-		// 16px (`gap-4`) between the groups; the Library block ends in a row with no bottom gap when open
-		out.push(...collectionEntries(open ? 16 : 15));
-		out.push(...groupEntries(16)); // Zotero's "Group Libraries" heading, under My Library and its collections
-		out.push({ id: "end", render: () => <div style={{ height: 4, width: "100%" }} /> }); // the old `pb-1`
-		return out;
-	});
+	}
 
 	// A new row whose inline name field takes focus is "revealed" by GPUIX: the list scrolls it to the TOP of the viewport, which would
 	// push the Library group (and the Collections header) out of view when you press "+". Keep the scroll position the user had
@@ -216,7 +236,7 @@ export function Sidebar(): JSX.Element {
 				ref={(el: HostElement) => setCollectionsPane(el)}
 				style={{
 					...t("flex min-h-0 flex-col"),
-					flexGrow: tagsOpen() ? collectionsFraction() : 1,
+					flexGrow: tagsShown() && tagsOpen() ? collectionsFraction() : 1,
 					flexShrink: 1,
 					flexBasis: 0,
 				}}
@@ -233,33 +253,35 @@ export function Sidebar(): JSX.Element {
 					<For each={entries()}>{(e) => e.render()}</For>
 				</virtual-list>
 			</div>
-			{/* the split handle: a 12px gap between the panes; draggable while the tags pane is open */}
-			<div
-				onMouseDown={(e) => {
-					if (tagsOpen() && e.button === 0) {
-						setSplitting(true);
-						setHot(true);
-					}
-				}}
-				onMouseEnter={() => tagsOpen() && setHot(true)}
-				onMouseLeave={() => {
-					if (!splitting()) setHot(false);
-				}}
-				style={{
-					flexShrink: 0,
-					height: 12,
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-					cursor: tagsOpen() ? "row-resize" : "default",
-				}}
-			>
-				<Show when={tagsOpen() && hot()}>
-					<div style={{ width: 36, height: 3, borderRadius: 2, backgroundColor: tok(splitting() ? "primary" : "border") }} />
-				</Show>
-			</div>
-			{/* Tags.tsx TagList: flex 2 1 0% (open) | 0 0 auto (header only) */}
-			<TagList />
+			{/* the split handle: a 12px gap between the panes; draggable while the tags pane is open. Both go when Tags is hidden. */}
+			<Show when={tagsShown()}>
+				<div
+					onMouseDown={(e) => {
+						if (tagsOpen() && e.button === 0) {
+							setSplitting(true);
+							setHot(true);
+						}
+					}}
+					onMouseEnter={() => tagsOpen() && setHot(true)}
+					onMouseLeave={() => {
+						if (!splitting()) setHot(false);
+					}}
+					style={{
+						flexShrink: 0,
+						height: 12,
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						cursor: tagsOpen() ? "row-resize" : "default",
+					}}
+				>
+					<Show when={tagsOpen() && hot()}>
+						<div style={{ width: 36, height: 3, borderRadius: 2, backgroundColor: tok(splitting() ? "primary" : "border") }} />
+					</Show>
+				</div>
+				{/* Tags.tsx TagList: flex 2 1 0% (open) | 0 0 auto (header only) */}
+				<TagList />
+			</Show>
 			<Show when={splitting()}>
 				<anchored fill="window" priority={1000} style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }}>
 					<div
