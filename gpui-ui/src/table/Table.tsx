@@ -10,7 +10,10 @@ import { openItem } from "../cards/actions";
 import { listFocused, listKeyHandler, setListFocused } from "../cards/keys";
 import { ListRetry } from "../cards/ListRetry";
 import { openItemMenu } from "../cards/menus";
-import { createRows, type Group, type Rows } from "../cards/rows";
+import { childClick, childLabel, childLook, isChildSelected, Twisty } from "../cards/ChildRow";
+import { hasChildren, isOpen, selectedChild } from "../cards/children";
+import { createRows, sameRow, type ChildRow, type Group, type Rows } from "../cards/rows";
+import { createTree, toggleItem } from "../cards/tree";
 import { mix } from "../cards/logic";
 import { gatedHover, markScroll, throttledCommit } from "../cards/scrolling";
 import { clipText } from "../clip";
@@ -93,7 +96,85 @@ function GroupRow(p: { group: Group; collapsed: boolean; onToggle: () => void })
 	);
 }
 
-function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
+/** Title cell: px-2 (8) + twisty slot + gap; a child row's icon sits one level in, under its parent's type icon + 2. */
+const TWISTY = 14;
+const TITLE_GAP = 6;
+const CHILD_INDENT = 8 + TWISTY + TITLE_GAP + 8;
+
+/** An opened item's attachment / note under it: in the title column, indented, with its type icon and title. */
+function ChildRowView(p: { row: ChildRow; cols: () => ColInfo[]; total: () => number }): JSX.Element {
+	const [hovered, setHovered] = createSignal(false);
+	const hover = gatedHover(setHovered);
+	const sel = () => isChildSelected(p.row);
+	/** Where the title column starts, and its width. */
+	const title = createMemo(() => {
+		let left = 0;
+		for (const c of p.cols()) {
+			if (c.id === "title") return { left, width: c.width };
+			left += c.width;
+		}
+		return { left: 0, width: p.cols()[0]?.width ?? 200 };
+	});
+	const look = () => (p.row.child ? childLook(p.row.child, mode()) : null);
+	return (
+		<div
+			testId="table-child-row"
+			onMouseEnter={hover.enter}
+			onMouseLeave={hover.leave}
+			onClick={childClick(p.row)}
+			style={{
+				display: "flex",
+				flexDirection: "row",
+				alignItems: "center",
+				flexShrink: 0,
+				height: ROW,
+				width: Math.max(p.total(), 0),
+				borderBottomWidth: 1,
+				borderColor: mix(tok("border"), 40, "transparent"),
+				backgroundColor: sel()
+					? mix(tok("primary"), 10, tok("card"))
+					: hovered()
+						? mix(tok("accent"), 50, "transparent")
+						: "transparent",
+				...(sel() && listFocused()
+					? { outlineWidth: 1, outlineColor: mix(tok("ring"), 60, "transparent"), outlineOffset: -1 }
+					: {}),
+			}}
+		>
+			<div style={{ width: title().left, height: "100%", flexShrink: 0 }} />
+			<div
+				style={{
+					...tw("flex flex-row items-center min-w-0", mode()),
+					width: title().width,
+					height: "100%",
+					flexShrink: 0,
+					overflow: "hidden",
+					paddingLeft: CHILD_INDENT,
+					gap: 6,
+				}}
+			>
+				<Show when={look()} fallback={<div style={{ ...tw("bg-primary/10 rounded-sm", mode()), height: 10, width: "50%" }} />}>
+					{(l) => (
+						<>
+							<Icon name={l().icon} size={14} color={l().color} />
+							<text
+								style={{
+									...textStyle("select-none text-[13px] text-foreground/85", mode()),
+									whiteSpace: "nowrap",
+									flexShrink: 0,
+								}}
+							>
+								{clipText(childLabel(p.row.child!), title().width - CHILD_INDENT - 14 - 6 - 8, 13)}
+							</text>
+						</>
+					)}
+				</Show>
+			</div>
+		</div>
+	);
+}
+
+function Cell(p: { col: ColInfo; item: ItemRow; index: number }): JSX.Element {
 	const c = () => p.col.def;
 	const base = (): Record<string, unknown> => ({
 		...tw("flex items-center px-2 min-w-0", mode()),
@@ -153,7 +234,18 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 				</Show>
 			}
 		>
-			<div style={{ ...base(), gap: 6 }}>
+			<div style={{ ...base(), gap: TITLE_GAP }}>
+				{/* the twisty slot: every row keeps it, so the titles line up */}
+				<div style={{ width: TWISTY, height: TWISTY, flexShrink: 0 }}>
+					<Show when={hasChildren(p.item)}>
+						<Twisty
+							open={isOpen(p.item.key)}
+							onToggle={() => toggleItem(p.item.key, p.index)}
+							size={TWISTY}
+							testId="table-twisty"
+						/>
+					</Show>
+				</div>
 				<div
 					style={{
 						position: "relative",
@@ -182,7 +274,7 @@ function Cell(p: { col: ColInfo; item: ItemRow }): JSX.Element {
 					</Show>
 				</div>
 				<text style={{ ...textStyle("select-none text-[13px] text-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>
-					{clipText(p.item.title || "(untitled)", p.col.width - 16 - 20, 13)}
+					{clipText(p.item.title || "(untitled)", p.col.width - 16 - 20 - TWISTY - TITLE_GAP, 13)}
 				</text>
 			</div>
 		</Show>
@@ -209,7 +301,7 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 		const it = item();
 		return !!it && store.selected().has(it.key);
 	};
-	const focused = () => listFocused() && store.focusIndex() === p.index;
+	const focused = () => listFocused() && store.focusIndex() === p.index && !selectedChild();
 	const src = dragSource(
 		() => {
 			const it = untrack(item);
@@ -259,19 +351,21 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 			}}
 		>
 			<Show when={item()} fallback={<RowSkeleton cols={p.cols()} />}>
-				{(x) => <For each={p.cols()}>{(c) => <Cell col={c} item={x()} />}</For>}
+				{(x) => <For each={p.cols()}>{(c) => <Cell col={c} item={x()} index={p.index} />}</For>}
 			</Show>
 		</div>
 	);
 }
 
 function RowView(p: { row: number; rows: Rows; cols: () => ColInfo[]; total: () => number }): JSX.Element {
-	const r = createMemo(() => p.rows.row(p.row));
+	const r = createMemo(() => p.rows.row(p.row), undefined, { equals: sameRow });
 	return (
 		<Show when={r()} keyed>
 			{(rw) =>
 				rw.kind === "header" ? (
 					<GroupRow group={rw.group} collapsed={p.rows.isCollapsed(rw.group)} onToggle={() => p.rows.toggle(rw.group)} />
+				) : rw.kind === "child" ? (
+					<ChildRowView row={rw} cols={p.cols} total={p.total} />
 				) : (
 					<ItemRowView index={rw.index} cols={p.cols} total={p.total} />
 				)
@@ -318,7 +412,7 @@ export function TableView(): JSX.Element {
 		visB = 0;
 	const itemAtRow = (r: number): number => {
 		const rw = rows.row(Math.max(0, Math.min(r, count() - 1)));
-		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.group.start;
+		return !rw ? 0 : rw.kind === "item" ? rw.index : rw.kind === "child" ? rw.parentIndex : rw.group.start;
 	};
 	// moving the mounted window is a JS commit (a full, uncached frame): at most every 100 ms while scrolling, at once only at the edge
 	const nearEdge = (rows: number) => {
@@ -417,13 +511,16 @@ export function TableView(): JSX.Element {
 		store.focusRow(next, extend);
 		reveal(rows.rowOf(next));
 	}
+	const tree = createTree({ rows, reveal, visible: () => [visA, visB], moveItems: move });
 	const keys = listKeyHandler({
-		move,
+		move: tree.move,
 		page: () => Math.max(1, visB - visA - 2),
-		open: () => {
-			const it = store.peek(store.focusIndex());
-			if (it) void openItem(it);
-		},
+		open: () =>
+			tree.open(() => {
+				const it = store.peek(store.focusIndex());
+				if (it) void openItem(it);
+			}),
+		extra: tree.extra,
 		toggle: () => {
 			if (store.focusIndex() >= 0) store.selectClick(store.focusIndex(), { shift: false, ctrl: true });
 		},

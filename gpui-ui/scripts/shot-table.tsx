@@ -3,6 +3,7 @@
 // ~758 px column with the overlay host on top, drives it with simulated mouse / keys and writes PNGs.
 //   bun scripts/shot-table.tsx <scenario> [out.png] [--mode dark|light] [--width PX]
 // scenarios: table | cards | multi | ctx | sort | group | fulltext | colmenu | tablectx | customize | resize | compact
+//            | tree | treecards (an item opened with the twisty, a child selected, the tree keys checked)
 // Needs a core at ZN_URL (default http://127.0.0.1:23160). Never touches the user's ui-state.json (writes disabled).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -15,6 +16,8 @@ import { dragging } from "../src/dnd";
 import { store, uiState } from "../src/store";
 import { columnLayout } from "../src/table/layout";
 import { SortBar, Toolbar } from "../src/Toolbar";
+import { childrenOf, closeAll, openKeys, selectedChild, setOpen } from "../src/cards/children";
+import { childClick } from "../src/cards/ChildRow";
 import { OverlayHost } from "../src/ui";
 
 uiState.disableWrites();
@@ -34,7 +37,12 @@ const r = t.renderer;
 (registerFonts as (x?: unknown) => void)(r);
 store.setMode(mode);
 store.setViewMode(
-	scenario === "cards" || scenario === "multi" || scenario === "ctx" || scenario === "customize" || scenario === "compact"
+	scenario === "cards" ||
+		scenario === "multi" ||
+		scenario === "ctx" ||
+		scenario === "customize" ||
+		scenario === "compact" ||
+		scenario === "treecards"
 		? "cards"
 		: "table",
 );
@@ -208,6 +216,85 @@ switch (scenario) {
 		r.nativeSimulateMouseUp(x + 80, h.y, 0);
 		frames();
 		console.log("widths after", columnLayout.widthOf("creator"));
+		break;
+	}
+	case "tree":
+	case "treecards": {
+		// Zotero's twisty: click the first one (open, then close again), then open the item with the most children among the
+		// first rows, select its second child and check the tree keys. Logs what happened; the shot shows the item open.
+		const twistyId = scenario === "tree" ? "table-twisty" : "card-twisty";
+		const childId = scenario === "tree" ? "table-child-row" : "card-child-row";
+		const centre = (id: string) => {
+			const el = r.findByTestId(id);
+			const b = el && r.getElementBounds(el.id);
+			if (!b) throw new Error(`no ${id}`);
+			return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+		};
+		const waitFor = async (ok: () => boolean, what: string) => {
+			for (let i = 0; i < 100 && !ok(); i++) await settle(40);
+			if (!ok()) throw new Error(`timed out: ${what}`);
+		};
+		// A simulated click on a control inside a row is not always delivered to the control in the test window (the first click
+		// of a fresh window reaches only the row, the cards' "more" button included), so the twisty click is reported, not relied on.
+		const tw0 = centre(twistyId);
+		click({ x: tw0.x + 200, y: tw0.y });
+		click(tw0);
+		await settle(300);
+		console.log("twisty click opened:", [...openKeys()].join(",") || "(not delivered)");
+		closeAll();
+		// the items with the most attachments first, so the opened one shows several children
+		store.sortBy({ key: "attachmentCount", dir: "desc" });
+		await waitFor(() => (store.peek(0)?.attachmentCount ?? 0) > 1, "sorted by attachments");
+		await settle(300);
+		let best = -1,
+			most = 0;
+		for (let i = 0; i < 3; i++) {
+			const it = store.peek(i);
+			const n = (it?.attachmentCount ?? 0) + (it?.noteCount ?? 0);
+			if (it && n > most) {
+				most = n;
+				best = i;
+			}
+		}
+		const parent = store.peek(best)!;
+		console.log(`opening #${best} ${parent.key} "${parent.title.slice(0, 50)}" (${most} children)`);
+		store.selectOnly(parent.key, best);
+		setOpen(parent.key, true);
+		await waitFor(() => !!r.findByTestId(childId) && r.findByType("svg").length > 0, "child rows");
+		await settle(300);
+		// select the second child with a click
+		const first = centre(childId);
+		click({ x: first.x, y: first.y + (scenario === "tree" ? 30 : 28) * Math.min(1, most - 1) });
+		console.log("selected child:", JSON.stringify(selectedChild()), "pane key:", store.selectedItem());
+		// keys: Left -> parent, Left -> closes, Right -> opens, Right -> first child, Down -> second child
+		const key = async (k: string) => {
+			r.simulateKeystrokes(k);
+			await settle(60);
+		};
+		await key("left");
+		console.log("left on child ->", selectedChild() ? "child" : `item ${store.selectedItem()}`);
+		await key("left");
+		console.log("left on open item ->", openKeys().has(parent.key) ? "still open" : "closed");
+		await key("right");
+		console.log("right on closed item ->", openKeys().has(parent.key) ? "open" : "closed");
+		await settle(200);
+		await key("right");
+		console.log("right on open item ->", JSON.stringify(selectedChild()));
+		if (most > 1) {
+			await key("down");
+			console.log("down ->", JSON.stringify(selectedChild()));
+		}
+		// double-click the first child: it opens as the item pane's entry does (a PDF / EPUB / snapshot: a reader tab). The test
+		// window delivers only one of two quick clicks on one spot, so the row's handler gets the second click (clickCount 2) directly.
+		const kids = childrenOf(parent.key)!;
+		const row = { kind: "child", parentKey: parent.key, parentIndex: best, pos: 0, last: false, child: kids[0]! } as const;
+		childClick(row)({ clickCount: 2 } as never);
+		await settle(200);
+		const tabs = (store as unknown as { tabs?: () => { id: string }[] }).tabs?.() ?? [];
+		console.log("double-click -> tabs:", tabs.map((t) => t.id).join(","));
+		// leave the second child selected for the shot
+		if (most > 1) await key("down");
+		await sleep(900); // the scroll popup of the sort change fades
 		break;
 	}
 	default:

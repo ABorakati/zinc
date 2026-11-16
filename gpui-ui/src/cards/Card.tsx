@@ -10,6 +10,7 @@ import { textStyle, tokens, tw } from "../theme";
 import { readState } from "../readState";
 import { DropdownMenu, type MenuItem } from "../ui";
 import { childIcon, childLabel, copyCitation, findFullText, getDetail, openChild, peekDetail, openUrl, toggleStar } from "./actions";
+import { Twisty } from "./ChildRow";
 import { swallow } from "./click";
 import { clipText, textWidth } from "../clip";
 import { cardLayout, cardListWidth } from "./layout";
@@ -221,7 +222,15 @@ const ACCENT_MAX = 0.4;
 /** The card's "more actions" (...) button calls this to open the context menu at the button. */
 export type MoreHandler = (rect: { x: number; y: number; width: number; height: number }) => void;
 
-export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore: MoreHandler; focused?: boolean }): JSX.Element {
+export function Card(p: {
+	item: ItemRow;
+	index: number;
+	hovered: boolean;
+	onMore: MoreHandler;
+	focused?: boolean;
+	/** The twisty under the type icon (items with attachments / notes): open state and toggle. */
+	tree?: { open: boolean; toggle: () => void };
+}): JSX.Element {
 	const mode = () => store.mode();
 	const it = () => p.item;
 	const L = cardLayout.layout;
@@ -310,7 +319,8 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 		// button, the star, an icon) blocks its ancestors' mouse handlers, so JS hover saw leave/enter pairs across a card and flickered.
 		return {
 			...base,
-			...tw("rounded-none border-b border-border/60", m),
+			// an open item's rule goes under its last child row instead (ChildRow.tsx)
+			...tw(p.tree?.open ? "rounded-none" : "rounded-none border-b border-border/60", m),
 			...(p.focused
 				? { backgroundColor: mix(tok("accent", m), 50, "transparent") }
 				: { hover: { backgroundColor: mix(tok("accent", m), 40, "transparent") } }),
@@ -340,7 +350,7 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 	return (
 		<div style={rootStyle()}>
 			{/* item-type icon: w-[22px] pt-[3px] text-muted-foreground/80 */}
-			<div style={{ ...tw("flex w-[22px] flex-none items-center justify-center pt-[3px]", mode()), position: "relative" }}>
+			<div style={{ ...tw("flex flex-col w-[22px] flex-none items-center justify-center pt-[3px]", mode()), position: "relative" }}>
 				<Show when={unread()}>
 					<div
 						data-testid="unread-dot"
@@ -360,6 +370,13 @@ export function Card(p: { item: ItemRow; index: number; hovered: boolean; onMore
 					size={compact() ? 16 : 18}
 					color={tw("text-muted-foreground/80", mode()).color as string}
 				/>
+				<Show when={p.tree}>
+					{(t) => (
+						<div style={{ marginTop: compact() ? 2 : 6 }}>
+							<Twisty open={t().open} onToggle={t().toggle} size={compact() ? 16 : 20} testId="card-twisty" />
+						</div>
+					)}
+				</Show>
 			</div>
 
 			<div style={tw("flex flex-col min-w-0 flex-1", mode())}>
