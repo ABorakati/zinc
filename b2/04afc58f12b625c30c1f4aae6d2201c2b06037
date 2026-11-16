@@ -1,0 +1,215 @@
+gpui-ui/scripts/release.ts
+  s_cdf1f30595ed11::t_5a063167790c4c 280
+  s_cdf1f30595ed11::t_8735711943f96c 26-29,31-32
+  s_cdf1f30595ed11::t_61aedabf904a62 296-298
+  s_cdf1f30595ed11::t_0ebef8653195ee 247-263
+  s_cdf1f30595ed11::t_9160496f77760f 139-140,142,148-154
+  s_cdf1f30595ed11::t_efd4324fd1649e 192
+  s_cdf1f30595ed11::t_96ea3d9f0d7aad 299-300,304
+.github/workflows/extension.yml
+  s_cdf1f30595ed11::t_40fce64b2e5150 1-183
+README.md
+  s_cdf1f30595ed11::t_36ec6731be5b72 57
+connector-host/install.ps1
+  s_cdf1f30595ed11::t_de2875ce89ab27 16-21,36,39-40,43-55,63-64,79,84-85,96
+connector-host/src/api.ts
+  s_cdf1f30595ed11::t_c75ab87c2096a2 5-13,17-23,25-27,33-52,92-101
+connector-host/src/dispatch.ts
+  s_cdf1f30595ed11::t_6bcf69a50ed4a8 14,243-263
+connector-host/src/import-browser.ts
+  s_cdf1f30595ed11::t_818529f455a56a 1-344
+connector-host/test/api.test.ts
+  s_cdf1f30595ed11::t_39df00ad6cdedc 105-138,141-163,173-222,225-227,236,241,245-249,251-255,257-259
+connector-host/test/import-browser.test.ts
+  s_cdf1f30595ed11::t_7edb62a2362d59 1-413
+connector-host/test/install-manifest.test.ts
+  s_cdf1f30595ed11::t_ed2de94d627ffd 1-69
+connector-host/test/sessions.test.ts
+  s_cdf1f30595ed11::t_9f915ffafcd521 135
+core/src/websync/CONTRACT.md
+  s_cdf1f30595ed11::t_f7f3c4f1d01807 82-90
+core/src/websync/client.ts
+  s_cdf1f30595ed11::t_15a6697469451f 26-28,69,75-76,112-119
+core/src/websync/files.ts
+  s_cdf1f30595ed11::t_408f2ae68d38db 42-52,55-60,135-136,221-222,224-227,232,369-370
+core/src/websync/index.ts
+  s_cdf1f30595ed11::t_84123df9009062 11
+core/src/websync/keystore.ts
+  s_cdf1f30595ed11::t_2e9c9ef1240e2c 24-38
+core/src/websync/service.ts
+  s_cdf1f30595ed11::t_36d4a76530ce3b 12-13,30-52,149,157,447-453,465,474-480,517,526-532
+core/test/websync/browser.test.ts
+  s_cdf1f30595ed11::t_910fd8c5ef19cc 1-236
+docs/design/browser-edition.md
+  s_cdf1f30595ed11::t_ec3c8f7b3c6075 1-198
+docs/design/gpuix-web-fonts-request.md
+  s_cdf1f30595ed11::t_29c2950dede16f 1-39
+docs/design/web-connector-wasm.md
+  s_cdf1f30595ed11::t_dce1304d298ab1 130,132,149,204-278
+docs/developer-guide/README.md
+  s_cdf1f30595ed11::t_9efc67da4148da 12
+docs/developer-guide/architecture.md
+  s_cdf1f30595ed11::t_d4a2e023ef8a55 77-91
+docs/developer-guide/extension-release.md
+  s_cdf1f30595ed11::t_03b6936b5dd02c 1-100
+docs/developer-guide/releasing.md
+  s_cdf1f30595ed11::t_5a3f3d51c127b1 15-16,135-144
+docs/user-guide/adding-items.md
+  s_cdf1f30595ed11::t_7995c56f9f54ff 118-127,138-143
+gpui-ui/scripts/installer.ts
+  s_cdf1f30595ed11::t_bdd1aafdc355b6 119
+gpui-ui/scripts/package.ts
+  s_cdf1f30595ed11::t_2289614c57efa4 1-195
+gpui-ui/scripts/release.test.ts
+  s_cdf1f30595ed11::t_f145d290b09682 1-90
+gpui-ui/scripts/scroll-test.tsx
+  s_cdf1f30595ed11::t_a3f0444b27f22e 1-175
+gpui-ui/src/main.tsx
+  s_cdf1f30595ed11::t_eea191079e2bee 1-9
+gpui-ui/src/platform.ts
+  s_cdf1f30595ed11::t_afa153472994b5 1-87
+gpui-ui/src/platform.web.ts
+  s_cdf1f30595ed11::t_bc9cfdd40bf9c7 1-353
+gpui-ui/src/reader/annotations/session.ts
+  s_cdf1f30595ed11::t_82924e902f30c1 193-194
+gpui-ui/src/reader/pdf.web.ts
+  s_cdf1f30595ed11::t_e8f60532acabb4 1-2,4-29,31,33-46,49-50,58-59,107-115,117,149-266,270-273,275-279,283,287-290,302-309,311-319,329-361,363,365-368,375,385,389,395,399,402,405,408,410-413,417,422,424,433,438,441,443,455,461,463-464,469,488,492,494,497,501,504,511-513
+gpui-ui/src/reader/structure/load.docworker.web.ts
+  s_cdf1f30595ed11::t_9e9249d9728d18 1-7,9-11
+gpui-ui/src/reader/structure/load.web.ts
+  s_cdf1f30595ed11::t_0ac84e72cc58e6 1-7,9-18,20-22,25-28
+gpui-ui/src/settings/defs/sync-org.tsx
+  s_cdf1f30595ed11::t_4fa0351c451d08 7,19-21,42
+gpui-ui/src/settings/defs/sync.tsx
+  s_cdf1f30595ed11::t_0467da328dd1e1 9,146-151
+gpui-ui/src/shell/libraryMode.test.ts
+  s_cdf1f30595ed11::t_a719041b4c6ca8 1-10
+gpui-ui/src/shell/libraryMode.ts
+  s_cdf1f30595ed11::t_81a031d1b26fbd 1-14
+gpui-ui/src/shell/outsideChanges.ts
+  s_cdf1f30595ed11::t_562a559fd71e5b 4
+gpui-ui/src/start.tsx
+  s_cdf1f30595ed11::t_d2d52e6f736691 1-198
+gpui-ui/src/store.ts
+  s_cdf1f30595ed11::t_04377345decac8 10,960-961
+gpui-ui/src/webview/config.ts
+  s_cdf1f30595ed11::t_d51944b918c077 22-28
+gpui-ui/web/browser-db/CONTRACT.md
+  s_cdf1f30595ed11::t_967a8b07dfb00e 1-99
+gpui-ui/web/browser-db/blobfs.test.ts
+  s_cdf1f30595ed11::t_8530fcb3ce9035 1-481
+gpui-ui/web/browser-db/blobfs.ts
+  s_cdf1f30595ed11::t_1b1bb603f21841 1-228
+gpui-ui/web/browser-db/db-worker.ts
+  s_cdf1f30595ed11::t_928aac5fabc03e 1-170
+gpui-ui/web/browser-db/dispatch.ts
+  s_cdf1f30595ed11::t_238b8ec7db6762 1-301
+gpui-ui/web/browser-db/dnr-rules.json
+  s_cdf1f30595ed11::t_2b6cb5b23c4b31 1-14
+gpui-ui/web/browser-db/empty-library.test.ts
+  s_cdf1f30595ed11::t_03707a9980bf9c 1-59
+gpui-ui/web/browser-db/empty-library.ts
+  s_cdf1f30595ed11::t_204e4ab8a2ba67 1-88
+gpui-ui/web/browser-db/export-zip.ts
+  s_cdf1f30595ed11::t_27a30dafd1eed2 1-124
+gpui-ui/web/browser-db/import-run.ts
+  s_cdf1f30595ed11::t_175b1a26242f13 1-389
+gpui-ui/web/browser-db/keystore-chrome.test.ts
+  s_cdf1f30595ed11::t_112a5e559b2931 1-34
+gpui-ui/web/browser-db/keystore-chrome.ts
+  s_cdf1f30595ed11::t_9a920f463dbf57 1-43
+gpui-ui/web/browser-db/offscreen.ts
+  s_cdf1f30595ed11::t_8561ce721e48fd 1-67
+gpui-ui/web/browser-db/sync-storage.test.ts
+  s_cdf1f30595ed11::t_540dff1f33affc 1-69
+gpui-ui/web/browser-db/sync-storage.ts
+  s_cdf1f30595ed11::t_da0ace761ccf2f 1-104
+gpui-ui/web/browser-db/sync.ts
+  s_cdf1f30595ed11::t_e2b856f135d485 1-37
+gpui-ui/web/browser-db/test-background.js
+  s_cdf1f30595ed11::t_e511b4858d7191 1-54
+gpui-ui/web/browser-db/welcome-import.ts
+  s_cdf1f30595ed11::t_a354dbd28b6fcd 1-256
+gpui-ui/web/browser-db/welcome.tsx
+  s_cdf1f30595ed11::t_957aaa6698304d 1-259
+gpui-ui/web/browser-library-check.ts
+  s_cdf1f30595ed11::t_8bc10779101ab7 1-543
+gpui-ui/web/browser-sync-check.ts
+  s_cdf1f30595ed11::t_2a52a5d501ea58 1-521
+gpui-ui/web/browser-welcome-check.ts
+  s_cdf1f30595ed11::t_5e0a6344fedbdc 1-789
+gpui-ui/web/build.ts
+  s_cdf1f30595ed11::t_b478959231d631 1,3,5-6,20-22,47-48,51-52,62-71,75-98,102-104,112-113,133-203,219,240,245-285
+gpui-ui/web/check-safety.ts
+  s_cdf1f30595ed11::t_540a7b198d8ac5 1-123
+gpui-ui/web/connector-browser-check.ts
+  s_cdf1f30595ed11::t_3de45615c405d5 1-647
+gpui-ui/web/connector-onelib-check.ts
+  s_cdf1f30595ed11::t_a9870527995d08 1-770
+gpui-ui/web/extension-check.ts
+  s_cdf1f30595ed11::t_27ccd1f18de20c 5-9,19,25,30,32,56-57,61-62,102-103
+gpui-ui/web/extension-ui.tsx
+  s_cdf1f30595ed11::t_5798a6efb6bf51 1-226
+gpui-ui/web/globals.ts
+  s_cdf1f30595ed11::t_612b676225b033 2
+gpui-ui/web/library-pdf-check.ts
+  s_cdf1f30595ed11::t_20a8db266b9320 1-475
+gpui-ui/web/library-reader-check.ts
+  s_cdf1f30595ed11::t_3f5e31d00dce7b 1-472
+gpui-ui/web/native-host.test.ts
+  s_cdf1f30595ed11::t_217429e386708e 121-130
+gpui-ui/web/native-host.ts
+  s_cdf1f30595ed11::t_8d046a4ce5156c 12-26,61-66,90-93,107,110-111
+gpui-ui/web/page-source.ts
+  s_cdf1f30595ed11::t_82881b216fcac9 1-5,8,10-15,17-18,20-40,43-64
+gpui-ui/web/pdf-engine.test.ts
+  s_cdf1f30595ed11::t_4daa39a5f39c8d 1-51
+gpui-ui/web/pdf-engine.ts
+  s_cdf1f30595ed11::t_523dde62d0fc42 1-251
+gpui-ui/web/pdf-worker.ts
+  s_cdf1f30595ed11::t_e24da9f781aa7d 1-111
+gpui-ui/web/popup-check.ts
+  s_cdf1f30595ed11::t_a9877a30f98ef2 4-9,19,25,31,59,62-63,165-166,266,268
+gpui-ui/web/reader-tab/zn-bridge.ts
+  s_cdf1f30595ed11::t_21a42ca05bc114 1-6,9,12,18-19
+gpui-ui/web/shims/fs-promises.ts
+  s_cdf1f30595ed11::t_9a88e9e33ed691 1,3-25
+gpui-ui/web/shims/fs.ts
+  s_cdf1f30595ed11::t_7daf219c2a56b4 1-2,4-6,13-57,60,63,73-79,87-89,95-100,105-124,136-137,141-148,153-154,156-169,171,173-178,180,185,187-191,194-196,201-207,224-233,239,242,244-248,251,254-268,270-283,285-298,303-316,321-328,330-338,340-356,358,361-397,399-415,420-480,482-499,501-522,524,526-587,621-631,641,643-644,646,648-649,652-653,655-685,745-748
+gpui-ui/web/shims/path.test.ts
+  s_cdf1f30595ed11::t_6fb8d441d7cd87 1-20
+gpui-ui/web/shims/path.ts
+  s_cdf1f30595ed11::t_470087e05ee877 1-4,19,43-44
+gpui-ui/web/shims/small.test.ts
+  s_cdf1f30595ed11::t_1a8c0642446072 1-107
+gpui-ui/web/shims/small.ts
+  s_cdf1f30595ed11::t_ae0e90ea6a26e7 1-2,17-130,132-246
+gpui-ui/web/shims/zlib.test.ts
+  s_cdf1f30595ed11::t_02aac6cde5ba7b 1-62
+gpui-ui/web/shims/zlib.ts
+  s_cdf1f30595ed11::t_03b6183fddb8f5 1-51
+gpui-ui/web/sqlite.ts
+  s_cdf1f30595ed11::t_60fd6519463148 2,13-15,20-53,58-76,103-104,169-171,174-180,182-183,212-220,264-266
+gpui-ui/web/update-notice-check.ts
+  s_cdf1f30595ed11::t_41380b6821b177 1-310
+gpui-ui/web/web-demo-check.ts
+  s_cdf1f30595ed11::t_981ec52cc57daa 1-282
+reader-host/src/host.js
+  s_cdf1f30595ed11::t_3f4cb081c0852a 13-16,35,169-170,207,228,243,273,284-288,392-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b204afc58f12b625c30c1f4aae6d2201c2b06037",
+  "prompts": {},
+  "sessions": {
+    "s_cdf1f30595ed11": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0719cea7-1eb3-4344-a1e4-a862c3bde6eb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
