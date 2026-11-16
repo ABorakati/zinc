@@ -1,6 +1,6 @@
 // Toolbar (quick-search mode, search box, List/Classic toggle, Tools, Add) and the Group / Sort bar under it.
 // Mirrors Toolbar in ui/src/App.tsx, QuickSearchMode.tsx and SortBar.tsx with the same class strings.
-import { createMemo, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
 import { openCustomize } from "./cards/Customize";
 import { registerSearchFocus } from "./cards/keys";
@@ -96,7 +96,8 @@ function SearchBox() {
 	});
 	onCleanup(() => registerSearchFocus(undefined));
 	return (
-		<div style={t("relative flex h-9 min-w-0 flex-1 items-center rounded-lg bg-muted")}>
+		// minWidth: the mode picker, divider and icon do not shrink, so a narrower box let them spill under the List/Classic toggle
+		<div style={{ ...t("relative flex h-9 flex-1 items-center rounded-lg bg-muted"), minWidth: SEARCH_MIN_W, overflow: "hidden" }}>
 			<QuickSearchMode />
 			<div style={{ width: 1, height: 18, flexShrink: 0, marginLeft: 6, marginRight: 10, backgroundColor: tok("border") }} />
 			<div style={{ display: "flex", alignItems: "center", flexShrink: 0, pointerEvents: "none" }}>
@@ -135,7 +136,16 @@ function SearchBox() {
 	);
 }
 
-/** View toggle: inline-flex rounded-lg bg-muted p-[3px]; buttons h-[30px] rounded-md px-2.5 text-[13px] gap-1.5. */
+/** The search box never gets narrower than this (mode picker, divider, icon and a few characters of input). */
+const SEARCH_MIN_W = 170;
+// Below these toolbar widths the List/Classic toggle, then Add, drop their labels (icons only) so the search box keeps its room.
+const COMPACT_TOGGLE_W = 640;
+const COMPACT_ADD_W = 480;
+const [toolbarWidth, setToolbarWidth] = createSignal(0);
+const compactToggle = createMemo(() => toolbarWidth() > 0 && toolbarWidth() < COMPACT_TOGGLE_W);
+const compactAdd = createMemo(() => toolbarWidth() > 0 && toolbarWidth() < COMPACT_ADD_W);
+
+/** View toggle: inline-flex rounded-lg bg-muted p-[3px]; buttons h-[30px] rounded-md px-2.5 text-[13px] gap-1.5. Icons only when narrow. */
 function ViewToggle() {
 	const items = [
 		{ id: "cards" as const, text: "List", icon: "layout-list" },
@@ -153,7 +163,8 @@ function ViewToggle() {
 							aria-selected={on()}
 							onClick={() => store.setViewMode(m.id)}
 							style={{
-								...t("flex h-[30px] items-center gap-1.5 rounded-md px-2.5"),
+								// no gap: the label carries its own margin, so a hidden label (an empty placeholder) leaves the icon centred
+								...t("flex h-[30px] items-center rounded-md px-2.5"),
 								cursor: "pointer",
 								...(on()
 									? { backgroundColor: tok("background"), boxShadow: tw("shadow-sm", mode()).boxShadow as BoxShadow[] }
@@ -161,9 +172,16 @@ function ViewToggle() {
 							}}
 						>
 							<Icon name={m.icon} size={14} color={tok(on() ? "foreground" : "muted-foreground")} />
-							<text style={tx(on() ? "text-[13px] font-medium text-foreground" : "text-[13px] text-muted-foreground")}>
-								{m.text}
-							</text>
+							<Show when={!compactToggle()}>
+								<text
+									style={{
+										...tx(on() ? "text-[13px] font-medium text-foreground" : "text-[13px] text-muted-foreground"),
+										marginLeft: 6,
+									}}
+								>
+									{m.text}
+								</text>
+							</Show>
 						</div>
 					);
 				}}
@@ -195,13 +213,15 @@ function ActionMenu(p: { menu: "add" | "tools" }) {
 							role="button"
 							aria-label="Add items"
 							style={{
-								...t("flex h-9 flex-none items-center gap-1.5 rounded-lg bg-primary px-3.5"),
+								...t("flex h-9 flex-none items-center rounded-lg bg-primary px-3.5"),
 								boxShadow: shadows[mode()].primary,
 								cursor: "pointer",
 							}}
 						>
 							<Icon name="plus" size={14} color={tok("primary-foreground")} />
-							<text style={tx("text-[13px] font-medium text-primary-foreground")}>Add</text>
+							<Show when={!compactAdd()}>
+								<text style={{ ...tx("text-[13px] font-medium text-primary-foreground"), marginLeft: 6 }}>Add</text>
+							</Show>
 						</div>
 					) : (
 						/* Tools: size-8 rounded-lg icon button */
@@ -232,6 +252,10 @@ export function Toolbar() {
 		// cacheRegion "content": drawn by its own cached GPUI view at the height it last painted with (re-measured whenever its
 		// subtree changes), so list scrolling does not rebuild the toolbar every frame.
 		<div
+			onLayout={(e: { width?: number }) => {
+				const w = Math.round(e.width ?? 0);
+				if (w && w !== toolbarWidth()) setToolbarWidth(w);
+			}}
 			style={{ ...t("flex flex-none items-center border-b border-border-soft px-4 pt-3.5 pb-2.5"), width: "100%", ...CONTENT_REGION }}
 		>
 			<SearchBox />

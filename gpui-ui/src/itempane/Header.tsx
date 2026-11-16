@@ -209,7 +209,8 @@ export function Header(): JSX.Element {
 					</For>
 				</div>
 			</Show>
-			<div style={{ ...t("flex flex-wrap"), marginTop: 14 }}>
+			{/* each button keeps an 8px right margin; rowGap gives a wrapped row the same space above it */}
+			<div style={{ ...t("flex flex-wrap"), rowGap: 8, marginTop: 14 }}>
 				<Show when={reader()}>
 					<HeaderBtn
 						kind="primary"
