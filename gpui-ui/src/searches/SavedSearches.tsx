@@ -8,6 +8,7 @@ import { NameInput } from "../sidebar/NameInput";
 import {
 	type Entry,
 	HEADER_BAND,
+	HEADER_HOVER,
 	HEADER_TEXT_BAND,
 	IconButton,
 	labelCls,
@@ -117,8 +118,8 @@ export function savedSearchEntries(): Entry[] {
 			id: "ss:header",
 			render: () => (
 				<ListItem gap={0}>
-					{/* the same accent band as the sidebar's section headers (SectionHeader) */}
-					<div style={{ ...t("mt-2 flex items-center justify-between pl-2.5 pr-1"), ...t(HEADER_BAND) }}>
+					{/* the same band as the sidebar's section headers (SectionHeader): shown on hover only */}
+					<div style={{ ...t("mt-2 flex items-center justify-between pl-2.5 pr-1"), ...t(HEADER_BAND), hover: t(HEADER_HOVER) }}>
 						<text style={tx(HEADER_TEXT_BAND)}>{tracked("Saved Searches")}</text>
 						<IconButton name="plus" box={20} icon={14} label="Advanced search" onClick={() => void openAdvancedSearch()} />
 					</div>

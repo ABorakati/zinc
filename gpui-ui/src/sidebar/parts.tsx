@@ -3,7 +3,7 @@ import { Show, type JSX } from "solid-js";
 import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
-import { textStyle, tokens, tw } from "../theme";
+import { textStyle, tokens, tw, type BoxShadow } from "../theme";
 
 export const mode = (): Mode => store.mode();
 export const t = (cls: string): Style => tw(cls, mode());
@@ -56,10 +56,13 @@ export const HEADER_BTN = "flex min-w-0 items-center gap-1.5 rounded-md px-2.5 p
 export const HEADER_TEXT = "text-[11px] font-semibold text-muted-foreground";
 /** The section header's label on its grey band. */
 export const HEADER_TEXT_BAND = "text-[11px] font-semibold text-muted-foreground";
-/** The section header's band: faded grey, the radius of a selected row (ROW is rounded-lg). */
-export const HEADER_BAND = "mb-1 min-h-[26px] rounded-lg bg-border-soft";
-export const ROW = "relative flex min-h-7 items-center gap-1.5 rounded-lg pr-2 hover:bg-foreground/5";
-export const SPECIAL = "relative flex min-h-7 cursor-pointer items-center gap-1 rounded-lg pl-6 pr-2 hover:bg-foreground/5";
+/** The section header's box: the radius of a selected row (ROW is rounded-lg). Its faded grey band shows only on hover (HEADER_HOVER). */
+export const HEADER_BAND = "mb-1 min-h-[26px] rounded-lg";
+export const HEADER_HOVER = "bg-border-soft";
+// A transparent 1px border on every row: the selected row's pill colours it (see pill), so selecting a row does not move its content.
+export const ROW = "relative flex min-h-7 items-center gap-1.5 rounded-lg border border-transparent pr-2 hover:bg-foreground/5";
+export const SPECIAL =
+	"relative flex min-h-7 cursor-pointer items-center gap-1 rounded-lg border border-transparent pl-6 pr-2 hover:bg-foreground/5";
 // The same rows without the native `hover:` refinement: each refinement costs frame time on every visible row, so the rows keep
 // a hover flag instead (a commit only while the pointer is over the sidebar) and paint ROW_HOVER on it.
 export const ROW_STATIC = ROW.replace(" hover:bg-foreground/5", "");
@@ -72,11 +75,21 @@ export const tracked = (s: string): string => s.toUpperCase();
 
 export const TRUNCATE: Style = { overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", minWidth: 0 };
 
-/** Selected treeitem: the raised pill from styles.css (`[role="treeitem"][aria-selected="true"]`). */
+/** A shadow that only draws an outline (`0 0 0 1px <colour>`). */
+const isRing = (s: BoxShadow): boolean => !s.inset && s.offsetX === 0 && s.offsetY === 0 && s.blurRadius === 0 && s.spreadRadius > 0;
+
+/**
+ * Selected treeitem: the raised pill from styles.css (`[role="treeitem"][aria-selected="true"]`). The token's outline ring
+ * (`0 0 0 1px ...`) is drawn as the row's border instead: GPUI grows a spread shadow's box but keeps the element's corner radius
+ * (gpui window.rs paint_shadows), so the ring came out thicker around each rounded corner than along the edges.
+ */
 export const pill = (sel: boolean): Style => {
 	if (!sel) return {};
 	const s = t("bg-background shadow-pill");
-	return { ...s, hover: s };
+	const shadows = (s.boxShadow ?? []) as BoxShadow[];
+	const ring = shadows.find(isRing);
+	const look: Style = ring ? { ...s, boxShadow: shadows.filter((x) => x !== ring), borderColor: ring.color } : s;
+	return { ...look, hover: look };
 };
 export const labelCls = (sel: boolean): string => (sel ? "text-[13px] font-semibold text-primary-deep" : "text-[13px] text-foreground/90");
 
@@ -120,10 +133,10 @@ export function SectionHeader(p: {
 	/** Right margin, for a header outside the virtual list (whose rows keep a scrollbar gutter on the right). */
 	inset?: number;
 }): JSX.Element {
-	// a faded grey band, so each section (Library, Collections, Group Libraries, Tags) stands apart from its rows; same width and
-	// corner radius as a selected row's pill (ROW: rounded-lg), so the two line up
+	// a faded grey band on hover only, showing the whole header toggles its section; same width and corner radius as a selected
+	// row's pill (ROW: rounded-lg), so the two line up
 	return (
-		<div style={{ ...t(HEADER_ROW), ...t(HEADER_BAND), ...(p.inset ? { marginRight: p.inset } : {}) }}>
+		<div style={{ ...t(HEADER_ROW), ...t(HEADER_BAND), hover: t(HEADER_HOVER), ...(p.inset ? { marginRight: p.inset } : {}) }}>
 			<div
 				role="button"
 				aria-expanded={p.open}
