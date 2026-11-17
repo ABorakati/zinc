@@ -321,6 +321,9 @@ function loadPlugins(): void {
 		.catch((e) => console.error("[reader] plugins:", e instanceof Error ? e.message : e));
 }
 
+/** Width of the page area's scrollbars (a little wider than the lists' 6 px: a long document's thumb is small to aim at). */
+const READER_SCROLLBAR = 8;
+
 export function Reader(props: ReaderProps): JSX.Element {
 	if (props.ephemeral !== true) {
 		loadPlugins();
@@ -2336,7 +2339,17 @@ export function Reader(props: ReaderProps): JSX.Element {
 			onMouseMove={onMouseMove}
 			onMouseUp={onMouseUp}
 			onScroll={onWheel}
-			style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%", overflowX: "scroll" }}
+			// GPUIX draws a scroll box's scrollbar only when scrollbarColor is set: without it the pages had none to drag
+			style={{
+				display: "flex",
+				flexDirection: "row",
+				flexGrow: 1,
+				minHeight: 0,
+				width: "100%",
+				overflowX: "scroll",
+				scrollbarColor: tok("input"),
+				scrollbarWidth: READER_SCROLLBAR,
+			}}
 		>
 			<div style={{ display: "flex", flexDirection: "column", flexShrink: 0, width: innerWidth(), height: "100%" }}>
 				<virtual-list
@@ -2347,7 +2360,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 					estimatedItemHeight={estimate()}
 					overdraw={300}
 					onVisibleRange={onVisibleRange}
-					style={{ width: "100%", flexGrow: 1, minHeight: 0 }}
+					style={{ width: "100%", flexGrow: 1, minHeight: 0, scrollbarColor: tok("input"), scrollbarWidth: READER_SCROLLBAR }}
 				>
 					<For each={rowIdx()}>
 						{(r) => (
@@ -2397,6 +2410,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 				width: "100%",
 				overflowX: "scroll",
 				overflowY: innerHeight() > vp().h + 1 ? "scroll" : "hidden",
+				scrollbarColor: tok("input"),
+				scrollbarWidth: READER_SCROLLBAR,
 			}}
 		>
 			<div

@@ -88,40 +88,45 @@ function ItemRowView(p: { index: number }): JSX.Element {
 			if (it && !store.selected().has(it.key)) store.selectOnly(it.key, p.index);
 		},
 	);
+	// The press handlers sit on the card box inside the 10 px side margins, not on the full-width row: the scrollbar thumb is drawn
+	// over the row's right margin, and GPUIX gives a whole press to an element that listens to mouse down + move, so a row under
+	// the thumb took the drag (the scrollbar could not be dragged; a long drag started an item drag instead).
 	return (
-		<div
-			style={tw("flex flex-col w-full flex-none px-2.5", store.mode())}
-			onMouseDown={src.onMouseDown}
-			onMouseMove={src.onMouseMove}
-			onMouseUp={src.onMouseUp}
-			onClick={(e: EventPayload) => {
-				if (swallowed() || src.wasDrag()) return;
-				const it = untrack(item);
-				if (!it) return;
-				setListFocused(true);
-				focusList(); // the arrow keys now move from this card
-				const mods = modsOf(e);
-				store.selectClick(p.index, mods);
-				if ((e.clickCount ?? 1) >= 2 && !mods.shift && !mods.ctrl) void openItem(it); // double-click opens the PDF in a reader tab
-			}}
-			onAuxClick={(e: EventPayload) => {
-				if (!(e.isRightClick || e.button === 2)) return;
-				const it = untrack(item);
-				if (it) openItemMenu({ x: e.x ?? 0, y: e.y ?? 0 }, it, p.index);
-			}}
-		>
-			<Show when={item()} fallback={<CardSkeleton />}>
-				{(x) => (
-					<Card
-						item={x()}
-						index={p.index}
-						hovered={false}
-						focused={listFocused() && store.focusIndex() === p.index && !selectedChild()}
-						tree={hasChildren(x()) ? { open: isOpen(x().key), toggle: () => toggleItem(x().key, p.index) } : undefined}
-						onMore={(r) => openItemMenu({ x: r.x, y: r.y + r.height }, x(), p.index)}
-					/>
-				)}
-			</Show>
+		<div style={tw("flex flex-col w-full flex-none px-2.5", store.mode())}>
+			<div
+				style={tw("flex flex-col w-full", store.mode())}
+				onMouseDown={src.onMouseDown}
+				onMouseMove={src.onMouseMove}
+				onMouseUp={src.onMouseUp}
+				onClick={(e: EventPayload) => {
+					if (swallowed() || src.wasDrag()) return;
+					const it = untrack(item);
+					if (!it) return;
+					setListFocused(true);
+					focusList(); // the arrow keys now move from this card
+					const mods = modsOf(e);
+					store.selectClick(p.index, mods);
+					if ((e.clickCount ?? 1) >= 2 && !mods.shift && !mods.ctrl) void openItem(it); // double-click opens the PDF in a reader tab
+				}}
+				onAuxClick={(e: EventPayload) => {
+					if (!(e.isRightClick || e.button === 2)) return;
+					const it = untrack(item);
+					if (it) openItemMenu({ x: e.x ?? 0, y: e.y ?? 0 }, it, p.index);
+				}}
+			>
+				<Show when={item()} fallback={<CardSkeleton />}>
+					{(x) => (
+						<Card
+							item={x()}
+							index={p.index}
+							hovered={false}
+							focused={listFocused() && store.focusIndex() === p.index && !selectedChild()}
+							tree={hasChildren(x()) ? { open: isOpen(x().key), toggle: () => toggleItem(x().key, p.index) } : undefined}
+							onMore={(r) => openItemMenu({ x: r.x, y: r.y + r.height }, x(), p.index)}
+						/>
+					)}
+				</Show>
+			</div>
 		</div>
 	);
 }

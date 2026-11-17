@@ -31,6 +31,12 @@ import { columnLayout as layout } from "./layout";
 const ROW = 30;
 const HEADER = 32;
 const WINDOW = 60;
+/**
+ * A strip at the list's right edge that no row covers, for the 6 px overlaid scrollbar thumb. A row listens to mouse down + move (to
+ * drag items out), and GPUIX gives the whole press to such an element: a row under the thumb took the drag, so the scrollbar could
+ * not be dragged (and a long drag started an item drag instead).
+ */
+const SCROLL_GUTTER = 10;
 
 const mode = () => store.mode();
 const tok = (name: string) => tokens[mode()][name]!;
@@ -389,16 +395,18 @@ export function TableView(): JSX.Element {
 
 	const [vw, setVw] = createSignal(0); // viewport width of the table (window px)
 	const [panX, setPanX] = createSignal(0); // horizontal pan, px (content moves left by this much)
-	/** Visible columns; when they are wider than the viewport the title column gives way first (down to 80 px). */
+	/** Visible columns; when they are wider than the viewport (less the scrollbar's gutter) the title column gives way first (down to 80 px). */
 	const cols = createMemo<ColInfo[]>(() => {
 		const list = engine.columns().map((c) => ({ id: c.id, def: c.def, width: c.width }));
-		const over = list.reduce((n, c) => n + c.width, 0) - vw();
+		const over = list.reduce((n, c) => n + c.width, 0) - (vw() - SCROLL_GUTTER);
 		const title = list.find((c) => c.id === "title");
 		if (vw() > 0 && over > 0 && title) title.width = Math.max(80, title.width - over);
 		return list;
 	});
 	const total = createMemo(() => cols().reduce((n, c) => n + c.width, 0));
-	const maxPan = () => Math.max(0, total() - vw());
+	/** Width of the panned content: the columns plus the gutter the scrollbar sits in, at least the viewport. */
+	const contentW = () => Math.max(total() + SCROLL_GUTTER, vw(), 1);
+	const maxPan = () => Math.max(0, contentW() - vw());
 
 	// ---- window over the rows ----
 	const [start, setStart] = createSignal(0);
@@ -624,7 +632,7 @@ export function TableView(): JSX.Element {
 						flexGrow: 1,
 						flexShrink: 1,
 						minHeight: 0,
-						width: Math.max(total(), vw(), 1),
+						width: contentW(),
 						marginLeft: -Math.min(panX(), maxPan()),
 					}}
 				>
