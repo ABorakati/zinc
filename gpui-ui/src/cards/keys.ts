@@ -1,7 +1,10 @@
-// Keyboard handling shared by the cards and the table: up/down (Shift extends), page, home/end, space (toggle), enter (open), Ctrl+A.
+// Keyboard handling shared by the cards and the table: up/down (Shift extends), page, home/end, space (toggle), enter (open), Ctrl+A,
+// Delete / Shift+Delete and 1–9 (coloured tags), as Zotero's item tree.
 import { createSignal } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
 import { deleteSelected } from "../features/maintenance/ops";
+import { selectedKeys } from "../features/shared";
+import { toggleColoredTag } from "../tags/state";
 import { addByIdentifier } from "../features/additems/client";
 import { looksLikeIdentifiers } from "../features/text";
 import { readClipboard } from "../shell/clipboard-win";
@@ -20,6 +23,20 @@ export const registerSearchFocus = (f: (() => void) | undefined) => {
 	searchFocuser = f;
 };
 export const focusSearch = () => searchFocuser?.();
+
+let listFocuser: (() => void) | undefined;
+/**
+ * The list view on screen (table or cards) registers how its focusable container takes keyboard focus. A click on a row calls
+ * focusList(): GPUIX does not move focus to a focusable ancestor on a click, and the <virtual-list> keeps the click from reaching
+ * the container, so without this the arrow keys did nothing after clicking an item. Returns the remover.
+ */
+export function registerListFocus(f: () => void): () => void {
+	listFocuser = f;
+	return () => {
+		if (listFocuser === f) listFocuser = undefined;
+	};
+}
+export const focusList = () => listFocuser?.();
 
 export interface ListKeyOps {
 	/** Move the focus row by `delta` items. */
@@ -71,8 +88,11 @@ export function listKeyHandler(ops: ListKeyOps) {
 		else if (k === "escape") store.selectOnly(null);
 		else if (k === "delete") {
 			if (store.canEdit()) void deleteSelected(!!m.shift);
-		} // Delete: to the Trash (permanently in the Trash view); Shift+Delete: permanently
-		else handled = ops.extra?.(k, e) ?? false;
+		} // Zotero's keys: Delete removes from the open collection / moves to the Trash; Shift+Delete moves to the Trash (deleteSelected)
+		else if (/^[1-9]$/.test(k) && !m.shift) {
+			// Zotero's coloured-tag keys: toggle the tag coloured at that position on the selection
+			if (store.canEdit()) void toggleColoredTag(Number(k), selectedKeys());
+		} else handled = ops.extra?.(k, e) ?? false;
 		if (handled) {
 			e.preventDefault?.();
 			e.stopPropagation?.();

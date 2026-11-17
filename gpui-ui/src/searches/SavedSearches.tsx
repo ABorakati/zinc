@@ -150,7 +150,12 @@ export function savedSearchEntries(): Entry[] {
 					<SavedSearchRow s={s} />
 				</ListItem>
 			),
-			nav: { selected: () => active(s.key), activate: () => setView({ kind: "savedSearch", key: s.key }) },
+			nav: {
+				selected: () => active(s.key),
+				activate: () => setView({ kind: "savedSearch", key: s.key }),
+				rename: () => setRenaming(s.key),
+				remove: () => void remove(s),
+			},
 		});
 	return out;
 }

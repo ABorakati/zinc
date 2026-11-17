@@ -22,7 +22,7 @@ export function register(): void {
 		icon: "wand-sparkles",
 		menu: "add",
 		when: canAdd,
-		shortcut: "Ctrl+Shift+I",
+		// no default key: Zotero's Ctrl+Shift+I is Import (features/io); a key can be given in Settings > Shortcuts
 		run: () => void openIdentifierDialog(),
 	});
 	registerAppAction({
@@ -40,6 +40,7 @@ export function register(): void {
 		icon: "sticky-note",
 		menu: "add",
 		when: canAdd,
+		shortcut: "Ctrl+Shift+O", // Zotero's "Create a New Note"
 		run: () => void createNote(),
 	});
 	registerAppAction({

@@ -94,6 +94,12 @@ export interface ReaderPlugin {
 	altView?: { id: string; label: string; icon: string; render: (ctx: ReaderContext) => JSX.Element };
 	/** the plugin's pageOverlay rotates its own rects (see ReaderContext.rotation); otherwise the overlay is hidden on rotated pages */
 	handlesRotation?: boolean;
+	/** a key press the core did not take for itself (Zotero's reader shortcuts: tools, colours, delete). Return true when handled, so
+	 *  the core stops it. `onRoot` is false while a text field has the focus (a comment box): plugins must not take bare keys then. */
+	onKey?: (
+		ctx: ReaderContext,
+		e: { key: string; modifiers: { ctrl: boolean; shift: boolean; alt: boolean; cmd: boolean }; onRoot: boolean },
+	) => boolean;
 	/** called once per open document */
 	onOpen?: (ctx: ReaderContext) => void | (() => void);
 }

@@ -7,7 +7,7 @@ import type { EventPayload } from "@gpuix/solid";
 import { childMenu } from "../cards/Card";
 import { modsOf, swallow, swallowed } from "../cards/click";
 import { openItem } from "../cards/actions";
-import { listFocused, listKeyHandler, setListFocused } from "../cards/keys";
+import { focusList, listFocused, listKeyHandler, registerListFocus, setListFocused } from "../cards/keys";
 import { ListRetry } from "../cards/ListRetry";
 import { openItemMenu } from "../cards/menus";
 import { childClick, childLabel, childLook, isChildSelected, Twisty } from "../cards/ChildRow";
@@ -324,6 +324,7 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 				const it = untrack(item);
 				if (!it) return;
 				setListFocused(true);
+				focusList(); // the arrow keys now move from this row
 				const mods = modsOf(e);
 				store.selectClick(p.index, mods);
 				if ((e.clickCount ?? 1) >= 2 && !mods.shift && !mods.ctrl) void openItem(it);
@@ -544,6 +545,8 @@ export function TableView(): JSX.Element {
 		},
 	});
 	onMount(() => onCleanup(() => setListFocused(false)));
+	let box: { id: number } | undefined;
+	onCleanup(registerListFocus(() => box && gpuix?.renderer.focusElement?.(box.id)));
 
 	// ---- header gestures: resize + reorder, tracked through a full-window overlay while active ----
 	const [gesture, setGesture] = createSignal<Gesture | null>(null);
@@ -590,6 +593,9 @@ export function TableView(): JSX.Element {
 	return (
 		<div style={{ ...tw("flex flex-col flex-1 min-h-0 w-full bg-card", mode()), height: "100%" }}>
 			<div
+				ref={(el: { id: number }) => {
+					box = el;
+				}}
 				tabIndex={0}
 				testId="table-container"
 				onKeyDown={keys}

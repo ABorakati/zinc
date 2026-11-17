@@ -36,8 +36,24 @@ Click **Open PDF** on an item, or choose **Open** from its menu, to open the PDF
 | `Ctrl+]`, `Ctrl+[` | Rotate right and left. Add `Shift` to rotate only the current page. |
 | `Ctrl+C` | Copy the selected text. |
 | `Ctrl+P` | Print. |
-| `Alt+Left` | Go back after following an internal link. |
-| `Esc` | Clear the selection, or close an open card or menu. |
+| `Alt+Left`, `Alt+Right` | Go back, and forward again, after following an internal link. |
+| `Alt+Down`, `Alt+Up` | Next and previous page. |
+| `Ctrl+Alt+G` | Put the cursor in the page-number box. |
+| `Esc` | Deselect the annotation, clear the text selection, or close an open card or menu. |
+
+These follow Zotero 7's reader, for the tools Zinc has:
+
+| Keys | Action |
+|---|---|
+| `Alt+1`, `Alt+2`, `Alt+3` | Highlight, underline and note tools (press again to turn the tool off). |
+| `Alt+6`, `Alt+7` | Ink and eraser tools (page view). |
+| `S` | Back to the select tool (no drawing tool). |
+| `Alt+8` | Next annotation colour (`Alt+4` in the reading view). |
+| `1` to `8` | Pick a colour while a tool is active. |
+| `Ctrl+Alt+1`, `Ctrl+Alt+2` | Highlight or underline the selected text. |
+| `Delete`, `Backspace` | Delete the selected annotation. |
+
+Zotero's text and area tools, hand tool, undo/redo of annotation edits, select-all annotations and arrow-key moving or resizing of annotations have no counterpart in Zinc yet.
 
 Internal links in the PDF (contents, citations, cross-references) jump within the document, and web links open in your browser.
 

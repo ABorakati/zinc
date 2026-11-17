@@ -3,10 +3,11 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
 import { openCustomize } from "./cards/Customize";
-import { registerSearchFocus } from "./cards/keys";
+import { focusSearch, registerSearchFocus } from "./cards/keys";
+import { actionShortcut } from "./shell/shortcuts";
 import type { GroupBy, Mode, SortLevel, Style } from "./contracts";
 import { Icon } from "./icons";
-import { appActions } from "./registry";
+import { appActions, registerAppAction } from "./registry";
 import { defaultDir, GROUP_BY, MAX_LEVELS, store, type QMode } from "./store";
 import { isNumericKey, moreColumns, SORT_OPTIONS, sortLabel } from "./table/defs";
 import { shadows, textStyle, tokens, tw, type BoxShadow } from "./theme";
@@ -86,6 +87,11 @@ function QuickSearchMode() {
 		/>
 	);
 }
+
+// Zotero's Quick Search keys: Ctrl+Shift+K (rebindable in Zotero) and Ctrl+F, in the library tab (a reader's own Ctrl+F finds in it)
+const inLibrary = () => store.activeTab() === "library";
+registerAppAction({ id: "search.quick", label: "Quick Search", menu: "none", shortcut: "Ctrl+Shift+K", when: inLibrary, run: focusSearch });
+registerAppAction({ id: "search.find", label: "Search the library", menu: "none", shortcut: "Ctrl+F", when: inLibrary, run: focusSearch });
 
 /** Search box: h-9 rounded-lg bg-muted field; the quick-search mode picker, a divider and the search icon sit inside it, at left. */
 function SearchBox() {
@@ -197,7 +203,7 @@ function ActionMenu(p: { menu: "add" | "tools" }) {
 		list().map((a) => ({
 			label: typeof a.label === "function" ? a.label() : a.label,
 			icon: a.icon,
-			shortcut: a.shortcut,
+			shortcut: actionShortcut(a),
 			onSelect: () => a.run(),
 		}));
 	return (

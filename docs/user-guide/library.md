@@ -97,26 +97,56 @@ Right-click an item (or a selection) for the menu:
 
 ### Keyboard shortcuts
 
-Press `Ctrl+/` (or choose **Tools > Keyboard Shortcuts**) to see the list in the app. The library shortcuts are:
+The defaults are Zotero's. Press `Ctrl+/` (or choose **Tools > Keyboard Shortcuts**) to see the list in the app, with any keys you changed. Change them under [Settings > Shortcuts](settings.md#shortcuts).
+
+**Commands** (you can change these):
 
 | Keys | Action |
 |---|---|
 | `Ctrl+Shift+N` | New item |
-| `Ctrl+Shift+I` | Add item by identifier |
+| `Ctrl+Shift+O` | New standalone note |
+| `Ctrl+Shift+I` | Import |
+| `Ctrl+Shift+Alt+I` | Import from Clipboard |
 | `Ctrl+Shift+C` | Copy bibliography of the selected items |
 | `Ctrl+Shift+A` | Copy citation of the selected items |
-| `Delete` | Move selected items to the Trash (permanently delete when in the Trash) |
-| `Shift+Delete` | Delete selected items permanently |
-| `Ctrl+A` | Select all items |
-| `Ctrl+F` | Search the library |
+| `Ctrl+Shift+K` or `Ctrl+F` | Quick search (the search box above the list) |
 | `Ctrl+Shift+F` | Advanced Search |
-| `Ctrl+Shift+L` | Focus the collections pane |
-| `Up` and `Down` | In the sidebar (after clicking a row or `Ctrl+Shift+L`): show the previous or next library, view, saved search or collection |
-| `Left` and `Right` | In the sidebar: collapse or expand a collection; on a closed one, `Left` moves to its parent, and on an open one, `Right` moves to its first subcollection |
-| `Home` and `End` | In the sidebar: the first or last row |
-| `+` and `-` | Expand and collapse all collections. In the item list, open and close the attachments and notes under items (see [Attachments and notes under an item](#attachments-and-notes-under-an-item)). |
+| `Ctrl+Shift+L` | Focus the sidebar (then use the arrow keys) |
+| `Ctrl+Shift+T` | Show or hide the tag selector |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous tab |
+| `Ctrl+1` to `Ctrl+8`, `Ctrl+9` | That tab; the last tab |
 | `Ctrl+W` | Close the current tab |
 | `Ctrl+,` | Settings |
+| `Ctrl+/` | Keyboard Shortcuts |
+
+**Add Item by Identifier** has no shortcut by default, because Zotero uses `Ctrl+Shift+I` for Import. Give it one in Settings > Shortcuts.
+
+**In the item list** (click an item first):
+
+| Keys | Action |
+|---|---|
+| `Up` / `Down`, `Shift+Up` / `Shift+Down` | Move through the items; extend the selection |
+| `Home` / `End`, `PageUp` / `PageDown` | First / last item; a page up or down |
+| `Left` / `Right` | Close / open the attachments and notes under an item |
+| `+` and `-` | Open and close the attachments and notes under every item (see [Attachments and notes under an item](#attachments-and-notes-under-an-item)) |
+| `Enter` | Open the item's PDF, EPUB or snapshot |
+| `Ctrl+A` | Select all items |
+| `Delete` | Move to the Trash (asks first for several items). In a collection: remove from the collection; the items stay in the library. In the Trash: delete permanently. |
+| `Shift+Delete` | Move to the Trash without asking; in a collection, move to the Trash instead of removing from it |
+| `1` to `9` | Add the tag coloured at that position to the selected items, or remove it when they all have it |
+
+**In the sidebar** (click a row or press `Ctrl+Shift+L` first):
+
+| Keys | Action |
+|---|---|
+| `Up` / `Down` | Show the previous or next library, view, saved search or collection |
+| `Left` / `Right` | Collapse or expand a collection; on a closed one, `Left` moves to its parent, and on an open one, `Right` moves to its first subcollection |
+| `Home` / `End` | The first or last row |
+| `+` and `-` | Expand and collapse all collections |
+| `F2` | Rename the selected collection or saved search |
+| `Delete` | Delete the selected collection or saved search (asks first; the items stay in the library) |
+
+Zotero shortcuts with no counterpart here: Save to Zotero (`Ctrl+Shift+S`, a browser-connector key), the feed keys (`Ctrl+Shift+R`, ``Ctrl+Shift+` ``), `Shift+Delete` on a collection (delete the collection and its items), and holding `Ctrl` to highlight the collections an item is in. The reader's shortcuts are in [Reader](reader.md#navigation-and-keyboard-shortcuts).
 
 ## Library views
 

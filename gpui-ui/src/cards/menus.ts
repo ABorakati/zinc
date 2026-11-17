@@ -6,6 +6,7 @@ import { itemActions, type ItemAction, type ItemActionContext } from "../registr
 import { store } from "../store";
 import { readState } from "../readState";
 import { openMenu, type Anchor, type MenuItem } from "../ui";
+import { displayShortcut } from "../shell/shortcuts";
 import { collectionStyle, paletteHex } from "../sidebar/collectionStyle";
 import { locateFileKey, locateItemFromRow, locateItemOf } from "../locate/item";
 import { locateMenu } from "../locate/menu";
@@ -101,7 +102,7 @@ function registered(ctx: ItemActionContext, groups: readonly string[]): MenuItem
 		const out: MenuItem[] = [];
 		const subs = new Map<string, MenuItem[]>();
 		for (const a of list) {
-			const entry: MenuItem = { label: label(a), icon: a.icon, shortcut: a.shortcut, onSelect: () => a.run(ctx) };
+			const entry: MenuItem = { label: label(a), icon: a.icon, shortcut: displayShortcut(a.shortcut), onSelect: () => a.run(ctx) };
 			if (!a.submenu) {
 				out.push(entry);
 				continue;

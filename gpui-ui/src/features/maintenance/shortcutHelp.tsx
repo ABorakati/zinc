@@ -1,7 +1,10 @@
-// Registry behind the Keyboard Shortcuts dialog (other features add their own entries) and the dialog itself.
+// Registry behind the Keyboard Shortcuts dialog and the dialog itself. Commands (app actions) are listed with the key they have now;
+// features add entries here only for fixed keys of lists and panes, which are not commands.
 import { createSignal, For, type JSX } from "solid-js";
 import { Button, openDialog } from "../../ui";
 import { Footer, Line, Scroll, t, Txt } from "../kit";
+import { appActions } from "../../registry";
+import { actionShortcut } from "../../shell/shortcuts";
 
 export interface ShortcutEntry {
 	keys: string; // display text, e.g. "Ctrl+Shift+N"
@@ -21,10 +24,19 @@ export function registerShortcutHelp(list: ShortcutEntry[]): void {
 	});
 }
 
-const ORDER = ["General", "Items", "Navigation"];
+const ORDER = ["Commands", "General", "Items", "Navigation"];
+/** The entries plus every command that has a key now (Settings > Shortcuts may have changed it). */
 function groups(): [string, ShortcutEntry[]][] {
+	const commands: ShortcutEntry[] = appActions()
+		.map((a) => ({
+			keys: actionShortcut(a) ?? "",
+			description: typeof a.label === "function" ? a.label() : a.label,
+			group: "Commands",
+		}))
+		.filter((e) => e.keys)
+		.sort((a, b) => a.description.localeCompare(b.description));
 	const m = new Map<string, ShortcutEntry[]>();
-	for (const e of entries()) {
+	for (const e of [...commands, ...entries()]) {
 		const g = e.group ?? "General";
 		m.set(g, [...(m.get(g) ?? []), e]);
 	}

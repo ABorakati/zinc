@@ -1,6 +1,7 @@
 // Shell state that outlives a session: which side panels are shown, the column sizes for each combination, and the Settings tab
 // (an extra tab beside Library and the readers, like the web UI's SETTINGS_TAB). Everything lives in ui-state.json ("shell.*").
 import { createSignal } from "solid-js";
+import { isDocTab } from "../contracts";
 import { registerAppAction } from "../registry";
 import { store, uiState } from "../store";
 import { bindUiState, isBool, persisted, getPref, setPref } from "./prefs";
@@ -69,3 +70,44 @@ export function closeActiveTab(): void {
 }
 
 registerAppAction({ id: "tab-close", label: "Close tab", icon: "x", menu: "none", shortcut: "Ctrl+W", run: closeActiveTab });
+
+// ---- moving between tabs (Zotero's tab keys): the order of the top bar, Library, the documents, then Settings
+/** Tab ids in the top bar's order. */
+export const tabOrder = (): string[] => [
+	"library",
+	...store
+		.tabs()
+		.filter(isDocTab)
+		.map((t) => t.id),
+	...(settingsOpen() ? [SETTINGS_TAB] : []),
+];
+/** Go `delta` tabs along, wrapping around. */
+export function stepTab(delta: number): void {
+	const list = tabOrder();
+	const i = Math.max(0, list.indexOf(store.activeTab()));
+	store.setActiveTab(list[(i + delta + list.length) % list.length]!);
+}
+/** The n-th tab (1-based); 9 is the last, as in browsers and Zotero. */
+export function gotoTab(n: number): void {
+	const list = tabOrder();
+	const id = n >= 9 ? list[list.length - 1] : list[n - 1];
+	if (id) store.setActiveTab(id);
+}
+registerAppAction({ id: "tab-next", label: "Next tab", menu: "none", shortcut: "Ctrl+Tab", run: () => stepTab(1) });
+registerAppAction({ id: "tab-previous", label: "Previous tab", menu: "none", shortcut: "Ctrl+Shift+Tab", run: () => stepTab(-1) });
+registerAppAction({ id: "tab-next-page", label: "Next tab (Page Down)", menu: "none", shortcut: "Ctrl+PageDown", run: () => stepTab(1) });
+registerAppAction({
+	id: "tab-previous-page",
+	label: "Previous tab (Page Up)",
+	menu: "none",
+	shortcut: "Ctrl+PageUp",
+	run: () => stepTab(-1),
+});
+for (let n = 1; n <= 9; n++)
+	registerAppAction({
+		id: `tab-goto-${n}`,
+		label: n === 9 ? "Go to the last tab" : `Go to tab ${n}`,
+		menu: "none",
+		shortcut: `Ctrl+${n}`,
+		run: () => gotoTab(n),
+	});

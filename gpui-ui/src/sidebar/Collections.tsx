@@ -710,6 +710,8 @@ export function collectionEntries(top: number): Entry[] {
 						return v.kind === "collection" && v.key === c.key;
 					},
 					activate: () => setView({ kind: "collection", key: c.key }),
+					rename: () => setEditing(c.key),
+					remove: () => void remove(c),
 					...(hasKids ? { expanded: () => expanded().has(c.key), toggle: () => toggle(c.key) } : {}),
 					...(!r.pinnedCopy && r.depth > 0 && c.parentKey ? { parent: `c:${c.parentKey}` } : {}),
 				},

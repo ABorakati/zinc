@@ -1,6 +1,7 @@
 // Tag data for the Tags pane: the library's tags with counts, Zotero tag colours, and which tags are only automatic
 // (ui/src/Tags.tsx + ui/src/cards/tags.ts). The big lists (tens of thousands of tags) load only once the pane is open.
 import { createMemo, createRoot, createSignal } from "solid-js";
+import { api } from "../api";
 import { store } from "../store";
 import { errMsg, sidebarApi, type TagColor } from "../sidebar/client";
 import { toast } from "../ui";
@@ -81,6 +82,39 @@ export async function setTagColor(name: string, color: string | null): Promise<v
 	} catch (e) {
 		toast("Could not save tag colour", { kind: "error", description: errMsg(e) });
 	}
+}
+
+/**
+ * Zotero's 1–9 keys in the item list: the tag coloured at that position goes onto the selected items, or comes off when every one of
+ * them already has it. The colours load here when the Tags pane has not loaded them yet.
+ */
+export async function toggleColoredTag(position: number, keys: string[]): Promise<void> {
+	if (!keys.length) return;
+	let cols = colors();
+	if (!cols.length) {
+		try {
+			cols = [...(await sidebarApi.tagColors())].sort((a, b) => a.position - b.position);
+			setColors(cols);
+		} catch {
+			return;
+		}
+	}
+	const tag = cols[position - 1]?.name;
+	if (!tag) return;
+	try {
+		const has = await inBatches(keys, async (k) => (await api.item(k)).tags.some((t) => t.tag === tag));
+		const remove = has.every(Boolean);
+		await inBatches(keys, (k) => (remove ? api.removeTags(k, [tag]) : api.addTags(k, [tag])));
+		store.refresh();
+	} catch (e) {
+		toast(`Could not change the tag "${tag}"`, { kind: "error", description: errMsg(e) });
+	}
+}
+/** `fn` over `list`, 25 requests at a time (a big selection must not open hundreds of requests at once). */
+async function inBatches<T>(list: string[], fn: (k: string) => Promise<T>): Promise<T[]> {
+	const out: T[] = [];
+	for (let i = 0; i < list.length; i += 25) out.push(...(await Promise.all(list.slice(i, i + 25).map(fn))));
+	return out;
 }
 
 /**

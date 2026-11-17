@@ -4,7 +4,7 @@ Open Settings with **Ctrl+,** or the **Settings...** entry in the Tools menu (th
 
 Most changes apply as soon as you make them; there is no Save button except where a row has its own (the citation key formula, the Unpaywall email). Defaults below are what a fresh install uses.
 
-Some rows exist but are marked as not available yet: **Update feeds automatically** (Files and folders), **Sync automatically** (Sync), **Change shortcuts** (Shortcuts) and **LibreOffice and Google Docs** (Integrations).
+Some rows exist but are marked as not available yet: **Update feeds automatically** (Files and folders), **Sync automatically** (Sync) and **LibreOffice and Google Docs** (Integrations).
 
 Where settings are stored:
 
@@ -183,19 +183,14 @@ Defaults for the export dialog. See [Import and export](import-export.md).
 
 ## Shortcuts
 
-A read-only list of the keyboard shortcuts of the app, built from the actions that have one. **Change shortcuts** (rebinding) is not available yet.
+Every command of the app with its keyboard shortcut, which you can change. This is Zotero's **Settings > Advanced > Shortcuts**, except that every command can have a shortcut here, not just eight, and changes apply at once (no restart).
 
-| Shortcut | Action |
-| --- | --- |
-| Ctrl+, | Open Settings |
-| Ctrl+W | Close the current tab |
-| Esc | Clear the settings search |
-| Ctrl+/ | Keyboard Shortcuts (shows this list) |
-| Ctrl+Shift+F | Advanced Search |
-| Ctrl+Shift+I | Add Item by Identifier |
-| Ctrl+Shift+N | New Item |
-| Ctrl+Shift+A | Copy Citation |
-| Ctrl+Shift+C | Copy Bibliography |
+- **Change**: press the new keys. A shortcut needs Ctrl or Alt with a key, or a function key (F1 to F12); plain letters, digits and arrows belong to the lists and text fields. Esc cancels. If another command already has those keys, they move to this one and you are told which command lost them.
+- **Remove**: the command keeps no shortcut.
+- **Reset to ...**: back to the default.
+- **Reset all**: every command back to its default.
+
+Under **Fixed keys** the page also lists the keys of the item list and the sidebar (arrows, Delete, 1–9, F2 ...), which cannot be changed. The defaults follow Zotero; see [Keyboard shortcuts](library.md#keyboard-shortcuts) for the full list. Your choices are stored in `ui-state.json` with the other window preferences.
 
 ## Files and folders
 

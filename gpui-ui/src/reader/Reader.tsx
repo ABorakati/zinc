@@ -696,6 +696,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 	let hbox: { id: number } | undefined; // the horizontally scrolling box around the list
 	let rootEl: { id: number } | undefined;
 	let searchEl: { id: number } | undefined;
+	let pageEl: { id: number } | undefined;
 	let paneEl: { id: number } | undefined; // the box the selection popup is positioned in
 
 	/** the main-axis scroll position as the list (or, scrolling horizontally, the strip) has it now */
@@ -1177,9 +1178,13 @@ export function Reader(props: ReaderProps): JSX.Element {
 
 	// ---- page navigation (links, outline, history) --------------------------------------------------------------------
 	const [history, setHistory] = createSignal<[number, number][]>([]);
+	const [forward, setForward] = createSignal<[number, number][]>([]);
 	function goTo(page: number, y = -1, record = true) {
 		if (!doc()) return;
-		if (record) setHistory((h) => [...h.slice(-30), anchor()]);
+		if (record) {
+			setHistory((h) => [...h.slice(-30), anchor()]);
+			setForward([]); // a new jump drops the places Alt+Right would have gone back to
+		}
 		const p = clamp(page, 0, count() - 1);
 		if (y >= 0 && rotOf(p) === 0) reveal(p, 0, y, 36);
 		else if (horiz()) reveal(p, 0, 0, 0);
@@ -1189,7 +1194,16 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const h = history();
 		if (!h.length) return;
 		setHistory(h.slice(0, -1));
+		setForward((f) => [...f.slice(-30), anchor()]);
 		restore(h[h.length - 1]!);
+	};
+	/** Alt+Right: undo a "back" */
+	const goForward = () => {
+		const f = forward();
+		if (!f.length) return;
+		setForward(f.slice(0, -1));
+		setHistory((h) => [...h.slice(-30), anchor()]);
+		restore(f[f.length - 1]!);
 	};
 	type LinkEvent = { page: number; rect: NRect; target: LinkInfo["target"]; x: number; y: number };
 	const linkHandlers = new Set<(e: LinkEvent) => boolean | void>();
@@ -1653,6 +1667,22 @@ export function Reader(props: ReaderProps): JSX.Element {
 		const stop = () => e.preventDefault?.();
 		const focused = gpuix?.renderer.getFocusedElementId?.();
 		const onRoot = focused == null || focused === rootEl?.id;
+		// Zotero: Ctrl+Alt+G puts the cursor in the page-number box (checked before Ctrl+G, which steps through the search hits)
+		if (mod && m.alt && k === "g") {
+			stop();
+			if (pageEl) gpuix?.renderer.focusElement?.(pageEl.id);
+			return;
+		}
+		// the plugins' shortcuts (annotation tools, colours, delete, ...) run before the core's keys below, so a plugin must take only
+		// keys the core does not use (the annotations plugin's one overlap, Escape, it takes only while an annotation is selected)
+		if (ctxSig()) {
+			for (const p of plugins()) {
+				if (p.onKey?.(ctx(), { key: k, modifiers: { ctrl: !!m.ctrl, shift: !!m.shift, alt: !!m.alt, cmd: !!m.cmd }, onRoot })) {
+					stop();
+					return;
+				}
+			}
+		}
 		if (mod) {
 			if (k === "f") {
 				stop();
@@ -1709,6 +1739,18 @@ export function Reader(props: ReaderProps): JSX.Element {
 		if (m.alt && k === "left") {
 			stop();
 			goBack();
+			return;
+		}
+		if (m.alt && k === "right") {
+			stop();
+			goForward();
+			return;
+		}
+		// Zotero: Alt+Down / Alt+Up go to the next / previous page (plain Up / Down scroll a little)
+		if (m.alt && (k === "down" || k === "up")) {
+			if (!onRoot || altView()) return;
+			stop();
+			stepRow(k === "down" ? 1 : -1);
 			return;
 		}
 		if (k === "escape") {
@@ -1934,6 +1976,13 @@ export function Reader(props: ReaderProps): JSX.Element {
 				<Show when={doc()}>
 					<IconButton icon="panel-left" title="Sidebar" mode={mode} on={sbOpen()} onClick={() => setSidebar(!sbOpen())} />
 					<IconButton icon="arrow-left" title="Back (Alt+Left)" mode={mode} disabled={history().length === 0} onClick={goBack} />
+					<IconButton
+						icon="arrow-right"
+						title="Forward (Alt+Right)"
+						mode={mode}
+						disabled={forward().length === 0}
+						onClick={goForward}
+					/>
 				</Show>
 			</div>
 			<div style={{ ...t("mx-2 flex min-w-0 items-center"), flexGrow: 1, flexShrink: 1, flexBasis: 96 }}>
@@ -1959,6 +2008,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 						}}
 					>
 						<input
+							ref={(el: { id: number }) => {
+								pageEl = el;
+							}}
 							value={String(curPage() + 1)}
 							onSubmit={(e) => {
 								const n = parseInt((e as { value?: string }).value ?? "", 10);

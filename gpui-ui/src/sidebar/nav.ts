@@ -1,6 +1,6 @@
 // Arrow-key navigation of the sidebar's rows (Zotero's collection tree keys): Up / Down move to the previous / next row and show
 // it, Home / End the first / last row; Left collapses an expanded row or moves to its parent, Right expands a closed row or moves
-// to its first child. Pure: the rows say what they are through `nav`; Sidebar.tsx does the moving. Unit-tested in nav.test.ts.
+// to its first child; F2 renames and Delete deletes the row's collection or saved search. Pure: the rows say what they are through `nav`; Sidebar.tsx does the moving. Unit-tested in nav.test.ts.
 
 export interface Nav {
 	/** Is this row's view the one the item list shows? */
@@ -13,6 +13,10 @@ export interface Nav {
 	toggle?(): void;
 	/** Entry id of the row this one is nested under. */
 	parent?: string;
+	/** F2 (Zotero: "Edit Collection Names"): start renaming. Absent where a row cannot be renamed here. */
+	rename?(): void;
+	/** Delete: delete the collection / saved search (asks first). */
+	remove?(): void;
 }
 
 export interface NavEntry {
@@ -20,7 +24,7 @@ export interface NavEntry {
 	nav?: Nav;
 }
 
-export type NavStep = { go: number } | { toggle: number } | null;
+export type NavStep = { go: number } | { toggle: number } | { rename: number } | { remove: number } | null;
 
 /** The row the keys move from: the row last moved to while it is still selected (a pinned collection is listed twice), else the first selected row; -1 for none. */
 export function currentIndex(list: readonly NavEntry[], lastId: string | null): number {
@@ -74,6 +78,10 @@ export function navStep(list: readonly NavEntry[], from: number, key: string): N
 			if (n.expanded?.() && next !== undefined && list[next]!.nav!.parent === list[from]!.id) return { go: next };
 			return { go: from };
 		}
+		case "f2":
+			return pos >= 0 && list[from]!.nav!.rename ? { rename: from } : null;
+		case "delete":
+			return pos >= 0 && list[from]!.nav!.remove ? { remove: from } : null;
 		default:
 			return null;
 	}

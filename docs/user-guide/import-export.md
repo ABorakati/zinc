@@ -10,8 +10,8 @@ Open the **Tools** menu (the wrench button in the toolbar) and choose:
 
 | Command | What it does |
 | --- | --- |
-| **Import...** | Pick one or more files. Each file is imported into a new collection named after the file. |
-| **Import from Clipboard** | Imports whatever reference data is on the clipboard into a new collection named "Clipboard import <date>". |
+| **Import...** (`Ctrl+Shift+I`) | Pick one or more files. Each file is imported into a new collection named after the file. |
+| **Import from Clipboard** (`Ctrl+Shift+Alt+I`) | Imports whatever reference data is on the clipboard into a new collection named "Clipboard import <date>". |
 | **Import from Mendeley Desktop...** | Lists the Mendeley Desktop libraries found on this computer and imports the one you choose. |
 
 The format is detected automatically from the text, so you do not choose one. If a collection was selected in the format itself (Zotero RDF carries its own collection tree), the collections from the file are created instead of one new collection.

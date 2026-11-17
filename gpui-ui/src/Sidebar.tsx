@@ -43,6 +43,7 @@ import {
 	setCollectionsFraction,
 	setLibraryOpen,
 	setSidebarWidth,
+	setTagsOpen,
 	sidebarWidth,
 	tagsOpen,
 } from "./sidebar/state";
@@ -269,6 +270,14 @@ export function Sidebar(): JSX.Element {
 			if (pane) gpuix?.renderer.focusElement?.(pane.id);
 		},
 	});
+	// Zotero's "Toggle Tag Selector": opens / closes the Tags pane
+	registerAppAction({
+		id: "tags-toggle",
+		label: "Show / hide the tag selector",
+		menu: "none",
+		shortcut: "Ctrl+Shift+T",
+		run: () => setTagsOpen(!tagsOpen()),
+	});
 	/** Scroll entry `i` into view when it is outside the viewport. Rows are ~29px high, so the estimate is close enough. */
 	const revealEntry = (i: number) => {
 		const s = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
@@ -289,6 +298,8 @@ export function Sidebar(): JSX.Element {
 		e.preventDefault?.();
 		e.stopPropagation?.();
 		if ("toggle" in step) return void rows[step.toggle]!.nav!.toggle!();
+		if ("rename" in step) return void rows[step.rename]!.nav!.rename!();
+		if ("remove" in step) return void rows[step.remove]!.nav!.remove!();
 		const to = rows[step.go]!;
 		lastNav = to.id;
 		if (step.go !== from) to.nav!.activate();

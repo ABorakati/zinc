@@ -11,7 +11,7 @@ import { textStyle, tokens, tw } from "../theme";
 import { childIcon, childLabel } from "./actions";
 import { isDoubleClick, selectChild, selectedChild } from "./children";
 import { swallow, swallowed } from "./click";
-import { setListFocused } from "./keys";
+import { focusList, setListFocused } from "./keys";
 import { cardLayout, cardListWidth } from "./layout";
 import { mix } from "./logic";
 import type { ChildRow } from "./rows";
@@ -63,6 +63,7 @@ export function childClick(row: ChildRow) {
 	return (e: EventPayload) => {
 		if (swallowed() || !row.child) return;
 		setListFocused(true);
+		focusList();
 		selectChild(row.parentKey, row.parentIndex, row.child.key);
 		// the row may have been rebuilt between the two clicks (a refresh of the list): GPUI's count then starts again at 1
 		if (isDoubleClick(row.child.key, e.clickCount ?? 1, performance.now())) openChildRow(row.parentIndex, row.child);

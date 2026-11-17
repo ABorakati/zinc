@@ -15,7 +15,7 @@ import { Button } from "../ui";
 import { openItem } from "./actions";
 import { Card, tok } from "./Card";
 import { modsOf, swallowed } from "./click";
-import { listFocused, listKeyHandler, setListFocused } from "./keys";
+import { focusList, listFocused, listKeyHandler, registerListFocus, setListFocused } from "./keys";
 import { cardLayout, cardListWidth as cardListWidthNow, setCardListWidth } from "./layout";
 import { ListRetry } from "./ListRetry";
 import { loadTagColors } from "./logic";
@@ -99,6 +99,7 @@ function ItemRowView(p: { index: number }): JSX.Element {
 				const it = untrack(item);
 				if (!it) return;
 				setListFocused(true);
+				focusList(); // the arrow keys now move from this card
 				const mods = modsOf(e);
 				store.selectClick(p.index, mods);
 				if ((e.clickCount ?? 1) >= 2 && !mods.shift && !mods.ctrl) void openItem(it); // double-click opens the PDF in a reader tab
@@ -289,9 +290,14 @@ export function CardsView(): JSX.Element {
 		},
 	});
 	onMount(() => onCleanup(() => setListFocused(false)));
+	let box: { id: number } | undefined;
+	onCleanup(registerListFocus(() => box && gpuix?.renderer.focusElement?.(box.id)));
 
 	return (
 		<div
+			ref={(el: { id: number }) => {
+				box = el;
+			}}
 			tabIndex={0}
 			testId="card-list-container"
 			onKeyDown={keys}

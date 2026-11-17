@@ -1,25 +1,25 @@
 // Maintenance: Empty Trash, Delete Permanently, Rename File from Parent Metadata, automatic-tag clean-up, Keyboard Shortcuts (Ctrl+/).
-// Delete / Shift+Delete / Ctrl+A / Ctrl+F are plain-key or list shortcuts: the list owns their key handling and calls
-// deleteSelected() from ./ops; they are listed in the help dialog here.
+// Delete / Shift+Delete / Ctrl+A / 1–9 are list keys: the list owns their key handling and calls deleteSelected() from ./ops;
+// they are listed in the help dialog here.
 import { registerAppAction, registerItemAction } from "../../registry";
 import { deleteAutomaticTags, deletePermanently, emptyTrash, renameFilesFromParent } from "./ops";
 import { registerShortcutHelp, showShortcutHelp } from "./shortcutHelp";
 
 export function register(): void {
+	// fixed keys of the item list and the sidebar (the commands are listed with their current keys by the dialog itself)
 	registerShortcutHelp([
-		{ group: "Items", keys: "Ctrl+Shift+N", description: "New item" },
-		{ group: "Items", keys: "Ctrl+Shift+I", description: "Add item by identifier" },
-		{ group: "Items", keys: "Ctrl+Shift+C", description: "Copy bibliography of the selected items" },
-		{ group: "Items", keys: "Ctrl+Shift+A", description: "Copy citation of the selected items" },
-		{ group: "Items", keys: "Delete", description: "Move selected items to the Trash (permanently delete in the Trash)" },
-		{ group: "Items", keys: "Shift+Delete", description: "Delete selected items permanently" },
+		{
+			group: "Items",
+			keys: "Delete",
+			description: "Move to the Trash; in a collection, remove from it; in the Trash, delete permanently",
+		},
+		{ group: "Items", keys: "Shift+Delete", description: "Move to the Trash without asking (from a collection too)" },
 		{ group: "Items", keys: "Ctrl+A", description: "Select all items" },
-		{ group: "Navigation", keys: "Ctrl+F", description: "Search the library" },
-		{ group: "Navigation", keys: "Ctrl+Shift+L", description: "Focus the collections pane" },
-		{ group: "Navigation", keys: "+", description: "Expand all collections" },
-		{ group: "Navigation", keys: "-", description: "Collapse all collections" },
-		{ group: "Navigation", keys: "Ctrl+W", description: "Close the current tab" },
-		{ group: "General", keys: "Ctrl+/", description: "Show keyboard shortcuts" },
+		{ group: "Items", keys: "1–9", description: "Add or remove the coloured tag at that position" },
+		{ group: "Navigation", keys: "Up / Down", description: "Move through the items, or the sidebar's rows" },
+		{ group: "Navigation", keys: "Left / Right", description: "Close / open an item or a collection" },
+		{ group: "Navigation", keys: "+ / -", description: "Expand / collapse all" },
+		{ group: "Navigation", keys: "F2", description: "Rename the selected collection or saved search" },
 	]);
 
 	registerAppAction({

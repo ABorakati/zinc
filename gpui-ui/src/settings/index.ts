@@ -12,6 +12,7 @@ import "./defs/general";
 import "../locate/settings"; // Locate engines rows (under general's "Locate" group; must follow defs/general)
 import "./defs/reader";
 import "./defs/sync";
+import "./defs/shortcuts";
 import "./defs/files";
 import "./defs/files-storage"; // the ZotMoov rows of Files and folders (must follow defs/files)
 import "./defs/integrations";

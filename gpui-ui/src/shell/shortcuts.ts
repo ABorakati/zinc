@@ -1,9 +1,11 @@
 // Global keyboard shortcuts. render()'s window-level onKeyDown (main.tsx passes `handleWindowKeyDown`) sees every key stroke after
 // the focused element's own handlers; here it is matched against the `shortcut` strings of the registry's appActions
 // ("Ctrl+Shift+A", "Ctrl+,", "Alt+Left") plus any local handler a view registers while it is shown (the Settings tab).
-// Light on purpose: imports only the registry.
+// An action's shortcut is the user's choice from Settings > Shortcuts when there is one (./bindings.ts), else its default.
+// Light on purpose: imports only the registry and the bindings.
 import type { KeyEvent } from "@gpuix/native/host";
-import { appActions } from "../registry";
+import { appActions, type AppAction } from "../registry";
+import { effectiveShortcut } from "./bindings";
 
 export interface Chord {
 	ctrl: boolean;
@@ -73,6 +75,63 @@ export function matchesChord(shortcut: string, e: Pick<KeyEvent, "key" | "modifi
 /** Display form on this platform ("Ctrl+Shift+A" as written). */
 export const formatShortcut = (s: string): string => s;
 
+const KEY_LABELS: Record<string, string> = {
+	escape: "Esc",
+	" ": "Space",
+	pageup: "PageUp",
+	pagedown: "PageDown",
+	backspace: "Backspace",
+};
+const keyLabel = (k: string): string =>
+	KEY_LABELS[k] ?? (/^f\d{1,2}$/.test(k) || k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1));
+
+/** A chord written the one way Settings stores and shows it: Ctrl, Alt, Shift, then the key ("Ctrl+Shift+K", "Alt+F2"). */
+export function formatChord(c: Chord): string {
+	return [c.ctrl && "Ctrl", c.alt && "Alt", c.shift && "Shift", keyLabel(c.key)].filter(Boolean).join("+");
+}
+/** "ctrl+shift+k" / "Shift+Ctrl+K" -> "Ctrl+Shift+K"; undefined when it names no key. */
+export const canonicalChord = (s: string): string | undefined => {
+	const c = chordOf(s);
+	return c ? formatChord(c) : undefined;
+};
+
+const MODIFIER_KEYS = new Set(["control", "ctrl", "shift", "alt", "altgraph", "meta", "cmd", "command", "os", "super", "capslock", "fn"]);
+/** The chord a key stroke makes, for recording a new shortcut; undefined while only modifiers are held. */
+export function chordFromEvent(e: Pick<KeyEvent, "key" | "modifiers">): string | undefined {
+	const raw = (e.key ?? "").toLowerCase();
+	if (!raw || MODIFIER_KEYS.has(raw)) return undefined;
+	const m = e.modifiers;
+	return formatChord({ ctrl: !!(m?.ctrl || m?.cmd), alt: !!m?.alt, shift: !!m?.shift, key: KEY_ALIASES[raw] ?? raw });
+}
+/**
+ * Can this chord be a global shortcut? It needs Ctrl or Alt, or must be a function key: a plain letter, digit, arrow, Enter, Tab or
+ * Delete belongs to text fields and lists (typing, moving, deleting).
+ */
+export function isBindable(chord: string): boolean {
+	const c = chordOf(chord);
+	return !!c && (c.ctrl || c.alt || /^f\d{1,2}$/.test(c.key));
+}
+
+/** The shortcut an app action has now (the user's choice in Settings, else the feature's default). */
+export const actionShortcut = (a: { id: string; shortcut?: string }): string | undefined => effectiveShortcut(a.id, a.shortcut);
+
+/** App actions (other than `exceptId`) bound to the same chord. */
+export function shortcutUsers(chord: string, exceptId?: string): AppAction[] {
+	const want = canonicalChord(chord);
+	if (!want) return [];
+	return appActions().filter((a) => a.id !== exceptId && canonicalChord(actionShortcut(a) ?? "") === want);
+}
+
+/**
+ * The shortcut to show beside a menu entry whose feature wrote down a default (an item action's `shortcut` is display only; the app
+ * action bound to that default runs it): follows the user's rebinding, undefined once they removed it.
+ */
+export function displayShortcut(fallback: string | undefined): string | undefined {
+	if (!fallback) return undefined;
+	const a = appActions().find((x) => x.shortcut === fallback);
+	return a ? actionShortcut(a) : fallback;
+}
+
 type LocalHandler = (e: KeyEvent) => boolean | void;
 const locals: LocalHandler[] = [];
 /**
@@ -97,7 +156,8 @@ export function handleWindowKeyDown(e: KeyEvent): void {
 		}
 	}
 	for (const a of appActions()) {
-		if (a.shortcut && matchesChord(a.shortcut, e)) {
+		const s = actionShortcut(a);
+		if (s && matchesChord(s, e)) {
 			e.preventDefault();
 			if (a.when && !a.when()) return;
 			try {

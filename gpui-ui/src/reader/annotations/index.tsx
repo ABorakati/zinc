@@ -11,7 +11,7 @@ import { IconButton, Swatches, kit } from "../structure/kit";
 import { PageAnnotations } from "./PageOverlay";
 import { AnnotationsPanel } from "./Panel";
 import { COLORS } from "./model";
-import { closeSession, sessionFor } from "./session";
+import { closeSession, sessionFor, type Tool } from "./session";
 
 function SelectionPopup(p: { ctx: ReaderContext }): JSX.Element {
 	const s = sessionFor(p.ctx);
@@ -188,8 +188,69 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 	);
 }
 
+// Zotero 7's reader shortcuts for the tools Zinc has. Missing here on purpose (no such feature): text / area tools (Alt+4/5, Ctrl+Alt+4/5),
+// hand tool (H), undo / redo of annotation edits, select-all annotations, arrow-key move / resize of an annotation.
+const TOOL_KEYS: Record<string, Tool> = { "1": "highlight", "2": "underline", "3": "note", "6": "ink", "7": "eraser" };
+
+function onKey(ctx: ReaderContext, e: Parameters<NonNullable<ReaderPlugin["onKey"]>>[1]): boolean {
+	const s = sessionFor(ctx);
+	const m = e.modifiers;
+	const mod = m.ctrl || m.cmd;
+	const k = e.key;
+	if (ctx.readOnly) return false;
+	// the next colour of the palette: Alt+8 in a PDF; the reading view (Zotero's EPUB) has only three tools, so Alt+4 does it there
+	const cycle = () => {
+		const i = COLORS.findIndex((c) => c.value === s.ui.color());
+		s.ui.setColor(COLORS[(i + 1) % COLORS.length]!.value);
+	};
+	if (m.alt && !m.shift) {
+		if (mod) {
+			// Ctrl+Alt+1 / 2: highlight / underline the selected text (Ctrl+Alt+3, a note on the selection, has no counterpart here)
+			if ((k === "1" || k === "2") && ctx.selection()) {
+				void s.act.fromSelection(k === "1" ? "highlight" : "underline", s.ui.color());
+				return true;
+			}
+			return false;
+		}
+		if (k === "8" || (k === "4" && ctx.altView())) {
+			cycle();
+			return true;
+		}
+		const t = TOOL_KEYS[k];
+		// ink / eraser draw on the pages: not offered in the reading view
+		if (t && !(ctx.altView() && (t === "ink" || t === "eraser"))) {
+			s.ui.setTool(s.ui.tool() === t ? null : t);
+			return true;
+		}
+		return false;
+	}
+	if (mod || m.alt || !e.onRoot) return false;
+	if (k === "escape") {
+		if (!s.ui.selectedId()) return false;
+		s.ui.select(null);
+		return true;
+	}
+	// 1-8 pick a colour while a tool is active
+	if (!m.shift && /^[1-8]$/.test(k) && s.ui.tool() && s.ui.tool() !== "eraser") {
+		s.ui.setColor(COLORS[Number(k) - 1]!.value);
+		return true;
+	}
+	if (!m.shift && k === "s") {
+		s.ui.setTool(null); // the select tool: no drawing tool active
+		return true;
+	}
+	if (k === "delete" || k === "backspace") {
+		const id = s.ui.selectedId();
+		if (!id) return false;
+		s.act.remove([id]);
+		return true;
+	}
+	return false;
+}
+
 export const annotationsPlugin: ReaderPlugin = {
 	id: "annotations",
+	onKey,
 	toolbar: (ctx) => <Toolbar ctx={ctx} />,
 	sidePanel: { id: "annotations", label: "Annotations", icon: "highlighter", render: (ctx) => <AnnotationsPanel ctx={ctx} /> },
 	pageOverlay: (ctx, page, box) => <PageAnnotations ctx={ctx} page={page} box={box} />,

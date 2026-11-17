@@ -107,11 +107,18 @@ export async function emptyTrash(): Promise<void> {
 }
 
 /** Delete key: trash (confirm when several); in the Trash view it deletes permanently. Shift+Delete always does. */
-export async function deleteSelected(permanent: boolean): Promise<void> {
+/**
+ * Delete / Shift+Delete in the item list, as Zotero: in the Trash both delete permanently; in a collection Delete removes the items
+ * from the collection (they stay in the library) and Shift+Delete moves them to the Trash; anywhere else both move them to the
+ * Trash, Shift+Delete without asking.
+ */
+export async function deleteSelected(shift: boolean): Promise<void> {
 	const keys = selectedKeys();
 	if (!keys.length) return;
-	if (permanent || currentView().kind === "trash") return deletePermanently(keys);
-	if (keys.length > 1) {
+	const v = currentView();
+	if (v.kind === "trash") return deletePermanently(keys);
+	if (v.kind === "collection" && !shift) return removeFromCollection(v.key, keys);
+	if (keys.length > 1 && (!shift || v.kind === "collection")) {
 		const ok = await confirm({
 			title: `Move ${plural(keys.length, "item")} to the Trash?`,
 			body: "You can restore them from the Trash later.",
@@ -121,6 +128,24 @@ export async function deleteSelected(permanent: boolean): Promise<void> {
 	}
 	await trashItems(keys, true);
 	selectOnly(null);
+}
+
+/** Take items out of a collection; they stay in the library and in their other collections. */
+export async function removeFromCollection(collectionKey: string, keys: string[]): Promise<void> {
+	const ok = await confirm({
+		title: `Remove ${plural(keys.length, "item")} from this collection?`,
+		body: "They stay in your library and in any other collections.",
+		confirmLabel: "Remove",
+	});
+	if (!ok) return;
+	try {
+		await call("DELETE", `/api/collections/${encodeURIComponent(collectionKey)}/items`, { keys });
+		selectOnly(null);
+		refresh();
+		toast(`Removed ${plural(keys.length, "item")} from the collection`, { kind: "success" });
+	} catch (e) {
+		fail("Could not remove from the collection", e);
+	}
 }
 
 // ---------------------------------------------------------------- tags (the tag pane calls these from its menu)

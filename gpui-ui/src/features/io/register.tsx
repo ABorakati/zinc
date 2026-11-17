@@ -6,12 +6,21 @@ import { ExportSettings, openExportDialog } from "./dialogs";
 import { openMendeleyImport } from "./mendeley";
 
 export function register(): void {
-	registerAppAction({ id: "io.import", label: "Import…", icon: "file-up", menu: "tools", run: () => void pickAndImport() });
+	// Zotero's keys: Ctrl+Shift+I and Ctrl+Shift+Alt+I
+	registerAppAction({
+		id: "io.import",
+		label: "Import…",
+		icon: "file-up",
+		menu: "tools",
+		shortcut: "Ctrl+Shift+I",
+		run: () => void pickAndImport(),
+	});
 	registerAppAction({
 		id: "io.importClipboard",
 		label: "Import from Clipboard",
 		icon: "clipboard-paste",
 		menu: "tools",
+		shortcut: "Ctrl+Alt+Shift+I",
 		run: () => void importFromClipboard(),
 	});
 	registerAppAction({

@@ -54,6 +54,15 @@ describe("sidebar arrow keys", () => {
 		expect(navStep(l, 3, "right")).toEqual({ go: 4 });
 		expect(navStep(l, 1, "right")).toEqual({ go: 1 }); // no children
 	});
+	test("F2 renames and Delete deletes, where the row allows it", () => {
+		const l = fixture("c:A");
+		l[3]!.nav!.rename = () => {};
+		l[3]!.nav!.remove = () => {};
+		expect(navStep(l, 3, "f2")).toEqual({ rename: 3 });
+		expect(navStep(l, 3, "delete")).toEqual({ remove: 3 });
+		expect(navStep(l, 1, "f2")).toBeNull(); // My Library cannot be renamed
+		expect(navStep(l, 1, "delete")).toBeNull();
+	});
 	test("other keys are not handled", () => {
 		expect(navStep(fixture("c:A"), 3, "enter")).toBeNull();
 		expect(navStep([{ id: "x" }], -1, "down")).toBeNull();

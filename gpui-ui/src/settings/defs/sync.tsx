@@ -1,14 +1,13 @@
-// Sync (Zotero data folder) and Shortcuts. The sync rows share the top-bar indicator's state (../../sync/state).
+// Sync (Zotero data folder). Shortcuts moved to ./shortcuts.tsx. The sync rows share the top-bar indicator's state (../../sync/state).
 import { createSignal, Show, type JSX } from "solid-js";
-import { appActions } from "../../registry";
 import { Note, NoteText, Txt, t } from "../../shell/kit";
 import { ago, plural } from "../../shell/net";
 import { syncOwner, syncOwnerNote } from "../../sync/owner";
 import { sync, ZOTERO_LABEL } from "../../sync/state";
 import { webSync } from "../../features/websync/client";
 import { isBrowserLibrary } from "../../shell/libraryMode";
-import { Btn, Kbd, Toggle, Value } from "../controls";
-import { onSettingsShown, registerSection, registerSettings, registerSettingsProvider } from "../registry";
+import { Btn, Toggle, Value } from "../controls";
+import { onSettingsShown, registerSection, registerSettings } from "../registry";
 import { AccountControl, FileCheckControl, FilesControl, GroupsControl, OrgStatusControl, PushControl, SourceControl } from "./sync-org";
 
 registerSection({
@@ -18,14 +17,6 @@ registerSection({
 	order: 40,
 	description: "Keeping this library and Zotero's in step.",
 	keywords: ["zotero", "write", "backup"],
-});
-registerSection({
-	id: "shortcuts",
-	label: "Shortcuts",
-	icon: "keyboard",
-	order: 80,
-	description: "Keyboard shortcuts of the app.",
-	keywords: ["keyboard", "keys", "hotkeys", "bindings"],
 });
 onSettingsShown(() => {
 	sync.start();
@@ -196,45 +187,4 @@ registerSettings([
 		control: () => <FileCheckControl />,
 	},
 	{ id: "sync.auto", section: "sync", label: "Sync automatically", keywords: ["background", "schedule"], unavailable: true },
-
-	{
-		id: "shortcuts.customise",
-		section: "shortcuts",
-		label: "Change shortcuts",
-		description: "Rebind keys to other combinations.",
-		keywords: ["customise", "customize", "rebind", "remap"],
-		unavailable: true,
-	},
 ]);
-
-/** Built-in shortcuts of the shell, listed with the registered actions'. */
-const BUILTIN: { keys: string; description: string }[] = [
-	{ keys: "Ctrl+,", description: "Open Settings" },
-	{ keys: "Ctrl+W", description: "Close the current tab" },
-	{ keys: "Esc", description: "Clear the settings search" },
-];
-
-registerSettingsProvider(() => {
-	const seen = new Set<string>();
-	const rows = [
-		...BUILTIN.map((b) => ({ ...b, group: "General" })),
-		...appActions()
-			.filter((a) => a.shortcut)
-			.map((a) => ({ keys: a.shortcut!, description: typeof a.label === "function" ? a.label() : a.label, group: "Actions" })),
-	];
-	return rows
-		.filter((r) => {
-			const k = `${r.keys}|${r.description}`;
-			if (seen.has(k)) return false;
-			seen.add(k);
-			return true;
-		})
-		.map((r) => ({
-			id: `shortcuts.${r.group}.${r.keys}.${r.description}`,
-			section: "shortcuts",
-			group: r.group,
-			label: r.description,
-			keywords: [r.keys, "keyboard", "shortcut", "key"],
-			control: () => <Kbd>{r.keys}</Kbd>,
-		}));
-});

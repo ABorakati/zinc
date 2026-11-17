@@ -4,10 +4,10 @@ There are several ways to get a reference into the library. The **Add** button i
 
 | Menu entry | Shortcut | What it does |
 |---|---|---|
-| **Add Item by Identifier…** | `Ctrl+Shift+I` | Looks up one or more identifiers. |
+| **Add Item by Identifier…** | none (give it one in [Settings > Shortcuts](settings.md#shortcuts)) | Looks up one or more identifiers. |
 | **Add from URL…** | none | Saves a web page with the Zotero translators. |
 | **New Item…** | `Ctrl+Shift+N` | Creates an empty item of a type you pick. |
-| **New Standalone Note** | none | Creates a note that has no parent item (see [Notes](notes-and-web-tabs.md)). |
+| **New Standalone Note** | `Ctrl+Shift+O` | Creates a note that has no parent item (see [Notes](notes-and-web-tabs.md)). |
 | **Add Attachment: Stored File…** | none | Copies a file into the library. |
 | **Add Attachment: Link to File…** | none | Links to a file where it already is. |
 | **Add Attachment: Link to URI…** | none | Attaches a web address. |
@@ -25,7 +25,7 @@ New items go into the collection you have selected, or into **My Library** when 
 
 ## Add by identifier
 
-Choose **Add > Add Item by Identifier…** (`Ctrl+Shift+I`). If the clipboard holds identifiers the box is pre-filled with them. Enter one or several identifiers separated by new lines or commas, then click **Add**.
+Choose **Add > Add Item by Identifier…**, or paste identifiers into the list (above). If the clipboard holds identifiers the box is pre-filled with them. Enter one or several identifiers separated by new lines or commas, then click **Add**.
 
 | Kind | Examples | Looked up in |
 |---|---|---|
