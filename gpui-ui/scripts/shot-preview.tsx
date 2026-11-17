@@ -154,6 +154,38 @@ console.log(
 		` at most ${maxImgs} <img> mounted at once; render median ${med(previewStats.renderMs)} ms`,
 );
 await shot("long-scrolled");
+// the drag strip over the preview's right edge (cards/ListScrollbar.tsx: GPUIX's painted thumb takes no pointer input): a press at
+// the top of the track jumps back to the first pages, a press near the bottom to the last ones
+{
+	const pressAt = async (f: number) => {
+		const x = strip.x + strip.width - 5;
+		const y = strip.y + 2 + (strip.height - 4) * f;
+		t.renderer.nativeSimulateMouseMove(x, y);
+		await settle(40);
+		t.renderer.nativeSimulateMouseDown(x, y);
+		await settle(80);
+		t.renderer.nativeSimulateMouseUp(x, y);
+		await settle(600);
+	};
+	/** The page numbers under the mounted thumbnails. */
+	const pages = () => {
+		const shown = t.renderer
+			.findByType("text")
+			.filter((e) => {
+				const b = t.renderer.getElementBounds(e.id);
+				return !!b && b.x >= strip.x && b.x < strip.x + strip.width && b.y >= strip.y && b.y < strip.y + strip.height;
+			})
+			.map((e) => Number(/^\d+$/.exec(e.text ?? "")?.[0] ?? NaN))
+			.filter((n) => n > 0);
+		return shown.length ? `${Math.min(...shown)}–${Math.max(...shown)}` : "none";
+	};
+	await pressAt(0.01);
+	const atTop = pages();
+	await pressAt(0.97);
+	const atEnd = pages();
+	console.log(`scrollbar drag strip: press at the top -> pages ${atTop}; press at 97% -> pages ${atEnd}`);
+	await shot("long-dragstrip");
+}
 console.log(
 	`memory: thumbnail cache ${mb(thumbCache.bytes)} in ${thumbCache.size} thumbnails (cap ${mb(PREVIEW_CACHE_BYTES)}),` +
 		` RSS ${mb(rss0)} -> ${mb(process.memoryUsage().rss)}`,

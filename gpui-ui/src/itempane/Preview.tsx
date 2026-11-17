@@ -8,6 +8,8 @@
 // two spacers of the right height (every page's height is known from the document's page sizes).
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Switch, untrack, type Accessor, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/native";
+import { useGpuix } from "@gpuix/solid";
+import { ListScrollbar } from "../cards/ListScrollbar";
 import { withAlpha } from "../theme";
 import { hiddenUntil, type ImgNode, whenMounted } from "../reader/core/pixels";
 import { windowDpr } from "../reader/env";
@@ -63,6 +65,8 @@ export function PdfPreview(p: PdfPreviewProps): JSX.Element {
 	const [sizes, setSizes] = createSignal<[number, number][] | undefined>(knownSizes(attKey));
 	const [avail, setAvail] = createSignal(360);
 	const [top, setTop] = createSignal(0);
+	const gpuix = useGpuix();
+	let stripEl: { id: number } | undefined;
 
 	let alive = true;
 	let ac = new AbortController();
@@ -156,42 +160,54 @@ export function PdfPreview(p: PdfPreviewProps): JSX.Element {
 					<text style={{ ...tx("text-xs text-muted-foreground") }}>{`No preview: ${(state() as { msg: string }).msg}`}</text>
 				</Match>
 				<Match when={sizes()}>
-					<div
-						testId="ip-preview-strip"
-						onScrollChange={(e: EventPayload) => setTop(Math.max(0, -((e as { scrollY?: number }).scrollY ?? 0)))}
-						style={{
-							width: "100%",
-							height: stripH(),
-							overflowY: "scroll",
-							// keeps the wheel here: without it GPUIX lets the wheel through to the item pane's own scroller
-							pointerEvents: "auto",
-							borderRadius: 8,
-							backgroundColor: tok("muted"),
-							// TODO(scrollbar): GPUIX's painted thumb takes no pointer input; give the strip the drag strip the item list
-							// gets (gpui-ui/src/cards/ListScrollbar.tsx, not on this branch yet). Until then: wheel / trackpad only.
-							scrollbarColor: withAlpha(tok("foreground"), 0.25),
-							scrollbarWidth: 6,
-						}}
-					>
-						<div style={{ display: "flex", flexDirection: "column", width: "100%", flexShrink: 0, paddingTop: ROW_GAP }}>
-							<div style={{ width: "100%", height: offsets()[lo()] ?? 0, flexShrink: 0 }} />
-							<For each={idx()}>
-								{(i) => (
-									<PageThumb
-										attKey={attKey}
-										i={i}
-										w={thumbW()}
-										h={pageH(i)}
-										dpr={dpr}
-										session={session}
-										prio={() => PRIO + Math.abs(i - untrack(center))}
-										onOpen={open}
-										onShown={onShown}
-									/>
-								)}
-							</For>
-							<div style={{ width: "100%", height: Math.max(0, total() - (offsets()[hi()] ?? 0)), flexShrink: 0 }} />
+					{/* the strip plus the drag strip over its right edge (GPUIX's painted thumb takes no pointer input): ListScrollbar
+					    counts pixels here, where the item list counts rows */}
+					<div style={{ display: "flex", flexDirection: "column", width: "100%", height: stripH() }}>
+						<div
+							ref={(el: { id: number }) => {
+								stripEl = el;
+							}}
+							testId="ip-preview-strip"
+							onScrollChange={(e: EventPayload) => setTop(Math.max(0, -((e as { scrollY?: number }).scrollY ?? 0)))}
+							style={{
+								width: "100%",
+								height: stripH(),
+								overflowY: "scroll",
+								// keeps the wheel here: without it GPUIX lets the wheel through to the item pane's own scroller
+								pointerEvents: "auto",
+								borderRadius: 8,
+								backgroundColor: tok("muted"),
+								scrollbarColor: withAlpha(tok("foreground"), 0.25),
+								scrollbarWidth: 6,
+							}}
+						>
+							<div style={{ display: "flex", flexDirection: "column", width: "100%", flexShrink: 0, paddingTop: ROW_GAP }}>
+								<div style={{ width: "100%", height: offsets()[lo()] ?? 0, flexShrink: 0 }} />
+								<For each={idx()}>
+									{(i) => (
+										<PageThumb
+											attKey={attKey}
+											i={i}
+											w={thumbW()}
+											h={pageH(i)}
+											dpr={dpr}
+											session={session}
+											prio={() => PRIO + Math.abs(i - untrack(center))}
+											onOpen={open}
+											onShown={onShown}
+										/>
+									)}
+								</For>
+								<div style={{ width: "100%", height: Math.max(0, total() - (offsets()[hi()] ?? 0)), flexShrink: 0 }} />
+							</div>
 						</div>
+						<ListScrollbar
+							count={() => Math.round(total() + ROW_GAP)}
+							visible={() => [top(), top() + stripH()]}
+							scrollTo={(px) => {
+								if (stripEl) gpuix?.renderer.scrollTo?.(stripEl.id, 0, -px);
+							}}
+						/>
 					</div>
 				</Match>
 				<Match when={true}>
