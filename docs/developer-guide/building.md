@@ -10,7 +10,7 @@ This page covers building and running Zinc from a checkout, and producing the Wi
 - Windows only: the .NET SDK (`dotnet`) with .NET Framework 4.8 targeting, for the Word add-in. The project pulls `Microsoft.NETFramework.ReferenceAssemblies` from NuGet.
 - Windows only: PowerShell 7 (`pwsh`): `word/build.ps1` and `package.ts --zip` are run through it.
 - Windows only, for the installer: Inno Setup 7.
-- Windows only, for `--aot` builds: a Bun canary build (see below).
+- For `--aot` builds: a Bun canary build, which the build downloads itself (see below).
 - Linux and macOS: the system libraries and tools in [Linux and macOS](#linux-and-macos).
 
 ## One-time setup
@@ -123,20 +123,30 @@ Without the custom addon, `cacheRegion` is ignored and the app works with whole-
 | `plain` | `zotero-next-gpui-plain.exe` | No bytecode, no minify |
 | `bytecode` | `zotero-next-gpui-bytecode.exe` | Copied to `out/zotero-next-gpui.exe` as the default |
 | `bytecode-min` | `zotero-next-gpui-bytecode-min.exe` | Bytecode plus minify |
-| `aot` | `zotero-next-gpui-aot.exe` | Only with `--aot`; needs the canary; Windows only |
+| `aot` | `zotero-next-gpui-aot.exe` | Only with `--aot`; needs the canary (downloaded by the build) |
 
-Options: `--variant <list>`, `--icons all` (embed every lucide icon instead of the ones `src/` mentions), `--hide-console` (Windows only), `--entry`, `--out`. The `aot` variant, the exe icon fix and `--hide-console` are Windows only. The version stamp and the update public key are baked in (see [Releasing](releasing.md)).
+Options: `--variant <list>`, `--icons all` (embed every lucide icon instead of the ones `src/` mentions), `--hide-console` (Windows only), `--entry`, `--out`. The exe icon fix and `--hide-console` are Windows only. The version stamp and the update public key are baked in (see [Releasing](releasing.md)).
 
 ### The AOT canary
 
-Windows only. Stable Bun 1.4.4 has no ahead-of-time compiler. The `aot` variant uses the `compile.aot` option, which exists only in a Bun canary build. `build.ts` runs the other variants in the current Bun and then re-runs itself as `<canary>/bun.exe scripts/build.ts --aot-only` to build the AOT variant. Point it at the canary with `ZN_BUN_CANARY=<path to the canary bun.exe>`; the global Bun is never touched. How to obtain the canary is not documented in the repository.
+Stable Bun 1.4.4 has no ahead-of-time compiler. The `aot` variant uses the `compile.aot` option, which exists only in Bun canary builds. `build.ts` runs the other variants in the current Bun and then re-runs itself as `<canary>/bun scripts/build.ts --aot-only` to build the AOT variant. The global Bun is never touched. `gpui-ui/scripts/_bun-canary.ts` finds the canary, first match wins:
+
+1. `ZN_BUN_CANARY`, the path of a canary `bun` (or `bun.exe`) you already have.
+2. On Windows, the canary the Windows release has been built with, `1.4.5-canary.1+5f3f8fe48`, if it is at its usual path on the build machine.
+3. The pinned daily canary from npm, `@oven/bun-<os>-<arch>@1.4.4-canary.20261116.1`. It reports itself as `1.4.5-canary.1+237bba51e`: the Windows canary's commit plus one AOT fix (oven-sh/bun#49081). npm keeps every daily canary, unlike GitHub's `canary` tag, which moves every day. The script downloads it once into `gpui-ui/out/tools/bun-<version>-<os>-<arch>/` and checks it against a SHA-512 in the script. `ZN_BUN_CANARY_DIR` puts that folder elsewhere. Packages are pinned for Linux x64 and arm64, macOS arm64 and x64, and Windows x64.
+
+`bun gpui-ui/scripts/_bun-canary.ts` prints the path it would use, downloading first if needed. To move to a newer canary, change `CANARY_VERSION` and the five SHA-512 values (npm's `dist.integrity` for each package) together.
+
+The compiled program is embedded under `B:/~BUN/root` on Windows and `/$bunfs/root` on Linux and macOS. `build.ts` picks the right one for the OS it runs on, for the worker paths and the `import.meta` rewrites below.
+
+**Linux: memory-deny-write-execute.** On Linux, an executable built with `compile.aot` turns on `prctl(PR_SET_MDWE)` when it starts. It does not run without it, and there is no option to turn it off. After that, no code in the process can make memory executable. Mesa's software Vulkan driver (lavapipe) needs exactly that: it compiles shaders to CPU code while the app runs. So the Linux AOT build crashes at its first frame wherever Vulkan is software-rendered: virtual machines, WSL, machines without a GPU driver, and CI runners. A hardware Vulkan driver compiles shaders for the GPU instead, so the AOT build should run there, but this has not been tested. The Linux AOT build was tested in WSL with the setting held off by a debugger. With that, start-up, PDF extraction, the document-structure worker and the Zotero translators all worked. For this reason the AppImage is still built from bytecode by default (see [Releasing](releasing.md#linux-and-macos-packages)). macOS has no such setting.
 
 In an AOT executable the workers (PDF extraction, document structure, Zotero translators) and the vendored code they load are compiled in. `build.ts` applies a list of source patches for this in the AOT variant only and fails if one no longer matches, so a change to those worker entry points can break the AOT build while leaving the others working. `gpui-ui/scripts/aot-bench.ts` is not part of the build: it benchmarks start-up and memory of running from sources against the compiled variants (`bun gpui-ui/scripts/aot-bench.ts --variants bytecode,aot`).
 
 ## Packaging
 
 ```
-bun gpui-ui/scripts/package.ts --aot     # Windows only: gpui-ui/out/package-aot/zotero-next-gpui/
+bun gpui-ui/scripts/package.ts --aot     # gpui-ui/out/package-aot/zotero-next-gpui/
 bun gpui-ui/scripts/package.ts           # bytecode build into gpui-ui/out/package/zotero-next-gpui/
 ```
 
@@ -150,7 +160,10 @@ Per OS, the files differ:
 | PDF library | `zn_pdf.dll` | `libzn_pdf.so` | `libzn_pdf.dylib` |
 | PDFium | `pdfium.dll` | `libpdfium.so` | `libpdfium.dylib` |
 | Icon | `icon.ico` | `icon.png` | `icon.png` |
-| `--aot` and signing | yes | no | no |
+| `--aot` | yes | yes (see [the Linux note](#the-aot-canary)) | yes |
+| Signing | yes | no | no |
+
+`bun gpui-ui/scripts/start-check.ts <package folder>` starts a packaged app on a throwaway library and exits 0 once the first items are loaded, or 1 if the app exits or 60 seconds pass first (`--seconds` changes that). It needs a display, as the app does.
 
 The folder is self-contained: the exe finds its files next to itself (`gpui-ui/src/packaged.ts`). Inside a macOS app bundle the code sits in `Contents/MacOS` and the data in `Contents/Resources`; `packageDataDir()` in `packaged.ts` finds it there.
 
@@ -240,7 +253,7 @@ bun gpui-ui/scripts/appimage.ts          # Linux x64: gpui-ui/out/appimage/Zinc-
 bun gpui-ui/scripts/dmg.ts               # macOS: gpui-ui/out/dmg/Zinc-<version>-<arch>.dmg
 ```
 
-`appimage.ts` and `dmg.ts` run `package.ts` first. Pass `--no-package` to reuse the existing folder, `--package <dir>` to wrap another folder, and `--out <dir>` to write elsewhere. The web parts (document worker, reader host, note host) must be built before either script, as for any package.
+`appimage.ts` and `dmg.ts` run `package.ts` first. With `--aot` they wrap the AOT build instead (`package.ts --aot`, `out/package-aot/zotero-next-gpui`); the file names and layout stay the same. Pass `--no-package` to reuse the existing folder, `--package <dir>` to wrap another folder, and `--out <dir>` to write elsewhere. The web parts (document worker, reader host, note host) must be built before either script, as for any package.
 
 **AppImage** (`appimage.ts`, Linux x64 only):
 

@@ -12,6 +12,14 @@ name: Desktop packages
 # The dmg job also makes Zinc-<version>-arm64.app.zip, the archive the macOS updater downloads; each package gets a .version file with
 # its exact build stamp. Signing the feed (latest-linux-x64.json, latest-darwin-arm64.json) is NOT done here: the private key stays on
 # the release machine, where gpui-ui/scripts/release.ts signs these files (gpui-ui/UPDATES.md).
+# AOT: either package can wrap the ahead-of-time compiled exe, like the Windows installer. The build runs under stable Bun and fetches the
+# pinned Bun canary it needs itself (gpui-ui/scripts/_bun-canary.ts, from npm, sha512-checked). Defaults (a release has no inputs):
+#   - macOS: AOT. The AOT app must also start (gpui-ui/scripts/start-check.ts: first items within 60 s). If the AOT build or that check
+#     fails, the job builds the bytecode package instead and says so in a warning and the job summary, so a release is never blocked.
+#   - Linux: bytecode. Bun's AOT runtime turns on memory-deny-write-execute (prctl PR_SET_MDWE) on Linux, and Mesa's software Vulkan
+#     (lavapipe: VMs, WSL, machines without a GPU driver, these runners) compiles shaders to CPU code at run time, so the AOT AppImage
+#     crashes there at its first frame. With a hardware Vulkan driver it should run, but that is untested. linux_build=aot builds it anyway
+#     (no start check: these runners have only lavapipe).
 on:
   release:
     types: [published]
@@ -21,6 +29,16 @@ on:
         description: "Attach the packages to this existing release (e.g. v0.1.10); empty: build only"
         required: false
         default: ""
+      mac_build:
+        description: "macOS: aot (falls back to bytecode if the AOT build or its start check fails) or bytecode"
+        type: choice
+        options: [aot, bytecode]
+        default: aot
+      linux_build:
+        description: "Linux: bytecode, or aot (crashes on software Vulkan; falls back to bytecode only if the AOT build fails)"
+        type: choice
+        options: [bytecode, aot]
+        default: bytecode
 
 concurrency:
   group: desktop-packages-${{ github.event_name }}-${{ github.ref }}
@@ -36,6 +54,9 @@ env:
   TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
   ZN_UPDATE_PUBKEY: ${{ vars.ZN_UPDATE_PUBKEY }}
   ZN_UPDATE_URL: ${{ vars.ZN_UPDATE_URL }}
+  # a release has no inputs: the defaults above
+  ZN_MAC_BUILD: ${{ inputs.mac_build || 'aot' }}
+  ZN_LINUX_BUILD: ${{ inputs.linux_build || 'bytecode' }}
 
 defaults:
   run:
@@ -110,11 +131,22 @@ jobs:
         run: |
           mkdir -p core/vendor/fulltext-wasm
           touch core/vendor/fulltext-wasm/fulltext.wasm
+      - name: Cache the Bun canary (AOT)
+        uses: actions/cache@v4
+        with:
+          path: gpui-ui/out/tools/bun-*
+          key: bun-canary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gpui-ui/scripts/_bun-canary.ts') }}
       - name: AppImage
         working-directory: gpui-ui
         run: |
           export ZN_RELEASE="${TAG#v}"; [ -n "$ZN_RELEASE" ] || export ZN_RELEASE=0.1.0 # v0.1.10 -> 0.1.10
-          bun scripts/appimage.ts
+          if [ "$ZN_LINUX_BUILD" = aot ] && bun scripts/appimage.ts --aot; then
+            echo "AppImage: **AOT** build (not start-checked)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            [ "$ZN_LINUX_BUILD" = aot ] && echo "::warning title=AOT build failed::the AppImage is the bytecode build instead (see the log above)"
+            bun scripts/appimage.ts
+            echo "AppImage: bytecode build" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: zinc-appimage
@@ -152,11 +184,24 @@ jobs:
         run: |
           mkdir -p core/vendor/fulltext-wasm
           touch core/vendor/fulltext-wasm/fulltext.wasm
+      - name: Cache the Bun canary (AOT)
+        uses: actions/cache@v4
+        with:
+          path: gpui-ui/out/tools/bun-*
+          key: bun-canary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gpui-ui/scripts/_bun-canary.ts') }}
       - name: Disk image
         working-directory: gpui-ui
         run: |
           export ZN_RELEASE="${TAG#v}"; [ -n "$ZN_RELEASE" ] || export ZN_RELEASE=0.1.0 # v0.1.10 -> 0.1.10
-          bun scripts/dmg.ts
+          # the AOT package is built and start-checked first; only then wrapped (dmg.ts --no-package --package <it>)
+          if [ "$ZN_MAC_BUILD" = aot ] && bun scripts/package.ts --aot && bun scripts/start-check.ts out/package-aot/zotero-next-gpui \
+            && bun scripts/dmg.ts --aot --no-package; then
+            echo "Disk image: **AOT** build (start-checked)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            [ "$ZN_MAC_BUILD" = aot ] && echo "::warning title=AOT build failed::the disk image is the bytecode build instead (see the log above)"
+            bun scripts/dmg.ts
+            echo "Disk image: bytecode build" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: zinc-dmg

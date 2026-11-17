@@ -42,12 +42,11 @@ const run = (cmd: string[], cwd = root) => {
 };
 
 // Per OS: the exe has no extension and the native libraries are lib*.so / lib*.dylib outside Windows (Linux and macOS packages are
-// what scripts/appimage.ts and scripts/dmg.ts wrap). --aot, signing and the icon.ico window icon are Windows only.
+// what scripts/appimage.ts and scripts/dmg.ts wrap, with --aot or without). Signing and the icon.ico window icon are Windows only.
 const isWin = process.platform === "win32";
 const EXE = isWin ? ".exe" : "";
 const PDF_LIB = isWin ? "zn_pdf.dll" : process.platform === "darwin" ? "libzn_pdf.dylib" : "libzn_pdf.so";
 const PDFIUM_LIB = isWin ? "pdfium.dll" : process.platform === "darwin" ? "libpdfium.dylib" : "libpdfium.so";
-if (aot && !isWin) throw new Error("--aot is Windows only");
 
 // 1. native PDF renderer (uses the user's normal cargo setup: shared target dir + kache)
 run(["cargo", "build", "--release"], join(root, "native", "pdf"));
@@ -69,10 +68,10 @@ if (!pdfium) throw new Error(`${PDFIUM_LIB} missing in ${pdfiumDir}`);
 // 2. the exe
 run(
 	aot
-		? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", "--hide-console"]
+		? ["bun", "scripts/build.ts", "--aot", "--variant", "aot", ...(isWin ? ["--hide-console"] : [])]
 		: ["bun", "scripts/build.ts", "--variant", "bytecode", ...(isWin ? ["--hide-console"] : [])],
 );
-const exe = join(root, "out", aot ? "zotero-next-gpui-aot.exe" : `zotero-next-gpui-bytecode${EXE}`);
+const exe = join(root, "out", `zotero-next-gpui-${aot ? "aot" : "bytecode"}${EXE}`);
 
 // 2b. the Zotero translation worker, pre-bundled (jsdom and friends inside; see scripts/translate-worker.ts)
 const translateWorker = join(root, "out", "translate-worker.js");

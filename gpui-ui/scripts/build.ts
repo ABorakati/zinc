@@ -1,5 +1,5 @@
 // Ahead-of-time compile the GPUI app to a single executable with Bun, for the OS and CPU it runs on: zotero-next-gpui-<variant>.exe on
-// Windows, zotero-next-gpui-<variant> (no extension) on Linux and macOS. The aot variant, the exe icon and --hide-console are Windows only.
+// Windows, zotero-next-gpui-<variant> (no extension) on Linux and macOS. The exe icon and --hide-console are Windows only.
 //
 //   bun scripts/build.ts                         # all variants -> out/zotero-next-gpui-<variant>.exe, best copied to out/zotero-next-gpui.exe
 //   bun scripts/build.ts --variant bytecode      # one (or comma list): plain | bytecode | bytecode-min [| bytecode-min-profile]
@@ -36,6 +36,7 @@ import typescript from "@babel/preset-typescript";
 import solidPreset from "babel-preset-solid";
 import solidBunPlugin from "@gpuix/solid/bun-plugin";
 import { fixExeIcon } from "./fix-exe-icon";
+import { canaryBun } from "./_bun-canary";
 import { BUILD_VERSION } from "./_version";
 import { DEFAULT_UPDATE_URL, updatePubkey } from "./_update-key";
 
@@ -77,9 +78,10 @@ if (bytecodeOrder) VARIANTS.push({ id: "bytecode-min-profile", bytecode: true, m
 const best = arg("best", "bytecode")!; // which variant is copied to out/zotero-next-gpui.exe
 
 // --aot: an extra `aot` variant (compile.aot: true), which only Bun's canary can build (stable 1.4.4 has no AOT compiler). Run under
-// stable Bun, the other variants build in-process and the aot variant is then built by a child run under the canary (env ZN_BUN_CANARY,
-// default C:/Users/abora/zn-ws/_tmp/bun-aot/canary-2026-11-16/bun-windows-x64/bun.exe, 1.4.5-canary.1; the global bun is never touched). The child is this same
-// script with --aot-only, so it can also be started by hand with the canary: `<canary>/bun.exe scripts/build.ts --aot-only`.
+// stable Bun, the other variants build in-process and the aot variant is then built by a child run under the canary (scripts/_bun-canary.ts:
+// env ZN_BUN_CANARY, else on Windows the local 1.4.5-canary.1+5f3f8fe48, else the pinned npm canary, downloaded once into out/tools; the
+// global bun is never touched). The child is this same script with --aot-only, so it can also be started by hand with the canary:
+// `<canary>/bun scripts/build.ts --aot-only`. Windows, Linux and macOS all build it.
 // --explain[=report] adds compile.aotExplain (default report "text": the slow-path list). --aot-trim adds compile.trim.
 const aotOnly = process.argv.includes("--aot-only");
 const wantAot = aotOnly || process.argv.includes("--aot");
@@ -89,7 +91,6 @@ const known = wantAot ? [...VARIANTS, AOT] : VARIANTS;
 let todo = wanted && wanted !== "true" ? known.filter((v) => wanted.split(",").includes(v.id)) : [...VARIANTS, ...(wantAot ? [AOT] : [])];
 if (aotOnly) todo = todo.filter((v) => v.aot);
 if (!todo.length) throw new Error(`unknown --variant ${wanted}; have ${known.map((v) => v.id).join(", ")}`);
-const canaryBun = process.env.ZN_BUN_CANARY ?? "C:/Users/abora/zn-ws/_tmp/bun-aot/canary-2026-11-16/bun-windows-x64/bun.exe";
 const runAotInChild = !aotOnly && todo.some((v) => v.aot);
 if (runAotInChild) todo = todo.filter((v) => !v.aot);
 
@@ -150,16 +151,20 @@ const nativePlugin: Bun.BunPlugin = {
 // Set per variant in the build loop. In an AOT exe every module's import.meta.* is its own (compiled-in) location, NOT the entry's, and
 // the embedded tree is laid out differently: its root is the common ancestor of the entry points (the repo, since the aot variant's
 // workers include core/ ones; without them it was gpui-ui), and compile.assets keep their path relative to it (gpui-ui/out/stage/gpui-ui/...).
-// So the rewrite below maps a repo path to the staged assets' location, not to the entry's import.meta.dir (aot variant only;
-// B:/~BUN/root is where a Windows exe embeds its tree).
+// So the rewrite below maps a repo path to the staged assets' location, not to the entry's import.meta.dir (aot variant only).
+// EMBED is where the exe embeds its tree: B:/~BUN/root on Windows, /$bunfs/root on Linux and macOS (file:///B:/~BUN/root/x and
+// file:///$bunfs/root/x as URLs).
 let currentAot = false;
-const AOT_ROOT = `B:/~BUN/root/${relative(repo, join(outDir, "stage")).split(sep).join("/")}`;
+const isWin = process.platform === "win32";
+const EMBED = isWin ? "B:/~BUN/root" : "/$bunfs/root";
+const fileUrl = (p: string) => (isWin ? `file:///${p}` : `file://${p}`);
+const AOT_ROOT = `${EMBED}/${relative(repo, join(outDir, "stage")).split(sep).join("/")}`;
 
 // ---- AOT: workers and code that used to load from disk ----------------------------------------------------------------------------
 // An AOT exe refuses import()/require()/new Worker() of code that is not in it. The three worker families (PDF text extraction, the
 // document-structure worker, the Zotero translators) and the code they load from disk are therefore compiled in: each worker is an extra
 // entry point, and the sources below are patched (aot variant only; sources and the bytecode build are untouched) so that
-//   * `new Worker(...)` gets the worker's embedded path (an entry point sits at B:/~BUN/root/<path relative to the repo>),
+//   * `new Worker(...)` gets the worker's embedded path (an entry point sits at <EMBED>/<path relative to the repo>),
 //   * the runtime import()/createRequire() of vendored code gets a literal specifier the bundler can follow.
 // Data (cmaps, fonts, wasm, models, translators text, schema.json) is read with fs from the package folder as before.
 const AOT_WORKERS = {
@@ -167,7 +172,7 @@ const AOT_WORKERS = {
 	doc: "src/reader/structure/docworker-entry.ts",
 	translate: "../core/src/translate/worker.ts",
 } as const;
-const embeddedPath = (rel: string) => `B:/~BUN/root/${relative(repo, resolve(root, rel)).split(sep).join("/")}`;
+const embeddedPath = (rel: string) => `${EMBED}/${relative(repo, resolve(root, rel)).split(sep).join("/")}`;
 const abs = (rel: string) => join(root, rel);
 
 // Zotero translate framework + utilities: modules the translation runtime require()s by computed path (runtime/zotero.ts rt()/ut()).
@@ -249,8 +254,11 @@ const AOT_PATCHES: [string, string | RegExp, string][] = [
 	// slower, the structure worker's ONNX model ~4x). Only a `.wasm` the build has seen is compiled to machine code, and `with { type: "file" }`
 	// hides it from the compiler (file loader): the same import without the attribute gives the same path string, plus a compiled copy that
 	// the runtime finds by content, whether the module is later built from Bun.file(path), readFileSync(path) or bytes posted from another
-	// thread. The source keeps the attribute (stable Bun, tests and the bytecode build need it).
-	[abs("../core/src/fulltext/wasm.ts"), 'fulltext.wasm" with { type: "file" };', 'fulltext.wasm";'],
+	// thread. The source keeps the attribute (stable Bun, tests and the bytecode build need it). Skipped when fulltext.wasm is the empty
+	// placeholder CI builds use (the file then stays a plain embedded file, as in the bytecode build; Find Full Text is not in those builds).
+	...((statSync(abs("../core/vendor/fulltext-wasm/fulltext.wasm"), { throwIfNoEntry: false })?.size
+		? [[abs("../core/src/fulltext/wasm.ts"), 'fulltext.wasm" with { type: "file" };', 'fulltext.wasm";']]
+		: []) as [string, string, string][]),
 	// The document worker's wasm (onnxruntime-web, pdf.js's openjpeg and jbig2) reaches it as bytes read from vendor/document-worker/build by
 	// the host (worker.ts FetchWasm/FetchData). Importing the same files here makes the build compile them; those bytes then match at run time.
 	// The files stay on disk (the host still reads them), so the package folder keeps its copy.
@@ -301,7 +309,8 @@ const metaPlugin: Bun.BunPlugin = {
 				for (const [file, from, to] of AOT_PATCHES) {
 					if (file !== path) continue;
 					const before = src;
-					src = src.replace(from, to);
+					// a function replacement keeps "$" literal ("/$bunfs/root/..."); only the require($1) patch uses a group reference
+					src = /\$\d/.test(to) ? src.replace(from, to) : src.replace(from, () => to);
 					if (src === before)
 						throw new Error(`[zn-aot-patch] ${relative(repo, path)}: pattern not found: ${String(from).slice(0, 70)}`);
 					shimmed++;
@@ -315,13 +324,13 @@ const metaPlugin: Bun.BunPlugin = {
 				);
 				if (shimmed) console.log(`[zn-core-shim] src/core.ts: ${shimmed} variable import(dir + ...) -> literal`);
 			}
-			// src/prefetch.ts: the worker is started from a hard-coded embedded path ("B:/~BUN/root/prefetch-worker.js", where the bytecode
+			// src/prefetch.ts: the worker is started from a hard-coded embedded path ("<EMBED>/prefetch-worker.js", where the bytecode
 			// build puts its second entry point). In an AOT exe the relative forms (`"./x.ts"`, `new URL("./x.ts", import.meta.url)`) did not resolve at run time; the absolute embedded path does (the file is the second entry point).
 			// Proper fix: do that in src/prefetch.ts for compiled and source runs alike.
 			if (currentAot && path === join(root, "src", "prefetch.ts")) {
 				const before = src;
 				const from = /new Worker\(\s*compiled \? embedded : new URL\("\.\/prefetch-worker\.ts", import\.meta\.url\)\.href\s*\)/;
-				src = src.replace(from, 'new Worker("B:/~BUN/root/gpui-ui/src/prefetch-worker.ts")');
+				src = src.replace(from, () => `new Worker(${JSON.stringify(`${EMBED}/gpui-ui/src/prefetch-worker.ts`)})`);
 				if (src === before) throw new Error("[zn-aot-shim] src/prefetch.ts: pattern not found (the worker start changed)");
 				shimmed++;
 				console.log("[zn-aot-shim] src/prefetch.ts: embedded worker path");
@@ -333,12 +342,12 @@ const metaPlugin: Bun.BunPlugin = {
 			}
 			const rel = relative(repo, path).split(sep).join("/");
 			const relDir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : ".";
-			// `import.meta.url` inside the replacement is the ENTRY's url at run time (file:///B:/~BUN/root/<exe>)
+			// `import.meta.url` inside the replacement is the ENTRY's url at run time (file:///B:/~BUN/root/<exe> on Windows)
 			const out = src.replace(META, (_m, k: string) => {
 				if (currentAot) {
 					switch (k) {
 						case "url":
-							return `new URL(${JSON.stringify(rel)}, "file:///${AOT_ROOT}/").href`;
+							return `new URL(${JSON.stringify(rel)}, ${JSON.stringify(fileUrl(`${AOT_ROOT}/`))}).href`;
 						case "dir":
 						case "dirname":
 							return JSON.stringify(`${AOT_ROOT}/${relDir}`);
@@ -383,10 +392,8 @@ mkdirSync(outDir, { recursive: true });
 const staged = stageAssets();
 const sizeMB = (p: string) => (statSync(p).size / 1048576).toFixed(1);
 
-const isWin = process.platform === "win32";
 const EXE = isWin ? ".exe" : "";
 const compileTarget = `bun-${isWin ? "windows" : process.platform}-${process.arch}`; // bun-windows-x64, bun-linux-x64, bun-darwin-arm64
-if (!isWin && todo.some((v) => v.aot)) throw new Error("the aot variant is Windows only (the canary and the patches above assume B:/~BUN)");
 
 for (const v of todo) {
 	const outfile = join(outDir, `zotero-next-gpui-${v.id}${EXE}`);
@@ -461,8 +468,9 @@ if (runAotInChild) {
 	}
 	if (hideConsole) fwd.push("--hide-console");
 	for (const a of process.argv.slice(2)) if (a.startsWith("--explain") || a === "--aot-trim") fwd.push(a);
-	console.log(`[aot] building under the canary: ${canaryBun}`);
-	const r = Bun.spawnSync([canaryBun, join(root, "scripts", "build.ts"), "--aot-only", ...fwd], {
+	const bun = await canaryBun();
+	console.log(`[aot] building under the canary: ${bun}`);
+	const r = Bun.spawnSync([bun, join(root, "scripts", "build.ts"), "--aot-only", ...fwd], {
 		cwd: root,
 		stdout: "inherit",
 		stderr: "inherit",
