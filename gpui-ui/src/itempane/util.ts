@@ -110,6 +110,19 @@ export function childKind(c: ChildSummary): ChildKind {
 	return isReaderType(c.contentType) ? "reader" : "file";
 }
 
+/** The attachment the item opens with (Zotero's "best attachment"): its first PDF with a file, else EPUB, else snapshot; undefined when none has a file. */
+export function primaryAttachment(children: readonly ChildSummary[]): ChildSummary | undefined {
+	const kids = children.filter((c) => childKind(c) === "reader");
+	const rank = (c: ChildSummary) => (/pdf/i.test(c.contentType ?? "") ? 0 : /epub/i.test(c.contentType ?? "") ? 1 : 2);
+	return [...kids].sort((a, b) => rank(a) - rank(b))[0];
+}
+
+/** primaryAttachment(), only when it is a PDF (the item pane's page preview). */
+export function primaryPdf(children: readonly ChildSummary[]): ChildSummary | undefined {
+	const a = primaryAttachment(children);
+	return a && /pdf/i.test(a.contentType ?? "") ? a : undefined;
+}
+
 /** DOI -> https://doi.org/..., else the DOI's own URL if it is one. */
 export const doiUrl = (doi: string | undefined) => {
 	const d = (doi ?? "")

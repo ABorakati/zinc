@@ -1,6 +1,6 @@
 // Attachments: file / link children with open in reader tab, show file, open in default app, rename, move to trash.
 // Port of ui/src/itempane/Attachments.tsx.
-import { createSignal, For, Show, type JSX } from "solid-js";
+import { createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { DropdownMenu, toast, type MenuItem } from "../ui";
@@ -8,6 +8,8 @@ import { findFullText, openLink } from "./actions";
 import { Empty, Field, IconBtn, locked, Section, TextBtn, t, tok, tx } from "./kit";
 import { fail, usePane } from "./model";
 import { ipApi, type ChildSummary } from "./net";
+import { PdfPreview } from "./Preview";
+import { primaryPdf } from "./util";
 import { openAttachmentExternally } from "../ui/openExternal";
 
 function iconFor(c: ChildSummary): { name: string; color: string } {
@@ -165,6 +167,8 @@ function AttachmentRow(p: { c: ChildSummary }): JSX.Element {
 export function AttachmentsSection(): JSX.Element {
 	const pane = usePane();
 	const atts = () => pane.detail()!.children.filter((c) => c.itemType === "attachment");
+	/** the primary attachment when it is a PDF with a file: its pages show above the list (EPUBs and snapshots get no preview) */
+	const pdfKey = createMemo(() => primaryPdf(pane.detail()?.children ?? [])?.key);
 	return (
 		<Section
 			id="attachments"
@@ -182,6 +186,9 @@ export function AttachmentsSection(): JSX.Element {
 				</Show>
 			}
 		>
+			<Show when={pdfKey()} keyed>
+				{(key) => <PdfPreview attKey={key} itemKey={pane.detail()?.data.key ?? ""} title={pane.detail()?.data.title || "Reader"} />}
+			</Show>
 			<Show when={atts().length} fallback={<Empty text="No attachments" />}>
 				<For each={atts()}>{(c) => <AttachmentRow c={c} />}</For>
 			</Show>
