@@ -268,10 +268,12 @@ async function del() {
 // ---------------------------------------------------------------- start
 
 async function main() {
-	const wantMock = new URLSearchParams(location.search).has("mock");
+	// a page that set globalThis.__znHost first (the website's demo, screenshot pages) drives the popup itself, as for main.ts
+	const injected = (globalThis as { __znHost?: Host }).__znHost;
+	const wantMock = !injected && new URLSearchParams(location.search).has("mock");
 	let mock = wantMock;
 	try {
-		host = wantMock ? createMockHost() : createWebViewHost();
+		host = injected ?? (wantMock ? createMockHost() : createWebViewHost());
 	} catch {
 		host = createMockHost();
 		mock = true;
