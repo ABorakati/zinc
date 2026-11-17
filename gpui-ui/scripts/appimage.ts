@@ -1,4 +1,7 @@
-// Wrap the packaged Linux app in an AppImage: `bun scripts/appimage.ts [--no-package] [--package <dir>] [--out <dir>]` (Linux x64 only).
+// Wrap the packaged Linux app in an AppImage: `bun scripts/appimage.ts [--aot] [--no-package] [--package <dir>] [--out <dir>]` (Linux x64 only).
+//
+// --aot wraps the ahead-of-time compiled package (scripts/package.ts --aot, out/package-aot/zotero-next-gpui; the Bun canary is fetched by
+// scripts/_bun-canary.ts) instead of the bytecode one. The AppImage is named and laid out the same either way.
 //
 //   out/appimage/Zinc-<version>-x86_64.AppImage     one file: chmod +x, then run it (also .sha256, and .version: the build stamp for release.ts)
 //
@@ -26,8 +29,9 @@ const arg = (name: string): string | undefined => {
 	const i = process.argv.indexOf(`--${name}`);
 	return i >= 0 ? process.argv[i + 1] : undefined;
 };
+const aot = process.argv.includes("--aot");
 const outDir = resolve(arg("out") ?? join(root, "out", "appimage"));
-const pkg = resolve(arg("package") ?? join(root, "out", "package", "zotero-next-gpui"));
+const pkg = resolve(arg("package") ?? join(root, "out", aot ? "package-aot" : "package", "zotero-next-gpui"));
 
 const run = (cmd: string[], cwd = root, env: Record<string, string> = {}) => {
 	const r = Bun.spawnSync(cmd, { cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, ...env } });
@@ -35,8 +39,9 @@ const run = (cmd: string[], cwd = root, env: Record<string, string> = {}) => {
 };
 
 // 1. the package
-if (!process.argv.includes("--no-package") && !arg("package")) run(["bun", "scripts/package.ts"]);
-if (!existsSync(join(pkg, "zotero-next-gpui"))) throw new Error(`no packaged Linux app in ${pkg}: run  bun scripts/package.ts  first`);
+if (!process.argv.includes("--no-package") && !arg("package")) run(["bun", "scripts/package.ts", ...(aot ? ["--aot"] : [])]);
+if (!existsSync(join(pkg, "zotero-next-gpui")))
+	throw new Error(`no packaged Linux app in ${pkg}: run  bun scripts/package.ts${aot ? " --aot" : ""}  first`);
 
 // 2. tools (pinned; sha256 from the release asset digests)
 const TOOLS = {

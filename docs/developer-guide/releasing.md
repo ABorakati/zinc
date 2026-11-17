@@ -173,7 +173,7 @@ What the app does (`core/src/update/`, `gpui-ui/src/update/`):
 This is the Windows installer. The Linux and macOS packages follow [the section below](#linux-and-macos-packages).
 
 1. Check `main` is green in CI and run the checks in [Testing](testing.md).
-2. Decide the release number (`ZN_RELEASE`) and build with `bun gpui-ui/scripts/package.ts --aot` (the committed `gpui-ui/update-pubkey.txt` and the default feed URL are used unless you override them).
+2. Decide the release number (`ZN_RELEASE`) and build with `bun gpui-ui/scripts/package.ts --aot` (the committed `gpui-ui/update-pubkey.txt` and the default feed URL are used unless you override them). On the release machine this uses the local Windows canary; elsewhere the pinned npm canary is downloaded (see [Building](building.md#the-aot-canary)).
 3. Build the installer with `bun gpui-ui/scripts/installer.ts`. Install it on a clean machine or in a sandbox (`--test`) and check a silent upgrade over the previous version.
 4. Run `release.ts` with `--dry-run`, read the command, then publish.
 5. Check that an installed older build offers the update and installs it.
@@ -187,8 +187,10 @@ The AppImage (`gpui-ui/scripts/appimage.ts`) and the macOS app (`gpui-ui/scripts
 | Job | Runner | What it does |
 | --- | --- | --- |
 | `web-parts` | `ubuntu-24.04` | Builds the parts that are the same on every OS, once: Zotero's document worker, the reader page (`reader-host/dist`, from `zotero/reader` at the commit in `ZOTERO_READER_COMMIT`) and the note editor page (`note-host/dist`). Passes them on as one artifact |
-| `appimage` | `ubuntu-24.04` | Unpacks the parts, installs `core` and `gpui-ui`, fetches the vendored Zotero code, makes the empty fulltext placeholder, runs `bun scripts/appimage.ts` |
-| `dmg` | `macos-15` | The same steps, then `bun scripts/dmg.ts` |
+| `appimage` | `ubuntu-24.04` | Unpacks the parts, installs `core` and `gpui-ui`, fetches the vendored Zotero code, makes the empty fulltext placeholder, runs `bun scripts/appimage.ts` (bytecode by default, `--aot` with `linux_build=aot`) |
+| `dmg` | `macos-15` | The same steps, then the AOT package (`package.ts --aot`), a start check of it (`scripts/start-check.ts`) and `bun scripts/dmg.ts --aot --no-package`. If any of these fails, `bun scripts/dmg.ts` (bytecode) instead |
+
+**Which build each package is.** The Windows installer is always the AOT build. The macOS disk image is AOT by default; the AppImage is bytecode by default, because on Linux Bun's AOT executables turn on memory-deny-write-execute and then crash wherever Vulkan is software-rendered (details in [Building](building.md#the-aot-canary)). A run by hand chooses with `mac_build` and `linux_build` (`aot` or `bytecode`); a published release uses the defaults. Both jobs get the Bun canary themselves (`gpui-ui/scripts/_bun-canary.ts`: the pinned npm canary, SHA-512-checked, cached between runs) and run under the stable Bun of `BUN_VERSION`. A failed AOT build never blocks a release: the job builds the bytecode package instead, with a warning, and the job summary says which build each package is. Check that summary before you announce a release. The fulltext wasm in CI is an empty placeholder, so `build.ts` leaves out the AOT patch that compiles it; Find Full Text is not in those builds anyway.
 
 The version comes from the tag: the workflow sets `ZN_RELEASE` to the tag without its leading `v` (`v0.1.10` gives `0.1.10`), or `0.1.0` when there is no tag. The files are named `Zinc-<version>-x86_64.AppImage` and `Zinc-<version>-arm64.dmg`, each with a `.sha256` file. Both jobs also keep the files as the artifacts `zinc-appimage` and `zinc-dmg`.
 
@@ -196,6 +198,7 @@ To attach the packages to a release that exists already:
 
 ```
 gh workflow run desktop-packages.yml -f release_tag=v0.1.10
+gh workflow run desktop-packages.yml -f mac_build=bytecode -f linux_build=aot   # other builds, artifacts only
 ```
 
 With an empty `release_tag` a manual run only builds and keeps the artifacts. Pinning a new `zotero/reader` commit means changing `ZOTERO_READER_COMMIT` in the workflow; the reader cache key includes it.

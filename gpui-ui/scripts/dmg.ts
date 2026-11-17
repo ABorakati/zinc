@@ -1,5 +1,8 @@
-// Wrap the packaged macOS app in Zinc.app and a disk image: `bun scripts/dmg.ts [--no-package] [--package <dir>] [--out <dir>]` (macOS only:
-// it uses sips, iconutil, codesign and hdiutil, which come with the system).
+// Wrap the packaged macOS app in Zinc.app and a disk image: `bun scripts/dmg.ts [--aot] [--no-package] [--package <dir>] [--out <dir>]`
+// (macOS only: it uses sips, iconutil, codesign and hdiutil, which come with the system).
+//
+// --aot wraps the ahead-of-time compiled package (scripts/package.ts --aot, out/package-aot/zotero-next-gpui; the Bun canary is fetched by
+// scripts/_bun-canary.ts) instead of the bytecode one. The bundle is named and laid out the same either way.
 //
 //   out/dmg/Zinc-<version>-<arm64|x64>.dmg      opens to Zinc.app and a link to Applications
 //   out/dmg/Zinc-<version>-<arm64|x64>.app.zip  Zinc.app for the in-app updater (ditto -c -k --keepParent), with .version and .sha256
@@ -26,8 +29,9 @@ const arg = (name: string): string | undefined => {
 	const i = process.argv.indexOf(`--${name}`);
 	return i >= 0 ? process.argv[i + 1] : undefined;
 };
+const aot = process.argv.includes("--aot");
 const outDir = resolve(arg("out") ?? join(root, "out", "dmg"));
-const pkg = resolve(arg("package") ?? join(root, "out", "package", "zotero-next-gpui"));
+const pkg = resolve(arg("package") ?? join(root, "out", aot ? "package-aot" : "package", "zotero-next-gpui"));
 const version = BUILD_VERSION.split("+")[0]!;
 
 const run = (cmd: string[], cwd = root) => {
@@ -36,8 +40,9 @@ const run = (cmd: string[], cwd = root) => {
 };
 
 // 1. the package
-if (!process.argv.includes("--no-package") && !arg("package")) run(["bun", "scripts/package.ts"]);
-if (!existsSync(join(pkg, "zotero-next-gpui"))) throw new Error(`no packaged macOS app in ${pkg}: run  bun scripts/package.ts  first`);
+if (!process.argv.includes("--no-package") && !arg("package")) run(["bun", "scripts/package.ts", ...(aot ? ["--aot"] : [])]);
+if (!existsSync(join(pkg, "zotero-next-gpui")))
+	throw new Error(`no packaged macOS app in ${pkg}: run  bun scripts/package.ts${aot ? " --aot" : ""}  first`);
 
 // 2. the bundle
 rmSync(outDir, { recursive: true, force: true });
