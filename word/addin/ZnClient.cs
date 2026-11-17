@@ -80,7 +80,7 @@ namespace ZoteroNext.Word
             return Json.Map("ok", true, "started", started);
         }
 
-        // ---- raise the app window (class BasicWindowClass, title "zotero-next", owned by bun/launcher) --------------
+        // ---- raise the app window (title "Zinc"; class Zed::Window for the GPUI app, BasicWindowClass for the old one) ---
         delegate bool EnumProc(IntPtr h, IntPtr l);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int n);
@@ -101,7 +101,9 @@ namespace ZoteroNext.Word
                     var t = new StringBuilder(64); GetWindowText(h, t, 64);
                     var title = t.ToString(); if (title != "Zinc" && title != "zotero-next") return true;
                     var c = new StringBuilder(64); GetClassName(h, c, 64);
-                    if (c.ToString() != "BasicWindowClass") return true;
+                    // Zed::Window: the GPUI app (zotero-next-gpui.exe); BasicWindowClass: the old Electrobun app
+                    var cls = c.ToString();
+                    if (cls != "Zed::Window" && cls != "BasicWindowClass") return true;
                     uint pid; GetWindowThreadProcessId(h, out pid);
                     string name = "";
                     try { name = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant(); } catch { }
