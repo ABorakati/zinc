@@ -44,8 +44,8 @@ namespace ZoteroNext.Word
         }
 
         /// <summary>
-        /// Show an item in zotero-next. Starts the app when it is not running (and waits up to ~40 s for its API),
-        /// then POSTs /api/ui/reveal. Returns {ok, started, error?}.
+        /// Show an item in Zinc: open its PDF / EPUB / snapshot, or select it in the library when it has none. Starts the app when it
+        /// is not running (and waits up to ~40 s for its API), then POSTs /api/ui/reveal {key, open: true}. Returns {ok, started, error?}.
         /// </summary>
         public static Dictionary<string, object> Reveal(string key)
         {
@@ -63,7 +63,8 @@ namespace ZoteroNext.Word
             }
             try
             {
-                var body = new StringContent(Json.Dump(Json.Map("key", key)), Encoding.UTF8, "application/json");
+                // open: also open the item's PDF / EPUB / snapshot in Zinc's reader (the core picks it); an item with no file is selected
+                var body = new StringContent(Json.Dump(Json.Map("key", key, "open", true)), Encoding.UTF8, "application/json");
                 using (var r = Http.PostAsync(Settings.ApiBase() + "/api/ui/reveal", body).GetAwaiter().GetResult())
                 {
                     var text = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();

@@ -11,6 +11,8 @@ import { isWebContent, webBase, webTabOpener } from "./webview/config";
 import { readState } from "./readState";
 
 export const PAGE = 100;
+/** After store.revealItem the lists keep the revealed row in view this long while the new list (count, group headers) arrives. */
+export const REVEAL_SETTLE_MS = 3000;
 /** Page cache size (LRU by distance): when more pages are cached, the ones farthest from the visible range go (a page is ~100 rows = ~300 KB). */
 export const MAX_PAGES = 24;
 /** Pages fetched ahead of the visible range in the scroll direction (and 1 behind), so scrolling meets rows, not skeletons. */
@@ -181,6 +183,13 @@ export interface AppStore extends Store, ListStore {
 	focusIndex: () => number;
 	/** Select exactly this item (key null clears); `index` becomes the anchor and focus row. */
 	selectOnly(key: string | null, index?: number): void;
+	/**
+	 * Show a top-level item from outside the list ("Open in Zinc"): select it where it is in the current view, else in My Library with
+	 * no search or tag filter, and ask the list to scroll to it. Resolves to false when even My Library does not list it.
+	 */
+	revealItem(key: string): Promise<boolean>;
+	/** The row the list should scroll to (set by revealItem; the table and the cards follow it). */
+	scrollRequest: () => { index: number; seq: number } | null;
 	/** Plain click = select only, Ctrl = toggle, Shift = range from the anchor (Ctrl+Shift extends). */
 	selectClick(index: number, mods: Mods): void;
 	/** Arrow-key move of the focus row (Shift extends the range). false when row `next` is not loaded yet. */
@@ -842,6 +851,31 @@ function createStore(): AppStore {
 			setFocusIndex(index);
 		});
 	}
+
+	const [scrollRequest, setScrollRequest] = createSignal<{ index: number; seq: number } | null>(null);
+	let revealSeq = 0;
+	async function revealItem(key: string): Promise<boolean> {
+		const my = ++revealSeq;
+		// where it is in the list on screen (the duplicates view and the full-text results are not plain listings: skip them)
+		const plain = untrack(view).kind !== "duplicates" && !untrack(fulltext);
+		let index = plain ? indexOfKey(key) : -1;
+		if (index < 0 && plain) index = await api.itemIndex(key, untrack(baseQuery)).catch(() => -1);
+		if (index < 0) {
+			// not in this view: My Library, with nothing filtering it out (the list starts over here, synchronously)
+			clearTimeout(timer);
+			batch(() => {
+				setFulltextSig(false);
+				setFilterSig("");
+				setAppliedFilter("");
+				selectLibrary(1);
+			});
+			index = await api.itemIndex(key, untrack(baseQuery)).catch(() => -1);
+		}
+		if (my !== revealSeq) return false; // a newer request took over
+		selectOnly(key, index);
+		if (index >= 0) setScrollRequest({ index, seq: my });
+		return index >= 0;
+	}
 	/** Keys of rows a..b that are cached. */
 	function rangeKeys(a: number, b: number): string[] {
 		const out: string[] = [];
@@ -1040,6 +1074,8 @@ function createStore(): AppStore {
 		anchor,
 		focusIndex,
 		selectOnly,
+		revealItem,
+		scrollRequest,
 		selectClick,
 		focusRow,
 		selectAll,

@@ -76,9 +76,15 @@ export const platform: Platform = {
 		// "Open in Zinc" from the Word sidebar or the browser connector: POST /api/ui/reveal, acted on here (src/shell/revealRequests.ts)
 		void import("./shell/revealRequests").then((m) =>
 			m.startRevealPolling((key, open) => {
+				if (open) {
+					// the item's PDF / EPUB / snapshot (the core picked it): open it in the reader
+					store.selectItem(key);
+					store.openAttachment(open.key, open.title, key);
+					return;
+				}
+				// no file to open: show the item in the library, scrolled to and selected (switching view when it is not in this one)
 				store.setActiveTab("library");
-				store.selectItem(key);
-				if (open) store.openAttachment(open.key, open.title, key); // "Open item" from the connector popup
+				void import("./store").then(({ store: app }) => app.revealItem(key));
 			}),
 		);
 		void import("./features/report/crashToast").then((m) => m.showCrashToast()); // "closed unexpectedly last time", if the crash marker found one

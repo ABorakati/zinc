@@ -281,6 +281,29 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 				}),
 			);
 		}
+		// GET /items/index?key=K&<the list's query>: K's position in that listing, -1 when it is not in it
+		if (n === 2 && b === "index") {
+			if (m !== "GET") return methodNotAllowed();
+			const p = url.searchParams;
+			const key = p.get("key");
+			if (!key || !/^[A-Za-z0-9]{1,32}$/.test(key)) throw new HttpError(400, "key is required");
+			return json({
+				index: repo.itemIndex(db, key, {
+					library: libParam(p),
+					collection: p.get("collection") || undefined,
+					tag: p.get("tag") || undefined,
+					q: p.get("q") || undefined,
+					sort: p.get("sort") || undefined,
+					dir: p.get("dir") || undefined,
+					then: p.get("then") || undefined,
+					search: p.get("search") || undefined,
+					qmode: p.get("qmode") || undefined,
+					unfiled: p.get("unfiled") === "1",
+					publications: p.get("publications") === "1",
+					trash: p.get("trash") === "1",
+				}),
+			});
+		}
 		if (n === 2) {
 			if (m === "GET") {
 				const d = repo.getItemDetail(db, b);

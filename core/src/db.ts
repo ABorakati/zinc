@@ -516,20 +516,42 @@ export function listItemGroups(db: Database, by: string, dirIn: string | undefin
 	return { groups: rows.map((r) => ({ value: r.v === null ? null : String(r.v), count: r.n })) };
 }
 
-export function listItems(db: Database, opts: ListOptions = {}): ItemList {
+/** The ORDER BY of a listing: listItems and itemIndex must agree on it, row for row. */
+function listOrder(db: Database, opts: ListOptions): { orderBy: string; extraTerms: string[] } {
 	if (opts.sort === "citationKey" || opts.then?.includes("citationKey")) backfillKeys(db); // sorting needs every key to exist
-	const f = buildFilter(db, opts);
-	const { whereSql, driver } = f;
 	const sortSpec = resolveSort(opts.sort ?? "dateAdded");
 	if (!sortSpec) throw new HttpError(400, `invalid sort: ${opts.sort}`);
 	const extraTerms = parseThen(opts.then);
+	const dir = (opts.dir ?? "desc").toLowerCase();
+	if (dir !== "asc" && dir !== "desc") throw new HttpError(400, `invalid dir: ${opts.dir}`);
+	return { orderBy: [orderTerm(sortSpec, dir), ...extraTerms, `i.key ${dir}`].join(", "), extraTerms };
+}
+
+/**
+ * Where an item is in a listing (GET /items/index): its 0-based position among the rows listItems returns for the same options, or
+ * -1 when the listing does not contain it. The UI uses it to scroll to an item it was asked to show ("Open in Zinc").
+ */
+export function itemIndex(db: Database, key: string, opts: ListOptions = {}): number {
+	const { orderBy } = listOrder(db, opts);
+	const f = buildFilter(db, opts);
+	const r = db
+		.query(
+			`SELECT n FROM (SELECT i.key AS k, row_number() OVER (ORDER BY ${orderBy}) - 1 AS n FROM ${f.from} WHERE ${f.whereSql})
+			 WHERE k = ?`,
+		)
+		.get(...f.params, key) as { n: number } | null;
+	return r ? r.n : -1;
+}
+
+export function listItems(db: Database, opts: ListOptions = {}): ItemList {
+	const { orderBy, extraTerms } = listOrder(db, opts);
+	const f = buildFilter(db, opts);
+	const { whereSql, driver } = f;
 	const fieldNames = (opts.fields ?? []).map((f) => {
 		const c = canonicalField(f);
 		if (!c) throw new HttpError(400, `invalid field: ${f}`);
 		return c;
 	});
-	const dir = (opts.dir ?? "desc").toLowerCase();
-	if (dir !== "asc" && dir !== "desc") throw new HttpError(400, `invalid dir: ${opts.dir}`);
 	const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 50), 1), 1000);
 	const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
 
@@ -540,7 +562,6 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 	];
 	const { unfiltered, params } = f;
 	const from = driver || extraTerms.length > 0 || !unfiltered || !indexName ? f.from : `items i INDEXED BY ${indexName}`;
-	const orderBy = [orderTerm(sortSpec, dir), ...extraTerms, `i.key ${dir}`].join(", ");
 	let total: number;
 	let rows: SummaryRow[];
 	if (f.expensive) {

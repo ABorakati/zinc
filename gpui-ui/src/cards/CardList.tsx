@@ -7,7 +7,7 @@ import { useGpuix } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/solid";
 import { dragSource } from "../dnd";
 import { Icon } from "../icons";
-import { stats, store } from "../store";
+import { REVEAL_SETTLE_MS, stats, store } from "../store";
 import { TableView } from "../table/Table";
 import { loadSchema } from "../table/defs";
 import { textStyle, tw } from "../theme";
@@ -238,13 +238,30 @@ export function CardsView(): JSX.Element {
 			{ defer: true },
 		),
 	);
+	// "Open in Zinc" (store.revealItem): scroll the item it selected into view. The list it switched to is still arriving (its row
+	// count, then the group headers that move every row down), so follow the count for a moment after the request.
+	let revealUntil = 0;
+	createEffect(
+		on(
+			[() => store.scrollRequest(), () => rows.count()],
+			([req], prev) => {
+				if (!req) return;
+				if (req !== prev?.[0]) revealUntil = performance.now() + REVEAL_SETTLE_MS;
+				else if (performance.now() > revealUntil) return;
+				const r = rows.rowOf(req.index);
+				// after this effect: its writes (the window move in reveal) are batched until it ends, and the scroll must follow them
+				if (r >= 0 && r < rows.count()) queueMicrotask(() => reveal(r, true));
+			},
+			{ defer: true },
+		),
+	);
 
-	/** Scroll so row `r` is on screen (only when it is outside the visible range). */
-	function reveal(r: number) {
+	/** Scroll so row `r` is on screen (only when it is outside the visible range, unless `always`: the range is the previous list's). */
+	function reveal(r: number, always = false) {
 		if (r < 0 || !list) return;
-		if (r >= visA + 1 && r < visB - 1) return;
+		if (!always && r >= visA + 1 && r < visB - 1) return;
 		setStart(Math.max(0, r - WINDOW / 2));
-		gpuix?.renderer.scrollToItem?.(list.id, r, r < visA ? 0 : -300);
+		gpuix?.renderer.scrollToItem?.(list.id, r, always || r >= visA ? -300 : 0);
 	}
 	/** Move the focus by `delta` items, skipping items hidden in collapsed groups. */
 	function move(delta: number, extend: boolean) {

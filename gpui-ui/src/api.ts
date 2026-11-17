@@ -264,6 +264,11 @@ export const api = {
 		const { fields: _f, include: _i, then: _t, sort: _s, ...rest } = q;
 		return get<{ groups: ItemGroup[] }>("/items/groups?" + qs({ ...rest, by }), signal);
 	},
+	/** Where an item is in a listing (0-based, the same order as `items`), -1 when the listing does not contain it. */
+	itemIndex: async (key: string, q: ItemQuery, signal?: AbortSignal) => {
+		const { fields: _f, include: _i, ...rest } = q;
+		return (await get<{ index: number }>("/items/index?" + qs({ ...rest, key }), signal)).index;
+	},
 	schema: (signal?: AbortSignal) => get<ZoteroSchema>("/schema", signal),
 	item: (key: string, signal?: AbortSignal) => get<ItemDetail>(`/items/${key}`, signal),
 	/** Full-text + metadata search with snippets (the "Full text" quick-search mode). */
