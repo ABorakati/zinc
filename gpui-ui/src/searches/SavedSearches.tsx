@@ -71,6 +71,9 @@ function showMenu(s: SavedSearch, x: number, y: number) {
 	setTimeout(() => setMenuKey((k) => (k === s.key ? null : k)), 3000);
 }
 
+/** True while a saved search's name field takes the keys. */
+export const savedSearchRenaming = (): boolean => renaming() !== null;
+
 const active = (k: string) => {
 	const v = currentView();
 	return v.kind === "savedSearch" && v.key === k;
@@ -147,6 +150,7 @@ export function savedSearchEntries(): Entry[] {
 					<SavedSearchRow s={s} />
 				</ListItem>
 			),
+			nav: { selected: () => active(s.key), activate: () => setView({ kind: "savedSearch", key: s.key }) },
 		});
 	return out;
 }

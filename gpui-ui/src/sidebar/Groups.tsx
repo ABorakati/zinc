@@ -171,7 +171,31 @@ export function groupEntries(top: number): Entry[] {
 				),
 			};
 		}
-		if (r.kind === "library") return { id: r.id, render: () => <LibraryRow lib={r.lib} hasCollections={r.hasCollections} /> };
-		return { id: r.id, render: () => <CollectionRow lib={r.lib} c={r.c} depth={r.depth} /> };
+		if (r.kind === "library") {
+			const lk = libKey(r.lib.id);
+			return {
+				id: r.id,
+				render: () => <LibraryRow lib={r.lib} hasCollections={r.hasCollections} />,
+				nav: {
+					selected: () => store.libraryId() === r.lib.id && currentView().kind === "library",
+					activate: () => store.selectLibrary(r.lib.id),
+					...(r.hasCollections ? { expanded: () => isOpen(lk), toggle: () => toggle(lk) } : {}),
+				},
+			};
+		}
+		const c = r.c;
+		return {
+			id: r.id,
+			render: () => <CollectionRow lib={r.lib} c={c} depth={r.depth} />,
+			nav: {
+				selected: () => {
+					const v = currentView();
+					return v.kind === "collection" && v.key === c.key;
+				},
+				activate: () => setView({ kind: "collection", key: c.key }),
+				...(r.hasChildren ? { expanded: () => isOpen(c.key), toggle: () => toggle(c.key) } : {}),
+				parent: r.depth > 1 && c.parentKey ? `gc:${c.parentKey}` : `g:${r.lib.id}`,
+			},
+		};
 	});
 }

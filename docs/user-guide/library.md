@@ -111,6 +111,9 @@ Press `Ctrl+/` (or choose **Tools > Keyboard Shortcuts**) to see the list in the
 | `Ctrl+F` | Search the library |
 | `Ctrl+Shift+F` | Advanced Search |
 | `Ctrl+Shift+L` | Focus the collections pane |
+| `Up` and `Down` | In the sidebar (after clicking a row or `Ctrl+Shift+L`): show the previous or next library, view, saved search or collection |
+| `Left` and `Right` | In the sidebar: collapse or expand a collection; on a closed one, `Left` moves to its parent, and on an open one, `Right` moves to its first subcollection |
+| `Home` and `End` | In the sidebar: the first or last row |
 | `+` and `-` | Expand and collapse all collections. In the item list, open and close the attachments and notes under items (see [Attachments and notes under an item](#attachments-and-notes-under-an-item)). |
 | `Ctrl+W` | Close the current tab |
 | `Ctrl+,` | Settings |

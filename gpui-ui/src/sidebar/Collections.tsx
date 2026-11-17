@@ -626,6 +626,9 @@ export function endDrags() {
 	setDropKey(null);
 }
 
+/** True while a name field of the Collections group (new collection / rename / section) takes the keys. */
+export const collectionsEditing = (): boolean => editing() !== null || creating() !== null || sectionInput() !== null;
+
 /** Registers the scrolling pane the rows live in (drops only count inside it). */
 export const setCollectionsPane = (el: HostElement) => {
 	paneEl = el;
@@ -696,7 +699,21 @@ export function collectionEntries(top: number): Entry[] {
 		if (r.kind === "header") {
 			out.push({ id: `c:h:${r.id}`, render: () => <GroupHeader h={r} gap={first ? 0 : 6} /> });
 		} else {
-			out.push({ id: r.id, render: () => <Row c={r.c} depth={r.depth} pinnedCopy={r.pinnedCopy} /> });
+			const c = r.c;
+			const hasKids = !r.pinnedCopy && !!c.children?.length;
+			out.push({
+				id: r.id,
+				render: () => <Row c={c} depth={r.depth} pinnedCopy={r.pinnedCopy} />,
+				nav: {
+					selected: () => {
+						const v = currentView();
+						return v.kind === "collection" && v.key === c.key;
+					},
+					activate: () => setView({ kind: "collection", key: c.key }),
+					...(hasKids ? { expanded: () => expanded().has(c.key), toggle: () => toggle(c.key) } : {}),
+					...(!r.pinnedCopy && r.depth > 0 && c.parentKey ? { parent: `c:${c.parentKey}` } : {}),
+				},
+			});
 			if (!r.pinnedCopy && creating() === r.c.key)
 				out.push({ id: `c:create:${r.c.key}`, render: () => <CreateRow parent={r.c.key} padLeft={6 + (r.depth + 1) * 14} /> });
 		}

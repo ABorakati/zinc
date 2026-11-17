@@ -4,6 +4,7 @@ import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { textStyle, tokens, tw, type BoxShadow } from "../theme";
+import type { Nav } from "./nav";
 
 export const mode = (): Mode => store.mode();
 export const t = (cls: string): Style => tw(cls, mode());
@@ -107,6 +108,8 @@ export const SCROLLBAR_GUTTER = 11;
 export interface Entry {
 	id: string;
 	render: () => JSX.Element;
+	/** A row the arrow keys can move to (sidebar/nav.ts); headers and notes have none. */
+	nav?: Nav;
 }
 
 /** Right padding of a list entry: the old `pr-2` plus the gutter GPUIX's overlaid scrollbar thumb needs. */
@@ -119,9 +122,23 @@ const ENTRY_PAD_RIGHT = 8 + SCROLLBAR_GUTTER;
  */
 export function ListItem(p: { children: JSX.Element; gap?: number; top?: number }): JSX.Element {
 	return (
-		<div style={{ width: "100%", paddingRight: ENTRY_PAD_RIGHT, paddingBottom: p.gap ?? 1, paddingTop: p.top ?? 0 }}>{p.children}</div>
+		<div
+			onClick={() => itemClicked?.()}
+			style={{ width: "100%", paddingRight: ENTRY_PAD_RIGHT, paddingBottom: p.gap ?? 1, paddingTop: p.top ?? 0 }}
+		>
+			{p.children}
+		</div>
 	);
 }
+
+let itemClicked: (() => void) | undefined;
+/**
+ * Sidebar.tsx: runs after a click on any row of its list, to give the pane the arrow keys. A click inside the <virtual-list> reaches
+ * the row's ancestors up to the list item, not the pane around the list, so the rows report it.
+ */
+export const onListItemClick = (f: (() => void) | undefined) => {
+	itemClicked = f;
+};
 
 export function SectionHeader(p: {
 	label: string;

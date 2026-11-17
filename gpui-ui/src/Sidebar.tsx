@@ -7,14 +7,36 @@ import { useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
 import type { View } from "./contracts";
 import { Icon } from "./icons";
-import { sidebarSections } from "./registry";
-import { savedSearchEntries } from "./searches/SavedSearches";
+import { registerAppAction, sidebarSections } from "./registry";
+import { savedSearchEntries, savedSearchRenaming } from "./searches/SavedSearches";
 import { ensureSavedSearches } from "./searches/state";
 import { currentView, setView } from "./sidebar/bridge";
 import { errMsg, sidebarApi } from "./sidebar/client";
-import { collectionEntries, creating, onBeforeCreate, reloadCollections, setCollectionsPane } from "./sidebar/Collections";
+import {
+	collectionEntries,
+	collectionsEditing,
+	creating,
+	onBeforeCreate,
+	reloadCollections,
+	setCollectionsPane,
+} from "./sidebar/Collections";
+import { currentIndex, type Nav, navStep } from "./sidebar/nav";
+import { store } from "./store";
 import { groupEntries } from "./sidebar/Groups";
-import { CountBadge, type Entry, labelCls, ListItem, pill, ROW_HOVER, SectionHeader, SPECIAL_STATIC, t, tok, tx } from "./sidebar/parts";
+import {
+	CountBadge,
+	type Entry,
+	labelCls,
+	ListItem,
+	onListItemClick,
+	pill,
+	ROW_HOVER,
+	SectionHeader,
+	SPECIAL_STATIC,
+	t,
+	tok,
+	tx,
+} from "./sidebar/parts";
 import {
 	collectionsFraction,
 	libraryOpen,
@@ -52,6 +74,15 @@ async function emptyTrash() {
 		toast("Could not empty the Trash", { kind: "error", description: errMsg(e) });
 	}
 }
+
+/** Arrow-key target for a My Library view row (every view but a collection is My Library's, store.setView). */
+const viewNav = (view: View): Nav => ({
+	selected: () => {
+		const v = currentView();
+		return store.libraryId() === 1 && v.kind === view.kind && ("key" in view ? "key" in v && v.key === view.key : true);
+	},
+	activate: () => setView(view),
+});
 
 function Special(p: { view: View; label: string; icon: string; count?: number; onMenu?: (x: number, y: number) => void }): JSX.Element {
 	const sel = () => {
@@ -147,14 +178,24 @@ export function Sidebar(): JSX.Element {
 		});
 		if (libraryOpen()) {
 			out.push(
-				{ id: "l:library", render: () => <Special view={{ kind: "library" }} label="My Library" icon="library" /> },
-				{ id: "l:unfiled", render: () => <Special view={{ kind: "unfiled" }} label="Unfiled" icon="inbox" /> },
+				{
+					id: "l:library",
+					render: () => <Special view={{ kind: "library" }} label="My Library" icon="library" />,
+					nav: viewNav({ kind: "library" }),
+				},
+				{
+					id: "l:unfiled",
+					render: () => <Special view={{ kind: "unfiled" }} label="Unfiled" icon="inbox" />,
+					nav: viewNav({ kind: "unfiled" }),
+				},
 				{
 					id: "l:publications",
 					render: () => <Special view={{ kind: "publications" }} label="My Publications" icon="book-user" />,
+					nav: viewNav({ kind: "publications" }),
 				},
 				{
 					id: "l:trash",
+					nav: viewNav({ kind: "trash" }),
 					render: () => (
 						<Special
 							view={{ kind: "trash" }}
@@ -172,6 +213,7 @@ export function Sidebar(): JSX.Element {
 				{
 					id: "l:duplicates",
 					render: () => <Special view={{ kind: "duplicates" }} label="Duplicate Items" icon="copy" count={dupCount()} />,
+					nav: viewNav({ kind: "duplicates" }),
 				},
 			);
 			for (const s of sidebarSections())
@@ -208,6 +250,51 @@ export function Sidebar(): JSX.Element {
 		),
 	);
 
+	// ---- arrow keys (sidebar/nav.ts): the pane is focusable, so clicking a row gives it the keys ----
+	let lastNav: string | null = null;
+	let pane: HostElement | undefined;
+	// a click on a row gives the pane the keys (GPUIX does not move focus to a focusable ancestor itself); not while a name field is
+	// open, which would lose its focus
+	onListItemClick(() => {
+		if (pane && !collectionsEditing() && !savedSearchRenaming()) gpuix?.renderer.focusElement?.(pane.id);
+	});
+	onCleanup(() => onListItemClick(undefined));
+	// Zotero's "Focus Libraries Pane" shortcut: the arrow keys then move through the rows
+	registerAppAction({
+		id: "sidebar-focus",
+		label: "Focus the collections pane",
+		menu: "none",
+		shortcut: "Ctrl+Shift+L",
+		run: () => {
+			if (pane) gpuix?.renderer.focusElement?.(pane.id);
+		},
+	});
+	/** Scroll entry `i` into view when it is outside the viewport. Rows are ~29px high, so the estimate is close enough. */
+	const revealEntry = (i: number) => {
+		const s = list ? gpuix?.renderer.getListScrollTop?.(list.id) : null;
+		if (!list || !s) return;
+		const [ix = 0, off = 0, viewport = 0] = s;
+		const y = (i - ix) * 29 - off;
+		if (y < 0) gpuix?.renderer.scrollToItem?.(list.id, i, 0);
+		else if (y + 29 > viewport) gpuix?.renderer.scrollToItem?.(list.id, i, -Math.max(0, viewport - 29));
+	};
+	const onNavKey = (ev: EventPayload) => {
+		const e = ev as EventPayload & { preventDefault?(): void; stopPropagation?(): void };
+		const m: { shift?: boolean; ctrl?: boolean; alt?: boolean; cmd?: boolean } = e.modifiers ?? {};
+		if (m.ctrl || m.cmd || m.alt || m.shift || collectionsEditing() || savedSearchRenaming()) return;
+		const rows = entries();
+		const from = currentIndex(rows, lastNav);
+		const step = navStep(rows, from, e.key ?? "");
+		if (!step) return;
+		e.preventDefault?.();
+		e.stopPropagation?.();
+		if ("toggle" in step) return void rows[step.toggle]!.nav!.toggle!();
+		const to = rows[step.go]!;
+		lastNav = to.id;
+		if (step.go !== from) to.nav!.activate();
+		revealEntry(step.go);
+	};
+
 	// ---- split between the collections and tags panes ----
 	// While the handle is dragged a transparent window-sized layer takes the pointer (as ui/resizable.tsx), so the drag keeps
 	// working when the cursor leaves the thin handle.
@@ -233,9 +320,16 @@ export function Sidebar(): JSX.Element {
 			    virtual list inside does, and builds only the rows on screen. Its overlaid scrollbar thumb sits at the list's right edge; the
 			    rows keep a gutter for it (ListItem), as the old container did with paddingRight 8 + SCROLLBAR_GUTTER. */}
 			<div
-				ref={(el: HostElement) => setCollectionsPane(el)}
+				ref={(el: HostElement) => {
+					pane = el;
+					setCollectionsPane(el);
+				}}
+				tabIndex={0}
+				testId="sidebar-pane"
+				onKeyDown={onNavKey}
 				style={{
 					...t("flex min-h-0 flex-col"),
+					keyboardFocusDim: false,
 					flexGrow: tagsShown() && tagsOpen() ? collectionsFraction() : 1,
 					flexShrink: 1,
 					flexBasis: 0,
