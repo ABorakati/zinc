@@ -60,6 +60,8 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write # only used on a release, to attach the zip
+      id-token: write # build provenance attestation of the zip (release only)
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
@@ -153,14 +155,23 @@ jobs:
         with:
           path: website/dist
 
+      - name: Zip the browser build
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: (cd gpui-ui/out && mv web-demo "Zinc-Web-$TAG" && zip -qr "Zinc-Web-$TAG.zip" "Zinc-Web-$TAG")
+      # a signed statement that this zip was built by this workflow from this commit: `gh attestation verify <zip> -R ABorakati/zinc`
+      - name: Attest build provenance
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: gpui-ui/out/Zinc-Web-*.zip
       - name: Attach the browser build to the release
         if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
-        run: |
-          (cd gpui-ui/out && mv web-demo "Zinc-Web-$TAG" && zip -qr "Zinc-Web-$TAG.zip" "Zinc-Web-$TAG")
-          gh release upload "$TAG" "gpui-ui/out/Zinc-Web-$TAG.zip" --clobber
+        run: gh release upload "$TAG" "gpui-ui/out/Zinc-Web-$TAG.zip" --clobber
 
   # The website (built above under /zinc/) on GitHub Pages: https://aborakati.github.io/zinc/
   pages:

@@ -14,6 +14,18 @@ bun gpui-ui/scripts/release.ts --installer <that exe> --notes <file> ...   # sig
 
 The browser extension (the Zinc Connector) has its own zips, workflow and store steps: see [Releasing the browser extension](extension-release.md).
 
+## Build provenance attestations
+
+From 0.1.18 the files GitHub Actions builds for a release carry a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations): a statement, signed through GitHub's OIDC token and recorded in Sigstore's public log, that the file was built by a given workflow from a given commit. `actions/attest-build-provenance` runs right before each "attach to the release" step:
+
+| Workflow | Files |
+| --- | --- |
+| `desktop-packages.yml` | `Zinc-<v>-x86_64.AppImage`, `Zinc-<v>-arm64.dmg`, `Zinc-<v>-arm64.app.zip` |
+| `extension.yml` | `Zinc-Connector-<v>.zip`, `Zinc-Connector-<v>-store.zip` |
+| `web.yml` | `Zinc-Web-v<v>.zip` |
+
+Check one with `gh attestation verify <file> -R ABorakati/zinc`. The Windows installer is built on the release machine, not in Actions, so it has none (GitHub only attests from a running workflow); nor do the `latest*.json` feeds, which carry their own Ed25519 signatures (below).
+
 ## Code signing: not used today
 
 Two different signatures exist. Do not confuse them.

@@ -46,6 +46,8 @@ concurrency:
 
 permissions:
   contents: write # gh release upload
+  id-token: write # build provenance attestations (actions/attest-build-provenance): the OIDC token that signs them
+  attestations: write # ... and storing them on the repository
 
 env:
   BUN_VERSION: 1.4.4
@@ -154,6 +156,12 @@ jobs:
             gpui-ui/out/appimage/*.AppImage
             gpui-ui/out/appimage/*.sha256
             gpui-ui/out/appimage/*.version
+      # a signed statement that this AppImage was built by this workflow from this commit: `gh attestation verify <file> -R ABorakati/zinc`
+      - name: Attest build provenance
+        if: env.TAG != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: gpui-ui/out/appimage/*.AppImage
       - name: Attach to the release
         if: env.TAG != ''
         env:
@@ -210,6 +218,14 @@ jobs:
             gpui-ui/out/dmg/*.app.zip
             gpui-ui/out/dmg/*.sha256
             gpui-ui/out/dmg/*.version
+      # the disk image and the app.zip the macOS updater downloads: `gh attestation verify <file> -R ABorakati/zinc`
+      - name: Attest build provenance
+        if: env.TAG != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            gpui-ui/out/dmg/*.dmg
+            gpui-ui/out/dmg/*.app.zip
       - name: Attach to the release
         if: env.TAG != ''
         env:

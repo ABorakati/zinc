@@ -56,6 +56,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write # only used on a release, to attach the zips
+      id-token: write # build provenance attestations of the zips (release only)
+      attestations: write
     steps:
       - name: Check out zotero-next
         uses: actions/checkout@v4
@@ -175,6 +177,12 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # a signed statement that these zips were built by this workflow from this commit: `gh attestation verify <zip> -R ABorakati/zinc`
+      - name: Attest build provenance
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ext-out/*.zip
       - name: Attach both zips to the release
         if: github.event_name == 'release' || inputs.release_tag != ''
         env:

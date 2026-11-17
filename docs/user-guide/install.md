@@ -123,6 +123,16 @@ The steps below are written for the agent.
    On Windows the Word add-in has its own MCP server, which needs a token from a file. Follow [MCP for AI agents](mcp.md) and never print the token.
 8. **Clean up.** Delete the temporary folder (the download and the log) once the install has worked.
 
+## Checking a download
+
+The Linux AppImage, the macOS disk image, the Zinc Connector zips and the browser edition's zip are built by GitHub Actions, and from 0.1.18 each comes with a GitHub attestation: a signed record of the workflow and commit that built it. With the [GitHub CLI](https://cli.github.com/) installed:
+
+```bash
+gh attestation verify Zinc-0.1.18-x86_64.AppImage -R ABorakati/zinc
+```
+
+The Windows installer is built outside GitHub Actions and has no attestation. Its SHA-256 is in the `.json` file next to it on the release page.
+
 ## Notes
 
 - Windows: web tabs and the rich note editor use Microsoft Edge WebView2, preinstalled on Windows 11; see [Troubleshooting](troubleshooting.md) if they do not appear. The Word add-in is built for .NET Framework 4.8 and works with desktop Word.
