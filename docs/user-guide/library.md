@@ -241,11 +241,20 @@ Below the header a tab row jumps between sections of one scrolling pane. This is
 | **Details** | Editable fields of the item (click a field to edit it). Changing the item type changes the available fields. |
 | **Abstract** | The abstract. |
 | **Notes** | Child notes of the item; see [Notes and web tabs](notes-and-web-tabs.md). |
-| **Files** | Attachments (PDFs, snapshots, links). |
+| **Files** | Attachments (PDFs, snapshots, links), with a preview of the PDF's pages at the top. |
 | **Collections** | The collections the item belongs to. |
 | **Tags** | The item's tags. |
 | **Related** | Items related to this one. |
 
 Selecting several items shows a summary instead. Edits are saved as you make them and picked up by the next [sync](sync.md).
+
+### PDF preview
+
+When an item's main attachment is a PDF, the **Files** section starts with its pages as thumbnails in a box you can scroll with the mouse wheel or trackpad. The preview does not open the full reader, so it appears quickly, and only the pages you scroll to are drawn. Double-click a page to open the PDF in a reader tab at that page.
+
+- EPUBs, snapshots and links get no preview.
+- A PDF over 30 MB is not read until you click **Show preview**. A large file, or one that is only in the cloud (for example OneDrive "online-only"), can take several seconds to load.
+- Moving quickly through the list with the arrow keys does not load each PDF. The preview waits until you stop on an item. Pages you saw recently show again at once.
+- The preview's scrollbar cannot be dragged yet. Use the wheel or trackpad.
 
 Next: [Adding items](adding-items.md), [The reader](reader.md).

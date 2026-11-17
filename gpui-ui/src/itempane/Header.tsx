@@ -10,7 +10,7 @@ import { Field, Section, goToSection, t, tok, tx } from "./kit";
 import { locateFileKey, locateItemOf } from "../locate/item";
 import { locateMenu } from "../locate/menu";
 import { usePane } from "./model";
-import { childKind, creatorFull, creatorLast, MONTH_ABBR, parseDate } from "./util";
+import { childKind, creatorFull, creatorLast, MONTH_ABBR, parseDate, primaryAttachment } from "./util";
 
 const MAX_AUTHORS = 6;
 
@@ -103,11 +103,7 @@ export function Header(): JSX.Element {
 		return [vi, str("pages"), when].filter(Boolean);
 	};
 
-	const reader = () => {
-		const kids = d().children.filter((c) => childKind(c) === "reader");
-		const rank = (c: (typeof kids)[number]) => (/pdf/i.test(c.contentType ?? "") ? 0 : /epub/i.test(c.contentType ?? "") ? 1 : 2);
-		return [...kids].sort((a, b) => rank(a) - rank(b))[0];
-	};
+	const reader = () => primaryAttachment(d().children);
 	const hasPdf = () => d().children.some((c) => childKind(c) === "reader" && /pdf/i.test(c.contentType ?? ""));
 	const readerLabel = () => {
 		const r = reader();

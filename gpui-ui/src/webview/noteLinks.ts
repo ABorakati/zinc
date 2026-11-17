@@ -76,6 +76,14 @@ async function openAttachmentAt(attachmentKey: string, jump: Jump | null): Promi
 	store.openAttachment(attachmentKey, String(data.title ?? ""), String(data.parentItem ?? ""));
 }
 
+/** Open a PDF attachment in its reader tab at a page (0-based), e.g. from the item pane's page preview. */
+export function openPdfAtPage(attachmentKey: string, title: string, itemKey: string, page: number): void {
+	const open = readers.get(attachmentKey);
+	if (open) jumpIn(open, { page });
+	else jumps.set(attachmentKey, { page });
+	store.openAttachment(attachmentKey, title, itemKey);
+}
+
 /** The cited item's best attachment (its first PDF), or null. */
 async function pdfOf(itemKey: string): Promise<string | null> {
 	const d = await api.item(itemKey);
