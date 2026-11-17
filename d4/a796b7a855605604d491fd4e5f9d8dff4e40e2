@@ -1,0 +1,45 @@
+gpui-ui/src/webview/noteLinks.ts
+  s_e3a790fb069052::t_25031fe3bdbbd1 79-86
+gpui-ui/src/itempane/previewDoc.ts
+  s_e3a790fb069052::t_b1a77bc4bf35d4 20-22
+  s_e3a790fb069052::t_bc277c6ad76c83 94-95
+  s_e3a790fb069052::t_45373740d82750 185
+  s_e3a790fb069052::t_3e8515611dd8b5 1-19,23-93,96-184,186-214
+gpui-ui/src/itempane/util.ts
+  s_e3a790fb069052::t_58a5ffe70f7cf9 113-125
+gpui-ui/src/itempane/Preview.tsx
+  s_e3a790fb069052::t_39434e27401911 229-235
+  s_e3a790fb069052::t_2974b7f700d6c1 139,160
+  s_e3a790fb069052::t_d084be3895d09b 22
+  s_e3a790fb069052::t_15f9cd70ac58f9 1-5,7-20,23-25,27-53,61-85,93-138,140-159,161-165,168-188,190-215,217-228,236-237,239-301,303-310
+  s_e3a790fb069052::t_c3a3a777e6e047 86-92
+  s_e3a790fb069052::t_4bc489d8f388ef 6,26
+  s_e3a790fb069052::t_bc277c6ad76c83 21,54-60,166-167,189,216,238,302
+gpui-ui/scripts/shot-preview.tsx
+  s_e3a790fb069052::t_cecc1dbe0e5894 1-89,91,105-115,117-118,122-126,129-138,140-204,211,213,215-217
+  s_e3a790fb069052::t_bc277c6ad76c83 127-128,139,205-210,212,214
+  s_e3a790fb069052::t_8191f2ca452bda 90,92-104,116,119-121
+gpui-ui/src/itempane/Header.tsx
+  s_e3a790fb069052::t_58a5ffe70f7cf9 13,106
+docs/user-guide/library.md
+  s_e3a790fb069052::t_0bc3604cfc2068 251-259
+  s_e3a790fb069052::t_ebe665910231da 244
+gpui-ui/src/itempane/Attachments.tsx
+  s_e3a790fb069052::t_d084be3895d09b 3,11-12,170-171,189-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4a796b7a855605604d491fd4e5f9d8dff4e40e2",
+  "prompts": {},
+  "sessions": {
+    "s_e3a790fb069052": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b67d26d3-4e59-46ec-81ae-83a6cd6cda6d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "ABorakati <ABorakati@users.noreply.github.com>"
+    }
+  }
+}
