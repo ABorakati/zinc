@@ -113,9 +113,15 @@ A save started from the right-click menu opens the same popup where the browser 
 
 ![Your library in a browser tab: collections, the item list and an item's details](../screenshots/web-library-item-dark.png)
 
-Right-click the Zinc button and choose **Open Zinc library**, or click **Open library** in the popup. Your library opens in a browser tab: the same interface as the app, built for the browser, reading the same library file through the helper, so it works with the app closed. Changes made in the app show up within about two seconds.
+Right-click the Zinc button and choose **Open Zinc library**, or click **Open library** in the popup. Your library opens in a browser tab: the same interface as the app, built for the browser, reading and writing the same library file through the helper, so it works with the app closed. Changes made in the app show up within about two seconds.
 
-Browsing, searching, collections, tags and item details work. Item edits are not saved yet: the tab is **read-only** for items, collections and tags.
+Browsing, searching and item details work, and so do edits: you can change items, collections, tags and notes in the tab, and they are saved to the app's library.
+
+The helper limits what the tab can do. It refuses account routes (sync, web sync and integrations), routes that act on the computer (open a URL, reveal a file, open an external program, raw files and Mendeley import), and any request that names a local path or a linked file. Use the app for those.
+
+**One library per computer.** When the app is installed, the connector always uses the app's library, so there is no second library to keep in step. If the browser holds a library of its own from before the app was installed, the library tab offers **Move your browser library into Zinc**. It copies items, collections, notes, annotations, tags and files into the app's library, skips anything the app already has, and then empties the browser library.
+
+The plain web page without the extension (the browser edition on the download page) is a read-only demo only.
 
 **PDFs open in the tab.** Double-click a PDF attachment to read it, as in the app: zoom, rotate, find in the document, the outline and thumbnails. Annotations work too. Highlights, underlines, notes and ink you add or change in the tab are saved to your library and synced like those made in the app. A 10 MB PDF takes about one to three seconds to open, because the file passes through the helper. Pages render in the background, so scrolling stays smooth; on long, image-heavy PDFs, pages may take a moment to appear.
 

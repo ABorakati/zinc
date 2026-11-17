@@ -51,10 +51,10 @@ bun scripts/package.ts --tag v0.2.0 --library ../zotero-next/gpui-ui/dist-extens
 `.github/workflows/extension.yml` (a Windows runner, the platform `build-win.ts` has been run on). `web.yml` builds the website's read-only demo of the app, not the extension; this workflow builds the extension.
 
 - **When:** every push to `main` that touches `gpui-ui/`, `core/`, `connector-host/`, `reader-host/` or the workflow; a published release; and by hand (`workflow_dispatch`, optionally with `release_tag` for a release that already exists).
-- **Steps:** checks out zotero-next and the connector (branch `zotero-next`, submodules) with the secret `CONNECTOR_REPO_TOKEN`; installs Bun 1.4.4; fetches the vendored Zotero code (`core/vendor`, as `web.yml` does) and builds the Zotero reader and document worker into `reader-host/dist` (the reader repository is cloned at the commit pinned as `READER_COMMIT` in the workflow); builds the library page; packages the connector.
+- **Steps:** checks out zotero-next and the connector (branch `zotero-next`, submodules) with the secret `CONNECTOR_REPO_TOKEN` when it is set, else the workflow's own token (the connector repository is public); installs Bun 1.4.4; fetches the vendored Zotero code (`core/vendor`, as `web.yml` does) and builds the Zotero reader and document worker into `reader-host/dist` (the reader repository is cloned at the commit pinned as `READER_COMMIT` in the workflow); builds the library page; packages the connector.
 - **Every run** uploads the unpacked zip as the artifact `zinc-connector-unpacked` (kept 7 days). Its version is `0.0.0.<run number>` (`v0.0.0-ci.<run number>`).
 - **A release** builds both zips with the version from the tag and attaches both to the release with `gh release upload`.
-- It fails with a clear message if the connector checkout lacks `scripts/package.ts` or its submodules. Without `gpui-ui/update-pubkey.txt` it warns and builds zips that show no update notice.
+- It fails with a clear message if the connector checkout lacks `scripts/package.ts` or its submodules. Without `gpui-ui/update-pubkey.txt` it warns and builds zips that show no update notice, a release included (`ZN_ALLOW_NO_UPDATE_KEY=1`). The repository commits that file, and the workflow passes it to the build as `ZN_UPDATE_PUBKEY_FILE` only when it exists, so releases carry the key.
 
 ### The secret `CONNECTOR_REPO_TOKEN` (only for a private connector repository)
 
@@ -72,7 +72,7 @@ bun gpui-ui/scripts/release.ts --extension-zip Zinc-Connector-0.2.0.zip ^
 gh release upload v0.2.0 gpui-ui/out/release/latest-extension.json
 ```
 
-`release.ts --extension-zip` can also create the release itself (`--publish <owner/repo>`, see its header), uploading the zip and the feed together; then CI's zips are not the ones in the feed, so use one route or the other for a given tag. The extension reads `https://github.com/ABorakati/zinc/releases/latest/download/latest-extension.json` (`ZINC_UPDATE_FEED_URL` in `updateNotice.js`). Store installs do not use the feed: they have an `update_url` of the store's own and the notice does nothing for them. The key, signing and format are the desktop app's ([Updates](../user-guide/updates.md), `gpui-ui/UPDATES.md`).
+The feed's `version` is the connector's own version, parsed from the zip's file name, not the app's build stamp; `--extension-url` or `--base-url` sets the zip's address (without either, `--publish` implies the GitHub release asset URL). `release.ts --extension-zip` can also create the release itself (`--publish <owner/repo>`, see its header), uploading the zip and the feed together; then CI's zips are not the ones in the feed, so use one route or the other for a given tag. The extension reads `https://github.com/ABorakati/zinc/releases/latest/download/latest-extension.json` (`ZINC_UPDATE_FEED_URL` in `updateNotice.js`). Store installs do not use the feed: they have an `update_url` of the store's own and the notice does nothing for them. The key, signing and format are the desktop app's ([Updates](../user-guide/updates.md), `gpui-ui/UPDATES.md`).
 
 ## Automatic updates through the stores: the manual steps
 

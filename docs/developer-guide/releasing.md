@@ -1,6 +1,6 @@
 # Releasing
 
-How a build becomes an installer, and how an installer becomes an update that installed copies pick up. Building each piece is covered in [Building](building.md); the user-facing side of updates is in [Updates](../user-guide/updates.md). Installers, signing and the update feed are Windows only; the Linux AppImage and the macOS disk image are described in [Linux and macOS packages](#linux-and-macos-packages).
+How a build becomes an installer, and how an installer becomes an update that installed copies pick up. Building each piece is covered in [Building](building.md); the user-facing side of updates is in [Updates](../user-guide/updates.md). The installer and code signing are Windows only; the Linux AppImage and the macOS disk image are described in [Linux and macOS packages](#linux-and-macos-packages).
 
 ## Overview
 
@@ -10,7 +10,7 @@ bun gpui-ui/scripts/installer.ts           # gpui-ui/out/installer/Zinc-Setup-<v
 bun gpui-ui/scripts/release.ts --installer <that exe> --notes <file> ...   # signs latest.json, optionally publishes
 ```
 
-`installer.ts` does not rebuild the package, and `release.ts` does not build anything: it hashes the installer you give it, writes a signed manifest, and optionally uploads. The build that users run must already contain the matching public key (below) and be older than the release.
+`installer.ts` does not rebuild the package, and `release.ts` does not build anything: it hashes the packages you give it, writes one signed manifest (feed) for each, and optionally uploads. There are four feeds: `latest.json` (Windows), `latest-linux-x64.json`, `latest-darwin-arm64.json` and `latest-extension.json` (the browser extension). A run writes the ones whose package you pass. The build that users run must already contain the matching public key (below) and be older than the release.
 
 The browser extension (the Zinc Connector) has its own zips, workflow and store steps: see [Releasing the browser extension](extension-release.md).
 
@@ -80,40 +80,51 @@ Updates are verified with an Ed25519 key pair.
 2. Embed the public key in every build that should be able to update. `gpui-ui/scripts/_update-key.ts` reads, first hit wins:
    - `ZN_UPDATE_PUBKEY`, the raw base64 key;
    - `ZN_UPDATE_PUBKEY_FILE`, a file holding it (for example `release-key.public.txt`);
-   - `gpui-ui/update-pubkey.txt`, which may be committed because a public key is not secret.
+   - `gpui-ui/update-pubkey.txt`, which may be committed because a public key is not secret. The repository commits the release public key there, so a local build embeds it with no setup.
 
-   `build.ts` bakes the key into the executable. A build with no key prints a warning, cannot verify any manifest and never updates. A packaged executable cannot be pointed at another key by an environment variable.
+   An empty `ZN_UPDATE_PUBKEY` counts as unset, because CI passes an unset variable as an empty string. `.github/workflows/desktop-packages.yml` reads the repository variable `ZN_UPDATE_PUBKEY` (Settings, Secrets and variables, Actions, Variables), so a value there overrides the file for the AppImage and the disk image. Keep the variable and the file the same key. `build.ts` bakes the key into the executable. A build with no key prints a warning, cannot verify any manifest and never updates. A packaged executable cannot be pointed at another key by an environment variable.
 
 3. The private key is read only by `release.ts`, from the path in `ZN_UPDATE_KEY`. The script refuses a path inside the repository.
 
-The default feed URL is baked in at build time with `ZN_UPDATE_URL=<https url of latest.json>`; a user can override it in Settings under System, Updates. With no feed URL nothing is ever requested.
+The default feed URL is baked in at build time. It is `ZN_UPDATE_URL` (an https URL of `latest.json`) when that is set and not empty, otherwise `DEFAULT_UPDATE_URL` in `gpui-ui/scripts/_update-key.ts`: `https://github.com/ABorakati/zinc/releases/latest/download/latest.json`, the `latest.json` of the latest GitHub release. `desktop-packages.yml` passes the repository variable `ZN_UPDATE_URL` the same way. A user can override the URL in Settings under System, Updates. The Linux and macOS builds read their own file next to it. A build with no public key never updates, and an unpackaged run with `ZN_UPDATE_URL` unset has no default feed, so nothing is requested.
 
 ## `release.ts`
 
 ```
 ZN_UPDATE_KEY=<path to release-key.private.json> \
-bun gpui-ui/scripts/release.ts --installer <Zinc-Setup-....exe> [options]
+bun gpui-ui/scripts/release.ts [--installer <Zinc-Setup-....exe>] [--appimage <file>] [--mac-app <file>] [--extension-zip <zip>] [options]
 ```
+
+Pass at least one package. Each one gets its own signed feed in `--out`:
+
+| Package option | Feed written |
+| --- | --- |
+| `--installer` | `latest.json` (Windows, no `platform` field) |
+| `--appimage` | `latest-linux-x64.json` (`"platform": "linux-x64"`) |
+| `--mac-app` | `latest-darwin-arm64.json` (`"platform": "darwin-arm64"`; `darwin-x64` when the file name says `-x64`) |
+| `--extension-zip` | `latest-extension.json`, see [The Zinc Connector's feed](#the-zinc-connectors-feed-latest-extensionjson) |
 
 | Option | Meaning |
 | --- | --- |
-| `--version <stamp>` | Default: parsed from the installer's file name, else the package's `version.txt` |
+| `--version <stamp>` | Default per package: the installer's file name; for the AppImage and the app zip, the `<file>.version` next to them (`appimage.ts` and `dmg.ts` write it); else the package's `version.txt`. It must be the version built into that package, or the updated app is offered the update again. The connector zip is the exception: its own version wins (below) |
 | `--notes <file or text>` | Release notes, Markdown (default `Zinc <version>`) |
-| `--url <https url>` | Where users download the installer (required unless `--publish`, which implies the GitHub release asset URL) |
+| `--url <https url>` | Where users download the package (one package only; with `--publish` it defaults to the GitHub release asset URL) |
+| `--base-url <https url>` | Where users download the packages: `<base-url>/<file name>`, for any number of packages. It also covers the connector zip |
 | `--min-version <v>` | Older installs cannot update in place and are told to install by hand |
-| `--out <dir>` | Where `latest.json` goes (default `gpui-ui/out/release`) |
-| `--publish <owner/repo>` | Run `gh release create` on that repository with the installer and `latest.json` |
+| `--out <dir>` | Where the feeds go (default `gpui-ui/out/release`) |
+| `--publish <owner/repo>` | Run `gh release create` on that repository with the packages, the feeds and any `--attach` files |
+| `--attach <file>` | Another file for the release (the `.dmg`, `.sha256` files). May be repeated |
 | `--tag <tag>` | Release tag (default `v<version>`) |
 | `--dry-run` | With `--publish`: print the `gh` command instead of running it |
 | `--force` | Skip the check that the key matches the public key builds embed |
 
-It hashes the installer, signs the manifest, verifies its own output, and refuses a private key that does not match the public key builds embed. Without `--publish` it uploads nothing. Always preview first:
+It hashes each package, signs its manifest, verifies its own output, and refuses a private key that does not match the public key builds embed. Without `--publish` it uploads nothing. Always preview first:
 
 ```
 bun gpui-ui/scripts/release.ts --installer <setup.exe> --notes notes.md --publish <owner>/<releases-repo> --dry-run
 ```
 
-With `--publish` it runs `gh release create <tag> <installer> <latest.json> --repo <owner>/<repo> --title "Zinc <version>" --notes-file <notes> --latest`, so `gh` must be installed and logged in. Publishing is a deliberate act; do not run it from automation without a human decision.
+With `--publish` it runs `gh release create <tag> <packages> <feeds> --repo <owner>/<repo> --title "Zinc <version>" --notes-file <notes> --latest`, so `gh` must be installed and logged in. Publishing is a deliberate act; do not run it from automation without a human decision.
 
 ## `latest.json`
 
@@ -140,13 +151,13 @@ Unpacked installs of the browser extension cannot update themselves, so the exte
 bun gpui-ui/scripts/release.ts --extension-zip Zinc-Connector-<version>.zip [--installer <setup.exe>] --publish <owner>/<repo> --dry-run
 ```
 
-`--installer` may be left out for a connector-only release. This writes `latest-extension.json` next to `latest.json`, with the same fields (without `minVersion`), the same key and the same signing; `url` is the release asset `Zinc-Connector-<version>.zip` (or `--extension-url`). With `--publish` the zip and the feed are uploaded to the release. The extension embeds the public key at build time: run `bun scripts/gen-update-key.ts <path to gpui-ui/update-pubkey.txt>` in the connector repository before building (an empty key means no notice). The extension compares the feed's `version` with its manifest `version_name` (else `version`), so build it with `version_name` set to the same stamp as the release.
+`--installer` may be left out for a connector-only release. This writes `latest-extension.json` next to `latest.json`, with the same fields (without `minVersion`), the same key and the same signing; `url` is the release asset `Zinc-Connector-<version>.zip` (or `--extension-url`, or `--base-url` plus the file name). With `--publish` the zip and the feed are uploaded to the release. The extension embeds the public key at build time: run `bun scripts/gen-update-key.ts <path to gpui-ui/update-pubkey.txt>` in the connector repository before building (an empty key means no notice). The extension compares the feed's `version` with its manifest `version_name` (else `version`). The feed carries the connector's own version, taken from the zip's file name (then `--version`, then the app package's), not the app's build stamp. An app stamp such as `0.1.11+1a2b3c4d-20261116` would count as newer than the extension's own `0.1.11` for ever.
 
 ## The feed and the update flow
 
 The feed is `latest.json` at an https URL (plain http is accepted for localhost only, for tests). It must be fetchable by the installed apps without credentials, so the hosting choice matters:
 
-- `ABorakati/zinc` is public, so its release assets download without credentials: the default feed can be `https://github.com/ABorakati/zinc/releases/latest/download/latest.json`. (A private repository's assets cannot be downloaded anonymously; it would need the feed hosted elsewhere.) The signature on the manifest, not the host, protects users.
+- `ABorakati/zinc` is public, so its release assets download without credentials: the default feed is `https://github.com/ABorakati/zinc/releases/latest/download/latest.json`, so `release.ts --publish` makes a new release the one installed apps find. (A private repository's assets cannot be downloaded anonymously; it would need the feed hosted elsewhere.) The signature on the manifest, not the host, protects users.
 - For your own machine only, `ZN_UPDATE_TOKEN` (a GitHub token) is sent as a bearer token to the feed's own origin and nowhere else. Do not ship a token to users.
 
 What the app does (`core/src/update/`, `gpui-ui/src/update/`):
@@ -154,6 +165,7 @@ What the app does (`core/src/update/`, `gpui-ui/src/update/`):
 - It checks about 20 seconds after the first items load, then every 24 hours, if "Check automatically" is on (default). "Download automatically" is off by default. "Check now" always works.
 - It downloads to `%LOCALAPPDATA%\zotero-next-gpui\updates\zotero-next-<version>-setup.exe`, resumable. Size and SHA-256 must match the signed manifest or the file is deleted; it is verified again right before running.
 - "Install now" closes the database cleanly, starts the installer detached with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ZNRELAUNCH` and exits. "Install on exit" does the same at the next normal quit, without `/ZNRELAUNCH`. A crash exit installs nothing. `ZN_INSTALLER_ARGS` (a JSON array, with `{pid}` and `{file}` placeholders) overrides the arguments.
+- The relaunched app is started from the old one, so it inherits the old process's environment. A packaged app replaces an inherited `ZN_PDF_DLL`, `ZN_ROOT`, `ZN_READER_HOST`, `ZN_NOTE_HOST`, `ZN_ZOTERO_VENDOR` or worker path that points into another Zinc package folder, or at nothing, so the new version loads its own files. Other values stay as the user's overrides (`gpui-ui/src/packagedEnv.ts`).
 - Logs go to `%APPDATA%\zotero-next-gpui\logs`, area `update`.
 
 ## Release checklist
@@ -161,14 +173,14 @@ What the app does (`core/src/update/`, `gpui-ui/src/update/`):
 This is the Windows installer. The Linux and macOS packages follow [the section below](#linux-and-macos-packages).
 
 1. Check `main` is green in CI and run the checks in [Testing](testing.md).
-2. Decide the release number (`ZN_RELEASE`) and build with `bun gpui-ui/scripts/package.ts --aot` using a build environment that has the update public key and `ZN_UPDATE_URL` set.
+2. Decide the release number (`ZN_RELEASE`) and build with `bun gpui-ui/scripts/package.ts --aot` (the committed `gpui-ui/update-pubkey.txt` and the default feed URL are used unless you override them).
 3. Build the installer with `bun gpui-ui/scripts/installer.ts`. Install it on a clean machine or in a sandbox (`--test`) and check a silent upgrade over the previous version.
 4. Run `release.ts` with `--dry-run`, read the command, then publish.
 5. Check that an installed older build offers the update and installs it.
 
 ## Linux and macOS packages
 
-The AppImage (`gpui-ui/scripts/appimage.ts`) and the macOS app (`gpui-ui/scripts/dmg.ts`, which also writes `Zinc-<release>-arm64.app.zip` for updates) update themselves from their own signed feeds, `latest-linux-x64.json` and `latest-darwin-arm64.json`, next to the Windows `latest.json`. Publish all three with one `release.ts` run (`--installer`, `--appimage`, `--mac-app`); the feed format and the self-replacement are in `gpui-ui/UPDATES.md`. The disk image itself is only for first installs (`--attach`). How each package is built is in [Building](building.md#linux-and-macos).
+The AppImage (`gpui-ui/scripts/appimage.ts`) and the macOS app (`gpui-ui/scripts/dmg.ts`, which also writes `Zinc-<release>-arm64.app.zip` for updates) update themselves from their own signed feeds, `latest-linux-x64.json` and `latest-darwin-arm64.json`, next to the Windows `latest.json`. Publish all three with one `release.ts` run (`--installer`, `--appimage`, `--mac-app`, with `--extension-zip` for the connector feed too); the feed format and the self-replacement are in `gpui-ui/UPDATES.md`. The disk image itself is only for first installs (`--attach`). How each package is built is in [Building](building.md#linux-and-macos).
 
 `.github/workflows/desktop-packages.yml` builds both and attaches them to a release. It runs when a release is published, and by hand. Jobs:
 
@@ -192,4 +204,4 @@ The workflow does not run on every push, only on releases and by hand: the macOS
 
 The disk image is signed ad hoc and not notarised, and the AppImage is not signed.
 
-The website, with this documentation, is published on GitHub Pages at https://aborakati.github.io/zinc/ by `web.yml` on every push to `main` that changes it.
+The website, with this documentation, is published on GitHub Pages at https://aborakati.github.io/zinc/ by `web.yml` on every push to `main` that changes it. The workflow builds the site under the base path `/zinc/` and its `pages` job deploys it (the repository's Pages source is "GitHub Actions"). The repositories, `ABorakati/zinc` and `ABorakati/zinc-connector`, are public.

@@ -22,7 +22,7 @@ The same commands work on Linux and macOS, apart from the `word/addin` and `conn
 
 | Location | What |
 | --- | --- |
-| `core/test/**/*.test.ts` | Core unit and integration tests, one folder per area (`sync/`, `websync/`, `translate/`, `cite/`, `connector/`, `mcp/`, `zport/`, `update/`, ...) and top-level files such as `migrations.test.ts`, `api.test.ts` and `server.test.ts` |
+| `core/test/**/*.test.ts` | Core unit and integration tests, one folder per area (`sync/`, `websync/`, `translate/`, `cite/`, `connector/`, `mcp/`, `zport/`, `update/`, ...) and top-level files such as `migrations.test.ts`, `api.test.ts`, `server.test.ts` and `item-index.test.ts` (`GET /api/items/index` must give each item's position exactly as `GET /api/items` lists it, for ten sorts, filters and views, and `-1` for an item outside the listing) |
 | `core/test/fixture.ts` | Helpers that create a temporary library and insert items and attachments |
 | `core/test/fuzz/` | Property-based tests (fast-check) |
 | `gpui-ui/src/**/*.test.ts` | Pure-logic tests next to the code they test (`*.fuzz.test.ts` for fuzzed ones) |
@@ -79,7 +79,10 @@ bun scripts/shot-hello.tsx out.png        # smoke test
 bun scripts/shot-app.tsx out.png          # the whole app
 bun scripts/shot-settings.tsx             # Settings
 bun scripts/shot-update.tsx [light]       # the auto-update UI against a fake feed
+ZN_URL=<core on a library COPY> bun scripts/shot-reveal.tsx [table|cards] [stay] [direct]   # "Open in Zinc"
 ```
+
+`shot-reveal.tsx` checks `store.revealItem` (see [Architecture](architecture.md#open-in-zinc-showing-an-item-from-outside-the-app)) on an item with no file. It picks the item 600 rows down My Library, so it is far off screen. By default it starts in a collection with a search typed and expects the app to switch to My Library, clear the search, select the item and scroll its row into view. It prints the checks (`found`, `view`, `filter`, `selected`, `focusIndex`, `rowShown`), the list's scroll anchor and the scroll request, and saves a screenshot. `table` (default) or `cards` picks the list; `stay` starts in My Library instead, so the item is only far down; `direct` also makes a direct `scrollToItem` call afterwards and prints where the list ends up. Preferences go to a throw-away file.
 
 The shell scripts share `gpui-ui/scripts/shell-shot-lib.tsx` (boot the app in the test renderer, settle, click, capture) and `_shell-env.ts`. `ZN_SHOTS=<dir>` sets the output folder (without it the scripts fall back to a fixed default folder, so set it). Each run points `ZN_UI_STATE` at a throw-away file so your real preferences are not touched. Scripts that need data talk to a core at `ZN_URL` serving a copy of a library; some scripts (for example `shot-item-actions.tsx`) write to that library, so always use a `VACUUM INTO` copy. These scripts need a GPU and are not run in CI. They are the way to check a layout change; a screenshot is not a test.
 

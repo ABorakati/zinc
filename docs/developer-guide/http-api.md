@@ -33,13 +33,14 @@ Clients that are not browsers send no `Origin` and pass. The guard lives in `ser
 - Item and collection identifiers are Zotero's 8-character keys.
 - Lists are paged with `limit` and `offset` query parameters. `GET /api/items` returns an `ItemList` with a `total`; `GET /api/search?q=&limit=&offset=` returns FTS5 results over metadata and full text. Style search (`GET /api/cite/styles`) pages the same way and sends the total in an `X-Total` header.
 - `GET /api/items` accepts `collection`, `tag`, `q`, `sort`, `dir`, `then`, `search`, `qmode`, `unfiled=1`, `publications=1`, `trash=1`, `fields=a,b` (extra Zotero data fields on each summary) and `include=creators,tags`.
+- `GET /api/items/index?key=K&...` answers `{"index": n}`: where item K sits in the listing `GET /api/items` returns for the same query parameters (`sort`, `dir`, `then`, `collection`, `tag`, `q`, `qmode`, `search`, `unfiled`, `publications`, `trash`, `library`), counted from 0, or `-1` when the listing does not contain it. A missing or malformed `key`, or a bad `sort` or `dir`, is a 400; any method but GET is a 405. `listItems` and `itemIndex` in `core/src/db.ts` build their `ORDER BY` from one function (`listOrder`), so the two cannot disagree. The app uses it to scroll to an item (see [Architecture](architecture.md#open-in-zinc-showing-an-item-from-outside-the-app)).
 - Attachment files are served with `Range` support: `GET /api/attachments/:key/file`.
 
 ## Route groups
 
 | Prefix | Module | What |
 | --- | --- | --- |
-| `/api/items`, `/api/collections`, `/api/tags`, `/api/tag-colors`, `/api/schema`, `/api/search`, `/api/open-url` | `core/src/api.ts` | Item CRUD (create, get, patch, `groups`, `duplicate`, `tags`, `related`), collections and their items, the tag list and tag colours, the Zotero item schema, full-text search, opening an http(s) or doi URL in the browser |
+| `/api/items`, `/api/collections`, `/api/tags`, `/api/tag-colors`, `/api/schema`, `/api/search`, `/api/open-url` | `core/src/api.ts` | Item CRUD (create, get, patch, `groups`, `index`, `duplicate`, `tags`, `related`), collections and their items, the tag list and tag colours, the Zotero item schema, full-text search, opening an http(s) or doi URL in the browser |
 | `/api/attachments/:key/...` | `core/src/api.ts` | `file` (GET, PUT to replace), `reveal`, `open-external`, `annotations`, `view-state` |
 | `/api/add/...` | `core/src/additems/api.ts` | `identifier`, `file`, `link`, `retrieve-metadata`, `create-parent` (all POST) |
 | `/api/cite/...` | `core/src/cite/api.ts` | `styles` (list, install, preview, delete), `format`, `settings` |
@@ -54,12 +55,28 @@ Clients that are not browsers send no `Origin` and pass. The guard lives in `ser
 | `/api/references/...` | `core/src/references/api.ts` | `:itemKey` (reference list), `lookup`, `add` |
 | `/api/sync/...` | `core/src/sync/api.ts` | Local Zotero sync: `status`, `now`, `enable`, `conflicts` |
 | `/api/websync/...` | `core/src/websync/api.ts` | zotero.org sync: `status`, `key`, `mode`, `options`, `now`, `files/check`, `files/download-missing`; contract in `core/src/websync/CONTRACT.md` |
-| `/api/ui/...` | `core/src/connector/ui.ts` | The UI's current selection and "reveal this item" requests (`selection`, `reveal`), used by the connector and the Word sidebar |
+| `/api/ui/...` | `core/src/connector/ui.ts` | The UI's current selection and "reveal this item" requests (`selection`, `reveal`), used by the connector and the Word sidebar; see [The `/api/ui` routes](#the-apiui-routes) |
 | `/api/integrations` | `core/src/integrations/api.ts` | Install or remove the Word add-in and the Chrome connector registration from Settings |
 
 There is no HTTP route for auto-update. The update logic (`core/src/update/`) is called directly by the app (`gpui-ui/src/update/`); see [Releasing](releasing.md).
 
 Routing order in `handleApi`: `/api/fulltext/` and `/api/references/` first, then the feature handlers (cite, add, duplicates, io, searches, maintenance, files, ui, integrations, translate, bbt), then `/api/sync/` and `/api/websync/`, then the core routes in `route()`. A handler that does not recognise its path returns `null` and the next one is tried; if none answers, the response is `404 {"error": "not found"}`.
+
+## The `/api/ui` routes
+
+`core/src/connector/ui.ts` is a small bridge between the running app, the browser connector and the Word add-in. Its state is in memory (`core/src/connector/state.ts`) and is lost when the core stops.
+
+| Route | What |
+| --- | --- |
+| `GET /api/ui/selection` | `{selection, rev, ext, reveal}`: the view the UI last posted, a revision counter the UI polls, `ext` (SQLite's `data_version`, which moves when another process commits to the database), and the pending reveal request or `null` |
+| `POST /api/ui/selection` | `{kind, key?}` with `kind` one of `library`, `unfiled`, `trash`, `collection`, `search` (`key` is required for the last two). The UI posts its current view so the connector saves into the selected collection. 400 for a malformed value |
+| `POST /api/ui/reveal` | `{key, open?}` asks the app to show an item. Answers `{ok, rev, seq, opened}` |
+
+For `reveal`, `key` is a top-level item or a child (a child resolves to its parent). The answer is 404 when the item does not exist or is in the trash, 400 for a missing or malformed `key`, and 405 for any method but POST.
+
+With `open: true` the core also picks a file to open, and `opened` in the answer is that attachment's key (`null` when `open` was not set or nothing was picked). If `key` is itself an attachment, only that attachment is considered. Otherwise the core takes the item's first PDF, then EPUB, then HTML snapshot. Only stored or linked files count, and an attachment of another type is never picked (`readableAttachment` in `ui.ts`).
+
+Each request gets a new `seq`, and `GET /api/ui/selection` returns the latest as `reveal: {key, title, seq, at, open?}`. `open` is `{key, title}` of the picked attachment and is present only when one was picked. The app acts when `seq` changes; see [Architecture](architecture.md#open-in-zinc-showing-an-item-from-outside-the-app).
 
 ## MCP: `/mcp`
 

@@ -30,12 +30,21 @@ They use the system web view and the note editor build. When the note editor is 
 
 Add from URL runs Zotero's translators and falls back to a plain webpage item when none matches. A translator is limited to 60 seconds and 25 HTTP requests ([translators](../developer-guide/translators.md)). Some publishers need your institution's sign-in for full text ([Find Full Text](find-full-text.md)).
 
+## Windows says the publisher is unknown, or macOS will not open Zinc
+
+The installers are not code-signed yet, so both systems warn you the first time.
+
+- **Windows (SmartScreen).** Click **More info**, then **Run anyway**.
+- **macOS.** Open the **Applications** folder, right-click **Zinc**, choose **Open**, then **Open** again. On macOS 15 and later, if there is no **Open** button, try to open Zinc once, then go to **System Settings > Privacy & Security** and click **Open Anyway**.
+- **Linux.** There is no warning. If the AppImage will not start, run `chmod +x` on it, or allow it to run as a program in the file manager's properties.
+
 ## Word
 
 The Word add-in and the Word MCP server are Windows only.
 
 - **The sidebar does not appear.** Check that the **Word add-in** component was installed ([Install](install.md)) and see [The Word add-in](word.md).
-- **An agent gets 401 from the Word MCP.** It needs the bearer token from the add-in's token file, and requests from a browser (with an `Origin` header) are refused ([MCP](mcp.md)).
+- **Open in Zinc opens the PDF instead of selecting the item.** That is intended. Zinc opens the item's PDF, else its EPUB, else its web snapshot. Only an item with no file is selected in the **Library** tab ([The Word add-in](word.md#open-in-zinc)).
+- **Open in Zinc takes a long time.** If Zinc is not running, the add-in starts it and waits up to about 40 seconds. Start Zinc first to avoid the wait.- **An agent gets 401 from the Word MCP.** It needs the bearer token from the add-in's token file, and requests from a browser (with an `Origin` header) are refused ([MCP](mcp.md)).
 
 ## Sync
 
@@ -44,7 +53,10 @@ The Word add-in and the Word MCP server are Windows only.
 
 ## Updates are not offered
 
-A build run from source, a build without an update key, or one with no feed address never updates ([Updates](updates.md)). Updating in the app is Windows only; on Linux and macOS download a newer release by hand ([Install](install.md)).
+- **Version 0.1.10 or earlier.** These cannot update themselves. Install a newer release by hand ([Install](install.md)); from 0.1.11 on, Zinc updates itself.
+- **A build run from source, or one without an update key,** never updates ([Updates](updates.md)).
+- **"Could not install the update", or "has to be installed by hand".** On Linux the AppImage must be started from its own file, in a folder you can write to. On macOS Zinc must be in Applications (or another writable folder), not run from the disk image. Otherwise install the new release by hand ([Install](install.md)).
+- **Nothing is offered.** Press **Check now** under **Settings > System > Updates**; it works even with **Check automatically** off. Leave **Update feed** empty unless you mean to use another one.
 
 ## FAQ
 
@@ -52,9 +64,9 @@ A build run from source, a build without an update key, or one with no feed addr
 
 **Where is my library?** In a single `.sqlite` file. **Settings > Files and folders > Library location** shows the path ([First run](first-run.md)).
 
-**Is anything sent over the network without my asking?** Logs stay on your computer. The app contacts the update feed only if one is configured, sync services only when you turn them on, and sites you add items from.
+**Is anything sent over the network without my asking?** Logs stay on your computer. The app contacts the update feed (the latest GitHub release) unless you turn off **Check automatically**, sync services only when you turn them on, and sites you add items from.
 
-**Can I use it on macOS or Linux?** Yes. There is a Linux x64 AppImage and a macOS disk image for Apple Silicon (macOS 13 or later). See [Install](install.md). The Word add-in, auto-update and the Zinc browser connector's helper are Windows only.
+**Can I use it on macOS or Linux?** Yes. There is a Linux x64 AppImage and a macOS disk image for Apple Silicon (macOS 13 or later). See [Install](install.md). The Word add-in and the Zinc browser connector's helper are Windows only. Auto-update works on all three systems.
 
 **Can I use it with the official Zotero Connector?** The app implements the connector protocol on port 23119, so the official connector can talk to it while Zotero is closed. On Windows the dedicated Zinc connector also works with neither program running ([Adding items](adding-items.md)).
 

@@ -54,8 +54,8 @@ Start-up is nearly 4 times faster to a window and over 20 times faster to a usab
 ### Works with the app closed
 
 - **Save references from Chrome or Edge.** The browser connector fork talks to a small native host, so pages, PDFs and references are saved straight into your library with the app closed. They sync the next time it runs. A popup under the toolbar button picks the collection, removes or cancels a save, and opens the item in the app.
-- **Browse your library in a browser tab.** The connector opens the same interface, built for the browser, on your library file through the same host. PDFs open there, and annotations made there are saved; item edits are read-only for now.
-- **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in Zinc** on a cited item.
+- **Browse your library in a browser tab.** The connector opens the same interface, built for the browser, on your library through the same host. You can search it and change items, collections, tags and notes there. PDFs open there, and annotations made there are saved. EPUBs and web snapshots open in Zotero's reader in a new tab. The host refuses sync, integration and anything that acts on the computer or names a local file.
+- **Cite in Word.** The Word add-in reads your library file directly and read-only. Searching, inserting citations and building a bibliography work with the app closed. The app starts only if you click **Open in Zinc** on a cited item, and that opens the item's PDF, EPUB or snapshot in Zinc's reader, or selects the item in the list when it has no file.
 - **Ask an agent.** The library's MCP server also runs over stdio against the library file with the app closed.
 
 ### Built-in MCP for AI agents
@@ -99,8 +99,8 @@ GPUIX is a dependency (the npm package, plus a private fork), not part of this r
 
 ### Library
 
-- Two views: **Cards** (title, authors, venue, tags and one-click actions) and a **Classic** sortable table.
-- **Make the list yours**: choose what each card shows and Comfortable or Compact density, pick the table's columns from Zotero's full list, group the list by year, item type or publication, sort on up to four levels, and hide or show the side panes. Unread items get a dot.
+- Two views: **Cards** (title, authors, venue, tags and one-click actions) and a **Classic** sortable table. In both, an item with attachments or notes has a twisty that opens them as child rows under it, as in Zotero.
+- **Make the list yours**: choose what each card shows and Comfortable or Compact density, pick the table's columns from Zotero's full list, group the list by year, item type or publication, sort on up to four levels, and hide or show the side panes. Under Settings, Appearance, Sidebars, show, hide and reorder the sidebar groups and the item pane's sections. Unread items get a dot.
 - **Organise collections your way**: give each collection a **colour** and an **icon** (book, star, flask, microscope and more), **pin** favourites to the top, and **group collections into your own named sections**, or group them by colour.
 - Quick search (title/creator/year, all fields, or full text), Advanced Search and saved searches, coloured tags, duplicate detection and merging, trash, and **My Publications**.
 
@@ -229,13 +229,14 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 | Reading view (reflowed article) | ✅ | ✅ | Zotero 10 has a Reading Mode button for PDFs and web snapshots. Next adds figures and tables as cards, and reference and citation cards. Zotero 10's reader code also has reference and citation popups, so how far the two differ is unverified. |
 | Read Aloud | ✅ | ❌ | Zotero 10: text-to-speech with local voices; its online voices need a Zotero login. |
 | Notes | ✅ | ✅ | Rich editor, child and standalone notes. |
+| Attachments and notes under items in the list | ✅ | ✅ | A twisty opens child rows, in Cards and in the Classic table. |
 | Snapshots and EPUB | ✅ | ✅ | Opened in web tabs. |
 | Sync with zotero.org | ✅ | ⚠️ | Items, collections, tags, notes, annotations and files. Your own library and your group libraries (read-only groups never upload). |
 | Sync through a local Zotero | n/a | ✅ | Reads and writes the Zotero data folder. |
 | Word plugin | ✅ | ✅ | Word only, with a sidebar. |
 | LibreOffice plugin | ✅ | ❌ | Zotero 10 ships the LibreOffice extension. Not planned for Next. |
 | Google Docs | ✅ | ❌ | Zotero 10 handles Google Docs through the browser connector (the install has the integration code); not tested end to end, so unverified. Not planned for Next. |
-| Browser connector | ✅ | ✅ | Works with the official connector on port 23119, or with the native-messaging fork. |
+| Browser connector | ✅ | ✅ | Works with the official connector on port 23119, or with the native-messaging fork, which also opens your library in a browser tab where you can edit it. |
 | Translators, import and export | ✅ | ✅ | Zotero's own translators, plus native importers for common formats. |
 | Citation styles | ✅ | ✅ | citeproc-js and CSL styles. |
 | Drag citations into other apps | ✅ | ✅ | Drop items on Word, a browser or an email to insert the Quick Copy text; Shift gives a citation instead of a bibliography entry. Windows only in Next. |
@@ -257,12 +258,12 @@ Two more figures: the first reading-view layout of a 10-page PDF takes about 5 t
 
 ### Windows
 
-1. Open the **Releases** page of this repository and download `Zinc-Setup-<version>.exe`. (Releases up to 0.1.2 name it `ZoteroNext-Setup-<version>.exe`.)
+1. Open the **Releases** page of this repository (it is public, so you need no sign-in) and download `Zinc-Setup-<version>.exe`. (Releases up to 0.1.2 name it `ZoteroNext-Setup-<version>.exe`.)
 2. Run it. It installs **per user**, into `%LOCALAPPDATA%\Programs\Zinc`. It does not need administrator rights and does not touch your library.
 3. Windows SmartScreen will warn that the publisher is unknown, because the installer is not code-signed yet. Click **More info**, then **Run anyway**.
 4. The Setup wizard has optional **Word add-in** and **Browser connector** components (both ticked by default). You can also tick a desktop shortcut.
 
-Updating is the same: run a newer installer over the top, or let the app's signed auto-update do it. Uninstalling removes the program files only, and asks before removing settings and logs. It never removes a library. Details, silent-install switches and signing are in [`gpui-ui/installer/README.md`](gpui-ui/installer/README.md); the update feed is described in [`gpui-ui/UPDATES.md`](gpui-ui/UPDATES.md).
+Updating is the same: run a newer installer over the top, or let the app's signed auto-update do it (built in since 0.1.11; it takes the latest GitHub release). Uninstalling removes the program files only, and asks before removing settings and logs. It never removes a library. Details, silent-install switches and signing are in [`gpui-ui/installer/README.md`](gpui-ui/installer/README.md); the update feed is described in [`gpui-ui/UPDATES.md`](gpui-ui/UPDATES.md).
 
 ### Linux
 
@@ -280,7 +281,7 @@ An agent with a shell, such as Claude Code, can install Zinc on any of the three
 
 ### The browser edition
 
-Each release also has `Zinc-Web-<tag>.zip` (`ZoteroNext-Web-<tag>.zip` up to 0.1.2): the same interface and core built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), which runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows. Unzip it, serve the folder over HTTP (for example `python3 -m http.server 8080` in it) and open `http://localhost:8080`; browsers do not run WebAssembly from a file opened on disk. For now it opens a demo library and keeps changes only until the tab closes; web tabs, sync and anything that needs your disk are desktop only. It is built by [`gpui-ui/web/build.ts`](gpui-ui/web/build.ts) in the [Browser build](.github/workflows/web.yml) workflow.
+Each release also has `Zinc-Web-<tag>.zip` (`ZoteroNext-Web-<tag>.zip` up to 0.1.2): the same interface and core built for the browser (GPUI, SQLite and PDFium compiled to WebAssembly), which runs in a recent Chrome, Edge, Firefox or Safari on Linux, macOS or Windows. Unzip it, serve the folder over HTTP (for example `python3 -m http.server 8080` in it) and open `http://localhost:8080`; browsers do not run WebAssembly from a file opened on disk. On its own, as a plain web page, it is a read-only demo library: it refuses changes, and web tabs, sync and anything that needs your disk are desktop only. To use your own library in a browser, use the Zinc Connector (see [The browser connector](#the-browser-connector)). It is built by [`gpui-ui/web/build.ts`](gpui-ui/web/build.ts) in the [Browser build](.github/workflows/web.yml) workflow.
 
 ## First run
 
@@ -307,7 +308,7 @@ Two routes put web pages and references into the library:
 1. **The Zotero connector port.** While the app runs it answers on port 23119 like Zotero does, so the official Zotero Connector extension works. Only one program can own that port, so close desktop Zotero first.
 2. **The native-messaging fork (Chrome and Edge, Windows).** A fork of the connector talks to `connector-host/` (a small native host), so you can save pages, PDFs and references **while the app is closed**. They go straight into the library and sync the next time the app runs. The installer registers the host and shows how to load the extension (`gpui-ui/installer/connector-howto.html`). The extension's source is its own repository, [ABorakati/zinc-connector](https://github.com/ABorakati/zinc-connector) (branch `zotero-next`), a fork of [zotero/zotero-connectors](https://github.com/zotero/zotero-connectors) under the same AGPL-3.0 licence.
 
-   With the fork, clicking the toolbar button saves the page and opens a popup under the button: choose or search the target collection, **Cancel** or **Remove** the save (to the Trash), or **Open PDF**, **Open in Zinc** and **Open library**. Right-click the button and choose **Open Zinc library** to browse your library in a browser tab, read-only for now. See [Adding items](docs/user-guide/adding-items.md#the-browser-connector).
+   With the fork, clicking the toolbar button saves the page and opens a popup under the button: choose or search the target collection, **Cancel** or **Remove** the save (to the Trash), or **Open PDF**, **Open in Zinc** and **Open library**. Right-click the button and choose **Open Zinc library** to browse and edit your library in a browser tab. A computer has one library: the app's, when the app is installed. A library held in the browser can be moved into the app. The helper refuses account routes (sync, integrations), routes that act on the computer (open a URL, reveal a file, raw files, Mendeley import) and any request that names a local path or linked file. See [Adding items](docs/user-guide/adding-items.md#the-browser-connector).
 
 ## MCP for AI agents
 
@@ -369,7 +370,7 @@ Notes:
 | `note-host/` | The page for the note editor |
 | `vendor/` | Upstream Zotero repositories fetched by build scripts (git-ignored) |
 | `scripts/` | Helper scripts, such as building Zotero's document worker |
-| `website/` | The project website (Astro): home, features, compare and download pages, plus these docs. Local only; from the repo root: `bun run docs:dev` |
+| `website/` | The project website (Astro): home, features, compare and download pages, plus these docs. Published at <https://aborakati.github.io/zinc/>; to run it locally, from the repo root: `bun run docs:dev` |
 | `docs/` | User-guide pages (`user-guide/`) and the pictures in this README (`screenshots/`) |
 | `.github/workflows/` | CI and the nightly fuzz run |
 | `CONTRIBUTING.md` | How to run the CI checks locally |

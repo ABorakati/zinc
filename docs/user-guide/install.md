@@ -1,6 +1,6 @@
 # Install
 
-Zinc runs on Windows, Linux and macOS. Each release on the **Releases** page of the repository has one download per system:
+Zinc runs on Windows, Linux and macOS. Each release on the **Releases** page of the repository has one download per system. The repository and its releases are public, so downloading needs no GitHub sign-in.
 
 | System | Download | Needs |
 | --- | --- | --- |
@@ -20,11 +20,11 @@ Some parts are Windows only for now: the Word add-in, the Zinc browser connector
    - A desktop shortcut (optional).
 4. Finish. Start **Zinc** from the Start menu.
 
-The program goes into `%LOCALAPPDATA%\Programs\Zinc`, with a Start-menu shortcut and an entry in **Apps & features** (under the current user). The installer never touches your library, your settings or your logs.
+The program goes into `%LOCALAPPDATA%\Programs\Zinc`, with a Start-menu shortcut and an entry in **Apps & features** (under the current user). Older builds used `%LOCALAPPDATA%\Programs\Zotero Next`. The installer never touches your library, your settings or your logs.
 
 ### Upgrading
 
-Run a newer installer over the old one, or let the app update itself ([Updates](updates.md)). Files are replaced in place and your choice of components is remembered. If Zinc is running, the installer asks to close it. A silent install closes it for you and fails if the app does not close within 15 seconds. If Word is open, the installer leaves an installed add-in as it is.
+Run a newer installer over the old one, or let the app update itself ([Updates](updates.md); versions 0.1.11 and later can do this, earlier ones need the installer). Files are replaced in place and your choice of components is remembered. If Zinc is running, the installer asks to close it. A silent install closes it for you and fails if the app does not close within 15 seconds. If Word is open, the installer leaves an installed add-in as it is.
 
 ### Silent install
 
@@ -45,8 +45,8 @@ Use **Apps & features**, or `unins000.exe /VERYSILENT /SUPPRESSMSGBOXES` from th
 The AppImage is one file that runs without installing anything.
 
 1. Download `Zinc-<version>-x86_64.AppImage`.
-2. Make it executable: `chmod +x Zinc-<version>-x86_64.AppImage`, or tick **Allow executing file as program** in the file's properties.
-3. Run it.
+2. Make it executable: `chmod +x Zinc-<version>-x86_64.AppImage`, or allow it to run as a program in the file manager's properties.
+3. Run it. Linux shows no warning for it.
 
 To add Zinc to the applications menu, use an AppImage manager such as Gear Lever or AppImageLauncher, or keep the file somewhere permanent and create a launcher for it.
 
@@ -58,7 +58,7 @@ Zinc updates itself ([Updates](updates.md)) if you can write to the folder that 
 
 1. Download `Zinc-<version>-arm64.dmg` and open it.
 2. Drag **Zinc** to **Applications**.
-3. The app is not notarised by Apple yet. The first time, open the **Applications** folder, right-click **Zinc** and choose **Open**, then **Open** again. If macOS only offers **Move to Bin**, open **System Settings > Privacy & Security** and click **Open Anyway** next to the message about Zinc.
+3. The app is not notarised by Apple yet, so macOS says it cannot check it. The first time, open the **Applications** folder, right-click **Zinc** and choose **Open**, then **Open** again. On macOS 15 and later, if there is no **Open** button, try to open Zinc once, then go to **System Settings > Privacy & Security** and click **Open Anyway**.
 
 Zinc updates itself ([Updates](updates.md)) once it is in Applications or another folder you can write to. To update by hand, drag the newer Zinc over the old one. To uninstall, move Zinc to the Bin. Settings and logs stay in `~/Library/Application Support/zotero-next-gpui`, and a library you created stays where you put it (by default `~/Library/Application Support/zotero-next/library.sqlite`).
 

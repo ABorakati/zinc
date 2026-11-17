@@ -3,9 +3,12 @@ import Icon from "../components/Icon.astro";
 import Site from "../layouts/Site.astro";
 
 const base = import.meta.env.BASE_URL;
+// the current release: every version and date on this page comes from these two (bump them with each release)
+const version = "0.1.15";
+const released = "17 Nov 2026";
 const latest = "https://github.com/ABorakati/zinc/releases/latest";
 // the browser edition (gpui-ui/web, attached to releases by .github/workflows/web.yml)
-const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.15/Zinc-Web-v0.1.15.zip";
+const webZip = `https://github.com/ABorakati/zinc/releases/download/v${version}/Zinc-Web-v${version}.zip`;
 // the AppImage and the disk image (gpui-ui/scripts/appimage.ts, dmg.ts) are attached to releases by .github/workflows/desktop-packages.yml
 const releases = "https://github.com/ABorakati/zinc/releases";
 // what to paste into an agent; the page's address is filled in by the script below (the site has no fixed origin)
@@ -19,7 +22,7 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 				<h1 class="display" style="margin-bottom: 1.5rem">Take it home</h1>
 				<p class="lede" style="margin-bottom: 2rem">On Windows, one installer for the app, the Word add-in and the browser connector. On Linux an AppImage, on a Mac a disk image. None of them needs administrator rights, and none changes your Zotero library.</p>
 				<div class="actions">
-					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.15 for Windows</a>
+					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download {version} for Windows</a>
 					<a class="btn btn-outline btn-lg" href="#linux-mac"><Icon name="laptop" />Linux and macOS</a>
 					<a class="btn btn-ghost btn-lg" href="#agent"><Icon name="bot" />Install with an agent</a>
 				</div>
@@ -35,7 +38,7 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 						<tr style="--r:1"><td>Installs to</td><td>your user, no admin</td></tr>
 						<tr style="--r:2"><td>Size</td><td>about 100 to 145 MB</td></tr>
 						<tr style="--r:3"><td>Updates</td><td>signed auto-update</td></tr>
-						<tr style="--r:4"><td>Released</td><td class="typed-date">9 Nov 2026</td></tr>
+						<tr style="--r:4"><td>Released</td><td class="typed-date">{released}</td></tr>
 					</tbody>
 				</table>
 			</div>
@@ -50,7 +53,7 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 				<p>Your installed copy lives in <code>%LOCALAPPDATA%\Programs\Zinc</code>. Uninstalling removes the program, never a library.</p>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1.9</span><span>Installing</span></div>
+				<div class="card-head"><span>ZN {version}</span><span>Installing</span></div>
 				<ol class="card-steps">
 					<li><div><strong>Run the installer.</strong><p>Windows may say the publisher is unknown: click <strong>More info</strong>, then <strong>Run anyway</strong>. Pick the parts you want. Close Word first if you install the add-in.</p></div></li>
 					<li><div><strong>Choose a library.</strong><p>Import from Zotero (only read), open a Zinc library, or start empty. <a href={`${base}user-guide/first-run/`}>First run</a>.</p></div></li>
@@ -60,7 +63,7 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 		</div>
 		<div class="wrap" style="margin-top: 2.5rem">
 			<p class="fine">Silent install, for scripts:</p>
-			<pre class="typed">Zinc-Setup-0.1.9.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="app,word,connector"</pre>
+			<pre class="typed">Zinc-Setup-{version}-&lt;build&gt;.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /COMPONENTS="app,word,connector"</pre>
 		</div>
 	</section>
 
@@ -69,14 +72,14 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 			<div class="prose">
 				<h2 class="h2" style="margin-bottom: 1.1rem">The browser connector</h2>
 				<p>On Windows, the installer registers the helper program. Browsers do not let an installer add an extension, so load it once yourself. It takes about thirty seconds, and afterwards pages save even when Zinc is closed.</p>
-				<p>Click the button to save. A popup opens under it, where you choose the collection, cancel or remove the save, or open the item in Zinc. Right-click the button and choose <strong>Open Zinc library</strong> to browse your library in a browser tab (read-only for now).</p>
+				<p>Click the button to save. A popup opens under it, where you choose the collection, cancel or remove the save, or open the item in Zinc. Right-click the button and choose <strong>Open Zinc library</strong> to browse and edit your library in a browser tab: items, collections, tags and notes. Sync, and anything that opens files on this computer, stay in the app.</p>
 				<figure class="slide-popup-shot" style="max-width: 300px; margin: 1.25rem 0">
 					<img src={`${base}screenshots/connector-popup-picker-light.png`} width="720" height="916" loading="lazy" alt="The save popup with the collection search open: My Library and its collections, with a search field" />
 				</figure>
 				<p>The official Zotero Connector also works, but only while the app is open. Keep one connector per browser, or every page shows two Save buttons.</p>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1.9</span><span>Connector</span></div>
+				<div class="card-head"><span>ZN {version}</span><span>Connector</span></div>
 				<ol class="card-steps">
 					<li><div><strong>Open the extensions page.</strong><p><code>chrome://extensions</code> or <code>edge://extensions</code>.</p></div></li>
 					<li><div><strong>Turn on Developer mode.</strong></div></li>
@@ -100,7 +103,7 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 				</div>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1</span><span>Linux and macOS</span></div>
+				<div class="card-head"><span>ZN {version}</span><span>Linux and macOS</span></div>
 				<ol class="card-steps">
 					<li><div><strong>Linux: make it executable.</strong><p><code>chmod +x Zinc-&lt;version&gt;-x86_64.AppImage</code>, then run it. Or, in your file manager, open the file's properties and allow it to run as a program. Snapshots, EPUBs and the note editor need WebKitGTK 6 (<code>libwebkitgtk-6.0-4</code>).</p></div></li>
 					<li><div><strong>macOS: drag it to Applications.</strong><p>Open <code>Zinc-&lt;version&gt;-arm64.dmg</code> and drag Zinc into Applications.</p></div></li>
@@ -133,16 +136,16 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 			<div class="prose">
 				<h2 class="h2" style="margin-bottom: 1.1rem">The browser edition</h2>
 				<p>The same interface and core, built for the browser: GPUI, SQLite and PDFium compiled to WebAssembly, with Zotero's layout analysis for the reader. It runs in a recent Chrome, Edge, Firefox or Safari on any system, with nothing to install.</p>
-				<p>For now it opens a demo library of well-known papers and a demo article, and keeps changes only until you close the tab. Web tabs, sync and anything that needs your disk are in the desktop app only. <a href={`${base}demo/`}>Try it here first</a>, nothing to download.</p>
+				<p>It opens a read-only demo library of well-known papers and a demo article: you can browse, search and read, but not change it. To keep a library in your browser, install the Zinc Connector; web tabs, sync and anything that needs your disk are in the desktop app only. <a href={`${base}demo/`}>Try it here first</a>, nothing to download.</p>
 				<div class="actions" style="margin-top: 1.5rem">
 					<a class="btn btn-primary" href={webZip}><Icon name="download" />Download the browser edition (zip)</a>
 					<a class="btn btn-outline" href={`${base}demo/`}><Icon name="mouse-pointer-click" />Open the demo</a>
 				</div>
 			</div>
 			<div class="card">
-				<div class="card-head"><span>ZN 0.1.9</span><span>Browser</span></div>
+				<div class="card-head"><span>ZN {version}</span><span>Browser</span></div>
 				<ol class="card-steps">
-					<li><div><strong>Unzip it.</strong><p><code>Zinc-Web-v0.1.9.zip</code>, about 60 MB unpacked.</p></div></li>
+					<li><div><strong>Unzip it.</strong><p><code>Zinc-Web-v{version}.zip</code>, about 60 MB unpacked.</p></div></li>
 					<li><div><strong>Serve the folder.</strong><p>In the folder: <code>python3 -m http.server 8080</code>, or any static file server. Browsers only run WebAssembly over http://, not from a file opened on disk.</p></div></li>
 					<li><div><strong>Open it.</strong><p><code>http://localhost:8080</code>. Add <code>?open=demo</code> to open the demo article in the reader.</p></div></li>
 				</ol>

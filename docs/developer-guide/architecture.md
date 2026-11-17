@@ -66,7 +66,7 @@ flowchart LR
 | `website/` | Project website sources (Astro): product pages and the docs |
 | `docs/` | Documentation: `user-guide/`, `developer-guide/`, `screenshots/` |
 | `data/` | A local library kept by a developer. Git-ignored; never commit or script against it |
-| `.github/workflows/` | `ci.yml`, `fuzz-nightly.yml`, `macos.yml` and `desktop-packages.yml` |
+| `.github/workflows/` | `ci.yml`, `fuzz-nightly.yml`, `macos.yml`, `desktop-packages.yml`, `web.yml` (the website and its demo, deployed to GitHub Pages) and `extension.yml` (the browser extension) |
 
 The old Electrobun app (`app/`, `ui/`) is not part of this documentation.
 
@@ -183,3 +183,16 @@ The add-in finds the library with the same rule as `core/src/library-location.ts
 Windows only.
 
 `zotero-next-host.exe` is a Bun-compiled native-messaging host started by Chrome or Edge for the Zinc Connector extension (a fork kept in a separate repository). It embeds `core/src/connector` and runs the same connector handlers as port 23119 directly against the library database, so saving works with the app closed. It is registered per user in HKCU by `connector-host/install.ps1`. Protocol framing is in `connector-host/src/frames.ts`.
+
+## Open in Zinc: showing an item from outside the app
+
+The Word sidebar and the browser connector's popup can ask the running app to show an item. The routes are in [HTTP API](http-api.md#the-apiui-routes).
+
+1. **The request.** The Word add-in (`word/addin/ZnClient.cs`, `Reveal`) starts the app if it is not running, waits up to about 40 seconds for its API, and posts `POST /api/ui/reveal` with `{key, open: true}`. The connector host (`connector-host/src/reveal.ts`) also posts reveal requests. The core keeps the latest one in memory with a sequence number (`core/src/connector/state.ts`). With `open: true` it also picks the item's readable attachment (the one asked for, else the PDF, else the EPUB, else the HTML snapshot).
+2. **Raising the window.** The app does not raise its own window. After a successful post the add-in does it (`BringToFront`): it looks for a visible window titled `Zinc` and of class `Zed::Window` (the GPUI app; `BasicWindowClass` is the old app), restores it if minimised and brings it forward.
+3. **The poll.** The app polls `GET /api/ui/selection` every 1.5 seconds (`gpui-ui/src/shell/revealRequests.ts`) and acts when `reveal.seq` changes. A request that is more than 60 seconds old when the app first looks is ignored.
+4. **A file.** If the request carries `open`, `gpui-ui/src/platform.ts` selects the item and opens that attachment in the reader.
+5. **No file.** Otherwise it calls `store.revealItem(key)` (`gpui-ui/src/store.ts`). That finds the item's row: in the rows already loaded, or else through `GET /api/items/index` with the list's current query. When the item is not in this view it switches to My Library with no search or filter and asks again. If even My Library does not list it, it gives up and returns `false`. Otherwise it selects the item and sets `scrollRequest` (`{index, seq}`). The duplicates view and full-text results are not plain listings, so they always switch to My Library.
+6. **The scroll.** `gpui-ui/src/table/Table.tsx` and `gpui-ui/src/cards/CardList.tsx` follow `scrollRequest`. The new list is still arriving (its row count, then the group headers that move every row down), so for `REVEAL_SETTLE_MS` (3 seconds) after a request they scroll again each time the row count changes.
+
+`gpui-ui/scripts/shot-reveal.tsx` checks the last two steps headlessly; see [Testing](testing.md#headless-screenshot-scripts).

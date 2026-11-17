@@ -12,6 +12,8 @@ An item can have any number of **child notes**, and you can also keep **standalo
 | Standalone note | **Add > New Standalone Note**. The note is created in the collection you have selected. |
 | From annotations | In the [reader](reader.md), **Add note from annotations** in the Annotations panel adds a child note that lists the annotations. |
 
+In the item list, an item with notes or attachments has a twisty. Open it to see them as child rows under the item. Click a note row to show it in the item pane. Press `Enter` or double-click to open an attachment row.
+
 ### The note editor
 
 Where the system allows it, notes open in Zotero's own rich-text note editor, so you get the same formatting, citations and annotation highlights as in Zotero. The editor appears in place:
@@ -46,6 +48,6 @@ PDFs open in the native [reader](reader.md). Web page snapshots and EPUB files o
 
 If a web tab cannot be shown (web view missing, or the reader files unavailable), the tab says "Could not show … in the web view" with the reason, and an **Open in default app** button opens the file with whatever your system uses for it. When the web reader is not available at all, snapshots and EPUBs open in their default app straight away.
 
-Snapshots come from the [browser connector](adding-items.md#the-browser-connector), which can store a snapshot of the page you save.
+Snapshots come from the [browser connector](adding-items.md#the-browser-connector), which can store a snapshot of the page you save. The connector's [library tab](adding-items.md#your-library-in-the-browser) opens snapshots and EPUBs in Zotero's reader in a new browser tab.
 
 See also [Troubleshooting](troubleshooting.md) if the web view or note editor does not appear.

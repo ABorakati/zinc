@@ -24,6 +24,7 @@ These pages are plain Markdown. Browse `docs/` on GitHub, or run the documentati
 
 ## Viewing these docs
 
+- On the website: <https://aborakati.github.io/zinc/>. It shows these pages with search and dark mode.
 - On GitHub: open the `docs/` folder. Links are relative and Mermaid diagrams render in place.
 - Locally, with search and dark mode: from the repository root run `bun run docs:dev` (live reload) or `bun run docs:preview` (a production build), then open the address it prints. The site lives in `website/` and reads `docs/` directly, so there is one copy of every page. Only Bun is needed.
 - To check for broken links without serving: `bun run docs:build`. The build fails on a relative link to a page that does not exist.

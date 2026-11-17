@@ -31,6 +31,18 @@ Applied live.
 | Text size | Base size of interface text. | 12 px, **13 px**, 14 px, 15 px |
 | Reset appearance (button: **Reset**) | Back to System theme, Quiet Paper, Inter, 13 px. | |
 
+### Sidebars
+
+What the left sidebar and the item pane show, and in which order. See [Library basics](library.md). Each part is a row with a switch to show or hide it and up and down buttons to move it. The changes apply at once.
+
+| Setting | What it does | Default / options |
+| --- | --- | --- |
+| Left sidebar | The groups of the left sidebar. Tags is always the last one: you can hide it, but not move it or move another group below it. | Library, Saved Searches, Collections, Group Libraries, Tags (all shown) |
+| Item pane | The sections of the item pane on the right. The tabs under its header follow the same order, and a hidden section loses its tab. | Details, Abstract, Notes, Files, Collections, Tags, Related (all shown) |
+| Reset sidebars (button: **Reset**) | Shows every group and section again, in the default order. | |
+
+At least one part stays shown on each side. The last shown part cannot be hidden. Saved Searches is a group of its own. It shows whether or not Library is open. Group Libraries appears only when you belong to a group.
+
 ## General
 
 ### Window
