@@ -5,7 +5,7 @@ import Site from "../layouts/Site.astro";
 const base = import.meta.env.BASE_URL;
 const latest = "https://github.com/ABorakati/zinc/releases/latest";
 // the browser edition (gpui-ui/web, attached to releases by .github/workflows/web.yml)
-const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.13/Zinc-Web-v0.1.13.zip";
+const webZip = "https://github.com/ABorakati/zinc/releases/download/v0.1.14/Zinc-Web-v0.1.14.zip";
 // the AppImage and the disk image (gpui-ui/scripts/appimage.ts, dmg.ts) are attached to releases by .github/workflows/desktop-packages.yml
 const releases = "https://github.com/ABorakati/zinc/releases";
 // what to paste into an agent; the page's address is filled in by the script below (the site has no fixed origin)
@@ -19,7 +19,7 @@ const agentPrompt = (url: string) => `Install Zinc on this computer for me. Foll
 				<h1 class="display" style="margin-bottom: 1.5rem">Take it home</h1>
 				<p class="lede" style="margin-bottom: 2rem">On Windows, one installer for the app, the Word add-in and the browser connector. On Linux an AppImage, on a Mac a disk image. None of them needs administrator rights, and none changes your Zotero library.</p>
 				<div class="actions">
-					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.13 for Windows</a>
+					<a class="btn btn-primary btn-lg" href={latest}><Icon name="download" />Download 0.1.14 for Windows</a>
 					<a class="btn btn-outline btn-lg" href="#linux-mac"><Icon name="laptop" />Linux and macOS</a>
 					<a class="btn btn-ghost btn-lg" href="#agent"><Icon name="bot" />Install with an agent</a>
 				</div>
