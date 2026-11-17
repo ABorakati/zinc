@@ -68,7 +68,9 @@ If you typed into a citation by hand, editing it warns you first, because editin
 
 ### The citation popup
 
-When the cursor rests inside a citation and Word is the active window, a small popup appears beside it showing the full reference, with an edit button that opens the sidebar on that citation. Esc closes it, and it stays closed until the cursor leaves that citation. To switch the popup off, set `citationPopup` to `false` in the add-in's `settings.json` (see below).
+![The citation popup under citation (2) in Word: the reference, Open in Zinc, DOI, Edit citation and Delete citation](../screenshots/word-citation-popup.png)
+
+When the cursor rests inside a citation and Word is the active window, a small popup appears beside it showing the full reference, with **Open in Zinc** (for an item in your library), **DOI** (when the item has one), **Edit citation** (opens the sidebar on that citation) and **Delete citation**. Esc closes it, and it stays closed until the cursor leaves that citation. To switch the popup off, set `citationPopup` to `false` in the add-in's `settings.json` (see below).
 
 ### Bibliography
 
