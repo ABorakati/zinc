@@ -16,6 +16,7 @@ import { openItem } from "./actions";
 import { Card, tok } from "./Card";
 import { modsOf, swallowed } from "./click";
 import { focusList, listFocused, listKeyHandler, registerListFocus, setListFocused } from "./keys";
+import { ListScrollbar } from "./ListScrollbar";
 import { cardLayout, cardListWidth as cardListWidthNow, setCardListWidth } from "./layout";
 import { ListRetry } from "./ListRetry";
 import { loadTagColors } from "./logic";
@@ -269,6 +270,13 @@ export function CardsView(): JSX.Element {
 		setStart(Math.max(0, r - WINDOW / 2));
 		gpuix?.renderer.scrollToItem?.(list.id, r, always || r >= visA ? -300 : 0);
 	}
+	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
+	function scrollToRow(r: number) {
+		if (!list) return;
+		const s = untrack(first);
+		if (r < s || r + (visB - visA) > s + WINDOW) setStart(Math.max(0, r - WINDOW / 4));
+		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
+	}
 	/** Move the focus by `delta` items, skipping items hidden in collapsed groups. */
 	function move(delta: number, extend: boolean) {
 		const last = store.total() - 1;
@@ -331,6 +339,7 @@ export function CardsView(): JSX.Element {
 			>
 				<For each={indices()}>{(i) => <RowView row={i} rows={rows} />}</For>
 			</virtual-list>
+			<ListScrollbar count={count} visible={() => [visA, visB]} scrollTo={scrollToRow} />
 			<Show when={bubble()}>
 				{(bb) => (
 					<div

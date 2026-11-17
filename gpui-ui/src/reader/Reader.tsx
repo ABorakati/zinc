@@ -22,6 +22,7 @@ import type { EventPayload } from "@gpuix/solid";
 import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { textStyle, tokens, tw, withAlpha } from "../theme";
+import { ListScrollbar } from "../cards/ListScrollbar";
 import { readerMode, windowDpr } from "./env";
 import { openPdf, fetchAttachment } from "./library";
 import { PdfDoc, type OutlineEntry, type PdfLink, type TextLayer, type TextWord } from "./pdf";
@@ -2325,7 +2326,15 @@ export function Reader(props: ReaderProps): JSX.Element {
 		</For>
 	);
 	/** vertical and wrapped scrolling: a virtual list of rows inside a box that pans sideways when a row is wider than the viewport */
+	// the page box, plus the scrollbar's drag strip beside it (GPUIX's painted thumb takes no pointer input: cards/ListScrollbar.tsx);
+	// the strip sits in this wrapper, not the sideways-scrolling box, so it stays at the right edge when zoomed in
 	const verticalPages = (env: PageEnv) => (
+		<div style={{ display: "flex", flexDirection: "row", flexGrow: 1, minHeight: 0, width: "100%" }}>
+			{pageBox(env)}
+			<ListScrollbar count={nRows} visible={() => vis() as [number, number]} scrollTo={(r) => scrollToRow(r)} />
+		</div>
+	);
+	const pageBox = (env: PageEnv) => (
 		<div
 			ref={(el: { id: number }) => {
 				hbox = el;

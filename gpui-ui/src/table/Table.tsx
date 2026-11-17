@@ -8,6 +8,7 @@ import { childMenu } from "../cards/Card";
 import { modsOf, swallow, swallowed } from "../cards/click";
 import { openItem } from "../cards/actions";
 import { focusList, listFocused, listKeyHandler, registerListFocus, setListFocused } from "../cards/keys";
+import { ListScrollbar } from "../cards/ListScrollbar";
 import { ListRetry } from "../cards/ListRetry";
 import { openItemMenu } from "../cards/menus";
 import { childClick, childLabel, childLook, isChildSelected, Twisty } from "../cards/ChildRow";
@@ -528,6 +529,13 @@ export function TableView(): JSX.Element {
 		setStart(Math.max(0, r - WINDOW / 2));
 		gpuix?.renderer.scrollToItem?.(list.id, r, always || r >= visA ? -300 : 0);
 	}
+	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
+	function scrollToRow(r: number) {
+		if (!list) return;
+		const s = untrack(first);
+		if (r < s || r + (visB - visA) > s + WINDOW) setStart(Math.max(0, r - WINDOW / 4));
+		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
+	}
 	function move(delta: number, extend: boolean) {
 		const last = store.total() - 1;
 		if (last < 0) return;
@@ -793,6 +801,8 @@ export function TableView(): JSX.Element {
 						</Show>
 					</div>
 				</div>
+				{/* the scrollbar's drag strip: in the container, not the panned content, so it stays at the right edge */}
+				<ListScrollbar top={HEADER} count={count} visible={() => [visA, visB]} scrollTo={scrollToRow} />
 			</div>
 			{/* outside the panned content, so the pill stays beside the scrollbar when the columns scroll sideways */}
 			<Show when={bubble()}>
