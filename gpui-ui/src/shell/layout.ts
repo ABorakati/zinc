@@ -9,16 +9,23 @@ import { isDocTab } from "../contracts";
 import { registerAppAction } from "../registry";
 import { store, uiState } from "../store";
 import {
+	locatePane,
+	sectionPaneId,
 	migrateLegacyLibrary,
+	movePane,
 	normalizeLayout,
 	resetSizes,
 	setLeftShown,
 	setPaneHidden,
+	setStackActive,
 	standardLibrary,
+	type DropTarget,
 	type KnownPanes,
+	type PaneLocation,
 	type ViewLayout,
 } from "./frameLayout";
 import { knownPanes } from "./panes";
+import { RIGHT_PARTS } from "./sidebarLayout";
 import { bindUiState, getPref, persisted, setPref } from "./prefs";
 
 bindUiState(uiState); // prefs are written by store.ts's single ui-state.json writer
@@ -31,7 +38,7 @@ const CURRENT_LIBRARY = "shell.layout.current.library";
 
 // The built-in library panes are known here even before shell/builtinPanes.tsx registers them, so an edit made earlier (or a
 // layout read earlier) never drops them; they are drawn once registered.
-const BUILTIN_LIBRARY: KnownPanes = { ids: ["items", "item"], required: ["items"] };
+const BUILTIN_LIBRARY: KnownPanes = { ids: ["items", "item", ...RIGHT_PARTS.map((p) => sectionPaneId(p.id))], required: ["items"] };
 const knownLibrary = (): KnownPanes => {
 	const reg = knownPanes("library");
 	return {
@@ -136,3 +143,45 @@ for (let n = 1; n <= 9; n++)
 		shortcut: `Ctrl+${n}`,
 		run: () => gotoTab(n),
 	});
+
+// ---- moving library panes (phase 2; see docs/developer-guide/layouts-phase2.md) --------------------------------------------
+// The one entry point for drag-to-dock (shell/dock.tsx), the pane menus (shell/PaneStack.tsx) and sections (shell/sectionPanes.tsx).
+
+let undoStack: ViewLayout[] = [];
+const [undoCount, setUndoCount] = createSignal(0);
+/** Whether there is a layout change to undo. */
+export const canUndoLayout = (): boolean => undoCount() > 0;
+function remember(prev: ViewLayout): void {
+	undoStack = [...undoStack.slice(-19), prev]; // the last 20 changes
+	setUndoCount(undoStack.length);
+}
+/** Undo the last move / show / hide made through the functions below. Returns false when there is nothing to undo. */
+export function undoLayout(): boolean {
+	const prev = undoStack.pop();
+	setUndoCount(undoStack.length);
+	if (!prev) return false;
+	setLibraryLayout(prev);
+	return true;
+}
+
+/** Move a pane of the library (or place it, for a section being detached). Undoable. Returns false when the move is not allowed. */
+export function moveLibraryPane(id: string, to: DropTarget): boolean {
+	const prev = libraryLayout();
+	const next = movePane(prev, id, to);
+	if (next === prev) return false;
+	remember(prev);
+	setLibraryLayout(next);
+	return true;
+}
+/** Show `id` in its stack (a tab click). Not undoable. */
+export function activateLibraryPane(id: string): void {
+	setLibraryLayout(setStackActive(libraryLayout(), id));
+}
+/** Hide or show a library pane in place. Undoable. */
+export function hideLibraryPane(id: string, hide: boolean): void {
+	const prev = libraryLayout();
+	remember(prev);
+	setLibraryLayout(setPaneHidden(prev, id, hide));
+}
+/** Where a library pane is, or null. */
+export const libraryPaneLocation = (id: string): PaneLocation | null => locatePane(libraryLayout(), id);
