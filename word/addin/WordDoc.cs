@@ -206,25 +206,30 @@ namespace ZoteroNext.Word
         }
 
         /// <summary>
-        /// The tracked changes of a story as [start, end, type] (one pass with the collection's enumerator: Item(i) on a Word
-        /// collection walks it from the start every time), or null when there are none. Counting alone costs Word a full scan
-        /// of the document (about 20 ms on a 120-citation test document), so this is done once per field scan, never per field.
+        /// The tracked changes of a range (a story, or one field) as [start, end, type], or null when there are none. One
+        /// pass with the collection's enumerator: Item(i) on a Word collection walks it from the start every time. Each
+        /// change costs Word real work (about 20 ms measured from another process), so a story is only read whole when it
+        /// holds few changes: a manuscript under review holds hundreds (352 in one, 7 s), and then each field is asked for
+        /// its own instead (see <see cref="ScanStory"/>).
         /// </summary>
-        static List<int[]> StoryRevisions(object storyRange)
+        static List<int[]> RangeRevisions(object range, int known = -1)
         {
             try
             {
-                dynamic revs = ((dynamic)storyRange).Revisions;
-                if ((int)revs.Count == 0) return null;
+                dynamic revs = ((dynamic)range).Revisions;
+                if (known == 0 || (known < 0 && (int)revs.Count == 0)) return null;
                 var list = new List<int[]>();
                 foreach (dynamic r in revs)
                 {
                     try { dynamic rg = r.Range; list.Add(new[] { (int)rg.Start, (int)rg.End, (int)r.Type }); } catch { }
                 }
-                return list;
+                return list.Count == 0 ? null : list;
             }
             catch { return null; }
         }
+
+        /// <summary>A story with more tracked changes than this is not read whole: each field is asked for its own.</summary>
+        const int StoryRevisionLimit = 40;
 
         /// <summary>
         /// The text of the range [rs, re) as it reads with every tracked change accepted: tracked deletions inside it are
@@ -268,7 +273,11 @@ namespace ZoteroNext.Word
 
         List<Entry> ScanStory(object storyRange, object fieldsObj, string story, Func<int, int> posOf)
         {
-            var revs = StoryRevisions(storyRange);
+            // few tracked changes: read them all once; many: ask each field for its own (perField)
+            int count = 0;
+            try { count = (int)((dynamic)storyRange).Revisions.Count; } catch { }
+            bool perField = count > StoryRevisionLimit;
+            var storyRevs = count == 0 || perField ? null : RangeRevisions(storyRange, count);
             var list = new List<Entry>();
             int i = 0;
             // the enumerator walks the collection once; fields.Item(i) per field made a scan quadratic in the field count
@@ -285,6 +294,14 @@ namespace ZoteroNext.Word
                 try
                 {
                     int cs = (int)cr.Start, ce = (int)cr.End;
+                    var revs = storyRevs;
+                    if (perField)
+                    {
+                        // the whole field, field characters included, so a deletion of the whole citation is seen too
+                        dynamic whole = ((dynamic)storyRange).Duplicate;
+                        whole.SetRange(cs - 1, (int)f.Result.End + 1);
+                        revs = RangeRevisions((object)whole);
+                    }
                     if (revs != null)
                     {
                         // a citation the user deleted with Track Changes on is gone from the document as it will read: skip it
@@ -295,7 +312,9 @@ namespace ZoteroNext.Word
                     dynamic res = f.Result; text = (string)res.Text ?? ""; s = cs - 1;
                     int rs = (int)res.Start, re = (int)res.End;
                     e = re + 1;
-                    if (revs != null) { bool c, w; text = FinalText(text, rs, re, revs, out c, out w); }
+                    // a renumbering an older tracked refresh left in the result ("16" deleted, "15" inserted) is flagged as
+                    // well, so the next refresh writes the result back clean
+                    if (revs != null) { bool c, w; text = FinalText(text, rs, re, revs, out c, out w); tracked = tracked || c; }
                 }
                 catch { }
                 list.Add(new Entry { Story = story, Idx = i, Kind = kind, Code = code.Trim(), Text = text, Start = s, End = e, Pos = posOf(s), Tracked = tracked });
@@ -643,6 +662,8 @@ namespace ZoteroNext.Word
         /// are kept few: no Fields.Count up front, each field part read once, tracked changes looked at only for a
         /// code that an earlier tracked rewrite left doubled.
         /// </summary>
+        string _doubledKey, _doubledCode, _doubledText;
+
         public Dictionary<string, object> Cursor()
         {
             LastResult = null;
@@ -692,11 +713,23 @@ namespace ZoteroNext.Word
                         string text = (string)hitResult.Text ?? "";
                         if (LooksDoubled(code))
                         {
-                            // left as old + new by a tracked rewrite: read it as it is with the changes accepted
-                            var revs = StoryRevisions((object)story);
-                            bool t, w;
-                            code = FinalText(code, (int)hitCode.Start, (int)hitCode.End, revs, out t, out w);
-                            text = FinalText(text, (int)hitResult.Start, (int)hitResult.End, revs, out t, out w);
+                            // left as old + new by a tracked rewrite: read it as it is with the changes accepted (only this
+                            // field's own tracked changes: the story's can number hundreds, 30 s of Word time). Kept for
+                            // as long as the field reads the same, as the cursor watcher re-reads a citation every few seconds.
+                            int cs = (int)hitCode.Start, rs = (int)hitResult.Start;
+                            string key = cs + "|" + rs + "|" + code + "|" + text;
+                            if (key != _doubledKey)
+                            {
+                                dynamic whole = story.Duplicate;
+                                whole.SetRange(cs - 1, (int)hitResult.End + 1);
+                                var revs = RangeRevisions((object)whole);
+                                bool t, w;
+                                _doubledCode = FinalText(code, cs, (int)hitCode.End, revs, out t, out w);
+                                _doubledText = FinalText(text, rs, (int)hitResult.End, revs, out t, out w);
+                                _doubledKey = key;
+                            }
+                            code = _doubledCode;
+                            text = _doubledText;
                         }
                         code = code.Trim();
                         res["inField"] = true;

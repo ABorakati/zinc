@@ -145,6 +145,37 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		await h.call("h.close");
 	}, 120_000);
 
+	test("with many tracked changes in the document, a damaged citation is still read and cleaned (each field asked for its own)", async () => {
+		await threeCitations();
+		const before = await app.readFields();
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		const p = parseFieldCode(before[1]!.code)!;
+		if (p.kind !== "item") throw new Error("expected a citation");
+		await h.call("h.rawSetCode", {
+			idx: before[1]!.idx,
+			code: buildItemCode({ ...p.data, schema: String(p.data.schema ?? "") + "#v2" }),
+		});
+		// more tracked changes than the add-in reads in one pass (StoryRevisionLimit): separate insertions, apart from the fields
+		// (an untracked space after each one, or Word merges them into one insertion)
+		for (let i = 0; i < 45; i++) {
+			await h.call("h.cursor", { start: 1 });
+			await h.call("h.track", { on: true });
+			await h.call("h.type", { text: "y" });
+			await h.call("h.track", { on: false });
+			await h.call("h.type", { text: " " });
+		}
+		await h.call("h.track", { on: true });
+		expect((await revisions()).length).toBeGreaterThan(40);
+		const damaged = await app.readFields();
+		expect(damaged.map((f) => f.tracked)).toEqual([false, true, false, false]);
+		expect(damaged.every((f) => f.parsed !== null)).toBe(true);
+		await app.refreshAll();
+		expect((await info()).every((f) => f.codeRevisions === 0)).toBe(true);
+		expect((await app.readFields()).every((f) => !f.tracked)).toBe(true);
+		expect((await app.refreshAll()).updated).toBe(0);
+		await h.call("h.close");
+	}, 180_000);
+
 	test("a citation deleted with Track Changes on stays a tracked deletion and leaves the numbering", async () => {
 		await threeCitations();
 		await h.call("h.track", { on: true, author: "Reviewer" });
