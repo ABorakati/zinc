@@ -61,6 +61,7 @@ namespace ZoteroNext.Word
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
             try { Popup.Stop(); } catch { }
+            try { CursorWatch.Stop(); } catch { }
             try { if (_mcp != null) _mcp.Dispose(); } catch { }
             try { if (_ui != null) _ui.Dispose(); } catch { }
             _mcp = null; _ui = null;

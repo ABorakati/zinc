@@ -91,6 +91,22 @@ describe("App against a mock Word document", () => {
 		expect(again.updated).toBe(0); // idempotent
 	});
 
+	test("a field code left as old + new by a tracked rewrite is rewritten (cleaned) by the next refresh, once", async () => {
+		const { app, host } = setup();
+		await app.init();
+		await app.insertCitation([(await app.pickFromKey("AAAA1111"))!]);
+		await app.insertBibliography();
+		expect((await app.refreshAll()).updated).toBe(0);
+		// what the add-in reports for codes with tracked changes inside: the code as it reads accepted, flagged
+		const before = host.fields.map((f: any) => f.code);
+		for (const f of host.fields) f.tracked = true;
+		const r = await app.refreshAll();
+		expect(r.updated).toBe(2); // the citation and the bibliography, though their JSON and text are already right
+		expect(host.fields.map((f: any) => f.code)).toEqual(before);
+		expect(host.fields.every((f: any) => !f.tracked)).toBe(true);
+		expect((await app.refreshAll()).updated).toBe(0);
+	});
+
 	test("changing the style reformats everything and updates the prefs", async () => {
 		const { app, host } = setup();
 		await app.init();

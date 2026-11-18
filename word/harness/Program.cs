@@ -127,7 +127,11 @@ internal static class Program
                     _app = Activator.CreateInstance(t);
                     Thread.Sleep(300);
                     var mine = Process.GetProcessesByName("WINWORD").Select(x => x.Id).Where(x => !before.Contains(x)).ToList();
-                    if (mine.Count != 1) { try { _app.Quit(0); } catch { } throw new InvalidOperationException("could not identify the Word process this harness started"); }
+                    // Not provably our own Word (no new process, or a fresh one that already has documents: COM attached to
+                    // someone else's): let go of it WITHOUT Quit, which would close that Word and its unsaved work.
+                    bool fresh = false;
+                    if (mine.Count == 1) { try { fresh = (int)_app.Documents.Count == 0; } catch { } }
+                    if (!fresh) { try { Marshal.ReleaseComObject((object)_app); } catch { } _app = null; throw new InvalidOperationException("could not identify the Word process this harness started"); }
                     _pid = mine[0];
                     _app.Visible = false;
                     _app.DisplayAlerts = 0;
@@ -159,6 +163,183 @@ internal static class Program
                 }
             case "h.undo": return Json.Map("ok", (bool)_app.ActiveDocument.Undo(Json.Int(p, "times", 1)));
             case "h.fieldCount": return Json.Map("count", (int)_app.ActiveDocument.Fields.Count);
+            // ---- Track Changes probes
+            case "h.track":
+                {
+                    if (p.ContainsKey("on")) _app.ActiveDocument.TrackRevisions = Json.Bool(p, "on");
+                    if (p.ContainsKey("author")) _app.UserName = Json.Str(p, "author");
+                    return Json.Map("on", (bool)_app.ActiveDocument.TrackRevisions);
+                }
+            case "h.revisions":
+                {
+                    // every revision in the main story: type 1 = insert, 2 = delete; text cut to 120 chars
+                    var list = new List<object>();
+                    dynamic revs = _app.ActiveDocument.Range().Revisions;
+                    int n = (int)revs.Count;
+                    for (int i = 1; i <= n; i++)
+                    {
+                        dynamic r = revs.Item(i);
+                        string t = ""; try { t = (string)r.Range.Text ?? ""; } catch { }
+                        list.Add(Json.Map("type", (int)r.Type, "text", t.Length > 120 ? t.Substring(0, 120) : t, "start", (int)r.Range.Start, "end", (int)r.Range.End));
+                    }
+                    return list;
+                }
+            case "h.rawSetCode":
+                {
+                    // write a field code the way the add-in did before the fix (no Track Changes handling), to make a damaged document
+                    dynamic f = _app.ActiveDocument.Fields.Item(Json.Int(p, "idx"));
+                    f.Code.Text = " " + Json.Str(p, "code").Trim() + " ";
+                    return Json.Map("ok", true);
+                }
+            case "h.acceptAll": _app.ActiveDocument.Revisions.AcceptAll(); return Json.Map("ok", true);
+            case "h.rejectAll": _app.ActiveDocument.Revisions.RejectAll(); return Json.Map("ok", true);
+            case "h.fieldInfo":
+                {
+                    // what Word itself thinks of each field: code shown instead of the result?, revisions inside code / result
+                    var list = new List<object>();
+                    dynamic fs = _app.ActiveDocument.Fields;
+                    int n = (int)fs.Count;
+                    for (int i = 1; i <= n; i++)
+                    {
+                        dynamic f = fs.Item(i);
+                        int rc = 0, rr = 0; string res = "";
+                        try { rc = (int)f.Code.Revisions.Count; } catch { }
+                        try { rr = (int)f.Result.Revisions.Count; res = (string)f.Result.Text ?? ""; } catch { }
+                        string code = (string)f.Code.Text ?? "";
+                        list.Add(Json.Map("idx", i, "showCodes", (bool)f.ShowCodes, "codeRevisions", rc, "resultRevisions", rr,
+                            "code", code.Length > 200 ? code.Substring(0, 200) : code, "codeLength", code.Length, "result", res));
+                    }
+                    return list;
+                }
+            case "h.docXml": return Json.Map("xml", (string)_app.ActiveDocument.Content.WordOpenXML);
+            case "h.pdf":
+                {
+                    // what a reader sees: PDF of the document, with markup (balloons, strike-through) when p.markup
+                    // ExportAsFixedFormat(path, wdExportFormatPDF=17, OpenAfterExport, OptimizeFor, Range=wdExportAllDocument 0, From, To, Item: 0 content / 7 with markup)
+                    if (Json.Bool(p, "balloons"))
+                    {
+                        // All Markup with revisions in balloons (deletions in the margin), as in Word's Review > Show Markup > Balloons
+                        dynamic v = _app.ActiveDocument.ActiveWindow.View;
+                        v.Type = 3;   // wdPrintView
+                        try { v.RevisionsFilter.Markup = 2; v.RevisionsFilter.View = 0; } catch { }
+                        v.MarkupMode = 0;   // wdBalloonRevisions
+                    }
+                    _app.ActiveDocument.ExportAsFixedFormat(Json.Str(p, "path"), 17, false, 0, 0, 1, 1, Json.Bool(p, "markup") ? 7 : 0);
+                    return Json.Map("ok", true);
+                }
+            case "h.probe":
+                {
+                    // ms for each Word call the cursor watcher makes, at the current selection
+                    var t = new Dictionary<string, object>();
+                    var sw = new Stopwatch();
+                    Func<string, Func<object>, object> time = (name, f) => { sw.Restart(); object v = null; for (int i = 0; i < 5; i++) v = f(); sw.Stop(); t[name] = Math.Round(sw.Elapsed.TotalMilliseconds / 5, 2); return v; };
+                    dynamic d = _app.ActiveDocument; dynamic sel = _app.Selection;
+                    int s = (int)sel.Start;
+                    time("selection start/end/story", () => (int)sel.Start + (int)sel.End + (int)sel.StoryType);
+                    time("doc FullName", () => (string)d.FullName);
+                    dynamic story = d.Content;
+                    time("story.Fields.Count", () => (int)story.Fields.Count);
+                    dynamic sr = story.Duplicate; sr.SetRange(s, s);
+                    time("Information(inFieldResult)", () => (bool)sr.Information(45));
+                    time("Information(inFieldCode)", () => (bool)sr.Information(44));
+                    dynamic before = story.Duplicate; before.SetRange((int)story.Start, s);
+                    time("before.Fields.Count", () => (int)before.Fields.Count);
+                    dynamic f1 = story.Fields.Item(Math.Max(1, (int)before.Fields.Count));
+                    time("Fields.Item(i)", () => story.Fields.Item(Math.Max(1, (int)before.Fields.Count)));
+                    time("field Code.Text", () => (string)f1.Code.Text);
+                    time("field Result.Text", () => (string)f1.Result.Text);
+                    time("field Code.Revisions.Count", () => (int)f1.Code.Revisions.Count);
+                    time("story Revisions.Count", () => (int)story.Revisions.Count);
+                    time("GetPoint(result)", () => { int l = 0, tp = 0, w = 0, hh = 0; _app.ActiveWindow.GetPoint(ref l, ref tp, ref w, ref hh, f1.Result); return l; });
+                    time("full Cursor()", () => _bridge.Doc.Cursor());
+                    return t;
+                }
+            case "h.watch":
+                {
+                    // the add-in's cursor watcher against this Word, as if a sidebar were shown: {on} starts it with zeroed counters
+                    if (Json.Bool(p, "on"))
+                    {
+                        Connect.Shared = _bridge;
+                        CursorWatch.RequireForeground = false;
+                        CursorWatch.ForceWanted = true;
+                        CursorWatch.WordTicks = 0; CursorWatch.FullReads = 0; CursorWatch.WordMs = 0;
+                        CursorWatch.Start();
+                    }
+                    return Json.Map("wordTicks", CursorWatch.WordTicks, "fullReads", CursorWatch.FullReads, "wordMs", Math.Round(CursorWatch.WordMs, 1),
+                        "inField", CursorWatch.Current != null && Json.Bool(CursorWatch.Current, "inField"));
+                }
+            case "h.legacyWatch":
+                {
+                    // the add-in's cursor polling BEFORE the CursorWatch rewrite, for a before/after measurement: the popup timer
+                    // (250 ms: Cursor(), plus FieldRect when the cursor sits in a citation) and the sidebar timer (300 ms: Cursor()),
+                    // run for `ms` while optionally typing a character every `typeEvery` ms. Returns the time spent in Word calls.
+                    double wordMs = 0; int calls = 0;
+                    var doc = _bridge.Doc;
+                    var sw = new Stopwatch();
+                    var popupT = new System.Windows.Forms.Timer { Interval = 250 };
+                    var paneT = new System.Windows.Forms.Timer { Interval = 300 };
+                    popupT.Tick += (s, e) =>
+                    {
+                        sw.Restart();
+                        try
+                        {
+                            var c = LegacyCursor(); calls++;
+                            if (Json.Bool(c, "inField") && Json.Int(c, "start") == Json.Int(c, "end")) doc.FieldRect(Json.Obj(Json.Get(c, "ref")));
+                        }
+                        catch { }
+                        wordMs += sw.Elapsed.TotalMilliseconds;
+                    };
+                    paneT.Tick += (s, e) => { sw.Restart(); try { LegacyCursor(); calls++; } catch { } wordMs += sw.Elapsed.TotalMilliseconds; };
+                    popupT.Start(); paneT.Start();
+                    var until = DateTime.UtcNow.AddMilliseconds(Json.Int(p, "ms", 5000));
+                    int every = Json.Int(p, "typeEvery", 0);
+                    var next = DateTime.UtcNow;
+                    while (DateTime.UtcNow < until)
+                    {
+                        if (every > 0 && DateTime.UtcNow >= next) { _app.Selection.TypeText("x"); next = DateTime.UtcNow.AddMilliseconds(every); }
+                        System.Windows.Forms.Application.DoEvents(); Thread.Sleep(5);
+                    }
+                    popupT.Stop(); paneT.Stop(); popupT.Dispose(); paneT.Dispose();
+                    return Json.Map("wordMs", Math.Round(wordMs, 1), "cursorCalls", calls);
+                }
+            case "h.benchCursorAB":
+                {
+                    // the old and the new cursor read, interleaved at the same selection: ms per call each
+                    int n = Math.Max(1, Json.Int(p, "n", 10));
+                    var sw = new Stopwatch(); double oldMs = 0, newMs = 0;
+                    LegacyCursor(); _bridge.Doc.Cursor();
+                    for (int i = 0; i < n; i++)
+                    {
+                        sw.Restart(); LegacyCursor(); oldMs += sw.Elapsed.TotalMilliseconds;
+                        sw.Restart(); _bridge.Doc.Cursor(); newMs += sw.Elapsed.TotalMilliseconds;
+                    }
+                    return Json.Map("oldMs", Math.Round(oldMs / n, 1), "newMs", Math.Round(newMs / n, 1));
+                }
+            case "h.typeFor":
+                {
+                    // type one character every `every` ms for `ms` ms, letting timers run in between (a user typing)
+                    var until = DateTime.UtcNow.AddMilliseconds(Json.Int(p, "ms", 3000));
+                    int every = Json.Int(p, "every", 120);
+                    var next = DateTime.UtcNow;
+                    while (DateTime.UtcNow < until)
+                    {
+                        if (DateTime.UtcNow >= next) { _app.Selection.TypeText("x"); next = DateTime.UtcNow.AddMilliseconds(every); }
+                        System.Windows.Forms.Application.DoEvents(); Thread.Sleep(5);
+                    }
+                    return Json.Map("ok", true);
+                }
+            case "h.bench":
+                {
+                    // time n calls of a bridge method in this process (no socket round trip): {method, params, n} -> ms per call
+                    string m = Json.Str(p, "method");
+                    var prm = Json.Obj(Json.Get(p, "params")) ?? new Dictionary<string, object>();
+                    int n = Math.Max(1, Json.Int(p, "n", 20));
+                    _bridge.Call(m, prm);   // warm-up
+                    var sw = Stopwatch.StartNew();
+                    for (int i = 0; i < n; i++) _bridge.Call(m, prm);
+                    sw.Stop();
+                    return Json.Map("ms", sw.Elapsed.TotalMilliseconds / n, "n", n);
+                }
             case "h.comSelfTest": return ComSelfTest();
             case "h.pane":
                 {
@@ -166,6 +347,7 @@ internal static class Program
                     if (_form == null)
                     {
                         Connect.Shared = _bridge;
+                        CursorWatch.RequireForeground = false;   // this private Word is never the foreground app
                         _form = new OffscreenForm();
                         _paneCtl = new PaneControl();
                         _form.Controls.Add(_paneCtl);
@@ -226,6 +408,71 @@ internal static class Program
             try { Thread.Sleep(1500); var pr = Process.GetProcessById(_pid); if (!pr.HasExited && pr.ProcessName.Equals("WINWORD", StringComparison.OrdinalIgnoreCase)) pr.Kill(); } catch { }
             _pid = 0;
         }
+    }
+
+    // ---- the cursor read as it was before the CursorWatch rewrite (copied verbatim from WordDoc.Cursor at 14addb3), for h.legacyWatch
+    const int wdMainTextStory = 1, wdFootnotesStory = 2, wdInFieldCode = 44, wdInFieldResult = 45;
+    static string LegacyKindOf(string code)
+    {
+        if (System.Text.RegularExpressions.Regex.IsMatch(code, @"^\s*ADDIN\s+ZOTERO_ITEM")) return "item";
+        if (System.Text.RegularExpressions.Regex.IsMatch(code, @"^\s*ADDIN\s+ZOTERO_BIBL")) return "bibl";
+        return null;
+    }
+    static Dictionary<string, object> LegacyCursor()
+    {
+        if ((int)_app.Documents.Count == 0) return Json.Map("hasDoc", false);
+        dynamic d = _app.ActiveDocument;
+        dynamic sel = _app.Selection;
+        int st = (int)sel.StoryType, s = (int)sel.Start, e = (int)sel.End;
+        var res = Json.Map("hasDoc", true, "doc", (string)d.FullName, "start", s, "end", e, "story", st, "inField", false);
+        try
+        {
+            dynamic story = st == wdMainTextStory ? d.Content : sel.StoryRange;
+            if ((int)story.Fields.Count == 0) return res;
+            dynamic startRange = story.Duplicate; startRange.SetRange(s, s);
+            bool inside = (bool)startRange.Information(wdInFieldResult) || (bool)startRange.Information(wdInFieldCode);
+            int idx = -1;
+            if (inside)
+            {
+                dynamic before = story.Duplicate; before.SetRange(story.Start, s);
+                int guess = (int)before.Fields.Count + 1;
+                int total = (int)story.Fields.Count;
+                for (int i = Math.Max(1, guess - 1); i <= Math.Min(total, guess + 1); i++)
+                {
+                    dynamic f = story.Fields.Item(i);
+                    int fs = (int)f.Code.Start - 1, fe = (int)f.Result.End + 1;
+                    if (s >= fs && s <= fe && LegacyKindOf((string)f.Code.Text) != null) { idx = i; break; }
+                }
+            }
+            else if (e > s)
+            {
+                // a selection covering whole fields (e.g. a double-clicked citation)
+                dynamic r = story.Duplicate; r.SetRange(s, e);
+                if ((int)r.Fields.Count > 0)
+                {
+                    dynamic before = story.Duplicate; before.SetRange(story.Start, s);
+                    int guess = (int)before.Fields.Count + 1;
+                    int total = (int)story.Fields.Count;
+                    for (int i = guess; i <= Math.Min(total, guess + 3); i++)
+                    {
+                        dynamic f = story.Fields.Item(i);
+                        if (LegacyKindOf((string)f.Code.Text) != null && (int)f.Code.Start - 1 >= s - 1 && (int)f.Result.End + 1 <= e + 1) { idx = i; break; }
+                    }
+                }
+            }
+            if (idx > 0)
+            {
+                dynamic f = story.Fields.Item(idx);
+                string code = ((string)f.Code.Text).Trim();
+                res["inField"] = true;
+                res["ref"] = Json.Map("story", st == wdMainTextStory ? "main" : (st == wdFootnotesStory ? "fn" : "en"), "idx", idx);
+                res["kind"] = LegacyKindOf(code);
+                res["code"] = code;
+                res["text"] = (string)f.Result.Text;
+            }
+        }
+        catch (Exception ex) { res["error"] = ex.Message; }
+        return res;
     }
 
     // ---- checks of the COM surface that do not need Word to load the add-in ----------------------------------------

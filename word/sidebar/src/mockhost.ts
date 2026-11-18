@@ -76,6 +76,8 @@ export interface MockField {
 	gap?: number;
 	/** document position the field was inserted at (doc.insert `at`); cursor inserts go last */
 	anchor?: number;
+	/** the code holds tracked changes of its own (a rewrite made with Track Changes on); an untracked doc.set code clears it */
+	tracked?: boolean;
 }
 
 export function createMockHost(opts: MockOptions = {}): Host & {
@@ -233,6 +235,7 @@ export function createMockHost(opts: MockOptions = {}): Host & {
 				start: f.start,
 				end: f.end,
 				note: f.note ?? 0,
+				...(f.tracked ? { tracked: true } : {}),
 			}));
 		},
 		"doc.cursor": () => {
@@ -286,7 +289,10 @@ export function createMockHost(opts: MockOptions = {}): Host & {
 		},
 		"doc.set": (p) => {
 			const f = find(p.ref);
-			if (p.code !== undefined) f.code = String(p.code).trim();
+			if (p.code !== undefined) {
+				f.code = String(p.code).trim();
+				f.tracked = false; // the add-in rewrites codes untracked
+			}
 			if (p.runs?.length) f.text = p.runs.map((r: any) => r.t).join("");
 			return { ok: true };
 		},

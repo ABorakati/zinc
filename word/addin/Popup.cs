@@ -71,8 +71,8 @@ namespace ZoteroNext.Word
 
     /// <summary>
     /// The citation popup: a borderless, non-activating window owned by Word's window that shows the full reference of the
-    /// citation under the cursor (page: popup.html). <see cref="Start"/> runs a poller on Word's UI thread that decides
-    /// when to show/hide it; it works whether or not the sidebar pane exists.
+    /// citation under the cursor (page: popup.html). The shared <see cref="CursorWatch"/> on Word's UI thread decides when to
+    /// show/hide it (PreTick, OnCursor); it works whether or not the sidebar pane exists.
     /// </summary>
     internal sealed class Popup : Form
     {
@@ -87,28 +87,26 @@ namespace ZoteroNext.Word
 
         // ---------------------------------------------------------------- controller (static)
 
-        static System.Windows.Forms.Timer _timer;
+        static bool _started;
         static Popup _form;
         static string _shownKey;        // field currently shown
         static string _suppressKey;     // field the user dismissed; stays closed until the cursor leaves it
         static bool _enabled = true;
         static DateTime _settingsAt = DateTime.MinValue;
         static int[] _lastRect;
+        static uint _placedInput;       // GetLastInputInfo tick when the popup was last measured
         static DateTime _warmAt = DateTime.MinValue;   // when to build the hidden form (warm-up)
 
+        /// <summary>Take part in the shared cursor watcher (<see cref="CursorWatch"/>), which calls PreTick and OnCursor.</summary>
         public static void Start()
         {
-            try { if (SynchronizationContext.Current == null) SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext()); } catch { }
-            if (_timer != null) return;
-            _timer = new System.Windows.Forms.Timer { Interval = 250 };
-            _timer.Tick += (s, e) => { try { Poll(); } catch (Exception ex) { Log.Error("popup poll", ex); } };
-            _timer.Start();
+            _started = true;
+            CursorWatch.Start();
         }
 
         public static void Stop()
         {
-            try { if (_timer != null) { _timer.Stop(); _timer.Dispose(); } } catch { }
-            _timer = null;
+            _started = false;
             try { if (_form != null) { _form.Hide_(); _form.Dispose(); } } catch { }
             _form = null; _shownKey = null; _suppressKey = null; _warmAt = DateTime.MinValue;
         }
@@ -127,13 +125,19 @@ namespace ZoteroNext.Word
             }
         }
 
-        static void Poll()
+        static bool IsShowing { get { return _form != null && !_form.IsDisposed && _form._visible; } }
+
+        /// <summary>
+        /// Every tick, before any cursor read: hide when Word is not in front, is minimised or Esc is pressed, warm the
+        /// hidden form up. Returns whether the popup wants the cursor this tick.
+        /// </summary>
+        public static bool PreTick(bool foreground)
         {
+            if (!_started) return false;
             RefreshSettings();
             var b = Connect.Shared;
-            if (b == null) return;
-            bool shown = _form != null && !_form.IsDisposed && _form._visible;
-            if (!_enabled) { if (shown) HideAndReset(); return; }
+            if (b == null) return false;
+            if (!_enabled) { if (IsShowing) HideAndReset(); return false; }
 
             // Warm-up: build the hidden form (WebView2 + popup.html) shortly after Word has a document; never shown here.
             if (_form == null || _form.IsDisposed)
@@ -145,17 +149,20 @@ namespace ZoteroNext.Word
                 else if (DateTime.Now >= _warmAt) { _form = Create(); Log.Write("popup warm-up"); }
             }
 
-            // Word is not the foreground app (deactivated) or is minimised: close.
-            uint pid; GetWindowThreadProcessId(GetForegroundWindow(), out pid);
-            bool foreground = pid == (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
-            if (!foreground) { if (shown) HideAndReset(); return; }
-            if (shown && _form._owner != IntPtr.Zero && IsIconic(_form._owner)) { HideAndReset(); return; }
-
+            if (!foreground) { if (IsShowing) HideAndReset(); return false; }
+            if (IsShowing && _form._owner != IntPtr.Zero && IsIconic(_form._owner)) { HideAndReset(); return false; }
             // Esc (the popup never has focus, so watch the key state)
-            if (shown && (GetAsyncKeyState(0x1B) & 0x8000) != 0) { CloseSuppress(); return; }
+            if (IsShowing && (GetAsyncKeyState(0x1B) & 0x8000) != 0) CloseSuppress();
+            return true;
+        }
 
-            Dictionary<string, object> c;
-            try { c = b.Doc.Cursor(); } catch { return; }   // Word busy (modal dialog): next tick
+        /// <summary>The cursor as the watcher last read it. fresh = read this tick; moving = the selection changed this tick
+        /// (so c may be out of date: nothing is shown or measured until it has been read again).</summary>
+        public static void OnCursor(Dictionary<string, object> c, bool fresh, bool moving)
+        {
+            var b = Connect.Shared;
+            if (b == null || moving) return;
+            bool shown = IsShowing;
             bool collapsed = Json.Int(c, "start") == Json.Int(c, "end");
             bool inItem = Json.Bool(c, "inField") && Json.Str(c, "kind") == "item" && collapsed;
             if (!inItem) { _suppressKey = null; if (shown || _shownKey != null) HideAndReset(); return; }
@@ -165,18 +172,30 @@ namespace ZoteroNext.Word
             if (key == _suppressKey) { if (shown) HideAndReset(); return; }
             if (shown && key == _shownKey)
             {
-                // keep it attached to the citation when the document scrolls
-                try { var rect = b.Doc.FieldRect(r); if (rect != null && !SameRect(rect, _lastRect)) _form.Place(rect); } catch { }
+                // keep it attached to the citation when the document scrolls: measure again (GetPoint makes Word lay the
+                // text out) only after some input since the last measurement, never on an idle tick
+                uint input = LastInputTick();
+                if (input == _placedInput) return;
+                _placedInput = input;
+                var rect = b.Doc.RangeRect(b.Doc.LastResult);
+                if (rect != null && !SameRect(rect, _lastRect)) _form.Place(rect);
                 return;
             }
+            if (!fresh) return;
 
             if (_form == null || _form.IsDisposed) _form = Create();
-            int[] rc = null;
-            try { rc = b.Doc.FieldRect(r); } catch { }
+            int[] rc = b.Doc.RangeRect(b.Doc.LastResult);
+            _placedInput = LastInputTick();
             int hwnd = 0;
             try { hwnd = b.Doc.WindowHandle(); } catch { }
             _shownKey = key;
             _form.ShowFor(c, rc, hwnd);
+        }
+
+        static uint LastInputTick()
+        {
+            var li = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)) };
+            return GetLastInputInfo(ref li) ? li.dwTime : 0;
         }
 
         static bool SameRect(int[] a, int[] b)
@@ -458,8 +477,7 @@ namespace ZoteroNext.Word
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr64(IntPtr h, int idx, IntPtr v);
         [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] static extern int SetWindowLong32(IntPtr h, int idx, int v);
-        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO li);
         [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
         [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
@@ -474,6 +492,7 @@ namespace ZoteroNext.Word
         [DllImport("gdi32.dll")] static extern int CombineRgn(IntPtr dst, IntPtr a, IntPtr b, int mode);
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
 
+        [StructLayout(LayoutKind.Sequential)] struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
         [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
         [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; public POINT(int x, int y) { X = x; Y = y; } }
         [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; }

@@ -169,30 +169,136 @@ namespace ZoteroNext.Word
         sealed class Entry
         {
             public int Note; public string Story; public int Idx; public string Kind; public string Code; public string Text; public int Pos; public int Start, End;
+            public bool Tracked;
         }
 
         static string KindOf(string code)
         {
+            // a field deleted with Track Changes on reads back a null code: not a field of ours any more (a null used to
+            // throw here and break every later field scan, so the sidebar could not refresh after a tracked delete)
+            if (string.IsNullOrEmpty(code)) return null;
             if (ItemCode.IsMatch(code)) return "item";
             if (BiblCode.IsMatch(code)) return "bibl";
             return null;
         }
 
-        List<Entry> ScanStory(object fieldsObj, string story, Func<int, int> posOf)
+        // ---------------------------------------------------------------- Track Changes
+        //
+        // Field codes are metadata. With Track Changes on, rewriting one makes Word keep the old code as a tracked
+        // deletion next to the new one as a tracked insertion: the Reviewing Pane and the change balloons then show raw
+        // "ADDIN ZOTERO_ITEM CSL_CITATION {json}" text, and Code.Text reads back as old + new JSON glued together (which no
+        // longer parses, so the next refresh loses those citations). Zotero's own Word plugin switches tracking off for its
+        // whole session; here it is off only inside one synchronous call that rewrites an existing field and is switched
+        // back on before the call returns, so nothing the user types is ever untracked. New and deleted citations stay
+        // tracked: those are the user's edits.
+
+        const int wdRevisionDelete = 2;
+
+        /// <summary>Run act with the document's Track Changes off, restoring the user's setting afterwards (also on error).</summary>
+        static void Untracked(object doc, Action act)
         {
-            dynamic fields = fieldsObj;
-            var list = new List<Entry>();
-            int n = (int)fields.Count;
-            for (int i = 1; i <= n; i++)
+            dynamic d = doc;
+            bool was = false;
+            try { was = (bool)d.TrackRevisions; } catch { }
+            if (was) { try { d.TrackRevisions = false; } catch { was = false; } }
+            try { act(); }
+            finally { if (was) { try { d.TrackRevisions = true; } catch (Exception e) { Log.Error("could not switch Track Changes back on", e); } } }
+        }
+
+        /// <summary>
+        /// The tracked changes of a story as [start, end, type] (one pass with the collection's enumerator: Item(i) on a Word
+        /// collection walks it from the start every time), or null when there are none. Counting alone costs Word a full scan
+        /// of the document (about 20 ms on a 120-citation test document), so this is done once per field scan, never per field.
+        /// </summary>
+        static List<int[]> StoryRevisions(object storyRange)
+        {
+            try
             {
-                dynamic f = fields.Item(i);
+                dynamic revs = ((dynamic)storyRange).Revisions;
+                if ((int)revs.Count == 0) return null;
+                var list = new List<int[]>();
+                foreach (dynamic r in revs)
+                {
+                    try { dynamic rg = r.Range; list.Add(new[] { (int)rg.Start, (int)rg.End, (int)r.Type }); } catch { }
+                }
+                return list;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// The text of the range [rs, re) as it reads with every tracked change accepted: tracked deletions inside it are
+        /// left out. contained = some tracked change lies wholly inside the range (for a field code: a tracked rewrite,
+        /// never the user's insertion or deletion of the whole citation, which reaches past the code). wholeDeleted = the
+        /// range is inside one deletion (a citation the user deleted with Track Changes on).
+        /// </summary>
+        static string FinalText(string text, int rs, int re, List<int[]> revs, out bool contained, out bool wholeDeleted)
+        {
+            contained = false; wholeDeleted = false;
+            if (revs == null) return text;
+            var cut = new List<int[]>();
+            foreach (var r in revs)
+            {
+                int s = r[0], e = r[1];
+                if (e <= rs || s >= re) continue;
+                if (s >= rs && e <= re) contained = true;
+                if (r[2] != wdRevisionDelete) continue;
+                if (s <= rs && e >= re) { wholeDeleted = true; continue; }
+                cut.Add(new[] { Math.Max(s, rs) - rs, Math.Min(e, re) - rs });
+            }
+            // offsets are cut by position, which needs one character per position (always so in a field code)
+            if (cut.Count == 0 || text.Length != re - rs) return text;
+            var sb = new StringBuilder();
+            int at = 0;
+            foreach (var c in cut.OrderBy(c => c[0]))
+            {
+                if (c[0] > at) sb.Append(text, at, c[0] - at);
+                at = Math.Max(at, c[1]);
+            }
+            if (at < text.Length) sb.Append(text, at, text.Length - at);
+            return sb.ToString();
+        }
+
+        /// <summary>A code an earlier tracked rewrite left as old + new: two field instructions in one code.</summary>
+        static bool LooksDoubled(string code)
+        {
+            int i = code.IndexOf("ZOTERO_", StringComparison.Ordinal);
+            return i >= 0 && code.IndexOf("ZOTERO_", i + 7, StringComparison.Ordinal) >= 0;
+        }
+
+        List<Entry> ScanStory(object storyRange, object fieldsObj, string story, Func<int, int> posOf)
+        {
+            var revs = StoryRevisions(storyRange);
+            var list = new List<Entry>();
+            int i = 0;
+            // the enumerator walks the collection once; fields.Item(i) per field made a scan quadratic in the field count
+            foreach (dynamic f in (dynamic)fieldsObj)
+            {
+                i++;
                 string code;
-                try { code = (string)f.Code.Text; } catch { continue; }
+                dynamic cr;
+                try { cr = f.Code; code = (string)cr.Text; } catch { continue; }
                 var kind = KindOf(code);
                 if (kind == null) continue;
+                bool tracked = false;
                 string text = ""; int s = 0, e = 0;
-                try { dynamic res = f.Result; text = (string)res.Text ?? ""; s = (int)f.Code.Start - 1; e = (int)res.End + 1; } catch { }
-                list.Add(new Entry { Story = story, Idx = i, Kind = kind, Code = code.Trim(), Text = text, Start = s, End = e, Pos = posOf(s) });
+                try
+                {
+                    int cs = (int)cr.Start, ce = (int)cr.End;
+                    if (revs != null)
+                    {
+                        // a citation the user deleted with Track Changes on is gone from the document as it will read: skip it
+                        bool deleted;
+                        code = FinalText(code, cs, ce, revs, out tracked, out deleted);
+                        if (deleted) continue;
+                    }
+                    dynamic res = f.Result; text = (string)res.Text ?? ""; s = cs - 1;
+                    int rs = (int)res.Start, re = (int)res.End;
+                    e = re + 1;
+                    if (revs != null) { bool c, w; text = FinalText(text, rs, re, revs, out c, out w); }
+                }
+                catch { }
+                list.Add(new Entry { Story = story, Idx = i, Kind = kind, Code = code.Trim(), Text = text, Start = s, End = e, Pos = posOf(s), Tracked = tracked });
             }
             return list;
         }
@@ -201,7 +307,7 @@ namespace ZoteroNext.Word
         public object Fields()
         {
             dynamic d = Doc;
-            var all = ScanStory((object)d.Fields, "main", p => p);
+            var all = ScanStory((object)d.Content, (object)d.Fields, "main", p => p);
             foreach (var pair in new[] { Tuple.Create("fn", wdFootnotesStory), Tuple.Create("en", wdEndnotesStory) })
             {
                 dynamic sr;
@@ -214,7 +320,7 @@ namespace ZoteroNext.Word
                 dynamic coll = pair.Item1 == "fn" ? d.Footnotes : d.Endnotes;
                 int nn = (int)coll.Count;
                 for (int i = 1; i <= nn; i++) { dynamic nt = coll.Item(i); notes.Add(new[] { (int)nt.Range.Start, (int)nt.Range.End, (int)nt.Reference.Start }); }
-                var found = ScanStory((object)sr.Fields, pair.Item1, p => p);
+                var found = ScanStory((object)sr, (object)sr.Fields, pair.Item1, p => p);
                 foreach (var e in found)
                 {
                     e.Pos = int.MaxValue / 2;
@@ -225,7 +331,7 @@ namespace ZoteroNext.Word
             }
             // main-text positions scale by 1000 as well so note fields interleave with the body
             foreach (var e in all) if (e.Story == "main") e.Pos = e.Pos * 1000;
-            return all.OrderBy(e => e.Pos).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note)).ToList();
+            return all.OrderBy(e => e.Pos).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note, "tracked", e.Tracked)).ToList();
         }
 
         dynamic FieldByRef(Dictionary<string, object> r)
@@ -452,21 +558,24 @@ namespace ZoteroNext.Word
             return -1;
         }
 
+        /// <summary>Rewrite an existing field's code and/or result. Never tracked (see Untracked): with Track Changes on, a
+        /// tracked rewrite would leave the old JSON in the document as a deletion, and an untracked one also cleans up a code
+        /// an earlier tracked rewrite left as old + new.</summary>
         public object SetField(Dictionary<string, object> p)
         {
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             string code = Json.Str(p, "code");
-            if (code != null)
-            {
-                if (KindOf(code) == null) throw new ArgumentException("not a Zotero field code");
-                f.Code.Text = Wrap(code);
-            }
+            if (code != null && KindOf(code) == null) throw new ArgumentException("not a Zotero field code");
             var runs = Json.Arr(Json.Get(p, "runs"));
-            if (runs.Length > 0)
+            Untracked((object)Doc, () =>
             {
-                SetResult(f, runs);
-                if (KindOf((string)f.Code.Text) == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
-            }
+                if (code != null) f.Code.Text = Wrap(code);
+                if (runs.Length > 0)
+                {
+                    SetResult(f, runs);
+                    if (KindOf((string)f.Code.Text) == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
+                }
+            });
             return Json.Map("ok", true);
         }
 
@@ -513,9 +622,30 @@ namespace ZoteroNext.Word
 
         // ---------------------------------------------------------------- cursor
 
-        /// <summary>The Zotero field the cursor or selection is in (or the first one a selection covers).</summary>
+        /// <summary>The result range of the field the last Cursor() call found (null outside a field): the popup measures
+        /// it on screen without looking the field up again (that lookup reads the whole JSON code every time).</summary>
+        public object LastResult;
+
+        /// <summary>
+        /// Where the cursor is, in four cheap calls: window|start|end|story, or "none" without a document. The cursor
+        /// watcher compares it each tick and only asks for the full <see cref="Cursor"/> once it has stopped changing.
+        /// </summary>
+        public string SelectionSig()
+        {
+            if ((int)_app.Documents.Count == 0) return "none";
+            dynamic sel = _app.Selection;
+            return (int)_app.ActiveWindow.Hwnd + "|" + (int)sel.Start + "|" + (int)sel.End + "|" + (int)sel.StoryType;
+        }
+
+        /// <summary>
+        /// The Zotero field the cursor or selection is in (or the first one a selection covers). Each Word call here costs
+        /// Word real work (Information and Fields.Item about 5 to 15 ms each on a 120-citation document), so the calls
+        /// are kept few: no Fields.Count up front, each field part read once, tracked changes looked at only for a
+        /// code that an earlier tracked rewrite left doubled.
+        /// </summary>
         public Dictionary<string, object> Cursor()
         {
+            LastResult = null;
             if ((int)_app.Documents.Count == 0) return Json.Map("hasDoc", false);
             dynamic d = _app.ActiveDocument;
             dynamic sel = _app.Selection;
@@ -524,47 +654,58 @@ namespace ZoteroNext.Word
             try
             {
                 dynamic story = st == wdMainTextStory ? d.Content : sel.StoryRange;
-                if ((int)story.Fields.Count == 0) return res;
-                dynamic startRange = story.Duplicate; startRange.SetRange(s, s);
-                bool inside = (bool)startRange.Information(wdInFieldResult) || (bool)startRange.Information(wdInFieldCode);
+                int storyStart = (int)story.Start;
                 int idx = -1;
-                if (inside)
+                dynamic hit = null, hitCode = null, hitResult = null;
+                // fields i, i+1, ... of the story from `first` on, until one matches (an index past the end throws: stop)
+                Func<int, int, Func<int, int, bool>, bool> scan = (first, last, match) =>
                 {
-                    dynamic before = story.Duplicate; before.SetRange(story.Start, s);
-                    int guess = (int)before.Fields.Count + 1;
-                    int total = (int)story.Fields.Count;
-                    for (int i = Math.Max(1, guess - 1); i <= Math.Min(total, guess + 1); i++)
+                    for (int i = Math.Max(1, first); i <= last; i++)
                     {
-                        dynamic f = story.Fields.Item(i);
-                        int fs = (int)f.Code.Start - 1, fe = (int)f.Result.End + 1;
-                        if (s >= fs && s <= fe && KindOf((string)f.Code.Text) != null) { idx = i; break; }
+                        dynamic f, cr, rr;
+                        try { f = story.Fields.Item(i); cr = f.Code; rr = f.Result; } catch { return false; }
+                        if (match((int)cr.Start - 1, (int)rr.End + 1)) { idx = i; hit = f; hitCode = cr; hitResult = rr; return true; }
                     }
-                }
-                else if (e > s)
+                    return false;
+                };
+                dynamic startRange = story.Duplicate; startRange.SetRange(s, s);
+                // no Fields.Count first (Word walks the story to count): Information is false just as well where there is no field
+                bool inside = (bool)startRange.Information(wdInFieldResult) || (bool)startRange.Information(wdInFieldCode);
+                if (inside || e > s)
                 {
-                    // a selection covering whole fields (e.g. a double-clicked citation)
-                    dynamic r = story.Duplicate; r.SetRange(s, e);
-                    if ((int)r.Fields.Count > 0)
+                    dynamic before = story.Duplicate; before.SetRange(storyStart, s);
+                    int guess = (int)before.Fields.Count + 1;
+                    if (inside) scan(guess - 1, guess + 1, (fs, fe) => s >= fs && s <= fe);
+                    else
                     {
-                        dynamic before = story.Duplicate; before.SetRange(story.Start, s);
-                        int guess = (int)before.Fields.Count + 1;
-                        int total = (int)story.Fields.Count;
-                        for (int i = guess; i <= Math.Min(total, guess + 3); i++)
-                        {
-                            dynamic f = story.Fields.Item(i);
-                            if (KindOf((string)f.Code.Text) != null && (int)f.Code.Start - 1 >= s - 1 && (int)f.Result.End + 1 <= e + 1) { idx = i; break; }
-                        }
+                        // a selection covering whole fields (e.g. a double-clicked citation)
+                        dynamic r = story.Duplicate; r.SetRange(s, e);
+                        if ((int)r.Fields.Count > 0) scan(guess, guess + 3, (fs, fe) => fs >= s - 1 && fe <= e + 1);
                     }
                 }
                 if (idx > 0)
                 {
-                    dynamic f = story.Fields.Item(idx);
-                    string code = ((string)f.Code.Text).Trim();
-                    res["inField"] = true;
-                    res["ref"] = Json.Map("story", st == wdMainTextStory ? "main" : (st == wdFootnotesStory ? "fn" : "en"), "idx", idx);
-                    res["kind"] = KindOf(code);
-                    res["code"] = code;
-                    res["text"] = (string)f.Result.Text;
+                    string code = (string)hitCode.Text;
+                    string kind = KindOf(code);
+                    if (kind != null)
+                    {
+                        string text = (string)hitResult.Text ?? "";
+                        if (LooksDoubled(code))
+                        {
+                            // left as old + new by a tracked rewrite: read it as it is with the changes accepted
+                            var revs = StoryRevisions((object)story);
+                            bool t, w;
+                            code = FinalText(code, (int)hitCode.Start, (int)hitCode.End, revs, out t, out w);
+                            text = FinalText(text, (int)hitResult.Start, (int)hitResult.End, revs, out t, out w);
+                        }
+                        code = code.Trim();
+                        res["inField"] = true;
+                        res["ref"] = Json.Map("story", st == wdMainTextStory ? "main" : (st == wdFootnotesStory ? "fn" : "en"), "idx", idx);
+                        res["kind"] = KindOf(code);
+                        res["code"] = code;
+                        res["text"] = text;
+                        LastResult = (object)hitResult;
+                    }
                 }
             }
             catch (Exception ex) { res["error"] = ex.Message; }
@@ -575,6 +716,20 @@ namespace ZoteroNext.Word
 
         /// <summary>Handle of Word's active window (owner for the citation popup).</summary>
         public int WindowHandle() { return (int)_app.ActiveWindow.Hwnd; }
+
+        /// <summary>Screen rect [left, top, width, height] in pixels of a range (e.g. <see cref="LastResult"/>), or null if it cannot be measured.</summary>
+        public int[] RangeRect(object range)
+        {
+            if (range == null) return null;
+            try
+            {
+                int l = 0, t = 0, w = 0, h = 0;
+                _app.ActiveWindow.GetPoint(ref l, ref t, ref w, ref h, range);
+                if (w == 0 && h == 0) return null;
+                return new[] { l, t, w, h };
+            }
+            catch { return null; }
+        }
 
         /// <summary>Screen rect [left, top, width, height] in pixels of a Zotero field's result, or null if it cannot be measured.</summary>
         public int[] FieldRect(Dictionary<string, object> r)

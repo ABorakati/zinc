@@ -67,6 +67,9 @@ export interface FieldInfo {
 	start: number;
 	end: number;
 	note?: number;
+	/** The field code holds tracked changes of its own (an earlier rewrite made with Track Changes on): `code` is how it
+	 * reads with them accepted, and the next refresh rewrites it untracked so the old JSON leaves the document. */
+	tracked?: boolean;
 }
 export interface DocField extends FieldInfo {
 	parsed: ParsedField;
@@ -360,9 +363,11 @@ export class App {
 
 	// ---- document --------------------------------------------------------------------------------------------
 
-	async docState(): Promise<{ hasDoc: boolean; name?: string; prefs: DocPrefs | null; readOnly?: boolean }> {
-		const s = await this.host.call<{ hasDoc: boolean; name?: string; prefsXml?: string | null; readOnly?: boolean }>("doc.state");
-		return { hasDoc: s.hasDoc, name: s.name, prefs: parsePrefsXml(s.prefsXml), readOnly: s.readOnly };
+	async docState(): Promise<{ hasDoc: boolean; name?: string; fullName?: string; prefs: DocPrefs | null; readOnly?: boolean }> {
+		const s = await this.host.call<{ hasDoc: boolean; name?: string; fullName?: string; prefsXml?: string | null; readOnly?: boolean }>(
+			"doc.state",
+		);
+		return { hasDoc: s.hasDoc, name: s.name, fullName: s.fullName, prefs: parsePrefsXml(s.prefsXml), readOnly: s.readOnly };
 	}
 
 	async readFields(): Promise<DocField[]> {
@@ -1161,7 +1166,7 @@ export class App {
 				const code = buildItemCode(data);
 				const same = JSON.stringify(f.parsed.data) === JSON.stringify(data);
 				const wantText = runsToPlain(shown);
-				if (same && (frozen || f.text === wantText)) continue;
+				if (same && (frozen || f.text === wantText) && !f.tracked) continue;
 				await this.host.call("doc.set", {
 					ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID },
 					code,
@@ -1174,9 +1179,11 @@ export class App {
 				if (!out.bibliography) continue;
 				const bib = out.bibliography;
 				const plain = bib.runs.map((r) => r.t).join("");
-				if (plain === b.text) continue;
+				if (plain === b.text && !b.tracked) continue;
 				await this.host.call("doc.set", {
 					ref: { story: b.story, idx: b.idx, kind: "bibl" },
+					// a code left as old + new by a tracked rewrite is written back as it reads with the changes accepted
+					...(b.tracked ? { code: b.code } : {}),
 					// every entry left out: the field is emptied rather than left showing the old text
 					runs: (bib.runs.length ? bib.runs : [{ t: "" }]) as Run[],
 					format: { hanging: bib.hanging, secondFieldAlign: bib.secondFieldAlign, entrySpacing: bib.entrySpacing },

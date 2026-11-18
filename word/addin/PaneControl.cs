@@ -13,8 +13,9 @@ namespace ZoteroNext.Word
     /// <summary>
     /// The sidebar: a WinForms UserControl that Word hosts as an ActiveX control in its Custom Task Pane, containing a
     /// WebView2 that shows the bundled sidebar (dist\addin\sidebar). The page talks to the add-in through
-    /// window.chrome.webview.postMessage / "message" events (see sidebar/src/bridge.ts). A timer watches the cursor so
-    /// the page can show the cited items when it sits in a Zotero citation.
+    /// window.chrome.webview.postMessage / "message" events (see sidebar/src/bridge.ts). The shared
+    /// <see cref="CursorWatch"/> tells it where the cursor is (<see cref="OnCursor"/>) so the page can show the cited
+    /// items when it sits in a Zotero citation.
     /// </summary>
     [ComVisible(true)]
     [Guid("6F3B1C2A-8E64-4B8F-A3D2-5C7E91A0B4D1")]
@@ -24,7 +25,6 @@ namespace ZoteroNext.Word
     {
         static readonly List<WeakReference> Live = new List<WeakReference>();
         readonly WebView2 _web = new WebView2();
-        readonly System.Windows.Forms.Timer _timer = new System.Windows.Forms.Timer { Interval = 300 };
         string _lastSig = "";
         string _theme = "light";
         bool _ready;
@@ -41,7 +41,6 @@ namespace ZoteroNext.Word
             Controls.Add(_web);
             lock (Live) Live.Add(new WeakReference(this));
             HandleCreated += (s, e) => { var _ = InitAsync(); };
-            _timer.Tick += (s, e) => Poll();
         }
 
         /// <summary>Send a command (from the ribbon) to every live sidebar; the visible one acts on it.</summary>
@@ -86,7 +85,7 @@ namespace ZoteroNext.Word
                 _web.DefaultBackgroundColor = OfficeTheme.Background(_theme);
                 OfficeTheme.Apply(core, _theme);
                 _web.Source = new Uri("https://zn-sidebar.local/index.html");
-                _timer.Start();
+                CursorWatch.Start();
                 Log.Write("pane ready, site " + site);
             }
             catch (Exception e) { Log.Error("pane init failed", e); }
@@ -135,26 +134,39 @@ namespace ZoteroNext.Word
             }
         }
 
-        void Poll()
+        static List<PaneControl> Shown()
         {
-            if (!Visible || !_ready) return;
-            var theme = OfficeTheme.Current();
-            if (theme != _theme)
+            var list = new List<PaneControl>();
+            lock (Live)
+                foreach (var w in Live.ToArray())
+                {
+                    var c = w.Target as PaneControl;
+                    if (c == null) { Live.Remove(w); continue; }
+                    if (!c.IsDisposed && c.Visible && c._ready) list.Add(c);
+                }
+            return list;
+        }
+
+        /// <summary>Whether any sidebar is shown (and loaded): only then does it need the cursor.</summary>
+        internal static bool AnyVisible() { return Shown().Count > 0; }
+
+        /// <summary>From the cursor watcher: tell each shown sidebar when the cursor (or the citation under it) changed.</summary>
+        internal static void OnCursor(Dictionary<string, object> c)
+        {
+            var sig = Json.Dump(Json.Map("d", Json.Get(c, "doc"), "s", Json.Get(c, "start"), "e", Json.Get(c, "end"), "st", Json.Get(c, "story"), "f", Json.Get(c, "inField"), "c", Json.Get(c, "code")));
+            string msg = null;
+            foreach (var p in Shown())
             {
-                _theme = theme;
-                try { _web.DefaultBackgroundColor = OfficeTheme.Background(theme); OfficeTheme.Apply(_web.CoreWebView2, theme); } catch { }
+                var theme = OfficeTheme.Current();
+                if (theme != p._theme)
+                {
+                    p._theme = theme;
+                    try { p._web.DefaultBackgroundColor = OfficeTheme.Background(theme); OfficeTheme.Apply(p._web.CoreWebView2, theme); } catch { }
+                }
+                if (sig == p._lastSig) continue;
+                p._lastSig = sig;
+                p.Post(msg ?? (msg = Json.Dump(Json.Map("event", "cursor", "data", c))));
             }
-            var b = Connect.Shared;
-            if (b == null) return;
-            try
-            {
-                var c = b.Doc.Cursor();
-                var sig = Json.Dump(Json.Map("d", Json.Get(c, "doc"), "s", Json.Get(c, "start"), "e", Json.Get(c, "end"), "st", Json.Get(c, "story"), "f", Json.Get(c, "inField"), "c", Json.Get(c, "code")));
-                if (sig == _lastSig) return;
-                _lastSig = sig;
-                Post(Json.Dump(Json.Map("event", "cursor", "data", c)));
-            }
-            catch { /* Word busy (modal dialog etc.): try again next tick */ }
         }
 
         // ---- COM registration: make the CLSID an ActiveX control (what Word's task pane host requires) -------------
@@ -184,7 +196,7 @@ namespace ZoteroNext.Word
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { try { _timer.Stop(); _timer.Dispose(); _web.Dispose(); } catch { } }
+            if (disposing) { try { _web.Dispose(); } catch { } }
             base.Dispose(disposing);
         }
     }

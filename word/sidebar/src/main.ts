@@ -530,20 +530,25 @@ async function deleteCited() {
 }
 
 let cursorSeq = 0;
+/** Full name of the document the last cursor event came from: the doc line is re-read only when it changes. (Comparing a
+ * file name cut from the path with Word's Name could fail to match, e.g. for a OneDrive document whose full name is a URL,
+ * and then every cursor move re-read the document state from Word.) */
+let cursorDoc: string | null = null;
 async function onCursor(c: any) {
 	const seq = ++cursorSeq;
 	if (!c?.hasDoc) {
 		docName = "";
+		cursorDoc = null;
 		cursorView = null;
 		renderDocLine();
 		renderCited();
 		return;
 	}
-	const name =
-		String(c.doc ?? "")
-			.split(/[\\/]/)
-			.pop() ?? "";
-	if (name !== docName) void refreshDocState();
+	const doc = String(c.doc ?? "");
+	if (doc !== cursorDoc) {
+		cursorDoc = doc;
+		void refreshDocState();
+	}
 	let view: CitationView | null = null;
 	try {
 		view = c.inField && c.kind === "item" ? await app.describeCitation(c) : null;

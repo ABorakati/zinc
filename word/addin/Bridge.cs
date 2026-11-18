@@ -35,7 +35,16 @@ namespace ZoteroNext.Word
             }
         }
 
+        /// <summary>doc.* methods that change the document: the cursor watcher reads the cursor again after them.</summary>
+        static readonly HashSet<string> Writes = new HashSet<string> { "doc.insert", "doc.set", "doc.delete", "doc.unlink", "doc.convert", "doc.setPrefs", "doc.end" };
+
         public object Call(string method, Dictionary<string, object> p)
+        {
+            try { return Dispatch(method, p); }
+            finally { if (method != null && Writes.Contains(method)) CursorWatch.Invalidate(); }
+        }
+
+        object Dispatch(string method, Dictionary<string, object> p)
         {
             switch (method)
             {
