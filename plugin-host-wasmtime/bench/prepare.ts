@@ -174,7 +174,9 @@ export async function prepareAll(opts: { force?: boolean; quiet?: boolean } = {}
 				const witDir = existsSync(join(staged, "wit")) ? join(staged, "wit") : apiWit;
 				const world = fx.world ?? manifest.main?.world ?? "plugin";
 				const outWasm = join(staged, "built.wasm");
-				await runCmd([qjsBin, "--wit", witDir, "--js", entry, "--world", world, "--sync", "--opt-size", "--stub-wasi", "-o", outWasm], staged);
+				// On Linux and macOS the .bin entry is a node-shebang script; run it with this Bun (as plugin-host/scripts/build-plugin.ts does)
+				const qjs = process.platform === "win32" ? [qjsBin] : [process.execPath, qjsBin];
+				await runCmd([...qjs, "--wit", witDir, "--js", entry, "--world", world, "--sync", "--opt-size", "--stub-wasi", "-o", outWasm], staged);
 				wasmBytes = new Uint8Array(await Bun.file(outWasm).arrayBuffer());
 			}
 
