@@ -1,0 +1,14 @@
+package zinc:rfixture@0.1.0;
+
+/// The reader areas of the plugin API, for gpui-ui/scripts/shot-wasm-reader.tsx: registrations and callbacks of every reader event.
+world reader-fixture {
+  import zinc:plugin/log@0.1.0;
+  import zinc:plugin/reader@0.1.0;
+  import zinc:plugin/annotations@0.1.0;
+  import zinc:plugin/note-editor@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/reader-events@0.1.0;
+  export zinc:plugin/note-events@0.1.0;
+  export zinc:plugin/ui-events@0.1.0;
+}

@@ -22,6 +22,10 @@ import { TopBar } from "./TopBar";
 import { WebTabView } from "./webview/WebTabView";
 import { OverlayHost, Resizable, toast } from "./ui";
 import { handleFileDrop } from "./features/additems/client";
+import { PluginBanners, PluginSidePanels, PluginTabBodies } from "./wasmplugins/extend/Chrome";
+import { buildContext, conditionContext } from "./wasmplugins/extend/context";
+import { dropWithPlugins } from "./wasmplugins/extend/drop";
+import { activeVirtual, VirtualCollectionView } from "./wasmplugins/extend/Tree";
 
 const mode = (): Mode => store.mode();
 const t = (cls: string): Style => tw(cls, mode());
@@ -186,7 +190,10 @@ function LibraryPanels(p: { k: string }): JSX.Element {
 					...REGION,
 				}}
 			>
-				<CardList />
+				{/* a WASM plugin's virtual collection replaces the list while it is chosen (wasmplugins/extend/Tree.tsx) */}
+				<Show when={!activeVirtual()} fallback={<VirtualCollectionView />}>
+					<CardList />
+				</Show>
 			</div>
 		</div>,
 	);
@@ -233,10 +240,15 @@ export function App() {
 		<div
 			style={{ ...t("flex flex-col bg-canvas"), width: "100%", height: "100%" }}
 			onFileDrop={(e) => {
-				if (store.canEdit()) void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y });
-				else toast("This library is read-only", { description: "Files cannot be added to it." });
+				// a plugin's `window` drop target (wasmplugins/extend/drop.ts) may take the files first; `ignored` falls through
+				void dropWithPlugins("window", e.paths ?? [], buildContext(), {}, conditionContext()).then((taken) => {
+					if (taken) return;
+					if (store.canEdit()) void handleFileDrop(e.paths ?? [], { x: e.x, y: e.y });
+					else toast("This library is read-only", { description: "Files cannot be added to it." });
+				});
 			}}
 		>
+			<PluginBanners />
 			<TopBar />
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
 			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}
@@ -248,12 +260,15 @@ export function App() {
 					...(onLibrary() ? {} : HIDDEN),
 				}}
 			>
+				<PluginSidePanels side="left" />
 				<Show when={panelsKey()} keyed>
 					{(k) => <LibraryPanels k={k} />}
 				</Show>
+				<PluginSidePanels side="right" />
 			</div>
 			{/* Reader tabs: full width below the top bar, one per open attachment, all kept mounted */}
 			<For each={store.tabs().filter(isDocTab)}>{(tab) => <ReaderTabView tab={tab} />}</For>
+			<PluginTabBodies />
 			<Show when={settingsOpen()}>
 				<SettingsTabView />
 			</Show>

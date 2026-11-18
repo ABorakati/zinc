@@ -15,6 +15,9 @@ import { itemDrag, itemDragPoint } from "./dndBridge";
 import { errMsg, sidebarApi } from "./client";
 import { NameInput } from "./NameInput";
 import { handleFileDrop } from "../features/additems/client";
+import { buildContext, conditionContext } from "../wasmplugins/extend/context";
+import { dropWithPlugins } from "../wasmplugins/extend/drop";
+import { PluginDecoration, virtualCollectionEntries } from "../wasmplugins/extend/Tree";
 import {
 	brighten,
 	CountBadge,
@@ -349,11 +352,13 @@ function collectionMenu(c: Collection): MenuItem[] {
 		...(c.parentKey
 			? [{ label: "Move to top level", icon: "corner-left-up", onSelect: () => void move(c.key, null) } satisfies MenuItem]
 			: []),
-		...collectionActions().map((a): MenuItem => ({
-			label: a.label,
-			icon: a.icon,
-			onSelect: () => a.run({ collectionKey: c.key, name: c.name }),
-		})),
+		...collectionActions()
+			.filter((a) => a.visible?.({ collectionKey: c.key, name: c.name }) ?? true)
+			.map((a): MenuItem => ({
+				label: typeof a.label === "function" ? a.label() : a.label,
+				icon: a.icon,
+				onSelect: () => a.run({ collectionKey: c.key, name: c.name }),
+			})),
 		{ separator: true },
 		{ label: "Delete…", icon: "trash-2", danger: true, onSelect: () => void remove(c) },
 	];
@@ -453,7 +458,11 @@ function Row(p: { c: Collection; depth: number; pinnedCopy?: boolean }): JSX.Ele
 				}}
 				role="treeitem"
 				aria-selected={sel()}
-				onFileDrop={(e) => void handleFileDrop(e.paths ?? [], { collectionKey: p.c.key })}
+				onFileDrop={(e) =>
+						void dropWithPlugins("collection-row", e.paths ?? [], buildContext(), { row: { kind: "collection", library: buildContext().library ?? 1, key: p.c.key } }, conditionContext()).then(
+							(taken) => void (taken || handleFileDrop(e.paths ?? [], { collectionKey: p.c.key })),
+						)
+					}
 				onClick={(e) => {
 					if (Date.now() - childClickAt < 150 || Date.now() - justDragged < 250 || isEditing()) return;
 					if ((e.clickCount ?? 1) >= 2) return setEditing(p.c.key);
@@ -536,6 +545,7 @@ function Row(p: { c: Collection; depth: number; pinnedCopy?: boolean }): JSX.Ele
 				<Show when={p.pinnedCopy}>
 					<Icon name="pin" size={11} color={muted()} style={{ marginLeft: 4 }} />
 				</Show>
+				<PluginDecoration collectionKey={p.c.key} />
 				<CountBadge n={p.c.itemCount} />
 			</div>
 		</ListItem>
@@ -721,5 +731,6 @@ export function collectionEntries(top: number): Entry[] {
 		}
 		first = false;
 	}
+	out.push(...virtualCollectionEntries()); // rows of WASM plugins (wasmplugins/extend/Tree.tsx; none while plugins are off)
 	return out;
 }

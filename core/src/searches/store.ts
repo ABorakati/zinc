@@ -79,11 +79,19 @@ export function getSavedSearch(db: Database, key: string): SavedSearch | null {
 	return r ? toSaved(r) : null;
 }
 
-export function createSavedSearch(db: Database, input: { name?: unknown; conditions?: unknown; options?: unknown }): SavedSearch {
+export function createSavedSearch(
+	db: Database,
+	input: { name?: unknown; conditions?: unknown; options?: unknown; key?: unknown },
+): SavedSearch {
 	ensureSearchSchema(db);
 	const name = cleanName(input.name);
 	const def = cleanDefinition(db, input.conditions, input.options);
 	let key = generateKey();
+	if (input.key !== undefined && input.key !== null) {
+		if (typeof input.key !== "string" || !/^[A-Za-z0-9]{8}$/.test(input.key)) throw new HttpError(400, "key must be 8 letters or digits");
+		if (db.query("SELECT 1 FROM saved_searches WHERE key = ?").get(input.key)) throw new HttpError(409, `saved search key already used: ${input.key}`);
+		key = input.key;
+	}
 	while (db.query("SELECT 1 FROM saved_searches WHERE key = ?").get(key)) key = generateKey();
 	db.query("INSERT INTO saved_searches(key, name, conditions, options, date_modified) VALUES(?, ?, ?, ?, ?)").run(
 		key,

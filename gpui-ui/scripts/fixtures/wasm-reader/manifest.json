@@ -1,0 +1,25 @@
+{
+	"manifest_version": 1,
+	"id": "zev-reader@zinc.test",
+	"name": "ZEV reader events (QuickJS test plugin)",
+	"version": "0.1.0",
+	"zinc": { "api_version": "0.1" },
+	"main": { "wasm": "plugin.wasm", "world": "reader-fixture", "language": "js" },
+	"permissions": {
+		"capabilities": [
+			"reader.read",
+			"reader.control",
+			"reader.ui",
+			"reader.themes",
+			"annotations.read",
+			"annotations.write",
+			"note-editor.read",
+			"note-editor.write",
+			"note-editor.control",
+			"note-editor.ui",
+			"library.read",
+			"library.write",
+			"library.files.write"
+		]
+	}
+}

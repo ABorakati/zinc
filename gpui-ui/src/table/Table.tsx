@@ -25,7 +25,9 @@ import { defaultDir, REVEAL_SETTLE_MS, stats, store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
 import { readState } from "../readState";
 import { DropdownMenu, openMenu, type MenuItem } from "../ui";
-import { getColumn, labelOf, loadSchema, MENU_COLUMNS, moreColumns, type Column } from "./defs";
+import { getColumn, labelOf, loadSchema, MENU_COLUMNS, moreColumns, pluginColumns, type Column } from "./defs";
+import { colorOf, textStyleOf } from "../wasmplugins/extend/style";
+import { rowStyleFor } from "../wasmplugins/extend/data";
 import { createColumnTable } from "./headless";
 import { columnLayout as layout } from "./layout";
 
@@ -46,6 +48,7 @@ type ColInfo = { id: string; def: Column; width: number };
 
 /** Sort by a column header (ItemTable.tsx HeaderRow.sortBy): click sorts (flips when already the level), Shift+click edits the level list. */
 function sortByColumn(c: Column, shift: boolean) {
+	if (!c.sort) return; // a plugin column: not sortable through the core (wasmplugins/extend/columns.ts)
 	const flip = (d: "asc" | "desc") => (d === "asc" ? "desc" : "asc");
 	const levels = store.sortLevels();
 	const idx = levels.findIndex((l) => l.key === c.sort);
@@ -79,6 +82,7 @@ function openColumnMenu(at: { x: number; y: number }) {
 		...MENU_COLUMNS.map((id) => entry(id, labelOf(id))),
 		{ separator: true },
 		{ label: "More Columns", submenu: more.length ? more : [{ label: "No other fields", disabled: true }] },
+		...(pluginColumns().length ? [{ label: "Plugin columns", submenu: pluginColumns().map((f) => entry(f.id, f.label)) } as MenuItem] : []),
 		{ separator: true },
 		{ label: "Restore Column Order", onSelect: () => layout.restoreOrder() },
 	]);
@@ -194,6 +198,13 @@ function Cell(p: { col: ColInfo; item: ItemRow; index: number }): JSX.Element {
 	});
 	// one-line cell text, cut to the column in JS (clip.ts) instead of textOverflow: ellipsis; the cell's overflow:hidden catches the rest
 	const text = () => clipText(c().get(p.item), p.col.width - 16, 13);
+	// WASM plugin cells and row styles (wasmplugins/extend): colour and text style of the cell, the row style's text colour
+	const look = (): Record<string, unknown> => {
+		const l = c().cellStyle?.(p.item);
+		const rs = rowStyleFor(p.item.key, store.itemsRev());
+		const color = colorOf(l?.color as never) ?? colorOf(rs?.textColor);
+		return { ...(color ? { color } : {}), ...textStyleOf((l?.style as never) ?? rs?.style) };
+	};
 	const attach = () => (p.item.attachmentCount ?? 0) > 0;
 	const unread = () => readState.isUnread(p.item);
 	return (
@@ -207,6 +218,7 @@ function Cell(p: { col: ColInfo; item: ItemRow; index: number }): JSX.Element {
 							<text
 								style={{
 									...textStyle("select-none text-[13px] text-foreground/80", mode()),
+																		...look(),
 									whiteSpace: "nowrap",
 									flexShrink: 0,
 								}}
@@ -309,6 +321,10 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 		return !!it && store.selected().has(it.key);
 	};
 	const focused = () => listFocused() && store.focusIndex() === p.index && !selectedChild();
+	const rowBackground = () => {
+		const it = item();
+		return it ? colorOf(rowStyleFor(it.key, store.itemsRev())?.background) : undefined;
+	};
 	const src = dragSource(
 		() => {
 			const it = untrack(item);
@@ -356,6 +372,7 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 						? mix(tok("accent"), 50, "transparent")
 						: "transparent",
 				...(focused() ? { outlineWidth: 1, outlineColor: mix(tok("ring"), 60, "transparent"), outlineOffset: -1 } : {}),
+				...(!selected() && !hovered() && rowBackground() ? { backgroundColor: rowBackground() } : {}),
 			}}
 		>
 			<Show when={item()} fallback={<RowSkeleton cols={p.cols()} />}>

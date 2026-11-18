@@ -1,0 +1,1013 @@
+package zinc:plugin@0.1.0;
+
+/// Extension points in Zinc's main window: menus, item pane sections and Info rows, item list columns and row styles,
+/// collection tree decorations and virtual collections, toolbar buttons, side panels, shortcuts, preference panes,
+/// custom tabs, banners, selection and navigation, and drag and drop.
+/// (The reader is in `reader.wit`; items, collections and tags are in `library.wit`; dialogs, prompts, windows, toasts,
+/// progress lines and the UI tree are in `ui.wit`; file pickers are `fs.pick-*`, the clipboard is `clipboard`, opening a
+/// URL is `shell.open-url`, all in `lifecycle.wit`. This file has none of them.)
+///
+/// Two interfaces:
+///   `extend`           the plugin calls the host: register things, push updates, read the selection, navigate.
+///   `extend-handlers`  the host calls the plugin: menu commands, "give me column values", "something was dropped".
+///
+/// Content that a plugin draws itself (a section body, a tab, a side panel, a preference pane, a custom setting row) is
+/// NOT handled here. This file registers the surface; the host then mounts a view with `ui-events.mount`, and the
+/// plugin returns a `ui.render-result`. `ui.view-context.view` is the id registered here and `view-context.params` is a
+/// JSON object whose shape is listed per surface in extend.md ("view-context.params"). Updates go out with `ui.push`,
+/// and clicks and edits come back as `ui-events.on-event`.
+///
+/// Permissions. Registering menus, sections, columns, panes, toolbar buttons and the like needs none. `ui.windows` is needed
+/// for `open-tab` and `register-side-panel` (they put plugin content in the main window). `ui.drop` is needed for
+/// `register-drop-target` and `register-drag-format`. `ui.navigate` is needed for `select-items`, `select-row`, `set-search`,
+/// `open-item`, `set-panel-visible` and `open-settings` (they change what the user sees). Reading the selection (`get-context`,
+/// the `context` that handlers get, `list-selected-items`, `list-view-items`) needs `library.read`. A call without its
+/// permission returns `error::permission-denied(<id>)`.
+///
+/// Rules that hold for every registration:
+///   * Ids (`menu-id`, `pane-id`, `data-key`, ...) are chosen by the plugin. They only need to be unique inside the
+///     plugin (the host namespaces them with the plugin id, as Zotero does with `pluginID`). Registering an id twice
+///     is a `conflict` error.
+///   * Everything a plugin registers is removed when the plugin stops. `unregister` is for removing it earlier.
+///   * Registrations are global to all main windows. Callbacks say which window they come from.
+///   * The host never calls the plugin while the user scrolls, moves the mouse or drags. Hot paths use declarative
+///     data (the `condition` record, `cell` values) and batched calls with a cache. See the time limit on each
+///     handler. A handler that fails or is too slow makes the host use the last good value or an empty one, and logs
+///     the error (Zotero's `fallbackReturn`).
+interface extend {
+  use types.{
+    item-key, collection-key, library-id, json, window-id, error, pref-value,
+    localized-string, icon-ref, color, accelerator, file-grant, theme-mode,
+  };
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Where things happen: tabs, tree rows, selection
+  // ---------------------------------------------------------------------------------------------------------------
+
+  type tab-id = string;
+
+  /// A tab. `kind` is "library", "reader" (subtype "pdf", "epub" or "snapshot"), "settings", or the `kind` a plugin gave
+  /// to its own tab (Zotero's custom tab `type`).
+  record tab-ref {
+    id: tab-id,
+    kind: string,
+    subtype: option<string>,
+  }
+
+  record tab-info {
+    ref: tab-ref,
+    window: window-id,
+    title: string,
+    pinned: bool,
+    /// The item or attachment the tab shows, for reader tabs and for plugin tabs that set `tab-spec.item`.
+    item: option<item-key>,
+  }
+
+  /// What a row of the collection tree is.
+  enum row-kind {
+    /// The root of My Library.
+    library,
+    /// The root of a group library.
+    group-library,
+    collection,
+    saved-search,
+    unfiled,
+    trash,
+    duplicates,
+    publications,
+    feed,
+    other,
+  }
+
+  /// A row of the collection tree. `key` is the collection key or saved-search key for those kinds.
+  record tree-row {
+    kind: row-kind,
+    library: library-id,
+    key: option<string>,
+  }
+
+  /// What the user has selected. Passed to most handlers. This is Zotero's menu `context` object, with item keys
+  /// where Zotero has item objects (read them in one batch with `library`).
+  record context {
+    window: window-id,
+    tab: tab-ref,
+    /// The library of the current view or tab.
+    library: option<library-id>,
+    /// Selected collection tree rows (empty in a reader tab).
+    rows: list<tree-row>,
+    /// Selected items (library tab) or the item of the tab (reader tab). The host sends at most 2000 keys;
+    /// `item-count` is the real number. Read the rest with `list-selected-items`.
+    items: list<item-key>,
+    item-count: u32,
+    items-truncated: bool,
+    /// False when the library is read-only for this user, or the item is locked.
+    editable: bool,
+    /// For the `item-info-row` menu: the Zotero field name ("title", "DOI") or the plugin `row-id` that was
+    /// right-clicked. Zotero's `fieldName`. `none` everywhere else.
+    field: option<string>,
+  }
+
+  /// A sort level of the item list.
+  record sort-level {
+    /// A column id, built-in ("title", "dateAdded") or the `data-key` of a plugin column.
+    key: string,
+    descending: bool,
+  }
+
+  /// The item list: which row of the collection tree it shows, the search box, tag filter and sort.
+  record view-state {
+    row: tree-row,
+    search-text: option<string>,
+    tag-filter: list<string>,
+    sort: list<sort-level>,
+    item-count: u32,
+  }
+
+  enum open-mode {
+    /// Zinc's default for the file type (the reader for PDF, EPUB and HTML).
+    default,
+    reader,
+    external-app,
+    show-in-folder,
+  }
+
+  enum panel {
+    collections-sidebar,
+    item-pane,
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Conditions: declarative show/enable rules the host evaluates itself, with no call into the plugin
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /// A rule over the current `context`. Every field that is set must hold; empty lists and `none` mean "no rule".
+  /// Use it instead of an `onShowing` or `onItemChange` handler whenever the rule is about the selection, the tab
+  /// or the library. It is the replacement for Zotero's `enableForTabTypes` and for the usual
+  /// "hide this menu item unless one regular item is selected" code.
+  record condition {
+    /// "library", "reader", "reader/pdf", "reader/epub", "reader/snapshot", "reader/*", or a plugin tab kind.
+    /// Empty: any tab.
+    tab-kinds: list<string>,
+    /// Number of selected items.
+    min-items: option<u32>,
+    max-items: option<u32>,
+    /// Zotero item type names ("journalArticle", "attachment", "note", "annotation"). Every selected item must be
+    /// one of them. Empty: any.
+    item-types: list<string>,
+    /// The collection tree rows, for the collection menu. Every selected row must be one of them. Empty: any.
+    row-kinds: list<row-kind>,
+    require-editable: bool,
+  }
+
+  /// A light and a dark version of an icon. Use only when the icon is not an SVG the host can tint.
+  record themed-icon {
+    light: icon-ref,
+    dark: option<icon-ref>,
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Menus  (Zotero.MenuManager.registerMenu)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /// Where a menu registration goes. Names follow Zotero's targets ("main/library/item" is `library-item`).
+  enum menu-target {
+    /// Zotero: main/menubar/file, edit, view, go, tools, help. Decided 2026-11-18: Zinc gets a real File / Edit / View /
+    /// Go / Tools / Help menubar in phase 2, and entries go into the named menu. Today Zinc has only Tools; until the
+    /// menubar exists the host shows entries for the other five in an overflow "Plugins" menu, prefixed with the menu's
+    /// name (app-info feature "extend.menubar" tells which).
+    menubar-file,
+    menubar-edit,
+    menubar-view,
+    menubar-go,
+    menubar-tools,
+    menubar-help,
+    /// Right-click menu of the item list (table and cards). Zotero: main/library/item.
+    library-item,
+    /// Right-click menu of a collection tree row. Zotero: main/library/collection.
+    library-collection,
+    /// The "Add attachment" menu. Zotero: main/library/addAttachment.
+    library-add-attachment,
+    /// The "New note" menu. Zotero: main/library/addNote.
+    library-add-note,
+    /// Zinc's "+" (add) menu in the toolbar. Not in Zotero.
+    library-add,
+    /// Right-click menu of a tab. Zotero: main/tab.
+    tab,
+    /// Right-click menu of an Info row in the item pane. Zotero: itemPane/info/row.
+    item-info-row,
+    /// Zotero: notesPane/addItemNote and notesPane/addStandaloneNote.
+    notes-add-item-note,
+    notes-add-standalone-note,
+    /// The "Locate" menu of the item pane side nav. Zotero: sidenav/locate.
+    sidenav-locate,
+  }
+
+  enum entry-kind {
+    item,
+    separator,
+    /// A submenu. Its children are the entries whose `parent` is this entry's id.
+    submenu,
+  }
+
+  /// Which `on-menu-*` phases the host should call. `command` is always delivered for `item` entries.
+  flags menu-hooks {
+    /// Before the menu opens. The handler returns `entry-patch`es. The host waits at most 120 ms.
+    showing,
+    shown,
+    hiding,
+    hidden,
+  }
+
+  /// One entry. WIT has no recursive types, so a tree is a flat list: a child names its `parent` entry id.
+  /// Order in the list is the order on screen.
+  record menu-entry {
+    /// Unique inside the registration. Sent back in `on-menu-command`.
+    id: string,
+    parent: option<string>,
+    kind: entry-kind,
+    /// Not used for separators.
+    label: option<localized-string>,
+    icon: option<themed-icon>,
+    /// A colour swatch drawn before the label (the reader's colour and annotation menus show one colour per entry).
+    /// Wins over `icon` when both are set.
+    swatch: option<color>,
+    /// `some` makes the entry a check item with this starting state.
+    check: option<bool>,
+    /// Shown in the menu and bound by Zinc. The user can rebind it in Settings > Shortcuts.
+    accelerator: option<accelerator>,
+    visible-when: option<condition>,
+    enabled-when: option<condition>,
+    hooks: menu-hooks,
+  }
+
+  record menu-registration {
+    menu-id: string,
+    target: menu-target,
+    entries: list<menu-entry>,
+  }
+
+  /// A change to one entry. Returned from `on-menu-showing`, or pushed with `patch-menu`.
+  /// Zotero's `setVisible`, `setEnabled`, `setL10nArgs` and `setIcon` on the menu context.
+  record entry-patch {
+    id: string,
+    hidden: option<bool>,
+    disabled: option<bool>,
+    label: option<localized-string>,
+    icon: option<themed-icon>,
+    checked: option<bool>,
+  }
+
+  register-menu: func(reg: menu-registration) -> result<_, error>;
+  /// Replace all entries of a registration (for menus that change with plugin state).
+  replace-menu-entries: func(menu-id: string, entries: list<menu-entry>) -> result<_, error>;
+  patch-menu: func(menu-id: string, patches: list<entry-patch>) -> result<_, error>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Item pane sections  (Zotero.ItemPaneManager.registerSection)
+  // ---------------------------------------------------------------------------------------------------------------
+  //
+  // The body is a view: `ui-events.mount` (Zotero's onInit + onRender) when the section is first needed for a window,
+  // `update-context` when its item changes (onItemChange + refresh), `visibility` when it is collapsed or expanded
+  // (onToggle), `unmount` (onDestroy). The returned `ui.render-result.meta` carries Zotero's `setEnabled`,
+  // `setL10nArgs`, `setSectionSummary` and `setSectionButtonStatus`. A press on a header button arrives as
+  // `ui-events.on-event` with `kind: press`, `handler` = the button id and no `node-key`.
+
+  record section-header {
+    label: localized-string,
+    icon: themed-icon,
+  }
+
+  record section-sidenav {
+    /// The tooltip of the side nav button.
+    label: localized-string,
+    icon: themed-icon,
+    /// False: the user cannot move the section in Zinc's section order.
+    orderable: bool,
+  }
+
+  /// A button in the section header.
+  record section-button {
+    /// Sent back as `ui-event.handler`. Must not contain ",".
+    id: string,
+    icon: themed-icon,
+    tooltip: option<localized-string>,
+    hidden: bool,
+    disabled: bool,
+  }
+
+  record section-registration {
+    pane-id: string,
+    header: section-header,
+    sidenav: section-sidenav,
+    /// Declarative replacement for `setEnabled(item.isRegularItem())` and `tabType === "library"` checks.
+    /// A section that is not enabled is hidden, with no call into the plugin.
+    enabled-for: option<condition>,
+    buttons: list<section-button>,
+    /// A height in px to reserve until the first render arrives (Zotero's "compute height in sync `onRender`").
+    body-height: option<u32>,
+    default-open: bool,
+    /// The plugin decides at run time whether to show the section (`render-result.meta.enabled`). Then the host calls
+    /// `update-context` on every item change, even while the section is collapsed. When false (the default), a
+    /// collapsed section is updated only when the user expands it, which saves a call per section per selection.
+    decides-enabled: bool,
+  }
+
+  register-section: func(reg: section-registration) -> result<_, error>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Info rows  (Zotero.ItemPaneManager.registerInfoRow)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  enum info-row-position {
+    start,
+    after-creators,
+    end,
+  }
+
+  record info-row-registration {
+    row-id: string,
+    label: localized-string,
+    position: info-row-position,
+    multiline: bool,
+    nowrap: bool,
+    /// The row can be edited. The value goes to `on-info-row-set`.
+    editable: bool,
+    enabled-for: option<condition>,
+  }
+
+  /// What `on-info-row-get` returns: the text, and the row's state for this item (Zotero's `onItemChange`).
+  record info-row-value {
+    value: string,
+    enabled: bool,
+    editable: bool,
+  }
+
+  register-info-row: func(reg: info-row-registration) -> result<_, error>;
+  /// Ask for the row to be read again (Zotero's `refreshInfoRow`). `item` none: for the item shown.
+  refresh-info-row: func(row-id: string, item: option<item-key>);
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Item list columns and row styles  (Zotero.ItemTreeManager.registerColumn)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /// How the host sorts a plugin column. The host fetches the values in batches (see `on-column-values`),
+  /// caches them, and sorts itself, so sorting never calls the plugin once per comparison.
+  enum sort-mode {
+    /// Not sortable.
+    none,
+    text,
+    number,
+  }
+
+  enum column-align {
+    start,
+    end,
+    center,
+  }
+
+  record column-registration {
+    /// The column id. Zotero's `dataKey`. Used in `sort-level.key` and `on-column-values`.
+    data-key: string,
+    label: localized-string,
+    /// Item lists the column is offered in. "main" is the library list; "*" is every list. Empty means "main".
+    trees: list<string>,
+    sort: sort-mode,
+    /// Zotero's `sortReverse`: the first click sorts descending.
+    sort-reverse: bool,
+    /// A flex ratio, or a width in px. Set one.
+    flex: option<f32>,
+    width: option<u32>,
+    min-width: option<u32>,
+    fixed-width: bool,
+    static-width: bool,
+    no-padding: bool,
+    /// Shown in the header instead of the label (Zotero's `iconPath` and `iconLabel`).
+    icon: option<themed-icon>,
+    align: column-align,
+    show-in-picker: bool,
+    /// Zotero's `columnPickerSubMenu`: list the column under "More Columns".
+    picker-submenu: bool,
+  }
+
+  variant sort-key {
+    text(string),
+    number(f64),
+  }
+
+  record chip {
+    text: string,
+    color: option<color>,
+  }
+
+  record rating {
+    value: f32,
+    max: u8,
+  }
+
+  variant cell-body {
+    text(string),
+    icon(icon-ref),
+    /// A progress bar, 0.0 to 1.0.
+    bar(f32),
+    rating(rating),
+    chips(list<chip>),
+  }
+
+  enum text-style {
+    normal,
+    bold,
+    italic,
+    muted,
+    strikethrough,
+  }
+
+  /// The content of one cell. This is the declarative form of Zotero's `dataProvider` plus `renderCell`: the plugin
+  /// says what to show, and the host draws it with Zinc's own components.
+  record cell {
+    body: cell-body,
+    tooltip: option<string>,
+    color: option<color>,
+    style: text-style,
+    /// What to sort by when it is not the text. Needed for `number` columns that show text such as "3 days".
+    sort-key: option<sort-key>,
+  }
+
+  register-column: func(reg: column-registration) -> result<_, error>;
+  /// Register several at once (Zotero's deprecated `registerColumns`). All or none.
+  register-columns: func(regs: list<column-registration>) -> result<_, error>;
+  /// Throw away cached values. `data-key` none: every plugin column of this plugin. `keys` none: all items.
+  /// Call this when something outside the item changed (a setting, a downloaded database). Item edits are
+  /// detected by the host (the item's modified date changes) and need no call. Zotero's `refreshColumns`.
+  invalidate-columns: func(data-key: option<string>, keys: option<list<item-key>>);
+
+  /// Item styling, for plugins that colour or mark rows. Not in Zotero's official API (plugins patch the item tree).
+  record row-style-registration {
+    style-id: string,
+    trees: list<string>,
+    /// Higher wins when two plugins style the same property.
+    priority: s32,
+  }
+
+  record row-style {
+    text-color: option<color>,
+    /// A tint behind the row. The host keeps selection colours readable.
+    background: option<color>,
+    style: text-style,
+    /// A small icon before the title.
+    leading-icon: option<icon-ref>,
+    tooltip: option<string>,
+  }
+
+  register-row-style: func(reg: row-style-registration) -> result<_, error>;
+  invalidate-row-styles: func(style-id: string, keys: option<list<item-key>>);
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Collection tree  (unofficial in Zotero: plugins patch collectionTree; only the context menu is official)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /// Decorations for existing rows: a badge, an icon, a colour. The host asks for the rows on screen in one batch.
+  record collection-decoration-registration {
+    decoration-id: string,
+  }
+
+  record collection-decoration {
+    badge: option<string>,
+    icon: option<icon-ref>,
+    color: option<color>,
+    tooltip: option<string>,
+  }
+
+  register-collection-decoration: func(reg: collection-decoration-registration) -> result<_, error>;
+  invalidate-collection-decorations: func(decoration-id: string);
+
+  /// A row that is not a collection or saved search: its items come from the plugin.
+  record virtual-collection-registration {
+    view-id: string,
+    label: localized-string,
+    icon: option<icon-ref>,
+    /// The collection it appears under. `none`: at the top level of every library listed in `libraries`.
+    parent: option<collection-key>,
+    /// Libraries it appears in. Empty: My Library only.
+    libraries: list<library-id>,
+    /// Lower first, among the plugin's rows. They come after the built-in rows.
+    order: s32,
+  }
+
+  register-virtual-collection: func(reg: virtual-collection-registration) -> result<_, error>;
+  /// The list changed: the host asks `on-virtual-collection-items` again if the row is shown.
+  invalidate-virtual-collection: func(view-id: string);
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Toolbar buttons, side panels and shortcuts  (unofficial in Zotero: plugins add DOM nodes and listen for keys)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  enum toolbar-slot {
+    /// Next to the search box, Tools and Add.
+    library-toolbar,
+    /// The top bar, beside the sync status.
+    top-bar,
+  }
+
+  record toolbar-button-registration {
+    button-id: string,
+    slot: toolbar-slot,
+    icon: themed-icon,
+    tooltip: localized-string,
+    /// Text next to the icon. `none`: icon only.
+    label: option<localized-string>,
+    /// `some`: a toggle button with this starting state. Clicking calls `on-toolbar-click` with the new state.
+    toggle: option<bool>,
+    /// Not empty: the button opens this menu (entry commands go to `on-menu-command` with `menu-id` = `button-id`).
+    menu: list<menu-entry>,
+    accelerator: option<accelerator>,
+    visible-when: option<condition>,
+    enabled-when: option<condition>,
+    /// Lower is nearer to the left. Among the plugin buttons of the slot.
+    order: s32,
+  }
+
+  record button-state {
+    icon: option<themed-icon>,
+    tooltip: option<localized-string>,
+    hidden: option<bool>,
+    disabled: option<bool>,
+    toggled: option<bool>,
+    /// A small count or text on the button.
+    badge: option<string>,
+  }
+
+  register-toolbar-button: func(reg: toolbar-button-registration) -> result<_, error>;
+  set-toolbar-button-state: func(button-id: string, state: button-state) -> result<_, error>;
+
+  /// A small view of the plugin's own in a toolbar slot (a search field, a status chip). Mounted as `ui.surface`
+  /// `toolbar-slot` with `view` = `view-id`.
+  record toolbar-view-registration {
+    view-id: string,
+    slot: toolbar-slot,
+    /// Width in px. `none`: the content decides.
+    width: option<u32>,
+    visible-when: option<condition>,
+    order: s32,
+  }
+
+  register-toolbar-view: func(reg: toolbar-view-registration) -> result<_, error>;
+
+  enum panel-side {
+    left,
+    right,
+  }
+
+  /// A panel docked beside the library or the reader (Zotero: plugins insert a box and a splitter into the main window).
+  /// Mounted as `ui.surface` `side-panel` with `view` = `panel-id`. The user can show and hide it with the panel's button
+  /// or `set-side-panel-open`.
+  record side-panel-registration {
+    panel-id: string,
+    title: localized-string,
+    icon: themed-icon,
+    side: panel-side,
+    default-width: u32,
+    min-width: u32,
+    /// Tab kinds it can appear in ("library", "reader"). Empty: library only.
+    tab-kinds: list<string>,
+    default-open: bool,
+  }
+
+  register-side-panel: func(reg: side-panel-registration) -> result<_, error>;
+  set-side-panel-open: func(panel-id: string, open: bool) -> result<_, error>;
+
+  enum shortcut-scope {
+    /// Any tab, including a reader tab.
+    global,
+    library,
+    reader,
+  }
+
+  /// A named command with a default key. The user can rebind it in Settings > Shortcuts (Zinc's own list), so a
+  /// plugin never reads raw key events. This replaces zotero-plugin-toolkit's KeyboardManager.
+  record shortcut-registration {
+    shortcut-id: string,
+    label: localized-string,
+    default-accelerator: option<accelerator>,
+    scope: shortcut-scope,
+    enabled-when: option<condition>,
+    /// Also list it in Zinc's command search, when Zinc has one.
+    in-command-search: bool,
+  }
+
+  register-shortcut: func(reg: shortcut-registration) -> result<_, error>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Preference panes  (Zotero.PreferencePanes.register)
+  // ---------------------------------------------------------------------------------------------------------------
+  //
+  // A pane is either a list of declarative rows (the host draws them in Zinc's settings style, searchable, bound to
+  // plugin prefs with no code) or a whole view the plugin draws (`ui.surface` `preferences-pane`, `view` = `pane-id`).
+  // A row of kind `custom` is a view too (`view` = "<pane-id>/<row-id>").
+
+  record choice-option {
+    value: string,
+    label: localized-string,
+  }
+
+  variant setting-control {
+    /// A switch bound to a boolean plugin pref (the key as `prefs.get` takes it).
+    toggle(string),
+    text(text-setting),
+    number(number-setting),
+    /// A drop-down bound to a text pref. The option values are the pref values.
+    choice(choice-setting),
+    /// A button. Calls `on-pref-action`.
+    button(button-setting),
+    /// Text only, no control.
+    note,
+    /// A view the plugin draws, with the given height in px (`none`: grows with the content).
+    custom(option<u32>),
+  }
+
+  record text-setting {
+    pref: string,
+    placeholder: option<localized-string>,
+    /// Hide the text and keep it out of logs and exports (API keys). The host stores it with the plugin's secrets.
+    secret: bool,
+    multiline: bool,
+  }
+
+  record number-setting {
+    pref: string,
+    min: option<s32>,
+    max: option<s32>,
+    step: option<s32>,
+  }
+
+  record choice-setting {
+    pref: string,
+    options: list<choice-option>,
+  }
+
+  record button-setting {
+    action-id: string,
+    text: localized-string,
+  }
+
+  /// Shown or enabled only while a pref has a value. Replaces the XUL pattern of one control `disabled` by another's pref.
+  record pref-condition {
+    pref: string,
+    equals: pref-value,
+  }
+
+  record setting-row {
+    /// Unique in the pane.
+    id: string,
+    /// A sub-heading above the row (rows with the same group are grouped).
+    group: option<localized-string>,
+    label: localized-string,
+    description: option<localized-string>,
+    /// Extra words for Zinc's settings search.
+    keywords: list<string>,
+    control: setting-control,
+    enabled-when: option<pref-condition>,
+    visible-when: option<pref-condition>,
+  }
+
+  variant pane-content {
+    rows(list<setting-row>),
+    /// The whole pane is a view of the plugin.
+    view,
+  }
+
+  record pref-pane-registration {
+    pane-id: string,
+    /// Another pane of this plugin. A child is not listed in the settings sidebar and opens from its parent.
+    parent: option<string>,
+    /// `none`: the plugin's name.
+    label: option<localized-string>,
+    /// `none`: the plugin's icon.
+    icon: option<themed-icon>,
+    /// A help button under the pane that opens this URL.
+    help-url: option<string>,
+    order: s32,
+    content: pane-content,
+    /// For `rows` panes: call `on-pref-pane-open` and `on-pref-pane-close` (Zotero's pane `onload`).
+    open-close-hooks: bool,
+  }
+
+  register-pref-pane: func(reg: pref-pane-registration) -> result<_, error>;
+  /// Replace the rows (for panes whose rows depend on state, such as a list of accounts).
+  replace-pref-rows: func(pane-id: string, rows: list<setting-row>) -> result<_, error>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Tabs  (Zotero_Tabs.add / select / close; unofficial but widely used)
+  // ---------------------------------------------------------------------------------------------------------------
+  //
+  // The tab's content is a view: `ui.surface` `tab`, `view` = `tab-id`. It is mounted when the tab is first shown.
+
+  record tab-spec {
+    tab-id: tab-id,
+    /// The plugin's own tab kind, shown to menus and conditions as "<kind>". Must not be a built-in kind.
+    kind: string,
+    title: localized-string,
+    icon: option<themed-icon>,
+    /// Position in the tab strip. `none`: at the end.
+    index: option<u32>,
+    select: bool,
+    pinned: bool,
+    /// False: the tab has no close button and ignores close shortcuts (the plugin closes it).
+    closable: bool,
+    /// `some`: the host saves it and restores the tab at the next start with `on-tab-restore`.
+    state: option<json>,
+    /// The item the tab relates to. Used for menu contexts and `tab-info.item`.
+    item: option<item-key>,
+  }
+
+  open-tab: func(spec: tab-spec) -> result<_, error>;
+  select-tab: func(tab: tab-id) -> result<_, error>;
+  /// Closes the tab. `on-tab-closing` is not called for a close the plugin asks for.
+  close-tab: func(tab: tab-id) -> result<_, error>;
+  rename-tab: func(tab: tab-id, title: localized-string) -> result<_, error>;
+  set-tab-pinned: func(tab: tab-id, pinned: bool) -> result<_, error>;
+  move-tab: func(tab: tab-id, index: u32) -> result<_, error>;
+  list-tabs: func(window: option<window-id>) -> list<tab-info>;
+  selected-tab: func(window: option<window-id>) -> option<tab-info>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Banners  (Zotero.Banners, the retraction and post-upgrade bars; unofficial)
+  // ---------------------------------------------------------------------------------------------------------------
+  //
+  // Dialogs, windows, alerts, confirms, prompts, toasts, progress windows and file pickers are in `ui`.
+
+  enum banner-kind {
+    info,
+    warning,
+    error,
+  }
+
+  record banner-action {
+    id: string,
+    label: localized-string,
+  }
+
+  /// A bar above the tab strip that stays until dismissed.
+  record banner-spec {
+    banner-id: string,
+    kind: banner-kind,
+    text: localized-string,
+    actions: list<banner-action>,
+    dismissable: bool,
+    /// Only while the tab is of one of these kinds. Empty: any.
+    tab-kinds: list<string>,
+  }
+
+  show-banner: func(spec: banner-spec) -> result<_, error>;
+  hide-banner: func(banner-id: string);
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Selection, view and navigation  (ZoteroPane.getSelected*, selectItem, getSortedItems, ...)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /// The current context of a window (`none`: the window the user last used).
+  get-context: func(window: option<window-id>) -> result<context, error>;
+  /// Selected item keys, in the order of the list, in pages (for a selection larger than `context.items`).
+  list-selected-items: func(window: option<window-id>, offset: u32, limit: u32) -> result<list<item-key>, error>;
+  get-view: func(window: option<window-id>) -> result<view-state, error>;
+
+  record view-page {
+    keys: list<item-key>,
+    total: u32,
+  }
+
+  /// The items of the current view in the order shown (Zotero's `getSortedItems`). Top-level items only.
+  list-view-items: func(window: option<window-id>, offset: u32, limit: u32) -> result<view-page, error>;
+
+  record select-options {
+    /// Clear the search box, tag filter and collection if the item is not visible in them
+    /// (Zotero's `inLibraryRoot` and the "not in this view" fallback).
+    clear-filters: bool,
+    /// Switch to the library tab first.
+    focus-library-tab: bool,
+  }
+
+  /// Select items in the list. Child items select their parent and open it. Returns how many were selected.
+  select-items: func(keys: list<item-key>, options: select-options) -> result<u32, error>;
+  select-row: func(row: tree-row) -> result<_, error>;
+  set-search: func(text: string) -> result<_, error>;
+  set-panel-visible: func(panel: panel, visible: bool) -> result<_, error>;
+  /// Zotero's `ZoteroPane.openPreferences(paneID)`. `pane-id` none opens Zinc's settings; a pane id is the plugin's own.
+  open-settings: func(pane-id: option<string>) -> result<_, error>;
+  /// Zotero's `viewAttachment`. Opens an attachment (or the best attachment of an item).
+  open-item: func(key: item-key, mode: open-mode) -> result<_, error>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Drag and drop into Zinc, and drag out of it
+  // ---------------------------------------------------------------------------------------------------------------
+
+  enum drop-target {
+    item-list,
+    item-pane,
+    /// A row of the collection tree. The payload says which.
+    collection-row,
+    /// The tab strip, or the window outside any other target.
+    window,
+  }
+
+  flags drop-kinds {
+    files,
+    urls,
+    text,
+    /// Items dragged from Zinc's own list.
+    items,
+  }
+
+  /// A drop target. The host decides by itself whether to highlight it while the pointer moves: it checks
+  /// `accepts`, `extensions` and `enabled-when`, and never calls the plugin during the drag. Only the drop is sent.
+  record drop-registration {
+    drop-id: string,
+    target: drop-target,
+    accepts: drop-kinds,
+    /// For `files`: only these extensions (no dot). Empty: any file.
+    extensions: list<string>,
+    /// The hint shown over the target while a matching drag hovers ("Import with My Plugin").
+    label: localized-string,
+    enabled-when: option<condition>,
+  }
+
+  record drop-payload {
+    /// `types.file-grant`s: read them with `fs.read(path-ref { root: granted(id), path: "" })`. No permission is needed for the
+    /// grant; registering the drop target needs `ui.drop`.
+    files: list<file-grant>,
+    urls: list<string>,
+    text: option<string>,
+    items: list<item-key>,
+    /// The collection tree row dropped on, for `collection-row`.
+    row: option<tree-row>,
+    /// The item dropped on, for `item-list`, when the pointer was on a row.
+    item: option<item-key>,
+  }
+
+  register-drop-target: func(reg: drop-registration) -> result<_, error>;
+
+  /// An extra format added when the user drags items out of Zinc into another app (Zotero's plugins patch
+  /// `Zotero.DragDrop` and the item tree). The host asks for the data once, when the drag starts.
+  record drag-format-registration {
+    format-id: string,
+    /// "text/plain", "text/html", "application/x-bibtex", ...
+    mime-type: string,
+    label: localized-string,
+  }
+
+  register-drag-format: func(reg: drag-format-registration) -> result<_, error>;
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // UI events the plugin may subscribe to, and unregister
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /// The ONE place where selection, view, tab and theme changes are delivered (`extend-handlers.on-event`). `library.notifier`
+  /// has no object types for them, so a plugin never gets the same change twice.
+  flags subscribed-events {
+    /// The item or collection selection changed. Debounced: at most one call per 100 ms.
+    selection-changed,
+    /// The list shows another collection, or the search or sort changed. Debounced.
+    view-changed,
+    /// A tab was added, selected, moved or closed.
+    tab-changed,
+    /// Light or dark mode changed.
+    theme-changed,
+  }
+
+  subscribe-events: func(events: subscribed-events);
+
+  enum registration-kind {
+    menu,
+    section,
+    info-row,
+    column,
+    row-style,
+    collection-decoration,
+    virtual-collection,
+    toolbar-button,
+    toolbar-view,
+    side-panel,
+    shortcut,
+    pref-pane,
+    drop-target,
+    drag-format,
+  }
+
+  unregister: func(kind: registration-kind, id: string) -> result<_, error>;
+}
+
+/// The plugin implements this; the host calls it. All functions may await host calls inside them. A returned
+/// `error` is logged and the host falls back as each function says. Views (sections, tabs, side panels, panes) are
+/// handled by `ui-events`, not here.
+interface extend-handlers {
+  use types.{item-key, error, library-id, theme-mode};
+  use extend.{
+    context, tab-info, tree-row, view-state, entry-patch, info-row-value, cell, row-style, collection-decoration,
+    drop-payload, tab-ref,
+  };
+
+  // ---- menus and commands ---------------------------------------------------------------------------------------
+
+  /// The menu is about to open (only for entries whose `hooks` has `showing`). Time limit 120 ms: after that the
+  /// menu opens with the last patches, or none. Returns changes to entries. Zotero's `onShowing`.
+  on-menu-showing: func(menu-id: string, ctx: context) -> result<list<entry-patch>, error>;
+
+  enum menu-phase {
+    shown,
+    hiding,
+    hidden,
+  }
+  /// Zotero's `onShown`, `onHiding` and `onHidden`. Fire and forget.
+  on-menu-phase: func(menu-id: string, entry-id: string, phase: menu-phase, ctx: context);
+
+  /// An entry was chosen. `checked` is the new state of a check entry. Zotero's `onCommand`.
+  on-menu-command: func(menu-id: string, entry-id: string, checked: option<bool>, ctx: context) -> result<_, error>;
+
+  /// A toolbar button was clicked (a toggle sends its new state).
+  on-toolbar-click: func(button-id: string, toggled: option<bool>, ctx: context) -> result<_, error>;
+
+  on-shortcut: func(shortcut-id: string, ctx: context) -> result<_, error>;
+
+  // ---- info rows ------------------------------------------------------------------------------------------------
+
+  /// The value of an Info row for an item. Zotero's `onGetData` plus `onItemChange`. Time limit 200 ms; the host
+  /// shows the last value until it answers. The host calls it when the item pane shows the item, when the item
+  /// is modified, and after `refresh-info-row`.
+  on-info-row-get: func(row-id: string, item: item-key, tab: tab-ref, editable: bool) -> result<info-row-value, error>;
+  /// The user edited the row. Zotero's `onSetData`.
+  on-info-row-set: func(row-id: string, item: item-key, tab: tab-ref, value: string) -> result<_, error>;
+
+  // ---- item list ------------------------------------------------------------------------------------------------
+
+  /// The cells of one plugin column for these items, in the same order and number. HOT PATH: the host never calls it
+  /// per row. It asks for the rows on screen plus a margin (up to 200 keys per call), and for the whole view
+  /// (up to 1000 keys per call, in the background) when the column is the sort key. Results are cached by item and
+  /// kept until the item changes or the plugin calls `invalidate-columns`. Time limit 500 ms per call; rows that
+  /// miss it show blank cells and are asked for again.
+  on-column-values: func(data-key: string, keys: list<item-key>) -> result<list<cell>, error>;
+
+  /// Row styles for these items, same rules as `on-column-values`. `none` entries are unstyled.
+  on-row-styles: func(style-id: string, keys: list<item-key>) -> result<list<option<row-style>>, error>;
+
+  // ---- collection tree ------------------------------------------------------------------------------------------
+
+  /// Decorations for the rows on screen. Same rules as `on-column-values`.
+  on-collection-decorations: func(decoration-id: string, rows: list<tree-row>) -> result<list<option<collection-decoration>>, error>;
+
+  record virtual-query {
+    search-text: option<string>,
+    tag-filter: list<string>,
+  }
+
+  record virtual-items {
+    keys: list<item-key>,
+    /// The real total, when `keys` is a page.
+    total: u32,
+  }
+
+  /// The items of a virtual collection. The host pages through it (up to 500 keys per call). It passes the query so the
+  /// plugin may filter, and applies the same search and tag filter to the result again, so a plugin that ignores the
+  /// query still behaves.
+  on-virtual-collection-items: func(view-id: string, library: library-id, query: virtual-query, offset: u32, limit: u32) -> result<virtual-items, error>;
+
+  // ---- preference panes -----------------------------------------------------------------------------------------
+
+  /// A `rows` pane was opened (only if `open-close-hooks`). Zotero's pane `onload`. The plugin may `replace-pref-rows` now.
+  on-pref-pane-open: func(pane-id: string);
+  on-pref-pane-close: func(pane-id: string);
+  /// A `button` row was pressed.
+  on-pref-action: func(pane-id: string, action-id: string) -> result<_, error>;
+
+  // ---- tabs and banners -----------------------------------------------------------------------------------------
+
+  /// The user is closing a plugin tab. Return false to keep it open (unsaved work). Time limit 2 s, then it closes.
+  on-tab-closing: func(tab-id: string) -> bool;
+  /// At start-up, a tab that had `state` is restored. Return false to drop it.
+  on-tab-restore: func(tab-id: string, kind: string, state: string) -> bool;
+  on-banner-action: func(banner-id: string, action-id: string);
+
+  // ---- drag and drop --------------------------------------------------------------------------------------------
+
+  enum drop-outcome {
+    handled,
+    ignored,
+  }
+
+  /// Something was dropped on a registered target. Only called on drop, never while dragging.
+  on-drop: func(drop-id: string, payload: drop-payload, ctx: context) -> result<drop-outcome, error>;
+  /// The data for an extra drag format. Called once when the drag starts. Time limit 200 ms.
+  on-drag-format: func(format-id: string, keys: list<item-key>) -> result<string, error>;
+
+  // ---- subscribed events ----------------------------------------------------------------------------------------
+
+  variant host-event {
+    selection-changed(context),
+    view-changed(view-state),
+    tab-added(tab-info),
+    tab-selected(tab-info),
+    tab-moved(tab-info),
+    tab-closed(string),
+    theme-changed(theme-mode),
+  }
+
+  on-event: func(event: host-event);
+}

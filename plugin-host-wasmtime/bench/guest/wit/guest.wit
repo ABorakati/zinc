@@ -1,0 +1,15 @@
+package zinc:fixture@0.1.0;
+
+world hello {
+  import zinc:plugin/log@0.1.0;
+  import zinc:plugin/prefs@0.1.0;
+  import zinc:plugin/timers@0.1.0;
+  import zinc:plugin/l10n@0.1.0;
+  import zinc:plugin/app@0.1.0;
+  import zinc:plugin/util@0.1.0;
+  import zinc:plugin/net@0.1.0;
+  import zinc:plugin/attachments@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/events@0.1.0;
+}

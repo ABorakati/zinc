@@ -1,10 +1,11 @@
 // A note in Zotero's own rich-text editor: a placeholder box that the shared note-editor WebView2 popup (webview/notes.ts) covers. The
 // placeholder only reserves the space and shows "Opening note…" until the editor is over it; loading, saving and switching notes are
 // the controller's. NoteClip (provided by the item pane's scroller) is the box the editor is cut to when the placeholder scrolls.
-import { createContext, createEffect, on, onCleanup, onMount, Show, useContext, type JSX } from "solid-js";
+import { createContext, createEffect, createSignal, on, onCleanup, onMount, Show, useContext, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import { Icon } from "../icons";
 import { claimNote, focusNote, noteShown, noteStatus } from "../webview/notes";
+import { wasmPluginsEnabled } from "../wasmplugins/flag";
 import { t, tok, tx } from "./kit";
 
 /** The scroller a note placeholder sits in (the item pane's list): the editor popup is cut to it, and the wheel goes on to it at the
@@ -24,6 +25,11 @@ export function RichNoteEditor(p: {
 }): JSX.Element {
 	const clip = useContext(NoteClip);
 	let box: HostElement | undefined;
+	// The strip of plugin UI over the editor (note-editor.register-head). Loaded only when plugins are on: the default app never imports it.
+	const [Head, setHead] = createSignal<((p: { noteKey: string }) => JSX.Element) | undefined>();
+	onMount(() => {
+		if (wasmPluginsEnabled()) void import("../wasmplugins/reader/notehead").then((m) => setHead(() => m.NoteEditorHead));
+	});
 	onMount(() => {
 		const release = claimNote({
 			key: () => p.noteKey,
@@ -79,6 +85,7 @@ export function RichNoteEditor(p: {
 					</div>
 				</Show>
 			</div>
+			{Head()?.({ noteKey: p.noteKey })}
 			<div
 				ref={(el: HostElement) => {
 					box = el;

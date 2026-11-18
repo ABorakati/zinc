@@ -1,0 +1,38 @@
+{
+	"manifest_version": 1,
+	"id": "mcp-tools@zinc.example",
+	"name": "MCP Tools",
+	"version": "0.1.0",
+	"description": "Gives AI agents a tool that counts items by tag and one that adds a tag, through Zinc's MCP server.",
+	"author": "Zinc samples",
+	"license": "MIT",
+	"zinc": { "api_version": "0.1" },
+	"main": { "wasm": "plugin.wasm", "world": "plugin-mcp", "language": "js" },
+	"activation_events": ["onStartup"],
+	"permissions": { "capabilities": ["library.read", "library.write", "mcp.expose"] },
+	"permission_reasons": {
+		"library.read": "Count items by tag for the tools you offer to AI agents.",
+		"library.write": "Add a tag to an item when an AI agent asks.",
+		"mcp.expose": "Offer two tools to AI agents connected to Zinc's MCP server. Off until you switch it on in Settings > Plugins."
+	},
+	"mcp": {
+		"tools": [
+			{
+				"name": "count_tagged",
+				"description": "Count the library items that carry a tag. Use it to see how many items a tag covers before listing or editing them.",
+				"input_schema": {
+					"type": "object",
+					"properties": { "tag": { "type": "string", "minLength": 1, "description": "The tag, exactly as shown in the tag selector." } },
+					"required": ["tag"],
+					"additionalProperties": false
+				},
+				"output_schema": {
+					"type": "object",
+					"properties": { "tag": { "type": "string" }, "count": { "type": "integer" } },
+					"required": ["tag", "count"]
+				},
+				"annotations": { "read_only": true, "destructive": false, "idempotent": true }
+			}
+		]
+	}
+}

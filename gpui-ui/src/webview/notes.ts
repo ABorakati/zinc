@@ -249,6 +249,13 @@ function save(c: Current): Promise<void> {
 			await ipApi.patchItem(c.key, { note: html });
 			c.saved = html;
 			setStatus(c.key, "Saved");
+			for (const f of [...savedListeners]) {
+				try {
+					f(c.key, html);
+				} catch (e) {
+					console.error("[notes] saved listener:", e instanceof Error ? e.message : e);
+				}
+			}
 			untrack(claims)
 				.filter((x) => x.c.key() === c.key)
 				.at(-1)
@@ -377,6 +384,43 @@ createRoot(() => {
 		),
 	);
 });
+
+// ---- for plugins (wasmplugins/reader): "this note was saved", "this note is shown", "open this note" ----
+const savedListeners = new Set<(key: string, html: string) => void>();
+/** Called after every save of a note the editor holds (the editor's own, 600 ms after typing, or a flush). Returns the unsubscribe. */
+export function onNoteSaved(fn: (key: string, html: string) => void): () => void {
+	savedListeners.add(fn);
+	return () => void savedListeners.delete(fn);
+}
+const shownListeners = new Set<(key: string | null) => void>();
+/** Called with the note key the editor page shows (null when none), now and at every change. Returns the unsubscribe. */
+export function onNoteShown(fn: (key: string | null) => void): () => void {
+	shownListeners.add(fn);
+	fn(untrack(shownKey));
+	return () => void shownListeners.delete(fn);
+}
+createRoot(() =>
+	createEffect(
+		on(
+			shownKey,
+			(key) => {
+				for (const f of [...shownListeners]) {
+					try {
+						f(key);
+					} catch (e) {
+						console.error("[notes] shown listener:", e instanceof Error ? e.message : e);
+					}
+				}
+			},
+			{ defer: true },
+		),
+	),
+);
+/** Show a note in the library tab's item pane (where the editor lives) and select it. False when the library does not have it. */
+export async function openNote(key: string): Promise<boolean> {
+	store.setActiveTab("library");
+	return store.revealItem(key);
+}
 
 /** Tests: the page's current note and HTML state, and the last {type:"probe"} value the page sent. */
 export const noteDebug = () => ({

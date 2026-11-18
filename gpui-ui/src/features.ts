@@ -3,9 +3,11 @@
 import { register as registerFeatures } from "./features/index";
 import { register as registerSearches } from "./searches/register";
 import { register as registerReaderPlugins } from "./reader/register";
+import { register as registerWasmPlugins } from "./wasmplugins/register";
 
 registerFeatures();
 registerSearches();
 registerReaderPlugins();
+registerWasmPlugins();
 
 export {};

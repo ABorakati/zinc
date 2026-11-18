@@ -1,0 +1,1236 @@
+package zinc:plugin@0.1.0;
+
+// Library access for plugins: items, collections, tags, saved searches, relations, libraries, schema,
+// attachments and their files, full text, citations, translators, sync triggers, and change notification.
+//
+// Interfaces in this file (all host imports unless said otherwise):
+//   library        items, collections, tags, saved searches, relations, duplicates, trash, atomic batches
+//   attachments    attachment files and the attachment import / link / rename calls
+//   fulltext       extracted text and the full-text index
+//   schema         item types, fields, creator types (what Zotero.ItemTypes / ItemFields / CreatorTypes answer)
+//   cite           styles, bibliographies, citations, Quick Copy
+//   translate      import / export / lookup translators
+//   sync-control   start a sync, read its state
+//   data-utils     pure helpers that need Zotero's exact behaviour (dates, CSL JSON, extra field, note titles)
+//   notifier       (import) subscribe to change events, and the event types
+//   notifier-handler  (EXPORT, implemented by the plugin) receives the batches of events
+//
+// Permission ids this file uses (the lifecycle area owns the manifest, see "Needs from other areas" in library.md):
+//   library.read  library.write  library.trash  library.erase
+//   library.files.read  library.files.write  library.files.paths  library.files.open
+//   library.fulltext.read  library.fulltext.write
+//   library.cite  library.cite.styles  library.translate  library.sync
+// Calls that make the host fetch a URL (attachments.import-from-url, translate.web) also need the lifecycle
+// area's network permission for that host.
+//
+// Process boundary: every call here crosses from the plugin Worker to the host process, and from there to the
+// core. Calls are coarse: they take and return lists, and `library.apply` runs many changes in one transaction.
+// Items travel as Zotero Web API item JSON (the same shape the core stores), so a plugin can use any JSON
+// library and Zotero's own documentation of item fields.
+
+interface library {
+  use types.{item-key, collection-key, search-key, library-id, json, error};
+
+  // ---------------------------------------------------------------- libraries
+
+  enum library-kind {
+    /// My Library (id 1).
+    user,
+    /// A group library synced from zotero.org.
+    group,
+  }
+
+  record library-info {
+    id: library-id,
+    kind: library-kind,
+    /// The group id on zotero.org. None for My Library.
+    group-id: option<u32>,
+    name: string,
+    /// False: writes to this library fail with `error.read-only`.
+    editable: bool,
+    /// False: the user may not add or change files in this library.
+    files-editable: bool,
+  }
+
+  /// Zotero.Libraries.getAll / Zotero.Groups.getAll. Libraries the user removed are not listed.
+  list-libraries: func() -> result<list<library-info>, error>;
+
+  /// Make `count` unused keys (8 characters, Zotero's alphabet). A plugin has no randomness of its own, and
+  /// needs keys to link objects it creates in one `apply` call (a child item's `parentItem`, a collection key
+  /// used in `add-to-collection`). The host never hands out the same key twice.
+  new-keys: func(count: u32) -> list<item-key>;
+
+  // -------------------------------------------------------------------- items
+
+  /// Tag type. Zotero stores 0 for manual and 1 for automatic.
+  enum tag-kind {
+    manual,
+    automatic,
+  }
+
+  record tag {
+    name: string,
+    kind: tag-kind,
+  }
+
+  /// A short, cheap view of an item for lists. Everything beyond the fixed fields is opt-in through
+  /// `item-query.fields` and `item-query.expand`.
+  record item-summary {
+    key: item-key,
+    library: library-id,
+    /// Zotero item type name, for example "journalArticle", "attachment", "note".
+    item-type: string,
+    /// The display title (a note's first line, an attachment's title, an item's title field).
+    title: string,
+    /// "Smith", "Smith and Jones", "Smith et al."
+    creators-summary: string,
+    year: option<s32>,
+    /// publicationTitle, bookTitle, websiteTitle and so on.
+    publication: option<string>,
+    /// ISO 8601 UTC.
+    date-added: string,
+    date-modified: string,
+    /// Set for attachments, child notes and annotations.
+    parent-key: option<item-key>,
+    /// The attachment Zotero would open first (PDF, then EPUB, then snapshot).
+    best-attachment: option<item-key>,
+    attachment-count: u32,
+    note-count: u32,
+    in-trash: bool,
+    /// Values of the fields named in `item-query.fields`, in that order. None when the field is empty.
+    fields: list<tuple<string, option<string>>>,
+    /// Filled when `item-include.creators` is set: "Family G", or the single-field name.
+    creators: list<string>,
+    /// Filled when `item-include.tags` is set.
+    tags: list<tag>,
+    /// Filled when `item-include.collections` is set.
+    collections: list<collection-key>,
+  }
+
+  flags item-include {
+    creators,
+    tags,
+    collections,
+  }
+
+  /// Which items a query looks at.
+  variant item-scope {
+    /// Every top-level item in the library (My Library when `library` is not set).
+    all,
+    /// Items in this collection. `recursive` adds the items of its sub-collections.
+    collection(collection-scope),
+    /// Items in no collection.
+    unfiled,
+    /// The trash (items only).
+    trash,
+    /// My Publications.
+    publications,
+    /// The results of a saved search.
+    saved-search(search-key),
+    /// The children (attachments, notes) of one item.
+    children-of(item-key),
+  }
+
+  record collection-scope {
+    key: collection-key,
+    recursive: bool,
+  }
+
+  /// The quick-search box modes (Zotero's quicksearch-titleCreatorYear, quicksearch-fields,
+  /// quicksearch-everything).
+  enum text-mode {
+    title-creator-year,
+    fields,
+    everything,
+  }
+
+  record sort-key {
+    /// "title", "creator", "year", "dateAdded", "dateModified", "itemType", "publication", or any Zotero
+    /// field name.
+    field: string,
+    ascending: bool,
+  }
+
+  record item-query {
+    /// None: My Library, or the library of `scope` when the scope names an object.
+    library: option<library-id>,
+    scope: item-scope,
+    /// Items must carry all of these tags.
+    tags: list<string>,
+    /// A quick-search text, matched according to `text-mode`.
+    text: option<string>,
+    text-mode: text-mode,
+    /// An ad-hoc advanced search that is ANDed with the rest of the query.
+    search: option<search-definition>,
+    /// Zotero field names to put in `item-summary.fields`.
+    fields: list<string>,
+    expand: item-include,
+    sort: list<sort-key>,
+    /// Page size. 0 means the host default (200). The host caps it (1000).
+    limit: u32,
+    offset: u32,
+  }
+
+  record item-page {
+    /// Matches before `limit` and `offset`.
+    total: u64,
+    items: list<item-summary>,
+  }
+
+  /// Run a query. This is the replacement for the SQL most plugins write against Zotero's database.
+  query-items: func(query: item-query) -> result<item-page, error>;
+
+  /// The same query, keys only. Cheaper for large selections.
+  query-keys: func(query: item-query) -> result<list<item-key>, error>;
+
+  /// Count matches without listing them.
+  count-items: func(query: item-query) -> result<u64, error>;
+
+  /// What a column of the matching items contains, with counts, most frequent first: the common
+  /// "GROUP BY" queries. `field` is "tag", "itemType", "year", "creator", "collection", "contentType" or
+  /// any Zotero field name.
+  facets: func(query: item-query, field: string, limit: u32) -> result<list<facet>, error>;
+
+  record facet {
+    value: string,
+    count: u64,
+  }
+
+  record get-options {
+    /// Add `children` (attachments and notes, as item JSON) to each item. They are not nested in the
+    /// result of items that have none.
+    include-children: bool,
+    /// Return trashed items too. Without it a trashed item answers none.
+    include-trashed: bool,
+  }
+
+  /// Full item data as Zotero Web API item JSON: `key`, `version`, `itemType`, every field, `creators`,
+  /// `tags`, `collections`, `relations`, `parentItem`, `dateAdded`, `dateModified`, `deleted`, and for notes
+  /// `note`, for attachments `linkMode`, `contentType`, `filename`, `path` (only with the
+  /// `library.files.paths` permission). With `include-children` the JSON gets a `children` array.
+  /// The result has one entry per requested key, in order; a missing key gives none. Annotation items are not
+  /// served here: a key that names one gives `invalid-argument` (use `annotations`, see reader.wit).
+  /// Zotero equivalents: Zotero.Items.getAsync, Item.toJSON, Item.getNotes / getAttachments.
+  get-items: func(keys: list<item-key>, options: get-options) -> result<list<option<json>>, error>;
+
+  /// Summaries of many items by key, with the optional fields: the "get these items, with these fields" call. One
+  /// crossing for any number of keys (the `extend` area hands out keys only, for custom columns, menu contexts and row
+  /// styles, and the plugin reads what it needs here; 1000 keys per call at most). `fields` are Zotero field names that fill
+  /// `item-summary.fields`, in that order; `expand` opts in to creators, tags and collections. One entry per requested
+  /// key, in order; a missing key (or one in the trash, unless `include-trashed`) gives none. Needs `library.read`.
+  get-summaries: func(keys: list<item-key>, fields: list<string>, expand: item-include, include-trashed: bool) -> result<list<option<item-summary>>, error>;
+
+  /// Children of one item as summaries. Zotero: Item.getAttachments / getNotes / numChildren.
+  get-children: func(key: item-key, include-trashed: bool) -> result<list<item-summary>, error>;
+
+  // -------------------------------------------------------------- collections
+
+  record collection-info {
+    key: collection-key,
+    library: library-id,
+    name: string,
+    parent: option<collection-key>,
+    /// Top-level items directly in this collection.
+    item-count: u32,
+    version: u32,
+  }
+
+  /// Every collection of a library as a flat list (parents give the tree). Zotero.Collections.getByLibrary.
+  list-collections: func(library: option<library-id>) -> result<list<collection-info>, error>;
+
+  /// Keys of the items in a collection. `recursive` follows sub-collections. Trashed items are left out.
+  /// Zotero: Collection.getChildItems / getDescendents.
+  get-collection-items: func(key: collection-key, recursive: bool) -> result<list<item-key>, error>;
+
+  // --------------------------------------------------------------------- tags
+
+  record tag-info {
+    name: string,
+    kind: tag-kind,
+    /// Items carrying the tag, in the library.
+    count: u32,
+  }
+
+  /// All tags in a library, or only those on the items a query matches. Zotero.Tags.getAll / getAllWithin.
+  list-tags: func(library: option<library-id>, within: option<item-query>) -> result<list<tag-info>, error>;
+
+  /// Coloured tags in position order (Zotero.Tags.getColors). Position 0 is key "1".
+  record tag-color {
+    name: string,
+    /// "#RRGGBB".
+    color: string,
+  }
+
+  get-tag-colors: func(library: option<library-id>) -> result<list<tag-color>, error>;
+  /// Replaces the coloured tags of the library, in the order given.
+  set-tag-colors: func(library: option<library-id>, colors: list<tag-color>) -> result<_, error>;
+
+  /// Rename a tag everywhere in a library. When `new-name` exists the two merge. Zotero.Tags.rename.
+  rename-tag: func(library: option<library-id>, old-name: string, new-name: string) -> result<u32, error>;
+  /// Remove tags from every item in the library (Zotero.Tags.removeFromLibrary). Returns the number of items changed.
+  delete-tags: func(library: option<library-id>, names: list<string>) -> result<u32, error>;
+  /// Zotero.Tags.removeAutomaticFromLibrary.
+  delete-automatic-tags: func(library: option<library-id>) -> result<u32, error>;
+
+  // ---------------------------------------------------------------- relations
+
+  /// Items whose relations hold `predicate` (for example "dc:relation", "owl:sameAs") and, if given, the
+  /// object URI. Zotero.Relations.getByPredicateAndObject / getByObject. Relations are read and written
+  /// through the `relations` object of item JSON and `apply`.
+  find-by-relation: func(library: option<library-id>, predicate: string, object: option<string>) -> result<list<item-key>, error>;
+
+  // ----------------------------------------------------------- saved searches
+
+  record search-condition {
+    /// A Zotero search condition name: "title", "creator", "tag", "collection", "itemType", "dateAdded",
+    /// "fulltextContent", "anyField", "note", "year", "publicationTitle", "attachmentFileType", ...
+    /// "groupStart" and "groupEnd" mark nested groups. `list-search-conditions` lists what the host supports.
+    condition: string,
+    /// "is", "isNot", "contains", "doesNotContain", "beginsWith", "isBefore", "isAfter", "isInTheLast",
+    /// "isLessThan", "isGreaterThan", "isEmpty", "isNotEmpty".
+    operator: string,
+    /// A collection condition takes a collection key; isInTheLast takes "<n> <days|weeks|months|years>".
+    value: string,
+    /// Zotero's `required` flag (ANDed even when the search joins with "any").
+    required: bool,
+  }
+
+  enum join-mode {
+    all,
+    any,
+  }
+
+  record search-options {
+    join: join-mode,
+    /// A match on a child also lists its parent (Zotero includeParentsAndChildren).
+    include-parents-and-children: bool,
+    /// Zotero "recursive": collection conditions include sub-collections.
+    search-subcollections: bool,
+    /// Zotero "noChildren": children never lift their parent.
+    top-level-only: bool,
+    /// Zotero "includeDeleted".
+    include-trash: bool,
+  }
+
+  record search-definition {
+    conditions: list<search-condition>,
+    options: search-options,
+  }
+
+  record saved-search {
+    key: search-key,
+    library: library-id,
+    name: string,
+    definition: search-definition,
+    date-modified: string,
+  }
+
+  record condition-info {
+    name: string,
+    /// Operators valid for this condition.
+    operators: list<string>,
+    /// English label (Zotero.SearchConditions.getLocalizedName).
+    label: string,
+  }
+
+  /// Conditions the host's search understands (Zotero.SearchConditions.getStandardConditions).
+  list-search-conditions: func() -> list<condition-info>;
+
+  /// Zotero.Searches.getAll / getByLibrary.
+  list-saved-searches: func(library: option<library-id>) -> result<list<saved-search>, error>;
+  get-saved-search: func(key: search-key) -> result<saved-search, error>;
+
+  // ---------------------------------------------------------- batched changes
+
+  /// A new item. `data` is item JSON. Without `key` the host picks one. With `key` it must come from
+  /// `new-keys`. Child items set `parentItem` in `data`; the parent may be created earlier in the same batch.
+  record new-item {
+    key: option<item-key>,
+    library: option<library-id>,
+    data: json,
+  }
+
+  /// A partial update (PATCH semantics): fields present in `patch` are set, absent fields are untouched, a
+  /// field set to "" is cleared. `creators`, `tags`, `collections`, `relations` replace the whole list when present.
+  record item-update {
+    key: item-key,
+    patch: json,
+    /// The `dateModified` the plugin last saw. If the item changed since, the batch fails with `conflict`.
+    expected-modified: option<string>,
+  }
+
+  record membership {
+    collection: collection-key,
+    items: list<item-key>,
+  }
+
+  record tag-edit {
+    items: list<item-key>,
+    tags: list<tag>,
+  }
+
+  record related-pair {
+    a: item-key,
+    b: item-key,
+  }
+
+  record new-collection {
+    key: option<collection-key>,
+    library: option<library-id>,
+    name: string,
+    parent: option<collection-key>,
+  }
+
+  record collection-update {
+    key: collection-key,
+    name: option<string>,
+    /// Outer none: leave the parent alone. Inner none: move to the top level.
+    parent: option<option<collection-key>>,
+  }
+
+  record collection-erase {
+    key: collection-key,
+    /// Also move the items that are only in this collection (and its sub-collections) to the trash.
+    /// Zotero: Collection.erase({deleteItems: true}).
+    trash-items: bool,
+  }
+
+  record new-saved-search {
+    key: option<search-key>,
+    library: option<library-id>,
+    name: string,
+    definition: search-definition,
+  }
+
+  record saved-search-update {
+    key: search-key,
+    name: option<string>,
+    definition: option<search-definition>,
+  }
+
+  variant change {
+    create-item(new-item),
+    update-item(item-update),
+    /// Move to the trash. Children go with their parent. Needs `library.trash`.
+    trash-items(list<item-key>),
+    /// Restore from the trash.
+    restore-items(list<item-key>),
+    /// Delete for good, with children. Needs `library.erase`. Items must be in the trash already.
+    erase-items(list<item-key>),
+    add-to-collection(membership),
+    remove-from-collection(membership),
+    add-tags(tag-edit),
+    remove-tags(tag-edit),
+    /// Two-way "Related" links (dc:relation both ways).
+    add-related(related-pair),
+    remove-related(related-pair),
+    /// Zotero Item.setPublications / addToPublications.
+    add-to-publications(list<item-key>),
+    remove-from-publications(list<item-key>),
+    create-collection(new-collection),
+    update-collection(collection-update),
+    /// Delete a collection. Its items are kept unless `trash-items`. Needs `library.erase`.
+    erase-collection(collection-erase),
+    create-saved-search(new-saved-search),
+    update-saved-search(saved-search-update),
+    /// Needs `library.erase`.
+    erase-saved-search(search-key),
+  }
+
+  record apply-options {
+    /// Do not send change events to the notifier for this batch (Zotero `skipNotifier`). The batch still
+    /// reaches other plugins' observers marked with this plugin as origin unless the user turned that off.
+    skip-notify: bool,
+  }
+
+  record apply-result {
+    /// Keys of the objects the `create-*` changes made, in the order of those changes.
+    created: list<string>,
+    /// Number of objects changed or created.
+    changed: u32,
+  }
+
+  /// The failure of one change, with its position.
+  record apply-error {
+    /// Index in the `changes` list. None when the failure is not tied to one change.
+    index: option<u32>,
+    error: error,
+  }
+
+  /// Run all changes in ONE transaction: all happen or none. This is Zotero.DB.executeTransaction plus
+  /// every `saveTx` / `eraseTx` / `addToCollection` / `addTag` inside it. Changes run in list order. The call
+  /// is the only way to write; there is no per-object save. Writes to a read-only library fail with
+  /// `read-only`. Needs `library.write`, plus `library.trash` / `library.erase` for those changes.
+  apply: func(changes: list<change>, options: apply-options) -> result<apply-result, apply-error>;
+
+  // ---------------------------------------------------------------- duplicates
+
+  record duplicate-set {
+    items: list<item-key>,
+  }
+
+  /// Zotero.Duplicates.findAll for one library.
+  find-duplicates: func(library: option<library-id>) -> result<list<duplicate-set>, error>;
+
+  /// Merge `others` into `master` as the Duplicate Items pane does: fields, tags, collections, relations,
+  /// children (notes, attachments, annotations) go to `master`, and `others` go to the trash. Zotero.Items.merge.
+  merge-items: func(master: item-key, others: list<item-key>) -> result<_, error>;
+
+  /// Zotero.Duplicates "not a duplicate" marking.
+  mark-not-duplicates: func(items: list<item-key>) -> result<_, error>;
+
+  // -------------------------------------------------------------------- trash
+
+  /// Empty the trash of one library, optionally only what has been there longer than `older-than-days`.
+  /// Returns the number of items erased. Needs `library.erase`. Zotero.Items.emptyTrash.
+  empty-trash: func(library: option<library-id>, older-than-days: option<u32>) -> result<u32, error>;
+}
+
+// ------------------------------------------------------------------ attachments
+
+interface attachments {
+  use types.{item-key, collection-key, library-id, json, error};
+
+  enum link-mode {
+    imported-file,
+    imported-url,
+    linked-file,
+    linked-url,
+    embedded-image,
+  }
+
+  record attachment-info {
+    key: item-key,
+    parent: option<item-key>,
+    link-mode: link-mode,
+    content-type: option<string>,
+    charset: option<string>,
+    /// The file name (no folders).
+    filename: option<string>,
+    /// The source URL, if any.
+    url: option<string>,
+    /// None for a link to a URL.
+    file-exists: option<bool>,
+    /// Bytes on disk, when the file exists.
+    size: option<u64>,
+    /// The absolute path. Only with `library.files.paths`; otherwise none.
+    path: option<string>,
+    /// Unix seconds of the last time the user read it. None if never.
+    last-read: option<u64>,
+  }
+
+  /// Zotero: Item.getAttachmentLinkMode / getAttachmentMIMEType / getAttachmentCharset / getFilename /
+  /// fileExists / getFilePathAsync / isPDFAttachment ... One entry per key, none for a key that is not an attachment.
+  get-info: func(keys: list<item-key>) -> result<list<option<attachment-info>>, error>;
+
+  /// The attachment Zotero opens for an item (Item.getBestAttachment).
+  best-attachment: func(item: item-key) -> result<option<item-key>, error>;
+  /// All attachments in Zotero's preference order (Item.getBestAttachments).
+  best-attachments: func(item: item-key) -> result<list<item-key>, error>;
+
+  // ---- read file bytes (library.files.read)
+
+  /// Read part of an attachment's file. `length` is capped at 8 MiB per call; a short answer means end of file.
+  read-file: func(key: item-key, offset: u64, length: u32) -> result<list<u8>, error>;
+
+  /// Read a whole file up to `max-bytes` (the host also caps it at 64 MiB). Fails with `limit-exceeded` if larger.
+  read-file-all: func(key: item-key, max-bytes: u64) -> result<list<u8>, error>;
+
+  // ---- create attachments (library.files.write)
+
+  record import-bytes-request {
+    /// None: a standalone attachment.
+    parent: option<item-key>,
+    library: option<library-id>,
+    /// The name to store the file under, with extension.
+    filename: string,
+    /// None: the host guesses from the name and the bytes.
+    content-type: option<string>,
+    /// None: the file name.
+    title: option<string>,
+    /// A source URL to record (imported_url) or none (imported_file).
+    url: option<string>,
+    collections: list<collection-key>,
+    data: list<u8>,
+  }
+
+  /// Store a file in Zinc's storage as a new attachment. Zotero.Attachments.importFromFile / importFromDocument.
+  /// Up to 64 MiB; use `file-writer` for more. Returns the new attachment's key.
+  import-bytes: func(request: import-bytes-request) -> result<item-key, error>;
+
+  /// Streaming upload of a large file: construct a writer with the request (its `data` empty), `append` the
+  /// chunks, then `finish`. A writer that is dropped without `finish` removes its partial file.
+  resource file-writer {
+    constructor(request: import-bytes-request);
+    append: func(chunk: list<u8>) -> result<_, error>;
+    finish: func() -> result<item-key, error>;
+  }
+
+  record import-url-request {
+    parent: option<item-key>,
+    library: option<library-id>,
+    url: string,
+    title: option<string>,
+    content-type: option<string>,
+    collections: list<collection-key>,
+  }
+
+  /// The host downloads the URL and stores the file (Zotero.Attachments.importFromURL, downloadFile). The host's
+  /// network permission check for the URL's host applies. Redirects and cookies follow the user's Find Full Text
+  /// sign-in session only for hosts that session covers.
+  import-from-url: func(request: import-url-request) -> result<item-key, error>;
+
+  record link-file-request {
+    parent: option<item-key>,
+    library: option<library-id>,
+    /// An absolute path on the user's disk. Needs `library.files.paths`.
+    path: string,
+    title: option<string>,
+    content-type: option<string>,
+  }
+
+  /// A linked file (Zotero.Attachments.linkFromFile).
+  link-file: func(request: link-file-request) -> result<item-key, error>;
+
+  record link-url-request {
+    parent: option<item-key>,
+    library: option<library-id>,
+    url: string,
+    title: option<string>,
+  }
+
+  /// A web link attachment (Zotero.Attachments.linkFromURL).
+  link-url: func(request: link-url-request) -> result<item-key, error>;
+
+  // ---- change files (library.files.write)
+
+  /// Replace the file of a stored attachment (the new bytes become the file; the name stays unless `filename`
+  /// is given). Used by plugins that rotate, compress or OCR a PDF.
+  replace-file: func(key: item-key, data: list<u8>, filename: option<string>) -> result<_, error>;
+
+  /// Rename the file of an attachment (Item.renameAttachmentFile). Returns the name used. With `overwrite` false
+  /// a taken name fails with `conflict`.
+  rename-file: func(key: item-key, new-name: string, overwrite: bool) -> result<string, error>;
+
+  record rename-outcome {
+    key: item-key,
+    /// The new file name, or none when the file was left alone (already named right, file missing, type not renamed).
+    new-name: option<string>,
+    error: option<string>,
+  }
+
+  /// Rename files by the user's "Rename Files from Parent Metadata" template (Zotero.Attachments
+  /// getFileBaseNameFromItem, the Rename command). One outcome per key.
+  rename-by-template: func(keys: list<item-key>) -> result<list<rename-outcome>, error>;
+
+  /// Delete the file but keep the attachment item (Item.deleteAttachmentFile).
+  delete-file: func(key: item-key) -> result<_, error>;
+
+  /// Point a linked file at a new path (Item.relinkAttachmentFile). Needs `library.files.paths`.
+  relink-file: func(key: item-key, path: string) -> result<_, error>;
+
+  // ---- open and show (library.files.open)
+
+  /// Show the file in the system file manager (ZoteroPane.showAttachmentInFilesystem).
+  reveal-file: func(key: item-key) -> result<_, error>;
+  /// Open the file in the default application (Zotero.launchFile).
+  open-file-external: func(key: item-key) -> result<_, error>;
+
+  // ---- storage numbers
+
+  record storage-info {
+    /// Files in the attachment's folder (Zotero.Attachments.getNumFiles).
+    file-count: u32,
+    /// Bytes in the folder (getTotalFileSize).
+    total-bytes: u64,
+  }
+
+  storage-of: func(key: item-key) -> result<storage-info, error>;
+
+  // ---- reader state kept with the attachment
+
+  /// The reader's saved view state for an attachment (page, scroll, zoom). Reader JSON, opaque to the host: the same
+  /// format as `reader.reader-state.primary-view-state` and `reader.open-request.primary-view-state`, which are the
+  /// live copy of it while a reader is open (the reader owns the format; this is the stored copy, readable with no reader).
+  /// Zotero: Item.getAttachmentLastPageIndex and the .zotero-reader-state file.
+  get-view-state: func(key: item-key) -> result<option<json>, error>;
+  set-view-state: func(key: item-key, state: json) -> result<_, error>;
+
+  // ---- find full text (open-access, institution resolvers)
+
+  record find-job {
+    id: string,
+    done: bool,
+    items: list<find-item>,
+  }
+
+  record find-item {
+    key: item-key,
+    /// queued, searching, downloading, attached, already-has-pdf, needs-sign-in, not-found, failed, cancelled.
+    state: string,
+    /// The key of the attachment that was added.
+    attachment: option<item-key>,
+    message: option<string>,
+  }
+
+  /// Zotero's "Find Available PDF(s)": start a job for these top-level items. Needs `library.files.write`.
+  find-available-files: func(keys: list<item-key>, open-access-only: bool) -> result<string, error>;
+  get-find-job: func(id: string) -> result<find-job, error>;
+  cancel-find-job: func(id: string) -> result<_, error>;
+}
+
+// --------------------------------------------------------------------- fulltext
+
+interface fulltext {
+  use types.{item-key, library-id, error};
+
+  record fulltext-content {
+    text: string,
+    /// "extracted" by Zinc's document worker, "zotero-cache" imported from Zotero, "plugin" set by a plugin.
+    source: string,
+    /// ISO 8601 UTC.
+    indexed-at: string,
+  }
+
+  /// The indexed text of an attachment. None when nothing is indexed. Zotero: the .zotero-ft-cache content.
+  /// Needs `library.fulltext.read`.
+  get-content: func(attachment: item-key) -> result<option<fulltext-content>, error>;
+
+  enum index-state {
+    unavailable,
+    unindexed,
+    partial,
+    indexed,
+    queued,
+  }
+
+  /// Zotero.Fulltext.getIndexedState, one entry per attachment key.
+  get-index-state: func(attachments: list<item-key>) -> result<list<index-state>, error>;
+
+  /// Store text for an attachment, for example from an OCR plugin (Zotero.Fulltext.setItemContent). It replaces
+  /// what was indexed and enters the search index. Needs `library.fulltext.write`.
+  set-content: func(attachment: item-key, text: string) -> result<_, error>;
+
+  /// Queue attachments for (re)indexing (Zotero.Fulltext.indexItems / rebuildIndex for a set). Needs `library.fulltext.write`.
+  reindex: func(attachments: list<item-key>) -> result<_, error>;
+
+  record search-hit {
+    key: item-key,
+    /// Text around the match, with <mark> around the matched words.
+    snippet: string,
+    /// "metadata", "fulltext", "notes".
+    matched-in: list<string>,
+  }
+
+  /// Full-text search over metadata, notes and attachment text. Zotero.Fulltext.findItemsWithContent /
+  /// Search with `fulltextContent`; the result names the top-level items.
+  search: func(text: string, library: option<library-id>, limit: u32, offset: u32) -> result<list<search-hit>, error>;
+
+  record queue-status {
+    attachments-waiting: u32,
+    extraction-waiting: u32,
+    notes-waiting: u32,
+  }
+
+  /// Zotero.Fulltext.getAttachmentIndexQueueCount and its relatives.
+  get-queue-status: func() -> result<queue-status, error>;
+}
+
+// ----------------------------------------------------------------------- schema
+
+interface schema {
+  use types.{error};
+
+  record field-info {
+    /// Zotero field name, for example "publicationTitle".
+    name: string,
+    /// English label.
+    label: string,
+    /// The base field this field maps to (bookTitle -> publicationTitle).
+    base-field: option<string>,
+    is-date: bool,
+    is-long: bool,
+    is-multiline: bool,
+  }
+
+  record creator-type-info {
+    name: string,
+    label: string,
+    /// The primary creator type of the item type (author for a book).
+    primary: bool,
+  }
+
+  record item-type-info {
+    name: string,
+    label: string,
+    /// In Zotero's display order.
+    fields: list<field-info>,
+    creator-types: list<creator-type-info>,
+  }
+
+  record schema-info {
+    /// Zotero schema version.
+    version: u32,
+    item-types: list<item-type-info>,
+  }
+
+  /// All item types with their fields and creator types, once. Plugins cache it. Replaces
+  /// Zotero.ItemTypes, ItemFields and CreatorTypes (getAll, getName, getTypesForItemType, getBaseMappedFields,
+  /// isValidForType, getPrimaryIDForType, getItemTypeFields, isDate / isLong / isMultiline).
+  get-schema: func() -> result<schema-info, error>;
+}
+
+// ------------------------------------------------------------------------- cite
+
+interface cite {
+  use types.{item-key, library-id, error};
+
+  record style-info {
+    /// The zotero.org style id, for example "vancouver".
+    id: string,
+    title: string,
+    title-short: option<string>,
+    /// author-date, numeric, note, label, author.
+    class: option<string>,
+    dependent: bool,
+    installed: bool,
+  }
+
+  record style-page {
+    total: u32,
+    styles: list<style-info>,
+  }
+
+  /// Search styles, installed ones first (Zotero.Styles.getVisible / the style picker). Empty `query` lists all.
+  list-styles: func(query: string, installed-only: bool, limit: u32, offset: u32) -> result<style-page, error>;
+
+  /// The CSL XML of an installed style, or none (Zotero.Styles.get(id).getXML).
+  get-style-xml: func(id: string) -> result<option<string>, error>;
+
+  /// Install a style by id from the style repository. Needs `library.cite.styles`. Zotero.Styles.install.
+  install-style: func(id: string) -> result<style-info, error>;
+  /// Remove a user-installed style. Needs `library.cite.styles`.
+  remove-style: func(id: string) -> result<_, error>;
+
+  enum cite-mode {
+    bibliography,
+    citation,
+  }
+
+  /// One cited item with its locator, prefix and suffix (a citeproc cite item).
+  record cite-item {
+    key: item-key,
+    /// "page", "chapter", "section", ... (CSL locator labels).
+    label: option<string>,
+    locator: option<string>,
+    prefix: option<string>,
+    suffix: option<string>,
+    suppress-author: bool,
+    author-only: bool,
+  }
+
+  flags output-formats {
+    html,
+    text,
+    rtf,
+    /// With `mode: citation`: Zotero's note citation markup (`<span class="citation" data-citation="...">`), the HTML that
+    /// `note-editor.insert-html` turns into a live citation. Filled in `format-result.note-citation`.
+    note-citation,
+  }
+
+  record format-request {
+    items: list<cite-item>,
+    /// None: the user's Quick Copy style.
+    style: option<string>,
+    /// BCP 47 tag. None: the Quick Copy locale, then the style's own.
+    locale: option<string>,
+    mode: cite-mode,
+    formats: output-formats,
+  }
+
+  record format-result {
+    html: option<string>,
+    text: option<string>,
+    rtf: option<string>,
+    /// Set when `formats` has `note-citation` and `mode` is `citation`.
+    note-citation: option<string>,
+    /// The keys that were formatted: children are resolved to their parent, duplicates dropped, missing skipped.
+    keys: list<item-key>,
+  }
+
+  /// Zotero.Cite.makeFormattedBibliographyOrCitationList and the Quick Copy bibliography. Needs `library.cite`.
+  format: func(request: format-request) -> result<format-result, error>;
+
+  record quick-copy-result {
+    html: option<string>,
+    text: option<string>,
+  }
+
+  /// What Quick Copy would put on the clipboard for these items with the user's settings: the Quick Copy format
+  /// (a bibliography, a citation, or an export translator). Zotero.QuickCopy.getContentFromItems.
+  quick-copy: func(items: list<item-key>, as-citations: bool) -> result<quick-copy-result, error>;
+
+  record quick-copy-settings {
+    style: string,
+    locale: string,
+    mode: cite-mode,
+  }
+
+  get-quick-copy-settings: func() -> result<quick-copy-settings, error>;
+}
+
+// -------------------------------------------------------------------- translate
+
+interface translate {
+  use types.{item-key, collection-key, library-id, json, error};
+
+  enum translator-kind {
+    web,
+    importer,
+    exporter,
+    search,
+  }
+
+  record translator-info {
+    /// The translator's id (a UUID).
+    id: string,
+    label: string,
+    kind: translator-kind,
+    /// Import and export translators: the file extension, without the dot.
+    extension: option<string>,
+    /// Higher runs first among equals (Zotero translator priority).
+    priority: u32,
+  }
+
+  /// Zotero.Translators.getAllForType. Needs `library.translate`.
+  list-translators: func(kind: translator-kind) -> result<list<translator-info>, error>;
+
+  record import-request {
+    /// The text to import.
+    text: string,
+    /// None: detect (Zotero.Translate.Import detection).
+    translator: option<string>,
+    library: option<library-id>,
+    /// Put the new items in this collection.
+    collection: option<collection-key>,
+    /// Wrap the new items in a new collection with this name (Zotero's "Place imported collections and items
+    /// into new collection").
+    new-collection-name: option<string>,
+  }
+
+  record import-result {
+    created: u32,
+    skipped: u32,
+    errors: list<string>,
+    item-keys: list<item-key>,
+    translator: string,
+  }
+
+  /// Import text with an import translator and save the items. Zotero.Translate.Import. Needs `library.translate`
+  /// and `library.write`.
+  import-text: func(request: import-request) -> result<import-result, error>;
+
+  record export-request {
+    translator: string,
+    /// Items to export. Empty with `collection` set exports that collection; both empty exports the library.
+    items: list<item-key>,
+    collection: option<collection-key>,
+    library: option<library-id>,
+    include-notes: bool,
+    /// Translator display options as a JSON object (Zotero's `displayOptions`).
+    display-options: option<json>,
+  }
+
+  record export-result {
+    /// Suggested file name.
+    filename: string,
+    content-type: string,
+    text: string,
+    count: u32,
+  }
+
+  /// Run an export translator and return its output as text. Zotero.Translate.Export. Needs `library.translate`.
+  export-items: func(request: export-request) -> result<export-result, error>;
+
+  /// Resolve identifiers (DOI, PMID, PMCID, arXiv id, ISBN, or free text with several) into item JSON without
+  /// saving, as the Add Item by Identifier box does (Zotero.Translate.Search). Needs `library.translate`.
+  lookup: func(text: string) -> result<list<json>, error>;
+
+  record web-request {
+    url: string,
+    library: option<library-id>,
+    collection: option<collection-key>,
+    /// Also save snapshot and PDF attachments the translator offers.
+    attachments: bool,
+    /// Force this translator.
+    translator: option<string>,
+  }
+
+  variant web-result {
+    /// Saved: keys of the items made.
+    saved(list<item-key>),
+    /// A multi-item page. `choices` are (id, title) pairs; call `web-select` with the ids to keep.
+    choose(web-choice),
+  }
+
+  record web-choice {
+    session: string,
+    items: list<web-choice-item>,
+  }
+
+  record web-choice-item {
+    id: string,
+    title: string,
+  }
+
+  /// Translate a web page by URL: the host loads it and runs a web translator (Zotero.Translate.Web). Needs
+  /// `library.translate`, `library.write` and the network permission for the host of the URL.
+  web: func(request: web-request) -> result<web-result, error>;
+
+  web-select: func(session: string, ids: list<string>, collection: option<collection-key>) -> result<list<item-key>, error>;
+}
+
+// ----------------------------------------------------------------- sync-control
+
+interface sync-control {
+  use types.{library-id, error};
+
+  enum sync-route {
+    /// Local sync with a Zotero install.
+    zotero-local,
+    /// zotero.org.
+    zotero-org,
+    off,
+  }
+
+  record sync-state {
+    route: sync-route,
+    running: bool,
+    /// ISO 8601 UTC of the last good sync, if any.
+    last-synced: option<string>,
+    /// Number of unresolved conflicts.
+    conflicts: u32,
+  }
+
+  get-state: func() -> result<sync-state, error>;
+
+  /// Start a sync now (Zotero.Sync.Runner.sync). None: all libraries. Returns at once; progress and the end
+  /// arrive as notifier events of type `sync`. Needs `library.sync`.
+  sync-now: func(libraries: option<list<library-id>>) -> result<_, error>;
+}
+
+// -------------------------------------------------------------------- data-utils
+
+interface data-utils {
+  use types.{json, error};
+
+  /// A parsed date. Zotero.Date.strToDate. `month` is 0-11 as in Zotero.
+  record date-parts {
+    year: option<s32>,
+    month: option<u8>,
+    day: option<u8>,
+    /// The text that was not recognised as year, month or day.
+    part: option<string>,
+    /// The order the parts appeared in, for example "ymd" or "dmy".
+    order: string,
+  }
+
+  parse-date: func(text: string) -> date-parts;
+
+  /// Zotero.Date.strToISO: "2024-03-07", "2024-03", "2024" or none when the text is not a date.
+  to-iso-date: func(text: string) -> option<string>;
+
+  /// Zotero.Date.multipartToStr / the "2024-03-07 March 7, 2024" form stored in the date field: the part that
+  /// shows to the user.
+  display-date: func(text: string) -> string;
+
+  /// Zotero.Utilities.Item.itemToCSLJSON: item JSON to CSL JSON.
+  item-to-csl-json: func(item: json) -> result<json, error>;
+  /// Zotero.Utilities.Item.itemFromCSLJSON: CSL JSON to item JSON (no key).
+  item-from-csl-json: func(csl: json) -> result<json, error>;
+
+  /// A note's title: its first line of text (Zotero.Utilities.Item.noteToTitle).
+  note-to-title: func(html: string) -> string;
+
+  /// The title shown for an item (Item.getDisplayTitle): case-name titles, note titles, "(untitled)" rules.
+  display-title: func(item: json) -> string;
+
+  /// "Smith", "Smith and Jones", "Smith et al." for item JSON (Zotero.Items.getFirstCreatorFromJSON).
+  first-creator: func(item: json) -> string;
+
+  /// The title with leading articles removed, for sorting (Zotero.Items.getSortTitle).
+  sort-title: func(title: string) -> string;
+
+  record extra-field {
+    name: string,
+    value: string,
+  }
+
+  record extra-parsed {
+    /// "Name: value" lines that Zotero treats as fields.
+    fields: list<extra-field>,
+    /// What is left of the text.
+    rest: string,
+  }
+
+  /// Zotero.Utilities.Internal.extractExtraFields.
+  parse-extra: func(extra: string) -> extra-parsed;
+
+  enum identifier-kind {
+    doi,
+    pmid,
+    pmcid,
+    arxiv,
+    isbn,
+    issn,
+  }
+
+  record identifier {
+    kind: identifier-kind,
+    value: string,
+  }
+
+  /// Zotero.Utilities.extractIdentifiers.
+  extract-identifiers: func(text: string) -> list<identifier>;
+}
+
+// --------------------------------------------------------------------- notifier
+
+/// Subscribe to changes in the library, and the types of the events. The plugin exports `notifier-handler` to
+/// receive them. Zotero.Notifier.registerObserver(ref, types, id, priority) becomes `subscribe`; the `ref.notify`
+/// method becomes `notifier-handler.on-events`.
+interface notifier {
+  use types.{plugin-id, epoch-ms, json, error};
+
+  /// Zotero's notifier object types that are library data. Zotero's UI-state types `tab`, `itemtree`, `itempane` and
+  /// `infobox` are not here: tab, selection, view and theme changes are delivered once, by `extend.subscribe-events`;
+  /// the other three are internal refresh signals and are not planned.
+  enum object-type {
+    collection,
+    search,
+    item,
+    file,
+    collection-item,
+    item-tag,
+    tag,
+    setting,
+    group,
+    trash,
+    relation,
+    feed,
+    feed-item,
+    sync,
+    api-key,
+    share,
+    share-items,
+    bucket,
+  }
+
+  enum event-kind {
+    add,
+    modify,
+    delete,
+    /// An object changed parent (Zotero "move", "c").
+    move,
+    /// A membership ended (collection-item, item-tag).
+    remove,
+    trash,
+    restore,
+    /// Rebuild your view: more changed than could be reported, or the library changed outside the host.
+    refresh,
+    redraw,
+    /// Full-text index changed ("index" in Zotero).
+    index,
+    /// Sync lifecycle for type `sync`: "start", "finish" arrive as these two.
+    sync-start,
+    sync-finish,
+    /// Escape hatch for events Zinc adds later; see `event.name`.
+    other,
+  }
+
+  /// Where a change came from. Zotero has no such field; it is added so a plugin can ignore its own writes.
+  variant origin {
+    /// This plugin. (Named `this-plugin`, not `self`: `self` becomes the Rust keyword `Self` in generated bindings.)
+    this-plugin,
+    /// Another plugin.
+    plugin(plugin-id),
+    /// The user, in Zinc's UI.
+    user,
+    /// Sync with Zotero or zotero.org.
+    sync,
+    /// The browser connector or another client of the local API (MCP, Word add-in).
+    connector,
+    /// Another process changed the library file.
+    external,
+    /// The host does not know.
+    unknown,
+  }
+
+  /// Extra data for one id, as JSON (Zotero `extraData[id]`): for `item` `modify` it holds `changed` (the
+  /// fields that changed), for `collection-item` `add` the collection, for `trash` ... The shape follows Zotero.
+  record id-data {
+    id: string,
+    data: json,
+  }
+
+  /// All ids of one type and kind that changed together (Zotero merges them per transaction).
+  record event {
+    object: object-type,
+    kind: event-kind,
+    /// Item, collection and search events: keys. `collection-item`: "<collection-key>-<item-key>".
+    /// `item-tag`: "<item-key>-<tag>". `tag`: the tag names. Library-wide events (refresh): empty.
+    ids: list<string>,
+    /// Which library, where it is known.
+    library: option<u32>,
+    /// Extra data per id, only for ids that have some.
+    extra: list<id-data>,
+    /// Event-level options (Zotero autoSyncDelay, skipAutoSync) and the name of an `other` event, as JSON.
+    options: option<json>,
+    origin: origin,
+  }
+
+  /// A group of events that belong to one transaction or one flush, in the order they were made.
+  record event-batch {
+    /// Counts up by one per batch for this subscription. A gap means batches were dropped and `refresh` follows.
+    seq: u64,
+    at: epoch-ms,
+    events: list<event>,
+  }
+
+  record subscription {
+    /// Types to receive. Empty means all types.
+    types: list<object-type>,
+    /// Kinds to receive. Empty means all.
+    kinds: list<event-kind>,
+    /// Zotero priority: lower runs first. Default 100. Applies across plugins for one batch.
+    priority: u32,
+    /// Do not deliver events whose origin is this plugin.
+    skip-own: bool,
+    /// Wait up to this long to collect more events into one batch. 0 means the host default (50 ms).
+    /// The host never waits longer than 1000 ms.
+    max-delay-ms: u32,
+    /// An id for log lines (Zotero's observer `id`).
+    label: string,
+  }
+
+  /// Start receiving. Returns a subscription id for `unsubscribe`. Subscribing needs `library.read` for data
+  /// types. A plugin gets no event about objects it could not read. Subscriptions end when the plugin stops.
+  subscribe: func(subscription: subscription) -> result<u32, error>;
+
+  unsubscribe: func(id: u32) -> result<_, error>;
+
+  /// Raise an event for others to see, as Zotero.Notifier.trigger does for plugin-defined state. Only `other`
+  /// events (named in `options.name`) are accepted; a plugin cannot forge `item` events.
+  trigger: func(event: event) -> result<_, error>;
+}
+
+/// Exported by the plugin that subscribes.
+interface notifier-handler {
+  use notifier.{event-batch};
+
+  /// A batch of events for subscription `subscription`. The host calls this one batch at a time per
+  /// subscription and does not start the next before this returns; it returns nothing so the host never waits
+  /// for a verdict. A plugin that is slow makes the host keep batches in a bounded queue (256). When it is
+  /// full the host drops the oldest batches and delivers a `refresh` event for each affected type.
+  on-events: func(subscription: u32, batch: event-batch);
+}

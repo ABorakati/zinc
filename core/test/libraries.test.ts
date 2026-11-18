@@ -63,7 +63,7 @@ describe("migration 4 on an existing library", () => {
 	test("keeps every row in My Library, backs up first, and the outbox keeps its entries", () => {
 		const old = join(dir, "old.sqlite");
 		const raw = new Database(old);
-		migrate(raw, old, { migrations: MIGRATIONS.slice(0, SCHEMA_HEAD - 1) }); // as the last release left it: no libraries yet
+		migrate(raw, old, { migrations: MIGRATIONS.filter((m) => m.id < 4) }); // as the last release left it: no libraries yet
 		expect((raw.query("PRAGMA table_info(items)").all() as { name: string }[]).some((c) => c.name === "library_id")).toBe(false);
 		for (let i = 0; i < 20; i++) {
 			raw.run(
@@ -79,10 +79,10 @@ describe("migration 4 on an existing library", () => {
 
 		const up = new Database(old);
 		const r = migrate(up, old);
-		expect(r.from).toBe(SCHEMA_HEAD - 1);
+		expect(r.from).toBe(3 /* the version before group libraries */);
 		expect(r.to).toBe(SCHEMA_HEAD);
 		expect(r.backup && existsSync(r.backup)).toBe(true);
-		expect(readdirSync(dir).some((f) => new RegExp(`^old\\.backup-v${SCHEMA_HEAD - 1}-to-v${SCHEMA_HEAD}-`).test(f))).toBe(true);
+		expect(readdirSync(dir).some((f) => new RegExp(`^old\\.backup-v${3 /* the version before group libraries */}-to-v${SCHEMA_HEAD}-`).test(f))).toBe(true);
 		const n = (sql: string) => (up.query(sql).get() as { n: number }).n;
 		expect(n("SELECT count(*) AS n FROM items")).toBe(20);
 		expect(n("SELECT count(*) AS n FROM items WHERE library_id = 1")).toBe(20);
@@ -104,7 +104,7 @@ describe("migration 4 on an existing library", () => {
 	test("running it again changes nothing", () => {
 		createItem(db, { itemType: "journalArticle", title: "Keep me" });
 		const before = db.query("SELECT key, library_id FROM items").all();
-		const m = MIGRATIONS[SCHEMA_HEAD - 1];
+		const m = MIGRATIONS[3 /* the version before group libraries */];
 		db.transaction(() => m.up(db))();
 		expect(db.query("SELECT key, library_id FROM items").all()).toEqual(before);
 		expect(db.query("SELECT count(*) AS n FROM libraries").get()).toEqual({ n: 1 });

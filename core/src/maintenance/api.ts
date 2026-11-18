@@ -27,7 +27,7 @@ export function setStorageDir(dir: string | null | undefined): void {
 	storageOverride = dir;
 }
 
-function ownStorage(db: Database): string | null {
+export function ownStorage(db: Database): string | null {
 	if (storageOverride !== undefined) return storageOverride;
 	const file = (db as unknown as { filename?: string }).filename;
 	return file ? join(dirname(file), "storage") : null;

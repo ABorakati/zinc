@@ -1,0 +1,175 @@
+package zinc:plugin@0.1.0;
+
+/// Types shared by every area of the plugin API. Owned by the `lifecycle` area.
+/// Other WIT files `use types.{...}` from here.
+interface types {
+  /// A Zotero-style 8-character key (item, attachment, note, annotation). Example: "ABCD2345".
+  type item-key = string;
+  /// A collection key, 8 characters.
+  type collection-key = string;
+  /// A saved-search key, 8 characters.
+  type search-key = string;
+  /// Zotero's numeric library id. 1 is My Library; group libraries have larger ids.
+  type library-id = u32;
+  /// A string that holds JSON text. Use it where a payload is open-ended (Zotero item JSON, plugin settings).
+  /// The host never interprets it unless the interface that takes it says so.
+  type json = string;
+  /// A plugin id, as written in the manifest `id` (an email-like string such as "my-plugin@example.org").
+  type plugin-id = string;
+  /// A semantic version string, "1.2.3" or "1.2.3-beta.1".
+  type version = string;
+  /// Milliseconds since 1970-01-01T00:00:00Z.
+  type epoch-ms = u64;
+  /// A main window. A Zinc process can have more than one library window; each has a stable id while it lives.
+  type window-id = u32;
+
+  /// The one error type for every fallible call in the plugin API.
+  variant error {
+    /// The thing asked for does not exist (item key, pref, file, plugin).
+    not-found(string),
+    /// An argument was malformed or out of range. The string says which and why.
+    invalid-argument(string),
+    /// The plugin has no permission for this call. The string is the permission id (see manifest.schema.json).
+    /// The user may have denied it, or the manifest never declared it.
+    permission-denied(string),
+    /// The target is read-only (a group library the user cannot edit, the plugin package).
+    read-only(string),
+    /// The call conflicts with the current state (stale item version, name taken).
+    conflict(string),
+    /// A limit was reached (quota, rate limit, size cap). The string names the limit.
+    limit-exceeded(string),
+    /// The call took longer than its time limit.
+    timeout,
+    /// The call was cancelled by the user or by shutdown.
+    cancelled,
+    /// The host or the feature is not available now (offline, not ready, not supported in this build).
+    unavailable(string),
+    /// A bug or failure in the host. The string is for the log, not for the user.
+    internal(string),
+  }
+
+  /// A preference value. Zotero prefs are exactly these three types.
+  variant pref-value {
+    flag(bool),
+    /// 32-bit, as in Firefox prefs.
+    integer(s32),
+    text(string),
+  }
+
+  /// A name and a value, for headers and other small maps. Order is kept and names may repeat.
+  record name-value {
+    name: string,
+    value: string,
+  }
+
+  /// An argument to a Fluent message.
+  variant l10n-arg {
+    text(string),
+    integer(s64),
+    number(f64),
+    /// A date or time, shown in the user's locale.
+    date(epoch-ms),
+  }
+
+  /// A reference to a message in the plugin's own Fluent (.ftl) files.
+  /// `id` is the Fluent message id. To read an attribute, write "message-id.attribute-name".
+  record l10n-ref {
+    id: string,
+    args: list<name-l10n-arg>,
+    /// Shown if the id is missing in every locale. Without it the id itself is shown and a warning is logged.
+    fallback: option<string>,
+  }
+
+  record name-l10n-arg {
+    name: string,
+    value: l10n-arg,
+  }
+
+  /// Text that the host shows to the user. Use `plain` for text that is already in the user's language
+  /// (for example a title read from the library) and `localized` for the plugin's own strings.
+  /// The host resolves `localized` at render time with the plugin's bundle and the current UI locale, so
+  /// a locale change updates visible UI without a call into the plugin.
+  variant localized-string {
+    plain(string),
+    localized(l10n-ref),
+  }
+
+  /// An icon. The host tints icons that ask for it to match the theme, as Zotero does with
+  /// `-moz-context-properties: fill`.
+  variant icon-ref {
+    /// One of Zinc's own icons by name (for example "tag", "folder", "book"). The ui area lists the names.
+    builtin(string),
+    /// A file shipped inside the plugin package (a "bundled" file), such as "icons/lookup.svg".
+    /// SVG is tinted; PNG is not.
+    bundled(string),
+    /// Inline SVG text. Use `currentColor` where the host should tint.
+    svg(string),
+  }
+
+  /// The app's light or dark mode. Defined here (not in `ui`) so that `extend` can use it without importing the whole `ui` interface.
+  enum theme-mode { light, dark }
+
+  /// Theme colors. The host resolves each one for the current light or dark mode and the user's palette. Same names as theme.ts.
+  enum color-token {
+    background, foreground, card, muted, muted-foreground, popover, popover-foreground, border, input, ring,
+    primary, primary-foreground, primary-soft, primary-tint, primary-line, primary-deep,
+    secondary, secondary-foreground, accent, accent-foreground,
+    destructive, destructive-foreground, success, success-foreground, warning, warning-foreground, error, error-foreground,
+    /// Eight categorical colors (DESIGN.md c-blue ... c-slate), tuned per mode for charts and tags.
+    palette-blue, palette-sky, palette-green, palette-amber, palette-rust, palette-rose, palette-violet, palette-slate,
+  }
+
+  record token-alpha {
+    token: color-token,
+    /// 0 transparent, 255 opaque.
+    alpha: u8,
+  }
+
+  /// A fixed color for each mode. `0xRRGGBBAA`.
+  record themed-color {
+    light: u32,
+    dark: u32,
+  }
+
+  /// THE colour type of the plugin API: the ui, extend and reader areas all use it. A theme token for colours that must
+  /// follow the theme and dark mode, or a fixed colour. Annotation colours in `annotations` stay "#rrggbb" strings because
+  /// that is how Zotero stores them; a plugin converts when it needs a `color`.
+  variant color {
+    token(color-token),
+    token-alpha(token-alpha),
+    /// A fixed color, the same in both modes. `0xRRGGBBAA`. Prefer `token` or `themed`.
+    rgba(u32),
+    themed(themed-color),
+  }
+
+  /// An item addressed by library and key. The one reference type for "this item in that library".
+  record item-ref {
+    library: library-id,
+    key: item-key,
+  }
+
+  /// A file or folder that the user gave the plugin: picked in a dialog (`fs.pick-open`, `pick-save`, `pick-directory`) or
+  /// dropped on a drop target (`ui.drop-info.files`, `extend.drop-payload.files`). `id` is used as `fs.root::granted(id)`;
+  /// `fs.read`, `fs.write` and the other file calls turn it into bytes. The plugin never sees a path. The user's choice is
+  /// the consent, so no permission is needed.
+  record file-grant {
+    id: string,
+    /// The file or folder name, for display.
+    name: string,
+    is-directory: bool,
+    /// Bytes, when the host knows it (a dropped file; a save target does not exist yet).
+    size: option<u64>,
+  }
+
+  /// A keyboard shortcut in Zinc's notation: modifiers joined with "+", then the key. "mod" is Ctrl on
+  /// Windows and Linux and Cmd on macOS. Examples: "mod+shift+k", "alt+f2".
+  type accelerator = string;
+
+  /// Log levels, lowest number is most important.
+  enum log-level {
+    error,
+    warn,
+    info,
+    debug,
+  }
+}

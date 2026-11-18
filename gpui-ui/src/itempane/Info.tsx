@@ -1,5 +1,6 @@
 // Info section: item type, every field of that type (from the core schema) with inline editing, the creators editor (type, two-field /
 // single-field names, add, remove, reorder) and the date as year / month / day parts. Port of ui/src/itempane/Info.tsx + DateParts.
+import { pluginInfoEntries } from "../wasmplugins/extend/InfoRows";
 import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js";
 import { Icon } from "../icons";
 import { Select } from "../ui";
@@ -496,16 +497,16 @@ export function useInfoEntries(): () => Entry[] {
 
 	return createMemo(() => {
 		if (isCollapsed("info")) return [head];
-		const out: Entry[] = [head, itemType];
+		const out: Entry[] = [head, itemType, ...pluginInfoEntries("start", data().key)]; // + rows WASM plugins added (wasmplugins/extend/InfoRows.tsx)
 		if (pending()) out.push(warning);
 		for (const f of fields()) {
 			out.push(entry(`f:${f.field}`, () => fieldRow(f.field)));
 			if (f.field === "title") {
-				out.push(...creatorEntries());
+				out.push(...creatorEntries(), ...pluginInfoEntries("after-creators", data().key));
 				out.push(entry("citekey", () => <CitationKeyBlock itemType={data().itemType} />));
 			}
 		}
-		out.push(added, modified);
+		out.push(...pluginInfoEntries("end", data().key), added, modified);
 		return out;
 	});
 }

@@ -2,6 +2,8 @@
 // (Reader.tsx) hosts plugins; features such as annotations, citations/figures (academic) and the reflowed reading
 // view register here from their own folder. CONTRACT: fixed signatures; the reader core implements the hosting.
 import { createSignal, type Accessor, type JSX } from "solid-js";
+import type { MenuItem } from "../ui/core";
+import type { Annotation } from "./annotations/model";
 
 /** A rect in page space, normalised 0..1 (x, y from the top-left of the page). */
 export interface NRect {
@@ -94,12 +96,28 @@ export interface ReaderPlugin {
 	altView?: { id: string; label: string; icon: string; render: (ctx: ReaderContext) => JSX.Element };
 	/** the plugin's pageOverlay rotates its own rects (see ReaderContext.rotation); otherwise the overlay is hidden on rotated pages */
 	handlesRotation?: boolean;
+	/** rows a plugin adds under the swatches of the annotation tool's colour popover (Zotero's createColorContextMenu); only items with
+	 *  an `onSelect` are drawn. This and the two hooks below are used by the WASM plugin bridge (src/wasmplugins/reader). */
+	colorMenu?: (ctx: ReaderContext) => MenuItem[];
+	/** extra items at the end of the annotation sidebar's tag filter menu (Zotero's createSelectorContextMenu) */
+	selectorMenu?: (ctx: ReaderContext, e: { enableClearSelection: boolean }) => MenuItem[];
+	/** extra items in the reader's appearance popup (Zotero's createThemeContextMenu); `theme` is "normal", "dark", "sepia", "custom" or "reading" */
+	themeMenu?: (ctx: ReaderContext, e: { theme: string }) => MenuItem[];
 	/** a key press the core did not take for itself (Zotero's reader shortcuts: tools, colours, delete). Return true when handled, so
 	 *  the core stops it. `onRoot` is false while a text field has the focus (a comment box): plugins must not take bare keys then. */
 	onKey?: (
 		ctx: ReaderContext,
 		e: { key: string; modifiers: { ctrl: boolean; shift: boolean; alt: boolean; cmd: boolean }; onRoot: boolean },
 	) => boolean;
+	/** extra items at the end of an annotation's context menu (the sidebar card and the annotation on the page); `ids` are the annotations
+	 *  the menu acts on (Zotero's createAnnotationContextMenu) */
+	annotationMenu?: (ctx: ReaderContext, e: { ids: string[]; annotation: Annotation }) => MenuItem[];
+	/** drawn in the header row of each annotation card in the sidebar, before the delete button (Zotero's renderSidebarAnnotationHeader) */
+	annotationHeader?: (ctx: ReaderContext, annotation: Accessor<Annotation>) => JSX.Element;
+	/** extra items at the end of the toolbar's View menu (Zotero's createViewContextMenu) */
+	viewMenu?: (ctx: ReaderContext) => MenuItem[];
+	/** extra items at the end of a thumbnail's right-click menu; `pages` are the 0-based pages it acts on (createThumbnailContextMenu) */
+	thumbnailMenu?: (ctx: ReaderContext, pages: number[]) => MenuItem[];
 	/** called once per open document */
 	onOpen?: (ctx: ReaderContext) => void | (() => void);
 }
@@ -107,3 +125,45 @@ export interface ReaderPlugin {
 const [plugins, setPlugins] = createSignal<ReaderPlugin[]>([]);
 export const registerReaderPlugin = (p: ReaderPlugin) => setPlugins((l) => [...l.filter((x) => x.id !== p.id), p]);
 export { plugins as readerPlugins };
+/** Remove a plugin (the Zotero plugin system drops a plugin's reader hooks when it shuts down). */
+export const unregisterReaderPlugin = (id: string) => setPlugins((l) => (l.some((x) => x.id === id) ? l.filter((x) => x.id !== id) : l));
+
+/** The menu items the registered plugins add through `pick`, behind a separator (empty when none): a failing plugin is skipped. */
+export function pluginMenuItems(pick: (p: ReaderPlugin) => MenuItem[] | undefined): MenuItem[] {
+	const out: MenuItem[] = [];
+	for (const p of plugins()) {
+		try {
+			const items = pick(p);
+			if (items?.length) out.push(...items);
+		} catch (e) {
+			console.error(`[reader] plugin ${p.id} menu:`, e);
+		}
+	}
+	return out.length ? [{ separator: true }, ...out] : out;
+}
+
+const [openReaders, setOpenReaders] = createSignal<ReaderContext[]>([]);
+/** The documents open in a reader now, oldest first (Zotero.Reader._readers). The reader core adds a context here when it opens a document. */
+export { openReaders };
+/** Record an open document; returns the function that removes it. */
+export const trackOpenReader = (c: ReaderContext): (() => void) => {
+	setOpenReaders((l) => [...l, c]);
+	return () => setOpenReaders((l) => (l.includes(c) ? l.filter((x) => x !== c) : l));
+};
+
+// Menus whose plugin items come from a WASM plugin (src/wasmplugins/reader/menus.ts) need an answer from another process, but Zinc's menu
+// layer reads its items once when it opens. The bridge `holdMenu`s the pending answer; `openAfterPlugins` evaluates the items once (which
+// starts the plugin's build-menu), waits for what is pending (at most MENU_WAIT_MS), then opens the menu with the answers in.
+const pendingMenus = new Set<Promise<unknown>>();
+const MENU_WAIT_MS = 600;
+export function holdMenu(p: Promise<unknown>): void {
+	pendingMenus.add(p);
+	const done = () => void pendingMenus.delete(p);
+	p.then(done, done);
+}
+export function openAfterPlugins(open: (items: MenuItem[]) => void, build: () => MenuItem[]): void {
+	const first = build();
+	if (!pendingMenus.size) return open(first);
+	const waiting = Promise.race([Promise.allSettled([...pendingMenus]), new Promise((r) => setTimeout(r, MENU_WAIT_MS))]);
+	void waiting.then(() => open(build()));
+}

@@ -8,7 +8,7 @@ import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../../icons";
 import { Button, openMenu } from "../../ui";
 import { withAlpha } from "../../theme";
-import type { ReaderContext } from "../plugins";
+import { openAfterPlugins, type ReaderContext } from "../plugins";
 import { kit, clamp, IconButton, Swatches, type Kit } from "../structure/kit";
 import type { PdfRect } from "../structure/types";
 import { annotationContextMenu } from "./contextMenu";
@@ -221,7 +221,7 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 									onClick={toggle}
 									onAuxClick={(e: EventPayload) => {
 										if (e.isRightClick || e.button === 2) {
-											openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, () => annotationContextMenu(p.ctx, a()!));
+											openAfterPlugins((items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items), () => annotationContextMenu(p.ctx, a()!));
 										}
 									}}
 									style={{
@@ -274,7 +274,7 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 						onClick={toggle}
 						onAuxClick={(e: EventPayload) => {
 							if (e.isRightClick || e.button === 2) {
-								openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, () => annotationContextMenu(p.ctx, a()!));
+								openAfterPlugins((items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items), () => annotationContextMenu(p.ctx, a()!));
 							}
 						}}
 						style={{

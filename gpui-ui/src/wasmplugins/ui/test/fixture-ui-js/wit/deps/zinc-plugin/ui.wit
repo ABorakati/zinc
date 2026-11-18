@@ -1,0 +1,654 @@
+package zinc:plugin@0.1.0;
+
+/// Declarative plugin UI.
+///
+/// A plugin never touches a DOM. It returns a UI tree as JSON (validated against `plugin-api/ui-schema/ui-tree.schema.json`).
+/// The host (Zinc, GPUIX/Solid) keeps the previous tree for each mounted view, diffs by `key`, and renders with Zinc's own
+/// components and theme. Events come back as `ui-events.on-event` calls that carry the handler id the plugin put in the tree.
+///
+/// Two interfaces live in this file:
+///   `ui`        the types, plus the functions the HOST provides to the plugin (import).
+///   `ui-events` the functions the PLUGIN provides to the host (export).
+/// Other areas (extend, reader) register surfaces (item pane sections, preference panes, reader panels, ...) and then use
+/// `ui.view-context` and `ui.render-result` as the contract for what the plugin returns.
+interface ui {
+  // ------------------------------------------------------------------------------------------------ shared types
+  use types.{json, localized-string, icon-ref, color, color-token, file-grant, error, theme-mode};
+
+  /// Text shown to the user: a literal (`plain`) or a Fluent message of the plugin (`localized`). This file calls it `ui-text`.
+  type ui-text = localized-string;
+
+  /// An icon: `builtin` (a name from Zinc's icon set, Lucide names such as "file-text"), `bundled` (a file in the plugin package,
+  /// SVG or PNG, for example "icons/my-icon.svg"; an SVG is drawn as a one-color mask in the text color, as built-in icons are)
+  /// or `svg` (inline markup, same masking). Full-color pictures are `image` nodes, not icons.
+  type ui-icon = icon-ref;
+
+  /// Identifies one mounted piece of UI: an item pane section instance, a dialog, a window, a toast, a popover.
+  /// The host allocates it. All events and updates for that piece carry it.
+  type instance-id = u64;
+
+  // ------------------------------------------------------------------------------------------------ typography & layout enums
+  // Full node styles, named styles and interaction state styles live in `plugin-api/ui-schema/ui-tree.schema.json` (`$defs.style`,
+  // `$defs.namedStyle`, `$defs.stateStyles`). These enums are shared by `measure-text`, `scroll-to`, `alert` and `show-toast`.
+
+  enum font-size { xs, sm, base, lg, xl, xl2, xl3 }
+  enum font-family { sans, title, mono }
+  enum font-weight { normal, medium, semibold, bold }
+  enum scroll-align { start, center, end, nearest }
+  enum tone { neutral, info, success, warning, error }
+
+  // ------------------------------------------------------------------------------------------------ events
+
+  /// Event kinds a node or view can fire. The plugin gets `ui-events.on-event` with the handler id when the event fires.
+  /// Which kinds a node can fire is listed with each node kind in ui.md. A binding for a kind the node cannot fire is ignored.
+  enum event-kind {
+    /// Click, tap, Enter or Space on a focused control. Payload `none`, except on rows (`row`) and canvas hits (`pointer`).
+    press,
+    double-press,
+    /// Right click or the menu key. Payload `pointer`. The plugin can answer with `ui.popup-menu`.
+    context-menu,
+    /// A value was committed (blur, Enter, selection made, slider released). Payload `value`, `toggled`, `selection` or `tab`.
+    change,
+    /// A value changed on every edit. Payload `value`. Use `debounceMs` in the node's `on` binding.
+    input,
+    /// A `form` was submitted (Enter in a field, or a `submit` button). Payload `form`.
+    submit,
+    focus,
+    blur,
+    key-down,
+    key-up,
+    hover-enter,
+    hover-leave,
+    /// A section, disclosure, tree row or popover opened or closed. Payload `toggled` (true = open), or `row`.
+    toggle,
+    /// Selection changed in a list or table. Payload `selection` (row ids).
+    select,
+    /// Row activated (double click or Enter). Payload `row`.
+    activate,
+    /// Column header pressed to sort. Payload `sort`.
+    sort,
+    /// A split pane or table column was resized by the user. Payload `sizes`.
+    resize,
+    scroll,
+    drop,
+    drag-start,
+    /// The user closed something that can be dismissed: a dialog, window, popover, tab, toast, callout. Payload `none`, `tab`,
+    /// or `button` (followed by `form` when there are named inputs) for a dialog.
+    close,
+    /// A page in a `web-view` posted a message. Payload `message`.
+    message,
+    /// A `web-view` finished loading, changed title, or asked to navigate. Payload `web`.
+    web,
+    /// Pointer events on a `canvas`, in canvas coordinates. Payload `pointer`.
+    pointer-down,
+    pointer-move,
+    pointer-up,
+    wheel,
+    /// The view of a pan/zoom `canvas` changed. Payload `view-box`.
+    view-changed,
+    /// The node entered or left the visible area (lazy loading). Payload `toggled`.
+    visible,
+    /// An embedded host component reported something (`embed`). Payload `message`.
+    embed,
+  }
+
+  flags modifiers { shift, ctrl, alt, meta }
+
+  variant value {
+    text(string),
+    number(f64),
+    flag(bool),
+    texts(list<string>),
+    /// A color as "#rrggbb" or "#rrggbbaa".
+    color(string),
+    none,
+  }
+
+  record form-field {
+    name: string,
+    value: value,
+  }
+
+  record key-info {
+    /// DOM-style key name: "a", "Enter", "ArrowDown", "Escape".
+    key: string,
+    repeat: bool,
+  }
+
+  /// A position in logical pixels. For a `canvas` it is in canvas coordinates; elsewhere relative to the node.
+  record pointer-info {
+    x: f32,
+    y: f32,
+    /// 0 primary, 1 middle, 2 secondary.
+    button: u8,
+    /// For `wheel`: scroll amounts.
+    delta-x: f32,
+    delta-y: f32,
+    /// The `hit` id of the canvas shape under the pointer, tested by the host.
+    hit: option<string>,
+    /// Press events on table and list rows.
+    row: option<string>,
+    column: option<string>,
+  }
+
+  record row-ref {
+    row: string,
+    column: option<string>,
+  }
+
+  enum sort-direction { ascending, descending }
+
+  record sort-spec {
+    column: string,
+    direction: sort-direction,
+  }
+
+  record scroll-info {
+    x: f32,
+    y: f32,
+    /// Fraction of content scrolled, 0 to 1.
+    progress-y: f32,
+  }
+
+  record drop-info {
+    items: list<string>,
+    text: option<string>,
+    /// Dropped files are `types.file-grant`s: `fs.read(path-ref { root: granted(id), path: "" })` gives the bytes. No permission is needed.
+    files: list<file-grant>,
+    custom: option<string>,
+    x: f32,
+    y: f32,
+    /// For drops onto a list or table: the row under the pointer, and whether it landed before, on, or after it.
+    row: option<string>,
+    position: option<drop-position>,
+  }
+
+  enum drop-position { before, on, after }
+
+  /// A rectangle in canvas coordinates.
+  record view-box {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    zoom: f32,
+  }
+
+  record web-info {
+    url: string,
+    title: option<string>,
+    /// "loaded", "title", "navigate-request" (host did not navigate; the plugin may call `shell.open-url`), "blocked".
+    phase: string,
+  }
+
+  variant event-payload {
+    none,
+    value(value),
+    toggled(bool),
+    key(key-info),
+    pointer(pointer-info),
+    selection(list<string>),
+    row(row-ref),
+    sort(sort-spec),
+    sizes(list<f32>),
+    scroll(scroll-info),
+    drop(drop-info),
+    form(list<form-field>),
+    tab(string),
+    button(string),
+    message(json),
+    web(web-info),
+    view-box(view-box),
+  }
+
+  /// One UI event.
+  record ui-event {
+    handler: string,
+    /// Key of the node that fired it, when it has one.
+    node-key: option<string>,
+    kind: event-kind,
+    modifiers: modifiers,
+    payload: event-payload,
+    /// `rev` of the tree the user was looking at. Lets a plugin drop events that belong to a tree it has already replaced.
+    rev: u64,
+  }
+
+  // ------------------------------------------------------------------------------------------------ menus
+
+  enum menu-item-kind { item, check, radio, separator, heading, submenu }
+
+  /// A menu entry. Submenu entries list their children as indices into `menu.items`.
+  record menu-item {
+    kind: menu-item-kind,
+    /// Passed back as the handler id: in `ui-event.handler` when the menu is attached to a node, or as the return value of `popup-menu`.
+    id: string,
+    label: option<ui-text>,
+    icon: option<ui-icon>,
+    /// Display only ("Ctrl+K"). Real shortcuts are registered through `extend`.
+    shortcut: option<string>,
+    checked: bool,
+    disabled: bool,
+    hidden: bool,
+    danger: bool,
+    /// Indices into `menu.items`, for `submenu`.
+    children: list<u32>,
+  }
+
+  record menu {
+    /// Indices of the top-level entries in `items`.
+    roots: list<u32>,
+    items: list<menu-item>,
+  }
+
+  // ------------------------------------------------------------------------------------------------ pulled rows & suggestions
+
+  variant drag-payload {
+    /// Library item keys. Other Zinc areas (the collection tree, the item list) accept these.
+    items(list<string>),
+    text(string),
+    custom(string),
+  }
+
+  record suggestion {
+    value: string,
+    label: ui-text,
+    detail: option<ui-text>,
+    icon: option<ui-icon>,
+  }
+
+  /// One cell of a row returned by `ui-events.render-range`.
+  record cell {
+    text: option<ui-text>,
+    icon: option<ui-icon>,
+    tooltip: option<ui-text>,
+    color: option<color>,
+    bold: bool,
+    /// Value to sort by when the host sorts inline rows. None = sort by `text`.
+    sort-value: option<value>,
+    /// Custom cell content as a JSON node (`$defs.node` in ui-schema/ui-tree.schema.json; a tag chip, a progress bar). Takes the place of text and icon.
+    content: option<json>,
+  }
+
+  /// One row of a list or table returned by `ui-events.render-range`.
+  record row {
+    /// Stable id. Selection, activation and drag use it.
+    id: string,
+    /// Tree mode: nesting level (0 = top).
+    depth: u32,
+    expandable: bool,
+    expanded: bool,
+    /// Cells, in column order (tables).
+    cells: list<cell>,
+    /// Custom row content as a JSON node (`$defs.node` in ui-schema/ui-tree.schema.json; lists, or a row that spans all columns).
+    content: option<json>,
+    height: option<f32>,
+    /// Extra style (a row background, a color for the whole row) as JSON (`$defs.style` in ui-schema/ui-tree.schema.json).
+    style: option<json>,
+    tooltip: option<ui-text>,
+    draggable: option<drag-payload>,
+    disabled: bool,
+  }
+
+  // ------------------------------------------------------------------------------------------------ updates & views
+
+  /// Content update for a mounted view. Both `json` and `patch` are validated against `plugin-api/ui-schema/ui-tree.schema.json`.
+  variant content-update {
+    /// Keep what is shown.
+    unchanged,
+    /// A whole UI tree in the nested JSON form (`$defs.tree` / root of `ui-schema/ui-tree.schema.json`).
+    json(json),
+    /// An incremental patch set in the JSON form (`$defs.patchSet` in `ui-schema/ui-tree.schema.json`).
+    patch(json),
+  }
+
+  /// Updates for the view's frame, outside its content. They replace Zotero's `setL10nArgs`, `setEnabled`, `setSectionSummary`
+  /// and `setSectionButtonStatus`.
+  record button-state {
+    id: string,
+    disabled: bool,
+    hidden: bool,
+  }
+
+  record view-meta {
+    title: option<ui-text>,
+    summary: option<ui-text>,
+    /// false hides the view (a section the plugin does not want for this item).
+    enabled: option<bool>,
+    badge: option<u32>,
+    buttons: list<button-state>,
+  }
+
+  record render-result {
+    content: content-update,
+    meta: option<view-meta>,
+    /// Move keyboard focus to this node key after rendering.
+    focus: option<string>,
+  }
+
+  /// Where a view is mounted. Registration happens in `extend` (item pane sections, tabs, side panels, preference panes,
+  /// toolbar slots) and `reader` (reader sidebar tabs and overlays, toolbar strips, selection popups, note editor head); this
+  /// enum is what they all report to the plugin in `view-context.surface`. `dialog`, `window`, `toast` and `popover` are the
+  /// ui area's own (a `popover` is also what `reader` uses for the selection popup). Info rows have no view: they are plain
+  /// values (`extend.register-info-row`).
+  enum surface {
+    /// `extend.register-section`.
+    item-pane-section,
+    /// `extend.register-pref-pane` (a `view` pane, or a `custom` row).
+    preferences-pane,
+    dialog,
+    window,
+    /// `extend.open-tab`.
+    tab,
+    /// `extend.register-side-panel`.
+    side-panel,
+    popover,
+    /// `extend.register-toolbar-view`, and the reader's toolbar strip, annotation header and note editor head.
+    toolbar-slot,
+    /// `reader.register-panel` with `sidebar-tab`.
+    reader-sidebar,
+    /// `reader.register-panel` with `alt-view`.
+    reader-overlay,
+    toast,
+    custom,
+  }
+
+  /// What the host tells the plugin about a view when it mounts, and again when something changes (another item selected,
+  /// the pane resized, the theme changed, edit mode toggled).
+  record view-context {
+    /// The id the plugin used when registering the surface.
+    view: string,
+    surface: surface,
+    /// Surface-specific data as JSON, for example {"itemKey":"ABCD1234","libraryID":1,"tabType":"library","editable":true}.
+    /// The shape is documented by the area that owns the surface (extend.md, reader.md, lifecycle.md).
+    params: json,
+    theme: theme-mode,
+    /// Available size in logical pixels, when known.
+    width: option<f32>,
+    height: option<f32>,
+    locale: string,
+  }
+
+  /// Rows asked for by a virtual list or table.
+  record range-request {
+    node-key: string,
+    start: u32,
+    count: u32,
+    sort: option<sort-spec>,
+  }
+
+  /// The rows answered by `ui-events.render-range`. Custom row/cell content is carried on each `row.content` and `cell.content`
+  /// as JSON (`$defs.node` in `ui-schema/ui-tree.schema.json`), and named styles referenced by those nodes are carried in `styles`
+  /// as a JSON array (`$defs.namedStyles`).
+  record row-batch {
+    start: u32,
+    rows: list<row>,
+    styles: option<json>,
+    /// New total, if it changed.
+    total: option<u32>,
+  }
+
+  record suggest-request {
+    node-key: string,
+    text: string,
+    limit: u32,
+  }
+
+  // ------------------------------------------------------------------------------------------------ host functions
+
+  // ---- pushing updates
+
+  /// Show a new state of a mounted view at any time (after a network call finished, on a timer from `extend`). Batched by the host.
+  push: func(instance: instance-id, update: render-result);
+
+  /// Ask the host to call `ui-events.update-context` again with the current context (Zotero's `refresh`).
+  refresh: func(instance: instance-id);
+
+  /// Move focus to a keyed node.
+  focus: func(instance: instance-id, key: string);
+
+  /// Scroll a keyed node into view.
+  scroll-to: func(instance: instance-id, key: string, align: scroll-align);
+
+  /// The user's current values of the named inputs in a view, without waiting for an event (Zotero's `bindings`/`getValue`).
+  form-values: func(instance: instance-id) -> list<form-field>;
+
+  /// Send a message to a `web-view` node's page.
+  web-post-message: func(instance: instance-id, key: string, message: json);
+
+  // ---- dialogs and windows
+
+  enum button-role { accept, cancel, destructive, extra }
+
+  record dialog-button {
+    id: string,
+    label: ui-text,
+    role: button-role,
+    disabled: bool,
+    /// Close the dialog when pressed. The accept and cancel buttons do. Set false for a button that only runs a handler.
+    closes: bool,
+    /// Activated by Enter.
+    is-default: bool,
+  }
+
+  record dialog-spec {
+    title: ui-text,
+    icon: option<ui-icon>,
+    /// Initial UI tree in the nested JSON form (`ui-schema/ui-tree.schema.json`).
+    content: json,
+    buttons: list<dialog-button>,
+    width: option<f32>,
+    height: option<f32>,
+    resizable: bool,
+    /// Block the rest of Zinc until it closes. Plugins get at most one modal dialog at a time.
+    modal: bool,
+    dismiss-on-escape: bool,
+  }
+
+  /// The plugin API's one set of dialogs, prompts and alerts (`extend` has none): `open-dialog`, `alert`, `confirm` and `prompt`.
+  /// Fails with `limit-exceeded` when the plugin already has its modal dialog open.
+  ///
+  /// Open a dialog without blocking the plugin. While open, its content is a mounted view (`ui-events.mount`, `on-event`).
+  /// When it closes, its `close` event reports the outcome (`event-payload.button` or `none`, followed by `event-payload.form`
+  /// when there are named inputs).
+  open-dialog: func(spec: dialog-spec) -> result<instance-id, error>;
+
+  /// Replace the content or buttons of an open dialog.
+  update-dialog: func(instance: instance-id, update: render-result);
+
+  /// Close a dialog (pressing `button` as if the user had).
+  close-dialog: func(instance: instance-id, button: option<string>);
+
+  /// Plain message with an OK button (Zotero.alert, Services.prompt.alert).
+  alert: func(title: ui-text, message: ui-text, tone: tone);
+
+  record confirm-spec {
+    title: ui-text,
+    message: ui-text,
+    accept-label: option<ui-text>,
+    cancel-label: option<ui-text>,
+    destructive: bool,
+    /// Add a checkbox ("Do not ask again"). Its state is returned.
+    checkbox-label: option<ui-text>,
+  }
+
+  record confirm-outcome {
+    accepted: bool,
+    checkbox: bool,
+  }
+
+  confirm: func(spec: confirm-spec) -> confirm-outcome;
+
+  record prompt-spec {
+    title: ui-text,
+    message: option<ui-text>,
+    value: string,
+    placeholder: option<ui-text>,
+    password: bool,
+  }
+
+  /// Ask for one line of text. None = cancelled.
+  prompt: func(spec: prompt-spec) -> option<string>;
+
+  /// A separate operating-system window. Tabs in the main window and docked side panels are not made here: they are
+  /// `extend.open-tab` and `extend.register-side-panel` (conditions, pinning, restore on start).
+  record window-spec {
+    /// A stable id. Opening again with the same id focuses the window and replaces its content.
+    id: string,
+    title: ui-text,
+    icon: option<ui-icon>,
+    /// Initial UI tree in the nested JSON form (`ui-schema/ui-tree.schema.json`).
+    content: json,
+    width: option<f32>,
+    height: option<f32>,
+    resizable: bool,
+  }
+
+  /// Needs the `ui.windows` permission (`permission-denied("ui.windows")` without it).
+  open-window: func(spec: window-spec) -> result<instance-id, error>;
+  close-window: func(instance: instance-id);
+
+  // ---- menus
+
+  record node-anchor {
+    instance: instance-id,
+    key: string,
+  }
+
+  record point {
+    x: f32,
+    y: f32,
+  }
+
+  variant anchor {
+    /// Where the pointer is (use inside a `context-menu` or `press` handler).
+    pointer,
+    node(node-anchor),
+    point(point),
+  }
+
+  /// Show a menu and wait for the user's choice. Returns the chosen item `id`, or none if dismissed.
+  popup-menu: func(at: anchor, menu: menu) -> option<string>;
+
+  // ---- toasts (progress windows, notifications)
+
+  record toast-line {
+    text: ui-text,
+    icon: option<ui-icon>,
+    /// 0 to 1. None = no progress bar on this line. Zotero's ProgressWindow line.
+    progress: option<f32>,
+    tone: tone,
+  }
+
+  record toast-action {
+    id: string,
+    label: ui-text,
+  }
+
+  record toast-spec {
+    title: option<ui-text>,
+    lines: list<toast-line>,
+    icon: option<ui-icon>,
+    tone: tone,
+    /// Close by itself after this many ms. None = stays until closed.
+    duration-ms: option<u32>,
+    actions: list<toast-action>,
+  }
+
+  /// Show a toast. A pressed action arrives as `ui-events.on-event` with this instance id and `kind: press`, `handler` = the action id.
+  show-toast: func(spec: toast-spec) -> instance-id;
+  update-toast: func(instance: instance-id, spec: toast-spec);
+  close-toast: func(instance: instance-id);
+
+  // ---- theme
+
+  record theme-info {
+    mode: theme-mode,
+    /// Resolved colors for the current mode, `0xRRGGBBAA`, for canvases and charts that need numbers.
+    colors: list<tuple<color-token, u32>>,
+    font-sans: string,
+    font-title: string,
+    font-mono: string,
+    base-font-size: f32,
+    /// The user's interface scale (1.0 = 100%).
+    scale: f32,
+    reduced-motion: bool,
+    locale: string,
+    rtl: bool,
+  }
+
+  get-theme: func() -> theme-info;
+
+  record token-color {
+    token: color-token,
+    /// `0xRRGGBBAA`.
+    color: u32,
+  }
+
+  /// Colors a plugin contributes to Zinc's own theme (the "Make It Red" case). Needs `ui.theme`. Shown in Settings, where the user can switch
+  /// it off. When several plugins set the same token the one enabled last wins.
+  record theme-override {
+    label: ui-text,
+    light: list<token-color>,
+    dark: list<token-color>,
+  }
+
+  set-theme-override: func(override: theme-override) -> result<_, error>;
+  clear-theme-override: func();
+
+  // ---- text measurement
+
+  record measure-request {
+    text: string,
+    size: font-size,
+    weight: font-weight,
+    family: font-family,
+    /// Wrap to this width. None = one line.
+    max-width: option<f32>,
+  }
+
+  record text-size {
+    width: f32,
+    height: f32,
+    lines: u32,
+  }
+
+  /// Measure several strings in one call, for label layout in a canvas.
+  measure-text: func(requests: list<measure-request>) -> list<text-size>;
+
+  // Clipboard, opening URLs and file dialogs are not here: they are `clipboard`, `shell.open-url` and `fs.pick-*` (lifecycle.wit).
+}
+
+/// What the plugin exports so the host can mount views and deliver events. All calls cross the process boundary, so each does as
+/// much as possible: one call returns the whole new state.
+interface ui-events {
+  use ui.{
+    instance-id, view-context, ui-event, render-result, range-request, row-batch, suggest-request, suggestion,
+  };
+
+  /// A view was created (an item pane section appeared in a window, a dialog opened, a preference pane was shown).
+  mount: func(instance: instance-id, ctx: view-context) -> render-result;
+
+  /// Something about the view's context changed: another item, edit mode, size, theme, or the plugin called `ui.refresh`.
+  update-context: func(instance: instance-id, ctx: view-context) -> render-result;
+
+  /// The view is gone. Free its state.
+  unmount: func(instance: instance-id);
+
+  /// The view became visible or hidden (a collapsed section, a background tab). Zotero's `onToggle`. Pause work while hidden.
+  visibility: func(instance: instance-id, visible: bool);
+
+  /// A user event. This is the ONE entry point for events from views (the other areas do not define a second one). Besides
+  /// events from nodes it receives: a press on a header button of an item pane section (`extend.section-button`) as
+  /// `kind: press`, `handler` = the button id, `node-key` none; a press on a toast action or a dialog button, with the toast's or
+  /// dialog's instance id; and `close` for a dismissed dialog, window, toast or tab.
+  on-event: func(instance: instance-id, event: ui-event) -> render-result;
+
+  /// The host dropped a patch (base `rev` mismatch) or lost its tree: send the whole tree.
+  resync: func(instance: instance-id) -> render-result;
+
+  /// A virtual list or table needs rows.
+  render-range: func(instance: instance-id, request: range-request) -> row-batch;
+
+  /// A `text-input` or `token-input` with `suggest.dynamic` needs suggestions.
+  suggest: func(instance: instance-id, request: suggest-request) -> list<suggestion>;
+}

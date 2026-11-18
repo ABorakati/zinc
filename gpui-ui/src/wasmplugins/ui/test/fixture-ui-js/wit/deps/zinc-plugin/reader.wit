@@ -1,0 +1,1034 @@
+package zinc:plugin@0.1.0;
+
+// Reader, annotations and note editor, for the `reader` area of the Zinc WASM plugin API (phase 1: design only).
+//
+// Interfaces in this file (the world imports the first four and exports the last three):
+//   annotations     import   annotation items: read, create, update, remove, images
+//   reader          import   open readers, navigation, state, selection, text, themes, and registration of UI contributions
+//   note-editor     import   the note editor: editor instances, insert content, embedded images, "Add Note from Annotations"
+//   reader-events   export   callbacks: build a menu, run a menu command, draw a page overlay, link clicks, event delivery
+//   note-events     export   callbacks for the note editor (event delivery)
+//
+// Dependencies run one way: annotations <- reader <- note-editor <- reader-events, note-events.
+// UI content is not defined here. A plugin's toolbar strip, selection popup, annotation header, sidebar panel and note head
+// are views of the ui area: the host mounts them through `ui-events.mount(instance, view-context)` with `view-context.view` =
+// the id the plugin registered here, `view-context.surface` as listed on each registration, and `view-context.params` as
+// reader.md describes. Menus use the extend area's `menu-entry`.
+
+/// Annotation items. In Zotero an annotation is an item of type `annotation` whose parent is a file attachment. In Zinc
+/// annotations live in their own table, so this interface is the ONLY way to read or write them: the library area's
+/// generic item calls (`library.get-items`, `query-items`, `apply`) do not return or change annotation items, and a key
+/// that names one answers `invalid-argument` there ("use annotations"). Annotation fields keep Zotero's names
+/// (`annotationType` is `kind`, `annotationText` is `text`, `annotationComment` is `comment`, `annotationColor` is `color`,
+/// `annotationPageLabel` is `page-label`, `annotationSortIndex` is `sort-index`, `annotationPosition` is `position`,
+/// `annotationIsExternal` is `is-external`).
+interface annotations {
+  use types.{item-key, library-id, json, error, epoch-ms, item-ref};
+
+  /// Zotero's annotation types.
+  enum annotation-kind {
+    highlight,
+    underline,
+    note,
+    image,
+    ink,
+    text,
+  }
+
+  /// A rectangle in PDF points, `(left, bottom, right, top)`, origin at the bottom-left of the page, as Zotero stores them.
+  type rect = tuple<f64, f64, f64, f64>;
+
+  /// Where an annotation is. PDF annotations use `page-index` and the shape fields. EPUB and snapshot annotations use
+  /// `selector` (a W3C Web Annotation selector, as Zotero stores it) and leave the shape fields empty.
+  record position {
+    /// 0-based. PDF only.
+    page-index: option<u32>,
+    /// highlight, underline, note, image, text: the boxes.
+    rects: list<rect>,
+    /// A text selection that continues onto the next page.
+    next-page-rects: list<rect>,
+    /// ink: one flat list `[x1, y1, x2, y2, ...]` per stroke.
+    paths: list<list<f64>>,
+    /// ink: stroke width in points.
+    width: option<f64>,
+    /// text: font size in points.
+    font-size: option<f64>,
+    /// text: rotation in degrees.
+    rotation: option<u32>,
+    /// EPUB and snapshot: the selector, as JSON.
+    selector: option<json>,
+  }
+
+  /// A tag on an annotation. `color` is set when the tag has a tag colour in the library.
+  record annotation-tag {
+    name: string,
+    color: option<string>,
+  }
+
+  /// A saved annotation.
+  record annotation {
+    key: item-key,
+    library: library-id,
+    /// The file attachment it belongs to.
+    attachment: item-key,
+    kind: annotation-kind,
+    /// "#rrggbb". One of the eight palette colours or, for ink and text, an extra colour.
+    color: string,
+    /// highlight and underline: the selected text.
+    text: option<string>,
+    comment: string,
+    page-label: option<string>,
+    /// Zotero's sort key `PPPPP|OOOOOO|TTTTT` (EPUB and snapshot use their own form).
+    sort-index: string,
+    position: position,
+    tags: list<annotation-tag>,
+    author-name: option<string>,
+    /// Imported from the PDF file itself (embedded annotation). The reader shows these read-only.
+    is-external: bool,
+    /// The reader will not edit it: external, made by another group member, or in a read-only library.
+    read-only: bool,
+    /// An image or ink annotation that has a cached PNG (see `get-annotation-image`).
+    has-image: bool,
+    date-added: epoch-ms,
+    date-modified: epoch-ms,
+  }
+
+  /// An annotation to create. Also the shape of the draft the reader holds for a text selection.
+  record new-annotation {
+    /// Fixed key. The host makes one when this is empty. Fails with `conflict` if the key exists.
+    key: option<item-key>,
+    kind: annotation-kind,
+    /// Default: the first palette colour, "#ffd400".
+    color: option<string>,
+    text: option<string>,
+    comment: option<string>,
+    /// Default: the page label the reader would give that page.
+    page-label: option<string>,
+    /// Default: computed by the host from the position, as the reader does.
+    sort-index: option<string>,
+    position: position,
+    tags: list<string>,
+    author-name: option<string>,
+    is-external: bool,
+  }
+
+  /// A change to an annotation. Only the fields that are present change. `kind` may switch highlight and underline.
+  record annotation-patch {
+    key: item-key,
+    kind: option<annotation-kind>,
+    color: option<string>,
+    text: option<string>,
+    comment: option<string>,
+    page-label: option<string>,
+    sort-index: option<string>,
+    position: option<position>,
+    /// Replaces the whole tag list.
+    tags: option<list<string>>,
+  }
+
+  /// One colour of the annotation palette (`Zotero.Annotations.COLORS`).
+  record annotation-color {
+    /// Zotero's Fluent id, for example "general-yellow".
+    id: string,
+    hex: string,
+  }
+
+  /// All annotations of a file attachment, in sort-index order. Needs permission `annotations.read`.
+  list-annotations: func(attachment: item-ref) -> result<list<annotation>, error>;
+
+  /// Annotations by key, in the order asked. A missing key gives `none`. Needs `annotations.read`.
+  get-annotations: func(refs: list<item-ref>) -> result<list<option<annotation>>, error>;
+
+  /// Create annotations on a file attachment (`Zotero.Annotations.saveFromJSON`). One call can carry many. A position
+  /// that is too large for one item (65000 characters) is split into several annotations, as Zotero does, so the
+  /// result can be longer than the input. Needs `annotations.write`. Fails with `read-only` in a read-only library.
+  create-annotations: func(attachment: item-ref, items: list<new-annotation>) -> result<list<annotation>, error>;
+
+  /// Change annotations that exist. All patches apply in one transaction. Needs `annotations.write`.
+  update-annotations: func(library: library-id, patches: list<annotation-patch>) -> result<list<annotation>, error>;
+
+  /// Delete annotations for good. Zotero erases annotation items; they do not go to the trash. Needs `annotations.write`.
+  remove-annotations: func(library: library-id, keys: list<item-key>) -> result<_, error>;
+
+  /// The cached PNG of an image or ink annotation, if there is one. Needs `annotations.read`.
+  get-annotation-image: func(annotation: item-ref) -> result<option<list<u8>>, error>;
+
+  /// Set the cached PNG of an image or ink annotation (`Zotero.Annotations.saveCacheImage`). Needs `annotations.write`.
+  set-annotation-image: func(annotation: item-ref, png: list<u8>) -> result<_, error>;
+
+  /// The palette, in Zotero's order. The first is the default.
+  annotation-colors: func() -> list<annotation-color>;
+
+  /// Read the annotations embedded in the PDF file and save the ones that are new (`Zotero.PDFWorker.import`).
+  /// Returns how many were added. Needs `annotations.write`.
+  import-embedded-annotations: func(attachment: item-ref) -> result<u32, error>;
+}
+
+/// Open readers (PDF, EPUB, snapshot) and everything a plugin does with them.
+interface reader {
+  use types.{item-key, library-id, json, error, localized-string, icon-ref, window-id, item-ref};
+  use annotations.{annotation, new-annotation, rect};
+  use extend.{menu-entry};
+
+  /// A reader instance, valid while it is open. The host makes it; Zotero's `tabID` plays this role.
+  type reader-id = string;
+
+  enum reader-kind {
+    pdf,
+    epub,
+    snapshot,
+  }
+
+  /// Facts that do not change quickly. Callbacks carry one of these so the plugin needs no extra call.
+  record reader-info {
+    id: reader-id,
+    kind: reader-kind,
+    /// The file attachment shown.
+    attachment: item-ref,
+    /// The attachment's parent item, if it has one.
+    parent-item: option<item-key>,
+    /// The tab, if the reader is in a tab.
+    tab-id: option<string>,
+    window: option<window-id>,
+    title: string,
+    /// The user cannot edit annotations: read-only library or item in the trash.
+    read-only: bool,
+    /// It is the selected tab of its window.
+    selected: bool,
+  }
+
+  /// A place in a document (Zotero's `NavLocation`). Set the fields that fit the reader kind; the first that
+  /// is set wins, in this order: annotation, position, pdf-dest, page-index, page-label, cfi, href, scroll-y-percent.
+  record location {
+    annotation: option<item-key>,
+    /// An annotation position as JSON (a PDF position or an EPUB or snapshot selector).
+    position: option<json>,
+    /// A PDF named destination or explicit destination array, as JSON.
+    pdf-dest: option<json>,
+    /// 0-based.
+    page-index: option<u32>,
+    /// PDF page label, or the page number of an EPUB that uses physical page numbers.
+    page-label: option<string>,
+    /// EPUB location, "epubcfi(...)".
+    cfi: option<string>,
+    /// EPUB: a link target inside the book. Snapshot: an anchor.
+    href: option<string>,
+    /// Snapshot and EPUB: 0..100.
+    scroll-y-percent: option<f64>,
+  }
+
+  record navigate-options {
+    /// Do not add the jump to the back/forward history.
+    skip-history: bool,
+  }
+
+  enum navigation-step {
+    back,
+    forward,
+    first-page,
+    last-page,
+    previous-page,
+    next-page,
+    previous-section,
+    next-section,
+  }
+
+  enum zoom-mode {
+    custom,
+    auto,
+    page-width,
+    page-height,
+  }
+
+  enum scroll-mode {
+    vertical,
+    horizontal,
+    wrapped,
+    page,
+  }
+
+  enum spread-mode {
+    none,
+    odd,
+    even,
+  }
+
+  /// What one view of the reader (Zotero's `primaryViewStats` or `secondaryViewStats`) shows now.
+  record view-stats {
+    /// 0-based.
+    page-index: option<u32>,
+    /// What the toolbar shows. For an EPUB without physical pages this is none.
+    page-label: option<string>,
+    pages-count: option<u32>,
+    /// Zoom factor, 1.0 = 100%. PDF only.
+    zoom: option<f64>,
+    zoom-mode: option<zoom-mode>,
+    scroll-mode: option<scroll-mode>,
+    spread-mode: option<spread-mode>,
+    /// EPUB: "paginated" or "scrolled".
+    flow-mode: option<string>,
+    can-go-back: bool,
+    can-go-forward: bool,
+  }
+
+  enum tool-kind {
+    pointer,
+    hand,
+    highlight,
+    underline,
+    note,
+    image,
+    text,
+    ink,
+    eraser,
+  }
+
+  record tool-state {
+    kind: tool-kind,
+    /// "#rrggbb" for the tools that have a colour.
+    color: option<string>,
+  }
+
+  /// The sidebar's annotation filter.
+  record annotation-filter {
+    query: string,
+    colors: list<string>,
+    tags: list<string>,
+    authors: list<string>,
+  }
+
+  record sidebar-state {
+    open: bool,
+    /// "annotations", "thumbnails" or "outline", or the id of a plugin panel (see `register-panel`).
+    view: string,
+    /// Logical pixels.
+    width: u32,
+  }
+
+  enum split-orientation {
+    vertical,
+    horizontal,
+  }
+
+  record find-state {
+    active: bool,
+    query: string,
+    case-sensitive: bool,
+    entire-word: bool,
+    highlight-all: bool,
+    /// Matches found, once known.
+    total: option<u32>,
+    /// 0-based index of the current match.
+    index: option<u32>,
+  }
+
+  /// A snapshot of a reader (Zotero's `_internalReader._state`, the parts plugins use).
+  record reader-state {
+    info: reader-info,
+    primary: view-stats,
+    /// Present in a split view.
+    secondary: option<view-stats>,
+    primary-is-active: bool,
+    /// The saved view state of the primary view, as JSON (Zotero: `getPrimaryViewState()`). Pass it back in `open-request` to restore it.
+    primary-view-state: json,
+    secondary-view-state: option<json>,
+    tool: tool-state,
+    selected-annotations: list<item-key>,
+    filter: annotation-filter,
+    show-annotations: bool,
+    sidebar: sidebar-state,
+    split: option<split-orientation>,
+    find: find-state,
+  }
+
+  /// Selected text and the annotation the reader would make from it.
+  record text-selection {
+    text: string,
+    /// A highlight draft: `position`, `text`, `sort-index` and `page-label` are filled in, `color` is the current tool colour.
+    draft: new-annotation,
+  }
+
+  /// A reference to an item by its URI is allowed for plugins that hold `zotero://` or `http://zotero.org/...` URIs.
+  variant open-target {
+    attachment(item-ref),
+    item-uri(string),
+  }
+
+  /// `Zotero.Reader.open` and `openURI`.
+  record open-request {
+    target: open-target,
+    location: option<location>,
+    /// Tab title. Default: the usual title.
+    title: option<string>,
+    tab-index: option<u32>,
+    /// Do not select the tab.
+    background: bool,
+    /// Open in a window of its own.
+    in-window: bool,
+    /// Open another reader even when the file is already open.
+    allow-duplicate: bool,
+    primary-view-state: option<json>,
+    secondary-view-state: option<json>,
+    window: option<window-id>,
+  }
+
+  /// A command a reader can run, the same as its toolbar and View menu.
+  enum reader-command {
+    zoom-in,
+    zoom-out,
+    zoom-reset,
+    zoom-auto,
+    zoom-page-width,
+    zoom-page-height,
+    /// Copy the selected text.
+    copy,
+    undo,
+    redo,
+    print,
+    /// Show the attachment's parent in the library window.
+    show-in-library,
+    /// Save a copy of the PDF with the annotations in it. The host asks the user where.
+    export-pdf,
+    /// Copy the annotations embedded in the file into the library (`transferFromPDF`). The host asks the user first.
+    import-annotations-from-pdf,
+    /// EPUB: import KOReader or Calibre annotations (`importFromEPUB`). The host asks the user first.
+    import-annotations-from-epub,
+    /// Load the file again (after it changed on disk).
+    reload,
+    toggle-context-pane,
+    /// Start or pause Read Aloud.
+    toggle-read-aloud,
+    open-find,
+    close-find,
+  }
+
+  record layout-patch {
+    scroll-mode: option<scroll-mode>,
+    spread-mode: option<spread-mode>,
+    /// EPUB: "paginated" or "scrolled".
+    flow-mode: option<string>,
+  }
+
+  enum find-action {
+    /// Start a search or change its settings, and go to the first match.
+    start,
+    next,
+    previous,
+    close,
+  }
+
+  record find-request {
+    action: find-action,
+    query: string,
+    case-sensitive: bool,
+    entire-word: bool,
+    highlight-all: bool,
+  }
+
+  /// A word with its box, for plugins that do their own text analysis.
+  record word {
+    text: string,
+    /// PDF points, bottom-left origin, the same as annotation rects.
+    rect: rect,
+    /// Index of the text line on the page.
+    line: u32,
+  }
+
+  record page-text {
+    page-index: u32,
+    /// Page size in points.
+    width: f64,
+    height: f64,
+    text: string,
+    /// Empty unless asked for.
+    words: list<word>,
+  }
+
+  /// One row of a document outline, in reading order. `depth` 0 is the top level.
+  record outline-item {
+    title: string,
+    depth: u32,
+    location: location,
+  }
+
+  record page-image {
+    /// "image/png".
+    mime: string,
+    width: u32,
+    height: u32,
+    bytes: list<u8>,
+  }
+
+  /// A reader colour theme (Zotero's `DEFAULT_THEMES` and the user's custom themes).
+  record reader-theme {
+    id: string,
+    label: string,
+    background: string,
+    foreground: string,
+    invert-images: bool,
+    /// Zinc's own themes. They cannot be changed or deleted.
+    builtin: bool,
+  }
+
+  /// Which theme the reader uses in light and in dark mode. None means the default for that mode.
+  record theme-choice {
+    light: option<string>,
+    dark: option<string>,
+  }
+
+  // Registration kinds
+
+  /// Slots a plugin fills with UI. They are Zotero's three `render*` events. Each slot is a ui view: the host mounts an
+  /// instance for every place the slot is shown (`ui-events.mount`), sends `update-context` when the params change and
+  /// `unmount` when it goes away. `view-context.params` is a JSON object with `slot` (the slot name below), `reader`
+  /// (a `reader-info` as JSON) and the slot's own fields; reader.md lists them.
+  enum slot-kind {
+    /// A strip at the end of the reader toolbar (`renderToolbar`). Surface `toolbar-slot`.
+    toolbar,
+    /// The popup that opens at a text selection (`renderTextSelectionPopup`). Surface `popover`. Extra params: `selection`
+    /// (a `text-selection` as JSON).
+    text-selection-popup,
+    /// The header row of an annotation card in the sidebar (`renderSidebarAnnotationHeader`). Surface `toolbar-slot`.
+    /// Extra params: `annotation` (an `annotation` as JSON).
+    sidebar-annotation-header,
+  }
+
+  /// Menus a plugin adds items to. The first five are Zotero's `create*ContextMenu` events.
+  enum menu-kind {
+    /// The colour picker menu (`createColorContextMenu`).
+    color,
+    /// The View menu, and the page's right-click menu where there is one (`createViewContextMenu`).
+    view,
+    /// An annotation's menu, in the sidebar and on the page (`createAnnotationContextMenu`).
+    annotation,
+    /// A thumbnail's menu (`createThumbnailContextMenu`).
+    thumbnail,
+    /// The sidebar's colour/tag/author filter menu (`createSelectorContextMenu`).
+    selector,
+    /// A reader theme's menu in the appearance popup (`createThemeContextMenu`; Zotero's reader fires it but its docs do not list it).
+    theme,
+  }
+
+  variant listener-target {
+    slot(slot-kind),
+    menu(menu-kind),
+  }
+
+  /// `Zotero.Reader.registerEventListener`, one registration per (target, plugin id).
+  record listener-registration {
+    /// A stable id the plugin chooses. For a `slot` it is the `view-context.view` of the mounted views; for a `menu` it is
+    /// the `listener-id` of `build-menu` and `on-menu-command`. Registering the same id again replaces it.
+    id: string,
+    target: listener-target,
+    /// Reader kinds to serve. Empty: all.
+    reader-kinds: list<reader-kind>,
+    /// For a `menu` target: entries that never change. When this is not empty the host shows them without a call into
+    /// the plugin (the entries' `visible-when` and `enabled-when` still apply); `on-menu-command` runs when one is
+    /// chosen. Leave empty to have `build-menu` called each time the menu opens. Ignored for a `slot` target.
+    static-menu: list<menu-entry>,
+  }
+
+  enum panel-placement {
+    /// A tab in the reader's left sidebar, beside Annotations, Thumbnails and Outline. Surface `reader-sidebar`.
+    sidebar-tab,
+    /// A view that replaces the page area, selected from the toolbar (Zinc's reading view is one). Surface `reader-overlay`.
+    alt-view,
+  }
+
+  /// A panel the plugin fills with UI. Zotero has no API for this; plugins patch the reader's DOM. The panel is a ui view:
+  /// `view-context.view` is `id`, `params` is `{"slot": "panel", "reader": <reader-info>}`.
+  record panel-registration {
+    id: string,
+    placement: panel-placement,
+    label: localized-string,
+    icon: option<icon-ref>,
+    reader-kinds: list<reader-kind>,
+  }
+
+  /// A layer drawn over each page. Zotero has no API for this; plugins inject DOM into the PDF.js page. `render-overlay` is called
+  /// for the pages that are on screen. PDF only for now.
+  record overlay-registration {
+    id: string,
+    reader-kinds: list<reader-kind>,
+  }
+
+  /// Take over clicks on links inside the document (a citation link, a figure link). The host does not follow a link
+  /// that an interceptor claims; the plugin decides what to do, for example `navigate` to the target or open a popup.
+  record link-interceptor-registration {
+    id: string,
+    /// Links that jump inside the document.
+    internal: bool,
+    /// Links to a URI.
+    external: bool,
+  }
+
+  enum event-kind {
+    opened,
+    closed,
+    tab-selected,
+    page-changed,
+    selection-changed,
+    annotations-selected,
+    annotations-changed,
+    tool-changed,
+    view-state-changed,
+  }
+
+  // Instances
+
+  /// Every open reader, oldest first (`Zotero.Reader._readers`). Needs `reader.read`.
+  list-readers: func() -> list<reader-info>;
+
+  get-reader: func(id: reader-id) -> option<reader-info>;
+
+  /// `Zotero.Reader.getByTabID`.
+  get-reader-by-tab: func(tab-id: string) -> option<reader-info>;
+
+  /// The reader in the selected tab of a window (toolkit `ReaderTool.getReader`). None when the selected tab is not a reader.
+  selected-reader: func(window: option<window-id>) -> option<reader-info>;
+
+  /// Open a file in a reader, or select the tab it is already open in. Returns the reader, or none when only an
+  /// unloaded tab was selected (Zotero then loads the reader later; a `opened` event follows). Needs `reader.control`.
+  open: func(request: open-request) -> result<option<reader-info>, error>;
+
+  /// Close the reader and its tab or window. Needs `reader.control`.
+  close: func(id: reader-id) -> result<_, error>;
+
+  /// Select its tab and give it keyboard focus. Needs `reader.control`.
+  focus: func(id: reader-id) -> result<_, error>;
+
+  // State
+
+  /// Everything the plugin usually wants to know in one call. Needs `reader.read`.
+  get-state: func(id: reader-id) -> result<reader-state, error>;
+
+  /// Selected text, if any. Needs `reader.read`.
+  get-selection: func(id: reader-id) -> result<option<text-selection>, error>;
+
+  /// The pages of the outline, or an empty list. Needs `reader.read`.
+  get-outline: func(id: reader-id) -> result<list<outline-item>, error>;
+
+  /// Page labels, one per page. PDF only. Needs `reader.read`.
+  get-page-labels: func(id: reader-id) -> result<list<string>, error>;
+
+  /// The text of pages, and optionally every word with its box. Asking for many pages in one call is cheap; asking
+  /// per page is not. PDF only for now. Needs `reader.read`.
+  get-page-text: func(id: reader-id, pages: list<u32>, with-words: bool) -> result<list<page-text>, error>;
+
+  /// Draw a page, or part of it, as a PNG. `scale` 1.0 is 72 dpi. PDF only. Needs `reader.read`.
+  render-page: func(id: reader-id, page: u32, scale: f64, clip: option<rect>) -> result<page-image, error>;
+
+  // Control
+
+  /// Go to a place. Needs `reader.control`.
+  navigate: func(id: reader-id, location: location, options: navigate-options) -> result<_, error>;
+
+  navigate-step: func(id: reader-id, step: navigation-step) -> result<_, error>;
+
+  /// Run a toolbar or View menu command. Commands that change files or ask the user are confirmed by the host. Needs `reader.control`.
+  run-command: func(id: reader-id, command: reader-command) -> result<_, error>;
+
+  /// Change scroll, spread or flow mode. Needs `reader.control`.
+  set-layout: func(id: reader-id, layout: layout-patch) -> result<_, error>;
+
+  /// Choose the annotation tool and its colour. Needs `reader.control`.
+  set-tool: func(id: reader-id, tool: tool-state) -> result<_, error>;
+
+  set-filter: func(id: reader-id, filter: annotation-filter) -> result<_, error>;
+
+  /// Show or hide annotations on the page.
+  show-annotations: func(id: reader-id, show: bool) -> result<_, error>;
+
+  /// Select annotations in the sidebar and on the page. With `navigate`, scroll to the first one.
+  select-annotations: func(id: reader-id, keys: list<item-key>, navigate: bool) -> result<_, error>;
+
+  clear-selection: func(id: reader-id) -> result<_, error>;
+
+  /// Open or close the sidebar, switch its tab, or change its width. A field left empty is not changed.
+  set-sidebar: func(id: reader-id, open: option<bool>, view: option<string>, width: option<u32>) -> result<_, error>;
+
+  /// Turn split view on, in an orientation, or off (none). Fails with `unavailable` where the reader has no split view.
+  set-split: func(id: reader-id, orientation: option<split-orientation>) -> result<_, error>;
+
+  /// Search the document and move between matches.
+  find: func(id: reader-id, request: find-request) -> result<find-state, error>;
+
+  /// Turn PDF pages by 90, 180 or 270 degrees. This changes the file (`Zotero.PDFWorker.rotatePages`). Needs
+  /// `reader.control` and `library.files.write`.
+  rotate-pages: func(id: reader-id, pages: list<u32>, degrees: u32) -> result<_, error>;
+
+  /// Delete PDF pages from the file. The host asks the user to confirm and returns false if they decline. Needs
+  /// `reader.control` and `library.files.write`.
+  delete-pages: func(id: reader-id, pages: list<u32>) -> result<bool, error>;
+
+  // Themes
+
+  /// Built-in themes and the user's custom themes. Needs `reader.read`.
+  list-themes: func() -> list<reader-theme>;
+
+  get-theme-choice: func() -> theme-choice;
+
+  /// Needs `reader.themes`.
+  set-theme-choice: func(choice: theme-choice) -> result<_, error>;
+
+  /// Add or change a custom theme (Zotero keeps these in the synced setting `readerCustomThemes`). Needs `reader.themes`.
+  save-theme: func(theme: reader-theme) -> result<_, error>;
+
+  /// Needs `reader.themes`. Built-in themes cannot be deleted.
+  delete-theme: func(id: string) -> result<_, error>;
+
+  // Registration
+  // Everything registered here is removed when the plugin shuts down. Needs `reader.ui`.
+
+  /// Fill a slot or add menu items.
+  register-listener: func(registration: listener-registration) -> result<_, error>;
+
+  register-panel: func(registration: panel-registration) -> result<_, error>;
+
+  register-overlay: func(registration: overlay-registration) -> result<_, error>;
+
+  register-link-interceptor: func(registration: link-interceptor-registration) -> result<_, error>;
+
+  /// Remove a registration of any kind by its id. A missing id is not an error.
+  unregister: func(id: string);
+
+  /// Ask for a slot, panel or overlay to be drawn again. Use it when something the plugin shows changed on its own,
+  /// for example after an async lookup finished. For a slot or panel it is `ui.refresh` for every mounted instance of
+  /// the registration (or only those of `reader`); for an overlay it drops the cached shapes. The host also redraws when
+  /// the inputs change (the selection, the annotation), so no call is needed for that.
+  invalidate: func(id: string, reader: option<reader-id>);
+
+  /// Choose which `reader-event`s are delivered to this plugin. The list replaces the previous one. Needs `reader.read`.
+  subscribe: func(kinds: list<event-kind>);
+}
+
+/// The note editor: Zotero's `note-editor` element and `Zotero.EditorInstance`. Zinc runs Zotero's own note editor, in a
+/// web view, so notes behave like Zotero's. Plugins get editor-level operations, not the editor's DOM or ProseMirror state.
+interface note-editor {
+  use types.{item-key, library-id, json, error, window-id, item-ref};
+  use reader.{reader-id};
+
+  /// Where an editor is shown.
+  enum editor-placement {
+    /// In the library item pane.
+    item-pane,
+    /// In a note tab.
+    note-tab,
+    /// In a window of its own.
+    note-window,
+    /// In the context pane next to a reader.
+    reader-context-pane,
+  }
+
+  /// An open editor instance. The host makes the id.
+  record editor-info {
+    id: string,
+    note: item-ref,
+    placement: editor-placement,
+    read-only: bool,
+    tab-id: option<string>,
+    window: option<window-id>,
+    /// The reader whose context pane holds it.
+    reader: option<reader-id>,
+  }
+
+  record open-note-request {
+    note: item-ref,
+    /// Tab title. Default: the note's title.
+    title: option<string>,
+    tab-index: option<u32>,
+    background: bool,
+    in-window: bool,
+    allow-duplicate: bool,
+    window: option<window-id>,
+  }
+
+  enum insert-position {
+    /// At the cursor, or after the selection.
+    cursor,
+    start,
+    end,
+  }
+
+  /// The content of an editor.
+  record note-content {
+    /// The note's HTML, with Zotero's wrapper div.
+    html: string,
+    /// The editor's document state (ProseMirror JSON), when the editor has it. Opaque: pass it back unchanged.
+    state: option<json>,
+  }
+
+  record note-selection {
+    text: string,
+    html: string,
+  }
+
+  /// "Add Note from Annotations" (Zotero: `ZoteroPane.createNoteFromAnnotations`, and "Add to Note" without an open note).
+  record annotations-note-request {
+    attachment: item-ref,
+    /// Which annotations. Empty: all of the attachment's.
+    annotations: list<item-key>,
+    /// Where the new note goes. Default: a child note of the attachment's parent item; a standalone note if there is none.
+    parent: option<item-key>,
+    /// A template in Zotero's note-template syntax ({{highlight}}, {{comment}}, {{citation}}, {{image}}, {{tags}}, {{color}}).
+    /// Default: the user's templates from the prefs `annotations.noteTemplates.*`.
+    template: option<string>,
+  }
+
+  record serialize-options {
+    template: option<string>,
+    /// Leave the citation items' full data out of the citation JSON (smaller output).
+    skip-embedding-item-data: bool,
+  }
+
+  record serialized-annotations {
+    html: string,
+    /// The citation items to embed in the note, as JSON (Zotero's `citationItems`).
+    citation-items: json,
+  }
+
+  enum note-event-kind {
+    editor-opened,
+    editor-closed,
+    note-saved,
+  }
+
+  /// Every open editor. Needs `note-editor.read`.
+  list-editors: func() -> list<editor-info>;
+
+  /// The editor that has focus in a window: the selected note tab, or the note that "Add to Note" would add to
+  /// (`ZoteroContextPane.activeEditor`). Needs `note-editor.read`.
+  active-editor: func(window: option<window-id>) -> option<editor-info>;
+
+  /// Open a note in a tab or window (`Zotero.Notes.open`). Needs `note-editor.control`.
+  open-note: func(request: open-note-request) -> result<option<editor-info>, error>;
+
+  focus: func(editor: string) -> result<_, error>;
+
+  /// What the editor holds now, including edits that are not saved yet (`getDataSync`). Needs `note-editor.read`.
+  get-content: func(editor: string) -> result<note-content, error>;
+
+  /// The selected text and HTML. Needs `note-editor.read`.
+  get-selection: func(editor: string) -> result<option<note-selection>, error>;
+
+  /// Put HTML into the document (the editor's `insertHTML`). Citations, highlights and images in Zotero's note HTML
+  /// (`span.citation[data-citation]`, `span.highlight[data-annotation]`, `img[data-attachment-key]`) become live nodes. Needs `note-editor.write`.
+  insert-html: func(editor: string, html: string, at: insert-position) -> result<_, error>;
+
+  /// Add annotations to the note as the user's note templates write them (`EditorInstance.insertAnnotations`: "Add to
+  /// Note"). Needs `note-editor.write`.
+  insert-annotations: func(editor: string, annotations: list<item-ref>) -> result<_, error>;
+
+  /// Replace the document with new content without losing the cursor and undo history where possible
+  /// (`applyIncrementalUpdate`). To change a note that is not open, change its item with the library area. Needs `note-editor.write`.
+  apply-update: func(editor: string, content: note-content, preserve-selection: bool) -> result<_, error>;
+
+  /// Save now instead of after the usual delay (`saveSync`). Needs `note-editor.write`.
+  save-now: func(editor: string) -> result<_, error>;
+
+  /// Turn annotations into note HTML and citation data with Zotero's template engine
+  /// (`EditorInstanceUtilities.serializeAnnotations`). A plugin with its own template engine can skip this and write
+  /// HTML itself from `annotations.get-annotations`. Needs `annotations.read`.
+  serialize-annotations: func(annotations: list<item-ref>, options: serialize-options) -> result<serialized-annotations, error>;
+
+  /// Make a note from annotations and return its key. Needs `annotations.read` and `library.write`.
+  create-note-from-annotations: func(request: annotations-note-request) -> result<item-key, error>;
+
+  /// The note's HTML as it should leave Zotero: embedded images inlined, internal keys resolved (`Zotero.Notes.getExportableNote`). Needs `library.read`.
+  exportable-html: func(note: item-ref) -> result<string, error>;
+
+  /// Save an image as an embedded image of a note and return the attachment key to use in `img[data-attachment-key]`
+  /// (`EditorInstance._importImage`). Needs `library.write`.
+  add-embedded-image: func(note: item-ref, mime: string, bytes: list<u8>) -> result<item-key, error>;
+
+  /// Copy the embedded images of one note to another (`Zotero.Notes.copyEmbeddedImages`). Needs `library.write`.
+  copy-embedded-images: func(from-note: item-ref, to-note: item-ref) -> result<_, error>;
+
+  /// Check that the embedded images of a note have their files. False if one is missing and the user chose not to ignore it
+  /// (`ensureEmbeddedImagesAreAvailable`).
+  embedded-images-available: func(note: item-ref) -> result<bool, error>;
+
+  /// Delete embedded image attachments that the note no longer uses. Returns how many (`deleteUnusedEmbeddedImages`). Needs `library.write`.
+  delete-unused-embedded-images: func(note: item-ref) -> result<u32, error>;
+
+  /// Show a strip of UI above every note editor (`NoteEditor.renderCustomHead`). The strip is a ui view with surface
+  /// `toolbar-slot`: `view-context.view` is `id` and `params` is `{"slot": "note-editor-head", "editor": <editor-info>}`.
+  /// Needs `note-editor.ui`.
+  register-head: func(id: string) -> result<_, error>;
+
+  unregister-head: func(id: string);
+
+  /// Draw the strip again (`ui.refresh` for the registration's views); with an editor, only that editor's.
+  invalidate-head: func(id: string, editor: option<string>);
+
+  /// Choose which `note-event`s are delivered. The list replaces the previous one. Needs `note-editor.read`.
+  subscribe-note-events: func(kinds: list<note-event-kind>);
+}
+
+/// Callbacks the host makes into a plugin for the reader. Few and coarse: the host caches what a callback returns and calls again
+/// only when its inputs change or the plugin calls `invalidate`. Slots and panels are not here: they are ui views, mounted through
+/// the ui area's `ui-events`.
+interface reader-events {
+  use types.{item-key, item-ref};
+  use annotations.{annotation, rect};
+  use extend.{menu-entry};
+  use reader.{reader-id, reader-info, text-selection, tool-state};
+
+  record annotation-menu-params {
+    /// The annotations the menu acts on (Zotero passes only their ids).
+    annotations: list<annotation>,
+    /// The one the menu was opened on.
+    current: option<item-key>,
+    /// Opened from the page, not from the sidebar.
+    from-view: bool,
+    /// Opened from an annotation popup.
+    popup: bool,
+  }
+
+  record selector-menu-params {
+    enable-clear-selection: bool,
+  }
+
+  variant menu-params {
+    color,
+    view,
+    annotation(annotation-menu-params),
+    /// 0-based pages the menu acts on.
+    thumbnail(list<u32>),
+    selector(selector-menu-params),
+    /// The id of the theme.
+    theme(string),
+  }
+
+  record menu-context {
+    reader: reader-info,
+    params: menu-params,
+  }
+
+  /// A shape in a page overlay. Coordinates are PDF points on the page, bottom-left origin, like annotation rects.
+  enum overlay-shape-kind {
+    /// Fill the rects.
+    fill,
+    /// Draw the outline of the rects.
+    outline,
+    /// A line under the bottom edge of each rect.
+    underline,
+  }
+
+  record overlay-shape {
+    kind: overlay-shape-kind,
+    rects: list<rect>,
+    /// Default: the theme's accent colour.
+    color: option<string>,
+    /// 0.0 to 1.0. Default 0.35 for fill, 1.0 otherwise.
+    opacity: option<f64>,
+    /// Shown while the pointer is over the shape.
+    tooltip: option<string>,
+    /// Sent to `on-overlay-click` when the shape is clicked. A shape without it does not take clicks.
+    command: option<string>,
+  }
+
+  record page-link {
+    page-index: u32,
+    /// Vertical position on the target page, 0.0 top to 1.0 bottom.
+    y: option<f64>,
+  }
+
+  variant link-target {
+    page(page-link),
+    uri(string),
+  }
+
+  record link-context {
+    reader: reader-info,
+    /// The page the link is on.
+    page-index: u32,
+    target: link-target,
+  }
+
+  record page-change {
+    reader: reader-id,
+    page-index: option<u32>,
+    page-label: option<string>,
+  }
+
+  record selection-change {
+    reader: reader-id,
+    /// None when the selection was cleared. Sent when the pointer is released, not while the user drags.
+    selection: option<text-selection>,
+  }
+
+  record annotations-selected {
+    reader: reader-id,
+    keys: list<item-key>,
+  }
+
+  /// A batch of annotation changes, one per attachment and transaction.
+  record annotations-change {
+    attachment: item-ref,
+    added: list<item-key>,
+    modified: list<item-key>,
+    removed: list<item-key>,
+    /// The plugin's own `annotations` calls made it. Lets a plugin ignore its own echo.
+    by-this-plugin: bool,
+  }
+
+  record tool-change {
+    reader: reader-id,
+    tool: tool-state,
+  }
+
+  variant reader-event {
+    opened(reader-info),
+    closed(reader-info),
+    tab-selected(reader-info),
+    page-changed(page-change),
+    selection-changed(selection-change),
+    annotations-selected(annotations-selected),
+    annotations-changed(annotations-change),
+    tool-changed(tool-change),
+    /// The reader saved its view state (scroll, zoom). Sent at most about once a second. Read it with `get-state`.
+    view-state-changed(reader-id),
+  }
+
+  /// Entries for a menu that opens now, for a registration without `static-menu`. Called once per opening, and the plugin
+  /// must answer within the host's menu time limit (the menu is not shown until it does).
+  build-menu: func(listener-id: string, context: menu-context) -> list<menu-entry>;
+
+  /// A menu entry was chosen. `command` is the entry's `id`. The context is the one the menu was built with.
+  on-menu-command: func(listener-id: string, command: string, context: menu-context);
+
+  /// Draw the overlay of one page. Called for pages that come on screen and again after `invalidate`; the host
+  /// caches the answer per page.
+  render-overlay: func(listener-id: string, reader: reader-info, page-index: u32) -> list<overlay-shape>;
+
+  on-overlay-click: func(listener-id: string, reader: reader-info, page-index: u32, command: string);
+
+  /// A claimed link was clicked. The host has not followed it.
+  on-link: func(listener-id: string, context: link-context);
+
+  /// A subscribed event. Events of one kind arrive in order.
+  on-reader-event: func(event: reader-event);
+}
+
+/// Callbacks for the note editor.
+interface note-events {
+  use types.{item-key, item-ref};
+  use note-editor.{editor-info};
+
+  record note-saved {
+    editor: string,
+    note: item-ref,
+    /// The plugin's own calls caused the save.
+    by-this-plugin: bool,
+  }
+
+  variant note-event {
+    editor-opened(editor-info),
+    editor-closed(editor-info),
+    /// The editor saved the note (after its usual delay). Not sent per keystroke.
+    note-saved(note-saved),
+  }
+
+  on-note-event: func(event: note-event);
+}

@@ -1,0 +1,10 @@
+package zinc:ui-fixture@0.1.0;
+
+/// A plugin that only draws UI: lifecycle (so the supervisor can start it), ui-events (views) and the ui and log imports.
+world ui-fixture {
+  import zinc:plugin/ui@0.1.0;
+  import zinc:plugin/log@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/ui-events@0.1.0;
+}

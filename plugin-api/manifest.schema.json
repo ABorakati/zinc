@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zinc.example/schemas/plugin-manifest-0.1.json",
+  "title": "Zinc plugin manifest (manifest.json)",
+  "description": "The manifest at the root of a Zinc WASM plugin package (a zip with the extension .zplugin). It follows the layout of a Zotero 7 manifest.json (name, version, description, author, homepage_url, icons, applications) so a Zotero plugin author finds the same fields. Differences: `applications.zotero` is replaced by the top-level `id` and a `zinc` block; the entry is a WebAssembly component, not bootstrap.js; and permissions are declared. Version 0.1 of the plugin API; the file is design only, nothing reads it yet.",
+  "type": "object",
+  "required": ["manifest_version", "id", "name", "version", "zinc", "main"],
+  "additionalProperties": false,
+  "if": { "required": ["mcp"], "properties": { "mcp": { "required": ["tools"] } } },
+  "then": {
+    "required": ["permissions"],
+    "properties": { "permissions": { "required": ["capabilities"], "properties": { "capabilities": { "contains": { "const": "mcp.expose" } } } } }
+  },
+  "properties": {
+    "$schema": { "type": "string" },
+
+    "manifest_version": {
+      "description": "Version of this manifest format. Zotero 7 uses 2; Zinc starts at 1.",
+      "const": 1
+    },
+
+    "id": {
+      "description": "Unique plugin id. Same rules as Zotero's `applications.zotero.id`: an email-like string or a GUID in braces. It names the plugin's pref branch (`extensions.<id>.`) and its data folder, so it must never change between versions. A ported Zotero plugin keeps its id.",
+      "type": "string",
+      "maxLength": 128,
+      "oneOf": [
+        { "pattern": "^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+$" },
+        { "pattern": "^\\{[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\\}$" }
+      ]
+    },
+
+    "name": {
+      "description": "Display name. For a name in other languages put `name` in the locale files and use `name_l10n`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "name_l10n": {
+      "description": "Fluent message id (in the plugin's own .ftl files) for the display name. When the id resolves it replaces `name` in Settings > Plugins.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Semantic version, for example 1.4.0 or 2.0.0-beta.3. Zinc compares versions with the same rules as Zotero.Utilities.semverCompare. Decides ADDON_UPGRADE or ADDON_DOWNGRADE.",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "description": { "type": "string", "maxLength": 400 },
+    "description_l10n": { "type": "string", "description": "Fluent message id for the description." },
+    "author": { "type": "string" },
+    "homepage_url": { "type": "string", "format": "uri" },
+    "license": { "description": "SPDX identifier.", "type": "string" },
+
+    "icons": {
+      "description": "Icon files in the package, keyed by size in pixels, as in Zotero. SVG may be given under any key. Used in Settings > Plugins and in permission prompts.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[0-9]+$" },
+      "additionalProperties": { "$ref": "#/$defs/packagePath" }
+    },
+
+    "zinc": {
+      "description": "What this plugin needs from Zinc. Replaces `applications.zotero` (id, strict_min_version, strict_max_version, update_url).",
+      "type": "object",
+      "required": ["api_version"],
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "description": "The `zinc:plugin` API version the component was built against, as MAJOR.MINOR. Zinc loads the plugin if it has the same major version and a minor version at least as high (before 1.0 the minor version must be equal, because 0.x may break between minors).",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+$"
+        },
+        "min_version": {
+          "description": "Lowest Zinc version. Zotero's `strict_min_version`. Below it the plugin shows as incompatible.",
+          "type": "string"
+        },
+        "max_version": {
+          "description": "Highest Zinc version. Zotero's `strict_max_version`. Zinc does NOT enforce this unless `strict_max` is true, because Zotero's habit of pinning it (for example '7.0.*') made plugins stop on every release.",
+          "type": "string"
+        },
+        "strict_max": { "type": "boolean", "default": false },
+        "platforms": {
+          "description": "Operating systems the plugin works on. Default: all.",
+          "type": "array",
+          "items": { "enum": ["windows", "macos", "linux"] },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "main": {
+      "description": "The plugin component and how it runs.",
+      "type": "object",
+      "required": ["wasm"],
+      "additionalProperties": false,
+      "properties": {
+        "wasm": {
+          "description": "Path of the WebAssembly component in the package. Replaces bootstrap.js. The component targets one world of the WIT package `zinc:plugin`: `plugin` (everything), `plugin-minimal`, or one of the smaller per-family worlds (see `world` below).",
+          "$ref": "#/$defs/packagePath"
+        },
+        "world": {
+          "description": "Which world the component was built for.",
+          "enum": ["plugin", "plugin-minimal", "plugin-core", "plugin-library", "plugin-extend", "plugin-ui", "plugin-reader", "plugin-dialogs", "plugin-mcp"],
+          "default": "plugin"
+        },
+        "language": {
+          "description": "Informational: the guest language, shown in Settings > Plugins.",
+          "enum": ["rust", "js", "other"]
+        },
+        "sha256": {
+          "description": "SHA-256 of the .wasm file, lower-case hex. Checked at install and at every load. If it is missing, Zinc computes it at install and pins it.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "startup_timeout_ms": {
+          "description": "Time allowed for install, startup and shutdown hooks. Default 10000, at most 60000. Zotero has no limit; Zinc needs one because a hung plugin is stopped by killing the plugin host process.",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 60000
+        }
+      }
+    },
+
+    "activation_events": {
+      "description": "When Zinc loads the plugin. Zotero starts every enabled plugin at launch, and that is the default here (`onStartup`). A plugin that lists only the events below stays unloaded (no memory, no process time) until one happens. The plugin must declare what it contributes under `contributes` so Zinc can show placeholders and know when to wake it. Zinc then calls `startup` with reason `app-startup` (or `addon-enable`).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(onStartup|onUiReady|onCommand:[\\w.-]+|onMenu:[\\w.-]+|onItemPaneSection:[\\w.-]+|onColumn:[\\w.-]+|onPreferencePane:[\\w.-]+|onReaderEvent:[\\w.-]+|onUriScheme:[\\w+.-]+|onItemSelected|onLibraryChange)$"
+      },
+      "uniqueItems": true,
+      "default": ["onStartup"]
+    },
+
+    "update_url": {
+      "description": "URL of the update manifest (Zotero's `applications.zotero.update_url`). Same JSON shape as Zotero's updates.json: {\"addons\": {\"<id>\": {\"updates\": [{\"version\", \"update_link\", \"update_hash\", \"applications\": {\"zinc\": {\"strict_min_version\"}}}]}}}. `update_link` must be https; `update_hash` (sha256:...) is required. Must be https.",
+      "type": "string",
+      "pattern": "^https://"
+    },
+
+    "permissions": { "$ref": "#/$defs/permissions" },
+    "optional_permissions": {
+      "description": "Permissions the plugin may ask for later with `permissions.request`. Not granted at install. Same shape as `permissions`; an id may not appear in both.",
+      "$ref": "#/$defs/permissions"
+    },
+    "permission_reasons": {
+      "description": "Why the plugin needs a permission, shown in the install prompt and in Settings > Plugins. Keys are permission ids (or `net.hosts`); values are Fluent message ids from the plugin's .ftl files, or plain English text if the value contains a space.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "default_prefs": {
+      "description": "Default values of the plugin's prefs, as Zotero's prefs.js `pref(\"extensions.<id>.key\", value)` calls. Keys are relative to the plugin's own branch. Types are fixed by the default: boolean, 32-bit integer or string.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "boolean" },
+          { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+          { "type": "string", "maxLength": 65536 }
+        ]
+      },
+      "maxProperties": 1000
+    },
+
+    "mcp": {
+      "description": "Tools the plugin offers to AI agents through Zinc's MCP server (plugin-api/wit/mcp.wit). Needs the permission `mcp.expose` AND the user's switch for the plugin in Settings > Plugins (off by default). The tools listed here are the static ones: they show in Settings > Plugins before the plugin runs and are served as soon as it is running. A plugin may also register tools at run time (`mcp.register-tool`). Agents see them as `<short plugin name>__<tool name>` on the HTTP endpoint of the running app only (not on the stdio transport).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/mcpTool" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "locales": {
+      "description": "Fluent localization. Files are `<dir>/<tag>/*.ftl` in the package (Zotero: `locale/<tag>/*.ftl`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default"],
+      "properties": {
+        "default": {
+          "description": "BCP 47 tag used when no locale matches the UI language.",
+          "type": "string"
+        },
+        "available": {
+          "description": "Tags that have a folder. If omitted, Zinc reads the folder names under `dir`.",
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "dir": { "type": "string", "default": "locale" }
+      }
+    },
+
+    "contributes": {
+      "description": "Static declarations of what the plugin adds. They are hints, not a replacement for the runtime calls: they let Zinc show the entry (and wake the plugin on use) before the plugin has started, and let Settings > Plugins list what a plugin does. Entries are checked against the runtime registrations; a runtime registration with no static entry still works. Each extension area (ui, extend, reader) adds its own fields to an entry; unknown fields are allowed here and validated by that area.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commands": { "$ref": "#/$defs/contributionList" },
+        "menus": { "$ref": "#/$defs/contributionList" },
+        "item_pane_sections": { "$ref": "#/$defs/contributionList" },
+        "columns": { "$ref": "#/$defs/contributionList" },
+        "preference_panes": { "$ref": "#/$defs/contributionList" },
+        "reader_events": {
+          "description": "Reader event names the plugin listens to (see reader.wit).",
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "uri_schemes": {
+          "description": "URL schemes the plugin handles, for example `zotero` sub-paths or its own.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9+.-]*$" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "dev": {
+      "description": "Development only. Ignored in a packed plugin; read when a folder is loaded in dev mode.",
+      "type": "object",
+      "properties": {
+        "watch": {
+          "description": "Reload the plugin (shutdown with addon-upgrade, then startup) when this file changes.",
+          "$ref": "#/$defs/packagePath"
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "packagePath": {
+      "description": "A relative path inside the package: '/' as separator, no '..', no leading '/'.",
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))[^\\\\:*?\"<>|]+$"
+    },
+
+    "capability": {
+      "description": "A permission id, always dotted lower-case (`area.thing`, for example `reader.control`; never `annotations:read`). `examples` and `x-risk` list every id that any WIT file or report uses in 0.1 (37 ids); the host rejects ids it does not know. `net.hosts` is not an id here: hosts go under `permissions.net.hosts`. A user's pick in a file dialog or a drop is the consent for that file, so there is no id for file dialogs, and the clipboard and URL ids are the lifecycle ones only.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+      "examples": [
+        "library.read", "library.write", "library.trash", "library.erase",
+        "library.files.read", "library.files.write", "library.files.paths", "library.files.open",
+        "library.fulltext.read", "library.fulltext.write",
+        "library.cite", "library.cite.styles", "library.translate", "library.sync",
+        "clipboard.read", "clipboard.write",
+        "shell.open-url", "shell.open-file", "shell.reveal",
+        "plugins.read", "prefs.app-read",
+        "ui.webview", "ui.windows", "ui.theme", "ui.drop", "ui.navigate",
+        "reader.read", "reader.control", "reader.ui", "reader.themes",
+        "annotations.read", "annotations.write",
+        "note-editor.read", "note-editor.write", "note-editor.control", "note-editor.ui",
+        "mcp.expose"
+      ],
+      "x-risk": {
+        "low": [
+          "library.read", "library.cite", "library.cite.styles", "library.fulltext.read",
+          "clipboard.write", "shell.open-url", "shell.reveal",
+          "ui.theme", "ui.navigate", "reader.ui", "reader.themes", "note-editor.control", "note-editor.ui"
+        ],
+        "medium": [
+          "library.write", "library.trash", "library.files.read", "library.files.paths", "library.translate", "library.sync", "library.fulltext.write",
+          "plugins.read", "prefs.app-read",
+          "ui.windows", "ui.drop",
+          "mcp.expose",
+          "reader.read", "reader.control", "annotations.read", "annotations.write", "note-editor.read", "note-editor.write"
+        ],
+        "high": ["library.erase", "library.files.write", "library.files.open", "clipboard.read", "shell.open-file", "ui.webview"]
+      }
+    },
+
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "description": "Permission ids the plugin uses. Free capabilities need no entry: `prefs` (own branch), `l10n`, `log`, `timers`, `util`, `fs` with the roots `data`, `bundled`, `temp` and user-picked files, and all declarative UI contributions.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" },
+          "uniqueItems": true
+        },
+        "net": {
+          "description": "Network access (`net` interface and any call of another area that makes Zinc fetch a URL for the plugin).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hosts": {
+              "description": "Allowed hosts. Each entry is `scheme://host[:port]`, with a leading `*.` allowed in the host to match subdomains. Without a scheme, https is assumed. `http://` must be written out. Loopback and private-network hosts (a local model server, for example `http://localhost:11434`) must be listed by exact host and port. The single entry `*` means any public host and is shown to the user as a high-risk permission.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(\\*|(https?://)?(\\*\\.)?[A-Za-z0-9.-]+(:[0-9]{1,5})?)$"
+              },
+              "uniqueItems": true,
+              "maxItems": 50
+            }
+          }
+        },
+        "shell": {
+          "description": "Extra detail for `shell.*` capabilities.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemes": {
+              "description": "URL schemes other than http, https and mailto that `shell.open-url` may open, for example `obsidian`. The user is asked on first use of each.",
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9+.-]*$", "not": { "enum": ["file", "javascript", "data", "vbscript", "http", "https", "mailto"] } },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+
+    "mcpTool": {
+      "description": "A tool declared statically. Same fields as `mcp.tool-def` in mcp.wit, with the schemas written as JSON objects rather than JSON text.",
+      "type": "object",
+      "required": ["name", "description", "input_schema"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,48}$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "input_schema": { "type": "object", "description": "JSON Schema of the arguments; an object schema (`type` \"object\" or absent)." },
+        "output_schema": { "type": "object", "description": "JSON Schema of the result, when it is an object with a fixed shape." },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read_only": { "type": "boolean", "default": false, "description": "The tool changes nothing." },
+            "destructive": { "type": "boolean", "default": true, "description": "The tool may delete or overwrite data (meaningful when read_only is false). Say false for tools that only add." },
+            "idempotent": { "type": "boolean", "default": false, "description": "Calling again with the same arguments changes nothing more." }
+          }
+        }
+      }
+    },
+
+    "contributionList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/contribution" }
+    },
+
+    "contribution": {
+      "description": "One static contribution. `id` is the same id the plugin uses when it registers the thing at run time.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[\\w.:-]+$" },
+        "title_l10n": { "type": "string", "description": "Fluent message id of the label or header." },
+        "title": { "type": "string", "description": "Plain label, if there is no localized one." },
+        "icon": { "$ref": "#/$defs/packagePath" },
+        "accelerator": { "type": "string", "description": "Default shortcut, in the notation of the `accelerator` type." },
+        "when": { "type": "string", "description": "Where it shows, as the owning area defines (for example an extension point name from ui.wit or extend.wit)." }
+      },
+      "additionalProperties": true
+    }
+  }
+}

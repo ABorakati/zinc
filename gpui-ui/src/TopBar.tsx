@@ -9,6 +9,9 @@ import { refreshLibraryLists } from "./sync/state";
 import { SyncStatus } from "./sync/SyncStatus";
 import { store } from "./store";
 import { textStyle, tokens, tw } from "./theme";
+import { Menubar, PluginPanelToggles, PluginTabChips } from "./wasmplugins/extend/Chrome";
+import { PluginToolbarSlot } from "./wasmplugins/extend/ToolbarSlot";
+import { pluginSupervisor } from "./wasmplugins/host";
 
 const mode = (): Mode => store.mode();
 const tok = (name: string): string => tokens[mode()][name] ?? "#888";
@@ -161,9 +164,14 @@ export function TopBar() {
 			<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>
 				<PanelButton icon="panel-left" on={leftOpen()} onClick={() => onLibrary() && setLeftOpen(!leftOpen())} />
 			</div>
+			{/* WASM plugins (src/wasmplugins): the File / Edit / View / Go / Tools / Help menubar, only while plugins are running */}
+			<Show when={pluginSupervisor()}>
+				<Menubar />
+			</Show>
 			<div style={t("flex min-w-0 items-center gap-1 py-1 pr-1 pl-0.5")}>
 				<LibraryTabChip active={onLibrary()} onClick={() => store.setActiveTab("library")} />
 				<For each={readers()}>{(tab) => <ReaderTabChip tab={tab} active={store.activeTab() === tab.id} />}</For>
+				<PluginTabChips />
 				<Show when={settingsOpen()}>
 					<SettingsTabChip active={store.activeTab() === SETTINGS_TAB} />
 				</Show>
@@ -171,6 +179,8 @@ export function TopBar() {
 			<div style={{ flexGrow: 1 }} />
 			<div style={t("flex flex-none items-center gap-1")}>
 				{/* Zotero sync: indicator + popover; refresh the lists when changes arrive from Zotero */}
+				<PluginToolbarSlot slot="top-bar" />
+				<PluginPanelToggles />
 				<SyncStatus onChanged={() => refreshLibraryLists(store)} />
 				<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>
 					<PanelButton icon="panel-right" on={rightOpen()} onClick={() => onLibrary() && setRightOpen(!rightOpen())} />

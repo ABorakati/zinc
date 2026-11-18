@@ -15,18 +15,22 @@ export interface ItemAction {
 	id: string;
 	label: string | ((ctx: ItemActionContext) => string);
 	icon?: string;
-	/** Menu section, in this order: "open", "cite", "export", "edit", "maintain" */
-	group?: "open" | "cite" | "export" | "edit" | "maintain";
+	/** Menu section, in this order: "open", "cite", "export", "edit", "maintain", "plugins" (WASM plugin entries, last before Trash) */
+	group?: "open" | "cite" | "export" | "edit" | "maintain" | "plugins";
 	shortcut?: string; // display, e.g. "Ctrl+Shift+C"
 	submenu?: string; // actions of a group sharing this label are shown under one submenu
 	visible?: (ctx: ItemActionContext) => boolean;
+	/** Shown dimmed and not run while this returns true. */
+	disabled?: (ctx: ItemActionContext) => boolean;
 	run: (ctx: ItemActionContext) => void;
 }
 
 export interface CollectionAction {
 	id: string;
-	label: string;
+	label: string | (() => string);
 	icon?: string;
+	/** Left out of the menu while this returns false. */
+	visible?: (ctx: { collectionKey: string; name: string }) => boolean;
 	run: (ctx: { collectionKey: string; name: string }) => void;
 }
 
@@ -63,6 +67,12 @@ const upsert = <T extends { id: string }>(list: T[], x: T) => [...list.filter((y
 export const registerItemAction = (a: ItemAction) => setItemActions((l) => upsert(l, a));
 export const registerCollectionAction = (a: CollectionAction) => setCollectionActions((l) => upsert(l, a));
 export const registerAppAction = (a: AppAction) => setAppActions((l) => upsert(l, a));
+// Removal, for registrations that come and go (WASM plugins: src/wasmplugins). `prefix` removes every id that starts with it.
+const dropId = <T extends { id: string }>(l: T[], id: string, prefix: boolean) => l.filter((y) => !(prefix ? y.id.startsWith(id) : y.id === id));
+export const unregisterItemAction = (id: string, prefix = false) => setItemActions((l) => dropId(l, id, prefix));
+export const unregisterCollectionAction = (id: string, prefix = false) => setCollectionActions((l) => dropId(l, id, prefix));
+export const unregisterAppAction = (id: string, prefix = false) => setAppActions((l) => dropId(l, id, prefix));
+export const unregisterSettingsSection = (id: string, prefix = false) => setSettingsSections((l) => dropId(l, id, prefix));
 /** Always-mounted UI such as a dialog that controls its own open state. */
 export const registerOverlay = (id: string, render: () => JSX.Element) => setOverlays((l) => upsert(l, { id, render }));
 /** A section under the collections tree in the left pane (e.g. saved searches, tags). Lower order first. */

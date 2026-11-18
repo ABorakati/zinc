@@ -1,0 +1,8 @@
+node_modules/
+# The root .gitignore ignores every folder named data/ (the library). These are source and tests.
+!src/imports/data/
+!test/data/
+# staged by scripts/build-plugin.ts (a copy of plugin-api/wit) and build output
+**/wit/deps/
+test/**/fixtures/*/dist/
+test/**/fixtures/*/target/

@@ -12,6 +12,7 @@ import { defaultDir, GROUP_BY, MAX_LEVELS, store, type QMode } from "./store";
 import { isNumericKey, moreColumns, SORT_OPTIONS, sortLabel } from "./table/defs";
 import { shadows, textStyle, tokens, tw, type BoxShadow } from "./theme";
 import { DropdownMenu, type MenuItem } from "./ui";
+import { PluginToolbarSlot } from "./wasmplugins/extend/ToolbarSlot";
 
 const mode = (): Mode => store.mode();
 const t = (cls: string): Style => tw(cls, mode());
@@ -268,6 +269,7 @@ export function Toolbar() {
 			<div style={{ width: 10, flexShrink: 0 }} />
 			<ViewToggle />
 			{/* each menu carries its own 10px left margin and collapses while it is empty (an empty <Show> would add a flex item) */}
+			<PluginToolbarSlot slot="library-toolbar" />
 			<ActionMenu menu="tools" />
 			<ActionMenu menu="add" />
 		</div>

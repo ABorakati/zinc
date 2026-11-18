@@ -1,0 +1,74 @@
+package zinc:plugin@0.1.0;
+
+/// Tools a plugin offers to AI agents through Zinc's MCP server (`http://127.0.0.1:<port>/mcp`, the HTTP endpoint of the running app).
+///
+/// A plugin declares tools in two ways, and may use both:
+///   - statically, in the manifest under `mcp.tools` (name, description, input schema, annotations). Settings > Plugins can show them
+///     before the plugin runs and before the user turns the switch on, and they are served from the moment the plugin is running,
+///     without waiting for `startup` to register them;
+///   - at run time, with `register-tool` below, for tools that depend on state (one tool per configured source, say).
+/// A run-time registration with the same name as a manifest entry replaces it.
+///
+/// Consent has two parts. The manifest must declare the permission `mcp.expose` (`register-tool` and the other calls here return
+/// `error::permission-denied("mcp.expose")` without it, and a manifest `mcp.tools` without it is invalid under the manifest schema), and the user must
+/// turn on the switch for this plugin in Settings > Plugins (off by default). With the switch off the calls here succeed, so a plugin
+/// cannot tell, but no agent sees any tool. A plugin that is not running (stopped, disabled, failed, not yet activated) offers nothing.
+///
+/// An agent sees the tool as `<plugin-short-name>__<name>` with the description prefixed by the plugin's name. Zinc validates the
+/// agent's arguments against `input-schema` and then calls `mcp-handler.on-mcp-call` with the tool's own `name`. The call is queued
+/// behind the plugin's other calls, has the normal per-call time limit, and runs with the plugin's own permissions: a tool that reads
+/// the library needs `library.read`, as anywhere else. A returned `error` becomes an MCP tool error (`isError`), not a protocol error.
+///
+/// Registrations are dropped when the plugin stops, is disabled, or the plugin host restarts (the plugin registers again in
+/// `lifecycle.startup`, as with `extend`).
+interface mcp {
+  use types.{json, error};
+
+  /// Hints for the agent. They map one to one to the MCP tool annotations. Zinc does not enforce them: a tool that says
+  /// `read-only` is still held to the plugin's permissions, but the agent's client may skip its confirmation prompt for it.
+  record tool-annotations {
+    /// The tool changes nothing (no library change, no file written, no setting changed).
+    read-only: bool,
+    /// The tool may delete or overwrite data. Meaningful only when `read-only` is false. Say false for tools that only add.
+    destructive: bool,
+    /// Calling the tool again with the same arguments changes nothing more.
+    idempotent: bool,
+  }
+
+  /// One tool.
+  record tool-def {
+    /// The tool's own name: letters, digits, `_`, `-` and `.`, 1 to 48 characters, unique within the plugin. Zinc adds the plugin prefix.
+    name: string,
+    /// What the tool does and when to use it, written for the agent. Up to 4000 characters. Zinc prefixes the plugin's name.
+    description: string,
+    /// JSON Schema (draft 2020-12 subset supported by Ajv) of the arguments: an object schema, up to 64 KiB.
+    input-schema: json,
+    /// JSON Schema of the result, when it is an object with a fixed shape. The agent then gets it as structured content, and Zinc
+    /// refuses a result that does not match. Leave empty for free-form results.
+    output-schema: option<json>,
+    annotations: tool-annotations,
+  }
+
+  /// Offer a tool to agents. A name that is already registered by this plugin is replaced. At most 64 tools per plugin
+  /// (`limit-exceeded`). A malformed name or schema is `invalid-argument`.
+  register-tool: func(tool: tool-def) -> result<_, error>;
+
+  /// Stop offering a tool (a manifest-declared tool included, until the plugin restarts). `not-found` if it is not registered.
+  unregister-tool: func(name: string) -> result<_, error>;
+
+  /// The tools this plugin offers now: the manifest's, then the run-time ones. For a plugin that wants to check what it registered.
+  list-tools: func() -> list<tool-def>;
+}
+
+/// What the plugin implements to serve its tools. A plugin that registers no tools never has this called, but a component built for
+/// a world with `mcp-handler` still has to export it (the JS SDK's `definePlugin` and the Rust SDK fill it in).
+interface mcp-handler {
+  use types.{json, error};
+
+  /// Run one tool. `tool` is the name the plugin registered (not the prefixed name an agent sees). `args` is the JSON text of the
+  /// arguments object, already checked against the tool's input schema. Return the result as JSON text (any JSON value; an object
+  /// when the tool has an output schema). Plain text that is not JSON is shown to the agent as it is. Return an `error` to make the
+  /// agent's call fail with that message: `not-found` for an item that does not exist, `invalid-argument` for a value the schema could
+  /// not catch, `permission-denied` when a permission is missing, `conflict`, `unavailable` ...
+  on-mcp-call: func(tool: string, args: json) -> result<json, error>;
+}

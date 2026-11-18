@@ -1,0 +1,12 @@
+package zinc:fixture@0.1.0;
+
+/// A subset of `plugin-minimal` for the test plugins: the lifecycle and events exports and three imports. The host accepts a
+/// component that exports fewer interfaces than the full world as long as it exports `lifecycle` (see world.wit).
+world hello {
+  import zinc:plugin/prefs@0.1.0;
+  import zinc:plugin/log@0.1.0;
+  import zinc:plugin/timers@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/events@0.1.0;
+}

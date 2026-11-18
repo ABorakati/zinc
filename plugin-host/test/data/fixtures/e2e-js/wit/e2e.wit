@@ -1,0 +1,12 @@
+package zinc:e2e@0.1.0;
+
+/// The data area's end-to-end test plugin: queries and writes the library, and receives notifier batches.
+world e2e {
+  import zinc:plugin/log@0.1.0;
+  import zinc:plugin/library@0.1.0;
+  import zinc:plugin/notifier@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/events@0.1.0;
+  export zinc:plugin/notifier-handler@0.1.0;
+}

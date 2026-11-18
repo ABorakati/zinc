@@ -3,6 +3,8 @@
 import { createSignal } from "solid-js";
 import { api, type ZoteroSchema } from "../api";
 import type { ItemRow } from "../contracts";
+import { isPluginColumn, pluginColumn } from "../wasmplugins/extend/columns";
+export { pluginColumns } from "../wasmplugins/extend/columns";
 
 export interface Column {
 	id: string;
@@ -16,6 +18,16 @@ export interface Column {
 	/** header shows an icon instead of the label */
 	icon?: "attachments" | "notes";
 	get(it: ItemRow): string;
+	/** WASM plugin columns: how to draw the cell besides its text (wasmplugins/extend/columns.ts). Absent for built-in columns. */
+	cellStyle?(it: ItemRow): CellLook | undefined;
+}
+
+/** Colour (a `types.color` of the plugin API), text style and tooltip of a plugin cell. */
+export interface CellLook {
+	color?: unknown;
+	style?: "normal" | "bold" | "italic" | "muted" | "strikethrough";
+	tooltip?: string;
+	chips?: { text: string; color?: unknown }[];
 }
 
 export const FALLBACK_LABELS: Record<string, string> = {
@@ -141,6 +153,7 @@ export function labelOf(id: string): string {
 const cache = new Map<string, Column>();
 /** Column definition for an id; the label is read live so it follows the schema once it arrives. */
 export function getColumn(id: string): Column {
+	if (isPluginColumn(id)) return pluginColumn(id); // a WASM plugin's column (wasmplugins/extend/columns.ts)
 	let c = cache.get(id);
 	if (!c) {
 		const s = SPECIAL[id];
@@ -165,7 +178,7 @@ export function moreColumns(): { id: string; label: string }[] {
 		.sort((a, b) => a.label.localeCompare(b.label));
 }
 
-export const isKnownColumn = (id: string) => id in SPECIAL || MENU_COLUMNS.includes(id) || /^[A-Za-z][A-Za-z0-9]*$/.test(id);
+export const isKnownColumn = (id: string) => id in SPECIAL || MENU_COLUMNS.includes(id) || isPluginColumn(id) || /^[A-Za-z][A-Za-z0-9]*$/.test(id);
 
 /** Sort keys of the common columns (SortBar chips list these first). */
 export const SORT_OPTIONS = [

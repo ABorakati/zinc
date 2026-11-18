@@ -1,0 +1,688 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zinc.invalid/plugin-api/ui-schema/ui-tree.schema.json",
+  "title": "Zinc plugin UI contract (trees, patches, row content, styles)",
+  "description": "The full JSON contract for declarative UI in `plugin-api/wit/ui.wit`. Root schema (and `$defs.tree`): a UI tree (`content-update.json`, `dialog-spec.content`, `window-spec.content`). `$defs.patchSet`: an incremental patch set (`content-update.patch`). `$defs.node` (`$defs.rowContent`): custom row or cell content (`row.content`, `cell.content`). `$defs.style`: a node or row style (`row.style`). `$defs.namedStyles`: named styles (`row-batch.styles`). Rules: camelCase field names; kebab-case enum and variant-case names; a node's `type` is the node-kind name; `children` are nested nodes; `on` maps event kinds to a handler id or binding object; absent fields use their defaults.",
+  "type": "object",
+  "required": ["root"],
+  "additionalProperties": false,
+  "properties": {
+    "rev": { "type": "integer", "minimum": 0, "description": "Tree revision. Events echo it. Default: the host counts up." },
+    "styles": { "$ref": "#/$defs/namedStyles" },
+    "root": { "$ref": "#/$defs/node" }
+  },
+  "$defs": {
+    "tree": {
+      "description": "A UI tree (`content-update.json`, `dialog-spec.content`, `window-spec.content`).",
+      "type": "object",
+      "required": ["root"],
+      "additionalProperties": false,
+      "properties": {
+        "rev": { "type": "integer", "minimum": 0, "description": "Tree revision. Events echo it. Default: the host counts up." },
+        "styles": { "$ref": "#/$defs/namedStyles" },
+        "root": { "$ref": "#/$defs/node" }
+      }
+    },
+    "namedStyles": {
+      "description": "Named styles (`tree.styles`, `row-batch.styles`, `patchOp` `set-styles`), referenced by node `class`.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/namedStyle" }
+    },
+    "rowContent": {
+      "description": "Custom content of a list/table row or cell (`row.content`, `cell.content`).",
+      "$ref": "#/$defs/node"
+    },
+    "patchOp": {
+      "description": "One operation in a `patchSet`. `op` selects the operation.",
+      "type": "object",
+      "required": ["op"],
+      "oneOf": [
+        {
+          "description": "Replace the keyed node's own properties and kind; its children stay.",
+          "properties": {
+            "op": { "const": "set-node" },
+            "key": { "type": "string" },
+            "node": { "$ref": "#/$defs/node" }
+          },
+          "required": ["op", "key", "node"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Replace the keyed node and everything under it with `node` (and merge `styles`, if any).",
+          "properties": {
+            "op": { "const": "replace" },
+            "key": { "type": "string" },
+            "node": { "$ref": "#/$defs/node" },
+            "styles": { "$ref": "#/$defs/namedStyles" }
+          },
+          "required": ["op", "key", "node"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Insert `node` as a child of `parent` at `index` (and merge `styles`, if any).",
+          "properties": {
+            "op": { "const": "insert" },
+            "parent": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0 },
+            "node": { "$ref": "#/$defs/node" },
+            "styles": { "$ref": "#/$defs/namedStyles" }
+          },
+          "required": ["op", "parent", "index", "node"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove the keyed node and everything under it.",
+          "properties": {
+            "op": { "const": "remove" },
+            "key": { "type": "string" }
+          },
+          "required": ["op", "key"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Move the keyed node to `parent` at `index`.",
+          "properties": {
+            "op": { "const": "move" },
+            "key": { "type": "string" },
+            "parent": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["op", "key", "parent", "index"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Add or replace named styles.",
+          "properties": {
+            "op": { "const": "set-styles" },
+            "styles": { "$ref": "#/$defs/namedStyles" }
+          },
+          "required": ["op", "styles"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "patchSet": {
+      "description": "Incremental update to a mounted tree (`content-update.patch`). If `baseRev` does not equal the tree's current `rev`, the host drops the patch and calls `ui-events.resync`.",
+      "type": "object",
+      "required": ["baseRev", "rev", "ops"],
+      "additionalProperties": false,
+      "properties": {
+        "baseRev": { "type": "integer", "minimum": 0 },
+        "rev": { "type": "integer", "minimum": 0 },
+        "ops": { "type": "array", "items": { "$ref": "#/$defs/patchOp" } }
+      }
+    },
+    "text": {
+      "description": "Text for the user. A string is literal text (`plain`). An object is a Fluent message of the plugin (`localized`).",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string" },
+            "args": {
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "number" },
+                  { "type": "object", "required": ["date"], "additionalProperties": false, "properties": { "date": { "type": "integer", "description": "epoch ms" } } }
+                ]
+              }
+            },
+            "fallback": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "icon": {
+      "description": "A string is a built-in icon name (Lucide). Objects: a file in the plugin package, or inline SVG. One-color masks; use an `image` node for color pictures.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object", "required": ["bundled"], "additionalProperties": false, "properties": { "bundled": { "type": "string" } } },
+        { "type": "object", "required": ["svg"], "additionalProperties": false, "properties": { "svg": { "type": "string" } } }
+      ]
+    },
+    "colorToken": {
+      "enum": [
+        "background", "foreground", "card", "muted", "muted-foreground", "popover", "popover-foreground", "border", "input", "ring",
+        "primary", "primary-foreground", "primary-soft", "primary-tint", "primary-line", "primary-deep",
+        "secondary", "secondary-foreground", "accent", "accent-foreground",
+        "destructive", "destructive-foreground", "success", "success-foreground", "warning", "warning-foreground", "error", "error-foreground",
+        "palette-blue", "palette-sky", "palette-green", "palette-amber", "palette-rust", "palette-rose", "palette-violet", "palette-slate"
+      ]
+    },
+    "color": {
+      "description": "The JSON form of `types.color` (types.wit): a theme token name, a fixed '#rrggbb' / '#rrggbbaa' (`rgba`), a token with alpha, or a fixed color per mode (`themed`).",
+      "oneOf": [
+        { "$ref": "#/$defs/colorToken" },
+        { "type": "string", "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" },
+        {
+          "type": "object", "required": ["token", "alpha"], "additionalProperties": false,
+          "properties": { "token": { "$ref": "#/$defs/colorToken" }, "alpha": { "type": "integer", "minimum": 0, "maximum": 255 } }
+        },
+        {
+          "type": "object", "required": ["light", "dark"], "additionalProperties": false,
+          "properties": {
+            "light": { "type": "string", "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" },
+            "dark": { "type": "string", "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" }
+          }
+        }
+      ]
+    },
+    "space": {
+      "description": "An integer is a step of the spacing scale (n * 4 px). A string like '10px' is a pixel value.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 255 },
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?px$" }
+      ]
+    },
+    "dim": {
+      "description": "An integer is a spacing step. '120px', '50%', or one of auto, fill, content.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 255 },
+        { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(px|%)$" },
+        { "enum": ["auto", "fill", "content"] }
+      ]
+    },
+    "edges": {
+      "description": "One space for all four edges, or an object with top / end / bottom / start (and x / y shorthands).",
+      "oneOf": [
+        { "$ref": "#/$defs/space" },
+        {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "top": { "$ref": "#/$defs/space" }, "end": { "$ref": "#/$defs/space" },
+            "bottom": { "$ref": "#/$defs/space" }, "start": { "$ref": "#/$defs/space" },
+            "x": { "$ref": "#/$defs/space" }, "y": { "$ref": "#/$defs/space" }
+          }
+        }
+      ]
+    },
+    "border": {
+      "type": "object", "required": ["width", "color"], "additionalProperties": false,
+      "properties": { "width": { "type": "number" }, "color": { "$ref": "#/$defs/color" }, "dashed": { "type": "boolean" } }
+    },
+    "gridSpan": {
+      "type": "object", "required": ["span"], "additionalProperties": false,
+      "properties": { "start": { "type": "integer", "minimum": 1 }, "span": { "type": "integer", "minimum": 1 } }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": { "enum": ["row", "column", "row-reverse", "column-reverse"] },
+        "wrap": { "type": "boolean" },
+        "alignItems": { "enum": ["start", "center", "end", "stretch", "baseline"] },
+        "justifyContent": { "enum": ["start", "center", "end", "space-between", "space-around", "space-evenly"] },
+        "gap": { "$ref": "#/$defs/space" },
+        "alignSelf": { "enum": ["start", "center", "end", "stretch", "baseline"] },
+        "flexGrow": { "type": "number", "minimum": 0 },
+        "flexShrink": { "type": "number", "minimum": 0 },
+        "flexBasis": { "$ref": "#/$defs/dim" },
+        "width": { "$ref": "#/$defs/dim" },
+        "height": { "$ref": "#/$defs/dim" },
+        "minWidth": { "$ref": "#/$defs/dim" },
+        "minHeight": { "$ref": "#/$defs/dim" },
+        "maxWidth": { "$ref": "#/$defs/dim" },
+        "maxHeight": { "$ref": "#/$defs/dim" },
+        "aspectRatio": { "type": "number", "exclusiveMinimum": 0 },
+        "padding": { "$ref": "#/$defs/edges" },
+        "margin": { "$ref": "#/$defs/edges" },
+        "overflow": { "enum": ["visible", "hidden", "scroll", "auto"] },
+        "position": { "enum": ["relative", "absolute"] },
+        "inset": { "$ref": "#/$defs/edges" },
+        "zIndex": { "type": "integer" },
+        "gridColumn": { "$ref": "#/$defs/gridSpan" },
+        "gridRow": { "$ref": "#/$defs/gridSpan" },
+        "background": { "$ref": "#/$defs/color" },
+        "foreground": { "$ref": "#/$defs/color" },
+        "border": { "$ref": "#/$defs/border" },
+        "borderTop": { "$ref": "#/$defs/border" },
+        "borderBottom": { "$ref": "#/$defs/border" },
+        "borderStart": { "$ref": "#/$defs/border" },
+        "borderEnd": { "$ref": "#/$defs/border" },
+        "radius": { "enum": ["none", "xs", "sm", "md", "lg", "xl", "full"] },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "shadow": { "enum": ["none", "raised", "pill"] },
+        "cursor": { "enum": ["standard", "pointer", "text", "grab", "grabbing", "not-allowed", "crosshair", "move", "wait", "help"] },
+        "fontSize": { "enum": ["xs", "sm", "base", "lg", "xl", "xl2", "xl3"] },
+        "fontFamily": { "enum": ["sans", "title", "mono"] },
+        "fontWeight": { "enum": ["normal", "medium", "semibold", "bold"] },
+        "italic": { "type": "boolean" },
+        "underline": { "type": "boolean" },
+        "strike": { "type": "boolean" },
+        "lineHeight": { "type": "number", "exclusiveMinimum": 0 },
+        "textAlign": { "enum": ["start", "center", "end", "justify"] },
+        "textWrap": { "enum": ["wrap", "nowrap", "truncate"] },
+        "maxLines": { "type": "integer", "minimum": 1, "maximum": 255 }
+      }
+    },
+    "stateStyles": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "hover": { "$ref": "#/$defs/style" },
+        "pressed": { "$ref": "#/$defs/style" },
+        "focusVisible": { "$ref": "#/$defs/style" },
+        "disabled": { "$ref": "#/$defs/style" },
+        "selected": { "$ref": "#/$defs/style" }
+      }
+    },
+    "namedStyle": {
+      "type": "object", "required": ["name"], "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "style": { "$ref": "#/$defs/style" },
+        "states": { "$ref": "#/$defs/stateStyles" }
+      }
+    },
+    "eventKind": {
+      "enum": [
+        "press", "double-press", "context-menu", "change", "input", "submit", "focus", "blur", "key-down", "key-up",
+        "hover-enter", "hover-leave", "toggle", "select", "activate", "sort", "resize", "scroll", "drop", "drag-start", "close",
+        "message", "web", "pointer-down", "pointer-move", "pointer-up", "wheel", "view-changed", "visible", "embed"
+      ]
+    },
+    "binding": {
+      "description": "A handler id, or a binding object.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object", "required": ["handler"], "additionalProperties": false,
+          "properties": {
+            "handler": { "type": "string" },
+            "debounceMs": { "type": "integer", "minimum": 0 },
+            "throttleMs": { "type": "integer", "minimum": 0 },
+            "keys": { "type": "array", "items": { "type": "string" } },
+            "preventDefault": { "type": "boolean" },
+            "stopPropagation": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "a11y": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": ["none", "button", "link", "heading", "list-box", "list-item", "tab", "tab-list", "tab-panel", "dialog", "alert", "status", "region", "image", "group", "navigation", "toolbar", "tooltip", "menu", "menu-item", "separator", "progress-bar", "slider", "text-box", "search-box", "check-box", "radio", "switch", "grid", "tree"]
+        },
+        "label": { "$ref": "#/$defs/text" },
+        "description": { "$ref": "#/$defs/text" },
+        "live": { "enum": ["off", "polite", "assertive"] },
+        "hidden": { "type": "boolean" },
+        "tabIndex": { "type": "integer", "minimum": -128, "maximum": 127 }
+      }
+    },
+    "dragPayload": {
+      "oneOf": [
+        { "type": "object", "required": ["items"], "additionalProperties": false, "properties": { "items": { "type": "array", "items": { "type": "string" } } } },
+        { "type": "object", "required": ["text"], "additionalProperties": false, "properties": { "text": { "type": "string" } } },
+        { "type": "object", "required": ["custom"], "additionalProperties": false, "properties": { "custom": { "type": "string" } } }
+      ]
+    },
+    "dropTarget": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "accepts": { "type": "array", "items": { "enum": ["items", "files", "text", "custom"] } },
+        "highlight": { "type": "boolean" }
+      }
+    },
+    "menuItem": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["item", "check", "radio", "separator", "heading", "submenu"], "description": "Default: item, or submenu when `children` is present." },
+        "id": { "type": "string" },
+        "label": { "$ref": "#/$defs/text" },
+        "icon": { "$ref": "#/$defs/icon" },
+        "shortcut": { "type": "string" },
+        "checked": { "type": "boolean" },
+        "disabled": { "type": "boolean" },
+        "hidden": { "type": "boolean" },
+        "danger": { "type": "boolean" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/menuItem" } }
+      }
+    },
+    "menu": {
+      "type": "object", "required": ["items"], "additionalProperties": false,
+      "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/menuItem" } } }
+    },
+    "choice": {
+      "type": "object", "required": ["value", "label"], "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "$ref": "#/$defs/text" },
+        "icon": { "$ref": "#/$defs/icon" },
+        "description": { "$ref": "#/$defs/text" },
+        "disabled": { "type": "boolean" },
+        "group": { "$ref": "#/$defs/text" }
+      }
+    },
+    "suggestion": {
+      "type": "object", "required": ["value", "label"], "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "$ref": "#/$defs/text" },
+        "detail": { "$ref": "#/$defs/text" },
+        "icon": { "$ref": "#/$defs/icon" }
+      }
+    },
+    "suggest": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/$defs/suggestion" } },
+        "dynamic": { "type": "boolean" },
+        "minChars": { "type": "integer", "minimum": 0 },
+        "debounceMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sortSpec": {
+      "type": "object", "required": ["column", "direction"], "additionalProperties": false,
+      "properties": { "column": { "type": "string" }, "direction": { "enum": ["ascending", "descending"] } }
+    },
+    "cell": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "text": { "$ref": "#/$defs/text" },
+        "icon": { "$ref": "#/$defs/icon" },
+        "tooltip": { "$ref": "#/$defs/text" },
+        "color": { "$ref": "#/$defs/color" },
+        "bold": { "type": "boolean" },
+        "sortValue": { "type": ["string", "number", "boolean", "null"] },
+        "content": { "$ref": "#/$defs/node" }
+      }
+    },
+    "row": {
+      "type": "object", "required": ["id"], "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "depth": { "type": "integer", "minimum": 0 },
+        "expandable": { "type": "boolean" },
+        "expanded": { "type": "boolean" },
+        "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+        "content": { "$ref": "#/$defs/node" },
+        "height": { "type": "number" },
+        "style": { "$ref": "#/$defs/style" },
+        "tooltip": { "$ref": "#/$defs/text" },
+        "draggable": { "$ref": "#/$defs/dragPayload" },
+        "disabled": { "type": "boolean" }
+      }
+    },
+    "rowsSource": {
+      "description": "An array is the rows (inline). An object with `count` is a virtual list: the host asks for ranges.",
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "#/$defs/row" } },
+        {
+          "type": "object", "required": ["count", "rowHeight"], "additionalProperties": false,
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "rowHeight": { "type": "number", "exclusiveMinimum": 0 },
+            "overscan": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "linkTarget": {
+      "oneOf": [
+        { "type": "object", "required": ["url"], "additionalProperties": false, "properties": { "url": { "type": "string" } } },
+        { "type": "object", "required": ["handler"], "additionalProperties": false, "properties": { "handler": { "type": "string" } } }
+      ]
+    },
+    "textRun": {
+      "description": "A string is one plain run.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object", "required": ["text"], "additionalProperties": false,
+          "properties": {
+            "text": { "$ref": "#/$defs/text" },
+            "bold": { "type": "boolean" }, "italic": { "type": "boolean" }, "underline": { "type": "boolean" },
+            "strike": { "type": "boolean" }, "mono": { "type": "boolean" },
+            "color": { "$ref": "#/$defs/color" },
+            "size": { "enum": ["xs", "sm", "base", "lg", "xl", "xl2", "xl3"] },
+            "link": { "$ref": "#/$defs/linkTarget" }
+          }
+        }
+      ]
+    },
+    "imageSource": {
+      "oneOf": [
+        { "type": "object", "required": ["asset"], "additionalProperties": false, "properties": { "asset": { "type": "string" } } },
+        { "type": "object", "required": ["png"], "additionalProperties": false, "properties": { "png": { "type": "string", "contentEncoding": "base64" } } },
+        { "type": "object", "required": ["jpeg"], "additionalProperties": false, "properties": { "jpeg": { "type": "string", "contentEncoding": "base64" } } },
+        { "type": "object", "required": ["svg"], "additionalProperties": false, "properties": { "svg": { "type": "string" } } },
+        { "type": "object", "required": ["attachment"], "additionalProperties": false, "properties": { "attachment": { "type": "string", "pattern": "^[A-Z0-9]{8}$" } } }
+      ]
+    },
+    "shapeStyle": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "fill": { "$ref": "#/$defs/color" },
+        "stroke": {
+          "type": "object", "required": ["color", "width"], "additionalProperties": false,
+          "properties": { "color": { "$ref": "#/$defs/color" }, "width": { "type": "number" }, "dashed": { "type": "boolean" }, "roundCaps": { "type": "boolean" } }
+        },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "hit": { "type": "string" },
+        "hoverTip": { "$ref": "#/$defs/text" }
+      }
+    },
+    "viewBox": {
+      "type": "object", "required": ["x", "y", "width", "height"], "additionalProperties": false,
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "width": { "type": "number" }, "height": { "type": "number" }, "zoom": { "type": "number" } }
+    },
+    "drawOp": {
+      "description": "`op` is the draw-op case name. Fields follow the WIT records; `style` is a shapeStyle.",
+      "type": "object", "required": ["op"],
+      "oneOf": [
+        { "properties": { "op": { "const": "rect" }, "x": { "type": "number" }, "y": { "type": "number" }, "width": { "type": "number" }, "height": { "type": "number" }, "cornerRadius": { "type": "number" }, "style": { "$ref": "#/$defs/shapeStyle" } }, "required": ["op", "x", "y", "width", "height"], "additionalProperties": false },
+        { "properties": { "op": { "const": "ellipse" }, "cx": { "type": "number" }, "cy": { "type": "number" }, "rx": { "type": "number" }, "ry": { "type": "number" }, "style": { "$ref": "#/$defs/shapeStyle" } }, "required": ["op", "cx", "cy", "rx", "ry"], "additionalProperties": false },
+        { "properties": { "op": { "const": "line" }, "x1": { "type": "number" }, "y1": { "type": "number" }, "x2": { "type": "number" }, "y2": { "type": "number" }, "style": { "$ref": "#/$defs/shapeStyle" } }, "required": ["op", "x1", "y1", "x2", "y2"], "additionalProperties": false },
+        { "properties": { "op": { "const": "polyline" }, "points": { "type": "array", "items": { "type": "number" } }, "closed": { "type": "boolean" }, "style": { "$ref": "#/$defs/shapeStyle" } }, "required": ["op", "points"], "additionalProperties": false },
+        { "properties": { "op": { "const": "path" }, "d": { "type": "string" }, "style": { "$ref": "#/$defs/shapeStyle" } }, "required": ["op", "d"], "additionalProperties": false },
+        { "properties": { "op": { "const": "text" }, "x": { "type": "number" }, "y": { "type": "number" }, "text": { "$ref": "#/$defs/text" }, "size": { "enum": ["xs", "sm", "base", "lg", "xl", "xl2", "xl3"] }, "weight": { "enum": ["normal", "medium", "semibold", "bold"] }, "family": { "enum": ["sans", "title", "mono"] }, "color": { "$ref": "#/$defs/color" }, "anchor": { "enum": ["start", "middle", "end"] }, "maxWidth": { "type": "number" }, "hit": { "type": "string" } }, "required": ["op", "x", "y", "text"], "additionalProperties": false },
+        { "properties": { "op": { "const": "image" }, "source": { "$ref": "#/$defs/imageSource" }, "x": { "type": "number" }, "y": { "type": "number" }, "width": { "type": "number" }, "height": { "type": "number" }, "hit": { "type": "string" } }, "required": ["op", "source", "x", "y", "width", "height"], "additionalProperties": false },
+        { "properties": { "op": { "const": "push-group" }, "translateX": { "type": "number" }, "translateY": { "type": "number" }, "scale": { "type": "number" }, "rotateDegrees": { "type": "number" }, "clip": { "$ref": "#/$defs/viewBox" }, "opacity": { "type": "number" } }, "required": ["op"], "additionalProperties": false },
+        { "properties": { "op": { "const": "pop-group" } }, "required": ["op"], "additionalProperties": false }
+      ]
+    },
+    "nodeBase": {
+      "description": "Properties every node has. `children` are nested nodes.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "key": { "type": "string", "description": "Stable identity. Needed for patches, host-kept state, focus, events with a node key." },
+        "name": { "type": "string", "description": "Form field name." },
+        "pref": { "type": "string", "description": "Bind the control's value to one of the plugin's own preferences (Zotero's preference=\"...\")." },
+        "class": { "type": "array", "items": { "type": "string" } },
+        "style": { "$ref": "#/$defs/style" },
+        "states": { "$ref": "#/$defs/stateStyles" },
+        "on": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/eventKind" },
+          "additionalProperties": { "$ref": "#/$defs/binding" }
+        },
+        "a11y": { "$ref": "#/$defs/a11y" },
+        "tooltip": { "$ref": "#/$defs/text" },
+        "contextMenu": { "$ref": "#/$defs/menu" },
+        "disabled": { "type": "boolean" },
+        "hidden": { "type": "boolean" },
+        "draggable": { "$ref": "#/$defs/dragPayload" },
+        "dropTarget": { "$ref": "#/$defs/dropTarget" },
+        "autoFocus": { "type": "boolean" },
+        "testId": { "type": "string" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/node" } }
+      },
+      "required": ["type"]
+    },
+    "node": {
+      "description": "A node. `type` selects the kind; the kind's own fields sit beside the common ones.",
+      "oneOf": [
+        { "$ref": "#/$defs/n-box" }, { "$ref": "#/$defs/n-grid" }, { "$ref": "#/$defs/n-scroll" }, { "$ref": "#/$defs/n-split" },
+        { "$ref": "#/$defs/n-tabs" }, { "$ref": "#/$defs/n-deck" }, { "$ref": "#/$defs/n-section" }, { "$ref": "#/$defs/n-group" },
+        { "$ref": "#/$defs/n-toolbar" }, { "$ref": "#/$defs/n-card" }, { "$ref": "#/$defs/n-spacer" }, { "$ref": "#/$defs/n-separator" },
+        { "$ref": "#/$defs/n-text" }, { "$ref": "#/$defs/n-link" }, { "$ref": "#/$defs/n-image" }, { "$ref": "#/$defs/n-icon" },
+        { "$ref": "#/$defs/n-progress" }, { "$ref": "#/$defs/n-badge" }, { "$ref": "#/$defs/n-callout" }, { "$ref": "#/$defs/n-rich-text" },
+        { "$ref": "#/$defs/n-code" }, { "$ref": "#/$defs/n-skeleton" },
+        { "$ref": "#/$defs/n-button" }, { "$ref": "#/$defs/n-checkbox" }, { "$ref": "#/$defs/n-switch" }, { "$ref": "#/$defs/n-radio-group" },
+        { "$ref": "#/$defs/n-select" }, { "$ref": "#/$defs/n-text-input" }, { "$ref": "#/$defs/n-number-input" }, { "$ref": "#/$defs/n-slider" },
+        { "$ref": "#/$defs/n-color-input" }, { "$ref": "#/$defs/n-date-input" }, { "$ref": "#/$defs/n-token-input" }, { "$ref": "#/$defs/n-form" },
+        { "$ref": "#/$defs/n-list-view" }, { "$ref": "#/$defs/n-table" }, { "$ref": "#/$defs/n-popover" },
+        { "$ref": "#/$defs/n-canvas" }, { "$ref": "#/$defs/n-web-view" }, { "$ref": "#/$defs/n-embed" }
+      ]
+    },
+
+    "n-box": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "box" } } }], "unevaluatedProperties": false },
+    "n-grid": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "grid" }, "columns": { "type": "array", "items": { "$ref": "#/$defs/dim" } }, "rows": { "type": "array", "items": { "$ref": "#/$defs/dim" } }, "columnGap": { "$ref": "#/$defs/space" }, "rowGap": { "$ref": "#/$defs/space" } }, "required": ["columns"] }],
+      "unevaluatedProperties": false
+    },
+    "n-scroll": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "scroll" }, "axis": { "enum": ["vertical", "horizontal", "both"] }, "scrollTo": { "type": "object", "required": ["key"], "additionalProperties": false, "properties": { "key": { "type": "string" }, "align": { "enum": ["start", "center", "end", "nearest"] } } }, "stickToEnd": { "type": "boolean" }, "alwaysShowBars": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-split": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "split" }, "orientation": { "enum": ["row", "column"] }, "sizes": { "type": "array", "items": { "type": "number" } }, "minSizes": { "type": "array", "items": { "type": "number" } }, "persistKey": { "type": "string" }, "collapsible": { "type": "array", "items": { "type": "integer" } } }, "required": ["orientation"] }],
+      "unevaluatedProperties": false
+    },
+    "n-tabs": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "tabs" }, "tabs": { "type": "array", "items": { "type": "object", "required": ["key", "label"], "additionalProperties": false, "properties": { "key": { "type": "string" }, "label": { "$ref": "#/$defs/text" }, "icon": { "$ref": "#/$defs/icon" }, "closable": { "type": "boolean" }, "disabled": { "type": "boolean" }, "badge": { "type": "integer", "minimum": 0 } } } }, "selected": { "type": "string" }, "look": { "enum": ["underline", "pills", "vertical"] }, "keepAlive": { "type": "boolean" } }, "required": ["tabs"] }],
+      "unevaluatedProperties": false
+    },
+    "n-deck": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "deck" }, "selected": { "type": "integer", "minimum": 0 } }, "required": ["selected"] }],
+      "unevaluatedProperties": false
+    },
+    "n-section": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "section" }, "title": { "$ref": "#/$defs/text" }, "icon": { "$ref": "#/$defs/icon" }, "open": { "type": "boolean" }, "summary": { "$ref": "#/$defs/text" }, "count": { "type": "integer", "minimum": 0 }, "buttons": { "type": "array", "items": { "type": "object", "required": ["id", "icon"], "additionalProperties": false, "properties": { "id": { "type": "string" }, "icon": { "$ref": "#/$defs/icon" }, "label": { "$ref": "#/$defs/text" }, "disabled": { "type": "boolean" }, "hidden": { "type": "boolean" } } } }, "persistKey": { "type": "string" } }, "required": ["title"] }],
+      "unevaluatedProperties": false
+    },
+    "n-group": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "group" }, "caption": { "$ref": "#/$defs/text" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-toolbar": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "toolbar" }, "overflow": { "enum": ["wrap", "scroll", "menu"] } } }],
+      "unevaluatedProperties": false
+    },
+    "n-card": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "card" } } }], "unevaluatedProperties": false },
+    "n-spacer": { "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "spacer" } } }], "unevaluatedProperties": false },
+    "n-separator": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "separator" }, "orientation": { "enum": ["horizontal", "vertical"] } } }],
+      "unevaluatedProperties": false
+    },
+    "n-text": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "text" }, "kind": { "enum": ["body", "label", "caption", "heading1", "heading2", "heading3", "title", "mono"] }, "runs": { "type": "array", "items": { "$ref": "#/$defs/textRun" } }, "text": { "$ref": "#/$defs/text", "description": "Shorthand for one plain run." }, "selectable": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-link": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "link" }, "label": { "$ref": "#/$defs/text" }, "target": { "$ref": "#/$defs/linkTarget" }, "icon": { "$ref": "#/$defs/icon" } }, "required": ["label", "target"] }],
+      "unevaluatedProperties": false
+    },
+    "n-image": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "image" }, "source": { "$ref": "#/$defs/imageSource" }, "fit": { "enum": ["contain", "cover", "fill", "none"] }, "alt": { "$ref": "#/$defs/text" } }, "required": ["source"] }],
+      "unevaluatedProperties": false
+    },
+    "n-icon": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "icon" }, "icon": { "$ref": "#/$defs/icon" }, "size": { "type": "number" }, "color": { "$ref": "#/$defs/color" }, "spin": { "type": "boolean" } }, "required": ["icon"] }],
+      "unevaluatedProperties": false
+    },
+    "n-progress": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "progress" }, "value": { "type": "number", "minimum": 0, "maximum": 1 }, "look": { "enum": ["bar", "ring", "spinner"] }, "label": { "$ref": "#/$defs/text" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-badge": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "badge" }, "label": { "$ref": "#/$defs/text" }, "tone": { "enum": ["neutral", "info", "success", "warning", "error"] }, "color": { "$ref": "#/$defs/color" }, "icon": { "$ref": "#/$defs/icon" }, "removable": { "type": "boolean" } }, "required": ["label"] }],
+      "unevaluatedProperties": false
+    },
+    "n-callout": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "callout" }, "tone": { "enum": ["neutral", "info", "success", "warning", "error"] }, "title": { "$ref": "#/$defs/text" }, "message": { "$ref": "#/$defs/text" }, "icon": { "$ref": "#/$defs/icon" }, "dismissible": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-rich-text": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "rich-text" }, "format": { "enum": ["markdown", "html-subset"] }, "source": { "type": "string" }, "selectable": { "type": "boolean" }, "linkHandler": { "type": "string" } }, "required": ["format", "source"] }],
+      "unevaluatedProperties": false
+    },
+    "n-code": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "code" }, "source": { "type": "string" }, "language": { "type": "string" }, "lineNumbers": { "type": "boolean" }, "wrap": { "type": "boolean" }, "copyButton": { "type": "boolean" } }, "required": ["source"] }],
+      "unevaluatedProperties": false
+    },
+    "n-skeleton": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "skeleton" }, "width": { "$ref": "#/$defs/dim" }, "height": { "$ref": "#/$defs/dim" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-button": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "button" }, "label": { "$ref": "#/$defs/text" }, "icon": { "$ref": "#/$defs/icon" }, "look": { "enum": ["standard", "primary", "ghost", "outline", "destructive", "link"] }, "size": { "enum": ["sm", "md", "lg"] }, "pressed": { "type": "boolean" }, "loading": { "type": "boolean" }, "menu": { "$ref": "#/$defs/menu" }, "menuMode": { "enum": ["dropdown", "split"] }, "submit": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-checkbox": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "checkbox" }, "label": { "$ref": "#/$defs/text" }, "checked": { "type": "boolean" }, "indeterminate": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-switch": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "switch" }, "label": { "$ref": "#/$defs/text" }, "on": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-radio-group": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "radio-group" }, "options": { "type": "array", "items": { "$ref": "#/$defs/choice" } }, "value": { "type": "string" }, "orientation": { "enum": ["horizontal", "vertical"] } }, "required": ["options"] }],
+      "unevaluatedProperties": false
+    },
+    "n-select": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "select" }, "options": { "type": "array", "items": { "$ref": "#/$defs/choice" } }, "value": { "type": "string" }, "placeholder": { "$ref": "#/$defs/text" }, "multiple": { "type": "boolean" }, "values": { "type": "array", "items": { "type": "string" } }, "searchable": { "type": "boolean" } }, "required": ["options"] }],
+      "unevaluatedProperties": false
+    },
+    "n-text-input": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "text-input" }, "value": { "type": "string" }, "placeholder": { "$ref": "#/$defs/text" }, "kind": { "enum": ["text", "password", "search", "email", "url"] }, "look": { "enum": ["field", "inline"] }, "multiline": { "type": "boolean" }, "minRows": { "type": "integer" }, "maxRows": { "type": "integer" }, "maxLength": { "type": "integer" }, "readOnly": { "type": "boolean" }, "selectOnFocus": { "type": "boolean" }, "clearButton": { "type": "boolean" }, "spellcheck": { "type": "boolean" }, "prefixIcon": { "$ref": "#/$defs/icon" }, "suggest": { "$ref": "#/$defs/suggest" } }, "required": ["value"] }],
+      "unevaluatedProperties": false
+    },
+    "n-number-input": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "number-input" }, "value": { "type": "number" }, "min": { "type": "number" }, "max": { "type": "number" }, "step": { "type": "number" }, "unit": { "$ref": "#/$defs/text" }, "placeholder": { "$ref": "#/$defs/text" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-slider": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "slider" }, "value": { "type": "number" }, "min": { "type": "number" }, "max": { "type": "number" }, "step": { "type": "number" }, "showValue": { "type": "boolean" } }, "required": ["value", "min", "max"] }],
+      "unevaluatedProperties": false
+    },
+    "n-color-input": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "color-input" }, "value": { "type": "string", "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" }, "alpha": { "type": "boolean" }, "swatches": { "type": "array", "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" } } }, "required": ["value"] }],
+      "unevaluatedProperties": false
+    },
+    "n-date-input": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "date-input" }, "value": { "type": "string" }, "kind": { "enum": ["date", "date-time", "time"] }, "min": { "type": "string" }, "max": { "type": "string" } }, "required": ["value"] }],
+      "unevaluatedProperties": false
+    },
+    "n-token-input": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "token-input" }, "tokens": { "type": "array", "items": { "type": "object", "required": ["id", "label"], "additionalProperties": false, "properties": { "id": { "type": "string" }, "label": { "$ref": "#/$defs/text" }, "color": { "$ref": "#/$defs/color" } } } }, "placeholder": { "$ref": "#/$defs/text" }, "suggest": { "$ref": "#/$defs/suggest" }, "allowNew": { "type": "boolean" } }, "required": ["tokens"] }],
+      "unevaluatedProperties": false
+    },
+    "n-form": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "form" }, "busy": { "type": "boolean" } } }],
+      "unevaluatedProperties": false
+    },
+    "n-list-view": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "list-view" }, "rows": { "$ref": "#/$defs/rowsSource" }, "selection": { "enum": ["none", "single", "multiple"] }, "selected": { "type": "array", "items": { "type": "string" } }, "focusRow": { "type": "string" }, "empty": { "$ref": "#/$defs/text" }, "persistKey": { "type": "string" } }, "required": ["rows"] }],
+      "unevaluatedProperties": false
+    },
+    "n-table": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "table" }, "columns": { "type": "array", "items": { "type": "object", "required": ["key"], "additionalProperties": false, "properties": { "key": { "type": "string" }, "label": { "$ref": "#/$defs/text" }, "icon": { "$ref": "#/$defs/icon" }, "width": { "type": "number" }, "minWidth": { "type": "number" }, "flex": { "type": "number" }, "align": { "enum": ["start", "center", "end", "justify"] }, "sortable": { "type": "boolean" }, "resizable": { "type": "boolean" }, "hidden": { "type": "boolean" } } } }, "rows": { "$ref": "#/$defs/rowsSource" }, "selection": { "enum": ["none", "single", "multiple"] }, "selected": { "type": "array", "items": { "type": "string" } }, "focusRow": { "type": "string" }, "sort": { "$ref": "#/$defs/sortSpec" }, "tree": { "type": "boolean" }, "header": { "type": "boolean" }, "striped": { "type": "boolean" }, "empty": { "$ref": "#/$defs/text" }, "persistKey": { "type": "string" } }, "required": ["columns", "rows"] }],
+      "unevaluatedProperties": false
+    },
+    "n-popover": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "popover" }, "open": { "type": "boolean" }, "placement": { "enum": ["bottom-start", "bottom", "bottom-end", "top-start", "top", "top-end", "start", "end"] }, "dismissOnOutside": { "type": "boolean" }, "width": { "type": "number" }, "maxHeight": { "type": "number" }, "arrow": { "type": "boolean" } }, "required": ["open"] }],
+      "unevaluatedProperties": false
+    },
+    "n-canvas": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "canvas" }, "width": { "type": "number" }, "height": { "type": "number" }, "background": { "$ref": "#/$defs/color" }, "ops": { "type": "array", "items": { "$ref": "#/$defs/drawOp" } }, "panZoom": { "type": "boolean" }, "view": { "$ref": "#/$defs/viewBox" } }, "required": ["width", "height", "ops"] }],
+      "unevaluatedProperties": false
+    },
+    "n-web-view": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "web-view" }, "source": { "oneOf": [{ "type": "object", "required": ["url"], "additionalProperties": false, "properties": { "url": { "type": "string" } } }, { "type": "object", "required": ["html"], "additionalProperties": false, "properties": { "html": { "type": "string" } } }, { "type": "object", "required": ["asset"], "additionalProperties": false, "properties": { "asset": { "type": "string" } } }] }, "sandbox": { "type": "object", "additionalProperties": false, "properties": { "scripts": { "type": "boolean" }, "forms": { "type": "boolean" }, "popups": { "type": "boolean" }, "downloads": { "type": "boolean" }, "persistStorage": { "type": "boolean" } } }, "allowHosts": { "type": "array", "items": { "type": "string" } }, "background": { "$ref": "#/$defs/color" }, "messaging": { "type": "boolean" } }, "required": ["source"] }],
+      "unevaluatedProperties": false
+    },
+    "n-embed": {
+      "allOf": [{ "$ref": "#/$defs/nodeBase" }, { "properties": { "type": { "const": "embed" }, "component": { "enum": ["note-editor", "item-box", "abstract-box", "attachments-box", "notes-box", "tags-box", "related-box", "libraries-collections-box", "attachment-preview", "attachment-annotations", "item-picker", "collection-picker", "search-builder", "style-picker"] }, "params": { "type": "object", "description": "Becomes the `params` JSON string." } }, "required": ["component"] }],
+      "unevaluatedProperties": false
+    }
+  }
+}

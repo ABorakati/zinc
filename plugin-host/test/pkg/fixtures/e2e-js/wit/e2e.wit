@@ -1,0 +1,17 @@
+package zinc:e2e@0.1.0;
+
+/// Test world for the package/permissions/imports area: lifecycle and events exports; imports of the interfaces under test.
+world e2e {
+  import zinc:plugin/prefs@0.1.0;
+  import zinc:plugin/log@0.1.0;
+  import zinc:plugin/timers@0.1.0;
+  import zinc:plugin/l10n@0.1.0;
+  import zinc:plugin/util@0.1.0;
+  import zinc:plugin/secrets@0.1.0;
+  import zinc:plugin/app@0.1.0;
+  import zinc:plugin/permissions@0.1.0;
+  import zinc:plugin/plugins@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/events@0.1.0;
+}
