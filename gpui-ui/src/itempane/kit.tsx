@@ -1,15 +1,19 @@
 // Small building blocks of the item pane (the GPUI counterpart of ui/src/itempane/ui.tsx): section frame, label/value rows,
 // click-to-edit fields on native <input>/<textarea>, icon/text buttons and an autocomplete picker. Class strings are the web UI's.
-import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
+import { children, createContext, createEffect, createSignal, For, on, onCleanup, Show, useContext, type JSX } from "solid-js";
 import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { textStyle, tokens, tw, withAlpha } from "../theme";
 import { useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
-import { openMenu, Tooltip, type MenuItem } from "../ui";
+import { DropdownMenu, openMenu, toast, Tooltip, type MenuItem } from "../ui";
 import { boundsOf, hideTooltip, showTooltip } from "../ui/core";
 import { gatedHover } from "../cards/scrolling";
+import { sectionPaneId } from "../shell/frameLayout";
+import { paneDragSource, registerDropHost } from "../shell/dock";
+import { detachSection } from "../shell/sectionPanes";
+import { undoLayout } from "../shell/layout";
 
 export const mode = (): Mode => store.mode();
 /** The library on screen is read-only for this user (a group they may not edit): the pane shows its data but changes nothing. */
@@ -47,6 +51,7 @@ export function IconBtn(p: {
 	size?: number;
 	box?: number;
 	color?: string;
+	testId?: string;
 }): JSX.Element {
 	const box = () => p.box ?? 20;
 	// the Tooltip component wraps its child in a div; inline handlers give the same delayed label with one node less per button
@@ -72,6 +77,7 @@ export function IconBtn(p: {
 				el = x;
 			}}
 			role="button"
+			testId={p.testId}
 			aria-label={p.title}
 			onClick={() => {
 				if (!p.disabled) p.onClick?.();
@@ -131,7 +137,13 @@ export function TextBtn(p: {
 // ---- section frame ----
 
 const [collapsed, setCollapsedSig] = createSignal<Record<string, boolean>>({});
-export const isCollapsed = (id: string) => !!collapsed()[id];
+/**
+ * True inside a section that lives in a pane of its own (shell/sectionPanes.tsx provides `true`): its header is not drawn (the
+ * pane's tab / header is the title), only the header's actions stay, and the body shows whatever the item pane collapsed.
+ */
+export const DetachedSectionContext = createContext(false);
+/** Read inside a component or an entry list: false for a detached section, whatever the item pane collapsed. */
+export const isCollapsed = (id: string) => !useContext(DetachedSectionContext) && !!collapsed()[id];
 export const setCollapsed = (id: string, v: boolean) => setCollapsedSig({ ...collapsed(), [id]: v });
 
 /** Count chip next to a section title: `h-[18px] min-w-[22px] rounded-full bg-border-soft px-1.5 text-[11px] font-semibold`. */
@@ -153,32 +165,77 @@ export interface Entry {
 
 type HeadProps = { id: string; title: string; icon: string; count?: number; actions?: JSX.Element; first?: boolean };
 
+/** An element that takes a dragged section as a drop host (`before`: the section it lands in front of, null = after the last). */
+function GapHost(p: { before: string | null; style: Style }): JSX.Element {
+	return (
+		<div
+			testId={`ip-gap-${p.before ?? "end"}`}
+			ref={(x: HostElement) => {
+				onCleanup(registerDropHost(() => ({ kind: "section-gap", before: p.before }), x));
+			}}
+			style={p.style}
+		/>
+	);
+}
+
+/** The gap before a section's header: a strip over the frame's top edge, outside the layout flow. A detached section has none. */
+const GAP_STRIP: Style = { position: "absolute", top: -6, left: 0, right: 0, height: 12, pointerEvents: "none" };
+
+/** The drop host after the last section of the item pane. */
+export function SectionGap(p: { before: string | null }): JSX.Element {
+	return <GapHost before={p.before} style={{ ...t("w-full flex-none"), height: 12 }} />;
+}
+
 /** The section frame's top: border-t (not on the first section) and the clickable 36 px header row. */
 export function SectionHead(p: HeadProps): JSX.Element {
+	const detached = useContext(DetachedSectionContext);
 	return (
-		<div style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first ? 0 : 1, borderColor: tok("border-soft") }}>
+		<div style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first || detached ? 0 : 1, borderColor: tok("border-soft") }}>
+			<Show when={!detached}>
+				<GapHost before={p.id} style={GAP_STRIP} />
+			</Show>
 			<HeadRow {...p} />
 		</div>
 	);
 }
 
+/** A detached section's header: no title row, only the actions (when there are any) in a small right-aligned row. */
+function ActionRow(p: { actions?: JSX.Element }): JSX.Element {
+	const acts = children(() => p.actions);
+	return (
+		<Show when={acts.toArray().length > 0}>
+			<div style={{ ...t("flex h-6 w-full flex-none items-center justify-end gap-0.5 px-5") }}>{acts()}</div>
+		</Show>
+	);
+}
+
 function HeadRow(p: HeadProps): JSX.Element {
+	if (useContext(DetachedSectionContext)) return <ActionRow actions={p.actions} />;
 	// The header keeps a faint tint at all times (so the sections read as bands); hovering darkens its chevron, icon and title
 	// instead. GPUIX hover styles only restyle the hovered element itself, not its children, so the text colour follows a
 	// signal — gated, so the item pane's virtual list makes no hover commits while it scrolls.
 	const [hot, setHot] = createSignal(false);
 	const hover = gatedHover(setHot);
 	const fg = () => tok(hot() ? "foreground" : "muted-foreground");
+	// the header drags the section out as a pane of its own; the click that ends a drag must not collapse it
+	const drag = paneDragSource(() => sectionPaneId(p.id));
+	const stop = (e: unknown) => (e as { stopPropagation?: () => void }).stopPropagation?.();
 	return (
 		<div
+			testId={`ip-section-head-${p.id}`}
 			onMouseEnter={hover.enter}
 			onMouseLeave={hover.leave}
+			onMouseDown={drag.onMouseDown}
+			onMouseMove={drag.onMouseMove}
 			style={{
 				...t("flex h-9 flex-none items-center gap-1.5 px-5"),
 				cursor: "pointer",
 				backgroundColor: withAlpha(tok("foreground"), 0.03),
 			}}
-			onClick={() => setCollapsed(p.id, !isCollapsed(p.id))}
+			onClick={() => {
+				if (drag.wasDrag()) return;
+				setCollapsed(p.id, !isCollapsed(p.id));
+			}}
 		>
 			<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={fg()} />
 			<Icon name={p.icon} size={14} color={fg()} />
@@ -187,8 +244,20 @@ function HeadRow(p: HeadProps): JSX.Element {
 				<CountBadge n={p.count!} />
 			</Show>
 			<div style={{ flexGrow: 1 }} />
-			<div style={{ ...t("flex items-center gap-0.5") }} onClick={(e) => (e as { stopPropagation?: () => void }).stopPropagation?.()}>
+			<div style={{ ...t("flex items-center gap-0.5") }} onMouseDown={stop} onClick={stop}>
 				{p.actions}
+				<DropdownMenu
+					align="end"
+					width={200}
+					items={[{
+						label: "Open in its own pane",
+						icon: "panel-right-open",
+						onSelect: () => {
+							if (detachSection(p.id)) toast(`Moved ${p.title}`, { action: { label: "Undo", run: () => { undoLayout(); } } });
+						},
+					}]}
+					trigger={<IconBtn testId={`ip-section-menu-${p.id}`} icon="ellipsis" title="Section menu" />}
+				/>
 			</div>
 		</div>
 	);
@@ -204,10 +273,14 @@ export function Block(p: { first?: boolean; last?: boolean; children: JSX.Elemen
 }
 
 export function Section(p: HeadProps & { children: JSX.Element }): JSX.Element {
+	const detached = useContext(DetachedSectionContext);
 	return (
-		<div style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first ? 0 : 1, borderColor: tok("border-soft") }}>
+		<div style={{ ...t("flex flex-col w-full flex-none"), borderTopWidth: p.first || detached ? 0 : 1, borderColor: tok("border-soft") }}>
+			<Show when={!detached}>
+				<GapHost before={p.id} style={GAP_STRIP} />
+			</Show>
 			<HeadRow {...p} />
-			<Show when={!isCollapsed(p.id)}>
+			<Show when={detached || !isCollapsed(p.id)}>
 				<div style={{ ...t("flex flex-col w-full pt-0.5 pb-3.5 px-5") }}>{p.children}</div>
 			</Show>
 		</div>
@@ -650,7 +723,7 @@ export function Skeleton(p: { w: number | string; h: number }): JSX.Element {
 }
 
 /** Scroll the pane to a section (set by the pane; used by "+N creators" in the header). */
-let goTo: (id: string) => void = () => {};
+let goTo: (id: string) => void = () => { };
 export const setGoTo = (f: (id: string) => void) => {
 	goTo = f;
 };

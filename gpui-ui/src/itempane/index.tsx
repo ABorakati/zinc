@@ -3,29 +3,25 @@
 //
 //   import { ItemPane } from "./itempane";   // <ItemPane /> fills its parent; it follows store.selectedItem() (and store.selected() when
 //   the list store has it: more than one key shows the multi-selection summary).
-import { createMemo, createSignal, For, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, type JSX } from "solid-js";
 import { useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../icons";
 import { store } from "../store";
 import { withAlpha } from "../theme";
-import { AbstractSection, Header } from "./Header";
-import { AttachmentsSection } from "./Attachments";
-import { CollectionsSection } from "./Collections";
-import { useInfoEntries } from "./Info";
+import { Header } from "./Header";
 import { MultiSelect } from "./Multi";
-import { NoteEditor, NotesSection } from "./Notes";
-import { RelatedSection } from "./Related";
+import { NoteEditor } from "./Notes";
 import { NoteClip } from "./RichNote";
 import { richNotesAvailable } from "../webview/notes";
 import { boundsOf } from "../ui/core";
-import { TagsSection } from "./Tags";
-import { Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx, type Entry } from "./kit";
-import { createPaneModel, PaneContext, usePane } from "./model";
+import { SectionGap, Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx } from "./kit";
+import { PaneContext, usePane, viewPaneModel } from "./model";
 import { firstLine } from "./util";
 import { rightLayout, visible } from "../shell/sidebarLayout";
-import { currentTabRef } from "../wasmplugins/extend/context";
-import { pluginSectionEntries, sectionTabs } from "../wasmplugins/extend/Sections";
+// This startup import registers section panes before Frame creates its pane hosts.
+import { isDetached, sectionOrder } from "../shell/sectionPanes";
+import { createSectionEntries, librarySectionTabs } from "./sections";
 
 export { showNote } from "./Notes";
 
@@ -71,27 +67,21 @@ function Body(): JSX.Element {
 	let list: HostElement | undefined;
 	let listBox: HostElement | undefined; // the list's painted area (a <virtual-list> itself reports no bounds)
 
-	// The body is one <virtual-list> (the native side builds only the entries on screen; a scrolling container would lay out and paint every
-	// field of every section on every frame, even while only the item list scrolls). Its children are exactly the entries: the Info
-	// section's header and rows, then one entry per other section.
-	const infoEntries = useInfoEntries();
-	const entryOf = (id: string, render: () => JSX.Element): Entry => ({ id, section: id, render });
-	const others: Record<string, Entry> = {
-		abstract: entryOf("abstract", () => <AbstractSection />),
-		notes: entryOf("notes", () => <NotesSection />),
-		attachments: entryOf("attachments", () => <AttachmentsSection />),
-		collections: entryOf("collections", () => <CollectionsSection />),
-		tags: entryOf("tags", () => <TagsSection />),
-		related: entryOf("related", () => <RelatedSection />),
-	};
-	// the sections shown, in the order Settings > Appearance > Sidebars sets (shell/sidebarLayout.ts)
-	// plus the sections WASM plugins registered (wasmplugins/extend/Sections.tsx; none while plugins are off), after the built-in ones
-		const plugged = createMemo(() => sectionTabs(currentTabRef(), d().data.key));
-		const sections = createMemo(() => [...visible(rightLayout.layout()).map((id) => SECTIONS.find((s) => s.id === id)!), ...plugged()]);
+	const entriesOf = createSectionEntries();
+	const plugged = createMemo(() => librarySectionTabs(d().data.key));
+	const sections = createMemo(() => {
+		const all = [...SECTIONS, ...plugged()];
+		return sectionOrder(plugged().map((s) => s.id))
+			.filter((id) => !rightLayout.layout().hidden.includes(id) && !isDetached(id))
+			.map((id) => all.find((s) => s.id === id)!)
+			.filter(Boolean);
+	});
+	createEffect(() => {
+		if (!sections().some((s) => s.id === active())) setActive(sections()[0]?.id ?? "");
+	});
 	const entries = createMemo(() => {
-		const out: Entry[] = [];
-		for (const s of sections()) if (!s.id.startsWith("plug:")) out.push(...(s.id === "info" ? infoEntries() : [others[s.id]!]));
-			out.push(...pluginSectionEntries(currentTabRef(), d().data.key));
+		const out = sections().flatMap((s) => entriesOf(s.id));
+		out.push({ id: "section-gap-end", section: "", render: () => <SectionGap before={null} /> });
 		// room below the last section, so it can scroll to the top
 		const last = sections().at(-1)?.id ?? "info";
 		out.push({ id: "spacer", section: last, render: () => <div style={{ width: "100%", height: 192, flexShrink: 0 }} /> });
@@ -295,13 +285,10 @@ function Single(): JSX.Element {
 }
 
 export function ItemPane(): JSX.Element {
-	const selected = () => (store as unknown as { selected?: () => Set<string> }).selected?.();
-	const multi = () => (selected()?.size ?? 0) > 1;
-	const key = createMemo(() => {
-		if (multi()) return null;
-		return store.selectedItem() ?? [...(selected() ?? [])][0] ?? null;
-	});
-	const model = createPaneModel(key);
+	const selected = () => store.selected();
+	const multi = () => selected().size > 1;
+	const model = viewPaneModel();
+	const key = model.key;
 	return (
 		<PaneContext.Provider value={model}>
 			<div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>

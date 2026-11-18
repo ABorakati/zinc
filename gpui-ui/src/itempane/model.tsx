@@ -1,10 +1,11 @@
 // State of the item pane: the focused item's detail, the schema, tag colours, and the optimistic save queue
 // (ports of SingleItem in ui/src/ItemPane.tsx and ctx.ts). Sections reach it through usePane().
-import { createContext, createEffect, createMemo, createSignal, on, useContext, type Accessor } from "solid-js";
+import { createContext, createEffect, createMemo, createRoot, createSignal, on, useContext, type Accessor } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
 import { store } from "../store";
 import { toast } from "../ui";
 import { ipApi, type ItemDetail, type TagColor, type ZoteroItemData, type ZoteroSchema } from "./net";
+import type { ViewKind } from "../shell/frameLayout";
 
 export interface PaneModel {
 	/** the focused item's key (null = nothing selected) */
@@ -32,6 +33,23 @@ export interface PaneModel {
 export const PaneContext = createContext<PaneModel>();
 export const usePane = (): PaneModel => useContext(PaneContext)!;
 
+// Models belong to views, not pane mounts. A detached pane can be the first (or only) consumer.
+const viewModels = new Map<ViewKind, PaneModel>();
+export function viewPaneModel(view: ViewKind = "library", key?: Accessor<string | null>): PaneModel {
+	let model = viewModels.get(view);
+	if (!model) {
+		model = createRoot((_dispose) => {
+			const focused = createMemo(key ?? (() => {
+				if (store.selected().size > 1) return null;
+				return store.selectedItem() ?? [...store.selected()][0] ?? null;
+			}));
+			return createPaneModel(focused);
+		});
+		viewModels.set(view, model);
+	}
+	return model;
+}
+
 export const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export const fail = (what: string, e: unknown) => toast(what, { kind: "error", description: errMsg(e) });
 
@@ -56,7 +74,7 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 	void ipApi.schema().then(setSchema, (e) => fail("Could not load the item schema", e));
 	void ipApi.tagColors().then(
 		(l: TagColor[]) => setTagColors(new Map(l.map((c) => [c.name, c.color]))),
-		() => {},
+		() => { },
 	);
 
 	let seq = 0;
