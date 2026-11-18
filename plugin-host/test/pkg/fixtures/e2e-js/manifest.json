@@ -1,0 +1,15 @@
+{
+	"manifest_version": 1,
+	"id": "e2e-js@zinc.test",
+	"name": "E2E (QuickJS test plugin)",
+	"version": "1.0.0",
+	"description": "Exercises prefs, timers, log, l10n, util, secrets, app, permissions and plugins through the supervisor.",
+	"icons": { "16": "icons/a.png" },
+	"zinc": { "api_version": "0.1", "min_version": "0.1.0" },
+	"main": { "wasm": "plugin.wasm", "world": "plugin-minimal", "language": "js" },
+	"permissions": { "capabilities": ["library.read", "prefs.app-read"] },
+	"optional_permissions": { "capabilities": ["library.write"] },
+	"permission_reasons": { "library.write": "Writes results back to the library." },
+	"default_prefs": { "greeting": "hello", "limit": 10, "enabled": true },
+	"locales": { "default": "en-US" }
+}

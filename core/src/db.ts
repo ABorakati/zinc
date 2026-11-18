@@ -163,7 +163,13 @@ function collectionExists(db: Database, key: string): boolean {
 	return !!db.query("SELECT 1 FROM collections WHERE key = ?").get(key);
 }
 
-export function createCollection(db: Database, name: string, parentKey?: string | null, libraryId?: number): Collection {
+export function createCollection(
+	db: Database,
+	name: string,
+	parentKey?: string | null,
+	libraryId?: number,
+	opts: { key?: string } = {},
+): Collection {
 	if (name !== undefined && name !== null && typeof name !== "string") throw new HttpError(400, "name must be a string");
 	if (parentKey !== undefined && parentKey !== null && typeof parentKey !== "string")
 		throw new HttpError(400, "parentKey must be a string or null");
@@ -174,7 +180,11 @@ export function createCollection(db: Database, name: string, parentKey?: string 
 	const lib = parentKey ? libraryOfCollection(db, parentKey)! : (libraryId ?? USER_LIBRARY);
 	if (parentKey && libraryId !== undefined && libraryId !== lib) throw new HttpError(400, "the parent collection is in another library");
 	assertWritable(db, lib);
-	let key = generateKey();
+	let key = opts.key ?? generateKey();
+	if (opts.key !== undefined) {
+		if (!/^[A-Za-z0-9]{8}$/.test(opts.key)) throw new HttpError(400, "key must be 8 letters or digits");
+		if (collectionExists(db, key)) throw new HttpError(409, `collection key already used: ${key}`);
+	}
 	while (collectionExists(db, key)) key = generateKey();
 	db.query("INSERT INTO collections(key, name, parent_key, library_id) VALUES(?, ?, ?, ?)").run(key, name, parentKey || null, lib);
 	return getCollection(db, key)!;
@@ -1018,7 +1028,7 @@ export function assertItemShape(d: Record<string, unknown>): void {
  * Creates an item. `libraryId` picks the library for a top-level item (default: the library of its collections, else My
  * Library); a note or attachment always joins its parent's library.
  */
-export function createItem(db: Database, input: Partial<ZoteroItemData>, libraryId?: number): ItemDetail {
+export function createItem(db: Database, input: Partial<ZoteroItemData>, libraryId?: number, opts: { key?: string } = {}): ItemDetail {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new HttpError(400, "data must be an object");
 	assertItemShape(input as Record<string, unknown>);
 	const itemType = input.itemType;
@@ -1067,7 +1077,11 @@ export function createItem(db: Database, input: Partial<ZoteroItemData>, library
 		tags.push(typeof t === "object" && t?.type ? { tag, type: t.type } : { tag });
 	}
 
-	let key = generateKey();
+	let key = opts.key ?? generateKey();
+	if (opts.key !== undefined) {
+		if (!/^[A-Za-z0-9]{8}$/.test(opts.key)) throw new HttpError(400, "key must be 8 letters or digits");
+		if (itemExists(db, key)) throw new HttpError(409, `item key already used: ${key}`);
+	}
 	while (itemExists(db, key)) key = generateKey();
 	const now = nowIso();
 	const data: ZoteroItemData = { key, ...(rest as object), itemType, dateAdded: now, dateModified: now } as ZoteroItemData;

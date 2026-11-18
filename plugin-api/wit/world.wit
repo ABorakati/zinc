@@ -83,3 +83,85 @@ world plugin-minimal {
   export extend-handlers;
   export ui-events;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Per-family worlds. They exist so that a guest only generates and links the bindings it uses: the `plugin` world is
+// about 400 imported functions with very deep records (`ui.style`, `ui.node-kind`), which the Rust toolchain cannot
+// compile in reasonable memory. Each world is a strict subset of `plugin` and of the next one up:
+//
+//   plugin-core  <  plugin-library  <  plugin-extend  <  plugin-ui
+//                                           ^
+//                                           +--------  plugin-reader
+//
+// The host loads all of them the same way (it accepts any component that exports `lifecycle`).
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Lifecycle, preferences, localisation, logging and timers. For plugins that only react to the app and to settings.
+world plugin-core {
+  import app;
+  import prefs;
+  import l10n;
+  import log;
+  import timers;
+
+  export lifecycle;
+  export events;
+}
+
+/// `plugin-core` plus the library family: items, attachments, full text, schema, citations, translators, sync control,
+/// data utilities and library change notifications.
+world plugin-library {
+  include plugin-core;
+
+  import library;
+  import attachments;
+  import fulltext;
+  import schema;
+  import cite;
+  import translate;
+  import sync-control;
+  import data-utils;
+  import notifier;
+
+  export notifier-handler;
+}
+
+/// `plugin-library` plus extension points: menus, columns, toolbar buttons, preference panes, item pane section
+/// registration, and so on (`extend`). No `ui`: a plugin that registers a section but draws it needs `plugin-ui`.
+world plugin-extend {
+  include plugin-library;
+
+  import extend;
+
+  export extend-handlers;
+}
+
+/// `plugin-extend` plus plugin-drawn views (item pane sections, dialogs, windows, popovers): the `ui` imports and the
+/// `ui-events` callbacks. The biggest family by far (`ui.node-kind` has 40 cases, `ui.style` 50 fields).
+world plugin-ui {
+  include plugin-extend;
+
+  import ui;
+
+  export ui-events;
+}
+
+/// `plugin-extend` plus the reader and note editor: annotations, reader listeners, overlays, note editor access.
+world plugin-reader {
+  include plugin-extend;
+
+  import annotations;
+  import reader;
+  import note-editor;
+
+  export reader-events;
+  export note-events;
+}
+
+/// `plugin-extend` plus the `ui` imports (dialogs, toasts, windows, `ui.push`) but not the `ui-events` callbacks. For a plugin
+/// that registers menu entries and shows a dialog or a toast, and never draws a view of its own.
+world plugin-dialogs {
+  include plugin-extend;
+
+  import ui;
+}

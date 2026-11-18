@@ -24,6 +24,8 @@ import { Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx, type Entry } fr
 import { createPaneModel, PaneContext, usePane } from "./model";
 import { firstLine } from "./util";
 import { rightLayout, visible } from "../shell/sidebarLayout";
+import { currentTabRef } from "../wasmplugins/extend/context";
+import { pluginSectionEntries, sectionTabs } from "../wasmplugins/extend/Sections";
 
 export { showNote } from "./Notes";
 
@@ -83,10 +85,13 @@ function Body(): JSX.Element {
 		related: entryOf("related", () => <RelatedSection />),
 	};
 	// the sections shown, in the order Settings > Appearance > Sidebars sets (shell/sidebarLayout.ts)
-	const sections = createMemo(() => visible(rightLayout.layout()).map((id) => SECTIONS.find((s) => s.id === id)!));
+	// plus the sections WASM plugins registered (wasmplugins/extend/Sections.tsx; none while plugins are off), after the built-in ones
+		const plugged = createMemo(() => sectionTabs(currentTabRef(), d().data.key));
+		const sections = createMemo(() => [...visible(rightLayout.layout()).map((id) => SECTIONS.find((s) => s.id === id)!), ...plugged()]);
 	const entries = createMemo(() => {
 		const out: Entry[] = [];
-		for (const s of sections()) out.push(...(s.id === "info" ? infoEntries() : [others[s.id]!]));
+		for (const s of sections()) if (!s.id.startsWith("plug:")) out.push(...(s.id === "info" ? infoEntries() : [others[s.id]!]));
+			out.push(...pluginSectionEntries(currentTabRef(), d().data.key));
 		// room below the last section, so it can scroll to the top
 		const last = sections().at(-1)?.id ?? "info";
 		out.push({ id: "spacer", section: last, render: () => <div style={{ width: "100%", height: 192, flexShrink: 0 }} /> });

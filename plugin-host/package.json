@@ -1,0 +1,20 @@
+{
+	"name": "zinc-plugin-host",
+	"private": true,
+	"type": "module",
+	"version": "0.1.0",
+	"description": "Zinc WASM plugin host: supervisor (Zinc process), host process, per-plugin Workers, build pipeline.",
+	"scripts": {
+		"test": "bun test",
+		"check": "bun check",
+		"build-plugin": "bun scripts/build-plugin.ts"
+	},
+	"dependencies": {
+		"@bytecodealliance/jco": "^1.42.0",
+		"componentize-qjs": "^0.6.0"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"typescript": "^6"
+	}
+}

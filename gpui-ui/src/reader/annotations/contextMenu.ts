@@ -1,5 +1,5 @@
 // Context menu definitions for annotations (sidebar list and page overlay).
-import type { ReaderContext } from "../plugins";
+import { pluginMenuItems, type ReaderContext } from "../plugins";
 import type { MenuItem } from "../../ui/core";
 import type { Annotation } from "./model";
 import { sessionFor } from "./session";
@@ -46,5 +46,7 @@ export function annotationContextMenu(ctx: ReaderContext, a: Annotation, opts: C
 		},
 	});
 
+	// the Zotero plugins' createAnnotationContextMenu items come last
+	items.push(...pluginMenuItems((p) => p.annotationMenu?.(ctx, { ids: [a.id], annotation: a })));
 	return items;
 }

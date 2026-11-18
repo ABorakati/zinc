@@ -18,7 +18,7 @@ package zinc:plugin@0.1.0;
 /// `ui.view-context`, `ui.render-result` and `ui.tree` as the contract for what the plugin returns.
 interface ui {
   // ------------------------------------------------------------------------------------------------ shared types
-  use types.{json, localized-string, icon-ref, color, color-token, file-grant, error};
+  use types.{json, localized-string, icon-ref, color, color-token, file-grant, error, theme-mode};
 
   /// Text shown to the user: a literal (`plain`) or a Fluent message of the plugin (`localized`). This file calls it `ui-text`.
   type ui-text = localized-string;
@@ -1283,8 +1283,6 @@ interface ui {
     toast,
     custom,
   }
-
-  enum theme-mode { light, dark }
 
   /// What the host tells the plugin about a view when it mounts, and again when something changes (another item selected,
   /// the pane resized, the theme changed, edit mode toggled).

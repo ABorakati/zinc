@@ -23,10 +23,11 @@ import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { textStyle, tokens, tw, withAlpha } from "../theme";
 import { ListScrollbar } from "../cards/ListScrollbar";
+import { openMenu as openContextMenu } from "../ui";
 import { readerMode, windowDpr } from "./env";
 import { openPdf, fetchAttachment } from "./library";
 import { PdfDoc, type OutlineEntry, type PdfLink, type TextLayer, type TextWord } from "./pdf";
-import { readerPlugins, type NRect, type ReaderContext, type ReaderPlugin, type Word } from "./plugins";
+import { pluginMenuItems, readerPlugins, trackOpenReader, type NRect, type ReaderContext, type ReaderPlugin, type Word } from "./plugins";
 import {
 	readerAppearance as appearance,
 	initReaderAppearance,
@@ -71,6 +72,7 @@ import {
 import { setDocGeometry } from "./core/geometry";
 import { createPageCommands, PrintButton, ViewMenuButton } from "./core/layoutui";
 import { readerPrefs } from "../settings/readerPrefs";
+import { registerReaderOps, type ReaderOps } from "./ops";
 
 export const CSS_PER_PT = 96 / 72; // zoom 1 (100%) = 96 dpi, like the web reader
 export const GAP = 12; // between pages
@@ -1033,6 +1035,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 		curPage: () => curPage(),
 		selected: () => (sbOpen() && sbTab() === "thumbs" ? selPages() : []),
 		read: async () => (props.path ? new Uint8Array(await Bun.file(props.path).arrayBuffer()) : fetchAttachment(props.attachmentKey)),
+		extraView: () => (ctxSig() ? pluginMenuItems((p) => p.viewMenu?.(ctx())) : []),
+		extraThumb: (pages) => (ctxSig() ? pluginMenuItems((p) => p.thumbnailMenu?.(ctx(), pages)) : []),
 		canEdit: () => !props.doc,
 		filesLocked: () => props.filesEditable === false || props.editable === false,
 		reopen: async (map) => {
@@ -1539,18 +1543,25 @@ export function Reader(props: ReaderProps): JSX.Element {
 		opened.clear();
 		linkHandlers.clear();
 	};
+	// the open documents, for Zotero.Reader._readers (src/plugins/managers/reader.tsx)
+	let untrackCtx: (() => void) | undefined;
 	createEffect(
 		on(doc, (d, prev) => {
 			if (prev && prev !== d) runCleanups();
+			untrackCtx?.();
+			untrackCtx = undefined;
 			setAltViewSig(null);
 			clearSel();
 			if (!d) {
 				setCtx(null);
 				return;
 			}
-			setCtx(makeContext(d));
+			const c = makeContext(d);
+			setCtx(c);
+			untrackCtx = trackOpenReader(c);
 		}),
 	);
+	onCleanup(() => untrackCtx?.());
 	createEffect(() => {
 		const c = ctxSig(),
 			ps = plugins();
@@ -1850,6 +1861,55 @@ export function Reader(props: ReaderProps): JSX.Element {
 		queueMicrotask(() => restore(a));
 		setTimeout(() => restore(a), 160); // once the new row heights are measured
 	};
+
+	// ---- operations for the WASM plugin bridge (ops.ts): registered with the document's plugin context ----------------------------
+	const readerOps: ReaderOps = {
+		info: () => ({ title: props.title ?? "", active: active() }),
+		state: () => ({
+			page: curPage(),
+			pages: count(),
+			zoom: zoom(),
+			zoomMode: zoomMode(),
+			scroll: scrollMode(),
+			spread: spreadMode(),
+			rotation: docRot(),
+			canBack: history().length > 0,
+			canForward: forward().length > 0,
+			sidebar: { open: sbOpen(), tab: sbOpen() ? sbTab() : null, width: sbW() },
+			find: { query: query(), total: hits().length, index: cur(), done: scanDone() },
+			selectedPages: selPages(),
+		}),
+		goTo: (page, y, record) => goTo(page, y ?? -1, record ?? true),
+		back: goBack,
+		forward: goForward,
+		stepRow,
+		zoomBy,
+		setZoom,
+		fitWidth,
+		fitPage,
+		rotate,
+		setLayout,
+		// a plugin panel is named by its own id; the sidebar keys it "plugin:<plugin>:<panel>"
+		setSidebar: (open, tab) => setSidebar(open, tab && (sideTabs().find((s) => s.id === tab || s.id.endsWith(`:${tab}`))?.id ?? tab)),
+		search: (q) => {
+			clearTimeout(searchTimer);
+			setQuery(q);
+			void runSearch(q);
+		},
+		findStep: step,
+		outline,
+		rotatePages: (pages, turns) => cmds.rotate(turns, pages),
+		deletePages: (pages, ask = true) => cmds.remove(pages, ask),
+		print: () => cmds.print(),
+		copySelection: doCopy,
+		focus: () => {
+			if (rootEl) gpuix?.renderer.focusElement?.(rootEl.id);
+		},
+	};
+	createEffect(() => {
+		const c = ctxSig();
+		if (c) onCleanup(registerReaderOps(c, readerOps));
+	});
 
 	// ---- controller for scripts -----------------------------------------------------------------------------------------------
 	props.controller?.({
@@ -2571,6 +2631,12 @@ export function Reader(props: ReaderProps): JSX.Element {
 					{(a) => (
 						<div
 							onClick={() => setReaderAppearance({ ...appearance(), mode: a.id })}
+								onAuxClick={(e: EventPayload) => {
+									// Zotero's createThemeContextMenu: the plugins' items for a right-clicked appearance
+									if (!(e.isRightClick || e.button === 2) || !ctxSig()) return;
+									const items = pluginMenuItems((p) => p.themeMenu?.(ctx(), { theme: a.id }));
+									if (items.length) openContextMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items.slice(1));
+								}}
 							style={{
 								...t("flex flex-col items-center gap-1 rounded-md p-1.5"),
 								width: 60,

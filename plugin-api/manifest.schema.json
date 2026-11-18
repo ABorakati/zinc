@@ -88,12 +88,12 @@
       "additionalProperties": false,
       "properties": {
         "wasm": {
-          "description": "Path of the WebAssembly component in the package. Replaces bootstrap.js. The component targets the `plugin` world or `plugin-minimal` of the WIT package `zinc:plugin`.",
+          "description": "Path of the WebAssembly component in the package. Replaces bootstrap.js. The component targets one world of the WIT package `zinc:plugin`: `plugin` (everything), `plugin-minimal`, or one of the smaller per-family worlds (see `world` below).",
           "$ref": "#/$defs/packagePath"
         },
         "world": {
           "description": "Which world the component was built for.",
-          "enum": ["plugin", "plugin-minimal"],
+          "enum": ["plugin", "plugin-minimal", "plugin-core", "plugin-library", "plugin-extend", "plugin-ui", "plugin-reader", "plugin-dialogs"],
           "default": "plugin"
         },
         "language": {

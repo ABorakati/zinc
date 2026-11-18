@@ -13,6 +13,7 @@ import { duplicateItem } from "./additems/duplicate";
 import { handleDuplicatesApi } from "./duplicates/api";
 import { handleIoApi } from "./io/api";
 import { isExecutableName } from "./io/dangerous";
+import { handleChangesApi } from "./changes/api";
 import { handleSearchesApi } from "./searches/api";
 import { handleMaintenanceApi } from "./maintenance/api";
 import { handleFilesApi } from "./files/api";
@@ -24,6 +25,7 @@ import { handleIntegrationsApi } from "./integrations/api";
 import { handleBbtApi } from "./bbt/api";
 import { handleTranslateApi } from "./translate/api";
 const FEATURE_HANDLERS = [
+	handleChangesApi,
 	handleCiteApi,
 	handleAddItemsApi,
 	handleDuplicatesApi,

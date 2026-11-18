@@ -37,9 +37,8 @@ package zinc:plugin@0.1.0;
 interface extend {
   use types.{
     item-key, collection-key, library-id, json, window-id, error, pref-value,
-    localized-string, icon-ref, color, accelerator, file-grant,
+    localized-string, icon-ref, color, accelerator, file-grant, theme-mode,
   };
-  use ui.{theme-mode};
 
   // ---------------------------------------------------------------------------------------------------------------
   // Where things happen: tabs, tree rows, selection
@@ -900,8 +899,7 @@ interface extend {
 /// `error` is logged and the host falls back as each function says. Views (sections, tabs, side panels, panes) are
 /// handled by `ui-events`, not here.
 interface extend-handlers {
-  use types.{item-key, error, library-id};
-  use ui.{theme-mode};
+  use types.{item-key, error, library-id, theme-mode};
   use extend.{
     context, tab-info, tree-row, view-state, entry-patch, info-row-value, cell, row-style, collection-decoration,
     drop-payload, tab-ref,

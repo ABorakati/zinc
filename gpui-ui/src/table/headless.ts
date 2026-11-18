@@ -17,7 +17,7 @@ import {
 } from "@tanstack/table-core";
 import type { ItemRow } from "../contracts";
 import { store } from "../store";
-import { getColumn, MENU_COLUMNS, moreColumns, schema } from "./defs";
+import { getColumn, MENU_COLUMNS, moreColumns, pluginColumns, schema } from "./defs";
 import { columnLayout as layout } from "./layout";
 
 const EMPTY_SIZING_INFO: ColumnSizingInfoState = {
@@ -36,7 +36,7 @@ export function createColumnTable() {
 	/** Every column the table knows: the visible ones in order, then the picker's list and the schema's other fields. */
 	const allIds = createMemo(() => {
 		schema(); // more columns appear once the schema has loaded
-		return [...new Set([...layout.ids(), ...MENU_COLUMNS, ...moreColumns().map((c) => c.id)])];
+		return [...new Set([...layout.ids(), ...MENU_COLUMNS, ...moreColumns().map((c) => c.id), ...pluginColumns().map((c) => c.id)])];
 	});
 	const defs = createMemo<ColumnDef<ItemRow>[]>(() =>
 		allIds().map((id) => {

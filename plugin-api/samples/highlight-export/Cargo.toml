@@ -1,0 +1,13 @@
+[package]
+name = "highlight-export"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zinc-plugin = { path = "../../sdk/rust", features = ["reader"] }
+
+# Keep this crate out of any parent workspace.
+[workspace]

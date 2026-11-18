@@ -1,0 +1,23 @@
+[package]
+name = "zinc-plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Rust SDK for Zinc WASM plugins: bindings for the `plugin` world, a Plugin trait with default no-op callbacks, and builders."
+license = "MIT"
+
+[features]
+# One world is generated, chosen by the highest feature (see `bindings` in src/lib.rs).
+default = []
+library = []
+extend = ["library"]
+dialogs = ["extend"]
+ui = ["dialogs"]
+reader = ["extend"]
+full = ["ui", "reader"]
+
+[dependencies]
+wit-bindgen = "0.63"
+serde_json = "1"
+
+# Keep this crate out of any parent workspace.
+[workspace]

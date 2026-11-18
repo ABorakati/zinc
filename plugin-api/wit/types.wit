@@ -106,6 +106,9 @@ interface types {
     svg(string),
   }
 
+  /// The app's light or dark mode. Defined here (not in `ui`) so that `extend` can use it without importing the whole `ui` interface.
+  enum theme-mode { light, dark }
+
   /// Theme colors. The host resolves each one for the current light or dark mode and the user's palette. Same names as theme.ts.
   enum color-token {
     background, foreground, card, muted, muted-foreground, popover, popover-foreground, border, input, ring,

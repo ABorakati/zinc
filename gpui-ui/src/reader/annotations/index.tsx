@@ -1,12 +1,12 @@
 // annotations plugin (reader-next/src/annotations): highlight/underline from the current selection (selection popup with
 // colours), sticky notes, the annotations side panel (list, colour filter, comments, delete) and page overlays drawing the saved
 // annotations. Storage is the core's annotations API (Zotero reader JSON), so the web reader and Zotero see the same annotations.
-import { createEffect, createSignal, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, For, Show, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import { Icon } from "../../icons";
 import { Popover } from "../../ui";
 import { boundsOf, type Anchor } from "../../ui/core";
-import type { ReaderContext, ReaderPlugin } from "../plugins";
+import { pluginMenuItems, type ReaderContext, type ReaderPlugin } from "../plugins";
 import { IconButton, Swatches, kit } from "../structure/kit";
 import { PageAnnotations } from "./PageOverlay";
 import { AnnotationsPanel } from "./Panel";
@@ -75,7 +75,9 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 		setAnchor(r ? { rect: r, align: "start" } : { x: e.x ?? 0, y: e.y ?? 0 });
 		setOpen(true);
 	};
-	const label = (text: string) => (
+	/** the plugins' createColorContextMenu items: plain rows (submenus and separators are not drawn here) */
+		const colorRows = () => pluginMenuItems((pl) => pl.colorMenu?.(p.ctx)).filter((it) => it.onSelect && it.label);
+		const label = (text: string) => (
 		<text style={{ ...k.tx("text-xs font-medium text-muted-foreground"), whiteSpace: "nowrap" }}>{text}</text>
 	);
 	return (
@@ -146,7 +148,30 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 									setOpen(false);
 								}}
 							/>
-							<Show when={s.ui.tool() === "ink"}>
+							{/* Zotero's createColorContextMenu: rows a plugin adds under the swatches */}
+								<For each={colorRows()}>
+									{(it) => (
+										<div
+											onClick={() => {
+												setOpen(false);
+												it.onSelect?.();
+											}}
+											style={{
+												...k.t("flex flex-row items-center rounded px-2"),
+												height: 26,
+												gap: 6,
+												cursor: "pointer",
+												hover: k.t("bg-accent"),
+											}}
+										>
+											<Show when={it.iconColor}>
+												<div style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: it.iconColor }} />
+											</Show>
+											<text style={{ ...k.tx("text-xs text-foreground"), whiteSpace: "nowrap" }}>{it.label ?? ""}</text>
+										</div>
+									)}
+								</For>
+								<Show when={s.ui.tool() === "ink"}>
 								{label("Thickness")}
 								<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
 									{widths.map((w) => {

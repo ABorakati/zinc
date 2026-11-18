@@ -6,7 +6,7 @@ import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../../icons";
 import { Button, openMenu, type MenuItem } from "../../ui";
 import { boundsOf } from "../../ui/core";
-import type { ReaderContext } from "../plugins";
+import { openAfterPlugins, pluginMenuItems, readerPlugins, type ReaderContext, type ReaderPlugin } from "../plugins";
 import { Field, kit } from "../structure/kit";
 import { annotationContextMenu } from "./contextMenu";
 import { copyAnnotationImage, exportAnnotationImage } from "./imageExport";
@@ -17,6 +17,16 @@ import { CommentBox, TYPE_ICON } from "./Widgets";
 function stop(e: unknown) {
 	if (e && typeof e === "object" && "stopPropagation" in e && typeof e.stopPropagation === "function") {
 		e.stopPropagation();
+	}
+}
+
+/** A Zotero plugin's mark in the annotation card header; a failing plugin draws nothing. */
+function pluginHeader(pl: ReaderPlugin, ctx: ReaderContext, a: Accessor<Annotation>): JSX.Element {
+	try {
+		return pl.annotationHeader?.(ctx, a);
+	} catch (e) {
+		console.error(`[reader] plugin ${pl.id} annotationHeader:`, e);
+		return undefined;
 	}
 }
 
@@ -31,7 +41,7 @@ function Item(p: { ctx: ReaderContext; id: string }): JSX.Element {
 				onClick={() => s.act.jump(a()!)}
 				onAuxClick={(e: EventPayload) => {
 					if (e.isRightClick || e.button === 2) {
-						openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, () => annotationContextMenu(p.ctx, a()!));
+						openAfterPlugins((items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items), () => annotationContextMenu(p.ctx, a()!));
 					}
 				}}
 				style={{
@@ -54,6 +64,13 @@ function Item(p: { ctx: ReaderContext; id: string }): JSX.Element {
 						style={{ ...k.tx("text-[11px] text-muted-foreground"), whiteSpace: "nowrap" }}
 					>{`Page ${a()!.pageLabel || a()!.position.pageIndex + 1}`}</text>
 					<div style={{ flexGrow: 1 }} />
+					<For each={readerPlugins().filter((pl) => pl.annotationHeader)}>
+						{(pl) => (
+							<div onClick={stop} style={{ display: "flex", flexDirection: "row", alignItems: "center" }}>
+								{pluginHeader(pl, p.ctx, a as Accessor<Annotation>)}
+							</div>
+						)}
+					</For>
 					<div
 						onClick={(e) => {
 							stop(e);
@@ -183,7 +200,12 @@ export function AnnotationsPanel(p: { ctx: ReaderContext; filter?: AnnotationsFi
 				onSelect: () => setTag(t),
 			})),
 		];
-		openMenu(b ? { rect: b } : { x: e.x ?? 0, y: e.y ?? 0 }, items, { minWidth: 140 });
+		openMenu(
+			b ? { rect: b } : { x: e.x ?? 0, y: e.y ?? 0 },
+			// Zotero's createSelectorContextMenu: the plugins' items at the end of the filter menu
+			[...items, ...pluginMenuItems((pl) => pl.selectorMenu?.(p.ctx, { enableClearSelection: filtered() }))],
+			{ minWidth: 140 },
+		);
 	};
 	return (
 		<div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", minHeight: 0 }}>

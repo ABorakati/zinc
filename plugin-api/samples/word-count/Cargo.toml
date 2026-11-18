@@ -1,0 +1,16 @@
+[package]
+name = "word-count"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zinc-plugin = { path = "../../sdk/rust", features = ["extend"] }
+
+[profile.release]
+# profile settings are the plugin's own; the shared target dir and kache are set by the environment
+
+# Keep this crate out of any parent workspace.
+[workspace]

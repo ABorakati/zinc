@@ -1,0 +1,10 @@
+package zinc:extend-fixture@0.1.0;
+
+/// What the extend test plugin needs: it registers extension points and answers their callbacks.
+world ext {
+  import zinc:plugin/log@0.1.0;
+  import zinc:plugin/extend@0.1.0;
+
+  export zinc:plugin/lifecycle@0.1.0;
+  export zinc:plugin/extend-handlers@0.1.0;
+}

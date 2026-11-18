@@ -861,8 +861,8 @@ interface util {
   /// Zotero: `Zotero.Utilities.cleanDOI`. None if there is no DOI in the text.
   clean-doi: func(text: string) -> option<string>;
 
-  /// Zotero: `Zotero.Utilities.cleanISBN` (and `toISBN13` when `to-13` is true). None if not an ISBN.
-  clean-isbn: func(text: string, to-13: bool) -> option<string>;
+  /// Zotero: `Zotero.Utilities.cleanISBN` (and `toISBN13` when `to-isbn13` is true). None if not an ISBN.
+  clean-isbn: func(text: string, to-isbn13: bool) -> option<string>;
 
   /// Zotero: `Zotero.Utilities.cleanISSN`.
   clean-issn: func(text: string) -> option<string>;

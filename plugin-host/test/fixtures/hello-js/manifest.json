@@ -1,0 +1,10 @@
+{
+	"manifest_version": 1,
+	"id": "hello-js@zinc.test",
+	"name": "Hello (QuickJS test plugin)",
+	"version": "0.2.0",
+	"zinc": { "api_version": "0.1" },
+	"main": { "wasm": "plugin.wasm", "world": "plugin-minimal", "language": "js" },
+	"permissions": { "capabilities": [] },
+	"default_prefs": { "greeting": "hello" }
+}

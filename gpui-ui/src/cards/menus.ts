@@ -6,6 +6,7 @@ import { itemActions, type ItemAction, type ItemActionContext } from "../registr
 import { store } from "../store";
 import { readState } from "../readState";
 import { openMenu, type Anchor, type MenuItem } from "../ui";
+import { beforePluginMenu } from "../wasmplugins/extend/mount";
 import { displayShortcut } from "../shell/shortcuts";
 import { collectionStyle, paletteHex } from "../sidebar/collectionStyle";
 import { locateFileKey, locateItemFromRow, locateItemOf } from "../locate/item";
@@ -102,7 +103,7 @@ function registered(ctx: ItemActionContext, groups: readonly string[]): MenuItem
 		const out: MenuItem[] = [];
 		const subs = new Map<string, MenuItem[]>();
 		for (const a of list) {
-			const entry: MenuItem = { label: label(a), icon: a.icon, shortcut: displayShortcut(a.shortcut), onSelect: () => a.run(ctx) };
+			const entry: MenuItem = { label: label(a), icon: a.icon, shortcut: displayShortcut(a.shortcut), disabled: a.disabled?.(ctx), onSelect: () => a.run(ctx) };
 			if (!a.submenu) {
 				out.push(entry);
 				continue;
@@ -194,7 +195,7 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 				: { label: "Show in My Publications", icon: "book-marked", onSelect: () => void setInPublications(ctx.keys, true) },
 		);
 	}
-	for (const l of registered(ctx, ["cite", "export", "maintain"])) {
+	for (const l of registered(ctx, ["cite", "export", "maintain", "plugins"])) {
 		sep();
 		out.push(...l);
 	}
@@ -218,6 +219,10 @@ export async function openItemMenu(at: Anchor, item: ItemRow, index: number): Pr
 	if (!store.selected().has(item.key)) store.selectOnly(item.key, index);
 	const keys = [...store.selected()];
 	// the item's collections come with its detail; menus are built synchronously, so wait a moment for it (cached after the first time)
-	const detail = await Promise.race([getDetail(item.key).catch(() => null), new Promise<null>((r) => setTimeout(r, 150))]);
+	// plugin menus with an `on-menu-showing` hook answer within 120 ms, in parallel (wasmplugins/extend/mount.ts; a no-op while plugins are off)
+	const [detail] = await Promise.all([
+		Promise.race([getDetail(item.key).catch(() => null), new Promise<null>((r) => setTimeout(r, 150))]),
+		beforePluginMenu("library-item"),
+	]);
 	openMenu(at, itemMenuItems(item, keys, detail));
 }

@@ -1,0 +1,10 @@
+{
+	"manifest_version": 1,
+	"id": "hello-rust@zinc.test",
+	"name": "Hello (Rust test plugin)",
+	"version": "0.1.0",
+	"zinc": { "api_version": "0.1" },
+	"main": { "wasm": "plugin.wasm", "world": "plugin-minimal", "language": "rust" },
+	"permissions": { "capabilities": [] },
+	"default_prefs": { "greeting": "hello" }
+}

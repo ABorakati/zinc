@@ -1,0 +1,85 @@
+package zinc:plugin@0.1.0;
+
+/// The full plugin world. A plugin component targets this world (or a subset of it, see `plugin-minimal`).
+///
+/// Imports are what Zinc gives the plugin. Exports are what the plugin implements: its lifecycle hooks and the
+/// callback interfaces that go with the extension points it uses. A plugin that never uses an extension point
+/// still has to export every function of an exported interface; guests that cannot stub them should build
+/// against a subset world. The host also accepts a component that exports fewer interfaces than this world, as
+/// long as it exports `lifecycle`: extension points whose callback interface is missing are refused with
+/// `error::invalid-argument` at registration time.
+///
+/// Calling an imported function without the permission it needs returns `error::permission-denied`; the
+/// permission list is in `manifest.schema.json`.
+world plugin {
+  // ---- lifecycle area (lifecycle.wit) --------------------------------------------------------------------
+  import app;
+  import plugins;
+  import prefs;
+  import secrets;
+  import l10n;
+  import log;
+  import timers;
+  import net;
+  import fs;
+  import clipboard;
+  import shell;
+  import util;
+  import permissions;
+
+  // ---- library area (library.wit) ------------------------------------------------------------------------
+  import library;
+  import attachments;
+  import fulltext;
+  import schema;
+  import cite;
+  import translate;
+  import sync-control;
+  import data-utils;
+  import notifier;
+
+  // ---- extend area (extend.wit) --------------------------------------------------------------------------
+  import extend;
+
+  // ---- ui area (ui.wit) ----------------------------------------------------------------------------------
+  import ui;
+
+  // ---- reader area (reader.wit) --------------------------------------------------------------------------
+  import annotations;
+  import reader;
+  import note-editor;
+
+  // ---- what the plugin implements ------------------------------------------------------------------------
+  export lifecycle;
+  export events;
+  export net-events;
+  export notifier-handler;
+  export ui-events;
+  export extend-handlers;
+  export reader-events;
+  export note-events;
+}
+
+/// A small world for plugins that only add UI (menu items, item pane sections, a preference pane) and keep
+/// settings, with no library, network or file access. It lists exactly the interfaces such a plugin uses, so the
+/// component does not import the rest. The host runs it like any other plugin. It has no `fs`, `clipboard`, `shell` or
+/// `reader`: a minimal plugin that gets a dropped file (`types.file-grant`) cannot read it, and one that needs to open a
+/// URL or pick a file must target `plugin`. Every interface in the package is in `plugin`, by the file name that defines
+/// it (lifecycle.wit: lifecycle, events, app, plugins, prefs, secrets, l10n, log, timers, net, net-events, fs, clipboard,
+/// shell, util, permissions; library.wit: library, attachments, fulltext, schema, cite, translate, sync-control, data-utils,
+/// notifier, notifier-handler; extend.wit: extend, extend-handlers; ui.wit: ui, ui-events; reader.wit: annotations, reader,
+/// note-editor, reader-events, note-events; types.wit: types, used by the others).
+world plugin-minimal {
+  import app;
+  import prefs;
+  import l10n;
+  import log;
+  import timers;
+  import extend;
+  import ui;
+
+  export lifecycle;
+  export events;
+  export extend-handlers;
+  export ui-events;
+}

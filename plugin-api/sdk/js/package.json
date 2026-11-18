@@ -1,0 +1,14 @@
+{
+	"name": "@zinc/plugin-sdk",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "JS SDK for Zinc WASM plugins (QuickJS guests): TypeScript types generated from the WIT, UI and registration helpers, build script.",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"scripts": {
+		"gen-types": "bun scripts/gen-types.ts",
+		"build": "bun scripts/build.ts",
+		"check": "bun scripts/gen-types.ts && bun check"
+	}
+}

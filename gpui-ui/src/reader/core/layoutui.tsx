@@ -10,6 +10,7 @@ import { DropdownMenu, openMenu } from "../../ui/menu";
 import { toast } from "../../ui/overlay";
 import type { MenuItem } from "../../ui/core";
 import { pdfOpsUnavailable, printPdf, type PdfDoc } from "../pdf";
+import { openAfterPlugins } from "../plugins";
 import type { ScrollMode, SpreadMode } from "./layout";
 import { deletePages, rotatePages } from "./pageops";
 
@@ -29,6 +30,9 @@ export interface PageCmdHost {
 	/** true when the attachment's library does not let this user change files (a read-only group) */
 	filesLocked?(): boolean;
 	reopen(map: (page: number) => number): Promise<void>;
+	/** extra items a plugin adds at the end of the View menu / of a thumbnail's menu (src/reader/plugins.ts) */
+	extraView?(): MenuItem[];
+	extraThumb?(pages: number[]): MenuItem[];
 }
 
 /** "page 3", "pages 3-5 and 8" (1-based, for messages) */
@@ -178,10 +182,10 @@ export function createPageCommands(h: PageCmdHost) {
 		const inSel = s.length ? s.includes(page) : page === h.curPage();
 		if (!inSel) setSel([page]);
 		const ps = inSel ? (s.length ? s : [page]) : [page];
-		openMenu({ x, y }, () => pageItems(() => ps));
+		openAfterPlugins((items) => openMenu({ x, y }, items), () => [...pageItems(() => ps), ...(h.extraThumb?.(ps) ?? [])]);
 	}
 
-	return { busy, rotate, remove, print, pageItems, thumbMenu, targets };
+	return { busy, rotate, remove, print, pageItems, thumbMenu, targets, extraView: () => h.extraView?.() ?? [] };
 }
 export type PageCommands = ReturnType<typeof createPageCommands>;
 
@@ -257,6 +261,7 @@ export function ViewMenuButton(p: {
 		...p.cmds.pageItems(),
 		{ separator: true },
 		{ label: "Print…", icon: "printer", shortcut: "Ctrl+P", disabled: !!p.cmds.busy(), onSelect: () => void p.cmds.print() },
+		...p.cmds.extraView(),
 	];
 	return (
 		<DropdownMenu

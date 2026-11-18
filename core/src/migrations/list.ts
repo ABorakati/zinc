@@ -16,9 +16,10 @@ import { baseline } from "./baseline";
 import { quickSearch3 } from "./quick-search";
 import { libraries4 } from "./libraries";
 import { venues2 } from "./venues";
+import { changeLog5 } from "./change-log";
 import type { Migration } from "./types";
 
-export const MIGRATIONS: readonly Migration[] = [baseline, venues2, quickSearch3, libraries4];
+export const MIGRATIONS: readonly Migration[] = [baseline, venues2, quickSearch3, libraries4, changeLog5];
 
 /** The schema version this build writes and understands. */
 export const SCHEMA_HEAD = MIGRATIONS[MIGRATIONS.length - 1].id;
