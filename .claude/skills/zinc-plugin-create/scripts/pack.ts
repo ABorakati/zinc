@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Pack a BUILT plugin folder into <id>-<version>.zplugin (a zip: manifest.json, plugin.wasm, locale/, icons/, assets/).
 // Validates the manifest against plugin-api/manifest.schema.json and the permission rules first, checks plugin.wasm against
-// main.sha256, and leaves out transpiled/ and target/ (the installer ignores a shipped transpiled/ on purpose and builds its own).
+// main.sha256, and leaves out transpiled/ and target/ (the installer ignores a shipped transpiled/ from older builds).
 //
 //   bun pack.ts <built dir> [--out <file or dir>]
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

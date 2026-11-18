@@ -6,10 +6,10 @@ Three levels, cheapest first. Do all three for a port you hand over; say which o
 
 ```bash
 bun plugin-api/sdk/js/scripts/build.ts   <plugin dir> --out "$TEMP/zn-port/<name>"        # JS (QuickJS)
-bun plugin-host/scripts/build-plugin.ts  <plugin dir> --out "$TEMP/zn-port/<name>"        # Rust (wasm32-wasip2 + jco)
+bun plugin-host/scripts/build-plugin.ts  <plugin dir> --out "$TEMP/zn-port/<name>"        # Rust (wasm32-wasip2)
 ```
 
-Output: `manifest.json` (with the sha256 added), `plugin.wasm`, `transpiled/`, `locale/`. Needs `plugin-host/node_modules` for JS. Never `bun install` in `gpui-ui/` or `core/`. JS plugin source may
+Output: `manifest.json` (with the sha256 added), `plugin.wasm`, `locale/`. Needs `plugin-host/node_modules` for JS. Never `bun install` in `gpui-ui/` or `core/`. JS plugin source may
 live outside the repo (scratch): import the SDK by absolute path (`import { definePlugin, ext } from "C:/.../plugin-api/sdk/js/src/index.ts"`); `build.ts` bundles it in.
 A syntax error or a missing field shows up here only partly: a record with a required field missing builds fine and **traps at the call** (see `patterns.md`, Traps).
 

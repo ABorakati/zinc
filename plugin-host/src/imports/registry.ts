@@ -11,7 +11,7 @@ export type { Grants, PluginManifest, LogLevel };
 /** What a handler function is called with first. One per call; cheap to build. */
 export interface HandlerContext {
 	readonly pluginId: string;
-	/** The plugin's folder (the loadable layout: manifest.json, plugin.wasm, transpiled/, locale/, ...). Read only. The `fs` root `bundled` is this folder. */
+	/** The plugin's folder (the loadable layout: manifest.json, plugin.wasm, locale/, ...). Read only. The `fs` root `bundled` is this folder. */
 	readonly pluginDir: string;
 	/** The plugin's manifest.json, parsed. */
 	readonly manifest: PluginManifest;

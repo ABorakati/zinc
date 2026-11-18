@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { buildPlugin } from "../scripts/build-plugin";
 import { defineHandler, type ImportHandler } from "../src/imports/registry";
-import { createPluginSupervisor, type PluginRunner, type PluginSupervisor, type SupervisorOptions } from "../src/supervisor";
+import { createPluginSupervisor, type PluginSupervisor, type SupervisorOptions } from "../src/supervisor";
 
 const fixtures = join(import.meta.dir, "fixtures");
 export const fixtureOut = join(process.env.TEMP ?? process.env.TMPDIR ?? "/tmp", `zn-wasm-fixtures-${process.pid}`);
@@ -12,10 +12,8 @@ process.on("exit", () => {
 	} catch {}
 });
 
-/** `ZN_TEST_RUNNER=worker bun test` runs against the fallback Bun Worker host; default is `"wasmtime"` (`zhw`). */
-export const RUNNER: PluginRunner = process.env.ZN_TEST_RUNNER === "worker" ? "worker" : "wasmtime";
 
-/** Build the three fixture plugins once per test run (`transpile: true` so both `wasmtime` and `worker` runners can load them). */
+/** Build the three fixture plugins once per test run. */
 let built: Promise<Record<"hello-rust" | "spin-rust" | "hello-js", string>> | undefined;
 export function buildFixtures() {
 	built ??= (async () => {
@@ -62,7 +60,6 @@ export function newSupervisor(lines: string[], extra: SupervisorOptions = {}): P
 		hostHandlerModules: [prefsHostModule],
 		// these tests bring their own stub handlers: the real src/imports/*.host.ts of the other areas must not shadow them
 		discoverHostHandlers: false,
-		runner: RUNNER,
 		...extra,
 	});
 }

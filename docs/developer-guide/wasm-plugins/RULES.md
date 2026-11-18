@@ -40,11 +40,11 @@ All five agents work at the same time in `C:\Users\abora\zotero-next\.claude\wor
 Read `C:\Users\abora\zotero-next\.claude\worktrees\wasm-plugin-spike-b1f662\docs\developer-guide\wasm-plugins-spike.md` and
 the spike's WIT at `...\wasm-plugin-spike-b1f662\spikes\wasm-plugins\wit\plugin.wit`. In short:
 
-- Plugins are WebAssembly components (the component model, WIT interfaces), run by jco under Bun.
-- All plugins run in one separate "plugin host" process, one Worker per plugin. A hung plugin is handled by killing and
-  restarting that process. So every host call crosses a process boundary: design for few, coarse calls (batch reads, return
+- Plugins are WebAssembly components (the component model, WIT interfaces), run by Wasmtime (`zhw`).
+- All plugins run in one separate "plugin host" process (`zhw`), one instance per plugin. A hung plugin is stopped by Wasmtime's
+  epoch interruption and disabled alone; the process restarts only if it dies. So every host call crosses a process boundary: design for few, coarse calls (batch reads, return
   lists, no per-row callbacks in hot paths such as item tree cell rendering; prefer declarative data the host renders).
-- Host imports can be async (JSPI). A plugin can await a host call.
+- Host imports can be async: the host suspends the plugin while it waits for the answer.
 - Plugins get no WASI: no files, no network, no clock, no env except what Zinc's own interfaces give. If Zotero gives a
   plugin a capability (HTTP, files, timers), design a Zinc interface for it, gated by a permission declared in the manifest.
 - Guests are written in Rust or JS (QuickJS). Keep the WIT easy to use from both: plain records, variants, lists, options,

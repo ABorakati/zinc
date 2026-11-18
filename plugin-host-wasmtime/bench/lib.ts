@@ -3,7 +3,6 @@
 // `Runner` interface shared by `bench/run.ts` and `bench/host.test.ts`.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createPluginSupervisor, type PluginSupervisor } from "../../plugin-host/src/supervisor";
 import {
 	HandlerTable,
 	WitError,
@@ -440,76 +439,27 @@ export class WtHost implements Runner {
 	}
 }
 
-// ---- Bun Worker baseline (fallback supervisor runner: "worker") ---------------------------------------------------------
-
-export class BunHost implements Runner {
-	name = "bun";
-	sup!: PluginSupervisor;
-	logLines = 0;
-	restarts: any[] = [];
-	constructor(private opts: { hostStderr?: "inherit" | "ignore" } = {}) {}
-	async start() {
-		const t0 = now();
-		this.sup = createPluginSupervisor({
-			runner: "worker",
-			importHandlers: [
-				defineHandler({
-					interface: "zinc:plugin/log",
-					where: "zinc",
-					functions: { write: () => void this.logLines++, "debug-enabled": () => false },
-				}),
-				defineHandler({ interface: "zinc:plugin/timers", where: "zinc", functions: { "set-timeout": () => 7 } }),
-				defineHandler({ interface: "zinc:plugin/extend", where: "zinc", functions: { "register-menu": () => undefined } }),
-			],
-			hostHandlerModules: [prefsHostModule],
-			discoverHostHandlers: false,
-			hostStderr: this.opts.hostStderr ?? "ignore",
-		});
-		this.sup.on("host-restart", (e) => this.restarts.push({ t: now(), ...e }));
-		this.sup.on("host-restarted", (e) => this.restarts.push({ t: now(), ...e }));
-		await this.sup.ready();
-		return now() - t0;
-	}
-	async load(dir: string) {
-		const t0 = now();
-		const info = await this.sup.load(dir);
-		return { id: info.id, ms: now() - t0 };
-	}
-	async startup(id: string): Promise<WireResult> {
-		try {
-			await this.sup.start(id);
-			return { ok: true, value: undefined };
-		} catch (e) {
-			return toWire(e);
-		}
-	}
-	async call(id: string, iface: string, fn: string, args: unknown[], timeoutMs?: number): Promise<WireResult> {
-		try {
-			return { ok: true, value: await this.sup.call(id, iface, fn, args, timeoutMs ? { timeoutMs } : undefined) };
-		} catch (e) {
-			return toWire(e);
-		}
-	}
-	pids() {
-		return this.sup.hostPid ? [this.sup.hostPid] : [];
-	}
-	counts() {
-		return { logLines: this.logLines, imports: 0 };
-	}
-	async close() {
-		await this.sup.shutdown();
-	}
-}
-
-function toWire(e: unknown): WireResult {
-	if (e instanceof PluginError) return { ok: false, error: e.error as any };
-	return { ok: false, error: { kind: "internal", message: String((e as Error)?.message ?? e) } };
-}
-
 // ---- measurement helpers -------------------------------------------------------------------------------------------------
 
 export async function workingSet(pids: number[]): Promise<number> {
 	let sum = 0;
+	if (process.platform === "linux") {
+		// VmRSS from /proc, in kB
+		for (const pid of pids) {
+			const status = await Bun.file(`/proc/${pid}/status`).text().catch(() => "");
+			const m = /^VmRSS:\s+(\d+)\s+kB/m.exec(status);
+			if (m) sum += Number(m[1]) * 1024;
+		}
+		return sum;
+	}
+	if (process.platform !== "win32") {
+		for (const pid of pids) {
+			const p = Bun.spawn(["ps", "-o", "rss=", "-p", String(pid)], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+			const kb = Number((await new Response(p.stdout).text()).trim());
+			if (kb) sum += kb * 1024;
+		}
+		return sum;
+	}
 	for (const pid of pids) {
 		const p = Bun.spawn(["tasklist", "/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
 			stdin: "ignore",

@@ -1,6 +1,6 @@
 // The timers of `timers.set-timeout`, `set-interval` and `request-idle` (lifecycle.wit): per plugin, at most 64, an interval is never
 // shorter than 10 ms, and while every Zinc window is hidden a timer shorter than 1 s runs at most once a second. A fired timer calls
-// the plugin's `events.on-timer(timer, kind)` through `deliver`. On the `wasmtime` runner, native Rust timers run inside `zhw` and
+// the plugin's `events.on-timer(timer, kind)` through `deliver`. Native Rust timers run inside `zhw` and
 // report their active count via `setRemoteCount`; `clearAll`/`clearEverything` also emit `onClear` (`timers-clear`).
 import { WitError } from "../imports/registry";
 

@@ -3,7 +3,7 @@
 // <PluginView> in a GPUIX test root, and checks the event round trips: a button click, typing, a dialog opened from a handler
 // (re-entrancy), a toast, a menu, a virtual table pulled with render-range, a sort, a form submit and a dark-mode switch.
 //   bun scripts/shot-wasm-ui.tsx [outDir]        screenshots go to %TEMP%\zn-wasm-ui (or outDir)
-// Never opens a window on the screen; the supervisor starts a plugin-host process (Bun) and stops it at the end.
+// Never opens a window on the screen; the supervisor starts the Wasmtime host (zhw) and stops it at the end.
 import { cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createTestRoot } from "@gpuix/solid/testing";

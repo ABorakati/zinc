@@ -2,8 +2,8 @@
 // supervisor (wasmplugins/host.ts); a test passes its own with `setReaderCaller`.
 //
 // There is no queue here any more: the supervisor runs ONE CALL AT A TIME PER PLUGIN (plugin-host/src/supervisor.ts), queues the
-// calls of every area, and gives a plugin with a large transpiled JS file the longer budget its slow first calls need
-// (phase2-integrate.md). This module only picks the supervisor.
+// calls of every area; `zhw` enforces the per-call time budget.
+// This module only picks the supervisor.
 import { getPluginSupervisor, callPlugin as appCall } from "../host";
 import type { CallPlugin } from "./types";
 

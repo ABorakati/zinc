@@ -1,17 +1,17 @@
 # Build, test, package, install
 
-Contents: build; testing with the supervisor; what a test must never touch; packaging; installing and dev loading; runners.
+Contents: build; testing with the supervisor; what a test must never touch; packaging; installing and dev loading; the runner.
 
 ## Build
 
 ```bash
-bun plugin-api/sdk/js/scripts/build.ts   <plugin dir> [--out <dir>]      # JS: bundle the SDK in, componentize-qjs, jco transpile   (~6 s)
-bun plugin-host/scripts/build-plugin.ts  <plugin dir> [--out <dir>]      # Rust: cargo build --release --target wasm32-wasip2, then jco (~40 s cold, ~15 s warm)
+bun plugin-api/sdk/js/scripts/build.ts   <plugin dir> [--out <dir>]      # JS: bundle the SDK in, componentize-qjs   (~6 s)
+bun plugin-host/scripts/build-plugin.ts  <plugin dir> [--out <dir>]      # Rust: cargo build --release --target wasm32-wasip2 (~40 s cold, ~15 s warm)
 ```
 
-(Run from the Zinc checkout, or use absolute paths.) Output, default `<dir>/dist`, or `--out`: `manifest.json` (copy of yours with `main.wasm`, `main.language` and `main.sha256` set), `plugin.wasm`, `transpiled/` (only the `worker` runner reads it; Rust: `--no-transpile` skips it), and copies of `locale/`, `icons/`, `assets/`. Build to a scratch `--out` outside the plugin source tree when testing.
+(Run from the Zinc checkout, or use absolute paths.) Output, default `<dir>/dist`, or `--out`: `manifest.json` (copy of yours with `main.wasm`, `main.language` and `main.sha256` set), `plugin.wasm`, and copies of `locale/`, `icons/`, `assets/`. Build to a scratch `--out` outside the plugin source tree when testing.
 
-Needs: Bun; `plugin-host/node_modules` (jco and componentize-qjs; if it is missing, tell the user and do not install into `gpui-ui/` or `core/`); for Rust, the `wasm32-wasip2` target (`rustup target add wasm32-wasip2`) and plenty of free disk (the sample test refuses below 9216 MiB free on the `%TEMP%` drive). Cargo uses the shared target dir from the environment (`CARGO_TARGET_DIR`): do not set another one or per-plugin profile flags. The build script finds `cargo` itself if it is not on PATH.
+Needs: Bun; `plugin-host/node_modules` (componentize-qjs, and jco for the SDK type generator; if it is missing, tell the user and do not install into `gpui-ui/` or `core/`); for Rust, the `wasm32-wasip2` target (`rustup target add wasm32-wasip2`) and plenty of free disk (the sample test refuses below 9216 MiB free on the `%TEMP%` drive). Cargo uses the shared target dir from the environment (`CARGO_TARGET_DIR`): do not set another one or per-plugin profile flags. The build script finds `cargo` itself if it is not on PATH.
 
 Typecheck JS: the scaffold's `tsconfig.json` includes the SDK types (`bun plugin-api/sdk/js/scripts/gen-types.ts` writes them from the WIT once); then `bun check` in the plugin dir. Types are advisory: componentize does not read them.
 
@@ -49,10 +49,10 @@ A `.zplugin` is a zip with `manifest.json`, `plugin.wasm`, `locale/`, `icons/`, 
 
 ## Install and dev loading
 
-- **Installer** (`plugin-host/src/package/installer.ts`, `PluginManager.installPackage(path | bytes)` / `installDir(folder)`): checks the zip, the manifest, `zinc.api_version` compatibility, the hash, asks for permission approval (`groups` of low, medium, high ids; optional permissions are never granted at install), precompiles for the Wasmtime runner into a per-machine cache (or transpiles for the worker runner), writes `installed/<id>/` under the plugins root (`%APPDATA%\zotero-next-gpui\plugins`, or `ZN_PLUGINS_DIR`), then runs `install` and `startup`. An update that adds permissions stays disabled until approved. In this tree Settings > Plugins has the on/off switch (`shell.wasmPlugins`) but no install button yet; call the manager from code (with a scratch `ZN_PLUGINS_DIR`) or ask the user how they want to install.
+- **Installer** (`plugin-host/src/package/installer.ts`, `PluginManager.installPackage(path | bytes)` / `installDir(folder)`): checks the zip, the manifest, `zinc.api_version` compatibility, the hash, asks for permission approval (`groups` of low, medium, high ids; optional permissions are never granted at install), precompiles into a per-machine `.cwasm` cache, writes `installed/<id>/` under the plugins root (`%APPDATA%\zotero-next-gpui\plugins`, or `ZN_PLUGINS_DIR`), then runs `install` and `startup`. An update that adds permissions stays disabled until approved. In this tree Settings > Plugins has the on/off switch (`shell.wasmPlugins`) but no install button yet; call the manager from code (with a scratch `ZN_PLUGINS_DIR`) or ask the user how they want to install.
 - **Dev loading** into a running app: `ZN_WASM_PLUGINS=1 ZN_WASM_PLUGIN_DIRS=<built dir>[;<more>]` (path-list separator of the OS). The folders load as they are, with the permissions their manifests declare, and no package manager. Restart the app after a rebuild. Never aim this at the user's live app without asking.
 - **Uninstall** removes `data/<id>`, prefs and secrets unless the plugin says otherwise; the `uninstall` hook runs first.
 
-## Runners
+## Runner
 
-Plugins run in Wasmtime (`zhw`, `plugin-host-wasmtime`); the component is precompiled to `.cwasm` (a per-machine cache keyed by wasm hash, `zhw` version and engine settings; if missing, `zhw` compiles at load, 0.2 to 2 s). Cold start is tens of milliseconds and a stuck plugin stops alone. The Bun Worker runner (jco `transpiled/`) is a fallback: `ZN_PLUGIN_RUNNER=worker`, or `--runner worker` in `smoke.ts`. `smoke.ts` picks Wasmtime when the `zhw` binary exists (`resolveZhwPath`: `ZHW`/`ZN_ZHW`, next to the executable, `plugin-host-wasmtime/target/release`, `gpui-ui/out`, the shared target dir) and otherwise the worker. Build `zhw` with `cd plugin-host-wasmtime && cargo build --release` if it is missing and the user wants it. If a runner fails for reasons outside your plugin (the runner code is under active change), report it and fall back to the other runner for your test.
+Plugins run in Wasmtime (`zhw`, `plugin-host-wasmtime`); the component is precompiled to `.cwasm` (a per-machine cache keyed by wasm hash, `zhw` version and engine settings; if missing, `zhw` compiles at load, 0.2 to 2 s). Cold start is tens of milliseconds and a stuck plugin stops alone. Wasmtime is the only runner (the Bun Worker runner was removed). `smoke.ts` needs the `zhw` binary (`resolveZhwPath`: `ZHW`/`ZN_ZHW`, next to the executable, `plugin-host-wasmtime/target/release`, `gpui-ui/out`, the shared target dir); build it with `cd plugin-host-wasmtime && cargo build --release` if it is missing and the user wants it. If `zhw` fails for reasons outside your plugin (the host code is under active change), report it and test with stubs in `plugin-api/samples/test.ts` style.

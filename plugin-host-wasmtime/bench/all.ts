@@ -1,4 +1,4 @@
-// Runs bench/run.ts once per (section, plugin, variant) in a fresh process (several Bun supervisors in one process hang
+// Runs bench/run.ts once per (section, plugin, variant) in a fresh process (several supervisors in one process hang
 // the harness sooner or later) and prints the medians. Usage: bun bench/all.ts [--reps 3] [--plugins a,b] [--skip import,safety]
 import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
@@ -9,7 +9,7 @@ const opt = (n: string) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : undef
 const reps = Number(opt("--reps") ?? 3);
 const plugins = (opt("--plugins") ?? "bench-guest,hello-rust,hello-js,quick-tags,ui-fixture").split(",");
 const skip = new Set((opt("--skip") ?? "").split(","));
-const variants = ["bun", "wt-jit", "wt-aot", "wt-aot-nobridge"];
+const variants = ["wt-jit", "wt-aot", "wt-aot-nobridge"];
 const out = join(scratch, "all");
 
 async function child(args: string[], file: string, timeoutMs: number): Promise<any> {
@@ -33,7 +33,7 @@ if (!skip.has("cold")) {
 	for (const p of plugins)
 		for (const v of variants) {
 			const runs: any[] = [];
-			for (let i = 0; i < (v === "bun" && p === "ui-fixture" ? 1 : reps); i++) {
+			for (let i = 0; i < reps; i++) {
 				const r = await child(["--only", "cold", "--plugins", p, "--variants", v, "--reps", "1"], join(out + `-c-${p}-${v}-${i}.json`), 600_000);
 				const x = r?.cold?.[`${p}/${v}`]?.[0];
 				if (x && !x.error) runs.push(x);

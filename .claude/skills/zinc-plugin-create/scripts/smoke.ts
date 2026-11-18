@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-// Load a BUILT plugin folder (manifest.json + plugin.wasm [+ transpiled/]) through Zinc's plugin supervisor with stub imports,
+// Load a BUILT plugin folder (manifest.json + plugin.wasm) through Zinc's plugin supervisor with stub imports,
 // run `startup`, and show what the plugin registered and called. No app, no core, no real library, no ports: every import is
 // answered by a stub defined here (Zinc's own handlers are not loaded).
 //
-//   bun smoke.ts <built dir> [--call <iface>.<fn> '<json array of args>'] ... [--runner wasmtime|worker] [--keep-going]
+//   bun smoke.ts <built dir> [--call <iface>.<fn> '<json array of args>'] ... [--keep-going]
 //   e.g. bun smoke.ts dist --call extend-handlers.on-menu-command '["hello-menu","hello.hello",null,{"window":1,"tab":{"id":"library","kind":"library"},"rows":[],"items":[],"itemCount":0,"itemsTruncated":false,"editable":true}]'
 //
 // As a module (see ../assets/plugin.test.ts) it exports openPlugin() and builders for the records callbacks take.
@@ -113,8 +113,6 @@ function stubs(calls: Call[], answers: Answers, echoLog: boolean) {
 }
 
 export interface OpenOptions {
-	/** "wasmtime" (needs the `zhw` binary) or "worker" (Bun Worker + jco). Default: wasmtime if zhw exists, else worker. */
-	runner?: "wasmtime" | "worker";
 	/** Print the plugin's own log lines. Default true. */
 	echoLog?: boolean;
 	callTimeoutMs?: number;
@@ -124,7 +122,6 @@ export interface OpenPlugin {
 	sup: any;
 	id: string;
 	calls: Call[];
-	runner: string;
 	/** `await p.call("extend-handlers", "on-menu-command", [menu, entry, undefined, ctx])` */
 	call(iface: string, fn: string, args?: unknown[]): Promise<any>;
 	/** Recorded import calls, `calledWith("extend.register-menu")`. */
@@ -135,12 +132,11 @@ export interface OpenPlugin {
 /** Load the built folder, grant the permissions its manifest declares, run `startup`. */
 export async function openPlugin(builtDir: string, answers: Answers = {}, o: OpenOptions = {}): Promise<OpenPlugin> {
 	const calls: Call[] = [];
-	let runner = o.runner ?? (process.env.ZN_PLUGIN_RUNNER === "worker" ? "worker" : undefined);
-	if (!runner) runner = existsSync(host.resolveZhwPath()) ? "wasmtime" : "worker";
+	// Plugins run in zhw, the Wasmtime host (cargo build --release in plugin-host-wasmtime, or set ZHW to its path).
+	if (!existsSync(host.resolveZhwPath())) throw new Error("the zhw binary was not found: run `cargo build --release` in plugin-host-wasmtime (or set ZHW)");
 	const sup = host.createPluginSupervisor({
 		importHandlers: stubs(calls, answers, o.echoLog ?? true),
 		discoverHostHandlers: false, // do not load src/imports/*.host.ts (they would talk to a real core)
-		runner,
 		callTimeoutMs: o.callTimeoutMs ?? 8000,
 		lifecycleTimeoutMs: o.lifecycleTimeoutMs ?? 15000,
 		loadTimeoutMs: 60000,
@@ -152,7 +148,6 @@ export async function openPlugin(builtDir: string, answers: Answers = {}, o: Ope
 		sup,
 		id,
 		calls,
-		runner,
 		call: (iface, fn, args = []) => sup.call(id, iface, fn, args),
 		calledWith: (name) => {
 			const [i, f] = name.split(".");
@@ -226,7 +221,6 @@ if (import.meta.main) {
 		const i = args.indexOf(flag);
 		return i >= 0 ? args.splice(i, 2)[1] : undefined;
 	};
-	const runner = take("--runner") as "wasmtime" | "worker" | undefined;
 	const callSpecs: { name: string; json?: string }[] = [];
 	for (let i = args.indexOf("--call"); i >= 0; i = args.indexOf("--call")) {
 		const [, name, json] = args.splice(i, 3);
@@ -234,16 +228,16 @@ if (import.meta.main) {
 	}
 	const dir = args[0];
 	if (!dir) {
-		console.error("usage: bun smoke.ts <built dir> [--call iface.fn '<json args>'] [--runner wasmtime|worker]");
+		console.error("usage: bun smoke.ts <built dir> [--call iface.fn '<json args>']");
 		process.exit(2);
 	}
 	let code = 0;
-	const p = await openPlugin(dir, {}, { runner }).catch((e) => {
+	const p = await openPlugin(dir).catch((e) => {
 		console.error(`FAIL load/startup: ${e?.message ?? e}${e?.payload ? " " + show(e.payload) : ""}`);
 		process.exit(1);
 	});
 	try {
-		console.log(`loaded ${p.id} (runner: ${p.runner}); startup ran`);
+		console.log(`loaded ${p.id}; startup ran`);
 		const interesting = p.calls.filter((c) => c.iface !== "log");
 		console.log(`import calls during startup (${interesting.length}):`);
 		for (const c of interesting) console.log(`  ${c.iface}.${c.fn} ${show(c.args)}`);

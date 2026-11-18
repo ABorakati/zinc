@@ -168,7 +168,7 @@ describe("menu resolution", () => {
 // ---- the real plugin --------------------------------------------------------------------------------------------------------
 
 describe("fixture plugin through the supervisor", () => {
-	// ZN_EXTEND_FIXTURE=<folder>: use a fixture that is already built (skips the componentize + jco step, about 12 s)
+	// ZN_EXTEND_FIXTURE=<folder>: use a fixture that is already built (skips the componentize step, about 12 s)
 	const out = process.env.ZN_EXTEND_FIXTURE ?? join(process.env.TEMP ?? "/tmp", "zn-wasm-extend-fixture-test");
 	const lines: string[] = [];
 	let sup: Awaited<ReturnType<typeof import("../index").startWasmPlugins>>;

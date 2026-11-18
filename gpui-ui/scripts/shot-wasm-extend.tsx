@@ -41,7 +41,7 @@ await startCore();
 
 // 2. the plugin: build the fixture, start the supervisor, bind the window side
 const { buildPlugin } = await import("../../plugin-host/scripts/build-plugin");
-// ZN_EXTEND_FIXTURE=<folder>: a fixture already built by a previous run or by extend.test.ts (skips the componentize + jco step)
+// ZN_EXTEND_FIXTURE=<folder>: a fixture already built by a previous run or by extend.test.ts (skips the componentize step)
 const pluginOut = process.env.ZN_EXTEND_FIXTURE ?? join(tmp, "plugin");
 if (!process.env.ZN_EXTEND_FIXTURE) await buildPlugin({ dir: join(import.meta.dir, "../test/wasm-extend-fixture"), out: pluginOut, world: "ext" });
 const { defineHandler } = await import("../../plugin-host/src/imports/registry");

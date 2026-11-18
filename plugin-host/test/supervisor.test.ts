@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { witError } from "../src/imports/registry";
 import { PluginError } from "../src/protocol";
 import type { PluginSupervisor, SupervisorEvents } from "../src/supervisor";
-import { RUNNER, alive, buildFixtures, newSupervisor, until, zincHandlers } from "./helpers";
+import { alive, buildFixtures, newSupervisor, until, zincHandlers } from "./helpers";
 
 let dirs: Awaited<ReturnType<typeof buildFixtures>>;
 beforeAll(async () => {
@@ -31,8 +31,8 @@ describe("load and call", () => {
 		expect(sup.get(info.id)?.status).toBe("running");
 
 		expect(lines).toContain("hello-rust@zinc.test: hello-rust startup hello-rust@zinc.test 0.1.0");
-		// On `wasmtime`, `*.host.ts` runs in the app process (`process.pid`); on `worker`, in `host-main.ts` (`sup.hostPid`).
-		const expectedPid = RUNNER === "wasmtime" ? process.pid : sup.hostPid;
+		// `*.host.ts` handlers run in the app process.
+		const expectedPid = process.pid;
 		expect(lines).toContain(`hello-rust@zinc.test: pref greeting=hello-from-host-${expectedPid}`);
 		// timers.set-timeout (zinc handler) later calls events.on-timer back through ctx.callExport.
 		expect(lines).toContain("hello-rust@zinc.test: timer=ok(7)");
@@ -60,7 +60,7 @@ describe("load and call", () => {
 		const info = await sup.load(dirs["hello-js"]);
 		await sup.start(info.id, { why: "addon-enable" });
 		expect(lines).toContain("hello-js@zinc.test: hello-js startup hello-js@zinc.test 0.2.0 why=addon-enable");
-		const expectedPid = RUNNER === "wasmtime" ? process.pid : sup.hostPid;
+		const expectedPid = process.pid;
 		expect(lines).toContain(`hello-js@zinc.test: pref greeting=hello-from-host-${expectedPid}`);
 		await until(() => lines.includes("hello-js@zinc.test: js timer 7 timeout fired"), 3000, "callback");
 		await sup.call(info.id, "events", "on-timer", [9, "interval"]);
@@ -147,44 +147,22 @@ describe("a stuck plugin", () => {
 		expect(err).toBeInstanceOf(PluginError);
 		expect(err.kind).toBe("timeout");
 
-		if (RUNNER === "wasmtime") {
-			// On Wasmtime, epoch interruption stops ONLY spin-rust; zhw and hello-rust keep running without a restart.
-			expect(sup.restarts).toBe(0);
-			expect(sup.hostPid).toBe(pid1);
-			expect(alive(pid1)).toBe(true);
-			expect(events).toEqual([]);
+		// Epoch interruption stops ONLY spin-rust; zhw and hello-rust keep running without a restart.
+		expect(sup.restarts).toBe(0);
+		expect(sup.hostPid).toBe(pid1);
+		expect(alive(pid1)).toBe(true);
+		expect(events).toEqual([]);
 
-			const s = sup.get(spin.id)!;
-			expect(s.status).toBe("disabled");
-			expect(s.reason).toContain("400 ms");
-			const refused = (await sup.call(spin.id, "events", "on-timer", [1, "timeout"]).catch((e) => e)) as PluginError;
-			expect(refused.kind).toBe("disabled");
+		const s = sup.get(spin.id)!;
+		expect(s.status).toBe("disabled");
+		expect(s.reason).toContain("400 ms");
+		const refused = (await sup.call(spin.id, "events", "on-timer", [1, "timeout"]).catch((e) => e)) as PluginError;
+		expect(refused.kind).toBe("disabled");
 
-			expect(sup.get(hello.id)?.status).toBe("running");
-			expect(lines.filter((l) => l.includes("hello-rust startup")).length).toBe(1);
-			await sup.call(hello.id, "events", "on-timer", [5, "interval"]);
-			expect(lines).toContain("hello-rust@zinc.test: timer 5 fired");
-		} else {
-			await until(() => events.some((e) => e.startsWith("restarted:")), 8000, "restart to finish");
-			expect(events[0]).toBe(`restart:timeout:${spin.id}`);
-			expect(events[1]).toBe(`restarted:${hello.id}`);
-			expect(sup.restarts).toBe(1);
-
-			expect(alive(pid1)).toBe(false);
-			expect(sup.hostPid).not.toBe(pid1);
-			expect(alive(sup.hostPid)).toBe(true);
-
-			const s = sup.get(spin.id)!;
-			expect(s.status).toBe("disabled");
-			expect(s.reason).toContain("exceeded 400 ms");
-			const refused = (await sup.call(spin.id, "events", "on-timer", [1, "timeout"]).catch((e) => e)) as PluginError;
-			expect(refused.kind).toBe("disabled");
-
-			expect(sup.get(hello.id)?.status).toBe("running");
-			expect(lines.filter((l) => l.includes("hello-rust startup")).length).toBe(2);
-			await sup.call(hello.id, "events", "on-timer", [5, "interval"]);
-			expect(lines).toContain("hello-rust@zinc.test: timer 5 fired");
-		}
+		expect(sup.get(hello.id)?.status).toBe("running");
+		expect(lines.filter((l) => l.includes("hello-rust startup")).length).toBe(1);
+		await sup.call(hello.id, "events", "on-timer", [5, "interval"]);
+		expect(lines).toContain("hello-rust@zinc.test: timer 5 fired");
 	}, 40_000);
 
 	test("killing the host process triggers host-restart -> host-restarted and reloads running plugins", async () => {

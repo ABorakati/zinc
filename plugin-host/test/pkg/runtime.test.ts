@@ -2,20 +2,17 @@
 // timers, log, l10n, util, secrets, app, permissions and plugins through the real handlers of this area. The plugin runs a "probe" when
 // `events.on-timer` is called with a number of 900 or more and logs each outcome, which the tests read back from the log ring.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { InstallError } from "../../src/package/installer";
 import type { ApproveFn } from "../../src/package/installer";
-import { RUNNER, buildE2e, newRuntime, pack, rmTree, scratch, until } from "./helpers";
+import { buildE2e, newRuntime, pack, rmTree, scratch, until } from "./helpers";
 
 const ID = "e2e-js@zinc.test";
 let built: string;
-let fastTranspile: (wasm: Uint8Array, out: string) => Promise<void>;
 
 beforeAll(async () => {
 	built = await buildE2e();
-	// Every package in these tests carries the same plugin.wasm, so most installs reuse the transpiled output of the build instead of running jco again.
-	fastTranspile = async (_wasm, out) => void cpSync(join(built, "transpiled"), out, { recursive: true });
 }, 120_000);
 
 type Rt = Awaited<ReturnType<typeof newRuntime>>;
@@ -38,7 +35,7 @@ async function runtime(o: Parameters<typeof newRuntime>[1] = {}, root?: string):
 	await closeCurrent();
 	const dir = root ?? scratch("rt");
 	if (!roots.includes(dir)) roots.push(dir);
-	const rt = await newRuntime(dir, { ...o, manager: { transpile: fastTranspile, zincVersion: "0.5.0", ...o.manager } });
+	const rt = await newRuntime(dir, { ...o, manager: { zincVersion: "0.5.0", ...o.manager } });
 	current = rt;
 	return Object.assign(rt, { root: dir });
 }
@@ -48,12 +45,12 @@ const probe = (rt: Rt, n: number, id = ID) => rt.services.manager.callPlugin(id,
 const grantAll: ApproveFn = (req) => ({ grant: req.required });
 const find = (lines: string[], prefix: string) => lines.find((l) => l.startsWith(prefix));
 
-describe("install from a .zplugin with the real jco step", () => {
+describe("install from a .zplugin", () => {
 	test("layout, hash pin, ignored transpiled/, hooks with reasons, default grants", async () => {
-		// the real jco step, not the fast copy, and a hostile transpiled/ in the package
+		// a hostile transpiled/ in the package (an older build layout) is ignored
 		const evil = "export const EVIL = true; throw new Error('ran the package transpiled code');";
 		const zip = pack(built, { withTranspiled: true, extra: { "transpiled/plugin.js": evil } });
-		const real = await runtime({ manager: { transpile: undefined } });
+		const real = await runtime();
 		const r = await real.services.manager.installPackage(zip);
 		expect(r.error).toBeUndefined();
 		expect(r.started).toBe(true);
@@ -61,14 +58,9 @@ describe("install from a .zplugin with the real jco step", () => {
 		expect(r.warnings.join("|")).toContain("transpiled/ folder was ignored");
 		const dir = real.services.manager.layout.installed(ID);
 		for (const f of ["manifest.json", "plugin.wasm", "locale/en-US/main.ftl", "locale/fr/main.ftl", "icons/a.png"]) expect(existsSync(join(dir, f))).toBe(true);
-		if (RUNNER === "wasmtime") {
-			expect(existsSync(join(dir, "transpiled"))).toBe(false);
-			expect(existsSync(real.services.manager.layout.cacheRoot)).toBe(true);
-			expect(real.supervisor.lastLoadInfo?.(ID)?.fromCwasm).toBe(true);
-		} else {
-			expect(existsSync(join(dir, "transpiled/plugin.js"))).toBe(true);
-			expect(readFileSync(join(dir, "transpiled", "plugin.js"), "utf8")).not.toContain("EVIL");
-		}
+		expect(existsSync(join(dir, "transpiled"))).toBe(false);
+		expect(existsSync(real.services.manager.layout.cacheRoot)).toBe(true);
+		expect(real.supervisor.lastLoadInfo?.(ID)?.fromCwasm).toBe(true);
 		const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
 		expect(m.main.sha256).toMatch(/^[0-9a-f]{64}$/); // pinned
 		const lines = real.lines(ID);
@@ -460,16 +452,16 @@ describe("refusals leave nothing behind", () => {
 		expect(await code(m.installPackage(withManifest((x) => (x.permissions.capabilities = ["made.up"]))))).toBe("invalid-manifest");
 		expect(await code(m.installPackage(withManifest((x) => (x.zinc.min_version = "9.0.0"))))).toBe("incompatible");
 		expect(await code(m.installPackage(withManifest((x) => (x.zinc.api_version = "0.2"))))).toBe("incompatible");
-		expect(await code(m.installPackage(withManifest((x) => (x.zinc.platforms = ["linux", "macos"]))))).toBe(process.platform === "win32" ? "incompatible" : undefined);
+		expect(await code(m.installPackage(withManifest((x) => (x.zinc.platforms = [process.platform === "win32" ? "linux" : "windows"]))))).toBe("incompatible");
 		expect(await code(m.installPackage(withManifest((x) => (x.main.sha256 = "0".repeat(64)))))).toBe("hash-mismatch");
 		expect(await code(m.installPackage(withManifest((x) => (x.main.wasm = "missing.wasm"))))).toBe("invalid-package");
 		expect(await code(m.installPackage(pack(built, { extra: { "plugin.wasm": "this is not wasm at all" }, manifest: (x) => delete x.main.sha256 })))).toBe("invalid-package");
 		expect(await code(m.installPackage(withManifest((x) => ((x.id = "blocked@zinc.test"), (x.version = "1.0.0")))))).toBe("incompatible");
 		expect(await code(m.installPackage(pack(built), { approve: () => false }))).toBe("cancelled");
-		// a component the transpiler cannot read
+		// a component zhw cannot compile
 		const bad = new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]);
-		const real = await runtime({ manager: { transpile: undefined } });
-		expect(await code(real.services.manager.installPackage(pack(built, { extra: { "plugin.wasm": bad }, manifest: (x) => delete x.main.sha256 })))).toBe("transpile-failed");
+		const real = await runtime();
+		expect(await code(real.services.manager.installPackage(pack(built, { extra: { "plugin.wasm": bad }, manifest: (x) => delete x.main.sha256 })))).toBe("prepare-failed");
 		for (const r of [m, real.services.manager]) {
 			expect(r.list()).toEqual([]);
 			expect(existsSync(r.layout.installedRoot) ? readdirSync(r.layout.installedRoot) : []).toEqual([]);
@@ -500,7 +492,7 @@ describe("restart of Zinc: startAll, quit, tampering", () => {
 		expect(second.lines(ID)).toContain("hook shutdown app-shutdown v=1.0.0");
 	}, 90_000);
 
-	test("a changed plugin.wasm or transpiled file is refused at load", async () => {
+	test("a changed plugin.wasm is refused at load", async () => {
 		const root = scratch("tamper");
 		const first = await runtime({}, root);
 		await first.services.manager.installPackage(pack(built), { approve: grantAll });
@@ -508,17 +500,7 @@ describe("restart of Zinc: startAll, quit, tampering", () => {
 		first.services.dispose();
 		await first.supervisor.shutdown();
 
-		if (RUNNER === "worker") {
-			writeFileSync(join(dir, "transpiled", "plugin.js"), readFileSync(join(dir, "transpiled", "plugin.js"), "utf8") + "\nconsole.log('tampered');\n");
-			const rt1 = await runtime({}, root);
-			await rt1.services.manager.startAll();
-			expect(rt1.services.manager.get(ID)).toMatchObject({ state: "failed" });
-			expect(rt1.services.manager.get(ID)?.stateDetail).toContain("prepared plugin files were changed");
-			expect(rt1.supervisor.get(ID)).toBeUndefined();
-		} else {
-			expect(existsSync(join(dir, "transpiled"))).toBe(false);
-		}
-
+		expect(existsSync(join(dir, "transpiled"))).toBe(false);
 		writeFileSync(join(dir, "plugin.wasm"), new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
 		const rt2 = await runtime({}, root);
 		await rt2.services.manager.startAll();
@@ -527,7 +509,7 @@ describe("restart of Zinc: startAll, quit, tampering", () => {
 		expect(rt2.supervisor.get(ID)).toBeUndefined();
 	}, 60_000);
 
-	test.if(RUNNER === "wasmtime")(".cwasm cache: warm load, JIT fallback when missing, and rebuild + prune on zhw version bump", async () => {
+	test(".cwasm cache: warm load, JIT fallback when missing, and rebuild + prune on zhw version bump", async () => {
 		const root = scratch("cwasm-e2e");
 		// 1. Install under version v1 -> precompiled .cwasm is built and loaded (fromCwasm === true)
 		const v1 = await runtime({ manager: { zhwVersionOverride: "zhw-test-v1" } }, root);

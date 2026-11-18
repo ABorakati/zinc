@@ -62,13 +62,13 @@ export function pluginsDir(): string {
 	return pluginsRoot();
 }
 
-/** Plugin folders in `dir` that are loadable (manifest.json and the transpiled entry). Default: the package area's `installed/` folder. */
+/** Plugin folders in `dir` that are loadable (manifest.json and plugin.wasm). Default: the package area's `installed/` folder. */
 export function listInstalled(dir: string = createLayout(pluginsRoot()).installedRoot): string[] {
 	try {
 		return readdirSync(dir, { withFileTypes: true })
 			.filter((d) => d.isDirectory())
 			.map((d) => join(dir, d.name))
-			.filter((p) => existsSync(join(p, "manifest.json")) && existsSync(join(p, "transpiled", "plugin.js")))
+			.filter((p) => existsSync(join(p, "manifest.json")) && existsSync(join(p, "plugin.wasm")))
 			.sort();
 	} catch {
 		return [];

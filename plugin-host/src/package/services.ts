@@ -6,7 +6,7 @@
 //   ...
 //   await services.manager.stopAll(); await supervisor.shutdown();
 //
-// On `runner === "wasmtime"`, `PluginServices` also pushes live `prefs`, `l10n`, `app`, `log-config` and `timers-clear` state to `zhw`,
+// `PluginServices` also pushes live `prefs`, `l10n`, `app`, `log-config` and `timers-clear` state to `zhw`,
 // and receives `log-batch` and `timers-count` events back from the supervisor.
 import {
 	createPluginSupervisor,
@@ -168,7 +168,7 @@ export class PluginServices {
 
 	/** Sync any changed pull-provider values (`app.*`, `locale`, `appPrefs.get`) before `zhw` executes a `call`. */
 	syncBeforeCall() {
-		if (!this.sup || this.sup.runner !== "wasmtime") return;
+		if (!this.sup) return;
 		const app = this.appSnapshot();
 		const appJson = JSON.stringify(app);
 		if (appJson !== this.lastAppJson) {
@@ -348,12 +348,10 @@ export interface RuntimeOptions extends ServicesOptions {
 
 /** The one-liner for the app: services + supervisor, wired together and registered as the process's services. */
 export async function createPluginRuntime(o: RuntimeOptions = {}): Promise<{ services: PluginServices; supervisor: PluginSupervisor }> {
-	const runner = o.supervisor?.runner ?? o.manager?.runner;
 	const zhwPath = o.supervisor?.zhwPath ?? o.manager?.zhwPath;
 	const services = new PluginServices({
 		...o,
 		manager: {
-			...(runner ? { runner } : {}),
 			...(zhwPath ? { zhwPath } : {}),
 			...o.manager,
 		},
@@ -362,7 +360,6 @@ export async function createPluginRuntime(o: RuntimeOptions = {}): Promise<{ ser
 	const importHandlers = [...(o.handlers ?? (await discoverHandlers("zinc"))), ...(o.extraHandlers ?? [])];
 	const supervisor = createPluginSupervisor({
 		coreUrl: o.coreUrl,
-		...(runner ? { runner } : {}),
 		...(zhwPath ? { zhwPath } : {}),
 		cwasmOf: (id, _dir, manifest) => services.manager.cwasmFor(id, manifest),
 		loadStateFor: (id, dir, manifest) => services.loadStateFor(id, dir, manifest),

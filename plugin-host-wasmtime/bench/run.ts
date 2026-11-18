@@ -1,8 +1,8 @@
-// Benchmark: native Wasmtime host (`zhw`, JIT vs `.cwasm` AOT) and optional Bun Worker baseline on the prepared fixtures.
+// Benchmark: native Wasmtime host (`zhw`, JIT vs `.cwasm` AOT) on the prepared fixtures. (The Bun Worker runner this once compared against was removed; its numbers stay in the phase 2/3 docs.)
 // Usage: bun bench/run.ts [--only cold,steady,import,safety] [--plugins bench-guest,hello-rust,hello-js,ui-fixture,quick-tags] [--reps 5] [--out result.json]
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { BunHost, WtHost, type Runner, type WireResult, now, prefsHostModule, scratch, stats, workingSet, zhwBin } from "./lib";
+import { WtHost, type Runner, type WireResult, now, prefsHostModule, scratch, stats, workingSet, zhwBin } from "./lib";
 
 const argv = process.argv.slice(2);
 const opt = (n: string) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : undefined);
@@ -54,10 +54,8 @@ type Variant = { name: string; make: () => Runner };
 const variants: Variant[] = [
 	{ name: "wt-aot", make: () => new WtHost({ aot: true }) },
 	{ name: "wt-jit", make: () => new WtHost({ aot: false }) },
-	{ name: "bun", make: () => new BunHost() },
 ];
 const sel = (xs: Variant[]) => xs.filter((v) => !wantedVariants || wantedVariants.has(v.name));
-const bunHasTranspiled = (d: PluginDef) => existsSync(join(fixtures, d.name, "transpiled", "plugin.js"));
 const fmt = (ms: number) => (ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms.toFixed(1) + " ms");
 const mb = (b: number) => (b / 1048576).toFixed(1) + " MB";
 
@@ -71,7 +69,6 @@ if (only.has("cold")) {
 	result.cold = {};
 	for (const d of present) {
 		for (const v of sel(variants)) {
-			if (v.name === "bun" && !bunHasTranspiled(d)) continue;
 			const runs: any[] = [];
 			for (let i = 0; i < reps; i++) {
 				const r = v.make();
@@ -97,7 +94,6 @@ if (only.has("cold")) {
 				} finally {
 					await r.close().catch(() => {});
 				}
-				if (v.name === "bun" && d.name === "ui-fixture") break;
 			}
 			const good = runs.filter((x) => !x.error);
 			result.cold[`${d.name}/${v.name}`] = runs;
@@ -117,7 +113,6 @@ if (only.has("steady")) {
 	const N = Number(opt("--n") ?? 300);
 	for (const d of present) {
 		for (const v of sel(variants.filter((x) => x.name !== "wt-jit"))) {
-			if (v.name === "bun" && !bunHasTranspiled(d)) continue;
 			const r = v.make();
 			try {
 				await r.start();

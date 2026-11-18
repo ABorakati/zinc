@@ -3,17 +3,17 @@
 	"private": true,
 	"type": "module",
 	"version": "0.1.0",
-	"description": "Zinc WASM plugin host: supervisor (Zinc process), host process, per-plugin Workers, build pipeline.",
+	"description": "Zinc WASM plugin host: supervisor (Zinc process) driving the Wasmtime host (zhw), packages and permissions, build pipeline.",
 	"scripts": {
 		"test": "bun test",
 		"check": "bun check",
 		"build-plugin": "bun scripts/build-plugin.ts"
 	},
 	"dependencies": {
-		"@bytecodealliance/jco": "^1.42.0",
 		"componentize-qjs": "^0.6.0"
 	},
 	"devDependencies": {
+		"@bytecodealliance/jco": "^1.42.0",
 		"@types/bun": "latest",
 		"typescript": "^6"
 	}

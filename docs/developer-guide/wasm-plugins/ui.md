@@ -29,7 +29,7 @@ All calls cross into the plugin host process (spike: about 50 µs per round trip
 | Async result (network answer) | Plugin calls `ui.push(instance, result)`. |
 | Stale events | Events carry `rev`; the plugin can ignore events for a tree it already replaced. A patch with the wrong `base-rev` is dropped and the host calls `resync`. |
 
-Estimate (not measured): a 300-node tree is a few tens of KB lowered; one `mount`/`on-event` round trip stays well under a millisecond plus the plugin's own work. A hung plugin is killed with the plugin host process; its views show a "plugin not responding" placeholder.
+Estimate (not measured): a 300-node tree is a few tens of KB lowered; one `mount`/`on-event` round trip stays well under a millisecond plus the plugin's own work. A hung plugin is stopped by the plugin host (the other plugins keep running); its views show a "plugin not responding" placeholder.
 
 ## What plugins build in practice
 

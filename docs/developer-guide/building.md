@@ -106,7 +106,7 @@ PDFium is not built. `bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts` downloads a
 
 ## The Wasmtime plugin host (`zhw`)
 
-`plugin-host-wasmtime` is a Rust binary crate (`zhw`, `zhw.exe` on Windows) that hosts WebAssembly plugins over an NDJSON stdio protocol (`plugin-host/src/transport-wasmtime.ts`). Build it manually for source runs and plugin tests with:
+`plugin-host-wasmtime` is a Rust binary crate (`zhw`, `zhw.exe` on Windows) that hosts WebAssembly plugins over an NDJSON stdio protocol (`plugin-host/src/transport-wasmtime.ts`). It is the only plugin runner. Build it manually for source runs and plugin tests with:
 
 ```
 cd plugin-host-wasmtime && cargo build --release

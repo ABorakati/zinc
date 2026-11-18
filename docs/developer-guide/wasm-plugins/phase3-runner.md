@@ -9,6 +9,26 @@ and `C:\dev\cache` (about 15:52–16:00). The evidence points to a cleanup comma
 agents, but its exact command line could not be recovered. No file in this worktree was lost. Since then, full-access agents
 are not used without a sandbox, and Gemini models run only through the `omp` provider with approvals.
 
+## Worker runner removed
+
+Follow-up (2026-11-18, after comparing the two runners): the Bun Worker runner is gone and Wasmtime (`zhw`) is the only runner.
+The text below is the report as it was written, so it still describes the `runner` option, `ZN_PLUGIN_RUNNER` and
+`coldBudget`; none of them exist any more. What was removed:
+
+- `createPluginSupervisor({ runner })` and the `PluginRunner` type, the `ZN_PLUGIN_RUNNER` / `ZN_TEST_RUNNER` switches,
+  `coldBudget` / `coldBonusMs`, and the options `runtime` and `hostEntry`. The supervisor's own time-budget ticker is gone:
+  `zhw` owns per-call budgets; the supervisor keeps only the heartbeat check and the restart of `zhw` after a crash.
+- `plugin-host/src/{host-main,worker,plugin-runtime,wasi-stubs,wit}.ts` and `src/package/transpile.ts`. The installer no longer
+  runs jco (a `transpiled/` folder in a package is still ignored), its error code `transpile-failed` is now `prepare-failed`,
+  and the state file no longer has `transpiledHash`. `scripts/build-plugin.ts` writes `plugin.wasm` and the manifest only
+  (no `--no-transpile`, no `asyncImports` in the result).
+- `protocol.ts`: the `ToWorker` / `FromWorker` messages and the `init` fields `coreUrl`, `hostModules` and `discover`.
+- `plugin-host-wasmtime/bench`: the `BunHost` baseline, the `bun` variant of `run.ts` / `all.ts`, and `transpile-time.ts`.
+  The Bun numbers in the phase 2 and phase 3 reports stay as the historical comparison.
+- `jco` stays in `plugin-host/package.json` as a dev tool only (`jco types` in `plugin-api/sdk/js/scripts/gen-types.ts`).
+- Tests: each test now runs once, on Wasmtime. Removed with the Worker runner: the `coldBonusMs` test, the WIT async-list tests
+  and the WASI-stub tests.
+
 ## What changed
 
 | Area | Files |

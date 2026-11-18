@@ -1,13 +1,8 @@
 // The loadable plugin folder produced by scripts/build-plugin.ts (and, later, by the installer):
 //
 //   <dir>/manifest.json        the plugin manifest (plugin-api/manifest.schema.json), main.wasm = "plugin.wasm"
-//   <dir>/plugin.wasm          the component (kept for the hash and for re-transpiling)
-//   <dir>/transpiled/plugin.js the jco output (JSPI), with its core .wasm files beside it
-//
-// `main` in the manifest has no field for the transpiled entry (the schema forbids extra keys), so the layout is fixed here.
+//   <dir>/plugin.wasm          the component (`zhw` compiles it, or loads the precompiled `.cwasm` from Zinc's cache)
 import { join } from "node:path";
-
-export const TRANSPILED_ENTRY = "transpiled/plugin.js";
 
 export interface Grants {
 	/** Permission ids the plugin may use (manifest `permissions.capabilities`, minus what the user denied). */

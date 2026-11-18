@@ -3,7 +3,7 @@
 // `update_url` and `update_link` must be https, and `update_hash` is required (lifecycle.md 2.3).
 import type { PluginManifest } from "../manifest";
 import { semverCompare } from "./semver";
-import { sha256Hex } from "./transpile";
+import { sha256Hex } from "./hash";
 
 export interface UpdateCandidate {
 	version: string;

@@ -160,11 +160,11 @@ Counts for this area, tallied by script from the status column: 114 rows; **cove
 
 ### 2.1 One process boundary, so few and coarse calls
 
-Plugins run in a separate plugin host process (spike decision), one Worker per plugin. Every host call crosses it. In this area that has three effects:
+Plugins run in a separate plugin host process (`zhw`, Wasmtime), one instance per plugin. Every host call crosses it. In this area that has three effects:
 
 - Calls that are hot or chatty (`log.write`, `prefs.get`, `l10n.format`, `timers.now`) are served inside the plugin host process from a copy, with batched write-back. The WIT still looks like a plain call. A log line is not a round trip.
 - Calls that really cross (`net.send`, `fs.*`, `permissions.request`) take whole values and return whole values. There is `prefs.set-many`, `net.send-many` (up to 16 requests), `l10n.format-many`, `prefs.get-all`.
-- Time limits are explicit. A hook has 10 s. A hung plugin is handled by killing and restarting the plugin host process; the other plugins reload and the hung one is `failed`.
+- Time limits are explicit. A hook has 10 s. A hung plugin is stopped alone (Wasmtime epoch interruption) and marked `disabled`; the other plugins keep running and the host process is not restarted.
 
 ### 2.2 Lifecycle in order
 

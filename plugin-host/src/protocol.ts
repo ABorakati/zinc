@@ -1,6 +1,5 @@
-// IPC messages. Two runners:
-//   wasmtime (default): Zinc app process <-> `zhw` (NDJSON on stdio, see transport-wasmtime.ts and protocol-ndjson.md)
-//   worker (fallback):  Zinc app process <-> Bun plugin host process (Bun IPC) <-> one Worker per plugin (postMessage)
+// IPC messages between the Zinc app process and `zhw`, the Wasmtime plugin host (NDJSON on stdio, see transport-wasmtime.ts and
+// protocol-ndjson.md).
 //
 // VALUES. Calls carry arguments and results in jco's JS representation of the WIT types: kebab names are camelCase, `u64`/`s64`
 // are bigint, `option<T>` is `T | undefined`, records are objects, variants are `{ tag, val }`, enums are strings, `list<u8>` is
@@ -29,9 +28,9 @@ export type WireError =
 	| { kind: "no-such-export"; iface: string; fn: string }
 	| { kind: "not-loaded"; plugin: string }
 	| { kind: "disabled"; plugin: string; reason: string }
-	/** Re-entering the same plugin while it waits on a forwarded import (`wasmtime` runner). */
+	/** Re-entering the same plugin while it waits on a forwarded import. */
 	| { kind: "reentrant"; plugin: string; message: string }
-	/** The plugin host process was killed or died while the call was running. Safe to retry once the plugin is running again. */
+	/** The plugin host process (`zhw`) was killed or died while the call was running. Safe to retry once the plugin is running again. */
 	| { kind: "host-restarting" }
 	| { kind: "internal"; message: string };
 
@@ -97,28 +96,24 @@ export interface PluginL10nState {
 export interface PluginSpec {
 	id: string;
 	dir: string;
-	/** Optional precompiled `.cwasm` in Zinc's cache folder (`wasmtime` runner). */
+	/** Optional precompiled `.cwasm` in Zinc's cache folder. */
 	cwasm?: string;
 	manifest: PluginManifest;
 	grants: Grants;
-	/** Initial cached prefs for native `prefs` imports (`wasmtime` runner). */
+	/** Initial cached prefs for native `prefs` imports. */
 	prefs?: PluginPrefsState;
-	/** Initial Fluent bundles for native `l10n` imports (`wasmtime` runner). */
+	/** Initial Fluent bundles for native `l10n` imports. */
 	l10n?: PluginL10nState;
 }
 
-// ---- (a) Zinc <-> plugin host (`zhw` or `host-main.ts`) ---------------------------------------------------------
+// ---- Zinc <-> `zhw` ---------------------------------------------------------------------------------------------
 
 /** Zinc -> host. `id` is chosen by Zinc; the reply carries the same id. */
 export type ToHost =
-	/** First message. `hostModules`/`discover` are for the Bun Worker host; `native`/`maxMemoryMb`/`maxImportCalls`/`debugEnabled`/`app` are for `zhw`. */
+	/** First message. */
 	| {
 			t: "init";
-			coreUrl?: string;
-			hostModules?: string[];
 			heartbeatMs: number;
-			/** false: do not load src/imports/*.host.ts (tests with their own handlers) */
-			discover?: boolean;
 			maxMemoryMb?: number;
 			maxImportCalls?: number;
 			native?: string[];
@@ -129,7 +124,7 @@ export type ToHost =
 	| { t: "call-reply"; id: number; result: WireResult }
 	/** Compile / deserialize and instantiate the component. Does not call `startup`. Reply: `reply`. */
 	| { t: "load"; id: number; plugin: PluginSpec }
-	/** Drop the plugin's instance / terminate its Worker. Reply: `reply`. */
+	/** Drop the plugin's instance. Reply: `reply`. */
 	| { t: "unload"; id: number; plugin: string }
 	/** Call one export. Reply: `reply` with the return value (or the error). */
 	| { t: "call"; id: number; plugin: string; iface: string; fn: string; args: unknown[]; timeoutMs?: number; maxImportCalls?: number }
@@ -197,7 +192,7 @@ export type FromHost =
 	| { t: "call"; id: number; plugin: string; iface: string; fn: string; args: unknown[]; timeoutMs?: number }
 	/** How many imports of this plugin are in flight. While n > 0 the plugin's call timers are paused. */
 	| { t: "waiting"; plugin: string; n: number }
-	/** Single-plugin fault (`zhw` timeout/trap, or Worker died by itself). */
+	/** Single-plugin fault (`zhw` timeout or trap). */
 	| { t: "plugin-exit"; plugin: string; kind?: "timeout" | "trap"; message: string }
 	/** Plugin log output (stderr of a Rust guest, host diagnostics, or single log entry). */
 	| { t: "log"; plugin?: string; level: LogLevel; message: string; stack?: string; isError?: boolean; dropped?: number }
@@ -205,17 +200,3 @@ export type FromHost =
 	| { t: "log-batch"; entries: LogBatchEntry[] }
 	/** `zhw`: active native Rust timer count for `plugin`. */
 	| { t: "timers-count"; plugin: string; count: number };
-
-// ---- (b) host <-> Worker (`worker` runner) ----------------------------------------------------------------------
-
-export type ToWorker =
-	| { t: "init"; spec: PluginSpec }
-	| { t: "call"; id: number; iface: string; fn: string; args: unknown[] }
-	| { t: "import-reply"; id: number; result: WireResult };
-
-export type FromWorker =
-	/** Reply to `init` (id 0) or `call`. */
-	| { t: "reply"; id: number; result: WireResult }
-	/** An import call. The host answers with `import-reply` using the same id. `fn` is camelCase as in jco. */
-	| { t: "import"; id: number; iface: string; fn: string; args: unknown[] }
-	| { t: "log"; level: LogLevel; message: string };

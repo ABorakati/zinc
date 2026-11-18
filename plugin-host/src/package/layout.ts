@@ -3,7 +3,7 @@
 //
 //   <root>/                     %APPDATA%\zotero-next-gpui\plugins   (override: ZN_PLUGINS_DIR)
 //     installed/<id>/           the loadable folder: manifest.json, plugin.wasm, locale/, icons/, anything else the package shipped
-//                               (plus transpiled/ when running on the fallback `worker` runner). Read only for the plugin (`bundled`).
+//                               Read only for the plugin (`bundled`).
 //     cache/<cacheKey>/         per-machine precompiled `.cwasm` cache (`<wasmSha256>.cwasm`), pruned on `zhw` upgrade and uninstall
 //     data/<id>/                the plugin's private folder (fs root `data`); removed on uninstall unless the user keeps it
 //     temp/                     scratch for fs root `temp` (emptied at start)

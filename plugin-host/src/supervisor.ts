@@ -1,16 +1,13 @@
-// The plugin supervisor. Runs in the Zinc process (the one that owns the UI and the in-process core):
-//   wasmtime (default): spawns `zhw` (transport-wasmtime.ts), runs both `*.host.ts` and `*.zinc.ts` handlers in-process, and lets
-//                       `zhw` enforce per-plugin CPU epoch timeouts and memory caps without killing other plugins.
-//   worker (fallback):  spawns the Bun plugin host process (`host-main.ts`), sends it loads and calls, watches active-time budgets,
-//                       and on a timeout kills the host, starts a new one and reloads every plugin except the stuck one.
+// The plugin supervisor. Runs in the Zinc process (the one that owns the UI and the in-process core). It spawns `zhw`, the
+// Wasmtime plugin host (transport-wasmtime.ts), runs both `*.host.ts` and `*.zinc.ts` handlers in-process, and lets `zhw` enforce
+// per-plugin CPU epoch timeouts and memory caps without killing other plugins. If `zhw` itself crashes or goes silent, the supervisor
+// restarts it and reloads every plugin.
 //
-// Time budgets count only time the plugin is RUNNING: while it waits for a host import its timers are paused.
+// Time budgets count only time the plugin is RUNNING: while it waits for a host import its timers are paused (done by `zhw`).
 //
 // ONE CALL AT A TIME PER PLUGIN. Every call into a plugin (`call`, `start`, `stop`, `enable`, `ctx.callExport` of a handler) goes
 // through one queue per plugin, and its budget starts when it leaves the queue.
-import { statSync } from "node:fs";
-import { join } from "node:path";
-import { TRANSPILED_ENTRY, declaredGrants, readManifest, type Grants, type PluginManifest } from "./manifest";
+import { declaredGrants, readManifest, type Grants, type PluginManifest } from "./manifest";
 import {
 	HandlerTable,
 	WitError,
@@ -36,7 +33,6 @@ import {
 import { spawnWasmtimeTransport } from "./transport-wasmtime";
 
 export type PluginStatus = "loading" | "loaded" | "starting" | "running" | "stopping" | "stopped" | "failed" | "disabled";
-export type PluginRunner = "wasmtime" | "worker";
 
 export interface PluginInfo {
 	id: string;
@@ -78,31 +74,21 @@ export interface SupervisorOptions {
 	discoverHostHandlers?: boolean;
 	/** Core's HTTP base URL for host handlers (`ctx.coreUrl`). */
 	coreUrl?: string;
-	/**
-	 * Extra budget for plugins with a large jco-transpiled JS file (`runner: "worker"` only; always 0 on `wasmtime`).
-	 * Defaults: 8 MB, 3000 ms/MB, max 300 s. `false` turns it off.
-	 */
-	coldBudget?: false | { thresholdBytes?: number; msPerMb?: number; maxMs?: number };
-	/**
-	 * Where a plugin runs. `"wasmtime"` (default): native Wasmtime host (`zhw`). `"worker"`: a Bun Worker in `host-main.ts`
-	 * (also selected when `ZN_PLUGIN_RUNNER=worker` and `opts.runner` is omitted).
-	 */
-	runner?: PluginRunner;
-	/** Explicit path to the `zhw` binary (`wasmtime` runner). */
+	/** Explicit path to the `zhw` binary. */
 	zhwPath?: string;
-	/** Per-plugin linear memory limit in MiB (`wasmtime` runner). */
+	/** Per-plugin linear memory limit in MiB. */
 	maxMemoryMb?: number;
-	/** Per-call import invocation limit (`wasmtime` runner). */
+	/** Per-call import invocation limit. */
 	maxImportCalls?: number;
-	/** Interfaces (or `iface.fn` selectors) handled natively by `zhw` in Rust (`wasmtime` runner). */
+	/** Interfaces (or `iface.fn` selectors) handled natively by `zhw` in Rust. */
 	nativeImports?: string[];
-	/** Look up a precompiled `.cwasm` path for a plugin (`wasmtime` runner). */
+	/** Look up a precompiled `.cwasm` path for a plugin. */
 	cwasmOf?: (id: string, dir: string, manifest: PluginManifest) => string | undefined | Promise<string | undefined>;
-	/** Initial cached `prefs` and `l10n` bundles passed in `load` (`wasmtime` runner). */
+	/** Initial cached `prefs` and `l10n` bundles passed in `load`. */
 	loadStateFor?: (id: string, dir: string, manifest: PluginManifest) => SupervisorLoadState | undefined;
-	/** Initial `app`, `debugEnabled`, `appPrefs`, `locale` passed at `zhw` startup (`wasmtime` runner). */
+	/** Initial `app`, `debugEnabled`, `appPrefs`, `locale` passed at `zhw` startup. */
 	initState?: () => SupervisorInitState | undefined;
-	/** Optional hook run synchronously right before sending a `call` to `zhw` (`wasmtime` runner), to flush pull-provider diffs. */
+	/** Optional hook run synchronously right before sending a `call` to `zhw`, to flush pull-provider diffs. */
 	beforeCall?: () => void;
 	/** Active-time budget of an export call, ms. Default 5000. */
 	callTimeoutMs?: number;
@@ -116,10 +102,6 @@ export interface SupervisorOptions {
 	/** At most this many host restarts in `restartWindowMs` before the supervisor gives up (event "host-failed"). Default 5 in 60 s. */
 	maxRestarts?: number;
 	restartWindowMs?: number;
-	/** Command that runs Bun (`worker` runner). Default: this process's executable (`BUN_BE_BUN=1`). */
-	runtime?: string[];
-	/** Path of host-main.ts (`worker` runner). Default: the one next to this file. */
-	hostEntry?: string;
 	/** What the plugin may do. Default: what its manifest declares. */
 	grantsFor?: (manifest: PluginManifest) => Grants;
 	/** The host's stderr. Default "ignore". "inherit" shows panics of the host itself. */
@@ -130,7 +112,7 @@ export interface SupervisorEvents {
 	/** The host process is up (first start and after each restart). */
 	"host-ready": { pid: number; restarts: number };
 	/** The host is being killed and replaced. After this event all plugins are reloaded. */
-	"host-restart": { reason: "timeout" | "heartbeat" | "crash"; plugin?: string; detail: string };
+	"host-restart": { reason: "heartbeat" | "crash"; plugin?: string; detail: string };
 	/** Restart finished: these plugins were reloaded (and started again if they were running). */
 	"host-restarted": { reloaded: string[]; disabled: string[] };
 	"host-failed": { detail: string };
@@ -146,13 +128,10 @@ interface Pending {
 	plugin: string;
 	phase: string;
 	budgetMs: number;
-	spentMs: number;
 	resolve: (r: WireResult) => void;
 }
 
 interface Record_ extends PluginInfo {
-	/** Budget added to every call (`worker` runner only; see SupervisorOptions.coldBudget). */
-	coldBonusMs: number;
 	wantRunning: boolean;
 	/** zinc-side imports in flight + host-side ones reported by the host. */
 	zincWaiting: number;
@@ -189,13 +168,9 @@ export interface PluginSupervisor {
 	on<K extends keyof SupervisorEvents>(event: K, handler: Handler<K>): () => void;
 	/** Wait for the host process to be up. */
 	ready(): Promise<void>;
-	/** Budget added to the plugin's calls because its transpiled JS is large (0 on `wasmtime` and for small plugins). */
-	coldBonusMs(id: string): number;
-	/** Active runner (`"wasmtime"` or `"worker"`). */
-	readonly runner?: PluginRunner;
-	/** Push a fire-and-forget state update (`prefs`, `l10n`, `app`, `log-config`, `timers-clear`) to `zhw` (`wasmtime` runner). */
+	/** Push a fire-and-forget state update (`prefs`, `l10n`, `app`, `log-config`, `timers-clear`) to `zhw`. */
 	pushHost?(msg: Record<string, unknown>): void;
-	/** Query `zhw` host RSS and per-plugin telemetry (`wasmtime` runner). */
+	/** Query `zhw` host RSS and per-plugin telemetry. */
 	stats?(): Promise<unknown>;
 	/** Load telemetry (`fromCwasm`, `compileMs`, ...) from the most recent `load` of `id`. */
 	lastLoadInfo?(id: string): LoadInfo | undefined;
@@ -206,8 +181,6 @@ export interface PluginSupervisor {
 }
 
 export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupervisor {
-	const envRunner = process.env.ZN_PLUGIN_RUNNER ?? process.env.ZN_TEST_RUNNER;
-	const runner: PluginRunner = opts.runner ?? (envRunner === "worker" ? "worker" : "wasmtime");
 	const callMs = opts.callTimeoutMs ?? DEFAULT_TIMEOUTS.call;
 	const lifecycleMs = opts.lifecycleTimeoutMs ?? DEFAULT_TIMEOUTS.lifecycle;
 	const loadMs = opts.loadTimeoutMs ?? DEFAULT_TIMEOUTS.load;
@@ -215,13 +188,10 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	const heartbeatTimeoutMs = opts.heartbeatTimeoutMs ?? 5000;
 	const maxRestarts = opts.maxRestarts ?? 5;
 	const restartWindowMs = opts.restartWindowMs ?? 60_000;
-	const runtime = opts.runtime ?? [process.execPath];
-	const hostEntry = opts.hostEntry ?? join(import.meta.dir, "host-main.ts");
 
 	let table = new HandlerTable(opts.importHandlers ?? []);
 	let hostTablePromise: Promise<{ table: HandlerTable; hostModIfaces: Set<string> }> | undefined;
 	function ensureCombinedTable(): Promise<{ table: HandlerTable; hostModIfaces: Set<string> }> {
-		if (runner === "worker") return Promise.resolve({ table, hostModIfaces: new Set() });
 		hostTablePromise ??= (async () => {
 			const discovered = opts.discoverHostHandlers === false ? [] : await discoverHandlers("host");
 			const extraMods = (await Promise.all((opts.hostHandlerModules ?? []).map(loadHandlerModule))).flat();
@@ -246,20 +216,6 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		]);
 		return ["util"].filter((n) => !overridden.has(n));
 	}
-
-	const cold =
-		runner !== "worker" || opts.coldBudget === false
-			? undefined
-			: { thresholdBytes: 8_000_000, msPerMb: 3000, maxMs: 300_000, ...opts.coldBudget };
-	const coldBonusOf = (dir: string): number => {
-		if (!cold) return 0;
-		try {
-			const size = statSync(join(dir, TRANSPILED_ENTRY)).size;
-			return size < cold.thresholdBytes ? 0 : Math.min(cold.maxMs, Math.round((size / 1e6) * cold.msPerMb));
-		} catch {
-			return 0;
-		}
-	};
 
 	// One chain per plugin. `chain` never rejects the tail, so one failed call does not stop the next.
 	const gates = new Map<string, Promise<void>>();
@@ -292,7 +248,6 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	let restarting: Promise<void> | undefined;
 	let shuttingDown = false;
 	let failed = false;
-	let lastTick = Date.now();
 
 	const emit = <K extends keyof SupervisorEvents>(event: K, e: SupervisorEvents[K]) => {
 		for (const h of listeners.get(event) ?? []) {
@@ -330,13 +285,13 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		budgetMs: number,
 	): Promise<WireResult> {
 		return new Promise((resolve) => {
-			pending.set(m.id, { id: m.id, plugin, phase, budgetMs, spentMs: 0, resolve });
+			pending.set(m.id, { id: m.id, plugin, phase, budgetMs, resolve });
 			sendRaw(m);
 		});
 	}
 
 	function callRequest(plugin: string, iface: string, fn: string, args: unknown[], budgetMs: number): Promise<WireResult> {
-		if (runner === "wasmtime" && proc) opts.beforeCall?.();
+		if (proc) opts.beforeCall?.();
 		return request(
 			{
 				t: "call",
@@ -365,26 +320,14 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		for (const p of [...pending.values()]) settle(p.id, { ok: false, error: error(p) });
 	}
 
-	// ---- time budgets and heartbeat -------------------------------------------------------------------------------------
+	// ---- heartbeat -------------------------------------------------------------------------------------
 
 	const ticker = setInterval(() => {
 		const now = Date.now();
-		const dt = now - lastTick;
-		lastTick = now;
 		if (shuttingDown || !proc) return;
 		if (!restarting && lastBeat && now - lastBeat > heartbeatTimeoutMs) {
 			void restart("heartbeat", undefined, `no heartbeat for ${now - lastBeat} ms`);
 			return;
-		}
-		if (runner !== "worker") return; // `zhw` owns per-call CPU timeouts via Wasmtime epochs
-		for (const p of pending.values()) {
-			const r = plugins.get(p.plugin);
-			if (r && r.zincWaiting + r.hostWaiting > 0) continue; // waiting for a host import: not the plugin's time
-			p.spentMs += dt;
-			if (p.spentMs > p.budgetMs) {
-				void restart("timeout", p.plugin, `${p.phase} exceeded ${p.budgetMs} ms`, p);
-				return;
-			}
 		}
 	}, POLL_MS);
 	ticker.unref?.();
@@ -404,71 +347,36 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		});
 		hostReady.catch(() => {});
 
-		if (runner === "wasmtime") {
-			const handle: HostProcess = spawnWasmtimeTransport({
-				zhwPath: opts.zhwPath,
-				maxMemoryMb: opts.maxMemoryMb,
-				hostStderr: opts.hostStderr,
-				onMessage: (m) => onHostMessage(m),
-				onExit: () => {
-					if (proc === handle) {
-						proc = undefined;
-						if (!shuttingDown) void restart("crash", undefined, "the zhw plugin host process exited");
-					}
-				},
-			});
-			proc = handle;
-			lastBeat = Date.now();
-			const initExtra = opts.initState?.();
-			sendRaw({
-				t: "init",
-				heartbeatMs,
-				...(opts.maxMemoryMb !== undefined ? { maxMemoryMb: opts.maxMemoryMb } : {}),
-				...(opts.maxImportCalls !== undefined ? { maxImportCalls: opts.maxImportCalls } : {}),
-				native: resolveNativeImports(hostModIfaces),
-				...(initExtra?.debugEnabled !== undefined ? { debugEnabled: initExtra.debugEnabled } : {}),
-				...(initExtra?.app !== undefined ? { app: initExtra.app } : {}),
-			});
-			if (initExtra?.appPrefs && Object.keys(initExtra.appPrefs).length > 0) {
-				sendRaw({ t: "prefs", appPrefs: initExtra.appPrefs });
-			}
-			if (initExtra?.locale !== undefined || initExtra?.timeZone !== undefined) {
-				sendRaw({ t: "l10n", locale: initExtra.locale, timeZone: initExtra.timeZone });
-			}
-			return hostReady;
-		}
-
-		const child = Bun.spawn([...runtime, hostEntry], {
-			ipc: (m: FromHost) => onHostMessage(m),
-			serialization: "advanced",
-			stdin: "ignore",
-			stdout: "ignore",
-			stderr: opts.hostStderr ?? "ignore",
-			env: { ...process.env, BUN_BE_BUN: "1" },
+		const handle: HostProcess = spawnWasmtimeTransport({
+			zhwPath: opts.zhwPath,
+			maxMemoryMb: opts.maxMemoryMb,
+			hostStderr: opts.hostStderr,
+			onMessage: (m) => onHostMessage(m),
 			onExit: () => {
 				if (proc === handle) {
 					proc = undefined;
-					if (!shuttingDown) void restart("crash", undefined, "the plugin host process exited");
+					if (!shuttingDown) void restart("crash", undefined, "the zhw plugin host process exited");
 				}
 			},
 		});
-		const handle: HostProcess = {
-			get pid() {
-				return child.pid;
-			},
-			get exited() {
-				return child.exited;
-			},
-			send(msg) {
-				(child as any).send(msg);
-			},
-			kill() {
-				child.kill();
-			},
-		};
 		proc = handle;
 		lastBeat = Date.now();
-		sendRaw({ t: "init", coreUrl: opts.coreUrl, hostModules: opts.hostHandlerModules ?? [], heartbeatMs, discover: opts.discoverHostHandlers });
+		const initExtra = opts.initState?.();
+		sendRaw({
+			t: "init",
+			heartbeatMs,
+			...(opts.maxMemoryMb !== undefined ? { maxMemoryMb: opts.maxMemoryMb } : {}),
+			...(opts.maxImportCalls !== undefined ? { maxImportCalls: opts.maxImportCalls } : {}),
+			native: resolveNativeImports(hostModIfaces),
+			...(initExtra?.debugEnabled !== undefined ? { debugEnabled: initExtra.debugEnabled } : {}),
+			...(initExtra?.app !== undefined ? { app: initExtra.app } : {}),
+		});
+		if (initExtra?.appPrefs && Object.keys(initExtra.appPrefs).length > 0) {
+			sendRaw({ t: "prefs", appPrefs: initExtra.appPrefs });
+		}
+		if (initExtra?.locale !== undefined || initExtra?.timeZone !== undefined) {
+			sendRaw({ t: "l10n", locale: initExtra.locale, timeZone: initExtra.timeZone });
+		}
 		return hostReady;
 	}
 
@@ -540,7 +448,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 					} else if (r.status !== "disabled") {
 						setStatus(r, "failed", m.message);
 						void table.dropPlugin(zincContext(r));
-						if (runner === "wasmtime") sendRaw({ t: "unload", id: nextId++, plugin: m.plugin });
+						sendRaw({ t: "unload", id: nextId++, plugin: m.plugin });
 					}
 				}
 				break;
@@ -603,19 +511,19 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 
 	// ---- restart --------------------------------------------------------------------------------------------------------
 	//
-	// A restart is a job: disable the culprit (Worker timeout), fail what is in flight, kill the host, then start a new host
-	// and reload the plugins. On `wasmtime`, per-plugin timeouts/traps do NOT restart `zhw`; `restart` only runs if `zhw`
+	// A restart is a job: disable the culprit (zhw timeout), fail what is in flight, kill the host, then start a new host
+	// and reload the plugins. Per-plugin timeouts/traps do NOT restart `zhw`; `restart` only runs if `zhw`
 	// itself crashes or misses heartbeats.
 
 	interface RestartJob {
-		reason: "timeout" | "heartbeat" | "crash";
+		reason: "heartbeat" | "crash";
 		culprit?: string;
 		detail: string;
 	}
 	const jobs: RestartJob[] = [];
 	let dying: Promise<unknown>[] = [];
 
-	function restart(reason: RestartJob["reason"], culprit: string | undefined, detail: string, timedOut?: Pending): Promise<void> {
+	function restart(reason: RestartJob["reason"], culprit: string | undefined, detail: string): Promise<void> {
 		const now = Date.now();
 		restartTimes.push(now);
 		while (restartTimes.length && now - restartTimes[0] > restartWindowMs) restartTimes.shift();
@@ -625,14 +533,8 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 			culpritRec.wantRunning = false;
 			setStatus(culpritRec, "disabled", `${detail} (the plugin host was restarted)`);
 		}
-		// Fail what is in flight: the call that timed out says "timeout", the culprit's others "disabled", everything else "host restarting".
-		failAll((p) =>
-			timedOut && p.id === timedOut.id
-				? { kind: "timeout", ms: p.budgetMs, phase: p.phase }
-				: p.plugin === culprit
-					? { kind: "disabled", plugin: p.plugin, reason: detail }
-					: { kind: "host-restarting" },
-		);
+		// Fail what is in flight: the culprit's calls say "disabled", everything else "host restarting".
+		failAll((p) => (p.plugin === culprit ? { kind: "disabled", plugin: p.plugin, reason: detail } : { kind: "host-restarting" }));
 		const old = proc;
 		proc = undefined;
 		if (old) {
@@ -701,8 +603,8 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 
 	async function loadRecord(r: Record_, fromRestart = false) {
 		if (!fromRestart) await ensureHost();
-		const cwasm = runner === "wasmtime" ? await opts.cwasmOf?.(r.id, r.dir, r.manifest) : undefined;
-		const extra = runner === "wasmtime" ? opts.loadStateFor?.(r.id, r.dir, r.manifest) : undefined;
+		const cwasm = await opts.cwasmOf?.(r.id, r.dir, r.manifest);
+		const extra = opts.loadStateFor?.(r.id, r.dir, r.manifest);
 		const spec: PluginSpec = {
 			id: r.id,
 			dir: r.dir,
@@ -728,7 +630,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	const describe = (e: WireError) => new PluginError(e).message;
 
 	function lifecycleBudget(r: Record_) {
-		return (r.manifest.main.startup_timeout_ms ?? lifecycleMs) + r.coldBonusMs;
+		return r.manifest.main.startup_timeout_ms ?? lifecycleMs;
 	}
 
 	function pluginData(r: Record_, previousVersion?: string) {
@@ -789,7 +691,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	async function callImpl(id: string, iface: string, fn: string, args: unknown[], o: { timeoutMs?: number } = {}): Promise<unknown> {
 		const r = must(id);
 		usable(r);
-		const budget = (o.timeoutMs ?? callMs) + r.coldBonusMs;
+		const budget = o.timeoutMs ?? callMs;
 		const res = await callRequest(id, iface, fn, args, budget);
 		if (res.ok) return res.value;
 		handleCallFailure(r, res, `${iface}#${fn}`);
@@ -797,8 +699,6 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	}
 
 	const api: PluginSupervisor = {
-		runner,
-
 		async load(pkgDir) {
 			const manifest = await readManifest(pkgDir);
 			const existing = plugins.get(manifest.id);
@@ -812,7 +712,6 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 				wantRunning: false,
 				zincWaiting: 0,
 				hostWaiting: 0,
-				coldBonusMs: coldBonusOf(pkgDir),
 			};
 			plugins.set(r.id, r);
 			setStatus(r, "loading");
@@ -835,7 +734,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 				usable(r);
 				r.wantRunning = false;
 				setStatus(r, "stopping");
-				const budget = Math.min(lifecycleBudget(r), 5000 + r.coldBonusMs);
+				const budget = Math.min(lifecycleBudget(r), 5000);
 				const res = await callRequest(id, "lifecycle", "shutdown", [pluginData(r), o.why ?? "app-shutdown"], budget);
 				if (!res.ok) {
 					handleCallFailure(r, res, "lifecycle#shutdown", "shutdown failed");
@@ -862,7 +761,6 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 				await restarting;
 				const r = must(id);
 				if (r.status !== "disabled" && r.status !== "failed" && r.status !== "stopped") return;
-				r.coldBonusMs = coldBonusOf(r.dir);
 				setStatus(r, "loading");
 				await loadRecord(r);
 				await startRecord(r, "addon-enable");
@@ -875,12 +773,11 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		},
 
 		pushHost(msg) {
-			if (runner !== "wasmtime" || !proc) return;
+			if (!proc) return;
 			sendRaw(msg as unknown as ToHost);
 		},
 
 		async stats() {
-			if (runner !== "wasmtime") return undefined;
 			await ensureHost();
 			const res = await request({ t: "stats", id: nextId++ }, "", "stats", callMs);
 			if (!res.ok) toError(res);
@@ -902,7 +799,6 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		async ready() {
 			await ensureHost();
 		},
-		coldBonusMs: (id) => plugins.get(id)?.coldBonusMs ?? 0,
 		get hostPid() {
 			return proc?.pid;
 		},

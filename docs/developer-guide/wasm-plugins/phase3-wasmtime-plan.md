@@ -26,7 +26,8 @@ Decision (user, 2026-11-18): plugins run in Wasmtime, precompiled to `.cwasm` on
    types go. Gains: Rust plugins can use `ui` (today rustc never finishes), smaller components, and no slow dynamic
    conversion of big results in `zhw`. Cost: the tree is typed by the JSON schema and the SDKs, not by WIT.
 5. **The package stays `zinc:plugin@0.1.0`.** Nothing is published, so breaking changes cost nothing yet.
-6. **Runners:** `wasmtime` becomes the default. The Bun Worker runner stays as a fallback setting for one release. The
+6. **Runners:** `wasmtime` becomes the default. The Bun Worker runner stays as a fallback setting for one release
+   (update: it was removed afterwards, see "Worker runner removed" in `phase3-runner.md`). The
    experimental `aot-process` runner and its build step are removed (316 MB per plugin, needs the canary).
 7. **`.cwasm` is a per-machine cache**, keyed by `(wasm sha256, zhw version, engine settings)`, built at install and
    after a Zinc upgrade, never shipped in a package and only read from Zinc's own cache folder. If it is missing,

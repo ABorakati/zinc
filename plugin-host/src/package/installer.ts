@@ -2,17 +2,16 @@
 // (lifecycle.md 2.2), and the startup of every installed plugin. It drives a PluginSupervisor (src/supervisor.ts) and writes the
 // loadable layout under <root>/installed/<id>/ (see layout.ts):
 //
-//   wasmtime (default): package -> checks -> staging -> zhw precompile into cache/ -> installed/<id>/ -> load, install, startup
-//   worker (fallback):  package -> checks -> staging -> jco transpile of plugin.wasm -> installed/<id>/ -> load, install, startup
+//   package -> checks -> staging -> zhw precompile into cache/ -> installed/<id>/ -> load, install, startup
 //
 // What is checked, in order: zip safety (names, sizes, CRC), the manifest against manifest.schema.json plus the permission ids, the
 // platform and the version ranges (api_version, min_version, strict max), main.sha256 against plugin.wasm (pinned when absent), then the
-// permission approval. A `transpiled/` folder inside a package is always ignored.
+// permission approval. A `transpiled/` folder inside a package (an older build layout) is always ignored.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { PluginManifest } from "../manifest";
-import type { PluginRunner, PluginSupervisor } from "../supervisor";
+import type { PluginSupervisor } from "../supervisor";
 import { PluginError } from "../protocol";
 import { describePermissions, declaredPermissions, optionalIds, requiredIds, permissionTier, type PromptGroup } from "../permissions/risk";
 import { GrantStore } from "../permissions/store";
@@ -20,12 +19,12 @@ import { assertSafeId, createLayout, pluginsRoot, type Layout } from "./layout";
 import { CwasmCache } from "./cwasm-cache";
 import { readJson, writeJsonAtomic } from "./json-file";
 import { apiCompatible, semverCompare } from "./semver";
-import { createTranspiler, hashTree, sha256Hex, type TranspileFn } from "./transpile";
+import { sha256Hex } from "./hash";
 import { validateManifest } from "./validate";
 import { readZip, ZipError, type ZipFile } from "./zip";
 
 export type InstallAction = "install" | "upgrade" | "downgrade" | "reinstall";
-export type InstallErrorCode = "invalid-package" | "invalid-manifest" | "incompatible" | "hash-mismatch" | "cancelled" | "transpile-failed" | "io";
+export type InstallErrorCode = "invalid-package" | "invalid-manifest" | "incompatible" | "hash-mismatch" | "cancelled" | "prepare-failed" | "io";
 
 export class InstallError extends Error {
 	constructor(
@@ -94,22 +93,16 @@ export interface ManagerOptions {
 	/** `zinc:plugin` API version of this build. Default "0.1.0". */
 	apiVersion?: string;
 	platform?: "windows" | "macos" | "linux";
-	/** Active plugin runner (`"wasmtime"` default, or `"worker"`). */
-	runner?: PluginRunner;
-	/** Precompile `plugin.wasm` into the `.cwasm` cache on `wasmtime` install. Default `true`. */
+	/** Precompile `plugin.wasm` into the `.cwasm` cache on install. Default `true`. */
 	precompile?: boolean;
 	/** Rebuild `.cwasm` on `loadInto` when `zhw` version bumped (or always when `true`, never when `false`). */
 	autoRebuildCache?: boolean;
-	/** Explicit path to the `zhw` binary (`wasmtime` runner). */
+	/** Explicit path to the `zhw` binary. */
 	zhwPath?: string;
 	/** Test hook: overrides the `cacheKey` reported by `zhw version` to simulate a `zhw` upgrade. */
 	zhwVersionOverride?: string;
 	/** The install prompt. Without one, tiers none and low are granted and the rest is not. */
 	approve?: ApproveFn;
-	/** Replace the jco step (`worker` runner tests). */
-	transpile?: TranspileFn;
-	/** Directory of the zinc:plugin WIT files for the default jco transpiler (`worker` runner). */
-	witDir?: string;
 	/** A reason string for a blocked plugin version (`plugin-state::blocked`), or undefined. */
 	blocklist?: (id: string, version: string) => string | undefined;
 	log?: (level: "error" | "warn" | "info" | "debug", message: string) => void;
@@ -133,9 +126,7 @@ interface StateEntry {
 	updatedAt?: number;
 	disabledReason?: string;
 	pendingApproval?: string[];
-	/** SHA-256 over the transpiled folder (`worker` runner; `""` on `wasmtime`). */
-	transpiledHash: string;
-	/** `zhw` cacheKey under which `.cwasm` was precompiled (`wasmtime` runner). */
+	/** `zhw` cacheKey under which `.cwasm` was precompiled. */
 	cwasmCacheKey?: string;
 }
 
@@ -165,7 +156,6 @@ export class PluginManager {
 	private problems = new Map<string, { state: PluginState; detail: string }>();
 	private uninstalling = new Set<string>();
 	private listeners = new Map<string, Set<(e: any) => void>>();
-	private transpile: TranspileFn;
 	private approveFn: ApproveFn | undefined;
 	private platform: "windows" | "macos" | "linux";
 	private loaded = false;
@@ -183,16 +173,8 @@ export class PluginManager {
 		});
 		this.zincVersion = opts.zincVersion ?? process.env.ZN_VERSION ?? "0.1.0";
 		this.apiVersion = opts.apiVersion ?? "0.1.0";
-		this.transpile = opts.transpile ?? createTranspiler(opts.witDir);
 		this.approveFn = opts.approve;
 		this.platform = opts.platform ?? (process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux");
-	}
-
-	activeRunner(): PluginRunner {
-		if (this.opts.runner) return this.opts.runner;
-		if (this.sup?.runner) return this.sup.runner;
-		const envRunner = process.env.ZN_PLUGIN_RUNNER ?? process.env.ZN_TEST_RUNNER;
-		return envRunner === "worker" ? "worker" : "wasmtime";
 	}
 
 	/** `.cwasm` path resolved for `id` (used by `supervisor`'s `cwasmOf` hook). */
@@ -204,7 +186,6 @@ export class PluginManager {
 	}
 
 	private pruneCache() {
-		if (this.activeRunner() !== "wasmtime") return;
 		const valid = new Set<string>();
 		for (const r of this.records.values()) {
 			if (r.manifest.main.sha256) valid.add(r.manifest.main.sha256);
@@ -455,7 +436,7 @@ export class PluginManager {
 			}
 		}
 
-		// 2. stage: the files, then prepare plugin.wasm (`.cwasm` cache on `wasmtime`, or `jco` on `worker`)
+		// 2. stage: the files, then precompile plugin.wasm into the `.cwasm` cache
 		const stage = join(this.layout.staging, `${id}-${crypto.randomUUID().slice(0, 8)}`);
 		await rm(stage, { recursive: true, force: true });
 		await mkdir(stage, { recursive: true });
@@ -470,26 +451,18 @@ export class PluginManager {
 			await Bun.write(join(stage, "manifest.json"), JSON.stringify(pinned, null, "\t") + "\n");
 
 			const wasmBytes = files.find((f) => f.name === manifest.main.wasm)!.data;
-			let transpiledHash = "";
 			let cwasmCacheKey: string | undefined;
-			if (this.activeRunner() === "worker") {
-				try {
-					await this.transpile(wasmBytes, join(stage, "transpiled"));
-				} catch (e) {
-					throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", [(e as Error).message.split("\n")[0]]);
-				}
-				transpiledHash = existsSync(join(stage, "transpiled")) ? await hashTree(join(stage, "transpiled")) : "";
-			} else if (this.opts.precompile !== false) {
+			if (this.opts.precompile !== false) {
 				try {
 					const cwasmPath = await this.cwasmCache.precompile(join(stage, ...manifest.main.wasm.split("/")), digest);
 					cwasmCacheKey = this.cwasmCache.cacheKey();
 					this.resolvedCwasm.set(id, cwasmPath);
 				} catch (e) {
-					throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", [(e as Error).message.split("\n")[0]]);
+					throw new InstallError("prepare-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", [(e as Error).message.split("\n")[0]]);
 				}
 			} else {
 				if (wasmBytes.length <= 8 || wasmBytes[4] !== 0x0d) {
-					throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", ["not a WebAssembly component"]);
+					throw new InstallError("prepare-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", ["not a WebAssembly component"]);
 				}
 				this.resolvedCwasm.set(id, undefined);
 			}
@@ -524,7 +497,6 @@ export class PluginManager {
 				updatedAt: old ? now : undefined,
 				disabledReason: enabled ? undefined : pending ? undefined : old?.entry.disabledReason,
 				pendingApproval: pending,
-				transpiledHash,
 				...(cwasmCacheKey ? { cwasmCacheKey } : {}),
 			};
 			const stored = JSON.parse(readFileSync(join(dest, "manifest.json"), "utf8")) as PluginManifest;
@@ -580,20 +552,16 @@ export class PluginManager {
 		if (why) return bad("incompatible", why);
 		const blocked = this.opts.blocklist?.(id, m.version);
 		if (blocked) return bad("blocked", blocked);
-		const runner = this.activeRunner();
 		let wasmSha = m.main.sha256;
 		try {
 			const wasm = new Uint8Array(await Bun.file(join(dir, m.main.wasm)).arrayBuffer());
 			const actualSha = sha256Hex(wasm);
 			if (m.main.sha256 && actualSha !== m.main.sha256) return bad("failed", "plugin.wasm does not match its pinned hash; reinstall the plugin");
 			wasmSha = actualSha;
-			if (runner === "worker" && r.entry.transpiledHash && (await hashTree(join(dir, "transpiled"))) !== r.entry.transpiledHash) {
-				return bad("failed", "the prepared plugin files were changed; reinstall the plugin");
-			}
 		} catch (e) {
 			return bad("failed", `plugin files cannot be read: ${(e as Error).message}`);
 		}
-		if (runner === "wasmtime" && wasmSha) {
+		if (wasmSha) {
 			let cwasm = this.opts.precompile === false ? undefined : this.cwasmCache.getIfFresh(wasmSha);
 			const currentKey = this.cwasmCache.cacheKey();
 			const shouldRebuild =

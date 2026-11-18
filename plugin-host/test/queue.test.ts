@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { defineHandler, witError } from "../src/imports/registry";
 import type { PluginSupervisor } from "../src/supervisor";
 import { join } from "node:path";
-import { RUNNER, buildFixtures, newSupervisor, prefsHostModule, until, zincHandlers } from "./helpers";
+import { buildFixtures, newSupervisor, prefsHostModule, until, zincHandlers } from "./helpers";
 
 let dirs: Awaited<ReturnType<typeof buildFixtures>>;
 beforeAll(async () => {
@@ -107,30 +107,5 @@ describe("per-plugin call queue", () => {
 		await sup.start(info.id);
 		await until(() => lines.includes("hello-rust@zinc.test: timer 7 fired"), 3000, "the callback made by the host handler");
 		expect(sup.get(info.id)?.status).toBe("running");
-	}, 30_000);
-
-	test("coldBonusMs is 0 on wasmtime, 0 for a small plugin on worker, and follows transpiled size on worker when lowered", async () => {
-		const lines: string[] = [];
-		const small = newSupervisor(lines, { importHandlers: zincHandlers(lines), runner: "worker" });
-		open.push(small);
-		const a = await small.load(dirs["hello-js"]);
-		expect(small.coldBonusMs(a.id)).toBe(0);
-		const lowered = newSupervisor([], { importHandlers: zincHandlers([]), runner: "worker", coldBudget: { thresholdBytes: 1, msPerMb: 1000, maxMs: 60_000 } });
-		open.push(lowered);
-		const b = await lowered.load(dirs["hello-js"]);
-		expect(lowered.coldBonusMs(b.id)).toBeGreaterThan(0);
-		const off = newSupervisor([], { importHandlers: zincHandlers([]), runner: "worker", coldBudget: false });
-		open.push(off);
-		const c = await off.load(dirs["hello-js"]);
-		expect(off.coldBonusMs(c.id)).toBe(0);
-		if (RUNNER === "wasmtime") {
-			const wt = newSupervisor([], { importHandlers: zincHandlers([]), runner: "wasmtime", coldBudget: { thresholdBytes: 1, msPerMb: 1000, maxMs: 60_000 } });
-			open.push(wt);
-			const d = await wt.load(dirs["hello-js"]);
-			expect(wt.coldBonusMs(d.id)).toBe(0);
-		} else {
-			const wt = newSupervisor([], { importHandlers: zincHandlers([]), runner: "wasmtime", coldBudget: { thresholdBytes: 1, msPerMb: 1000, maxMs: 60_000 } });
-			expect(wt.coldBonusMs("hello-js@zinc.test")).toBe(0);
-		}
 	}, 30_000);
 });

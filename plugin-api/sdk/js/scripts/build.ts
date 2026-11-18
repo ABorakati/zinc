@@ -4,7 +4,7 @@
 // Builds a JS (QuickJS) plugin: bundles the entry (default <dir>/src/main.js, then src/index.js|ts, plugin.js) and everything it
 // imports from the SDK into one ES module (componentize-qjs resolves only what is under the entry's folder, so the SDK has to be
 // inlined; the `zinc:plugin/*` imports stay as they are), then hands it to plugin-host/scripts/build-plugin.ts, which runs
-// componentize-qjs and jco and writes <out>/{manifest.json,plugin.wasm,transpiled/}. Default <out>: <dir>/dist.
+// componentize-qjs and writes <out>/{manifest.json,plugin.wasm}. Default <out>: <dir>/dist.
 import { mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { buildPlugin } from "../../../../plugin-host/scripts/build-plugin";
