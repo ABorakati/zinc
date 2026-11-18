@@ -229,7 +229,7 @@ export function migrateLegacyLibrary(get: (key: string) => unknown): ViewLayout 
 
 // ---- moving panes (phase 2) -------------------------------------------------------------------------------------------------
 
-/** Where a pane can be put. Indexes refer to the layout as it is BEFORE the move. */
+/** Where a pane can be put. Indexes (stack, `index`, `at`) are whole numbers and refer to the layout as it is BEFORE the move. */
 export type DropTarget =
 	/** into an existing stack as a tab, at `index` among its panes (default: last) */
 	| { kind: "tab"; column: "centre" | "right"; stack: number; index?: number }
@@ -261,30 +261,54 @@ export function locatePane(l: ViewLayout, id: string): PaneLocation | null {
 	return null;
 }
 
-/** Whether `movePane` would do anything for this move. */
+const isColumnId = (c: unknown): c is "centre" | "right" => c === "centre" || c === "right";
+
+/** True when taking the pane at `from` out would leave the centre column without a stack. */
+function emptiesCentre(l: ViewLayout, from: PaneLocation): boolean {
+	return from.column === "centre" && l.centre.stacks.length === 1 && l.centre.stacks[0]!.panes.length === 1;
+}
+
+/**
+ * Whether `movePane` would do anything for this move. False for a target that does not exist (a column other than centre / right,
+ * a stack that is not there, a split position or tab index that is not an integer inside the column / stack), for the centre
+ * column's last pane leaving it (to the right column or back to the item pane), for `section` on a pane that is not a placed
+ * `section:` pane, and for a drop that leaves the pane exactly where it is (its own place in its stack, or beside its own lone stack).
+ */
 export function canMove(l: ViewLayout, id: string, to: DropTarget): boolean {
 	const from = locatePane(l, id);
-	if (to.kind === "section") return isSectionPane(id) && from !== null;
+	if (to.kind === "section") return isSectionPane(id) && from !== null && !emptiesCentre(l, from);
+	if (to.kind !== "tab" && to.kind !== "split") return false;
+	if (!isColumnId(to.column)) return false;
 	const col = l[to.column];
-	if (to.kind === "tab" && !col.stacks[to.stack]) return false;
-	if (to.kind === "split" && (to.at < 0 || to.at > col.stacks.length)) return false;
+	let tabIndex = 0;
+	if (to.kind === "tab") {
+		const target = Number.isInteger(to.stack) ? col.stacks[to.stack] : undefined;
+		if (!target) return false;
+		tabIndex = to.index ?? target.panes.length;
+		if (!Number.isInteger(tabIndex) || tabIndex < 0 || tabIndex > target.panes.length) return false;
+	} else if (!Number.isInteger(to.at) || to.at < 0 || to.at > col.stacks.length) return false;
 	if (!from) return true; // a pane placed for the first time (a section being detached)
-	// the centre column is never left empty
-	if (from.column === "centre" && to.column !== "centre") {
-		const centre = l.centre.stacks;
-		if (centre.length === 1 && centre[0]!.panes.length === 1) return false;
-	}
-	// a pane alone in its stack, dropped next to itself, changes nothing
+	if (to.column !== from.column && emptiesCentre(l, from)) return false;
 	const alone = l[from.column].stacks[from.stack]!.panes.length === 1;
-	if (to.kind === "split" && alone && to.column === from.column && (to.at === from.stack || to.at === from.stack + 1)) return false;
-	if (to.kind === "tab" && to.column === from.column && to.stack === from.stack && alone) return false;
+	if (to.kind === "tab") {
+		// `tabIndex` is a gap before the move: the gaps either side of the pane itself keep it where it is
+		if (to.column === from.column && to.stack === from.stack && (tabIndex === from.index || tabIndex === from.index + 1)) return false;
+	} else if (alone && to.column === from.column && (to.at === from.stack || to.at === from.stack + 1)) return false;
 	return true;
+}
+
+/** `sizes` scaled to sum to 1 (equal parts when they do not sum to a positive number). */
+function rescale(sizes: number[]): number[] {
+	const sum = sizes.reduce((a, b) => a + b, 0);
+	return sum > 0 && Number.isFinite(sum) ? sizes.map((x) => x / sum) : sizes.map(() => 1 / sizes.length);
 }
 
 /**
  * The layout with pane `id` moved to `to` (or placed there, if it was not in the layout). The moved pane becomes its stack's
- * active pane and is shown. A stack left empty is removed and its height goes to the others; a new stack takes an equal share.
- * Returns `l` itself when the move is not allowed (canMove). Callers store the result through normalizeLayout.
+ * active pane and is shown. A stack left empty is removed and its height goes to the other stacks of its column in proportion;
+ * a new stack takes an equal share, except that a lone stack moved within its own column keeps its height. A `section` target
+ * takes the pane out of the layout. Returns `l` itself when the move is not allowed (canMove). Never changes `l`.
+ * Callers store the result through normalizeLayout.
  */
 export function movePane(l: ViewLayout, id: string, to: DropTarget): ViewLayout {
 	if (!canMove(l, id, to)) return l;
@@ -297,6 +321,7 @@ export function movePane(l: ViewLayout, id: string, to: DropTarget): ViewLayout 
 	const targetStack = to.kind === "tab" ? cols[to.column].stacks[to.stack]! : null;
 	let splitAt = to.kind === "split" ? to.at : 0;
 	let tabIndex = to.kind === "tab" ? (to.index ?? targetStack!.panes.length) : 0;
+	let keptSize: number | null = null; // the height of a lone stack that moves within its column
 
 	if (from) {
 		const col = cols[from.column];
@@ -306,30 +331,32 @@ export function movePane(l: ViewLayout, id: string, to: DropTarget): ViewLayout 
 		if (s.active === id) s.active = s.panes[Math.min(from.index, s.panes.length - 1)] ?? "";
 		if (!s.panes.length) {
 			col.stacks.splice(from.stack, 1);
-			col.sizes.splice(from.stack, 1);
-			if (to.kind === "split" && to.column === from.column && from.stack < to.at) splitAt--;
+			const [size] = col.sizes.splice(from.stack, 1);
+			if (to.kind === "split" && to.column === from.column) {
+				if (from.stack < to.at) splitAt--;
+				keptSize = size ?? null;
+			} else col.sizes = rescale(col.sizes);
 		}
 	}
 	if (to.kind === "tab") {
-		targetStack!.panes.splice(Math.max(0, Math.min(tabIndex, targetStack!.panes.length)), 0, id);
+		targetStack!.panes.splice(tabIndex, 0, id);
 		targetStack!.active = id;
 	} else if (to.kind === "split") {
 		const col = cols[to.column];
-		const n = col.stacks.length;
-		const share = 1 / (n + 1);
-		const sum = col.sizes.reduce((a, b) => a + b, 0) || 1;
-		col.sizes = col.sizes.map((x) => (x / sum) * (1 - share));
+		const share = keptSize ?? 1 / (col.stacks.length + 1);
+		col.sizes = keptSize === null ? rescale(col.sizes).map((x) => x * (1 - share)) : col.sizes;
 		col.stacks.splice(splitAt, 0, { panes: [id], active: id });
 		col.sizes.splice(splitAt, 0, share);
 	}
 	return { ...l, centre: cols.centre, right: cols.right, hidden: l.hidden.filter((h) => h !== id) };
 }
 
-/** The layout with `id` the active (shown) pane of its stack. */
+/** The layout with `id` the active pane of its stack, and shown. Returns `l` itself when it is not placed, or already so. */
 export function setStackActive(l: ViewLayout, id: string): ViewLayout {
 	const at = locatePane(l, id);
 	if (!at) return l;
 	const col = l[at.column];
+	if (col.stacks[at.stack]!.active === id && !l.hidden.includes(id)) return l;
 	const stacks = col.stacks.map((s, i) => (i === at.stack ? { ...s, active: id } : s));
-	return { ...l, [at.column]: { ...col, stacks } };
+	return { ...l, [at.column]: { ...col, stacks }, hidden: l.hidden.filter((h) => h !== id) };
 }

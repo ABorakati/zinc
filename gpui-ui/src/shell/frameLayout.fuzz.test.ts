@@ -1,14 +1,21 @@
 // Fuzz: the layout model (frameLayout.ts). Any stored value (a hand-edited or older ui-state.json) must normalise to one valid
 // layout without throwing: every pane once, required panes placed and shown, sizes that sum to 1, a non-empty centre, and
-// normalising again changing nothing. Edits (show/hide, sizes) must keep those rules after normalising.
+// normalising again changing nothing. Edits (show/hide, sizes) must keep those rules after normalising. Random sequences of
+// moves, activations and hides keep them too: movePane / setStackActive give a valid layout without normalising, a move that
+// canMove refuses returns the very same object, and nothing ever changes its input.
 import { describe, expect } from "bun:test";
 import { fc, fuzz } from "../fuzzHarness";
 import {
+	canMove,
 	drawnColumns,
+	locatePane,
 	migrateLegacyLibrary,
+	movePane,
 	normalizeLayout,
 	setLeftShown,
 	setPaneHidden,
+	setStackActive,
+	type DropTarget,
 	type KnownPanes,
 	type ViewLayout,
 } from "./frameLayout";
@@ -96,5 +103,126 @@ describe("frame layout fuzz", () => {
 		const l = migrateLegacyLibrary((k) => keys[k]);
 		checkValid(normalizeLayout(l, KNOWN));
 		expect(normalizeLayout(l, KNOWN)).toEqual(l);
+	});
+});
+
+// ---- moves, activations and hides ------------------------------------------------------------------------------------------
+
+const POOL_PANES = [...KNOWN.ids, "plugin:a:graph", "section:plug:a:refs"];
+const poolPane = fc.constantFrom(...POOL_PANES);
+const richStack = fc.tuple(fc.array(poolPane, { minLength: 1, maxLength: 3 }), fc.nat(2)).map(([panes, i]) => ({ panes, active: panes[i % panes.length]! }));
+const richColumn = fc.array(richStack, { maxLength: 3 }).chain((stacks) =>
+	fc
+		.array(fc.double({ min: 0.02, max: 1, noNaN: true }), { minLength: stacks.length, maxLength: stacks.length })
+		.map((sizes) => ({ stacks, sizes })),
+);
+/** layouts with several stacks of several panes, which the arbitrary junk above rarely builds */
+const richLayoutArb = fc.record({ centre: richColumn, right: richColumn, hidden: fc.array(poolPane, { maxLength: 4 }) });
+
+// mostly real columns; sometimes a column that is not one (the left frame column, Object.prototype names)
+const colId = fc.oneof(
+	{ weight: 8, arbitrary: fc.constantFrom<"centre" | "right">("centre", "right") },
+	{ weight: 1, arbitrary: fc.constantFrom("left", "constructor", "__proto__") as unknown as fc.Arbitrary<"centre"> },
+);
+const place = fc.oneof({ weight: 8, arbitrary: fc.nat(3) }, { weight: 1, arbitrary: fc.constantFrom(-1, 4, NaN, 0.5, -0.5, Infinity) });
+const targetArb: fc.Arbitrary<DropTarget> = fc.oneof(
+	fc
+		.tuple(colId, place, fc.option(place, { nil: undefined }))
+		.map(([column, stack, index]): DropTarget => (index === undefined ? { kind: "tab", column, stack } : { kind: "tab", column, stack, index })),
+	fc.tuple(colId, place).map(([column, at]): DropTarget => ({ kind: "split", column, at })),
+	fc.constant<DropTarget>({ kind: "section" }),
+);
+const paneId = fc.oneof({ weight: 4, arbitrary: fc.constantFrom(...POOL_PANES) }, { weight: 1, arbitrary: fc.constantFrom(...ID_POOL) });
+type Op = { op: "move"; id: string; to: DropTarget } | { op: "activate"; id: string } | { op: "hide"; id: string; hide: boolean };
+const opArb: fc.Arbitrary<Op> = fc.oneof(
+	{ weight: 5, arbitrary: fc.tuple(paneId, targetArb).map(([id, to]): Op => ({ op: "move", id, to })) },
+	{ weight: 2, arbitrary: paneId.map((id): Op => ({ op: "activate", id })) },
+	{ weight: 2, arbitrary: fc.tuple(paneId, fc.boolean()).map(([id, hide]): Op => ({ op: "hide", id, hide })) },
+);
+
+const placedIds = (l: ViewLayout): string[] => [...l.centre.stacks, ...l.right.stacks].flatMap((s) => s.panes);
+const isKnownId = (pid: string) => KNOWN.ids.includes(pid) || pid.startsWith("plugin:") || pid.startsWith("section:plug:");
+function deepFreeze<T>(v: T): T {
+	if (v && typeof v === "object") for (const x of Object.values(v)) deepFreeze(x);
+	return Object.freeze(v);
+}
+
+/** movePane on `l`: the same object when canMove refuses; otherwise a valid layout, with the pane where `to` says, without normalising */
+function checkMove(l: ViewLayout, pid: string, to: DropTarget): ViewLayout {
+	const allowed = canMove(l, pid, to);
+	const r = movePane(l, pid, to);
+	if (!allowed) {
+		expect(r).toBe(l);
+		return r;
+	}
+	expect(r).not.toBe(l);
+	expect(r.hidden).toEqual(l.hidden.filter((h) => h !== pid));
+	expect(r.left).toEqual(l.left);
+	expect(r.sizes).toEqual(l.sizes);
+	if (!isKnownId(pid) && !placedIds(l).includes(pid)) return r; // normalizeLayout will drop a pane it does not know
+	checkValid(r);
+	const was = placedIds(l);
+	const want = to.kind === "section" ? was.filter((x) => x !== pid) : [...new Set([...was, pid])];
+	expect([...placedIds(r)].sort()).toEqual([...want].sort());
+	if (to.kind === "section") expect(locatePane(r, pid)).toBeNull();
+	else {
+		const at = locatePane(r, pid)!;
+		expect(at.column).toBe(to.column);
+		expect(r[at.column].stacks[at.stack]!.active).toBe(pid);
+		if (to.kind === "split") expect(r[at.column].stacks[at.stack]!.panes).toEqual([pid]);
+	}
+	// the result is where normalizeLayout would leave it
+	const n = normalizeLayout(r, KNOWN);
+	expect(n.centre.stacks).toEqual(r.centre.stacks);
+	expect(n.right.stacks).toEqual(r.right.stacks);
+	return r;
+}
+
+/** setStackActive on `l`: the same object when it has nothing to do; otherwise only the active pane and the hidden list change */
+function checkActivate(l: ViewLayout, pid: string): ViewLayout {
+	const at = locatePane(l, pid);
+	const r = setStackActive(l, pid);
+	if (!at) {
+		expect(r).toBe(l);
+		return r;
+	}
+	const already = l[at.column].stacks[at.stack]!.active === pid && !l.hidden.includes(pid);
+	if (already) expect(r).toBe(l);
+	else expect(r).not.toBe(l);
+	expect(r[at.column].stacks[at.stack]!.active).toBe(pid);
+	expect(r.hidden).toEqual(l.hidden.filter((h) => h !== pid));
+	expect(locatePane(r, pid)).toEqual(at);
+	for (const c of ["centre", "right"] as const) {
+		expect(r[c].stacks.map((s) => s.panes)).toEqual(l[c].stacks.map((s) => s.panes));
+		expect(r[c].sizes).toEqual(l[c].sizes);
+	}
+	checkValid(r);
+	return r;
+}
+
+describe("frame layout fuzz: moving panes", () => {
+	fuzz(
+		"moves, activations and hides from any normalised layout stay valid; a refused move returns the same object; the input never changes",
+		[fc.oneof(layoutArb, richLayoutArb), fc.array(opArb, { maxLength: 12 })],
+		(v, ops) => {
+			let l = normalizeLayout(v, KNOWN);
+			checkValid(l);
+			for (const op of ops) {
+				deepFreeze(l); // a mutation of the input throws
+				const before = structuredClone(l);
+				const next =
+					op.op === "move" ? checkMove(l, op.id, op.to) : op.op === "activate" ? checkActivate(l, op.id) : setPaneHidden(l, op.id, op.hide);
+				expect(l).toEqual(before);
+				l = normalizeLayout(next, KNOWN);
+				checkValid(l);
+			}
+		},
+	);
+
+	fuzz("every target on every layout: canMove never throws and agrees with movePane", [fc.oneof(layoutArb, richLayoutArb), paneId, targetArb], (v, pid, to) => {
+		const l = normalizeLayout(v, KNOWN);
+		const r = movePane(l, pid, to);
+		expect(r === l).toBe(!canMove(l, pid, to));
+		expect(movePane(l, pid, to)).toEqual(r); // deterministic
 	});
 });

@@ -9,6 +9,7 @@ import { isDocTab } from "../contracts";
 import { registerAppAction } from "../registry";
 import { store, uiState } from "../store";
 import {
+	isPluginPane,
 	locatePane,
 	sectionPaneId,
 	migrateLegacyLibrary,
@@ -166,6 +167,9 @@ export function undoLayout(): boolean {
 
 /** Move a pane of the library (or place it, for a section being detached). Undoable. Returns false when the move is not allowed. */
 export function moveLibraryPane(id: string, to: DropTarget): boolean {
+	const known = knownLibrary();
+	if (!known.ids.includes(id) && !isPluginPane(id)) return false;
+	if (to.kind === "section" && known.required.includes(id)) return false;
 	const prev = libraryLayout();
 	const next = movePane(prev, id, to);
 	if (next === prev) return false;
@@ -180,8 +184,11 @@ export function activateLibraryPane(id: string): void {
 /** Hide or show a library pane in place. Undoable. */
 export function hideLibraryPane(id: string, hide: boolean): void {
 	const prev = libraryLayout();
+	if (!locatePane(prev, id) || (hide && knownLibrary().required.includes(id)) || prev.hidden.includes(id) === hide) return;
 	remember(prev);
 	setLibraryLayout(setPaneHidden(prev, id, hide));
 }
 /** Where a library pane is, or null. */
 export const libraryPaneLocation = (id: string): PaneLocation | null => locatePane(libraryLayout(), id);
+
+import "./layoutActions";
