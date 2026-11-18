@@ -1,0 +1,909 @@
+package zinc:plugin@0.1.0;
+
+// Everything about a plugin as a package and its life in Zinc, plus the capabilities that Zotero gives
+// plugins freely and Zinc gates with permissions (network, files, timers, clipboard, shell, log).
+//
+// Interfaces in this file:
+//   exported by the plugin:  lifecycle, events
+//   imported from the host:  app, plugins, prefs, secrets, l10n, log, timers, net, fs, clipboard, shell, util, permissions
+//
+// Permission ids (strings) are listed in plugin-api/manifest.schema.json and in lifecycle.md.
+// Every call that needs a permission returns error::permission-denied(<id>) when the manifest did not
+// declare it, the user denied it, or the user revoked it later.
+
+// ---------------------------------------------------------------------------------------------------------------
+// Exports: what the plugin implements
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The plugin's lifecycle hooks. They match the bootstrap.js methods of a Zotero 7 plugin.
+/// Each hook has a time limit (10 s by default). A hook that passes it counts as a hung plugin: Zinc restarts
+/// the plugin host process and disables the plugin.
+interface lifecycle {
+  use types.{plugin-id, version, window-id, error};
+
+  /// Why a hook runs. Same names and meaning as Zotero's `REASONS`. `main-window-load` and
+  /// `main-window-unload` are given to the window hooks.
+  enum reason {
+    /// Zinc is starting and the plugin was already enabled.
+    app-startup,
+    /// Zinc is quitting.
+    app-shutdown,
+    /// The user enabled the plugin (or an update finished re-enabling it) while Zinc runs.
+    addon-enable,
+    /// The user disabled the plugin, or Zinc blocked it.
+    addon-disable,
+    /// The plugin was installed for the first time.
+    addon-install,
+    /// The plugin is being removed.
+    addon-uninstall,
+    /// A newer version replaces the running one.
+    addon-upgrade,
+    /// An older version replaces the running one.
+    addon-downgrade,
+    main-window-load,
+    main-window-unload,
+  }
+
+  /// Which hook a plugin event is about.
+  enum hook {
+    install,
+    startup,
+    shutdown,
+    uninstall,
+    main-window-load,
+    main-window-unload,
+  }
+
+  /// What every hook gets. Zotero passes `{ id, version, rootURI }`; Zinc has no root URI (packaged files
+  /// are read through `fs` with `root::bundled`), and it adds the previous version for migrations.
+  record plugin-data {
+    id: plugin-id,
+    version: version,
+    /// The version that was installed before this one. Set for `addon-upgrade` and `addon-downgrade`.
+    previous-version: option<version>,
+  }
+
+  /// Called once after the plugin is installed or upgraded, before `startup`. Do one-time setup, such as
+  /// migrating prefs from `plugin-data.previous-version`. May be skipped for an enable of an installed plugin.
+  install: func(data: plugin-data, why: reason) -> result<_, error>;
+
+  /// Called when the plugin starts: at app start, when it is enabled, and after install or upgrade.
+  /// Zinc calls it only after the library is open and the UI is ready (what Zotero's
+  /// `initializationPromise` and `uiReadyPromise` guarantee), so a plugin does not wait for either.
+  /// Register extension points and UI here. If it returns an error, Zinc removes everything the plugin
+  /// registered and marks the plugin as failed.
+  startup: func(data: plugin-data, why: reason) -> result<_, error>;
+
+  /// Called when the plugin stops: disable, uninstall, upgrade, or app quit. Undo what `startup` did.
+  /// After it returns, Zinc removes every registration, timer, subscription and pref observer that
+  /// the plugin still has, so a plugin that forgets to clean up cannot leave anything behind.
+  /// For `app-shutdown` the time limit is 5 s.
+  shutdown: func(data: plugin-data, why: reason) -> result<_, error>;
+
+  /// Called after `shutdown` when the plugin is being removed or replaced. Use it to delete data that
+  /// is outside the plugin's data folder. Zinc removes the data folder and the plugin's own prefs after
+  /// this call unless the user chose to keep them.
+  uninstall: func(data: plugin-data, why: reason) -> result<_, error>;
+
+  /// A library window finished loading (opened later, or reopened). Add per-window UI here.
+  /// Zinc does not call this for windows that already exist when `startup` runs, as Zotero does not;
+  /// use `app.main-windows` in `startup` for those.
+  main-window-load: func(data: plugin-data, window: window-id) -> result<_, error>;
+
+  /// A library window is closing, or its last library view was closed.
+  main-window-unload: func(data: plugin-data, window: window-id) -> result<_, error>;
+}
+
+/// Callbacks for things the plugin subscribed to through `prefs`, `timers`, `plugins`, `l10n` and
+/// `permissions`. Callbacks for the extension points of the other areas are in their own interfaces.
+interface events {
+  use types.{pref-value, plugin-id};
+  use lifecycle.{reason, hook};
+  use prefs.{pref-scope};
+  use timers.{timer-kind};
+
+  /// A pref the plugin observes changed. `value` is none when the pref was cleared and has no default.
+  on-pref-changed: func(subscription: u32, scope: pref-scope, name: string, value: option<pref-value>);
+
+  /// A timer set with `timers` fired.
+  on-timer: func(timer: u32, kind: timer-kind);
+
+  /// Another plugin (or this one) ran a hook. Needs `plugins.read`. Zotero: `Zotero.Plugins.addObserver`.
+  on-plugin-event: func(plugin: plugin-id, which: hook, why: reason);
+
+  /// The UI language changed. Localized UI updates itself; this is for plugins that cache strings.
+  on-locale-changed: func(locale: string);
+
+  /// The user granted or revoked a permission in Settings > Plugins (or answered `permissions.request`).
+  on-permission-changed: func(permission: string, granted: bool);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: the app and other plugins
+// ---------------------------------------------------------------------------------------------------------------
+
+interface app {
+  use types.{version, window-id};
+
+  enum platform {
+    windows,
+    macos,
+    linux,
+  }
+
+  record app-info {
+    /// "Zinc".
+    name: string,
+    /// Zinc's version.
+    version: version,
+    /// Version of this plugin API (the `zinc:plugin` package version). A plugin can compare it with the
+    /// `zinc.api_version` it was built for.
+    api-version: version,
+    /// The Zotero version Zinc claims to match for plugin purposes, for code that branches on
+    /// `Zotero.version`. Zinc's own Zotero-plugin layer reports 10.0.0.
+    zotero-version: version,
+    platform: platform,
+    /// "x86_64" or "aarch64".
+    arch: string,
+    /// BCP 47 tag of the UI language, for example "en-US".
+    locale: string,
+    /// IANA time zone name, for example "Europe/London".
+    time-zone: string,
+    /// True for a development build or when the plugin is loaded in dev mode.
+    dev-build: bool,
+    /// Optional features of this build, as stable ids. A plugin can check a feature before it relies on it. Ids in 0.1:
+    ///  ui: "ui.item-pane-section", "ui.webview" (WebView2 present), "ui.embed.<component>" (for example
+    ///      "ui.embed.note-editor", one per `ui.embed-component` the build offers), "ui.canvas"
+    ///  extend: "extend.menubar" (a real menubar; without it the five non-Tools menubar targets show in an overflow menu),
+    ///      "extend.command-search", "extend.reader-sections" (item pane sections in reader tabs)
+    ///  reader: "reader.events", "reader.panels", "reader.overlays", "reader.split-view", "reader.read-aloud",
+    ///      "reader.web" (plugin UI in the EPUB and snapshot readers)
+    ///  note editor: "note-editor.head"
+    features: list<string>,
+  }
+
+  get-info: func() -> app-info;
+
+  /// True once the library is open and the main window shows. Always true inside `startup`.
+  is-ui-ready: func() -> bool;
+
+  /// Waits until `is-ui-ready` is true. Zotero: `Zotero.uiReadyPromise`. Returns at once inside `startup`.
+  wait-ui-ready: func();
+
+  /// Library windows that exist now. Zotero: `Zotero.getMainWindows()`.
+  main-windows: func() -> list<window-id>;
+
+  /// The most recently used library window. Zotero: `Zotero.getMainWindow()`.
+  active-window: func() -> option<window-id>;
+}
+
+/// The plugin's own entry and, with `plugins.read`, other plugins. Zotero: `Zotero.Plugins`.
+interface plugins {
+  use types.{plugin-id, version, error};
+
+  enum plugin-state {
+    enabled,
+    /// Turned off by the user.
+    disabled,
+    /// On Zinc's blocklist for this version. The user cannot override it.
+    blocked,
+    /// The version range or API version in the manifest does not match this Zinc.
+    incompatible,
+    /// `startup` returned an error, or the plugin hung.
+    failed,
+    /// Marked for removal at the next restart.
+    uninstalling,
+  }
+
+  record plugin-info {
+    id: plugin-id,
+    name: string,
+    version: version,
+    description: option<string>,
+    author: option<string>,
+    homepage: option<string>,
+    state: plugin-state,
+    /// The blocklist reason, or the failure message. Zotero: `getBlockedPluginReason`.
+    state-detail: option<string>,
+    /// Permission ids the user has granted (not only declared).
+    granted: list<string>,
+  }
+
+  record update-info {
+    version: version,
+    /// Release notes page, if the update manifest gives one.
+    notes-url: option<string>,
+  }
+
+  /// This plugin's own record. Always allowed.
+  self-info: func() -> plugin-info;
+
+  /// Another plugin's record. Needs `plugins.read`. Zotero: `AddonManager.getAddonByID`.
+  get-info: func(id: plugin-id) -> option<plugin-info>;
+
+  /// All installed plugins. Needs `plugins.read`. Zotero: `Zotero.Plugins.getAllPluginIDs()`.
+  list-plugins: func() -> list<plugin-info>;
+
+  /// The icon of an installed plugin as PNG bytes, at the closest size to `size-px`. Needs `plugins.read`
+  /// for other plugins. Zotero: `Zotero.Plugins.getIconURI(id, size)`.
+  get-icon: func(id: plugin-id, size-px: u32) -> option<list<u8>>;
+
+  /// Ask whether a newer version exists, using the plugin's `update_url`. Needs `net` access to the update
+  /// host only for Zinc itself (the plugin needs no `net.hosts` entry). A plugin cannot install an update;
+  /// the user approves it in Settings > Plugins.
+  check-update: func(id: plugin-id) -> result<option<update-info>, error>;
+
+  /// Start delivering `events.on-plugin-event` for lifecycle hooks of all plugins. Needs `plugins.read`.
+  observe-plugins: func() -> result<_, error>;
+
+  stop-observing-plugins: func();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: preferences
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Plugin preferences. Each plugin has its own namespace: the key "foo.bar" is stored as
+/// `extensions.<plugin-id>.foo.bar`. A plugin cannot read or write another plugin's keys.
+///
+/// Keys: 1 to 128 characters of a-z, A-Z, 0-9 and ". _ -". Limits: 1000 keys; a text value up to 64 KiB.
+/// Defaults come from `default_prefs` in the manifest and are loaded before `startup`; a default is never
+/// written to disk, and `clear` goes back to it.
+///
+/// The host serves reads from a copy in the plugin host process, so `get` does not cross a process boundary.
+///
+/// UI bindings. A control bound to a pref (`ui.node-props.pref`, and the `pref`, `toggle` and `choice` fields of
+/// `extend.setting-row` controls) is read and written by the host with the same rules as `get` and `set`, with no call
+/// into the plugin: the key is in the plugin's own namespace, the type of the default is enforced, and the plugin's
+/// `events.on-pref-changed` observers fire for the change. Which control fits which type:
+/// `switch`, `checkbox` and `toggle` bind to `flag`; `select`, `radio-group`, `choice`, `color-input`, `text-input` and
+/// `date-input` bind to `text`; `number-input` and `slider` bind to `integer`, or to `text` (a decimal string) when the
+/// control has a fractional step. A pref bound to a `secret` text setting is not a pref: the host keeps it in `secrets`
+/// under the name "pref:<key>", `get` returns none for it, and the plugin reads it with `secrets.get("pref:<key>")`.
+interface prefs {
+  use types.{pref-value, error};
+
+  /// Whose prefs.
+  enum pref-scope {
+    /// The plugin's own namespace.
+    plugin-own,
+    /// Zinc's own settings. Read-only and limited to an allowlist (see lifecycle.md). Needs `prefs.app-read`.
+    app,
+  }
+
+  record pref-entry {
+    key: string,
+    value: pref-value,
+    /// True if the user (or the plugin) set it; false if it is the manifest default.
+    user-set: bool,
+  }
+
+  /// The user value, else the default, else none. Zotero: `Zotero.Prefs.get(name, global)`.
+  get: func(key: string) -> option<pref-value>;
+
+  /// Reads a Zinc setting. The key is the Zinc pref name. Needs `prefs.app-read`.
+  get-app: func(key: string) -> result<option<pref-value>, error>;
+
+  /// All keys with a value (user or default), optionally under a prefix such as "ui.".
+  get-all: func(prefix: option<string>) -> list<pref-entry>;
+
+  /// Sets a value. A key that has a default keeps the default's type: setting another type is
+  /// `invalid-argument`. Zotero: `Zotero.Prefs.set`.
+  set: func(key: string, value: pref-value) -> result<_, error>;
+
+  /// Sets several values together; all or none are written. One call, one change notification per key.
+  set-many: func(entries: list<tuple<string, pref-value>>) -> result<_, error>;
+
+  /// Drops the user value so the default shows again. Zotero: `Zotero.Prefs.clear`.
+  clear: func(key: string);
+
+  /// True if the key has a user-set value. Zotero: `Zotero.Prefs.prefHasUserValue`.
+  has-user-value: func(key: string) -> bool;
+
+  /// Clears every user value under a prefix (all keys if none), except the keys in `except`.
+  /// Zotero: `Zotero.Prefs.resetBranch(exclude, branch)`.
+  reset: func(prefix: option<string>, except: list<string>);
+
+  /// Start delivering `events.on-pref-changed` for a key, or for every key under it when `prefix` is true.
+  /// Returns a subscription id. Zotero: `Zotero.Prefs.registerObserver`.
+  observe: func(scope: pref-scope, key: string, prefix: bool) -> result<u32, error>;
+
+  /// Zotero: `Zotero.Prefs.unregisterObserver`.
+  unobserve: func(subscription: u32);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: secrets
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Small secrets such as API keys and tokens, kept in the operating system's credential store (Windows
+/// Credential Manager, macOS Keychain, Secret Service) under the plugin's id. Zotero has no API for this: plugins
+/// there keep keys in prefs in clear text or use the Firefox login manager (`Services.logins`). No permission is
+/// needed, and no other plugin can read these values. Values never appear in logs, in Settings > Plugins or in
+/// exported settings, and they are deleted when the plugin is uninstalled (unless the user keeps its data).
+/// Limits: 64 names, 8 KiB per value.
+interface secrets {
+  use types.{error};
+
+  /// None if there is no such secret.
+  get: func(name: string) -> result<option<string>, error>;
+
+  set: func(name: string, value: string) -> result<_, error>;
+
+  delete: func(name: string) -> result<_, error>;
+
+  /// Names only.
+  list-names: func() -> result<list<string>, error>;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: localization
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Plugin strings. A plugin ships Fluent files at `locale/<tag>/<name>.ftl` and lists the locale tags in
+/// the manifest. For the UI locale Zinc picks, in order: the exact tag, another tag with the same
+/// language, the manifest's default locale, the first locale listed (the same chain Zotero builds in
+/// `Zotero.Plugins`). Message ids are private to the plugin; two plugins can use the same id.
+///
+/// UI trees and menu items do not call this: they carry a `localized-string` and the host resolves it.
+/// Use `format` for text the plugin needs as a string (a note body, a file name, a log line for the user).
+interface l10n {
+  use types.{l10n-ref, epoch-ms, error};
+
+  enum date-style {
+    short,
+    medium,
+    long,
+    full,
+  }
+
+  /// Formats one message. A missing id gives the reference's `fallback`, else the id itself.
+  /// Zotero: `Zotero.getString` (for the plugin's own strings) and `document.l10n.formatValue`.
+  format: func(message: l10n-ref) -> string;
+
+  /// Formats many messages in one call.
+  format-many: func(messages: list<l10n-ref>) -> list<string>;
+
+  /// True if the plugin has this message in any locale.
+  has-message: func(id: string) -> bool;
+
+  /// The UI locale (BCP 47). Same as `app.get-info().locale`.
+  locale: func() -> string;
+
+  /// Locales the plugin ships, as listed in the manifest.
+  plugin-locales: func() -> list<string>;
+
+  /// A date in the user's locale and time zone.
+  format-date: func(when: epoch-ms, style: date-style, with-time: bool) -> string;
+
+  /// A number in the user's locale. `fraction-digits` is the number of decimals, or none for the default.
+  format-number: func(value: f64, fraction-digits: option<u8>) -> string;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: log
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Plugin log. Lines are tagged with the plugin id and kept in Zinc's log ring buffer (visible in
+/// Help > Debug Output and in Settings > Plugins). No permission is needed. Limit: 200 lines per second and
+/// 8 KiB per line; extra lines are dropped and counted.
+///
+/// The host buffers these calls inside the plugin host process and sends them in batches, so writing a log
+/// line is not a round trip.
+interface log {
+  use types.{log-level};
+
+  /// Zotero: `Zotero.debug(message, level)`, `Zotero.warn`.
+  write: func(level: log-level, message: string);
+
+  /// Records an error with an optional stack text, and shows it in Settings > Plugins as the plugin's last
+  /// error. Zotero: `Zotero.logError(e)`.
+  write-error: func(message: string, stack: option<string>);
+
+  /// True if debug lines are being kept now (the user turned debug output on). A plugin can skip building an
+  /// expensive message. Zotero: `Zotero.Debug.enabled`.
+  debug-enabled: func() -> bool;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: timers and time
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Time. A plugin has no WASI clock, so this is its clock. No permission is needed.
+/// Limits: 64 timers per plugin; an interval below 10 ms is raised to 10 ms; while all Zinc windows are
+/// hidden or minimized, timers shorter than 1 s run at most once a second. All timers stop at `shutdown`.
+interface timers {
+  use types.{epoch-ms, error};
+
+  enum timer-kind {
+    timeout,
+    interval,
+    /// Runs when the app is idle, or after the time limit.
+    idle,
+  }
+
+  /// Wall-clock time. Zotero: `Date.now()`.
+  now: func() -> epoch-ms;
+
+  /// Milliseconds on a clock that only goes forward. Use it to measure durations.
+  monotonic-ms: func() -> u64;
+
+  /// Pauses this call for `ms` milliseconds. Zotero: `await Zotero.Promise.delay(ms)`.
+  /// The plugin's other callbacks may not run while it waits (the host decides in phase 2); for long
+  /// waits and for polling use `set-timer`.
+  sleep: func(ms: u32);
+
+  /// Calls `events.on-timer` once after `ms`. Zotero: `setTimeout`.
+  set-timeout: func(ms: u32) -> result<u32, error>;
+
+  /// Calls `events.on-timer` every `ms`. Zotero: `setInterval`.
+  set-interval: func(ms: u32) -> result<u32, error>;
+
+  /// Calls `events.on-timer` when the app is idle or after `deadline-ms`. Zotero: `requestIdleCallback`.
+  request-idle: func(deadline-ms: u32) -> result<u32, error>;
+
+  /// Cancels a timer. Zotero: `clearTimeout`, `clearInterval`, `cancelIdleCallback`.
+  clear: func(timer: u32);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: network
+// ---------------------------------------------------------------------------------------------------------------
+
+/// HTTP. Permission: the manifest lists the hosts in `permissions.net.hosts`. A request to any other host
+/// returns `permission-denied("net.hosts")`. Rules:
+///  - A host entry is `scheme://host[:port]`; a leading `*.` matches any subdomain. "https" is the default
+///    scheme. "http" is accepted only when the entry says so. The entry "*" allows any public host and is
+///    shown to the user as high risk.
+///  - Loopback and private addresses (localhost, 127.0.0.0/8, 10/8, 172.16/12, 192.168/16, link-local) are
+///    checked after DNS resolution, so a name that points there is refused unless that exact host and port
+///    is listed in `net.hosts`. A local model server such as `http://localhost:11434` must be listed.
+///  - Zinc's own server and Zotero's local ports (23119, 23120) are always refused.
+///  - Every redirect target is checked again.
+///  - Plugins do not get cookies from other plugins or from Zinc's own sessions.
+///
+/// Zotero gives plugins `Zotero.HTTP.request`, `fetch`, `XMLHttpRequest` and `WebSocket`; this interface
+/// replaces the first three. WebSocket and server-sent events over `request-body` are not planned for 0.1.
+interface net {
+  use types.{name-value, error};
+  use fs.{path-ref, conflict};
+
+  record basic-credentials {
+    username: string,
+    password: string,
+  }
+
+  enum redirect-mode {
+    /// Follow redirects (up to 20). Default.
+    follow,
+    /// Return the 3xx response itself.
+    manual,
+  }
+
+  variant cookie-mode {
+    /// Send and store no cookies. Zotero: `anon: true`.
+    none,
+    /// Use the plugin's cookie jar of this name (created on first use; jars are private to the plugin and
+    /// live until Zinc quits or `clear-cookie-jar`). Zotero: `userContextId` from `newCookieContext()`.
+    jar(string),
+  }
+
+  record retry-policy {
+    /// Wait this long before each retry. A 5xx, 429 or 503 answer (honouring Retry-After) and connection
+    /// errors are retried; other answers are not. Zotero's default is a built-in ladder; here the default is
+    /// no retry.
+    delays-ms: list<u32>,
+    /// Give up when the waiting adds up to more than this. Zotero: `errorDelayMax`.
+    max-total-ms: u32,
+    /// If true, a 429 or 503 that has a Retry-After header is returned at once as `unexpected-status`
+    /// so the plugin can apply its own throttling. Zotero: `noRetryOnThrottle`.
+    surface-throttle: bool,
+  }
+
+  record http-request {
+    /// "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS".
+    method: string,
+    url: string,
+    /// Order and case are kept. The host sets Host, Content-Length, Connection, Cookie (unless
+    /// `cookies` is `jar`), Proxy-* and Sec-* itself and ignores the plugin's values. The default
+    /// User-Agent is "Zinc/<version>"; the plugin may set its own (CrossRef and others ask for a contact).
+    headers: list<name-value>,
+    body: option<list<u8>>,
+    /// Default 30000. 0 means no limit, but the host still stops a call after 10 minutes.
+    timeout-ms: option<u32>,
+    /// Status codes that count as success. None: 200 to 299. An empty list: every status is a success.
+    /// Zotero: `successCodes` (false = accept all).
+    success-codes: option<list<u16>>,
+    redirect: redirect-mode,
+    credentials: option<basic-credentials>,
+    cookies: cookie-mode,
+    retry: option<retry-policy>,
+    /// Skip the HTTP cache. Zotero: `noCache`.
+    bypass-cache: bool,
+    /// Stop with `too-large` if the body would be bigger than this. Default 64 MiB; at most 512 MiB.
+    max-response-bytes: option<u64>,
+    /// A name the plugin picks so it can stop this request later with `cancel`. Zotero:
+    /// `cancellerReceiver`. Names are private to the plugin; reusing a live name is `conflict`.
+    cancel-key: option<string>,
+  }
+
+  record http-response {
+    status: u16,
+    status-text: string,
+    /// The URL after redirects. Zotero: `xmlhttp.responseURL`.
+    url: string,
+    /// All headers, in order, with the original case. Zotero: `getAllResponseHeaders()`.
+    headers: list<name-value>,
+    body: list<u8>,
+  }
+
+  variant net-error {
+    /// No network connection. Zotero: `BrowserOfflineException`.
+    offline,
+    /// Zotero: `TimeoutException`.
+    timeout,
+    /// Zotero: `CancelledException`; also when the plugin shuts down.
+    cancelled,
+    dns(string),
+    tls(string),
+    connection(string),
+    /// The body is bigger than `max-response-bytes`.
+    too-large,
+    /// The host, port or address is not allowed. The string says which rule. Same case as
+    /// `error::permission-denied`, with detail.
+    blocked(string),
+    /// The status is not in `success-codes`. Carries the whole response. Zotero:
+    /// `UnexpectedStatusException`.
+    unexpected-status(http-response),
+    other(string),
+  }
+
+  /// One request, whole body in memory. Zotero: `Zotero.HTTP.request(method, url, options)`.
+  send: func(req: http-request) -> result<http-response, net-error>;
+
+  /// Several requests at the same time; results are in the same order. Use it to fetch many URLs
+  /// with one crossing of the process boundary. At most 16 requests per call.
+  send-many: func(reqs: list<http-request>) -> list<result<http-response, net-error>>;
+
+  record download-options {
+    /// Deliver `events`-style progress to `on-download-progress` of the `net-events` interface.
+    report-progress: bool,
+    /// What to do if the file exists.
+    on-conflict: conflict,
+    create-parents: bool,
+    /// Stop with a timeout if no data arrives for this long. Default 30000. Zotero: `Zotero.HTTP.download`.
+    inactivity-timeout-ms: option<u32>,
+  }
+
+  record download-result {
+    /// Where the file was written (it differs from the request when `rename-unique` renamed it).
+    file: path-ref,
+    status: u16,
+    url: string,
+    headers: list<name-value>,
+    bytes: u64,
+  }
+
+  /// Streams a response to a file without holding it in memory. The destination must be writable
+  /// (`fs` roots `data`, `temp` or `granted`). To save a download as an attachment use
+  /// `attachments.import-from-url`.
+  /// Zotero: `Zotero.HTTP.download`, `Zotero.File.download`.
+  download: func(req: http-request, dest: path-ref, options: download-options) -> result<download-result, net-error>;
+
+  /// A response body that the plugin reads piece by piece, for large bodies and for streamed replies
+  /// (for example from a language-model server). Close it when done.
+  resource body-reader {
+    /// Reads up to `max` bytes. Returns none at the end of the body. Waits for data.
+    read: func(max: u32) -> result<option<list<u8>>, net-error>;
+    /// Stops the transfer and frees the connection.
+    close: func();
+  }
+
+  record streamed-response {
+    status: u16,
+    status-text: string,
+    url: string,
+    headers: list<name-value>,
+    body: body-reader,
+  }
+
+  /// Like `send`, but returns when the headers arrive. `success-codes` still applies; a status outside it
+  /// gives `unexpected-status` with an empty body. Zotero: `fetch()` with `response.body.getReader()`.
+  send-streamed: func(req: http-request) -> result<streamed-response, net-error>;
+
+  /// Stops the in-flight request or download that has this `cancel-key`. It finishes with `cancelled`.
+  /// Does nothing if there is none.
+  cancel: func(key: string);
+
+  /// Cookies the jar holds for a host (name and value). Zotero: `newCookieContext().getCookies(host)`.
+  list-cookies: func(jar: string, host: string) -> list<name-value>;
+
+  /// Removes the jar and its cookies. Zotero: `newCookieContext().dispose()`.
+  clear-cookie-jar: func(jar: string);
+
+  /// True if the computer looks online. Zotero: `Zotero.HTTP.browserIsOffline()` (inverted).
+  is-online: func() -> bool;
+}
+
+/// Progress of `net.download`, as an exported callback. Only called when `report-progress` was set.
+interface net-events {
+  /// `total` is none when the server sent no length.
+  on-download-progress: func(url: string, received: u64, total: option<u64>);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: files
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Files. A plugin never sees a real path. It names a file by a root and a relative path, and the host
+/// resolves it. Rules for `path`: relative, "/" as the separator, no "..", no leading "/" or drive letter,
+/// no empty names, normalized by the host; names Windows reserves (CON, NUL, ...) are refused on every
+/// platform. Symbolic links are never followed outside the root. Size caps: 256 MiB for a whole-file read
+/// or write; use `read-range` or `net.download` for more.
+///
+/// Roots and their permissions:
+///  - `data`: the plugin's private folder. Read and write. No permission. Quota 512 MiB. Replaces the
+///    profile folder and `Zotero.DataDirectory` writes that plugins do (`IOUtils`, `Zotero.File`).
+///  - `bundled`: files shipped in the plugin package. Read only. No permission. Zotero: reading
+///    `chrome://` and `resource://` URLs of the plugin.
+///  - `temp`: a scratch folder emptied when Zinc starts. Read and write. No permission.
+///    Zotero: `Zotero.getTempDirectory()`.
+///  - Files of library attachments are not a root here. They belong to the library area:
+///    `attachments.read-file`, `attachments.import-bytes`, `attachments.replace-file` and the
+///    `library.files.*` permissions. To move bytes between an attachment and the plugin's own folder,
+///    read them with `attachments` and write them with `fs`.
+///  - `granted(id)`: a file or folder the user gave the plugin: picked in a dialog the plugin opened (`pick-*`) or dropped
+///    on a plugin's drop target. All three ways hand out the same `types.file-grant` (`ui.drop-info.files` and
+///    `extend.drop-payload.files` carry it too). This is the ONLY way to turn what the user chose into bytes:
+///    `read(path-ref { root: granted(id), path: "" })`, and `write` for a save target or a folder. Read and write are
+///    allowed as the dialog allowed. The choice itself is the consent, so no permission is needed.
+///    For a granted file the path is ""; for a granted folder it is relative to that folder.
+interface fs {
+  use types.{epoch-ms, error, file-grant};
+
+  variant root {
+    data,
+    bundled,
+    temp,
+    /// A grant id from a `pick-*` call.
+    granted(string),
+  }
+
+  record path-ref {
+    root: root,
+    path: string,
+  }
+
+  enum entry-kind {
+    file,
+    directory,
+    other,
+  }
+
+  record file-stat {
+    kind: entry-kind,
+    size: u64,
+    modified: epoch-ms,
+  }
+
+  record dir-entry {
+    name: string,
+    kind: entry-kind,
+  }
+
+  enum conflict {
+    /// Return `error::conflict`.
+    fail,
+    overwrite,
+    /// Pick a free name by adding " 2", " 3", ... before the extension. Zotero: `createUniqueFile`,
+    /// `Zotero.File.rename(..., { unique: true })`.
+    rename-unique,
+  }
+
+  record write-options {
+    create-parents: bool,
+    on-conflict: conflict,
+    /// Write to a temporary file and rename it, so a crash never leaves half a file.
+    /// Zotero: `Zotero.File.putContentsAsync` (safe output stream), `IOUtils.write` with `tmpPath`.
+    atomic: bool,
+  }
+
+  record file-filter {
+    /// Shown in the dialog, for example "PDF files".
+    label: string,
+    /// Extensions without the dot, for example ["pdf"].
+    extensions: list<string>,
+  }
+
+  record pick-options {
+    title: option<string>,
+    filters: list<file-filter>,
+    /// Keep the grant after Zinc restarts, until the user revokes it in Settings > Plugins.
+    persistent: bool,
+  }
+
+  /// Zotero: `IOUtils.read`, `Zotero.File.getBinaryContentsAsync`.
+  read: func(file: path-ref) -> result<list<u8>, error>;
+
+  /// Reads `length` bytes from `offset`. Fewer bytes come back at the end of the file.
+  read-range: func(file: path-ref, offset: u64, length: u32) -> result<list<u8>, error>;
+
+  /// Reads a whole file as UTF-8 text; invalid bytes become U+FFFD. Zotero: `IOUtils.readUTF8`,
+  /// `Zotero.File.getContentsAsync`.
+  read-text: func(file: path-ref) -> result<string, error>;
+
+  /// Zotero: `IOUtils.write`, `Zotero.File.putContentsAsync`. Returns where the data went, which differs
+  /// from `file` only when `rename-unique` picked another name.
+  write: func(file: path-ref, data: list<u8>, options: write-options) -> result<path-ref, error>;
+
+  write-text: func(file: path-ref, text: string, options: write-options) -> result<path-ref, error>;
+
+  /// Adds to the end of a file, creating it if needed. Zotero: `IOUtils.write` with `mode: "append"`.
+  append: func(file: path-ref, data: list<u8>) -> result<_, error>;
+
+  /// None if it does not exist. Zotero: `IOUtils.stat`, `IOUtils.exists`.
+  stat: func(file: path-ref) -> result<option<file-stat>, error>;
+
+  /// Names in a folder (not recursive). Zotero: `IOUtils.getChildren`, `Zotero.File.iterateDirectory`.
+  list-dir: func(dir: path-ref) -> result<list<dir-entry>, error>;
+
+  /// Zotero: `IOUtils.makeDirectory`, `Zotero.File.createDirectoryIfMissingAsync`.
+  make-dir: func(dir: path-ref, parents: bool) -> result<_, error>;
+
+  /// Deletes a file, or a folder with `recursive`. Missing is not an error. Zotero: `IOUtils.remove`,
+  /// `Zotero.File.removeIfExists`.
+  remove: func(target: path-ref, recursive: bool) -> result<_, error>;
+
+  /// Moves or renames inside one root, or between roots the plugin can write. Returns the new location.
+  /// Zotero: `IOUtils.move`, `Zotero.File.rename`, `Zotero.File.moveDirectory`.
+  move: func(from-path: path-ref, to-path: path-ref, on-conflict: conflict) -> result<path-ref, error>;
+
+  /// Zotero: `IOUtils.copy`, `Zotero.File.copyDirectory`, `Zotero.File.copyToUnique`.
+  copy: func(from-path: path-ref, to-path: path-ref, on-conflict: conflict) -> result<path-ref, error>;
+
+  /// Opens the system "open file" dialog and waits. An empty list if the user cancels. Needs a visible window; the call
+  /// is refused if no Zinc window is focused. This is the plugin API's one file-open dialog (the ui and extend areas have
+  /// none). Zotero: `FilePicker` (modeOpen, modeOpenMultiple).
+  pick-open: func(options: pick-options, multiple: bool) -> result<list<file-grant>, error>;
+
+  /// Opens the "save as" dialog. None if the user cancels. Zotero: `FilePicker` (modeSave).
+  pick-save: func(options: pick-options, suggested-name: option<string>) -> result<option<file-grant>, error>;
+
+  /// Opens the "choose folder" dialog. None if the user cancels. Zotero: `FilePicker` (modeGetFolder).
+  pick-directory: func(options: pick-options) -> result<option<file-grant>, error>;
+
+  /// The grants the plugin still holds: persistent picks (`pick-options.persistent`) from earlier runs, and the
+  /// picks and drops of this run that were not released.
+  list-grants: func() -> list<file-grant>;
+
+  /// Drops a grant before Zinc quits.
+  release-grant: func(id: string);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: clipboard and shell
+// ---------------------------------------------------------------------------------------------------------------
+
+/// The plugin API's only clipboard interface (the ui area has none).
+interface clipboard {
+  use types.{error};
+
+  record clipboard-content {
+    text: option<string>,
+    /// An HTML fragment.
+    html: option<string>,
+    /// A PNG image.
+    image-png: option<list<u8>>,
+  }
+
+  /// Puts content on the clipboard, replacing it. Needs `clipboard.write`. Limit: 16 MiB, 10 calls a
+  /// second. Zotero: `Zotero.Utilities.Internal.copyTextToClipboard`, nsIClipboard.
+  write: func(content: clipboard-content) -> result<_, error>;
+
+  /// Reads the clipboard. Needs `clipboard.read`, a Zinc window in focus, and the user confirms the
+  /// first read in each session. Zotero: nsIClipboard `getData`.
+  read: func() -> result<clipboard-content, error>;
+}
+
+/// Opening things outside Zinc. The plugin API's only way to open a URL (the ui area has none; a `link` node with a
+/// `url` target is opened by the host and needs no call).
+interface shell {
+  use types.{error};
+  use fs.{path-ref};
+
+  /// Opens a URL in the user's default program. "https", "http" and "mailto" need `shell.open-url`.
+  /// Any other scheme (for example "zotero:" or an app's own) is refused unless the plugin listed the
+  /// scheme in `permissions.shell.schemes`, and the user confirms the first use of each scheme.
+  /// "file:", "javascript:", "data:" and "vbscript:" are always refused. Zotero: `Zotero.launchURL`.
+  open-url: func(url: string) -> result<_, error>;
+
+  /// Opens a file with the program the system chooses for its type. Needs `shell.open-file`. Programs
+  /// and scripts (.exe, .bat, .cmd, .com, .msi, .scr, .ps1, .vbs, .js, .jar, .app, .sh, .lnk, ...) are
+  /// refused. Only files in the plugin's `data` or `temp` root or granted by the user are reachable.
+  /// To open a library attachment use `attachments.open-file-external`.
+  /// Zotero: `Zotero.launchFile`.
+  open-file: func(file: path-ref) -> result<_, error>;
+
+  /// Shows a file or folder in the system file manager. Needs `shell.reveal`. Zotero: `Zotero.File.reveal`.
+  reveal: func(target: path-ref) -> result<_, error>;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: small helpers that must agree with Zinc
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Helpers where Zinc must give the same answer as its own code. Pure helpers that any library can do
+/// (URL parsing, base64, JSON) are the plugin's own business. No permission is needed.
+interface util {
+  use types.{error};
+
+  enum hash-algorithm {
+    md5,
+    sha1,
+    sha256,
+    sha512,
+  }
+
+  /// Random bytes from the system. A plugin has no WASI random. Limit: 64 KiB per call.
+  /// Zotero: `crypto.getRandomValues`.
+  random-bytes: func(count: u32) -> list<u8>;
+
+  /// A random v4 UUID in lower case. Zotero: `Zotero.Utilities.generateObjectKey` is not this (that is a
+  /// library key); see library.wit for keys.
+  uuid-v4: func() -> string;
+
+  /// Zotero: `Zotero.Utilities.Internal.md5`, `crypto.subtle.digest`.
+  hash: func(algorithm: hash-algorithm, data: list<u8>) -> list<u8>;
+
+  /// -1, 0 or 1. Zotero: `Zotero.Utilities.semverCompare`.
+  semver-compare: func(a: string, b: string) -> s32;
+
+  /// Zotero: `Zotero.Utilities.cleanDOI`. None if there is no DOI in the text.
+  clean-doi: func(text: string) -> option<string>;
+
+  /// Zotero: `Zotero.Utilities.cleanISBN` (and `toISBN13` when `to-13` is true). None if not an ISBN.
+  clean-isbn: func(text: string, to-13: bool) -> option<string>;
+
+  /// Zotero: `Zotero.Utilities.cleanISSN`.
+  clean-issn: func(text: string) -> option<string>;
+
+  /// Plain text from an HTML fragment (tags removed, entities decoded, block elements as line breaks).
+  /// Zotero: `Zotero.Utilities.unescapeHTML`, `Zotero.Utilities.Internal.html2text`-style helpers.
+  html-to-text: func(html: string) -> string;
+
+  /// Escapes text and turns line breaks into `<br>` or paragraphs. Zotero: `Zotero.Utilities.text2html`.
+  text-to-html: func(text: string, single-paragraph: bool) -> string;
+
+  /// Title Case for English titles with Zotero's small-word list. Zotero: `Zotero.Utilities.capitalizeTitle`.
+  capitalize-title: func(title: string, force: bool) -> string;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Imports: permissions
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Asking about permissions at run time. Zotero has no such thing: a plugin can do everything.
+interface permissions {
+  use types.{localized-string, error};
+
+  enum permission-state {
+    /// Declared and granted.
+    granted,
+    /// Declared in the manifest, not granted (the user said no, or revoked it).
+    denied,
+    /// Listed in `optional_permissions`; `request` can ask for it.
+    optional,
+    /// Not in the manifest at all. Calls that need it fail.
+    undeclared,
+  }
+
+  check: func(permission: string) -> permission-state;
+
+  /// Everything the plugin declared, with its state. Includes the `net.hosts` entries as "net.hosts:<entry>".
+  list-permissions: func() -> list<tuple<string, permission-state>>;
+
+  /// Asks the user for a permission from `optional_permissions`. Shows a dialog with `reason` and waits.
+  /// Refused unless a Zinc window is focused and the user acted in the last 10 seconds (a click or a key),
+  /// so a plugin cannot spam prompts from a background timer. Returns whether it is now granted.
+  request: func(permission: string, reason: localized-string) -> result<bool, error>;
+}
