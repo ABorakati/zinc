@@ -28,8 +28,8 @@
 //      is not embedded in the bytecode build: package.ts ships pdf-worker.ts and the document-worker build next to the exe and src/services.ts points the pool at them.
 //   5. aot variant only: the workers (PDF extraction, document structure, Zotero translators) ARE compiled in as extra entry points, with
 //      the vendored code they load from disk made static (see "AOT: workers" below). package.ts --aot ships only data next to that exe.
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
@@ -393,6 +393,57 @@ const staged = stageAssets();
 const sizeMB = (p: string) => (statSync(p).size / 1048576).toFixed(1);
 
 const EXE = isWin ? ".exe" : "";
+if (!aotOnly) {
+	const zhwDir = join(repo, "plugin-host-wasmtime");
+	const home = process.env.USERPROFILE || process.env.HOME || "";
+	const rustupTcRoot = join(home, ".rustup", "toolchains");
+	const rustupStableBin = existsSync(rustupTcRoot)
+		? readdirSync(rustupTcRoot)
+				.filter((d) => d.startsWith("stable-"))
+				.map((d) => join(rustupTcRoot, d, "bin"))
+				.find((p) => existsSync(p))
+		: undefined;
+	const extraBins = [join(home, ".cargo", "bin"), rustupStableBin].filter((p): p is string => !!p && existsSync(p));
+	const pathSep = isWin ? ";" : ":";
+	const cargoEnv: Record<string, string | undefined> = {
+		...process.env,
+		...(extraBins.length ? { PATH: `${extraBins.join(pathSep)}${pathSep}${process.env.PATH ?? ""}` } : {}),
+	};
+	const cargoCmd = Bun.which("cargo", { PATH: cargoEnv.PATH }) || `cargo${EXE}`;
+	if (isWin) {
+		const wrapper = process.env.RUSTC_WRAPPER || Bun.which("kache", { PATH: cargoEnv.PATH }) || undefined;
+		if (wrapper && existsSync(wrapper) && basename(wrapper).toLowerCase().startsWith("kache")) {
+			const toolsDir = join(outDir, "tools");
+			mkdirSync(toolsDir, { recursive: true });
+			const kacheRustcExe = join(toolsDir, "kache-rustc.exe");
+			if (!existsSync(kacheRustcExe) || statSync(kacheRustcExe).size !== statSync(wrapper).size) {
+				cpSync(wrapper, kacheRustcExe);
+			}
+			cargoEnv.RUSTC_WRAPPER = kacheRustcExe;
+		}
+	}
+	const tZhw = performance.now();
+	const rZhw = Bun.spawnSync([cargoCmd, "build", "--release"], {
+		cwd: zhwDir,
+		env: cargoEnv,
+		stdout: "inherit",
+		stderr: "inherit",
+	});
+	if (rZhw.exitCode !== 0) throw new Error(`zhw cargo build failed (exit ${rZhw.exitCode})`);
+	const zhwCands = [
+		join(zhwDir, "target", "release", `zhw${EXE}`),
+		process.env.CARGO_TARGET_DIR && join(process.env.CARGO_TARGET_DIR, "release", `zhw${EXE}`),
+		isWin ? "C:/dev/cache/cargo-target/release/zhw.exe" : undefined,
+	].filter(Boolean) as string[];
+	const builtZhw = zhwCands
+		.filter((p) => existsSync(p))
+		.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
+	if (!builtZhw) throw new Error(`zhw${EXE} not found after cargo build (tried ${zhwCands.join(", ")})`);
+	const outZhw = join(outDir, `zhw${EXE}`);
+	cpSync(builtZhw, outZhw);
+	if (!isWin) chmodSync(outZhw, 0o755);
+	console.log(`[zhw] ${relative(root, outZhw)}  ${sizeMB(outZhw)} MB  (${((performance.now() - tZhw) / 1000).toFixed(1)} s)`);
+}
 const compileTarget = `bun-${isWin ? "windows" : process.platform}-${process.arch}`; // bun-windows-x64, bun-linux-x64, bun-darwin-arm64
 
 for (const v of todo) {

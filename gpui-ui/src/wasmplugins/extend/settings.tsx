@@ -7,6 +7,7 @@ import { registerSettingsSection, unregisterSettingsSection } from "../../regist
 import { Txt, t } from "../../shell/kit";
 import { callPlugin } from "../host";
 import { setWasmPluginsEnabled, wasmPluginsEnabled } from "../flag";
+import { mcpExposed, setMcpExposed } from "../mcp/exposure";
 import { prefCell } from "./prefs";
 import { prefRows, registries, type Owned } from "./registry";
 import { lstr, iconName } from "./text";
@@ -168,7 +169,9 @@ export function startPaneMirror(): () => void {
 // ---- the Plugins section ---------------------------------------------------------------------------------------------------
 
 /** Settings > Plugins: the switch and the list. Registered once at start-up (src/features.ts), always, so plugins can be turned on. */
-export function registerPluginsSettings(list: () => { id: string; name: string; version: string; status: string }[]): void {
+export function registerPluginsSettings(
+	list: () => { id: string; name: string; version: string; status: string; /** set when the plugin asks for `mcp.expose`: how many tools its manifest declares */ mcpTools?: number }[],
+): void {
 	registerSettingsSection({
 		id: "wasm-plugins",
 		label: "Plugins",
@@ -184,11 +187,22 @@ export function registerPluginsSettings(list: () => { id: string; name: string; 
 				/>
 				<For each={list()}>
 					{(p, i) => (
-						<SettingRow
-							label={`${p.name} ${p.version}`}
-							control={() => <Value>{p.status}</Value>}
-							last={i() === list().length - 1}
-						/>
+						<>
+							<SettingRow
+								label={`${p.name} ${p.version}`}
+								control={() => <Value>{p.status}</Value>}
+								last={i() === list().length - 1 && p.mcpTools === undefined}
+							/>
+							<Show when={p.mcpTools !== undefined}>
+								<SettingRow
+									id={`wasm-plugin-mcp:${p.id}`}
+									label={`Offer ${p.name}'s tools to AI agents`}
+									description={`Lets AI agents connected to Zinc's MCP server (HTTP, while Zinc runs) call this plugin's tools${p.mcpTools ? ` (${p.mcpTools} declared)` : ""}. They can do whatever the plugin is allowed to do. Off by default.`}
+									control={() => <Toggle checked={mcpExposed(p.id)} onChange={(on) => setMcpExposed(p.id, on)} />}
+									last={i() === list().length - 1}
+								/>
+							</Show>
+						</>
 					)}
 				</For>
 			</div>

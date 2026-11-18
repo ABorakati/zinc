@@ -10,6 +10,7 @@
 //      (plugin-host/src/imports/*.zinc.ts, found by discoverHandlers) and the run-time permission prompt (ui area).
 //   2. wireApp() (wire.ts): file picker, clipboard and shell hooks, plugin prefs for settings panes, drops as grants, reader tab functions.
 //   3. binds the extension points to the window (extend/bind.ts) and installs the reader bridge.
+//   3b. offers the tools of plugins that exposed some (mcp.expose + the user's switch) to the in-process core's MCP endpoint (mcp/provider.ts)
 //   4. clears every area's registrations when a plugin stops, is disabled or fails, and all of them when the host restarts.
 //   5. manager.startAll() (installed and enabled plugins), then main-window-load.
 //
@@ -40,6 +41,8 @@ import { setWasmPluginsEnabled, wasmPluginsEnabled } from "./flag";
 export { setWasmPluginsEnabled, wasmPluginsEnabled };
 import { extendHandler } from "./extend/handler";
 import { clearPluginRegistrations } from "./extend/registry";
+import { mcpHandler } from "./mcp/handler";
+import { installMcpBridge } from "./mcp/provider";
 import {
 	callPlugin,
 	getPluginSupervisor,
@@ -81,7 +84,7 @@ export function addZincHandlers(list: ImportHandler[]): void {
 
 /** Every `where: "zinc"` handler: the ones found in plugin-host/src/imports (ui, reader, extend, fs, ... : one file per area), and any added. */
 export async function collectZincHandlers(): Promise<ImportHandler[]> {
-	const all = [...(await discoverHandlers("zinc")), extendHandler, ...extraHandlers];
+	const all = [...(await discoverHandlers("zinc")), extendHandler, mcpHandler, ...extraHandlers];
 	// extend.zinc.ts re-exports `extendHandler`: the same object must not be listed twice
 	return [...new Set(all)];
 }
@@ -163,6 +166,7 @@ export function startWasmPlugins(opts: StartOptions = {}): Promise<PluginSupervi
 			});
 		}
 		setPluginSupervisor(sup);
+		stopHooks.push(installMcpBridge(sup)); // plugin tools on Zinc's MCP server (HTTP endpoint of this process; docs/user-guide/mcp.md)
 		if (useRuntime) (await import("./wire")).wireApp();
 		if (opts.bindUi !== false) {
 			await import("./extend/bind").then((m) => m.bindExtendUi()); // the main window side of the extension points

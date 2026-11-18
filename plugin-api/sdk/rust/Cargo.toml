@@ -9,6 +9,8 @@ license = "MIT"
 # One world is generated, chosen by the highest feature (see `bindings` in src/lib.rs).
 default = []
 library = []
+# Tools for AI agents (the `plugin-mcp` world: `library` + mcp). With extend/ui/reader use `full` (the `plugin` world has mcp too).
+mcp = ["library"]
 extend = ["library"]
 dialogs = ["extend"]
 ui = ["dialogs"]
@@ -17,6 +19,7 @@ full = ["ui", "reader"]
 
 [dependencies]
 wit-bindgen = "0.63"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Keep this crate out of any parent workspace.

@@ -1,5 +1,5 @@
 //! Highlight Export: a reader toolbar button ("Export highlights to note") and an annotation context menu entry ("Export to
-//! note") that write annotations into a child note of the reader's item.
+//! note") that write annotations into a child note of the reader's item and show a toast.
 
 use zinc_plugin::host::{annotations, library, reader};
 use zinc_plugin::json::{escape_html, json};
@@ -89,9 +89,19 @@ impl Plugin for HighlightExport {
             _ => return,
         };
         match result {
-            Ok(0) => log::warn("nothing to export: no annotations with text or comments"),
-            Ok(n) => log::info(format!("{n} annotation(s) written to a new note")),
-            Err(e) => log::error(format!("export failed: {}", err::message(&e))),
+            Ok(0) => {
+                ui::toast("Highlight Export", "No annotations with text or comments to export.", Tone::Warning);
+                log::warn("nothing to export: no annotations with text or comments");
+            }
+            Ok(n) => {
+                ui::toast("Highlight Export", format!("Exported {n} annotation(s) to a new note."), Tone::Success);
+                log::info(format!("{n} annotation(s) written to a new note"));
+            }
+            Err(e) => {
+                let msg = err::message(&e);
+                ui::toast("Highlight Export", format!("Export failed: {msg}"), Tone::Error);
+                log::error(format!("export failed: {msg}"));
+            }
         }
     }
 }

@@ -29,8 +29,26 @@ export async function buildJsPlugin(o: { dir: string; out?: string; entry?: stri
 	try {
 		const r = await Bun.build({ entrypoints: [entry], outdir: scratch, naming: "plugin.js", format: "esm", target: "browser", external: ["zinc:*"], minify: false });
 		if (!r.success) throw new Error("bundle failed:\n" + r.logs.map(String).join("\n"));
+		const bundledPath = join(scratch, "plugin.js");
+		// Globals QuickJS lacks (Date.now()/new Date()/performance.now() trap without a clock; no console, setTimeout, TextEncoder): see src/prelude.js.
+		const prelude = (await Bun.file(join(sdk, "src", "prelude.js")).text()).replace(/^export /gm, "");
+		const bundledCode = await Bun.file(bundledPath).text();
+		await Bun.write(bundledPath, `import __zp_timers from "zinc:plugin/timers@0.1.0";\nimport __zp_log from "zinc:plugin/log@0.1.0";\n${prelude}\ninstallPrelude(globalThis, { timers: __zp_timers, log: __zp_log });\n${bundledCode}`);
+		const code = await Bun.file(bundledPath).text();
+		if (code.includes("__zincOpenDialog")) {
+			await Bun.write(bundledPath, `import __sdk_zui from "zinc:plugin/ui@0.1.0";\nglobalThis.__zincOpenDialog = __sdk_zui.openDialog;\n${code}`);
+		}
+		// Worlds with `mcp-handler` need that export. A plugin written before it (it exports everything but mcpHandler) gets the default:
+		// no tools, every call answers not-found.
+		const world = (JSON.parse(await Bun.file(join(dir, "manifest.json")).text()) as { main?: { world?: string } }).main?.world ?? "plugin";
+		if (["plugin", "plugin-mcp"].includes(world) && !/export[^{};]*[{][^}]*mcpHandler[^}]*[}]/.test(await Bun.file(bundledPath).text())) {
+			const cur = await Bun.file(bundledPath).text();
+			await Bun.write(bundledPath, cur + `
+export const mcpHandler = { onMcpCall(tool) { throw { tag: "not-found", val: "no tool named " + tool }; } };
+`);
+		}
 		log(`bundled ${entry}`);
-		return await buildPlugin({ dir, out: o.out, js: join(scratch, "plugin.js"), log });
+		return await buildPlugin({ dir, out: o.out, js: bundledPath, log });
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}

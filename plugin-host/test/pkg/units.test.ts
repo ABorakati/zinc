@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { WitError } from "../../src/imports/registry";
 import { createLayout, assertSafeId } from "../../src/package/layout";
+import { CwasmCache, sanitizeCacheKey } from "../../src/package/cwasm-cache";
+import { decodeWire, decodeWireResult, encodeWire, encodeWireResult } from "../../src/transport-wasmtime";
 import { semverCompare, apiCompatible } from "../../src/package/semver";
 import { badEntryName, readZip, writeZip, ZipError } from "../../src/package/zip";
 import { validateManifest } from "../../src/package/validate";
@@ -128,8 +130,8 @@ describe("manifest validation", () => {
 });
 
 describe("permissions", () => {
-	test("ids and tiers come from the schema (36 known)", () => {
-		expect(KNOWN_CAPABILITIES.length).toBe(36);
+	test("ids and tiers come from the schema (37 known)", () => {
+		expect(KNOWN_CAPABILITIES.length).toBe(37);
 		expect(capabilityTier("library.read")).toBe("low");
 		expect(capabilityTier("library.write")).toBe("medium");
 		expect(capabilityTier("clipboard.read")).toBe("high");
@@ -239,8 +241,77 @@ describe("layout", () => {
 	test("ids are checked at every path build", () => {
 		const l = createLayout("/r");
 		expect(l.installed("a@b.c")).toContain("installed");
+		expect(l.cacheRoot).toContain("cache");
 		for (const bad of ["..", "../x@y.z", "a/b@c.d", "a\\b@c.d", "x"]) expect(() => assertSafeId(bad)).toThrow();
 		expect(() => l.data("..")).toThrow();
+	});
+});
+
+describe("wasmtime wire codec & cwasm cache", () => {
+	test("encodeWire and decodeWire round-trip bigint, Uint8Array, and null <-> undefined", () => {
+		const raw = {
+			n: 1234567890123456789n,
+			neg: -42n,
+			bytes: new Uint8Array([1, 2, 3, 255]),
+			empty: new Uint8Array(0),
+			opt: undefined,
+			arr: [1n, undefined, new Uint8Array([9])],
+			res: { "$zinc-resource": "body-reader", id: -1 },
+		};
+		const encoded = JSON.parse(JSON.stringify(encodeWire(raw)));
+		expect(encoded.n).toEqual({ $big: "1234567890123456789" });
+		expect(encoded.neg).toEqual({ $big: "-42" });
+		expect(encoded.bytes).toEqual({ $bytes: "AQID/w==" });
+		expect(encoded.empty).toEqual({ $bytes: "" });
+		expect("opt" in encoded).toBe(false);
+		expect(encoded.arr[1]).toBeNull();
+
+		const decoded = decodeWire({ ...encoded, opt: null }) as any;
+		expect(decoded.n).toBe(1234567890123456789n);
+		expect(decoded.neg).toBe(-42n);
+		expect(decoded.bytes).toBeInstanceOf(Uint8Array);
+		expect([...decoded.bytes]).toEqual([1, 2, 3, 255]);
+		expect(decoded.empty).toBeInstanceOf(Uint8Array);
+		expect(decoded.empty.length).toBe(0);
+		expect(decoded.opt).toBeUndefined();
+		expect(decoded.arr).toEqual([1n, undefined, new Uint8Array([9])]);
+		expect(decoded.res).toEqual({ "$zinc-resource": "body-reader", id: -1 });
+
+		expect(decodeWireResult(JSON.parse(JSON.stringify(encodeWireResult({ ok: true, value: undefined }))))).toEqual({ ok: true, value: undefined });
+		expect(
+			decodeWireResult(JSON.parse(JSON.stringify(encodeWireResult({ ok: false, error: { kind: "wit", payload: { tag: "cancelled", val: undefined } } })))),
+		).toEqual({ ok: false, error: { kind: "wit", payload: { tag: "cancelled" } } });
+	});
+
+	test("CwasmCache: cacheKey sanitization, getIfFresh, and prune across version bumps", () => {
+		const root = scratch("cwasm");
+		try {
+			const layout = createLayout(root);
+			expect(sanitizeCacheKey("zhw-0.1.0/wt:50")).toBe("zhw-0.1.0_wt_50");
+			expect(sanitizeCacheKey("..")).toBe("default");
+
+			const c1 = new CwasmCache({ cacheRoot: layout.cacheRoot, zhwVersionOverride: "zhw-v1" });
+			expect(c1.cacheKey()).toBe("zhw-v1");
+			expect(c1.getIfFresh("aaaa")).toBeUndefined();
+
+			mkdirSync(join(layout.cacheRoot, "zhw-v1"), { recursive: true });
+			writeFileSync(join(layout.cacheRoot, "zhw-v1", "aaaa.cwasm"), "compiled-aaaa");
+			writeFileSync(join(layout.cacheRoot, "zhw-v1", "dead.cwasm"), "compiled-dead");
+			expect(c1.getIfFresh("aaaa")).toBe(join(layout.cacheRoot, "zhw-v1", "aaaa.cwasm"));
+
+			c1.prune(new Set(["aaaa"]));
+			expect(readdirSync(join(layout.cacheRoot, "zhw-v1"))).toEqual(["aaaa.cwasm"]);
+
+			// Simulate a zhw upgrade: zhw-v1 folder is pruned, zhw-v2 is active
+			const c2 = new CwasmCache({ cacheRoot: layout.cacheRoot, zhwVersionOverride: "zhw-v2" });
+			mkdirSync(join(layout.cacheRoot, "zhw-v2"), { recursive: true });
+			writeFileSync(join(layout.cacheRoot, "zhw-v2", "aaaa.cwasm"), "compiled-v2");
+			c2.prune(new Set(["aaaa"]));
+			expect(readdirSync(layout.cacheRoot)).toEqual(["zhw-v2"]);
+			expect(c2.getIfFresh("aaaa")).toBe(join(layout.cacheRoot, "zhw-v2", "aaaa.cwasm"));
+		} finally {
+			rmTree(root);
+		}
 	});
 });
 
@@ -417,8 +488,12 @@ describe("fluent", () => {
 describe("log ring", () => {
 	test("limits: 8 KiB a line, 200 lines a second, debug only when enabled", () => {
 		const ring = new LogRing(10);
+		const debugEvents: boolean[] = [];
+		ring.onDebugChange = (v) => debugEvents.push(v);
 		expect(ring.accept("p", "debug", "x")).toBeUndefined();
 		ring.debugEnabled = true;
+		ring.debugEnabled = true; // idempotent: no duplicate callback
+		expect(debugEvents).toEqual([true]);
 		expect(ring.accept("p", "debug", "x")).toBe("x");
 		const long = ring.accept("p", "info", "é".repeat(10000))!;
 		expect(Buffer.byteLength(long)).toBeLessThan(9000);
@@ -458,13 +533,22 @@ describe("timers", () => {
 		expect(fired.filter((f) => f.startsWith("p:")).length).toBe(n);
 		expect(svc.count("p")).toBe(0);
 	});
-	test("hidden windows slow short timers to once a second", async () => {
+	test("hidden windows slow short timers to once a second, and remote counts sync with clearAll", async () => {
 		const fired: number[] = [];
-		const svc = new TimerService({ deliver: async () => void fired.push(1), hidden: () => true });
+		const cleared: Array<string | undefined> = [];
+		const svc = new TimerService({ deliver: async () => void fired.push(1), hidden: () => true, onClear: (p) => cleared.push(p) });
 		svc.setTimeout("p", 5);
+		svc.setRemoteCount("p", 3);
+		expect(svc.count("p")).toBe(4);
 		await Bun.sleep(100);
 		expect(fired.length).toBe(0);
 		svc.clearAll("p");
+		expect(svc.count("p")).toBe(0);
+		expect(cleared).toEqual(["p"]);
+		svc.setRemoteCount("q", 2);
+		svc.clearEverything();
+		expect(svc.count("q")).toBe(0);
+		expect(cleared).toEqual(["p", undefined]);
 	});
 });
 

@@ -2,12 +2,11 @@
 //! What a Rust (wasm32-wasip2) or QuickJS guest needs to start (random seed, clock, stderr for a panic message) gets harmless
 //! values; everything else traps with a clear message. Resources (streams, pollables, ...) are host-dynamic handles with a small rep.
 use crate::state::St;
-use wasmtime::error::Context;
-use wasmtime::{format_err as anyhow, bail, Result};
+use serde_json::json;
 use std::sync::OnceLock;
 use std::time::Instant;
 use wasmtime::component::{ResourceDynamic, Val};
-use wasmtime::StoreContextMut;
+use wasmtime::{bail, format_err as anyhow, Result, StoreContextMut};
 
 const STDIN: u32 = 1;
 const STDOUT: u32 = 2;
@@ -30,10 +29,13 @@ fn mono_ns() -> u64 {
 }
 
 fn mk_res(cx: &mut StoreContextMut<'_, St>, key: &str, rep: u32) -> Result<Val> {
-    let id = *cx.data().res_ids.get(key).ok_or_else(|| anyhow!("component does not import resource {key}"))?;
+    let id = *cx
+        .data()
+        .res_ids
+        .get(key)
+        .ok_or_else(|| anyhow!("component does not import resource {key}"))?;
     Ok(Val::Resource(ResourceDynamic::new_own(rep, id).try_into_resource_any(&mut *cx)?))
 }
-
 
 fn sink(cx: &mut StoreContextMut<'_, St>, rep: u32, bytes: &[u8]) {
     let id = cx.data().id.clone();
@@ -46,7 +48,25 @@ fn sink(cx: &mut StoreContextMut<'_, St>, rep: u32, bytes: &[u8]) {
     }
     for l in lines {
         let stream = if rep == STDERR { "stderr" } else { "stdout" };
-        cx.data().send(serde_json::json!({"t":"log","plugin":id,"level": if rep == STDERR {"warn"} else {"info"}, "message": format!("[{stream}] {l}")}));
+        let level = if rep == STDERR { "warn" } else { "info" };
+        cx.data().send(json!({"t":"log","plugin":id,"level":level,"message":format!("[{stream}] {l}")}));
+    }
+}
+
+pub fn flush_stdio(st: &mut St) {
+    if !st.stdout_buf.is_empty() {
+        let rem = std::mem::take(&mut st.stdout_buf);
+        let l = rem.trim_end_matches(['\r', '\n']);
+        if !l.is_empty() {
+            st.send(json!({"t":"log","plugin":st.id,"level":"info","message":format!("[stdout] {l}")}));
+        }
+    }
+    if !st.stderr_buf.is_empty() {
+        let rem = std::mem::take(&mut st.stderr_buf);
+        let l = rem.trim_end_matches(['\r', '\n']);
+        if !l.is_empty() {
+            st.send(json!({"t":"log","plugin":st.id,"level":"warn","message":format!("[stderr] {l}")}));
+        }
     }
 }
 
@@ -75,9 +95,14 @@ pub fn call(cx: &mut StoreContextMut<'_, St>, iface: &str, name: &str, params: &
         ("wasi:clocks/monotonic-clock", "resolution") => r0(results, Val::U64(1000)),
         ("wasi:clocks/wall-clock", "now") => {
             let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-            r0(results, Val::Record(vec![("seconds".into(), Val::U64(d.as_secs())), ("nanoseconds".into(), Val::U32(d.subsec_nanos()))]));
+            r0(
+                results,
+                Val::Record(vec![("seconds".into(), Val::U64(d.as_secs())), ("nanoseconds".into(), Val::U32(d.subsec_nanos()))]),
+            );
         }
-        ("wasi:clocks/wall-clock", "resolution") => r0(results, Val::Record(vec![("seconds".into(), Val::U64(0)), ("nanoseconds".into(), Val::U32(1_000_000))])),
+        ("wasi:clocks/wall-clock", "resolution") => {
+            r0(results, Val::Record(vec![("seconds".into(), Val::U64(0)), ("nanoseconds".into(), Val::U32(1_000_000))]))
+        }
         ("wasi:random/random" | "wasi:random/insecure", "get-random-bytes" | "get-insecure-random-bytes") => {
             let n = match params.first() {
                 Some(Val::U64(n)) => (*n).min(1 << 20) as usize,

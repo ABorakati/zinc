@@ -2,11 +2,11 @@
 // timers, log, l10n, util, secrets, app, permissions and plugins through the real handlers of this area. The plugin runs a "probe" when
 // `events.on-timer` is called with a number of 900 or more and logs each outcome, which the tests read back from the log ring.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { InstallError } from "../../src/package/installer";
 import type { ApproveFn } from "../../src/package/installer";
-import { buildE2e, newRuntime, pack, rmTree, scratch, until } from "./helpers";
+import { RUNNER, buildE2e, newRuntime, pack, rmTree, scratch, until } from "./helpers";
 
 const ID = "e2e-js@zinc.test";
 let built: string;
@@ -60,8 +60,15 @@ describe("install from a .zplugin with the real jco step", () => {
 		expect(r.action).toBe("install");
 		expect(r.warnings.join("|")).toContain("transpiled/ folder was ignored");
 		const dir = real.services.manager.layout.installed(ID);
-		for (const f of ["manifest.json", "plugin.wasm", "transpiled/plugin.js", "locale/en-US/main.ftl", "locale/fr/main.ftl", "icons/a.png"]) expect(existsSync(join(dir, f))).toBe(true);
-		expect(readFileSync(join(dir, "transpiled", "plugin.js"), "utf8")).not.toContain("EVIL");
+		for (const f of ["manifest.json", "plugin.wasm", "locale/en-US/main.ftl", "locale/fr/main.ftl", "icons/a.png"]) expect(existsSync(join(dir, f))).toBe(true);
+		if (RUNNER === "wasmtime") {
+			expect(existsSync(join(dir, "transpiled"))).toBe(false);
+			expect(existsSync(real.services.manager.layout.cacheRoot)).toBe(true);
+			expect(real.supervisor.lastLoadInfo?.(ID)?.fromCwasm).toBe(true);
+		} else {
+			expect(existsSync(join(dir, "transpiled/plugin.js"))).toBe(true);
+			expect(readFileSync(join(dir, "transpiled", "plugin.js"), "utf8")).not.toContain("EVIL");
+		}
 		const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
 		expect(m.main.sha256).toMatch(/^[0-9a-f]{64}$/); // pinned
 		const lines = real.lines(ID);
@@ -501,18 +508,66 @@ describe("restart of Zinc: startAll, quit, tampering", () => {
 		first.services.dispose();
 		await first.supervisor.shutdown();
 
-		writeFileSync(join(dir, "transpiled", "plugin.js"), readFileSync(join(dir, "transpiled", "plugin.js"), "utf8") + "\nconsole.log('tampered');\n");
-		let rt = await runtime({}, root);
-		await rt.services.manager.startAll();
-		expect(rt.services.manager.get(ID)).toMatchObject({ state: "failed" });
-		expect(rt.services.manager.get(ID)?.stateDetail).toContain("prepared plugin files were changed");
-		expect(rt.supervisor.get(ID)).toBeUndefined();
+		if (RUNNER === "worker") {
+			writeFileSync(join(dir, "transpiled", "plugin.js"), readFileSync(join(dir, "transpiled", "plugin.js"), "utf8") + "\nconsole.log('tampered');\n");
+			const rt1 = await runtime({}, root);
+			await rt1.services.manager.startAll();
+			expect(rt1.services.manager.get(ID)).toMatchObject({ state: "failed" });
+			expect(rt1.services.manager.get(ID)?.stateDetail).toContain("prepared plugin files were changed");
+			expect(rt1.supervisor.get(ID)).toBeUndefined();
+		} else {
+			expect(existsSync(join(dir, "transpiled"))).toBe(false);
+		}
 
 		writeFileSync(join(dir, "plugin.wasm"), new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
-		rt = await runtime({}, root);
-		await rt.services.manager.startAll();
-		expect(rt.services.manager.get(ID)?.stateDetail).toContain("pinned hash");
+		const rt2 = await runtime({}, root);
+		await rt2.services.manager.startAll();
+		expect(rt2.services.manager.get(ID)).toMatchObject({ state: "failed" });
+		expect(rt2.services.manager.get(ID)?.stateDetail).toContain("pinned hash");
+		expect(rt2.supervisor.get(ID)).toBeUndefined();
 	}, 60_000);
+
+	test.if(RUNNER === "wasmtime")(".cwasm cache: warm load, JIT fallback when missing, and rebuild + prune on zhw version bump", async () => {
+		const root = scratch("cwasm-e2e");
+		// 1. Install under version v1 -> precompiled .cwasm is built and loaded (fromCwasm === true)
+		const v1 = await runtime({ manager: { zhwVersionOverride: "zhw-test-v1" } }, root);
+		await v1.services.manager.installPackage(pack(built), { approve: grantAll });
+		const lay = v1.services.manager.layout;
+		const sha = v1.services.manager.manifestOf(ID)!.main.sha256!;
+		expect(readdirSync(lay.cacheRoot)).toEqual(["zhw-test-v1"]);
+		const cwasmV1 = join(lay.cacheRoot, "zhw-test-v1", `${sha}.cwasm`);
+		expect(existsSync(cwasmV1)).toBe(true);
+		expect(v1.supervisor.lastLoadInfo?.(ID)?.fromCwasm).toBe(true);
+		const stats = (await v1.supervisor.stats?.()) as { rssBytes?: number; plugins?: Array<{ plugin: string }> } | undefined;
+		expect(stats?.plugins?.some((p) => p.plugin === ID)).toBe(true);
+		v1.services.dispose();
+		await v1.supervisor.shutdown();
+
+		// 2. Delete the .cwasm file under the SAME version -> falls back to JIT compilation (fromCwasm === false)
+		rmSync(cwasmV1, { force: true });
+		const jit = await runtime({ manager: { zhwVersionOverride: "zhw-test-v1" } }, root);
+		await jit.services.manager.startAll();
+		expect(jit.supervisor.get(ID)?.status).toBe("running");
+		expect(jit.supervisor.lastLoadInfo?.(ID)?.fromCwasm).toBe(false);
+		expect(jit.lines(ID).filter((l) => l.startsWith("starts=")).at(-1)).toBe("starts=2");
+		jit.services.dispose();
+		await jit.supervisor.shutdown();
+
+		// 3. Bump zhwVersionOverride to v2 -> stale v1 dir is pruned, .cwasm is rebuilt in v2, and fromCwasm === true
+		mkdirSync(join(lay.cacheRoot, "zhw-test-v1"), { recursive: true });
+		writeFileSync(cwasmV1, "stale");
+		const v2 = await runtime({ manager: { zhwVersionOverride: "zhw-test-v2" } }, root);
+		await v2.services.manager.startAll();
+		expect(readdirSync(lay.cacheRoot)).toEqual(["zhw-test-v2"]);
+		expect(existsSync(join(lay.cacheRoot, "zhw-test-v2", `${sha}.cwasm`))).toBe(true);
+		expect(v2.supervisor.get(ID)?.status).toBe("running");
+		expect(v2.supervisor.lastLoadInfo?.(ID)?.fromCwasm).toBe(true);
+		expect(v2.lines(ID).filter((l) => l.startsWith("starts=")).at(-1)).toBe("starts=3");
+
+		// 4. Uninstall prunes the plugin's .cwasm from the active cache folder
+		await v2.services.manager.uninstall(ID);
+		expect(readdirSync(join(lay.cacheRoot, "zhw-test-v2"))).toEqual([]);
+	}, 90_000);
 
 	test("a plugin that no longer fits this Zinc is marked incompatible, not started", async () => {
 		const root = scratch("compat");

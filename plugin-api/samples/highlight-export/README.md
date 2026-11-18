@@ -11,6 +11,6 @@ Two entry points in the PDF/EPUB reader:
 | `reader.register-listener` with target `menu(annotation)` | `startup` |
 | `reader-events.on-menu-command` (the SDK names it `on_reader_menu_command`) | dispatches on listener id and command |
 | `annotations.list-annotations`, `library.apply` (`create-item`, a note as HTML) | `export` |
-| `log.write` | the result (a toast needs the Rust `ui` bindings, which do not compile yet) |
+| `ui.show-toast` (`ui::toast`) + `log.write` | reports how many annotations were exported |
 
 Permissions: `reader.ui`, `annotations.read`, `library.write`. Build: `bun plugin-host/scripts/build-plugin.ts plugin-api/samples/highlight-export`.

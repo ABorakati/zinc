@@ -7,7 +7,7 @@
 //! * [`Plugin`]: one trait whose methods all have no-op defaults. Implement only the ones you use.
 //! * [`export_plugin!`]: wires your type to the world (it replaces `wit_bindgen::generate!` + `export!`).
 //! * Builders: [`text`] (localized strings), [`err`] (errors), [`menu`] (menu entries and registrations),
-//!   [`ui`] (UI trees, the flat node list, from a nested expression), [`reg`] (extension point registration).
+//!   [`ui`] (serde UI trees in the JSON schema form, dialogs, toasts), [`reg`] (extension point registration).
 //! * [`prelude`]: the names a plugin usually needs.
 //!
 //! ```ignore
@@ -33,27 +33,28 @@
 /// |-----------|------------------|------|
 /// | (none)    | `plugin-core`    | lifecycle, events, app, prefs, l10n, timers, log |
 /// | `library` | `plugin-library` | library, attachments, fulltext, schema, cite, translate, sync-control, data-utils, notifier |
+/// | `mcp`     | `plugin-mcp`     | `library` plus mcp (register tools for AI agents) and the mcp-handler callback; not with `extend` (use `full`) |
 /// | `extend`  | `plugin-extend`  | extend (menus, columns, panes, ...) and the extend-handlers callbacks |
-/// | `ui`      | `plugin-ui`      | ui (views, dialogs, windows) and the ui-events callbacks: by far the slowest to compile |
+/// | `dialogs` | `plugin-dialogs` | ui imports (dialogs, toasts, windows, push) without ui-events |
+/// | `ui`      | `plugin-ui`      | ui imports and the ui-events callbacks |
 /// | `reader`  | `plugin-reader`  | annotations, reader, note-editor, reader-events, note-events |
 /// | `full`    | `plugin`         | everything, including net, fs, clipboard, shell, secrets |
 ///
-/// `ui` and `reader` together need `full`.
+/// Enabling both `dialogs` (or `ui`) and `reader` automatically selects the full `plugin` world.
 pub mod bindings {
-    #[cfg(all(feature = "ui", feature = "reader", not(feature = "full")))]
-    compile_error!("features `ui` and `reader` together need the `plugin` world: enable `full`");
-
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader")))]
     pub use self::w_plugin::*;
-    #[cfg(all(feature = "ui", not(feature = "full")))]
+    #[cfg(all(feature = "ui", not(feature = "reader"), not(feature = "full")))]
     pub use self::w_ui::*;
     #[cfg(all(feature = "dialogs", not(feature = "ui"), not(feature = "reader"), not(feature = "full")))]
     pub use self::w_dialogs::*;
-    #[cfg(all(feature = "reader", not(feature = "full"), not(feature = "dialogs")))]
+    #[cfg(all(feature = "reader", not(feature = "dialogs"), not(feature = "full")))]
     pub use self::w_reader::*;
     #[cfg(all(feature = "extend", not(feature = "dialogs"), not(feature = "reader"), not(feature = "full")))]
     pub use self::w_extend::*;
-    #[cfg(all(feature = "library", not(feature = "extend"), not(feature = "full")))]
+    #[cfg(all(feature = "mcp", not(feature = "extend"), not(feature = "full")))]
+    pub use self::w_mcp::*;
+    #[cfg(all(feature = "library", not(feature = "mcp"), not(feature = "extend"), not(feature = "full")))]
     pub use self::w_library::*;
     #[cfg(not(feature = "library"))]
     pub use self::w_core::*;
@@ -72,32 +73,54 @@ pub mod bindings {
             }
         };
     }
-    world!(w_plugin, feature = "full", "zinc:plugin/plugin");
-    world!(w_ui, all(feature = "ui", not(feature = "full")), "zinc:plugin/plugin-ui");
+    world!(
+        w_plugin,
+        any(feature = "full", all(feature = "dialogs", feature = "reader")),
+        "zinc:plugin/plugin"
+    );
+    world!(
+        w_ui,
+        all(feature = "ui", not(feature = "reader"), not(feature = "full")),
+        "zinc:plugin/plugin-ui"
+    );
     world!(
         w_dialogs,
         all(feature = "dialogs", not(feature = "ui"), not(feature = "reader"), not(feature = "full")),
         "zinc:plugin/plugin-dialogs"
     );
-    world!(w_reader, all(feature = "reader", not(feature = "full"), not(feature = "dialogs")), "zinc:plugin/plugin-reader");
+    world!(
+        w_reader,
+        all(feature = "reader", not(feature = "dialogs"), not(feature = "full")),
+        "zinc:plugin/plugin-reader"
+    );
     world!(
         w_extend,
         all(feature = "extend", not(feature = "dialogs"), not(feature = "reader"), not(feature = "full")),
         "zinc:plugin/plugin-extend"
     );
-    world!(w_library, all(feature = "library", not(feature = "extend"), not(feature = "full")), "zinc:plugin/plugin-library");
+    world!(w_mcp, all(feature = "mcp", not(feature = "extend"), not(feature = "full")), "zinc:plugin/plugin-mcp");
+    world!(
+        w_library,
+        all(feature = "library", not(feature = "mcp"), not(feature = "extend"), not(feature = "full")),
+        "zinc:plugin/plugin-library"
+    );
     world!(w_core, not(feature = "library"), "zinc:plugin/plugin-core");
 }
 
+#[cfg(all(feature = "mcp", feature = "extend", not(feature = "full"), not(all(feature = "dialogs", feature = "reader"))))]
+compile_error!("feature `mcp` with `extend`, `ui` or `reader`: enable `full` (the `plugin` world is the only one with both)");
+
 pub mod err;
 pub mod json;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 #[cfg(feature = "extend")]
 pub mod menu;
 pub mod plugin;
 #[cfg(feature = "extend")]
 pub mod reg;
 pub mod text;
-#[cfg(feature = "ui")]
+#[cfg(feature = "dialogs")]
 pub mod ui;
 
 pub use plugin::{Glue, Plugin};
@@ -109,11 +132,13 @@ pub mod host {
     pub use crate::bindings::zinc::plugin::{attachments, cite, data_utils, fulltext, library, notifier, schema, sync_control, translate};
     #[cfg(feature = "extend")]
     pub use crate::bindings::zinc::plugin::extend;
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     pub use crate::bindings::zinc::plugin::ui;
     #[cfg(feature = "reader")]
     pub use crate::bindings::zinc::plugin::{annotations, note_editor, reader};
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "mcp", feature = "full", all(feature = "dialogs", feature = "reader")))]
+    pub use crate::bindings::zinc::plugin::mcp;
+    #[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader")))]
     pub use crate::bindings::zinc::plugin::{clipboard, fs, net, permissions, plugins, secrets, shell, util};
 }
 
@@ -124,12 +149,14 @@ pub mod callbacks {
     pub use crate::bindings::exports::zinc::plugin::notifier_handler;
     #[cfg(feature = "extend")]
     pub use crate::bindings::exports::zinc::plugin::extend_handlers;
-    #[cfg(feature = "ui")]
+    #[cfg( any(feature = "ui", all(feature = "dialogs", feature = "reader")) )]
     pub use crate::bindings::exports::zinc::plugin::ui_events;
     #[cfg(feature = "reader")]
     pub use crate::bindings::exports::zinc::plugin::{note_events, reader_events};
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader")))]
     pub use crate::bindings::exports::zinc::plugin::net_events;
+    #[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader"), all(feature = "mcp", not(feature = "extend"))))]
+    pub use crate::bindings::exports::zinc::plugin::mcp_handler;
 }
 
 /// `log::info("...")` and friends. Thin wrapper over `zinc:plugin/log`.
@@ -170,14 +197,16 @@ pub mod prelude {
     pub use crate::menu::{self, MenuEntryBuilder};
     #[cfg(feature = "extend")]
     pub use crate::reg;
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     pub use crate::host::ui::{
-        DialogOutcome, EventKind, EventPayload, InstanceId, RenderResult, Surface, UiEvent, ViewContext,
+        EventKind, EventPayload, InstanceId, RenderResult, Surface, Tone, UiEvent, ViewContext,
     };
     #[cfg(feature = "reader")]
     pub use crate::callbacks::reader_events::{
         AnnotationMenuParams, LinkContext, MenuContext, MenuParams, OverlayShape, ReaderEvent,
     };
-    #[cfg(feature = "ui")]
-    pub use crate::ui::{self, El};
+    #[cfg(feature = "dialogs")]
+    pub use crate::ui::{self, DialogOutcome, El};
+    #[cfg(feature = "mcp")]
+    pub use crate::mcp::{self, Tool};
 }

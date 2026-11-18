@@ -1,7 +1,7 @@
 // Per-plugin preferences (lifecycle.wit, interface prefs). One JSON file per plugin (<root>/prefs/<id>.json) holds the user-set values;
 // defaults come from the manifest's `default_prefs` and are never written. Values are JS primitives: boolean (flag), integer number
 // (integer, 32-bit) and string (text). The store lives in the Zinc process, so the import handler and the UI bindings (a control bound
-// to a pref) see one copy; observers are told through `onChange`.
+// to a pref) see one copy; observers are told through `onChange`, and `zhw` cache pushes are driven synchronously through `onSync`.
 import { rmSync } from "node:fs";
 import { readJson, writeJsonAtomic } from "./json-file";
 import type { Layout } from "./layout";
@@ -37,6 +37,7 @@ export interface PrefChange {
 export class PrefStore {
 	private cache = new Map<string, Record<string, PrefValue>>();
 	private listeners = new Set<(c: PrefChange) => void>();
+	private syncListeners = new Set<(plugin: string) => void>();
 	/** Keys that are secret settings: kept in `secrets` under "pref:<key>", never here. */
 	private secretKeys = new Map<string, Set<string>>();
 
@@ -71,9 +72,35 @@ export class PrefStore {
 		}
 	}
 
+	private emitSync(plugin: string) {
+		for (const fn of this.syncListeners) {
+			try {
+				fn(plugin);
+			} catch {
+				/* a sync listener must not break a write */
+			}
+		}
+	}
+
 	onChange(fn: (c: PrefChange) => void): () => void {
 		this.listeners.add(fn);
 		return () => void this.listeners.delete(fn);
+	}
+
+	/** Fires synchronously on every mutation (`setMany`, `clear`, `reset`, `markSecret`, `deleteAll`), before `onChange` and before handlers return. */
+	onSync(fn: (plugin: string) => void): () => void {
+		this.syncListeners.add(fn);
+		return () => void this.syncListeners.delete(fn);
+	}
+
+	/** Current `{ defaults, user, secrets }` snapshot for pushing to `zhw`. */
+	snapshot(plugin: string, defaultsOverride?: Record<string, PrefValue>): { defaults: Record<string, PrefValue>; user: Record<string, PrefValue>; secrets: string[] } {
+		const defs = defaultsOverride ?? this.defaults(plugin);
+		return {
+			defaults: { ...defs },
+			user: { ...this.load(plugin) },
+			secrets: [...(this.secretKeys.get(plugin) ?? [])],
+		};
 	}
 
 	/** A key bound to a `secret` setting: reads give none, and writes go to `secrets` (the caller does that). */
@@ -81,6 +108,7 @@ export class PrefStore {
 		let s = this.secretKeys.get(plugin);
 		if (!s) this.secretKeys.set(plugin, (s = new Set()));
 		s.add(key);
+		this.emitSync(plugin);
 	}
 
 	isSecret(plugin: string, key: string): boolean {
@@ -141,25 +169,40 @@ export class PrefStore {
 		for (const [k, v] of new Map(entries)) if (this.get(plugin, k) !== v) changes.push({ plugin, key: k, value: v });
 		this.cache.set(plugin, next);
 		this.save(plugin, next);
+		this.emitSync(plugin);
 		for (const c of changes) this.emit(c);
 	}
 
-	clear(plugin: string, key: string): void {
+	private clearKey(plugin: string, key: string): PrefChange | undefined {
 		const u = this.load(plugin);
-		if (!(key in u)) return;
+		if (!(key in u)) return undefined;
 		const before = this.get(plugin, key);
 		const next = { ...u };
 		delete next[key];
 		this.cache.set(plugin, next);
 		this.save(plugin, next);
 		const after = this.get(plugin, key);
-		if (before !== after) this.emit({ plugin, key, value: after });
+		return before !== after ? { plugin, key, value: after } : undefined;
+	}
+
+	clear(plugin: string, key: string): void {
+		const c = this.clearKey(plugin, key);
+		this.emitSync(plugin);
+		if (c) this.emit(c);
 	}
 
 	/** Clears every user value under `prefix` (all if none) except `except`. */
 	reset(plugin: string, prefix: string | undefined, except: string[]): void {
 		const u = this.load(plugin);
-		for (const k of Object.keys(u)) if ((!prefix || k.startsWith(prefix)) && !except.includes(k)) this.clear(plugin, k);
+		const changes: PrefChange[] = [];
+		for (const k of Object.keys(u)) {
+			if ((!prefix || k.startsWith(prefix)) && !except.includes(k)) {
+				const c = this.clearKey(plugin, k);
+				if (c) changes.push(c);
+			}
+		}
+		this.emitSync(plugin);
+		for (const c of changes) this.emit(c);
 	}
 
 	/** Uninstall: drop the plugin's pref file (and the cached copy). */
@@ -167,6 +210,7 @@ export class PrefStore {
 		this.cache.delete(plugin);
 		this.secretKeys.delete(plugin);
 		rmSync(this.layout.prefsFile(plugin), { force: true });
+		this.emitSync(plugin);
 	}
 }
 

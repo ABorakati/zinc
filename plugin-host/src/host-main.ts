@@ -125,7 +125,7 @@ async function onMessage(m: ToHost) {
 	switch (m.t) {
 		case "init": {
 			coreUrl = m.coreUrl;
-			const handlers = [...(m.discover === false ? [] : await discoverHandlers("host")), ...(await Promise.all(m.hostModules.map(loadHandlerModule))).flat()];
+			const handlers = [...(m.discover === false ? [] : await discoverHandlers("host")), ...(await Promise.all((m.hostModules ?? []).map(loadHandlerModule))).flat()];
 			table = new HandlerTable(handlers);
 			send({ t: "ready", pid: process.pid, interfaces: table.interfaces() });
 			setInterval(() => send({ t: "heartbeat", ts: Date.now() }), m.heartbeatMs);

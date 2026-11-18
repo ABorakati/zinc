@@ -5,7 +5,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { buildPlugin } from "../../scripts/build-plugin";
 import { createPluginSupervisor, type PluginSupervisor } from "../../src/supervisor";
-import { zincHandlers, fixtureOut } from "../helpers";
+import { RUNNER, zincHandlers, fixtureOut } from "../helpers";
 import { startCore, until, type TestCore } from "./core-fixture";
 
 let core: TestCore;
@@ -20,7 +20,7 @@ const find = (pred: (e: any) => boolean) => events().find(pred);
 beforeAll(async () => {
 	core = await startCore();
 	const { out } = await buildPlugin({ dir: fixture, out: join(fixtureOut, "e2e-data"), world: "e2e" });
-	sup = createPluginSupervisor({ importHandlers: zincHandlers(lines), coreUrl: core.url, callTimeoutMs: 8000, lifecycleTimeoutMs: 10_000 });
+	sup = createPluginSupervisor({ importHandlers: zincHandlers(lines), coreUrl: core.url, callTimeoutMs: 8000, lifecycleTimeoutMs: 10_000, runner: RUNNER });
 	if (process.env.ZN_DUMP_LOG) {
 		for (const ev of ["host-restart", "host-restarted", "host-failed", "status", "log"] as const) sup.on(ev, (e: unknown) => lines.push(`SUP ${ev} ${JSON.stringify(e)}`));
 	}

@@ -15,7 +15,7 @@ package zinc:plugin@0.1.0;
 // Exports: what the plugin implements
 // ---------------------------------------------------------------------------------------------------------------
 
-/// The plugin's lifecycle hooks. They match the bootstrap.js methods of a Zotero 7 plugin.
+/// The plugin's lifecycle hooks. They match the bootstrap.js methods of a Zotero plugin (unchanged from Zotero 7 to 10).
 /// Each hook has a time limit (10 s by default). A hook that passes it counts as a hung plugin: Zinc restarts
 /// the plugin host process and disables the plugin.
 interface lifecycle {

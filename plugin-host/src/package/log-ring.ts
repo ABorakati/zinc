@@ -1,7 +1,7 @@
 // The plugin log (lifecycle.wit, interface log): lines tagged with the plugin id, kept in a ring buffer for Help > Debug Output and
 // Settings > Plugins. Limits: 200 lines a second and 8 KiB a line per plugin; extra lines are dropped and counted. `debug` lines are
 // kept only while `debugEnabled` is true. The ring is fed by the supervisor's "log" events (`services.attach`), so output that does not
-// come through `log.write` (a Rust guest's stderr, host diagnostics) lands in the same place.
+// come through `log.write` (a Rust guest's stderr, host diagnostics, and `zhw`'s `log-batch`) lands in the same place.
 export type LogLevel = "error" | "warn" | "info" | "debug";
 
 export interface LogLine {
@@ -19,16 +19,28 @@ export class LogRing {
 	private rate = new Map<string, { windowStart: number; n: number }>();
 	private dropped = new Map<string, number>();
 	private lastErrors = new Map<string, { ts: number; message: string; stack?: string }>();
-	debugEnabled = false;
+	private _debugEnabled = false;
+	onDebugChange?: (enabled: boolean) => void;
 
 	constructor(private capacity = 5000) {}
+
+	get debugEnabled(): boolean {
+		return this._debugEnabled;
+	}
+
+	set debugEnabled(v: boolean) {
+		const next = !!v;
+		if (this._debugEnabled === next) return;
+		this._debugEnabled = next;
+		this.onDebugChange?.(next);
+	}
 
 	/**
 	 * Applies the plugin-facing limits to one `log.write` line. Returns the text to log, or undefined when the line is dropped
 	 * (debug off, or over the rate limit).
 	 */
 	accept(plugin: string, level: LogLevel, message: string, now = Date.now()): string | undefined {
-		if (level === "debug" && !this.debugEnabled) return undefined;
+		if (level === "debug" && !this._debugEnabled) return undefined;
 		let r = this.rate.get(plugin);
 		if (!r || now - r.windowStart >= 1000) this.rate.set(plugin, (r = { windowStart: now, n: 0 }));
 		if (++r.n > MAX_LINES_PER_SECOND) {
@@ -46,6 +58,10 @@ export class LogRing {
 	/** `log.write-error` and error-level `log.write`: remembered as the plugin's last error (Settings > Plugins). */
 	recordError(plugin: string, message: string, stack?: string) {
 		this.lastErrors.set(plugin, { ts: Date.now(), message, stack });
+	}
+
+	addDropped(plugin: string, count: number) {
+		if (count > 0) this.dropped.set(plugin, (this.dropped.get(plugin) ?? 0) + count);
 	}
 
 	lastError(plugin: string) {
@@ -71,5 +87,5 @@ export class LogRing {
 
 function truncate(s: string): string {
 	if (Buffer.byteLength(s, "utf8") <= MAX_LINE_BYTES) return s;
-	return Buffer.from(s, "utf8").subarray(0, MAX_LINE_BYTES).toString("utf8").replace(/�$/, "") + "... [truncated]";
+	return Buffer.from(s, "utf8").subarray(0, MAX_LINE_BYTES).toString("utf8").replace(/$/, "") + "... [truncated]";
 }

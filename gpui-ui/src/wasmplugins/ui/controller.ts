@@ -3,7 +3,7 @@
 // virtual-row caches, suggestions and the values of named inputs. No GPUIX here: PluginView/render.tsx draw it.
 import { batch } from "solid-js";
 import { createStore, produce, reconcile, type SetStoreFunction } from "solid-js/store";
-import { applyPatch, buildNested, jsonToTree, resolveBatchRows, TreeError } from "./convert";
+import { applyPatch, buildNested, jsonToPatch, jsonToTree, parseBatchStyles, resolveBatchRows, TreeError } from "./convert";
 import type {
 	EventBinding,
 	EventKind,
@@ -185,8 +185,10 @@ export class ViewController {
 	}
 
 	/** Show an initial tree before the plugin's `mount` answers (dialogs carry their content in the spec). */
-	showInitial(tree: Tree): void {
-		this.applyContent({ tag: "full", val: tree });
+	showInitial(tree: Tree | string | Record<string, unknown>): void {
+		if (typeof tree === "string") this.applyContent({ tag: "json", val: tree });
+		else if ("nodes" in tree && Array.isArray((tree as Tree).nodes)) this.applyContent({ tag: "full", val: tree as Tree });
+		else this.applyContent({ tag: "json", val: JSON.stringify(tree) });
 		this.setStatus("ready");
 	}
 
@@ -280,7 +282,8 @@ export class ViewController {
 				case "json":
 					return this.setTree(jsonToTree(c.val));
 				case "patch": {
-					if (c.val.baseRev !== this.state.rev) {
+					const patch = jsonToPatch(c.val);
+					if (patch.baseRev !== this.state.rev) {
 						// The plugin patched a tree the host does not have: drop it and ask for the whole tree.
 						void this.enqueue(async () => {
 							const r = await this.call<RenderResult>("resync", [this.instance]);
@@ -295,8 +298,8 @@ export class ViewController {
 								ok = false;
 								return;
 							}
-							ok = applyPatch(s.root, s.styles, c.val);
-							s.rev = c.val.rev;
+							ok = applyPatch(s.root, s.styles, patch);
+							s.rev = patch.rev;
 						}),
 					);
 					if (!ok) void this.resync();
@@ -462,11 +465,12 @@ export class ViewController {
 			const batchRes = await this.call<RowBatch>("render-range", [this.instance, { nodeKey: node.props.key, start, count, sort }]);
 			if (!batchRes || this.destroyed) return;
 			const rows = resolveBatchRows(batchRes.rows, batchRes.nodes, node.id);
+			const batchStyles = parseBatchStyles(batchRes.styles);
 			batch(() => {
 				if (!this.state.rowCache[node.id]) this.setState("rowCache", node.id, { rows: {} });
 				rows.forEach((r, i) => this.setState("rowCache", node.id, "rows", batchRes.start + i, r));
 				if (batchRes.total !== undefined) this.setState("rowCache", node.id, "total", batchRes.total);
-				for (const s of batchRes.styles) this.setState("styles", s.name, s);
+				for (const s of batchStyles) this.setState("styles", s.name, s);
 			});
 		}
 	}

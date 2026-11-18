@@ -181,18 +181,18 @@ try {
 	check(await until(() => has("Fixture toast")), "toast drawn");
 	await shot("ui-toast");
 
-	// ---- a dialog opened from a handler: the plugin is suspended in ui.run-dialog meanwhile (re-entrancy)
+	// ---- a dialog opened from a handler via ui.open-dialog (outcome delivered via close event)
 	await clickText("Open dialog");
-	check(await until(() => has("Fixture dialog")), "run-dialog drew the dialog");
+	check(await until(() => has("Fixture dialog")), "open-dialog drew the dialog");
 	const di = t.renderer.findByType("input").map((e) => ({ e, b: t.renderer.getElementBounds(e.id)! })).filter((x) => x.b && x.b.x > 500 && x.b.x < 900 && x.b.y > 150).pop();
 	if (di) await click(di.b.x + 20, di.b.y + di.b.height / 2);
 	for (const ch of "ok") await key(ch);
-	check(await until(() => logged("dialog typed: ok")), "an event from the dialog reached the plugin while run-dialog was waiting");
+	check(await until(() => logged("dialog typed: ok")), "an event from the dialog reached the plugin while open");
 	await shot("ui-dialog");
 	await key("enter"); // Enter in the dialog's input presses the default button
 	const cancel = at("Cancel");
 	if (cancel && has("Fixture dialog")) await click(cancel.x + 74, cancel.y); // fallback: the OK button sits right of Cancel
-	check(await until(() => logged("dialog outcome: ok dlgtext=ok")), "run-dialog returned the pressed button and the input values");
+	check(await until(() => logged("dialog outcome: ok dlgtext=ok")), "open-dialog close events delivered the pressed button and input values");
 	check(await until(() => has("Dialog outcome: ok dlgtext=ok")), "tree re-rendered after the dialog closed");
 
 	// ---- a scrolled view of the lower half, in light and dark

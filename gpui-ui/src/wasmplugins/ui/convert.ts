@@ -1,6 +1,9 @@
-// Tree conversion, all pure: nested JSON form -> flat WIT tree (jsonToTree), flat tree -> the nested VNode tree the renderers use
-// (buildNested), and patch-set application on a VNode tree (applyPatch). The JSON form is documented in
-// plugin-api/ui-schema/ui-tree.schema.json: camelCase names, a node's `type` is the kind, `on` maps event kinds to handlers.
+// Tree and patch decoding, validation (`validate.ts` against `plugin-api/ui-schema/ui-tree.schema.json`), and normalization:
+//   - nested JSON tree -> normalized flat `Tree` (`jsonToTree`)
+//   - JSON patch set   -> normalized `PatchSet` (`jsonToPatch`)
+//   - flat `Tree`      -> nested `VNode` tree the renderers use (`buildNested`)
+//   - patch application on a `VNode` tree (`applyPatch`)
+//   - `render-range` batch row content and styles decoding (`resolveBatchRows`, `parseBatchStyles`)
 import {
 	KIND_TAGS,
 	type Cell,
@@ -14,6 +17,7 @@ import {
 	type NamedStyle,
 	type NodeKind,
 	type NodeProps,
+	type PatchOp,
 	type PatchSet,
 	type Row,
 	type Space,
@@ -23,6 +27,18 @@ import {
 	type UiText,
 	type VNode,
 } from "./types";
+import {
+	getValidationMode,
+	setValidationMode,
+	validateNamedStylesArray,
+	validateNodeObject,
+	validatePatchObject,
+	validateStyleObject,
+	validateTreeObject,
+	type ValidationMode,
+} from "./validate";
+
+export { getValidationMode, setValidationMode, type ValidationMode };
 
 /** Host limits (ui.md "Host limits"). */
 export const LIMITS = { nodes: 5000, depth: 64, drawOps: 20000 } as const;
@@ -90,7 +106,10 @@ const color = (v: Any): Color => {
 		if (isColorToken(v)) return { tag: "token", val: v };
 		throw new TreeError(`unknown colour token "${v}"`);
 	}
-	if (isObj(v) && typeof v.token === "string") return { tag: "token-alpha", val: { token: v.token, alpha: v.alpha ?? 255 } };
+	if (isObj(v) && typeof v.token === "string") {
+		if (!isColorToken(v.token)) throw new TreeError(`unknown colour token "${v.token}"`);
+		return { tag: "token-alpha", val: { token: v.token, alpha: v.alpha ?? 255 } };
+	}
 	if (isObj(v) && typeof v.light === "string") return { tag: "themed", val: { light: hexToRgba(v.light), dark: hexToRgba(v.dark ?? v.light) } };
 	throw new TreeError("bad colour: " + JSON.stringify(v));
 };
@@ -362,7 +381,12 @@ class Builder {
 			case "list-view": val = { rows: this.rows(j.rows ?? []), selection: j.selection ?? "none", selected: j.selected ?? [], focusRow: j.focusRow, empty: optText(j.empty), persistKey: j.persistKey }; break;
 			case "table": val = { columns: (j.columns ?? []).map((c: Any) => ({ key: c.key, label: optText(c.label), icon: optIcon(c.icon), width: c.width, minWidth: c.minWidth, flex: c.flex, align: c.align, sortable: b(c.sortable), resizable: b(c.resizable), hidden: b(c.hidden) })), rows: this.rows(j.rows ?? []), selection: j.selection ?? "none", selected: j.selected ?? [], focusRow: j.focusRow, sort: j.sort, tree: b(j.tree), header: j.header !== false, striped: b(j.striped), empty: optText(j.empty), persistKey: j.persistKey }; break;
 			case "popover": val = { open: b(j.open), placement: j.placement ?? "bottom-start", dismissOnOutside: j.dismissOnOutside !== false, width: j.width, maxHeight: j.maxHeight, arrow: b(j.arrow) }; break;
-			case "canvas": val = { width: j.width ?? 100, height: j.height ?? 100, background: optColor(j.background), ops: (j.ops ?? []).map((o: Any) => this.op(o)), panZoom: b(j.panZoom), view: j.view ? { zoom: 1, ...j.view } : undefined }; break;
+			case "canvas": {
+				const rawOps = j.ops ?? [];
+				if (rawOps.length > LIMITS.drawOps) throw new TreeError(`more than ${LIMITS.drawOps} draw ops`);
+				val = { width: j.width ?? 100, height: j.height ?? 100, background: optColor(j.background), ops: rawOps.map((o: Any) => this.op(o)), panZoom: b(j.panZoom), view: j.view ? { zoom: 1, ...j.view } : undefined };
+				break;
+			}
 			case "web-view": {
 				const s = j.source ?? {};
 				val = { source: s.url !== undefined ? { tag: "url", val: s.url } : s.html !== undefined ? { tag: "html", val: s.html } : { tag: "asset", val: s.asset ?? "" }, sandbox: { scripts: b(j.sandbox?.scripts), forms: b(j.sandbox?.forms), popups: b(j.sandbox?.popups), downloads: b(j.sandbox?.downloads), persistStorage: b(j.sandbox?.persistStorage) }, allowHosts: j.allowHosts ?? [], background: optColor(j.background), messaging: b(j.messaging) };
@@ -409,8 +433,8 @@ class Builder {
 }
 
 let revCounter = 0n;
-/** The nested JSON form (a JSON string, or the parsed object) -> the flat WIT tree. Throws TreeError. */
-export function jsonToTree(json: unknown): Tree {
+/** The nested JSON form (a JSON string, or the parsed object) -> the normalized flat `Tree`. Throws TreeError. */
+export function jsonToTree(json: unknown, opts?: { validate?: ValidationMode }): Tree {
 	let j: Any = json;
 	if (typeof json === "string") {
 		try {
@@ -422,7 +446,69 @@ export function jsonToTree(json: unknown): Tree {
 	if (!isObj(j) || !j.root) throw new TreeError("the JSON tree needs a `root`");
 	const b = new Builder();
 	const root = b.node(j.root, 0);
+	const err = validateTreeObject(j, opts?.validate);
+	if (err) throw new TreeError(err);
 	return { rev: j.rev !== undefined ? BigInt(j.rev) : ++revCounter, root, nodes: b.nodes, styles: convNamedStyles(j.styles) };
+}
+
+/** Decode and validate a JSON patch set (`$defs.patchSet` in `ui-tree.schema.json`), or pass an already-normalized `PatchSet` through. */
+export function jsonToPatch(patch: unknown, opts?: { validate?: ValidationMode }): PatchSet {
+	let j: Any = patch;
+	if (typeof patch === "string") {
+		try {
+			j = JSON.parse(patch);
+		} catch (e) {
+			throw new TreeError("the JSON patch does not parse: " + (e as Error).message);
+		}
+	}
+	if (!isObj(j)) throw new TreeError("the patch must be an object");
+	if (typeof j.baseRev === "bigint" && Array.isArray(j.ops) && (j.ops.length === 0 || isObj(j.ops[0]) && "tag" in j.ops[0])) {
+		return j as PatchSet;
+	}
+	const err = validatePatchObject(j, opts?.validate);
+	if (err) throw new TreeError(err);
+	const ops: PatchOp[] = (j.ops as Any[]).map((op: Any): PatchOp => {
+		switch (op.op) {
+			case "set-node": {
+				const b = new Builder();
+				const kind = b.kind(op.node.type, op.node);
+				const props = b.props({ ...op.node, key: op.node.key ?? op.key });
+				return { tag: "set-node", val: { key: String(op.key), props, kind } };
+			}
+			case "replace": {
+				const b = new Builder();
+				const root = b.node({ ...op.node, key: op.node.key ?? op.key }, 0);
+				return {
+					tag: "replace",
+					val: {
+						key: String(op.key),
+						subtree: { rev: BigInt(j.rev), root, nodes: b.nodes, styles: convNamedStyles(op.styles) },
+					},
+				};
+			}
+			case "insert": {
+				const b = new Builder();
+				const root = b.node(op.node, 0);
+				return {
+					tag: "insert",
+					val: {
+						parent: String(op.parent),
+						index: Number(op.index),
+						subtree: { rev: BigInt(j.rev), root, nodes: b.nodes, styles: convNamedStyles(op.styles) },
+					},
+				};
+			}
+			case "remove":
+				return { tag: "remove", val: String(op.key) };
+			case "move":
+				return { tag: "move", val: { key: String(op.key), parent: String(op.parent), index: Number(op.index) } };
+			case "set-styles":
+				return { tag: "set-styles", val: convNamedStyles(op.styles) };
+			default:
+				throw new TreeError(`unknown patch op "${op.op}"`);
+		}
+	});
+	return { baseRev: BigInt(j.baseRev), rev: BigInt(j.rev), ops };
 }
 
 // ---------------------------------------------------------------------------------------------------- flat -> nested
@@ -468,27 +554,73 @@ function resolveRowContent(kind: NodeKind, make: (idx: number, id: string) => VN
 	if (!rows || rows.tag !== "inline") return kind;
 	const out: Row[] = (rows.val as Row[]).map((r) => ({
 		...r,
-		contentNode: r.content !== undefined ? make(r.content, `${nodeId}#${r.id}`) : undefined,
-		cells: r.cells.map((c, i) => ({ ...c, contentNode: c.content !== undefined ? make(c.content, `${nodeId}#${r.id}:${i}`) : undefined })),
+		contentNode: typeof r.content === "number" ? make(r.content, `${nodeId}#${r.id}`) : undefined,
+		cells: r.cells.map((c, i) => ({ ...c, contentNode: typeof c.content === "number" ? make(c.content, `${nodeId}#${r.id}:${i}`) : undefined })),
 	}));
 	return { tag: kind.tag, val: { ...kind.val, rows: { tag: "inline", val: out } } };
 }
 
-/** Rows answered by `render-range`: their content indices point into `batch.nodes`. */
-export function resolveBatchRows(rows: Row[], nodes: FlatNode[], nodeId: string): Row[] {
-	const tree = { root: 0, nodes };
-	return rows.map((r) => {
-		const one = (idx: number, id: string) => {
-			const used = new Set<number>();
-			void used;
-			return buildNested({ root: idx, nodes: tree.nodes }, { rootId: id });
-		};
-		return {
-			...r,
-			contentNode: r.content !== undefined ? one(r.content, `${nodeId}#${r.id}`) : undefined,
-			cells: r.cells.map((c, i) => ({ ...c, contentNode: c.content !== undefined ? one(c.content, `${nodeId}#${r.id}:${i}`) : undefined })),
-		};
-	});
+function decodeContentNode(content: number | string | Record<string, unknown> | undefined, nodes: FlatNode[] | undefined, id: string, opts?: { validate?: ValidationMode }): VNode | undefined {
+	if (content === undefined || content === null) return undefined;
+	if (typeof content === "number") {
+		if (!nodes) throw new TreeError(`row content index ${content} has no node list`);
+		return buildNested({ root: content, nodes }, { rootId: id });
+	}
+	let obj: unknown = content;
+	if (typeof content === "string") {
+		try {
+			obj = JSON.parse(content);
+		} catch (e) {
+			throw new TreeError("row content JSON does not parse: " + (e as Error).message);
+		}
+	}
+	const err = validateNodeObject(obj, opts?.validate);
+	if (err) throw new TreeError(err);
+	const b = new Builder();
+	const root = b.node(obj, 0);
+	return buildNested({ root, nodes: b.nodes }, { rootId: id });
+}
+
+function decodeRowStyle(style: Style | string | undefined, opts?: { validate?: ValidationMode }): Style | undefined {
+	if (style === undefined || style === null) return undefined;
+	if (typeof style !== "string") return style;
+	let obj: unknown;
+	try {
+		obj = JSON.parse(style);
+	} catch (e) {
+		throw new TreeError("row style JSON does not parse: " + (e as Error).message);
+	}
+	const err = validateStyleObject(obj, opts?.validate);
+	if (err) throw new TreeError(err);
+	return convStyle(obj);
+}
+
+/** Decode named styles carried on a `RowBatch`. */
+export function parseBatchStyles(styles: string | NamedStyle[] | undefined, opts?: { validate?: ValidationMode }): NamedStyle[] {
+	if (styles === undefined || styles === null) return [];
+	if (Array.isArray(styles)) return styles;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(styles);
+	} catch (e) {
+		throw new TreeError("batch styles JSON does not parse: " + (e as Error).message);
+	}
+	const err = validateNamedStylesArray(parsed, opts?.validate);
+	if (err) throw new TreeError(err);
+	return convNamedStyles(parsed);
+}
+
+/** Rows answered by `render-range`: their `content` and `style` are JSON strings (or legacy indices into `nodes`). */
+export function resolveBatchRows(rows: Row[], nodes: FlatNode[] | undefined, nodeId: string, opts?: { validate?: ValidationMode }): Row[] {
+	return rows.map((r) => ({
+		...r,
+		style: decodeRowStyle(r.style, opts),
+		contentNode: decodeContentNode(r.content, nodes, `${nodeId}#${r.id}`, opts),
+		cells: r.cells.map((c, i) => ({
+			...c,
+			contentNode: decodeContentNode(c.content, nodes, `${nodeId}#${r.id}:${i}`, opts),
+		})),
+	}));
 }
 
 // ---------------------------------------------------------------------------------------------------- patches
@@ -510,8 +642,11 @@ function find(root: VNode, key: string): { node: VNode; parent?: VNode; index: n
  * Apply a patch-set to a nested tree. Mutates `root` and `styles` (call it on a Solid `produce` draft or a copy). Returns false
  * (and leaves the tree as it was before the failing op) when an op names a key the tree does not have: the caller then asks for a resync.
  */
-export function applyPatch(root: VNode, styles: Record<string, NamedStyle>, patch: PatchSet): boolean {
-	for (const op of patch.ops) {
+export function applyPatch(root: VNode, styles: Record<string, NamedStyle>, patch: PatchSet | string | Record<string, unknown>): boolean {
+	const p = typeof patch === "string" || !("ops" in patch && Array.isArray(patch.ops) && (patch.ops.length === 0 || "tag" in (patch.ops[0] as object)))
+		? jsonToPatch(patch)
+		: (patch as PatchSet);
+	for (const op of p.ops) {
 		switch (op.tag) {
 			case "set-styles":
 				for (const s of op.val) styles[s.name] = s;

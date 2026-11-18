@@ -7,6 +7,7 @@ export type { ApprovalRequest, Approval, ApproveFn, InstallResult, InstalledPlug
 export { readZip, writeZip, ZipError } from "./zip";
 export { validateManifest } from "./validate";
 export { pluginsRoot, createLayout } from "./layout";
+export { CwasmCache, sanitizeCacheKey } from "./cwasm-cache";
 export { semverCompare, apiCompatible } from "./semver";
 export { AppService, APP_PREF_ALLOWLIST } from "./app-service";
 export type { AppProviders, AppPrefProvider } from "./app-service";

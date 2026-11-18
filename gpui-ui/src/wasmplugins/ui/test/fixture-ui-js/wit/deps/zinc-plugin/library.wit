@@ -1150,8 +1150,8 @@ interface notifier {
 
   /// Where a change came from. Zotero has no such field; it is added so a plugin can ignore its own writes.
   variant origin {
-    /// This plugin.
-    self,
+    /// This plugin. (Named `this-plugin`, not `self`: `self` becomes the Rust keyword `Self` in generated bindings.)
+    this-plugin,
     /// Another plugin.
     plugin(plugin-id),
     /// The user, in Zinc's UI.

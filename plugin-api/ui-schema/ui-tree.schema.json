@@ -1,21 +1,117 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://zinc.invalid/plugin-api/ui-schema/ui-tree.schema.json",
-  "title": "Zinc plugin UI tree (nested JSON form)",
-  "description": "The nested JSON form of the `tree` record in plugin-api/wit/ui.wit. A plugin may return this as `content-update.json`. The host converts it to the flat WIT form (nodes list with child indices). Rules: WIT kebab-case field names become camelCase; enum and variant-case names stay kebab-case; a node's `type` is the node-kind case name; `children` are nested nodes (the host assigns the indices); `on` is a map from event kind to a handler id or a binding object; option fields are simply left out; `none` is the absence of a field. ui.md explains the mapping and the defaults.",
+  "title": "Zinc plugin UI contract (trees, patches, row content, styles)",
+  "description": "The full JSON contract for declarative UI in `plugin-api/wit/ui.wit`. Root schema (and `$defs.tree`): a UI tree (`content-update.json`, `dialog-spec.content`, `window-spec.content`). `$defs.patchSet`: an incremental patch set (`content-update.patch`). `$defs.node` (`$defs.rowContent`): custom row or cell content (`row.content`, `cell.content`). `$defs.style`: a node or row style (`row.style`). `$defs.namedStyles`: named styles (`row-batch.styles`). Rules: camelCase field names; kebab-case enum and variant-case names; a node's `type` is the node-kind name; `children` are nested nodes; `on` maps event kinds to a handler id or binding object; absent fields use their defaults.",
   "type": "object",
   "required": ["root"],
   "additionalProperties": false,
   "properties": {
     "rev": { "type": "integer", "minimum": 0, "description": "Tree revision. Events echo it. Default: the host counts up." },
-    "styles": {
-      "type": "array",
-      "description": "Named styles, referenced by node `class`.",
-      "items": { "$ref": "#/$defs/namedStyle" }
-    },
+    "styles": { "$ref": "#/$defs/namedStyles" },
     "root": { "$ref": "#/$defs/node" }
   },
   "$defs": {
+    "tree": {
+      "description": "A UI tree (`content-update.json`, `dialog-spec.content`, `window-spec.content`).",
+      "type": "object",
+      "required": ["root"],
+      "additionalProperties": false,
+      "properties": {
+        "rev": { "type": "integer", "minimum": 0, "description": "Tree revision. Events echo it. Default: the host counts up." },
+        "styles": { "$ref": "#/$defs/namedStyles" },
+        "root": { "$ref": "#/$defs/node" }
+      }
+    },
+    "namedStyles": {
+      "description": "Named styles (`tree.styles`, `row-batch.styles`, `patchOp` `set-styles`), referenced by node `class`.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/namedStyle" }
+    },
+    "rowContent": {
+      "description": "Custom content of a list/table row or cell (`row.content`, `cell.content`).",
+      "$ref": "#/$defs/node"
+    },
+    "patchOp": {
+      "description": "One operation in a `patchSet`. `op` selects the operation.",
+      "type": "object",
+      "required": ["op"],
+      "oneOf": [
+        {
+          "description": "Replace the keyed node's own properties and kind; its children stay.",
+          "properties": {
+            "op": { "const": "set-node" },
+            "key": { "type": "string" },
+            "node": { "$ref": "#/$defs/node" }
+          },
+          "required": ["op", "key", "node"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Replace the keyed node and everything under it with `node` (and merge `styles`, if any).",
+          "properties": {
+            "op": { "const": "replace" },
+            "key": { "type": "string" },
+            "node": { "$ref": "#/$defs/node" },
+            "styles": { "$ref": "#/$defs/namedStyles" }
+          },
+          "required": ["op", "key", "node"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Insert `node` as a child of `parent` at `index` (and merge `styles`, if any).",
+          "properties": {
+            "op": { "const": "insert" },
+            "parent": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0 },
+            "node": { "$ref": "#/$defs/node" },
+            "styles": { "$ref": "#/$defs/namedStyles" }
+          },
+          "required": ["op", "parent", "index", "node"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove the keyed node and everything under it.",
+          "properties": {
+            "op": { "const": "remove" },
+            "key": { "type": "string" }
+          },
+          "required": ["op", "key"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Move the keyed node to `parent` at `index`.",
+          "properties": {
+            "op": { "const": "move" },
+            "key": { "type": "string" },
+            "parent": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["op", "key", "parent", "index"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Add or replace named styles.",
+          "properties": {
+            "op": { "const": "set-styles" },
+            "styles": { "$ref": "#/$defs/namedStyles" }
+          },
+          "required": ["op", "styles"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "patchSet": {
+      "description": "Incremental update to a mounted tree (`content-update.patch`). If `baseRev` does not equal the tree's current `rev`, the host drops the patch and calls `ui-events.resync`.",
+      "type": "object",
+      "required": ["baseRev", "rev", "ops"],
+      "additionalProperties": false,
+      "properties": {
+        "baseRev": { "type": "integer", "minimum": 0 },
+        "rev": { "type": "integer", "minimum": 0 },
+        "ops": { "type": "array", "items": { "$ref": "#/$defs/patchOp" } }
+      }
+    },
     "text": {
       "description": "Text for the user. A string is literal text (`plain`). An object is a Fluent message of the plugin (`localized`).",
       "oneOf": [

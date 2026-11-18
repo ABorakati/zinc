@@ -1,6 +1,6 @@
 # WASM plugins for Zinc: design index (phase 1)
 
-Zinc's own plugin system: WebAssembly components with WIT interfaces, run by jco under Bun in a separate plugin host process, one Worker per plugin. A plugin written for it can do what a Zotero 7 plugin can do, including full UI customization through declarative UI trees. Phase 1 is design only: WIT files, a manifest schema, a UI tree schema, and per-area parity tables against Zotero's source. There is no host code yet.
+Zinc's own plugin system: WebAssembly components with WIT interfaces. A plugin written for it can do what a Zotero plugin can do (the target is the current Zotero, 10; plugins written for Zotero 7–9 are covered too), including full UI customization through declarative UI trees. Phase 1 was design only: WIT files, a manifest schema, a UI tree schema, and per-area parity tables against Zotero's source. Phase 2 built the host (jco under Bun, one Worker per plugin); phase 3 makes Wasmtime the default runner (`phase3-wasmtime-plan.md`). How Zotero's plugin API changed from 7 to 11, and what that means for porting: [zotero-versions.md](zotero-versions.md).
 
 Read [RULES.md](RULES.md) first for the ground rules, and the runtime spike (`wasm-plugins-spike.md` in the spike worktree) for why plugins are components in a separate process.
 
@@ -59,7 +59,7 @@ bunx @bytecodealliance/jco types plugin-api/wit --world-name plugin-minimal -o "
 Five areas were written in parallel. The coordinator's reconcile pass made them one design. What was merged (the area that owned the concept kept its design):
 
 1. **One clipboard, one URL opener, one set of file dialogs.** Kept: `clipboard.write` / `read`, `shell.open-url`, `fs.pick-open` / `pick-save` / `pick-directory`. Removed: `ui.copy-text`, `ui.read-clipboard-text`, `ui.open-url`, `ui.pick-files` / `pick-folder` / `pick-save` and their types. **One file-grant type**: `types.file-grant` (`id`, `name`, `is-directory`, `size`). The `id` is `fs.root::granted(id)`, and `fs.read`, `fs.read-range`, `fs.write` turn it into bytes (the missing "token to bytes" path). Picks and drops arrive as the same record (`ui.drop-info.files`, `extend.drop-payload.files`); `fs.list-grants` was added. The ids `ui.pick-files`, `ui.file-dialogs` and `ui.clipboard-read` are gone: a user's pick is the consent.
-2. **Dialogs and prompts have one owner, `ui`.** Extend has none and refers to ui. `ui.run-dialog`, `open-dialog`, `open-window` and `set-theme-override` now return `result<_, error>`, because they need permissions or have a limit.
+2. **Dialogs and prompts have one owner, `ui`.** Extend has none and refers to ui. `open-dialog`, `open-window` and `set-theme-override` now return `result<_, error>`, because they need permissions or have a limit.
 3. **Extend placeholders** (`node`, `node-event`, `form-values`, `file-grant`) were already replaced by the extend area with the ui types; the reconcile confirmed it. `ui-events.on-event` is the one event entry point (a section header button press is `kind: press` with `handler` = the button id). Reader had no placeholders.
 4. **One colour type**: `types.color` (token, token with alpha, fixed, pair per mode) with `types.color-token`, moved from ui. The old `types.color` (hex or free token string) is gone. Annotation colours stay hex strings.
 5. **`themed-icon`** stays in extend: only extend uses it (ui and reader take one `icon-ref`).
@@ -84,7 +84,7 @@ Collected from the five reports (duplicates merged). Nothing here blocks phase 1
 
 **Runtime and platform**
 
-1. **Re-entrancy while a call waits** (lifecycle 1, extend 1, ui). While a plugin is suspended in a host import (JSPI: `net.send`, `ui.run-dialog`), may the host call another export of the same instance (a menu command, `on-event` for the dialog's own buttons)? If not, `ui` drops its waiting calls and a guest SDK wraps `open-dialog` into an awaitable. Needs a phase 2 spike.
+1. **Re-entrancy while a call waits** (lifecycle 1, extend 1, ui). While a plugin is suspended in a host import (JSPI: `net.send`; `ui.run-dialog` was removed in phase 3: dialogs use `open-dialog` and a `close` event), may the host call another export of the same instance (a menu command, `on-event` for the dialog's own buttons)? If not, `ui` drops its waiting calls and a guest SDK wraps `open-dialog` into an awaitable. Needs a phase 2 spike.
 2. **Code signing and a store** (lifecycle 2). Pin a hash and show a prompt only, or add publisher signatures or an allowlisted registry?
 3. **Lazy start by default, and static `contributes`** (lifecycle 3, extend 3). Start plugins lazily when they list `contributes`? Should menus, columns, section headers and preference rows be declarable in the manifest?
 4. **Zotero ports** (lifecycle 4). Keep the JS-sandbox compat layer in parallel, or map `Zotero.*` calls onto the WIT at build time?

@@ -1,13 +1,13 @@
 //! Component `Val` <-> JSON, in the shape jco uses for JS (what `plugin-host/src/imports/*` handlers expect):
-//! kebab names are camelCase, `u64`/`s64` are `{"$big":"123"}` (BigInt on the Bun side), `list<u8>` is `{"$bytes":"<base64>"}`,
-//! `option<T>` is the value or JSON null, records are objects, variants are `{"tag":"case","val":..}`, enums are strings, flags are
-//! objects of booleans, resources are the handle number (or the `{"$zinc-resource": name, id}` marker coming back).
-use wasmtime::error::Context;
-use wasmtime::{format_err as anyhow, bail, Result};
+//! kebab names are camelCase, `u64`/`s64` are `{"$big":"123"}` (BigInt on the Bun side), `list<u8>` is `{"$bytes":"<base64>"}`
+//! (always tagged from WIT type, including empty `{"$bytes":""}`), `option<T>` is the value or JSON null, records are objects,
+//! variants are `{"tag":"case","val":..}`, enums are strings, flags are objects of booleans, resources are the handle number
+//! (or the `{"$zinc-resource": name, id}` marker coming back).
 use base64::Engine as _;
 use serde_json::{json, Map, Value};
 use wasmtime::component::{ResourceDynamic, Type, Val};
-use wasmtime::AsContextMut;
+use wasmtime::error::Context;
+use wasmtime::{bail, format_err as anyhow, AsContextMut, Result};
 
 pub fn camel(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -51,7 +51,12 @@ pub fn iface_name(name: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 pub fn val_to_json(cx: &mut impl AsContextMut, v: &Val) -> Result<Value> {
+    val_to_json_typed(cx, v, None)
+}
+
+pub fn val_to_json_typed(cx: &mut impl AsContextMut, v: &Val, ty: Option<&Type>) -> Result<Value> {
     Ok(match v {
         Val::Bool(b) => json!(b),
         Val::S8(n) => json!(n),
@@ -67,19 +72,56 @@ pub fn val_to_json(cx: &mut impl AsContextMut, v: &Val) -> Result<Value> {
         Val::Char(c) => Value::String(c.to_string()),
         Val::String(s) => Value::String(s.clone()),
         Val::List(items) => {
-            if !items.is_empty() && items.iter().all(|i| matches!(i, Val::U8(_))) {
+            if let Some(Type::List(lt)) = ty {
+                let et = lt.ty();
+                if et == Type::U8 {
+                    let bytes: Vec<u8> = items.iter().map(|i| if let Val::U8(b) = i { *b } else { 0 }).collect();
+                    json!({ "$bytes": base64::engine::general_purpose::STANDARD.encode(bytes) })
+                } else {
+                    Value::Array(
+                        items
+                            .iter()
+                            .map(|i| val_to_json_typed(cx, i, Some(&et)))
+                            .collect::<Result<_>>()?,
+                    )
+                }
+            } else if !items.is_empty() && items.iter().all(|i| matches!(i, Val::U8(_))) {
                 let bytes: Vec<u8> = items.iter().map(|i| if let Val::U8(b) = i { *b } else { 0 }).collect();
                 json!({ "$bytes": base64::engine::general_purpose::STANDARD.encode(bytes) })
             } else {
-                Value::Array(items.iter().map(|i| val_to_json(cx, i)).collect::<Result<_>>()?)
+                Value::Array(items.iter().map(|i| val_to_json_typed(cx, i, None)).collect::<Result<_>>()?)
             }
         }
-        Val::FixedLengthList(items) | Val::Tuple(items) => Value::Array(items.iter().map(|i| val_to_json(cx, i)).collect::<Result<_>>()?),
-        Val::Map(kv) => Value::Array(kv.iter().map(|(k, v)| Ok(json!([val_to_json(cx, k)?, val_to_json(cx, v)?]))).collect::<Result<_>>()?),
+        Val::FixedLengthList(items) => {
+            Value::Array(items.iter().map(|i| val_to_json_typed(cx, i, None)).collect::<Result<_>>()?)
+        }
+        Val::Tuple(items) => {
+            if let Some(Type::Tuple(tt)) = ty {
+                let tys: Vec<Type> = tt.types().collect();
+                Value::Array(
+                    items
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, i)| val_to_json_typed(cx, i, tys.get(idx)))
+                        .collect::<Result<_>>()?,
+                )
+            } else {
+                Value::Array(items.iter().map(|i| val_to_json_typed(cx, i, None)).collect::<Result<_>>()?)
+            }
+        }
+        Val::Map(kv) => Value::Array(
+            kv.iter()
+                .map(|(k, v)| Ok(json!([val_to_json_typed(cx, k, None)?, val_to_json_typed(cx, v, None)?])))
+                .collect::<Result<_>>()?,
+        ),
         Val::Record(fields) => {
             let mut m = Map::new();
             for (name, val) in fields {
-                let j = val_to_json(cx, val)?;
+                let fty = match ty {
+                    Some(Type::Record(rt)) => rt.fields().find(|f| f.name == name).map(|f| f.ty),
+                    _ => None,
+                };
+                let j = val_to_json_typed(cx, val, fty.as_ref())?;
                 if !j.is_null() {
                     m.insert(camel(name), j);
                 }
@@ -90,22 +132,46 @@ pub fn val_to_json(cx: &mut impl AsContextMut, v: &Val) -> Result<Value> {
             let mut m = Map::new();
             m.insert("tag".into(), Value::String(name.clone()));
             if let Some(p) = payload {
-                m.insert("val".into(), val_to_json(cx, p)?);
+                let pty = match ty {
+                    Some(Type::Variant(vt)) => vt.cases().find(|c| c.name == name).and_then(|c| c.ty),
+                    _ => None,
+                };
+                m.insert("val".into(), val_to_json_typed(cx, p, pty.as_ref())?);
             }
             Value::Object(m)
         }
         Val::Enum(s) => Value::String(s.clone()),
         Val::Option(None) => Value::Null,
-        Val::Option(Some(x)) => val_to_json(cx, x)?,
+        Val::Option(Some(x)) => {
+            let inner = match ty {
+                Some(Type::Option(ot)) => Some(ot.ty()),
+                _ => None,
+            };
+            val_to_json_typed(cx, x, inner.as_ref())?
+        }
         Val::Result(r) => {
-            let (tag, p) = match r {
-                Ok(p) => ("ok", p),
-                Err(p) => ("err", p),
+            let (tag, p, inner_ty) = match r {
+                Ok(p) => (
+                    "ok",
+                    p,
+                    match ty {
+                        Some(Type::Result(rt)) => rt.ok(),
+                        _ => None,
+                    },
+                ),
+                Err(p) => (
+                    "err",
+                    p,
+                    match ty {
+                        Some(Type::Result(rt)) => rt.err(),
+                        _ => None,
+                    },
+                ),
             };
             let mut m = Map::new();
             m.insert("tag".into(), json!(tag));
             if let Some(p) = p {
-                m.insert("val".into(), val_to_json(cx, p)?);
+                m.insert("val".into(), val_to_json_typed(cx, p, inner_ty.as_ref())?);
             }
             Value::Object(m)
         }
@@ -121,7 +187,12 @@ pub fn val_to_json(cx: &mut impl AsContextMut, v: &Val) -> Result<Value> {
 fn num_i(j: &Value) -> Result<i64> {
     match j {
         Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).ok_or_else(|| anyhow!("bad number {n}")),
-        Value::Object(o) => o.get("$big").and_then(|b| b.as_str()).ok_or_else(|| anyhow!("expected integer, got {j}"))?.parse::<i64>().map_err(Into::into),
+        Value::Object(o) => o
+            .get("$big")
+            .and_then(|b| b.as_str())
+            .ok_or_else(|| anyhow!("expected integer, got {j}"))?
+            .parse::<i64>()
+            .map_err(Into::into),
         Value::String(s) => Ok(s.parse()?),
         Value::Bool(b) => Ok(*b as i64),
         _ => bail!("expected integer, got {j}"),
@@ -131,7 +202,12 @@ fn num_i(j: &Value) -> Result<i64> {
 fn num_u(j: &Value) -> Result<u64> {
     match j {
         Value::Number(n) => n.as_u64().or_else(|| n.as_f64().map(|f| f as u64)).ok_or_else(|| anyhow!("bad number {n}")),
-        Value::Object(o) => o.get("$big").and_then(|b| b.as_str()).ok_or_else(|| anyhow!("expected integer, got {j}"))?.parse::<u64>().map_err(Into::into),
+        Value::Object(o) => o
+            .get("$big")
+            .and_then(|b| b.as_str())
+            .ok_or_else(|| anyhow!("expected integer, got {j}"))?
+            .parse::<u64>()
+            .map_err(Into::into),
         Value::String(s) => Ok(s.parse()?),
         _ => bail!("expected unsigned integer, got {j}"),
     }
@@ -183,7 +259,10 @@ pub fn json_to_val(cx: &mut impl AsContextMut, ty: &Type, j: &Value, res: &ResId
         }
         Type::Variant(v) => {
             let tag = j.get("tag").and_then(|t| t.as_str()).ok_or_else(|| anyhow!("expected variant {{tag,val}}, got {j}"))?;
-            let case = v.cases().find(|c| c.name == tag || camel(c.name) == tag).ok_or_else(|| anyhow!("unknown variant case {tag}"))?;
+            let case = v
+                .cases()
+                .find(|c| c.name == tag || camel(c.name) == tag)
+                .ok_or_else(|| anyhow!("unknown variant case {tag}"))?;
             let payload = match case.ty {
                 Some(t) => Some(Box::new(json_to_val(cx, &t, j.get("val").unwrap_or(&Value::Null), res)?)),
                 None => None,
@@ -192,7 +271,10 @@ pub fn json_to_val(cx: &mut impl AsContextMut, ty: &Type, j: &Value, res: &ResId
         }
         Type::Enum(e) => {
             let s = j.as_str().ok_or_else(|| anyhow!("expected enum string, got {j}"))?;
-            let name = e.names().find(|n| *n == s || camel(n) == s).ok_or_else(|| anyhow!("unknown enum case {s}"))?;
+            let name = e
+                .names()
+                .find(|n| *n == s || camel(n) == s)
+                .ok_or_else(|| anyhow!("unknown enum case {s}"))?;
             Val::Enum(name.to_string())
         }
         Type::Option(o) => {
@@ -213,19 +295,31 @@ pub fn json_to_val(cx: &mut impl AsContextMut, ty: &Type, j: &Value, res: &ResId
         }
         Type::Flags(f) => {
             let obj = j.as_object().ok_or_else(|| anyhow!("expected flags object"))?;
-            Val::Flags(f.names().filter(|n| obj.get(&camel(n)).and_then(|v| v.as_bool()).unwrap_or(false)).map(str::to_string).collect())
+            Val::Flags(
+                f.names()
+                    .filter(|n| obj.get(&camel(n)).or_else(|| obj.get(*n)).and_then(|v| v.as_bool()).unwrap_or(false))
+                    .map(str::to_string)
+                    .collect(),
+            )
         }
         Type::Own(_) | Type::Borrow(_) => {
-            let name = j.get("$zinc-resource").and_then(|n| n.as_str()).ok_or_else(|| anyhow!("expected resource marker, got {j}"))?;
+            let name = j
+                .get("$zinc-resource")
+                .and_then(|n| n.as_str())
+                .ok_or_else(|| anyhow!("expected resource marker, got {j}"))?;
             let id = j.get("id").and_then(|n| n.as_i64()).ok_or_else(|| anyhow!("resource marker without id"))?;
-            let tid = *res.ids.get(&format!("{}#{}", res.iface, name)).ok_or_else(|| anyhow!("unknown resource {name}"))?;
+            let key = format!("{}#{name}", res.iface);
+            let tid = res
+                .ids
+                .get(&key)
+                .or_else(|| {
+                    let suffix = format!("#{name}");
+                    res.ids.iter().find(|(k, _)| k.ends_with(&suffix)).map(|(_, v)| v)
+                })
+                .copied()
+                .ok_or_else(|| anyhow!("unknown resource {name}"))?;
             Val::Resource(ResourceDynamic::new_own(id as i32 as u32, tid).try_into_resource_any(cx.as_context_mut())?)
         }
         other => bail!("unsupported type in import result: {other:?}"),
     })
-}
-
-/// Default value of a type, used when a plugin's expected result is missing.
-pub fn unit_result_ok() -> Val {
-    Val::Result(Ok(None))
 }

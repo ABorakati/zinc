@@ -72,6 +72,14 @@ run(
 		: ["bun", "scripts/build.ts", "--variant", "bytecode", ...(isWin ? ["--hide-console"] : [])],
 );
 const exe = join(root, "out", `zotero-next-gpui-${aot ? "aot" : "bytecode"}${EXE}`);
+const zhwCands = [
+	join(root, "out", `zhw${EXE}`),
+	join(repo, "plugin-host-wasmtime", "target", "release", `zhw${EXE}`),
+	process.env.CARGO_TARGET_DIR && join(process.env.CARGO_TARGET_DIR, "release", `zhw${EXE}`),
+	isWin ? "C:/dev/cache/cargo-target/release/zhw.exe" : undefined,
+].filter(Boolean) as string[];
+const zhw = zhwCands.find((p) => existsSync(p));
+if (!zhw) throw new Error(`zhw${EXE} not found after build (tried ${zhwCands.join(", ")})`);
 
 // 2b. the Zotero translation worker, pre-bundled (jsdom and friends inside; see scripts/translate-worker.ts)
 const translateWorker = join(root, "out", "translate-worker.js");
@@ -82,6 +90,8 @@ rmSync(app, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 cpSync(exe, join(app, `zotero-next-gpui${EXE}`));
 if (!isWin) chmodSync(join(app, "zotero-next-gpui"), 0o755);
+cpSync(zhw, join(app, `zhw${EXE}`));
+if (!isWin) chmodSync(join(app, "zhw"), 0o755);
 cpSync(dll, join(app, PDF_LIB));
 if (isWin)
 	cpSync(join(root, "assets", "icon.ico"), join(app, "icon.ico")); // the window's title-bar/taskbar icon (src/shell/windowIcon.ts)
@@ -173,7 +183,7 @@ else
 
 writeFileSync(join(app, "version.txt"), BUILD_VERSION + "\n"); // the stamp scripts/installer.ts and the updater read
 // Authenticode (scripts/sign.ts): signs the exe and our native DLL when a certificate is configured, else prints "unsigned: ..." and moves on
-if (isWin) signFiles([join(app, "zotero-next-gpui.exe"), join(app, "zn_pdf.dll")]);
+if (isWin) signFiles([join(app, "zotero-next-gpui.exe"), join(app, "zhw.exe"), join(app, "zn_pdf.dll")]);
 
 const size = (p: string): number => {
 	const s = statSync(p);

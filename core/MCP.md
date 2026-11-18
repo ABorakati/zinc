@@ -30,6 +30,20 @@ Destructive (annotated `destructiveHint`): `trash_item` (recoverable), `update_i
 | `trash_item` / `restore_item {key}` | Trash and restore |
 | `get_file_path {key}` | Absolute path of the attachment file (best PDF for a parent key) |
 
+## Plugin tools
+
+WASM plugins can contribute tools (`docs/developer-guide/wasm-plugins/mcp.md`). Core stays independent of the plugin host: the app registers a
+`PluginToolProvider` (`src/mcp/plugin-tools.ts`, `setPluginToolProvider(provider | undefined)`) when plugins start and clears it when they stop.
+`createMcpServer(db, { pluginTools })` and the HTTP endpoint (`http.ts`, which reads the global provider) then add the tools; **stdio never has a provider**.
+
+- Name `<plugin-short-name>__<tool>` (`[a-z0-9_-]`, at most 64 characters, unique, never a library tool: a clash gets `_2`), description `[<plugin name>] ...`.
+- `tools/list` and `tools/call` ask the provider every time (stateless). The provider lists only running plugins with `mcp.expose` whose per-plugin switch is on.
+- Arguments are validated against the plugin's JSON Schema (Ajv, through the SDK) before `provider.call`; an output schema makes the result `structuredContent` and is enforced.
+- Plugin errors, timeouts (120 s cap in core; the supervisor's own limit is shorter) and invalid arguments are tool errors (`isError`). A provider that throws leaves the library tools working.
+- Annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` come from the plugin; `openWorldHint` is false.
+- `notifications/tools/list_changed`: sent to long-lived connections (in-memory, SSE) when `provider.onChange` fires. The HTTP endpoint is POST-only and stateless, so a client re-lists instead.
+- Tests: `bun test test/mcp/plugin-tools.test.ts` (fake provider). The SDK keeps its tools handlers in a private map; `attachPluginTools` wraps them and throws at start-up if an SDK upgrade moves it.
+
 ## Claude Code setup
 
 stdio (works with the app closed):

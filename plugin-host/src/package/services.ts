@@ -6,9 +6,16 @@
 //   ...
 //   await services.manager.stopAll(); await supervisor.shutdown();
 //
-// The handlers find the services through `getServices()`, a module-level slot filled by `createPluginRuntime`/`setServices`. The Zinc
-// process owns exactly one; tests set their own with a temporary root.
-import { createPluginSupervisor, type PluginSupervisor, type SupervisorOptions } from "../supervisor";
+// On `runner === "wasmtime"`, `PluginServices` also pushes live `prefs`, `l10n`, `app`, `log-config` and `timers-clear` state to `zhw`,
+// and receives `log-batch` and `timers-count` events back from the supervisor.
+import {
+	createPluginSupervisor,
+	type PluginSupervisor,
+	type SupervisorInitState,
+	type SupervisorLoadState,
+	type SupervisorOptions,
+} from "../supervisor";
+import type { PluginManifest } from "../manifest";
 import { discoverHandlers, type ImportHandler } from "../imports/registry";
 import { PermissionService, type PermissionPrompt } from "../permissions/service";
 import { APP_PREF_ALLOWLIST, AppService, type AppProviders } from "./app-service";
@@ -52,15 +59,30 @@ export class PluginServices {
 	private nextSub = new Map<string, number>();
 	private pluginObservers = new Set<string>();
 	private offApp: (() => void) | undefined;
+	private lastAppJson = "";
+	private lastAppPrefsJson = "";
+	private lastLocale = "";
+	private lastTimeZone: string | undefined;
 	updateFetch: UpdateOptions["fetch"];
 
 	constructor(o: ServicesOptions = {}) {
 		this.updateFetch = o.updateFetch;
 		this.app = new AppService(o.app);
-		this.manager = new PluginManager({ zincVersion: o.app?.version, apiVersion: o.app?.apiVersion, ...o.manager, log: (l, m) => this.logs.push(undefined, l, `[plugins] ${m}`) });
+		this.logs.onDebugChange = (debugEnabled) => {
+			this.sup?.pushHost?.({ t: "log-config", debugEnabled });
+		};
+		this.manager = new PluginManager({
+			zincVersion: o.app?.version,
+			apiVersion: o.app?.apiVersion,
+			...o.manager,
+			log: (l, m) => this.logs.push(undefined, l, `[plugins] ${m}`),
+		});
 		this.manager.init();
 		const layout = this.manager.layout;
-		this.prefs = new PrefStore(layout, (id) => this.manager.manifestOf(id)?.default_prefs as Record<string, PrefValue> | undefined);
+		this.prefs = new PrefStore(
+			layout,
+			(id) => (this.manager.manifestOf(id) ?? this.sup?.get(id)?.manifest)?.default_prefs as Record<string, PrefValue> | undefined,
+		);
 		this.secrets = new SecretStore(layout, o.secretKeys);
 		this.l10n = new L10nService({
 			locale: () => this.app.locale(),
@@ -69,7 +91,11 @@ export class PluginServices {
 			manifestOf: (id) => this.manager.manifestOf(id) ?? this.sup?.get(id)?.manifest,
 			warn: (id, m) => this.logs.push(id, "warn", `[l10n] ${m}`),
 		});
-		this.timers = new TimerService({ deliver: (p, i, f, a) => this.deliver(p, i, f, a), hidden: () => this.app.providers.windowsHidden?.() ?? false });
+		this.timers = new TimerService({
+			deliver: (p, i, f, a) => this.deliver(p, i, f, a),
+			hidden: () => this.app.providers.windowsHidden?.() ?? false,
+			onClear: (plugin) => this.sup?.pushHost?.(plugin ? { t: "timers-clear", plugin } : { t: "timers-clear" }),
+		});
 		this.permissions = new PermissionService({
 			prompt: o.prompt,
 			canPrompt: o.canPrompt,
@@ -83,16 +109,107 @@ export class PluginServices {
 			this.secrets.deleteAll(id);
 			this.logs.clearPlugin(id);
 		});
-		this.manager.on("installed", ({ id }) => this.l10n.invalidate(id));
+		this.manager.on("installed", ({ id }) => {
+			this.l10n.invalidate(id);
+			this.pushPluginPrefs(id);
+			this.pushPluginL10n(id);
+		});
 		this.manager.on("uninstalled", ({ id }) => {
 			this.l10n.invalidate(id);
 			this.cleanup(id);
 		});
-		// observers: pref changes, plugin events, locale
+		this.manager.on("window", () => this.pushAppState());
+		// synchronous cache pushes to `zhw` BEFORE `prefs.zinc.ts` returns, plus observer fan-out
+		this.prefs.onSync((plugin) => this.pushPluginPrefs(plugin));
 		this.prefs.onChange((c) => this.fanOutPref(c));
 		this.manager.on("hook", (e) => this.fanOutPluginEvent(e));
 		this.app.locales.add((tag) => this.fanOutLocale(tag));
 		this.offApp = this.app.providers.appPrefs?.subscribe?.((k, v) => this.fanOutAppPref(k, v));
+	}
+
+	// ---- `zhw` cache snapshots and pushes ----------------------------------------------------------------------------------
+
+	appPrefsSnapshot(): Record<string, PrefValue> {
+		const out: Record<string, PrefValue> = {};
+		for (const k of APP_PREF_ALLOWLIST) {
+			const v = this.app.appPref(k);
+			if (v !== undefined) out[k] = v;
+		}
+		return out;
+	}
+
+	appSnapshot(localeOverride?: string) {
+		const info = this.app.info();
+		if (localeOverride) info.locale = localeOverride;
+		return {
+			info,
+			isUiReady: this.app.isUiReady(),
+			mainWindows: this.app.mainWindows(),
+			activeWindow: this.app.activeWindow() ?? null,
+			windowsHidden: this.app.providers.windowsHidden?.() ?? false,
+		};
+	}
+
+	initState(): SupervisorInitState {
+		const app = this.appSnapshot();
+		const appPrefs = this.appPrefsSnapshot();
+		this.lastAppJson = JSON.stringify(app);
+		this.lastAppPrefsJson = JSON.stringify(appPrefs);
+		this.lastLocale = app.info.locale;
+		this.lastTimeZone = app.info.timeZone;
+		return {
+			debugEnabled: this.logs.debugEnabled,
+			app,
+			appPrefs,
+			locale: app.info.locale,
+			timeZone: app.info.timeZone,
+		};
+	}
+
+	/** Sync any changed pull-provider values (`app.*`, `locale`, `appPrefs.get`) before `zhw` executes a `call`. */
+	syncBeforeCall() {
+		if (!this.sup || this.sup.runner !== "wasmtime") return;
+		const app = this.appSnapshot();
+		const appJson = JSON.stringify(app);
+		if (appJson !== this.lastAppJson) {
+			this.lastAppJson = appJson;
+			this.sup.pushHost?.({ t: "app", ...app });
+		}
+		if (app.info.locale !== this.lastLocale || app.info.timeZone !== this.lastTimeZone) {
+			this.lastLocale = app.info.locale;
+			this.lastTimeZone = app.info.timeZone;
+			this.sup.pushHost?.({ t: "l10n", locale: app.info.locale, timeZone: app.info.timeZone });
+		}
+		const appPrefs = this.appPrefsSnapshot();
+		const appPrefsJson = JSON.stringify(appPrefs);
+		if (appPrefsJson !== this.lastAppPrefsJson) {
+			this.lastAppPrefsJson = appPrefsJson;
+			this.sup.pushHost?.({ t: "prefs", appPrefs });
+		}
+	}
+
+	loadStateFor(id: string, dir: string, manifest: PluginManifest): SupervisorLoadState {
+		const prefs = this.prefs.snapshot(id, manifest.default_prefs as Record<string, PrefValue> | undefined);
+		const l10n = this.l10n.rawBundles(id, dir, manifest);
+		return { prefs, l10n };
+	}
+
+	private pushAppState(localeOverride?: string) {
+		const snap = this.appSnapshot(localeOverride);
+		this.lastAppJson = JSON.stringify(snap);
+		this.sup?.pushHost?.({ t: "app", ...snap });
+	}
+
+	private pushPluginPrefs(plugin: string) {
+		const snap = this.prefs.snapshot(plugin);
+		this.sup?.pushHost?.({ t: "prefs", plugin, ...snap });
+	}
+
+	private pushPluginL10n(plugin: string) {
+		const raw = this.l10n.rawBundles(plugin);
+		if (raw) {
+			this.sup?.pushHost?.({ t: "l10n", plugin, defaultLocale: raw.defaultLocale, bundles: raw.bundles });
+		}
 	}
 
 	/** Call a plugin export; rejects if the plugin is not there. */
@@ -112,7 +229,12 @@ export class PluginServices {
 			for (const id of [...this.prefSubs.keys(), ...this.pluginObservers]) this.cleanup(id);
 			this.timers.clearEverything();
 		});
-		sup.on("log", (e) => this.logs.push(e.plugin, e.level, e.message));
+		sup.on("log", (e) => {
+			this.logs.push(e.plugin, e.level, e.message);
+			if (e.isError && e.plugin) this.logs.recordError(e.plugin, e.rawMessage ?? e.message, e.stack);
+			if (e.dropped && e.plugin) this.logs.addDropped(e.plugin, e.dropped);
+		});
+		sup.on("timers-count", (e) => this.timers.setRemoteCount(e.plugin, e.count));
 	}
 
 	/** Everything a plugin registered through this area: timers, pref observers, plugin-event observer. Run at shutdown and on failure. */
@@ -154,6 +276,9 @@ export class PluginServices {
 
 	private fanOutAppPref(key: string, value: PrefValue | undefined) {
 		if (!APP_PREF_ALLOWLIST.includes(key)) return; // plugins only ever hear about allowlisted settings
+		const appPrefs = this.appPrefsSnapshot();
+		this.lastAppPrefsJson = JSON.stringify(appPrefs);
+		this.sup?.pushHost?.({ t: "prefs", appPrefs });
 		for (const plugin of this.prefSubs.keys()) this.fanOut(plugin, "app", key, value);
 	}
 
@@ -176,6 +301,11 @@ export class PluginServices {
 	}
 
 	private fanOutLocale(tag: string) {
+		this.pushAppState(tag);
+		const info = this.app.info();
+		this.lastLocale = tag;
+		this.lastTimeZone = info.timeZone;
+		this.sup?.pushHost?.({ t: "l10n", locale: tag, timeZone: info.timeZone });
 		for (const p of this.sup?.list() ?? []) {
 			this.l10n.invalidate(p.id);
 			if (p.status === "running") void this.deliver(p.id, "events", "on-locale-changed", [tag]).catch(() => {});
@@ -218,10 +348,30 @@ export interface RuntimeOptions extends ServicesOptions {
 
 /** The one-liner for the app: services + supervisor, wired together and registered as the process's services. */
 export async function createPluginRuntime(o: RuntimeOptions = {}): Promise<{ services: PluginServices; supervisor: PluginSupervisor }> {
-	const services = new PluginServices(o);
+	const runner = o.supervisor?.runner ?? o.manager?.runner;
+	const zhwPath = o.supervisor?.zhwPath ?? o.manager?.zhwPath;
+	const services = new PluginServices({
+		...o,
+		manager: {
+			...(runner ? { runner } : {}),
+			...(zhwPath ? { zhwPath } : {}),
+			...o.manager,
+		},
+	});
 	setServices(services);
 	const importHandlers = [...(o.handlers ?? (await discoverHandlers("zinc"))), ...(o.extraHandlers ?? [])];
-	const supervisor = createPluginSupervisor({ coreUrl: o.coreUrl, ...o.supervisor, importHandlers: [...importHandlers, ...(o.supervisor?.importHandlers ?? [])], grantsFor: services.manager.grants.grantsFor });
+	const supervisor = createPluginSupervisor({
+		coreUrl: o.coreUrl,
+		...(runner ? { runner } : {}),
+		...(zhwPath ? { zhwPath } : {}),
+		cwasmOf: (id, _dir, manifest) => services.manager.cwasmFor(id, manifest),
+		loadStateFor: (id, dir, manifest) => services.loadStateFor(id, dir, manifest),
+		initState: () => services.initState(),
+		beforeCall: () => services.syncBeforeCall(),
+		...o.supervisor,
+		importHandlers: [...importHandlers, ...(o.supervisor?.importHandlers ?? [])],
+		grantsFor: (m) => services.manager.grants.grantsFor(m),
+	});
 	services.attach(supervisor);
 	return { services, supervisor };
 }

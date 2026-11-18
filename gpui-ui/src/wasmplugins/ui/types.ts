@@ -1,7 +1,7 @@
-// Types of the plugin UI tree in jco's JS representation (what `supervisor.call` returns for `ui-events.*` and what the `ui` import
-// handler receives): camelCase record fields, `option<T>` as `T | undefined`, variants as `{ tag, val }`, enums as strings,
-// u64 as bigint. They mirror plugin-api/wit/ui.wit; the per-kind specs are loose (`Spec`) on purpose: the renderers read only
-// the fields they know and the JSON converter (convert.ts) fills the defaults.
+// Types of the plugin UI in jco's JS representation (what `supervisor.call` returns for `ui-events.*` and what the `ui` import
+// handler receives) plus the internal normalized tree (`Tree` / `FlatNode` / `VNode`) used by the Solid renderers.
+// Wire trees, patches, row content and styles arrive as JSON strings validated against `plugin-api/ui-schema/ui-tree.schema.json`
+// and normalized by `convert.ts`.
 
 export type Spec = Record<string, any>;
 
@@ -303,7 +303,7 @@ export interface NodeKind {
 	tag: KindTag;
 	val?: Spec;
 }
-/** A node of the flat WIT tree. */
+/** A node of the normalized flat tree. */
 export interface FlatNode {
 	props: NodeProps;
 	kind: NodeKind;
@@ -330,9 +330,11 @@ export interface Row {
 	expandable: boolean;
 	expanded: boolean;
 	cells: Cell[];
-	content?: number;
+	/** JSON node string (from `render-range`), node object, or flat node index (for inline rows converted by `Builder`). */
+	content?: number | string | Record<string, unknown>;
 	height?: number;
-	style?: Style;
+	/** JSON style string (from `render-range`) or normalized `Style`. */
+	style?: Style | string;
 	tooltip?: UiText;
 	draggable?: DragPayload;
 	disabled: boolean;
@@ -346,7 +348,8 @@ export interface Cell {
 	color?: Color;
 	bold: boolean;
 	sortValue?: UiValue;
-	content?: number;
+	/** JSON node string (from `render-range`), node object, or flat node index (for inline rows converted by `Builder`). */
+	content?: number | string | Record<string, unknown>;
 	contentNode?: VNode;
 }
 
@@ -364,9 +367,9 @@ export interface PatchSet {
 }
 export type ContentUpdate =
 	| { tag: "unchanged" }
-	| { tag: "full"; val: Tree }
 	| { tag: "json"; val: string }
-	| { tag: "patch"; val: PatchSet };
+	| { tag: "patch"; val: string | PatchSet }
+	| { tag: "full"; val: Tree };
 
 export interface ButtonState {
 	id: string;
@@ -418,8 +421,8 @@ export interface SortSpec {
 export interface RowBatch {
 	start: number;
 	rows: Row[];
-	nodes: FlatNode[];
-	styles: NamedStyle[];
+	styles?: string | NamedStyle[];
+	nodes?: FlatNode[];
 	total?: number;
 }
 export interface Suggestion {

@@ -1,6 +1,7 @@
 // Public surface of the plugin host package.
 export { createPluginSupervisor } from "./supervisor";
-export type { PluginSupervisor, SupervisorOptions, SupervisorEvents, PluginInfo, PluginStatus } from "./supervisor";
+export type { PluginSupervisor, SupervisorOptions, SupervisorEvents, PluginInfo, PluginStatus, PluginRunner, LoadInfo } from "./supervisor";
+export { resolveZhwPath, encodeWire, decodeWire } from "./transport-wasmtime";
 export { PluginError, DEFAULT_TIMEOUTS } from "./protocol";
 export type { WireError, WireResult, LogLevel } from "./protocol";
 export { defineHandler, witError, WitError, discoverHandlers, loadHandlerModule } from "./imports/registry";

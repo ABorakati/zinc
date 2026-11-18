@@ -18,5 +18,6 @@ export type { PermissionPromptRequest } from "./permission";
 export { closeDialogsOf as clearUiOf, onThemeOverrideChange, themeOverrideList } from "./host";
 export { setLocalizer } from "./l10n";
 export { setPrefsBackend } from "./prefs";
-export { jsonToTree, buildNested, applyPatch, TreeError } from "./convert";
+export { jsonToTree, jsonToPatch, buildNested, applyPatch, getValidationMode, setValidationMode, TreeError } from "./convert";
+export type { ValidationMode } from "./convert";
 export type * from "./types";

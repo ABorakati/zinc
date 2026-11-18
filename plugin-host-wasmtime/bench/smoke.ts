@@ -1,8 +1,12 @@
-// Quick manual check: bun bench/smoke.ts <plugin dir> [--nobridge] [--aot]
-import { WtHost } from "./lib";
+// Quick manual check: bun bench/smoke.ts <plugin dir> [--aot]
+import { WtHost, prefsHostModule } from "./lib";
 const dir = process.argv[2]!;
-const h = new WtHost({ bridge: !process.argv.includes("--nobridge"), aot: process.argv.includes("--aot"), hostModules: [(await import("./lib")).prefsHostModule], onImport: (m) => (console.log("  forwarded import", m.iface, m.fn), undefined) });
-console.log("host up in", (await h.start()).toFixed(0), "ms", h.readyInfo.interfaces);
+const h = new WtHost({
+	aot: process.argv.includes("--aot"),
+	hostModules: [prefsHostModule],
+	onImport: (m) => (console.log("  forwarded import", m.iface, m.fn), undefined),
+});
+console.log("host up in", (await h.start()).toFixed(1), "ms", h.readyInfo.interfaces);
 const l = await h.load(dir);
 console.log("load", l);
 console.log("startup", JSON.stringify(await h.startup(l.id)));

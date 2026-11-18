@@ -1,6 +1,7 @@
 // The timers of `timers.set-timeout`, `set-interval` and `request-idle` (lifecycle.wit): per plugin, at most 64, an interval is never
 // shorter than 10 ms, and while every Zinc window is hidden a timer shorter than 1 s runs at most once a second. A fired timer calls
-// the plugin's `events.on-timer(timer, kind)` through `deliver`. Everything is cancelled when the plugin stops (`clearAll`).
+// the plugin's `events.on-timer(timer, kind)` through `deliver`. On the `wasmtime` runner, native Rust timers run inside `zhw` and
+// report their active count via `setRemoteCount`; `clearAll`/`clearEverything` also emit `onClear` (`timers-clear`).
 import { WitError } from "../imports/registry";
 
 export type TimerKind = "timeout" | "interval" | "idle";
@@ -10,6 +11,8 @@ export interface TimerOptions {
 	deliver: (plugin: string, iface: string, fn: string, args: unknown[]) => Promise<unknown>;
 	/** True while every Zinc window is hidden or minimised. Default: never. */
 	hidden?: () => boolean;
+	/** Called when `clearAll(plugin)` or `clearEverything()` (`plugin === undefined`) cancels timers, so `zhw` cancels native timers too. */
+	onClear?: (plugin?: string) => void;
 	maxTimers?: number;
 	minIntervalMs?: number;
 	/** `request-idle` has no idle signal yet: it fires after min(deadline, this). Default 50 ms. */
@@ -26,6 +29,7 @@ interface Entry {
 export class TimerService {
 	private timers = new Map<string, Map<number, Entry>>();
 	private next = new Map<string, number>();
+	private remoteCounts = new Map<string, number>();
 	private max: number;
 	private minInterval: number;
 	private idleDelay: number;
@@ -39,7 +43,7 @@ export class TimerService {
 	private add(plugin: string, kind: TimerKind, ms: number): number {
 		let m = this.timers.get(plugin);
 		if (!m) this.timers.set(plugin, (m = new Map()));
-		if (m.size >= this.max) throw new WitError("limit-exceeded", `at most ${this.max} timers per plugin`);
+		if (m.size + (this.remoteCounts.get(plugin) ?? 0) >= this.max) throw new WitError("limit-exceeded", `at most ${this.max} timers per plugin`);
 		const id = (this.next.get(plugin) ?? 0) + 1;
 		this.next.set(plugin, id);
 		const e: Entry = { kind, ms, handle: undefined, busy: false };
@@ -96,18 +100,32 @@ export class TimerService {
 		m!.delete(id);
 	}
 
+	/** Update active native Rust timer count reported by `zhw` (`timers-count`). */
+	setRemoteCount(plugin: string, count: number): void {
+		if (count <= 0) this.remoteCounts.delete(plugin);
+		else this.remoteCounts.set(plugin, count);
+	}
+
 	/** The plugin stopped (or the host restarted): cancel every timer it has. */
 	clearAll(plugin: string): void {
 		for (const e of this.timers.get(plugin)?.values() ?? []) clearTimeout(e.handle);
 		this.timers.delete(plugin);
 		this.next.delete(plugin);
+		this.remoteCounts.delete(plugin);
+		this.o.onClear?.(plugin);
 	}
 
 	clearEverything(): void {
-		for (const p of [...this.timers.keys()]) this.clearAll(p);
+		for (const m of this.timers.values()) {
+			for (const e of m.values()) clearTimeout(e.handle);
+		}
+		this.timers.clear();
+		this.next.clear();
+		this.remoteCounts.clear();
+		this.o.onClear?.(undefined);
 	}
 
 	count(plugin: string): number {
-		return this.timers.get(plugin)?.size ?? 0;
+		return (this.timers.get(plugin)?.size ?? 0) + (this.remoteCounts.get(plugin) ?? 0);
 	}
 }

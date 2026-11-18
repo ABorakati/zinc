@@ -49,6 +49,9 @@ world plugin {
   import reader;
   import note-editor;
 
+  // ---- mcp area (mcp.wit) ------------------------------------------------------------------------------------
+  import mcp;
+
   // ---- what the plugin implements ------------------------------------------------------------------------
   export lifecycle;
   export events;
@@ -58,6 +61,7 @@ world plugin {
   export extend-handlers;
   export reader-events;
   export note-events;
+  export mcp-handler;
 }
 
 /// A small world for plugins that only add UI (menu items, item pane sections, a preference pane) and keep
@@ -68,7 +72,7 @@ world plugin {
 /// it (lifecycle.wit: lifecycle, events, app, plugins, prefs, secrets, l10n, log, timers, net, net-events, fs, clipboard,
 /// shell, util, permissions; library.wit: library, attachments, fulltext, schema, cite, translate, sync-control, data-utils,
 /// notifier, notifier-handler; extend.wit: extend, extend-handlers; ui.wit: ui, ui-events; reader.wit: annotations, reader,
-/// note-editor, reader-events, note-events; types.wit: types, used by the others).
+/// note-editor, reader-events, note-events; mcp.wit: mcp, mcp-handler; types.wit: types, used by the others).
 world plugin-minimal {
   import app;
   import prefs;
@@ -164,4 +168,14 @@ world plugin-dialogs {
   include plugin-extend;
 
   import ui;
+}
+
+/// `plugin-library` plus `mcp`: a plugin that gives AI agents tools (through Zinc's MCP server) and reads or changes the library to
+/// answer them. It has no `extend` and no `ui`; a plugin that also adds menus targets `plugin`. The host loads it like any other world.
+world plugin-mcp {
+  include plugin-library;
+
+  import mcp;
+
+  export mcp-handler;
 }

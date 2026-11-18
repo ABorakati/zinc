@@ -4,12 +4,20 @@ import { buildPlugin } from "../../scripts/build-plugin";
 import { loadHandlerModule, type ImportHandler } from "../../src/imports/registry";
 import { createPluginRuntime, type RuntimeOptions } from "../../src/package/services";
 import { writeZip, type ZipWriteEntry } from "../../src/package/zip";
-import type { PluginManifest } from "../../src/manifest";
+import type { PluginRunner } from "../../src/supervisor";
 
 const tmp = process.env.TEMP ?? process.env.TMPDIR ?? "/tmp";
-export const fixtureRoot = join(tmp, "zn-wasm-pkg-fixtures");
+export const fixtureRoot = join(tmp, `zn-wasm-pkg-fixtures-${process.pid}`);
+process.on("exit", () => {
+	try {
+		rmSync(fixtureRoot, { recursive: true, force: true });
+	} catch {}
+});
 const here = import.meta.dir;
 export const importsDir = join(here, "..", "..", "src", "imports");
+
+/** `ZN_TEST_RUNNER=worker bun test` runs against the fallback Bun Worker host; default is `"wasmtime"` (`zhw`). */
+export const RUNNER: PluginRunner = process.env.ZN_TEST_RUNNER === "worker" ? "worker" : "wasmtime";
 
 /** A fresh scratch folder under %TEMP%. */
 export function scratch(name = "root"): string {
@@ -70,8 +78,8 @@ export async function newRuntime(root: string, o: RuntimeOptions = {}) {
 	const rt = await createPluginRuntime({
 		handlers: await myZincHandlers(),
 		...o,
-		manager: { root, ...o.manager },
-		supervisor: { callTimeoutMs: 6000, ...o.supervisor },
+		manager: { root, runner: RUNNER, ...o.manager },
+		supervisor: { callTimeoutMs: 6000, runner: RUNNER, ...o.supervisor },
 	});
 	const lines = (id: string) => rt.services.logs.recent({ plugin: id, limit: 5000 }).map((l) => l.message);
 	return { ...rt, lines };

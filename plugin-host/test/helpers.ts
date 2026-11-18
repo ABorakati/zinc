@@ -1,13 +1,21 @@
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { buildPlugin } from "../scripts/build-plugin";
-import { buildAot } from "../src/package/aot";
 import { defineHandler, type ImportHandler } from "../src/imports/registry";
-import { createPluginSupervisor, type PluginSupervisor, type SupervisorOptions } from "../src/supervisor";
+import { createPluginSupervisor, type PluginRunner, type PluginSupervisor, type SupervisorOptions } from "../src/supervisor";
 
 const fixtures = join(import.meta.dir, "fixtures");
-export const fixtureOut = join(process.env.TEMP ?? process.env.TMPDIR ?? "/tmp", "zn-wasm-fixtures");
+export const fixtureOut = join(process.env.TEMP ?? process.env.TMPDIR ?? "/tmp", `zn-wasm-fixtures-${process.pid}`);
+process.on("exit", () => {
+	try {
+		rmSync(fixtureOut, { recursive: true, force: true });
+	} catch {}
+});
 
-/** Build the three fixture plugins once per test run. Returns the loadable folders. */
+/** `ZN_TEST_RUNNER=worker bun test` runs against the fallback Bun Worker host; default is `"wasmtime"` (`zhw`). */
+export const RUNNER: PluginRunner = process.env.ZN_TEST_RUNNER === "worker" ? "worker" : "wasmtime";
+
+/** Build the three fixture plugins once per test run (`transpile: true` so both `wasmtime` and `worker` runners can load them). */
 let built: Promise<Record<"hello-rust" | "spin-rust" | "hello-js", string>> | undefined;
 export function buildFixtures() {
 	built ??= (async () => {
@@ -16,21 +24,11 @@ export function buildFixtures() {
 			"spin-rust": buildPlugin({ dir: join(fixtures, "spin-rust"), out: join(fixtureOut, "spin-rust") }),
 			"hello-js": buildPlugin({ dir: join(fixtures, "hello-js"), out: join(fixtureOut, "hello-js"), world: "hello" }),
 		};
-		const entries = await Promise.all(
-			Object.entries(jobs).map(async ([k, v]) => {
-				const out = (await v).out;
-				// ZN_TEST_RUNNER=aot-process: the same tests against per-plugin AOT executables (needs the Bun canary; phase2-aot.md)
-				if (AOT_RUNNER) await buildAot(out);
-				return [k, out] as const;
-			}),
-		);
+		const entries = await Promise.all(Object.entries(jobs).map(async ([k, v]) => [k, (await v).out] as const));
 		return Object.fromEntries(entries) as Record<"hello-rust" | "spin-rust" | "hello-js", string>;
 	})();
 	return built;
 }
-
-/** `ZN_TEST_RUNNER=aot-process bun test` runs every supervisor test with the plugins as AOT child processes. */
-export const AOT_RUNNER = process.env.ZN_TEST_RUNNER === "aot-process";
 
 export const prefsHostModule = join(import.meta.dir, "handlers", "prefs.host.ts");
 
@@ -64,7 +62,7 @@ export function newSupervisor(lines: string[], extra: SupervisorOptions = {}): P
 		hostHandlerModules: [prefsHostModule],
 		// these tests bring their own stub handlers: the real src/imports/*.host.ts of the other areas must not shadow them
 		discoverHostHandlers: false,
-		...(AOT_RUNNER ? { runner: "aot-process" as const } : {}),
+		runner: RUNNER,
 		...extra,
 	});
 }

@@ -58,6 +58,17 @@ Write:
 
 Item keys are 8-character strings. Results are paged with `limit` and `offset`. Full parameters are documented in `core/MCP.md` and the tool schemas themselves, which the agent reads from the server.
 
+### Tools from plugins
+
+A plugin can offer its own tools to the same MCP server. They show up next to the library tools, named `<plugin>__<tool>` (for example `mcp-tools__count_tagged`), and every description starts with the plugin's name in square brackets, so you can tell where a tool comes from.
+
+- **Off by default.** Go to Settings > Plugins. A plugin that asks to offer tools has a row "Offer <plugin>'s tools to AI agents". Turn it on for the plugins you trust. An agent that is connected can then do whatever the plugin is allowed to do (a plugin with the permission to change your library can change it).
+- **Only while the plugin runs.** A plugin that is stopped, disabled or has failed offers nothing. Turning the switch off removes the tools at the next request.
+- **Only over HTTP.** Plugin tools are served by the HTTP endpoint of the running app (`http://127.0.0.1:23120/mcp`). The stdio transport lists none, because it runs without the app and without plugins.
+- **Fresh lists.** The server is stateless, so it cannot push `notifications/tools/list_changed`. Clients get the current list each time they ask. If your client caches the list, reconnect or restart it after you change a switch.
+- **Errors.** If a plugin fails, times out, or the agent sends arguments that do not match the tool's schema, the agent receives a tool error with the reason. Zinc checks the arguments before the plugin runs.
+- Tools marked read-only or non-destructive by the plugin are passed to the agent as hints; your agent's own confirmation prompts follow them.
+
 ## Word MCP
 
 The Word add-in (see [Word add-in](word.md)) runs its own MCP server so an agent can work on the document you have open in Word: find sources, insert and edit citations, build the bibliography and change the style. It exists only while Word is running with the add-in loaded, and is on by default.

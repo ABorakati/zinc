@@ -97,11 +97,11 @@ Status: `covered`, `partial` (what is missing is stated), `not planned` (why, an
 | Zotero capability | Zinc WIT | Status |
 |---|---|---|
 | `Zotero.Search.addCondition(name, operator, value, required)`, `getConditions`, `setScope`, `fromJSON/toJSON` | `search-definition` / `search-condition` | partial. The record carries any of Zotero's 59 condition names, but the core compiler (`core/src/searches/compile.ts`) supports a subset (title, creator, year, date fields, publicationTitle, itemType, tag, collection, note, attachmentFileType, fulltextContent, anyField, schema fields; no `groupStart/groupEnd`, `numberfield`, `lastRead`, `annotation*`, `retracted`, `tempTable`). Needs core |
-| `Zotero.Search.search()` (item ids), `getSQL` | `library.query-items` / `query-keys` with `search` | covered for supported conditions; `getSQL` is `not planned` (no SQL) |
+| `Zotero.Search.search()` (item ids), `getSQL` | `library.query-items` / `query-keys` with `search` | covered for supported conditions; `getSQL` is `not planned` (no SQL). Zotero 10 added condition groups and removed `fulltextWord` (use `fulltextContent`) and migrated `childNote` to `note`; Zinc accepts `fulltextContent` and `note`, and has no group conditions yet (see the first row) |
 | `joinMode any/all`, `includeParentsAndChildren`, `recursive`, `noChildren`, `includeDeleted`, `required` | `search-options`, `search-condition.required` | covered |
 | `Zotero.Search.setScope(search)` (search within search) | `item-query.scope = saved-search` plus `search` | partial: nesting one saved search in another via a `savedSearch` condition is not in the core |
 | `Zotero.SearchConditions.getStandardConditions/getLocalizedName` | `library.list-search-conditions` | covered |
-| `Zotero.Searches.getAll/getByLibrary/get`, `getNextName` | `library.list-saved-searches`, `get-saved-search` | covered |
+| `Zotero.Searches.getAll/getByLibrary/get`, `getNextName` | `library.list-saved-searches`, `get-saved-search` | covered. Zotero 10 lets several saved searches and collections be selected at once (`getSelectedSavedSearches`, `getSelectedCollections`); a Zinc plugin gets lists from `extend.context` and runs one `item-query` per scope (zotero-versions.md) |
 | `Search.name = / saveTx / erase` | `apply.create-saved-search`, `update-saved-search`, `erase-saved-search` | covered |
 | Quick search modes (`quicksearch-titleCreatorYear/fields/everything`, `Zotero.Search` quick) | `item-query.text` with `text-mode` | covered |
 | `Zotero.Search.hasPostSearchFilter`, `tempTable` condition | n/a | not planned: internal SQL planner |
@@ -162,7 +162,7 @@ Status: `covered`, `partial` (what is missing is stated), `not planned` (why, an
 | Read `.zotero-ft-cache` / indexed content | `fulltext.get-content` | covered |
 | `Fulltext.setItemContent`, custom indexing by plugins | `fulltext.set-content` | partial. Needs core: `fulltext.source` accepts only `zotero-cache` and `document-worker`; add `plugin` |
 | `Fulltext.indexItems`, `indexDocument/indexPDF/indexEPUB`, `rebuildIndex`, `reindexTruncated`, `queueItem` | `fulltext.reindex` | partial. Needs core: no reindex route |
-| `Fulltext.findItemsWithContent`, `findTextInItems`, `getContentSearchSQL` | `fulltext.search`; `fulltextContent` search condition | partial: FTS5 (stemmed) rather than Zotero's word index; results differ |
+| `Fulltext.findItemsWithContent`, `findTextInItems`, `getContentSearchSQL` | `fulltext.search`; `fulltextContent` search condition | partial: FTS5 (stemmed) rather than Zotero's word index; results differ. Since Zotero 10 Zotero also uses FTS5 (an attached `ftindex` database, `fulltextWords` tables dropped, `fulltextWord` condition removed, `fulltextContent` kept), so word-index SQL in a ported plugin has no equivalent in either: use `fulltext.search` |
 | `Fulltext.getAttachmentIndexQueueCount`, `processAttachmentIndexQueue`, etc. | `fulltext.get-queue-status` | partial: counts only |
 | `Fulltext.canIndex`, `getItemCacheFile`, `semanticSplitter`, converter paths, sync content (`getUnsyncedContent`, `processSyncedContent`, `registerSyncContentProcessor`), `clearItemWords`, `vacuum`, `optimizeContentIndex` | n/a | not planned: Zotero's own index internals and its full-text sync. Zinc uses SQLite FTS5 |
 

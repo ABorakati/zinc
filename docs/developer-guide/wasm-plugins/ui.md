@@ -6,8 +6,8 @@ A Zotero plugin builds UI with the DOM, XUL, Zotero's custom elements (`chrome/c
 
 ## Summary of the design
 
-- **Flat tree.** WIT forbids recursive types. A `tree` is `nodes: list<node>`; a node lists children as indices. Menus (`menu.items`) and table cells with custom content (`cell.content`) use the same trick. Every node has an optional `key` for identity.
-- **Two spellings of one tree.** The typed WIT tree is canonical. A nested JSON form (`content-update.json`, schema in `ui-schema/`) is accepted everywhere. JS guests write the JSON form; Rust guests use the typed form. The host normalizes JSON to the flat form.
+- **Trees are JSON (phase 3).** The phase 2 flat WIT tree (`nodes: list<node>` with child indices) is gone: WIT forbids recursive types and the typed style records made Rust builds take minutes. A tree, a patch set, a row's or cell's custom content and styles are JSON strings, specified by `plugin-api/ui-schema/ui-tree.schema.json` (`$defs.tree`, `patchSet`, `rowContent`/`node`, `style`, `namedStyles`). Every node has an optional `key` for identity. The text below that says "flat" or lists WIT node records describes the same shape as the schema's node kinds.
+- **One spelling.** Both SDKs build the JSON form (JS nested objects, Rust `serde` builders); the host validates it against the schema (`full` mode in tests and debug builds, `cheap` in release).
 - **Events are handler ids.** Any node carries `events: list<event-binding>`. The plugin gets `ui-events.on-event(instance, ui-event)` and returns the next `render-result`. Debounce, throttle and key filters are part of the binding, so the host only calls the plugin when it must.
 - **Host-kept state, plugin-owned values.** Text being typed, scroll, selection and open/closed state live in the host. A plugin-supplied value (`value`, `open`, `selected`, ...) is applied only when it differs from the last value the plugin sent. To force a reset to the same value, change the node's `key`.
 - **Updates.** Default is "return the whole tree" (the host diffs by key, so GPUIX only touches what changed). Big trees can send `patch-set`s. Big lists are pulled: the host asks for row ranges.
@@ -104,8 +104,8 @@ Status is the last column.
 | `navigator.clipboard.readText` | `clipboard.read` (lifecycle; permission `clipboard.read`) | covered |
 | `Zotero.launchURL`, `openLink` | `shell.open-url` (lifecycle; a `link` node with a `url` target needs no call) | covered |
 | `Services.prompt.alert`/`confirm`/`prompt`, `Zotero.alert` | `ui.alert`, `ui.confirm`, `ui.prompt` | covered |
-| `Services.prompt.confirmEx` (up to 3 buttons, checkbox) | `ui.confirm` (checkbox) or `ui.run-dialog` (any buttons) | covered |
-| `window.openDialog` with plugin XHTML, zotero-plugin-toolkit `Dialog` | `ui.run-dialog`, `ui.open-dialog`, `update-dialog`, `close-dialog`, `dialog-spec` | covered |
+| `Services.prompt.confirmEx` (up to 3 buttons, checkbox) | `ui.confirm` (checkbox) or `ui.open-dialog` (any buttons; the pressed button arrives as a `close` event) | covered |
+| `window.openDialog` with plugin XHTML, zotero-plugin-toolkit `Dialog` | `ui.open-dialog` (answer in the `close` event), `update-dialog`, `close-dialog`, `dialog-spec` | covered |
 | `Zotero.ProgressWindow` and toolkit `ProgressWindowHelper` | `ui.show-toast`, `update-toast`, `close-toast` (lines with progress, actions) | covered |
 | Plugin windows (`window.open`, `openWindowByType`) | `ui.open-window` (an OS window; permission `ui.windows`; returns `result`) | covered |
 | Custom main tabs (`Zotero_Tabs.add` content) | `extend.open-tab`: the tab content is a `ui` view with `surface.tab` (`ui.window-kind` was removed so there is one way to make a tab) | covered |
@@ -201,12 +201,12 @@ A recursive `node` is illegal in WIT. The options were (a) a JSON string (what t
 
 - `key` names a node across renders. Without it, identity is position among siblings.
 - The host owns edit state. Controlled values follow the "apply only when the plugin's value changed" rule, so a re-render triggered by something else never overwrites what the user is typing.
-- `form` + `name` gives one `submit` event with all values; `ui.form-values` reads them at any time; `dialog-outcome.values` returns them when a dialog closes.
+- `form` + `name` gives one `submit` event with all values; `ui.form-values` reads them at any time; the dialog's `close` event (kind `form`) delivers them when it closes.
 - `pref` gives zero-call binding for preference panes.
 
 ### Updates
 
-1. `mount`, `update-context` and `on-event` each return a `render-result`: `unchanged`, `full`, `json`, or `patch`. One call, whole answer.
+1. `mount`, `update-context` and `on-event` each return a `render-result` (`content-update`): `unchanged`, `json` (a whole tree) or `patch` (a JSON patch set). One call, whole answer.
 2. `patch-set` ops: `set-node`, `replace`, `insert`, `remove`, `move`, `set-styles`, all by key. Use them when a tree is large and a change is small (a table cell, a log line).
 3. The host always diffs; patches only save serialization.
 4. Async work calls `ui.push`. The host batches pushes per frame.
@@ -300,6 +300,6 @@ Resolved in the reconcile of 2026-11-18 (see README):
 - **Extend:** extend has no placeholders; it registers views and calls `ui-events.mount`, uses `ui.render-result`, `ui.ui-event` and `ui.form-field` and one `on-event` entry point. Dialogs and prompts have one owner (this area); extend refers to it. Menu data is `ui.menu` for popup menus and nodes; registered menus use `extend.menu-entry`.
 - **Reader:** reader panels, overlays and strips are `surface.reader-sidebar`, `reader-overlay`, `toolbar-slot` and `popover` views (confirmed); page overlays are drawn from `reader-events.render-overlay` shapes, so `canvas` needs no page coordinates. The attachment preview that reader row 22 asked for is `embed-component.attachment-preview` (already here). For the reader strips, `view-context.height` holds the fixed strip height (the host's toolbar or annotation header height) and `width` the space available; a popover gets the host's chosen size.
 - **Prefs:** `node-props.pref` binds through `prefs.get` and `prefs.set` rules in the plugin's own namespace; the `prefs` interface lists which control binds to which pref type.
-- **Files:** `drop-info.files` carries `types.file-grant`; `fs.read` and `fs.write` turn it into bytes. `ui.open-window`, `run-dialog`, `open-dialog` and `set-theme-override` now return `result<_, error>` so a missing permission or a second modal dialog has an answer.
+- **Files:** `drop-info.files` carries `types.file-grant`; `fs.read` and `fs.write` turn it into bytes. `ui.open-window`, `open-dialog` and `set-theme-override` now return `result<_, error>` so a missing permission or a second modal dialog has an answer.
 
 Still open: none from this area's list. The "close all toasts" call and a "choose from a list" prompt that extend asked for are open (see extend.md).

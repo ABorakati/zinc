@@ -171,30 +171,33 @@ const handlers = {
 	},
 	"toast-ok": () => void info("toast action"),
 	dialog: () => {
-		// a dialog opened from inside an event handler: the plugin is suspended here while the dialog is open, and the dialog's own
-		// events (button presses, input) are delivered to this same instance meanwhile
-		const r = ui.runDialog({
-			title: plain("Fixture dialog"), buttons: [{ id: "cancel", label: plain("Cancel"), role: "cancel", disabled: false, closes: true, isDefault: false }, { id: "ok", label: plain("OK"), role: "accept", disabled: false, closes: true, isDefault: true }],
-			resizable: false, modal: true, dismissOnEscape: true, width: 420,
-			content: { rev: 1n, root: 0, styles: [], nodes: [
-				{ children: [1, 2], kind: { tag: "box" }, props: props({ style: { direction: "column", gap: step(2) } }) },
-				{ children: [], kind: { tag: "text", val: { kind: "body", runs: [run("Type a value, then press OK.")], selectable: true } }, props: props({}) },
-				{ children: [], kind: { tag: "text-input", val: textInput("dlgtext") }, props: props({ name: "dlgtext", key: "dlgtext", events: [binding("input", "dlg-typed")] }) },
-			] },
+		const id = ui.openDialog({
+			title: plain("Fixture dialog"),
+			buttons: [
+				{ id: "cancel", label: plain("Cancel"), role: "cancel", disabled: false, closes: true, isDefault: false },
+				{ id: "ok", label: plain("OK"), role: "accept", disabled: false, closes: true, isDefault: true },
+			],
+			resizable: false,
+			modal: true,
+			dismissOnEscape: true,
+			width: 420,
+			content: JSON.stringify({
+				rev: 1,
+				root: {
+					type: "box",
+					style: { direction: "column", gap: 2 },
+					children: [
+						{ type: "text", kind: "body", text: "Type a value, then press OK.", selectable: true },
+						{ type: "text-input", name: "dlgtext", key: "dlgtext", value: "", placeholder: "Value", on: { input: "dlg-typed" } },
+					],
+				},
+			}),
 		});
-		const v = r.values.map((f) => `${f.name}=${f.value.val}`).join(";");
-		s.outcome = `${r.button ?? "dismissed"} ${v}`;
-		info(`dialog outcome: ${s.outcome}`);
+		dialogInstances.set(String(id), { button: undefined });
+		info(`dialog opened ${id}`);
 	},
 	"dlg-typed": (e) => void info(`dialog typed: ${e.payload.val.val}`),
 };
-
-// ---- helpers to build typed (flat) WIT values for the dialog
-const step = (n) => ({ tag: "step", val: n });
-const run = (t) => ({ text: plain(t), bold: false, italic: false, underline: false, strike: false, mono: false });
-const binding = (event, handler) => ({ event, handler, keys: [], preventDefault: false, stopPropagation: false });
-const props = (o) => ({ class: [], style: {}, events: [], a11y: { hidden: false }, disabled: false, hidden: false, autoFocus: false, ...o });
-const textInput = (value) => ({ value: "", placeholder: plain("Value"), kind: "text", look: "field", multiline: false, readOnly: false, selectOnFocus: false, clearButton: false, spellcheck: false });
 
 export const lifecycle = {
 	install() {},
@@ -205,17 +208,39 @@ export const lifecycle = {
 	mainWindowUnload() {},
 };
 
-const dialogInstances = new Set();
+let mainInstance;
+const dialogInstances = new Map();
 export const uiEvents = {
-	mount(instance, ctx) { info(`mount ${instance} surface=${ctx.surface} theme=${ctx.theme}`); if (ctx.surface === "dialog") { dialogInstances.add(String(instance)); return { content: { tag: "unchanged" } }; } return render(); },
+	mount(instance, ctx) {
+		info(`mount ${instance} surface=${ctx.surface} theme=${ctx.theme}`);
+		if (ctx.surface === "dialog") {
+			if (!dialogInstances.has(String(instance))) dialogInstances.set(String(instance), { button: undefined });
+			return { content: { tag: "unchanged" } };
+		}
+		mainInstance = instance;
+		return render();
+	},
 	updateContext(instance, ctx) { info(`update-context ${instance} theme=${ctx.theme}`); return render(); },
 	unmount(instance) { info(`unmount ${instance}`); },
 	visibility(instance, visible) { info(`visibility ${instance} ${visible}`); },
 	onEvent(instance, event) {
 		const h = handlers[event.handler];
 		info(`on-event ${event.kind} ${event.handler} node=${event.nodeKey ?? "-"} inst=${instance}`);
+		const dlg = dialogInstances.get(String(instance));
+		if (dlg && event.kind === "close") {
+			if (event.payload.tag === "button") dlg.button = event.payload.val;
+			else if (event.payload.tag === "none") dlg.button = undefined;
+			else if (event.payload.tag === "form") {
+				const v = event.payload.val.map((f) => `${f.name}=${f.value.val}`).join(";");
+				s.outcome = `${dlg.button ?? "dismissed"} ${v}`;
+				info(`dialog outcome: ${s.outcome}`);
+				dialogInstances.delete(String(instance));
+				if (mainInstance !== undefined) ui.push(mainInstance, render());
+			}
+			return { content: { tag: "unchanged" } };
+		}
 		if (h) h(event);
-		return dialogInstances.has(String(instance)) ? { content: { tag: "unchanged" } } : render();
+		return dlg ? { content: { tag: "unchanged" } } : render();
 	},
 	resync() { return render(); },
 	renderRange(instance, req) {
@@ -224,7 +249,7 @@ export const uiEvents = {
 		for (let i = req.start; i < req.start + req.count; i++) {
 			rows.push({ id: "v" + i, depth: 0, expandable: false, expanded: false, disabled: false, cells: [{ text: plain(String(i)), bold: false }, { text: plain("Virtual row " + i), bold: false }] });
 		}
-		return { start: req.start, rows, nodes: [], styles: [] };
+		return { start: req.start, rows, styles: undefined, total: undefined };
 	},
 	suggest() { return []; },
 };

@@ -6,6 +6,11 @@
   "type": "object",
   "required": ["manifest_version", "id", "name", "version", "zinc", "main"],
   "additionalProperties": false,
+  "if": { "required": ["mcp"], "properties": { "mcp": { "required": ["tools"] } } },
+  "then": {
+    "required": ["permissions"],
+    "properties": { "permissions": { "required": ["capabilities"], "properties": { "capabilities": { "contains": { "const": "mcp.expose" } } } } }
+  },
   "properties": {
     "$schema": { "type": "string" },
 
@@ -93,7 +98,7 @@
         },
         "world": {
           "description": "Which world the component was built for.",
-          "enum": ["plugin", "plugin-minimal", "plugin-core", "plugin-library", "plugin-extend", "plugin-ui", "plugin-reader", "plugin-dialogs"],
+          "enum": ["plugin", "plugin-minimal", "plugin-core", "plugin-library", "plugin-extend", "plugin-ui", "plugin-reader", "plugin-dialogs", "plugin-mcp"],
           "default": "plugin"
         },
         "language": {
@@ -154,6 +159,20 @@
         ]
       },
       "maxProperties": 1000
+    },
+
+    "mcp": {
+      "description": "Tools the plugin offers to AI agents through Zinc's MCP server (plugin-api/wit/mcp.wit). Needs the permission `mcp.expose` AND the user's switch for the plugin in Settings > Plugins (off by default). The tools listed here are the static ones: they show in Settings > Plugins before the plugin runs and are served as soon as it is running. A plugin may also register tools at run time (`mcp.register-tool`). Agents see them as `<short plugin name>__<tool name>` on the HTTP endpoint of the running app only (not on the stdio transport).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/mcpTool" },
+          "uniqueItems": true
+        }
+      }
     },
 
     "locales": {
@@ -221,7 +240,7 @@
     },
 
     "capability": {
-      "description": "A permission id, always dotted lower-case (`area.thing`, for example `reader.control`; never `annotations:read`). `examples` and `x-risk` list every id that any WIT file or report uses in 0.1 (36 ids); the host rejects ids it does not know. `net.hosts` is not an id here: hosts go under `permissions.net.hosts`. A user's pick in a file dialog or a drop is the consent for that file, so there is no id for file dialogs, and the clipboard and URL ids are the lifecycle ones only.",
+      "description": "A permission id, always dotted lower-case (`area.thing`, for example `reader.control`; never `annotations:read`). `examples` and `x-risk` list every id that any WIT file or report uses in 0.1 (37 ids); the host rejects ids it does not know. `net.hosts` is not an id here: hosts go under `permissions.net.hosts`. A user's pick in a file dialog or a drop is the consent for that file, so there is no id for file dialogs, and the clipboard and URL ids are the lifecycle ones only.",
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
       "examples": [
@@ -235,7 +254,8 @@
         "ui.webview", "ui.windows", "ui.theme", "ui.drop", "ui.navigate",
         "reader.read", "reader.control", "reader.ui", "reader.themes",
         "annotations.read", "annotations.write",
-        "note-editor.read", "note-editor.write", "note-editor.control", "note-editor.ui"
+        "note-editor.read", "note-editor.write", "note-editor.control", "note-editor.ui",
+        "mcp.expose"
       ],
       "x-risk": {
         "low": [
@@ -247,6 +267,7 @@
           "library.write", "library.trash", "library.files.read", "library.files.paths", "library.translate", "library.sync", "library.fulltext.write",
           "plugins.read", "prefs.app-read",
           "ui.windows", "ui.drop",
+          "mcp.expose",
           "reader.read", "reader.control", "annotations.read", "annotations.write", "note-editor.read", "note-editor.write"
         ],
         "high": ["library.erase", "library.files.write", "library.files.open", "clipboard.read", "shell.open-file", "ui.webview"]
@@ -291,6 +312,28 @@
               "items": { "type": "string", "pattern": "^[a-z][a-z0-9+.-]*$", "not": { "enum": ["file", "javascript", "data", "vbscript", "http", "https", "mailto"] } },
               "uniqueItems": true
             }
+          }
+        }
+      }
+    },
+
+    "mcpTool": {
+      "description": "A tool declared statically. Same fields as `mcp.tool-def` in mcp.wit, with the schemas written as JSON objects rather than JSON text.",
+      "type": "object",
+      "required": ["name", "description", "input_schema"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,48}$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "input_schema": { "type": "object", "description": "JSON Schema of the arguments; an object schema (`type` \"object\" or absent)." },
+        "output_schema": { "type": "object", "description": "JSON Schema of the result, when it is an object with a fixed shape." },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read_only": { "type": "boolean", "default": false, "description": "The tool changes nothing." },
+            "destructive": { "type": "boolean", "default": true, "description": "The tool may delete or overwrite data (meaningful when read_only is false). Say false for tools that only add." },
+            "idempotent": { "type": "boolean", "default": false, "description": "Calling again with the same arguments changes nothing more." }
           }
         }
       }

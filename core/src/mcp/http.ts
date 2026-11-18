@@ -3,6 +3,7 @@
 
 import type { Database } from "bun:sqlite";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { getPluginToolProvider } from "./plugin-tools";
 import { createMcpServer } from "./server";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
@@ -48,7 +49,7 @@ export async function handleMcp(req: Request, db: Database): Promise<Response | 
 		// Stateless server: no standalone SSE stream and no sessions to terminate.
 		return new Response(null, { status: 405, headers: { Allow: "POST" } });
 	}
-	const server = createMcpServer(db);
+	const server = createMcpServer(db, { pluginTools: getPluginToolProvider() });
 	const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
 	await server.connect(transport);
 	try {

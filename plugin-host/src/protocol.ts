@@ -1,6 +1,6 @@
-// IPC messages. Two links:
-//   (a) Zinc process  <-> plugin host process   (Bun IPC, `serialization: "advanced"`, so bigint and Uint8Array survive)
-//   (b) host process  <-> one Worker per plugin (postMessage, structured clone)
+// IPC messages. Two runners:
+//   wasmtime (default): Zinc app process <-> `zhw` (NDJSON on stdio, see transport-wasmtime.ts and protocol-ndjson.md)
+//   worker (fallback):  Zinc app process <-> Bun plugin host process (Bun IPC) <-> one Worker per plugin (postMessage)
 //
 // VALUES. Calls carry arguments and results in jco's JS representation of the WIT types: kebab names are camelCase, `u64`/`s64`
 // are bigint, `option<T>` is `T | undefined`, records are objects, variants are `{ tag, val }`, enums are strings, `list<u8>` is
@@ -22,13 +22,15 @@ export const DEFAULT_TIMEOUTS = {
 export type WireError =
 	/** The plugin's export returned `result::err(payload)`, or an import handler failed. `payload` is a WIT `types.error`: `{ tag: "not-found", val: "..." }` etc. */
 	| { kind: "wit"; payload: unknown }
-	/** The component trapped (panic, unreachable, exception out of a JS guest). The instance is no longer usable. */
+	/** The component trapped (panic, unreachable, exception out of a JS guest, memory limit, import-call limit). The instance is no longer usable. */
 	| { kind: "trap"; message: string; stack?: string }
-	/** The active-time budget ran out. The host process was killed. */
+	/** The active-time budget ran out. */
 	| { kind: "timeout"; ms: number; phase: string }
 	| { kind: "no-such-export"; iface: string; fn: string }
 	| { kind: "not-loaded"; plugin: string }
 	| { kind: "disabled"; plugin: string; reason: string }
+	/** Re-entering the same plugin while it waits on a forwarded import (`wasmtime` runner). */
+	| { kind: "reentrant"; plugin: string; message: string }
 	/** The plugin host process was killed or died while the call was running. Safe to retry once the plugin is running again. */
 	| { kind: "host-restarting" }
 	| { kind: "internal"; message: string };
@@ -66,6 +68,8 @@ export function describeError(e: WireError): string {
 			return `plugin ${e.plugin} is not loaded`;
 		case "disabled":
 			return `plugin ${e.plugin} is disabled: ${e.reason}`;
+		case "reentrant":
+			return `plugin ${e.plugin} cannot be re-entered: ${e.message}`;
 		case "host-restarting":
 			return "plugin host is restarting";
 		case "internal":
@@ -73,56 +77,136 @@ export function describeError(e: WireError): string {
 	}
 }
 
-/** What a worker needs to load one plugin. `dir` is the loadable folder (see manifest.ts). */
+export interface PluginPrefsState {
+	defaults?: Record<string, boolean | number | string>;
+	user?: Record<string, boolean | number | string>;
+	secrets?: string[];
+}
+
+export interface PluginL10nBundle {
+	tag: string;
+	ftl: string;
+}
+
+export interface PluginL10nState {
+	defaultLocale?: string;
+	bundles: PluginL10nBundle[];
+}
+
+/** What the host needs to load one plugin. `dir` is the loadable folder (see manifest.ts). */
 export interface PluginSpec {
 	id: string;
 	dir: string;
+	/** Optional precompiled `.cwasm` in Zinc's cache folder (`wasmtime` runner). */
+	cwasm?: string;
 	manifest: PluginManifest;
 	grants: Grants;
+	/** Initial cached prefs for native `prefs` imports (`wasmtime` runner). */
+	prefs?: PluginPrefsState;
+	/** Initial Fluent bundles for native `l10n` imports (`wasmtime` runner). */
+	l10n?: PluginL10nState;
 }
 
-// ---- (a) Zinc <-> plugin host ----------------------------------------------------------------------------------
+// ---- (a) Zinc <-> plugin host (`zhw` or `host-main.ts`) ---------------------------------------------------------
 
 /** Zinc -> host. `id` is chosen by Zinc; the reply carries the same id. */
 export type ToHost =
-	/** First message. `hostModules`: absolute paths of extra handler modules (besides src/imports/*.host.ts). */
-	| { t: "init"; coreUrl?: string; hostModules: string[]; heartbeatMs: number; /** false: do not load src/imports/*.host.ts (tests with their own handlers) */ discover?: boolean }
+	/** First message. `hostModules`/`discover` are for the Bun Worker host; `native`/`maxMemoryMb`/`maxImportCalls`/`debugEnabled`/`app` are for `zhw`. */
+	| {
+			t: "init";
+			coreUrl?: string;
+			hostModules?: string[];
+			heartbeatMs: number;
+			/** false: do not load src/imports/*.host.ts (tests with their own handlers) */
+			discover?: boolean;
+			maxMemoryMb?: number;
+			maxImportCalls?: number;
+			native?: string[];
+			debugEnabled?: boolean;
+			app?: unknown;
+	  }
 	/** Answer to a `FromHost` `call` message. */
 	| { t: "call-reply"; id: number; result: WireResult }
-	/** Create the plugin's Worker, compile and instantiate the component. Does not call `startup`. Reply: `reply` with value undefined. */
+	/** Compile / deserialize and instantiate the component. Does not call `startup`. Reply: `reply`. */
 	| { t: "load"; id: number; plugin: PluginSpec }
-	/** Terminate the plugin's Worker. Reply: `reply`. */
+	/** Drop the plugin's instance / terminate its Worker. Reply: `reply`. */
 	| { t: "unload"; id: number; plugin: string }
 	/** Call one export. Reply: `reply` with the return value (or the error). */
-	| { t: "call"; id: number; plugin: string; iface: string; fn: string; args: unknown[] }
+	| { t: "call"; id: number; plugin: string; iface: string; fn: string; args: unknown[]; timeoutMs?: number; maxImportCalls?: number }
 	/** Answer to a `FromHost` `import` message. */
 	| { t: "import-reply"; id: number; result: WireResult }
 	/** The grants of a loaded plugin changed. */
 	| { t: "grants"; plugin: string; grants: Grants }
+	/** `zhw`: update cached plugin prefs and/or allowlisted app settings. */
+	| {
+			t: "prefs";
+			plugin?: string;
+			defaults?: Record<string, boolean | number | string>;
+			user?: Record<string, boolean | number | string>;
+			secrets?: string[];
+			appPrefs?: Record<string, boolean | number | string>;
+	  }
+	/** `zhw`: update cached Fluent bundles and/or global UI locale & time zone. */
+	| {
+			t: "l10n";
+			plugin?: string;
+			locale?: string;
+			timeZone?: string;
+			defaultLocale?: string;
+			bundles?: PluginL10nBundle[];
+	  }
+	/** `zhw`: update cached `app` import state and hidden-window flag. */
+	| {
+			t: "app";
+			info?: unknown;
+			isUiReady?: boolean;
+			mainWindows?: number[];
+			activeWindow?: number | null;
+			windowsHidden?: boolean;
+	  }
+	/** `zhw`: update `log.debug-enabled()` and debug line filtering. */
+	| { t: "log-config"; debugEnabled: boolean }
+	/** `zhw`: cancel native Rust timers for `plugin` (or every plugin when omitted). */
+	| { t: "timers-clear"; plugin?: string }
+	/** `zhw`: query host RSS and per-plugin telemetry. Reply: `reply`. */
+	| { t: "stats"; id: number }
 	/** Exit now. */
 	| { t: "exit" };
 
 export type LogLevel = "error" | "warn" | "info" | "debug";
 
+export interface LogBatchEntry {
+	plugin?: string;
+	level: LogLevel;
+	message: string;
+	stack?: string;
+	isError?: boolean;
+	dropped?: number;
+}
+
 /** Host -> Zinc. */
 export type FromHost =
-	/** Sent once after `init`. `interfaces` lists the host-side handler interfaces that were loaded. */
-	| { t: "ready"; pid: number; interfaces: string[] }
-	/** Every `heartbeatMs`, from the host's main thread. A runaway plugin does not stop it; a blocked handler does. */
+	/** Sent once after `init`. `interfaces` lists the host-side / native handler interfaces. */
+	| { t: "ready"; pid: number; version?: string; interfaces: string[]; startupMs?: number }
+	/** Every `heartbeatMs`, from the host's main thread / tokio runtime. */
 	| { t: "heartbeat"; ts: number }
 	| { t: "reply"; id: number; result: WireResult }
-	/** A plugin called an import that no host-side handler has. Zinc looks for a `where: "zinc"` handler and answers with `import-reply`. */
+	/** A plugin called an import forwarded to Zinc. Zinc answers with `import-reply`. */
 	| { t: "import"; id: number; plugin: string; iface: string; fn: string; args: unknown[] }
-	/** A host-side handler calls an export of a plugin (`ctx.callExport`). Zinc queues it with the plugin's other calls and answers with `call-reply`. */
+	/** A host-side handler (or native timer) calls an export of a plugin (`ctx.callExport`). Zinc queues it and answers with `call-reply`. */
 	| { t: "call"; id: number; plugin: string; iface: string; fn: string; args: unknown[]; timeoutMs?: number }
-	/** How many host-side imports of this plugin are in flight. While n > 0 the plugin's call timers are paused. */
+	/** How many imports of this plugin are in flight. While n > 0 the plugin's call timers are paused. */
 	| { t: "waiting"; plugin: string; n: number }
-	/** The plugin's Worker died by itself (not through `unload`). */
-	| { t: "plugin-exit"; plugin: string; message: string }
-	/** Plugin log output (stderr of a Rust guest, host diagnostics). Not the `log` WIT interface: that one is a handler. */
-	| { t: "log"; plugin?: string; level: LogLevel; message: string };
+	/** Single-plugin fault (`zhw` timeout/trap, or Worker died by itself). */
+	| { t: "plugin-exit"; plugin: string; kind?: "timeout" | "trap"; message: string }
+	/** Plugin log output (stderr of a Rust guest, host diagnostics, or single log entry). */
+	| { t: "log"; plugin?: string; level: LogLevel; message: string; stack?: string; isError?: boolean; dropped?: number }
+	/** `zhw`: batched native `log.write` / `log.write-error` lines, flushed before `reply` or `import`. */
+	| { t: "log-batch"; entries: LogBatchEntry[] }
+	/** `zhw`: active native Rust timer count for `plugin`. */
+	| { t: "timers-count"; plugin: string; count: number };
 
-// ---- (b) host <-> Worker -----------------------------------------------------------------------------------------
+// ---- (b) host <-> Worker (`worker` runner) ----------------------------------------------------------------------
 
 export type ToWorker =
 	| { t: "init"; spec: PluginSpec }

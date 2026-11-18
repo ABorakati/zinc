@@ -6,7 +6,7 @@ This page covers building and running Zinc from a checkout, and producing the Wi
 
 - Windows 10 or 11 (x64), Linux (x64) or macOS 13 or later on Apple Silicon (arm64). The app runs from source on all three. Only Windows has the installer, the Word add-in, the connector host and auto-update.
 - Bun 1.4.4. Use Bun for everything: no Node, npm or npx.
-- The Rust toolchain (`cargo`) for the PDF library.
+- The Rust toolchain (`cargo`) for the PDF library and the Wasmtime plugin host (`zhw`).
 - Windows only: the .NET SDK (`dotnet`) with .NET Framework 4.8 targeting, for the Word add-in. The project pulls `Microsoft.NETFramework.ReferenceAssemblies` from NuGet.
 - Windows only: PowerShell 7 (`pwsh`): `word/build.ps1` and `package.ts --zip` are run through it.
 - Windows only, for the installer: Inno Setup 7.
@@ -104,6 +104,18 @@ PDFium is not built. `bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts` downloads a
 
 `package.ts` calls the script if the library is missing; `--force` fetches again. The PDF library loads PDFium from its own folder, so the two ship together; without PDFium it renders with `hayro`.
 
+## The Wasmtime plugin host (`zhw`)
+
+`plugin-host-wasmtime` is a Rust binary crate (`zhw`, `zhw.exe` on Windows) that hosts WebAssembly plugins over an NDJSON stdio protocol (`plugin-host/src/transport-wasmtime.ts`). Build it manually for source runs and plugin tests with:
+
+```
+cd plugin-host-wasmtime && cargo build --release
+```
+
+`gpui-ui/scripts/build.ts` builds `zhw` automatically in release mode (`cargo build --release`) and copies it to `gpui-ui/out/zhw` (`zhw.exe` on Windows), and `gpui-ui/scripts/package.ts` ships it next to the app executable (and signs `zhw.exe` on Windows). At run time `resolveZhwPath` looks in order: explicit `zhwPath`, `ZHW`, `ZN_ZHW`, next to the executable (or `../Resources/zhw` inside a macOS `.app`), `$CARGO_TARGET_DIR/release`, `plugin-host-wasmtime/target/release`, `gpui-ui/out`, and the Windows shared target path.
+
+**Windows `kache` wrapper note:** Wasmtime compiles C sources via `cc-rs` (`cl.exe` on MSVC). When `kache` is configured as `RUSTC_WRAPPER`, `build.ts` copies `kache.exe` to `gpui-ui/out/tools/kache-rustc.exe` and sets `RUSTC_WRAPPER` in the `cargo build` child environment only so `kache` wraps `rustc` without breaking `cl.exe`, leaving global Cargo configuration and `CARGO_TARGET_DIR` untouched.
+
 ## The custom GPUIX addon
 
 Windows only. The app uses a locally built `@gpuix/native` addon with cache regions. On Linux and macOS the npm binary is used as it is and the app works with whole-window redraws. On Windows, after every `bun install` in `gpui-ui` you must copy the custom addon over the npm binary again:
@@ -150,13 +162,14 @@ bun gpui-ui/scripts/package.ts --aot     # gpui-ui/out/package-aot/zotero-next-g
 bun gpui-ui/scripts/package.ts           # bytecode build into gpui-ui/out/package/zotero-next-gpui/
 ```
 
-Add `--zip` to also write a zip (through `pwsh` on Windows, through `zip` elsewhere). `package.ts` runs the steps in order: `cargo build --release` for the PDF library, the PDFium fetch if needed, `scripts/build.ts` (with `--hide-console` on Windows), the pre-bundled translate worker (non-AOT only, `scripts/translate-worker.ts`), then assembles the folder: the exe, the PDF library, PDFium with its licences, the icon, `vendor/zotero` (translators, schema, and for non-AOT the framework), `vendor/document-worker/build`, `reader-host/dist` and `note-host/dist` when built (otherwise it warns that web tabs will be off), `README.txt` and `version.txt`. On Windows it then calls the signing hook, which does nothing unless configured (see [Releasing](releasing.md)).
+Add `--zip` to also write a zip (through `pwsh` on Windows, through `zip` elsewhere). `package.ts` runs the steps in order: `cargo build --release` for the PDF library, the PDFium fetch if needed, `scripts/build.ts` (which also builds `zhw`, and uses `--hide-console` on Windows), the pre-bundled translate worker (non-AOT only, `scripts/translate-worker.ts`), then assembles the folder: the exe, `zhw`, the PDF library, PDFium with its licences, the icon, `vendor/zotero` (translators, schema, and for non-AOT the framework), `vendor/document-worker/build`, `reader-host/dist` and `note-host/dist` when built (otherwise it warns that web tabs will be off), `README.txt` and `version.txt`. On Windows it then calls the signing hook, which does nothing unless configured (see [Releasing](releasing.md)).
 
 Per OS, the files differ:
 
 | | Windows | Linux | macOS |
 | --- | --- | --- | --- |
 | Executable | `zotero-next-gpui.exe` | `zotero-next-gpui` | `zotero-next-gpui` |
+| Plugin host | `zhw.exe` | `zhw` | `zhw` |
 | PDF library | `zn_pdf.dll` | `libzn_pdf.so` | `libzn_pdf.dylib` |
 | PDFium | `pdfium.dll` | `libpdfium.so` | `libpdfium.dylib` |
 | Icon | `icon.ico` | `icon.png` | `icon.png` |

@@ -1,6 +1,4 @@
-// The plugin runtime: loads a jco-transpiled component (JSPI) and runs its exports. Shared by the two places a plugin can live:
-//   worker.ts      a Worker in the plugin host process (default); the glue is imported from disk
-//   aot-entry.ts   the entry of a per-plugin AOT executable (src/package/aot.ts); the glue and the core .wasm files are compiled in
+// The Worker plugin runtime (`runner: "worker"`): loads a jco-transpiled component (JSPI) from disk and runs its exports.
 //
 //   imports  zinc:plugin/*  -> async function that posts an `import` message to the host and awaits the reply
 //            wasi:*         -> wasi-stubs.ts (nothing real)

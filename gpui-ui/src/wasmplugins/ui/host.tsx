@@ -1,8 +1,9 @@
 // The host side of the `ui` import (plugin-api/wit/ui.wit): what a plugin can ask Zinc to do. plugin-host/src/imports/ui.zinc.ts
 // is a thin wrapper that calls these functions. Everything here runs in the Zinc process.
 //
-// Dialogs and prompts are re-entrant: `run-dialog` suspends the plugin's call while the dialog is open, and events from the dialog
-// arrive through `ui-events.on-event` meanwhile (core README: a plugin may be entered again while it waits in an import).
+// Dialogs never block the plugin: `open-dialog` returns at once, events from the dialog arrive through `ui-events.on-event`, and
+// closing it sends `close` events (the button, then the form values). `alert`, `confirm` and `prompt` do wait, but they show no
+// plugin content, so nothing calls into the plugin while they are open.
 import { createSignal, For, Show, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
 import { Icon } from "../../icons";
@@ -12,6 +13,7 @@ import { getPluginSupervisor } from "../host";
 import { overrides as colorOverrides, tokenColor } from "./colors";
 import { ControllerView } from "./ControllerView";
 import { allocInstance, lookupInstance, P, ViewController } from "./controller";
+import { jsonToTree, TreeError } from "./convert";
 import { textOf } from "./l10n";
 import { lastPointer, toMenuItems } from "./render/node";
 import { webHosts } from "./render/special";
@@ -88,7 +90,7 @@ interface DialogButton {
 interface DialogSpec {
 	title: UiText;
 	icon?: unknown;
-	content: Tree;
+	content: string | Tree | Record<string, unknown>;
 	buttons: DialogButton[];
 	width?: number;
 	height?: number;
@@ -181,20 +183,22 @@ async function showDialog(ctx: HostCtx, spec: DialogSpec, instance: bigint, onRe
 	return { button, values };
 }
 
-export async function runDialog(ctx: HostCtx, spec: DialogSpec): Promise<{ button: string | undefined; values: FormField[] }> {
-	checkLimits(ctx, spec);
-	return showDialog(ctx, spec, allocInstance());
-}
-
 export function openDialogNow(ctx: HostCtx, spec: DialogSpec): bigint {
 	checkLimits(ctx, spec);
+	let tree: Tree;
+	try {
+		tree = typeof spec.content === "object" && spec.content !== null && "nodes" in spec.content ? (spec.content as Tree) : jsonToTree(spec.content);
+	} catch (e) {
+		if (e instanceof TreeError) throw new UiHostError("invalid-argument", e.message);
+		throw e;
+	}
 	const instance = allocInstance();
-	void showDialog(ctx, spec, instance).then(async (o) => {
+	void showDialog(ctx, { ...spec, content: tree }, instance).then(async (o) => {
 		// the plugin hears the outcome as `close` events: the button, then the form
-		const base = { handler: "", kind: "close", modifiers: NO_MODS, rev: 0n };
+		const base = { handler: o.button ?? "", kind: "close", modifiers: NO_MODS, rev: 0n };
 		try {
 			await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: o.button === undefined ? P.none : P.button(o.button) }]);
-			if (o.values.length) await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: P.form(o.values) }]);
+			await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: P.form(o.values) }]);
 		} catch {
 			/* the plugin is gone */
 		}
@@ -306,11 +310,11 @@ export async function prompt(
 
 /**
  * Zinc has one GPUIX window: it cannot open a second operating-system window yet. A plugin that needs one gets the WIT error and
- * can fall back to `ui.run-dialog` (or `extend.open-tab`).
+ * can fall back to `ui.open-dialog` (or `extend.open-tab`).
  */
 export function openWindow(ctx: HostCtx, _spec: unknown): never {
 	if (!ctx.has("ui.windows")) throw new UiHostError("permission-denied", "ui.windows");
-	throw new UiHostError("unavailable", "ui.open-window: Zinc cannot open a second window yet; use ui.run-dialog or extend.open-tab");
+	throw new UiHostError("unavailable", "ui.open-window: Zinc cannot open a second window yet; use ui.open-dialog or extend.open-tab");
 }
 export function closeWindow(_ctx: HostCtx, _instance: bigint): void {}
 

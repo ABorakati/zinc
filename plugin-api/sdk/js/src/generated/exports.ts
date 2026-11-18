@@ -253,5 +253,10 @@ export const EXPORT_FUNCTIONS: readonly { iface: string; fn: string; ret: string
 		"iface": "noteEvents",
 		"fn": "onNoteEvent",
 		"ret": "void"
+	},
+	{
+		"iface": "mcpHandler",
+		"fn": "onMcpCall",
+		"ret": "Json"
 	}
 ];

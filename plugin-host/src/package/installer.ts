@@ -1,24 +1,25 @@
 // The plugin manager: install, update, uninstall, enable and disable of .zplugin packages, the lifecycle hook calls with their reasons
-// (lifecycle.md 2.2), and the startup of every installed plugin. It drives a PluginSupervisor (src/supervisor.ts) and writes exactly the
-// loadable layout of src/manifest.ts under <root>/installed/<id>/ (see layout.ts).
+// (lifecycle.md 2.2), and the startup of every installed plugin. It drives a PluginSupervisor (src/supervisor.ts) and writes the
+// loadable layout under <root>/installed/<id>/ (see layout.ts):
 //
-//   package (.zplugin zip, or a folder)  ->  checks  ->  staging  ->  jco transpile of plugin.wasm  ->  installed/<id>/  ->  load, install, startup
+//   wasmtime (default): package -> checks -> staging -> zhw precompile into cache/ -> installed/<id>/ -> load, install, startup
+//   worker (fallback):  package -> checks -> staging -> jco transpile of plugin.wasm -> installed/<id>/ -> load, install, startup
 //
 // What is checked, in order: zip safety (names, sizes, CRC), the manifest against manifest.schema.json plus the permission ids, the
 // platform and the version ranges (api_version, min_version, strict max), main.sha256 against plugin.wasm (pinned when absent), then the
-// permission approval. A `transpiled/` folder inside a package is ignored: the installer builds its own (transpile.ts says why).
+// permission approval. A `transpiled/` folder inside a package is always ignored.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { PluginManifest } from "../manifest";
-import type { PluginSupervisor } from "../supervisor";
+import type { PluginRunner, PluginSupervisor } from "../supervisor";
 import { PluginError } from "../protocol";
 import { describePermissions, declaredPermissions, optionalIds, requiredIds, permissionTier, type PromptGroup } from "../permissions/risk";
 import { GrantStore } from "../permissions/store";
 import { assertSafeId, createLayout, pluginsRoot, type Layout } from "./layout";
+import { CwasmCache } from "./cwasm-cache";
 import { readJson, writeJsonAtomic } from "./json-file";
 import { apiCompatible, semverCompare } from "./semver";
-import { AOT_EXE, buildAot, hashFile } from "./aot";
 import { createTranspiler, hashTree, sha256Hex, type TranspileFn } from "./transpile";
 import { validateManifest } from "./validate";
 import { readZip, ZipError, type ZipFile } from "./zip";
@@ -93,17 +94,21 @@ export interface ManagerOptions {
 	/** `zinc:plugin` API version of this build. Default "0.1.0". */
 	apiVersion?: string;
 	platform?: "windows" | "macos" | "linux";
+	/** Active plugin runner (`"wasmtime"` default, or `"worker"`). */
+	runner?: PluginRunner;
+	/** Precompile `plugin.wasm` into the `.cwasm` cache on `wasmtime` install. Default `true`. */
+	precompile?: boolean;
+	/** Rebuild `.cwasm` on `loadInto` when `zhw` version bumped (or always when `true`, never when `false`). */
+	autoRebuildCache?: boolean;
+	/** Explicit path to the `zhw` binary (`wasmtime` runner). */
+	zhwPath?: string;
+	/** Test hook: overrides the `cacheKey` reported by `zhw version` to simulate a `zhw` upgrade. */
+	zhwVersionOverride?: string;
 	/** The install prompt. Without one, tiers none and low are granted and the rest is not. */
 	approve?: ApproveFn;
-	/** Replace the jco step (tests that never load the plugin). */
+	/** Replace the jco step (`worker` runner tests). */
 	transpile?: TranspileFn;
-	/**
-	 * Experimental AOT step (phase2-aot.md): compile a plugin whose transpiled JS is at least `minBytes` (default 8 MB; smaller plugins
-	 * gain nothing and an executable is 85 MB or more) into `aot/plugin.exe`, which the host runs when the supervisor's runner is
-	 * "aot-process". Needs the Bun canary. A failed build only logs: the plugin keeps running in a Worker. Default off.
-	 */
-	aot?: boolean | { minBytes?: number; build?: (pkgDir: string) => Promise<unknown> };
-	/** Directory of the zinc:plugin WIT files for the default transpiler. */
+	/** Directory of the zinc:plugin WIT files for the default jco transpiler (`worker` runner). */
 	witDir?: string;
 	/** A reason string for a blocked plugin version (`plugin-state::blocked`), or undefined. */
 	blocklist?: (id: string, version: string) => string | undefined;
@@ -117,6 +122,8 @@ export interface ManagerEvents {
 	changed: { id: string };
 	/** A lifecycle hook finished OK (`hook` is a lifecycle.hook name, `why` a lifecycle.reason). */
 	hook: { plugin: string; hook: string; why: string };
+	/** A library window opened or closed (emitted before running the window lifecycle hooks). */
+	window: { hook: "main-window-load" | "main-window-unload"; window: number };
 }
 
 interface StateEntry {
@@ -126,10 +133,10 @@ interface StateEntry {
 	updatedAt?: number;
 	disabledReason?: string;
 	pendingApproval?: string[];
-	/** SHA-256 over the transpiled folder, checked at every load. */
+	/** SHA-256 over the transpiled folder (`worker` runner; `""` on `wasmtime`). */
 	transpiledHash: string;
-	/** SHA-256 of aot/plugin.exe, when there is one; a mismatch at load deletes the executable and the plugin runs in a Worker. */
-	aotHash?: string;
+	/** `zhw` cacheKey under which `.cwasm` was precompiled (`wasmtime` runner). */
+	cwasmCacheKey?: string;
 }
 
 interface StateFile {
@@ -149,10 +156,12 @@ const MAX_MANIFEST_BYTES = 256 * 1024;
 export class PluginManager {
 	readonly layout: Layout;
 	readonly grants: GrantStore;
+	readonly cwasmCache: CwasmCache;
 	readonly zincVersion: string;
 	readonly apiVersion: string;
 	private sup: PluginSupervisor | undefined;
 	private records = new Map<string, Rec>();
+	private resolvedCwasm = new Map<string, string | undefined>();
 	private problems = new Map<string, { state: PluginState; detail: string }>();
 	private uninstalling = new Set<string>();
 	private listeners = new Map<string, Set<(e: any) => void>>();
@@ -167,11 +176,40 @@ export class PluginManager {
 	constructor(private opts: ManagerOptions = {}) {
 		this.layout = createLayout(opts.root ?? pluginsRoot());
 		this.grants = new GrantStore(this.layout.grantsFile);
+		this.cwasmCache = new CwasmCache({
+			cacheRoot: this.layout.cacheRoot,
+			zhwPath: opts.zhwPath,
+			zhwVersionOverride: opts.zhwVersionOverride,
+		});
 		this.zincVersion = opts.zincVersion ?? process.env.ZN_VERSION ?? "0.1.0";
 		this.apiVersion = opts.apiVersion ?? "0.1.0";
 		this.transpile = opts.transpile ?? createTranspiler(opts.witDir);
 		this.approveFn = opts.approve;
 		this.platform = opts.platform ?? (process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux");
+	}
+
+	activeRunner(): PluginRunner {
+		if (this.opts.runner) return this.opts.runner;
+		if (this.sup?.runner) return this.sup.runner;
+		const envRunner = process.env.ZN_PLUGIN_RUNNER ?? process.env.ZN_TEST_RUNNER;
+		return envRunner === "worker" ? "worker" : "wasmtime";
+	}
+
+	/** `.cwasm` path resolved for `id` (used by `supervisor`'s `cwasmOf` hook). */
+	cwasmFor(id: string, manifest?: PluginManifest): string | undefined {
+		if (this.resolvedCwasm.has(id)) return this.resolvedCwasm.get(id);
+		if (this.opts.precompile === false) return undefined;
+		const sha = (manifest ?? this.records.get(id)?.manifest)?.main.sha256;
+		return sha ? this.cwasmCache.getIfFresh(sha) : undefined;
+	}
+
+	private pruneCache() {
+		if (this.activeRunner() !== "wasmtime") return;
+		const valid = new Set<string>();
+		for (const r of this.records.values()) {
+			if (r.manifest.main.sha256) valid.add(r.manifest.main.sha256);
+		}
+		this.cwasmCache.prune(valid);
 	}
 
 	/** The supervisor the manager drives. Set once, before the first install or `startAll`. */
@@ -198,35 +236,6 @@ export class PluginManager {
 				this.log("error", `listener for ${event} threw: ${(err as Error).message}`);
 			}
 		}
-	}
-
-	/** Install step: build `aot/plugin.exe` in the staging folder when the option is on and the plugin is big enough. Returns its hash. */
-	private async buildAotStep(id: string, stage: string): Promise<string | undefined> {
-		const o = this.opts.aot;
-		if (!o) return undefined;
-		const cfg = o === true ? {} : o;
-		try {
-			const size = statSync(join(stage, "transpiled", "plugin.js")).size;
-			if (size < (cfg.minBytes ?? 8_000_000)) return undefined;
-			const t0 = Date.now();
-			await (cfg.build ?? ((dir: string) => buildAot(dir)))(stage);
-			this.log("info", `${id}: AOT executable built in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-			return await hashFile(join(stage, AOT_EXE));
-		} catch (e) {
-			this.log("warn", `${id}: AOT build failed, the plugin runs in a Worker: ${(e as Error).message.split("\n")[0]}`);
-			await rm(join(stage, "aot"), { recursive: true, force: true }).catch(() => {});
-			return undefined;
-		}
-	}
-
-	/** Load step: an executable that does not match its hash (or has none on record) is deleted; the plugin then runs in a Worker. */
-	private async checkAot(id: string, dir: string, entry: StateEntry): Promise<void> {
-		const exe = join(dir, AOT_EXE);
-		if (!existsSync(exe)) return;
-		const ok = entry.aotHash !== undefined && (await hashFile(exe).catch(() => "")) === entry.aotHash;
-		if (ok) return;
-		this.log("warn", `${id}: aot/plugin.exe does not match its recorded hash; deleted, the plugin runs in a Worker`);
-		await rm(join(dir, "aot"), { recursive: true, force: true }).catch(() => {});
 	}
 
 	private log(level: "error" | "warn" | "info" | "debug", message: string) {
@@ -260,7 +269,7 @@ export class PluginManager {
 
 	// ---- reading what is installed ------------------------------------------------------------------------------------------
 
-	/** Reads state.json and every installed manifest, empties temp/ and the work folders. Idempotent. */
+	/** Reads state.json and every installed manifest, empties temp/ and the work folders, and prunes stale `.cwasm` caches. Idempotent. */
 	init(): void {
 		if (this.loaded) return;
 		this.loaded = true;
@@ -278,6 +287,7 @@ export class PluginManager {
 		mkdirSync(this.layout.tempRoot, { recursive: true });
 		rmSync(this.layout.staging, { recursive: true, force: true });
 		rmSync(this.layout.trash, { recursive: true, force: true });
+		this.pruneCache();
 	}
 
 	private saveState() {
@@ -445,7 +455,7 @@ export class PluginManager {
 			}
 		}
 
-		// 2. stage: the files, then our own transpile of plugin.wasm
+		// 2. stage: the files, then prepare plugin.wasm (`.cwasm` cache on `wasmtime`, or `jco` on `worker`)
 		const stage = join(this.layout.staging, `${id}-${crypto.randomUUID().slice(0, 8)}`);
 		await rm(stage, { recursive: true, force: true });
 		await mkdir(stage, { recursive: true });
@@ -458,13 +468,31 @@ export class PluginManager {
 			}
 			const pinned = { ...manifest, main: { ...manifest.main, sha256: digest } } as PluginManifest;
 			await Bun.write(join(stage, "manifest.json"), JSON.stringify(pinned, null, "\t") + "\n");
-			try {
-				await this.transpile(files.find((f) => f.name === manifest.main.wasm)!.data, join(stage, "transpiled"));
-			} catch (e) {
-				throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", [(e as Error).message.split("\n")[0]]);
+
+			const wasmBytes = files.find((f) => f.name === manifest.main.wasm)!.data;
+			let transpiledHash = "";
+			let cwasmCacheKey: string | undefined;
+			if (this.activeRunner() === "worker") {
+				try {
+					await this.transpile(wasmBytes, join(stage, "transpiled"));
+				} catch (e) {
+					throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", [(e as Error).message.split("\n")[0]]);
+				}
+				transpiledHash = existsSync(join(stage, "transpiled")) ? await hashTree(join(stage, "transpiled")) : "";
+			} else if (this.opts.precompile !== false) {
+				try {
+					const cwasmPath = await this.cwasmCache.precompile(join(stage, ...manifest.main.wasm.split("/")), digest);
+					cwasmCacheKey = this.cwasmCache.cacheKey();
+					this.resolvedCwasm.set(id, cwasmPath);
+				} catch (e) {
+					throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", [(e as Error).message.split("\n")[0]]);
+				}
+			} else {
+				if (wasmBytes.length <= 8 || wasmBytes[4] !== 0x0d) {
+					throw new InstallError("transpile-failed", "plugin.wasm could not be prepared (is it a component built for the zinc:plugin world?)", ["not a WebAssembly component"]);
+				}
+				this.resolvedCwasm.set(id, undefined);
 			}
-			const transpiledHash = existsSync(join(stage, "transpiled")) ? await hashTree(join(stage, "transpiled")) : "";
-			const aotHash = await this.buildAotStep(id, stage);
 
 			// 3. stop and remove the old version (data and prefs stay)
 			if (old) await this.retire(id, action === "downgrade" ? "addon-downgrade" : "addon-upgrade", { removeFiles: false });
@@ -497,13 +525,14 @@ export class PluginManager {
 				disabledReason: enabled ? undefined : pending ? undefined : old?.entry.disabledReason,
 				pendingApproval: pending,
 				transpiledHash,
-				aotHash,
+				...(cwasmCacheKey ? { cwasmCacheKey } : {}),
 			};
 			const stored = JSON.parse(readFileSync(join(dest, "manifest.json"), "utf8")) as PluginManifest;
 			this.records.set(id, { manifest: stored, entry });
 			this.problems.delete(id);
 			this.grants.set(id, { granted: [...granted], seen: [...declaredAll] });
 			this.saveState();
+			this.pruneCache();
 		} catch (e) {
 			await rm(stage, { recursive: true, force: true }).catch(() => {});
 			throw e;
@@ -551,14 +580,38 @@ export class PluginManager {
 		if (why) return bad("incompatible", why);
 		const blocked = this.opts.blocklist?.(id, m.version);
 		if (blocked) return bad("blocked", blocked);
+		const runner = this.activeRunner();
+		let wasmSha = m.main.sha256;
 		try {
 			const wasm = new Uint8Array(await Bun.file(join(dir, m.main.wasm)).arrayBuffer());
-			if (m.main.sha256 && sha256Hex(wasm) !== m.main.sha256) return bad("failed", "plugin.wasm does not match its pinned hash; reinstall the plugin");
-			if (r.entry.transpiledHash && (await hashTree(join(dir, "transpiled"))) !== r.entry.transpiledHash) return bad("failed", "the prepared plugin files were changed; reinstall the plugin");
+			const actualSha = sha256Hex(wasm);
+			if (m.main.sha256 && actualSha !== m.main.sha256) return bad("failed", "plugin.wasm does not match its pinned hash; reinstall the plugin");
+			wasmSha = actualSha;
+			if (runner === "worker" && r.entry.transpiledHash && (await hashTree(join(dir, "transpiled"))) !== r.entry.transpiledHash) {
+				return bad("failed", "the prepared plugin files were changed; reinstall the plugin");
+			}
 		} catch (e) {
 			return bad("failed", `plugin files cannot be read: ${(e as Error).message}`);
 		}
-		await this.checkAot(id, dir, r.entry);
+		if (runner === "wasmtime" && wasmSha) {
+			let cwasm = this.opts.precompile === false ? undefined : this.cwasmCache.getIfFresh(wasmSha);
+			const currentKey = this.cwasmCache.cacheKey();
+			const shouldRebuild =
+				!cwasm &&
+				this.opts.precompile !== false &&
+				this.opts.autoRebuildCache !== false &&
+				(this.opts.autoRebuildCache === true || (currentKey !== undefined && r.entry.cwasmCacheKey !== currentKey));
+			if (shouldRebuild) {
+				try {
+					cwasm = await this.cwasmCache.precompile(join(dir, m.main.wasm), wasmSha);
+					r.entry.cwasmCacheKey = currentKey;
+					this.saveState();
+				} catch (e) {
+					this.log("warn", `${id}: .cwasm cache rebuild failed, falling back to JIT: ${(e as Error).message.split("\n")[0]}`);
+				}
+			}
+			this.resolvedCwasm.set(id, cwasm);
+		}
 		const sup = this.supervisor();
 		if (sup.get(id)) await sup.unload(id);
 		await sup.load(dir);
@@ -626,9 +679,11 @@ export class PluginManager {
 				}
 				await this.retire(id, "addon-uninstall", { removeFiles: true });
 				this.records.delete(id);
+				this.resolvedCwasm.delete(id);
 				this.problems.delete(id);
 				this.grants.remove(id);
 				this.saveState();
+				this.pruneCache();
 				if (!o.keepData) {
 					rmSync(this.layout.data(id), { recursive: true, force: true });
 					for (const fn of this.dataRemovers) fn(id);
@@ -719,6 +774,7 @@ export class PluginManager {
 	/** Load and start every enabled plugin (`startup(app-startup)`). Call after the library is open and the UI is ready. Failures are recorded per plugin. */
 	async startAll(o: { concurrency?: number } = {}): Promise<void> {
 		this.init();
+		this.pruneCache();
 		const queue = [...this.records.keys()].filter((id) => this.records.get(id)!.entry.enabled);
 		const total = queue.length;
 		const worker = async () => {
@@ -767,6 +823,7 @@ export class PluginManager {
 	}
 
 	private async windowHook(hook: "main-window-load" | "main-window-unload", window: number) {
+		this.emit("window", { hook, window });
 		const sup = this.supervisor();
 		await Promise.all(
 			[...this.records.keys()].map(async (id) => {

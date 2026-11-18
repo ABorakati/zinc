@@ -31,7 +31,6 @@ export default defineHandler({
 		"scroll-to": fn("scrollTo"),
 		"form-values": fn("formValues"),
 		"web-post-message": fn("webPostMessage"),
-		"run-dialog": fn("runDialog"),
 		"open-dialog": fn("openDialogNow"),
 		"update-dialog": fn("updateDialog"),
 		"close-dialog": fn("closeDialog"),

@@ -12,6 +12,8 @@ import { resolveStoredPath } from "../files/paths";
 import { indexItem, search, stripHtml } from "../search";
 import { listLibraries, resolveLibrary } from "../libraries";
 import { pendingCount } from "../sync/build";
+import { attachPluginTools } from "./plugin-tools-server";
+import type { PluginToolProvider } from "./plugin-tools";
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
@@ -149,7 +151,12 @@ function collectionNames(db: Database): Map<string, Collection> {
 
 // ---------------------------------------------------------------- server
 
-export function createMcpServer(db: Database): McpServer {
+export interface McpServerOptions {
+	/** Where WASM plugin tools come from (HTTP transport inside the app). Default: none. */
+	pluginTools?: PluginToolProvider;
+}
+
+export function createMcpServer(db: Database, opts: McpServerOptions = {}): McpServer {
 	const server = new McpServer(
 		{ name: "zotero-next", version: "0.1.0" },
 		{
@@ -597,5 +604,6 @@ export function createMcpServer(db: Database): McpServer {
 		},
 	);
 
+	if (opts.pluginTools) attachPluginTools(server, opts.pluginTools);
 	return server;
 }

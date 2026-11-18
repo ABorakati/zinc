@@ -153,7 +153,7 @@ Status: `covered`, `partial` (what is missing is stated), `not planned` (why, an
 | # | Zotero capability | Zinc WIT | Status |
 |---|---|---|---|
 | 89 | `getSelectedItems(asIDs)` | `context.items`, `get-context`, `list-selected-items` | covered |
-| 90 | `getSelectedCollection(s)`, `getSelectedSavedSearch(es)`, `getSelectedGroup`, `getSelectedLibraryID(s)`, `getCollectionTreeRow`, `getSelectedObjects` | `context.rows`, `context.library` | covered |
+| 90 | `getSelectedCollection(s)`, `getSelectedSavedSearch(es)`, `getSelectedGroup`, `getSelectedLibraryID(s)`, `getCollectionTreeRow`, `getSelectedObjects` | `context.rows`, `context.library` | covered. Zotero 10 allows several collection-tree rows to be selected and throws from the singular getters (`getSelectedCollection`, `getSelectedLibraryID`, `getCollectionTreeRow`, `getSelectedSavedSearch`, `getSelectedGroup`); the plural forms (`getCollectionTreeRows`, `getSelectedCollections`, `getSelectedLibraryIDs`, `getSelectedSavedSearches`) are what Zinc models: `context.rows` is a list, so read it as "the selected rows" (zotero-versions.md) |
 | 91 | `getSortedItems`, `getSortField`, `getSortDirection` | `list-view-items`, `get-view` (`sort`) | covered |
 | 92 | `selectItem`, `selectItems` | `select-items` | covered |
 | 93 | `collectionsView.selectLibrary`, `selectCollection`, `selectSearch`, selecting rows | `select-row` | covered |
@@ -170,12 +170,12 @@ Status: `covered`, `partial` (what is missing is stated), `not planned` (why, an
 | # | Zotero capability | Zinc WIT | Status |
 |---|---|---|---|
 | 101 | `Zotero.Banners` bars above the tab strip (not a plugin API in Zotero; plugins use it or inject DOM) | `show-banner`, `hide-banner`, `on-banner-action` | covered: new, small |
-| 102 | `Zotero.Prompt.confirm({title, text, button0..2, checkbox, buttonDelay})` | `ui.confirm`, or `ui.run-dialog` with three buttons | partial: `ui.confirm` has two buttons and a checkbox; three-button prompts and `buttonDelay` need `ui.run-dialog` |
-| 103 | `Services.prompt.alert`, `prompt`, `select`; `Zotero.alert` | `ui.alert`, `ui.prompt`; `select` via `ui.run-dialog` | partial: no built-in "choose from list" prompt |
+| 102 | `Zotero.Prompt.confirm({title, text, button0..2, checkbox, buttonDelay})` | `ui.confirm`, or `ui.open-dialog` with three buttons (the pressed button arrives as a `close` event) | partial: `ui.confirm` has two buttons and a checkbox; three-button prompts and `buttonDelay` need `ui.open-dialog` and a `close` handler |
+| 103 | `Services.prompt.alert`, `prompt`, `select`; `Zotero.alert` | `ui.alert`, `ui.prompt`; `select` via `ui.open-dialog` and its `close` event | partial: no built-in "choose from list" prompt |
 | 104 | `Zotero.ProgressWindow` (`changeHeadline`, `addLines`, `ItemProgress` with `setProgress`, `setText`, `setError`, `setIcon`, `show`, `startCloseTimer`, `close`) | `ui.show-toast`, `update-toast`, `close-toast` (title, lines with progress, tone, `duration-ms`) | covered |
 | 105 | `ProgressWindowSet.closeAll` | none | partial: the plugin keeps its toast ids and closes them; there is no "close all" |
 | 106 | `Zotero.ProgressQueue` / `progressQueueDialog.jsx` (a dialog that lists queued items and their status) | none | not planned: build it as a `ui.open-dialog` with a list and update it with `ui.update-dialog` |
-| 107 | `window.openDialog`, `Services.ww.openWindow` with a `chrome://` XHTML dialog | `ui.run-dialog`, `ui.open-dialog`, `ui.open-window` | partial: the content is a `ui.tree`, not XHTML |
+| 107 | `window.openDialog`, `Services.ww.openWindow` with a `chrome://` XHTML dialog | `ui.open-dialog` (answer in the `close` event), `ui.open-window` | partial: the content is a `ui.tree`, not XHTML |
 | 108 | File and folder pickers (`FilePicker`, toolkit `FilePickerHelper`) | `fs.pick-open`, `fs.pick-save`, `fs.pick-directory` (lifecycle); results are `types.file-grant`s read with `fs.read` | covered |
 
 ### 1.9 Unofficial but widely used: from zotero-plugin-toolkit and from patching
@@ -186,7 +186,7 @@ Status: `covered`, `partial` (what is missing is stated), `not planned` (why, an
 | 110 | Toolbar buttons added to `#zotero-items-toolbar`, `#zotero-tabs-toolbar` | `register-toolbar-button`, `register-toolbar-view`, `set-toolbar-button-state` | partial: two slots (library toolbar, top bar). Arbitrary elements anywhere are not planned |
 | 111 | Keyboard shortcuts (`KeyboardManager`: `keydown`/`keyup` on the main window and reader iframes, key combos) | `register-shortcut`, `on-shortcut`; user rebinds in Settings > Shortcuts | partial: named commands with one chord. Raw key events, key sequences and overriding built-in shortcuts are not planned (a plugin cannot hear every key press; the user owns key bindings) |
 | 112 | Command palette (`PromptManager`, older toolkit) | `shortcut-registration.in-command-search`; or `ui.open-dialog` | partial: Zinc has no command search yet; the flag is ignored until it does |
-| 113 | Custom dialogs (`DialogHelper`, `SettingsDialog`) | `ui.run-dialog` / pref pane | covered |
+| 113 | Custom dialogs (`DialogHelper`, `SettingsDialog`) | `ui.open-dialog` and its `close` event / pref pane | covered |
 | 114 | Table in a plugin UI (`VirtualizedTableHelper`, React `VirtualizedTable`) | `ui` list and table nodes with `render-range` | covered (ui) |
 | 115 | Custom UI added anywhere in Zotero's DOM (`UITool.appendElement`, `createElement`) | the extension points here, plus `register-side-panel` | not planned: no DOM. Where the plugin wanted its own box, use a section, a tab, a side panel or a toolbar view |
 | 116 | Injected stylesheets that restyle Zotero (make-it-red style) | `ui.set-theme-override` | partial: colour tokens only, not arbitrary CSS |
@@ -220,7 +220,7 @@ Counts for this area, tallied by script over the tables above: 126 rows; **cover
 
 **Lazy updates for collapsed sections.** Zotero calls `onItemChange` on every section for every selection. With N plugin sections that is N calls per click. In Zinc a collapsed section is updated only when the user expands it, unless the plugin set `decides-enabled`. Most sections use `enabled-for` and need no call at all while the item is irrelevant.
 
-**Nothing waits for the user.** In `extend`, no function stays open while the user decides something. Dialogs belong to `ui`, which offers both a waiting call (`run-dialog`) and a non-waiting one (`open-dialog`). The waiting form depends on the host being able to deliver `ui-events` to the plugin while the plugin is suspended in an import. That is not yet tested (see open question 1).
+**Nothing waits for the user.** In `extend`, no function stays open while the user decides something. Dialogs belong to `ui`, which has one non-waiting call, `open-dialog`; the answer arrives as a `close` event on `ui-events`. The old waiting `run-dialog` was removed in phase 3, which settled open question 1. `ui.alert`, `confirm` and `prompt` still block, because they show no plugin content.
 
 **Preference panes are mostly declarative.** A `rows` pane has no code: the host draws toggles, text, number, choice and button rows in Zinc's settings style, bound to the plugin's prefs, with Zinc's settings search and enabled/visible rules from other prefs. `view` panes and `custom` rows give full control. Secret text fields are stored by the host with the plugin's secrets. This replaces XUL `preference=` bindings and per-pane scripts, which were the largest part of most Zotero plugins' preference code.
 
@@ -238,7 +238,7 @@ Counts for this area, tallied by script over the tables above: 126 rows; **cover
 
 ## 3. Open questions for the user
 
-1. **Re-entrancy in the plugin host.** `ui.run-dialog` and similar calls suspend the plugin inside a host import (JSPI) while the user answers, and the host must call `ui-events.on-event` for the dialog's own buttons during that time. Does jco let the host call another export of the same instance while one is suspended in an async import? If not, `ui` must drop its waiting calls and use `open-dialog` plus an event, and a guest SDK wraps that into an awaitable. Phase 2 spike needed before this is fixed.
+1. **Re-entrancy in the plugin host.** Resolved in phase 3: `ui.run-dialog` was removed; dialogs use `open-dialog` plus a `close` event, and the guest SDK wraps that into an awaitable (`ui.dialog`). Only `ui.alert`, `confirm` and `prompt` still block, and they show no plugin content.
 2. **Where do the other five menubar targets go?** Decided 2026-11-18: phase 2 adds a real File / Edit / View / Go / Help menubar; the overflow "Plugins" menu is only the fallback until it exists.
 3. **Manifest `contributes` for lazy loading.** Should menus, columns, section headers and preference rows be declarable in the manifest so a plugin loads only when used? It saves start-up time and memory for plugins with many entries. The cost is two ways to say the same thing.
 4. **Section visibility in the reader.** Do plugin item-pane sections appear in a reader tab's side panel? Zotero shows them there (`tabType` is `reader`), and many plugins (translation, reference tools) depend on it. Decided 2026-11-18: yes, sections and the `notes-add-*` menus appear in reader tabs (host work in phase 2).

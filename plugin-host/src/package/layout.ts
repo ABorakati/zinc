@@ -2,13 +2,14 @@
 // "zotero-next-gpui" subfolder that gpui-ui uses for library.json and ui-state.json):
 //
 //   <root>/                     %APPDATA%\zotero-next-gpui\plugins   (override: ZN_PLUGINS_DIR)
-//     installed/<id>/           the loadable folder of phase2-core: manifest.json, plugin.wasm, transpiled/plugin.js (+ core wasm),
-//                               locale/, icons/, anything else the package shipped. Read only for the plugin (fs root `bundled`).
+//     installed/<id>/           the loadable folder: manifest.json, plugin.wasm, locale/, icons/, anything else the package shipped
+//                               (plus transpiled/ when running on the fallback `worker` runner). Read only for the plugin (`bundled`).
+//     cache/<cacheKey>/         per-machine precompiled `.cwasm` cache (`<wasmSha256>.cwasm`), pruned on `zhw` upgrade and uninstall
 //     data/<id>/                the plugin's private folder (fs root `data`); removed on uninstall unless the user keeps it
 //     temp/                     scratch for fs root `temp` (emptied at start)
 //     prefs/<id>.json           user-set prefs of the plugin
 //     secrets/<id>.json         encrypted secrets; secrets/master.key* is the wrapped key
-//     state.json                installed plugins: version, enabled, hash of the transpiled output
+//     state.json                installed plugins: version, enabled, hash of prepared files
 //     grants.json               what the user granted each plugin
 //     .staging/, .trash/        work folders of the installer
 import { homedir } from "node:os";
@@ -18,6 +19,7 @@ export interface Layout {
 	root: string;
 	installed(id: string): string;
 	installedRoot: string;
+	cacheRoot: string;
 	data(id: string): string;
 	dataRoot: string;
 	tempRoot: string;
@@ -57,6 +59,7 @@ export function createLayout(root: string): Layout {
 		root,
 		installedRoot: join(root, "installed"),
 		installed: byId(join(root, "installed")),
+		cacheRoot: join(root, "cache"),
 		dataRoot: join(root, "data"),
 		data: byId(join(root, "data")),
 		tempRoot: join(root, "temp"),

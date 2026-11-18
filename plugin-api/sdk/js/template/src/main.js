@@ -20,4 +20,4 @@ const plugin = definePlugin({
 });
 
 // The QuickJS guest looks its exports up by these names.
-export const { lifecycle, events, netEvents, notifierHandler, uiEvents, extendHandlers, readerEvents, noteEvents } = plugin;
+export const { lifecycle, events, netEvents, notifierHandler, uiEvents, extendHandlers, readerEvents, noteEvents, mcpHandler } = plugin;

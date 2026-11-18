@@ -50,15 +50,16 @@ const plugin = definePlugin({
 			if (menuId !== MENU || entryId !== ENTRY) return;
 			const items = selectedItems(ctx);
 			if (!items.length) fail("invalid-argument", "no items selected");
-			const outcome = zui.runDialog(dialog(items.length));
-			if (outcome.button !== "ok") return;
-			const tags = parseTags(ui.fieldValue(outcome.values, "tags"));
-			if (!tags.length) {
-				zui.showToast(ui.toastSpec("Quick tags", "No tags entered.", "warning"));
-				return;
-			}
-			library.apply([ext.change("add-tags", { items, tags: tags.map((name) => ({ name, kind: "manual" })) })], { skipNotify: false });
-			zui.showToast(ui.toastSpec("Quick tags", `Added ${tags.length} tag${tags.length === 1 ? "" : "s"} to ${items.length} item${items.length === 1 ? "" : "s"}.`, "success"));
+			ui.dialog(dialog(items.length), zui).then((outcome) => {
+				if (outcome.button !== "ok") return;
+				const tags = parseTags(ui.fieldValue(outcome.values, "tags"));
+				if (!tags.length) {
+					zui.showToast(ui.toastSpec("Quick tags", "No tags entered.", "warning"));
+					return;
+				}
+				library.apply([ext.change("add-tags", { items, tags: tags.map((name) => ({ name, kind: "manual" })) })], { skipNotify: false });
+				zui.showToast(ui.toastSpec("Quick tags", `Added ${tags.length} tag${tags.length === 1 ? "" : "s"} to ${items.length} item${items.length === 1 ? "" : "s"}.`, "success"));
+			});
 		},
 	},
 });

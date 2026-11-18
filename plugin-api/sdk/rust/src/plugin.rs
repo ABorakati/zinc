@@ -5,19 +5,20 @@
 //! `reader-events.build-menu` / `on-menu-command` are [`Plugin::build_reader_menu`] / [`Plugin::on_reader_menu_command`].
 //!
 //! Methods are associated functions (no `self`): a plugin instance is one Wasm instance, so keep state in a
-//! `thread_local!` (the guest is single-threaded). A plugin can be re-entered while one of its calls waits in a host
-//! import (for example `ui::run_dialog`), so never hold a `RefCell` borrow across a host call.
+//! `thread_local!` (the guest is single-threaded).
 
 use crate::callbacks::{events, lifecycle};
 #[cfg(feature = "extend")]
 use crate::callbacks::extend_handlers as eh;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader")))]
 use crate::callbacks::net_events;
 #[cfg(feature = "reader")]
 use crate::callbacks::{note_events, reader_events as re};
 #[cfg(feature = "library")]
 use crate::callbacks::notifier_handler;
-#[cfg(feature = "ui")]
+#[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader"), all(feature = "mcp", not(feature = "extend"))))]
+use crate::callbacks::mcp_handler;
+#[cfg(any(feature = "ui", all(feature = "dialogs", feature = "reader")))]
 use crate::callbacks::ui_events;
 #[cfg(feature = "library")]
 use crate::host::notifier;
@@ -25,7 +26,7 @@ use crate::host::notifier;
 use crate::host::extend;
 #[cfg(feature = "reader")]
 use crate::host::reader;
-#[cfg(feature = "ui")]
+#[cfg(feature = "dialogs")]
 use crate::host::ui;
 use crate::host::{
     prefs, timers,
@@ -36,7 +37,7 @@ use crate::host::types::{ItemKey, LibraryId};
 
 type Res<T = ()> = Result<T, Error>;
 
-#[cfg(feature = "ui")]
+#[cfg(feature = "dialogs")]
 fn empty_render() -> ui::RenderResult {
     ui::RenderResult { content: ui::ContentUpdate::Unchanged, meta: None, focus: None }
 }
@@ -71,40 +72,48 @@ pub trait Plugin: 'static {
     fn on_plugin_event(plugin: PluginId, which: lifecycle::Hook, why: lifecycle::Reason) {}
     fn on_locale_changed(locale: String) {}
     fn on_permission_changed(permission: String, granted: bool) {}
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader")))]
     fn on_download_progress(url: String, received: u64, total: Option<u64>) {}
+
+    // ---- tools for AI agents (the `mcp` feature or the full world) --------------------------------------------------
+    /// Run the tool `tool` (the name you registered, not the prefixed name an agent sees). `args` is the JSON text of the arguments,
+    /// already checked against the tool's input schema. Return the result as JSON text (see `mcp::ok`). Default: `not-found` (no tools).
+    #[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader"), all(feature = "mcp", not(feature = "extend"))))]
+    fn on_mcp_call(tool: String, args: String) -> Res<String> {
+        Err(Error::NotFound(format!("no tool named {tool}")))
+    }
 
     // ---- library change notifications --------------------------------------------------------------------------
     #[cfg(feature = "library")]
     fn on_events(subscription: u32, batch: notifier::EventBatch) {}
 
     // ---- ui-events (item pane sections, dialogs opened with open-dialog, windows, popovers) --------------------------
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn mount(instance: ui::InstanceId, ctx: ui::ViewContext) -> ui::RenderResult {
         empty_render()
     }
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn update_context(instance: ui::InstanceId, ctx: ui::ViewContext) -> ui::RenderResult {
         empty_render()
     }
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn unmount(instance: ui::InstanceId) {}
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn visibility(instance: ui::InstanceId, visible: bool) {}
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     /// `ui-events.on-event`.
     fn on_ui_event(instance: ui::InstanceId, event: ui::UiEvent) -> ui::RenderResult {
         empty_render()
     }
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn resync(instance: ui::InstanceId) -> ui::RenderResult {
         empty_render()
     }
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn render_range(instance: ui::InstanceId, request: ui::RangeRequest) -> ui::RowBatch {
-        ui::RowBatch { start: request.start, rows: Vec::new(), nodes: Vec::new(), styles: Vec::new(), total: Some(0) }
+        ui::RowBatch { start: request.start, rows: Vec::new(), styles: None, total: Some(0) }
     }
-    #[cfg(feature = "ui")]
+    #[cfg(feature = "dialogs")]
     fn suggest(instance: ui::InstanceId, request: ui::SuggestRequest) -> Vec<ui::Suggestion> {
         Vec::new()
     }
@@ -259,7 +268,14 @@ impl<P: Plugin> events::Guest for Glue<P> {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader"), all(feature = "mcp", not(feature = "extend"))))]
+impl<P: Plugin> mcp_handler::Guest for Glue<P> {
+    fn on_mcp_call(tool: String, args: String) -> Res<String> {
+        P::on_mcp_call(tool, args)
+    }
+}
+
+#[cfg(any(feature = "full", all(feature = "dialogs", feature = "reader")))]
 impl<P: Plugin> net_events::Guest for Glue<P> {
     fn on_download_progress(url: String, received: u64, total: Option<u64>) {
         P::on_download_progress(url, received, total)
@@ -273,7 +289,7 @@ impl<P: Plugin> notifier_handler::Guest for Glue<P> {
     }
 }
 
-#[cfg(feature = "ui")]
+#[cfg(any(feature = "ui", all(feature = "dialogs", feature = "reader")))]
 impl<P: Plugin> ui_events::Guest for Glue<P> {
     fn mount(instance: ui::InstanceId, ctx: ui::ViewContext) -> ui::RenderResult {
         P::mount(instance, ctx)
@@ -288,6 +304,9 @@ impl<P: Plugin> ui_events::Guest for Glue<P> {
         P::visibility(instance, visible)
     }
     fn on_event(instance: ui::InstanceId, event: ui::UiEvent) -> ui::RenderResult {
+        if crate::ui::dispatch_dialog_event(instance, &event) {
+            return empty_render();
+        }
         P::on_ui_event(instance, event)
     }
     fn resync(instance: ui::InstanceId) -> ui::RenderResult {

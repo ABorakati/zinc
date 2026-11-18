@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { buildCanvas, hitTest, pathBox } from "./canvasSvg";
 import { resolveColor } from "./colors";
 import { ViewController, matchKey, P, lookupInstance } from "./controller";
-import { applyPatch, buildNested, jsonToTree, LIMITS, TreeError } from "./convert";
+import { applyPatch, buildNested, jsonToPatch, jsonToTree, LIMITS, setValidationMode, TreeError } from "./convert";
 import { htmlToMarkdown } from "./markup";
 import { measureText } from "./measure";
 import { mapBox, mergeText, textStyleOf } from "./styleMap";
@@ -140,6 +140,37 @@ describe("nested tree and patches", () => {
 		expect(applyPatch(n, styles, { baseRev: 2n, rev: 3n, ops: [{ tag: "remove", val: "b" }] })).toBe(true);
 		expect(n.children.length).toBe(2);
 		expect(applyPatch(n, styles, { baseRev: 3n, rev: 4n, ops: [{ tag: "remove", val: "nope" }] })).toBe(false);
+	});
+	test("JSON patch-set decodes, validates and applies", () => {
+		const n = buildNested(base());
+		const styles: Record<string, never> = {};
+		const patchJson = JSON.stringify({
+			baseRev: 1,
+			rev: 2,
+			ops: [
+				{ op: "set-node", key: "a", node: { type: "text", kind: "caption", text: "updated" } },
+				{ op: "insert", parent: "root", index: 1, node: { type: "badge", key: "b", label: "b", tone: "info" } },
+				{ op: "move", key: "a", parent: "root", index: 2 },
+				{ op: "replace", key: "b", node: { type: "badge", key: "b2", label: "b2", tone: "success" }, styles: [{ name: "chip", style: { radius: "full" } }] },
+				{ op: "set-styles", styles: [{ name: "n", style: { gap: 2 } }] },
+			],
+		});
+		expect(applyPatch(n, styles, patchJson)).toBe(true);
+		expect(n.children.map((c) => c.id)).toEqual(["k:b", "k:root/1", "k:a"]);
+		expect(n.children[2]!.kind.val!.kind).toBe("caption");
+		expect(n.children[0]!.kind.tag).toBe("badge");
+		expect((styles as Record<string, unknown>).chip).toBeDefined();
+		expect((styles as Record<string, unknown>).n).toBeDefined();
+		expect(() => jsonToPatch(JSON.stringify({ baseRev: 1, rev: 2, ops: [{ op: "unknown-op" }] }))).toThrow(TreeError);
+	});
+	test("schema validation: full mode catches unknown fields and bad enums; cheap mode skips schema walk", () => {
+		setValidationMode("full");
+		expect(() => jsonToTree({ root: { type: "box", unknownProp: 123 } })).toThrow(/unknown field "unknownProp"/);
+		expect(() => jsonToTree({ root: { type: "button", look: "not-a-look" } })).toThrow(/not-a-look/);
+		expect(() => jsonToTree({ root: { type: "grid" } })).toThrow(/missing required field "columns"/);
+		setValidationMode("cheap");
+		expect(jsonToTree({ root: { type: "box", unknownProp: 123 } }).nodes.length).toBe(1);
+		setValidationMode("full");
 	});
 });
 
@@ -335,11 +366,11 @@ describe("ViewController", () => {
 		expect(ctl.state.rev).toBe(3n);
 		const textOf = () => (ctl.state.root!.children[0]!.kind.val!.runs[0].text as { val: string }).val;
 		expect(textOf()).toBe("p2");
-		const kind = { tag: "text" as const, val: { kind: "body", runs: [{ text: { tag: "plain" as const, val: "patched" }, bold: false, italic: false, underline: false, strike: false, mono: false }], selectable: false } };
-		ctl.apply({ content: { tag: "patch", val: { baseRev: 3n, rev: 4n, ops: [{ tag: "set-node", val: { key: "t", props: props({ key: "t" }), kind } }] } } });
+		const patchStr = JSON.stringify({ baseRev: 3, rev: 4, ops: [{ op: "set-node", key: "t", node: { type: "text", key: "t", text: "patched" } }] });
+		ctl.apply({ content: { tag: "patch", val: patchStr } });
 		expect(textOf()).toBe("patched");
 		expect(ctl.state.rev).toBe(4n);
-		ctl.apply({ content: { tag: "patch", val: { baseRev: 99n, rev: 100n, ops: [] } } });
+		ctl.apply({ content: { tag: "patch", val: JSON.stringify({ baseRev: 99, rev: 100, ops: [] }) } });
 		await sleep(30);
 		expect(calls.some((c) => c.fn === "resync")).toBe(true);
 		expect(textOf()).toBe("resynced");
@@ -366,7 +397,21 @@ describe("ViewController", () => {
 			if (c.fn !== "render-range") return c.fn === "mount" ? fullTree(1n, "a") : undefined;
 			const r = c.args[1];
 			ranges.push(`${r.start}+${r.count}`);
-			return { start: r.start, rows: Array.from({ length: r.count }, (_, i) => ({ id: "v" + (r.start + i), depth: 0, expandable: false, expanded: false, disabled: false, cells: [] })), nodes: [], styles: [], total: 500 };
+			return {
+				start: r.start,
+				rows: Array.from({ length: r.count }, (_, i) => ({
+					id: "v" + (r.start + i),
+					depth: 0,
+					expandable: false,
+					expanded: false,
+					disabled: false,
+					style: i === 0 ? JSON.stringify({ background: "primary-tint" }) : undefined,
+					content: i === 1 ? JSON.stringify({ type: "badge", label: "custom" }) : undefined,
+					cells: [{ bold: false, content: i === 2 ? JSON.stringify({ type: "text", text: "cell-node" }) : undefined }],
+				})),
+				styles: JSON.stringify([{ name: "batch-style", style: { gap: 1 } }]),
+				total: 500,
+			};
 		});
 		const ctl = new ViewController("p@x", sup, ctx);
 		await ctl.mount();
@@ -376,6 +421,10 @@ describe("ViewController", () => {
 		expect(ranges).toEqual(["0+15"]);
 		expect(ctl.state.rowCache["k:vt"]!.total).toBe(500);
 		expect(ctl.state.rowCache["k:vt"]!.rows[14]!.id).toBe("v14");
+		expect((ctl.state.rowCache["k:vt"]!.rows[0]!.style as { background?: { val: string } })?.background?.val).toBe("primary-tint");
+		expect(ctl.state.rowCache["k:vt"]!.rows[1]!.contentNode?.kind.tag).toBe("badge");
+		expect(ctl.state.rowCache["k:vt"]!.rows[2]!.cells[0]!.contentNode?.kind.tag).toBe("text");
+		expect(ctl.state.styles["batch-style"]).toBeDefined();
 		ctl.requestRange(vnode(), 0, 15);
 		await sleep(100);
 		expect(ranges.length).toBe(1); // cached

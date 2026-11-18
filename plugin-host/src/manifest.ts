@@ -18,7 +18,7 @@ export interface Grants {
 
 /** The parts of manifest.json the host reads. The full file is passed through to handlers as `ctx.manifest`. */
 /** The worlds of `zinc:plugin` (plugin-api/wit/world.wit) a component may target. */
-export type PluginWorld = "plugin" | "plugin-minimal" | "plugin-core" | "plugin-library" | "plugin-extend" | "plugin-ui" | "plugin-reader" | "plugin-dialogs";
+export type PluginWorld = "plugin" | "plugin-minimal" | "plugin-core" | "plugin-library" | "plugin-extend" | "plugin-ui" | "plugin-reader" | "plugin-dialogs" | "plugin-mcp";
 
 export interface PluginManifest {
 	manifest_version: number;

@@ -64,6 +64,39 @@ export class L10nService {
 		for (const w of [...this.warned]) if (w.startsWith(plugin + "\0")) this.warned.delete(w);
 	}
 
+	/** Raw Fluent sources (`{ defaultLocale, bundles }`) for pushing to `zhw`. */
+	rawBundles(
+		plugin: string,
+		dirOverride?: string,
+		manifestOverride?: PluginManifest,
+	): { defaultLocale?: string; bundles: Array<{ tag: string; ftl: string }> } | undefined {
+		const dir = dirOverride ?? this.o.dirOf(plugin);
+		const m = (manifestOverride ?? this.o.manifestOf(plugin)) as
+			| (PluginManifest & { locales?: { default: string; available?: string[]; dir?: string } })
+			| undefined;
+		if (!dir) return undefined;
+		const base = join(dir, m?.locales?.dir ?? "locale");
+		let tags = m?.locales?.available;
+		if (!tags) {
+			try {
+				tags = readdirSync(base).filter((n) => statSync(join(base, n)).isDirectory());
+			} catch {
+				tags = [];
+			}
+		}
+		const bundles: Array<{ tag: string; ftl: string }> = [];
+		for (const tag of tags) {
+			const d = join(base, tag);
+			if (!existsSync(d)) continue;
+			const parts: string[] = [];
+			for (const f of readdirSync(d).filter((n) => n.endsWith(".ftl")).sort()) {
+				parts.push(readFileSync(join(d, f), "utf8"));
+			}
+			bundles.push({ tag, ftl: parts.join("\n") });
+		}
+		return { defaultLocale: m?.locales?.default, bundles };
+	}
+
 	private bundles(plugin: string): PluginBundles | undefined {
 		const hit = this.cache.get(plugin);
 		if (hit) return hit;

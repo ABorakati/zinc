@@ -66,8 +66,8 @@ Status: `covered` = a plugin can do the same thing; `partial` = part of it; `not
 
 | # | Zotero capability (source: prefs.js) | Zinc WIT | Status |
 |---|---|---|---|
-| 38 | `Zotero.Prefs.get(name)` on `extensions.zotero.` and `get(name, true)` for the plugin's `extensions.<id>.` branch | `prefs.get` on the plugin's own namespace `extensions.<plugin-id>.` | covered |
-| 39 | `Zotero.Prefs.get(name, true)` for Zotero's own and Firefox prefs | `prefs.get-app` (read only, allowlist, `prefs.app-read`) | partial |
+| 38 | `Zotero.Prefs.get(name)` (relative to `extensions.zotero.`), and `get("extensions.<id>.key", true)` for the plugin's own branch (`true` means the name is absolute) | `prefs.get` on the plugin's own namespace `extensions.<plugin-id>.`; the guest passes the short key | covered |
+| 39 | `Zotero.Prefs.get(name, true)` with an absolute name that is not the plugin's own: Zotero's own and Firefox prefs | `prefs.get-app` (read only, allowlist, `prefs.app-read`) | partial |
 | 40 | `Zotero.Prefs.set` (creates a pref of the right type; a type mismatch throws) | `prefs.set`, `prefs.set-many` (all or none); `pref-value` is bool, 32-bit int or string | covered |
 | 41 | `Zotero.Prefs.set(name, value, true)` on Zotero, Firefox and other plugins' prefs; `Services.prefs` raw branches | None. Zotero had to undo plugins that changed `ui.popup.disable_autohide` (prefs.js migration 13). Zinc settings that plugins may change get a typed call in the area that owns the feature | not planned |
 | 42 | `Zotero.Prefs.clear` | `prefs.clear` | covered |
@@ -133,7 +133,7 @@ Status: `covered` = a plugin can do the same thing; `partial` = part of it; `not
 | 92 | `setInterval`, `clearInterval` | `timers.set-interval`, `clear` | covered |
 | 93 | `requestIdleCallback`, `cancelIdleCallback` | `timers.request-idle`, `clear` | covered |
 | 94 | `Zotero.Promise.delay(ms)`, `await` on a timer | `timers.sleep` | covered |
-| 95 | `Date.now()`, `performance.now()` (a plugin has no WASI clock) | `timers.now`, `timers.monotonic-ms` | covered |
+| 95 | `Date.now()`, `performance.now()` (a plugin has no WASI clock) | `timers.now`, `timers.monotonic-ms` | covered: the guest has no WASI clock, so the JS SDK supplies `Date` (and `performance.now`) from `timers`; Rust plugins call `timers` directly |
 | 96 | `ChromeWorker`, `Worker` (threads) | None. A plugin is one single-threaded component; split long work into steps with `timers` | not planned |
 | 97 | `Zotero.Utilities.Internal.copyTextToClipboard`, nsIClipboard writes (text, HTML, image) | `clipboard.write` (`clipboard.write`; the only clipboard write in the API) | covered |
 | 98 | nsIClipboard reads | `clipboard.read` (`clipboard.read`; focused window; first read confirmed per session; the only clipboard read in the API) | covered |
@@ -151,7 +151,7 @@ Status: `covered` = a plugin can do the same thing; `partial` = part of it; `not
 | 110 | `Services.logins` / login manager for API keys (kept in clear text in prefs by many plugins) | `secrets.get`, `set`, `delete`, `list-names` (OS credential store, per plugin). Zinc addition | covered |
 | 111 | `Services.startup.quit`, `restart`, `Services.appShell`, `Services.wm`, `Services.io`, `Services.scriptloader`, `Services.console` | None for quit and restart (a plugin must not close Zinc); windows are in `app` and `extend`; the rest is not applicable | not planned |
 | 112 | `Components.classes`, `Cc`, `Ci`, `Cu`, `ChromeUtils.importESModule` of Zotero or Firefox modules, `Cu.Sandbox` | None | not planned |
-| 113 | `Zotero.alert`, `Zotero.ProgressWindow`, `Services.prompt` | Owned by the ui area, which is the one owner of dialogs and prompts (`ui.alert`, `confirm`, `prompt`, `run-dialog`, `open-dialog`, `show-toast`); extend has none. Counted in the ui table | covered (other area) |
+| 113 | `Zotero.alert`, `Zotero.ProgressWindow`, `Services.prompt` | Owned by the ui area, which is the one owner of dialogs and prompts (`ui.alert`, `confirm`, `prompt`, `open-dialog` with its `close` event, `show-toast`); extend has none. Counted in the ui table | covered (other area) |
 | 114 | Zotero has no permission checks | `permissions.check`, `list-permissions`, `request`; `events.on-permission-changed`. Zinc addition, see section 3 | covered (new) |
 
 Counts for this area, tallied by script from the status column: 114 rows; **covered 77, partial 15, not planned 22**. Row 113 (dialogs, owned by the extend and ui areas) and row 114 (permissions, a Zinc addition) are counted as covered.

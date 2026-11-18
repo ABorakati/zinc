@@ -273,7 +273,7 @@ export const uiEvents = {
 		return { content: { tag: "unchanged" }, meta: undefined, focus: undefined };
 	},
 	renderRange() {
-		return { start: 0, rows: [], nodes: [], styles: [], total: undefined };
+		return { start: 0, rows: [], styles: undefined, total: undefined };
 	},
 	suggest() {
 		return [];

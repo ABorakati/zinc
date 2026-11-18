@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-zinc-plugin = { path = "../../sdk/rust", features = ["extend"] }
+zinc-plugin = { path = "../../sdk/rust", features = ["ui"] }
 
 [profile.release]
 # profile settings are the plugin's own; the shared target dir and kache are set by the environment

@@ -2,9 +2,9 @@
 
 | Sample | Language | Shows |
 |---|---|---|
-| [`word-count`](word-count/) | Rust | an item list column, a preference (world `plugin-extend`) |
-| [`quick-tags`](quick-tags/) | JS (QuickJS) | an item context menu entry, a dialog with a form, `library.apply`, a toast |
-| [`highlight-export`](highlight-export/) | Rust | a reader toolbar button and an annotation context menu entry that export annotations to a note |
+| [`word-count`](word-count/) | Rust | an item list column, an item pane section (`ui-events`), and a preference (`plugin-ui`) |
+| [`quick-tags`](quick-tags/) | JS (QuickJS) | an item context menu entry, a non-blocking dialog (`ui.dialog`), `library.apply`, a toast |
+| [`highlight-export`](highlight-export/) | Rust | a reader toolbar button and an annotation context menu entry that export annotations to a note and show a toast |
 
 Build one (output goes to `<dir>/dist`, or `--out`):
 
