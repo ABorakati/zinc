@@ -1,47 +1,72 @@
-// Shell state that outlives a session: which side panels are shown, the column sizes for each combination, and the Settings tab
-// (an extra tab beside Library and the readers, like the web UI's SETTINGS_TAB). Everything lives in ui-state.json ("shell.*").
-import { createSignal } from "solid-js";
+// Shell state that outlives a session: the library's layout (frame columns, panes, sizes) and the Settings tab (an extra tab
+// beside Library and the readers, like the web UI's SETTINGS_TAB). Everything lives in ui-state.json ("shell.*").
+//
+// The layout is the working copy of docs/developer-guide/layouts.md, section 8 ("shell.layout.current.library"), normalised by
+// shell/frameLayout.ts. leftOpen / rightOpen (top-bar buttons, View menu, Settings > General) are views of it: the left column
+// and the "item" pane.
+import { createMemo, createRoot, createSignal } from "solid-js";
 import { isDocTab } from "../contracts";
 import { registerAppAction } from "../registry";
 import { store, uiState } from "../store";
-import { bindUiState, isBool, persisted, getPref, setPref } from "./prefs";
+import {
+	migrateLegacyLibrary,
+	normalizeLayout,
+	resetSizes,
+	setLeftShown,
+	setPaneHidden,
+	standardLibrary,
+	type KnownPanes,
+	type ViewLayout,
+} from "./frameLayout";
+import { knownPanes } from "./panes";
+import { bindUiState, getPref, persisted, setPref } from "./prefs";
 
 bindUiState(uiState); // prefs are written by store.ts's single ui-state.json writer
 
 export const SETTINGS_TAB = "settings";
 
-// ---- side panels (top-bar toggles)
-export const [leftOpen, setLeftOpen] = persisted("shell.panelLeft", true, isBool);
-export const [rightOpen, setRightOpen] = persisted("shell.panelRight", true, isBool);
+// ---- the library layout
+export const LAYOUT_VERSION = 1;
+const CURRENT_LIBRARY = "shell.layout.current.library";
 
-// ---- column sizes: fractions summing to 1, per combination of visible panels ("11" both, "10" sidebar only, "01" item pane only, "00")
-export const DEFAULT_COLS: Record<string, number[]> = { "11": [0.18, 0.54, 0.28], "10": [0.22, 0.78], "01": [0.64, 0.36], "00": [1] };
-const colsKey = (k: string) => `shell.cols.${k}`;
-const validCols =
-	(k: string) =>
-	(v: unknown): number[] | undefined => {
-		const want = DEFAULT_COLS[k]!.length;
-		return Array.isArray(v) && v.length === want && v.every((n) => typeof n === "number" && n > 0.02) ? (v as number[]) : undefined;
+// The built-in library panes are known here even before shell/builtinPanes.tsx registers them, so an edit made earlier (or a
+// layout read earlier) never drops them; they are drawn once registered.
+const BUILTIN_LIBRARY: KnownPanes = { ids: ["items", "item"], required: ["items"] };
+const knownLibrary = (): KnownPanes => {
+	const reg = knownPanes("library");
+	return {
+		ids: [...new Set([...BUILTIN_LIBRARY.ids, ...reg.ids])],
+		required: [...new Set([...BUILTIN_LIBRARY.required, ...reg.required])],
 	};
-const [colsRev, bumpCols] = createSignal(0);
-/** Stored sizes for a panel combination (falls back to the defaults). */
-export function getCols(k: string): number[] {
-	colsRev();
-	return getPref(colsKey(k), DEFAULT_COLS[k]!, validCols(k));
+};
+
+// First start with layouts: build the working copy from the fixed layout's keys (layouts.md, section 12). Those keys stay in the
+// file for one release, so a downgrade still finds them.
+if (getPref<unknown>("shell.layout.version", undefined) !== LAYOUT_VERSION) {
+	setPref(CURRENT_LIBRARY, migrateLegacyLibrary((k) => getPref<unknown>(k, undefined)));
+	setPref("shell.layout.active", { library: "builtin:standard" });
+	setPref("shell.layout.version", LAYOUT_VERSION);
 }
-export function setCols(k: string, sizes: number[]): void {
-	setPref(
-		colsKey(k),
-		sizes.map((n) => +n.toFixed(4)),
-	);
-	// no bump: the Resizable owns the live sizes while it is mounted; the stored copy is read when it is next created
+
+const [rawLibrary, setRawLibrary] = persisted<unknown>(CURRENT_LIBRARY, standardLibrary());
+/** The library's layout, valid for the panes registered now (normalised again when a pane registers or goes away). */
+export const libraryLayout = createRoot(() => createMemo(() => normalizeLayout(rawLibrary(), knownLibrary())));
+/** Replace the library's working copy (stored normalised). */
+export function setLibraryLayout(l: ViewLayout): void {
+	setRawLibrary(normalizeLayout(l, knownLibrary()));
+	setPref("shell.layout.version", LAYOUT_VERSION); // again, in case the "shell." keys were cleared since (Settings > Reset)
 }
+
+// ---- side panels (top-bar toggles): the left column and the item pane
+export const leftOpen = (): boolean => libraryLayout().left.shown;
+export const setLeftOpen = (shown: boolean): void => setLibraryLayout(setLeftShown(libraryLayout(), shown));
+export const rightOpen = (): boolean => !libraryLayout().hidden.includes("item");
+export const setRightOpen = (shown: boolean): void => setLibraryLayout(setPaneHidden(libraryLayout(), "item", !shown));
+
+/** Frame and column sizes back to the defaults (the panes stay where they are). */
 export function resetCols(): void {
-	for (const k of Object.keys(DEFAULT_COLS)) setPref(colsKey(k), undefined);
-	bumpCols((n) => n + 1);
+	setLibraryLayout(resetSizes(libraryLayout()));
 }
-/** The "11"/"10"/"01"/"00" key for the current panel visibility. */
-export const panelKey = (): string => `${+leftOpen()}${+rightOpen()}`;
 
 // ---- Settings tab
 const [settingsOpen, setSettingsOpen] = createSignal(false);
