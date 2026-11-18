@@ -1,0 +1,418 @@
+// One stack of the frame (docs/developer-guide/layouts-phase2.md, "stacks"): a 26 px header on the canvas colour above the pane's
+// card. With one pane the header shows its icon and title (muted) and a menu button; with several it is a tab strip (icon + title per
+// tab, the active one raised as the top bar's tabs are). The header is the drag source and the place the pane menu opens from.
+//
+// The content area is an empty div handed to the parent through `contentRef`: Frame moves the pane elements into it (insert before
+// remove, so GPUIX keeps their native state). This file never puts children there.
+//
+// Also here: the pane menu (right click or the menu button on a header or tab, Shift+F10 / Menu on a focused tab) and the one place
+// that moves a library pane from a menu or the keyboard with its "Moved <title>" undo toast.
+import { createEffect, createMemo, createSignal, For, on, onCleanup, type JSX } from "solid-js";
+import type { EventPayload, HostElement } from "@gpuix/solid";
+import { Icon } from "../icons";
+import { openMenu, toast, type Anchor, type MenuItem } from "../ui";
+import { boundsOf, native, t, tok, tx } from "../ui/core";
+import { focusRing, isActivateKey } from "../ui/controls";
+import { registerDropHost, paneDragSource } from "./dock";
+import {
+	canMove,
+	isSectionPane,
+	locatePane,
+	paneShown,
+	sectionIdOf,
+	stackFace,
+	type DropTarget,
+	type Stack,
+	type ViewLayout,
+} from "./frameLayout";
+import { activateLibraryPane, hideLibraryPane, libraryLayout, moveLibraryPane, undoLayout } from "./layout";
+import { paneDef, panesOf } from "./panes";
+import { returnSection } from "./sectionPanes";
+
+const HEADER_H = 26;
+const TAB_H = 22;
+/** One toast id for every layout change, so quick changes replace each other instead of stacking. */
+const TOAST_ID = "layout-move";
+
+const FILL = { display: "flex", flexDirection: "column", width: "100%", height: "100%", minWidth: 0, minHeight: 0 } as const;
+
+const sameList = <T,>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+type KeyEvent = EventPayload & {
+	preventDefault?: () => void;
+	stopPropagation?: () => void;
+	modifiers?: { shift?: boolean; ctrl?: boolean; alt?: boolean; cmd?: boolean };
+};
+/** Key name as GPUIX reports it, without an "arrow" prefix ("left", "right", "f10", "menu"). */
+const keyOf = (e: { key?: string }): string => {
+	const k = (e.key ?? "").toLowerCase();
+	return k.startsWith("arrow") ? k.slice(5) : k;
+};
+const isRightClick = (e: EventPayload): boolean => !!(e.isRightClick || e.button === 2);
+
+const titleOf = (id: string): string => paneDef(id)?.title() ?? id;
+
+// ---- moving and the pane menu ----------------------------------------------------------------------------------------------
+
+function offerUndo(message: string): void {
+	toast(message, {
+		id: TOAST_ID,
+		action: {
+			label: "Undo",
+			run: () => {
+				undoLayout();
+				toast.dismiss(TOAST_ID);
+			},
+		},
+	});
+}
+
+/** Move a library pane (menu or keyboard); on success shows "Moved <title>" with an Undo action. Returns false when not allowed. */
+export function movePaneFromMenu(id: string, to: DropTarget): boolean {
+	const title = titleOf(id);
+	const ok = moveLibraryPane(id, to);
+	if (ok) offerUndo(`Moved ${title}`);
+	return ok;
+}
+
+function menuFor(id: string, l: ViewLayout, registered: ReadonlySet<string>): MenuItem[] {
+	const loc = locatePane(l, id);
+	const to = (target: DropTarget) => () => void movePaneFromMenu(id, target);
+	const splitEnd = (column: "centre" | "right"): DropTarget => ({ kind: "split", column, at: l[column].stacks.length });
+
+	// the other stacks that draw something, by their face's title
+	const stacks: MenuItem[] = [];
+	for (const column of ["centre", "right"] as const)
+		l[column].stacks.forEach((s, stack) => {
+			if (s.panes.includes(id)) return;
+			const face = stackFace(l, s, registered);
+			if (!face) return;
+			const target: DropTarget = { kind: "tab", column, stack };
+			stacks.push({ label: titleOf(face), icon: paneDef(face)?.icon, disabled: !canMove(l, id, target), onSelect: to(target) });
+		});
+
+	const items: MenuItem[] = [
+		{
+			label: "Move to",
+			icon: "move",
+			submenu: (["centre", "right"] as const).map((column) => ({
+				label: column === "centre" ? "Centre column" : "Right column",
+				disabled: !canMove(l, id, splitEnd(column)),
+				onSelect: to(splitEnd(column)),
+			})),
+		},
+		{ label: "Stack with", icon: "layers", disabled: stacks.length === 0, submenu: stacks },
+	];
+
+	if (loc) {
+		const col = l[loc.column];
+		const alone = col.stacks[loc.stack]!.panes.length === 1;
+		const drawn = (i: number) => stackFace(l, col.stacks[i]!, registered) !== null;
+		let up: DropTarget | null = alone ? null : { kind: "split", column: loc.column, at: loc.stack };
+		let down: DropTarget | null = alone ? null : { kind: "split", column: loc.column, at: loc.stack + 1 };
+		if (alone) {
+			for (let i = loc.stack - 1; i >= 0; i--)
+				if (drawn(i)) {
+					up = { kind: "split", column: loc.column, at: i };
+					break;
+				}
+			for (let i = loc.stack + 1; i < col.stacks.length; i++)
+				if (drawn(i)) {
+					down = { kind: "split", column: loc.column, at: i + 1 };
+					break;
+				}
+		}
+		items.push(
+			{ label: "Move up", icon: "arrow-up", disabled: !up || !canMove(l, id, up), onSelect: up ? to(up) : undefined },
+			{ label: "Move down", icon: "arrow-down", disabled: !down || !canMove(l, id, down), onSelect: down ? to(down) : undefined },
+		);
+	}
+
+	const sectionId = sectionIdOf(id);
+	if (sectionId !== null && isSectionPane(id))
+		items.push({ separator: true }, {
+			label: "Return to item pane",
+			disabled: !canMove(l, id, { kind: "section" }),
+			icon: "corner-up-left",
+			onSelect: () => {
+				const title = titleOf(id);
+				if (returnSection(sectionId)) offerUndo(`Moved ${title}`);
+			},
+		});
+
+	if (!paneDef(id)?.required) {
+		items.push({ separator: true }, {
+			label: "Hide",
+			icon: "eye-off",
+			onSelect: () => {
+				const title = titleOf(id);
+				hideLibraryPane(id, true);
+				offerUndo(`Hid ${title}`);
+			},
+		});
+	}
+	return items;
+}
+
+/** The pane menu of a library pane as drawn now: what a right click on its tab opens (the headless harness calls its `onSelect`s). */
+export function paneMenuItems(id: string): MenuItem[] {
+	return menuFor(id, libraryLayout(), new Set(panesOf("library").map((d) => d.id)));
+}
+
+// ---- the stack -------------------------------------------------------------------------------------------------------------
+
+export function PaneStack(p: {
+	column: "centre" | "right";
+	/** this stack's position in its column */
+	index: () => number;
+	/** undefined while the slot is retained but its stack is gone */
+	stack: () => Stack | undefined;
+	layout: () => ViewLayout;
+	registered: () => ReadonlySet<string>;
+	/** receives the content div; the parent puts the pane elements there */
+	contentRef: (el: HostElement) => void;
+}): JSX.Element {
+	const [root, setRoot] = createSignal<HostElement | undefined>(undefined);
+	const tabEls = new Map<string, HostElement>();
+
+	/** the pane the stack shows, null when the stack is gone or draws nothing */
+	const face = createMemo((): string | null => {
+		const s = p.stack();
+		return s ? stackFace(p.layout(), s, p.registered()) : null;
+	});
+	/** the tabs: this stack's registered panes that are not hidden, in order */
+	const tabs = createMemo(
+		() => {
+			const s = p.stack();
+			const l = p.layout();
+			const reg = p.registered();
+			return s ? s.panes.filter((id) => paneShown(l, id, reg)) : [];
+		},
+		[],
+		{ equals: sameList },
+	);
+	const single = () => tabs().length < 2;
+
+	// a drop host only while the stack exists and draws something; the cleanup unregisters it when either stops being true
+	const active = createMemo(() => face() !== null && root() !== undefined);
+	createEffect(
+		on(active, (isOn) => {
+			const el = root();
+			if (!isOn || !el) return;
+			onCleanup(registerDropHost(() => ({ kind: "stack", column: p.column, stack: p.index() }), el));
+		}),
+	);
+
+	const menuFrom = (id: string, at: Anchor) => openMenu(at, () => menuFor(id, p.layout(), p.registered()));
+	const menuUnder = (id: string, el: HostElement | undefined, e?: EventPayload) => {
+		const b = boundsOf(el);
+		menuFrom(id, b ? { rect: b, align: "start" } : { x: e?.x ?? 0, y: e?.y ?? 0 });
+	};
+	const focusTab = (id: string) => {
+		const el = tabEls.get(id);
+		try {
+			if (el) native()?.focusElement?.(el.id);
+		} catch {
+			/* element is gone */
+		}
+	};
+
+	/** Move `id` one tab along (among the shown tabs); the model's tab index is the layout before the move. */
+	const reorder = (id: string, dir: 1 | -1) => {
+		const s = p.stack();
+		const vis = tabs();
+		const nb = vis[vis.indexOf(id) + dir];
+		if (!s || !nb) return;
+		const i = s.panes.indexOf(id);
+		const j = s.panes.indexOf(nb);
+		const index = j > i ? j + 1 : j;
+		if (movePaneFromMenu(id, { kind: "tab", column: p.column, stack: p.index(), index })) queueMicrotask(() => focusTab(id));
+	};
+	/** Activate the tab `delta` along (clamped) or the first / last one, and focus it. */
+	const stepTo = (id: string, to: number | "first" | "last") => {
+		const vis = tabs();
+		const at = vis.indexOf(id);
+		const k = to === "first" ? 0 : to === "last" ? vis.length - 1 : Math.max(0, Math.min(vis.length - 1, at + to));
+		const next = vis[k];
+		if (!next || next === id) return;
+		activateLibraryPane(next);
+		focusTab(next);
+	};
+
+	const Tab = (q: { id: string }): JSX.Element => {
+		const id = q.id;
+		const { wasDrag, ...drag } = paneDragSource(() => id);
+		const [hover, setHover] = createSignal(false);
+		let el: HostElement | undefined;
+		onCleanup(() => tabEls.delete(id));
+		const on = () => face() === id;
+		/** a lone pane's header is flat and muted; with several panes the active tab is raised */
+		const raised = () => on() && !single();
+		const fg = () => tok(raised() || hover() ? "foreground" : "muted-foreground");
+		const onKeyDown = (e: KeyEvent) => {
+			const k = keyOf(e);
+			const m = e.modifiers;
+			if (isActivateKey(e)) {
+				e.preventDefault?.();
+				e.stopPropagation?.();
+				if (!e.isHeld) activateLibraryPane(id);
+			} else if (k === "menu" || k === "contextmenu" || (k === "f10" && m?.shift)) {
+				e.preventDefault?.();
+				e.stopPropagation?.();
+				menuUnder(id, el);
+			} else if (k === "left" || k === "right") {
+				const dir = k === "left" ? -1 : 1;
+				if ((m?.ctrl || m?.cmd) && m?.shift) reorder(id, dir);
+				else if (!m?.ctrl && !m?.cmd && !m?.alt) stepTo(id, dir);
+				else return;
+				e.preventDefault?.();
+				e.stopPropagation?.();
+			} else if ((k === "home" || k === "end") && !m?.ctrl && !m?.cmd && !m?.alt) {
+				stepTo(id, k === "home" ? "first" : "last");
+				e.preventDefault?.();
+				e.stopPropagation?.();
+			}
+		};
+		return (
+			<div
+				ref={(x: HostElement) => {
+					el = x;
+					tabEls.set(id, x);
+				}}
+				testId={`pane-tab-${id}`}
+				role="tab"
+				aria-selected={on()}
+				aria-label={titleOf(id)}
+				tabIndex={0}
+				{...drag}
+				onClick={() => {
+					if (wasDrag()) return;
+					activateLibraryPane(id);
+				}}
+				onAuxClick={(e: EventPayload) => {
+					if (isRightClick(e)) menuFrom(id, { x: e.x ?? 0, y: e.y ?? 0 });
+				}}
+				onKeyDown={onKeyDown}
+				onMouseEnter={() => setHover(true)}
+				onMouseLeave={() => setHover(false)}
+				style={{
+					...t("flex flex-none items-center gap-1.5 rounded-md px-2.5"),
+					height: TAB_H,
+					minWidth: 0,
+					maxWidth: 224,
+					flexShrink: 1,
+					cursor: "pointer",
+					keyboardFocusDim: false,
+					...focusRing(),
+					...(raised() ? t("bg-background shadow-sm ring-1 ring-border") : hover() ? t("bg-foreground/5") : {}),
+				}}
+			>
+				<Icon name={paneDef(id)?.icon ?? "square"} size={14} color={fg()} style={{ flexShrink: 0 }} />
+				<text
+					style={{
+						...tx(`min-w-0 truncate text-[13px] ${raised() ? "font-medium" : ""}`),
+						color: fg(),
+						flexShrink: 1,
+						whiteSpace: "nowrap",
+					}}
+				>
+					{titleOf(id)}
+				</text>
+			</div>
+		);
+	};
+
+	const MenuButton = (): JSX.Element => {
+		const [hover, setHover] = createSignal(false);
+		let el: HostElement | undefined;
+		return (
+			<div
+				ref={(x: HostElement) => {
+					el = x;
+				}}
+				testId={`pane-menu-${face() ?? ""}`}
+				role="button"
+				aria-label="Pane menu"
+				aria-haspopup="menu"
+				tabIndex={0}
+				onClick={(e: EventPayload) => {
+					const f = face();
+					if (f) {
+						const b = boundsOf(el);
+						menuFrom(f, b ? { rect: b, align: "end" } : { x: e.x ?? 0, y: e.y ?? 0 });
+					}
+				}}
+				onKeyDown={(e: KeyEvent) => {
+					if (!isActivateKey(e)) return;
+					e.preventDefault?.();
+					e.stopPropagation?.();
+					const f = face();
+					if (f && !e.isHeld) {
+						const b = boundsOf(el);
+						menuFrom(f, b ? { rect: b, align: "end" } : { x: 0, y: 0 });
+					}
+				}}
+				onMouseEnter={() => setHover(true)}
+				onMouseLeave={() => setHover(false)}
+				style={{
+					...t("flex flex-none items-center justify-center rounded"),
+					width: TAB_H,
+					height: TAB_H,
+					cursor: "pointer",
+					keyboardFocusDim: false,
+					...focusRing(),
+					...(hover() ? t("bg-foreground/10") : {}),
+				}}
+			>
+				<Icon name="ellipsis" size={14} color={tok(hover() ? "foreground" : "muted-foreground")} />
+			</div>
+		);
+	};
+
+	// the free part of the header drags the lone pane; with several tabs (or no pane shown) its handlers do nothing, so only the tabs drag
+	const { wasDrag: headWasDrag, ...head } = paneDragSource(() => face() ?? p.stack()?.panes[0] ?? "items");
+	const dragsHere = () => single() && face() !== null;
+	const headDrag = {
+		onMouseDown: (e: Parameters<typeof head.onMouseDown>[0]) => dragsHere() && head.onMouseDown(e),
+		onMouseMove: (e: Parameters<typeof head.onMouseMove>[0]) => dragsHere() && head.onMouseMove(e),
+		onMouseUp: () => dragsHere() && head.onMouseUp(),
+	};
+
+	return (
+		<div ref={(x: HostElement) => setRoot(x)} testId={`stack-${p.stack()?.panes[0]}`} style={FILL}>
+			{/* always mounted, so the tabs keep their focus and native nodes while the stack draws nothing */}
+			<div
+				style={{
+					...t("flex flex-none flex-row items-center gap-0.5 px-1"),
+					height: HEADER_H,
+					width: "100%",
+					minWidth: 0,
+					...(face() === null ? { display: "none" } : {}),
+				}}
+			>
+				<div
+					role="tablist"
+					aria-label="Pane tabs"
+					style={{ ...t("flex flex-row items-center gap-0.5"), minWidth: 0, flexShrink: 1 }}
+				>
+					<For each={tabs()}>{(id) => <Tab id={id} />}</For>
+				</div>
+				{/* the free part of the header: drags a lone pane, and a right click opens the menu of the pane shown */}
+				<div
+					{...headDrag}
+					onClick={() => void headWasDrag()}
+					onAuxClick={(e: EventPayload) => {
+						const f = face();
+						if (f && isRightClick(e)) menuFrom(f, { x: e.x ?? 0, y: e.y ?? 0 });
+					}}
+					style={{ flexGrow: 1, flexShrink: 1, height: "100%", minWidth: 0 }}
+				/>
+				<MenuButton />
+			</div>
+			<div
+				ref={p.contentRef}
+				style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, flexBasis: 0, width: "100%", minWidth: 0, minHeight: 0 }}
+			/>
+		</div>
+	);
+}
