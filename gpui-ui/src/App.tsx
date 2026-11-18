@@ -4,13 +4,13 @@
 // <OverlayHost/> (menus, dialogs, popovers, toasts) is mounted once at the root, followed by the overlays features registered.
 import { createEffect, ErrorBoundary, For, Show, type JSX } from "solid-js";
 import { isDocTab, isWebTab, type Mode, type ReaderTab, type Style, type WebTab } from "./contracts";
-import { overlays } from "./registry";
+import { overlays, registerAppAction } from "./registry";
 import { Sidebar } from "./Sidebar";
 import { Reader } from "./reader/Reader";
 import { SettingsPage } from "./settings";
 import { libraryLayout, leftOpen, setLibraryLayout, SETTINGS_TAB, settingsOpen } from "./shell/layout";
 import { REGION } from "./shell/builtinPanes";
-import { Frame } from "./shell/Frame";
+import { focusFramePane, Frame } from "./shell/Frame";
 import { HIDDEN } from "./shell/kit";
 import { setWindowTitle } from "./shell/native";
 import { logBoundary } from "./shell/errorlog";
@@ -26,6 +26,23 @@ import { dropWithPlugins } from "./wasmplugins/extend/drop";
 
 const mode = (): Mode => store.mode();
 const t = (cls: string): Style => tw(cls, mode());
+
+registerAppAction({
+	id: "pane-next",
+	label: "Focus next pane",
+	menu: "none",
+	shortcut: "F6",
+	when: () => store.activeTab() === "library",
+	run: () => focusFramePane("library", 1),
+});
+registerAppAction({
+	id: "pane-previous",
+	label: "Focus previous pane",
+	menu: "none",
+	shortcut: "Shift+F6",
+	when: () => store.activeTab() === "library",
+	run: () => focusFramePane("library", -1),
+});
 
 /**
  * A reader tab's content. Contract with the reader: `<Reader attachmentKey title active />`, filling its parent; it resolves the
