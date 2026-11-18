@@ -134,3 +134,32 @@ Owns: `shell/sectionPanes.tsx`, everything under `itempane/`, `settings/defs/sid
   what you built, files, how you verified it (with screenshot paths), anything another agent's file needs, and open issues.
 - Code style: follow the files around you (comment headers that say what a file does, tabs, the `t()` / `tok()` style
   helpers, testId props for headless checks). Keep comments plain and short.
+
+## Outcome (2026-11-18)
+
+Built by four GPT-6.1 Sol agents (Paseo, OMP) on `claude/layouts-p2-{model,stacks,dock,sections}`, merged into
+`claude/layouts-phase2` with these integration fixes:
+
+- Section headers: the drag and collapse handlers sit on the title area, not the whole row. In GPUIX a row with mouse-down /
+  mouse-move listeners swallows the clicks of the buttons inside it (the section menu stopped working). The title area also
+  spreads the drag source's `onMouseUp`: without it, a section dragged out of the item pane showed the preview but never dropped.
+- `scripts/shot-dock.tsx` drives the real tabs, headers and gaps (the agents' version used test-only drop hosts).
+- The agents' commit tool stored files with CRLF; they are stored with LF again.
+
+Checks: `bun check` clean; `bun test` 605 pass, 6 skip, 0 fail (67 plugin tests included); `scripts/shot-app.tsx --move --focus
+--tabs --toggle` (49 checks: moves and hides keep pane host ids, list scroll and pixels), `--stacked --drag`;
+`scripts/shot-sections.tsx` (90 checks); `scripts/shot-dock.tsx` (split, tab, Escape, Undo, host ids, list scroll, a list click
+after a move, a section dragged out and back).
+
+Open issues:
+
+- In the headless renderer, a click on a button inside the item pane's virtual list does not arrive after that list was scrolled
+  (by `scrollToItem` or the wheel); clicks at the list's top position work. Not seen to be layout-specific; check in the real
+  window before treating it as a bug.
+- GPUIX 0.11 drops `aria-orientation` and `aria-valuenow` before they reach the native tree; splitters expose the value through
+  `aria-valuetext` and the keys through `aria-description` instead.
+- Undo covers the layout only: returning a section to the item pane also changes `shell.itempaneLayout` order (and plugin section
+  anchors, `shell.itempanePluginPositions`), which `undoLayout` does not restore.
+- Stack headers (26 px) are new above every pane card, including in Standard; review the look in the real window.
+- Agents in OMP use jj by default; the main checkout is a colocated jj repo, and jj run from a worktree nested under it acts on
+  the main checkout. Tell agents not to use jj, or put agent worktrees outside the main checkout.
