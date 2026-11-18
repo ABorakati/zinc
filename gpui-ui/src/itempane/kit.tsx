@@ -217,34 +217,39 @@ function HeadRow(p: HeadProps): JSX.Element {
 	const [hot, setHot] = createSignal(false);
 	const hover = gatedHover(setHot);
 	const fg = () => tok(hot() ? "foreground" : "muted-foreground");
-	// the header drags the section out as a pane of its own; the click that ends a drag must not collapse it
+	// the header's title area drags the section out as a pane of its own; the click that ends a drag must not collapse it.
+	// The drag and collapse handlers sit on the title area only, not on the whole row: in GPUIX a row with mouse-down /
+	// mouse-move listeners swallows the clicks of the buttons inside it (the actions and the menu would stop working).
 	const drag = paneDragSource(() => sectionPaneId(p.id));
-	const stop = (e: unknown) => (e as { stopPropagation?: () => void }).stopPropagation?.();
 	return (
 		<div
 			testId={`ip-section-head-${p.id}`}
 			onMouseEnter={hover.enter}
 			onMouseLeave={hover.leave}
-			onMouseDown={drag.onMouseDown}
-			onMouseMove={drag.onMouseMove}
 			style={{
 				...t("flex h-9 flex-none items-center gap-1.5 px-5"),
-				cursor: "pointer",
 				backgroundColor: withAlpha(tok("foreground"), 0.03),
 			}}
-			onClick={() => {
-				if (drag.wasDrag()) return;
-				setCollapsed(p.id, !isCollapsed(p.id));
-			}}
 		>
-			<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={fg()} />
-			<Icon name={p.icon} size={14} color={fg()} />
-			<text style={{ ...tx("text-[11px] font-semibold"), color: fg(), whiteSpace: "nowrap" }}>{p.title.toUpperCase()}</text>
-			<Show when={(p.count ?? 0) > 0}>
-				<CountBadge n={p.count!} />
-			</Show>
-			<div style={{ flexGrow: 1 }} />
-			<div style={{ ...t("flex items-center gap-0.5") }} onMouseDown={stop} onClick={stop}>
+			<div
+				testId={`ip-section-title-${p.id}`}
+				onMouseDown={drag.onMouseDown}
+				onMouseMove={drag.onMouseMove}
+				onMouseUp={drag.onMouseUp}
+				onClick={() => {
+					if (drag.wasDrag()) return;
+					setCollapsed(p.id, !isCollapsed(p.id));
+				}}
+				style={{ ...t("flex h-full min-w-0 flex-1 items-center gap-1.5"), cursor: "pointer" }}
+			>
+				<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={fg()} />
+				<Icon name={p.icon} size={14} color={fg()} />
+				<text style={{ ...tx("text-[11px] font-semibold"), color: fg(), whiteSpace: "nowrap" }}>{p.title.toUpperCase()}</text>
+				<Show when={(p.count ?? 0) > 0}>
+					<CountBadge n={p.count!} />
+				</Show>
+			</div>
+			<div style={{ ...t("flex items-center gap-0.5") }}>
 				{p.actions}
 				<DropdownMenu
 					align="end"
