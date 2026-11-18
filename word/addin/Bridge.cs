@@ -36,13 +36,29 @@ namespace ZoteroNext.Word
         }
 
         /// <summary>doc.* methods that change the document: the cursor watcher reads the cursor again after them.</summary>
-        static readonly HashSet<string> Writes = new HashSet<string> { "doc.insert", "doc.set", "doc.delete", "doc.unlink", "doc.convert", "doc.setPrefs", "doc.end" };
+        static readonly HashSet<string> Writes = new HashSet<string> { "doc.insert", "doc.set", "doc.setMany", "doc.delete", "doc.unlink", "doc.convert", "doc.setPrefs", "doc.end" };
 
         public object Call(string method, Dictionary<string, object> p)
         {
+            // doc.* calls run on Word's UI thread: name them for the watchdog, and log any that takes a second or more
+            string prev = null;
+            bool word = NeedsWordThread(method);
+            var sw = word ? System.Diagnostics.Stopwatch.StartNew() : null;
+            if (word) prev = UiWatchdog.Enter(method);
             try { return Dispatch(method, p); }
-            finally { if (method != null && Writes.Contains(method)) CursorWatch.Invalidate(); }
+            finally
+            {
+                if (word)
+                {
+                    UiWatchdog.Exit(prev);
+                    if (sw.ElapsedMilliseconds >= 1000) Log.Write("slow: " + method + " took " + sw.ElapsedMilliseconds + " ms");
+                }
+                if (method != null && Writes.Contains(method)) { CursorWatch.Invalidate(); System.Threading.Interlocked.Increment(ref WriteCount); }
+            }
         }
+
+        /// <summary>Writes to a document through any bridge in this Word (sidebar, popup, MCP): part of doc.signature.</summary>
+        public static int WriteCount;
 
         object Dispatch(string method, Dictionary<string, object> p)
         {
@@ -78,10 +94,12 @@ namespace ZoteroNext.Word
                 case "doc.list": return _doc.List();
                 case "doc.target": return _doc.SetTarget(p);
                 case "doc.locate": return _doc.Locate(p);
-                case "doc.fields": return _doc.Fields();
+                case "doc.fields": return _doc.Fields(Json.Bool(p, "checkTracked"));
+                case "doc.signature": { var s = _doc.Signature(); s["writes"] = WriteCount; return s; }
                 case "doc.cursor": return _doc.Cursor();
                 case "doc.insert": return _doc.InsertField(p);
                 case "doc.set": return _doc.SetField(p);
+                case "doc.setMany": return _doc.SetFields(p);
                 case "doc.delete": return _doc.DeleteField(p);
                 case "doc.unlink": return _doc.RemoveFieldCode(p);
                 case "doc.convert": return _doc.ConvertField(p);

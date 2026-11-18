@@ -98,7 +98,7 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 			expect(f.code.match(/ZOTERO_/g)?.length).toBe(1); // one instruction per code, not old + new
 			expect(f.result).not.toContain(")(");
 		}
-		const fields = await app.readFields();
+		const fields = await app.readFields({ checkTracked: true });
 		expect(fields.every((f) => f.parsed !== null && !f.tracked)).toBe(true);
 		expect((await app.refreshAll()).updated).toBe(0); // idempotent
 		expect((await h.call<{ on: boolean }>("h.track")).on).toBe(true); // the user's setting is left as it was
@@ -133,19 +133,20 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		const changed = buildItemCode({ ...p.data, schema: String(p.data.schema ?? "") + "#v2" });
 		await h.call("h.rawSetCode", { idx: before[1]!.idx, code: changed });
 		expect((await info())[1]!.codeRevisions).toBeGreaterThan(0); // old JSON tracked as deleted, new as inserted
-		const damaged = await app.readFields();
+		expect((await app.readFields()).every((f) => f.parsed !== null)).toBe(true); // a plain read (popup labels) parses it too
+		const damaged = await app.readFields({ checkTracked: true }); // as a refresh reads it
 		expect(damaged[1]!.tracked).toBe(true);
 		expect(damaged[1]!.parsed).not.toBeNull(); // read as it is with the change accepted
 		const rep = await app.refreshAll();
 		expect(rep.changed.some((c) => c.startsWith(`item#${before[1]!.idx}:`))).toBe(true);
 		const after = await info();
 		expect(after.every((f) => f.codeRevisions === 0)).toBe(true);
-		expect((await app.readFields()).every((f) => !f.tracked && f.parsed !== null)).toBe(true);
+		expect((await app.readFields({ checkTracked: true })).every((f) => !f.tracked && f.parsed !== null)).toBe(true);
 		expect((await app.refreshAll()).updated).toBe(0);
 		await h.call("h.close");
 	}, 120_000);
 
-	test("with many tracked changes in the document, a damaged citation is still read and cleaned (each field asked for its own)", async () => {
+	test("with many tracked changes in the document, a damaged citation is still read and cleaned (only its own changes looked at)", async () => {
 		await threeCitations();
 		const before = await app.readFields();
 		await h.call("h.track", { on: true, author: "Reviewer" });
@@ -155,7 +156,7 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 			idx: before[1]!.idx,
 			code: buildItemCode({ ...p.data, schema: String(p.data.schema ?? "") + "#v2" }),
 		});
-		// more tracked changes than the add-in reads in one pass (StoryRevisionLimit): separate insertions, apart from the fields
+		// a document under review: dozens of the user's own tracked changes (separate insertions, apart from the fields)
 		// (an untracked space after each one, or Word merges them into one insertion)
 		for (let i = 0; i < 45; i++) {
 			await h.call("h.cursor", { start: 1 });
@@ -166,12 +167,14 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		}
 		await h.call("h.track", { on: true });
 		expect((await revisions()).length).toBeGreaterThan(40);
-		const damaged = await app.readFields();
+		const plain = await app.readFields(); // the popup's read: no tracked-change lookups for a code that reads clean
+		expect(plain.every((f) => f.parsed !== null)).toBe(true);
+		const damaged = await app.readFields({ checkTracked: true });
 		expect(damaged.map((f) => f.tracked)).toEqual([false, true, false, false]);
 		expect(damaged.every((f) => f.parsed !== null)).toBe(true);
 		await app.refreshAll();
 		expect((await info()).every((f) => f.codeRevisions === 0)).toBe(true);
-		expect((await app.readFields()).every((f) => !f.tracked)).toBe(true);
+		expect((await app.readFields({ checkTracked: true })).every((f) => !f.tracked)).toBe(true);
 		expect((await app.refreshAll()).updated).toBe(0);
 		await h.call("h.close");
 	}, 180_000);

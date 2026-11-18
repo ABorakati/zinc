@@ -224,6 +224,12 @@ export function createMockHost(opts: MockOptions = {}): Host & {
 			readOnly: false,
 			prefsXml: state.prefsXml,
 		}),
+		// as the add-in: field counts per story + the writes so far (doc.insert/set/delete/... recorded in state.calls)
+		"doc.signature": () => ({
+			doc: state.target ?? "Preview.docx",
+			fields: ["main", "fn", "en"].map((s) => fields.filter((f) => f.story === s).length).join("|"),
+			writes: state.calls.filter((c) => /^doc\.(insert|set|delete|unlink|convert|setPrefs|end)$/.test(c)).length,
+		}),
 		"doc.fields": () => {
 			layout();
 			return fields.map((f) => ({
@@ -295,6 +301,13 @@ export function createMockHost(opts: MockOptions = {}): Host & {
 			}
 			if (p.runs?.length) f.text = p.runs.map((r: any) => r.t).join("");
 			return { ok: true };
+		},
+		// as the add-in: every field checked before any is written
+		"doc.setMany": (p) => {
+			const items: any[] = p.items ?? [];
+			for (const it of items) find(it.ref);
+			for (const it of items) methods["doc.set"]!(it);
+			return { ok: true, count: items.length };
 		},
 		"doc.delete": (p) => {
 			fields.splice(fields.indexOf(find(p.ref)), 1);

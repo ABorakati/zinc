@@ -47,13 +47,20 @@ namespace ZoteroNext.Word
         {
             try { if (SynchronizationContext.Current == null) SynchronizationContext.SetSynchronizationContext(new System.Windows.Forms.WindowsFormsSynchronizationContext()); } catch { }
             if (_timer != null) return;
+            UiWatchdog.Start();
             _timer = new System.Windows.Forms.Timer { Interval = TickMs };
-            _timer.Tick += (s, e) => { try { Tick(); } catch (Exception ex) { Log.Error("cursor watch", ex); } };
+            _timer.Tick += (s, e) =>
+            {
+                var prev = UiWatchdog.Enter("cursor watch");
+                try { Tick(); } catch (Exception ex) { Log.Error("cursor watch", ex); }
+                finally { UiWatchdog.Exit(prev); }
+            };
             _timer.Start();
         }
 
         public static void Stop()
         {
+            UiWatchdog.Stop();
             try { if (_timer != null) { _timer.Stop(); _timer.Dispose(); } } catch { }
             _timer = null; _seen = null; _readSig = null; _cursor = null; _dirty = true;
         }
@@ -94,6 +101,7 @@ namespace ZoteroNext.Word
             bool fresh = false;
             if (due)
             {
+                var prev = UiWatchdog.Enter("cursor read");
                 try
                 {
                     _cursor = b.Doc.Cursor();
@@ -101,10 +109,19 @@ namespace ZoteroNext.Word
                     _readSig = sig; _readAt = DateTime.Now; _dirty = false; fresh = true;
                 }
                 catch { return; }
+                finally { UiWatchdog.Exit(prev); }
             }
             if (_cursor == null) return;
-            if (popupWants) Popup.OnCursor(_cursor, fresh, moving);
-            if (paneWants) PaneControl.OnCursor(_cursor);
+            if (popupWants)
+            {
+                var prev = UiWatchdog.Enter("citation popup");
+                try { Popup.OnCursor(_cursor, fresh, moving); } finally { UiWatchdog.Exit(prev); }
+            }
+            if (paneWants)
+            {
+                var prev = UiWatchdog.Enter("sidebar cursor event");
+                try { PaneControl.OnCursor(_cursor); } finally { UiWatchdog.Exit(prev); }
+            }
         }
 
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();

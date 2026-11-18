@@ -370,8 +370,13 @@ export class App {
 		return { hasDoc: s.hasDoc, name: s.name, fullName: s.fullName, prefs: parsePrefsXml(s.prefsXml), readOnly: s.readOnly };
 	}
 
-	async readFields(): Promise<DocField[]> {
-		const infos = await this.host.call<FieldInfo[]>("doc.fields");
+	/**
+	 * Every Zotero field in document order. checkTracked (a refresh) also asks Word about each field's tracked changes, to
+	 * find and flag damage left by an older tracked rewrite: seconds of Word time in a document under review, so a plain
+	 * read (popup labels, edits) leaves it out.
+	 */
+	async readFields(opts: { checkTracked?: boolean } = {}): Promise<DocField[]> {
+		const infos = await this.host.call<FieldInfo[]>("doc.fields", opts.checkTracked ? { checkTracked: true } : {});
 		return infos.map((f) => ({ ...f, parsed: parseFieldCode(f.code) }));
 	}
 
@@ -616,7 +621,7 @@ export class App {
 		const placement = note ? (prefs.noteType === 2 ? "endnote" : "footnote") : "inline";
 		const data = this.citationDataFromPicks(picks, opts.citationID ?? newCitationID());
 		const where = opts.at === undefined ? {} : { at: { pos: opts.at } };
-		await this.host.call("doc.begin", { name: "Insert citation" });
+		await this.beginEdit({ name: "Insert citation" });
 		try {
 			if (prefs.delayCitationUpdates) {
 				const p = await this.previewCitation(data, f);
@@ -650,7 +655,7 @@ export class App {
 			throw new Error("The document changed under the sidebar. Refresh and try again.");
 		const old = cur.parsed.data.properties;
 		const data = this.citationDataFromPicks(picks, citationID, old.noteIndex ?? 0, prepareForEditing(old));
-		await this.host.call("doc.begin", { name: "Edit citation" });
+		await this.beginEdit({ name: "Edit citation" });
 		try {
 			const prefs = await this.ensurePrefs();
 			if (prefs.delayCitationUpdates) {
@@ -693,7 +698,7 @@ export class App {
 			throw new Error("This citation has custom or hand-edited text that a split would replace. Confirm the split first.");
 		}
 		const parts = splitCitationData(cur.parsed.data);
-		await this.host.call("doc.begin", { name: "Split citation" });
+		await this.beginEdit({ name: "Split citation" });
 		try {
 			// the new fields are inserted first and the original is rewritten last, so until the very end the original is intact
 			let inserted = 0;
@@ -740,9 +745,11 @@ export class App {
 			});
 	}
 
-	/** Fold citations that touch each other into the first of them (Zotero's merge on Refresh). Returns how many fields were removed. */
-	private async mergeAdjacent(): Promise<number> {
-		const fields = await this.readFields();
+	/**
+	 * Fold citations that touch each other into the first of them (Zotero's merge on Refresh). Returns how many fields were
+	 * removed. fields: the document's fields as just read (the refresh reuses that read when nothing was merged).
+	 */
+	private async mergeAdjacent(fields: DocField[]): Promise<number> {
 		const mergeable = (f: DocField): f is ItemField =>
 			f.parsed?.kind === "item" &&
 			!f.parsed.data.properties.dontUpdate &&
@@ -760,7 +767,7 @@ export class App {
 		}
 		if (cur.length > 1) groups.push(cur);
 		if (!groups.length) return 0;
-		await this.host.call("doc.begin", { name: "Merge citations" });
+		await this.beginEdit({ name: "Merge citations" });
 		try {
 			const doomed: ItemField[] = [];
 			const rewritten: ItemField[] = [];
@@ -808,7 +815,7 @@ export class App {
 	async unlinkCitations(): Promise<{ unlinked: number }> {
 		const fields = await this.readFields();
 		if (!fields.length) return { unlinked: 0 };
-		await this.host.call("doc.begin", { name: "Unlink citations" });
+		await this.beginEdit({ name: "Unlink citations" });
 		try {
 			// last field first: removing one only renumbers the fields after it in its story
 			for (const f of [...fields].reverse()) {
@@ -832,7 +839,7 @@ export class App {
 			(f) => f.parsed?.kind === "item" && f.story !== want && !f.parsed.data.properties.dontUpdate,
 		);
 		if (!todo.length) return 0;
-		await this.host.call("doc.begin", { name: "Convert citations" });
+		await this.beginEdit({ name: "Convert citations" });
 		try {
 			// last first: converting a citation only renumbers fields after it, never the ones still waiting
 			let done = 0;
@@ -855,7 +862,7 @@ export class App {
 	}
 
 	async deleteCitation(ref: { story: string; idx: number }, citationID: string): Promise<RefreshReport> {
-		await this.host.call("doc.begin", { name: "Delete citation" });
+		await this.beginEdit({ name: "Delete citation" });
 		try {
 			await this.host.call("doc.delete", { ref: { ...ref, kind: "item", cid: citationID } });
 			return await this.refreshAll();
@@ -869,7 +876,7 @@ export class App {
 		const fields = await this.readFields();
 		const prefs = await this.ensurePrefs();
 		if (!fields.some((f) => f.kind === "bibl")) {
-			await this.host.call("doc.begin", { name: "Insert bibliography" });
+			await this.beginEdit({ name: "Insert bibliography" });
 			try {
 				await this.host.call("doc.insert", {
 					kind: "bibl",
@@ -898,7 +905,7 @@ export class App {
 		const isNote = f.style.xclass === "note";
 		prefs.noteType = isNote ? prefs.noteType || 1 : 0;
 		await this.writePrefs(prefs);
-		await this.host.call("doc.begin", { name: "Change citation style" });
+		await this.beginEdit({ name: "Change citation style" });
 		try {
 			// switching between an in-text and a note style moves the existing citations into / out of the notes
 			if (wasNote !== isNote) await this.convertCitations(!isNote ? "inline" : prefs.noteType === 2 ? "endnote" : "footnote");
@@ -915,7 +922,7 @@ export class App {
 		if (f.style.xclass !== "note") return null;
 		prefs.noteType = noteType;
 		await this.writePrefs(prefs);
-		await this.host.call("doc.begin", { name: "Change note type" });
+		await this.beginEdit({ name: "Change note type" });
 		try {
 			await this.convertCitations(noteType === 2 ? "endnote" : "footnote");
 			return await this.refreshAll();
@@ -936,8 +943,8 @@ export class App {
 	 * only reads it): read the fields, resolve the cited items, build the citation list in document order and format it.
 	 * `probes` appends one synthetic one-item citation per distinct cited item after the real ones (see docLabels).
 	 */
-	private async formatDocument(opts: { probes?: boolean; wantBib?: boolean } = {}): Promise<DocFormat> {
-		const fields = await this.readFields();
+	private async formatDocument(opts: { probes?: boolean; wantBib?: boolean; fields?: DocField[] } = {}): Promise<DocFormat> {
+		const fields = opts.fields ?? (await this.readFields());
 		const items = fields.filter((f): f is DocField & { parsed: { kind: "item"; data: CitationData } } => f.parsed?.kind === "item");
 		const bibls = fields.filter((f): f is DocField & { parsed: { kind: "bibl"; data: BibliographyData } } => f.parsed?.kind === "bibl");
 		const st = await this.docState();
@@ -1055,32 +1062,55 @@ export class App {
 		return { ...base, resolved, docCitations, engineIds, probeIds, fmt, out, cslUris, uncitedIds: new Set(uncitedIds) };
 	}
 
-	private labelCache: { key: string; at: number; labels: Promise<Map<string, string>> } | null = null;
+	/** Start one undoable edit of the document (doc.begin); the cached popup labels no longer hold once it changes. */
+	private async beginEdit(p: { name: string }): Promise<void> {
+		this.labelCache = null;
+		await this.host.call("doc.begin", p);
+	}
+
+	private labelCache: {
+		key: string; // from the fields as read: count, total code length, style
+		sig: string | null; // doc.signature at that read: document, field counts per story, the add-in's writes, style
+		at: number; // when the labels were computed
+		labels: Promise<Map<string, string>>;
+	} | null = null;
 
 	/**
 	 * Per cited item (by CSL id) the label the document shows for it: numeric styles -> its citation number ("[3]", "3."),
 	 * author-date styles -> its in-text citation without the outer parentheses ("Smith et al., 2020"), note styles -> the
 	 * short (subsequent-citation) form. It is the output of a one-item citation for that item appended after the real
 	 * citations of a whole-document format pass, so numbering, et-al. and year-suffix disambiguation match the document.
-	 * Cached ~10 s per document (name + field count + total code length) so repeated clicks are quick.
+	 * Every popup click asks for these, and reading the fields is the costly part (Word's UI thread, a few calls per field:
+	 * seconds in a thesis with a thousand fields), so a cheap doc.signature comes first: same document, same field count
+	 * per story and no write by the add-in since the last read -> the cached labels, with no field read at all. Otherwise
+	 * the fields are read, and the labels still reused when the citations read the same (count + total code length).
+	 * Either way at most reuseMs old (author-date labels follow library edits after that).
 	 */
-	async docLabels(ttlMs = 10_000): Promise<Map<string, string>> {
+	async docLabels(reuseMs = 300_000): Promise<Map<string, string>> {
 		const st = await this.docState();
 		if (!st.hasDoc) return new Map();
-		const fields = await this.readFields();
-		const key = `${st.name ?? ""}|${fields.length}|${fields.reduce((n, f) => n + f.code.length, 0)}|${st.prefs?.styleId ?? ""}`;
+		const style = st.prefs?.styleId ?? "";
+		const s = await this.host.call<{ doc: string; fields: string; writes: number }>("doc.signature").catch(() => null);
+		const sig = s ? `${s.doc}|${s.fields}|${s.writes}|${style}` : null;
 		const c = this.labelCache;
-		if (c && c.key === key && Date.now() - c.at < ttlMs) return c.labels;
-		const labels = this.computeLabels();
-		this.labelCache = { key, at: Date.now(), labels };
+		const now = Date.now();
+		if (c && sig && c.sig === sig && now - c.at < reuseMs) return c.labels;
+		const fields = await this.readFields();
+		const key = `${st.fullName ?? st.name ?? ""}|${fields.length}|${fields.reduce((n, f) => n + f.code.length, 0)}|${style}`;
+		if (c && c.key === key && now - c.at < reuseMs) {
+			c.sig = sig;
+			return c.labels;
+		}
+		const labels = this.computeLabels(fields); // the fields just read: reading them again costs Word as much again
+		this.labelCache = { key, sig, at: now, labels };
 		labels.catch(() => {
 			if (this.labelCache?.labels === labels) this.labelCache = null;
 		});
 		return labels;
 	}
 
-	private async computeLabels(): Promise<Map<string, string>> {
-		const d = await this.formatDocument({ probes: true, wantBib: false });
+	private async computeLabels(fields: DocField[]): Promise<Map<string, string>> {
+		const d = await this.formatDocument({ probes: true, wantBib: false, fields });
 		const labels = new Map<string, string>();
 		if (!d.out) return labels;
 		for (const [id, pid] of d.probeIds) {
@@ -1093,8 +1123,11 @@ export class App {
 
 	/** Re-read every Zotero field, re-resolve the items from the library, reformat the whole document and rewrite what changed. */
 	async refreshAll(opts: RefreshOptions = {}): Promise<RefreshReport> {
-		const merged = opts.merge ? await this.mergeAdjacent() : 0;
-		const d = await this.formatDocument();
+		// one field read for the whole refresh (each costs Word a few calls per field), unless a merge changed the fields
+		let fields = await this.readFields({ checkTracked: true });
+		const merged = opts.merge ? await this.mergeAdjacent(fields) : 0;
+		if (merged) fields = await this.readFields({ checkTracked: true });
+		const d = await this.formatDocument({ fields });
 		const { items, bibls, st, prefs, resolved, docCitations, engineIds, out } = d;
 		const report: RefreshReport = {
 			citations: items.length,
@@ -1127,8 +1160,9 @@ export class App {
 		}
 		const editedSet = new Set(edited);
 
-		await this.host.call("doc.begin", { name: "Refresh citations" });
+		await this.beginEdit({ name: "Refresh citations" });
 		try {
+			const writes: Record<string, unknown>[] = [];
 			let n = 0;
 			for (const f of items) {
 				const o = out.citations.get(engineIds[n]!);
@@ -1167,7 +1201,7 @@ export class App {
 				const same = JSON.stringify(f.parsed.data) === JSON.stringify(data);
 				const wantText = runsToPlain(shown);
 				if (same && (frozen || f.text === wantText) && !f.tracked) continue;
-				await this.host.call("doc.set", {
+				writes.push({
 					ref: { story: f.story, idx: f.idx, kind: "item", cid: f.parsed.data.citationID },
 					code,
 					...(frozen ? {} : { runs: shown }),
@@ -1180,7 +1214,7 @@ export class App {
 				const bib = out.bibliography;
 				const plain = bib.runs.map((r) => r.t).join("");
 				if (plain === b.text && !b.tracked) continue;
-				await this.host.call("doc.set", {
+				writes.push({
 					ref: { story: b.story, idx: b.idx, kind: "bibl" },
 					// a code left as old + new by a tracked rewrite is written back as it reads with the changes accepted
 					...(b.tracked ? { code: b.code } : {}),
@@ -1194,6 +1228,9 @@ export class App {
 					`bibl#${b.idx}: differs at ${at}: ${JSON.stringify(b.text.slice(Math.max(0, at - 10), at + 20))} vs ${JSON.stringify(plain.slice(Math.max(0, at - 10), at + 20))} (len ${b.text.length}/${plain.length})`,
 				);
 			}
+			// one call for every rewrite: the add-in finds them all in one walk of the fields (a doc.set each made Word walk
+			// the fields from the first one for every citation: seconds over a long document, more in one with footnotes)
+			if (writes.length) await this.host.call("doc.setMany", { items: writes });
 			const wantHas = bibls.length > 0;
 			if (!st.prefs || prefs.hasBibliography !== wantHas) {
 				prefs.hasBibliography = wantHas;
@@ -1238,7 +1275,7 @@ export class App {
 		const bibls = (await this.readFields()).filter((f) => f.parsed?.kind === "bibl");
 		if (!bibls.length) throw new Error("The document has no bibliography.");
 		const uris = (l: string[][]) => l.filter((u) => u.length);
-		await this.host.call("doc.begin", { name: "Edit bibliography" });
+		await this.beginEdit({ name: "Edit bibliography" });
 		try {
 			for (const b of bibls) {
 				const data = { ...(b.parsed as { data: BibliographyData }).data };

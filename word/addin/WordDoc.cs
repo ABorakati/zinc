@@ -206,18 +206,16 @@ namespace ZoteroNext.Word
         }
 
         /// <summary>
-        /// The tracked changes of a range (a story, or one field) as [start, end, type], or null when there are none. One
-        /// pass with the collection's enumerator: Item(i) on a Word collection walks it from the start every time. Each
-        /// change costs Word real work (about 20 ms measured from another process), so a story is only read whole when it
-        /// holds few changes: a manuscript under review holds hundreds (352 in one, 7 s), and then each field is asked for
-        /// its own instead (see <see cref="ScanStory"/>).
+        /// The tracked changes of one field's range as [start, end, type], or null when there are none. One pass with the
+        /// collection's enumerator: Item(i) on a Word collection walks it from the start every time. Never asked of a whole
+        /// story: each change costs Word real work (a manuscript under review held 352: 33 s from another process).
         /// </summary>
-        static List<int[]> RangeRevisions(object range, int known = -1)
+        static List<int[]> RangeRevisions(object range)
         {
             try
             {
                 dynamic revs = ((dynamic)range).Revisions;
-                if (known == 0 || (known < 0 && (int)revs.Count == 0)) return null;
+                if ((int)revs.Count == 0) return null;
                 var list = new List<int[]>();
                 foreach (dynamic r in revs)
                 {
@@ -227,9 +225,6 @@ namespace ZoteroNext.Word
             }
             catch { return null; }
         }
-
-        /// <summary>A story with more tracked changes than this is not read whole: each field is asked for its own.</summary>
-        const int StoryRevisionLimit = 40;
 
         /// <summary>
         /// The text of the range [rs, re) as it reads with every tracked change accepted: tracked deletions inside it are
@@ -271,19 +266,25 @@ namespace ZoteroNext.Word
             return i >= 0 && code.IndexOf("ZOTERO_", i + 7, StringComparison.Ordinal) >= 0;
         }
 
-        List<Entry> ScanStory(object storyRange, object fieldsObj, string story, Func<int, int> posOf)
+        /// <summary>
+        /// The Zotero fields of one story. Asking Word about tracked changes costs seconds in a document under review, and
+        /// a plain scan runs on every popup click (citation labels), so a plain scan looks at them only for a code that an
+        /// older tracked rewrite left reading as old + new (LooksDoubled). checkTracked (a refresh) asks every field for its
+        /// own, to find damage that reads clean (Word does not always include the deleted half in Code.Text) and clean it.
+        /// A citation the user deleted with Track Changes on needs neither: Word gives no code text for it (skipped).
+        /// </summary>
+        List<Entry> ScanStory(object storyRange, object fieldsObj, string story, Func<int, int> posOf, bool checkTracked)
         {
-            // few tracked changes: read them all once; many: ask each field for its own (perField)
-            int count = 0;
-            try { count = (int)((dynamic)storyRange).Revisions.Count; } catch { }
-            bool perField = count > StoryRevisionLimit;
-            var storyRevs = count == 0 || perField ? null : RangeRevisions(storyRange, count);
+            if (checkTracked) { try { checkTracked = (int)((dynamic)storyRange).Revisions.Count > 0; } catch { } }
             var list = new List<Entry>();
             int i = 0;
             // the enumerator walks the collection once; fields.Item(i) per field made a scan quadratic in the field count
             foreach (dynamic f in (dynamic)fieldsObj)
             {
                 i++;
+                // one call to pass over every other field (cross-references, captions, page numbers, a TOC: a thesis has
+                // hundreds): a Zotero code starts with ADDIN, which Word types as wdFieldAddin
+                try { if ((int)f.Type != wdFieldAddin) continue; } catch { }
                 string code;
                 dynamic cr;
                 try { cr = f.Code; code = (string)cr.Text; } catch { continue; }
@@ -294,8 +295,8 @@ namespace ZoteroNext.Word
                 try
                 {
                     int cs = (int)cr.Start, ce = (int)cr.End;
-                    var revs = storyRevs;
-                    if (perField)
+                    List<int[]> revs = null;
+                    if (checkTracked || LooksDoubled(code))
                     {
                         // the whole field, field characters included, so a deletion of the whole citation is seen too
                         dynamic whole = ((dynamic)storyRange).Duplicate;
@@ -322,11 +323,25 @@ namespace ZoteroNext.Word
             return list;
         }
 
-        /// <summary>All Zotero fields in document order (main text, footnotes, endnotes).</summary>
-        public object Fields()
+        /// <summary>
+        /// A cheap change check for a cached field read (the popup's citation labels): the document and its field count per
+        /// story (Word counts without the per-field calls of a full read). Same signature and no write by the add-in since
+        /// (<see cref="Bridge.WriteCount"/>): the citations are as they were.
+        /// </summary>
+        public Dictionary<string, object> Signature()
         {
             dynamic d = Doc;
-            var all = ScanStory((object)d.Content, (object)d.Fields, "main", p => p);
+            int fn = 0, en = 0;
+            try { if ((int)d.Footnotes.Count > 0) fn = (int)d.StoryRanges.Item(wdFootnotesStory).Fields.Count; } catch { }
+            try { if ((int)d.Endnotes.Count > 0) en = (int)d.StoryRanges.Item(wdEndnotesStory).Fields.Count; } catch { }
+            return Json.Map("doc", (string)d.FullName, "fields", (int)d.Fields.Count + "|" + fn + "|" + en);
+        }
+
+        /// <summary>All Zotero fields in document order (main text, footnotes, endnotes). checkTracked: see <see cref="ScanStory"/>.</summary>
+        public object Fields(bool checkTracked = false)
+        {
+            dynamic d = Doc;
+            var all = ScanStory((object)d.Content, (object)d.Fields, "main", p => p, checkTracked);
             foreach (var pair in new[] { Tuple.Create("fn", wdFootnotesStory), Tuple.Create("en", wdEndnotesStory) })
             {
                 dynamic sr;
@@ -337,9 +352,9 @@ namespace ZoteroNext.Word
                 // map each note field to the position of its reference mark in the main text
                 var notes = new List<int[]>(); // start, end, refStart
                 dynamic coll = pair.Item1 == "fn" ? d.Footnotes : d.Endnotes;
-                int nn = (int)coll.Count;
-                for (int i = 1; i <= nn; i++) { dynamic nt = coll.Item(i); notes.Add(new[] { (int)nt.Range.Start, (int)nt.Range.End, (int)nt.Reference.Start }); }
-                var found = ScanStory((object)sr, (object)sr.Fields, pair.Item1, p => p);
+                // the enumerator walks the notes once; coll.Item(i) walks from the first note every time (quadratic in the notes)
+                foreach (dynamic nt in coll) { dynamic nr = nt.Range; notes.Add(new[] { (int)nr.Start, (int)nr.End, (int)nt.Reference.Start }); }
+                var found = ScanStory((object)sr, (object)sr.Fields, pair.Item1, p => p, checkTracked);
                 foreach (var e in found)
                 {
                     e.Pos = int.MaxValue / 2;
@@ -353,16 +368,27 @@ namespace ZoteroNext.Word
             return all.OrderBy(e => e.Pos).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note, "tracked", e.Tracked)).ToList();
         }
 
-        dynamic FieldByRef(Dictionary<string, object> r)
+        dynamic StoryFields(string story)
         {
             dynamic d = Doc;
-            string story = Json.Str(r, "story", "main");
+            if (story == "main") return d.Fields;
+            return d.StoryRanges.Item(story == "fn" ? wdFootnotesStory : wdEndnotesStory).Fields;
+        }
+
+        dynamic FieldByRef(Dictionary<string, object> r)
+        {
+            dynamic fields = StoryFields(Json.Str(r, "story", "main"));
             int idx = Json.Int(r, "idx");
-            dynamic fields;
-            if (story == "main") fields = d.Fields;
-            else fields = d.StoryRanges.Item(story == "fn" ? wdFootnotesStory : wdEndnotesStory).Fields;
-            if (idx < 1 || idx > (int)fields.Count) throw new InvalidOperationException("The document changed: field " + idx + " no longer exists. Refresh and try again.");
-            dynamic f = fields.Item(idx);
+            // no Fields.Count first (Word walks the story to count): Item throws for an index past the end just as well
+            dynamic f = null;
+            if (idx >= 1) { try { f = fields.Item(idx); } catch { } }
+            return CheckField(f, r);
+        }
+
+        /// <summary>f is the field r names (same kind, same citationID), or the document changed under the sidebar: throw.</summary>
+        static dynamic CheckField(dynamic f, Dictionary<string, object> r)
+        {
+            if (f == null) throw new InvalidOperationException("The document changed: field " + Json.Int(r, "idx") + " no longer exists. Refresh and try again.");
             string code = (string)f.Code.Text;
             string kind = KindOf(code);
             string expectKind = Json.Str(r, "kind");
@@ -585,17 +611,65 @@ namespace ZoteroNext.Word
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             string code = Json.Str(p, "code");
             if (code != null && KindOf(code) == null) throw new ArgumentException("not a Zotero field code");
-            var runs = Json.Arr(Json.Get(p, "runs"));
-            Untracked((object)Doc, () =>
-            {
-                if (code != null) f.Code.Text = Wrap(code);
-                if (runs.Length > 0)
-                {
-                    SetResult(f, runs);
-                    if (KindOf((string)f.Code.Text) == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
-                }
-            });
+            Untracked((object)Doc, () => WriteField((object)f, p));
             return Json.Map("ok", true);
+        }
+
+        /// <summary>
+        /// doc.set for many fields in one call (a refresh): p.items = [{ref, code?, runs?, format?}, ...]. One walk per story
+        /// finds every field named, where a doc.set each did Fields.Item(idx) (Word walks from the first field every time:
+        /// quadratic over a refresh) plus a bridge round trip. Every field is checked before any is written, and Track
+        /// Changes is switched off once around all the writes. Rewriting a code or result never adds or removes a field, so
+        /// the indexes stay valid throughout.
+        /// </summary>
+        public object SetFields(Dictionary<string, object> p)
+        {
+            var items = Json.Arr(Json.Get(p, "items")).Select(o => Json.Obj(o)).ToList();
+            var wanted = new Dictionary<string, HashSet<int>>();
+            foreach (var it in items)
+            {
+                var r = Json.Obj(Json.Get(it, "ref"));
+                string story = Json.Str(r, "story", "main");
+                if (!wanted.ContainsKey(story)) wanted[story] = new HashSet<int>();
+                wanted[story].Add(Json.Int(r, "idx"));
+            }
+            var found = new Dictionary<string, object>();
+            foreach (var kv in wanted)
+            {
+                int last = kv.Value.Max(), i = 0;
+                foreach (dynamic f in StoryFields(kv.Key))
+                {
+                    i++;
+                    if (kv.Value.Contains(i)) found[kv.Key + "|" + i] = f;
+                    if (i >= last) break;
+                }
+            }
+            var todo = new List<Tuple<object, Dictionary<string, object>>>();
+            foreach (var it in items)
+            {
+                var r = Json.Obj(Json.Get(it, "ref"));
+                object f;
+                found.TryGetValue(Json.Str(r, "story", "main") + "|" + Json.Int(r, "idx"), out f);
+                string code = Json.Str(it, "code");
+                if (code != null && KindOf(code) == null) throw new ArgumentException("not a Zotero field code");
+                todo.Add(Tuple.Create((object)CheckField(f, r), it));
+            }
+            Untracked((object)Doc, () => { foreach (var t in todo) WriteField(t.Item1, t.Item2); });
+            return Json.Map("ok", true, "count", todo.Count);
+        }
+
+        /// <summary>Write p.code and/or p.runs (+ p.format for a bibliography) into field f. Called inside Untracked.</summary>
+        void WriteField(dynamic f, Dictionary<string, object> p)
+        {
+            string code = Json.Str(p, "code");
+            var runs = Json.Arr(Json.Get(p, "runs"));
+            if (code != null) f.Code.Text = Wrap(code);
+            if (runs.Length > 0)
+            {
+                SetResult(f, runs);
+                string kind = code != null ? KindOf(code) : KindOf((string)f.Code.Text);
+                if (kind == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
+            }
         }
 
         public object DeleteField(Dictionary<string, object> p)
