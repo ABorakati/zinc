@@ -16,7 +16,7 @@ function rig(over: Partial<OutDragDeps> = {}) {
 	const log: string[] = [];
 	const runs: { text: string; html?: string }[] = [];
 	const requested: boolean[] = [];
-	let tick: () => void = () => {};
+	let tick: () => void = () => { };
 	const deps: OutDragDeps = {
 		supported: () => true,
 		leftDown: () => state.left,
@@ -40,7 +40,7 @@ function rig(over: Partial<OutDragDeps> = {}) {
 		every: (fn) => {
 			tick = fn;
 			return () => {
-				tick = () => {};
+				tick = () => { };
 			};
 		},
 		...over,
@@ -162,6 +162,18 @@ describe("createOutDrag", () => {
 		await r.flush();
 		expect(r.runs).toEqual([]);
 		expect(r.log).toEqual(["endInApp", "error:Could not drag the citation"]);
+	});
+
+	test("pane drags never format Quick Copy content or start an OS watch", () => {
+		const r = rig();
+		r.state.alt = true;
+		r.state.outside = true;
+		r.out.start({ kind: "pane", id: "item" });
+		r.tick();
+		expect(r.out.active()).toBe(false);
+		expect(r.requested).toEqual([]);
+		expect(r.runs).toEqual([]);
+		expect(r.log).toEqual([]);
 	});
 
 	test("unsupported platforms do nothing", () => {

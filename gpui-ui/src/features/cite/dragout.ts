@@ -71,7 +71,7 @@ export function createOutDrag(d: OutDragDeps): OutDrag {
 			if (!p) {
 				p = d.content(keys, shift);
 				memo.set(k, p);
-				p.catch(() => {});
+				p.catch(() => { });
 			}
 			return p;
 		};
@@ -138,7 +138,7 @@ export function createOutDrag(d: OutDragDeps): OutDrag {
 
 /** The real thing, wired to the Win32 probes and the clipboard. */
 export function installOutDrag(): void {
-	const dbg = process.env.ZN_DRAG_DEBUG ? (m: string) => console.error(`[dragout] ${m}`) : () => {};
+	const dbg = process.env.ZN_DRAG_DEBUG ? (m: string) => console.error(`[dragout] ${m}`) : () => { };
 	const out = createOutDrag({
 		supported: osDragSupported,
 		leftDown: leftButtonDown,
@@ -171,6 +171,7 @@ export function installOutDrag(): void {
 	});
 	setDragHook({
 		start: (p) => {
+			if (p.kind !== "items") return;
 			dbg(`start ${p.keys.length}`);
 			out.start(p);
 		},
