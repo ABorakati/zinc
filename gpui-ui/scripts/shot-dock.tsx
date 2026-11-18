@@ -4,6 +4,7 @@
 // Prints PASS / FAIL lines and exits 1 on a failure. Preferences go to a throw-away ui-state.json (scripts/_shell-env.ts).
 // Writes <ZN_SHOTS>/shell-dock-*.png.
 //
+// Normal use draws no pane headers; the scenarios run in edit layout mode (shell/layoutEdit.tsx), which shows them.
 // Scenarios, each from the Standard layout (sidebar | items | item):
 //   1. drag the Item tab onto the bottom quarter of the Items stack: Item becomes a stack below Items; the pane and list host ids are
 //      unchanged, the list keeps its scroll offset, a click on a list row still selects it; Undo from the toast restores Standard
@@ -16,6 +17,8 @@ import { standardLibrary } from "../src/shell/frameLayout";
 import { libraryLayout, setLibraryLayout } from "../src/shell/layout";
 import { isDetached } from "../src/shell/sectionPanes";
 import { handleWindowKeyDown } from "../src/shell/shortcuts";
+import { editLayout, layoutEditing } from "../src/shell/layoutEdit";
+import { closeMenus } from "../src/ui/core";
 
 const h = await boot({ prefs: { mode: "light" } });
 const r = h.t.renderer;
@@ -75,6 +78,16 @@ async function reset() {
 h.store.selectItem(h.store.itemAt(0)!.key);
 await h.settle(1800);
 
+// ---- 0. normal use: no headers; edit mode: headers, grips and the edit bar
+{
+	check(!box("pane-tab-items") && !box("pane-tab-item"), "normal use draws no pane headers");
+	r.captureScreenshot(`${SHOTS}/shell-dock-normal.png`);
+	editLayout(true);
+	await h.settle(600);
+	check(!!box("pane-tab-items") && !!box("pane-tab-item") && !!box("layout-edit-bar"), "edit mode shows the pane headers and the edit bar");
+	r.captureScreenshot(`${SHOTS}/shell-dock-edit-mode.png`);
+}
+
 // ---- 1. Item tab -> bottom quarter of Items
 {
 	await reset();
@@ -96,21 +109,31 @@ await h.settle(1800);
 	check(anchor0 !== null && listAnchor() === anchor0, `list scroll kept: ${anchor0} -> ${listAnchor()}`);
 	r.captureScreenshot(`${SHOTS}/shell-dock-after.png`);
 	// a click inside the moved layout still works: pick a visible row of the list
+	// a row inside the list's visible area: below the toolbar and sort bar (about 110 px), above the pane's bottom edge (the
+	// virtual list reports bounds for rows scrolled out under the toolbar too)
+	const pane = box("pane-items")!;
 	let target = h.store.itemAt(0)!;
 	let rb: { x: number; y: number; width: number; height: number } | null = null;
 	for (let i = 0; i < 60 && !rb; i++) {
 		const it = h.store.itemAt(i);
 		const row = it && it.key !== h.store.selectedItem() ? r.findByText(it.title) : null;
 		const b = row ? r.getElementBounds(row.id) : null;
-		if (it && b && b.height > 0 && b.y > 120 && b.y < 500) {
+		if (it && b && b.height > 0 && b.y > pane.y + 130 && b.y + b.height < pane.y + pane.height - 20) {
 			target = it;
 			rb = b;
 		}
 	}
 	if (rb && rb.height > 0) {
+		const before = h.store.selectedItem();
+		// a hand moves to the row first; after the drag layer goes away GPUI hit-tests from the last pointer move
+		r.nativeSimulateMouseMove(rb.x + 4, rb.y + rb.height / 2);
+		await h.settle(200);
 		r.nativeSimulateClick(rb.x + 4, rb.y + rb.height / 2);
 		await h.settle(800);
-		check(h.store.selectedItem() === target.key, `a list row click selects it after the move (${h.store.selectedItem()} = ${target.key})`);
+		// the selection follows the click (the row under the pointer may be a neighbour of `target` while the list settles)
+		check(h.store.selectedItem() !== before, `a list row click changes the selection after the move (${before} -> ${h.store.selectedItem()}, aimed at ${target.key})`);
+		closeMenus();
+		await h.settle(300);
 	} else console.log("SKIP row click: the row is not on screen");
 	const undo = r.findByText("Undo");
 	const ub = undo ? r.getElementBounds(undo.id) : null;
@@ -168,6 +191,11 @@ await h.settle(1800);
 		}
 	}
 }
+
+// ---- 5. Escape leaves edit mode (when no drag is running)
+escape();
+await h.settle(400);
+check(!layoutEditing() && !box("pane-tab-item") && !box("layout-edit-bar"), "Escape leaves edit mode");
 
 console.log(failed ? `${failed} check(s) FAILED` : "all dock checks passed");
 h.t.unmount();

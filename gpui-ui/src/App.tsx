@@ -11,6 +11,7 @@ import { SettingsPage } from "./settings";
 import { libraryLayout, leftOpen, setLibraryLayout, SETTINGS_TAB, settingsOpen } from "./shell/layout";
 import { REGION } from "./shell/builtinPanes";
 import { focusFramePane, Frame } from "./shell/Frame";
+import { LayoutEditBar, layoutEditing } from "./shell/layoutEdit";
 import { HIDDEN } from "./shell/kit";
 import { setWindowTitle } from "./shell/native";
 import { logBoundary } from "./shell/errorlog";
@@ -178,6 +179,11 @@ export function App() {
 		>
 			<PluginBanners />
 			<TopBar />
+			<Show when={layoutEditing() && onLibrary()}>
+				<div style={{ ...t("flex flex-none px-3 pt-3"), width: "100%" }}>
+					<LayoutEditBar />
+				</div>
+			</Show>
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
 			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}
 			<div

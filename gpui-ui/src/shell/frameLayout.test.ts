@@ -6,11 +6,13 @@ import {
 	drawnColumns,
 	drawnStacks,
 	isSectionPane,
+	LIBRARY_PRESETS,
 	locatePane,
 	migrateLegacyLibrary,
 	movePane,
 	normalizeLayout,
 	paneShown,
+	presetById,
 	resetSizes,
 	sectionIdOf,
 	sectionPaneId,
@@ -28,6 +30,11 @@ import {
 } from "./frameLayout";
 
 const KNOWN: KnownPanes = { ids: ["items", "item", "notes"], required: ["items"] };
+/** The library's built-in panes, sections included (as shell/layout.ts knows them). */
+const KNOWN_ALL: KnownPanes = {
+	ids: ["items", "item", ...["info", "abstract", "notes", "attachments", "collections", "tags", "related"].map((id) => `section:${id}`)],
+	required: ["items"],
+};
 const REG = new Set(KNOWN.ids);
 const norm = (v: unknown) => normalizeLayout(v, KNOWN);
 const st = (...panes: string[]) => ({ panes, active: panes[0]! });
@@ -718,6 +725,8 @@ describe("the library store", () => {
 	});
 	beforeEach(() => {
 		drain();
+		S.setDefaultPreset("builtin:standard");
+		drain();
 		S.setLibraryLayout(standardLibrary());
 	});
 
@@ -914,8 +923,8 @@ describe("layout actions", () => {
 		S.setLibraryLayout(standardLibrary());
 	});
 
-	test("the three actions are registered in the Tools menu, with no default shortcut", () => {
-		for (const id of ["layout-undo", "layout-reset-sizes", "layout-reset-standard"]) {
+	test("the layout actions are registered in the Tools menu, with no default shortcut", () => {
+		for (const id of ["layout-edit", "layout-undo", "layout-reset-sizes", "layout-reset"]) {
 			const a = action(id);
 			expect(a).toBeDefined();
 			expect(a.menu).toBe("tools");
@@ -963,7 +972,7 @@ describe("layout actions", () => {
 		expect(r.hidden).toEqual(l.hidden);
 	});
 
-	test("Reset layout to Standard: panes, sizes, hidden panes and the sidebar all go back", () => {
+	test("Reset layout (default Standard): panes, sizes, hidden panes and the sidebar all go back", () => {
 		S.moveLibraryPane("section:tags", split("right", 1));
 		S.moveLibraryPane("item", tab("centre", 0));
 		S.hideLibraryPane("section:tags", true);
@@ -971,7 +980,7 @@ describe("layout actions", () => {
 		const l = S.libraryLayout();
 		S.setLibraryLayout({ ...l, sizes: [0.1, 0.7, 0.2] });
 		expect(S.libraryLayout()).not.toEqual(standardLibrary());
-		action("layout-reset-standard").run();
+		action("layout-reset").run();
 		expect(S.libraryLayout()).toEqual(standardLibrary());
 		expect(S.leftOpen()).toBe(true);
 		expect(S.rightOpen()).toBe(true);
@@ -981,6 +990,33 @@ describe("layout actions", () => {
 
 	test("the reset actions are always offered (no `when`)", () => {
 		expect(action("layout-reset-sizes").when).toBeUndefined();
-		expect(action("layout-reset-standard").when).toBeUndefined();
+		expect(action("layout-reset").when).toBeUndefined();
+	});
+
+	test("presets: choosing a default arranges the library now, Reset returns to it, Undo goes back", () => {
+		for (const p of LIBRARY_PRESETS) expect(normalizeLayout(p.build(), KNOWN_ALL)).toEqual(p.build());
+		S.setDefaultPreset("builtin:stacked");
+		expect(S.defaultPresetId()).toBe("builtin:stacked");
+		expect(S.libraryLayout()).toEqual(presetById("builtin:stacked")!.build());
+		expect(S.libraryPaneLocation("item")).toEqual({ column: "centre", stack: 1, index: 0 });
+		S.moveLibraryPane("item", split("right", 0));
+		action("layout-reset").run();
+		expect(S.libraryLayout()).toEqual(presetById("builtin:stacked")!.build());
+		S.undoLayout();
+		expect(S.libraryPaneLocation("item")).toEqual({ column: "right", stack: 0, index: 0 });
+		S.setDefaultPreset("builtin:triage");
+		expect(S.rightOpen()).toBe(false); // Triage hides the item pane; its Tags and Collections sections have panes of their own
+		expect(S.libraryPaneLocation("section:tags")).not.toBeNull();
+		S.setDefaultPreset("nope");
+		expect(S.defaultPresetId()).toBe("builtin:triage");
+	});
+
+	test("Edit layout toggles edit mode", async () => {
+		const { layoutEditing } = await import("./layoutEdit");
+		expect(layoutEditing()).toBe(false);
+		action("layout-edit").run();
+		expect(layoutEditing()).toBe(true);
+		action("layout-edit").run();
+		expect(layoutEditing()).toBe(false);
 	});
 });

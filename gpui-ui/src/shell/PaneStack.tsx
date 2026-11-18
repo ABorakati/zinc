@@ -1,6 +1,7 @@
-// One stack of the frame (docs/developer-guide/layouts-phase2.md, "stacks"): a 26 px header on the canvas colour above the pane's
-// card. With one pane the header shows its icon and title (muted) and a menu button; with several it is a tab strip (icon + title per
-// tab, the active one raised as the top bar's tabs are). The header is the drag source and the place the pane menu opens from.
+// One stack of the frame (docs/developer-guide/layouts-phase2.md, "stacks"). In normal use a stack draws no header, so the window
+// looks as it did before layouts; a stack holding two or more panes shows a quiet tab strip (the active tab underlined). In edit
+// layout mode (shell/layoutEdit.tsx) every stack shows its header: a grip, the tabs (or the lone pane's title) and the menu button,
+// with an outline around the stack. The header is the drag source and the place the pane menu opens from.
 //
 // The content area is an empty div handed to the parent through `contentRef`: Frame moves the pane elements into it (insert before
 // remove, so GPUIX keeps their native state). This file never puts children there.
@@ -26,6 +27,9 @@ import {
 	type ViewLayout,
 } from "./frameLayout";
 import { activateLibraryPane, hideLibraryPane, libraryLayout, moveLibraryPane, undoLayout } from "./layout";
+import { layoutEditing } from "./layoutEdit";
+import { HIDDEN } from "./kit";
+import { withAlpha } from "../theme";
 import { paneDef, panesOf } from "./panes";
 import { returnSection } from "./sectionPanes";
 
@@ -246,7 +250,7 @@ export function PaneStack(p: {
 		let el: HostElement | undefined;
 		onCleanup(() => tabEls.delete(id));
 		const on = () => face() === id;
-		/** a lone pane's header is flat and muted; with several panes the active tab is raised */
+		/** a lone pane's header is flat and muted; with several panes the active tab is underlined */
 		const raised = () => on() && !single();
 		const fg = () => tok(raised() || hover() ? "foreground" : "muted-foreground");
 		const onKeyDown = (e: KeyEvent) => {
@@ -296,15 +300,16 @@ export function PaneStack(p: {
 				onMouseEnter={() => setHover(true)}
 				onMouseLeave={() => setHover(false)}
 				style={{
-					...t("flex flex-none items-center gap-1.5 rounded-md px-2.5"),
+					...t("flex flex-none items-center gap-1.5 px-2"),
 					height: TAB_H,
+					borderBottomWidth: 2,
+					borderColor: raised() ? tok("primary") : "transparent",
 					minWidth: 0,
 					maxWidth: 224,
 					flexShrink: 1,
 					cursor: "pointer",
 					keyboardFocusDim: false,
 					...focusRing(),
-					...(raised() ? t("bg-background shadow-sm ring-1 ring-border") : hover() ? t("bg-foreground/5") : {}),
 				}}
 			>
 				<Icon name={paneDef(id)?.icon ?? "square"} size={14} color={fg()} style={{ flexShrink: 0 }} />
@@ -379,7 +384,16 @@ export function PaneStack(p: {
 	};
 
 	return (
-		<div ref={(x: HostElement) => setRoot(x)} testId={`stack-${p.stack()?.panes[0]}`} style={FILL}>
+		<div
+			ref={(x: HostElement) => setRoot(x)}
+			testId={`stack-${p.stack()?.panes[0]}`}
+			style={{
+				...FILL,
+				...(layoutEditing() && face() !== null
+					? { borderWidth: 1, borderColor: withAlpha(tok("primary"), 0.45), borderRadius: 16, padding: 2 }
+					: {}),
+			}}
+		>
 			{/* always mounted, so the tabs keep their focus and native nodes while the stack draws nothing */}
 			<div
 				style={{
@@ -387,9 +401,14 @@ export function PaneStack(p: {
 					height: HEADER_H,
 					width: "100%",
 					minWidth: 0,
-					...(face() === null ? { display: "none" } : {}),
+					// HIDDEN, not display:none alone: GPUIX would still paint the header's children (shell/kit.tsx)
+					...(face() === null || (!layoutEditing() && single()) ? HIDDEN : {}),
 				}}
 			>
+				{/* the grip says "drag me"; the whole free part of the header drags a lone pane */}
+				<div style={{ ...t("flex flex-none items-center justify-center"), width: 16, ...(layoutEditing() ? {} : HIDDEN) }}>
+					<Icon name="grip-vertical" size={14} color={tok("muted-foreground")} />
+				</div>
 				<div
 					role="tablist"
 					aria-label="Pane tabs"
@@ -407,7 +426,9 @@ export function PaneStack(p: {
 					}}
 					style={{ flexGrow: 1, flexShrink: 1, height: "100%", minWidth: 0 }}
 				/>
-				<MenuButton />
+				<div style={layoutEditing() ? { display: "flex" } : HIDDEN}>
+					<MenuButton />
+				</div>
 			</div>
 			<div
 				ref={p.contentRef}

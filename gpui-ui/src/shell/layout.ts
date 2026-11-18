@@ -11,6 +11,7 @@ import { store, uiState } from "../store";
 import {
 	isPluginPane,
 	locatePane,
+	presetById,
 	sectionPaneId,
 	migrateLegacyLibrary,
 	movePane,
@@ -190,5 +191,29 @@ export function hideLibraryPane(id: string, hide: boolean): void {
 }
 /** Where a library pane is, or null. */
 export const libraryPaneLocation = (id: string): PaneLocation | null => locatePane(libraryLayout(), id);
+
+// ---- presets: the default layout (Settings > Appearance > Layout) ------------------------------------------------------------
+
+const isActive = (v: unknown) =>
+	v && typeof v === "object" && typeof (v as { library?: unknown }).library === "string" ? (v as { library: string }) : undefined;
+const [activePresets, setActivePresets] = persisted<{ library: string }>("shell.layout.active", { library: "builtin:standard" }, isActive);
+/** The preset the library resets to (and starts from on a first run). */
+export const defaultPresetId = (): string => (presetById(activePresets().library) ? activePresets().library : "builtin:standard");
+/** Arrange the library as preset `id`. Undoable. */
+export function applyPreset(id: string): boolean {
+	const preset = presetById(id);
+	if (!preset) return false;
+	remember(libraryLayout());
+	setLibraryLayout(preset.build());
+	return true;
+}
+/** Make preset `id` the default and arrange the library that way now. */
+export function setDefaultPreset(id: string): void {
+	if (!presetById(id)) return;
+	setActivePresets({ ...activePresets(), library: id });
+	applyPreset(id);
+}
+/** Back to the default preset (undoable). */
+export const resetLayout = (): boolean => applyPreset(defaultPresetId());
 
 import "./layoutActions";

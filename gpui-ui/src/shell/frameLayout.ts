@@ -360,3 +360,43 @@ export function setStackActive(l: ViewLayout, id: string): ViewLayout {
 	const stacks = col.stacks.map((s, i) => (i === at.stack ? { ...s, active: id } : s));
 	return { ...l, [at.column]: { ...col, stacks }, hidden: l.hidden.filter((h) => h !== id) };
 }
+
+// ---- presets (layouts.md, section 9) ---------------------------------------------------------------------------------------
+
+export interface LibraryPreset {
+	id: string;
+	name: string;
+	description: string;
+	build: () => ViewLayout;
+}
+
+/** The built-in library layouts; Settings > Appearance > Layout picks the default among them. */
+export const LIBRARY_PRESETS: LibraryPreset[] = [
+	{
+		id: "builtin:standard",
+		name: "Standard",
+		description: "Sidebar, item list and item details side by side.",
+		build: standardLibrary,
+	},
+	{
+		id: "builtin:stacked",
+		name: "Stacked",
+		description: "Item details below the item list, for narrow or portrait screens.",
+		build: () => ({
+			...standardLibrary(),
+			centre: { stacks: [stack("items"), stack("item")], sizes: [0.55, 0.45] },
+			right: { stacks: [], sizes: [] },
+		}),
+	},
+	{
+		id: "builtin:triage",
+		name: "Triage",
+		description: "A wide item list with Tags and Collections beside it, for sorting and filing.",
+		build: () => ({
+			...standardLibrary(),
+			right: { stacks: [stack("item"), stack("section:tags"), stack("section:collections")], sizes: [0.34, 0.33, 0.33] },
+			hidden: ["item"],
+		}),
+	},
+];
+export const presetById = (id: string): LibraryPreset | undefined => LIBRARY_PRESETS.find((p) => p.id === id);

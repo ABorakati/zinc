@@ -7,6 +7,7 @@ import { CardList } from "../cards/CardList";
 import { Icon } from "../icons";
 import { ItemPane } from "../itempane";
 import { store } from "../store";
+import { savedSearches } from "../searches/state";
 import { textStyle, tokens, tw } from "../theme";
 import { SortBar, Toolbar } from "../Toolbar";
 import { activeVirtual, VirtualCollectionView } from "../wasmplugins/extend/Tree";
@@ -80,10 +81,40 @@ function ItemsCard(): JSX.Element {
 	);
 }
 
+/** The item list's pane title: what it lists (My Library, a collection, a saved search, Trash, ...). */
+function viewTitle(): string {
+	const v = store.view();
+	switch (v.kind) {
+		case "collection": {
+			const find = (cs: readonly { key: string; name: string; children?: unknown }[]): string | undefined => {
+				for (const c of cs) {
+					if (c.key === v.key) return c.name;
+					const sub = find((c.children ?? []) as typeof cs);
+					if (sub) return sub;
+				}
+				return undefined;
+			};
+			return find(store.collections()) ?? "Collection";
+		}
+		case "savedSearch":
+			return savedSearches().find((s) => s.key === v.key)?.name ?? "Saved search";
+		case "unfiled":
+			return "Unfiled Items";
+		case "trash":
+			return "Trash";
+		case "duplicates":
+			return "Duplicate Items";
+		case "publications":
+			return "My Publications";
+		default:
+			return store.libraries().find((l) => l.id === store.libraryId())?.name ?? "My Library";
+	}
+}
+
 registerPane({
 	id: "items",
-	title: () => "Items",
-	icon: "list",
+	title: viewTitle,
+	icon: "library",
 	views: ["library"],
 	required: true,
 	minSize: { w: 320, h: 160 },
@@ -92,7 +123,7 @@ registerPane({
 
 registerPane({
 	id: "item",
-	title: () => "Item",
+	title: () => "Item details",
 	icon: "info",
 	views: ["library"],
 	minSize: { w: 200, h: 160 },

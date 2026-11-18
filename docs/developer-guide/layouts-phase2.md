@@ -163,3 +163,21 @@ Open issues:
 - Stack headers (26 px) are new above every pane card, including in Standard; review the look in the real window.
 - Agents in OMP use jj by default; the main checkout is a colocated jj repo, and jj run from a worktree nested under it acts on
   the main checkout. Tell agents not to use jj, or put agent worktrees outside the main checkout.
+
+## Revision after trying it (2026-11-18)
+
+The user tried the phase 2 build in a dev window: everything worked, but the always-on header row above every pane, its tabs
+and the extra spacing did not look right, and "Items" / "Item" read as the same thing. Changes:
+
+- **Clean by default, edit mode to customize** (`shell/layoutEdit.tsx`). Panes draw no header in normal use, so the window looks
+  as it did before layouts. A stack shows a tab strip only when it holds two or more panes (quiet tabs, the active one
+  underlined). Edit layout mode shows every pane's header (grip, title, `⋯` menu) and an outline, with a bar above the library
+  (Reset, Done; Escape leaves). Entered from Settings or Tools > Edit layout. Item pane section titles stay draggable.
+- **Names**: the item list pane is titled by what it shows (My Library, the collection, the saved search, Trash, ...); the
+  item pane is "Item details".
+- **Settings > Appearance > Layout**: Default layout (Standard, Stacked, Triage: `LIBRARY_PRESETS` in `shell/frameLayout.ts`),
+  Customize… (edit mode), Reset layout. Choosing a default arranges the library that way; Reset returns to it (undoable).
+- GPUIX has no `display: none` that hides a subtree: hidden headers use `HIDDEN` from `shell/kit.tsx`.
+- `test/log-preload.ts` sets `ZN_UI_STATE=off`: test files share one process, and one that loaded `store.ts` first pointed later
+  writes at the user's real ui-state.json (a test run had written layout keys and a section order there; repaired, with a
+  backup next to it).
