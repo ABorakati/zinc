@@ -419,6 +419,12 @@ if (!aotOnly) {
 			if (!existsSync(kacheRustcExe) || statSync(kacheRustcExe).size !== statSync(wrapper).size) {
 				cpSync(wrapper, kacheRustcExe);
 			}
+			// newer kache releases are two binaries: the wrapper looks for kache-engine.exe beside itself
+			const engine = join(dirname(wrapper), "kache-engine.exe");
+			const engineCopy = join(toolsDir, "kache-engine.exe");
+			if (existsSync(engine) && (!existsSync(engineCopy) || statSync(engineCopy).size !== statSync(engine).size)) {
+				cpSync(engine, engineCopy);
+			}
 			cargoEnv.RUSTC_WRAPPER = kacheRustcExe;
 		}
 	}
