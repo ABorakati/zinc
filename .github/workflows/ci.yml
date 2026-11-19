@@ -111,6 +111,10 @@ jobs:
       - name: Install word/sidebar
         working-directory: word/sidebar
         run: bun install --frozen-lockfile
+      # the WASM plugin tests (gpui-ui/src/wasmplugins) build a fixture plugin with plugin-host's componentize-qjs
+      - name: Install plugin-host
+        working-directory: plugin-host
+        run: bun install --frozen-lockfile
 
       # The *.test.ts files under gpui-ui/src are pure logic (they do not open the @gpuix native addon or a window).
       # The screenshot scripts (gpui-ui/scripts/shot-*.tsx) need a GPU and are not run here.

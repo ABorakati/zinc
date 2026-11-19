@@ -64,6 +64,10 @@ jobs:
       - name: Install word/sidebar
         working-directory: word/sidebar
         run: bun install --frozen-lockfile
+      # the WASM plugin tests (gpui-ui/src/wasmplugins) build a fixture plugin with plugin-host's componentize-qjs
+      - name: Install plugin-host
+        working-directory: plugin-host
+        run: bun install --frozen-lockfile
 
       # See ci.yml for both.
       - name: Cache vendored Zotero translation code

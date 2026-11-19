@@ -72,20 +72,27 @@ function nbibToItem(rec: [string, string][]): ParsedItem | null {
 	const full = all("FAU");
 	const abbr = all("AU");
 	const creators: Creator[] = [];
-	if (full.length) {
+	/** A name as last + first; an empty line is no creator, and a lone given name becomes the last name (never an empty one). */
+	const person = (creatorType: string, last: string | undefined, first: string | undefined): void => {
+		const l = (last ?? "").trim();
+		const f = (first ?? "").trim();
+		if (!l && !f) return;
+		creators.push(l ? { creatorType, lastName: l, firstName: f } : { creatorType, lastName: f, firstName: "" });
+	};
+	if (full.some((n) => n.trim())) {
 		for (const n of full) {
 			const [last, first] = n.split(/,\s*/, 2);
-			creators.push({ creatorType: "author", lastName: last ?? n, firstName: first ?? "" });
+			person("author", last, first);
 		}
 	} else {
 		for (const n of abbr) {
-			const m = /^(.*)\s+(\S+)$/.exec(n);
-			creators.push({ creatorType: "author", lastName: m ? m[1]! : n, firstName: m ? m[2]! : "" });
+			const m = /^(.*)\s+(\S+)$/.exec(n.trim());
+			person("author", m ? m[1] : n, m ? m[2] : "");
 		}
 	}
 	for (const n of all("FED")) {
 		const [last, first] = n.split(/,\s*/, 2);
-		creators.push({ creatorType: "editor", lastName: last ?? n, firstName: first ?? "" });
+		person("editor", last, first);
 	}
 	if (creators.length) data.creators = creators;
 	const tags = [...all("MH"), ...all("OT"), ...all("KW")].map((t) => t.replace(/^\*/, "").trim()).filter(Boolean);
