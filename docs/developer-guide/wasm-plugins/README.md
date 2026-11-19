@@ -4,6 +4,8 @@ Zinc's own plugin system: WebAssembly components with WIT interfaces. A plugin w
 
 Read [RULES.md](RULES.md) first for the ground rules, and the runtime spike (`wasm-plugins-spike.md` in the spike worktree) for why plugins are components in a separate process.
 
+To write a plugin, start with [Writing a Zinc plugin](writing-a-plugin.md). If you use an AI coding agent, give it the [agent skills for plugin authors](agent-skills.md): `zinc-plugin-create` makes a new plugin, `zinc-plugin-port` ports a Zotero plugin. How users turn plugins on and manage them: [Plugins](../../user-guide/plugins.md) in the user guide.
+
 ## Area reports and totals
 
 Totals are tallied by script from the status column of each report's parity tables (reconciled 2026-11-18).

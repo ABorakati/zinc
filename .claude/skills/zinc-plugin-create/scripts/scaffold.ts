@@ -2,13 +2,14 @@
 // Scaffold a new Zinc WASM plugin (JS/QuickJS or Rust) with the parts you pick. No network, no dependencies.
 //
 //   bun <skill>/scripts/scaffold.ts <dir> --id my-plugin@example.com --name "My Plugin" --lang js|rust
-//        [--with menu,column,section,prefs,dialog,notifier,library,reader,net,toast] [--no-l10n] [--zinc <zinc root>] [--force]
+//        [--with menu,column,section,prefs,dialog,notifier,library,reader,net,toast,mcp] [--no-l10n] [--zinc <zinc root>] [--force]
 //
 // Parts:  menu      Tools-menu command                      column   item list column
 //         section   item pane section with a button         prefs    a boolean pref + settings pane + pref observer
 //         dialog    non-blocking dialog (adds a menu entry) notifier library change subscription
 //         library   read-only library query (menu entry)    reader   reader toolbar button
 //         net       one HTTP GET (menu entry)               toast    only toasts (a ui import, no views)
+//         mcp       a read-only tool for AI agents (count items by tag), declared in manifest.json; needs mcp.expose
 // The script picks the smallest world and the fewest permissions the parts need and prints what it chose.
 // After scaffolding:  bun <zinc>/plugin-api/sdk/js/scripts/build.ts <dir>        (JS)
 //                     bun <zinc>/plugin-host/scripts/build-plugin.ts <dir>       (Rust)
@@ -46,7 +47,7 @@ if (!dirArg || !id || !displayName) die('usage: scaffold.ts <dir> --id name@doma
 if (lang !== "js" && lang !== "rust") die("--lang must be js or rust");
 if (!/^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+$/.test(id!)) die(`id "${id}" must look like name@domain (letters, digits . _ + - ; a domain after @)`);
 
-const PARTS = ["menu", "column", "section", "prefs", "dialog", "notifier", "library", "reader", "net", "toast"] as const;
+const PARTS = ["menu", "column", "section", "prefs", "dialog", "notifier", "library", "reader", "net", "toast", "mcp"] as const;
 type Part = (typeof PARTS)[number];
 const parts = new Set<Part>();
 for (const p of withArg.split(",").map((s) => s.trim()).filter(Boolean)) {
@@ -85,6 +86,8 @@ const needsExtend = has("menu") || has("column") || has("section") || has("prefs
 const needsView = has("section") || has("dialog"); // ui imports AND the ui-events callbacks (dialog close events arrive there)
 const needsUiImport = needsView || has("toast");
 const worldOf = (): string => {
+	// plugin-mcp is plugin-library + mcp; with menus, views, reader or net only the full `plugin` world has mcp too
+	if (has("mcp")) return needsExtend || needsUiImport || has("net") ? "plugin" : "plugin-mcp";
 	if (has("net")) return "plugin";
 	if (has("reader") && needsUiImport) return "plugin";
 	if (has("reader")) return "plugin-reader";
@@ -96,7 +99,7 @@ const worldOf = (): string => {
 };
 const world = worldOf();
 const rustFeatures: string[] =
-	world === "plugin" ? ["full"] : world === "plugin-reader" ? ["reader"] : world === "plugin-ui" ? ["ui"] : world === "plugin-dialogs" ? ["dialogs"] : world === "plugin-extend" ? ["extend"] : world === "plugin-library" ? ["library"] : [];
+	world === "plugin" ? (has("mcp") ? ["full", "mcp"] : ["full"]) : world === "plugin-mcp" ? ["mcp"] : world === "plugin-reader" ? ["reader"] : world === "plugin-ui" ? ["ui"] : world === "plugin-dialogs" ? ["dialogs"] : world === "plugin-extend" ? ["extend"] : world === "plugin-library" ? ["library"] : [];
 
 const caps = new Set<string>();
 const reasons: Record<string, string> = {};
@@ -106,11 +109,22 @@ const need = (c: string, why: string) => {
 };
 if (has("library") || has("notifier")) need("library.read", "Read item counts and see which items change.");
 if (has("reader")) need("reader.ui", "Add a button to the reader toolbar.");
+if (has("mcp")) {
+	if (!caps.has("library.read")) need("library.read", "Count items by tag for the tool you offer to AI agents.");
+	need("mcp.expose", "Offer a tool that counts items by tag to AI agents connected to Zinc. Off until you switch it on in Settings > Plugins.");
+}
 const netHosts = has("net") ? ["example.com"] : [];
 if (has("net")) reasons["net.hosts"] = "Fetch a sample page from example.com.";
 
 const slug = id!.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "plugin";
 const Q = (s: string) => JSON.stringify(s);
+
+// The `mcp` part's tool. Declared statically in manifest.json (Settings > Plugins counts it before the plugin runs) and answered in
+// the plugin's mcp-handler. Agents see it as `<plugin>__count_tagged` once the user switches the plugin on in Settings > Plugins.
+const TOOL_NAME = "count_tagged";
+const TOOL_DESCRIPTION = "Count the library items that carry a tag.";
+const TOOL_INPUT = { type: "object", properties: { tag: { type: "string", minLength: 1, description: "The tag, exactly as shown in the tag selector." } }, required: ["tag"], additionalProperties: false };
+const TOOL_OUTPUT = { type: "object", properties: { tag: { type: "string" }, count: { type: "integer" } }, required: ["tag", "count"] };
 
 // ---- manifest, locale ------------------------------------------------------------------------------------------------
 const manifest: Record<string, unknown> = {
@@ -127,6 +141,9 @@ const manifest: Record<string, unknown> = {
 	permissions: { capabilities: [...caps], ...(netHosts.length ? { net: { hosts: netHosts } } : {}) },
 	permission_reasons: reasons,
 	...(has("prefs") ? { default_prefs: { enabled: true } } : {}),
+	...(has("mcp")
+		? { mcp: { tools: [{ name: TOOL_NAME, description: TOOL_DESCRIPTION, input_schema: TOOL_INPUT, output_schema: TOOL_OUTPUT, annotations: { read_only: true, destructive: false, idempotent: true } }] } }
+		: {}),
 	...(noL10n ? {} : { locales: { default: "en-US" } }),
 };
 if (!manifest.author) delete manifest.author;
@@ -159,7 +176,7 @@ function genJs(): string {
 	if (needsExtend) imp.push(`import extend from "zinc:plugin/extend@0.1.0";`);
 	if (needsUiImport) imp.push(`import zui from "zinc:plugin/ui@0.1.0";`);
 	if (has("prefs")) imp.push(`import prefs from "zinc:plugin/prefs@0.1.0";`);
-	if (has("library")) imp.push(`import library from "zinc:plugin/library@0.1.0";`);
+	if (has("library") || has("mcp")) imp.push(`import library from "zinc:plugin/library@0.1.0";`);
 	if (has("notifier")) imp.push(`import notifier from "zinc:plugin/notifier@0.1.0";`);
 	if (has("reader")) imp.push(`import reader from "zinc:plugin/reader@0.1.0";`);
 	if (has("net")) imp.push(`import net from "zinc:plugin/net@0.1.0";`);
@@ -216,6 +233,22 @@ function genJs(): string {
 			`if (entryId === ${Q(slug + ".fetch")}) {\n\ttry {\n\t\tconst res = net.send(fill("net/HttpRequest", { method: "GET", url: "https://example.com/", headers: [], redirect: "follow", cookies: { tag: "none" }, bypassCache: false }));\n\t\tlog.write("info", \`HTTP \${res.status}, \${utf8(res.body).length} chars\`);\n\t} catch (e) {\n\t\tlog.write("warn", \`fetch failed: \${JSON.stringify(e.payload ?? String(e))}\`); // e.payload is the net-error variant\n\t}\n\treturn;\n}`,
 		);
 	}
+	if (has("mcp")) {
+		top.push(
+			`/** A tool for AI agents. It is declared in manifest.json too (keep the two the same). Tools added at run time go through
+ * registerTools(mcp, [tool]) in startup (import mcp from "zinc:plugin/mcp@0.1.0"). The handler is synchronous and returns JSON-able data. */
+const countTagged = defineTool(
+	{
+		name: ${Q(TOOL_NAME)},
+		description: ${Q(TOOL_DESCRIPTION)},
+		input: ${JSON.stringify(TOOL_INPUT)},
+		output: ${JSON.stringify(TOOL_OUTPUT)},
+		annotations: { readOnly: true, idempotent: true },
+	},
+	({ tag }) => ({ tag, count: Number(library.countItems(fill("library/ItemQuery", { scope: { tag: "all" }, tags: [tag] }))) }),
+);`,
+		);
+	}
 	if (has("notifier")) {
 		startup.push(`notifier.subscribe({ types: ["item"], kinds: ["add", "modify", "trash"], priority: 0, skipOwn: true, maxDelayMs: 250, label: ${Q(slug)} });`);
 		notifyBody.push(`for (const ev of batch.events) log.write("info", \`\${ev.object} \${ev.kind}: \${ev.ids.join(",")}\`);`);
@@ -231,6 +264,7 @@ function genJs(): string {
 	const fn = (name: string, args: string, body: string[]) => `${name}(${args}) {\n${tabs(body.join("\n"), 1)}\n},`;
 	const group = (name: string, fns: string[]) => `${name}: {\n${tabs(fns.join("\n"), 1)}\n},`;
 	const groups: string[] = [];
+	if (has("mcp")) groups.push("tools: [countTagged], // definePlugin writes mcpHandler.onMcpCall from these");
 	groups.push(group("lifecycle", [fn("startup", "", [...startup, `log.write("info", ${Q(slug + " started")});`]), ...(shutdown.length ? [fn("shutdown", "", shutdown)] : [])]));
 	if (prefChanged.length) groups.push(group("events", [fn("onPrefChanged", "subscription, scope, name, value", prefChanged)]));
 	const eh: string[] = [];
@@ -253,14 +287,14 @@ function genJs(): string {
 	const L: string[] = [];
 	L.push(`// ${displayName} (${id}). QuickJS guest: the JS is interpreted, so keep it to glue and UI; heavy loops belong in a Rust plugin.`);
 	L.push(`// Build: bun ${zinc}/plugin-api/sdk/js/scripts/build.ts .`);
-	L.push(`import { definePlugin, fail, fill, ui, ext } from ${Q(sdk)};`);
+	L.push(`import { definePlugin, fail, fill, ui, ext${has("mcp") ? ", defineTool" : ""} } from ${Q(sdk)};`);
 	L.push(imp.join("\n"));
 	L.push("");
 	if (top.length) L.push(top.join("\n\n"), "");
 	L.push(`const plugin = definePlugin({\n${tabs(groups.join("\n"), 1)}\n});`);
 	L.push("");
 	L.push(`// The QuickJS guest looks its exports up by these names. Keep the line as it is.`);
-	L.push(`export const { lifecycle, events, netEvents, notifierHandler, uiEvents, extendHandlers, readerEvents, noteEvents } = plugin;`);
+	L.push(`export const { lifecycle, events, netEvents, notifierHandler, uiEvents, extendHandlers, readerEvents, noteEvents, mcpHandler } = plugin;`);
 	return L.join("\n") + "\n";
 }
 
@@ -321,6 +355,37 @@ function genRust(): string {
 		);
 		menuEntries.push(`MenuEntryBuilder::item(${Q(slug + ".ask")}, "Ask my name...").build()`);
 		menuCmd.push(`${Q(slug + ".ask")} => ask_name()?,`);
+	}
+	if (has("mcp")) {
+		impl.push(
+			`    /// Tools for AI agents. ${TOOL_NAME} is declared in manifest.json; its arguments were checked against the input schema already.
+    /// Tools added at run time: mcp::register_all(&[Tool::new(..)]) in startup.
+    fn on_mcp_call(tool: String, args: String) -> Result<String, Error> {
+        match tool.as_str() {
+            ${Q(TOOL_NAME)} => {
+                let tag = json::string_field(&args, "tag").ok_or_else(|| err::invalid("tag is required"))?;
+                let query = library::ItemQuery {
+                    library: None,
+                    scope: library::ItemScope::All,
+                    tags: vec![tag.clone()],
+                    text: None,
+                    text_mode: library::TextMode::TitleCreatorYear,
+                    search: None,
+                    fields: Vec::new(),
+                    expand: library::ItemInclude::empty(),
+                    sort: Vec::new(),
+                    limit: 0,
+                    offset: 0,
+                };
+                let count = library::count_items(&query)?;
+                mcp::ok(&json::json!({ "tag": tag, "count": count }))
+            }
+            _ => Err(err::not_found(format!("no tool {tool}"))),
+        }
+    }`,
+		);
+		uses.push("use zinc_plugin::json;");
+		hostUses.push("library");
 	}
 	if (has("library")) {
 		menuEntries.push(`MenuEntryBuilder::item(${Q(slug + ".count")}, "Count items in library").build()`);

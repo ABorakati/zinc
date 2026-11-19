@@ -1,6 +1,6 @@
 # Recipes, Rust
 
-Built with `bun plugin-host/scripts/build-plugin.ts` against the matching cargo feature (menu, column, section, prefs, dialog, notifier, library, reader, toast, and the condition/apply/query/note/prefs/timers/push snippets below); the `net` snippet is marked where it was not compiled. Contents: skeleton; menus and commands; columns; sections; dialogs; preferences; notifier; library; reader; network; l10n; timers.
+Built with `bun plugin-host/scripts/build-plugin.ts` against the matching cargo feature (menu, column, section, prefs, dialog, notifier, library, reader, toast, and the condition/apply/query/note/prefs/timers/push snippets below); the `net` snippet is marked where it was not compiled. Contents: skeleton; menus and commands; columns; sections; dialogs; preferences; notifier; library; reader; network; tools for AI agents (MCP); l10n; timers.
 
 ## Skeleton
 
@@ -221,7 +221,37 @@ let req = net::HttpRequest {
 match net::send(&req) { Ok(res) => { /* res.status, res.body: Vec<u8> */ } Err(e) => log::warn(format!("fetch failed: {e:?}")) }   // e: net::NetError
 ```
 
-(Not compiled in this session: the `full` world did not build while the SDK lagged the new `mcp` interface; the JS equivalent ran.) Parse JSON with `json::parse(&String::from_utf8_lossy(&res.body))`. `net::send` blocks the plugin: no other call can enter it while it waits.
+(This snippet was not compiled; the JS equivalent ran. The `full` world itself builds again: checked with features `full` + `mcp`.) Parse JSON with `json::parse(&String::from_utf8_lossy(&res.body))`. `net::send` blocks the plugin: no other call can enter it while it waits.
+
+## Tools for AI agents (MCP) (feature `mcp`; with extend/ui/reader use `full` + `mcp`; manifest `mcp.expose`)
+
+```rust
+use zinc_plugin::host::library;
+use zinc_plugin::json;
+use zinc_plugin::prelude::*;                           // with feature `mcp`: mcp, Tool
+
+// count_tagged is declared in manifest.json ("mcp": { "tools": [...] }), so nothing is registered for it in startup.
+// Tools added at run time: mcp::register_all(&[Tool::new("name", "description", json::json!({ "type": "object" })).read_only()])?;
+impl Plugin for MyPlugin {
+    fn on_mcp_call(tool: String, args: String) -> Result<String, Error> {   // args: JSON text, already checked against the input schema
+        match tool.as_str() {
+            "count_tagged" => {
+                let tag = json::string_field(&args, "tag").ok_or_else(|| err::invalid("tag is required"))?;
+                let query = library::ItemQuery {
+                    library: None, scope: library::ItemScope::All, tags: vec![tag.clone()], text: None,
+                    text_mode: library::TextMode::TitleCreatorYear, search: None, fields: Vec::new(),
+                    expand: library::ItemInclude::empty(), sort: Vec::new(), limit: 0, offset: 0,
+                };
+                let count = library::count_items(&query)?;
+                mcp::ok(&json::json!({ "tag": tag, "count": count }))   // the result as JSON text
+            }
+            _ => Err(err::not_found(format!("no tool {tool}"))),        // -> a tool error for the agent
+        }
+    }
+}
+```
+
+Built and called through `smoke.ts` (the `scaffold.ts --with mcp` output, alone with feature `mcp` and with `menu` under `full` + `mcp`); the `register_all` line is from the SDK docs (`plugin-api/sdk/rust/src/mcp.rs`). With serde in your own Cargo.toml, `mcp::args::<MyArgs>(&args)?` parses into a struct. `Tool` builder: `.read_only()`, `.destructive(false)` for add-only tools (the default is destructive), `.idempotent()`, `.output(schema)`; `mcp::manifest(&tools)` prints the manifest block. The user must still turn on the plugin's switch in Settings > Plugins.
 
 ## l10n
 

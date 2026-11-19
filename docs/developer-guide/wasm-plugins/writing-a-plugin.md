@@ -4,6 +4,8 @@ A Zinc plugin is a WebAssembly component that implements the `plugin` world or o
 build it with one command, and Zinc loads it into a separate plugin host process. That host is Wasmtime (`zhw`), the only runner; the component is precompiled to a `.cwasm` when the plugin is installed (`phase3-runner.md`). The SDKs hide the parts of the world you do not use:
 the world exports 48 callback functions, and a plugin writes only the ones it needs.
 
+With an AI coding agent, install the [agent skills for plugin authors](agent-skills.md) instead of walking through this page by hand: `zinc-plugin-create` scaffolds, builds, tests and packages a new plugin, and `zinc-plugin-port` assesses and ports a Zotero plugin.
+
 ## Start
 
 **Rust** (`plugin-api/sdk/rust`, crate `zinc-plugin`). Copy `plugin-api/samples/word-count`, rename it, and edit `manifest.json` and `src/lib.rs`.
@@ -131,7 +133,7 @@ A plugin can offer tools to AI agents through Zinc's MCP server: declare them in
 
 ## Installing and managing
 
-Settings > Plugins has on/off switches ("Enable plugins", experimental, applied at the next start, and the per-plugin MCP switch above) and lists each plugin with its status. It has no install button yet: installing goes through `PluginManager.installPackage` / `installDir` in `plugin-host/src/package/installer.ts` (see `phase2-pkg.md`).
+Settings > Plugins has on/off switches ("Enable plugins", experimental, applied at the next start, and the per-plugin MCP switch above) and lists each plugin with its status. It has no install button yet: installing goes through `PluginManager.installPackage` / `installDir` in `plugin-host/src/package/installer.ts` (see `phase2-pkg.md`). What users see: [Plugins](../../user-guide/plugins.md) in the user guide.
 
 ## Testing without Zinc
 

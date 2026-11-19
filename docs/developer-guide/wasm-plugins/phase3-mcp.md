@@ -74,7 +74,7 @@ world enum gains `plugin-mcp`, and an `if/then` that `mcp.tools` requires `mcp.e
 3. `plugin-host/src/package/json-schema.ts` ignores `if/then/contains`, so the schema rule "mcp.tools needs mcp.expose" is not enforced at install. Either add those keywords, or a rule in `package/validate.ts`. The bridge is safe
    meanwhile (it never lists a plugin without the grant).
 4. The other WIT copies (`plugin-host/test/fixtures/*/wit`, `plugin-host/test/pkg/fixtures/e2e-js/wit`, `gpui-ui/test/wasm-extend-fixture/wit`) were not touched; refresh them when their owners next sync the WIT. They still build (older `plugin` world).
-5. The skills (`.claude/skills/zinc-plugin-*`) could mention `plugin-mcp`, `defineTool` and the `mcp.expose` permission.
+5. Done (2026-11-19): the skills (`.claude/skills/zinc-plugin-*`) cover `plugin-mcp`, `defineTool`, `mcp::Tool` and the `mcp.expose` permission (SKILL.md, `choose-and-manifest.md`, the JS and Rust recipes, the port skill's rules), and `scaffold.ts --with mcp` writes a working tool in JS or Rust. They are published as zips: [agent-skills.md](agent-skills.md).
 
 ## What is left / notes
 

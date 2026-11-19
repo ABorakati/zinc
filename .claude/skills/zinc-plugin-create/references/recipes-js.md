@@ -1,6 +1,6 @@
 # Recipes, JavaScript (QuickJS)
 
-All snippets were built with `plugin-api/sdk/js/scripts/build.ts` and run through the supervisor (stub imports) unless marked "built only". Contents: skeleton; menus and commands; columns; item pane sections; dialogs; preferences; notifier; library; reader; network; l10n; timers.
+All snippets were built with `plugin-api/sdk/js/scripts/build.ts` and run through the supervisor (stub imports) unless marked "built only". Contents: skeleton; menus and commands; columns; item pane sections; dialogs; preferences; notifier; library; reader; network; tools for AI agents (MCP); l10n; timers.
 
 ## Skeleton
 
@@ -23,7 +23,7 @@ const plugin = definePlugin({
 });
 // Keep this line: the QuickJS guest looks its exports up by these names. If a newer WIT adds an exported interface
 // (check sdk/js/types/exports.d.ts after `bun plugin-api/sdk/js/scripts/gen-types.ts`), add its camelCase name here.
-export const { lifecycle, events, netEvents, notifierHandler, uiEvents, extendHandlers, readerEvents, noteEvents } = plugin;
+export const { lifecycle, events, netEvents, notifierHandler, uiEvents, extendHandlers, readerEvents, noteEvents, mcpHandler } = plugin;
 ```
 
 `definePlugin` supplies a safe default for every export you leave out. Failing a `result<_, error>` callback: `fail("invalid-argument", "msg")` (throws). A failing import throws an object; its `.payload` is the `error` variant: `{ tag: "permission-denied", val: "library.write" }`. Imports that are `u64` return `BigInt` (`library.countItems`): use `Number(x)` before arithmetic, and never `JSON.stringify` a BigInt (it throws).
@@ -216,6 +216,45 @@ function utf8(bytes) { let s = ""; for (let i = 0; i < bytes.length; i++) s += S
 ```
 
 (built only; the stub run did not answer `net.send`.) Request body: `body: Uint8Array`. The host owns `Host`, `Content-Length`, `Cookie`; default timeout 30 s; max response 64 MiB unless `maxResponseBytes`; redirects are re-checked against the host list; `net.sendMany(reqs)` runs up to 16 in parallel; `net.download(req, destPathRef, options)` streams to a file. While `net.send` waits, the plugin cannot be called into (see pitfalls). Only send data to hosts the user knows about.
+
+## Tools for AI agents (MCP) (world `plugin-mcp`, or `plugin` with menus or views; manifest `mcp.expose`)
+
+```js
+import { definePlugin, defineTool, registerTools, fail, fill, ext } from "<zinc>/plugin-api/sdk/js/src/index.ts";
+import library from "zinc:plugin/library@0.1.0";
+import mcp from "zinc:plugin/mcp@0.1.0";        // only for tools registered at run time
+
+// Declared in manifest.json too ("mcp": { "tools": [...] }, snake_case keys, schemas as objects): Settings > Plugins counts it before the plugin runs.
+const countTagged = defineTool(
+	{
+		name: "count_tagged",                       // agents see "<plugin>__count_tagged"
+		description: "Count the library items that carry a tag.",
+		input: { type: "object", properties: { tag: { type: "string", minLength: 1 } }, required: ["tag"], additionalProperties: false },
+		output: { type: "object", properties: { tag: { type: "string" }, count: { type: "integer" } }, required: ["tag", "count"] },
+		annotations: { readOnly: true, idempotent: true },
+	},
+	({ tag }) => ({ tag, count: Number(library.countItems(fill("library/ItemQuery", { scope: { tag: "all" }, tags: [tag] }))) }),   // synchronous; return JSON-able data
+);
+
+// Registered at run time only (not in the manifest). Add-only, so say destructive: false (MCP's default is destructive).
+const addTag = defineTool(
+	{ name: "add_tag", description: "Add a tag to one item.", annotations: { destructive: false, idempotent: true },
+	  input: { type: "object", properties: { item: { type: "string", pattern: "^[A-Z0-9]{8}$" }, tag: { type: "string", minLength: 1 } }, required: ["item", "tag"] } },
+	({ item, tag }) => {
+		if (!library.getSummaries([item], [], fill("library/ItemInclude", {}), false).filter(Boolean).length) fail("not-found", `no item ${item}`);   // -> a tool error for the agent
+		library.apply([ext.change("add-tags", { items: [item], tags: [{ name: tag, kind: "manual" }] })], { skipNotify: false });                    // needs library.write
+		return { item, tag, added: true };
+	},
+);
+
+const plugin = definePlugin({
+	tools: [countTagged, addTag],                   // definePlugin writes mcpHandler.onMcpCall; do not also write it yourself
+	lifecycle: { startup() { registerTools(mcp, [addTag]); } },
+});
+export const { lifecycle, events, mcpHandler } = plugin;   // mcpHandler must be exported, or calls never reach the tools
+```
+
+From `plugin-api/samples/mcp-tools` (run through the supervisor by `plugin-api/samples/test.ts`) and `scaffold.ts --with mcp` (run with `smoke.ts --call mcp-handler.on-mcp-call '["count_tagged", "{\"tag\":\"x\"}"]'`). Arguments arrive already checked against `input`. `fill()` does not default variant fields: pass `scope: { tag: "all" }`. `mcpManifest([countTagged])` prints the manifest block. Hand-over note for the user: the tools stay hidden until they turn on "Offer <plugin>'s tools to AI agents" in Settings > Plugins, and agents reach them only on the running app's HTTP MCP endpoint.
 
 ## l10n
 

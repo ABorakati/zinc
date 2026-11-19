@@ -10,6 +10,7 @@ How to install and use Zinc. Zinc runs on Windows, Linux and macOS; where a feat
 ## Your library
 
 - [Library basics](library.md): views, grouping, collections, tags, saved searches, duplicates, trash
+- [Layouts](layouts.md): arrange, stack and hide panes; Edit layout mode, presets, undo
 - [Adding items](adding-items.md): drag and paste, add from URL, identifiers, the browser connector
 - [The PDF reader](reader.md): annotations, reading view, cards, print
 - [Notes and web tabs](notes-and-web-tabs.md)
@@ -28,6 +29,7 @@ How to install and use Zinc. Zinc runs on Windows, Linux and macOS; where a feat
 ## Agents, settings and upkeep
 
 - [MCP for AI agents](mcp.md)
+- [Plugins](plugins.md): turning plugins on, permissions, tools for AI agents (experimental)
 - [Settings reference](settings.md)
 - [Logs and Report a problem](logs-and-reports.md)
 - [Updates](updates.md)

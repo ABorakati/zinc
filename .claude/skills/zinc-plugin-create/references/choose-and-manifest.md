@@ -4,7 +4,7 @@ Contents: worlds; permissions; manifest; locale files; default prefs; ids.
 
 ## Worlds (what each adds)
 
-`plugin-core` < `plugin-library` < `plugin-extend` < `plugin-ui`; `plugin-reader` and `plugin-dialogs` also build on `plugin-extend`; `plugin` is everything. Source: `plugin-api/wit/world.wit`.
+`plugin-core` < `plugin-library` < `plugin-extend` < `plugin-ui`; `plugin-reader` and `plugin-dialogs` also build on `plugin-extend`; `plugin-mcp` builds on `plugin-library` only; `plugin` is everything. Source: `plugin-api/wit/world.wit`.
 
 | World | Imports | Exports (callbacks) |
 |---|---|---|
@@ -14,13 +14,15 @@ Contents: worlds; permissions; manifest; locale files; default prefs; ids.
 | `plugin-dialogs` | + ui (toasts, dialogs, windows, `push`) | (no ui-events) |
 | `plugin-ui` | + ui | + ui-events (mount, on-event, ...) |
 | `plugin-reader` | + annotations, reader, note-editor | + reader-events, note-events |
-| `plugin` | + net, fs, clipboard, shell, secrets, util, permissions, plugins | + net-events |
+| `plugin-mcp` | `plugin-library` + mcp (`register-tool`, `unregister-tool`) | + mcp-handler (`on-mcp-call`) |
+| `plugin` | + net, fs, clipboard, shell, secrets, util, permissions, plugins, mcp | + net-events, mcp-handler |
 
 Consequences that bite:
 
 - A **section** needs `ui-events` (it is mounted as a view), so it needs `plugin-ui`, not `plugin-extend`.
 - A **dialog** reports its answer as a `close` event on `ui-events.on-event`. With only `plugin-dialogs` (Rust feature `dialogs`) the dialog opens but the answer never reaches the plugin. Dialogs with an outcome need `plugin-ui` (feature `ui`). Toasts alone are fine with `plugin-dialogs`.
 - **net, fs, clipboard, shell, secrets** exist only in `plugin`. Reader plus any UI also means `plugin` (Rust: features `reader` + `ui` select it, or use `full`).
+- **MCP tools** alone (with library access) fit `plugin-mcp`. Tools plus menus, columns, sections, dialogs or the reader need `plugin` (Rust: features `full` + `mcp`; `mcp` with `extend`, `ui` or `reader` but without `full` is a compile error).
 - Calling an import the world lacks is a build error (Rust) or an import error at load (JS). Not a runtime permission error.
 
 ## Permissions
@@ -42,6 +44,7 @@ No permission needed: registering menus, columns, sections, panes, shortcuts, to
 | annotations | `annotations.read`, `annotations.write` |
 | note editor | `note-editor.read` / `.write` / `.control` / `.ui` |
 | other plugins, app prefs | `plugins.read`, `prefs.app-read` |
+| tools for AI agents (MCP) | `mcp.expose` (medium); the tools' own needs (`library.read`, `library.write`, ...) come on top. Agents see nothing until the user also turns on the plugin's switch in Settings > Plugins |
 | web hosts | `permissions.net.hosts`, not an id |
 
 Net hosts: `"api.example.org"` (https assumed), `"*.example.org"`, `"http://localhost:11434"` (http and private hosts must be written out, exact host and port), `"*"` (any public host: shown as high risk, avoid). A redirect to an unlisted host is refused.
@@ -76,6 +79,7 @@ Schema: `plugin-api/manifest.schema.json`; the installer validates against it (a
 - `main.startup_timeout_ms`: budget for install, startup, shutdown (default 10000, max 60000).
 - `activation_events`: keep `["onStartup"]`. Lazy activation needs a `contributes` block; skip it for a first version.
 - `icons`, `homepage_url`, `author`, `update_url` (https, needs a hash) are optional.
+- `mcp`: `{ "tools": [{ "name", "description", "input_schema", "output_schema"?, "annotations": { "read_only", "destructive", "idempotent" } }] }`, the tools for AI agents declared statically (Settings > Plugins counts them before the plugin runs). Schemas are JSON objects here (the WIT takes JSON text). Valid only with `mcp.expose` in `permissions.capabilities`. JS `mcpManifest(tools)` and Rust `mcp::manifest(&tools)` print the block; `scaffold.ts --with mcp` writes one.
 
 ## Locale files
 

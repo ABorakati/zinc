@@ -10,7 +10,8 @@ Where settings are stored:
 
 | Kind | Stored in |
 | --- | --- |
-| Window and interface choices (Appearance, General, Reader, updates, the Locate address) | `ui-state.json` in the settings folder (see [Folders](first-run.md#folders)). **System** shows the exact path. |
+| Window and interface choices (Appearance, the library layout, General, Reader, updates, the Locate address, the Plugins switches) | `ui-state.json` in the settings folder (see [Folders](first-run.md#folders)). **System** shows the exact path. |
+| Plugins' own settings and data | the plugins folder (see [Plugins](plugins.md#where-plugins-live)) |
 | Reading view typography | `reading-settings.json` next to `ui-state.json` |
 | Quick Copy style | `cite-settings.json` next to the library database |
 | Attachment storage and the Zotero data folder | `zotero-next.config.json` next to the library database |
@@ -42,6 +43,16 @@ What the left sidebar and the item pane show, and in which order. See [Library b
 | Reset sidebars (button: **Reset**) | Shows every group and section again, in the default order. | |
 
 At least one part stays shown on each side. The last shown part cannot be hidden. Saved Searches is a group of its own. It shows whether or not Library is open. Group Libraries appears only when you belong to a group.
+
+### Layout
+
+How the library's panes are arranged. See [Layouts](layouts.md).
+
+| Setting | What it does | Default / options |
+| --- | --- | --- |
+| Default layout | How the library is arranged. Choosing one arranges the library that way now (it can be undone); Reset layout returns to it. | **Standard** (sidebar, item list and item details side by side), Stacked (item details below the list), Triage (a wide list with Tags and Collections beside it) |
+| Customize layout (button: **Customize...**) | Starts edit layout mode: every pane gets a header, so you can drag panes and item pane sections to another place, stack them as tabs or hide them. Press **Done** or Escape to finish. | |
+| Reset layout (button: **Reset**) | Puts every pane back where the default layout has it. | |
 
 ## General
 
@@ -245,3 +256,15 @@ Settings under System > Updates. See [Updates](updates.md). Updating in the app 
 | Check automatically | Look for a new version when Zinc starts and once a day. When off, nothing is requested from the internet unless you press Check now. | On |
 | Download automatically | Fetch the installer in the background as soon as a new version is found. It is installed only when you choose Install now or Install on exit. | Off |
 | Update feed | The https address of the signed `latest.json`. Empty uses the address built into this version, if any. | Empty |
+
+## Plugins
+
+Plugins are experimental and off by default. See [Plugins](plugins.md).
+
+| Setting | What it does | Default / options |
+| --- | --- | --- |
+| Enable plugins (experimental) | Runs installed plugins in a separate process. Takes effect the next time Zinc starts. | Off |
+| *each plugin* | Its name, version and status (running, stopped, disabled, failed, ...). | |
+| Offer *plugin*'s tools to AI agents | Shown under a plugin that asks to offer tools to AI agents. Lets agents connected to Zinc's MCP server (HTTP, while Zinc runs) call the plugin's tools, with the number it declares. They can do whatever the plugin is allowed to do. See [MCP for AI agents](mcp.md#tools-from-plugins). | Off |
+
+There is no Install button yet. A plugin with a settings pane of its own appears as its own section after Plugins.

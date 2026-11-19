@@ -10,6 +10,7 @@ How Zinc is built, tested and released.
 - [The translators runtime](translators.md)
 - [Releasing](releasing.md): installer, update feed, signing hooks, AppImage and disk image
 - [Releasing the browser extension](extension-release.md): the connector's two zips, the workflow, store updates
+- [WASM plugins](wasm-plugins/README.md): the plugin system's design, [writing a plugin](wasm-plugins/writing-a-plugin.md), and [agent skills for plugin authors](wasm-plugins/agent-skills.md)
 - [Contributing](contributing.md)
 
 The repository root keeps `CONTRIBUTING.md` (GitHub links to it from pull requests). It holds the short version and points here.

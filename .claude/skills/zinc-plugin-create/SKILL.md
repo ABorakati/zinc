@@ -16,7 +16,7 @@ Paths below are relative to the Zinc checkout (the folder holding `plugin-api/`)
    ```bash
    bun .claude/skills/zinc-plugin-create/scripts/scaffold.ts <dir> --id my-plugin@example.com --name "My Plugin" --lang js --with menu,section
    ```
-   `--with` takes: `menu column section prefs dialog notifier library reader net toast`. The script writes `manifest.json`, `locale/en-US/plugin.ftl`, the entry file (`src/main.js` or `Cargo.toml` + `src/lib.rs`), picks the smallest world and the fewest permissions the parts need, and prints both. Put the plugin outside the Zinc tree (a scratch dir or its own repo); the script writes relative or absolute SDK paths as needed.
+   `--with` takes: `menu column section prefs dialog notifier library reader net toast mcp` (`mcp`: a read-only tool for AI agents, declared in the manifest). The script writes `manifest.json`, `locale/en-US/plugin.ftl`, the entry file (`src/main.js` or `Cargo.toml` + `src/lib.rs`), picks the smallest world and the fewest permissions the parts need, and prints both. Put the plugin outside the Zinc tree (a scratch dir or its own repo); the script writes relative or absolute SDK paths as needed.
 3. **Write the logic** with the recipes: `references/recipes-js.md` or `references/recipes-rust.md`. Every snippet there was built and run.
 4. **Build**: `bun plugin-api/sdk/js/scripts/build.ts <dir> --out <out>` (JS, ~6 s) or `bun plugin-host/scripts/build-plugin.ts <dir> --out <out>` (Rust, ~40 s cold, ~15 s warm).
 5. **Test** through the supervisor with stub imports: `bun .claude/skills/zinc-plugin-create/scripts/smoke.ts <out>` shows what startup registered; add `--call iface.fn '<json args>'` to drive callbacks, or copy `assets/plugin.test.ts` for assertions. UI trees are checked against `ui-tree.schema.json`. Details: `references/build-test-install.md`.
@@ -39,15 +39,15 @@ If a build or test step fails for reasons outside the plugin (a missing `plugin-
 | item pane sections, dialogs (their close events arrive in `ui-events`), windows | `plugin-ui` | `ui` |
 | reader listeners, annotations, note editor | `plugin-reader` | `reader` |
 | tools for AI agents (MCP), with library access | `plugin-mcp` | `mcp` |
-| reader plus UI, or net, fs, clipboard, shell, secrets | `plugin` | `full` |
+| reader plus UI, or net, fs, clipboard, shell, secrets; or MCP tools plus menus, views or reader | `plugin` | `full` (add `mcp` for the `mcp::Tool` helpers) |
 
 Put the world in `manifest.json` `main.world` (JS: it is the componentize input; Rust: informational, but keep it true).
 
-**Permissions = the fewest.** Registering menus, columns, sections, panes, dialogs, toasts, prefs and logging need none. Add only: `library.read` (reading items, and reading the selection from a callback context), `library.write` (`library.apply`), `library.trash`/`library.erase`, `library.fulltext.read`, `library.files.read`, `annotations.read`/`write`, `reader.ui` (reader toolbar and menus), `ui.windows` (tabs, side panels, extra windows), and `permissions.net.hosts` for each web host. Write a `permission_reasons` sentence for each: the install prompt shows it. Full table: `references/choose-and-manifest.md`.
+**Permissions = the fewest.** Registering menus, columns, sections, panes, dialogs, toasts, prefs and logging need none. Add only: `library.read` (reading items, and reading the selection from a callback context), `library.write` (`library.apply`), `library.trash`/`library.erase`, `mcp.expose` (tools for AI agents), `library.fulltext.read`, `library.files.read`, `annotations.read`/`write`, `reader.ui` (reader toolbar and menus), `ui.windows` (tabs, side panels, extra windows), and `permissions.net.hosts` for each web host. Write a `permission_reasons` sentence for each: the install prompt shows it. Full table: `references/choose-and-manifest.md`.
 
 ## Recipe: tools for AI agents (MCP)
 
-World `plugin-mcp` (Rust feature `mcp`; `full` also has it). Design: `docs/developer-guide/wasm-plugins/mcp.md`; working sample: `plugin-api/samples/mcp-tools` (JS).
+World `plugin-mcp` (= `plugin-library` + mcp; Rust feature `mcp`). It has no menus, views or reader: a plugin that needs those and tools uses world `plugin` (Rust features `full` + `mcp`; `full` alone has the WIT interface but not the `mcp::Tool` helpers, and `mcp` with `extend`/`ui`/`reader` but without `full` is a compile error). Start with `scaffold.ts --with mcp` (adds `library.read`, `mcp.expose`, a `count_tagged` tool in the manifest and its handler; built and called in JS and Rust, alone and with `menu`). Design: `docs/developer-guide/wasm-plugins/mcp.md`; working sample: `plugin-api/samples/mcp-tools` (JS). Recipes: `references/recipes-js.md` and `references/recipes-rust.md`, "Tools for AI agents".
 
 - Manifest: capability `mcp.expose` (medium risk) with a `permission_reasons` sentence, plus whatever the tools themselves need (`library.read`, `library.write`). Optionally declare tools statically in `"mcp": {"tools": [{name, description, input_schema, output_schema?, annotations: {read_only, destructive, idempotent}}]}` so Settings > Plugins counts them before the plugin runs. `mcp.tools` without `mcp.expose` is invalid.
 - Consent has two parts: the permission, and the user's per-plugin switch in Settings > Plugins ("Offer <plugin>'s tools to AI agents"), off by default. Agents see nothing until both hold and the plugin is running; they reach the tools only on the app's HTTP MCP endpoint. Tell the user to flip the switch when you hand the plugin over.
