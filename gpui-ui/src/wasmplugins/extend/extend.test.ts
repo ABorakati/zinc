@@ -3,9 +3,11 @@
 // real supervisor (registrations arrive, a column is fetched in ONE call, a menu command and a toolbar click reach the plugin, the
 // registrations go when the plugin stops). The window side (that things are drawn and clickable) is gpui-ui/scripts/shot-wasm-extend.tsx.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildPlugin } from "../../../../plugin-host/scripts/build-plugin";
 import { defineHandler, type HandlerContext } from "../../../../plugin-host/src/imports/registry";
+import { resolveZhwPath } from "../../../../plugin-host/src/transport-wasmtime";
 import { BatchCache } from "./cache";
 import { conditionHolds, type CondCtx } from "./conditions";
 import { cacheStats, cellText, columnCell, dropDataCaches } from "./data";
@@ -22,11 +24,19 @@ const fakeCtx = (pluginId: string, caps: string[] = []): HandlerContext =>
 		pluginId,
 		has: (p: string) => caps.includes(p),
 		require(p: string) {
-			if (!caps.includes(p)) throw Object.assign(new Error(`permission-denied: ${p}`), { payload: { tag: "permission-denied", val: p } });
+			if (!caps.includes(p))
+				throw Object.assign(new Error(`permission-denied: ${p}`), { payload: { tag: "permission-denied", val: p } });
 		},
 	}) as unknown as HandlerContext;
 
-const x = (over: Partial<CondCtx> = {}): CondCtx => ({ tab: { id: "library", kind: "library" }, itemCount: 1, itemTypes: ["journalArticle"], rowKinds: ["library"], editable: true, ...over });
+const x = (over: Partial<CondCtx> = {}): CondCtx => ({
+	tab: { id: "library", kind: "library" },
+	itemCount: 1,
+	itemTypes: ["journalArticle"],
+	rowKinds: ["library"],
+	editable: true,
+	...over,
+});
 
 describe("conditions", () => {
 	test("every set field must hold", () => {
@@ -61,7 +71,11 @@ describe("batch cache", () => {
 	});
 	test("a failing call keeps the last good value and retries later", async () => {
 		let fail = false;
-		const c = new BatchCache<string>({ delayMs: 2, retryMs: 10, fetch: async (k) => (fail ? Promise.reject(new Error("x")) : k.map(() => "v")) });
+		const c = new BatchCache<string>({
+			delayMs: 2,
+			retryMs: 10,
+			fetch: async (k) => (fail ? Promise.reject(new Error("x")) : k.map(() => "v")),
+		});
 		c.get("a");
 		await new Promise((r) => setTimeout(r, 20));
 		fail = true;
@@ -97,7 +111,9 @@ describe("extend handler", () => {
 		expect(() => fns["register-menu"]!(fakeCtx(P), bad)).toThrow(/unknown parent/);
 	});
 	test("permissions: open-tab needs ui.windows, select-items ui.navigate, get-context library.read", async () => {
-		expect(() => fns["open-tab"]!(fakeCtx(P), { tabId: "t", kind: "mine", title: plain("T"), select: false, pinned: false, closable: true })).toThrow(/permission-denied/);
+		expect(() =>
+			fns["open-tab"]!(fakeCtx(P), { tabId: "t", kind: "mine", title: plain("T"), select: false, pinned: false, closable: true }),
+		).toThrow(/permission-denied/);
 		expect(() => fns["register-drop-target"]!(fakeCtx(P), { dropId: "d" })).toThrow(/permission-denied/);
 		expect(() => fns["get-context"]!(fakeCtx(P), undefined)).toThrow(/permission-denied/);
 		await expect(Promise.resolve().then(() => fns["select-items"]!(fakeCtx(P), ["A"], {}))).rejects.toThrow(/permission-denied/);
@@ -116,7 +132,16 @@ describe("extend handler", () => {
 	test("navigation goes through the bound host; without one it is unavailable", async () => {
 		const calls: string[] = [];
 		const host = {
-			getContext: () => ({ window: 1, tab: { id: "library", kind: "library" }, rows: [], items: ["A"], itemCount: 1, itemsTruncated: false, editable: true }) as Context,
+			getContext: () =>
+				({
+					window: 1,
+					tab: { id: "library", kind: "library" },
+					rows: [],
+					items: ["A"],
+					itemCount: 1,
+					itemsTruncated: false,
+					editable: true,
+				}) as Context,
 			listSelected: () => ["A"],
 			selectItems: async (keys: string[]) => (calls.push(`select ${keys.join(",")}`), keys.length),
 			setSearch: (t: string) => void calls.push(`search ${t}`),
@@ -157,7 +182,10 @@ describe("menu resolution", () => {
 		const list = resolveTarget("library-item", x());
 		expect(list.map((e) => e.id)).toEqual(["a", "sep", "sub"]);
 		expect(list[2]!.children.map((c) => [c.id, c.disabled])).toEqual([["d", true]]); // c is hidden (needs 2 items), d disabled
-		fns["patch-menu"]!(fakeCtx(P), "m", [{ id: "a", disabled: true, label: plain("A2") }, { id: "sub", hidden: true }]);
+		fns["patch-menu"]!(fakeCtx(P), "m", [
+			{ id: "a", disabled: true, label: plain("A2") },
+			{ id: "sub", hidden: true },
+		]);
 		const patched = resolveEntries(P, "m", entries, x());
 		expect(patched.map((e) => [e.id, e.label, e.disabled])).toEqual([["a", "A2", true]]);
 		expect(menuPatches.get(P, "m")?.size).toBe(2);
@@ -167,7 +195,10 @@ describe("menu resolution", () => {
 
 // ---- the real plugin --------------------------------------------------------------------------------------------------------
 
-describe("fixture plugin through the supervisor", () => {
+// Needs the Wasmtime plugin host (`zhw`, built by `cargo build --release` in plugin-host-wasmtime/). CI does not build it: skip there.
+const hasPluginHost = existsSync(resolveZhwPath());
+
+describe.skipIf(!hasPluginHost)("fixture plugin through the supervisor", () => {
 	// ZN_EXTEND_FIXTURE=<folder>: use a fixture that is already built (skips the componentize step, about 12 s)
 	const out = process.env.ZN_EXTEND_FIXTURE ?? join(process.env.TEMP ?? "/tmp", "zn-wasm-extend-fixture-test");
 	const lines: string[] = [];
@@ -176,15 +207,22 @@ describe("fixture plugin through the supervisor", () => {
 	const ID = "extend-fixture@zinc.test";
 
 	beforeAll(async () => {
-		if (!process.env.ZN_EXTEND_FIXTURE) await buildPlugin({ dir: join(import.meta.dir, "../../../test/wasm-extend-fixture"), out, world: "ext" });
+		if (!process.env.ZN_EXTEND_FIXTURE)
+			await buildPlugin({ dir: join(import.meta.dir, "../../../test/wasm-extend-fixture"), out, world: "ext" });
 		const mod = await import("../index");
 		const log = defineHandler({
 			interface: "zinc:plugin/log",
 			where: "zinc",
 			functions: { write: (ctx: HandlerContext, _l: string, m: string) => void lines.push(m) },
 		});
-		sup = await mod.startWasmPlugins({ force: true, bindUi: false, dirs: [out], handlers: [log, extendHandler], supervisor: { callTimeoutMs: 8000 } });
-		stop = mod.stopWasmPlugins;
+		stop = mod.stopWasmPlugins; // set first, so a failed start is still stopped (it would leave the MCP bridge installed for later files)
+		sup = await mod.startWasmPlugins({
+			force: true,
+			bindUi: false,
+			dirs: [out],
+			handlers: [log, extendHandler],
+			supervisor: { callTimeoutMs: 8000 },
+		});
 	}, 120_000);
 	afterAll(async () => {
 		await stop?.();
@@ -196,7 +234,12 @@ describe("fixture plugin through the supervisor", () => {
 		expect(lines.some((l) => l.startsWith("startup extend-fixture@zinc.test"))).toBe(true);
 		for (const k of ["menus", "sections", "infoRows", "columns", "rowStyles", "toolbarButtons", "shortcuts", "prefPanes"] as const)
 			expect(registries[k].list().length).toBeGreaterThan(0);
-		expect(registries.menus.list().map((m) => m.reg.target).sort()).toEqual(["library-item", "menubar-tools"]);
+		expect(
+			registries.menus
+				.list()
+				.map((m) => m.reg.target)
+				.sort(),
+		).toEqual(["library-item", "menubar-tools"]);
 	});
 
 	test("a column asks the plugin ONCE for a screenful of rows", async () => {
@@ -211,7 +254,15 @@ describe("fixture plugin through the supervisor", () => {
 	});
 
 	test("a menu command and a toolbar click reach the plugin", async () => {
-		const ctx = { window: 1, tab: { id: "library", kind: "library" }, rows: [], items: ["A", "B"], itemCount: 2, itemsTruncated: false, editable: true } as Context;
+		const ctx = {
+			window: 1,
+			tab: { id: "library", kind: "library" },
+			rows: [],
+			items: ["A", "B"],
+			itemCount: 2,
+			itemsTruncated: false,
+			editable: true,
+		} as Context;
 		await runMenuCommand({ plugin: ID, menuId: "m1", id: "hello", checked: undefined }, ctx);
 		expect(lines).toContain("menu-command m1/hello items=2 tab=library");
 		await sup!.call(ID, "extend-handlers", "on-toolbar-click", ["tb1", undefined, ctx]);

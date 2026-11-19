@@ -276,6 +276,8 @@ export function Checkbox(p: { checked: boolean; onChange: (v: boolean) => void; 
 					...t("flex size-4 flex-none items-center justify-center rounded-[4px] border"),
 					borderColor: p.checked ? tok("primary") : tok("input"),
 					backgroundColor: p.checked ? tok("primary") : tok("background"),
+					// a painted box would take the click itself (GPUIX: a filled element blocks hits), so let it through to the checkbox
+					pointerEvents: "none",
 				}}
 			>
 				<Show when={p.checked}>
@@ -312,10 +314,13 @@ export function Switch(p: { checked: boolean; onChange: (v: boolean) => void; la
 					...t("flex h-[18px] w-8 flex-none items-center rounded-full p-0.5"),
 					backgroundColor: p.checked ? tok("primary") : tok("input"),
 					justifyContent: p.checked ? "flex-end" : "flex-start",
+					// the painted track and thumb would take the click themselves (GPUIX: a filled element blocks hits): let it through
+					pointerEvents: "none",
 				}}
 			>
 				<div
 					style={{
+						pointerEvents: "none",
 						width: 14,
 						height: 14,
 						borderRadius: 7,
