@@ -25,6 +25,10 @@ export function registerDropHost(spec: () => DropHostSpec, el: HostElement): () 
 	return () => { hosts.delete(host); };
 }
 
+/** The pane whose drag source the mouse button is held on, before the drag starts (sources tint while pressed). */
+const [pressed, setPressed] = createSignal<string | null>(null);
+export const panePressed: Accessor<string | null> = pressed;
+
 /** The pane being dragged (its id), or null. Item drags never show the dock overlay. */
 export const paneDragging: Accessor<string | null> = () => {
 	const d = dragging();
@@ -61,6 +65,7 @@ function cancel() {
 		setTarget(null);
 		setZones([]);
 		setTargets([]);
+		setPressed(null);
 		if (paneDragging()) endDrag();
 	});
 }
@@ -107,6 +112,7 @@ export function paneDragSource(id: () => string): {
 			if ((e.button ?? 0) !== 0 || dragging()) return;
 			justDragged = false;
 			press = { x: e.x ?? 0, y: e.y ?? 0 };
+			setPressed(id());
 		},
 		onMouseMove(e) {
 			if (paneDragging()) { move(e); return; }
@@ -124,6 +130,7 @@ export function paneDragSource(id: () => string): {
 			const next = createDockZones(snapshots, windowSize(), isSectionPane(pane))
 				.filter((z) => canMove(libraryLayout(), pane, z.target));
 			batch(() => {
+				setPressed(null);
 				setZones(next);
 				setTargets(snapshots.filter((x) => x.spec.kind === "stack").map((x) => x.bounds));
 				startDrag({ kind: "pane", id: pane });
@@ -131,7 +138,7 @@ export function paneDragSource(id: () => string): {
 			});
 			justDragged = true;
 		},
-		onMouseUp() { press = null; if (paneDragging()) drop(); },
+		onMouseUp() { press = null; setPressed(null); if (paneDragging()) drop(); },
 		wasDrag() { const was = justDragged; justDragged = false; return was; },
 	};
 }

@@ -11,7 +11,7 @@ import { DropdownMenu, openMenu, toast, Tooltip, type MenuItem } from "../ui";
 import { boundsOf, hideTooltip, showTooltip } from "../ui/core";
 import { gatedHover } from "../cards/scrolling";
 import { sectionPaneId } from "../shell/frameLayout";
-import { paneDragSource, registerDropHost } from "../shell/dock";
+import { paneDragging, paneDragSource, panePressed, registerDropHost } from "../shell/dock";
 import { detachSection } from "../shell/sectionPanes";
 import { undoLayout } from "../shell/layout";
 
@@ -240,7 +240,14 @@ function HeadRow(p: HeadProps): JSX.Element {
 					if (drag.wasDrag()) return;
 					setCollapsed(p.id, !isCollapsed(p.id));
 				}}
-				style={{ ...t("flex h-full min-w-0 flex-1 items-center gap-1.5"), cursor: "pointer" }}
+				style={{
+					...t("flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md"),
+					cursor: "pointer",
+					// held to drag the section out, or being dragged: tint it
+					...(panePressed() === sectionPaneId(p.id) || paneDragging() === sectionPaneId(p.id)
+						? { backgroundColor: withAlpha(tok("primary"), 0.14) }
+						: {}),
+				}}
 			>
 				<Icon name={isCollapsed(p.id) ? "chevron-right" : "chevron-down"} size={14} color={fg()} />
 				<Icon name={p.icon} size={14} color={fg()} />

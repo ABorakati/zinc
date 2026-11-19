@@ -14,7 +14,7 @@ import { Icon } from "../icons";
 import { openMenu, toast, type Anchor, type MenuItem } from "../ui";
 import { boundsOf, native, t, tok, tx } from "../ui/core";
 import { focusRing, isActivateKey } from "../ui/controls";
-import { registerDropHost, paneDragSource } from "./dock";
+import { registerDropHost, paneDragSource, paneDragging, panePressed } from "./dock";
 import {
 	canMove,
 	isSectionPane,
@@ -34,6 +34,8 @@ import { paneDef, panesOf } from "./panes";
 import { returnSection } from "./sectionPanes";
 
 const HEADER_H = 26;
+/** The header is taller in edit layout mode: it is the handle then. */
+const EDIT_HEADER_H = 34;
 const TAB_H = 22;
 /** One toast id for every layout change, so quick changes replace each other instead of stacking. */
 const TOAST_ID = "layout-move";
@@ -307,9 +309,10 @@ export function PaneStack(p: {
 					minWidth: 0,
 					maxWidth: 224,
 					flexShrink: 1,
-					cursor: "pointer",
+					cursor: layoutEditing() ? "grab" : "pointer",
 					keyboardFocusDim: false,
 					...focusRing(),
+					...(panePressed() === id || paneDragging() === id ? { backgroundColor: withAlpha(tok("primary"), 0.14), borderRadius: 6 } : {}),
 				}}
 			>
 				<Icon name={paneDef(id)?.icon ?? "square"} size={14} color={fg()} style={{ flexShrink: 0 }} />
@@ -377,6 +380,13 @@ export function PaneStack(p: {
 	// the free part of the header drags the lone pane; with several tabs (or no pane shown) its handlers do nothing, so only the tabs drag
 	const { wasDrag: headWasDrag, ...head } = paneDragSource(() => face() ?? p.stack()?.panes[0] ?? "items");
 	const dragsHere = () => single() && face() !== null;
+	const { wasDrag: gripWasDrag, ...grip } = paneDragSource(() => face() ?? p.stack()?.panes[0] ?? "items");
+	const [gripHover, setGripHover] = createSignal(false);
+	/** the pane this stack shows is held or dragged: its handle and the stack say so */
+	const held = () => {
+		const f = face();
+		return f !== null && (panePressed() === f || paneDragging() === f);
+	};
 	const headDrag = {
 		onMouseDown: (e: Parameters<typeof head.onMouseDown>[0]) => dragsHere() && head.onMouseDown(e),
 		onMouseMove: (e: Parameters<typeof head.onMouseMove>[0]) => dragsHere() && head.onMouseMove(e),
@@ -392,22 +402,44 @@ export function PaneStack(p: {
 				...(layoutEditing() && face() !== null
 					? { borderWidth: 1, borderColor: withAlpha(tok("primary"), 0.45), borderRadius: 16, padding: 2 }
 					: {}),
+				// the pane being dragged fades, so it reads as "this is what moves"
+				...(face() !== null && paneDragging() === face() ? { opacity: 0.45 } : {}),
 			}}
 		>
 			{/* always mounted, so the tabs keep their focus and native nodes while the stack draws nothing */}
 			<div
 				style={{
 					...t("flex flex-none flex-row items-center gap-0.5 px-1"),
-					height: HEADER_H,
+					height: layoutEditing() ? EDIT_HEADER_H : HEADER_H,
 					width: "100%",
 					minWidth: 0,
 					// HIDDEN, not display:none alone: GPUIX would still paint the header's children (shell/kit.tsx)
 					...(face() === null || (!layoutEditing() && single()) ? HIDDEN : {}),
 				}}
 			>
-				{/* the grip says "drag me"; the whole free part of the header drags a lone pane */}
-				<div style={{ ...t("flex flex-none items-center justify-center"), width: 16, ...(layoutEditing() ? {} : HIDDEN) }}>
-					<Icon name="grip-vertical" size={14} color={tok("muted-foreground")} />
+				{/* the grip: a handle that drags the pane shown (the free part of the header drags a lone pane too) */}
+				<div
+					testId={`pane-grip-${face() ?? ""}`}
+					role="button"
+					aria-label="Drag to move this pane"
+					{...grip}
+					onClick={() => void gripWasDrag()}
+					onMouseEnter={() => setGripHover(true)}
+					onMouseLeave={() => setGripHover(false)}
+					style={{
+						...t("flex flex-none items-center justify-center rounded-md"),
+						width: 28,
+						height: 28,
+						cursor: "grab",
+						backgroundColor: held()
+							? withAlpha(tok("primary"), 0.22)
+							: gripHover()
+								? withAlpha(tok("primary"), 0.12)
+								: withAlpha(tok("foreground"), 0.05),
+						...(layoutEditing() ? {} : HIDDEN),
+					}}
+				>
+					<Icon name="grip-vertical" size={18} color={tok(held() || gripHover() ? "primary" : "muted-foreground")} />
 				</div>
 				<div
 					role="tablist"
@@ -424,7 +456,7 @@ export function PaneStack(p: {
 						const f = face();
 						if (f && isRightClick(e)) menuFrom(f, { x: e.x ?? 0, y: e.y ?? 0 });
 					}}
-					style={{ flexGrow: 1, flexShrink: 1, height: "100%", minWidth: 0 }}
+					style={{ flexGrow: 1, flexShrink: 1, height: "100%", minWidth: 0, cursor: layoutEditing() && dragsHere() ? "grab" : "default" }}
 				/>
 				<div style={layoutEditing() ? { display: "flex" } : HIDDEN}>
 					<MenuButton />

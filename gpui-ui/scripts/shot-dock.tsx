@@ -10,8 +10,8 @@
 //      unchanged, the list keeps its scroll offset, a click on a list row still selects it; Undo from the toast restores Standard
 //   2. drag the Item tab onto the middle of the Items stack: a tab beside Items
 //   3. Escape during a drag cancels it
-//   4. drag the Info section header out of the item pane onto the bottom quarter of the Item stack: section:info is a stack of its
-//      own below Item; then drag its tab onto a section gap in the item pane: it returns there
+//   4. drag the Info section header out of the item pane onto the bottom quarter of the Items stack: section:info is a stack of
+//      its own below the list; then drag its tab onto a section gap in the item pane: it returns there
 import { SHOTS, boot, sleep } from "./shell-shot-lib";
 import { standardLibrary } from "../src/shell/frameLayout";
 import { libraryLayout, setLibraryLayout } from "../src/shell/layout";
@@ -173,16 +173,17 @@ await h.settle(1800);
 {
 	await reset();
 	const head = box("ip-section-title-info");
-	const itemStack = box("stack-item")!;
+	// below the list in the centre column: the item pane keeps its height, so its section gaps stay on screen
+	const itemsStack = box("stack-items")!;
 	if (!head) check(false, "the Info header is on screen");
 	else {
-		await drag(mid(head), { x: itemStack.x + itemStack.width / 2, y: itemStack.y + itemStack.height * 0.9 });
+		await drag(mid(head), { x: itemsStack.x + itemsStack.width / 2, y: itemsStack.y + itemsStack.height * 0.9 });
 		check(isDetached("info"), `Info dragged out: ${shape()}`);
-		check(shape() === "centre items[items] | right item[item] / section:info[section:info]", `below Item: ${shape()}`);
+		check(shape() === "centre items[items] / section:info[section:info] | right item[item]", `below the list: ${shape()}`);
 		r.captureScreenshot(`${SHOTS}/shell-dock-section-detached.png`);
 		await sleep(400);
 		const tab = box("pane-tab-section:info");
-		const gap = box("ip-gap-abstract") ?? box("ip-gap-end");
+		const gap = ["abstract", "notes", "attachments", "collections", "tags", "related", "end"].map((g) => box(`ip-gap-${g}`)).find((b) => b && b.y > 0 && b.y < 860) ?? null;
 		if (!tab || !gap) check(false, `section tab and a gap are on screen (tab ${!!tab}, gap ${!!gap})`);
 		else {
 			await drag(mid(tab), mid(gap));
@@ -192,7 +193,37 @@ await h.settle(1800);
 	}
 }
 
-// ---- 5. Escape leaves edit mode (when no drag is running)
+// ---- 5. the grip: pressing it tints it, dragging by it moves the pane and fades the pane being moved
+{
+	await reset();
+	const grip = box("pane-grip-item");
+	const stack = box("stack-items")!;
+	if (!grip) check(false, "the Item details stack has a grip");
+	else {
+		check(grip.width >= 24 && grip.height >= 24, `the grip is a real handle (${grip.width}x${grip.height})`);
+		const at = mid(grip);
+		r.nativeSimulateMouseMove(at.x, at.y);
+		await h.settle(100);
+		r.nativeSimulateMouseDown(at.x, at.y);
+		await h.settle(200);
+		r.captureScreenshot(`${SHOTS}/shell-dock-grip-pressed.png`);
+		r.nativeSimulateMouseMove(at.x - 8, at.y, 0);
+		await sleep(25);
+		const to = { x: stack.x + stack.width / 2, y: stack.y + stack.height * 0.9 };
+		for (let i = 1; i <= 8; i++) {
+			r.nativeSimulateMouseMove(Math.round(at.x + ((to.x - at.x) * i) / 8), Math.round(at.y + ((to.y - at.y) * i) / 8), 0);
+			await sleep(25);
+		}
+		await h.settle(200);
+		r.captureScreenshot(`${SHOTS}/shell-dock-grip-dragging.png`);
+		check(!!box("dock-preview-label"), "the drop target says what the drop does");
+		r.nativeSimulateMouseUp(to.x, to.y);
+		await h.settle(700);
+		check(shape() === "centre items[items] / item[item] | right -", `dragged by the grip: ${shape()}`);
+	}
+}
+
+// ---- 6. Escape leaves edit mode (when no drag is running)
 escape();
 await h.settle(400);
 check(!layoutEditing() && !box("pane-tab-item") && !box("layout-edit-bar"), "Escape leaves edit mode");
