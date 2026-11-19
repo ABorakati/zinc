@@ -8,6 +8,7 @@ import { registerAppAction, registerSettingsSection, settingsSections } from "..
 import { openSettings } from "../shell/layout";
 import "./defs/appearance";
 import "./defs/sidebars"; // Appearance > Sidebars rows (must follow defs/appearance)
+import "./defs/layout"; // Appearance > Layout rows (after Sidebars)
 import "./defs/general";
 import "../locate/settings"; // Locate engines rows (under general's "Locate" group; must follow defs/general)
 import "./defs/reader";

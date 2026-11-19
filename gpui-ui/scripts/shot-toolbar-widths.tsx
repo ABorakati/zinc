@@ -4,12 +4,12 @@
 // The sidebar keeps 0.2 and the item pane takes the rest. Writes <scratchpad>/gpui-shots/shell-middle-<fraction>[-dark].png.
 // Preferences go to a throw-away ui-state.json (scripts/_shell-env.ts), never the real one.
 import { boot } from "./shell-shot-lib";
-import { setCols } from "../src/shell/layout";
+import { libraryLayout, setLibraryLayout } from "../src/shell/layout";
 
 const args = process.argv.slice(2);
 const middle = Number(args.find((a) => /^0?\.\d+$/.test(a)) ?? 0.54);
 const mode = args.includes("dark") ? "dark" : "light";
-setCols("11", [0.2, middle, +(0.8 - middle).toFixed(4)]);
+setLibraryLayout({ ...libraryLayout(), sizes: [0.2, middle, +(0.8 - middle).toFixed(4)] });
 const h = await boot({ prefs: { mode } });
 const first = (await (await fetch(`${process.env.ZN_URL}/api/items?limit=1`)).json()) as { items: { key: string }[] };
 if (first.items[0]) h.store.selectItem(first.items[0].key);

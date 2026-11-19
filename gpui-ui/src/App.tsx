@@ -1,66 +1,49 @@
-// The window: top bar, then the tab bodies on the canvas — Library (sidebar | list card | item-pane card in resizable columns), one
-// reader per open attachment, and the Settings tab. Layout and class strings follow ui/src/App.tsx (Library / LibraryPanels /
-// GutterHandle). Panel visibility and column sizes persist (shell/layout.ts -> ui-state.json). <OverlayHost/> (menus, dialogs,
-// popovers, toasts) is mounted once at the root, followed by the overlays features registered.
-import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show, type JSX } from "solid-js";
+// The window: top bar, then the tab bodies on the canvas — Library (the frame of shell/Frame.tsx: sidebar | centre column | right
+// column, with the item list and the item pane as panes), one reader per open attachment, and the Settings tab. Class strings
+// follow ui/src/App.tsx. The library layout persists (shell/layout.ts -> ui-state.json; docs/developer-guide/layouts.md).
+// <OverlayHost/> (menus, dialogs, popovers, toasts) is mounted once at the root, followed by the overlays features registered.
+import { createEffect, ErrorBoundary, For, Show, type JSX } from "solid-js";
 import { isDocTab, isWebTab, type Mode, type ReaderTab, type Style, type WebTab } from "./contracts";
-import { Icon } from "./icons";
-import { overlays } from "./registry";
+import { overlays, registerAppAction } from "./registry";
 import { Sidebar } from "./Sidebar";
-import { CardList } from "./cards/CardList";
-import { ItemPane } from "./itempane";
 import { Reader } from "./reader/Reader";
 import { SettingsPage } from "./settings";
-import { getCols, leftOpen, panelKey, setCols, SETTINGS_TAB, settingsOpen } from "./shell/layout";
+import { libraryLayout, leftOpen, setLibraryLayout, SETTINGS_TAB, settingsOpen } from "./shell/layout";
+import { REGION } from "./shell/builtinPanes";
+import { focusFramePane, Frame } from "./shell/Frame";
+import { LayoutEditBar, layoutEditing } from "./shell/layoutEdit";
 import { HIDDEN } from "./shell/kit";
 import { setWindowTitle } from "./shell/native";
 import { logBoundary } from "./shell/errorlog";
 import { store } from "./store";
 import { textStyle, tokens, tw } from "./theme";
-import { SortBar, Toolbar } from "./Toolbar";
 import { TopBar } from "./TopBar";
 import { WebTabView } from "./webview/WebTabView";
-import { OverlayHost, Resizable, toast } from "./ui";
+import { OverlayHost, toast } from "./ui";
 import { handleFileDrop } from "./features/additems/client";
 import { PluginBanners, PluginSidePanels, PluginTabBodies } from "./wasmplugins/extend/Chrome";
 import { buildContext, conditionContext } from "./wasmplugins/extend/context";
 import { dropWithPlugins } from "./wasmplugins/extend/drop";
-import { activeVirtual, VirtualCollectionView } from "./wasmplugins/extend/Tree";
 
 const mode = (): Mode => store.mode();
 const t = (cls: string): Style => tw(cls, mode());
 
-/** const card = "min-w-0 rounded-[14px] bg-background shadow-raised" */
-const CARD = "min-w-0 rounded-[14px] bg-background shadow-raised";
-/** GPUIX cache region (see the sidebar panel below); a typed constant because the host style type does not list the key. */
-const REGION: Style = { cacheRegion: true };
-// GPUI clips children to a rectangle, not to the card's rounded outline, so no child may paint a background into a corner: the
-// item pane's tinted header carries the card's top radii itself, and the list keeps a strip of padding below its last row.
-// (An earlier canvas-coloured corner mask covered the card's shadow and looked wrong.)
-
-/** ItemPane empty(): flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground */
-function ItemPaneEmpty() {
-	return (
-		<div style={{ ...t("flex flex-col items-center justify-center gap-2 p-6"), height: "100%", width: "100%" }}>
-			<Icon name="file-text" size={40} strokeWidth={1.25} color={tokens[mode()]["muted-foreground"]!} style={{ opacity: 0.4 }} />
-			<text style={{ ...textStyle("text-muted-foreground", mode()), textAlign: "center" }}>Select an item to view its details</text>
-		</div>
-	);
-}
-
-/** The item pane (src/itempane); the placeholder shows if it throws while rendering. */
-function ItemPaneSlot(): JSX.Element {
-	return (
-		<ErrorBoundary
-			fallback={(err) => {
-				logBoundary("item pane", err);
-				return <ItemPaneEmpty />;
-			}}
-		>
-			<ItemPane />
-		</ErrorBoundary>
-	);
-}
+registerAppAction({
+	id: "pane-next",
+	label: "Focus next pane",
+	menu: "none",
+	shortcut: "F6",
+	when: () => store.activeTab() === "library",
+	run: () => focusFramePane("library", 1),
+});
+registerAppAction({
+	id: "pane-previous",
+	label: "Focus previous pane",
+	menu: "none",
+	shortcut: "Shift+F6",
+	when: () => store.activeTab() === "library",
+	run: () => focusFramePane("library", -1),
+});
 
 /**
  * A reader tab's content. Contract with the reader: `<Reader attachmentKey title active />`, filling its parent; it resolves the
@@ -151,79 +134,25 @@ function SettingsTabView(): JSX.Element {
 	);
 }
 
-/** Minimum column fractions (ui/src/App.tsx: sidebar 0.1, list 0.25, item pane 0.15). */
-const MINS = { sidebar: 0.1, list: 0.25, pane: 0.15 };
-
-/** The panels present for one combination of sidebar / item-pane visibility; rebuilt when that combination changes. */
-function LibraryPanels(p: { k: string }): JSX.Element {
-	const left = p.k[0] === "1",
-		right = p.k[1] === "1";
-	const [cols, setColsSig] = createSignal(getCols(p.k));
-	const panels: JSX.Element[] = [];
-	const mins: number[] = [];
-	if (left) {
-		// the Sidebar draws the zn-sidebar padding itself
-		// cacheRegion (sidebar, list body, item pane): each is drawn by its own cached GPUI view, so a frame where only the list
-		// scrolled replays the other two instead of rebuilding them. A region must take its size from its parent (100%, flex-grow).
-		panels.push(
-			<div style={{ ...t("flex flex-col min-h-0"), height: "100%", width: "100%", minWidth: 0, ...REGION }}>
-				<Sidebar />
-			</div>,
-		);
-		mins.push(MINS.sidebar);
-	}
-	panels.push(
-		<div style={{ ...t(`${CARD} flex flex-col overflow-hidden`), height: "100%", width: "100%" }}>
-			<Toolbar />
-			<SortBar />
-			<div
-				style={{
-					flexGrow: 1,
-					minHeight: 0,
-					width: "100%",
-					display: "flex",
-					flexDirection: "column",
-					paddingBottom: 10,
-					backgroundColor: tokens[mode()]["card"],
-					borderBottomLeftRadius: 14,
-					borderBottomRightRadius: 14,
-					...REGION,
-				}}
-			>
-				{/* a WASM plugin's virtual collection replaces the list while it is chosen (wasmplugins/extend/Tree.tsx) */}
-				<Show when={!activeVirtual()} fallback={<VirtualCollectionView />}>
-					<CardList />
-				</Show>
-			</div>
-		</div>,
-	);
-	mins.push(MINS.list);
-	if (right) {
-		panels.push(
-			<div style={{ ...t(`${CARD} overflow-hidden`), height: "100%", width: "100%", ...REGION }}>
-				<ItemPaneSlot />
-			</div>,
-		);
-		mins.push(MINS.pane);
-	}
+/** The library's frame: the sidebar on the left (it draws the zn-sidebar padding itself; cacheRegion as the panes' cards), the
+ * item list and the item pane as panes (shell/builtinPanes.tsx). */
+function LibraryFrame(): JSX.Element {
 	return (
-		<Resizable
-			sizes={cols()}
-			minSizes={mins}
-			gutter={12}
-			line={false}
-			onSizes={(s) => {
-				setColsSig(s);
-				setCols(p.k, s);
-			}}
-		>
-			{panels}
-		</Resizable>
+		<Frame
+			view="library"
+			layout={libraryLayout}
+			setLayout={setLibraryLayout}
+			leftMinPx={140}
+			left={() => (
+				<div style={{ ...t("flex flex-col min-h-0"), height: "100%", width: "100%", minWidth: 0, ...REGION }}>
+					<Sidebar />
+				</div>
+			)}
+		/>
 	);
 }
 
 export function App() {
-	const panelsKey = createMemo(panelKey);
 	const onLibrary = () => store.activeTab() === "library";
 
 	// window title: the reader's document, Settings, or the app name
@@ -250,6 +179,11 @@ export function App() {
 		>
 			<PluginBanners />
 			<TopBar />
+			<Show when={layoutEditing() && onLibrary()}>
+				<div style={{ ...t("flex flex-none px-3 pt-3"), width: "100%" }}>
+					<LayoutEditBar />
+				</div>
+			</Show>
 			{/* Library: the canvas shows 12px above, right and below the cards; the sidebar carries its own left padding.
 			    Kept mounted (just not displayed) while another tab is active, so the list keeps its scroll position. */}
 			<div
@@ -261,9 +195,7 @@ export function App() {
 				}}
 			>
 				<PluginSidePanels side="left" />
-				<Show when={panelsKey()} keyed>
-					{(k) => <LibraryPanels k={k} />}
-				</Show>
+				<LibraryFrame />
 				<PluginSidePanels side="right" />
 			</div>
 			{/* Reader tabs: full width below the top bar, one per open attachment, all kept mounted */}

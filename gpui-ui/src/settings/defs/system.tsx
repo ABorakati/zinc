@@ -67,7 +67,7 @@ function resetShell(): void {
 		setLeftOpen(true);
 		setRightOpen(true);
 		clearPrefs("shell.");
-		toast("Interface reset", { kind: "success", description: "Pane sizes return to normal the next time the layout is rebuilt." });
+		toast("Interface reset", { kind: "success" });
 	});
 }
 
@@ -109,10 +109,7 @@ registerSettings([
 			<Btn
 				onClick={() => {
 					resetCols();
-					toast("Pane sizes reset", {
-						kind: "success",
-						description: "They return to normal the next time the layout is rebuilt.",
-					});
+					toast("Pane sizes reset", { kind: "success" });
 				}}
 			>
 				Reset

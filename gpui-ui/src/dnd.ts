@@ -1,4 +1,4 @@
-// Drag payload store shared by the item list (drag sources) and the sidebar (drop targets).
+// Drag payload store shared by item drags and pane docking.
 //
 // GPUIX has no HTML5 drag-and-drop, so a drag is a mouse gesture: a card / table row calls startDrag() once the pointer has
 // moved a few pixels with the left button held (see dragSource() below), and any element can react to it:
@@ -7,10 +7,10 @@
 //     onMouseUp reads `dragging()`, handles it and calls endDrag();
 //   - the list ends the drag itself when the button is released over a non-target, or on Escape.
 //
-// Coordinate only through this file's API (kind "items": the dragged top-level item keys).
+// Coordinate only through this file's API.
 import { createSignal } from "solid-js";
 
-export type DragPayload = { kind: "items"; keys: string[] };
+export type DragPayload = { kind: "items"; keys: string[] } | { kind: "pane"; id: string };
 
 const [dragging, setDragging] = createSignal<DragPayload | null>(null);
 /** Last pointer position (window px) reported by the drag source while a drag is active, for ghost labels. */
@@ -32,10 +32,10 @@ export const setDragHook = (h: DragHook | undefined): void => {
 	hook = h;
 };
 
-/** Begin a drag of these item keys (no-op for an empty list). */
+/** Begin a drag (no-op for an empty item list). */
 export function startDrag(payload: DragPayload): void {
-	if (payload.keys.length === 0) return;
-	setDragging({ kind: payload.kind, keys: [...payload.keys] });
+	if (payload.kind === "items" && payload.keys.length === 0) return;
+	setDragging(payload.kind === "items" ? { kind: "items", keys: [...payload.keys] } : { kind: "pane", id: payload.id });
 	hook?.start(payload);
 }
 
@@ -51,9 +51,10 @@ export function moveDrag(x: number, y: number): void {
 	if (dragging()) setDragPoint({ x, y });
 }
 
-/** Label for a ghost / tooltip: "3 items". */
+/** Label for a ghost / tooltip. Pane docking resolves its title from the pane registry. */
 export function dragLabel(d: DragPayload | null = dragging()): string {
 	if (!d) return "";
+	if (d.kind === "pane") return d.id;
 	return `${d.keys.length} ${d.keys.length === 1 ? "item" : "items"}`;
 }
 
@@ -82,7 +83,8 @@ export function dragSource(keys: () => string[], onStart?: () => void) {
 			press = { x: e.x ?? 0, y: e.y ?? 0 };
 		},
 		onMouseMove(e: PressEvent) {
-			if (dragging()) {
+			if (dragging()?.kind === "pane") return;
+			if (dragging()?.kind === "items") {
 				moveDrag(e.x ?? 0, e.y ?? 0);
 				if (e.pressedButton === undefined) endDrag();
 				return;
@@ -103,7 +105,7 @@ export function dragSource(keys: () => string[], onStart?: () => void) {
 		},
 		onMouseUp() {
 			press = null;
-			if (dragging()) endDrag();
+			if (dragging()?.kind === "items") endDrag();
 		},
 		/** true once after a drag that started on this source */
 		wasDrag(): boolean {

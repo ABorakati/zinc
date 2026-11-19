@@ -186,10 +186,17 @@ Each pane component is created once per view in its own Solid root (`createRoot`
 renderer draws the frame and places the existing pane elements into stack hosts. Moving a pane re-parents its element;
 hiding it applies `HIDDEN`. This replaces the keyed `LibraryPanels`.
 
-This needs a spike: GPUIX must accept moving an existing host node to a new parent without destroying its cached view
-(Solid's `insert` re-parents DOM nodes; whether `@gpuix/solid` does the same for GPUI elements is untested). The fallback
-is to keep every pane mounted in a fixed order and position them absolutely from the layout, which loses flex layout but
-keeps state.
+What `@gpuix/solid` 0.11 does (read from its `host.js` while building phase 1):
+
+- `removeHostNode` destroys the native element and its whole subtree (`destroyElement`). Inserting the same host node again
+  creates a new native element, so native state (scroll offsets, cached views) is lost even though the Solid component
+  survives.
+- `insertHostNode` on a node that is still mounted moves it: it is detached in JS and appended or inserted natively, with
+  no destroy.
+
+So phase 1 never removes anything to hide it: a hidden column, stack or pane stays mounted with `display: none`
+(`Resizable` has a `shown` prop for this). A move (phase 2) must insert the pane into its new place before its old wrapper
+is removed; that ordering is what the phase 0 spike still has to prove with Solid's `For`.
 
 `Resizable` gains a `dir: "row" | "column"` prop and keyboard resizing (section 10). A new `PaneStack` draws the tab strip
 when a stack holds more than one pane, and the pane's header when it holds one.
