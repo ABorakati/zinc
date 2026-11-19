@@ -206,25 +206,40 @@ namespace ZoteroNext.Word
         }
 
         /// <summary>
-        /// The tracked changes of one field's range as [start, end, type], or null when there are none. One pass with the
-        /// collection's enumerator: Item(i) on a Word collection walks it from the start every time. Never asked of a whole
-        /// story: each change costs Word real work (a manuscript under review held 352: 33 s from another process).
+        /// The tracked changes of one field's range as [start, end, type], or null when there are none. Never asked of a
+        /// whole story: each change costs Word real work (a manuscript under review held 352: 33 s from another process).
+        ///
+        /// Read by index up to Count, never with foreach: Word's enumerator over Revisions can cycle without end. A
+        /// manuscript's bibliography held two formatting changes (Count 3) that the enumerator returned again and again,
+        /// for the field's range and for the whole story alike, so a refresh froze Word for good. Item(i) walks from the
+        /// start each time, which is cheap for the handful of changes in one field, and a time limit caps the rest.
         /// </summary>
         static List<int[]> RangeRevisions(object range)
         {
             try
             {
                 dynamic revs = ((dynamic)range).Revisions;
-                if ((int)revs.Count == 0) return null;
+                int n = (int)revs.Count;
+                if (n == 0) return null;
                 var list = new List<int[]>();
-                foreach (dynamic r in revs)
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                for (int i = 1; i <= n; i++)
                 {
-                    try { dynamic rg = r.Range; list.Add(new[] { (int)rg.Start, (int)rg.End, (int)r.Type }); } catch { }
+                    if (sw.ElapsedMilliseconds > RevisionBudgetMs)
+                    {
+                        Log.Write("tracked changes: read " + (i - 1) + " of " + n + " in one field before the time limit; using those");
+                        break;
+                    }
+                    // Word can count a change it then cannot return (Item(3) of that bibliography's 3 came back empty)
+                    try { dynamic r = revs.Item(i); dynamic rg = r.Range; list.Add(new[] { (int)rg.Start, (int)rg.End, (int)r.Type }); } catch { }
                 }
                 return list.Count == 0 ? null : list;
             }
             catch { return null; }
         }
+
+        /// <summary>Time limit for reading one field's tracked changes (each Item(i) cost Word about 130 ms in that manuscript).</summary>
+        const int RevisionBudgetMs = 3000;
 
         /// <summary>
         /// The text of the range [rs, re) as it reads with every tracked change accepted: tracked deletions inside it are
