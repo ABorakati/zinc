@@ -1,5 +1,5 @@
 // Pane docking: snapshot painted hosts at drag start, capture the pointer, then apply one undoable layout move.
-import { batch, createSignal, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import { batch, createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import { dragging, dragPoint, DRAG_THRESHOLD, endDrag, moveDrag, startDrag } from "../dnd";
 import { withAlpha } from "../theme";
@@ -11,6 +11,8 @@ import { libraryLayout, moveLibraryPane, undoLayout } from "./layout";
 import { paneDef } from "./panes";
 import { returnSection } from "./sectionPanes";
 import { addKeyHandler } from "./shortcuts";
+import { Icon } from "../icons";
+import type { Rect } from "./dockZones";
 
 export type { DropHostSpec } from "./dockZones";
 
@@ -31,12 +33,34 @@ export const paneDragging: Accessor<string | null> = () => {
 
 const [zones, setZones] = createSignal<DockZone[]>([]);
 const [target, setTarget] = createSignal<DockZone | null>(null);
+/** The panes that take a drop (their whole bounds), outlined while dragging so the targets show before the pointer gets there. */
+const [targets, setTargets] = createSignal<Rect[]>([]);
 const title = (id: string) => paneDef(id)?.title() ?? id;
+/** The title of the pane a stack shows. */
+const stackTitle = (column: "centre" | "right", i: number): string | null => {
+	const st = libraryLayout()[column].stacks[i];
+	return st ? title(st.active) : null;
+};
+/** What dropping on `z` does, in words: shown inside the target while dragging. */
+export function dropLabel(z: DockZone): string {
+	if (z.hostKind === "section-gap") return "Return to the item pane";
+	if (z.hostKind === "empty-right") return "Move to the right column";
+	const to = z.target;
+	if (to.kind === "tab") return `Stack with ${stackTitle(to.column, to.stack) ?? "this pane"} as a tab`;
+	if (to.kind === "split") {
+		const above = to.at > 0 ? stackTitle(to.column, to.at - 1) : null;
+		if (above) return `Place below ${above}`;
+		const below = stackTitle(to.column, to.at);
+		return below ? `Place above ${below}` : "Move here";
+	}
+	return "Move here";
+}
 
 function cancel() {
 	batch(() => {
 		setTarget(null);
 		setZones([]);
+		setTargets([]);
 		if (paneDragging()) endDrag();
 	});
 }
@@ -101,6 +125,7 @@ export function paneDragSource(id: () => string): {
 				.filter((z) => canMove(libraryLayout(), pane, z.target));
 			batch(() => {
 				setZones(next);
+				setTargets(snapshots.filter((x) => x.spec.kind === "stack").map((x) => x.bounds));
 				startDrag({ kind: "pane", id: pane });
 				move(e);
 			});
@@ -133,6 +158,19 @@ export function DockOverlay(): JSX.Element {
 					onMouseUp={(e) => drop(e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : dragPoint())}
 					style={{ width: "100%", height: "100%", position: "relative", cursor: "grabbing" }}
 				>
+					{/* every pane that takes the drop, outlined */}
+					<For each={targets()}>
+						{(r) => (
+							<div
+								testId="dock-target"
+								style={{
+									position: "absolute", left: r.x, top: r.y, width: r.width, height: r.height, pointerEvents: "none",
+									borderWidth: 2, borderColor: withAlpha(tok("primary"), 0.35), borderRadius: 14,
+									backgroundColor: withAlpha(tok("primary"), 0.03),
+								}}
+							/>
+						)}
+					</For>
 					<Show when={zones().find((z) => z.hostKind === "empty-right")}>
 						{(z) => <div testId="dock-empty-right" style={{
 							position: "absolute", left: z().rect.x, top: z().rect.y, width: z().rect.width, height: z().rect.height,
@@ -140,15 +178,30 @@ export function DockOverlay(): JSX.Element {
 						}} />}
 					</Show>
 					<Show when={target()}>
-						{(z) => <div testId="dock-preview" style={{
-							position: "absolute", left: z().rect.x, top: z().rect.y, width: z().rect.width, height: z().rect.height,
-							backgroundColor: withAlpha(tok("primary"), 0.2), borderColor: tok("primary"), borderWidth: 1, pointerEvents: "none",
-						}} />}
+						{(z) => (
+							<div
+								testId="dock-preview"
+								style={{
+									position: "absolute", left: z().rect.x, top: z().rect.y, width: z().rect.width, height: z().rect.height,
+									backgroundColor: withAlpha(tok("primary"), 0.16), borderColor: tok("primary"), borderWidth: 2, borderRadius: 12,
+									display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", overflow: "hidden",
+								}}
+							>
+								{/* what the drop will do */}
+								<div testId="dock-preview-label" style={{ ...t("rounded-md px-3 py-1.5 shadow-md"), backgroundColor: tok("primary") }}>
+									<text style={{ ...t("text-[13px] font-medium"), color: tok("primary-foreground"), whiteSpace: "nowrap" }}>
+										{dropLabel(z())}
+									</text>
+								</div>
+							</div>
+						)}
 					</Show>
 					<div testId="dock-ghost" style={{
-						...t("rounded-md border bg-popover px-3 py-1.5 shadow-md"), position: "absolute", ...ghost(), pointerEvents: "none",
+						...t("flex items-center gap-1.5 rounded-md bg-popover px-2.5 py-1.5 shadow-md"), position: "absolute", ...ghost(),
+						pointerEvents: "none", borderWidth: 1, borderColor: tok("primary"),
 					}}>
-						<text style={t("text-sm text-popover-foreground")}>{title(paneDragging()!)}</text>
+						<Icon name={paneDef(paneDragging()!)?.icon ?? "move"} size={14} color={tok("primary")} />
+						<text style={{ ...t("text-sm font-medium text-popover-foreground"), whiteSpace: "nowrap" }}>{title(paneDragging()!)}</text>
 					</div>
 				</div>
 			</anchored>
