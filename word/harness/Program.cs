@@ -191,6 +191,9 @@ internal static class Program
                     f.Code.Text = " " + Json.Str(p, "code").Trim() + " ";
                     return Json.Map("ok", true);
                 }
+            case "h.docVar":
+                try { return Json.Map("value", (string)_app.ActiveDocument.Variables.Item(Json.Str(p, "name")).Value); }
+                catch { return Json.Map("value", null); }
             case "h.acceptAll": _app.ActiveDocument.Revisions.AcceptAll(); return Json.Map("ok", true);
             case "h.rejectAll": _app.ActiveDocument.Revisions.RejectAll(); return Json.Map("ok", true);
             case "h.fieldInfo":

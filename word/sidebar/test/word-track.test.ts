@@ -80,6 +80,8 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 	}
 	const info = () => h.call<FieldInfo[]>("h.fieldInfo");
 	const revisions = () => h.call<Revision[]>("h.revisions");
+	/** The document variable a refresh sets once it has found every field free of tracked damage (WordDoc.TrackCheckedVar). */
+	const trackChecked = async () => (await h.call<{ value: string | null }>("h.docVar", { name: "ZincFieldsTrackChecked" })).value;
 	const texts = async () => (await app.readFields()).filter((f) => f.kind === "item").map((f) => f.text);
 
 	test("a refresh with Track Changes on rewrites codes untracked: no JSON in any tracked change, nothing left doubled", async () => {
@@ -137,6 +139,7 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		const damaged = await app.readFields({ checkTracked: true }); // as a refresh reads it
 		expect(damaged[1]!.tracked).toBe(true);
 		expect(damaged[1]!.parsed).not.toBeNull(); // read as it is with the change accepted
+		expect(await trackChecked()).toBeNull(); // damage found: not recorded as checked
 		const rep = await app.refreshAll();
 		expect(rep.changed.some((c) => c.startsWith(`item#${before[1]!.idx}:`))).toBe(true);
 		const after = await info();
@@ -178,6 +181,27 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		expect((await app.refreshAll()).updated).toBe(0);
 		await h.call("h.close");
 	}, 180_000);
+
+	test("a refresh that finds every field clean in a document under review records it, and later refreshes skip the lookups", async () => {
+		await threeCitations();
+		await app.refreshAll();
+		expect(await trackChecked()).toBeNull(); // no tracked changes at all: nothing looked at, the document is left alone
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		await h.call("h.cursor", { start: 1 });
+		await h.call("h.type", { text: "y" }); // the user's own tracked change, away from the fields
+		expect((await revisions()).length).toBeGreaterThan(0);
+		expect((await app.refreshAll()).updated).toBe(0);
+		expect(await trackChecked()).toBe("1");
+		expect((await revisions()).length).toBe(1); // the marker is no tracked change of its own
+		// later refreshes and edits work as before
+		await h.call("h.cursorEnd");
+		await app.insertCitation([picks[4]!]);
+		const fields = await app.readFields({ checkTracked: true });
+		expect(fields.filter((f) => f.kind === "item").length).toBe(4);
+		expect(fields.every((f) => f.parsed !== null && !f.tracked)).toBe(true);
+		expect((await app.refreshAll()).updated).toBe(0);
+		await h.call("h.close");
+	}, 120_000);
 
 	test("a citation deleted with Track Changes on stays a tracked deletion and leaves the numbering", async () => {
 		await threeCitations();

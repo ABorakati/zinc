@@ -227,6 +227,7 @@ namespace ZoteroNext.Word
                 {
                     if (sw.ElapsedMilliseconds > RevisionBudgetMs)
                     {
+                        RevisionReadsCut++;
                         Log.Write("tracked changes: read " + (i - 1) + " of " + n + " in one field before the time limit; using those");
                         break;
                     }
@@ -235,8 +236,11 @@ namespace ZoteroNext.Word
                 }
                 return list.Count == 0 ? null : list;
             }
-            catch { return null; }
+            catch { RevisionReadsCut++; return null; }
         }
+
+        /// <summary>Counts reads of a field's tracked changes that stopped early or failed: a scan that saw one cannot vouch for the document.</summary>
+        static int RevisionReadsCut;
 
         /// <summary>Time limit for reading one field's tracked changes (each Item(i) cost Word about 130 ms in that manuscript).</summary>
         const int RevisionBudgetMs = 3000;
@@ -291,6 +295,7 @@ namespace ZoteroNext.Word
         List<Entry> ScanStory(object storyRange, object fieldsObj, string story, Func<int, int> posOf, bool checkTracked)
         {
             if (checkTracked) { try { checkTracked = (int)((dynamic)storyRange).Revisions.Count > 0; } catch { } }
+            if (checkTracked) _scanCheckedTracked = true;
             var list = new List<Entry>();
             int i = 0;
             // the enumerator walks the collection once; fields.Item(i) per field made a scan quadratic in the field count
@@ -326,11 +331,11 @@ namespace ZoteroNext.Word
                         if (deleted) continue;
                     }
                     dynamic res = f.Result; text = (string)res.Text ?? ""; s = cs - 1;
-                    int rs = (int)res.Start, re = (int)res.End;
+                    int re = (int)res.End;
                     e = re + 1;
                     // a renumbering an older tracked refresh left in the result ("16" deleted, "15" inserted) is flagged as
-                    // well, so the next refresh writes the result back clean
-                    if (revs != null) { bool c, w; text = FinalText(text, rs, re, revs, out c, out w); tracked = tracked || c; }
+                    // well, so the next refresh writes the result back clean (the result's start is needed only then)
+                    if (revs != null) { bool c, w; text = FinalText(text, (int)res.Start, re, revs, out c, out w); tracked = tracked || c; }
                 }
                 catch { }
                 list.Add(new Entry { Story = story, Idx = i, Kind = kind, Code = code.Trim(), Text = text, Start = s, End = e, Pos = posOf(s), Tracked = tracked });
@@ -352,10 +357,38 @@ namespace ZoteroNext.Word
             return Json.Map("doc", (string)d.FullName, "fields", (int)d.Fields.Count + "|" + fn + "|" + en);
         }
 
-        /// <summary>All Zotero fields in document order (main text, footnotes, endnotes). checkTracked: see <see cref="ScanStory"/>.</summary>
+        // ---------------------------------------------------------------- "fields checked for tracked damage" marker
+        //
+        // Asking Word about each field's tracked changes is most of a refresh in a document under review (each field's
+        // Range.Revisions makes Word work out the changes in it). It only finds damage that add-in versions before
+        // 2026-11-18 left when they rewrote a field with Track Changes on; this add-in rewrites fields untracked, so it
+        // makes none. Once a refresh's scan finds every field clean, a document variable records it and later refreshes
+        // skip the per-field lookups. A code that reads doubled (the common damage) is still looked at on every scan.
+
+        const string TrackCheckedVar = "ZincFieldsTrackChecked";
+        bool _scanCheckedTracked;
+
+        static bool IsTrackChecked(dynamic d)
+        {
+            try { return (string)d.Variables.Item(TrackCheckedVar).Value == "1"; } catch { return false; }
+        }
+
+        static void MarkTrackChecked(dynamic d)
+        {
+            try { d.Variables.Add(TrackCheckedVar, "1"); }
+            catch (Exception e) { Log.Error("could not record the tracked-changes check", e); }
+        }
+
+        /// <summary>
+        /// All Zotero fields in document order (main text, footnotes, endnotes). checkTracked: see <see cref="ScanStory"/>;
+        /// skipped in a document already found clean (<see cref="TrackCheckedVar"/>).
+        /// </summary>
         public object Fields(bool checkTracked = false)
         {
             dynamic d = Doc;
+            if (checkTracked && IsTrackChecked(d)) checkTracked = false;
+            _scanCheckedTracked = false;
+            int cut = RevisionReadsCut;
             var all = ScanStory((object)d.Content, (object)d.Fields, "main", p => p, checkTracked);
             foreach (var pair in new[] { Tuple.Create("fn", wdFootnotesStory), Tuple.Create("en", wdEndnotesStory) })
             {
@@ -380,6 +413,9 @@ namespace ZoteroNext.Word
             }
             // main-text positions scale by 1000 as well so note fields interleave with the body
             foreach (var e in all) if (e.Story == "main") e.Pos = e.Pos * 1000;
+            // every field looked at and none damaged: later refreshes need not ask again (a document with no tracked
+            // changes at all was not looked at, needs no lookups anyway, and is left unmarked)
+            if (checkTracked && _scanCheckedTracked && RevisionReadsCut == cut && !all.Any(e => e.Tracked)) MarkTrackChecked(d);
             return all.OrderBy(e => e.Pos).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note, "tracked", e.Tracked)).ToList();
         }
 
