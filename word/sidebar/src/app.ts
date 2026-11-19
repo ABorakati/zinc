@@ -284,6 +284,12 @@ export class App {
 		return this.info;
 	}
 
+	/** Whether Zinc is running (for "Find abstract"), asked after a light init: a closed port alone takes Windows most of a second. */
+	async checkZinc(): Promise<void> {
+		const zn = await this.host.call<HostInfo["zn"]>("zn.status");
+		if (this.info) this.info.zn = zn;
+	}
+
 	get uriBase(): string {
 		return this.info?.uri.base ?? "http://zotero.org/users/local/znlocal0";
 	}

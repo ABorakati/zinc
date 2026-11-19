@@ -28,6 +28,9 @@ namespace ZoteroNext.Word
         string _lastSig = "";
         string _theme = "light";
         bool _ready;
+        /// <summary>From the pane's creation (the click that opened it) to the page loaded: logged once, to see where opening goes.</summary>
+        readonly System.Diagnostics.Stopwatch _openTimer = System.Diagnostics.Stopwatch.StartNew();
+        long _webViewMs = -1;
         readonly List<string> _pending = new List<string>();
 
         internal WebView2 Web { get { return _web; } }
@@ -62,6 +65,7 @@ namespace ZoteroNext.Word
                 var site = WebHost.SiteDir();
                 var env = await WebHost.EnvAsync(_web);
                 await _web.EnsureCoreWebView2Async(env);
+                _webViewMs = _openTimer.ElapsedMilliseconds;
                 var core = _web.CoreWebView2;
                 core.Settings.AreDevToolsEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
                 core.Settings.IsStatusBarEnabled = false;
@@ -75,7 +79,11 @@ namespace ZoteroNext.Word
                     e.Cancel = true;
                     try { if (e.Uri.StartsWith("https://") || e.Uri.StartsWith("http://")) System.Diagnostics.Process.Start(e.Uri); } catch { }
                 };
-                core.NavigationCompleted += (s, e) => { _ready = true; OfficeTheme.Apply(core, _theme); FlushPending(); };
+                core.NavigationCompleted += (s, e) =>
+                {
+                    if (!_ready) Log.Write("pane: WebView2 ready after " + _webViewMs + " ms, page loaded after " + _openTimer.ElapsedMilliseconds + " ms");
+                    _ready = true; OfficeTheme.Apply(core, _theme); FlushPending();
+                };
                 core.NewWindowRequested += (s, e) =>
                 {
                     e.Handled = true;

@@ -968,11 +968,9 @@ async function main() {
 		toast("Preview mode: not inside Word, using sample data.");
 	}
 	app = new App(host);
-	try {
-		await app.init();
-	} catch (e) {
-		toast(e instanceof Error ? e.message : String(e), true, 10000);
-	}
+	// the search box and buttons work at once; the first calls answer in parallel (calls that do not need Word run on a
+	// worker thread in the add-in). Light init: no item count and no Zinc probe, which is asked afterwards.
+	const ready = app.init(true).catch((e) => toast(e instanceof Error ? e.message : String(e), true, 10000));
 	const q = $<HTMLInputElement>("q");
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	q.addEventListener("input", () => {
@@ -1020,9 +1018,10 @@ async function main() {
 		else if (d?.name === "editCitation") void editCitationAtCursor();
 	});
 	renderTray();
-	await refreshDocState();
-	await runSearch();
 	q.focus();
+	// the doc line names the default style for a new document, which comes with the host info
+	await Promise.all([ready.then(refreshDocState), runSearch()]);
+	void app.checkZinc().catch(() => {});
 }
 
 void main();
