@@ -3,6 +3,8 @@ using System.IO;
 
 [assembly: System.Runtime.InteropServices.ComVisible(false)]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("ZoteroNextWord.Harness")]
+// the LibreOffice pane (libreoffice/pane) answers lib.* / style.* / settings.* with this assembly's code
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("ZincLibreOfficePane")]
 
 namespace ZoteroNext.Word
 {

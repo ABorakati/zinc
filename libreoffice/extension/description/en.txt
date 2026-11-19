@@ -1,0 +1,1 @@
+Cite from your Zinc library in Writer: the Zinc sidebar (the same one as in Word) docked in Writer's sidebar, with citations, a bibliography and refresh in Zotero's document format, so documents open in Zotero and Zinc alike.
