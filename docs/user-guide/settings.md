@@ -264,7 +264,8 @@ Plugins are experimental and off by default. See [Plugins](plugins.md).
 | Setting | What it does | Default / options |
 | --- | --- | --- |
 | Enable plugins (experimental) | Runs installed plugins in a separate process. Takes effect the next time Zinc starts. | Off |
-| *each plugin* | Its name, version and status (running, stopped, disabled, failed, ...). | |
+| Install a plugin (button: **Install from file...**) | Installs or updates a plugin from a `.zplugin` file, after showing the permissions it asks for. Available while plugins are running. | |
+| *each plugin* | Its name, version and status (running, off, failed, ...), a switch to turn it on or off, and **Remove** (asks first; deletes the plugin with its settings and data). **Review permissions...** appears when an update waits for your approval. | On after install |
 | Offer *plugin*'s tools to AI agents | Shown under a plugin that asks to offer tools to AI agents. Lets agents connected to Zinc's MCP server (HTTP, while Zinc runs) call the plugin's tools, with the number it declares. They can do whatever the plugin is allowed to do. See [MCP for AI agents](mcp.md#tools-from-plugins). | Off |
 
-There is no Install button yet. A plugin with a settings pane of its own appears as its own section after Plugins.
+A plugin with a settings pane of its own appears as its own section after Plugins.

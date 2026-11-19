@@ -5,6 +5,7 @@ export type { RuntimeOptions, ServicesOptions } from "./services";
 export { PluginManager, InstallError } from "./installer";
 export type { ApprovalRequest, Approval, ApproveFn, InstallResult, InstalledPlugin, ManagerOptions, PluginState, InstallAction } from "./installer";
 export { readZip, writeZip, ZipError } from "./zip";
+export { embedPackage, extractPackage, isWasm, stripPackage, PACKAGE_SECTION } from "./wasm-package";
 export { validateManifest } from "./validate";
 export { pluginsRoot, createLayout } from "./layout";
 export { CwasmCache, sanitizeCacheKey } from "./cwasm-cache";

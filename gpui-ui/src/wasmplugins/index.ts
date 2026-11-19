@@ -33,7 +33,9 @@ import { discoverHandlers, type ImportHandler } from "../../../plugin-host/src/i
 import { configureFs } from "../../../plugin-host/src/imports/data/fs-roots";
 import { declaredGrants } from "../../../plugin-host/src/manifest";
 import { createLayout, pluginsRoot } from "../../../plugin-host/src/package/layout";
+import { InstallError, type ApproveFn, type InstallResult } from "../../../plugin-host/src/package/installer";
 import { createPluginRuntime, type PluginServices } from "../../../plugin-host/src/package/services";
+import { describePermissions } from "../../../plugin-host/src/permissions/risk";
 import { createPluginSupervisor, type PluginInfo, type PluginSupervisor, type SupervisorOptions } from "../../../plugin-host/src/supervisor";
 import { BASE_URL } from "../api";
 import { getPref } from "../shell/prefs";
@@ -41,14 +43,19 @@ import { setWasmPluginsEnabled, wasmPluginsEnabled } from "./flag";
 export { setWasmPluginsEnabled, wasmPluginsEnabled };
 import { extendHandler } from "./extend/handler";
 import { clearPluginRegistrations } from "./extend/registry";
+import { setMcpExposed } from "./mcp/exposure";
 import { mcpHandler } from "./mcp/handler";
 import { installMcpBridge } from "./mcp/provider";
+import { manifestTools } from "./mcp/tools";
 import {
 	callPlugin,
 	getPluginSupervisor,
 	onPluginRegistrationsReset,
 	pluginList,
 	pluginSupervisor,
+	setManagedPlugins,
+	setPackageRuntime,
+	setPluginActions,
 	setPluginList,
 	resetPluginRegistrations,
 	setPluginSupervisor,
@@ -117,6 +124,121 @@ export const installedPlugins = pluginList;
 
 function refreshList(): void {
 	setPluginList(getPluginSupervisor()?.list() ?? []);
+	setManagedPlugins(
+		(services?.manager.list() ?? []).map((p) => {
+			const caps = (p.manifest as { permissions?: { capabilities?: string[] } }).permissions?.capabilities ?? [];
+			return {
+				id: p.id,
+				name: p.name,
+				version: p.version,
+				state: p.state,
+				detail: p.stateDetail,
+				pending: p.pendingApproval,
+				mcpTools: caps.includes("mcp.expose") ? manifestTools(p.manifest).tools.length : undefined,
+			};
+		}),
+	);
+}
+
+// ---- install, enable, remove (Settings > Plugins) ------------------------------------------------------------------------
+
+const describeError = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Install or update a plugin from a file the user picks (.zplugin, or a single-file .wasm). Shows the install prompt first; reports the result as a toast. */
+export async function installPluginFromFile(): Promise<void> {
+	const { toast } = await import("../ui");
+	const s = services;
+	if (!s) {
+		toast("Plugins are not running", { kind: "error", description: "Turn on Enable plugins, then restart Zinc." });
+		return;
+	}
+	const { pickFile } = await import("../shell/native");
+	const path = await pickFile("Choose a Zinc plugin (.zplugin or .wasm)");
+	if (!path) return;
+	await installPluginPackage(path);
+}
+
+/** Install a .zplugin by path (the file picker, a drop, tests). `approve` replaces the install prompt (tests). */
+export async function installPluginPackage(path: string, o: { approve?: ApproveFn } = {}): Promise<InstallResult | undefined> {
+	const { toast } = await import("../ui");
+	const s = services;
+	if (!s) return undefined;
+	const approve = o.approve ?? (await import("./ui/install")).promptInstall;
+	try {
+		const r = await s.manager.installPackage(path, { approve });
+		const verb = r.action === "install" ? "Installed" : r.action === "downgrade" ? "Downgraded" : "Updated";
+		const name = s.manager.get(r.id)?.name ?? r.id;
+		if (r.error) toast(`${verb} ${name} ${r.version}, but it did not start`, { kind: "error", description: r.error });
+		else if (r.pendingApproval?.length) toast(`${verb} ${name} ${r.version}`, { kind: "info", description: "It stays off until you approve its new permissions." });
+		else toast(`${verb} ${name} ${r.version}`, { kind: "success" });
+		return r;
+	} catch (e) {
+		if (e instanceof InstallError && e.code === "cancelled") return undefined;
+		toast("Could not install the plugin", { kind: "error", description: describeError(e) });
+		return undefined;
+	} finally {
+		refreshList();
+	}
+}
+
+/** Turn an installed plugin on or off (it is stopped and unloaded while off). */
+export async function setPluginEnabled(id: string, on: boolean): Promise<void> {
+	const s = services;
+	if (!s) return;
+	try {
+		await s.manager.setEnabled(id, on);
+	} catch (e) {
+		(await import("../ui")).toast(on ? "Could not turn the plugin on" : "Could not turn the plugin off", { kind: "error", description: describeError(e) });
+	} finally {
+		refreshList();
+	}
+}
+
+/** Uninstall a plugin after asking (`ask: false` skips the question: tests). Its data, settings and secrets go too. */
+export async function removePlugin(id: string, o: { ask?: boolean } = {}): Promise<void> {
+	const s = services;
+	if (!s) return;
+	const { confirm, toast } = await import("../ui");
+	const name = s.manager.get(id)?.name ?? id;
+	const ok = o.ask === false || await confirm({
+		title: `Remove ${name}?`,
+		body: "The plugin is stopped and deleted, with its settings, saved data and secrets. Your library is not touched.",
+		confirmLabel: "Remove",
+		danger: true,
+	});
+	if (!ok) return;
+	try {
+		await s.manager.uninstall(id);
+		setMcpExposed(id, false);
+		toast(`Removed ${name}`, { kind: "success" });
+	} catch (e) {
+		toast(`Could not remove ${name}`, { kind: "error", description: describeError(e) });
+	} finally {
+		refreshList();
+	}
+}
+
+/** An update added permissions: ask for them, then turn the plugin on with what the user allowed. */
+export async function approvePluginPermissions(id: string): Promise<void> {
+	const s = services;
+	const p = s?.manager.get(id);
+	if (!s || !p?.pendingApproval?.length) return;
+	const { promptInstall } = await import("./ui/install");
+	const answer = await promptInstall({
+		action: "upgrade",
+		manifest: p.manifest,
+		previousVersion: undefined,
+		groups: describePermissions(p.manifest, p.pendingApproval),
+		required: p.pendingApproval,
+	});
+	if (!answer) return;
+	try {
+		await s.manager.approvePending(id, answer.grant);
+	} catch (e) {
+		(await import("../ui")).toast("Could not turn the plugin on", { kind: "error", description: describeError(e) });
+	} finally {
+		refreshList();
+	}
 }
 
 /** What the app tells plugins about itself (`app.get-info`, `prefs.get-app`). */
@@ -152,12 +274,22 @@ export function startWasmPlugins(opts: StartOptions = {}): Promise<PluginSupervi
 				handlers: opts.handlers ?? (await collectZincHandlers()),
 				app: appProviders(),
 				prompt: (req) => promptPermission(req as unknown as Parameters<typeof promptPermission>[0]),
-				manager: { root: layout.root },
+				// the install prompt, for any install or update that does not bring its own (installPluginPackage passes the same one)
+				manager: { root: layout.root, approve: async (req) => (await import("./ui/install")).promptInstall(req) },
 				supervisor: opts.supervisor,
 			});
 			services = rt.services;
 			sup = rt.supervisor;
 			services.manager.on("changed", refreshList);
+			services.manager.on("installed", refreshList);
+			services.manager.on("uninstalled", refreshList);
+			setPluginActions({
+				installFromFile: installPluginFromFile,
+				setEnabled: setPluginEnabled,
+				remove: (id) => removePlugin(id),
+				approvePermissions: approvePluginPermissions,
+			});
+			setPackageRuntime(true);
 		} else {
 			sup = createPluginSupervisor({
 				importHandlers: opts.handlers ?? (await collectZincHandlers()),
@@ -233,6 +365,9 @@ export async function stopWasmPlugins(): Promise<void> {
 	clearPluginRegistrations();
 	resetPluginRegistrations(undefined);
 	setPluginList([]);
+	setManagedPlugins([]);
+	setPluginActions(undefined);
+	setPackageRuntime(false);
 }
 
 /** Accessors for components. */

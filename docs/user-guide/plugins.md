@@ -14,36 +14,59 @@ When plugins are on, Zinc starts the plugin host at startup and then every insta
 
 The switch is stored as `shell.wasmPlugins` in `ui-state.json` (see [Settings reference](settings.md)). Starting Zinc with the environment variable `ZN_WASM_PLUGINS=1` turns plugins on for that run, whatever the switch says.
 
+## Install a plugin
+
+A plugin comes as one file, in either of two forms. Zinc installs both the same way:
+
+- **`.zplugin`**: a zip that holds `manifest.json` (the plugin's name, version and the permissions it asks for), `plugin.wasm` (its code) and its strings and icons.
+- **`.wasm`**: the plugin's code with the same manifest, strings and icons stored inside it, in a data block that carries no code (a custom section named `zinc:package`). It is larger than the `.zplugin`, because nothing in it is compressed. A plain `.wasm` without that block is refused: nothing would say what the plugin is or what it may do.
+
+Install it from Settings (Zinc 0.2.3 or later):
+
+1. Turn plugins on and restart Zinc (above). The install button stays greyed out until plugins are running.
+2. Settings > Plugins > **Install a plugin** > **Install from file...**, and pick the `.zplugin` or `.wasm` file.
+3. Zinc checks the package before anything of it runs: its files, its manifest, that it fits this version of Zinc, and that `plugin.wasm` matches its recorded hash. A package that fails a check is refused, with the reason, and nothing is installed.
+4. **Install this plugin?** shows the plugin's name, version, author and description, and the permissions it asks for, grouped by risk, each with the plugin's reason. Low- and medium-risk permissions start ticked; high-risk ones start unticked, so you must tick them yourself. Optional permissions are listed but not granted now (see below). Untick anything you do not want to allow: the plugin still installs, and the features that need that permission do not work.
+5. Choose **Install**. The plugin starts at once and a message confirms it. **Cancel** installs nothing.
+
+![The install prompt: permissions grouped by risk, high risk unticked](../screenshots/plugins-install-prompt-light.png)
+
+Installing another version of a plugin you already have updates it in place: it keeps its settings and data. If the new version asks for permissions you have not seen, the prompt (**Update this plugin?**) lists only those; otherwise it installs without asking. An update that reached Zinc without the prompt and asks for new permissions stays off until you approve them: its row in Settings > Plugins then has a **Review permissions...** button.
+
 ## Settings > Plugins
 
-The section lists every plugin Zinc knows, with its name, version and status:
+![Settings > Plugins with one installed plugin turned off](../screenshots/settings-plugins-light.png)
+
+The section lists every installed plugin with its name, version and status. Each row has:
+
+- a switch to turn the plugin **on or off**. A plugin you turn off is stopped and unloaded (it uses no memory) and stays off after a restart; turning it on starts it again.
+- **Remove**, which asks first and then stops the plugin and deletes it with its settings, saved data and secrets. Your library is not touched.
+- **Review permissions...**, only when an update is waiting for your approval.
 
 | Status | Meaning |
 | --- | --- |
 | running | Started and working. |
 | loading, loaded, starting | On its way up. |
 | stopping, stopped | Shut down; it offers nothing. |
-| disabled | Turned off, or waiting for you to approve new permissions. |
-| failed | It crashed or kept timing out. Zinc stops a plugin that does not answer in time, without affecting the rest of the app. See [Logs and Report a problem](logs-and-reports.md) for the reason. |
+| off | You turned it off. |
+| disabled | Waiting for you to approve new permissions, or turned off by Zinc, with the reason. |
+| failed | It crashed or kept timing out. Zinc stops a plugin that does not answer in time, without affecting the rest of the app. The row shows the reason; [Logs and Report a problem](logs-and-reports.md) has more. |
+| incompatible, blocked | It does not fit this version of Zinc, or this version of it is blocked. It is not started. |
 
 A plugin that has a settings pane of its own gets its own section in Settings, after Plugins, with its icon and name.
 
-## Installing a plugin
+## Try a plugin without installing it
 
-A plugin comes as a `.zplugin` file: a zip that holds `manifest.json` (its name, version and the permissions it asks for), `plugin.wasm` and its strings.
+For plugin authors and testing: Zinc can load built plugin folders straight away, without installing them.
 
-**Zinc 0.2 has no Install button yet.** The package manager that installs `.zplugin` files is built and tested, but Settings > Plugins does not offer it. Until it does, you can try a plugin like this:
-
-1. Unzip the `.zplugin` file into a folder of its own.
-2. Start Zinc with `ZN_WASM_PLUGIN_DIRS` set to that folder (separate several folders with `;` on Windows and `:` on Linux and macOS).
+1. Unzip a `.zplugin` file (or use the build output) in a folder of its own. A single-file `.wasm` cannot be loaded this way: install it.
+2. Quit Zinc, then start it with `ZN_WASM_PLUGIN_DIRS` set to that folder. Separate several folders with `;` on Windows and `:` on Linux and macOS.
 
 ```powershell
 $env:ZN_WASM_PLUGINS = "1"; $env:ZN_WASM_PLUGIN_DIRS = "C:\plugins\word-count"; & "$env:LOCALAPPDATA\Programs\Zinc\zotero-next-gpui.exe"
 ```
 
-Quit Zinc before you run this, so a new copy starts with the variables. A plugin loaded this way gets every permission its manifest declares, without asking, and it is not added to the installed list. Load only plugins you trust, and read the `permissions` part of `manifest.json` first.
-
-When the Install button arrives, installing will check the package (its files, its manifest, that it fits this version of Zinc, and that `plugin.wasm` matches its recorded hash), then show the permissions it asks for, grouped by risk, before anything runs. An update that asks for more permissions stays disabled until you approve them.
+A plugin loaded this way gets every permission its manifest declares, without asking. It shows in Settings > Plugins with "loaded from a folder" and has no switch or Remove button; it is gone at the next start without the variable. Load only plugins you trust.
 
 ## Permissions
 
@@ -59,7 +82,7 @@ A plugin can do only what its permissions allow. Showing menus, columns, section
 | `mcp.expose` | Medium | Offer tools to AI agents (see below). |
 | web addresses | Shown by name | Connect to the listed websites, and only those. |
 
-Each permission comes with the plugin's own sentence saying why it needs it.
+Each permission comes with the plugin's own sentence saying why it needs it. You decide on each one in the install prompt.
 
 Some permissions are optional: the plugin asks for them only when you use the feature that needs them. Zinc then shows **Allow this plugin to do more?** with the plugin's name, the permission, its risk level and the plugin's reason. Choose **Allow** or **Don't allow**. Escape or closing the dialog counts as Don't allow, and the plugin carries on without that feature.
 
@@ -91,7 +114,7 @@ The environment variable `ZN_PLUGINS_DIR` points Zinc at another folder. Inside 
 | `cache/` | Compiled copies of the plugins for this computer; safe to delete, rebuilt when needed |
 | `state.json`, `grants.json` | Which plugins are installed and enabled, and the permissions you granted |
 
-Uninstalling a plugin removes its data, settings and secrets. Plugins never see these folders directly: a plugin reads and writes only its own `data` folder, its temporary folder, and files you pick or drop on it.
+Removing a plugin (Settings > Plugins > **Remove**) deletes its folder, data, settings and secrets. Plugins never see these folders directly: a plugin reads and writes only its own `data` folder, its temporary folder, and files you pick or drop on it.
 
 ## Writing plugins
 

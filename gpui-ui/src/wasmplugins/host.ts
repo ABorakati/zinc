@@ -53,3 +53,42 @@ export async function callPlugin(plugin: string, iface: string, fn: string, args
 /** The plugins the supervisor knows (id, manifest, status), as a signal; index.ts keeps it current. */
 const [pluginList, setPluginList] = createSignal<PluginInfo[]>([]);
 export { pluginList, setPluginList };
+
+/**
+ * The plugins the package manager installed (state.json), including disabled ones the supervisor has unloaded. Settings > Plugins
+ * draws its install, enable and remove controls from this; index.ts keeps it current. Empty while plugins are off.
+ */
+export interface ManagedPlugin {
+	id: string;
+	name: string;
+	version: string;
+	/** `PluginState`: enabled, disabled, failed, blocked, incompatible, uninstalling. */
+	state: string;
+	detail?: string;
+	/** Permissions an update added that wait for the user's approval. */
+	pending?: string[];
+	/** Asks for `mcp.expose`: how many tools its manifest declares. */
+	mcpTools?: number;
+}
+const [managedPlugins, setManagedPlugins] = createSignal<ManagedPlugin[]>([]);
+export { managedPlugins, setManagedPlugins };
+
+/** True while the package runtime (package manager, install, prefs) is up; false while plugins are off or in a dev/test start. */
+const [packageRuntime, setPackageRuntime] = createSignal(false);
+export { packageRuntime, setPackageRuntime };
+
+/**
+ * What the Settings > Plugins buttons do. index.ts sets these when the package runtime starts and clears them when it stops, so the
+ * settings page never imports the runtime (which the browser build cannot bundle: node:crypto, child processes).
+ */
+export interface PluginActions {
+	installFromFile(): Promise<void>;
+	setEnabled(id: string, on: boolean): Promise<void>;
+	remove(id: string): Promise<void>;
+	approvePermissions(id: string): Promise<void>;
+}
+let actions: PluginActions | undefined;
+export const setPluginActions = (a: PluginActions | undefined): void => {
+	actions = a;
+};
+export const pluginActions = (): PluginActions | undefined => actions;

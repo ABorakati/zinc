@@ -6,8 +6,9 @@ Status 2026-11-18. Code: `plugin-host/src/package/`, `plugin-host/src/permission
 
 | File | What it is |
 |---|---|
-| `src/package/installer.ts` | `PluginManager`: install and update from a `.zplugin` (bytes or path) or a folder, uninstall, enable and disable, `startAll`/`stopAll`, `windowLoaded`/`windowUnloaded`, permission grant and revoke, the lifecycle hook calls with their reasons. Drives a `PluginSupervisor`. |
+| `src/package/installer.ts` | `PluginManager`: install and update from a `.zplugin` or a single-file `.wasm` (bytes or path; added in 0.2.3, see `wasm-package.ts`) or a folder, uninstall, enable and disable, `startAll`/`stopAll`, `windowLoaded`/`windowUnloaded`, permission grant and revoke, the lifecycle hook calls with their reasons. Drives a `PluginSupervisor`. |
 | `src/package/zip.ts` | Zip reader (hostile input: names, sizes, CRC, symlinks, zip64 and encryption refused) and writer. |
+| `src/package/wasm-package.ts` | Single-file plugins (0.2.3): the package zip in a `zinc:package` custom section of `plugin.wasm`. `embedPackage`, `extractPackage` (gives the files of a `.zplugin`, with the section cut out of the binary), `stripPackage`. Top-level sections only; the embedded zip is read with the same limits. |
 | `src/package/json-schema.ts`, `validate.ts` | A small JSON Schema checker run against the real `plugin-api/manifest.schema.json`, plus rules a schema cannot say (known permission ids, required and optional do not overlap, reasons name real ids, integer prefs). |
 | `src/package/layout.ts` | Folder layout under Zinc's data folder (below). |
 | `src/package/transpile.ts` | The installer's build step: jco transpile of `plugin.wasm` with the same async lists as `scripts/build-plugin.ts`; tree hash. |

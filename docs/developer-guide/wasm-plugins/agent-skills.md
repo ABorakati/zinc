@@ -18,7 +18,7 @@ Makes a plugin from nothing. The agent:
 3. Writes the logic from tested recipes (menus, columns, item pane sections, dialogs, preference panes, the notifier, library reads and writes, reader hooks, network, tools for AI agents).
 4. Builds it (`plugin-api/sdk/js/scripts/build.ts` or `plugin-host/scripts/build-plugin.ts`).
 5. Tests it with `scripts/smoke.ts`, which loads the plugin in the real runner with stub imports and calls its callbacks. No library and no running app are needed.
-6. Packages it as a `.zplugin` with `scripts/pack.ts`.
+6. Packages it with `scripts/pack.ts`: a `.zplugin`, or with `--wasm` a single `.wasm` file. Users install either from Settings > Plugins > **Install from file...** (Zinc 0.2.3 and later).
 
 For tools for AI agents, the skill uses the `plugin-mcp` world (or `plugin` when the plugin also adds menus or views), the `mcp.expose` permission, and `defineTool` (JavaScript) or `mcp::Tool` (Rust). It reminds you that the tools stay hidden until you turn on the plugin's switch in Settings > Plugins. See [Exposing tools to AI agents](mcp.md).
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
-// Pack a BUILT plugin folder into <id>-<version>.zplugin (a zip: manifest.json, plugin.wasm, locale/, icons/, assets/).
+// Pack a BUILT plugin folder into <id>-<version>.zplugin (a zip: manifest.json, plugin.wasm, locale/, icons/, assets/), or with
+// --wasm into ONE file <id>-<version>.wasm: plugin.wasm with the rest embedded in its "zinc:package" custom section
+// (plugin-host/src/package/wasm-package.ts). Zinc 0.2.3 and later install either from Settings > Plugins.
 // Validates the manifest against plugin-api/manifest.schema.json and the permission rules first, checks plugin.wasm against
 // main.sha256, and leaves out transpiled/ and target/ (the installer ignores a shipped transpiled/ from older builds).
 //
-//   bun pack.ts <built dir> [--out <file or dir>]
+//   bun pack.ts <built dir> [--wasm] [--out <file or dir>]
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,11 +27,14 @@ const pkg: any = await import(pathToFileURL(join(zinc, "plugin-host", "src", "pa
 const { validateManifest } = await import(pathToFileURL(join(zinc, "plugin-host", "src", "package", "validate.ts")).href);
 
 const args = process.argv.slice(2);
+const wi = args.indexOf("--wasm");
+const single = wi >= 0;
+if (single) args.splice(wi, 1);
 const oi = args.indexOf("--out");
 const outArg = oi >= 0 ? args.splice(oi, 2)[1] : undefined;
 const dir = args[0] ? resolve(args[0]) : undefined;
 if (!dir) {
-	console.error("usage: bun pack.ts <built dir> [--out <file or dir>]");
+	console.error("usage: bun pack.ts <built dir> [--wasm] [--out <file or dir>]");
 	process.exit(2);
 }
 const fail = (m: string): never => {
@@ -56,7 +61,7 @@ const walk = (d: string) => {
 			continue;
 		}
 		const name = relative(dir, p).replace(/\\/g, "/");
-		if (name.startsWith(".") || name.endsWith(".zplugin")) continue;
+		if (name.startsWith(".") || name.endsWith(".zplugin") || (name.endsWith(".wasm") && name !== (manifest.main?.wasm ?? "plugin.wasm"))) continue;
 		entries.push({ name, data: new Uint8Array(readFileSync(p)) });
 	}
 };
@@ -64,13 +69,18 @@ walk(dir);
 const total = entries.reduce((n, e) => n + e.data.length, 0);
 if (total > 128 * 1024 * 1024) fail(`package is ${(total / 1048576).toFixed(0)} MiB; the installer refuses entries over 128 MiB`);
 
-const file = `${manifest.id}-${manifest.version}.zplugin`;
+const file = `${manifest.id}-${manifest.version}.${single ? "wasm" : "zplugin"}`;
 let out = outArg ? resolve(outArg) : join(dir, "..", file);
 if (existsSync(out) && statSync(out).isDirectory()) out = join(out, file);
-const bytes: Uint8Array = pkg.writeZip(entries);
+const mainName = manifest.main?.wasm ?? "plugin.wasm";
+const bytes: Uint8Array = single ? pkg.embedPackage(wasm, entries.filter((e) => e.name !== mainName)) : pkg.writeZip(entries);
 await Bun.write(out, bytes);
-// read it back with the installer's own (hostile-input) zip reader
-const back = pkg.readZip(bytes);
-if (!back.some((f: { name: string }) => f.name === "manifest.json")) fail("written zip has no manifest.json");
+// read it back with the installer's own (hostile-input) readers
+const back: { name: string; data: Uint8Array }[] = single ? pkg.extractPackage(bytes) : pkg.readZip(bytes);
+if (!back?.some((f) => f.name === "manifest.json")) fail("written package has no manifest.json");
+if (single) {
+	const code = back.find((f) => f.name === mainName)!;
+	if (new Bun.CryptoHasher("sha256").update(code.data).digest("hex") !== sha) fail("the embedded package does not give back plugin.wasm unchanged");
+}
 console.log(`packed ${back.length} files (${(bytes.length / 1024).toFixed(0)} KiB) -> ${out}`);
 for (const e of entries) console.log("  " + e.name);

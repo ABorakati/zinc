@@ -20,7 +20,7 @@ Paths below are relative to the Zinc checkout (the folder holding `plugin-api/`)
 3. **Write the logic** with the recipes: `references/recipes-js.md` or `references/recipes-rust.md`. Every snippet there was built and run.
 4. **Build**: `bun plugin-api/sdk/js/scripts/build.ts <dir> --out <out>` (JS, ~6 s) or `bun plugin-host/scripts/build-plugin.ts <dir> --out <out>` (Rust, ~40 s cold, ~15 s warm).
 5. **Test** through the supervisor with stub imports: `bun .claude/skills/zinc-plugin-create/scripts/smoke.ts <out>` shows what startup registered; add `--call iface.fn '<json args>'` to drive callbacks, or copy `assets/plugin.test.ts` for assertions. UI trees are checked against `ui-tree.schema.json`. Details: `references/build-test-install.md`.
-6. **Package**: `bun .claude/skills/zinc-plugin-create/scripts/pack.ts <out>` writes `<id>-<version>.zplugin`. Installing and in-app dev loading are in `references/build-test-install.md`.
+6. **Package**: `bun .claude/skills/zinc-plugin-create/scripts/pack.ts <out>` writes `<id>-<version>.zplugin`; add `--wasm` for one self-contained `<id>-<version>.wasm` instead. The user installs either with Settings > Plugins > Install from file... (Zinc 0.2.3+). Installing and in-app dev loading are in `references/build-test-install.md`.
 
 If a build or test step fails for reasons outside the plugin (a missing `plugin-host/node_modules`, a `zhw` binary that is not built, an SDK that lags the WIT), say so and report it; do not patch `plugin-host/`, `plugin-host-wasmtime/` or the SDKs from a plugin task.
 

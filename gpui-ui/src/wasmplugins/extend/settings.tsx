@@ -5,7 +5,7 @@ import { createEffect, createMemo, createRoot, For, onCleanup, onMount, Show, ty
 import { Choice, Btn, SettingRow, TextField, Toggle, Value } from "../../settings/controls";
 import { registerSettingsSection, unregisterSettingsSection } from "../../registry";
 import { Txt, t } from "../../shell/kit";
-import { callPlugin } from "../host";
+import { callPlugin, pluginActions, type PluginActions } from "../host";
 import { setWasmPluginsEnabled, wasmPluginsEnabled } from "../flag";
 import { mcpExposed, setMcpExposed } from "../mcp/exposure";
 import { prefCell } from "./prefs";
@@ -168,10 +168,36 @@ export function startPaneMirror(): () => void {
 
 // ---- the Plugins section ---------------------------------------------------------------------------------------------------
 
-/** Settings > Plugins: the switch and the list. Registered once at start-up (src/features.ts), always, so plugins can be turned on. */
-export function registerPluginsSettings(
-	list: () => { id: string; name: string; version: string; status: string; /** set when the plugin asks for `mcp.expose`: how many tools its manifest declares */ mcpTools?: number }[],
-): void {
+/** One plugin row of Settings > Plugins. */
+export interface PluginRowInfo {
+	id: string;
+	name: string;
+	version: string;
+	/** What to show: the supervisor's status when loaded (running, failed ...), else the manager's state (disabled ...). */
+	status: string;
+	/** Why it is in that state (a failure, "disabled by the user", "new permissions need your approval"). */
+	detail?: string;
+	/** Installed through the package manager (so it can be turned off and removed); false for a folder loaded with ZN_WASM_PLUGIN_DIRS. */
+	managed: boolean;
+	/** The user's on/off for a managed plugin. */
+	enabled: boolean;
+	/** An update added permissions that wait for approval. */
+	pending: boolean;
+	/** set when the plugin asks for `mcp.expose`: how many tools its manifest declares */
+	mcpTools?: number;
+}
+
+/**
+ * The actions behind the buttons (wasmplugins/index.ts), reached through host.ts: never an import of the runtime from here, not even a
+ * dynamic one, or the browser build would have to bundle it. They exist while the package runtime runs; otherwise the click does nothing.
+ */
+const act = (f: (a: PluginActions) => Promise<void>) => {
+	const a = pluginActions();
+	if (a) void f(a);
+};
+
+/** Settings > Plugins: the switch, Install, and the list. Registered once at start-up (src/features.ts), always, so plugins can be turned on. */
+export function registerPluginsSettings(list: () => PluginRowInfo[], running: () => boolean): void {
 	registerSettingsSection({
 		id: "wasm-plugins",
 		label: "Plugins",
@@ -185,12 +211,43 @@ export function registerPluginsSettings(
 					description="Runs installed plugins in a separate process. Takes effect the next time Zinc starts."
 					control={() => <Toggle checked={wasmPluginsEnabled()} onChange={setWasmPluginsEnabled} />}
 				/>
+				<SettingRow
+					id="wasm-plugins-install"
+					label="Install a plugin"
+					description={
+						running()
+							? "Install or update a plugin from a .zplugin or .wasm file. You see the permissions it asks for before any of it runs."
+							: "Turn on Enable plugins and restart Zinc to install plugins."
+					}
+					control={() => (
+						<Btn icon="download" disabled={!running()} onClick={() => act((a) => a.installFromFile())}>
+							Install from file…
+						</Btn>
+					)}
+					last={list().length === 0}
+				/>
 				<For each={list()}>
 					{(p, i) => (
 						<>
 							<SettingRow
+								id={`wasm-plugin:${p.id}`}
 								label={`${p.name} ${p.version}`}
-								control={() => <Value>{p.status}</Value>}
+								description={[p.status, p.detail].filter(Boolean).join(": ") + (p.managed ? "" : " (loaded from a folder with ZN_WASM_PLUGIN_DIRS)")}
+								control={() =>
+									p.managed ? (
+										<div style={{ ...t("flex flex-row items-center gap-2") }}>
+											<Show when={p.pending}>
+												<Btn primary onClick={() => act((a) => a.approvePermissions(p.id))}>
+													Review permissions…
+												</Btn>
+											</Show>
+											<Toggle checked={p.enabled} onChange={(on) => act((a) => a.setEnabled(p.id, on))} />
+											<Btn onClick={() => act((a) => a.remove(p.id))}>Remove</Btn>
+										</div>
+									) : (
+										<Value>{p.status}</Value>
+									)
+								}
 								last={i() === list().length - 1 && p.mcpTools === undefined}
 							/>
 							<Show when={p.mcpTools !== undefined}>

@@ -22,6 +22,7 @@ import { apiCompatible, semverCompare } from "./semver";
 import { sha256Hex } from "./hash";
 import { validateManifest } from "./validate";
 import { readZip, ZipError, type ZipFile } from "./zip";
+import { extractPackage, isWasm } from "./wasm-package";
 
 export type InstallAction = "install" | "upgrade" | "downgrade" | "reinstall";
 export type InstallErrorCode = "invalid-package" | "invalid-manifest" | "incompatible" | "hash-mismatch" | "cancelled" | "prepare-failed" | "io";
@@ -335,12 +336,22 @@ export class PluginManager {
 
 	// ---- install ---------------------------------------------------------------------------------------------------------------
 
-	/** Install or update from the bytes of a .zplugin, or from its path. */
+	/**
+	 * Install or update from the bytes of a package, or from its path: a .zplugin (a zip), or a single-file plugin (a .wasm with the
+	 * package embedded in its `zinc:package` custom section, see wasm-package.ts). Both go through the same checks.
+	 */
 	async installPackage(source: Uint8Array | string, o: { approve?: ApproveFn } = {}): Promise<InstallResult> {
 		const bytes = typeof source === "string" ? new Uint8Array(await Bun.file(source).arrayBuffer()) : source;
 		let files: ZipFile[];
 		try {
-			files = readZip(bytes);
+			if (isWasm(bytes)) {
+				const inner = extractPackage(bytes);
+				if (!inner)
+					throw new InstallError("invalid-package", "this .wasm file is not a Zinc plugin package", [
+						"it has no embedded manifest (no zinc:package section); pack it with pack.ts --wasm, or install the .zplugin",
+					]);
+				files = inner;
+			} else files = readZip(bytes);
 		} catch (e) {
 			if (e instanceof ZipError) throw new InstallError("invalid-package", "not a valid plugin package", [e.message]);
 			throw e;
