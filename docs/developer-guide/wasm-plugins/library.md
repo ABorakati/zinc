@@ -1,6 +1,6 @@
 # WASM plugin API: library, search, batching, notifier
 
-Area `library`. WIT: [`plugin-api/wit/library.wit`](../../../plugin-api/wit/library.wit). Phase 1 is design only. "Needs core" in a status means the WIT is written but Zinc's core (`core/src/`, `core/schema.sql`) does not serve the feature yet; that is fine for phase 1.
+Area `library`. WIT: [`plugin-api/wit/library.wit`](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/library.wit). Phase 1 is design only. "Needs core" in a status means the WIT is written but Zinc's core (`core/src/`, `core/schema.sql`) does not serve the feature yet; that is fine for phase 1.
 
 Sources read: Zotero `chrome/content/zotero/xpcom/data/*.js` (items, collections, searches, tags, relations, libraries, groups, notes, itemFields, cachedTypes, creators, feeds), `search` conditions (`data/searchConditions.js`, 59 conditions), `attachments.js`, `fulltext.js`, `cite.js`, `quickCopy.js`, `duplicates.js`, `notifier.js`, `db.js`, `translation/translators.js`; Zinc's `core/schema.sql`, `core/src/api-types.ts`, `docs/developer-guide/http-api.md`, `database.md`, and the earlier compat layer (`gpui-ui/src/plugins/zotero/`). `Zotero.Translate` itself and `Zotero.Utilities.Item` live in git submodules that the sparse checkout does not contain; their rows come from Zotero's public API, not from the checked-out source.
 

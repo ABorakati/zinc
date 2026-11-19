@@ -1,6 +1,6 @@
 # Phase 2, Wasmtime spike: a native plugin host to compare with the Bun host
 
-Status 2026-11-18. Package: [`plugin-host-wasmtime/`](../../../plugin-host-wasmtime/) (standalone Rust crate, its own empty `[workspace]`, no file outside it was changed; `plugin-api/` and `plugin-host/` were only read). Tests: **13 pass** (`bun test bench/host.test.ts`, about 3 s). `cargo build --release` clean (4 warnings: unused helper, unused imports).
+Status 2026-11-18. Package: [`plugin-host-wasmtime/`](https://github.com/ABorakati/zinc/tree/main/plugin-host-wasmtime/) (standalone Rust crate, its own empty `[workspace]`, no file outside it was changed; `plugin-api/` and `plugin-host/` were only read). Tests: **13 pass** (`bun test bench/host.test.ts`, about 3 s). `cargo build --release` clean (4 warnings: unused helper, unused imports).
 
 Short answer. Wasmtime runs the same components with no jco glue. On the UI fixture a cold start (process, load, `startup`, first call of each of the four big UI exports) takes **79 ms** with a precompiled `.cwasm`, against **34 s** (80 s on a busy machine) through the Bun host. A stuck plugin is stopped by its own budget in 515 ms without killing the process, and a plugin that allocates without end is stopped at its memory cap. One thing in the current plugin API does not fit: a plugin that is suspended inside an import (`ui.run-dialog`) cannot be entered again (see "What blocks").
 

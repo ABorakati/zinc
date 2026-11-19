@@ -1,6 +1,6 @@
 # Phase 2, extend agent: extension points in the main window
 
-Status 2026-11-18. WIT: [`extend.wit`](../../../plugin-api/wit/extend.wit). Result: `bun test src/wasmplugins/extend/extend.test.ts` in `gpui-ui/`: **16 pass**; `bun scripts/shot-wasm-extend.tsx`: **all 21 checks pass** (headless, with the real QuickJS fixture plugin in the plugin host process); `bun check` in `gpui-ui/`: clean; the existing sidebar / shell / cards / table / itempane tests (90) still pass.
+Status 2026-11-18. WIT: [`extend.wit`](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/extend.wit). Result: `bun test src/wasmplugins/extend/extend.test.ts` in `gpui-ui/`: **16 pass**; `bun scripts/shot-wasm-extend.tsx`: **all 21 checks pass** (headless, with the real QuickJS fixture plugin in the plugin host process); `bun check` in `gpui-ui/`: clean; the existing sidebar / shell / cards / table / itempane tests (90) still pass.
 
 ## What was built
 

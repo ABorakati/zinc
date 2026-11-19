@@ -1,6 +1,6 @@
 # Phase 2, data agent: library, change log, notifier, net, fs, clipboard, shell
 
-Status 2026-11-18. Handlers: [`plugin-host/src/imports/`](../../../plugin-host/src/imports/) (files named below). Core change log and batch: [`core/src/changes/`](../../../core/src/changes/), [`core/src/migrations/change-log.ts`](../../../core/src/migrations/change-log.ts). Tests: [`plugin-host/test/data/`](../../../plugin-host/test/data/).
+Status 2026-11-18. Handlers: [`plugin-host/src/imports/`](https://github.com/ABorakati/zinc/tree/main/plugin-host/src/imports/) (files named below). Core change log and batch: [`core/src/changes/`](https://github.com/ABorakati/zinc/tree/main/core/src/changes/), [`core/src/migrations/change-log.ts`](https://github.com/ABorakati/zinc/blob/main/core/src/migrations/change-log.ts). Tests: [`plugin-host/test/data/`](https://github.com/ABorakati/zinc/tree/main/plugin-host/test/data/).
 
 Design sources: [library.md](library.md), [lifecycle.md](lifecycle.md), [phase2-core.md](phase2-core.md) ("For the stage 2 agents"), `plugin-api/wit/library.wit` and `lifecycle.wit`.
 

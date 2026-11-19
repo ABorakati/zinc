@@ -10,18 +10,18 @@ Totals are tallied by script from the status column of each report's parity tabl
 
 | Area | Report | WIT file | What it covers | Rows | Covered | Partial | Not planned |
 |---|---|---|---|---|---|---|---|
-| lifecycle | [lifecycle.md](lifecycle.md) | [lifecycle.wit](../../../plugin-api/wit/lifecycle.wit), [types.wit](../../../plugin-api/wit/types.wit), [world.wit](../../../plugin-api/wit/world.wit) | Package and manifest, install / startup / shutdown / uninstall, prefs, secrets, strings (Fluent), network, files and file grants, timers, clipboard, shell, log, helpers, permissions | 114 | 77 | 15 | 22 |
-| library | [library.md](library.md) | [library.wit](../../../plugin-api/wit/library.wit) | Items, collections, tags, searches, attachments and files, full text, schema, citations, translators, sync, change notifications | 133 | 69 | 39 | 25 |
-| extend | [extend.md](extend.md) | [extend.wit](../../../plugin-api/wit/extend.wit) | Menus, item pane sections and rows, columns, collection tree, toolbar, shortcuts, preference panes, tabs, banners, selection, drag and drop | 126 | 86 | 16 | 24 |
-| ui | [ui.md](ui.md) | [ui.wit](../../../plugin-api/wit/ui.wit), [ui-schema/](../../../plugin-api/ui-schema/) | The declarative UI tree, styles, events, views, dialogs, prompts, windows, toasts, popovers | 102 | 73 | 19 | 10 |
-| reader | [reader.md](reader.md) | [reader.wit](../../../plugin-api/wit/reader.wit) | Reader events and panels, annotations, selection, themes, note editor | 105 | 73 | 20 | 12 |
+| lifecycle | [lifecycle.md](lifecycle.md) | [lifecycle.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/lifecycle.wit), [types.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/types.wit), [world.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/world.wit) | Package and manifest, install / startup / shutdown / uninstall, prefs, secrets, strings (Fluent), network, files and file grants, timers, clipboard, shell, log, helpers, permissions | 114 | 77 | 15 | 22 |
+| library | [library.md](library.md) | [library.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/library.wit) | Items, collections, tags, searches, attachments and files, full text, schema, citations, translators, sync, change notifications | 133 | 69 | 39 | 25 |
+| extend | [extend.md](extend.md) | [extend.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/extend.wit) | Menus, item pane sections and rows, columns, collection tree, toolbar, shortcuts, preference panes, tabs, banners, selection, drag and drop | 126 | 86 | 16 | 24 |
+| ui | [ui.md](ui.md) | [ui.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/ui.wit), [ui-schema/](https://github.com/ABorakati/zinc/tree/main/plugin-api/ui-schema/) | The declarative UI tree, styles, events, views, dialogs, prompts, windows, toasts, popovers | 102 | 73 | 19 | 10 |
+| reader | [reader.md](reader.md) | [reader.wit](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/reader.wit) | Reader events and panels, annotations, selection, themes, note editor | 105 | 73 | 20 | 12 |
 | **Total** | | | | **580** | **378** | **109** | **93** |
 
 ## Other files
 
-- [`plugin-api/manifest.schema.json`](../../../plugin-api/manifest.schema.json): JSON Schema for the `manifest.json` at the root of a plugin package. `$defs.capability` lists all 36 permission ids with risk tiers (`x-risk`).
-- [`plugin-api/ui-schema/ui-tree.schema.json`](../../../plugin-api/ui-schema/ui-tree.schema.json): the nested JSON form of a UI tree.
-- [`plugin-api/wit/world.wit`](../../../plugin-api/wit/world.wit): world `plugin` (every interface) and `plugin-minimal` (app, prefs, l10n, log, timers, extend, ui; no `fs`, `clipboard`, `shell`, `reader`).
+- [`plugin-api/manifest.schema.json`](https://github.com/ABorakati/zinc/blob/main/plugin-api/manifest.schema.json): JSON Schema for the `manifest.json` at the root of a plugin package. `$defs.capability` lists all 36 permission ids with risk tiers (`x-risk`).
+- [`plugin-api/ui-schema/ui-tree.schema.json`](https://github.com/ABorakati/zinc/blob/main/plugin-api/ui-schema/ui-tree.schema.json): the nested JSON form of a UI tree.
+- [`plugin-api/wit/world.wit`](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/world.wit): world `plugin` (every interface) and `plugin-minimal` (app, prefs, l10n, log, timers, extend, ui; no `fs`, `clipboard`, `shell`, `reader`).
 
 ## The WIT package
 

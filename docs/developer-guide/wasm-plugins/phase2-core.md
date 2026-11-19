@@ -1,6 +1,6 @@
 # Phase 2, core agent: the plugin host
 
-Status 2026-11-18. Package: [`plugin-host/`](../../../plugin-host/). Tests: 15 pass (`bun test` in `plugin-host/`, about 7 s plus the fixture build), `bun check` clean.
+Status 2026-11-18. Package: [`plugin-host/`](https://github.com/ABorakati/zinc/tree/main/plugin-host/). Tests: 15 pass (`bun test` in `plugin-host/`, about 7 s plus the fixture build), `bun check` clean.
 
 ## What was built
 

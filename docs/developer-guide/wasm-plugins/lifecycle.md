@@ -4,10 +4,10 @@ This is the phase 1 design report of the `lifecycle` agent (2026-11-18). It is d
 
 Files owned by this area:
 
-- [`plugin-api/wit/types.wit`](../../../plugin-api/wit/types.wit): shared types.
-- [`plugin-api/wit/lifecycle.wit`](../../../plugin-api/wit/lifecycle.wit): interfaces `lifecycle`, `events`, `app`, `plugins`, `prefs`, `secrets`, `l10n`, `log`, `timers`, `net`, `net-events`, `fs`, `clipboard`, `shell`, `util`, `permissions`.
-- [`plugin-api/wit/world.wit`](../../../plugin-api/wit/world.wit): worlds `plugin` and `plugin-minimal`.
-- [`plugin-api/manifest.schema.json`](../../../plugin-api/manifest.schema.json): JSON Schema of `manifest.json`.
+- [`plugin-api/wit/types.wit`](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/types.wit): shared types.
+- [`plugin-api/wit/lifecycle.wit`](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/lifecycle.wit): interfaces `lifecycle`, `events`, `app`, `plugins`, `prefs`, `secrets`, `l10n`, `log`, `timers`, `net`, `net-events`, `fs`, `clipboard`, `shell`, `util`, `permissions`.
+- [`plugin-api/wit/world.wit`](https://github.com/ABorakati/zinc/blob/main/plugin-api/wit/world.wit): worlds `plugin` and `plugin-minimal`.
+- [`plugin-api/manifest.schema.json`](https://github.com/ABorakati/zinc/blob/main/plugin-api/manifest.schema.json): JSON Schema of `manifest.json`.
 
 Sources read: Zotero `xpcom/plugins.js` (whole file), `xpcom/prefs.js`, `xpcom/http.js`, `xpcom/file.js`, `xpcom/zotero.js` (launchFile, launchURL, window helpers, debug), plus Zinc's existing Zotero-compat layer (`gpui-ui/src/plugins/`, its doc `zotero-plugins.md`) as a map of what plugins actually call. The Zotero 7 manifest and bootstrap conventions are from the Zotero 7 developer documentation.
 
