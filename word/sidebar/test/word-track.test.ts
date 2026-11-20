@@ -217,6 +217,52 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		await h.call("h.close");
 	}, 120_000);
 
+	// tracked changes other than insertions and deletions (Word's types 1 and 2): formatting, paragraph properties, style
+	const formatting = (revs: Revision[]) => revs.filter((r) => r.type !== 1 && r.type !== 2);
+
+	test("inserting citations and a bibliography with Track Changes on records them as insertions only, no tracked formatting", async () => {
+		await h.call("h.newDoc");
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		await h.call("h.type", { text: "Alpha claim " });
+		await app.insertCitation([picks[1]!]);
+		await h.call("h.type", { text: " and beta claim " });
+		await app.insertCitation([picks[2]!]);
+		await h.call("h.type", { text: " end." });
+		await h.call("h.para");
+		await app.insertBibliography();
+		const revs = await revisions();
+		expect(revs.length).toBeGreaterThan(0);
+		expect(formatting(revs)).toEqual([]); // a formatting change in the bibliography makes Word's tracked-change list loop
+		expect((await h.call<{ text: string }>("h.text")).text).toContain("Author2");
+		await h.call("h.close");
+	}, 120_000);
+
+	test("a refresh rebuilds a bibliography left with tracked formatting, even in a document marked clean, and keeps the user's edits", async () => {
+		await threeCitations();
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		await h.call("h.cursor", { start: 1 });
+		await h.call("h.type", { text: "y" }); // the user's own tracked change
+		await app.refreshAll();
+		expect(await trackChecked()).toBe("1"); // found clean: later scans skip the per-field lookups
+		// what older add-ins did: format the bibliography with Track Changes on
+		await h.call("h.biblIndentLast");
+		expect(formatting(await revisions()).length).toBeGreaterThan(0);
+		const fieldsBefore = (await h.call<{ count: number }>("h.fieldCount")).count;
+		const textBefore = (await h.call<{ text: string }>("h.text")).text;
+		const rep = await app.refreshAll();
+		expect(rep.updated).toBe(1); // the bibliography, rebuilt
+		const revs = await revisions();
+		expect(formatting(revs)).toEqual([]);
+		expect(revs.length).toBe(1);
+		expect(revs[0]!.type).toBe(1); // the user's "y", still tracked
+		expect((await h.call<{ count: number }>("h.fieldCount")).count).toBe(fieldsBefore);
+		expect((await h.call<{ text: string }>("h.text")).text.trimEnd()).toBe(textBefore.trimEnd());
+		expect(await texts()).toEqual(["(1)", "(2)", "(3)"]);
+		expect((await h.call<{ on: boolean }>("h.track")).on).toBe(true);
+		expect((await app.refreshAll()).updated).toBe(0); // and now it stays as it is
+		await h.call("h.close");
+	}, 120_000);
+
 	test("the cursor watcher stays out of Word's way while the user types, and reads once the cursor rests", async () => {
 		await threeCitations();
 		await h.call("h.cursorEnd");

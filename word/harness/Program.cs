@@ -178,9 +178,15 @@ internal static class Program
                     int n = (int)revs.Count;
                     for (int i = 1; i <= n; i++)
                     {
-                        dynamic r = revs.Item(i);
-                        string t = ""; try { t = (string)r.Range.Text ?? ""; } catch { }
-                        list.Add(Json.Map("type", (int)r.Type, "text", t.Length > 120 ? t.Substring(0, 120) : t, "start", (int)r.Range.Start, "end", (int)r.Range.End));
+                        // Word can count a change it then cannot return ("Object has been deleted"): a tracked formatting
+                        // change in a bibliography does that. Listed as type -1.
+                        try
+                        {
+                            dynamic r = revs.Item(i);
+                            string t = ""; try { t = (string)r.Range.Text ?? ""; } catch { }
+                            list.Add(Json.Map("type", (int)r.Type, "text", t.Length > 120 ? t.Substring(0, 120) : t, "start", (int)r.Range.Start, "end", (int)r.Range.End));
+                        }
+                        catch { list.Add(Json.Map("type", -1, "text", "", "start", -1, "end", -1)); }
                     }
                     return list;
                 }
@@ -189,6 +195,18 @@ internal static class Program
                     // write a field code the way the add-in did before the fix (no Track Changes handling), to make a damaged document
                     dynamic f = _app.ActiveDocument.Fields.Item(Json.Int(p, "idx"));
                     f.Code.Text = " " + Json.Str(p, "code").Trim() + " ";
+                    return Json.Map("ok", true);
+                }
+            case "h.biblIndentLast":
+                {
+                    // indent the bibliography's last paragraph (the one its field ends in) with Track Changes as it is set: what
+                    // add-in versions before 2026-11-20 did when they formatted a bibliography under review
+                    dynamic bf = null;
+                    foreach (dynamic f in _app.ActiveDocument.Fields) { if (((string)f.Code.Text).Contains("ZOTERO_BIBL")) bf = f; }
+                    if (bf == null) throw new InvalidOperationException("no bibliography in the document");
+                    int e = (int)bf.Result.End + 1;
+                    dynamic r = bf.Result.Duplicate; r.SetRange(e, e);
+                    r.Paragraphs.Item(1).LeftIndent = Json.Int(p, "left", 30);
                     return Json.Map("ok", true);
                 }
             case "h.docVar":
@@ -209,7 +227,8 @@ internal static class Program
                         try { rc = (int)f.Code.Revisions.Count; } catch { }
                         try { rr = (int)f.Result.Revisions.Count; res = (string)f.Result.Text ?? ""; } catch { }
                         string code = (string)f.Code.Text ?? "";
-                        list.Add(Json.Map("idx", i, "showCodes", (bool)f.ShowCodes, "codeRevisions", rc, "resultRevisions", rr,
+                        int ty = -1; try { ty = (int)f.Type; } catch { }
+                        list.Add(Json.Map("idx", i, "type", ty, "showCodes", (bool)f.ShowCodes, "codeRevisions", rc, "resultRevisions", rr,
                             "code", code.Length > 200 ? code.Substring(0, 200) : code, "codeLength", code.Length, "result", res));
                     }
                     return list;
