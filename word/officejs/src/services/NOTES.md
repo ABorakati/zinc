@@ -27,11 +27,11 @@ Implemented `createServiceMethods` (`src/services/index.ts`) and all 14 non-docu
 | `lib.search` (`year` only) | `POST /api/searches/run` (`year is <year>`, `sort: "dateAdded", dir: "desc"`, `fields: ["DOI"]`) | **Existing** | Maps `ItemSummary` -> `LibRow` |
 | `lib.search` (`match`, optional `year`) | `GET /api/libraries` + `GET /api/search?q=...&limit=...` + `GET /api/items/:key` | **Existing** | Converts sidebar FTS5 `match` to `q` for `parseQuery`, filters `matchedIn.includes("metadata")` and `year`, enriches `publication` (`venueOf`), `itemType`, `DOI` -> `LibRow` |
 | `lib.items` | `GET /api/libraries` + `GET /api/items/:key` (+ `GET /api/items/index?key=...&library=...` only when group libraries exist) | **Existing** | Validates/deduplicates keys, follows `data.parentItem` to parent, resolves `trashed` and `groupId` -> `{ key, found, itemKey, trashed, itemType, data, groupId }` |
-| `lib.byUri` | `POST /api/items/by-uri` `{ uris, userId? }` | **Missing in core** | Returns `Record<string, string>` (`citedUri -> replacementKey`) |
+| `lib.byUri` | `POST /api/items/by-uri` `{ uris, userId? }` | **Added to core** | Returns `Record<string, string>` (`citedUri -> replacementKey`) |
 | `lib.uriBase` | `settings.userId` -> `settings.detectedUserId` -> `GET /api/library?count=0` (404 fallback: `GET /api/websync/status`) | Needs `/api/library` for `library_key` & inferred `userId` | Caches detected `userId` in `detectedUserId`; falls back to `http://zotero.org/users/local/<libraryKey \| znlocal0>` |
 | `style.search` | `GET /api/cite/styles?quick=1&limit=...` (empty `q`) or `GET /api/cite/styles?q=...&limit=...` | **Existing** | Maps `CiteStyleInfo[]` -> `{ id, title, format: s.format ?? null, dependent, installed }[]` |
-| `style.xml` | `GET /api/cite/styles/:id` | **Missing in core** | Validates `STYLE_ID_RE` first, returns `{ id, xml }` |
-| `locale.xml` | `GET /api/cite/locales/:lang` | **Missing in core** | Validates `LOCALE_RE` first, returns `{ lang, xml: string \| null }` |
+| `style.xml` | `GET /api/cite/styles/:id` | **Added to core** | Validates `STYLE_ID_RE` first, returns `{ id, xml }` |
+| `locale.xml` | `GET /api/cite/locales/:lang` | **Added to core** | Validates `LOCALE_RE` first, returns `{ lang, xml: string \| null }` |
 | `zn.status` | `GET /api/ui/selection` (800 ms timeout) | **Existing** | Returns `{ up, api, launcher: "", launcherExists: false }` |
 | `zn.lookup` | `GET /api/references/lookup?doi=...` | **Existing** | Returns `ReferenceDetail` JSON, or `null` when empty/404/down |
 | `zn.reveal` | `POST /api/ui/reveal` `{ key, open: true }` | **Existing** | Returns `{ ok, started: false, error? }` (maps `"not found"` -> too-old message, never throws) |
@@ -39,7 +39,7 @@ Implemented `createServiceMethods` (`src/services/index.ts`) and all 14 non-docu
 
 ---
 
-## Endpoints Core Lacks (Minimal Additions Needed in `core/`)
+## Endpoints Core Lacked (added on this branch: core/src/cite/api.ts, core/src/items-by-uri.ts; cross-origin access in core/src/taskpane-cors.ts)
 
 ### 1. `GET /api/cite/styles/:id` (`core/src/cite/api.ts`)
 `StyleStore.styleXml(id, mode)` already exists in `core/src/cite/engine.ts`, and `DELETE /api/cite/styles/:id` already sits at `parts[0] === "styles" && parts.length === 2` in `core/src/cite/api.ts` (line 286), after `/api/cite/styles/install` and `/api/cite/styles/preview`.

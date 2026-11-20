@@ -45,6 +45,7 @@ import { handleWebSyncApi } from "./websync/api";
 import { listLibraries, resolveLibrary, USER_LIBRARY } from "./libraries";
 import { pendingCount } from "./sync/build";
 import { indexItem, search } from "./search";
+import { itemsByUri } from "./items-by-uri";
 
 function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -227,6 +228,12 @@ async function route(req: Request, url: URL, db: Database, parts: string[]): Pro
 	}
 
 	if (a === "items") {
+		if (n === 2 && b === "by-uri") {
+			// cited URIs whose key is not in the library -> the item that replaced it (see items-by-uri.ts)
+			if (m !== "POST") return methodNotAllowed();
+			const body = await readBody<{ uris?: unknown; userId?: unknown }>(req);
+			return json(itemsByUri(db, body?.uris, body?.userId));
+		}
 		if (n === 1) {
 			if (m === "POST") {
 				const body = await readBody<{ data?: Partial<ZoteroItemData>; library?: unknown }>(req);

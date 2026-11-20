@@ -9,6 +9,7 @@ import { createDevReload } from "./devreload";
 import { openDb } from "./db";
 import { handleMcp } from "./mcp/http";
 import { installConsoleMirror, logError } from "./log";
+import { isTaskPaneOrigin, taskPaneOrigin, taskPanePreflight, withTaskPaneCors } from "./taskpane-cors";
 
 export interface Mount {
 	prefix: string;
@@ -104,7 +105,8 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
  * Guard for /api: the server only listens on loopback, but any web page in the user's browser can
  * still send requests to it. Reject (403) requests whose Host isn't loopback (DNS rebinding), and
  * state-changing requests that come from another origin or aren't JSON (cross-site request
- * forgery: a cross-origin JSON request needs a CORS preflight, which this server never grants).
+ * forgery: a cross-origin JSON request needs a CORS preflight, which this server grants only to the
+ * Office.js Word add-in's task pane, for POST: see taskpane-cors.ts).
  */
 export function apiRequestRejected(req: Request): string | null {
 	const url = new URL(req.url);
@@ -113,7 +115,7 @@ export function apiRequestRejected(req: Request): string | null {
 	if (host && !LOOPBACK_HOSTS.has(host)) return "bad host";
 	if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return null;
 	const origin = req.headers.get("origin");
-	if (origin && origin !== url.origin) return "cross-origin request";
+	if (origin && origin !== url.origin && !(isTaskPaneOrigin(origin) && req.method === "POST")) return "cross-origin request";
 	const type = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
 	if (type !== "application/json" && req.body !== null) return "content-type must be application/json";
 	return null;
@@ -144,10 +146,12 @@ export function startServer(opts: ServerOptions) {
 			}
 			const mcp = await handleMcp(req, db);
 			if (mcp) return mcp;
+			const preflight = taskPanePreflight(req);
+			if (preflight) return preflight;
 			const rejected = apiRequestRejected(req);
 			if (rejected) return Response.json({ error: `forbidden: ${rejected}` }, { status: 403 });
 			const api = await handleApi(req, db);
-			if (api) return api;
+			if (api) return withTaskPaneCors(api, taskPaneOrigin(req));
 			if (req.method !== "GET" && req.method !== "HEAD") return new Response("method not allowed", { status: 405 });
 			const pathname = new URL(req.url).pathname;
 			const res = serveStatic(pathname, mounts);

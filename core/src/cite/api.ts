@@ -283,6 +283,17 @@ export async function handleCiteApi(req: Request, db: Database): Promise<Respons
 				.filter(Boolean);
 			return json(await svc.preview(db, sp.get("id") ?? "", keys, sp.get("locale") ?? undefined));
 		}
+		if (parts[0] === "styles" && parts.length === 2 && m === "GET") {
+			// a style's CSL XML (the Office.js Word add-in formats in its task pane): installed styles from disk, others through
+			// the preview cache, so looking at a style never installs it
+			const id = decodeURIComponent(parts[1]!);
+			return json({ id, xml: await svc.store.styleXml(id, "preview") });
+		}
+		if (parts[0] === "locales" && parts.length === 2) {
+			if (m !== "GET") throw new HttpError(405, "method not allowed");
+			const lang = decodeURIComponent(parts[1]!);
+			return json({ lang, xml: await svc.store.locale(lang) });
+		}
 		if (parts[0] === "styles" && parts.length === 2) {
 			if (m !== "DELETE") throw new HttpError(405, "method not allowed");
 			const id = decodeURIComponent(parts[1]!);
