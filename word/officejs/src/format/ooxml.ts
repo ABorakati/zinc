@@ -217,7 +217,42 @@ export function runsToBodyXml(runs: Run[], options?: OoxmlOptions): string {
  * `field.result.insertOoxml(xml, "Replace")`.
  */
 export function runsToOoxml(runs: Run[], options?: OoxmlOptions): string {
-	const bodyXml = runsToBodyXml(runs, options);
+	return packageXml(runsToBodyXml(runs, options));
+}
+
+/**
+ * A whole field as `<w:p>` XML: begin, the code (instrText), separate, the result runs, end. A multi-paragraph result
+ * (bibliography) spans the paragraphs: begin in the first, end in the last. Office.js `insertField(..., "Addin", ...)` makes an
+ * ADDIN field with no result part (no separate), so a result written to it lands after the field's end; a field inserted
+ * from this XML has one, like the fields Zotero and the COM add-in write.
+ */
+export function fieldToBodyXml(code: string, runs: Run[], options?: OoxmlOptions): string {
+	const split = splitRunsIntoParagraphs(runs);
+	const paragraphs = split.length ? split : [[]];
+	const pPr = buildParagraphPropertiesXml(options);
+	const reset = !!options?.resetFormatting;
+	const instr = escapeXmlText(stripInvalidXmlChars(` ${code.trim()} `));
+	const begin =
+		`<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+		`<w:r><w:instrText xml:space="preserve">${instr}</w:instrText></w:r>` +
+		`<w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
+	const end = `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+	let out = "";
+	paragraphs.forEach((pRuns, i) => {
+		let xml = i === 0 ? begin : "";
+		for (const r of pRuns) xml += buildRunXml(r, reset);
+		if (i === paragraphs.length - 1) xml += end;
+		out += `<w:p>${pPr}${xml}</w:p>`;
+	});
+	return out;
+}
+
+/** fieldToBodyXml as a Flat OPC package for `insertOoxml`. */
+export function fieldToOoxml(code: string, runs: Run[], options?: OoxmlOptions): string {
+	return packageXml(fieldToBodyXml(code, runs, options));
+}
+
+function packageXml(bodyXml: string): string {
 	return (
 		`<pkg:package xmlns:pkg="${PKG_NS}">` +
 		`<pkg:part pkg:name="/_rels/.rels" pkg:contentType="${RELS_CONTENT_TYPE}">` +

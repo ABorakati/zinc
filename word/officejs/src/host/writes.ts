@@ -1,4 +1,5 @@
 import type { BibliographyFormat, ResultWriter } from "../contracts";
+import { fieldToOoxml } from "../format/ooxml";
 import { resolveFieldRefs, wrapUnwrappedFields } from "./fields";
 import { bibliographyHasTrackedFormatting, ensureTrackingUnlocked, withTrackingOff } from "./tracking";
 import {
@@ -87,18 +88,22 @@ async function resolveLocatedRange(
 	return target.getRange("End");
 }
 
-/** Create a wrapped Zotero field at `range` (`cc` first -> `insertField("Start", "Addin", ...)` -> `queueResult`). */
+/**
+ * Create a wrapped Zotero field at `range`: the content control first, then the whole field (code and formatted result) from
+ * WordprocessingML. Not `insertField("Start", "Addin", ...)`: in Word that makes an ADDIN field without a result part, and the
+ * result written to it lands after the field's end (seen in Word for Windows, 2026-11-20).
+ */
 function queueWrappedField(
 	range: Word.Range,
 	kind: "item" | "bibl",
 	code: string,
 	runs: Run[],
-	writer: ResultWriter,
+	_writer: ResultWriter,
 ): { cc: Word.ContentControl; field: Word.Field } {
 	const cc = range.insertContentControl();
 	cc.tag = tagForCode(kind, code);
-	const field = cc.getRange("Content").insertField("Start", "Addin", stripAddinPrefix(code), true);
-	writer.queueResult(field, runs);
+	cc.insertOoxml(fieldToOoxml("ADDIN " + stripAddinPrefix(code), runs), "Replace");
+	const field = cc.fields.getFirst();
 	return { cc, field };
 }
 

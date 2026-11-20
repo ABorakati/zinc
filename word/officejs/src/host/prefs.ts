@@ -78,17 +78,28 @@ export interface DocIdentity {
 }
 
 export function getDocIdentity(office: any, doc?: any): DocIdentity {
-	if (doc && doc.isNullObject) return { hasDoc: false, name: "", fullName: "", readOnly: false };
+	// a Word.Document proxy throws PropertyNotLoaded for any property not loaded yet (isNullObject included): treat as absent
+	const prop = (k: string): unknown => {
+		try {
+			return doc?.[k];
+		} catch {
+			return undefined;
+		}
+	};
+	if (doc && prop("isNullObject") === true) return { hasDoc: false, name: "", fullName: "", readOnly: false };
 	const officeDoc = office?.context?.document;
 	if (officeDoc === null) return { hasDoc: false, name: "", fullName: "", readOnly: false };
-	const rawUrl = typeof doc?.fullName === "string" ? doc.fullName : typeof officeDoc?.url === "string" ? officeDoc.url : "";
-	const explicitName = typeof doc?.name === "string" && doc.name ? doc.name : "";
+	const docFullName = prop("fullName");
+	const docName = prop("name");
+	const docReadOnly = prop("readOnly");
+	const rawUrl = typeof docFullName === "string" ? docFullName : typeof officeDoc?.url === "string" ? officeDoc.url : "";
+	const explicitName = typeof docName === "string" && docName ? docName : "";
 	const fullName = rawUrl || explicitName || "Document";
 	const name = explicitName || (rawUrl ? basenameFromUrl(rawUrl) : "Document");
 	const readOnlyMode = office?.DocumentMode?.ReadOnly ?? "readOnly";
 	const readOnly =
-		typeof doc?.readOnly === "boolean"
-			? doc.readOnly
+		typeof docReadOnly === "boolean"
+			? docReadOnly
 			: officeDoc?.mode !== undefined && (officeDoc.mode === readOnlyMode || String(officeDoc.mode).toLowerCase() === "readonly");
 	return { hasDoc: true, name, fullName, readOnly };
 }

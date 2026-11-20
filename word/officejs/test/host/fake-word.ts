@@ -174,6 +174,10 @@ export class FakeWordEnv {
 	}[] = [];
 	failWriterOnCall: number | null = null;
 	private writerCallSeq = 0;
+	/** A result write that does not go through `writer` (a field inserted whole from XML) counts as a writer call too. */
+	countResultWrite(): void {
+		if (++this.writerCallSeq === this.failWriterOnCall) throw new Error("Simulated writer failure");
+	}
 
 	readonly writer: ResultWriter;
 	readonly word: any;
@@ -556,6 +560,7 @@ class FakeRequestContext {
 	}
 
 	makeCcProxy(cc: CcModel, getField?: () => FieldModel | null): any {
+		let ooxmlField: FieldModel | null = null;
 		const proxy: any = {
 			isNullObject: false,
 			id: undefined as number | undefined,
@@ -570,6 +575,43 @@ class FakeRequestContext {
 				return proxy;
 			},
 			getRange: (loc = "Whole") => this.makeCcRangeProxy(cc, loc, getField),
+			// a whole field from WordprocessingML (format/ooxml.ts fieldToOoxml): begin, instrText, separate, result, end
+			insertOoxml: (ooxml: string, mode: string) => {
+				const instr = /<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/.exec(ooxml);
+				if (!instr) return this.makeCcRangeProxy(cc, "Content", getField).insertOoxml(ooxml, mode);
+				this.env.countResultWrite();
+				const unesc = (s: string) =>
+					s
+						.replace(/&quot;/g, '"')
+						.replace(/&apos;/g, "'")
+						.replace(/&lt;/g, "<")
+						.replace(/&gt;/g, ">")
+						.replace(/&amp;/g, "&");
+				const result = ooxml.slice(ooxml.indexOf('w:fldCharType="separate"'));
+				const paras = result
+					.split("</w:p>")
+					.map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => unesc(m[1]!)).join(""));
+				const text = paras.slice(0, Math.max(1, paras.length - 1)).join("\r");
+				const fm: FieldModel = { id: this.env.allocId(), type: "Addin", code: unesc(instr[1]!), runs: [{ t: text }], cc };
+				ooxmlField = fm;
+				this.enqueue(
+					`cc.insertOoxmlField#${fm.id}`,
+					() => {
+						const found = this.env.findCcLocation(cc.id);
+						if (!found) throw new Error("ContentControl missing on sync");
+						found.body.paragraphs[found.paraIdx]!.segments[found.segIdx] = { kind: "field", field: fm };
+					},
+					true,
+				);
+			},
+			fields: {
+				getFirst: () => {
+					if (!ooxmlField) throw new Error("fake: cc.fields.getFirst() before a field was inserted into this content control");
+					const fp = this.makeFieldProxy(ooxmlField, false);
+					fp.__bornAtSync = this.syncCount + 1;
+					return fp;
+				},
+			},
 			delete: (keepContent: boolean) => {
 				this.enqueue(
 					`cc.delete(${keepContent})`,
