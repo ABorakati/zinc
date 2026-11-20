@@ -464,7 +464,11 @@ export async function convertDocField(
 		noteFields.load("items");
 		await ctx.sync();
 
-		anchorRange = noteItem.reference.getRange("Before");
+		// Just before the note's reference mark, OUTSIDE it: a zero-width space inserted "Before" the mark is the anchor the
+		// new citation's content control wraps (its XML then replaces the space). A collapsed reference.getRange("Start")
+		// is not enough: in Word the content control then took the mark itself, and deleting the note took the citation with
+		// it. (reference.getRange("Before") throws InvalidArgument: "Before" is only for content controls.)
+		anchorRange = noteItem.reference.insertText("​", "After");
 		const remaining = (noteBodyRange.text ?? "").replace(cur.text, "").trim();
 		wholeNote = (noteFields.items ?? []).length <= 1 && remaining.length === 0;
 	}
@@ -500,6 +504,18 @@ export async function convertDocField(
 		cur.field.delete();
 	}
 	await ctx.sync();
+	// The text comparison above can miss (Word's note text has marks and spacing of its own): once the citation is gone, a
+	// note with nothing visible left is removed too, so no empty footnote number stays behind. A note with any of the
+	// user's text is kept.
+	if (fromStory !== "main" && !wholeNote && noteItem) {
+		const rest = noteItem.body.getRange();
+		rest.load("text");
+		await ctx.sync();
+		if (!/[^\s\u0000-\u001f​﻿]/.test(rest.text ?? "")) {
+			noteItem.delete();
+			await ctx.sync();
+		}
+	}
 
 	return { ok: true, story: targetStory };
 }

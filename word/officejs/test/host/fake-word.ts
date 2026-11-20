@@ -1052,6 +1052,8 @@ class FakeRequestContext {
 			__kind: "noteRef",
 			__note: note,
 			getRange: (loc = "Before") => this.makeNoteRefSubRange(note, loc),
+			// the zero-width anchor the host inserts before the mark: the fake keeps no text for it, only the position
+			insertText: (_text: string, loc: string) => this.makeNoteRefSubRange(note, loc === "After" ? "After" : "Before"),
 			compareLocationWith: (other: any) => {
 				const out = { value: "Unrelated" };
 				this.enqueue("noteRef.compareLocationWith", () => {
