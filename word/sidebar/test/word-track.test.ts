@@ -263,6 +263,38 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		await h.call("h.close");
 	}, 120_000);
 
+	type BiblStyle = {
+		firstLineIndent: number;
+		leftIndent: number;
+		lineSpacing: number;
+		spaceAfter: number;
+		tabs: number[];
+		paragraphs: { left: number; first: number; style: string }[];
+	};
+	test("the bibliography is formatted as Zotero does: the Bibliography style holds the format, set once; entries carry only the style", async () => {
+		await threeCitations(); // Vancouver: second-field-align flush
+		const s = await h.call<BiblStyle>("h.biblStyle");
+		// Zotero: indent and tab at 24 + 120 twips per label character, first line hanging by the same, single spacing
+		expect(s.leftIndent).toBeGreaterThan(0);
+		expect(s.firstLineIndent).toBeCloseTo(-s.leftIndent, 1);
+		expect(s.tabs).toEqual([s.leftIndent]);
+		const r = (((s.leftIndent * 20 - 24) % 120) + 120) % 120;
+		expect(Math.min(r, 120 - r)).toBeLessThan(0.05); // a whole number of label characters
+		expect(s.lineSpacing).toBe(12);
+		// no direct paragraph formatting: every entry shows the style's indents
+		expect(s.paragraphs.length).toBeGreaterThan(1);
+		for (const p of s.paragraphs) {
+			expect(p.left).toBeCloseTo(s.leftIndent, 1);
+			expect(p.first).toBeCloseTo(s.firstLineIndent, 1);
+		}
+		// the user's own change to the style is kept by later refreshes (bibliographyStyleHasBeenSet)
+		await h.call("h.biblStyle", { leftIndent: 50 });
+		await h.call("h.cursorEnd");
+		await app.insertCitation([picks[5]!]);
+		expect((await h.call<BiblStyle>("h.biblStyle")).leftIndent).toBe(50);
+		await h.call("h.close");
+	}, 120_000);
+
 	test("with Track Changes locked, no citation is changed: inserts and refreshes are refused with the reason", async () => {
 		await threeCitations();
 		const codes = (await info()).map((f) => f.code);

@@ -1,4 +1,5 @@
 import type { BibliographyFormat, ResultWriter } from "../contracts";
+import { applyBibliographyStyleFormat, type BibliographyStyleFormat } from "../format/bibliography";
 import { fieldToOoxml } from "../format/ooxml";
 import { resolveFieldRefs, wrapUnwrappedFields } from "./fields";
 import { bibliographyHasTrackedFormatting, ensureTrackingUnlocked, withTrackingOff } from "./tracking";
@@ -270,6 +271,8 @@ export interface SetItemSpec {
 	code?: string;
 	runs?: Run[];
 	format?: BibliographyFormat;
+	/** Zotero's Bibliography style values, sent once per document (see format/bibliography.ts applyBibliographyStyleFormat) */
+	styleFormat?: BibliographyStyleFormat;
 }
 
 function parseSetItem(raw: Record<string, unknown>): SetItemSpec {
@@ -278,7 +281,8 @@ function parseSetItem(raw: Record<string, unknown>): SetItemSpec {
 	if (code !== undefined && kindOf(code) === null) throw new Error("not a Zotero field code");
 	const runs = Array.isArray(raw.runs) && raw.runs.length > 0 ? (raw.runs as Run[]) : undefined;
 	const format = raw.format && typeof raw.format === "object" ? (raw.format as BibliographyFormat) : undefined;
-	return { ref: raw.ref as FieldRef, code, runs, format };
+	const styleFormat = raw.styleFormat && typeof raw.styleFormat === "object" ? (raw.styleFormat as BibliographyStyleFormat) : undefined;
+	return { ref: raw.ref as FieldRef, code, runs, format, styleFormat };
 }
 
 export async function setDocFields(
@@ -358,6 +362,9 @@ export async function setDocFields(
 					tracked,
 				);
 			}
+			// Zotero's Bibliography style values, once per document (still with Track Changes off)
+			const sf = specs.find((s) => s.styleFormat)?.styleFormat;
+			if (sf) await applyBibliographyStyleFormat(ctx, sf);
 		},
 		changeTrackingMode,
 	);

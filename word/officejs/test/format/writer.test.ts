@@ -179,7 +179,7 @@ describe('queueResult — strategy (b): single insertOoxml("Replace")', () => {
 });
 
 describe("queueBibliographyFormat", () => {
-	test("applies built-in Bibliography style, hanging indent, spaceAfter, and lineSpacing without syncing", () => {
+	test("applies the built-in Bibliography style and no direct indents or spacing (Zotero: they belong to the style), without syncing", () => {
 		const { context, field, commands } = createFakeField();
 		resultWriter.queueBibliographyFormat(field as unknown as Word.Field, {
 			hanging: true,
@@ -192,25 +192,17 @@ describe("queueBibliographyFormat", () => {
 			{ kind: "getStyles" },
 			{ kind: "getStyleByNameOrNull", name: "Bibliography" },
 			{ kind: "setStyleBuiltIn", target: "field.result", style: "Bibliography" },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "leftIndent", value: 36 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "firstLineIndent", value: -36 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "spaceAfter", value: 12 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "lineSpacing", value: 18 },
 		]);
 	});
 
-	test("applies hanging indent for secondFieldAlign and supports entrySpacing = 0", () => {
+	test("puts no direct paragraph formatting on the result for secondFieldAlign either", () => {
 		const { field, commands } = createFakeField();
 		resultWriter.queueBibliographyFormat(field as unknown as Word.Field, {
 			secondFieldAlign: true,
 			entrySpacing: 0,
 		});
 
-		expect(commands.filter((c) => c.kind === "setParagraphFormat")).toEqual([
-			{ kind: "setParagraphFormat", target: "field.result", prop: "leftIndent", value: 36 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "firstLineIndent", value: -36 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "spaceAfter", value: 0 },
-		]);
+		expect(commands.filter((c) => c.kind === "setParagraphFormat")).toEqual([]);
 	});
 
 	test("creates missing Bibliography style once (Word on the web) and assigns range.style instead of styleBuiltIn", () => {
@@ -223,8 +215,6 @@ describe("queueBibliographyFormat", () => {
 			{ kind: "getStyleByNameOrNull", name: "Bibliography" },
 			{ kind: "addStyle", name: "Bibliography", styleType: "Paragraph" },
 			{ kind: "setStyle", target: "field.result", style: "Bibliography" },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "leftIndent", value: 36 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "firstLineIndent", value: -36 },
 		]);
 
 		// A second bibliography field in the same document reuses the cached custom style without calling addStyle again.
@@ -245,8 +235,6 @@ describe("queueBibliographyFormat", () => {
 		expect(env1.commands).toEqual([
 			{ kind: "addStyle", name: "Bibliography", styleType: "Paragraph" },
 			{ kind: "setStyle", target: "field.result", style: "Bibliography" },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "leftIndent", value: 36 },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "firstLineIndent", value: -36 },
 		]);
 
 		// 2. Standalone async ensureBibliographyStyle preflight
@@ -257,10 +245,7 @@ describe("queueBibliographyFormat", () => {
 		env2.commands.length = 0;
 
 		resultWriter.queueBibliographyFormat(env2.field as unknown as Word.Field, { entrySpacing: 2 });
-		expect(env2.commands).toEqual([
-			{ kind: "setStyle", target: "field.result", style: "Bibliography" },
-			{ kind: "setParagraphFormat", target: "field.result", prop: "spaceAfter", value: 24 },
-		]);
+		expect(env2.commands).toEqual([{ kind: "setStyle", target: "field.result", style: "Bibliography" }]);
 
 		// 3. Without preflight on strict unloaded proxy: falls back cleanly without throwing PropertyNotLoaded
 		const env3 = createFakeField({ styles: [{ name: "Bibliography", builtIn: true }], strictUnloadedStyle: true });

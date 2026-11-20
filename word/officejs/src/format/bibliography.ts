@@ -113,29 +113,53 @@ function resolveOrCreateStyleSync(doc: any, overrideKind?: BibliographyStyleKind
 }
 
 /**
- * Queue the `"Bibliography"` paragraph style, hanging indent (`leftIndent = 36`, `firstLineIndent = -36`), entry spacing
- * (`spaceAfter = entrySpacing * 12` pt), and line spacing (`lineSpacing * 12` pt) onto `field.result`. Does not call `sync()`.
+ * Queue the `"Bibliography"` paragraph style onto `field.result`. Does not call `sync()`. Like Zotero, the bibliography's
+ * paragraphs get the style and nothing else: the indents, spacing and tab stops belong to the style itself, set once per
+ * document (`applyBibliographyStyleFormat`). `fmt` is accepted for the contract and not applied as direct formatting.
  */
-export function queueBibliographyFormat(field: Word.Field, fmt: BibliographyFormat, overrideKind?: BibliographyStyleKind): void {
+export function queueBibliographyFormat(field: Word.Field, _fmt: BibliographyFormat, overrideKind?: BibliographyStyleKind): void {
 	const res = field.result;
 	const styleName = bibliographyStyleName();
 	const kind = resolveOrCreateStyleSync(docOfField(field), overrideKind);
 
 	if (kind === "custom") res.style = styleName;
 	else res.styleBuiltIn = styleName;
+}
 
-	if (!fmt) return;
-	const pf = res.paragraphFormat;
-	if (!pf) return;
+/** Zotero's values for the Bibliography style, in twips (core/src/cite/docformat.ts bibliographyStyleFormat). */
+export interface BibliographyStyleFormat {
+	firstLineIndent: number;
+	indent: number;
+	lineSpacing: number;
+	entrySpacing: number;
+	tabStops: number[];
+}
 
-	if (fmt.hanging || fmt.secondFieldAlign) {
-		pf.leftIndent = HANGING_INDENT_PT;
-		pf.firstLineIndent = -HANGING_INDENT_PT;
+/**
+ * Zotero's `setBibliographyStyle` for Office.js: first-line and left indent, line spacing and spacing after on the document's
+ * "Bibliography" style (`Word.Style.paragraphFormat`, WordApi 1.5), making the style when the document has none. Run with Track
+ * Changes off. Tab stops cannot be set: Office.js has no tab-stop API (OfficeDev/office-js#3585), as Zotero's own Office.js
+ * add-in also found; for numbered styles the Windows add-in and Zotero add one at the indent.
+ */
+export async function applyBibliographyStyleFormat(context: Word.RequestContext, sf: BibliographyStyleFormat): Promise<void> {
+	const doc = context.document;
+	const name = bibliographyStyleName();
+	let style = doc.getStyles().getByNameOrNullObject(name);
+	style.load("builtIn");
+	await context.sync();
+	if (style.isNullObject) {
+		doc.addStyle(name, paragraphStyleType());
+		docStyleKind.set(doc, "custom");
+		await context.sync();
+		style = doc.getStyles().getByNameOrNullObject(name);
+		style.load("builtIn");
+		await context.sync();
+		if (style.isNullObject) return;
 	}
-	if (fmt.entrySpacing !== undefined && Number.isFinite(fmt.entrySpacing) && fmt.entrySpacing >= 0) {
-		pf.spaceAfter = fmt.entrySpacing * POINTS_PER_LINE;
-	}
-	if (fmt.lineSpacing !== undefined && Number.isFinite(fmt.lineSpacing) && fmt.lineSpacing > 0) {
-		pf.lineSpacing = fmt.lineSpacing * POINTS_PER_LINE;
-	}
+	const pf = style.paragraphFormat;
+	pf.firstLineIndent = sf.firstLineIndent / 20;
+	pf.leftIndent = sf.indent / 20;
+	pf.lineSpacing = sf.lineSpacing / 20;
+	pf.spaceAfter = sf.entrySpacing / 20;
+	await context.sync();
 }

@@ -111,7 +111,50 @@ export interface BibliographyOut {
 	hanging: boolean;
 	secondFieldAlign: boolean;
 	entrySpacing: number;
+	/** the Bibliography paragraph style as Zotero sets it (see bibliographyStyleFormat) */
+	styleFormat: BibliographyStyleFormat;
 }
+
+/**
+ * The paragraph format Zotero gives a document's "Bibliography" style, in twips (1/20 pt), exactly as Zotero computes it
+ * (Zotero.Cite.getBibliographyFormatParameters, chrome/content/zotero/xpcom/cite.js) and applies it once per document
+ * (setBibliographyStyle in the word-processor plugins; bibliographyStyleHasBeenSet in the document preferences).
+ */
+export interface BibliographyStyleFormat {
+	firstLineIndent: number;
+	indent: number;
+	lineSpacing: number;
+	entrySpacing: number;
+	tabStops: number[];
+}
+
+/** citeproc's bibliography parameters -> Zotero's Bibliography style format (port of getBibliographyFormatParameters). */
+export function bibliographyStyleFormat(params: Record<string, unknown>): BibliographyStyleFormat {
+	const num = (v: unknown, d: number) =>
+		typeof v === "number" && Number.isFinite(v) ? v : Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d;
+	const f: BibliographyStyleFormat = {
+		tabStops: [],
+		indent: 0,
+		firstLineIndent: 0,
+		lineSpacing: 240 * num(params.linespacing, 1),
+		entrySpacing: 240 * num(params.entryspacing, 1),
+	};
+	if (params.hangingindent) {
+		f.indent = 720; // 720 twips = 0.5 in
+		f.firstLineIndent = -720;
+	} else if (params["second-field-align"]) {
+		// Zotero: "works for first fields that look like [1] and 1."
+		const alignAt = 24 + num(params.maxoffset, 0) * 120;
+		f.firstLineIndent = -alignAt;
+		if (params["second-field-align"] === "margin") f.tabStops = [0];
+		else {
+			f.indent = alignAt;
+			f.tabStops = [alignAt];
+		}
+	}
+	return f;
+}
+
 export interface FormatResult {
 	citations: Map<string, CitationOut>;
 	bibliography: BibliographyOut | null;
@@ -332,6 +375,7 @@ export class CslFormatter {
 			hanging: !!params.hangingindent,
 			secondFieldAlign: !!params["second-field-align"],
 			entrySpacing: Number(params.entryspacing ?? 1),
+			styleFormat: bibliographyStyleFormat(params as Record<string, unknown>),
 		};
 	}
 }

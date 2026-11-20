@@ -205,6 +205,25 @@ internal static class Program
                     f.Code.Text = " " + Json.Str(p, "code").Trim() + " ";
                     return Json.Map("ok", true);
                 }
+            case "h.biblStyle":
+                {
+                    // the document's Bibliography style (indents, spacing, tab stops, in points) and each bibliography paragraph's own
+                    // left indent; p.leftIndent changes the style first (the user's own customisation)
+                    dynamic doc = _app.ActiveDocument;
+                    dynamic st; try { st = doc.Styles.Item(-266); } catch { st = doc.Styles.Item("Bibliography"); }
+                    dynamic pf = st.ParagraphFormat;
+                    if (p.ContainsKey("leftIndent")) pf.LeftIndent = (float)Json.Int(p, "leftIndent");
+                    var tabs = new List<object>();
+                    for (int i = 1; i <= (int)pf.TabStops.Count; i++) tabs.Add((double)pf.TabStops.Item(i).Position);
+                    var paras = new List<object>();
+                    foreach (dynamic f in doc.Fields)
+                    {
+                        if (!((string)f.Code.Text).Contains("ZOTERO_BIBL")) continue;
+                        foreach (dynamic para in f.Result.Paragraphs) paras.Add(Json.Map("left", (double)para.LeftIndent, "first", (double)para.FirstLineIndent, "style", (string)para.Style.NameLocal));
+                    }
+                    return Json.Map("firstLineIndent", (double)pf.FirstLineIndent, "leftIndent", (double)pf.LeftIndent, "lineSpacing", (double)pf.LineSpacing,
+                        "spaceAfter", (double)pf.SpaceAfter, "tabs", tabs, "paragraphs", paras);
+                }
             case "h.biblIndentLast":
                 {
                     // indent the bibliography's last paragraph (the one its field ends in) with Track Changes as it is set: what

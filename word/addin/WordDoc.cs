@@ -857,7 +857,7 @@ namespace ZoteroNext.Word
                     catch (Exception e) { Log.Error("could not check the bibliography for tracked formatting; rewriting it in place", e); }
                     if (rebuild) RebuildBibliography(f, code, runs);
                     else { if (code != null) f.Code.Text = Wrap(code); SetResult(f, runs); }
-                    ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
+                    ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")), Json.Obj(Json.Get(p, "styleFormat")));
                     return;
                 }
                 if (code != null) f.Code.Text = Wrap(code);
@@ -891,22 +891,51 @@ namespace ZoteroNext.Word
             return Json.Map("ok", true);
         }
 
-        void ApplyBibliographyFormat(dynamic f, Dictionary<string, object> fmt)
+        // ---------------------------------------------------------------- the bibliography's format, as Zotero sets it
+        //
+        // Zotero gives the bibliography's paragraphs the "Bibliography" style and nothing else; the indents, line spacing,
+        // spacing after and tab stops live in that style, set once per document (setBibliographyStyle in Zotero's Word plugin,
+        // bibliographyStyleHasBeenSet in the document preferences), so the user's own later changes to the style are kept.
+        // The sidebar sends styleFormat (Zotero's values, in twips) only on that first write. Run inside Untracked.
+
+        const int wdStyleBibliography = -266, wdStyleTypeParagraph = 1, wdAlignTabLeft = 0, wdTabLeaderSpaces = 0;
+
+        void ApplyBibliographyFormat(dynamic f, Dictionary<string, object> fmt, Dictionary<string, object> styleFormat = null)
         {
+            dynamic d = Doc;
+            dynamic style = BibliographyStyle(d);
+            if (styleFormat != null && style != null) SetBibliographyStyleFormat(style, styleFormat);
             dynamic res = f.Result;
-            try { res.Style = "Bibliography"; } catch { /* style not present in this template: keep Normal */ }
-            res = f.Result;
+            try { if (style != null) res.Style = style; } catch (Exception e) { Log.Error("could not give the bibliography its style", e); }
+            // no direct paragraph formatting (older add-ins put a fixed hanging indent and spacing on every entry): the style's
+            // format shows through, as in a document Zotero wrote
+            try { ((dynamic)f.Result).Paragraphs.Reset(); } catch { }
+        }
+
+        /// <summary>The document's Bibliography paragraph style, made when the template has none (as Zotero does).</summary>
+        static dynamic BibliographyStyle(dynamic d)
+        {
+            try { return d.Styles.Item(wdStyleBibliography); } catch { }
+            try { return d.Styles.Item("Bibliography"); } catch { }
+            try { return d.Styles.Add("Bibliography", wdStyleTypeParagraph); } catch (Exception e) { Log.Error("could not make the Bibliography style", e); }
+            return null;
+        }
+
+        /// <summary>Zotero's setBibliographyStyle: indents, line spacing, spacing after and tab stops (twips) on the style.</summary>
+        static void SetBibliographyStyleFormat(dynamic style, Dictionary<string, object> sf)
+        {
             try
             {
-                var pf = res.ParagraphFormat;
-                if (fmt != null)
-                {
-                    if (Json.Bool(fmt, "hanging") || Json.Bool(fmt, "secondFieldAlign")) { pf.LeftIndent = 36; pf.FirstLineIndent = -36; }
-                    int es = Json.Int(fmt, "entrySpacing", -1);
-                    if (es >= 0) pf.SpaceAfter = es * 12;
-                }
+                dynamic pf = style.ParagraphFormat;
+                pf.FirstLineIndent = Json.Int(sf, "firstLineIndent") / 20f;
+                pf.LeftIndent = Json.Int(sf, "indent") / 20f;
+                pf.LineSpacing = Json.Int(sf, "lineSpacing", 240) / 20f;
+                pf.SpaceAfter = Json.Int(sf, "entrySpacing", 240) / 20f;
+                dynamic tabs = pf.TabStops;
+                tabs.ClearAll();
+                foreach (var t in Json.Arr(Json.Get(sf, "tabStops"))) tabs.Add(Convert.ToSingle(t) / 20f, wdAlignTabLeft, wdTabLeaderSpaces);
             }
-            catch { }
+            catch (Exception e) { Log.Error("could not set the Bibliography style's format", e); }
         }
 
         // ---------------------------------------------------------------- cursor

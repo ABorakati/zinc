@@ -48,3 +48,14 @@ The coordinating session should verify on Word for Windows, Word for Mac, and Wo
    - **Zero-extra-sync integration**: in `src/host`, whenever a write batch (`doc.insert`, `doc.set`, `doc.setMany`) includes a `"bibl"` field, call `queueLoadBibliographyStyle(context)` (exported from `src/format`) right before the pre-write `context.sync()` that switches `changeTrackingMode` to `"Off"`. `queueBibliographyFormat` will then see `isNullObject` synchronously, queue `document.addStyle("Bibliography", "Paragraph")` once if missing, and assign `result.style = "Bibliography"` in the write batch. (Alternatively, `await ensureBibliographyStyle(context)` runs it as a self-contained preflight, or `ResultWriter` in `src/contracts.ts` could gain an optional `prepareBibliography?(context: Word.RequestContext): Promise<void>`.)
 2. **Forwarding `lineSpacing` from `core` and `word/sidebar`**:
    - `BibliographyFormat` in `src/contracts.ts` defines `lineSpacing?: number`, and `src/format` implements `lineSpacing * 12` pt (`w:line = lineSpacing * 240`). Currently `BibliographyOut` in `core/src/cite/docformat.ts` and `word/sidebar/src/app.ts` only forward `hanging`, `secondFieldAlign`, and `entrySpacing`; forwarding `params.linespacing` from `citeproc` will enable `lineSpacing` end-to-end.
+
+## Bibliography format: as Zotero (2026-11-20)
+
+Zotero gives the bibliography's paragraphs the "Bibliography" style only and puts the format on the style itself, once per
+document (`bibliographyStyleHasBeenSet`): `queueBibliographyFormat` now sets the style only, and `applyBibliographyStyleFormat`
+sets Zotero's values (core `bibliographyStyleFormat`, sent by the sidebar as `styleFormat`) on the style. Compared in Word with the
+Windows add-in on the same scenario, everything matches except two things Office.js cannot express:
+- **Tab stops** (numbered styles: one at the indent): `Word.ParagraphFormat` has no tab stops, even in the preview API. Rendering is
+  unaffected: Word uses a hanging indent as an implicit tab stop, so labels and text line up the same.
+- **Line spacing rule**: `lineSpacing` writes "at least N pt" (`w:lineRule="atLeast"`), Zotero writes "single/multiple"
+  (`auto`). For text up to the line height it looks the same.
