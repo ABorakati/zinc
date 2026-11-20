@@ -170,6 +170,14 @@ internal static class Program
                     if (p.ContainsKey("author")) _app.UserName = Json.Str(p, "author");
                     return Json.Map("on", (bool)_app.ActiveDocument.TrackRevisions);
                 }
+            case "h.lockTracking":
+                {
+                    // Review > Track Changes > Lock Tracking: protection wdAllowOnlyRevisions (0) with a password; on:false unlocks
+                    dynamic doc = _app.ActiveDocument;
+                    string pw = Json.Str(p, "password", "test");
+                    if (Json.Bool(p, "on")) doc.Protect(0, false, pw); else doc.Unprotect(pw);
+                    return Json.Map("protection", (int)doc.ProtectionType, "track", (bool)doc.TrackRevisions);
+                }
             case "h.revisions":
                 {
                     // every revision in the main story: type 1 = insert, 2 = delete; text cut to 120 chars

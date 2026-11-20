@@ -161,7 +161,7 @@ namespace ZoteroNext.Word
             dynamic d = Doc;
             var prefs = ReadPrefsXml(d);
             return Json.Map("hasDoc", true, "name", (string)d.Name, "fullName", (string)d.FullName, "readOnly", (bool)d.ReadOnly,
-                "prefsXml", prefs, "protection", (int)d.ProtectionType);
+                "prefsXml", prefs, "protection", (int)d.ProtectionType, "trackingLocked", TrackingLocked(d));
         }
 
         // ---------------------------------------------------------------- fields
@@ -194,13 +194,52 @@ namespace ZoteroNext.Word
 
         const int wdRevisionDelete = 2;
 
-        /// <summary>Run act with the document's Track Changes off, restoring the user's setting afterwards (also on error).</summary>
+        // ---------------------------------------------------------------- locked tracking
+        //
+        // Review > Track Changes > Lock Tracking (a password; journal production files often have it) protects a document
+        // with wdAllowOnlyRevisions: Track Changes cannot be switched off. Every rewrite of an existing field would then be
+        // recorded, field codes included: the old JSON stays as a tracked deletion beside the new, so the code reads as two
+        // glued together and stops parsing, and a tracked formatting change in the bibliography makes Word's tracked-change
+        // list loop. So while tracking is locked the add-in changes no citation at all: every write says why and does
+        // nothing, and the sidebar shows the lock. The user's own edits are untouched; unlocking (with the password) or
+        // working on a copy without the lock lets Zinc update the citations again.
+
+        const int wdAllowOnlyRevisions = 0;
+
+        public const string TrackingLockedMessage =
+            "Track Changes is locked in this document (Review > Track Changes > Lock Tracking), so Zinc cannot switch it off " +
+            "while it updates citations, and updating them with tracking on would record every field code as a tracked change " +
+            "and damage the citations. Zinc has changed nothing. Unlock tracking (it needs the password), or work on a copy " +
+            "without the lock.";
+
+        static bool TrackingLocked(dynamic d)
+        {
+            try { return (int)d.ProtectionType == wdAllowOnlyRevisions; } catch { return false; }
+        }
+
+        /// <summary>Refuse a change to the citations, before anything is written, while Track Changes is locked.</summary>
+        void EnsureTrackingUnlocked()
+        {
+            if (TrackingLocked(Doc)) throw new InvalidOperationException(TrackingLockedMessage);
+        }
+
+        /// <summary>
+        /// Run act with the document's Track Changes off, restoring the user's setting afterwards (also on error). When Word
+        /// will not switch it off (locked tracking, however that came about), act is not run at all: a write made with
+        /// tracking on damages field codes (see above).
+        /// </summary>
         static void Untracked(object doc, Action act)
         {
             dynamic d = doc;
             bool was = false;
             try { was = (bool)d.TrackRevisions; } catch { }
-            if (was) { try { d.TrackRevisions = false; } catch { was = false; } }
+            if (was)
+            {
+                try { d.TrackRevisions = false; } catch { }
+                bool still = true;
+                try { still = (bool)d.TrackRevisions; } catch { }
+                if (still) throw new InvalidOperationException(TrackingLockedMessage);
+            }
             try { act(); }
             finally { if (was) { try { d.TrackRevisions = true; } catch (Exception e) { Log.Error("could not switch Track Changes back on", e); } } }
         }
@@ -574,6 +613,7 @@ namespace ZoteroNext.Word
         /// </summary>
         public object InsertField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic d = Doc;
             string kind = Json.Str(p, "kind", "item");
             string code = Json.Str(p, "code");
@@ -668,6 +708,7 @@ namespace ZoteroNext.Word
         /// </summary>
         public object ConvertField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic d = Doc;
             var r = Json.Obj(Json.Get(p, "ref"));
             string target = Json.Str(p, "target");
@@ -748,6 +789,7 @@ namespace ZoteroNext.Word
         /// an earlier tracked rewrite left as old + new.</summary>
         public object SetField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             string code = Json.Str(p, "code");
             if (code != null && KindOf(code) == null) throw new ArgumentException("not a Zotero field code");
@@ -764,6 +806,7 @@ namespace ZoteroNext.Word
         /// </summary>
         public object SetFields(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             var items = Json.Arr(Json.Get(p, "items")).Select(o => Json.Obj(o)).ToList();
             var wanted = new Dictionary<string, HashSet<int>>();
             foreach (var it in items)
@@ -825,6 +868,7 @@ namespace ZoteroNext.Word
 
         public object DeleteField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             f.Delete();   // removes the field and its result
             return Json.Map("ok", true);
@@ -832,6 +876,7 @@ namespace ZoteroNext.Word
 
         public object RemoveFieldCode(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             f.Unlink();   // keep the result as plain text (what Zotero's "Unlink citations" does)
             return Json.Map("ok", true);

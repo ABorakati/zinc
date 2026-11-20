@@ -369,11 +369,31 @@ export class App {
 
 	// ---- document --------------------------------------------------------------------------------------------
 
-	async docState(): Promise<{ hasDoc: boolean; name?: string; fullName?: string; prefs: DocPrefs | null; readOnly?: boolean }> {
-		const s = await this.host.call<{ hasDoc: boolean; name?: string; fullName?: string; prefsXml?: string | null; readOnly?: boolean }>(
-			"doc.state",
-		);
-		return { hasDoc: s.hasDoc, name: s.name, fullName: s.fullName, prefs: parsePrefsXml(s.prefsXml), readOnly: s.readOnly };
+	/** trackingLocked: Track Changes is locked (Lock Tracking), so the add-in refuses every change to the citations */
+	async docState(): Promise<{
+		hasDoc: boolean;
+		name?: string;
+		fullName?: string;
+		prefs: DocPrefs | null;
+		readOnly?: boolean;
+		trackingLocked?: boolean;
+	}> {
+		const s = await this.host.call<{
+			hasDoc: boolean;
+			name?: string;
+			fullName?: string;
+			prefsXml?: string | null;
+			readOnly?: boolean;
+			trackingLocked?: boolean;
+		}>("doc.state");
+		return {
+			hasDoc: s.hasDoc,
+			name: s.name,
+			fullName: s.fullName,
+			prefs: parsePrefsXml(s.prefsXml),
+			readOnly: s.readOnly,
+			trackingLocked: !!s.trackingLocked,
+		};
 	}
 
 	/**

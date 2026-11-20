@@ -651,3 +651,21 @@ describe("failure safety (split, edit URIs)", () => {
 		expect(res!.picks[0]!.uris).toEqual(["http://zotero.org/groups/777/items/AAAA1111"]);
 	});
 });
+
+describe("a document with locked Track Changes", () => {
+	test("the state reports the lock, and a citation is refused with the reason, nothing written", async () => {
+		const host = createMockHost({
+			items: structuredClone(SAMPLE_ITEMS),
+			userId: "5106252",
+			trackingLocked: true,
+			styleXml: async (id) => read(`${id}.csl`),
+			localeXml: async (l) => (l === "en-US" ? read("locales-en-US.xml") : null),
+		});
+		const app = new App(host);
+		await app.init();
+		expect((await app.docState()).trackingLocked).toBe(true);
+		const [a] = await pickAll(app, "AAAA1111");
+		await expect(app.insertCitation([a!])).rejects.toThrow(/Track Changes is locked/);
+		expect((host as any).fields.length).toBe(0);
+	});
+});

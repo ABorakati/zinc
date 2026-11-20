@@ -263,6 +263,27 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		await h.call("h.close");
 	}, 120_000);
 
+	test("with Track Changes locked, no citation is changed: inserts and refreshes are refused with the reason", async () => {
+		await threeCitations();
+		const codes = (await info()).map((f) => f.code);
+		const locked = await h.call<{ protection: number; track: boolean }>("h.lockTracking", { on: true });
+		expect(locked).toEqual({ protection: 0, track: true });
+		expect((await app.docState()).trackingLocked).toBe(true);
+		await h.call("h.cursor", { start: 5 });
+		await expect(app.insertCitation([picks[0]!])).rejects.toThrow(/Track Changes is locked/);
+		await h.call("h.biblIndentLast"); // a tracked change of the user's own, so the bibliography would want a rewrite
+		await expect(app.refreshAll()).rejects.toThrow(/Track Changes is locked/);
+		// nothing of ours was written: the codes are as they were, and the one tracked change is the user's
+		expect((await info()).map((f) => f.code)).toEqual(codes);
+		expect((await revisions()).every((r) => !/CSL_CITATION|ZOTERO_/.test(r.text))).toBe(true);
+		// unlocked again, Zinc works as before (and cleans the bibliography)
+		await h.call("h.lockTracking", { on: false });
+		expect((await app.docState()).trackingLocked).toBe(false);
+		await app.refreshAll();
+		expect(formatting(await revisions())).toEqual([]);
+		await h.call("h.close");
+	}, 120_000);
+
 	test("the cursor watcher stays out of Word's way while the user types, and reads once the cursor rests", async () => {
 		await threeCitations();
 		await h.call("h.cursorEnd");

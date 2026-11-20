@@ -55,6 +55,8 @@ let searchSeq = 0;
 let cursorView: CitationView | null = null;
 let docName = "";
 let docStyle = "";
+/** Track Changes is locked in the document (Lock Tracking): the add-in refuses every change to the citations */
+let docLocked = false;
 
 // ---------------------------------------------------------------- small UI helpers
 
@@ -125,12 +127,20 @@ function renderDocLine() {
 	const el = $("docline");
 	el.textContent = docName ? `${docName}${docStyle ? "  ·  " + docStyle : ""}` : "No document open";
 	el.title = el.textContent;
+	if (docName && docLocked) {
+		el.textContent += "  ·  Track Changes locked: citations can't be changed";
+		el.title =
+			"Track Changes is locked in this document (Review > Track Changes > Lock Tracking). Zinc cannot switch it off while it " +
+			"updates citations, and updating them with tracking on would damage the field codes, so it changes no citation. " +
+			"Unlock tracking (it needs the password), or work on a copy without the lock.";
+	}
 }
 
 async function refreshDocState() {
 	try {
 		const st = await app.docState();
 		docName = st.hasDoc ? (st.name ?? "") : "";
+		docLocked = !!st.trackingLocked;
 		docStyle = st.prefs
 			? styleUrlToId(st.prefs.styleId) + (st.prefs.locale ? " (" + st.prefs.locale + ")" : "")
 			: st.hasDoc
