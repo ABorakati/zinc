@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp
+	xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+	xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+	xsi:type="TaskPaneApp"
+>
+	<Id>c8d4f2a1-7b3e-4e9a-8c51-2f6a90e3d417</Id>
+	<Version>1.0.0.0</Version>
+	<ProviderName>Zinc</ProviderName>
+	<DefaultLocale>en-US</DefaultLocale>
+	<DisplayName DefaultValue="Zinc" />
+	<Description DefaultValue="Insert and format Zotero-compatible citations and bibliographies from your Zinc library." />
+	<IconUrl DefaultValue="https://localhost:44321/icon-32.png" />
+	<HighResolutionIconUrl DefaultValue="https://localhost:44321/icon-64.png" />
+	<SupportUrl DefaultValue="https://aborakati.github.io/zinc/" />
+	<AppDomains>
+		<AppDomain>https://aborakati.github.io</AppDomain>
+	</AppDomains>
+	<Hosts>
+		<Host Name="Document" />
+	</Hosts>
+	<Requirements>
+		<Sets DefaultMinVersion="1.5">
+			<Set Name="WordApi" MinVersion="1.5" />
+		</Sets>
+	</Requirements>
+	<DefaultSettings>
+		<SourceLocation DefaultValue="https://localhost:44321/taskpane.html" />
+	</DefaultSettings>
+	<Permissions>ReadWriteDocument</Permissions>
+	<VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+		<Hosts>
+			<Host xsi:type="Document">
+				<DesktopFormFactor>
+					<GetStarted>
+						<Title resid="Zinc.GetStarted.Title" />
+						<Description resid="Zinc.GetStarted.Description" />
+						<LearnMoreUrl resid="Zinc.Support.Url" />
+					</GetStarted>
+					<ExtensionPoint xsi:type="PrimaryCommandSurface">
+						<OfficeTab id="TabHome">
+							<Group id="Zinc.CitationsGroup">
+								<Label resid="Zinc.GroupLabel" />
+								<Icon>
+									<bt:Image size="16" resid="Zinc.Icon.16" />
+									<bt:Image size="32" resid="Zinc.Icon.32" />
+									<bt:Image size="80" resid="Zinc.Icon.80" />
+								</Icon>
+								<Control xsi:type="Button" id="Zinc.TaskpaneButton">
+									<Label resid="Zinc.TaskpaneButton.Label" />
+									<Supertip>
+										<Title resid="Zinc.TaskpaneButton.Label" />
+										<Description resid="Zinc.TaskpaneButton.Tooltip" />
+									</Supertip>
+									<Icon>
+										<bt:Image size="16" resid="Zinc.Icon.16" />
+										<bt:Image size="32" resid="Zinc.Icon.32" />
+										<bt:Image size="80" resid="Zinc.Icon.80" />
+									</Icon>
+									<Action xsi:type="ShowTaskpane">
+										<TaskpaneId>Office.AutoShowTaskpaneWithDocument</TaskpaneId>
+										<SourceLocation resid="Zinc.Taskpane.Url" />
+									</Action>
+								</Control>
+							</Group>
+						</OfficeTab>
+					</ExtensionPoint>
+				</DesktopFormFactor>
+			</Host>
+		</Hosts>
+		<Resources>
+			<bt:Images>
+				<bt:Image id="Zinc.Icon.16" DefaultValue="https://localhost:44321/icon-16.png" />
+				<bt:Image id="Zinc.Icon.32" DefaultValue="https://localhost:44321/icon-32.png" />
+				<bt:Image id="Zinc.Icon.80" DefaultValue="https://localhost:44321/icon-80.png" />
+			</bt:Images>
+			<bt:Urls>
+				<bt:Url id="Zinc.Taskpane.Url" DefaultValue="https://localhost:44321/taskpane.html" />
+				<bt:Url id="Zinc.Support.Url" DefaultValue="https://aborakati.github.io/zinc/" />
+			</bt:Urls>
+			<bt:ShortStrings>
+				<bt:String id="Zinc.GroupLabel" DefaultValue="Citations" />
+				<bt:String id="Zinc.TaskpaneButton.Label" DefaultValue="Zinc" />
+				<bt:String id="Zinc.GetStarted.Title" DefaultValue="Cite with Zinc" />
+			</bt:ShortStrings>
+			<bt:LongStrings>
+				<bt:String
+					id="Zinc.TaskpaneButton.Tooltip"
+					DefaultValue="Open the Zinc sidebar to insert citations and format the bibliography."
+				/>
+				<bt:String
+					id="Zinc.GetStarted.Description"
+					DefaultValue="Zinc loaded. Click the Zinc button on the Home tab to open the citation sidebar."
+				/>
+			</bt:LongStrings>
+		</Resources>
+	</VersionOverrides>
+</OfficeApp>
