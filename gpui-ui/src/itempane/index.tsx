@@ -15,7 +15,7 @@ import { NoteEditor } from "./Notes";
 import { NoteClip } from "./RichNote";
 import { richNotesAvailable } from "../webview/notes";
 import { boundsOf } from "../ui/core";
-import { SectionGap, Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx } from "./kit";
+import { ListViewHeight, SectionGap, Skeleton, setCollapsed, setGoTo, setLabelW, t, tok, tx } from "./kit";
 import { PaneContext, usePane, viewPaneModel } from "./model";
 import { firstLine } from "./util";
 import { rightLayout, visible } from "../shell/sidebarLayout";
@@ -64,6 +64,7 @@ function Body(): JSX.Element {
 	const gp = useGpuix();
 	const d = () => pane.detail()!;
 	const [active, setActive] = createSignal(visible(rightLayout.layout())[0] ?? "info");
+	const [listH, setListH] = createSignal(0);
 	let list: HostElement | undefined;
 	let listBox: HostElement | undefined; // the list's painted area (a <virtual-list> itself reports no bounds)
 
@@ -188,8 +189,9 @@ function Body(): JSX.Element {
 					listBox = el;
 				}}
 				onLayout={(e) => {
-					const w = (e as { width?: number }).width;
+					const { width: w, height: h } = e as { width?: number; height?: number };
 					if (w) setLabelW(Math.min(112, Math.max(64, Math.round(0.28 * (w - 40)))));
+					if (h && Math.abs(h - listH()) >= 1) setListH(h);
 				}}
 				style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0, width: "100%", display: "flex", flexDirection: "column" }}
 			>
@@ -210,7 +212,9 @@ function Body(): JSX.Element {
 							scrollbarWidth: 6,
 						}}
 					>
-						<For each={entries()}>{(e) => e.render()}</For>
+						<ListViewHeight.Provider value={listH}>
+							<For each={entries()}>{(e) => e.render()}</For>
+						</ListViewHeight.Provider>
 					</virtual-list>
 				</NoteClip.Provider>
 			</div>

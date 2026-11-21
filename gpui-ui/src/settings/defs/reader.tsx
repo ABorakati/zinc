@@ -119,6 +119,14 @@ registerSettings([
 		),
 	},
 	{
+		id: "reader.previewFitWidth",
+		section: "reader",
+		label: "Fit attachment preview to width",
+		description: "The page preview in the item pane's Attachments section fills the pane's width, instead of showing small pages.",
+		keywords: ["fit width", "item pane", "attachment", "preview", "thumbnail", "page size", "zoom"],
+		control: () => <Toggle checked={readerPrefs.previewFitWidth()} onChange={readerPrefs.setPreviewFitWidth} />,
+	},
+	{
 		id: "reader.reset",
 		section: "reader",
 		label: "Restore reader defaults",

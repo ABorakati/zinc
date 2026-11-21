@@ -1,7 +1,7 @@
 // Item sections share the library's item model, whether the item pane is visible or not.
-import { createEffect, createMemo, createRoot, For, Show, untrack, type JSX } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal, For, Show, untrack, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
-import { DetachedSectionContext, t, tok, tx } from "../itempane/kit";
+import { DetachedSectionContext, ListViewHeight, t, tok, tx } from "../itempane/kit";
 import { PaneContext, viewPaneModel, usePane } from "../itempane/model";
 import { createSectionEntries } from "../itempane/sections";
 import { NoteClip } from "../itempane/RichNote";
@@ -71,16 +71,23 @@ function SectionList(p: { id: string }): JSX.Element {
 	const entriesOf = createSectionEntries();
 	const entries = createMemo(() => entriesOf(p.id));
 	let box: HostElement | undefined;
+	const [listH, setListH] = createSignal(0);
 	return (
 		<div
 			ref={(el: HostElement) => { box = el; }}
 			testId={`section-content-${p.id}`}
 			data-item={pane.itemKey()}
+			onLayout={(e) => {
+				const h = (e as { height?: number }).height;
+				if (h && Math.abs(h - listH()) >= 1) setListH(h);
+			}}
 			style={{ ...t("flex flex-col w-full h-full min-h-0") }}
 		>
 			<NoteClip.Provider value={{ el: () => box }}>
 				<virtual-list testId={`section-list-${p.id}`} estimatedItemHeight={28} overdraw={80} style={{ width: "100%", flexGrow: 1, minHeight: 0 }}>
-					<For each={entries()}>{(entry) => entry.render()}</For>
+					<ListViewHeight.Provider value={listH}>
+						<For each={entries()}>{(entry) => entry.render()}</For>
+					</ListViewHeight.Provider>
 				</virtual-list>
 			</NoteClip.Provider>
 		</div>

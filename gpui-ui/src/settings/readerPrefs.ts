@@ -1,6 +1,6 @@
 // Defaults of the native PDF reader chosen in Settings > Reader, persisted in ui-state.json ("shell.reader.*"). The reader reads
 // these signals when it opens a document for the first time:  import { readerPrefs } from "../settings/readerPrefs".
-import { persisted } from "../shell/prefs";
+import { isBool, persisted } from "../shell/prefs";
 import { reflowSettings, resetReflowSettings, setReflowSettings } from "../reader/reflow/state";
 
 /** Zoom for a document opened for the first time: fit width, fit page, or a fixed scale (1 = 100%). */
@@ -28,6 +28,8 @@ const [sidebar, setSidebar] = persisted<SidebarStart>("shell.reader.sidebar", "r
 const [pages, setPages] = persisted<PageAppearance>("shell.reader.pages", "app", okPage);
 const [scrollMode, setScrollMode] = persisted<ScrollModePref>("shell.reader.scrollMode", "vertical", okScroll);
 const [spreadMode, setSpreadMode] = persisted<SpreadModePref>("shell.reader.spreadMode", "none", okSpread);
+/** The page preview in the item pane's Attachments section (itempane/Preview.tsx): pages as wide as the pane, not thumbnails. */
+const [previewFitWidth, setPreviewFitWidth] = persisted<boolean>("shell.reader.previewFitWidth", true, isBool);
 
 export const readerPrefs = {
 	/** "width" | "page" | a scale as a number (1 = 100%) */
@@ -45,12 +47,15 @@ export const readerPrefs = {
 	setScrollMode,
 	spreadMode,
 	setSpreadMode,
+	previewFitWidth,
+	setPreviewFitWidth,
 	reset(): void {
 		setZoomKey("width");
 		setSidebar("remember");
 		setPages("app");
 		setScrollMode("vertical");
 		setSpreadMode("none");
+		setPreviewFitWidth(true);
 	},
 };
 

@@ -6,7 +6,20 @@
 // renders and closes the document (previewDoc.ts), so arrow-key scrubbing through the list only ever costs the item it stops on.
 // It waits OPEN_DELAY ms before reading the file. Only the pages near the visible part of the strip are mounted; the rest is
 // two spacers of the right height (every page's height is known from the document's page sizes).
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Switch, untrack, type Accessor, type JSX } from "solid-js";
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	Match,
+	on,
+	onCleanup,
+	Switch,
+	untrack,
+	useContext,
+	type Accessor,
+	type JSX,
+} from "solid-js";
 import type { EventPayload } from "@gpuix/native";
 import { useGpuix } from "@gpuix/solid";
 import { ListScrollbar } from "../cards/ListScrollbar";
@@ -14,7 +27,8 @@ import { withAlpha } from "../theme";
 import { hiddenUntil, type ImgNode, whenMounted } from "../reader/core/pixels";
 import { windowDpr } from "../reader/env";
 import { openPdfAtPage } from "../webview/noteLinks";
-import { Skeleton, t, TextBtn, tok, tx } from "./kit";
+import { readerPrefs } from "../settings/readerPrefs";
+import { ListViewHeight, Skeleton, t, TextBtn, tok, tx } from "./kit";
 import {
 	forcePreview,
 	formatBytes,
@@ -29,9 +43,18 @@ import {
 
 /** Wait this long after a selection change before reading the file (arrow-key scrubbing passes items faster than this). */
 const OPEN_DELAY = 100;
-/** Widest a thumbnail gets, px. */
+/** Widest a thumbnail gets, px (unless Settings > Reader > "Fit attachment preview to width" is on). */
 const MAX_W = 240;
 const MIN_W = 96;
+/** Widest a page fitted to the pane gets, px: a US Letter page at 100% (in a wide pane, docked along the bottom, it is centred). */
+const MAX_FIT_W = 816;
+/** Tallest the strip gets, px: with small pages, and with pages fitted to the pane's width. */
+const MAX_STRIP_H = 460;
+const MAX_STRIP_H_FIT = 720;
+/** Room the strip leaves in the list's height (the section's header row), so the list can still be scrolled past it; in a very
+ *  short list it keeps MIN_STRIP_H if that fits, else 16 px. */
+const STRIP_SLACK = 56;
+const MIN_STRIP_H = 160;
 /** Right-hand strip no thumbnail covers, for the scrollbar thumb. */
 const GUTTER = 10;
 const LABEL_H = 16;
@@ -101,8 +124,14 @@ export function PdfPreview(p: PdfPreviewProps): JSX.Element {
 		void load();
 	};
 
-	// ---- geometry: one column of pages, each as wide as the thumbnail width, its height from the page's aspect
-	const thumbW = createMemo(() => Math.max(MIN_W, Math.min(MAX_W, Math.floor((avail() - 2 * GUTTER) / 8) * 8)));
+	// ---- geometry: one column of pages, each as wide as the thumbnail width, its height from the page's aspect. The width steps
+	// by 8 px so a pane resize re-renders the pages only now and then.
+	const fit = readerPrefs.previewFitWidth;
+	const listH = useContext(ListViewHeight);
+	const thumbW = createMemo(() => {
+		const w = Math.floor((avail() - 2 * GUTTER) / 8) * 8;
+		return Math.max(MIN_W, Math.min(fit() ? MAX_FIT_W : MAX_W, w));
+	});
 	const pageH = (i: number) => {
 		const s = sizes()?.[i];
 		return s ? Math.round((thumbW() * s[1]) / s[0]) : Math.round(thumbW() * 1.294);
@@ -115,8 +144,12 @@ export function PdfPreview(p: PdfPreviewProps): JSX.Element {
 		return out;
 	});
 	const total = () => offsets()[offsets().length - 1] ?? 0;
-	/** about one and a half pages tall, and never taller than the pages */
-	const stripH = createMemo(() => Math.min(Math.round(pageH(0) * 1.45), Math.max(total() + ROW_GAP, 80), 460));
+	/** about one and a half pages tall, never taller than the pages, and shorter than the list it is in (a short pane) */
+	const stripH = createMemo(() => {
+		const l = listH();
+		const inList = l > 0 ? Math.max(Math.min(MIN_STRIP_H, l - 16), l - STRIP_SLACK) : Infinity;
+		return Math.min(Math.round(pageH(0) * 1.45), Math.max(total() + ROW_GAP, 80), fit() ? MAX_STRIP_H_FIT : MAX_STRIP_H, inList);
+	});
 	/** first page at or below y */
 	const pageAt = (y: number) => {
 		const o = offsets();
@@ -290,6 +323,7 @@ function PageThumb(p: {
 			}}
 		>
 			<div
+				testId={`ip-preview-pagebox-${p.i}`}
 				style={{
 					position: "relative",
 					width: p.w,

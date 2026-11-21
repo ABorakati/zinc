@@ -142,6 +142,11 @@ const [collapsed, setCollapsedSig] = createSignal<Record<string, boolean>>({});
  * pane's tab / header is the title), only the header's actions stay, and the body shows whatever the item pane collapsed.
  */
 export const DetachedSectionContext = createContext(false);
+/**
+ * Height in px of the scrolling list the section is in (the item pane's, or a detached section pane's), 0 until measured. A box
+ * that scrolls by itself inside the list (the PDF preview) keeps under it, so the wheel can still scroll the list past it.
+ */
+export const ListViewHeight = createContext<() => number>(() => 0);
 /** Read inside a component or an entry list: false for a detached section, whatever the item pane collapsed. */
 export const isCollapsed = (id: string) => !useContext(DetachedSectionContext) && !!collapsed()[id];
 export const setCollapsed = (id: string, v: boolean) => setCollapsedSig({ ...collapsed(), [id]: v });
