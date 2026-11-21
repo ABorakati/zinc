@@ -423,7 +423,7 @@ class Session {
 		const cur: LoadedItem | undefined = existingRow
 			? loadItems(this.db, this.lk, [existingRow.itemID])?.get(existingRow.itemID)
 			: undefined;
-		if (cur?.annotation) throw new ZoteroWriteError(`${w.key} is an annotation, not an item`);
+		if (cur?.annotation || cur?.typeName === "annotation") throw new ZoteroWriteError(`${w.key} is an annotation, not an item`);
 		const typeName = String(data.itemType ?? cur?.typeName ?? "");
 		if (!typeName) throw new ZoteroWriteError("itemType missing");
 		if (typeName === "annotation") throw new ZoteroWriteError("annotations must use type 'annotation'");
@@ -580,6 +580,7 @@ class Session {
 		checkBaseline(w, cur?.dateModified);
 		let itemID: number;
 		let dm: string;
+		const removedCreatorIds: number[] = [];
 		if (!cur) {
 			dm = incomingDM ?? now;
 			const added = isoToSql(str(data.dateAdded)) ?? now;
@@ -597,11 +598,20 @@ class Session {
 		} else {
 			itemID = cur.itemID;
 			dm = incomingDM && incomingDM !== cur.dateModified ? incomingDM : now;
-			// When itemType changes, remove fields invalid on the new type before updating itemTypeID so triggers/lookups stay consistent.
+			// When itemType changes, remove fields and creator types invalid on the new type before updating itemTypeID so triggers/lookups stay consistent.
 			if (flags.itemType) {
-				const curFields = cur.input?.fields ?? {};
-				for (const k of Object.keys(curFields)) {
-					if (!fieldsIn.has(k)) this.run("DELETE FROM itemData WHERE itemID = ? AND fieldID = ?", itemID, this.lk.fieldId.get(k));
+				for (const r of this.all("SELECT fieldID FROM itemData WHERE itemID = ?", itemID)) {
+					const name = this.lk.fieldName.get(r.fieldID as number);
+					if (!name || !fieldsIn.has(name)) this.run("DELETE FROM itemData WHERE itemID = ? AND fieldID = ?", itemID, r.fieldID);
+				}
+				const validCreators = this.lk.validCreatorTypes.get(typeId);
+				if (validCreators) {
+					for (const r of this.all("SELECT creatorID, creatorTypeID, orderIndex FROM itemCreators WHERE itemID = ?", itemID)) {
+						if (!validCreators.has(r.creatorTypeID as number)) {
+							this.run("DELETE FROM itemCreators WHERE itemID = ? AND orderIndex = ?", itemID, r.orderIndex);
+							removedCreatorIds.push(r.creatorID as number);
+						}
+					}
 				}
 				this.run(
 					"UPDATE items SET itemTypeID = ?, dateModified = ?, clientDateModified = ?, synced = 0 WHERE itemID = ?",
@@ -629,7 +639,10 @@ class Session {
 				}
 			}
 		}
-		if (!cur || flags.creators) this.writeCreators(itemID, creatorsIn, cur?.input?.creators ?? []);
+		if (!cur || flags.creators || removedCreatorIds.length > 0) {
+			this.writeCreators(itemID, creatorsIn, cur?.input?.creators ?? []);
+			for (const id of new Set(removedCreatorIds)) this.purgeCreator(id);
+		}
 
 		// parent / note / attachment (parent must be set before collections: triggers)
 		if (isChild && !cur) {
