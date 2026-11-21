@@ -14,6 +14,7 @@ export const tx = (cls: string): Style => textStyle(cls, mode());
 export const HIDDEN: Style = {
 	display: "none",
 	visibility: "hidden",
+	pointerEvents: "none",
 	width: 0,
 	height: 0,
 	flexGrow: 0,
