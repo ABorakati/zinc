@@ -381,6 +381,7 @@ Zinc stands on other people's work.
 
 - **[Zotero](https://www.zotero.org)**: the data model and schema, the translators and translation framework, the connector protocol, the web reader and note editor, and the document worker. Zotero is a project of the Corporation for Digital Scholarship.
 - **[Zed](https://zed.dev) GPUI** and **[GPUIX](https://github.com/remorses/gpuix)**: the UI toolkit and its Solid adapter.
+- **[Quiet.md](https://github.com/s1dashu/quiet-md)** (MIT): the document model, editing core and text layout behind the native note editor, ported into the GPUIX fork as its `<richtext>` element.
 - **[Better BibTeX](https://retorque.re/zotero-better-bibtex/)** and **[ZotMoov](https://github.com/wileyyugioh/zotmoov)**: the concepts behind citation keys, auto-export and file moving.
 - **[PDFium](https://pdfium.googlesource.com/pdfium/)** (via the pdfium-binaries project) and **hayro**: PDF rendering and text.
 - **[citeproc-js](https://github.com/Juris-M/citeproc-js)**: citation styles.
