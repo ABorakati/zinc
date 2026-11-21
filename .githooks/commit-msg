@@ -1,0 +1,9 @@
+#!/bin/sh
+# Checks the commit message against CONTRIBUTING.md, "Commit messages" (scripts/commit-lint.ts).
+# Turn it on in a clone with:  git config core.hooksPath .githooks
+# Skip it once with:           git commit --no-verify
+if ! command -v bun >/dev/null 2>&1; then
+	echo "commit-msg: bun is not on PATH; the commit message was not checked" >&2
+	exit 0
+fi
+exec bun "$(git rev-parse --show-toplevel)/scripts/commit-lint.ts" --file "$1"

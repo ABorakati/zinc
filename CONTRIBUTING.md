@@ -16,6 +16,56 @@ When a change is one users will notice, add an entry for it to [`CHANGELOG.md`](
 section for its type: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security` ([Keep a Changelog
 1.1.0](https://keepachangelog.com/en/1.1.0/)). Write it as the release notes are written: a bold title, then what changed for the user.
 
+## Commit messages
+
+Commit messages and pull request titles follow the [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+format:
+
+```text
+type(scope): subject
+
+Optional body, separated from the first line by a blank line.
+```
+
+The scope is optional: `type: subject` is also valid. For example:
+
+```text
+fix(word): stop a refresh freezing Word on a looping tracked-changes list
+feat(itempane): fit the attachment preview to the pane's width
+docs: layouts and plugins user guides
+```
+
+The rules:
+
+- **type**: one of `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, in lowercase. A
+  `!` before the colon marks a breaking change: `feat(api)!: …`.
+- **subject**: no full stop at the end.
+- **first line**: at most 80 characters.
+- **body and footer lines**: at most 100 characters each. A line with a URL may be longer.
+
+Merge commits, and the messages git writes for `git revert` and for `fixup!` and `squash!` commits, are not checked.
+
+The rules are in [`scripts/commit-lint.ts`](scripts/commit-lint.ts). CI checks the title and the commit messages of every pull
+request with them.
+
+### The commit-msg hook (optional)
+
+The repository has a commit-msg hook, [`.githooks/commit-msg`](.githooks/commit-msg), which runs the same check each time you
+commit, so a broken message is caught before CI sees it. Git does not turn on hooks from a cloned repository, because a hook runs
+commands on your machine: each developer decides whether to turn it on. To turn it on in your clone, run this once from the
+repository root:
+
+```
+git config core.hooksPath .githooks
+```
+
+`git config --unset core.hooksPath` turns it off again.
+
+A commit whose message breaks a rule is then refused, and git keeps the message in `.git/COMMIT_EDITMSG`. `git commit --no-verify`
+skips the check once. The hook needs Bun on `PATH`; without it, the hook prints a warning and lets the commit through. `core.hooksPath`
+replaces `.git/hooks`, so copy any hooks of your own from there into `.githooks`. Jujutsu (`jj`) does not run git hooks; CI still
+checks the pull request.
+
 ## Running the CI checks locally
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request. Everything it runs works on this machine too.
