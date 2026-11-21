@@ -28,7 +28,7 @@
 // delimiter separated) does the same for a running app.
 import { existsSync, readdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { createMemo } from "solid-js";
+import { createComponent, createMemo } from "solid-js";
 import { discoverHandlers, type ImportHandler } from "../../../plugin-host/src/imports/registry";
 import { configureFs } from "../../../plugin-host/src/imports/data/fs-roots";
 import { declaredGrants } from "../../../plugin-host/src/manifest";
@@ -51,6 +51,8 @@ import {
 	callPlugin,
 	getPluginSupervisor,
 	onPluginRegistrationsReset,
+	packageRuntime,
+	pluginActions,
 	pluginList,
 	pluginSupervisor,
 	setManagedPlugins,
@@ -256,95 +258,136 @@ const appProviders = () => ({
 	},
 });
 
-/** Create the runtime and load + start the installed plugins. Resolves with the supervisor, or undefined when plugins are off. Idempotent. */
+/** Create the runtime and load + start the installed plugins. Resolves with the supervisor, or undefined when plugins are off or startup fails. Idempotent. */
 export function startWasmPlugins(opts: StartOptions = {}): Promise<PluginSupervisor | undefined> {
 	if (!opts.force && !wasmPluginsEnabled()) return Promise.resolve(undefined);
 	starting ??= (async () => {
-		const useRuntime = opts.runtime ?? (!opts.dirs && !opts.handlers);
-		let sup: PluginSupervisor;
-		if (useRuntime) {
-			// The host process (a separate process) finds the plugins' data and temp folders through the environment it inherits.
-			const layout = createLayout(pluginsRoot());
-			process.env.ZN_PLUGIN_DATA_DIR ??= layout.dataRoot;
-			process.env.ZN_PLUGIN_TEMP_DIR ??= layout.tempRoot;
-			configureFs({ dataRoot: process.env.ZN_PLUGIN_DATA_DIR, tempRoot: process.env.ZN_PLUGIN_TEMP_DIR });
-			const { promptPermission } = await import("./ui");
-			const rt = await createPluginRuntime({
-				coreUrl: BASE_URL,
-				handlers: opts.handlers ?? (await collectZincHandlers()),
-				app: appProviders(),
-				prompt: (req) => promptPermission(req as unknown as Parameters<typeof promptPermission>[0]),
-				// the install prompt, for any install or update that does not bring its own (installPluginPackage passes the same one)
-				manager: { root: layout.root, approve: async (req) => (await import("./ui/install")).promptInstall(req) },
-				supervisor: opts.supervisor,
+		let sup: PluginSupervisor | undefined;
+		try {
+			const useRuntime = opts.runtime ?? (!opts.dirs && !opts.handlers);
+			if (useRuntime) {
+				// The host process (a separate process) finds the plugins' data and temp folders through the environment it inherits.
+				const layout = createLayout(pluginsRoot());
+				process.env.ZN_PLUGIN_DATA_DIR ??= layout.dataRoot;
+				process.env.ZN_PLUGIN_TEMP_DIR ??= layout.tempRoot;
+				configureFs({ dataRoot: process.env.ZN_PLUGIN_DATA_DIR, tempRoot: process.env.ZN_PLUGIN_TEMP_DIR });
+				const { promptPermission } = await import("./ui");
+				const rt = await createPluginRuntime({
+					coreUrl: BASE_URL,
+					handlers: opts.handlers ?? (await collectZincHandlers()),
+					app: appProviders(),
+					prompt: (req) => promptPermission(req as unknown as Parameters<typeof promptPermission>[0]),
+					// the install prompt, for any install or update that does not bring its own (installPluginPackage passes the same one)
+					manager: { root: layout.root, approve: async (req) => (await import("./ui/install")).promptInstall(req) },
+					supervisor: opts.supervisor,
+				});
+				services = rt.services;
+				sup = rt.supervisor;
+				services.manager.on("changed", refreshList);
+				services.manager.on("installed", refreshList);
+				services.manager.on("uninstalled", refreshList);
+				setPluginActions({
+					installFromFile: installPluginFromFile,
+					setEnabled: setPluginEnabled,
+					remove: (id) => removePlugin(id),
+					approvePermissions: approvePluginPermissions,
+				});
+				setPackageRuntime(true);
+			} else {
+				sup = createPluginSupervisor({
+					importHandlers: opts.handlers ?? (await collectZincHandlers()),
+					coreUrl: BASE_URL,
+					...opts.supervisor,
+				});
+			}
+			setPluginSupervisor(sup);
+			stopHooks.push(installMcpBridge(sup)); // plugin tools on Zinc's MCP server (HTTP endpoint of this process; docs/user-guide/mcp.md)
+			if (useRuntime) (await import("./wire")).wireApp();
+			if (opts.bindUi !== false) {
+				await import("./extend/bind").then((m) => m.bindExtendUi()); // the main window side of the extension points
+				const { installReaderBridge, setPluginViewComponent: setReaderPluginView } = await import("./reader");
+				stopHooks.push(installReaderBridge());
+				const { clearUiOf, installUiHost, PluginView } = await import("./ui");
+				stopHooks.push(installUiHost());
+				stopHooks.push(onPluginRegistrationsReset((plugin) => clearUiOf(plugin)));
+				const { setPluginViewComponent: setExtendPluginView } = await import("./extend/viewSlot");
+				setExtendPluginView((p) =>
+					createComponent(PluginView as never, {
+						get pluginId() {
+							return p.plugin;
+						},
+						get view() {
+							return p.view;
+						},
+						get surface() {
+							return p.surface;
+						},
+						get params() {
+							return p.params;
+						},
+						get width() {
+							return p.width;
+						},
+						get height() {
+							return p.height;
+						},
+						get visible() {
+							return p.visible;
+						},
+						get onMeta() {
+							return p.onMeta;
+						},
+					}),
+				);
+				stopHooks.push(() => setExtendPluginView(undefined));
+				setReaderPluginView(PluginView as never);
+				stopHooks.push(() => setReaderPluginView(undefined));
+			}
+			// what a plugin registered goes when it stops, is disabled or fails, and everything goes when the host restarts
+			sup.on("host-restart", () => {
+				clearPluginRegistrations();
+				resetPluginRegistrations(undefined);
+				refreshList();
 			});
-			services = rt.services;
-			sup = rt.supervisor;
-			services.manager.on("changed", refreshList);
-			services.manager.on("installed", refreshList);
-			services.manager.on("uninstalled", refreshList);
-			setPluginActions({
-				installFromFile: installPluginFromFile,
-				setEnabled: setPluginEnabled,
-				remove: (id) => removePlugin(id),
-				approvePermissions: approvePluginPermissions,
+			sup.on("host-restarted", refreshList);
+			sup.on("status", (e) => {
+				if (e.status === "stopped" || e.status === "disabled" || e.status === "failed" || e.status === "stopping") {
+					clearPluginRegistrations(e.plugin);
+					resetPluginRegistrations(e.plugin);
+				}
+				refreshList();
 			});
-			setPackageRuntime(true);
-		} else {
-			sup = createPluginSupervisor({
-				importHandlers: opts.handlers ?? (await collectZincHandlers()),
-				coreUrl: BASE_URL,
-				...opts.supervisor,
+			sup.on("log", (e) => {
+				if (e.level === "error") console.error(`[plugin${e.plugin ? ` ${e.plugin}` : ""}]`, e.message);
 			});
-		}
-		setPluginSupervisor(sup);
-		stopHooks.push(installMcpBridge(sup)); // plugin tools on Zinc's MCP server (HTTP endpoint of this process; docs/user-guide/mcp.md)
-		if (useRuntime) (await import("./wire")).wireApp();
-		if (opts.bindUi !== false) {
-			await import("./extend/bind").then((m) => m.bindExtendUi()); // the main window side of the extension points
-			const { installReaderBridge } = await import("./reader");
-			stopHooks.push(installReaderBridge());
-			const { clearUiOf } = await import("./ui");
-			stopHooks.push(onPluginRegistrationsReset((plugin) => clearUiOf(plugin)));
-		}
-		// what a plugin registered goes when it stops, is disabled or fails, and everything goes when the host restarts
-		sup.on("host-restart", () => {
-			clearPluginRegistrations();
-			resetPluginRegistrations(undefined);
-			refreshList();
-		});
-		sup.on("host-restarted", refreshList);
-		sup.on("status", (e) => {
-			if (e.status === "stopped" || e.status === "disabled" || e.status === "failed" || e.status === "stopping") {
-				clearPluginRegistrations(e.plugin);
-				resetPluginRegistrations(e.plugin);
+			await sup.ready();
+			if (services) {
+				await services.manager.startAll().catch((e) => console.error("[wasmplugins] startAll:", e instanceof Error ? e.message : e));
+				await services.manager.windowLoaded(1).catch(() => {});
+			}
+			// built folders given directly (tests, dev): loaded as they are, with the permissions their manifests declare
+			const dirs = opts.dirs ?? (process.env.ZN_WASM_PLUGIN_DIRS ?? "").split(delimiter).filter(Boolean);
+			for (const dir of dirs) {
+				try {
+					const info = await sup.load(dir);
+					sup.setGrants(info.id, declaredGrants(info.manifest));
+					await sup.start(info.id, { why: "app-startup" });
+					await sup
+						.call(info.id, "lifecycle", "main-window-load", [{ id: info.id, version: info.manifest.version, previousVersion: undefined }, 1])
+						.catch(() => {}); // a plugin without the hook
+				} catch (e) {
+					console.error(`[wasmplugins] ${dir}:`, e instanceof Error ? e.message : e);
+				}
 			}
 			refreshList();
-		});
-		sup.on("log", (e) => {
-			if (e.level === "error") console.error(`[plugin${e.plugin ? ` ${e.plugin}` : ""}]`, e.message);
-		});
-		await sup.ready();
-		if (services) {
-			await services.manager.startAll().catch((e) => console.error("[wasmplugins] startAll:", e instanceof Error ? e.message : e));
-			await services.manager.windowLoaded(1).catch(() => {});
+			return sup;
+		} catch (e) {
+			console.error("[wasmplugins] startup failed; plugins disabled for this session:", e instanceof Error ? (e.stack ?? e.message) : e);
+			if (sup && getPluginSupervisor() !== sup) await sup.shutdown().catch(() => {});
+			await stopWasmPlugins().catch(() => {});
+			starting = undefined;
+			return undefined;
 		}
-		// built folders given directly (tests, dev): loaded as they are, with the permissions their manifests declare
-		const dirs = opts.dirs ?? (process.env.ZN_WASM_PLUGIN_DIRS ?? "").split(delimiter).filter(Boolean);
-		for (const dir of dirs) {
-			try {
-				const info = await sup.load(dir);
-				sup.setGrants(info.id, declaredGrants(info.manifest));
-				await sup.start(info.id, { why: "app-startup" });
-				await sup
-					.call(info.id, "lifecycle", "main-window-load", [{ id: info.id, version: info.manifest.version, previousVersion: undefined }, 1])
-					.catch(() => {}); // a plugin without the hook
-			} catch (e) {
-				console.error(`[wasmplugins] ${dir}:`, e instanceof Error ? e.message : e);
-			}
-		}
-		refreshList();
-		return sup;
 	})();
 	return starting;
 }
@@ -353,9 +396,9 @@ export function startWasmPlugins(opts: StartOptions = {}): Promise<PluginSupervi
 export async function stopWasmPlugins(): Promise<void> {
 	const sup = getPluginSupervisor();
 	starting = undefined;
-	if (!sup) return;
+	if (!sup && !services && stopHooks.length === 0 && !packageRuntime() && !pluginActions()) return;
 	await services?.manager.stopAll().catch(() => {});
-	await sup.shutdown().catch(() => {});
+	await sup?.shutdown().catch(() => {});
 	services?.dispose();
 	services = undefined;
 	setPluginSupervisor(undefined);

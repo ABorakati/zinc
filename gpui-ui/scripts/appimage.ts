@@ -81,6 +81,7 @@ const lib = join(appDir, "usr", "lib", "zinc");
 mkdirSync(lib, { recursive: true });
 cpSync(pkg, lib, { recursive: true, verbatimSymlinks: true });
 chmodSync(join(lib, "zotero-next-gpui"), 0o755);
+if (existsSync(join(lib, "zhw"))) chmodSync(join(lib, "zhw"), 0o755);
 
 // GPUI's addon links libxkbcommon-x11 and libxcb-xkb, which minimal systems (WSL, some server images with a desktop added) lack;
 // without them the addon does not load at all. Both are small and only depend on libxkbcommon / libxcb, so they ship in usr/lib/zinc/lib

@@ -4,9 +4,15 @@
 // path (the host process and the type check of this package never see gpui-ui).
 import { defineHandler, witError, type HandlerContext } from "./registry";
 
+const SLOT = Symbol.for("zinc.wasmplugins.ui-host");
+
 type Impl = Record<string, (ctx: any, ...args: any[]) => any> & { UiHostError: new (...a: any[]) => Error & { tag: string } };
 let impl: Promise<Impl> | undefined;
-const load = (): Promise<Impl> => (impl ??= import(new URL("../../../gpui-ui/src/wasmplugins/ui/host.tsx", import.meta.url).href) as Promise<Impl>);
+const load = (): Promise<Impl> => {
+	const registered = (globalThis as Record<symbol, unknown>)[SLOT] as Impl | undefined;
+	if (registered) return Promise.resolve(registered);
+	return (impl ??= import(new URL("../../../gpui-ui/src/wasmplugins/ui/host.tsx", import.meta.url).href) as Promise<Impl>);
+};
 
 /** Run an implementation function, turning its UiHostError into `result::err`. */
 function fn(name: string) {

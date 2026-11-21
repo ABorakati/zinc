@@ -35,11 +35,12 @@ export function setPluginViewComponent(c: Component<PluginViewProps> | undefined
 const UI_MODULE = "../ui/index";
 
 function load(): void {
+	if (component()) return;
 	loading ??= (async () => {
 		try {
 			const spec: string = UI_MODULE;
 			const mod = (await import(spec)) as { PluginView?: Component<PluginViewProps> };
-			if (mod.PluginView) setComponent(() => mod.PluginView);
+			if (!component() && mod.PluginView) setComponent(() => mod.PluginView);
 		} catch {
 			/* the ui area is not built into this checkout */
 		}

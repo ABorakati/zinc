@@ -337,28 +337,47 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	async function spawnHost(): Promise<void> {
 		const { hostModIfaces } = await ensureCombinedTable();
 		let readyTimer: ReturnType<typeof setTimeout> | undefined;
+		let isReady = false;
+		let rejectReady: ((err: Error) => void) | undefined;
 		hostReady = new Promise<void>((resolve, reject) => {
 			resolveReady = () => {
+				if (isReady) return;
+				isReady = true;
 				if (readyTimer) clearTimeout(readyTimer);
 				resolve();
+			};
+			rejectReady = (err) => {
+				if (isReady) return;
+				if (readyTimer) clearTimeout(readyTimer);
+				reject(err);
 			};
 			readyTimer = setTimeout(() => reject(new Error("the plugin host did not start in 20 s")), 20_000);
 			readyTimer.unref?.();
 		});
 		hostReady.catch(() => {});
 
-		const handle: HostProcess = spawnWasmtimeTransport({
-			zhwPath: opts.zhwPath,
-			maxMemoryMb: opts.maxMemoryMb,
-			hostStderr: opts.hostStderr,
-			onMessage: (m) => onHostMessage(m),
-			onExit: () => {
-				if (proc === handle) {
-					proc = undefined;
-					if (!shuttingDown) void restart("crash", undefined, "the zhw plugin host process exited");
-				}
-			},
-		});
+		let handle: HostProcess;
+		try {
+			handle = spawnWasmtimeTransport({
+				zhwPath: opts.zhwPath,
+				maxMemoryMb: opts.maxMemoryMb,
+				hostStderr: opts.hostStderr,
+				onMessage: (m) => onHostMessage(m),
+				onExit: (code) => {
+					if (proc === handle) {
+						proc = undefined;
+						if (!isReady) {
+							rejectReady?.(new Error(`the zhw plugin host exited before ready (code ${code ?? "null"})`));
+							return;
+						}
+						if (!shuttingDown) void restart("crash", undefined, "the zhw plugin host process exited");
+					}
+				},
+			});
+		} catch (err) {
+			if (readyTimer) clearTimeout(readyTimer);
+			throw err;
+		}
 		proc = handle;
 		lastBeat = Date.now();
 		const initExtra = opts.initState?.();

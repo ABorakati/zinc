@@ -8,6 +8,8 @@
 //   clearUiOf(pluginId?)                          close the plugin's dialogs when its registrations are reset
 //   setLocalizer / setPrefsBackend                where texts and `pref` bindings come from (defaults: the package area's services)
 // The `ui` import itself (dialogs, toasts, theme, ...) is plugin-host/src/imports/ui.zinc.ts, which calls ./host.
+import * as uiHost from "./host";
+
 export { PluginView, setUiSupervisor, uiSupervisor } from "./PluginView";
 export type { PluginViewProps } from "./PluginView";
 export { ControllerView } from "./ControllerView";
@@ -21,3 +23,14 @@ export { setPrefsBackend } from "./prefs";
 export { jsonToTree, jsonToPatch, buildNested, applyPatch, getValidationMode, setValidationMode, TreeError } from "./convert";
 export type { ValidationMode } from "./convert";
 export type * from "./types";
+
+const UI_HOST_SLOT = Symbol.for("zinc.wasmplugins.ui-host");
+
+/** Register the UI host implementation for `plugin-host/src/imports/ui.zinc.ts` so packaged builds never need a runtime `import(new URL(...))`. */
+export function installUiHost(): () => void {
+	const g = globalThis as Record<symbol, unknown>;
+	g[UI_HOST_SLOT] = uiHost;
+	return () => {
+		if (g[UI_HOST_SLOT] === uiHost) delete g[UI_HOST_SLOT];
+	};
+}

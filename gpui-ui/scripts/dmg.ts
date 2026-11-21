@@ -9,7 +9,7 @@
 //
 // Steps: scripts/package.ts (unless --no-package / --package), then the bundle
 //   Zinc.app/Contents/Info.plist
-//   Zinc.app/Contents/MacOS/zotero-next-gpui, libzn_pdf.dylib, libpdfium.dylib   the code (zn_pdf finds PDFium next to itself)
+//   Zinc.app/Contents/MacOS/zotero-next-gpui, zhw, libzn_pdf.dylib, libpdfium.dylib   the code (zn_pdf finds PDFium next to itself; zhw is the WASM plugin host)
 //   Zinc.app/Contents/Resources/                    everything else from the package folder (vendor/, reader-host/, note-host/, workers,
 //                                                   README.txt, version.txt) and Zinc.icns; src/packaged.ts looks here for its data
 // an ad-hoc signature (codesign --sign -; Apple Silicon runs no unsigned code), and a compressed UDZO image.
@@ -51,12 +51,13 @@ const macos = join(app, "Contents", "MacOS");
 const res = join(app, "Contents", "Resources");
 mkdirSync(macos, { recursive: true });
 mkdirSync(res, { recursive: true });
-const CODE = new Set(["zotero-next-gpui", "libzn_pdf.dylib", "libpdfium.dylib"]);
+const CODE = new Set(["zotero-next-gpui", "zhw", "libzn_pdf.dylib", "libpdfium.dylib"]);
 for (const name of readdirSync(pkg)) {
 	if (name === "icon.png") continue;
 	cpSync(join(pkg, name), join(CODE.has(name) ? macos : res, name), { recursive: true, verbatimSymlinks: true });
 }
 chmodSync(join(macos, "zotero-next-gpui"), 0o755);
+if (existsSync(join(macos, "zhw"))) chmodSync(join(macos, "zhw"), 0o755);
 
 // the icon: icon.png (1024 px or less) scaled into an .iconset, then iconutil
 const iconset = join(outDir, "Zinc.iconset");
@@ -108,7 +109,8 @@ writeFileSync(
 // 3. signature: the libraries first, then the exe and the bundle (codesign --deep is deprecated for signing)
 const identity = process.env.ZN_MAC_SIGN_IDENTITY;
 const signArgs = identity ? ["--sign", identity, "--options", "runtime", "--timestamp"] : ["--sign", "-"];
-for (const lib of ["libzn_pdf.dylib", "libpdfium.dylib"]) run(["codesign", "--force", ...signArgs, join(macos, lib)]);
+for (const lib of ["libzn_pdf.dylib", "libpdfium.dylib", ...(existsSync(join(macos, "zhw")) ? ["zhw"] : [])])
+	run(["codesign", "--force", ...signArgs, join(macos, lib)]);
 run(["codesign", "--force", ...signArgs, app]);
 run(["codesign", "--verify", "--strict", "--verbose=2", app]);
 

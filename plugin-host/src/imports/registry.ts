@@ -236,19 +236,76 @@ export async function loadHandlerModule(file: string): Promise<ImportHandler[]> 
 }
 
 /**
+ * Static module loaders for the built-in `*.host.ts` and `*.zinc.ts` handlers in this folder.
+ *
+ * Using static `import("./...")` specifiers lets `bun build --compile` (bytecode and AOT) trace and embed every
+ * handler into the packaged executable, where `import.meta.dir` points into `/$bunfs/root` (or `B:/~BUN/root`) and
+ * has no directory on disk to `readdir()`.
+ *
+ * Keep these entries in sync with `plugin-host/src/imports/*.{host,zinc}.ts` (enforced by `test/units.test.ts`).
+ */
+export const BUILTIN_HANDLER_MODULES: Record<"host" | "zinc", Record<string, () => Promise<unknown>>> = {
+	host: {
+		"attachments.host.ts": () => import("./attachments.host"),
+		"cite.host.ts": () => import("./cite.host"),
+		"data-utils.host.ts": () => import("./data-utils.host"),
+		"fs.host.ts": () => import("./fs.host"),
+		"fulltext.host.ts": () => import("./fulltext.host"),
+		"library.host.ts": () => import("./library.host"),
+		"net.host.ts": () => import("./net.host"),
+		"notifier.host.ts": () => import("./notifier.host"),
+		"schema.host.ts": () => import("./schema.host"),
+		"sync-control.host.ts": () => import("./sync-control.host"),
+		"timers.host.ts": () => import("./timers.host"),
+		"translate.host.ts": () => import("./translate.host"),
+		"util.host.ts": () => import("./util.host"),
+	},
+	zinc: {
+		"app.zinc.ts": () => import("./app.zinc"),
+		"clipboard.zinc.ts": () => import("./clipboard.zinc"),
+		"extend.zinc.ts": () => import("./extend.zinc"),
+		"fs.zinc.ts": () => import("./fs.zinc"),
+		"l10n.zinc.ts": () => import("./l10n.zinc"),
+		"log.zinc.ts": () => import("./log.zinc"),
+		"permissions.zinc.ts": () => import("./permissions.zinc"),
+		"plugins.zinc.ts": () => import("./plugins.zinc"),
+		"prefs.zinc.ts": () => import("./prefs.zinc"),
+		"reader.zinc.ts": () => import("./reader.zinc"),
+		"secrets.zinc.ts": () => import("./secrets.zinc"),
+		"shell.zinc.ts": () => import("./shell.zinc"),
+		"timers.zinc.ts": () => import("./timers.zinc"),
+		"ui.zinc.ts": () => import("./ui.zinc"),
+	},
+};
+
+function collectValidated(where: "host" | "zinc", file: string, handlers: ImportHandler[], out: ImportHandler[]): void {
+	for (const h of handlers) {
+		if (h.where !== where) throw new Error(`${file}: handler for ${h.interface} says where "${h.where}" but the file is *.${where}.ts`);
+		out.push(h);
+	}
+}
+
+/**
  * Find the handler modules that live in this folder: `*.host.ts` for the plugin host process, `*.zinc.ts` for the Zinc process.
  * The host process calls `discoverHandlers("host")` itself. The app calls `discoverHandlers("zinc")` and passes the result to
  * `createPluginSupervisor({ importHandlers })`, together with handlers of its own.
+ *
+ * When `dir` is omitted, loads the statically-registered built-in modules (compatible with `bun build --compile`).
+ * When a custom `dir` is passed (for example by tests), scans `dir` on disk for `*.<where>.ts`.
  */
-export async function discoverHandlers(where: "host" | "zinc", dir: string = import.meta.dir): Promise<ImportHandler[]> {
+export async function discoverHandlers(where: "host" | "zinc", dir?: string): Promise<ImportHandler[]> {
+	const out: ImportHandler[] = [];
+	if (dir === undefined) {
+		const entries = Object.entries(BUILTIN_HANDLER_MODULES[where]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+		for (const [f, load] of entries) {
+			collectValidated(where, f, asHandlers(await load(), f), out);
+		}
+		return out;
+	}
 	const suffix = `.${where}.ts`;
 	const files = (await readdir(dir)).filter((f) => f.endsWith(suffix)).sort();
-	const out: ImportHandler[] = [];
 	for (const f of files) {
-		for (const h of await loadHandlerModule(join(dir, f))) {
-			if (h.where !== where) throw new Error(`${f}: handler for ${h.interface} says where "${h.where}" but the file is *.${where}.ts`);
-			out.push(h);
-		}
+		collectValidated(where, f, await loadHandlerModule(join(dir, f)), out);
 	}
 	return out;
 }

@@ -123,6 +123,7 @@ const cfg = signConfig();
 if (cfg) {
 	const ours = [
 		join(pkg, "zotero-next-gpui.exe"),
+		...(existsSync(join(pkg, "zhw.exe")) ? [join(pkg, "zhw.exe")] : []),
 		join(pkg, "zn_pdf.dll"),
 		...(wordDir ? [join(wordDir, "addin", "ZoteroNextWord.dll")] : []),
 		...(connectorDir ? [join(connectorDir, "zotero-next-host.exe")] : []),

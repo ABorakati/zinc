@@ -74,9 +74,11 @@ export const platform: Platform = {
 	afterFeatures(store) {
 		void openTabsFromEnv(store.openAttachment);
 		// WASM plugins: off unless Settings > Plugins or ZN_WASM_PLUGINS=1 turned them on (src/wasmplugins/index.ts)
-		void import("./wasmplugins/flag").then(async (f) => {
-			if (f.wasmPluginsEnabled()) await (await import("./wasmplugins")).startWasmPlugins();
-		});
+		void import("./wasmplugins/flag")
+			.then(async (f) => {
+				if (f.wasmPluginsEnabled()) await (await import("./wasmplugins")).startWasmPlugins();
+			})
+			.catch((e) => console.error("[wasmplugins] startup failed:", e instanceof Error ? (e.stack ?? e.message) : e));
 		// "Open in Zinc" from the Word sidebar or the browser connector: POST /api/ui/reveal, acted on here (src/shell/revealRequests.ts)
 		void import("./shell/revealRequests").then((m) =>
 			m.startRevealPolling((key, open) => {

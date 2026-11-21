@@ -6,20 +6,30 @@ import type { FromHost, LogBatchEntry, ToHost, WireResult } from "./protocol";
 
 const EXE = process.platform === "win32" ? "zhw.exe" : "zhw";
 
+/** True when `dir` is inside Bun's compiled single-file virtual filesystem (`/$bunfs/...` or `B:/~BUN/...`). */
+export function isCompiledBunfs(dir: string): boolean {
+	return /^(\/\$bunfs|[A-Za-z]:[\\/]+~BUN)([\\/]|$)/i.test(dir);
+}
+
 /** Locate the `zhw` binary in priority order (explicit -> env -> packaged -> newest dev build). */
-export function resolveZhwPath(explicit?: string): string {
+export function resolveZhwPath(explicit?: string, opts: { execPath?: string; moduleDir?: string } = {}): string {
 	if (explicit) return explicit;
 	if (process.env.ZHW) return process.env.ZHW;
 	if (process.env.ZN_ZHW) return process.env.ZN_ZHW;
 
-	const execDir = dirname(process.execPath);
+	const execDir = dirname(opts.execPath ?? process.execPath);
 	for (const packaged of [join(execDir, EXE), join(execDir, "..", "Resources", EXE)]) {
 		if (existsSync(packaged)) return packaged;
 	}
 
+	const moduleDir = opts.moduleDir ?? import.meta.dir;
+	if (isCompiledBunfs(moduleDir)) {
+		return join(execDir, EXE);
+	}
+
 	const devCandidates = [
-		resolve(import.meta.dir, "..", "..", "plugin-host-wasmtime", "target", "release", EXE),
-		resolve(import.meta.dir, "..", "..", "gpui-ui", "out", EXE),
+		resolve(moduleDir, "..", "..", "plugin-host-wasmtime", "target", "release", EXE),
+		resolve(moduleDir, "..", "..", "gpui-ui", "out", EXE),
 		process.env.CARGO_TARGET_DIR ? join(process.env.CARGO_TARGET_DIR, "release", EXE) : undefined,
 		process.platform === "win32" ? "C:/dev/cache/cargo-target/release/zhw.exe" : undefined,
 	]
@@ -30,7 +40,7 @@ export function resolveZhwPath(explicit?: string): string {
 
 	return (
 		(process.env.CARGO_TARGET_DIR ? join(process.env.CARGO_TARGET_DIR, "release", EXE) : undefined) ??
-		resolve(import.meta.dir, "..", "..", "plugin-host-wasmtime", "target", "release", EXE)
+		resolve(moduleDir, "..", "..", "plugin-host-wasmtime", "target", "release", EXE)
 	);
 }
 
@@ -169,6 +179,9 @@ export interface WasmtimeTransport {
 
 export function spawnWasmtimeTransport(opts: WasmtimeTransportOptions): WasmtimeTransport {
 	const zhwPath = resolveZhwPath(opts.zhwPath);
+	if ((zhwPath.includes("/") || zhwPath.includes("\\")) && !existsSync(zhwPath)) {
+		throw new Error(`zhw plugin host binary not found at ${zhwPath}`);
+	}
 	const args = [zhwPath, "run", ...(opts.maxMemoryMb ? ["--max-memory-mb", String(opts.maxMemoryMb)] : [])];
 	let closed = false;
 	let exitCode: number | null = null;

@@ -44,7 +44,7 @@ export default defineHandler({
 });
 ```
 
-3. Test it (see "For the stage 2 agents" in `docs/developer-guide/wasm-plugins/phase2-core.md`). Do not edit `registry.ts`.
+3. Register the file in `BUILTIN_HANDLER_MODULES` in `src/imports/registry.ts` (static imports are required so `bun build --compile` embeds every handler in packaged builds; `test/units.test.ts` checks that the table matches disk), then test it (see "For the stage 2 agents" in `docs/developer-guide/wasm-plugins/phase2-core.md`).
 
 ## The contract
 
