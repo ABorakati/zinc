@@ -159,34 +159,36 @@ async function firstLine(stream: ReadableStream<Uint8Array>): Promise<string> {
 describe.skipIf(!portalWanted)("Linux appearance, real gdbus and a stand-in portal", () => {
 	let bus: ReturnType<typeof Bun.spawn> | undefined;
 	let portal: ReturnType<typeof Bun.spawn> | undefined;
-	const previousBus = process.env.DBUS_SESSION_BUS_ADDRESS;
+	let busEnv: Record<string, string | undefined> = {};
 	const script = join(dir, "portal.py");
+	// gdbus on the private bus. A child process Bun starts without `env` does not see a change to process.env made at run time,
+	// so the address goes into this wrapper, which the tests pass to appearance.ts as the gdbus command.
+	const gdbus = join(dir, "gdbus-private");
 
 	beforeAll(async () => {
 		writeFileSync(script, FAKE_PORTAL);
 		bus = Bun.spawn(["dbus-daemon", "--session", "--nofork", "--print-address=1"], { stdout: "pipe", stderr: "inherit" });
 		const address = await firstLine(bus.stdout as ReadableStream<Uint8Array>);
 		expect(address).toContain("unix:");
-		// gdbus, which appearance.ts starts, takes the bus from the environment
-		process.env.DBUS_SESSION_BUS_ADDRESS = address;
+		busEnv = { ...process.env, DBUS_SESSION_BUS_ADDRESS: address };
+		writeFileSync(gdbus, `#!/bin/sh\nDBUS_SESSION_BUS_ADDRESS='${address}' exec gdbus "$@"\n`);
+		chmodSync(gdbus, 0o755);
 	});
 	afterAll(() => {
 		portal?.kill();
 		bus?.kill();
-		if (previousBus === undefined) delete process.env.DBUS_SESSION_BUS_ADDRESS;
-		else process.env.DBUS_SESSION_BUS_ADDRESS = previousBus;
 	});
 
 	async function startPortal(...args: string[]): Promise<void> {
 		portal?.kill();
 		await portal?.exited;
-		portal = Bun.spawn(["python3", script, ...args], { stdout: "pipe", stderr: "inherit", env: process.env });
+		portal = Bun.spawn(["python3", script, ...args], { stdout: "pipe", stderr: "inherit", env: busEnv });
 		expect(await firstLine(portal.stdout as ReadableStream<Uint8Array>)).toBe("ready");
 	}
 
 	function setScheme(v: number): void {
 		const r = Bun.spawnSync(
-			["gdbus", "call", "--session", "--dest", "org.freedesktop.portal.Desktop", "--object-path", "/org/freedesktop/portal/desktop",
+			[gdbus, "call", "--session", "--dest", "org.freedesktop.portal.Desktop", "--object-path", "/org/freedesktop/portal/desktop",
 				"--method", "test.Control.Set", String(v)],
 			{ stdout: "ignore", stderr: "pipe" },
 		);
@@ -195,22 +197,22 @@ describe.skipIf(!portalWanted)("Linux appearance, real gdbus and a stand-in port
 
 	test("readLinuxDark reads color-scheme with ReadOne", async () => {
 		await startPortal("1");
-		expect(readLinuxDark()).toBe(true);
+		expect(readLinuxDark(gdbus)).toBe(true);
 		setScheme(2);
-		expect(readLinuxDark()).toBe(false);
+		expect(readLinuxDark(gdbus)).toBe(false);
 		setScheme(0);
-		expect(readLinuxDark()).toBe(false);
+		expect(readLinuxDark(gdbus)).toBe(false);
 	});
 
 	test("readLinuxDark falls back to Read on a portal without ReadOne", async () => {
 		await startPortal("1", "no-readone");
-		expect(readLinuxDark()).toBe(true);
+		expect(readLinuxDark(gdbus)).toBe(true);
 	});
 
 	test("onLinuxThemeChange follows SettingChanged as gdbus monitor prints it", async () => {
 		await startPortal("2");
 		const seen: boolean[] = [];
-		const watch = onLinuxThemeChange((d) => seen.push(d));
+		const watch = onLinuxThemeChange((d) => seen.push(d), gdbus);
 		expect(watch).not.toBeNull();
 		try {
 			await Bun.sleep(500); // gdbus monitor subscribes after it starts; a signal before that is not seen
