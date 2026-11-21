@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **Application menubar on its own top row:** the File / Edit / View / Go / Tools / Help menubar is now always shown on its own compact row above the tab strip (not only when plugins are enabled), keeping open tabs uncluttered.
+- **Application menubar:** the File / Edit / View / Go / Tools / Help menubar is now always available (not only when plugins are enabled) — rendered natively in the macOS system menu bar on macOS, and on its own compact top row above the tab strip on Windows and Linux.
 
 ### Fixed
 

@@ -69,6 +69,13 @@ export const platform: Platform = {
 		bootCore(); // (a no-op when it already started)
 		saveHint();
 		void import("./shell/windowIcon").then((m) => m.applyWindowIcon()); // the app icon in the title bar / taskbar (GPUI sets none)
+		if (process.platform === "darwin") {
+			void Promise.all([import("./shell/macMenubar"), import("./shell/menubarState")]).then(
+				([{ installMacMenubar }, { setNativeMenubarState }]) => {
+					setNativeMenubarState(installMacMenubar() ? "active" : "fallback");
+				},
+			);
+		}
 	},
 
 	afterFeatures(store) {

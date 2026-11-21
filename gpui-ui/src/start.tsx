@@ -20,6 +20,7 @@ import { render } from "@gpuix/solid";
 import { createComponent, createEffect, createRoot, createSignal, Show, type Component } from "solid-js";
 import type { Mode, Style } from "./contracts";
 import { applyAppearance, startAppearance } from "./shell/appearance";
+import { showInWindowMenubar } from "./shell/menubarState";
 import { bindUiState } from "./shell/prefs";
 import { handleWindowKeyDown } from "./shell/shortcuts";
 import { tw } from "./theme";
@@ -80,7 +81,7 @@ function Splash(props: { t: (cls: string) => Style }) {
 	const bar = (w: number | string, h = 10): Style => ({ ...t("rounded-md bg-border"), width: w, height: h, opacity: 0.5 });
 	return (
 		<div style={{ ...t("flex flex-col bg-canvas"), ...FULL }}>
-			<div style={{ ...t("flex h-7 flex-none items-center border-b bg-topbar px-2"), width: "100%" }} />
+			{showInWindowMenubar() && <div style={{ ...t("flex h-7 flex-none items-center border-b bg-topbar px-2"), width: "100%" }} />}
 			<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }} />
 			<div style={{ ...t("flex flex-1 min-h-0 pt-3 pr-3 pb-3 pl-3"), width: "100%" }}>
 				<div style={{ ...t("flex flex-col gap-3 p-3"), width: "18%", flexShrink: 0, minWidth: 0, height: "100%" }}>

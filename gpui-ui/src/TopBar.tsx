@@ -5,6 +5,7 @@ import type { EventPayload } from "@gpuix/solid";
 import { isDocTab, type Mode, type ReaderTab, type Style, type WebTab } from "./contracts";
 import { Icon } from "./icons";
 import { closeSettings, leftOpen, openSettings, rightOpen, setLeftOpen, setRightOpen, SETTINGS_TAB, settingsOpen } from "./shell/layout";
+import { showInWindowMenubar } from "./shell/menubarState";
 import { refreshLibraryLists } from "./sync/state";
 import { SyncStatus } from "./sync/SyncStatus";
 import { store } from "./store";
@@ -159,10 +160,12 @@ export function TopBar() {
 	return (
 		// cacheRegion: drawn by its own cached GPUI view, replayed while the list scrolls
 		<div style={{ ...t("flex flex-col flex-none bg-topbar"), width: "100%", ...REGION }}>
-			{/* Application menubar (File / Edit / View / Go / Tools / Help), always shown above the tab strip; plugins can append entries */}
-			<div style={{ ...t("flex h-7 flex-none items-center border-b bg-topbar px-2"), width: "100%" }}>
-				<Menubar />
-			</div>
+			{/* Application menubar (File / Edit / View / Go / Tools / Help): native NSMenu on macOS, compact top row on Windows/Linux/web */}
+			<Show when={showInWindowMenubar()}>
+				<div style={{ ...t("flex h-7 flex-none items-center border-b bg-topbar px-2"), width: "100%" }}>
+					<Menubar />
+				</div>
+			</Show>
 			<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }}>
 				{/* the panel toggles belong to the library layout (disabled on a reader tab, as the web UI) */}
 				<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>

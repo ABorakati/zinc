@@ -22,8 +22,8 @@ import { toMenuItems } from "./ToolbarSlot";
 
 // ---- menubar ---------------------------------------------------------------------------------------------------------------
 
-type MenubarName = "file" | "edit" | "view" | "go" | "tools" | "help";
-const MENUS: { id: MenubarName; label: string }[] = [
+export type MenubarName = "file" | "edit" | "view" | "go" | "tools" | "help";
+export const MENUS: { id: MenubarName; label: string }[] = [
 	{ id: "file", label: "File" },
 	{ id: "edit", label: "Edit" },
 	{ id: "view", label: "View" },
