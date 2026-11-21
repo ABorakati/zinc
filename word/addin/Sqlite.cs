@@ -1,6 +1,7 @@
-// Minimal read-only SQLite access through winsqlite3.dll, the SQLite that ships with Windows 10/11 (FTS5
-// included). No NuGet/native dependency, nothing to register. The library database is opened READ ONLY: zotero-next
-// may be writing it (WAL) at the same moment, and this add-in never writes to it.
+// Minimal read-only SQLite access through winsqlite3.dll, the SQLite that ships with Windows 10/11 (older
+// builds may omit FTS5; Library.Search falls back to LIKE queries when FTS5 is unavailable). No NuGet/native
+// dependency, nothing to register. The library database is opened READ ONLY: zotero-next may be writing it
+// (WAL) at the same moment, and this add-in never writes to it.
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;

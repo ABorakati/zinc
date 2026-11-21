@@ -44,6 +44,19 @@ describe("buildSearchArgs", () => {
 		expect(buildSearchArgs("https://doi.org/10.1000/tx.2021.001")).toEqual({ doi: "10.1000/tx.2021.001", limit: 30 });
 		expect(buildSearchArgs("")).toEqual({ limit: 30 });
 		expect(buildSearchArgs('"graft survival"').match).toBe('{title creators abstract publication tags} : ("graft survival")');
+		expect(buildSearchArgs("Al-Mansoor").match).toBe('{title creators abstract publication tags} : ("Al Mansoor"*)');
+		expect(buildSearchArgs("O'Brien").match).toBe('{title creators abstract publication tags} : ("O Brien"*)');
+	});
+
+	test("app.search finds items by author name, title, author + year, and DOI", async () => {
+		const { app } = setup();
+		await app.init();
+		expect((await app.search("Smith")).map((r) => r.key)).toEqual(["AAAA1111"]);
+		expect((await app.search("Kovacs")).map((r) => r.key)).toEqual(["CCCC3333"]);
+		expect((await app.search("Machine perfusion")).map((r) => r.key)).toEqual(["BBBB2222"]);
+		expect((await app.search("Smith 2021")).map((r) => r.key)).toEqual(["AAAA1111"]);
+		expect((await app.search("Smith 2019")).map((r) => r.key)).toEqual([]);
+		expect((await app.search("10.1000/jh.2019.044")).map((r) => r.key)).toEqual(["BBBB2222"]);
 	});
 });
 
