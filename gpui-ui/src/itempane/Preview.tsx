@@ -24,7 +24,7 @@ import type { EventPayload } from "@gpuix/native";
 import { useGpuix } from "@gpuix/solid";
 import { ListScrollbar } from "../cards/ListScrollbar";
 import { withAlpha } from "../theme";
-import { hiddenUntil, type ImgNode, whenMounted } from "../reader/core/pixels";
+import { hiddenUntil, type ImgNode, uploadImagePixels } from "../reader/core/pixels";
 import { windowDpr } from "../reader/env";
 import { openPdfAtPage } from "../webview/noteLinks";
 import { readerPrefs } from "../settings/readerPrefs";
@@ -272,19 +272,24 @@ function PageThumb(p: {
 	const [ready, setReady] = createSignal(false);
 	onCleanup(() => {
 		alive = false;
+		img = undefined;
 		task?.cancel();
 	});
 	const show = async (px: ThumbPixels) => {
-		if (
-			(await whenMounted(
-				() => img,
-				() => alive,
-			)) &&
-			img
-		) {
-			img.setImagePixels(px.width, px.height, px.pixels, { format: "bgra" });
-			setReady(true);
-			p.onShown();
+		try {
+			if (
+				(await uploadImagePixels(
+					() => img,
+					() => alive,
+					() => ({ width: px.width, height: px.height, pixels: px.pixels }),
+				)) &&
+				alive
+			) {
+				setReady(true);
+				p.onShown();
+			}
+		} catch (e) {
+			if (alive) console.error("[preview] thumb:", e instanceof Error ? e.message : e);
 		}
 	};
 	createEffect(
@@ -300,9 +305,13 @@ function PageThumb(p: {
 				const pw = s.sizes[p.i]?.[0] ?? 612;
 				const r = s.render(p.i, (w * p.dpr) / pw, p.prio(), key);
 				task = r;
-				void r.promise.then((px) => {
-					if (px && alive) void show(px);
-				});
+				void r.promise
+					.then((px) => {
+						if (px && alive) void show(px);
+					})
+					.catch((e) => {
+						if (alive) console.error("[preview] thumb:", e instanceof Error ? e.message : e);
+					});
 			},
 		),
 	);

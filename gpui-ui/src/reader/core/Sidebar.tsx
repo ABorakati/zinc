@@ -11,7 +11,7 @@ import { textStyle, tokens, tw, withAlpha } from "../../theme";
 import { clampTx } from "../structure/kit";
 import { boundsOf, hideTooltip, showTooltip } from "../../ui/core";
 import type { Look, OutlineEntry, PdfDoc } from "../pdf";
-import { hiddenUntil, type ImgNode, whenMounted } from "./pixels";
+import { hiddenUntil, type ImgNode, uploadImagePixels } from "./pixels";
 import type { Scheduler } from "./scheduler";
 
 export const THUMB_W = 116;
@@ -233,6 +233,7 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]>; on
 	let task: { cancel(): void } | undefined;
 	onCleanup(() => {
 		alive = false;
+		img = undefined;
 		handle?.cancel();
 		task?.cancel();
 	});
@@ -266,13 +267,13 @@ function Thumb(p: ThumbsProps & { i: number; box: Accessor<[number, number]>; on
 						if (!r) return;
 						try {
 							if (
-								(await whenMounted(
+								(await uploadImagePixels(
 									() => img,
 									() => alive,
+									() => ({ width: r.width, height: r.height, pixels: r.pixels }),
 								)) &&
-								img
+								alive
 							) {
-								img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" });
 								setReady(true);
 							}
 						} finally {

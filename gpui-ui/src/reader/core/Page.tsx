@@ -31,7 +31,7 @@ import type { Look, PdfDoc, RenderTask } from "../pdf";
 import type { NRect } from "../plugins";
 import { lookKey } from "./appearance";
 import type { Scheduler } from "./scheduler";
-import { HIDE_UNTIL_PIXELS, hiddenUntil, type ImgNode, whenMounted } from "./pixels";
+import { HIDE_UNTIL_PIXELS, hiddenUntil, type ImgNode, uploadImagePixels } from "./pixels";
 import type { Previews } from "./preview";
 import { rotRect } from "./text";
 
@@ -232,6 +232,7 @@ function TileView(p: {
 	env.stats.peakTiles = Math.max(env.stats.peakTiles, env.stats.tiles);
 	onCleanup(() => {
 		spec.alive = false;
+		spec.img = undefined;
 		env.stats.tiles--;
 		p.onGone(spec);
 	});
@@ -266,21 +267,22 @@ function PreviewImg(p: {
 	const [ready, setReady] = createSignal(false);
 	onCleanup(() => {
 		alive = false;
+		img = undefined;
 		p.onShown(false);
 	});
-	void (async () => {
-		if (
-			!(await whenMounted(
-				() => img,
-				() => alive,
-			)) ||
-			!img
-		)
-			return;
-		img.setImagePixels(p.data.w, p.data.h, p.data.px, { format: "bgra" });
-		setReady(true);
-		p.onShown(true);
-	})();
+	void uploadImagePixels(
+		() => img,
+		() => alive,
+		() => ({ width: p.data.w, height: p.data.h, pixels: p.data.px }),
+	)
+		.then((ok) => {
+			if (!ok || !alive) return;
+			setReady(true);
+			p.onShown(true);
+		})
+		.catch((e) => {
+			if (alive) console.error("[reader] preview:", e instanceof Error ? e.message : e);
+		});
 	return (
 		<img
 			ref={(el: ImgNode) => {
@@ -500,6 +502,7 @@ export function PageSlot(p: {
 	};
 
 	// ---- rendering: the tiles that exist and are not drawn get a job (one per tile, or one for the whole page)
+	let disposed = false;
 	const inflight = new Map<string, Inflight>();
 	const BANDS = [PRIO_VISIBLE, PRIO_AHEAD, PRIO_BEHIND];
 	const prioOf = (inf: Inflight): number => {
@@ -510,28 +513,34 @@ export function PageSlot(p: {
 	const bitmaps = env.bitmaps ?? new BitmapCache(0);
 	const bmKey = (sk: string) => p.index + "|" + sk;
 	/** hand the tiles their pixels, the ones the reader sees first before the others */
-	async function uploadTiles(list: Iterable<TileSpec>, r: Bitmap): Promise<void> {
+	async function uploadTiles(list: Iterable<TileSpec>, r: Bitmap): Promise<boolean> {
+		let uploaded = false;
 		const order = [...list].sort((a, b) => a.tier() - b.tier() || dist(a) - dist(b));
 		for (const t of order) {
-			if (t.ready()) continue;
+			if (disposed || !t.alive || t.ready()) continue;
 			// the element may not be inserted yet right after mount: wait for it (a few frames at most)
-			const m0 = performance.now();
-			if (
-				!(await whenMounted(
-					() => t.img,
-					() => t.alive,
-				)) ||
-				!t.img
-			)
-				continue;
-			const u0 = performance.now();
-			env.stats.mountWaitMs = (env.stats.mountWaitMs ?? 0) + (u0 - m0);
-			if (t.whole) t.img.setImagePixels(r.width, t.h, r.slice(t.y, t.h), { format: "bgra" });
-			else t.img.setImagePixels(r.width, r.height, r.pixels, { format: "bgra" });
-			env.stats.lastUploadMs = performance.now() - u0;
-			env.stats.uploadMs = (env.stats.uploadMs ?? 0) + env.stats.lastUploadMs;
+			const ok = await uploadImagePixels(
+				() => t.img,
+				() => !disposed && t.alive && !t.ready(),
+				() =>
+					t.whole
+						? { width: r.width, height: t.h, pixels: r.slice(t.y, t.h) }
+						: { width: r.width, height: r.height, pixels: r.pixels },
+				{
+					onMountWait: (ms) => {
+						env.stats.mountWaitMs = (env.stats.mountWaitMs ?? 0) + ms;
+					},
+					onUpload: (ms) => {
+						env.stats.lastUploadMs = ms;
+						env.stats.uploadMs = (env.stats.uploadMs ?? 0) + ms;
+					},
+				},
+			);
+			if (!ok || disposed || !t.alive) continue;
 			t.setReady(true);
+			uploaded = true;
 		}
+		return uploaded;
 	}
 	function startJob(key: string, first: TileSpec): void {
 		const inf: Inflight = { key, tiles: new Set([first]), task: null, update: () => {} };
@@ -548,7 +557,7 @@ export function PageSlot(p: {
 		} catch (e) {
 			inflight.delete(key);
 			env.pending.n--;
-			if (first.alive) console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
+			if (!disposed && first.alive) console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
 			return;
 		}
 		inf.task = task;
@@ -564,29 +573,32 @@ export function PageSlot(p: {
 				// a whole-page bitmap stays in the cache (band tiles that appear later are cut out of it), a region is freed once uploaded
 				const entry = first.whole ? bitmaps.put(bmKey(first.sk), p.index, r) : null;
 				try {
-					if (inf.tiles.size) {
-						await uploadTiles(inf.tiles, r);
-						env.stats.renders++;
-						env.stats.lastRenderMs = r.renderMs;
-						env.stats.totalRenderMs += r.renderMs;
-						setTick((n) => n + 1);
+					if (!disposed && inf.tiles.size) {
+						const uploaded = await uploadTiles(inf.tiles, r);
+						if (!disposed && uploaded) {
+							env.stats.renders++;
+							env.stats.lastRenderMs = r.renderMs;
+							env.stats.totalRenderMs += r.renderMs;
+							setTick((n) => n + 1);
+						}
 					}
 				} finally {
 					if (entry) bitmaps.unuse(entry);
 					else r.release();
 				} // GPUIX holds its own copy of what it got
 			} catch (e) {
-				console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
+				if (!disposed) console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
 			} finally {
 				env.jobs.delete(inf.update);
 				if (inflight.get(key) === inf) inflight.delete(key);
 				env.pending.n--;
 				// a tile that appeared while the bitmap was being uploaded: it is cut out of the cached bitmap
-				if (inf.tiles.size) untrack(() => ensureJobs(tiles()));
+				if (!disposed && inf.tiles.size) untrack(() => ensureJobs(tiles()));
 			}
 		})();
 	}
 	function ensureJobs(list: TileSpec[]): void {
+		if (disposed) return;
 		for (const t of list) {
 			if (t.ready() || t.busy || !t.alive || t.sk !== untrack(grid).sk) continue;
 			const key = t.whole ? t.sk : t.key;
@@ -598,10 +610,17 @@ export function PageSlot(p: {
 			const cached = t.whole ? bitmaps.acquire(bmKey(t.sk)) : undefined;
 			if (cached) {
 				t.busy = true;
-				void uploadTiles([t], cached.r).finally(() => {
-					t.busy = false;
-					bitmaps.unuse(cached);
-				});
+				void uploadTiles([t], cached.r)
+					.then((uploaded) => {
+						if (!disposed && uploaded) setTick((n) => n + 1);
+					})
+					.catch((e) => {
+						if (!disposed && t.alive) console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
+					})
+					.finally(() => {
+						t.busy = false;
+						bitmaps.unuse(cached);
+					});
 			} else startJob(key, t);
 		}
 	}
@@ -619,6 +638,7 @@ export function PageSlot(p: {
 		}
 	}
 	onCleanup(() => {
+		disposed = true;
 		for (const inf of inflight.values()) {
 			inf.tiles.clear();
 			inf.task?.cancel();
