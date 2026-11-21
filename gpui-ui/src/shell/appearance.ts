@@ -8,7 +8,7 @@
 // It is light on purpose (no store import): main.tsx calls applyAppearance() before the first frame and startAppearance(store)
 // once the store exists.
 import { batch, createEffect, createRoot, createSignal, type Accessor } from "solid-js";
-import { dlopen, FFIType } from "bun:ffi";
+import { dlopen, FFIType, JSCallback } from "bun:ffi";
 import {
 	accentFor,
 	cleanFamily,
@@ -68,17 +68,121 @@ export function readWindowsAppsUseDark(): boolean | undefined {
 	}
 }
 
+// CF object references travel as u64 (BigInt): short CFStrings such as "Dark" are tagged pointers with the top bit set, which
+// FFIType.ptr (a JS number) cannot hold, and passing one back crashes the process.
+type CFRef = bigint;
+type MacCF = {
+	CFStringCreateWithCString(alloc: null, s: Buffer, enc: number): CFRef;
+	CFPreferencesAppSynchronize(app: CFRef): boolean;
+	CFPreferencesCopyAppValue(key: CFRef, app: CFRef): CFRef;
+	CFStringGetCString(s: CFRef, buf: Buffer, len: number, enc: number): boolean;
+	CFGetTypeID(cf: CFRef): bigint;
+	CFStringGetTypeID(): bigint;
+	CFRelease(cf: CFRef): void;
+	CFNotificationCenterGetDistributedCenter(): CFRef;
+	CFNotificationCenterAddObserver(center: CFRef, observer: CFRef, cb: unknown, name: CFRef, object: CFRef, behavior: number): void;
+};
+const UTF8 = 0x08000100; // kCFStringEncodingUTF8
+let macCF: { cf: MacCF; str(s: string): CFRef; key: CFRef; app: CFRef } | null | undefined;
+
+/** CoreFoundation and the two CFStrings the reader needs, opened once; null when not on macOS or when it fails to load. */
+function loadMacCF() {
+	if (macCF !== undefined) return macCF;
+	macCF = null;
+	if (process.platform !== "darwin") return null;
+	const cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
+		CFStringCreateWithCString: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u64 },
+		CFPreferencesAppSynchronize: { args: [FFIType.u64], returns: FFIType.bool },
+		CFPreferencesCopyAppValue: { args: [FFIType.u64, FFIType.u64], returns: FFIType.u64 },
+		CFStringGetCString: { args: [FFIType.u64, FFIType.ptr, FFIType.i64, FFIType.u32], returns: FFIType.bool },
+		CFGetTypeID: { args: [FFIType.u64], returns: FFIType.u64 },
+		CFStringGetTypeID: { args: [], returns: FFIType.u64 },
+		CFRelease: { args: [FFIType.u64], returns: FFIType.void },
+		CFNotificationCenterGetDistributedCenter: { args: [], returns: FFIType.u64 },
+		CFNotificationCenterAddObserver: {
+			args: [FFIType.u64, FFIType.u64, FFIType.function, FFIType.u64, FFIType.u64, FFIType.i64],
+			returns: FFIType.void,
+		},
+	}).symbols as unknown as MacCF;
+	const str = (s: string) => cf.CFStringCreateWithCString(null, Buffer.from(`${s}\0`, "utf8"), UTF8);
+	// kCFPreferencesAnyApplication is a CFString with this content; CFPreferences compares domains by value
+	const key = str("AppleInterfaceStyle");
+	const app = str("kCFPreferencesAnyApplication");
+	if (!key || !app) return null;
+	macCF = { cf, str, key, app };
+	return macCF;
+}
+
+/**
+ * macOS "Appearance" (the global AppleInterfaceStyle preference: "Dark" in dark mode, absent in light mode); undefined when
+ * unreadable. The preferences are synchronized before each read, so a long-running process sees the user's changes.
+ */
+export function readMacDark(): boolean | undefined {
+	try {
+		const m = loadMacCF();
+		if (!m) return undefined;
+		const { cf, key, app } = m;
+		cf.CFPreferencesAppSynchronize(app);
+		const v = cf.CFPreferencesCopyAppValue(key, app);
+		if (!v) return false;
+		try {
+			if (cf.CFGetTypeID(v) !== cf.CFStringGetTypeID()) return false;
+			const buf = Buffer.alloc(16);
+			if (!cf.CFStringGetCString(v, buf, buf.length, UTF8)) return false;
+			return buf.toString("utf8", 0, buf.indexOf(0)) === "Dark";
+		} finally {
+			cf.CFRelease(v);
+		}
+	} catch {
+		return undefined;
+	}
+}
+
+// Kept for the life of the process: CoreFoundation holds the function pointer and has no use for removing the observer here.
+let macThemeCallback: JSCallback | undefined;
+/**
+ * Call `onChange` when the user switches macOS between light and dark (the distributed notification
+ * AppleInterfaceThemeChangedNotification). CoreFoundation delivers it on the main run loop, which GPUIX's tick() pumps on the
+ * JavaScript thread, so `onChange` runs there. Returns false when not on macOS or when the observer cannot be registered.
+ */
+export function onMacThemeChange(onChange: () => void): boolean {
+	try {
+		const m = loadMacCF();
+		if (!m || macThemeCallback) return false;
+		// void (*)(CFNotificationCenterRef, void *observer, CFNotificationName, const void *object, CFDictionaryRef userInfo)
+		macThemeCallback = new JSCallback(() => onChange(), {
+			args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64],
+			returns: FFIType.void,
+		});
+		const center = m.cf.CFNotificationCenterGetDistributedCenter();
+		// observer: any non-null token; CFNotificationSuspensionBehaviorDeliverImmediately = 4
+		m.cf.CFNotificationCenterAddObserver(center, 1n, macThemeCallback.ptr, m.str("AppleInterfaceThemeChangedNotification"), 0n, 4);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 const [systemDark, setSystemDark] = createSignal(true);
 let watching = false;
-/** Follow the OS light/dark setting (polled every few seconds; there is no change event in the GPUIX window). */
+/**
+ * Follow the OS light/dark setting. macOS: read it now and again on each change notification. Windows: polled every few seconds,
+ * as there is no change event in the GPUIX window.
+ */
 export function watchSystemTheme(): void {
 	if (watching) return;
 	watching = true;
-	const poll = () => {
-		const d = readWindowsAppsUseDark();
+	const read = (d: boolean | undefined) => {
 		if (d !== undefined && d !== systemDark()) setSystemDark(d);
 	};
+	if (process.platform === "darwin") {
+		read(readMacDark());
+		onMacThemeChange(() => read(readMacDark()));
+		return;
+	}
+	const poll = () => read(readWindowsAppsUseDark());
 	poll();
+	if (process.platform !== "win32") return;
 	const t = setInterval(poll, 4000);
 	(t as unknown as { unref?: () => void }).unref?.();
 }
