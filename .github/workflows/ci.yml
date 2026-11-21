@@ -136,3 +136,36 @@ jobs:
       # Into a temp folder: the project's own OutputPath is word/dist/addin.
       - name: word/addin build (.NET Framework 4.8)
         run: dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$RUNNER_TEMP/addin-out"
+
+  # gpui-ui/src/shell/appearance.ts on Linux: the light/dark reader and change monitor, which run gdbus against the XDG desktop
+  # portal. appearance.linux.test.ts starts a private dbus-daemon and a stand-in portal (Python Gio); ZN_PORTAL_TEST=1 makes those
+  # tests fail, instead of skip, when dbus-daemon, gdbus or PyGObject is missing. The other gpui-ui tests run in windows-rest.
+  linux-appearance:
+    name: gpui-ui appearance (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-gpui-${{ hashFiles('gpui-ui/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-gpui-
+
+      - name: Install gpui-ui
+        working-directory: gpui-ui
+        run: bun install --frozen-lockfile
+      - name: Install dbus-daemon, gdbus and PyGObject
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-daemon libglib2.0-bin python3-gi
+
+      - name: gpui-ui appearance test
+        working-directory: gpui-ui
+        env:
+          ZN_PORTAL_TEST: "1"
+        run: bun test src/shell/appearance.linux.test.ts

@@ -163,11 +163,77 @@ export function onMacThemeChange(onChange: () => void): boolean {
 	}
 }
 
+// Linux: the XDG desktop portal's org.freedesktop.appearance color-scheme (GNOME and KDE implement it), through the gdbus command
+// (libglib2.0-bin). A GDBus subscription in this process would need GLib's main loop, which runs only while a web view is open.
+const PORTAL = ["--session", "--dest", "org.freedesktop.portal.Desktop", "--object-path", "/org/freedesktop/portal/desktop"];
+
+/** color-scheme as gdbus prints it ("<uint32 1>"): 1 prefers dark, 2 prefers light, 0 no preference (light). */
+function colorSchemeDark(text: string): boolean | undefined {
+	const m = /uint32 (\d+)/.exec(text);
+	return m ? m[1] === "1" : undefined;
+}
+
+/**
+ * The portal's color-scheme, read with `gdbus call`; undefined when gdbus or the portal is missing. ReadOne needs version 2 of the
+ * Settings interface; Read is the older call. `gdbus` is the command to run (tests pass a stand-in).
+ */
+export function readLinuxDark(gdbus = "gdbus"): boolean | undefined {
+	for (const method of ["ReadOne", "Read"]) {
+		try {
+			const r = Bun.spawnSync(
+				[gdbus, "call", ...PORTAL, "--method", `org.freedesktop.portal.Settings.${method}`, "org.freedesktop.appearance", "color-scheme"],
+				{ stdout: "pipe", stderr: "ignore", stdin: "ignore", timeout: 2000 },
+			);
+			if (r.exitCode === 0) return colorSchemeDark(r.stdout.toString());
+		} catch {
+			return undefined; // no gdbus
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Call `onChange` with the new value when the portal's color-scheme changes. `gdbus monitor` runs for the life of the app and prints
+ * one line per signal, e.g. "/org/freedesktop/portal/desktop: org.freedesktop.portal.Settings.SettingChanged
+ * ('org.freedesktop.appearance', 'color-scheme', <uint32 1>)". Returns false when gdbus cannot start. `gdbus` is the command to run
+ * (tests pass a stand-in); `stop()` ends the monitor, which otherwise ends when the app exits.
+ */
+export function onLinuxThemeChange(onChange: (dark: boolean) => void, gdbus = "gdbus"): { stop(): void } | null {
+	let proc: ReturnType<typeof Bun.spawn<"ignore", "pipe", "ignore">>;
+	try {
+		proc = Bun.spawn([gdbus, "monitor", ...PORTAL], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+	} catch {
+		return null;
+	}
+	proc.unref();
+	const stop = () => proc.kill();
+	process.once("exit", stop);
+	void (async () => {
+		let rest = "";
+		const dec = new TextDecoder();
+		for await (const chunk of proc.stdout) {
+			const lines = (rest + dec.decode(chunk, { stream: true })).split("\n");
+			rest = lines.pop() ?? "";
+			for (const line of lines) {
+				if (!line.includes(".SettingChanged") || !line.includes("'org.freedesktop.appearance', 'color-scheme'")) continue;
+				const d = colorSchemeDark(line);
+				if (d !== undefined) onChange(d);
+			}
+		}
+	})().catch(() => {});
+	return {
+		stop() {
+			process.off("exit", stop);
+			stop();
+		},
+	};
+}
+
 const [systemDark, setSystemDark] = createSignal(true);
 let watching = false;
 /**
- * Follow the OS light/dark setting. macOS: read it now and again on each change notification. Windows: polled every few seconds,
- * as there is no change event in the GPUIX window.
+ * Follow the OS light/dark setting. macOS and Linux: read it now and again on each change notification. Windows: polled every few
+ * seconds, as there is no change event in the GPUIX window.
  */
 export function watchSystemTheme(): void {
 	if (watching) return;
@@ -178,13 +244,15 @@ export function watchSystemTheme(): void {
 	if (process.platform === "darwin") {
 		read(readMacDark());
 		onMacThemeChange(() => read(readMacDark()));
-		return;
+	} else if (process.platform === "linux") {
+		read(readLinuxDark());
+		onLinuxThemeChange(read);
+	} else if (process.platform === "win32") {
+		const poll = () => read(readWindowsAppsUseDark());
+		poll();
+		const t = setInterval(poll, 4000);
+		(t as unknown as { unref?: () => void }).unref?.();
 	}
-	const poll = () => read(readWindowsAppsUseDark());
-	poll();
-	if (process.platform !== "win32") return;
-	const t = setInterval(poll, 4000);
-	(t as unknown as { unref?: () => void }).unref?.();
 }
 /** Is the OS in dark mode (as last read)? */
 export const systemIsDark: Accessor<boolean> = systemDark;
