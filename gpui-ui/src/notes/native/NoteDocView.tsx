@@ -7,6 +7,7 @@ import { openLink } from "../../itempane/actions";
 import { t, tok, tx } from "../../itempane/kit";
 import { Icon } from "../../icons";
 import { inlineMarkdown } from "./inline";
+import { blockAlign, blockDir } from "../../ui/bidi";
 import type { NoteNode } from "./parse";
 
 const BLOCK_GAP = 8;
@@ -30,8 +31,16 @@ function Blocks(p: { nodes: NoteNode[]; depth: number; onCitation?: OnCitation }
 
 const indentOf = (n: NoteNode) => (Number(n.attrs?.indent) || 0) * INDENT_PX;
 
-function Text(p: { node: NoteNode; prefix?: string; onCitation?: OnCitation }): JSX.Element {
+const textOf = (x: NoteNode): string => x.text ?? (x.content ?? []).map(textOf).join("");
+/** Direction of a block: `attrs.dir`, else the first strong character of its text (what Zotero's note editor does with dir="auto"). */
+const dirOf = (n: NoteNode) => blockDir(n.attrs, textOf(n));
+/** A list's direction: its own `attrs.dir`, else the first non-empty item's text. */
+const listDirOf = (n: NoteNode) => blockDir(n.attrs, textOf({ type: "doc", content: n.content } as NoteNode));
+
+function Text(p: { node: NoteNode; prefix?: string; onCitation?: OnCitation; dir?: "ltr" | "rtl" }): JSX.Element {
 	const r = inlineMarkdown(p.node.content);
+	const dir = () => p.dir ?? dirOf(p.node);
+	const rtl = () => dir() === "rtl";
 	return (
 		<markdown
 			source={(p.prefix ?? "") + r.source}
@@ -48,14 +57,18 @@ function Text(p: { node: NoteNode; prefix?: string; onCitation?: OnCitation }): 
 				if (cite) p.onCitation?.(r.citations[Number(cite[1])] ?? {});
 				else void openLink(url);
 			}}
-			style={{ width: "100%", paddingLeft: indentOf(p.node) }}
+			style={{
+				width: "100%",
+				// an RTL paragraph is indented from the right; textAlign follows attrs.align, else the direction
+				...(rtl() ? { paddingRight: indentOf(p.node) } : { paddingLeft: indentOf(p.node) }),
+				textAlign: blockAlign(p.node.attrs, dir()),
+			}}
 		/>
 	);
 }
 
 function Block(p: { node: NoteNode; depth: number; onCitation?: OnCitation }): JSX.Element {
 	const n = p.node;
-	const textOf = (x: NoteNode): string => x.text ?? (x.content ?? []).map(textOf).join("");
 	return (
 		<Switch fallback={<Text node={n} onCitation={p.onCitation} />}>
 			<Match when={n.type === "paragraph" && !(n.content ?? []).length}>
@@ -68,15 +81,17 @@ function Block(p: { node: NoteNode; depth: number; onCitation?: OnCitation }): J
 				<div style={{ ...t("flex flex-col"), gap: 2, width: "100%" }}>
 					<For each={n.content ?? []}>
 						{(item, i) => (
-							<div style={{ ...t("flex flex-row"), width: "100%" }}>
+							<div style={{ ...t("flex"), flexDirection: listDirOf(n) === "rtl" ? "row-reverse" : "row", width: "100%" }}>
 								<text
 									style={{
 										...tx("text-[13px] text-muted-foreground"),
 										width: 22,
 										flexShrink: 0,
 										lineHeight: 19,
-										textAlign: "right",
-										paddingRight: 6,
+										// the marker sits on the start side: right of the text in LTR, left of it in RTL
+										...(listDirOf(n) === "rtl"
+											? { textAlign: "left", paddingLeft: 6 }
+											: { textAlign: "right", paddingRight: 6 }),
 									}}
 								>
 									{n.type === "orderedList"
@@ -97,9 +112,8 @@ function Block(p: { node: NoteNode; depth: number; onCitation?: OnCitation }): J
 						...t("flex flex-col"),
 						width: "100%",
 						gap: BLOCK_GAP,
-						borderLeftWidth: 3,
+						...(listDirOf(n) === "rtl" ? { borderRightWidth: 3, paddingRight: 10 } : { borderLeftWidth: 3, paddingLeft: 10 }),
 						borderColor: tok("border"),
-						paddingLeft: 10,
 					}}
 				>
 					<Blocks nodes={n.content ?? []} depth={p.depth} onCitation={p.onCitation} />

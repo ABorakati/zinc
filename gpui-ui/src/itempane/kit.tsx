@@ -393,6 +393,8 @@ export function Field(p: {
 	onEditing?: (e: boolean) => void;
 	/** open directly in the editor (rename) */
 	startEditing?: boolean;
+	/** base direction of the editor: "ltr" for IDs / numbers / URLs (Zotero's fieldDir); default "auto" (first strong character) */
+	dir?: "ltr" | "rtl" | "auto";
 }): JSX.Element {
 	const [editing, setEditingRaw] = createSignal(!!p.startEditing);
 	const setEditing = (v: boolean) => {
@@ -474,6 +476,7 @@ export function Field(p: {
 						autoFocus
 						value={p.value}
 						placeholder={p.placeholder}
+						dir={p.dir}
 						onChange={(e) => {
 							draft = (e as { value?: string }).value ?? "";
 						}}
@@ -489,6 +492,7 @@ export function Field(p: {
 					autoFocus
 					value={p.value}
 					placeholder={p.placeholder}
+					dir={p.dir}
 					minRows={2}
 					maxRows={14}
 					onSubmit={p.submitOnEnter ? commit : undefined}
@@ -516,6 +520,8 @@ export function BoxInput(p: {
 	autoFocus?: boolean;
 	numeric?: boolean;
 	style?: Style;
+	/** base direction; numeric inputs are always "ltr" */
+	dir?: "ltr" | "rtl" | "auto";
 }): JSX.Element {
 	let draft = p.value;
 	let done = p.value;
@@ -531,6 +537,7 @@ export function BoxInput(p: {
 			autoFocus={p.autoFocus}
 			value={p.value}
 			placeholder={p.placeholder}
+			dir={p.numeric ? "ltr" : p.dir}
 			onChange={(e) => {
 				let v = (e as { value?: string }).value ?? "";
 				if (p.numeric) v = v.replace(/\D/g, "");

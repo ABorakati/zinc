@@ -6,6 +6,10 @@ import type { HostProps } from "@gpuix/native/host";
 import type { SolidHostProps } from "@gpuix/solid/jsx-runtime";
 
 declare module "@gpuix/native/host" {
+	interface InputProps {
+		/** base text direction; the fork defaults to "auto" (first strong character) */
+		dir?: "ltr" | "rtl" | "auto";
+	}
 	interface GpuixTheme {
 		/** <markdown> link text and underline colour (unset: links keep the text colour) */
 		link?: string;

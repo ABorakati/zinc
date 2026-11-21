@@ -27,6 +27,7 @@ import { clearTitleEdit, titleEditWanted } from "./focus";
 import { openLink } from "./actions";
 import { CITATION_KEY_FIELD, CitationKeyBlock } from "../features/bbt/InfoRow";
 import type { Creator, ZoteroSchemaField, ZoteroSchemaItemType } from "./net";
+import { fieldDir } from "../ui/bidi";
 import { daysIn, fmtTimestamp, formatDateParts, isPlainDate, MONTH_ABBR, parseDate } from "./util";
 
 const HIDDEN = new Set(["abstractNote", "dateAdded", "dateModified", "accessDate_", "itemType", "creators"]);
@@ -402,6 +403,7 @@ export function useInfoEntries(): () => Entry[] {
 						<Field
 							value={v()}
 							multiline={field === "extra"}
+							dir={fieldDir(field)}
 							onSave={(nv) => void pane.save({ [field]: nv })}
 							// Duplicate Item / Create Parent Item open the new item's title for editing (focusTitle in ./focus)
 							startEditing={field === "title" && titleEditWanted(data().key)}
