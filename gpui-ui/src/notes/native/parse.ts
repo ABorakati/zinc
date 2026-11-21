@@ -58,6 +58,11 @@ export function noteMetadata(box: Element): Metadata {
 function preprocess(box: Element, document: Document): void {
 	const walk = (parent: Element) => {
 		for (let node = parent.firstElementChild; node; node = node.nextElementSibling) {
+			const style = node.getAttribute("style");
+			if (style) {
+				const canon = cssomColors(style);
+				if (canon !== style) node.setAttribute("style", canon);
+			}
 			const bg = /(?:^|;)\s*background(?:-image)?\s*:[^;]*?url\(\s*(["']?)([^"')]*)\1\s*\)/i.exec(node.getAttribute("style") ?? "");
 			if (bg && /^(https?|data):/.test(bg[2]!)) {
 				const img = document.createElement("img");
@@ -75,6 +80,78 @@ function preprocess(box: Element, document: Document): void {
 		}
 	};
 	walk(box);
+}
+
+/**
+ * Colour declarations of a `style` attribute as the browser's CSSOM prints them (`#ffd400` -> `rgb(255, 212, 0)`). Zotero's parse rules
+ * read styles through `dom.style.getPropertyValue`, so in Firefox they never see hex; linkedom has no CSSOM and hands over the raw text.
+ * Without this, Zotero's backgroundColor rule (which adds 50% alpha to a palette colour written in hex) fires in Zinc and not in Zotero,
+ * and a highlight saved opaque by Zotero comes back half transparent.
+ */
+export function cssomColors(style: string): string {
+	return style.replace(
+		/(^|;)(\s*)(color|background-color|text-decoration-color|background)(\s*:\s*)([^;]*)/gi,
+		(all, sep: string, ws: string, name: string, colon: string, value: string) => {
+			const v = value.trim();
+			// `background` only when it is one value: Zotero's rule takes a one-token shorthand as a colour
+			if (name.toLowerCase() === "background" && /\s/.test(v)) return all;
+			const c = cssomColor(v);
+			return c === null ? all : `${sep}${ws}${name}${colon}${c}${value.slice(value.trimEnd().length)}`;
+		},
+	);
+}
+
+/** One CSS colour as the CSSOM serializes a specified value (CSS Color 4 §15), or null when it is not one this handles. */
+export function cssomColor(input: string): string | null {
+	const v = input.trim().toLowerCase();
+	const out = (r: number, g: number, b: number, a = 1): string => {
+		const c = (x: number) => Math.max(0, Math.min(255, Math.round(x)));
+		if (a >= 1) return `rgb(${c(r)}, ${c(g)}, ${c(b)})`;
+		return `rgba(${c(r)}, ${c(g)}, ${c(b)}, ${alpha(Math.max(0, a))})`;
+	};
+	const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(v);
+	if (hex) {
+		let h = hex[1]!;
+		if (h.length <= 4) h = [...h].map((x) => x + x).join("");
+		const n = (i: number) => parseInt(h.slice(i, i + 2), 16);
+		return out(n(0), n(2), n(4), h.length === 8 ? n(6) / 255 : 1);
+	}
+	const fn = /^(rgba?|hsla?)\(\s*([^)]*)\)$/.exec(v);
+	if (!fn) return null;
+	// both syntaxes: `rgb(1, 2, 3, 0.5)` and `rgb(1 2 3 / 50%)`
+	const parts = fn[2]!.split(/\s*[,/]\s*|\s+/).filter(Boolean);
+	if (parts.length < 3 || parts.length > 4) return null;
+	const num = (s: string, pct: number): number | null => {
+		const m = /^([+-]?(?:\d+\.?\d*|\.\d+))(%|deg)?$/.exec(s);
+		if (!m) return null;
+		return m[2] === "%" ? (Number(m[1]) / 100) * pct : Number(m[1]);
+	};
+	const a = parts[3] === undefined ? 1 : num(parts[3], 1);
+	if (a === null) return null;
+	if (fn[1]!.startsWith("rgb")) {
+		const [r, g, b] = parts.slice(0, 3).map((p) => num(p, 255));
+		return r == null || g == null || b == null ? null : out(r, g, b, a);
+	}
+	const h = num(parts[0]!, 360);
+	const s = num(parts[1]!, 1);
+	const l = num(parts[2]!, 1);
+	if (h === null || s === null || l === null || !parts[1]!.endsWith("%") || !parts[2]!.endsWith("%")) return null;
+	// CSS Color 4 hsl -> rgb
+	const f = (k: number) => {
+		const t = (k + (((h % 360) + 360) % 360) / 30) % 12;
+		return l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(t - 3, 9 - t, 1));
+	};
+	return out(f(0) * 255, f(8) * 255, f(4) * 255, a);
+}
+
+/** Alpha as browsers print it: the fewest decimals (2, else 3) that still round to the same 8-bit value. */
+function alpha(a: number): string {
+	const byte = Math.round(a * 255);
+	for (const places of [2, 3]) {
+		const s = Number(a.toFixed(places));
+		if (Math.round(s * 255) === byte) return String(s);
+	}
+	return String(Number(a.toFixed(3)));
 }
 
 /**

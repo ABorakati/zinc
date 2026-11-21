@@ -140,23 +140,14 @@ function withCanonColors(oracle: Oracle, doc: unknown): unknown {
 		if (o.marks)
 			o.marks = o.marks.map((m: any) => {
 				if (!(m.attrs && typeof m.attrs.color === "string" && m.attrs.color)) return m;
-				let color = oracle.cssColor(m.attrs.color);
-				// Zotero's backgroundColor parse rule adds 50% alpha to the palette's hex colours; Gecko hands it rgb(), so it never fires there
-				const half = /^rgba\((\d+), (\d+), (\d+), 0\.5\)$/.exec(color);
-				if (m.type === "backgroundColor" && half && PALETTE_RGB.includes(`rgb(${half[1]}, ${half[2]}, ${half[3]})`))
-					color = `rgb(${half[1]}, ${half[2]}, ${half[3]})`;
-				return { ...m, attrs: { ...m.attrs, color } };
+				// no allowance for Zotero's palette-alpha rule: parse.ts normalises colours as the CSSOM does, so it fires (or not) as in Zotero
+				return { ...m, attrs: { ...m.attrs, color: oracle.cssColor(m.attrs.color) } };
 			});
 		if (o.content) o.content = o.content.map(walk);
 		return o;
 	};
 	return walk(doc);
 }
-
-/** Zotero's highlight palette (`HIGHLIGHT_COLORS`) without its alpha, as the CSSOM prints it. */
-const PALETTE_RGB = ["#ff6666", "#f19837", "#ffd400", "#5fb236", "#a28ae5", "#e56eee", "#2ea8e5", "#aaaaaa"].map(
-	(h) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`,
-);
 
 /**
  * What Zotero's own editor does to a document when the note is saved and opened again (a `load(save(doc))` that is not the identity
@@ -169,12 +160,14 @@ const PALETTE_RGB = ["#ff6666", "#f19837", "#ffd400", "#5fb236", "#a28ae5", "#e5
  *  - an image's originalSrc and tempSrc are not written; an ordered list's start that is NaN (null) is not either.
  *  - column widths: see below.
  *  - a table cell's background-color style is read again as a backgroundColor mark on its text.
+ *  - display maths is written as bare `$$...$$`: marks its text inherited on load (a `color` on a wrapper <div>) are not written.
  */
 export function reloadNormal(doc: any): any {
 	const ws = /[ \t\n\r\f\u00a0]+/g;
 	const emptyPara = { type: "paragraph", attrs: { indent: null, align: null, dir: null } };
 	const walk = (n: any, cell: boolean, soleInItem: boolean): any => {
 		let o = { ...n };
+		if (o.type === "math_display" && o.content) o.content = o.content.map((t: any) => (t.marks ? { ...t, marks: undefined } : t));
 		const inCell = cell || ((o.type === "table_cell" || o.type === "table_header") && !!o.attrs?.background);
 		if (o.marks && inCell) o.marks = o.marks.filter((m: any) => m.type !== "backgroundColor");
 		if (o.type === "text") {

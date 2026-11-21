@@ -1,7 +1,7 @@
 // Where Zinc's parse.ts / serialize.ts used to differ from Zotero's own note editor, found by scripts/fuzz (the differential fuzzer):
 // each test is one behaviour of the editor (EditorCore's constructor on open, buildToHTML on save) written down.
 import { expect, test } from "bun:test";
-import { loadNoteParser, type NoteNode } from "./parse";
+import { cssomColor, cssomColors, loadNoteParser, type NoteNode } from "./parse";
 import { serializeNote } from "./serialize";
 
 const parser = (await loadNoteParser())!;
@@ -93,4 +93,33 @@ test("load: a style on the root div reaches the text; NUL is dropped; the newlin
 test("load: text next to an entity is one text node, so leading white space is collapsed across it", () => {
 	const doc = parser.parse(`<div data-schema-version="10"><pre>x</pre>\n\n\n&#38;&#60;\n<p>b</p></div>`);
 	expect(find(doc, "text").map((t) => t.text)).toEqual(["x", " &<", "b"]);
+});
+
+// Firefox hands Zotero's parse rules colours through the CSSOM (`rgb(...)`), so its rule that adds 50% alpha to a palette colour written
+// in hex never fires there. Zinc used to see the raw hex and saved Zotero yellow `#ffd400` as half-transparent `#ffd40080`.
+test("a palette colour written in hex stays opaque, as in Zotero", async () => {
+	const parser = (await loadNoteParser())!;
+	const html = '<div data-schema-version="10"><p><span style="background-color: #ffd400">yellow</span></p></div>';
+	const out = serializeNote(parser.parse(html), html);
+	expect(out).toContain("background-color: rgb(255, 212, 0)");
+	expect(out).not.toContain("#ffd40080");
+});
+
+test("colours are normalised as the CSSOM prints them (checked against Chromium)", () => {
+	const cases: [string, string | null][] = [
+		["#ffd400", "rgb(255, 212, 0)"],
+		["#FFD400", "rgb(255, 212, 0)"],
+		["#ffd40080", "rgba(255, 212, 0, 0.5)"],
+		["#ffd4007f", "rgba(255, 212, 0, 0.498)"],
+		["#0a08", "rgba(0, 170, 0, 0.533)"],
+		["#000000ff", "rgb(0, 0, 0)"],
+		["rgb(10 120 200 / 50%)", "rgba(10, 120, 200, 0.5)"],
+		["rgb(300, -5, 12.6)", "rgb(255, 0, 13)"],
+		["hsl(120, 100%, 25%)", "rgb(0, 128, 0)"],
+		["red", null],
+		["var(--x)", null],
+	];
+	for (const [input, want] of cases) expect(cssomColor(input)).toBe(want);
+	expect(cssomColors("text-align: center; background-color: #ffd400")).toBe("text-align: center; background-color: rgb(255, 212, 0)");
+	expect(cssomColors("background: #fff url(x.png)")).toBe("background: #fff url(x.png)");
 });
