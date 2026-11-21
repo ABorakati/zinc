@@ -6,6 +6,15 @@ import type { HostProps } from "@gpuix/native/host";
 import type { SolidHostProps } from "@gpuix/solid/jsx-runtime";
 
 declare module "@gpuix/native/host" {
+	interface HostProps {
+		/**
+		 * base text direction of the text on this element and below it (inherited), like HTML `dir`: "auto" (default) is the first strong
+		 * character; "ltr" / "rtl" force it (punctuation, digits and the truncation ellipsis follow) without changing `textAlign`.
+		 * Works on <text>, text inside <div> and <markdown>. NOTE: the npm 0.11 JS layer drops `dir` on built-in <text> / <div> (it is not in
+		 * its UNIVERSAL_PROPS); the fork's mutations.ts lists it.
+		 */
+		dir?: "ltr" | "rtl" | "auto";
+	}
 	interface InputProps {
 		/** base text direction; the fork defaults to "auto" (first strong character) */
 		dir?: "ltr" | "rtl" | "auto";

@@ -2,7 +2,8 @@
 import { createSignal } from "solid-js";
 import { api } from "../api";
 import type { ItemRow } from "../contracts";
-import { fieldOf } from "../table/defs";
+import { fieldOf, itemFieldDir } from "../table/defs";
+import type { Dir } from "../ui/bidi";
 import { metaText } from "./fields";
 import { cardLayout, type CreatorsMode } from "./layout";
 
@@ -36,6 +37,16 @@ export function authorsText(it: ItemRow, mode: CreatorsMode = cardLayout.layout(
 export interface MetaPart {
 	text: string;
 	accent: boolean;
+	/** base direction of the part's text (ui/bidi.ts fieldDirection) */
+	dir: Dir | "auto";
+}
+
+/** The data field whose direction rules a meta field; `null`: interface text (item type), which stays left to right. */
+const META_DIR_FIELD: Record<string, string | null> = { itemType: null, year: "date", publication: "publicationTitle", volIssuePages: "pages" };
+/** Direction of a meta line field for an item. */
+export function metaDir(id: string, it: ItemRow): Dir | "auto" {
+	const field = id in META_DIR_FIELD ? META_DIR_FIELD[id] : id;
+	return field === null ? "ltr" : itemFieldDir(it, field!);
 }
 
 /** Meta line fields in the customised order, empty ones dropped. */
@@ -43,7 +54,7 @@ export function metaParts(it: ItemRow): MetaPart[] {
 	const out: MetaPart[] = [];
 	for (const m of cardLayout.metaFields()) {
 		const text = metaText(m, it);
-		if (text) out.push({ text, accent: !!m.accent });
+		if (text) out.push({ text, accent: !!m.accent, dir: metaDir(m.id, it) });
 	}
 	return out;
 }

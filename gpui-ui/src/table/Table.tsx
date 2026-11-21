@@ -25,7 +25,7 @@ import { defaultDir, REVEAL_SETTLE_MS, stats, store } from "../store";
 import { textStyle, tokens, tw } from "../theme";
 import { readState } from "../readState";
 import { DropdownMenu, openMenu, type MenuItem } from "../ui";
-import { getColumn, labelOf, loadSchema, MENU_COLUMNS, moreColumns, pluginColumns, type Column } from "./defs";
+import { cellDir, getColumn, labelOf, loadSchema, MENU_COLUMNS, moreColumns, pluginColumns, type Column } from "./defs";
 import { colorOf, textStyleOf } from "../wasmplugins/extend/style";
 import { rowStyleFor } from "../wasmplugins/extend/data";
 import { createColumnTable } from "./headless";
@@ -216,6 +216,7 @@ function Cell(p: { col: ColInfo; item: ItemRow; index: number }): JSX.Element {
 					fallback={
 						<div style={base()}>
 							<text
+								dir={cellDir(c(), p.item)}
 								style={{
 									...textStyle("select-none text-[13px] text-foreground/80", mode()),
 																		...look(),
@@ -292,7 +293,10 @@ function Cell(p: { col: ColInfo; item: ItemRow; index: number }): JSX.Element {
 						/>
 					</Show>
 				</div>
-				<text style={{ ...textStyle("select-none text-[13px] text-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}>
+				<text
+					dir={cellDir(c(), p.item)}
+					style={{ ...textStyle("select-none text-[13px] text-foreground", mode()), whiteSpace: "nowrap", flexShrink: 0 }}
+				>
 					{clipText(p.item.title || "(untitled)", p.col.width - 16 - 20 - TWISTY - TITLE_GAP, 13)}
 				</text>
 			</div>

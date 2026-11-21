@@ -31,14 +31,15 @@ export const columnLayout = createRoot(() => {
 
 	const columns = createMemo(() => ids().map(getColumn));
 	const widthOf = (id: string) => widths()[id] ?? getColumn(id).width;
-	/** Zotero data fields the visible columns need, as the `fields=` parameter. */
+	/** Zotero data fields the visible columns need, as the `fields=` parameter; `language` always comes along (it decides each cell's direction). */
 	const fieldsParam = createMemo(() =>
 		[
-			...new Set(
-				columns()
+			...new Set([
+				"language",
+				...columns()
 					.map((c) => c.field)
 					.filter((f): f is string => !!f),
-			),
+			]),
 		]
 			.sort()
 			.join(","),

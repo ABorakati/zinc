@@ -4,6 +4,7 @@ import { createSignal } from "solid-js";
 import { api, type ZoteroSchema } from "../api";
 import type { ItemRow } from "../contracts";
 import { isPluginColumn, pluginColumn } from "../wasmplugins/extend/columns";
+import { fieldDirection, type Dir } from "../ui/bidi";
 export { pluginColumns } from "../wasmplugins/extend/columns";
 
 export interface Column {
@@ -120,6 +121,27 @@ const date10 = (s: string | null | undefined) => (s ? s.slice(0, 10) : "");
 /** A Zotero data field of a row (requested through `fields=`). */
 export const fieldOf = (it: ItemRow, f: string): string => (it.fields as Record<string, string | null> | undefined)?.[f] ?? "";
 const field = (f: string) => (it: ItemRow) => fieldOf(it, f);
+
+/**
+ * Base direction of an item field's text in the item list, as Zotero's item tree sets each cell's `dir` from
+ * `ItemFields.getDirection(field, baseField)` and the item's `language` (see ui/bidi.ts fieldDirection). The list requests
+ * `language` with its fields; a row that lacks it gives "auto" (first strong character) for fields that are not ID-like.
+ */
+export function itemFieldDir(it: ItemRow, field: string): Dir | "auto" {
+	const baseField = schema()
+		?.itemTypes.find((t) => t.itemType === it.itemType)
+		?.fields.find((f) => f.field === field)?.baseField;
+	return fieldDirection(field, baseField, fieldOf(it, "language") || undefined);
+}
+
+/** The data field whose direction rules a column's cell; `null`: interface text (item types, counts), which stays left to right. */
+const DIR_FIELD: Record<string, string | null> = { year: "date", itemType: null, attachments: null, notes: null };
+/** Direction of a column's cell for an item. Plugin columns (arbitrary text) follow their own text. */
+export function cellDir(col: Pick<Column, "id">, it: ItemRow): Dir | "auto" {
+	if (isPluginColumn(col.id)) return "auto";
+	const field = col.id in DIR_FIELD ? DIR_FIELD[col.id] : col.id;
+	return field === null ? "ltr" : itemFieldDir(it, field!);
+}
 
 /** "journalArticle" -> "Journal Article" (the schema label once it has loaded). */
 export const itemTypeLabel = (t: string): string =>
