@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster Settings open:** Settings now defers and scopes section refreshes (`Files`, `Integrations`, `Sync`, `System`) to the visible section instead of querying all backends and Windows subprocesses on every open, batches tab activation, and memoizes section/search queries.
+- **Faster PDF viewing and scrolling:** PDF page tile uploads now run concurrently in a single GPUIX batch with a microtask mount fast-path, scroll updates are batched, preview requests track page changes rather than pixel offsets, and academic hover highlights use O(1) selectors.
+
+### Fixed
+
+- **Syncing `itemType` changes back to Zotero:** changing a regular item's type (such as `blogPost` → `webpage`) no longer fails to write to `zotero.sqlite`; base fields remap cleanly across types (e.g. `blogTitle` → `websiteTitle`), stale fields and invalid creator types are cleaned up before updating `itemTypeID`, and structural conversions to/from notes or attachments remain safely rejected.
+- **PDF hover cards and annotation popups clipping under adjacent pages:** citation/figure hover cards and annotation editor popups are now hoisted into deferred `<anchored>` overlays rendered above all pages, with smart flipping and viewport edge clamping.
+
 ## [0.2.6] - 2026-11-21
 
 Fixes the packaged plugin startup crash, Word citation search on older Windows SQLite builds, PDF reader page-jump crashes, and macOS/Linux system appearance tracking, and introduces an always-available application menubar (native `NSMenu` on macOS, compact top row on Windows and Linux).
