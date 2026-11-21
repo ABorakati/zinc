@@ -8,6 +8,13 @@ import { DockOverlay, registerDropHost } from "./dock";
 import { drawnColumns, locatePane, stackFace, type Column, type ColumnId, type ViewKind, type ViewLayout } from "./frameLayout";
 import { PaneStack } from "./PaneStack";
 import { paneDef, panesOf } from "./panes";
+import { clearMaximise, maximised, minimisedPanes, restorePane } from "./paneChrome";
+import { IconBtn } from "../itempane/kit";
+import { t, tok } from "../ui/core";
+import { HIDDEN } from "./kit";
+
+/** The strip at the frame's right edge with the minimised library panes, one button each. */
+const RAIL_W = 34;
 
 const GUTTER = 12;
 const MIN_FRACTION: Record<ColumnId, number> = { left: 0.1, centre: 0.25, right: 0.15 };
@@ -64,6 +71,17 @@ export function Frame(p: {
 		return el;
 	};
 
+	/** Where the maximised pane is while it is drawn (library only); null shows the layout as it is. */
+	const maxAt = createMemo(() => {
+		const id = p.view === "library" ? maximised() : null;
+		return id && visible(id) ? locatePane(p.layout(), id) : null;
+	});
+	// a maximised pane that stops being drawn (hidden, moved into a stack behind another tab) ends the maximise
+	createEffect(() => {
+		const id = maximised();
+		if (p.view === "library" && id && !visible(id)) clearMaximise();
+	});
+
 	const ColumnView = (q: { which: "centre" | "right" }): JSX.Element => {
 		const col = (): Column => p.layout()[q.which];
 		// Keep ordinal slots, including empty ones, so no Solid cleanup can destroy a pane during a move.
@@ -83,7 +101,10 @@ export function Frame(p: {
 					gutter={GUTTER}
 					line={false}
 					sizes={slots().map((i) => col().sizes[i] ?? 0)}
-					shown={slots().map((i) => face(i) !== null)}
+					shown={slots().map((i) => {
+						const m = maxAt();
+						return m ? m.column === q.which && m.stack === i : face(i) !== null;
+					})}
 					minPx={slots().map((i) => (paneDef(face(i) ?? "")?.minSize.h ?? 0) + 26)}
 					onSizes={(s) => p.setLayout({ ...p.layout(), [q.which]: { ...col(), sizes: s.slice(0, col().stacks.length) } })}
 				>
@@ -171,13 +192,20 @@ export function Frame(p: {
 	};
 	const ORDER: ColumnId[] = ["left", "centre", "right"];
 
+	const rail = () => (p.view === "library" ? minimisedPanes() : []);
+
 	return (
 		<>
+			<div style={{ display: "flex", flexDirection: "row", width: "100%", height: "100%", minWidth: 0, minHeight: 0 }}>
+			<div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, minWidth: 0, height: "100%" }}>
 			<Resizable
 				gutter={GUTTER}
 				line={false}
 				sizes={p.layout().sizes}
-				shown={ORDER.map((c) => cols().includes(c))}
+				shown={ORDER.map((c) => {
+					const m = maxAt();
+					return m ? m.column === c : cols().includes(c);
+				})}
 				minSizes={ORDER.map((c) => MIN_FRACTION[c])}
 				minPx={ORDER.map(minPx)}
 				onSizes={(s) => p.setLayout({ ...p.layout(), sizes: [s[0]!, s[1]!, s[2]!] })}
@@ -188,6 +216,32 @@ export function Frame(p: {
 				<ColumnView which="centre" />
 				<ColumnView which="right" />
 			</Resizable>
+			</div>
+			<div
+				testId="pane-rail"
+				role="toolbar"
+				aria-label="Minimised panes"
+				style={
+					rail().length
+						? { ...t("flex flex-none flex-col items-center gap-1"), width: RAIL_W, marginLeft: 6, paddingTop: 4, height: "100%" }
+						: HIDDEN
+				}
+			>
+				<For each={rail()}>
+					{(id) => (
+						<IconBtn
+							testId={`pane-rail-${id}`}
+							icon={paneDef(id)?.icon ?? "square"}
+							title={`Show ${paneDef(id)?.title() ?? id}`}
+							box={28}
+							size={16}
+							color={tok("muted-foreground")}
+							onClick={() => restorePane(id)}
+						/>
+					)}
+				</For>
+			</div>
+			</div>
 			<div ref={(el: HostElement) => { parking = el; }} testId="pane-parking" style={OFF} />
 			<div
 				ref={(el: HostElement) => { emptyRight = el; }}

@@ -32,8 +32,15 @@ import { HIDDEN } from "./kit";
 import { withAlpha } from "../theme";
 import { paneDef, panesOf } from "./panes";
 import { returnSection } from "./sectionPanes";
+import { maximised, minimisePane, paneHeaderActions, toggleMaximise } from "./paneChrome";
+import { IconBtn } from "../itempane/kit";
 
 const HEADER_H = 26;
+/** The hover header over a lone pane, and the strip along the pane's top edge that brings it up. */
+const HOVER_HEADER_H = 30;
+const HOT_STRIP_H = 8;
+/** How long the hover header stays after the pointer leaves it (so a quick pass back over it does not flicker). */
+const HIDE_DELAY_MS = 350;
 /** The header is taller in edit layout mode: it is the handle then. */
 const EDIT_HEADER_H = 34;
 const TAB_H = 22;
@@ -146,18 +153,96 @@ function menuFor(id: string, l: ViewLayout, registered: ReadonlySet<string>): Me
 			},
 		});
 
+	items.push({ separator: true }, {
+		label: maximised() === id ? "Restore size" : "Maximise",
+		icon: maximised() === id ? "minimize-2" : "maximize-2",
+		onSelect: () => toggleMaximise(id),
+	});
 	if (!paneDef(id)?.required) {
-		items.push({ separator: true }, {
-			label: "Hide",
-			icon: "eye-off",
-			onSelect: () => {
-				const title = titleOf(id);
-				hideLibraryPane(id, true);
-				offerUndo(`Hid ${title}`);
-			},
-		});
+		items.push(
+			{ label: "Minimise to the edge", icon: "minus", onSelect: () => minimisePane(id) },
+			{ label: "Hide", icon: "eye-off", onSelect: () => closePane(id) },
+		);
 	}
 	return items;
+}
+
+/** Hide a library pane in place (the header's close button, the menu's Hide), with an Undo toast. */
+function closePane(id: string): void {
+	const title = titleOf(id);
+	hideLibraryPane(id, true);
+	offerUndo(`Hid ${title}`);
+}
+
+/** The pane's own buttons in its header: the pane menu, minimise, maximise / restore, close. */
+function PaneControls(p: {
+	/** "hover" (the hover header) or "tabs" (the tab strip): keeps the test ids apart */
+	tag: string;
+	id: () => string | null;
+	menu: (id: string, el: HostElement | undefined) => void;
+}): JSX.Element {
+	let menuEl: HostElement | undefined;
+	const req = () => !!paneDef(p.id() ?? "")?.required;
+	const isMax = () => p.id() !== null && maximised() === p.id();
+	const fg = tok("muted-foreground");
+	return (
+		<div style={{ ...t("flex flex-none flex-row items-center gap-0.5") }}>
+			<div ref={(x: HostElement) => { menuEl = x; }}>
+				<IconBtn
+					testId={`pane-${p.tag}-menu-${p.id() ?? ""}`}
+					icon="ellipsis"
+					title="Pane menu"
+					box={24}
+					size={15}
+					color={fg}
+					onClick={() => {
+						const id = p.id();
+						if (id) p.menu(id, menuEl);
+					}}
+				/>
+			</div>
+			<div style={req() ? HIDDEN : { display: "flex" }}>
+				<IconBtn
+					testId={`pane-${p.tag}-min-${p.id() ?? ""}`}
+					icon="minus"
+					title="Minimise to the edge"
+					box={24}
+					size={15}
+					color={fg}
+					onClick={() => {
+						const id = p.id();
+						if (id) minimisePane(id);
+					}}
+				/>
+			</div>
+			<IconBtn
+				testId={`pane-${p.tag}-max-${p.id() ?? ""}`}
+				icon={isMax() ? "minimize-2" : "maximize-2"}
+				title={isMax() ? "Restore size" : "Maximise"}
+				box={24}
+				size={14}
+				color={fg}
+				onClick={() => {
+					const id = p.id();
+					if (id) toggleMaximise(id);
+				}}
+			/>
+			<div style={req() ? HIDDEN : { display: "flex" }}>
+				<IconBtn
+					testId={`pane-${p.tag}-close-${p.id() ?? ""}`}
+					icon="x"
+					title="Hide this pane"
+					box={24}
+					size={15}
+					color={fg}
+					onClick={() => {
+						const id = p.id();
+						if (id) closePane(id);
+					}}
+				/>
+			</div>
+		</div>
+	);
 }
 
 /** The pane menu of a library pane as drawn now: what a right click on its tab opens (the headless harness calls its `onSelect`s). */
@@ -393,6 +478,34 @@ export function PaneStack(p: {
 		onMouseUp: () => dragsHere() && head.onMouseUp(),
 	};
 
+	// ---- the hover header of a lone pane: it lies over the pane's top and comes up when the pointer reaches the strip along the
+	// pane's top edge (not anywhere over the pane: it would cover the pane's own top row, e.g. the item list's column headers).
+	// It stays while the pointer is on it, and a little after. Its free part (title and empty space) drags the pane.
+	const hoverMode = () => !layoutEditing() && single() && face() !== null;
+	const [revealed, setRevealed] = createSignal(false);
+	let hideTimer: ReturnType<typeof setTimeout> | undefined;
+	const reveal = () => {
+		if (hideTimer !== undefined) clearTimeout(hideTimer);
+		hideTimer = undefined;
+		setRevealed(true);
+	};
+	const hideSoon = () => {
+		if (hideTimer !== undefined) clearTimeout(hideTimer);
+		hideTimer = setTimeout(() => {
+			hideTimer = undefined;
+			setRevealed(false);
+		}, HIDE_DELAY_MS);
+	};
+	onCleanup(() => {
+		if (hideTimer !== undefined) clearTimeout(hideTimer);
+	});
+	const { wasDrag: hoverWasDrag, ...hoverDrag } = paneDragSource(() => face() ?? p.stack()?.panes[0] ?? "items");
+	const [titleHot, setTitleHot] = createSignal(false);
+	const headerActions = () => {
+		const f = face();
+		return f ? paneHeaderActions(f) : undefined;
+	};
+
 	return (
 		<div
 			ref={(x: HostElement) => setRoot(x)}
@@ -410,6 +523,7 @@ export function PaneStack(p: {
 			<div
 				style={{
 					...t("flex flex-none flex-row items-center gap-0.5 px-1"),
+					userSelect: "none",
 					height: layoutEditing() ? EDIT_HEADER_H : HEADER_H,
 					width: "100%",
 					minWidth: 0,
@@ -461,11 +575,105 @@ export function PaneStack(p: {
 				<div style={layoutEditing() ? { display: "flex" } : HIDDEN}>
 					<MenuButton />
 				</div>
+				{/* several tabs, outside edit mode: the pane's own buttons for the tab shown */}
+				<div style={!layoutEditing() && !single() && face() !== null ? { display: "flex" } : HIDDEN}>
+					<PaneControls tag="tabs" id={face} menu={(id, el) => menuUnder(id, el)} />
+				</div>
 			</div>
 			<div
 				ref={p.contentRef}
 				style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, flexBasis: 0, width: "100%", minWidth: 0, minHeight: 0 }}
 			/>
+			{/* after the content, so they lie over it: the strip along the top edge, then the hover header */}
+			<div
+				testId={`pane-hotstrip-${face() ?? ""}`}
+				onMouseEnter={reveal}
+				onMouseLeave={hideSoon}
+				style={
+					hoverMode()
+						? { position: "absolute", top: 0, left: 16, right: 16, height: HOT_STRIP_H, ...t("flex flex-row justify-center") }
+						: HIDDEN
+				}
+			>
+				{/* a short grabber line: the hint that there is a header here */}
+				<div
+					style={{
+						marginTop: 2,
+						width: 36,
+						height: 3,
+						borderRadius: 2,
+						backgroundColor: withAlpha(tok("foreground"), revealed() ? 0 : 0.18),
+						pointerEvents: "none",
+					}}
+				/>
+			</div>
+			<div
+				testId={`pane-hover-header-${face() ?? ""}`}
+				role="toolbar"
+				aria-label={`${titleOf(face() ?? "")} pane`}
+				onMouseEnter={reveal}
+				onMouseLeave={hideSoon}
+				style={
+					hoverMode() && (revealed() || held())
+						? {
+								...t("flex flex-row items-center gap-1 pl-1 pr-1"),
+								position: "absolute",
+								top: 0,
+								left: 0,
+								right: 0,
+								height: HOVER_HEADER_H,
+								backgroundColor: tok("background"),
+								borderBottomWidth: 1,
+								borderColor: tok("border"),
+								borderTopLeftRadius: 14,
+								borderTopRightRadius: 14,
+								// a press here starts a drag, never a text selection across the window
+								userSelect: "none",
+							}
+						: HIDDEN
+				}
+			>
+				{/* the free part: icon, title and the empty space drag the pane; a double click maximises it; a right click opens the menu */}
+				<div
+					testId={`pane-hover-drag-${face() ?? ""}`}
+					{...hoverDrag}
+					onClick={(e: EventPayload) => {
+						if (hoverWasDrag()) return;
+						const f = face();
+						if (f && (e.clickCount ?? 1) >= 2) toggleMaximise(f);
+					}}
+					onAuxClick={(e: EventPayload) => {
+						const f = face();
+						if (f && isRightClick(e)) menuFrom(f, { x: e.x ?? 0, y: e.y ?? 0 });
+					}}
+					onMouseEnter={() => setTitleHot(true)}
+					onMouseLeave={() => setTitleHot(false)}
+					style={{
+						...t("flex flex-row items-center gap-1.5 rounded-md px-2"),
+						flexGrow: 1,
+						flexShrink: 1,
+						minWidth: 0,
+						height: "100%",
+						cursor: "grab",
+						...(held() ? { backgroundColor: withAlpha(tok("primary"), 0.14) } : {}),
+					}}
+				>
+					<Icon name={paneDef(face() ?? "")?.icon ?? "square"} size={14} color={tok(titleHot() ? "foreground" : "muted-foreground")} />
+					<text
+						style={{
+							...tx("min-w-0 truncate text-[13px] font-medium"),
+							color: tok(titleHot() ? "foreground" : "muted-foreground"),
+							flexShrink: 1,
+							whiteSpace: "nowrap",
+						}}
+					>
+						{titleOf(face() ?? "")}
+					</text>
+				</div>
+				{/* buttons the pane's content hands over (a detached section's own actions) */}
+				<div style={{ ...t("flex flex-none flex-row items-center gap-0.5") }}>{headerActions()?.()}</div>
+				<PaneControls tag="hover" id={face} menu={(id, el) => menuUnder(id, el)} />
+			</div>
 		</div>
 	);
 }

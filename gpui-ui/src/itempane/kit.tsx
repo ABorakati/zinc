@@ -14,6 +14,7 @@ import { sectionPaneId } from "../shell/frameLayout";
 import { paneDragging, paneDragSource, panePressed, registerDropHost } from "../shell/dock";
 import { detachSection } from "../shell/sectionPanes";
 import { undoLayout } from "../shell/layout";
+import { setPaneHeaderActions } from "../shell/paneChrome";
 
 export const mode = (): Mode => store.mode();
 /** The library on screen is read-only for this user (a group they may not edit): the pane shows its data but changes nothing. */
@@ -204,18 +205,18 @@ export function SectionHead(p: HeadProps): JSX.Element {
 	);
 }
 
-/** A detached section's header: no title row, only the actions (when there are any) in a small right-aligned row. */
-function ActionRow(p: { actions?: JSX.Element }): JSX.Element {
+/** A detached section draws no header row: its actions go to the pane's hover header (shell/PaneStack.tsx), next to the title. */
+function DetachedActions(p: { id: string; actions?: JSX.Element }): JSX.Element {
 	const acts = children(() => p.actions);
-	return (
-		<Show when={acts.toArray().length > 0}>
-			<div style={{ ...t("flex h-6 w-full flex-none items-center justify-end gap-0.5 px-5") }}>{acts()}</div>
-		</Show>
-	);
+	createEffect(() => {
+		if (acts.toArray().length === 0) return;
+		onCleanup(setPaneHeaderActions(sectionPaneId(p.id), () => acts()));
+	});
+	return null;
 }
 
 function HeadRow(p: HeadProps): JSX.Element {
-	if (useContext(DetachedSectionContext)) return <ActionRow actions={p.actions} />;
+	if (useContext(DetachedSectionContext)) return <DetachedActions id={p.id} actions={p.actions} />;
 	// The header keeps a faint tint at all times (so the sections read as bands); hovering darkens its chevron, icon and title
 	// instead. GPUIX hover styles only restyle the hovered element itself, not its children, so the text colour follows a
 	// signal — gated, so the item pane's virtual list makes no hover commits while it scrolls.
