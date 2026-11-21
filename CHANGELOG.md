@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-11-21
+
+Fixes the packaged plugin startup crash, Word citation search on older Windows SQLite builds, PDF reader page-jump crashes, and macOS/Linux system appearance tracking, and introduces an always-available application menubar (native `NSMenu` on macOS, compact top row on Windows and Linux).
+
 ### Changed
 
 - **Application menubar:** the File / Edit / View / Go / Tools / Help menubar is now always available (not only when plugins are enabled) — rendered natively in the macOS system menu bar on macOS, and on its own compact top row above the tab strip on Windows and Linux.
@@ -363,7 +367,8 @@ The first start upgrades the library database to schema v3 (it adds the search i
 - Institution sign-in window (OpenAthens, Shibboleth, library proxy) for Find Full Text; a sign-in from the earlier Electrobun build is carried over.
 - Browser connector (native messaging) included in the installer.
 
-[unreleased]: https://github.com/ABorakati/zinc/compare/v0.2.5...HEAD
+[unreleased]: https://github.com/ABorakati/zinc/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/ABorakati/zinc/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/ABorakati/zinc/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ABorakati/zinc/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ABorakati/zinc/compare/v0.2.2...v0.2.3
