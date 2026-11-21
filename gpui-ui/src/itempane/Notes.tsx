@@ -80,7 +80,7 @@ type NoteEditorProps = {
 };
 
 /** One note: Zotero's editor when it is available, else the Markdown editor. `fill` (top-level notes) fills the parent's height.
- *  With Settings > General > "Show notes natively" (a preview) the note opens read-only in the native view first. */
+ *  With Settings > Experimental > "Show notes natively" the note opens read-only in the native view first. */
 export function NoteEditor(p: NoteEditorProps): JSX.Element {
 	return (
 		<Show when={nativeNotes()} fallback={<UsualNoteEditor {...p} />}>

@@ -17,6 +17,7 @@ import "./defs/shortcuts";
 import "./defs/files";
 import "./defs/files-storage"; // the ZotMoov rows of Files and folders (must follow defs/files)
 import "./defs/integrations";
+import "./defs/experimental";
 import "./defs/system";
 import "./defs/updates"; // System > Updates rows (must follow defs/system)
 import { SectionBody } from "./SettingsPage";

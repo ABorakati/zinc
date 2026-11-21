@@ -1,4 +1,4 @@
-// Headless check that Settings > General > "Show notes natively (preview)" can be switched on with the mouse and is saved:
+// Headless check that Settings > Experimental > "Show notes natively" can be switched on with the mouse and is saved:
 //   ZN_DB=<copy of library.sqlite> ZN_PORT=23164 ZN_SHOTS=<dir> bun scripts/shot-native-note-setting.tsx
 // Opens Settings at General, clicks the switch on the setting's row, then checks the setting and the (throw-away) ui-state.json.
 import { STATE_FILE } from "./_shell-env";
@@ -20,10 +20,10 @@ const h = await boot({ prefs: { mode: "light" }, width: 1400, height: 900 });
 const r = h.t.renderer;
 openSettings();
 await h.settle(400);
-gotoSection("general");
+gotoSection("experimental");
 await h.settle(800);
 
-const LABEL = "Show notes natively (preview)";
+const LABEL = "Show notes natively";
 const label = r.findByText(LABEL);
 let lb = label ? r.getElementBounds(label.id) : null;
 for (let i = 0; i < 20 && (!lb || lb.y > 860 || lb.height === 0); i++) {

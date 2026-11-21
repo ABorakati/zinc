@@ -1,4 +1,4 @@
-// Headless check of the PROTOTYPE native note view inside the app (Settings > General > "Show notes natively"), against an
+// Headless check of the PROTOTYPE native note view inside the app (Settings > Experimental > "Show notes natively"), against an
 // in-process core on a library COPY that has a child note:
 //   ZN_DB=<copy of library.sqlite> ZN_PORT=23163 ZN_SHOTS=<dir> bun scripts/shot-native-note-app.tsx
 // Turns the setting on, opens the first child note from its parent's Notes section, checks it is drawn natively with its text,

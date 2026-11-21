@@ -8,7 +8,6 @@ import { readState } from "../../readState";
 import { registerSection, registerSettings } from "../registry";
 import { openUrlResolver, setOpenUrlResolver } from "../../locate/prefs";
 import { autoAttachPdfs, autoTag, setAutoAttachPdfs, setAutoTag } from "../generalPrefs";
-import { nativeNotes, setNativeNotes } from "../../notes/native/prefs";
 
 registerSection({
 	id: "general",
@@ -136,15 +135,5 @@ registerSettings([
 		description: "Add tags from keywords and subject headings found in fetched metadata or imported files.",
 		keywords: ["import", "tags", "keywords", "subjects", "metadata"],
 		control: () => <Toggle checked={autoTag()} onChange={setAutoTag} />,
-	},
-	{
-		id: "general.nativeNotes",
-		section: "general",
-		group: "Notes",
-		label: "Show notes natively (preview)",
-		description:
-			"Experimental: a note opens at once in a native, read-only view; Edit opens it in the usual editor. Text colour is not shown yet.",
-		keywords: ["notes", "editor", "native", "experimental", "fast"],
-		control: () => <Toggle checked={nativeNotes()} onChange={setNativeNotes} />,
 	},
 ]);

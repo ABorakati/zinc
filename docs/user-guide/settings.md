@@ -10,7 +10,7 @@ Where settings are stored:
 
 | Kind | Stored in |
 | --- | --- |
-| Window and interface choices (Appearance, the library layout, General, Reader, updates, the Locate address, the Plugins switches) | `ui-state.json` in the settings folder (see [Folders](first-run.md#folders)). **System** shows the exact path. |
+| Window and interface choices (Appearance, the library layout, General, Reader, updates, the Locate address, the Experimental and Plugins switches) | `ui-state.json` in the settings folder (see [Folders](first-run.md#folders)). **System** shows the exact path. |
 | Plugins' own settings and data | the plugins folder (see [Plugins](plugins.md#where-plugins-live)) |
 | Reading view typography | `reading-settings.json` next to `ui-state.json` |
 | Quick Copy style | `cite-settings.json` next to the library database |
@@ -233,6 +233,16 @@ Word, and saving from your browser. Both are Windows only and are installed per 
 | LibreOffice and Google Docs | Cite-while-you-write for LibreOffice and Google Docs. Not available yet. | |
 | Browser connector (Edge / Chrome) | Save papers and PDFs from Edge or Chrome into this library, even when the app is closed. **Install browser connector** installs the helper and opens the browser's extensions page; you then turn on Developer mode and choose Load unpacked yourself. Afterwards: **Add to Edge...** / **Add to Chrome...** and **Uninstall**. See [Adding items](adding-items.md). | |
 
+## Experimental
+
+Features that work but are not finished. Each is **off by default** and changes nothing until you turn it on; they may change or go away in a later version.
+
+| Setting | What it does | Default / options |
+| --- | --- | --- |
+| Show notes natively | A note opens at once in a native, read-only view; **Edit** opens it in the usual editor. Text colour is not shown yet. | Off |
+| Edit notes natively | With Show notes natively on, **Edit** opens a native editor with a formatting toolbar (bold, italic, lists, headings, colours, links, undo) instead of the usual one. Needs a Zinc build whose GPUI toolkit has the native editor. | Off |
+| Enable plugins | Runs installed plugins in a separate process. Install and manage them under [Plugins](#plugins). Takes effect the next time Zinc starts. See [Plugins](plugins.md). | Off |
+
 ## System
 
 The core connection, saved interface state and about.
@@ -259,11 +269,10 @@ Settings under System > Updates. See [Updates](updates.md). Updating in the app 
 
 ## Plugins
 
-Plugins are experimental and off by default. See [Plugins](plugins.md).
+Plugins are experimental and off by default: turn them on with [Experimental](#experimental) > Enable plugins. See [Plugins](plugins.md).
 
 | Setting | What it does | Default / options |
 | --- | --- | --- |
-| Enable plugins (experimental) | Runs installed plugins in a separate process. Takes effect the next time Zinc starts. | Off |
 | Install a plugin (button: **Install from file...**) | Installs or updates a plugin from a `.zplugin` file, after showing the permissions it asks for. Available while plugins are running. | |
 | *each plugin* | Its name, version and status (running, off, failed, ...), a switch to turn it on or off, and **Remove** (asks first; deletes the plugin with its settings and data). **Review permissions...** appears when an update waits for your approval. | On after install |
 | Offer *plugin*'s tools to AI agents | Shown under a plugin that asks to offer tools to AI agents. Lets agents connected to Zinc's MCP server (HTTP, while Zinc runs) call the plugin's tools, with the number it declares. They can do whatever the plugin is allowed to do. See [MCP for AI agents](mcp.md#tools-from-plugins). | Off |
