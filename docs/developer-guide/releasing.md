@@ -14,6 +14,14 @@ bun gpui-ui/scripts/release.ts --installer <that exe> --notes <file> ...   # sig
 
 The browser extension (the Zinc Connector) has its own zips, workflow and store steps: see [Releasing the browser extension](extension-release.md).
 
+## Release notes
+
+The release notes are the version's section of `CHANGELOG.md` at the repository root ([Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)). Before a release:
+
+1. Rename `## [Unreleased]` to `## [<version>] - <yyyy-mm-dd>` and add an empty `## [Unreleased]` above it.
+2. At the end of the file, point `[unreleased]` at `compare/v<version>...HEAD` and add a `[<version>]` link to `compare/v<previous>...v<version>`.
+3. Pass that section, with the install instructions, to `release.ts --notes`.
+
 ## Build provenance attestations
 
 From 0.1.18 the files GitHub Actions builds for a release carry a [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations): a statement, signed through GitHub's OIDC token and recorded in Sigstore's public log, that the file was built by a given workflow from a given commit. `actions/attest-build-provenance` runs right before each "attach to the release" step:
