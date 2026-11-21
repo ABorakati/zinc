@@ -9,7 +9,7 @@ import { clearPrefs, prefsPath } from "../../shell/prefs";
 import { resetThemePrefs } from "../../shell/appearance";
 import { confirm, toast } from "../../ui";
 import { Btn, Value } from "../controls";
-import { onSettingsShown, registerSection, registerSettings } from "../registry";
+import { onSectionShown, registerSection, registerSettings } from "../registry";
 import { readerPrefs } from "../readerPrefs";
 
 registerSection({
@@ -23,10 +23,10 @@ registerSection({
 
 const [core, setCore] = createSignal<"checking" | "ok" | "down">("checking");
 const [coreInfo, setCoreInfo] = createSignal("");
-onSettingsShown(() => {
-	setCore("checking");
+onSectionShown("system", () => {
+	if (core() !== "ok") setCore("checking");
 	// any cheap read tells whether the core answers
-	call<unknown[]>("GET", "/api/collections").then(
+	void call<unknown[]>("GET", "/api/collections").then(
 		(c) => {
 			setCore("ok");
 			setCoreInfo(`${c.length.toLocaleString()} collections`);

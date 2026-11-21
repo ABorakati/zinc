@@ -7,7 +7,7 @@ import { sync, ZOTERO_LABEL } from "../../sync/state";
 import { webSync } from "../../features/websync/client";
 import { isBrowserLibrary } from "../../shell/libraryMode";
 import { Btn, Toggle, Value } from "../controls";
-import { onSettingsShown, registerSection, registerSettings } from "../registry";
+import { onSectionShown, registerSection, registerSettings } from "../registry";
 import { AccountControl, FileCheckControl, FilesControl, GroupsControl, OrgStatusControl, PushControl, SourceControl } from "./sync-org";
 
 registerSection({
@@ -18,9 +18,8 @@ registerSection({
 	description: "Keeping this library and Zotero's in step.",
 	keywords: ["zotero", "write", "backup"],
 });
-onSettingsShown(() => {
-	sync.start();
-	void sync.refresh();
+onSectionShown("sync", () => {
+	if (!sync.start()) void sync.refresh();
 	void webSync.refresh();
 });
 

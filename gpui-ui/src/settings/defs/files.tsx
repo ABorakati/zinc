@@ -8,9 +8,9 @@ import { canPickFile, canPickFolder, pickFile, pickFolder, revealInFolder } from
 import { readLibrarySetting, saveLibrarySetting } from "../../../../core/src/library-location";
 import { inspectLibraryFile } from "../../firstrun/libraryFile";
 import { toast } from "../../ui";
-import { refreshStorage, setStorage as publishStorage, type StorageInfo } from "../../features/storage/state";
+import { setStorage as publishStorage, type StorageInfo } from "../../features/storage/state";
 import { Btn, Segmented, TextField, Toggle, Value } from "../controls";
-import { onSettingsShown, registerSection, registerSettings } from "../registry";
+import { onSectionShown, registerSection, registerSettings } from "../registry";
 
 registerSection({
 	id: "files",
@@ -100,7 +100,12 @@ export const files = createRoot(() => {
 			setView(v);
 			publishStorage(v.storage);
 			setError("");
-			setConvert(await call<ConvertPreview>("POST", "/api/files/base-dir/convert", { direction: "relative" }).catch(() => null));
+			// Only scan linked attachments for relative-path conversion when a base directory is active and absolute links exist.
+			if (v.baseDir.effective && v.baseDir.stored.absolute > 0) {
+				setConvert(await call<ConvertPreview>("POST", "/api/files/base-dir/convert", { direction: "relative" }).catch(() => null));
+			} else {
+				setConvert(null);
+			}
 		} catch (e) {
 			setError(errMsg(e));
 		}
@@ -123,10 +128,6 @@ export const files = createRoot(() => {
 		}
 	};
 	return { view, error, busy, convert, refresh, send };
-});
-onSettingsShown(() => {
-	void files.refresh();
-	void refreshStorage();
 });
 
 export const gone = (): JSX.Element => <Value>{files.error() || "Loading…"}</Value>;
@@ -162,8 +163,11 @@ export async function pick(then: (path: string) => unknown): Promise<void> {
 
 const samePath = (a: string, b: string) => a.replaceAll("\\", "/").toLowerCase() === b.replaceAll("\\", "/").toLowerCase();
 /** The library path saved for the next start (%APPDATA%\zotero-next-gpui\library.json); null when none was saved yet. */
-const [savedLibrary, setSavedLibrary] = createSignal<string | null>(readLibrarySetting());
-onSettingsShown(() => setSavedLibrary(readLibrarySetting()));
+const [savedLibrary, setSavedLibrary] = createSignal<string | null>(null);
+onSectionShown("files", () => {
+	setSavedLibrary(readLibrarySetting());
+	void files.refresh();
+});
 
 /** "Change…": pick another zotero-next library file; it is saved and opens at the next start (the open library is left alone). */
 async function changeLibrary(current: string | null) {

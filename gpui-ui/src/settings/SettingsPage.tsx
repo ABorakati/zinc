@@ -96,10 +96,19 @@ export function SettingsPage(p: { active: boolean }): JSX.Element {
 		const cur = list.find((s) => s.id === currentSection()) ?? list[0];
 		return cur ? [cur] : [];
 	});
-	const total = () => sections().reduce((n, s) => n + (sectionDef(s.id) ? sectionCount(s.id) : 0), 0);
+	const total = createMemo(() => sections().reduce((n, s) => n + (sectionDef(s.id) ? sectionCount(s.id) : 0), 0));
+	const shownIds = createMemo(() => shown().map((s) => s.id), [], {
+		equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]),
+	});
 
+	// Refresh only the visible section(s), and defer until after the Settings frame paints (plus a short debounce while searching
+	// so intermediate single-letter matches do not trigger heavy refreshes for sections the user is only typing past).
 	createEffect(() => {
-		if (p.active) settingsShown();
+		if (!p.active) return;
+		const ids = shownIds();
+		const delay = searching() ? 150 : 0;
+		const timer = setTimeout(() => settingsShown(ids), delay);
+		onCleanup(() => clearTimeout(timer));
 	});
 	// Escape clears the search while the tab is showing
 	createEffect(() => {

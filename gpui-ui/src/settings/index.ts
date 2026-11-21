@@ -24,7 +24,7 @@ import { sections } from "./registry";
 
 export { SettingsPage, gotoSection } from "./SettingsPage";
 export { SettingRow, Btn, Choice, Kbd, Segmented, TextField, Toggle, Value } from "./controls";
-export { registerSection, registerSetting, registerSettings, registerSettingsProvider, onSettingsShown } from "./registry";
+export { registerSection, registerSetting, registerSettings, registerSettingsProvider, onSettingsShown, onSectionShown } from "./registry";
 export { readerPrefs } from "./readerPrefs";
 
 /** Bridge: every data-driven section becomes a shell SettingsSection (once; safe to call again for sections added later). */

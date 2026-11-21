@@ -5,7 +5,7 @@ import { Txt, t } from "../../shell/kit";
 import { call, errMsg } from "../../shell/net";
 import { toast } from "../../ui";
 import { Btn, Value } from "../controls";
-import { onSettingsShown, registerSection, registerSettings } from "../registry";
+import { onSectionShown, registerSection, registerSettings } from "../registry";
 
 registerSection({
 	id: "integrations",
@@ -33,18 +33,26 @@ interface IntegrationsStatus {
 const [status, setStatus] = createSignal<IntegrationsStatus | null>(null);
 const [busy, setBusy] = createSignal<string | null>(null);
 const [failed, setFailed] = createSignal(false);
-const refresh = () =>
-	void call<IntegrationsStatus>("GET", "/api/integrations").then(
-		(s) => {
-			setStatus(s);
-			setFailed(false);
-		},
-		() => {
-			setStatus(null);
-			setFailed(true);
-		},
-	);
-onSettingsShown(refresh);
+let inflight = false;
+const refresh = () => {
+	if (inflight) return;
+	inflight = true;
+	void call<IntegrationsStatus>("GET", "/api/integrations")
+		.then(
+			(s) => {
+				setStatus(s);
+				setFailed(false);
+			},
+			() => {
+				setStatus(null);
+				setFailed(true);
+			},
+		)
+		.finally(() => {
+			inflight = false;
+		});
+};
+onSectionShown("integrations", refresh, { minIntervalMs: 5000 });
 
 async function act(what: "word" | "chrome", action: "install" | "uninstall", done: string): Promise<boolean> {
 	setBusy(`${what}.${action}`);

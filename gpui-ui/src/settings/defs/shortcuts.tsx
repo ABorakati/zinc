@@ -150,4 +150,4 @@ registerSettingsProvider(() => {
 			control: () => <Kbd>{f.keys}</Kbd>,
 		})),
 	];
-});
+}, "shortcuts");

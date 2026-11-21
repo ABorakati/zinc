@@ -2,7 +2,7 @@
 // and searches them. Built-in sections (defs/*.tsx) are registered with the shell's registry (registerSettingsSection), so other
 // features add their own sections the same way and the page lists both. A feature that wants the same row look and the search
 // can register SettingDefs for its own section id too (registerSetting) and use registerSection for the heading metadata.
-import { createSignal, type JSX } from "solid-js";
+import { createMemo, createRoot, createSignal, type Accessor, type JSX } from "solid-js";
 
 export interface SectionDef {
 	id: string;
@@ -34,29 +34,63 @@ export interface SettingDef {
 	unavailable?: boolean | string;
 }
 
+interface ProviderEntry {
+	section?: string;
+	fn: () => SettingDef[];
+	memo?: Accessor<SettingDef[]>;
+}
+
 const [sections, setSections] = createSignal<SectionDef[]>([]);
 const [settings, setSettings] = createSignal<SettingDef[]>([]);
-const providers: (() => SettingDef[])[] = [];
+const providers: ProviderEntry[] = [];
 const [providerRev, setProviderRev] = createSignal(0);
 
 const upsert = <T extends { id: string }>(list: T[], x: T) => [...list.filter((y) => y.id !== x.id), x];
 
 export const registerSection = (s: SectionDef) => setSections((l) => upsert(l, s).sort((a, b) => a.order - b.order));
 export const registerSetting = (s: SettingDef) => setSettings((l) => upsert(l, s));
-export const registerSettings = (list: SettingDef[]) => list.forEach(registerSetting);
-/** Settings computed from reactive state (e.g. one row per registered keyboard shortcut). */
-export const registerSettingsProvider = (fn: () => SettingDef[]) => {
-	providers.push(fn);
+export const registerSettings = (list: SettingDef[]) => {
+	if (!list.length) return;
+	const ids = new Set(list.map((x) => x.id));
+	setSettings((l) => [...l.filter((y) => !ids.has(y.id)), ...list]);
+};
+/** Settings computed from reactive state (e.g. one row per registered keyboard shortcut). Pass `section` to skip computing it for other sections. */
+export const registerSettingsProvider = (fn: () => SettingDef[], section?: string) => {
+	providers.push({ section, fn });
 	setProviderRev((n) => n + 1);
+};
+
+const readProvider = (p: ProviderEntry): SettingDef[] => {
+	if (!p.memo) p.memo = createRoot(() => createMemo(p.fn));
+	return p.memo();
 };
 
 /** All settings in registration order, then provided ones. Reactive. */
 export function allSettings(): SettingDef[] {
 	providerRev();
-	return [...settings(), ...providers.flatMap((p) => p())];
+	return [...settings(), ...providers.flatMap(readProvider)];
 }
 export { sections };
-export const sectionDef = (id: string): SectionDef | undefined => sections().find((s) => s.id === id);
+
+const sectionMap = createRoot(() =>
+	createMemo(() => {
+		const map = new Map<string, SectionDef>();
+		for (const s of sections()) map.set(s.id, s);
+		return map;
+	}),
+);
+const staticBySection = createRoot(() =>
+	createMemo(() => {
+		const map = new Map<string, SettingDef[]>();
+		for (const s of settings()) {
+			let list = map.get(s.section);
+			if (!list) map.set(s.section, (list = []));
+			list.push(s);
+		}
+		return map;
+	}),
+);
+export const sectionDef = (id: string): SectionDef | undefined => sectionMap().get(id);
 
 // ---------------------------------------------------------------- search
 
@@ -77,11 +111,7 @@ export function matches(s: SettingDef, sec: SectionDef | undefined, tokens: stri
 	return tokens.every((t) => hay.includes(t));
 }
 
-/** Settings of one section that match the current query, grouped (rows without a group first). Reactive. */
-export function sectionRows(sectionId: string): { name?: string; rows: SettingDef[] }[] {
-	const tokens = queryTokens(settingsQuery());
-	const sec = sectionDef(sectionId);
-	const rows = allSettings().filter((s) => s.section === sectionId && matches(s, sec, tokens));
+function groupRows(rows: SettingDef[]): { name?: string; rows: SettingDef[] }[] {
 	const groups: { name?: string; rows: SettingDef[] }[] = [];
 	for (const r of rows) {
 		let g = groups.find((x) => x.name === r.group);
@@ -90,13 +120,87 @@ export function sectionRows(sectionId: string): { name?: string; rows: SettingDe
 	}
 	return groups.sort((a, b) => Number(!!a.name) - Number(!!b.name));
 }
+
+const activeTokens = createRoot(() => createMemo(() => queryTokens(settingsQuery())));
+
+/** Filtered + grouped rows for every section, computed once per search query so nav badges, totals and bodies share it. */
+const matchedBySection = createRoot(() =>
+	createMemo(() => {
+		const tokens = activeTokens();
+		const out = new Map<string, { name?: string; rows: SettingDef[] }[]>();
+		if (!tokens.length) return out;
+		const bySec = new Map<string, SettingDef[]>();
+		for (const s of allSettings()) {
+			if (!matches(s, sectionDef(s.section), tokens)) continue;
+			let list = bySec.get(s.section);
+			if (!list) bySec.set(s.section, (list = []));
+			list.push(s);
+		}
+		for (const [id, rows] of bySec) out.set(id, groupRows(rows));
+		return out;
+	}),
+);
+
+/** Settings of one section that match the current query, grouped (rows without a group first). Reactive. */
+export function sectionRows(sectionId: string): { name?: string; rows: SettingDef[] }[] {
+	if (activeTokens().length) return matchedBySection().get(sectionId) ?? [];
+	providerRev();
+	const base = staticBySection().get(sectionId) ?? [];
+	const extra: SettingDef[] = [];
+	for (const p of providers) {
+		if (p.section !== undefined && p.section !== sectionId) continue;
+		for (const s of readProvider(p)) if (s.section === sectionId) extra.push(s);
+	}
+	return groupRows(extra.length ? [...base, ...extra] : base);
+}
 export const sectionCount = (sectionId: string): number => sectionRows(sectionId).reduce((n, g) => n + g.rows.length, 0);
 
 // ---------------------------------------------------------------- refresh hooks
 
-const openHooks: (() => void)[] = [];
-/** Run `fn` each time the Settings tab is shown (and once at start): server-backed settings re-read their state. */
-export const onSettingsShown = (fn: () => void) => {
-	openHooks.push(fn);
-};
-export const settingsShown = () => openHooks.forEach((f) => f());
+export interface ShownHookOptions {
+	/** Skip re-running when this hook already ran within the last N ms (default 3000). */
+	minIntervalMs?: number;
+}
+
+interface ShownHook {
+	fn: () => void;
+	section?: string;
+	minIntervalMs: number;
+	lastRun: number;
+}
+
+const DEFAULT_MIN_INTERVAL_MS = 3000;
+const openHooks: ShownHook[] = [];
+
+/**
+ * Run `fn` when the Settings tab is shown (or, when `section` is given, only while that section is visible).
+ * Returns an unsubscribe function. Deduplicated by `minIntervalMs` so rapid switches / search keystrokes do not hammer the core.
+ */
+export function onSettingsShown(fn: () => void, section?: string, opts?: ShownHookOptions): () => void {
+	const hook: ShownHook = { fn, section, minIntervalMs: opts?.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS, lastRun: -Infinity };
+	openHooks.push(hook);
+	return () => {
+		const i = openHooks.indexOf(hook);
+		if (i !== -1) openHooks.splice(i, 1);
+	};
+}
+
+/** Run `fn` only when Settings section `section` is actually visible (active or matched in search). */
+export const onSectionShown = (section: string, fn: () => void, opts?: ShownHookOptions): (() => void) =>
+	onSettingsShown(fn, section, opts);
+
+/** Trigger refresh hooks for `visibleSections` (or all hooks when omitted), skipping hooks still within their staleness window. */
+export function settingsShown(visibleSections?: Iterable<string>, now = Date.now()): void {
+	const visible = visibleSections ? new Set(visibleSections) : null;
+	for (const h of [...openHooks]) {
+		if (visible && h.section !== undefined && !visible.has(h.section)) continue;
+		if (now - h.lastRun < h.minIntervalMs) continue;
+		h.lastRun = now;
+		h.fn();
+	}
+}
+
+/** Tests: clear recorded last-run timestamps so subsequent `settingsShown` calls are not throttled. */
+export function resetSettingsShownState(): void {
+	for (const h of openHooks) h.lastRun = -Infinity;
+}

@@ -114,13 +114,14 @@ function create() {
 		working,
 		error,
 		reachable,
-		/** Start polling (idempotent). `changed` fires when Zotero's changes were pulled in (refresh lists). */
-		start(changed?: () => void) {
+		/** Start polling (idempotent). Returns true when polling just started (and triggered an initial refresh). */
+		start(changed?: () => void): boolean {
 			if (changed) onChanged = changed;
-			if (timer) return;
+			if (timer) return false;
 			void refresh();
 			timer = setInterval(() => void refresh(), POLL_MS);
 			(timer as unknown as { unref?: () => void }).unref?.();
+			return true;
 		},
 		refresh,
 		/** The popover / Settings page is showing conflicts: load and keep them fresh. */

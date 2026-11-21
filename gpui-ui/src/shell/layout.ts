@@ -4,7 +4,7 @@
 // The layout is the working copy of docs/developer-guide/layouts.md, section 8 ("shell.layout.current.library"), normalised by
 // shell/frameLayout.ts. leftOpen / rightOpen (top-bar buttons, View menu, Settings > General) are views of it: the left column
 // and the "item" pane.
-import { createMemo, createRoot, createSignal } from "solid-js";
+import { batch, createMemo, createRoot, createSignal } from "solid-js";
 import { isDocTab } from "../contracts";
 import { registerAppAction } from "../registry";
 import { store, uiState } from "../store";
@@ -52,7 +52,10 @@ const knownLibrary = (): KnownPanes => {
 // First start with layouts: build the working copy from the fixed layout's keys (layouts.md, section 12). Those keys stay in the
 // file for one release, so a downgrade still finds them.
 if (getPref<unknown>("shell.layout.version", undefined) !== LAYOUT_VERSION) {
-	setPref(CURRENT_LIBRARY, migrateLegacyLibrary((k) => getPref<unknown>(k, undefined)));
+	setPref(
+		CURRENT_LIBRARY,
+		migrateLegacyLibrary((k) => getPref<unknown>(k, undefined)),
+	);
 	setPref("shell.layout.active", { library: "builtin:standard" });
 	setPref("shell.layout.version", LAYOUT_VERSION);
 }
@@ -83,17 +86,21 @@ export { settingsOpen };
 
 /** Open the Settings tab (or focus it). */
 export function openSettings(): void {
-	setSettingsOpen(true);
-	store.setActiveTab(SETTINGS_TAB);
+	batch(() => {
+		setSettingsOpen(true);
+		store.setActiveTab(SETTINGS_TAB);
+	});
 }
 /** Close the Settings tab; the library (or the last reader) becomes active when it was. */
 export function closeSettings(): void {
 	if (!settingsOpen()) return;
-	setSettingsOpen(false);
-	if (store.activeTab() === SETTINGS_TAB) {
-		const tabs = store.tabs();
-		store.setActiveTab(tabs[tabs.length - 1]?.id ?? "library");
-	}
+	batch(() => {
+		setSettingsOpen(false);
+		if (store.activeTab() === SETTINGS_TAB) {
+			const tabs = store.tabs();
+			store.setActiveTab(tabs[tabs.length - 1]?.id ?? "library");
+		}
+	});
 }
 
 /** Close whichever tab is active (Ctrl+W); the library tab stays. */
