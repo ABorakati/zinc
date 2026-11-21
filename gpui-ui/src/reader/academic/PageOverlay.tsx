@@ -2,14 +2,14 @@
 // mentions, supplementary-material mentions and author-year citations. Each becomes a soft highlight with hover / click popovers
 // (reader-next/src/academic/index.ts onPageOverlay). The overlay is sized to the page box; hot areas are the only things that take
 // pointer input.
-import { createResource, createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import { createMemo, createResource, createSelector, createSignal, For, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
 import { addKeyHandler } from "../../shell/shortcuts";
 import { withAlpha } from "../../theme";
 import { Icon } from "../../icons";
 import { Button } from "../../ui";
 import { windowSize } from "../../ui/core";
 import type { ReaderContext } from "../plugins";
-import { kit, type Kit } from "../structure/kit";
+import { kit, placeFloatingCard, type Kit } from "../structure/kit";
 import { fromNRect, toNRect } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
 import { CitedByCard, CiteGroup, FigureCard, RefCard, SuppCard } from "./Cards";
@@ -300,7 +300,8 @@ async function computeHots(s: AcademicSession, ctx: ReaderContext, page: number)
 /** Every mention is a blue link (reader-next: .rn-hot, the primary colour as an underline, a tint on hover); the web reader's blue is #2563eb. */
 const LINK = "#2563eb";
 const TINT: Record<HotKind, string> = { cite: LINK, figure: LINK, supp: LINK, "author-year": LINK, bib: LINK };
-const CARD_W = 380;
+export const CARD_W = 380;
+export const CARD_EST_H = 360;
 
 /** Escape closes the card while it is shown (hover cards never take keyboard focus, so this is a window-level handler). */
 export function EscapeCloses(p: { close: () => void }): JSX.Element {
@@ -316,7 +317,6 @@ export function EscapeCloses(p: { close: () => void }): JSX.Element {
 
 export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accessor<{ width: number; height: number }> }): JSX.Element {
 	const s = academicFor(p.ctx);
-	const k = kit(p.ctx.mode);
 	const size = () => p.ctx.pageSize(p.page);
 	const sc = () => p.box().width / size().w; // px per PDF point
 	// scanned at once, and again when the document analysis (reference list, figure index) lands; the old zones stay until the new ones are in
@@ -329,11 +329,16 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 			}),
 	);
 	const [hover, setHover] = createSignal<string | null>(null);
+	const isHovered = createSelector(hover);
 	const timers = new Map<string, ReturnType<typeof setTimeout>>();
+	onCleanup(() => {
+		for (const t of timers.values()) clearTimeout(t);
+		timers.clear();
+	});
 	const open = (h: Hot, pinned: boolean) => s.showPopup({ key: h.key, page: p.page, rect: h.rects[0]!, content: h.content, pinned });
 
 	function HotRect(q: { h: Hot; r: PdfRect }): JSX.Element {
-		const on = () => hover() === q.h.key;
+		const on = () => isHovered(q.h.key);
 		return (
 			<div
 				onMouseEnter={() => {
@@ -376,58 +381,89 @@ export function AcademicPage(p: { ctx: ReaderContext; page: number; box: Accesso
 		);
 	}
 
-	/** The card of the open popup, placed under (or above) its mention inside the page box. */
-	const card = (): JSX.Element => {
-		const pp = s.popup();
-		if (!pp || pp.page !== p.page) return undefined;
-		const r = pp.rect;
-		const left = Math.max(4, Math.min(r[0] * sc(), p.box().width - CARD_W - 4));
-		const rectTop = (size().h - r[3]) * sc(),
-			rectBottom = (size().h - r[1]) * sc();
-		// below the mention when the window has room there (a card is up to ~430 px tall), else above it; the page box is taller than the window
-		p.ctx.viewTick?.();
-		const w = p.ctx.rectToWindow?.(p.page, toNRect(r, size().w, size().h));
-		const room = w ? windowSize().height - (w.y + w.height) : 0;
-		const below = w ? room >= 440 || room >= w.y : rectBottom + 8 + 260 < p.box().height || rectTop < 270;
-		return (
-			<div
-				onMouseEnter={() => s.cancelHide()}
-				onMouseLeave={() => s.scheduleHide(600)}
-				// a press anywhere else closes the card, a hover card as much as a pinned one (pressing its own mention pins it again)
-				onMouseDownOutside={() => s.hidePopup()}
-				style={{
-					...k.t("flex flex-col rounded-lg border bg-popover"),
-					position: "absolute",
-					left,
-					width: CARD_W,
-					padding: 12,
-					...(below ? { top: Math.min(rectBottom + 6, p.box().height - 80) } : { bottom: p.box().height - rectTop + 6 }),
-					borderColor: k.tok("border"),
-					pointerEvents: "auto",
-					boxShadow: [{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" }],
-				}}
-			>
-				<Show when={pp.pinned}>
-					<div
-						onClick={() => s.hidePopup()}
-						style={{ position: "absolute", right: 6, top: 6, display: "flex", cursor: "pointer" }}
-					>
-						<Icon name="x" size={14} color={k.tok("muted-foreground")} />
-					</div>
-				</Show>
-				<EscapeCloses close={() => s.hidePopup()} />
-				{pp.content()}
-			</div>
-		);
-	};
-
 	return (
 		<div style={{ position: "absolute", left: 0, top: 0, width: p.box().width, height: p.box().height, pointerEvents: "none" }}>
 			<Show when={hots()}>
 				<For each={hots()}>{(h) => <For each={h.rects}>{(r) => <HotRect h={h} r={r} />}</For>}</For>
 			</Show>
-			{card()}
 		</div>
+	);
+}
+
+/**
+ * Mounted once at the reader's page pane level (paneOverlay): draws the open hover / pinned card in a GPUIX deferred
+ * `<anchored>` layer above all pages so it never disappears under adjacent pages or clips at page/window edges.
+ */
+export function AcademicPopupHost(p: { ctx: ReaderContext }): JSX.Element {
+	const s = academicFor(p.ctx);
+	const k = kit(p.ctx.mode);
+	// Keyed by popup key (not popup object or scroll tick) so scrolling only repositions `<anchored>` without remounting card content.
+	const popupKey = createMemo(() => (p.ctx.altView() ? null : (s.popup()?.key ?? null)));
+	return (
+		<Show when={popupKey()} keyed>
+			{(_key) => {
+				const initial = untrack(s.popup)!;
+				const pos = createMemo(() => {
+					const pp = s.popup();
+					if (!pp) return null;
+					p.ctx.viewTick?.();
+					const sz = p.ctx.pageSize(pp.page);
+					const rect = p.ctx.rectToWindow?.(pp.page, toNRect(pp.rect, sz.w, sz.h));
+					if (!rect) return null;
+					return placeFloatingCard(rect, windowSize(), {
+						width: CARD_W,
+						estHeight: CARD_EST_H,
+						gap: 6,
+						margin: 8,
+						pane: p.ctx.paneBounds?.(),
+					});
+				});
+				return (
+					<Show when={pos()}>
+						{(at) => (
+							<anchored position={{ x: at().x, y: at().y }} anchor={at().anchor} fit="snap" snapMargin={8} priority={80}>
+								<div
+									testId="academic-hover-card"
+									onMouseEnter={() => s.cancelHide()}
+									onMouseLeave={() => s.scheduleHide(600)}
+									// a press anywhere else closes the card, a hover card as much as a pinned one (pressing its own mention pins it again)
+									onMouseDownOutside={() => s.hidePopup()}
+									style={{
+										...k.t("flex flex-col rounded-lg border bg-popover"),
+										width: CARD_W,
+										padding: 12,
+										borderColor: k.tok("border"),
+										pointerEvents: "auto",
+										boxShadow: [
+											{ offsetX: 0, offsetY: 8, blurRadius: 18, spreadRadius: -2, color: "rgba(0, 0, 0, 0.32)" },
+										],
+									}}
+								>
+									<Show when={s.popup()?.pinned}>
+										<div
+											onClick={() => s.hidePopup()}
+											style={{
+												position: "absolute",
+												right: 6,
+												top: 6,
+												display: "flex",
+												cursor: "pointer",
+												padding: 2,
+												backgroundColor: "rgba(128, 128, 128, 0.02)",
+											}}
+										>
+											<Icon name="x" size={14} color={k.tok("muted-foreground")} />
+										</div>
+									</Show>
+									<EscapeCloses close={() => s.hidePopup()} />
+									{initial.content()}
+								</div>
+							</anchored>
+						)}
+					</Show>
+				);
+			}}
+		</Show>
 	);
 }
 

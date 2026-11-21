@@ -158,4 +158,54 @@ describe("uploadImagePixels", () => {
 			),
 		).rejects.toThrow("pixel buffer size mismatch");
 	});
+
+	test("mounts on the microtask fast path without setTimeout when ref attaches synchronously after call", async () => {
+		let ref: ImgNode | undefined;
+		let uploaded = 0;
+		const p = uploadImagePixels(
+			() => ref,
+			() => true,
+			px,
+		);
+		// Mimics PreviewImg calling uploadImagePixels() right before JSX ref attaches & mounts
+		ref = fakeImg(15, () => {
+			uploaded++;
+		});
+		ref.mounted = true;
+
+		// Should resolve within microtasks (before a 0ms setTimeout even fires!)
+		let resolvedBeforeTimer = false;
+		const timer = new Promise<void>((r) => setTimeout(r, 0));
+		await Promise.race([
+			p.then((ok) => {
+				expect(ok).toBe(true);
+				resolvedBeforeTimer = true;
+			}),
+			timer,
+		]);
+		expect(resolvedBeforeTimer).toBe(true);
+		expect(uploaded).toBe(1);
+	});
+
+	test("calls getPixels only once across transient Unknown element id retries", async () => {
+		let attempts = 0;
+		let sliceCalls = 0;
+		const el = fakeImg(16, (id) => {
+			attempts++;
+			if (attempts < 3) throw new Error(`Unknown element id ${id}`);
+		});
+		el.mounted = true;
+
+		const ok = await uploadImagePixels(
+			() => el,
+			() => true,
+			() => {
+				sliceCalls++;
+				return px();
+			},
+		);
+		expect(ok).toBe(true);
+		expect(attempts).toBe(3);
+		expect(sliceCalls).toBe(1);
+	});
 });

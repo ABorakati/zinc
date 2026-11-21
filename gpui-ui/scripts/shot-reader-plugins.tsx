@@ -191,6 +191,7 @@ function Chrome(): JSX.Element {
 									</div>
 								</div>
 							</Show>
+							<For each={plugins()}>{(pl) => <Show when={pl.paneOverlay}>{pl.paneOverlay!(ctx)}</Show>}</For>
 						</div>
 					}
 				>

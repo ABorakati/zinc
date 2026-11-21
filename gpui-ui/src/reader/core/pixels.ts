@@ -27,7 +27,9 @@ export async function whenMounted(img: () => ImgNode | undefined, alive: () => b
 		if (!alive()) return false;
 		const el = img();
 		if (el?.mounted) return true;
-		await new Promise<void>((r) => setTimeout(r, i < 3 ? 0 : 2));
+		// Yield a microtask first (ref assignment and GPUIX's microtask mutation flush complete before any macrotask timer).
+		if (i === 0) await Promise.resolve();
+		else await new Promise<void>((r) => setTimeout(r, i < 4 ? 0 : 2));
 	}
 	return false;
 }
@@ -52,26 +54,29 @@ export async function uploadImagePixels(
 	getPixels: () => { width: number; height: number; pixels: Uint8Array },
 	options: UploadPixelsOptions = {},
 ): Promise<boolean> {
+	if (!alive()) return false;
 	const format = options.format ?? "bgra";
 	const maxRetries = options.maxRetries ?? 8;
-	const m0 = performance.now();
+	const m0 = options.onMountWait ? performance.now() : 0;
 	if (!(await whenMounted(img, alive))) return false;
-	options.onMountWait?.(performance.now() - m0);
+	if (options.onMountWait) options.onMountWait(performance.now() - m0);
 
+	let data: { width: number; height: number; pixels: Uint8Array } | undefined;
 	for (let attempt = 0; attempt <= maxRetries; attempt++) {
 		if (!alive()) return false;
 		const el = img();
 		if (!el?.mounted) return false;
-		const { width, height, pixels } = getPixels();
-		const u0 = performance.now();
+		data ??= getPixels();
+		const u0 = options.onUpload ? performance.now() : 0;
 		try {
-			el.setImagePixels(width, height, pixels, { format });
-			options.onUpload?.(performance.now() - u0);
+			el.setImagePixels(data.width, data.height, data.pixels, { format });
+			if (options.onUpload) options.onUpload(performance.now() - u0);
 			return true;
 		} catch (e) {
 			if (!isUnknownElementError(e)) throw e;
 			if (!alive() || !img()?.mounted || attempt === maxRetries) return false;
-			await new Promise<void>((r) => setTimeout(r, attempt < 2 ? 0 : 2));
+			if (attempt === 0) await Promise.resolve();
+			else await new Promise<void>((r) => setTimeout(r, attempt < 3 ? 0 : 2));
 		}
 	}
 	return false;

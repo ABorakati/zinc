@@ -154,6 +154,86 @@ export function Field(p: {
 
 export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
+// ---------------------------------------------------------------------------------------------------- floating card placement
+
+export interface BoxRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export interface CardPlacement {
+	x: number;
+	y: number;
+	anchor: "topLeft" | "bottomLeft";
+	/** true when placed below the anchor rect, false when flipped above */
+	below: boolean;
+}
+
+export interface PlaceCardOptions {
+	/** Card width in logical px. */
+	width: number;
+	/** Estimated card height in logical px (decides whether to flip above the anchor). */
+	estHeight: number;
+	/** Horizontal alignment relative to the anchor rect: "start" aligns left edges, "center" centres over the anchor. Default "start". */
+	align?: "start" | "center";
+	/** Vertical gap between anchor and card. Default 6. */
+	gap?: number;
+	/** Minimum inset from viewport edges. Default 8. */
+	margin?: number;
+	/** Visible reader pane bounds (below toolbar, beside sidebar). Returns null when the anchor has scrolled outside it. */
+	pane?: BoxRect | null;
+}
+
+/**
+ * Window-space placement for a floating reader card (hover card, annotation popup) anchored to a page rect.
+ * - Returns null when the anchor has scrolled completely outside `pane` (or the window).
+ * - Places below when there is room (`estHeight`) or more room below than above; otherwise flips above (`anchor: "bottomLeft"`).
+ * - Clamps `x` inside `pane` (falling back to window bounds when the pane is narrower than the card).
+ * Paired with GPUIX `<anchored position={{ x, y }} anchor={anchor} fit="snap" snapMargin={margin}>` so the card paints
+ * in GPUI's deferred layer above all pages and never disappears under adjacent pages or clips past window edges.
+ */
+export function placeFloatingCard(
+	anchor: BoxRect,
+	window: { width: number; height: number },
+	opts: PlaceCardOptions,
+): CardPlacement | null {
+	const gap = opts.gap ?? 6;
+	const margin = opts.margin ?? 8;
+	const pane = opts.pane ?? { x: 0, y: 0, width: window.width, height: window.height };
+
+	const vpLeft = Math.max(0, pane.x);
+	const vpTop = Math.max(0, pane.y);
+	const vpRight = Math.min(window.width, pane.x + pane.width);
+	const vpBottom = Math.min(window.height, pane.y + pane.height);
+	if (vpRight <= vpLeft || vpBottom <= vpTop) return null;
+
+	// Anchor scrolled completely outside the visible page pane: hide the card instead of stranding it over chrome.
+	if (anchor.y + anchor.height < vpTop || anchor.y > vpBottom || anchor.x + anchor.width < vpLeft || anchor.x > vpRight) {
+		return null;
+	}
+
+	const desiredX = opts.align === "center" ? anchor.x + anchor.width / 2 - opts.width / 2 : anchor.x;
+	const usePaneX = vpRight - vpLeft >= opts.width + margin * 2;
+	const minX = (usePaneX ? vpLeft : 0) + margin;
+	const maxX = Math.max(minX, (usePaneX ? vpRight : window.width) - opts.width - margin);
+	const x = Math.round(clamp(desiredX, minX, maxX));
+
+	const belowTop = anchor.y + anchor.height + gap;
+	const aboveBottom = anchor.y - gap;
+	const spaceBelow = vpBottom - margin - belowTop;
+	const spaceAbove = aboveBottom - (vpTop + margin);
+	const below = spaceBelow >= opts.estHeight || spaceBelow >= spaceAbove;
+
+	if (below) {
+		const y = Math.round(clamp(belowTop, vpTop + margin, Math.max(vpTop + margin, window.height - margin)));
+		return { x, y, anchor: "topLeft", below: true };
+	}
+	const y = Math.round(clamp(aboveBottom, vpTop + margin, Math.max(vpTop + margin, window.height - margin)));
+	return { x, y, anchor: "bottomLeft", below: false };
+}
+
 // ---------------------------------------------------------------------------------------------------- region image
 
 /** A cropped page region (regions.ts) shown at `width` px; a skeleton box until the pixels are there. */

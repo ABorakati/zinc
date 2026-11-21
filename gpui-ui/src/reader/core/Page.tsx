@@ -438,6 +438,7 @@ export function PageSlot(p: {
 	// ---- tile set
 	const [tiles, setTiles] = createSignal<TileSpec[]>([]);
 	const [tick, setTick] = createSignal(0);
+	let hasStale = false;
 	const make = (g: Grid, c: number, r: number, key: string, tier: number): TileSpec => {
 		const [ready, setReady] = createSignal(false);
 		const [t, setT] = createSignal(tier);
@@ -481,6 +482,7 @@ export function PageSlot(p: {
 			// older resolutions stay (under the new tiles) until everything on screen is redrawn at the new one; only drawn ones are worth keeping
 			const covered = fresh.every((t) => t.tier() !== 0 || t.ready());
 			const stale = covered ? [] : cur.filter((t) => t.sk !== g.sk && t.ready());
+			hasStale = stale.length > 0;
 			const next = [...stale, ...fresh];
 			if (next.length === cur.length && next.every((t, i) => t === cur[i])) return;
 			setTiles(next);
@@ -512,34 +514,37 @@ export function PageSlot(p: {
 	};
 	const bitmaps = env.bitmaps ?? new BitmapCache(0);
 	const bmKey = (sk: string) => p.index + "|" + sk;
-	/** hand the tiles their pixels, the ones the reader sees first before the others */
+	/** hand the tiles their pixels, the ones the reader sees first before the others (concurrently so a slow/retrying tile never stalls ready siblings, and ready siblings flush in one GPUIX batch) */
 	async function uploadTiles(list: Iterable<TileSpec>, r: Bitmap): Promise<boolean> {
+		const order = [...list].filter((t) => !disposed && t.alive && !t.ready()).sort((a, b) => a.tier() - b.tier() || dist(a) - dist(b));
+		if (!order.length) return false;
 		let uploaded = false;
-		const order = [...list].sort((a, b) => a.tier() - b.tier() || dist(a) - dist(b));
-		for (const t of order) {
-			if (disposed || !t.alive || t.ready()) continue;
-			// the element may not be inserted yet right after mount: wait for it (a few frames at most)
-			const ok = await uploadImagePixels(
-				() => t.img,
-				() => !disposed && t.alive && !t.ready(),
-				() =>
-					t.whole
-						? { width: r.width, height: t.h, pixels: r.slice(t.y, t.h) }
-						: { width: r.width, height: r.height, pixels: r.pixels },
-				{
-					onMountWait: (ms) => {
-						env.stats.mountWaitMs = (env.stats.mountWaitMs ?? 0) + ms;
+		await Promise.all(
+			order.map(async (t) => {
+				if (disposed || !t.alive || t.ready()) return;
+				// the element may not be inserted yet right after mount: wait for it (a few frames at most)
+				const ok = await uploadImagePixels(
+					() => t.img,
+					() => !disposed && t.alive && !t.ready(),
+					() =>
+						t.whole
+							? { width: r.width, height: t.h, pixels: r.slice(t.y, t.h) }
+							: { width: r.width, height: r.height, pixels: r.pixels },
+					{
+						onMountWait: (ms) => {
+							env.stats.mountWaitMs = (env.stats.mountWaitMs ?? 0) + ms;
+						},
+						onUpload: (ms) => {
+							env.stats.lastUploadMs = ms;
+							env.stats.uploadMs = (env.stats.uploadMs ?? 0) + ms;
+						},
 					},
-					onUpload: (ms) => {
-						env.stats.lastUploadMs = ms;
-						env.stats.uploadMs = (env.stats.uploadMs ?? 0) + ms;
-					},
-				},
-			);
-			if (!ok || disposed || !t.alive) continue;
-			t.setReady(true);
-			uploaded = true;
-		}
+				);
+				if (!ok || disposed || !t.alive) return;
+				t.setReady(true);
+				uploaded = true;
+			}),
+		);
 		return uploaded;
 	}
 	function startJob(key: string, first: TileSpec): void {
@@ -579,7 +584,7 @@ export function PageSlot(p: {
 							env.stats.renders++;
 							env.stats.lastRenderMs = r.renderMs;
 							env.stats.totalRenderMs += r.renderMs;
-							setTick((n) => n + 1);
+							if (hasStale) setTick((n) => n + 1);
 						}
 					}
 				} finally {
@@ -599,29 +604,46 @@ export function PageSlot(p: {
 	}
 	function ensureJobs(list: TileSpec[]): void {
 		if (disposed) return;
+		const curSk = untrack(grid).sk;
+		let cachedGroups: Map<string, { entry: BitmapEntry; tiles: TileSpec[] }> | undefined;
 		for (const t of list) {
-			if (t.ready() || t.busy || !t.alive || t.sk !== untrack(grid).sk) continue;
+			if (t.ready() || t.busy || !t.alive || t.sk !== curSk) continue;
 			const key = t.whole ? t.sk : t.key;
 			const inf = inflight.get(key);
 			if (inf) {
 				if (!inf.tiles.has(t)) inf.tiles.add(t);
 				continue;
 			}
-			const cached = t.whole ? bitmaps.acquire(bmKey(t.sk)) : undefined;
-			if (cached) {
-				t.busy = true;
-				void uploadTiles([t], cached.r)
+			if (t.whole) {
+				const existing = cachedGroups?.get(t.sk);
+				if (existing) {
+					existing.tiles.push(t);
+					continue;
+				}
+				const cached = bitmaps.acquire(bmKey(t.sk));
+				if (cached) {
+					(cachedGroups ??= new Map()).set(t.sk, { entry: cached, tiles: [t] });
+					continue;
+				}
+			}
+			startJob(key, t);
+		}
+		if (cachedGroups) {
+			for (const { entry, tiles: group } of cachedGroups.values()) {
+				for (const t of group) t.busy = true;
+				void uploadTiles(group, entry.r)
 					.then((uploaded) => {
-						if (!disposed && uploaded) setTick((n) => n + 1);
+						if (!disposed && uploaded && hasStale) setTick((n) => n + 1);
 					})
 					.catch((e) => {
-						if (!disposed && t.alive) console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
+						if (!disposed && group.some((t) => t.alive))
+							console.error(`[reader] page ${p.index} tile:`, e instanceof Error ? e.message : e);
 					})
 					.finally(() => {
-						t.busy = false;
-						bitmaps.unuse(cached);
+						for (const t of group) t.busy = false;
+						bitmaps.unuse(entry);
 					});
-			} else startJob(key, t);
+			}
 		}
 	}
 	createEffect(() => {

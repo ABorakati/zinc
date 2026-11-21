@@ -3,13 +3,15 @@
 // handle at its top-left (or the note icon itself), through the side panel list, or after it is created. The active tool's
 // surface (notes) and the popup of the selected annotation do take input.
 import { useGpuix } from "@gpuix/solid";
-import { createMemo, createSignal, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js";
+import { createMemo, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/native";
 import { Icon } from "../../icons";
 import { Button, openMenu } from "../../ui";
+import { windowSize } from "../../ui/core";
 import { withAlpha } from "../../theme";
 import { openAfterPlugins, type ReaderContext } from "../plugins";
-import { kit, clamp, IconButton, Swatches, type Kit } from "../structure/kit";
+import { kit, clamp, IconButton, placeFloatingCard, Swatches, type Kit } from "../structure/kit";
+import { toNRect } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
 import { annotationContextMenu } from "./contextMenu";
 import { rectsOnPage } from "./geometry";
@@ -20,6 +22,7 @@ import { sessionFor, type Session } from "./session";
 import { CommentBox, TagEditor } from "./Widgets";
 
 const POP_W = 300;
+const POP_EST_H = 200;
 
 function inkSvg(a: Annotation, pw: number, ph: number): string {
 	const paths = (a.position.paths ?? [])
@@ -33,73 +36,111 @@ function inkSvg(a: Annotation, pw: number, ph: number): string {
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${pw} ${ph}" fill="none" stroke="#000" stroke-width="${a.position.width ?? 2}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 }
 
-function AnnotationPopup(p: {
-	k: Kit;
-	s: Session;
-	a: Annotation;
-	box: Accessor<{ width: number; height: number }>;
-	sc: Accessor<number>;
-	ph: Accessor<number>;
-}): JSX.Element {
+function AnnotationPopupCard(p: { k: Kit; s: Session; a: Accessor<Annotation | undefined> }): JSX.Element {
 	const { store, act } = p.s;
-	const b = () => boundingRect(p.a.position);
-	const left = () => clamp(((b()[0] + b()[2]) / 2) * p.sc() - POP_W / 2, 4, Math.max(4, p.box().width - POP_W - 4));
-	const bottom = () => (p.ph() - b()[1]) * p.sc();
-	const top = () => (p.ph() - b()[3]) * p.sc();
-	// below the annotation when there is room (about 190 px), else above
-	const below = () => bottom() + 8 + 190 < p.box().height || top() < 200;
 	return (
-		<div
-			style={{
-				...p.k.t("flex flex-col rounded-lg border bg-popover"),
-				position: "absolute",
-				left: left(),
-				width: POP_W,
-				padding: 8,
-				gap: 6,
-				...(below() ? { top: Math.min(bottom() + 8, p.box().height - 120) } : { top: Math.max(4, top() - 8 - 150) }),
-				borderColor: p.k.tok("border"),
-				boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 14, spreadRadius: -2, color: "rgba(0, 0, 0, 0.28)" }],
+		<Show when={p.a()}>
+			{(ann) => (
+				<div
+					testId="annotation-popup"
+					style={{
+						...p.k.t("flex flex-col rounded-lg border bg-popover"),
+						width: POP_W,
+						padding: 8,
+						gap: 6,
+						borderColor: p.k.tok("border"),
+						pointerEvents: "auto",
+						boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 14, spreadRadius: -2, color: "rgba(0, 0, 0, 0.28)" }],
+					}}
+				>
+					<Show when={!store.readOnly()}>
+						<div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+							<Swatches
+								k={p.k}
+								colors={COLORS}
+								value={ann().color}
+								size={16}
+								onPick={(c) => {
+									p.s.ui.setColor(c);
+									store.update(ann().id, { color: c });
+								}}
+							/>
+							<IconButton k={p.k} icon="trash-2" title="Delete" size={14} box={24} onClick={() => act.remove([ann().id])} />
+						</div>
+					</Show>
+					<Show when={ann().text}>
+						<div style={{ ...p.k.t("flex border-l-2 pl-2"), borderColor: ann().color }}>
+							<text style={{ ...p.k.tx("text-[11.5px] text-muted-foreground"), lineClamp: 3 }}>{ann().text}</text>
+						</div>
+					</Show>
+					<Show when={ann().type === "image"}>
+						<div style={{ display: "flex", flexDirection: "row", gap: 6, marginTop: 2 }}>
+							<Button
+								size="sm"
+								variant="outline"
+								icon="copy"
+								onClick={() => void copyAnnotationImage(p.s.ctx, ann(), p.s.ui.notify)}
+							>
+								Copy Image
+							</Button>
+							<Button
+								size="sm"
+								variant="outline"
+								icon="download"
+								onClick={() => void exportAnnotationImage(p.s.ctx, ann(), undefined, p.s.ui.notify)}
+							>
+								Export Image…
+							</Button>
+						</div>
+					</Show>
+					<CommentBox k={p.k} s={p.s} id={ann().id} rows={2} />
+					<TagEditor k={p.k} s={p.s} id={ann().id} />
+				</div>
+			)}
+		</Show>
+	);
+}
+
+/**
+ * Mounted once at the reader's page pane level (paneOverlay): draws the selected annotation's editor popup in a GPUIX
+ * deferred `<anchored>` layer above all pages so it never disappears under adjacent pages or clips at page/window edges.
+ */
+export function AnnotationPopupHost(p: { ctx: ReaderContext }): JSX.Element {
+	const s = sessionFor(p.ctx);
+	const k = kit(p.ctx.mode);
+	const selectedId = createMemo(() => (p.ctx.altView() ? null : s.ui.selectedId()));
+	return (
+		<Show when={selectedId()} keyed>
+			{(id) => {
+				const ann = createMemo(() => s.store.get(id));
+				const pos = createMemo(() => {
+					const a = ann();
+					if (!a) return null;
+					p.ctx.viewTick?.();
+					const page = a.position.pageIndex;
+					const sz = p.ctx.pageSize(page);
+					const rect = p.ctx.rectToWindow?.(page, toNRect(boundingRect(a.position), sz.w, sz.h));
+					if (!rect) return null;
+					return placeFloatingCard(rect, windowSize(), {
+						width: POP_W,
+						estHeight: POP_EST_H,
+						align: "center",
+						gap: 8,
+						margin: 8,
+						pane: p.ctx.paneBounds?.(),
+					});
+				});
+				return (
+					<Show when={pos()}>
+						{(at) => (
+							<anchored position={{ x: at().x, y: at().y }} anchor={at().anchor} fit="snap" snapMargin={8} priority={75}>
+								<AnnotationPopupCard k={k} s={s} a={ann} />
+							</anchored>
+						)}
+					</Show>
+				);
 			}}
-		>
-			<Show when={!store.readOnly()}>
-				<div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-					<Swatches
-						k={p.k}
-						colors={COLORS}
-						value={p.a.color}
-						size={16}
-						onPick={(c) => {
-							p.s.ui.setColor(c);
-							store.update(p.a.id, { color: c });
-						}}
-					/>
-					<IconButton k={p.k} icon="trash-2" title="Delete" size={14} box={24} onClick={() => act.remove([p.a.id])} />
-				</div>
-			</Show>
-			<Show when={p.a.text}>
-				<div style={{ ...p.k.t("flex border-l-2 pl-2"), borderColor: p.a.color }}>
-					<text style={{ ...p.k.tx("text-[11.5px] text-muted-foreground"), lineClamp: 3 }}>{p.a.text}</text>
-				</div>
-			</Show>
-			<Show when={p.a.type === "image"}>
-				<div style={{ display: "flex", flexDirection: "row", gap: 6, marginTop: 2 }}>
-					<Button size="sm" variant="outline" icon="copy" onClick={() => void copyAnnotationImage(p.s.ctx, p.a, p.s.ui.notify)}>
-						Copy Image
-					</Button>
-					<Button
-						size="sm"
-						variant="outline"
-						icon="download"
-						onClick={() => void exportAnnotationImage(p.s.ctx, p.a, undefined, p.s.ui.notify)}
-					>
-						Export Image…
-					</Button>
-				</div>
-			</Show>
-			<CommentBox k={p.k} s={p.s} id={p.a.id} rows={2} />
-			<TagEditor k={p.k} s={p.s} id={p.a.id} />
-		</div>
+		</Show>
 	);
 }
 
@@ -126,14 +167,6 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 		width: (r[2] - r[0]) * sc(),
 		height: (r[3] - r[1]) * sc(),
 	});
-	const selected = createMemo(() => {
-		const id = s.ui.selectedId();
-		return id ? s.store.get(id) : undefined;
-	});
-	const selectedHere = () => {
-		const a = selected();
-		return a && a.position.pageIndex === page ? a : undefined;
-	};
 
 	let catcher: { id: number } | undefined;
 	function onCatch(e: { x?: number; y?: number }) {
@@ -221,7 +254,10 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 									onClick={toggle}
 									onAuxClick={(e: EventPayload) => {
 										if (e.isRightClick || e.button === 2) {
-											openAfterPlugins((items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items), () => annotationContextMenu(p.ctx, a()!));
+											openAfterPlugins(
+												(items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items),
+												() => annotationContextMenu(p.ctx, a()!),
+											);
 										}
 									}}
 									style={{
@@ -274,7 +310,10 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 						onClick={toggle}
 						onAuxClick={(e: EventPayload) => {
 							if (e.isRightClick || e.button === 2) {
-								openAfterPlugins((items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items), () => annotationContextMenu(p.ctx, a()!));
+								openAfterPlugins(
+									(items) => openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items),
+									() => annotationContextMenu(p.ctx, a()!),
+								);
 							}
 						}}
 						style={{
@@ -318,7 +357,6 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 			<Show when={s.ui.tool() === "ink" || s.ui.tool() === "eraser"}>
 				<InkOverlay ctx={p.ctx} page={page} box={p.box} sc={sc} ph={ph} s={s} />
 			</Show>
-			<Show when={selectedHere()}>{(a) => <AnnotationPopup k={k} s={s} a={a()} box={p.box} sc={sc} ph={ph} />}</Show>
 		</div>
 	);
 }

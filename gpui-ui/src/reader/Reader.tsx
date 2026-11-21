@@ -720,9 +720,11 @@ export function Reader(props: ReaderProps): JSX.Element {
 		if (!a || a.length < 3) return null;
 		return { idx: clamp(a[0]!, 0, Math.max(0, untrack(nRows) - 1)), off: Math.round(a[1]!), h: Math.round(a[2]!) };
 	}
-	function refreshScroll() {
+	function refreshScroll(): boolean {
 		const n = readScroll();
-		if (n) {
+		if (!n) return false;
+		let changed = false;
+		batch(() => {
 			if (untrack(horiz) && hbox) {
 				// the strip has no visible-range event: the visible rows and the vertical offset come from here
 				const L = untrack(layout),
@@ -731,6 +733,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 				if (y !== untrack(scrollY)) {
 					setScrollY(y);
 					bump();
+					changed = true;
 				}
 				const x = (L.start[n.idx] ?? 0) + n.off,
 					e = rowAt(L, x + n.h - 1);
@@ -750,31 +753,37 @@ export function Reader(props: ReaderProps): JSX.Element {
 				}
 				setSp(n);
 				bump();
-				saveSoon();
 				updateWin(n);
-				reprioSoon();
-				if (performance.now() > zoomingUntil) lastAnchor = anchor();
+				changed = true;
 			}
+		});
+		if (changed) {
+			saveSoon();
+			reprioSoon();
+			if (performance.now() > zoomingUntil) lastAnchor = anchor(n);
 		}
+		return changed;
 	}
 	const onVisibleRange = (e: EventPayload) => {
 		const a = e.startIndex ?? 0,
 			b = e.endIndex ?? a + 1;
-		setVis([a, b]);
-		refreshScroll();
-		const lo = Math.max(0, Math.floor(a) - 1),
-			hi = Math.min(untrack(nRows), Math.ceil(b) + 1);
-		// once the scroll position is known refreshScroll() owns the window (pages inside the margins); until then trust the list's range
-		const w = untrack(win);
-		if (!untrack(sp).h && (w[0] !== lo || w[1] !== hi)) setWin([lo, hi]);
-		bump();
+		batch(() => {
+			const cv = untrack(vis);
+			if (cv[0] !== a || cv[1] !== b) setVis([a, b]);
+			const bumped = refreshScroll();
+			const lo = Math.max(0, Math.floor(a) - 1),
+				hi = Math.min(untrack(nRows), Math.ceil(b) + 1);
+			// once the scroll position is known refreshScroll() owns the window (pages inside the margins); until then trust the list's range
+			const w = untrack(win);
+			if (!untrack(sp).h && (w[0] !== lo || w[1] !== hi)) setWin([lo, hi]);
+			if (!bumped) bump();
+		});
 		saveSoon();
 	};
 
 	/** where the viewport top (left, scrolling horizontally) is: [first page of the row there, fraction of that row before it]; a page, so it survives a layout change */
-	function anchor(): [number, number] {
-		const L = untrack(layout),
-			s = readScroll();
+	function anchor(s = readScroll()): [number, number] {
+		const L = untrack(layout);
 		if (s && L.rows) {
 			const r = clamp(s.idx, 0, L.rows - 1);
 			return [L.first[r] ?? 0, clamp(s.off / Math.max(1, L.ext[r] ?? 1), 0, 1)];
@@ -881,8 +890,8 @@ export function Reader(props: ReaderProps): JSX.Element {
 			h = Math.round(e.height ?? 0);
 		if (w <= 0 || h <= 0) return; // hidden: keep the last layout
 		const v = untrack(vp);
-		refreshDpr();
 		if (Math.abs(v.w - w) < 1 && Math.abs(v.h - h) < 1) return;
+		refreshDpr();
 		if (v.w === 0 || zoomMode() === "custom") setVp({ w, h });
 		else
 			keepAnchor(() => {
@@ -1145,10 +1154,13 @@ export function Reader(props: ReaderProps): JSX.Element {
 		linksCache.set(i, p);
 		return p;
 	}
+	const EMPTY_LINKS: LinkInfo[] = [];
 	const linksOf = (i: number): LinkInfo[] => {
-		linksVer();
 		const c = linksCache.get(i);
-		return c && !(c instanceof Promise) ? c : [];
+		if (c && !(c instanceof Promise)) return c;
+		linksVer();
+		const c2 = linksCache.get(i);
+		return c2 && !(c2 instanceof Promise) ? c2 : EMPTY_LINKS;
 	};
 	// mounted pages get their text layer (selection, plugins) and links
 	createEffect(() => {
@@ -1345,12 +1357,13 @@ export function Reader(props: ReaderProps): JSX.Element {
 		return best;
 	}
 
+	const EMPTY_RECTS: NRect[] = [];
 	function selRectsFor(i: number): NRect[] {
-		textVer();
 		const r = range();
-		if (!r || i < r[0].page || i > r[1].page) return [];
+		if (!r || i < r[0].page || i > r[1].page) return EMPTY_RECTS;
+		textVer();
 		const pt = peekText(i);
-		return pt ? selectionRects(pt, i, r[0], r[1]) : [];
+		return pt ? selectionRects(pt, i, r[0], r[1]) : EMPTY_RECTS;
 	}
 	async function finalizeSelection(r: [Caret, Caret] | null) {
 		if (!r) {
@@ -1520,6 +1533,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 				const q = rotRect(r, rotOf(page));
 				return { x: b.x + q.x * b.width, y: b.y + q.y * b.height, width: q.w * b.width, height: q.h * b.height };
 			},
+			paneBounds: () => (paneEl ? (gpuix?.renderer.getElementBounds?.(paneEl.id) ?? null) : null),
 			viewTick,
 			mountedPages: indices,
 			// tabs by a plugin's sidePanel id (the sidebar keys them "plugin:<plugin>:<panel>")
@@ -2253,11 +2267,11 @@ export function Reader(props: ReaderProps): JSX.Element {
 		vis();
 		win();
 		dir();
+		curPage();
 		docRot();
 		pageRots();
 		look();
 		dpr();
-		sp();
 		layout();
 		untrack(() => {
 			// vis is in rows: the visible pages are those of the visible rows
@@ -2331,9 +2345,9 @@ export function Reader(props: ReaderProps): JSX.Element {
 
 	// where the selection popup sits (window px -> this reader's px)
 	const popupPos = createMemo(() => {
-		viewTick();
 		const s = selInfo();
 		if (!s || drag || !paneEl) return null;
+		viewTick();
 		const lastP = s.pages[s.pages.length - 1];
 		const r = lastP?.rects[lastP.rects.length - 1];
 		if (!lastP || !r) return null;
@@ -2590,6 +2604,11 @@ export function Reader(props: ReaderProps): JSX.Element {
 						</div>
 					)}
 				</Show>
+
+				{/* plugins' pane-level overlays (hover cards, annotation popups): rendered above all pages so they never clip under adjacent pages */}
+				<Show when={!curAlt() && ctxSig()}>
+					<For each={plugins()}>{(p: ReaderPlugin) => <Show when={p.paneOverlay}>{p.paneOverlay!(ctx())}</Show>}</For>
+				</Show>
 			</div>
 		</div>
 	);
@@ -2631,12 +2650,12 @@ export function Reader(props: ReaderProps): JSX.Element {
 					{(a) => (
 						<div
 							onClick={() => setReaderAppearance({ ...appearance(), mode: a.id })}
-								onAuxClick={(e: EventPayload) => {
-									// Zotero's createThemeContextMenu: the plugins' items for a right-clicked appearance
-									if (!(e.isRightClick || e.button === 2) || !ctxSig()) return;
-									const items = pluginMenuItems((p) => p.themeMenu?.(ctx(), { theme: a.id }));
-									if (items.length) openContextMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items.slice(1));
-								}}
+							onAuxClick={(e: EventPayload) => {
+								// Zotero's createThemeContextMenu: the plugins' items for a right-clicked appearance
+								if (!(e.isRightClick || e.button === 2) || !ctxSig()) return;
+								const items = pluginMenuItems((p) => p.themeMenu?.(ctx(), { theme: a.id }));
+								if (items.length) openContextMenu({ x: e.x ?? 0, y: e.y ?? 0 }, items.slice(1));
+							}}
 							style={{
 								...t("flex flex-col items-center gap-1 rounded-md p-1.5"),
 								width: 60,

@@ -13,7 +13,7 @@ import { indexFromStructure, mergeIndex, scanCaptionsInPage, type FigItem } from
 
 export type StructState = { phase: "loading"; pct: number } | { phase: "ready"; doc: DocStructure } | { phase: "error"; message: string };
 
-/** The card shown for a mention: drawn in the overlay of `page`, next to `rect` (PDF points). */
+/** The card shown for a mention: anchored above all pages in the reader's paneOverlay, next to `rect` (PDF points) on `page`. */
 export interface Popup {
 	key: string;
 	page: number;

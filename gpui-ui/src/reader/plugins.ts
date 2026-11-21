@@ -72,6 +72,8 @@ export interface ReaderContext {
 	copy?(text: string): boolean;
 	/** window-space rect (logical px) of a rect on a mounted page, null while the page is not mounted: for positioning popups */
 	rectToWindow?(page: number, rect: NRect): { x: number; y: number; width: number; height: number } | null;
+	/** window-space rect (logical px) of the reader's visible page pane (below the toolbar, beside the sidebar), null before layout */
+	paneBounds?(): { x: number; y: number; width: number; height: number } | null;
 	/** bumps whenever pages move on screen (scroll, zoom, layout): read it in an effect to follow an anchored popup */
 	viewTick?: Accessor<number>;
 	/** the page currently being drawn: 0-based indexes of the mounted pages */
@@ -90,6 +92,8 @@ export interface ReaderPlugin {
 	sidePanel?: { id: string; label: string; icon: string; render: (ctx: ReaderContext) => JSX.Element };
 	/** drawn over each mounted page, sized to the page box; use NRect × the box size */
 	pageOverlay?: (ctx: ReaderContext, page: number, box: Accessor<{ width: number; height: number }>) => JSX.Element;
+	/** drawn once above all pages in the reader's page pane (for floating hover cards and popups that must never clip under adjacent pages) */
+	paneOverlay?: (ctx: ReaderContext) => JSX.Element;
 	/** shown in a small popup at the selection when text is selected (e.g. highlight colours) */
 	selectionPopup?: (ctx: ReaderContext) => JSX.Element;
 	/** a full-pane alternate view, shown when ctx.altView() === id (e.g. the reflowed reading view) */

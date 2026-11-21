@@ -3,15 +3,16 @@
 // the "Figures & Tables", "References" and "Supplementary" side panels. The document structure comes from Zotero's document
 // worker (../structure/load.ts); the bibliography from the core's /api/references.
 import type { ReaderPlugin } from "../plugins";
-import { AcademicHost, AcademicPage } from "./PageOverlay";
+import { AcademicHost, AcademicPage, AcademicPopupHost } from "./PageOverlay";
 import { FiguresPanel, ReferencesPanel, SupplementaryPanel } from "./Panels";
 import { academicFor, closeAcademic } from "./session";
 
-/** Overlay (mentions + citations), the shared popover host and the "back" button. */
+/** Overlay (mentions + citations), the hoisted popover host and the "back" button. */
 export const academicPlugin: ReaderPlugin = {
 	id: "academic",
 	toolbar: (ctx) => <AcademicHost ctx={ctx} />,
 	pageOverlay: (ctx, page, box) => <AcademicPage ctx={ctx} page={page} box={box} />,
+	paneOverlay: (ctx) => <AcademicPopupHost ctx={ctx} />,
 	onOpen(ctx) {
 		const s = academicFor(ctx);
 		// analyse in the background a moment after opening (the document worker is a separate thread), then warm the bibliography

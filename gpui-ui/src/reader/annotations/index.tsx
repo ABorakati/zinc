@@ -8,7 +8,7 @@ import { Popover } from "../../ui";
 import { boundsOf, type Anchor } from "../../ui/core";
 import { pluginMenuItems, type ReaderContext, type ReaderPlugin } from "../plugins";
 import { IconButton, Swatches, kit } from "../structure/kit";
-import { PageAnnotations } from "./PageOverlay";
+import { AnnotationPopupHost, PageAnnotations } from "./PageOverlay";
 import { AnnotationsPanel } from "./Panel";
 import { COLORS } from "./model";
 import { closeSession, sessionFor, type Tool } from "./session";
@@ -76,8 +76,8 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 		setOpen(true);
 	};
 	/** the plugins' createColorContextMenu items: plain rows (submenus and separators are not drawn here) */
-		const colorRows = () => pluginMenuItems((pl) => pl.colorMenu?.(p.ctx)).filter((it) => it.onSelect && it.label);
-		const label = (text: string) => (
+	const colorRows = () => pluginMenuItems((pl) => pl.colorMenu?.(p.ctx)).filter((it) => it.onSelect && it.label);
+	const label = (text: string) => (
 		<text style={{ ...k.tx("text-xs font-medium text-muted-foreground"), whiteSpace: "nowrap" }}>{text}</text>
 	);
 	return (
@@ -149,29 +149,29 @@ function Toolbar(p: { ctx: ReaderContext }): JSX.Element {
 								}}
 							/>
 							{/* Zotero's createColorContextMenu: rows a plugin adds under the swatches */}
-								<For each={colorRows()}>
-									{(it) => (
-										<div
-											onClick={() => {
-												setOpen(false);
-												it.onSelect?.();
-											}}
-											style={{
-												...k.t("flex flex-row items-center rounded px-2"),
-												height: 26,
-												gap: 6,
-												cursor: "pointer",
-												hover: k.t("bg-accent"),
-											}}
-										>
-											<Show when={it.iconColor}>
-												<div style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: it.iconColor }} />
-											</Show>
-											<text style={{ ...k.tx("text-xs text-foreground"), whiteSpace: "nowrap" }}>{it.label ?? ""}</text>
-										</div>
-									)}
-								</For>
-								<Show when={s.ui.tool() === "ink"}>
+							<For each={colorRows()}>
+								{(it) => (
+									<div
+										onClick={() => {
+											setOpen(false);
+											it.onSelect?.();
+										}}
+										style={{
+											...k.t("flex flex-row items-center rounded px-2"),
+											height: 26,
+											gap: 6,
+											cursor: "pointer",
+											hover: k.t("bg-accent"),
+										}}
+									>
+										<Show when={it.iconColor}>
+											<div style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: it.iconColor }} />
+										</Show>
+										<text style={{ ...k.tx("text-xs text-foreground"), whiteSpace: "nowrap" }}>{it.label ?? ""}</text>
+									</div>
+								)}
+							</For>
+							<Show when={s.ui.tool() === "ink"}>
 								{label("Thickness")}
 								<div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
 									{widths.map((w) => {
@@ -279,6 +279,7 @@ export const annotationsPlugin: ReaderPlugin = {
 	toolbar: (ctx) => <Toolbar ctx={ctx} />,
 	sidePanel: { id: "annotations", label: "Annotations", icon: "highlighter", render: (ctx) => <AnnotationsPanel ctx={ctx} /> },
 	pageOverlay: (ctx, page, box) => <PageAnnotations ctx={ctx} page={page} box={box} />,
+	paneOverlay: (ctx) => <AnnotationPopupHost ctx={ctx} />,
 	selectionPopup: (ctx) => <SelectionPopup ctx={ctx} />,
 	onOpen(ctx) {
 		const s = sessionFor(ctx);
