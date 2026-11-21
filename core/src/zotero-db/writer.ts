@@ -334,6 +334,7 @@ class Session {
 		if (typeId === undefined) throw new ZoteroWriteError(`unknown itemType '${typeName}'`);
 		const valid = this.lk.validFields.get(typeId) ?? new Set<number>();
 		const extraLines: string[] = [];
+		const directFields = new Set<string>();
 		for (const [k, v] of Object.entries(data)) {
 			if (NON_FIELD_KEYS.has(k) || v === null || v === undefined || typeof v === "object") continue;
 			const value = String(v).trim();
@@ -344,8 +345,13 @@ class Session {
 				continue;
 			}
 			let target = fid;
-			if (!valid.has(fid)) {
-				const mapped = this.lk.baseMapped.get(`${typeId}:${fid}`);
+			const isDirect = valid.has(fid);
+			if (!isDirect) {
+				let mapped = this.lk.baseMapped.get(`${typeId}:${fid}`);
+				if (mapped === undefined) {
+					const base = this.lk.baseOfField.get(fid);
+					if (base !== undefined) mapped = valid.has(base) ? base : this.lk.baseMapped.get(`${typeId}:${base}`);
+				}
 				if (mapped === undefined) {
 					extraLines.push(`${k}: ${value}`);
 					continue;
@@ -353,6 +359,8 @@ class Session {
 				target = mapped;
 			}
 			const name = this.lk.fieldName.get(target) as string;
+			if (!isDirect && directFields.has(name)) continue;
+			if (isDirect) directFields.add(name);
 			out.set(name, name === "accessDate" ? (isoToSql(value) ?? value) : value);
 		}
 		let extra = typeof data.extra === "string" ? data.extra.trim() : "";
@@ -419,13 +427,15 @@ class Session {
 		const typeName = String(data.itemType ?? cur?.typeName ?? "");
 		if (!typeName) throw new ZoteroWriteError("itemType missing");
 		if (typeName === "annotation") throw new ZoteroWriteError("annotations must use type 'annotation'");
-		if (cur && cur.typeName !== typeName)
-			throw new ZoteroWriteError(`changing itemType (${cur.typeName} -> ${typeName}) is not supported`);
 		const typeId = this.lk.typeId.get(typeName);
 		if (typeId === undefined) throw new ZoteroWriteError(`unknown itemType '${typeName}'`);
 		const isNote = typeName === "note";
 		const isAtt = typeName === "attachment";
 		const isChild = isNote || isAtt;
+		const curIsNote = cur?.typeName === "note";
+		const curIsAtt = cur?.typeName === "attachment";
+		if (cur && cur.typeName !== typeName && (isNote || isAtt || curIsNote || curIsAtt))
+			throw new ZoteroWriteError(`changing itemType (${cur.typeName} -> ${typeName}) is not supported`);
 
 		// parent
 		let parentID: number | null = null;
@@ -503,6 +513,7 @@ class Session {
 		const incomingDM = isoToSql(str(data.dateModified));
 		let changedAny = false;
 		const flags = {
+			itemType: false,
 			fields: false,
 			creators: false,
 			tags: false,
@@ -516,6 +527,7 @@ class Session {
 		if (!cur) {
 			changedAny = true;
 		} else {
+			flags.itemType = cur.typeName !== typeName;
 			const curFields = cur.input?.fields ?? {};
 			const keys = new Set([...Object.keys(curFields), ...fieldsIn.keys()]);
 			for (const k of keys) {
@@ -585,19 +597,36 @@ class Session {
 		} else {
 			itemID = cur.itemID;
 			dm = incomingDM && incomingDM !== cur.dateModified ? incomingDM : now;
-			this.run("UPDATE items SET dateModified = ?, clientDateModified = ?, synced = 0 WHERE itemID = ?", dm, now, itemID);
+			// When itemType changes, remove fields invalid on the new type before updating itemTypeID so triggers/lookups stay consistent.
+			if (flags.itemType) {
+				const curFields = cur.input?.fields ?? {};
+				for (const k of Object.keys(curFields)) {
+					if (!fieldsIn.has(k)) this.run("DELETE FROM itemData WHERE itemID = ? AND fieldID = ?", itemID, this.lk.fieldId.get(k));
+				}
+				this.run(
+					"UPDATE items SET itemTypeID = ?, dateModified = ?, clientDateModified = ?, synced = 0 WHERE itemID = ?",
+					typeId,
+					dm,
+					now,
+					itemID,
+				);
+			} else {
+				this.run("UPDATE items SET dateModified = ?, clientDateModified = ?, synced = 0 WHERE itemID = ?", dm, now, itemID);
+			}
 		}
 
 		// itemData
-		if (!cur || flags.fields) {
+		if (!cur || flags.fields || flags.itemType) {
 			const curFields = cur?.input?.fields ?? {};
 			for (const [k, v] of fieldsIn) {
 				const stored = k === "date" ? dateToMultipart(v) : v;
 				if (curFields[k] === stored || (k === "date" && curFields[k] !== undefined && dateForApi(curFields[k]) === v)) continue;
 				this.run("REPLACE INTO itemData VALUES (?, ?, ?)", itemID, this.lk.fieldId.get(k), this.valueId(stored));
 			}
-			for (const k of Object.keys(curFields)) {
-				if (!fieldsIn.has(k)) this.run("DELETE FROM itemData WHERE itemID = ? AND fieldID = ?", itemID, this.lk.fieldId.get(k));
+			if (!flags.itemType) {
+				for (const k of Object.keys(curFields)) {
+					if (!fieldsIn.has(k)) this.run("DELETE FROM itemData WHERE itemID = ? AND fieldID = ?", itemID, this.lk.fieldId.get(k));
+				}
 			}
 		}
 		if (!cur || flags.creators) this.writeCreators(itemID, creatorsIn, cur?.input?.creators ?? []);

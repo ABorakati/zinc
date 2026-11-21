@@ -9,6 +9,7 @@ export interface Lookups {
 	fieldId: Map<string, number>;
 	validFields: Map<number, Set<number>>; // itemTypeID -> valid fieldIDs
 	baseMapped: Map<string, number>; // `${itemTypeID}:${baseFieldID}` -> type-specific fieldID
+	baseOfField: Map<number, number>; // type-specific fieldID -> baseFieldID
 	creatorTypeName: Map<number, string>;
 	creatorTypeId: Map<string, number>;
 	validCreatorTypes: Map<number, Set<number>>;
@@ -33,6 +34,7 @@ export function loadLookups(db: Database): Lookups {
 		fieldId: new Map(),
 		validFields: new Map(),
 		baseMapped: new Map(),
+		baseOfField: new Map(),
 		creatorTypeName: new Map(),
 		creatorTypeId: new Map(),
 		validCreatorTypes: new Map(),
@@ -55,6 +57,7 @@ export function loadLookups(db: Database): Lookups {
 	}
 	for (const r of db.query("SELECT itemTypeID, baseFieldID, fieldID FROM baseFieldMappingsCombined").all() as Row[]) {
 		lk.baseMapped.set(`${r.itemTypeID}:${r.baseFieldID}`, r.fieldID);
+		lk.baseOfField.set(r.fieldID, r.baseFieldID);
 	}
 	for (const r of db.query("SELECT creatorTypeID, creatorType FROM creatorTypes").all() as Row[]) {
 		lk.creatorTypeName.set(r.creatorTypeID, r.creatorType);
