@@ -35,7 +35,7 @@ writeFileSync(
 		`export { schema } from ${p(join(SCHEMA, "index.js"))};`,
 		`export { default as Metadata } from ${p(join(SCHEMA, "metadata.js"))};`,
 		`export { formatCitationItem } from ${p(join(ED, "src/core/utils.js"))};`,
-		`export { DOMParser } from ${p(pm)};`,
+		`export { DOMParser, DOMSerializer } from ${p(pm)};`,
 	].join("\n"),
 );
 try {
