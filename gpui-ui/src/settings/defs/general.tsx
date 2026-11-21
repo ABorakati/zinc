@@ -8,6 +8,7 @@ import { readState } from "../../readState";
 import { registerSection, registerSettings } from "../registry";
 import { openUrlResolver, setOpenUrlResolver } from "../../locate/prefs";
 import { autoAttachPdfs, autoTag, setAutoAttachPdfs, setAutoTag } from "../generalPrefs";
+import { nativeNotes, nativeNotesSupported, setNativeNotes } from "../../notes/native/prefs";
 
 registerSection({
 	id: "general",
@@ -136,4 +137,19 @@ registerSettings([
 		keywords: ["import", "tags", "keywords", "subjects", "metadata"],
 		control: () => <Toggle checked={autoTag()} onChange={setAutoTag} />,
 	},
+	// a prototype, offered only where it can run (Zinc from source)
+	...(nativeNotesSupported
+		? [
+				{
+					id: "general.nativeNotes",
+					section: "general",
+					group: "Notes",
+					label: "Show notes natively (preview)",
+					description:
+						"Experimental: a note opens at once in a native, read-only view; Edit opens it in the usual editor. Text colour is not shown yet.",
+					keywords: ["notes", "editor", "native", "experimental", "fast"],
+					control: () => <Toggle checked={nativeNotes()} onChange={setNativeNotes} />,
+				},
+			]
+		: []),
 ]);
