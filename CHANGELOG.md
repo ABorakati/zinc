@@ -9,10 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Application menubar on its own top row:** the File / Edit / View / Go / Tools / Help menubar is now always shown on its own compact row above the tab strip (not only when plugins are enabled), keeping open tabs uncluttered.
+
 ### Fixed
 
 - **"System" appearance follows macOS:** with Settings > Appearance on System, Zinc showed the dark theme on macOS whatever the system setting. It now follows the system's light or dark mode, and switches when you change it.
 - **"System" appearance follows Linux:** with Settings > Appearance on System, Zinc showed the dark theme on Linux whatever the system setting. It now follows the light or dark style set in GNOME or KDE (read from the desktop portal), and switches when you change it.
+- **Packaged app crashed on startup with plugins enabled:** enabling WASM plugins in Settings caused packaged builds on macOS and Windows to exit immediately with an `ENOENT` error scanning `/$bunfs/root/plugin-host/src/imports` (#2, #4). Plugin handlers are now bundled statically, packaged `zhw` signing/lookup is hardened, and plugin startup failures disable plugins cleanly instead of crashing the app.
+- **Word citation search by author or title failed on older Windows SQLite builds:** on Windows builds where `winsqlite3.dll` lacks FTS5, searching by author or title in the Word add-in failed with `no such module: fts5` (#3). The add-in now detects missing FTS5 and falls back to a ranked search across titles, all authors (including co-authors), publication, abstract, DOI, and tags.
+- **PDF reader crashed when jumping from bibliography to in-text citation:** rapid page jumps could upload a tile to an image element that had already unmounted (`Unknown element id`, #1). Image pixel uploads now guard against mount/unmount races cleanly.
 
 ## [0.2.5] - 2026-11-21
 
