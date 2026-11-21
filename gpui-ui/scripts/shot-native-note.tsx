@@ -12,6 +12,7 @@ import { store } from "../src/store";
 import { tw } from "../src/theme";
 import { loadNoteParser, type NoteNode } from "../src/notes/native/parse";
 import { NoteDocView } from "../src/notes/native/NoteDocView";
+import { DOMParser, schema } from "../src/notes/native/zotero-schema.gen.js";
 import { createRequire } from "node:module";
 
 // core's jsdom (the same one the parser uses), for the text check
@@ -94,8 +95,34 @@ const check = (ok: unknown, what: string) => {
 const tl0 = performance.now();
 const parser = await loadNoteParser();
 const loadWall = performance.now() - tl0;
-if (!parser) throw new Error("the note parser did not load (vendor/note-editor or core/node_modules/jsdom missing?)");
-console.log(`parser loaded in ${loadWall.toFixed(0)} ms (jsdom + schema ${parser.loadMs.toFixed(0)} ms)`);
+if (!parser) throw new Error("the note parser did not load");
+console.log(`parser ready in ${loadWall.toFixed(1)} ms`);
+
+/** The same schema over a jsdom document (a full browser DOM): what the app's linkedom parse must equal. */
+const jsdomDoc = new JSDOM("<!doctype html><html><body></body></html>").window.document;
+const viaJsdom = (html: string): unknown => {
+	const box = jsdomDoc.createElement("div");
+	box.innerHTML = html;
+	const root = box.childElementCount === 1 && box.firstElementChild?.tagName === "DIV" ? box.firstElementChild : box;
+	return DOMParser.fromSchema(schema).parse(root).toJSON();
+};
+/** JSON without the random per-parse citation node ids and the display text the app adds, colours as hex (a browser DOM turns
+ *  style colours into rgb()/rgba(), linkedom keeps them as written: the same colour either way) */
+const hex = (c: string): string => {
+	const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(c.trim());
+	if (!m) return c.toLowerCase();
+	const h = (n: number) => n.toString(16).padStart(2, "0");
+	const a = m[4] === undefined ? "" : h(Math.round(Number(m[4]) * 255));
+	return `#${h(+m[1]!)}${h(+m[2]!)}${h(+m[3]!)}${a === "ff" ? "" : a}`;
+};
+const comparable = (v: unknown): string =>
+	JSON.stringify(v, (k, x) =>
+		k === "nodeID" || (k === "text" && typeof x === "string" && x.startsWith("("))
+			? undefined
+			: (k === "color" || k === "background") && typeof x === "string"
+				? hex(x)
+				: x,
+	);
 
 const [doc, setDoc] = createSignal<NoteNode | null>(null);
 const h = await boot({
@@ -125,6 +152,10 @@ for (const note of notes) {
 	const want = squash((box.textContent ?? "").replace(/\$\$?/g, ""));
 	const got = squash(textOf(d).replace(/\$\$?/g, ""));
 	check(got === want, `${note.name}: all ${want.length} text characters are in the document`);
+	check(
+		comparable(d) === comparable(viaJsdom(note.html)),
+		`${note.name}: linkedom gives the same document as a full browser DOM (jsdom)`,
+	);
 	if (got !== want) {
 		let i = 0;
 		while (i < got.length && got[i] === want[i]) i++;

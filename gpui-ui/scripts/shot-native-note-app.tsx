@@ -10,7 +10,7 @@ import { startCore } from "../src/core";
 import { viewPaneModel } from "../src/itempane/model";
 import { detachSection } from "../src/shell/sectionPanes";
 import { showNote } from "../src/itempane/Notes";
-import { setNativeNotes, nativeNotesSupported } from "../src/notes/native/prefs";
+import { setNativeNotes } from "../src/notes/native/prefs";
 
 const dbPath = process.env.ZN_DB;
 if (!dbPath) throw new Error("set ZN_DB to a COPY of library.sqlite");
@@ -27,7 +27,6 @@ const check = (ok: unknown, what: string) => {
 	console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
 	if (!ok) fails++;
 };
-check(nativeNotesSupported, "the native view can run here (from source)");
 setNativeNotes(true);
 
 await startCore();

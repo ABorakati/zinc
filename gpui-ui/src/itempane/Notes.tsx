@@ -15,7 +15,7 @@ import { firstLine } from "./util";
 import { RichNoteEditor } from "./RichNote";
 import { richNotesAvailable } from "../webview/notes";
 import { NativeNote } from "../notes/native/NativeNote";
-import { nativeNotes, nativeNotesSupported } from "../notes/native/prefs";
+import { nativeNotes } from "../notes/native/prefs";
 
 // A note the item list asked to open (double-click on a child note row); applied once that parent's notes are shown.
 const [pendingNote, setPendingNote] = createSignal<{ parentKey: string; noteKey: string } | null>(null);
@@ -80,10 +80,10 @@ type NoteEditorProps = {
 };
 
 /** One note: Zotero's editor when it is available, else the Markdown editor. `fill` (top-level notes) fills the parent's height.
- *  With Settings > General > "Show notes natively" (a prototype, from source only) the note opens read-only in the native view first. */
+ *  With Settings > General > "Show notes natively" (a preview) the note opens read-only in the native view first. */
 export function NoteEditor(p: NoteEditorProps): JSX.Element {
 	return (
-		<Show when={nativeNotes() && nativeNotesSupported} fallback={<UsualNoteEditor {...p} />}>
+		<Show when={nativeNotes()} fallback={<UsualNoteEditor {...p} />}>
 			<NativeNote {...p} editor={() => <UsualNoteEditor {...p} startEditing />} />
 		</Show>
 	);
