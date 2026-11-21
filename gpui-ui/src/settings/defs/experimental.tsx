@@ -1,6 +1,6 @@
 // Experimental: features that work but are not finished. Each has its own switch here, off by default, so they never change
 // anything until someone turns them on. When a feature graduates, its row moves to the section it belongs in.
-import { nativeNotes, richTextEditor, setNativeNotes, setRichTextEditor } from "../../notes/native/prefs";
+import { nativeNotes, richTextEditor, richTextSupported, setNativeNotes, setRichTextEditor } from "../../notes/native/prefs";
 import { setWasmPluginsEnabled, wasmPluginsEnabled } from "../../wasmplugins/flag";
 import { Toggle } from "../controls";
 import { registerSection, registerSettings } from "../registry";
@@ -33,6 +33,7 @@ registerSettings([
 			"With Show notes natively on, Edit opens a native editor with a formatting toolbar instead of the usual one. Needs a Zinc build whose GPUI toolkit has the native editor.",
 		keywords: ["notes", "editor", "native", "wysiwyg", "rich text", "formatting", "toolbar"],
 		control: () => <Toggle checked={richTextEditor()} onChange={setRichTextEditor} />,
+		unavailable: richTextSupported ? undefined : "Needs a Zinc build with the GPUIX fork's native editor",
 	},
 	{
 		id: "experimental.plugins",

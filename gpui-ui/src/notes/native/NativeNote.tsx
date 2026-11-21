@@ -8,7 +8,7 @@ import { locked, t, tok, tx } from "../../itempane/kit";
 import { store } from "../../store";
 import { loadNoteParser } from "./parse";
 import { NoteDocView } from "./NoteDocView";
-import { richTextEditor } from "./prefs";
+import { richTextEditor, richTextSupported } from "./prefs";
 import { openCitation, RichTextEditor } from "./RichTextEditor";
 
 export interface NativeNoteProps {
@@ -55,7 +55,7 @@ export function NativeNote(p: NativeNoteProps): JSX.Element {
 			when={!editing()}
 			fallback={
 				// the native editor when the addon has <richtext>; Done returns to this view with the saved note, else the usual editor
-				<Show when={richTextEditor()} fallback={p.editor()}>
+				<Show when={richTextEditor() && richTextSupported} fallback={p.editor()}>
 					<RichTextEditor
 						noteKey={p.noteKey}
 						height={p.height}
