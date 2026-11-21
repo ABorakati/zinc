@@ -251,6 +251,7 @@ export const createCipheriv = () => {
 	throw new Error("encryption is not available in the browser demo");
 };
 export const createDecipheriv = createCipheriv;
+export const hkdfSync = createCipheriv;
 
 export default {
 	homedir,
@@ -270,4 +271,5 @@ export default {
 	randomBytes,
 	createCipheriv,
 	createDecipheriv,
+	hkdfSync,
 };
