@@ -1,6 +1,6 @@
 // The window chrome plugins can extend: the menubar (File / Edit / View / Go / Tools / Help), banners above the tab strip, plugin tabs
-// (chips and bodies) and side panels. Every piece draws nothing while no plugin registered anything for it, except the menubar, which
-// is part of the plugin-enabled build (TopBar shows it only while plugins are on).
+// (chips and bodies) and side panels. Banners, plugin tabs and side panels draw nothing until a plugin registers them; the menubar is
+// always shown on its own row at the top of the window, and plugins can append entries to its menus.
 import { createMemo, For, Show, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
 import { Icon } from "../../icons";
@@ -64,6 +64,18 @@ function builtin(m: MenubarName): MenuItem[] {
 			];
 		case "tools":
 			return actionItems("tools");
+		case "help": {
+			const report = appActions().find((a) => a.id === "report-problem" && (a.when?.() ?? true));
+			return report
+				? [
+						{
+							label: typeof report.label === "function" ? report.label() : report.label,
+							icon: report.icon,
+							onSelect: () => report.run(),
+						},
+					]
+				: [];
+		}
 		default:
 			return [];
 	}
@@ -79,7 +91,7 @@ export function menubarItems(m: MenubarName): MenuItem[] {
 
 export function Menubar(): JSX.Element {
 	return (
-		<div testId="plugin-menubar" style={{ ...t("flex flex-none items-center"), marginRight: 4 }}>
+		<div testId="plugin-menubar" style={t("flex flex-none items-center gap-0.5")}>
 			<For each={MENUS}>
 				{(m) => (
 					<DropdownMenu
@@ -90,9 +102,13 @@ export function Menubar(): JSX.Element {
 								role="button"
 								aria-label={m.label}
 								onMouseEnter={() => void menuShowing(`menubar-${m.id}` as MenuTarget, buildContext())}
-								style={{ ...t("flex h-7 flex-none items-center rounded-md px-2"), cursor: "pointer", hover: t("bg-foreground/5") }}
+								style={{
+									...t("flex h-6 flex-none items-center rounded px-2"),
+									cursor: "pointer",
+									hover: t("bg-foreground/5"),
+								}}
 							>
-								<text style={{ ...tx("text-[13px] text-muted-foreground"), whiteSpace: "nowrap" }}>{m.label}</text>
+								<text style={{ ...tx("text-[12px] text-muted-foreground"), whiteSpace: "nowrap" }}>{m.label}</text>
 							</div>
 						}
 					/>
@@ -113,8 +129,7 @@ const TONE: Record<BannerSpec["kind"], { bg: string; fg: string; icon: string }>
 function Banner(p: { b: Owned<BannerSpec> }): JSX.Element {
 	const tone = () => TONE[p.b.reg.kind] ?? TONE.info;
 	const shown = () =>
-		!dismissedBanners.get(p.b.plugin, p.b.id) &&
-		(!p.b.reg.tabKinds?.length || p.b.reg.tabKinds.includes(conditionContext().tab.kind));
+		!dismissedBanners.get(p.b.plugin, p.b.id) && (!p.b.reg.tabKinds?.length || p.b.reg.tabKinds.includes(conditionContext().tab.kind));
 	return (
 		<Show when={shown()}>
 			<div
@@ -122,13 +137,17 @@ function Banner(p: { b: Owned<BannerSpec> }): JSX.Element {
 				style={{ ...t("flex flex-none items-center gap-2 px-4 py-1.5"), width: "100%", backgroundColor: tok(tone().bg) }}
 			>
 				<Icon name={tone().icon} size={14} color={tok(tone().fg)} />
-				<text style={{ ...tx("text-[13px]"), color: tok(tone().fg), flexGrow: 1, flexShrink: 1, minWidth: 0 }}>{lstr(p.b.reg.text)}</text>
+				<text style={{ ...tx("text-[13px]"), color: tok(tone().fg), flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
+					{lstr(p.b.reg.text)}
+				</text>
 				<For each={p.b.reg.actions}>
 					{(a) => (
 						<div
 							role="button"
 							aria-label={lstr(a.label, a.id)}
-							onClick={() => void callPlugin(p.b.plugin, "extend-handlers", "on-banner-action", [p.b.id, a.id]).catch(() => {})}
+							onClick={() =>
+								void callPlugin(p.b.plugin, "extend-handlers", "on-banner-action", [p.b.id, a.id]).catch(() => {})
+							}
 							style={{ ...t("flex h-6 items-center rounded-md border px-2"), cursor: "pointer", borderColor: tok(tone().fg) }}
 						>
 							<text style={{ ...tx("text-xs"), color: tok(tone().fg), whiteSpace: "nowrap" }}>{lstr(a.label, a.id)}</text>
@@ -136,7 +155,12 @@ function Banner(p: { b: Owned<BannerSpec> }): JSX.Element {
 					)}
 				</For>
 				<Show when={p.b.reg.dismissable}>
-					<div role="button" aria-label="Dismiss" onClick={() => dismissedBanners.set(p.b.plugin, p.b.id, true)} style={{ cursor: "pointer" }}>
+					<div
+						role="button"
+						aria-label="Dismiss"
+						onClick={() => dismissedBanners.set(p.b.plugin, p.b.id, true)}
+						style={{ cursor: "pointer" }}
+					>
 						<Icon name="x" size={14} color={tok(tone().fg)} />
 					</div>
 				</Show>
@@ -200,7 +224,9 @@ export function PluginTabChips(): JSX.Element {
 							style={{ ...t("flex h-full min-w-0 flex-1 items-center gap-1.5 pl-3 pr-1 cursor-pointer") }}
 						>
 							<Icon name={iconName(tab.reg.icon, "puzzle")} size={14} color={fg()} style={{ flexShrink: 0 }} />
-							<text style={{ ...tx(`text-[13px] ${active() ? "font-medium" : ""}`), color: fg(), whiteSpace: "nowrap" }}>{titleOf(tab.reg)}</text>
+							<text style={{ ...tx(`text-[13px] ${active() ? "font-medium" : ""}`), color: fg(), whiteSpace: "nowrap" }}>
+								{titleOf(tab.reg)}
+							</text>
 						</div>
 						<Show when={tab.reg.closable}>
 							<div
@@ -227,13 +253,27 @@ export function PluginTabBodies(): JSX.Element {
 				return (
 					<div
 						testId={`plugin-tab-body-${tab.plugin}-${tab.id}`}
-						style={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, width: "100%", ...t("bg-background"), ...(active() ? {} : HIDDEN) }}
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							flexGrow: 1,
+							minHeight: 0,
+							width: "100%",
+							...t("bg-background"),
+							...(active() ? {} : HIDDEN),
+						}}
 					>
 						<PluginViewSlot
 							plugin={tab.plugin}
 							view={tab.id}
 							surface="tab"
-							params={{ window: 1, tabID: id(), kind: tab.reg.kind, state: tab.reg.state ? JSON.parse(tab.reg.state) : null, item: tab.reg.item ?? null }}
+							params={{
+								window: 1,
+								tabID: id(),
+								kind: tab.reg.kind,
+								state: tab.reg.state ? JSON.parse(tab.reg.state) : null,
+								item: tab.reg.item ?? null,
+							}}
 							visible={active()}
 						/>
 					</div>
@@ -245,12 +285,14 @@ export function PluginTabBodies(): JSX.Element {
 
 // ---- side panels -----------------------------------------------------------------------------------------------------------
 
-const fitsTab = (p: Owned<SidePanelRegistration>, tabKind: string) => (p.reg.tabKinds?.length ? p.reg.tabKinds : ["library"]).includes(tabKind);
+const fitsTab = (p: Owned<SidePanelRegistration>, tabKind: string) =>
+	(p.reg.tabKinds?.length ? p.reg.tabKinds : ["library"]).includes(tabKind);
 
 /** Panels docked on one side of the library (or, with `tab`, of a reader tab). */
 export function PluginSidePanels(p: { side: "left" | "right"; tabKind?: string }): JSX.Element {
 	const kind = () => p.tabKind ?? "library";
-	const list = () => registries.sidePanels.list().filter((s) => s.reg.side === p.side && fitsTab(s, kind()) && panelOpen.get(s.plugin, s.id));
+	const list = () =>
+		registries.sidePanels.list().filter((s) => s.reg.side === p.side && fitsTab(s, kind()) && panelOpen.get(s.plugin, s.id));
 	return (
 		<For each={list()}>
 			{(s) => (
@@ -268,12 +310,22 @@ export function PluginSidePanels(p: { side: "left" | "right"; tabKind?: string }
 					<div style={{ ...t("flex h-9 flex-none items-center gap-1.5 px-3 border-b border-border-soft") }}>
 						<Icon name={iconName(s.reg.icon)} size={14} color={tok("muted-foreground")} />
 						<text style={{ ...tx("text-[12px] font-semibold text-foreground"), flexGrow: 1 }}>{lstr(s.reg.title, s.id)}</text>
-						<div role="button" aria-label="Close panel" onClick={() => panelOpen.set(s.plugin, s.id, false)} style={{ cursor: "pointer" }}>
+						<div
+							role="button"
+							aria-label="Close panel"
+							onClick={() => panelOpen.set(s.plugin, s.id, false)}
+							style={{ cursor: "pointer" }}
+						>
 							<Icon name="x" size={14} color={tok("muted-foreground")} />
 						</div>
 					</div>
 					<div style={{ flexGrow: 1, minHeight: 0, width: "100%" }}>
-						<PluginViewSlot plugin={s.plugin} view={s.id} surface="side-panel" params={{ window: 1, tabID: store.activeTab(), tabType: kind(), side: s.reg.side }} />
+						<PluginViewSlot
+							plugin={s.plugin}
+							view={s.id}
+							surface="side-panel"
+							params={{ window: 1, tabID: store.activeTab(), tabType: kind(), side: s.reg.side }}
+						/>
 					</div>
 				</div>
 			)}
@@ -283,7 +335,8 @@ export function PluginSidePanels(p: { side: "left" | "right"; tabKind?: string }
 
 /** Buttons that show and hide the registered side panels (top bar). */
 export function PluginPanelToggles(p: { tabKind?: string }): JSX.Element {
-	const list = () => registries.sidePanels.list().filter((s) => fitsTab(s, p.tabKind ?? "library") && conditionHolds(undefined, conditionContext()));
+	const list = () =>
+		registries.sidePanels.list().filter((s) => fitsTab(s, p.tabKind ?? "library") && conditionHolds(undefined, conditionContext()));
 	return (
 		<For each={list()}>
 			{(s) => {
@@ -293,7 +346,12 @@ export function PluginPanelToggles(p: { tabKind?: string }): JSX.Element {
 						role="button"
 						aria-label={lstr(s.reg.title, s.id)}
 						onClick={(_e: EventPayload) => panelOpen.set(s.plugin, s.id, !on())}
-						style={{ ...t("flex size-7 flex-none items-center justify-center rounded-md"), cursor: "pointer", ...(on() ? t("bg-border") : {}), hover: on() ? undefined : t("bg-foreground/5") }}
+						style={{
+							...t("flex size-7 flex-none items-center justify-center rounded-md"),
+							cursor: "pointer",
+							...(on() ? t("bg-border") : {}),
+							hover: on() ? undefined : t("bg-foreground/5"),
+						}}
 					>
 						<Icon name={iconName(s.reg.icon)} size={16} color={tok(on() ? "foreground" : "muted-foreground")} />
 					</div>
@@ -302,4 +360,3 @@ export function PluginPanelToggles(p: { tabKind?: string }): JSX.Element {
 		</For>
 	);
 }
-

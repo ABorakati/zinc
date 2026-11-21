@@ -11,7 +11,6 @@ import { store } from "./store";
 import { textStyle, tokens, tw } from "./theme";
 import { Menubar, PluginPanelToggles, PluginTabChips } from "./wasmplugins/extend/Chrome";
 import { PluginToolbarSlot } from "./wasmplugins/extend/ToolbarSlot";
-import { pluginSupervisor } from "./wasmplugins/host";
 
 const mode = (): Mode => store.mode();
 const tok = (name: string): string => tokens[mode()][name] ?? "#888";
@@ -158,34 +157,36 @@ export function TopBar() {
 	const onLibrary = () => store.activeTab() === "library";
 	const readers = () => store.tabs().filter(isDocTab);
 	return (
-		// cacheRegion: drawn by its own cached GPUI view (fixed h-10), replayed while the list scrolls
-		<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%", ...REGION }}>
-			{/* the panel toggles belong to the library layout (disabled on a reader tab, as the web UI) */}
-			<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>
-				<PanelButton icon="panel-left" on={leftOpen()} onClick={() => onLibrary() && setLeftOpen(!leftOpen())} />
-			</div>
-			{/* WASM plugins (src/wasmplugins): the File / Edit / View / Go / Tools / Help menubar, only while plugins are running */}
-			<Show when={pluginSupervisor()}>
+		// cacheRegion: drawn by its own cached GPUI view, replayed while the list scrolls
+		<div style={{ ...t("flex flex-col flex-none bg-topbar"), width: "100%", ...REGION }}>
+			{/* Application menubar (File / Edit / View / Go / Tools / Help), always shown above the tab strip; plugins can append entries */}
+			<div style={{ ...t("flex h-7 flex-none items-center border-b bg-topbar px-2"), width: "100%" }}>
 				<Menubar />
-			</Show>
-			<div style={t("flex min-w-0 items-center gap-1 py-1 pr-1 pl-0.5")}>
-				<LibraryTabChip active={onLibrary()} onClick={() => store.setActiveTab("library")} />
-				<For each={readers()}>{(tab) => <ReaderTabChip tab={tab} active={store.activeTab() === tab.id} />}</For>
-				<PluginTabChips />
-				<Show when={settingsOpen()}>
-					<SettingsTabChip active={store.activeTab() === SETTINGS_TAB} />
-				</Show>
 			</div>
-			<div style={{ flexGrow: 1 }} />
-			<div style={t("flex flex-none items-center gap-1")}>
-				{/* Zotero sync: indicator + popover; refresh the lists when changes arrive from Zotero */}
-				<PluginToolbarSlot slot="top-bar" />
-				<PluginPanelToggles />
-				<SyncStatus onChanged={() => refreshLibraryLists(store)} />
+			<div style={{ ...t("flex h-10 flex-none items-center gap-1 border-b bg-topbar px-3"), width: "100%" }}>
+				{/* the panel toggles belong to the library layout (disabled on a reader tab, as the web UI) */}
 				<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>
-					<PanelButton icon="panel-right" on={rightOpen()} onClick={() => onLibrary() && setRightOpen(!rightOpen())} />
+					<PanelButton icon="panel-left" on={leftOpen()} onClick={() => onLibrary() && setLeftOpen(!leftOpen())} />
 				</div>
-				<PanelButton icon="settings" accent={store.activeTab() === SETTINGS_TAB} onClick={openSettings} />
+				<div style={t("flex min-w-0 items-center gap-1 py-1 pr-1 pl-0.5")}>
+					<LibraryTabChip active={onLibrary()} onClick={() => store.setActiveTab("library")} />
+					<For each={readers()}>{(tab) => <ReaderTabChip tab={tab} active={store.activeTab() === tab.id} />}</For>
+					<PluginTabChips />
+					<Show when={settingsOpen()}>
+						<SettingsTabChip active={store.activeTab() === SETTINGS_TAB} />
+					</Show>
+				</div>
+				<div style={{ flexGrow: 1 }} />
+				<div style={t("flex flex-none items-center gap-1")}>
+					{/* Zotero sync: indicator + popover; refresh the lists when changes arrive from Zotero */}
+					<PluginToolbarSlot slot="top-bar" />
+					<PluginPanelToggles />
+					<SyncStatus onChanged={() => refreshLibraryLists(store)} />
+					<div style={{ opacity: onLibrary() ? 1 : 0.3 }}>
+						<PanelButton icon="panel-right" on={rightOpen()} onClick={() => onLibrary() && setRightOpen(!rightOpen())} />
+					</div>
+					<PanelButton icon="settings" accent={store.activeTab() === SETTINGS_TAB} onClick={openSettings} />
+				</div>
 			</div>
 		</div>
 	);
