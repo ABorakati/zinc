@@ -10,6 +10,12 @@ Zinc is a fun side project that solved some of my own pain points. It is not run
 
 Contributions are licensed under the AGPL-3.0, like the rest of the project.
 
+## Recording a change
+
+When a change is one users will notice, add an entry for it to [`CHANGELOG.md`](CHANGELOG.md), under `## [Unreleased]`, in the
+section for its type: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security` ([Keep a Changelog
+1.1.0](https://keepachangelog.com/en/1.1.0/)). Write it as the release notes are written: a bold title, then what changed for the user.
+
 ## Running the CI checks locally
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request. Everything it runs works on this machine too.

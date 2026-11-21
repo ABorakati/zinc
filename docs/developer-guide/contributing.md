@@ -42,6 +42,7 @@ Notes:
 - If you change anything under `core/src/connector` or `core/src/db.ts`, rebuild the connector host: it embeds them.
 - If you touch a parser or anything that reads untrusted data, run the long fuzz suite once: `cd core && ZN_FUZZ_RUNS=5000 bun test test/fuzz`. See [Testing](testing.md).
 - A change to layout is checked with the headless screenshot scripts in `gpui-ui/scripts/`, not by tests.
+- A change users will notice gets an entry in `CHANGELOG.md` at the repository root, under `## [Unreleased]`. See [Release notes](releasing.md#release-notes).
 
 ## Code conventions
 
