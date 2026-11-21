@@ -34,22 +34,86 @@ export function loadNoteParser(): Promise<NoteParser | null> {
 	}
 }
 
+/**
+ * The note's metadata as Zotero's editor reads it (`preprocessHTML`): the `data-*` attributes of the first top-level
+ * `<div data-schema-version>`. A root div without data-schema-version carries none.
+ */
+export function noteMetadata(box: Element): Metadata {
+	const metadata = new Metadata();
+	const attrs: Record<string, string> = {};
+	for (const el of Array.from(box.children)) {
+		if (el.tagName !== "DIV" || !el.hasAttribute("data-schema-version")) continue;
+		for (const a of Array.from(el.attributes as ArrayLike<{ name: string; value: string }>))
+			if (a.name.startsWith("data-")) attrs[a.name] = a.value;
+		break;
+	}
+	metadata.parseAttributes(attrs);
+	return metadata;
+}
+
+/**
+ * The rest of Zotero's `preprocessHTML`: an element with a `background-image: url(http(s)/data)` gets an `<img>` of it before it, and
+ * a non-`<img>` element with a `src` gets a link to the source before it.
+ */
+function preprocess(box: Element, document: Document): void {
+	const walk = (parent: Element) => {
+		for (let node = parent.firstElementChild; node; node = node.nextElementSibling) {
+			const bg = /(?:^|;)\s*background(?:-image)?\s*:[^;]*?url\(\s*(["']?)([^"')]*)\1\s*\)/i.exec(node.getAttribute("style") ?? "");
+			if (bg && /^(https?|data):/.test(bg[2]!)) {
+				const img = document.createElement("img");
+				img.setAttribute("src", bg[2]!);
+				parent.insertBefore(img, node);
+			}
+			const src = node.getAttribute("src");
+			if (node.tagName !== "IMG" && src) {
+				const a = document.createElement("a");
+				a.setAttribute("href", src);
+				a.appendChild(document.createTextNode(src));
+				parent.insertBefore(a, node);
+			}
+			walk(node);
+		}
+	};
+	walk(box);
+}
+
+/**
+ * Zotero's `schemaTransform` (what EditorCore runs on every note it opens): an image keeps no marks, and no other node keeps the
+ * `code` mark (inline code holds plain text only).
+ */
+function schemaTransform(n: NoteNode): void {
+	if (n.marks) {
+		const marks = n.type === "image" ? [] : n.type === "text" ? n.marks : n.marks.filter((m) => m.type !== "code");
+		if (marks.length) n.marks = marks;
+		else delete n.marks;
+	}
+	for (const c of n.content ?? []) schemaTransform(c);
+}
+
+/** `loadNoteParser().parse`, for callers that cannot await (the parser is built on first use, a few ms). */
+export function parseNoteSync(html: string): NoteNode {
+	parser ??= create();
+	return parser.parse(html);
+}
+
 function create(): NoteParser {
 	const t0 = performance.now();
 	const { document } = parseHTML("<!doctype html><html><body></body></html>");
 	const pm = DOMParser.fromSchema(schema);
 	const parse = (html: string): NoteNode => {
 		const box = document.createElement("div");
-		box.innerHTML = html;
-		// Zotero's root <div data-schema-version data-citation-items>: the metadata the citations' text comes from
-		const first = box.firstElementChild;
-		const root = first && first.tagName === "DIV" && box.childElementCount === 1 ? first : box;
-		const metadata = new Metadata();
-		const attrs: Record<string, string> = {};
-		for (const a of Array.from(root.attributes as ArrayLike<{ name: string; value: string }>)) attrs[a.name] = a.value;
-		metadata.parseAttributes(attrs);
+		// What an HTML parser does and linkedom's does not: NUL is dropped, and the newline right after <pre> is not content (two of them
+		// are not: the editor's preprocessHTML parses the note, serializes it and parses it again)
+		box.innerHTML = html.replace(/\0/g, "").replace(/(<pre(?:\s[^>]*)?>)(?:\r\n|\n|\r){1,2}/gi, "$1");
+		// Zotero's editor parses the whole body, so a style on the root <div> reaches the text too
+		const root = box;
+		// linkedom's parser leaves text next to an entity in separate nodes (`a&amp;b` is three), and ProseMirror trims white space per node
+		box.normalize();
+		preprocess(box, document);
+		const metadata = noteMetadata(box);
 		try {
 			const node = pm.parse(root).toJSON() as NoteNode;
+			schemaTransform(node);
 			labelCitations(node, metadata);
 			return node;
 		} catch (e) {
@@ -63,7 +127,9 @@ function create(): NoteParser {
 /** Give every citation node its display text, "(Smith 2020; Jones et al. 2019)", as Zotero's editor draws it. */
 function labelCitations(n: NoteNode, metadata: Metadata): void {
 	if (n.type === "citation") {
-		const citation = JSON.parse(JSON.stringify(n.attrs?.citation ?? { citationItems: [] })) as { citationItems: unknown[] };
+		// (a data-citation that is JSON of another shape, `[1,2]` or `{}`, has no items to show)
+		const raw = JSON.parse(JSON.stringify(n.attrs?.citation ?? null)) as { citationItems?: unknown } | null;
+		const citation = { citationItems: Array.isArray(raw?.citationItems) ? raw.citationItems : [] } as { citationItems: unknown[] };
 		try {
 			metadata.fillCitationItemsWithData(citation.citationItems);
 		} catch {

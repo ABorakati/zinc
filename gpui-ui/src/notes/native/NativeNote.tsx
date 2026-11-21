@@ -1,5 +1,5 @@
-// PROTOTYPE: a note shown natively and read-only (NoteDocView), with an Edit button that hands it to the usual editor (Zotero's
-// editor in its web view, or the Markdown editor). Used by itempane/Notes.tsx when Settings > General > "Show notes natively" is on.
+// PROTOTYPE: a note shown natively and read-only (NoteDocView), with an Edit button that opens the native <richtext> editor when the
+// addon has it (RichTextEditor), else hands it to the usual editor (Zotero's editor in its web view, or the Markdown editor). Used by itempane/Notes.tsx when Settings > Experimental > "Show notes natively" is on.
 import { createEffect, createResource, createSignal, on, Show, type JSX } from "solid-js";
 import { Icon } from "../../icons";
 import { ipApi } from "../../itempane/net";
@@ -8,11 +8,14 @@ import { locked, t, tok, tx } from "../../itempane/kit";
 import { store } from "../../store";
 import { loadNoteParser } from "./parse";
 import { NoteDocView } from "./NoteDocView";
+import { richTextEditor } from "./prefs";
+import { openCitation, RichTextEditor } from "./RichTextEditor";
 
 export interface NativeNoteProps {
 	noteKey: string;
 	startEditing?: boolean;
 	onClose?: () => void;
+	onSaved?: (html: string) => void;
 	height?: number;
 	fill?: boolean;
 	/** the usual editor, for Edit */
@@ -28,7 +31,7 @@ export function NativeNote(p: NativeNoteProps): JSX.Element {
 			{ defer: true },
 		),
 	);
-	const [html] = createResource(
+	const [html, { mutate }] = createResource(
 		() => p.noteKey,
 		async (k) => {
 			try {
@@ -47,15 +50,25 @@ export function NativeNote(p: NativeNoteProps): JSX.Element {
 		return h !== undefined && ps ? ps.parse(h) : null;
 	};
 
-	/** a citation was clicked: select the first cited item when it is in this library */
-	const openCitation = (c: Record<string, unknown>) => {
-		const items = (c.citationItems as { uris?: string[] }[] | undefined) ?? [];
-		const key = /\/items\/([A-Z0-9]{8})$/.exec(items[0]?.uris?.[0] ?? "")?.[1];
-		if (key) store.selectItem(key);
-	};
-
 	return (
-		<Show when={!editing()} fallback={p.editor()}>
+		<Show
+			when={!editing()}
+			fallback={
+				// the native editor when the addon has <richtext>; Done returns to this view with the saved note, else the usual editor
+				<Show when={richTextEditor()} fallback={p.editor()}>
+					<RichTextEditor
+						noteKey={p.noteKey}
+						height={p.height}
+						fill={p.fill}
+						onSaved={(h) => {
+							mutate(h);
+							p.onSaved?.(h);
+						}}
+						onClose={() => setEditing(false)}
+					/>
+				</Show>
+			}
+		>
 			<div
 				testId="native-note-pane"
 				style={{ ...t("flex flex-col"), width: "100%", ...(p.fill ? { height: "100%", minHeight: 0 } : {}) }}
