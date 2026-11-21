@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { baseDir, blockAlign, blockDir, fieldDir, isRtl, languageDir } from "./bidi";
+import { baseDir, blockAlign, blockDir, fieldDirection, isRtl, languageToISO6391 } from "./bidi";
 
 describe("baseDir", () => {
 	test("Arabic, Hebrew, Persian, Urdu are rtl", () => {
@@ -47,20 +47,33 @@ describe("baseDir", () => {
 	});
 });
 
-describe("field and language direction", () => {
-	test("ids and numbers are ltr, text fields auto", () => {
-		expect(fieldDir("DOI")).toBe("ltr");
-		expect(fieldDir("pages")).toBe("ltr");
-		expect(fieldDir("title")).toBe("auto");
-		expect(fieldDir("abstractNote")).toBe("auto");
+describe("field direction (Zotero's ItemFields.getDirection)", () => {
+	test("ids, numbers and dates are ltr; text fields follow their text", () => {
+		for (const f of ["DOI", "ISBN", "url", "pages", "volume", "extra", "language", "dateAdded", "accessDate"])
+			expect(fieldDirection(f, undefined, "ar")).toBe("ltr");
+		expect(fieldDirection("title", undefined, undefined)).toBe("auto");
+		expect(fieldDirection("abstractNote", undefined, "")).toBe("auto");
 	});
-	test("languageDir", () => {
-		expect(languageDir("ar")).toBe("rtl");
-		expect(languageDir("he-IL")).toBe("rtl");
-		expect(languageDir("fa_IR")).toBe("rtl");
-		expect(languageDir("ur")).toBe("rtl");
-		expect(languageDir("en-US")).toBe("ltr");
-		expect(languageDir("")).toBeUndefined();
+	test("a type-specific field is judged by its base field", () => {
+		expect(fieldDirection("reportNumber", "number", "ar")).toBe("ltr");
+		expect(fieldDirection("firstPage", "pages", "he")).toBe("ltr");
+		expect(fieldDirection("bookTitle", "publicationTitle", "ar")).toBe("rtl");
+	});
+	test("the item's language decides the other fields", () => {
+		for (const lang of ["ar", "he-IL", "fa_IR", "ur", "Arabic", "Hebrew", "Persian", "arabic", "العربية", "עברית", "ara", "yi"])
+			expect(fieldDirection("title", undefined, lang)).toBe("rtl");
+		for (const lang of ["en", "en-US", "English", "fr", "Deutsch", "zh-Hans", "ja"])
+			expect(fieldDirection("title", undefined, lang)).toBe("ltr");
+		// a language Intl cannot read is "ltr", as in Zotero (not "auto")
+		expect(fieldDirection("title", undefined, "Klingon!")).toBe("ltr");
+	});
+	test("languageToISO6391", () => {
+		expect(languageToISO6391("Arabic")).toBe("ar");
+		expect(languageToISO6391("Français")).toBe("fr");
+		expect(languageToISO6391("en_US")).toBe("en-US");
+		expect(languageToISO6391("de-AT")).toBe("de-AT");
+		expect(languageToISO6391("Klingon!")).toBe("Klingon!");
+		expect(languageToISO6391("")).toBe("");
 	});
 });
 

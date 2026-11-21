@@ -393,7 +393,7 @@ export function Field(p: {
 	onEditing?: (e: boolean) => void;
 	/** open directly in the editor (rename) */
 	startEditing?: boolean;
-	/** base direction of the editor: "ltr" for IDs / numbers / URLs (Zotero's fieldDir); default "auto" (first strong character) */
+	/** base direction of the editor: "ltr" for IDs / numbers / URLs (Zotero's getDirection: see ui/bidi.ts fieldDirection); default "auto" (first strong character) */
 	dir?: "ltr" | "rtl" | "auto";
 }): JSX.Element {
 	const [editing, setEditingRaw] = createSignal(!!p.startEditing);
