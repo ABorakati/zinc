@@ -2,12 +2,26 @@ name: macOS
 
 # Zinc on macOS (Apple Silicon): core's tests, the app's typecheck and logic tests, the native PDF library (native/pdf as a .dylib with
 # PDFium), and a smoke run of the real app window (gpui-ui/scripts/smoke-native.ts) whose screenshots are kept as an artifact.
-# macOS runner minutes cost several times Linux ones on a private repository, so this runs on demand and when the code that differs per
-# operating system changes on main, not on every push.
+# Runs on demand, on pull requests, and on pushes to main whenever the code that differs per operating system changes, rather than on
+# every push.
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - ".github/workflows/macos.yml"
+      - "gpui-ui/native/**"
+      - "gpui-ui/src/webview/**"
+      - "gpui-ui/src/shell/**"
+      - "gpui-ui/src/reader/pdf.ts"
+      - "gpui-ui/src/reader/printGtk.ts"
+      - "gpui-ui/src/reader/printMac.ts"
+      - "gpui-ui/scripts/smoke-native.ts"
+      - "gpui-ui/package.json"
+      - "gpui-ui/bun.lock"
+      - "core/src/platform-dirs.ts"
+      - "core/src/library-location.ts"
+  pull_request:
     paths:
       - ".github/workflows/macos.yml"
       - "gpui-ui/native/**"
