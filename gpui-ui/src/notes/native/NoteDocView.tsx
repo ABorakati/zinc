@@ -1,15 +1,12 @@
 // PROTOTYPE: a Zotero note drawn natively, read-only, from its ProseMirror document (parse.ts). Block structure (headings, lists,
 // quotes, tables, rules, code, maths, images) is native boxes; the text of each block is one <markdown> element (inline.ts),
 // with annotation highlights, underlines and background colours as <markdown marks>. No web view.
-import { createSignal, For, Match, Show, Switch, type JSX } from "solid-js";
+import { For, Match, Switch, type JSX } from "solid-js";
 import { markdownTheme } from "../../itempane/Notes";
 import { openLink } from "../../itempane/actions";
-import { t, TextBtn, tok, tx } from "../../itempane/kit";
+import { t, tok, tx } from "../../itempane/kit";
 import { Icon } from "../../icons";
-import { withAlpha } from "../../theme";
-import { Tooltip } from "../../ui";
 import { inlineMarkdown } from "./inline";
-import { NoteEditView } from "./NoteEditView";
 import type { NoteNode } from "./parse";
 
 const BLOCK_GAP = 8;
@@ -19,80 +16,11 @@ const BULLETS = ["•", "◦", "▪"];
 /** A citation link was clicked: the citation's data (citationItems with uris / itemData). */
 export type OnCitation = (citation: Record<string, unknown>) => void;
 
-/** Block-by-block editing of the top-level blocks (NativeNote owns the state). */
-export interface BlockEdit {
-	/** index of the block being edited; `doc.content.length` is a new paragraph at the end; null = none */
-	editing: () => number | null;
-	/** open a block for editing (by node, so a click that lands after another editor committed still hits the right block) */
-	start: (block: NoteNode) => void;
-	/** the block as Markdown, null when it cannot be edited that way without loss */
-	markdown: (block: NoteNode) => string | null;
-	commit: (markdown: string) => void;
-	cancel: () => void;
-	/** open a new paragraph at the end */
-	add: () => void;
-}
-
-export function NoteDocView(p: { doc: NoteNode; onCitation?: OnCitation; edit?: BlockEdit }): JSX.Element {
+export function NoteDocView(p: { doc: NoteNode; onCitation?: OnCitation }): JSX.Element {
 	return (
 		<div testId="native-note" style={{ ...t("flex flex-col"), width: "100%", gap: BLOCK_GAP, userSelect: "text" }}>
-			<Show when={p.edit} fallback={<Blocks nodes={p.doc.content ?? []} depth={0} onCitation={p.onCitation} />}>
-				{(edit) => (
-					<>
-						<For each={p.doc.content ?? []}>
-							{(n, i) => <TopBlock node={n} index={i} edit={edit()} onCitation={p.onCitation} />}
-						</For>
-						<Show
-							when={edit().editing() === (p.doc.content ?? []).length}
-							fallback={
-								<div testId="native-note-add" style={{ ...t("flex flex-row"), paddingTop: 2 }}>
-									<TextBtn label="Add paragraph" icon="plus" onClick={edit().add} />
-								</div>
-							}
-						>
-							<NoteEditView initial="" onCommit={edit().commit} onCancel={edit().cancel} />
-						</Show>
-					</>
-				)}
-			</Show>
+			<Blocks nodes={p.doc.content ?? []} depth={0} onCitation={p.onCitation} />
 		</div>
-	);
-}
-
-/** A top-level block with editing: click to edit when it has a Markdown form, else a read-only hint on hover. */
-function TopBlock(p: { node: NoteNode; index: () => number; edit: BlockEdit; onCitation?: OnCitation }): JSX.Element {
-	const md = p.edit.markdown(p.node);
-	const [hot, setHot] = createSignal(false);
-	return (
-		<Show
-			when={p.edit.editing() !== p.index()}
-			fallback={<NoteEditView initial={md ?? ""} onCommit={p.edit.commit} onCancel={p.edit.cancel} />}
-		>
-			<div
-				testId={`native-block-${p.index()}`}
-				onClick={md === null ? undefined : () => p.edit.start(p.node)}
-				onMouseEnter={() => setHot(true)}
-				onMouseLeave={() => setHot(false)}
-				style={{
-					...t("flex flex-col rounded"),
-					position: "relative",
-					width: "100%",
-					cursor: md === null ? "default" : "text",
-					...(md === null ? {} : { hover: { backgroundColor: withAlpha(tok("muted"), 0.5) } }),
-				}}
-			>
-				<Block node={p.node} depth={0} onCitation={p.onCitation} />
-				<Show when={md === null && hot()}>
-					<div style={{ position: "absolute", top: 2, right: 2 }}>
-						<Tooltip label="Edit this part in Zotero's editor">
-							<div style={{ ...t("flex items-center rounded p-1"), backgroundColor: tok("muted") }}>
-								<Icon name="lock" size={12} color={tok("muted-foreground")} />
-							</div>
-						</Tooltip>
-					</div>
-				</Show>
-			</div>
-		</Show>
 	);
 }
 

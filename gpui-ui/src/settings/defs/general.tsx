@@ -143,7 +143,7 @@ registerSettings([
 		group: "Notes",
 		label: "Show notes natively (preview)",
 		description:
-			"Experimental: notes open at once in a native editor. Click a paragraph, heading or list to edit it (Markdown: **bold**, *italic*, - lists). Parts with citations, highlights, colours, tables or maths open in Zotero's editor.",
+			"Experimental: a note opens at once in a native, read-only view; Edit opens it in the usual editor. Text colour is not shown yet.",
 		keywords: ["notes", "editor", "native", "experimental", "fast"],
 		control: () => <Toggle checked={nativeNotes()} onChange={setNativeNotes} />,
 	},
