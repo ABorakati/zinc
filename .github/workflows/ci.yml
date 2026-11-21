@@ -169,3 +169,33 @@ jobs:
         env:
           ZN_PORTAL_TEST: "1"
         run: bun test src/shell/appearance.linux.test.ts
+
+  # Commit messages (CONTRIBUTING.md, "Commit messages"): the rules' tests on every push; on a pull request, also its title and each
+  # of its commits, merges excepted. The commit-msg hook in .githooks runs the same script before a commit is made.
+  commit-messages:
+    name: commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Test the rules
+        run: bun test scripts/commit-lint.test.ts
+      # The title and the shas go through env: a title is text anyone opening a pull request can choose.
+      - name: Check the pull request's title and commits
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          status=0
+          bun scripts/commit-lint.ts --message "$TITLE" || status=1
+          bun scripts/commit-lint.ts "$BASE..$HEAD" || status=1
+          exit $status

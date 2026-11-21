@@ -43,6 +43,7 @@ Notes:
 - If you touch a parser or anything that reads untrusted data, run the long fuzz suite once: `cd core && ZN_FUZZ_RUNS=5000 bun test test/fuzz`. See [Testing](testing.md).
 - A change to layout is checked with the headless screenshot scripts in `gpui-ui/scripts/`, not by tests.
 - A change users will notice gets an entry in `CHANGELOG.md` at the repository root, under `## [Unreleased]`. See [Release notes](releasing.md#release-notes).
+- Commit messages follow Conventional Commits (`fix(word): …`), with the rules in `CONTRIBUTING.md` at the repository root, "Commit messages". `git config core.hooksPath .githooks` checks each message when you commit.
 
 ## Code conventions
 

@@ -32,3 +32,6 @@ Cargo.lock                      linguist-generated
 
 # Shipped end-user page, not source
 gpui-ui/installer/connector-howto.html   linguist-documentation
+
+# Git runs hooks with sh, which fails on CRLF line ends: keep them LF on every OS (core.autocrlf on Windows included)
+.githooks/*                     text eol=lf
