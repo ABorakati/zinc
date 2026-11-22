@@ -301,7 +301,12 @@ export function Card(p: {
 	// selected: rounded-[10px] bg-primary/[0.07] + 1px ring (primary 32%) + 0 4px 12px glow (primary 14%); otherwise border-b + hover wash
 	const rootStyle = (): Style => {
 		const m = mode();
-		const base = tw(compact() ? "relative flex items-start gap-3 px-2.5 py-1.5" : "relative flex items-start gap-3 px-2.5 py-2.5", m);
+		// pointerEvents "none": the card's fill (selected, focused) must not block the click for the box around it, which has the
+		// handlers (GPUIX: a filled element blocks hits). It only means "does not block": the buttons and the hover keep working.
+		const base: Style = {
+			...tw(compact() ? "relative flex items-start gap-3 px-2.5 py-1.5" : "relative flex items-start gap-3 px-2.5 py-2.5", m),
+			pointerEvents: "none",
+		};
 		const ring = p.focused ? { outlineWidth: 2, outlineColor: mix(tok("ring", m), 60, "transparent"), outlineOffset: -2 } : {};
 		if (selected()) {
 			const primary = tok("primary", m);

@@ -50,6 +50,8 @@ function Swatch(p: { color: string; label: string; active: boolean; fg: string; 
 		>
 			<div
 				style={{
+					// the painted dot would take the click itself (GPUIX: a filled element blocks hits): let it through
+					pointerEvents: "none",
 					width: 20,
 					height: 20,
 					borderRadius: 10,
