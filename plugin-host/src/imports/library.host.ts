@@ -67,12 +67,19 @@ function applyError(index: number | undefined, tag: string, val?: string): WitEr
 	return e;
 }
 
-/** jco gives `option<option<T>>` as undefined | null | T, or as {tag,val}; accept every spelling. Returns "keep" | string | null. */
-function nestedOption(v: any): "keep" | string | null {
+/**
+ * jco gives `option<option<T>>` as undefined | null | T, or as {tag,val}; accept every spelling. Returns "keep" | string | null.
+ * zhw sends none as null and a present value as `{tag:"some",val}`, with `val` null for some(none); `decodeWire` turns that null
+ * into undefined, so a `some` whose `val` is undefined or missing is some(none), the case that clears the value.
+ */
+export function nestedOption(v: any): "keep" | string | null {
 	if (v === undefined) return "keep";
 	if (v === null) return null;
 	if (typeof v === "string") return v;
-	if (v && typeof v === "object" && "tag" in v) return v.tag === "some" ? nestedOption(v.val) : null;
+	if (v && typeof v === "object" && "tag" in v) {
+		if (v.tag !== "some") return null;
+		return v.val === undefined ? null : nestedOption(v.val);
+	}
 	return "keep";
 }
 

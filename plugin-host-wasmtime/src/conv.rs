@@ -51,6 +51,33 @@ pub fn iface_name(name: &str) -> String {
     }
 }
 
+/// `some(x)` of an option on the wire. An `option<T>` is the value or null. When `T` is itself an option, `some(none)` and `none`
+/// would both be null, so there the present case is tagged: `{"tag":"some","val":<inner>}` (`val` null for `some(none)`), and
+/// `none` stays null. A reader that does not know the tagged form sees a tagged value like any variant and leaves the field alone.
+fn some_to_json(inner_is_option: bool, inner: Value) -> Value {
+    if inner_is_option {
+        json!({ "tag": "some", "val": inner })
+    } else {
+        inner
+    }
+}
+
+/// The inverse for an `option<option<T>>` argument: `None` for `none`, else the JSON of the inner option. Null and
+/// `{"tag":"none"}` are `none`; `{"tag":"some","val":v}` is `some(v)`, with a missing or null `val` meaning `some(none)`;
+/// a bare value is accepted as `some(some(value))`.
+fn nested_some(j: &Value) -> Option<&Value> {
+    if j.is_null() {
+        return None;
+    }
+    match j.get("tag").and_then(Value::as_str) {
+        Some("none") if j.as_object().is_some_and(|o| o.len() == 1) => None,
+        Some("some") if j.as_object().is_some_and(|o| o.keys().all(|k| k == "tag" || k == "val")) => {
+            Some(j.get("val").unwrap_or(&Value::Null))
+        }
+        _ => Some(j),
+    }
+}
+
 #[allow(dead_code)]
 pub fn val_to_json(cx: &mut impl AsContextMut, v: &Val) -> Result<Value> {
     val_to_json_typed(cx, v, None)
@@ -147,7 +174,8 @@ pub fn val_to_json_typed(cx: &mut impl AsContextMut, v: &Val, ty: Option<&Type>)
                 Some(Type::Option(ot)) => Some(ot.ty()),
                 _ => None,
             };
-            val_to_json_typed(cx, x, inner.as_ref())?
+            let j = val_to_json_typed(cx, x, inner.as_ref())?;
+            some_to_json(matches!(**x, Val::Option(_)), j)
         }
         Val::Result(r) => {
             let (tag, p, inner_ty) = match r {
@@ -278,10 +306,11 @@ pub fn json_to_val(cx: &mut impl AsContextMut, ty: &Type, j: &Value, res: &ResId
             Val::Enum(name.to_string())
         }
         Type::Option(o) => {
-            if j.is_null() {
-                Val::Option(None)
-            } else {
-                Val::Option(Some(Box::new(json_to_val(cx, &o.ty(), j, res)?)))
+            let inner_ty = o.ty();
+            let present = if matches!(inner_ty, Type::Option(_)) { nested_some(j) } else { (!j.is_null()).then_some(j) };
+            match present {
+                None => Val::Option(None),
+                Some(v) => Val::Option(Some(Box::new(json_to_val(cx, &inner_ty, v, res)?))),
             }
         }
         Type::Result(r) => {
@@ -322,4 +351,63 @@ pub fn json_to_val(cx: &mut impl AsContextMut, ty: &Type, j: &Value, res: &ResId
         }
         other => bail!("unsupported type in import result: {other:?}"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasmtime::{Engine, Store};
+
+    fn store() -> Store<()> {
+        Store::new(&Engine::default(), ())
+    }
+
+    fn opt(v: Option<Val>) -> Val {
+        Val::Option(v.map(Box::new))
+    }
+
+    /// `option<option<string>>` as a plugin sends it, over the JSON wire (null becomes `undefined` on the TypeScript side).
+    fn encode(v: Val) -> Value {
+        val_to_json_typed(&mut store(), &v, None).unwrap()
+    }
+
+    /// What the host decodes back, as `Some(Some(s))`, `Some(None)` or `None`.
+    fn decode(j: &Value) -> Option<Option<String>> {
+        nested_some(j).map(|inner| inner.as_str().map(str::to_string))
+    }
+
+    #[test]
+    fn none_some_none_and_some_value_stay_apart() {
+        let none = encode(opt(None));
+        let some_none = encode(opt(Some(opt(None))));
+        let some_value = encode(opt(Some(opt(Some(Val::String("K1".into()))))));
+        assert_eq!(none, Value::Null);
+        assert_eq!(some_none, json!({"tag": "some", "val": null}));
+        assert_eq!(some_value, json!({"tag": "some", "val": "K1"}));
+        assert_eq!(decode(&none), None);
+        assert_eq!(decode(&some_none), Some(None));
+        assert_eq!(decode(&some_value), Some(Some("K1".to_string())));
+    }
+
+    #[test]
+    fn a_plain_option_is_still_the_bare_value_or_null() {
+        assert_eq!(encode(opt(None)), Value::Null);
+        assert_eq!(encode(opt(Some(Val::String("a".into())))), json!("a"));
+    }
+
+    #[test]
+    fn a_record_keeps_the_field_for_some_none_and_drops_it_for_none() {
+        let rec = |parent: Val| Val::Record(vec![("key".into(), Val::String("c".into())), ("parent".into(), parent)]);
+        assert_eq!(encode(rec(opt(None))), json!({"key": "c"}));
+        assert_eq!(encode(rec(opt(Some(opt(None))))), json!({"key": "c", "parent": {"tag": "some", "val": null}}));
+    }
+
+    #[test]
+    fn decoding_accepts_the_other_spellings() {
+        assert_eq!(decode(&json!({"tag": "none"})), None);
+        assert_eq!(decode(&json!({"tag": "some"})), Some(None));
+        assert_eq!(decode(&json!("bare")), Some(Some("bare".to_string())));
+        // a variant that merely has a tag is a value, not an option
+        assert_eq!(nested_some(&json!({"tag": "some", "other": 1})), Some(&json!({"tag": "some", "other": 1})));
+    }
 }
