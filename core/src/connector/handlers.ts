@@ -246,6 +246,7 @@ export const saveSnapshot: Handler = async (req, { db }) => {
 		return reply(201, "application/json");
 	} catch (e) {
 		console.error("[connector] saveSnapshot failed:", e);
+		SessionManager.remove(session.id);
 		return failure(e);
 	}
 };

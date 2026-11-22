@@ -369,6 +369,16 @@ describe("attachments", () => {
 		expect(await badSession.json()).toEqual({ error: "SESSION_NOT_FOUND" });
 	});
 
+	test("a failed saveSnapshot frees its session ID so the same ID can be tried again", async () => {
+		db.exec("CREATE TRIGGER refuse_items BEFORE INSERT ON items BEGIN SELECT RAISE(ABORT, 'refused'); END");
+		const failed = await zjson("/connector/saveSnapshot", { sessionID: "RETRY1", url: "https://example.org/r", title: "Retry me" });
+		expect(failed.status).toBeGreaterThanOrEqual(400);
+		db.exec("DROP TRIGGER refuse_items");
+		const again = await zjson("/connector/saveSnapshot", { sessionID: "RETRY1", url: "https://example.org/r", title: "Retry me" });
+		expect(again.status).toBe(201);
+		expect(topByTitle("Retry me")).toBeTruthy();
+	});
+
 	test("saveSnapshot creates a webpage item; saveSingleFile attaches the HTML", async () => {
 		setSelection({ kind: "collection", key: "COLLAAA1" });
 		const url = "https://example.org/a/page";
