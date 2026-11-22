@@ -933,7 +933,6 @@ export class App {
 	/** Change the document's citation style and/or locale and reformat everything. */
 	async setStyle(styleId: string, locale: string): Promise<RefreshReport> {
 		const prefs = await this.ensurePrefs();
-		const wasNote = prefs.noteType !== 0;
 		prefs.styleId = styleIdToUrl(styleId);
 		prefs.locale = locale;
 		// as Zotero's document preferences: a new style gets its Bibliography style format on the next bibliography write
@@ -941,11 +940,13 @@ export class App {
 		const f = await this.formatter(styleId, locale);
 		const isNote = f.style.xclass === "note";
 		prefs.noteType = isNote ? prefs.noteType || 1 : 0;
-		await this.writePrefs(prefs);
 		await this.beginEdit({ name: "Change citation style" });
 		try {
-			// switching between an in-text and a note style moves the existing citations into / out of the notes
-			if (wasNote !== isNote) await this.convertCitations(!isNote ? "inline" : prefs.noteType === 2 ? "endnote" : "footnote");
+			// the citations move first and the preferences are written after, in the same edit: a move that fails leaves the
+			// document's preferences as they were, so asking again moves what is left (it moves only the citations not yet where
+			// the style wants them, so an unchanged class costs a field read and no change)
+			await this.convertCitations(!isNote ? "inline" : prefs.noteType === 2 ? "endnote" : "footnote");
+			await this.writePrefs(prefs);
 			return await this.refreshAll();
 		} finally {
 			await this.host.call("doc.end");
@@ -958,10 +959,10 @@ export class App {
 		const f = await this.formatter(styleUrlToId(prefs.styleId), prefs.locale);
 		if (f.style.xclass !== "note") return null;
 		prefs.noteType = noteType;
-		await this.writePrefs(prefs);
 		await this.beginEdit({ name: "Change note type" });
 		try {
 			await this.convertCitations(noteType === 2 ? "endnote" : "footnote");
+			await this.writePrefs(prefs);
 			return await this.refreshAll();
 		} finally {
 			await this.host.call("doc.end");

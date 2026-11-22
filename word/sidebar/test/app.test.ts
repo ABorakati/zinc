@@ -486,6 +486,37 @@ describe("document preferences", () => {
 		expect(await app.setNoteType(1)).toBeNull();
 	});
 
+	test("a style change that fails halfway writes no preferences, and trying again moves the rest", async () => {
+		const { app, host } = setupNote();
+		await app.init();
+		const [a, b] = await pickAll(app, "AAAA1111", "BBBB2222");
+		await app.insertCitation([a!]);
+		await app.insertCitation([b!]);
+		const real = host.call.bind(host);
+		let converts = 0;
+		const start = host.calls.length;
+		host.call = (async (method: string, params?: Record<string, unknown>) => {
+			if (method === "doc.convert" && ++converts === 2) throw new Error("Word refused");
+			return real(method, params);
+		}) as typeof host.call;
+		await expect(app.setStyle("mininote", "en-US")).rejects.toThrow(/Moving citations failed/);
+		host.call = real;
+		// the preferences are written inside the edit, after the move, so the failure left them as they were
+		expect(parsePrefsXml(host.prefsXml)!.noteType).toBe(0);
+		const run = host.calls.slice(start);
+		expect(run.filter((c: string) => c === "doc.setPrefs").length).toBe(0);
+		expect(run.lastIndexOf("doc.end")).toBeGreaterThan(run.indexOf("doc.begin"));
+		expect(host.fields.map((f: any) => f.story).sort()).toEqual(["fn", "main"]);
+		// a second try converts what is left (it used to see the new class already written and move nothing)
+		const before = host.calls.length;
+		await app.setStyle("mininote", "en-US");
+		expect(host.fields.map((f: any) => f.story)).toEqual(["fn", "fn"]);
+		const second = host.calls.slice(before);
+		expect(second.indexOf("doc.begin")).toBeLessThan(second.indexOf("doc.setPrefs"));
+		expect(second.indexOf("doc.setPrefs")).toBeLessThan(second.lastIndexOf("doc.end"));
+		expect(parsePrefsXml(host.prefsXml)!.noteType).toBe(1);
+	});
+
 	test("Automatically update citations off: a new or edited citation is formatted alone, Refresh does the rest", async () => {
 		const { app, host } = setup();
 		await app.init();
