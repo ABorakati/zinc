@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Right-to-left text (partial):** item fields and the native note view choose their direction as Zotero does. The renderer does not reorder the letters yet, so Arabic and Hebrew titles in the item list are still drawn backwards.
+- **Right-to-left text:** item fields and the native note view choose their direction as Zotero does, and Arabic and Hebrew are drawn in the right order on Windows, including right-to-left words in a line that starts in Latin script.
 - **Pane headers:** panes show a header on hover, with minimise, maximise and hide.
 - **Experimental settings:** Settings has an Experimental section with a switch per feature. It includes a native note view and a native note editor (both off by default; the editor needs a GPUIX build with rich text).
 - **Office.js Word add-in (preview):** a task-pane version of the Word add-in, which talks to Zinc's local API.

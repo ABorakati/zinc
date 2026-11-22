@@ -137,9 +137,12 @@ On Windows the app runs a locally built `@gpuix/native` addon, not the npm 0.11.
 `"content"` for a region sized by its children). Each region is drawn by its own cached GPUI view, so a frame where only the list
 scrolled replays the sidebar, toolbar and item pane instead of rebuilding them (scroll draw p50 ~5.4 -> ~3.3 ms).
 
-* Source: private repo https://github.com/ABorakati/gpuix, branch `zn-cache` (local checkout `C:\Users\abora\src\gpuix`; on top
-  of the 0.11.0 release `2e31b47`). Its `zed` submodule's two commits (`zn-cache`, `17be001`) are kept as patch files in
-  `patches/zed/` on base `f77e5cf` of https://github.com/remorses/zed; `patches/zed/README.md` says how to re-apply them.
+* Source: private repo https://github.com/ABorakati/gpuix, branch `richtext-editor` (local checkout `C:\Users\abora\src\gpuix`;
+  `zn-cache` plus the `<richtext>` note editor and right-to-left text, on top of the 0.11.0 release `2e31b47`). Its `zed`
+  submodule's commits are kept as patch files `patches/zed/0001` to `0010` on base `f77e5cf` of https://github.com/remorses/zed;
+  `patches/zed/README.md` says how to re-apply them (applied: local branch `zn-rtl` of the submodule). 0005 to 0010 are
+  right-to-left text: without them Arabic and Hebrew are drawn backwards on Windows.
+* Dependencies: the fork's `bun install --frozen-lockfile --ignore-scripts` before the first build (it brings `napi`).
 * Build: in `packages/native`, `bun run build` (napi release build with `test-support`).
 * Install: copy `packages/native/gpuix-native.win32-x64-msvc.node` over
   `node_modules/@gpuix/native-win32-x64-msvc/gpuix-native.win32-x64-msvc.node` (the npm original is kept beside it as `.orig`).
