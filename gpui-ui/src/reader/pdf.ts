@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { printWithGtkDialog, printWithLp } from "./printGtk";
 import { printWithMacNoPanel, printWithMacPanel } from "./printMac";
+import { lastErrorReader } from "./znLastError";
 
 const { ptr: P, i32: I32, u32: U32, f32: F32, u64: U64, cstring } = FFIType;
 const usize = FFIType.u64; // 64-bit only
@@ -194,7 +195,9 @@ const sym = () => (lib ??= open()).symbols;
 export const nativeVersion = (): string => String(sym().zpdf_version());
 /** Why PDFium is not in use (empty when it is): pdfium.dll missing / unloadable, or ZN_PDF_BACKEND=hayro. */
 export const pdfiumStatus = (): string => String(sym().zpdf_pdfium_status());
-const lastError = (): string => String(sym().zpdf_last_error());
+let readLastError: (() => string) | undefined;
+/** zn_pdf's last error, copied while the library holds it (see znLastError.ts: an older zn_pdf.dll falls back to the pointer function). */
+const lastError = (): string => (readLastError ??= lastErrorReader(findDll(), () => sym().zpdf_last_error()))();
 
 /** One word of a page's text layer; x/y/w/h are fractions (0..1) of the page, origin top-left; l = line index. */
 export interface TextWord {

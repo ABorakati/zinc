@@ -7,6 +7,7 @@
 // drag.rs); it returns a job that this file polls, so JS is never blocked while the pointer is dragged around.
 import { dlopen, FFIType, JSCallback, ptr, toBuffer } from "bun:ffi";
 import { findDll } from "../reader/pdf";
+import { lastErrorReader } from "../reader/znLastError";
 import { cfHtml } from "../features/cfhtml";
 
 export interface Rect {
@@ -45,6 +46,8 @@ interface Native {
 		zpdf_job_free(job: unknown): void;
 		zpdf_last_error(): unknown;
 	} | null;
+	/** zn_pdf's last error, copied under its lock (the old pointer function when this zn_pdf.dll predates the copy one). */
+	lastError: () => string;
 }
 
 let native: Native | null | undefined;
@@ -79,7 +82,9 @@ function load(): Native | null {
 		} catch {
 			zn = null;
 		} // no zn_pdf.dll, or one built before the drag source: no OS drag, the caller falls back
-		native = { user: user as unknown as Native["user"], kernel, zn };
+		const znSyms = zn;
+		const readError = znSyms ? lastErrorReader(findDll(), () => znSyms.zpdf_last_error()) : () => "";
+		native = { user: user as unknown as Native["user"], kernel, zn, lastError: readError };
 	} catch {
 		native = null;
 	}
@@ -191,7 +196,7 @@ export async function runOsDrag(p: { text: string; html?: string }): Promise<OsD
 		html ? html.length : 0,
 	);
 	if (!job) {
-		lastError = String(n.zn.zpdf_last_error());
+		lastError = n.lastError();
 		return "failed";
 	}
 	try {
@@ -205,7 +210,7 @@ export async function runOsDrag(p: { text: string; html?: string }): Promise<OsD
 			await Bun.sleep(10);
 		}
 		if (st !== 1) {
-			lastError = String(n.zn.zpdf_last_error());
+			lastError = n.lastError();
 			return "failed";
 		}
 		const len = Number(n.zn.zpdf_job_len(job));
