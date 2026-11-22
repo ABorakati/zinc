@@ -1,11 +1,11 @@
 // Draws a ViewController: the runtime context, the root node and a banner when the plugin is not answering.
-import { createMemo, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, ErrorBoundary, on, onCleanup, Show, type JSX } from "solid-js";
 import { useGpuix, type HostElement } from "@gpuix/solid";
 import type { Style } from "../../contracts";
 import { Icon } from "../../icons";
 import { Button } from "../../ui";
 import { mode, t, tok, tx } from "../../ui/core";
-import type { ViewController } from "./controller";
+import { logRejection, type ViewController } from "./controller";
 import { textOf } from "./l10n";
 import { NodeView } from "./render/node";
 import { RuntimeCtx, type ViewRuntime } from "./render/ctx";
@@ -49,7 +49,9 @@ export function ControllerView(p: ControllerViewProps): JSX.Element {
 				<Show when={root()} fallback={<Skeleton status={ctl.state.status} />}>
 					{(r) => (
 						<div style={{ display: "flex", flexDirection: "column", width: "100%", flexGrow: 1, minHeight: 0, opacity: problem() === "unresponsive" ? 0.5 : 1 }}>
-							<NodeView node={r()} />
+							<ErrorBoundary fallback={(err, reset) => <DrawFailed ctl={ctl} err={err} reset={reset} />}>
+								<NodeView node={r()} />
+							</ErrorBoundary>
 						</div>
 					)}
 				</Show>
@@ -63,7 +65,7 @@ export function ControllerView(p: ControllerViewProps): JSX.Element {
 							<text style={{ ...tx("text-xs"), color: tok(problem() ? "warning-foreground" : "muted-foreground") }}>{ctl.state.message ?? ""}</text>
 						</div>
 						<Show when={problem() === "unresponsive"}>
-							<Button size="sm" variant="outline" onClick={() => void ctl.remount()}>
+							<Button size="sm" variant="outline" onClick={() => void ctl.remount().catch(logRejection(ctl.pluginId, "remount"))}>
 								Retry
 							</Button>
 						</Show>
@@ -71,6 +73,21 @@ export function ControllerView(p: ControllerViewProps): JSX.Element {
 				</Show>
 			</div>
 		</RuntimeCtx.Provider>
+	);
+}
+
+/**
+ * Data that decodes but makes a renderer throw (a malformed field the schema does not reach, a pre-built tree) is contained here: the
+ * plugin surface shows a notice and the rest of the app carries on. The next tree from the plugin draws again.
+ */
+function DrawFailed(p: { ctl: ViewController; err: unknown; reset: () => void }): JSX.Element {
+	console.error(`[plugin ${p.ctl.pluginId}] a view could not be drawn:`, p.err instanceof Error ? (p.err.stack ?? p.err.message) : p.err);
+	createEffect(on(() => p.ctl.state.generation, () => p.reset(), { defer: true }));
+	return (
+		<div style={{ ...t("flex items-start gap-2 rounded-md border p-2"), backgroundColor: tok("warning") }}>
+			<Icon name="triangle-alert" size={14} color={tok("warning-foreground")} style={{ marginTop: 1 }} />
+			<text style={{ ...tx("text-xs"), color: tok("warning-foreground"), flexShrink: 1, minWidth: 0 }}>This plugin view could not be drawn.</text>
+		</div>
 	);
 }
 

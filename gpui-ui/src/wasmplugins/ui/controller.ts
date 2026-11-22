@@ -2,8 +2,8 @@
 // plugin (`ui-events.on-event`, serialized per view, with debounce/throttle from the bindings), `ui.push` batching, patches,
 // virtual-row caches, suggestions and the values of named inputs. No GPUIX here: PluginView/render.tsx draw it.
 import { batch } from "solid-js";
-import { createStore, produce, reconcile, type SetStoreFunction } from "solid-js/store";
-import { applyPatch, buildNested, jsonToPatch, jsonToTree, parseBatchStyles, resolveBatchRows, TreeError } from "./convert";
+import { createStore, reconcile, unwrap, type SetStoreFunction } from "solid-js/store";
+import { applyPatchCopy, asTreeError, buildNested, jsonToPatch, jsonToTree, normalizeTree, parseBatchStyles, resolveBatchRows, TreeError } from "./convert";
 import type {
 	EventBinding,
 	EventKind,
@@ -93,6 +93,15 @@ interface Timer {
 
 const PUSH_INTERVAL_MS = 33; // at most 30 `push` per second per instance (ui.md "Host limits"); extra pushes are merged into one frame
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+/** A rejection handler for a fire-and-forget promise: log it. A rejection nobody handles ends the app (shell/errorlog.ts). */
+export const logRejection =
+	(pluginId: string, what: string) =>
+	(e: unknown): void => {
+		console.error(`[plugin ${pluginId}] ${what} failed:`, e instanceof Error ? (e.stack ?? e.message) : e);
+	};
+
 export class ViewController {
 	readonly instance: bigint;
 	readonly state: ViewState;
@@ -119,6 +128,7 @@ export class ViewController {
 	private requested = new Map<string, Set<number>>();
 	private destroyed = false;
 	private mounted = false;
+	private lastRejected: string | undefined;
 
 	constructor(
 		readonly pluginId: string,
@@ -174,21 +184,30 @@ export class ViewController {
 
 	/** Mount the view: `ui-events.mount`, then show what it returns. Safe to call again after a plugin host restart. */
 	async mount(): Promise<void> {
-		this.setStatus("mounting");
-		const r = await this.enqueue(() => this.call<RenderResult>("mount", [this.instance, this.ctx]));
-		if (this.destroyed) return;
-		if (r) {
-			this.mounted = true;
-			this.apply(r);
-			if (this.state.status === "mounting") this.setStatus("ready");
+		try {
+			this.setStatus("mounting");
+			const r = await this.enqueue(() => this.call<RenderResult>("mount", [this.instance, this.ctx]));
+			if (this.destroyed) return;
+			if (r) {
+				this.mounted = true;
+				this.apply(r);
+				if (this.state.status === "mounting") this.setStatus("ready");
+			}
+		} catch (e) {
+			// only a host callback (onStatus, onMeta) can get here: plugin content is contained by `apply`
+			logRejection(this.pluginId, "mount")(e);
 		}
 	}
 
 	/** Show an initial tree before the plugin's `mount` answers (dialogs carry their content in the spec). */
 	showInitial(tree: Tree | string | Record<string, unknown>): void {
-		if (typeof tree === "string") this.applyContent({ tag: "json", val: tree });
-		else if ("nodes" in tree && Array.isArray((tree as Tree).nodes)) this.applyContent({ tag: "full", val: tree as Tree });
-		else this.applyContent({ tag: "json", val: JSON.stringify(tree) });
+		try {
+			if (typeof tree === "string") this.applyContent({ tag: "json", val: tree });
+			else if (isRecord(tree) && Array.isArray((tree as { nodes?: unknown }).nodes)) this.applyContent({ tag: "full", val: tree as unknown as Tree });
+			else this.applyContent({ tag: "json", val: JSON.stringify(tree) });
+		} catch (e) {
+			this.reject(e); // JSON.stringify of a value that cannot be one
+		}
 		this.setStatus("ready");
 	}
 
@@ -262,58 +281,86 @@ export class ViewController {
 	/** Apply a render-result now. */
 	apply(r: RenderResult): void {
 		if (this.destroyed) return;
-		batch(() => {
-			this.applyContent(r.content);
-			if (r.meta) {
-				this.setState("meta", r.meta);
-				this.onMeta?.(r.meta);
+		// The one boundary for what a plugin sends: whatever is wrong with it, the last good tree stays and nothing is thrown.
+		try {
+			if (!isRecord(r)) throw new TreeError("the render result is not an object");
+			batch(() => {
+				this.applyContent(r.content);
+				if (r.meta !== undefined && r.meta !== null) {
+					const meta = this.checkMeta(r.meta);
+					this.setState("meta", meta);
+					this.onMeta?.(meta);
+				}
+			});
+			if (r.focus !== undefined && r.focus !== null) {
+				if (typeof r.focus !== "string") throw new TreeError("`focus` must be a node key");
+				if (r.focus) this.focusKey(r.focus);
 			}
-		});
-		if (r.focus) this.focusKey(r.focus);
+		} catch (e) {
+			this.reject(e);
+		}
+	}
+
+	private checkMeta(m: unknown): ViewMeta {
+		if (!isRecord(m)) throw new TreeError("`meta` must be an object");
+		if (m.buttons !== undefined && (!Array.isArray(m.buttons) || !m.buttons.every((b) => isRecord(b) && typeof b.id === "string"))) throw new TreeError("`meta.buttons` must be a list of buttons with an id");
+		return m.buttons === undefined ? ({ ...m, buttons: [] } as unknown as ViewMeta) : (m as unknown as ViewMeta);
+	}
+
+	/** Plugin content that cannot be used: keep the last good tree, show why, log it (once per distinct message, so a plugin pushing it 30 times a second cannot flood the log). */
+	private reject(e: unknown, what = "the plugin sent an invalid UI tree"): void {
+		const err = e instanceof TreeError ? e : asTreeError(e, "unexpected error");
+		const msg = `${what}: ${err.message}`;
+		this.setState("message", msg);
+		if (msg !== this.lastRejected) {
+			this.lastRejected = msg;
+			console.error(`[plugin ${this.pluginId}] ${msg}`, err.cause instanceof Error ? (err.cause.stack ?? err.cause.message) : (err.cause ?? ""));
+		}
 	}
 
 	private applyContent(c: RenderResult["content"]): void {
 		try {
+			if (!isRecord(c)) throw new TreeError("the render result has no content");
 			switch (c.tag) {
 				case "unchanged":
 					return;
 				case "full":
-					return this.setTree(c.val);
+					return this.setTree(normalizeTree(c.val));
 				case "json":
 					return this.setTree(jsonToTree(c.val));
 				case "patch": {
 					const patch = jsonToPatch(c.val);
 					if (patch.baseRev !== this.state.rev) {
 						// The plugin patched a tree the host does not have: drop it and ask for the whole tree.
-						void this.enqueue(async () => {
-							const r = await this.call<RenderResult>("resync", [this.instance]);
-							if (r && !this.destroyed) this.apply(r);
-						});
+						void this.resync();
 						return;
 					}
-					let ok = true;
-					this.setState(
-						produce((s) => {
-							if (!s.root) {
-								ok = false;
-								return;
-							}
-							ok = applyPatch(s.root, s.styles, patch);
-							s.rev = patch.rev;
-						}),
-					);
-					if (!ok) void this.resync();
-					else this.bump();
+					const base = this.state.root && unwrap(this.state.root);
+					if (!base) {
+						void this.resync();
+						return;
+					}
+					// On copies: a patch that fails part-way must leave no op applied. The copy is committed in one batch.
+					const next = applyPatchCopy(base, unwrap(this.state.styles), patch);
+					if (!next) {
+						void this.resync();
+						return;
+					}
+					batch(() => {
+						this.setState("root", reconcile(next.root, { key: "id", merge: false }));
+						this.setState("styles", reconcile(next.styles, { merge: false }));
+						this.setState("rev", patch.rev);
+						this.setState("message", undefined);
+						this.bump();
+					});
+					this.lastRejected = undefined;
 					return;
 				}
+				default:
+					throw new TreeError(`unknown content update "${String((c as { tag?: unknown }).tag)}"`);
 			}
 		} catch (e) {
-			if (e instanceof TreeError) {
-				// invalid tree from the plugin: keep the last good one and say what was wrong
-				this.setState("message", `the plugin sent an invalid UI tree: ${e.message}`);
-				return;
-			}
-			throw e;
+			this.reject(e);
 		}
 	}
 
@@ -328,6 +375,7 @@ export class ViewController {
 		const root = buildNested(tree);
 		const styles: Record<string, NamedStyle> = {};
 		for (const s of tree.styles) styles[s.name] = s;
+		this.lastRejected = undefined;
 		batch(() => {
 			this.setState("root", reconcile(root, { key: "id", merge: false }));
 			this.setState("styles", reconcile(styles, { merge: false }));
@@ -446,7 +494,7 @@ export class ViewController {
 			this.rangeTimer = undefined;
 			const jobs = [...this.wanted.values()];
 			this.wanted.clear();
-			for (const j of jobs) void this.fetchRange(j.node, j.need, j.sort);
+			for (const j of jobs) this.fetchRange(j.node, j.need, j.sort).catch(logRejection(this.pluginId, "fetching rows"));
 		}, 60);
 	}
 
@@ -464,8 +512,15 @@ export class ViewController {
 		for (const [start, count] of runs) {
 			const batchRes = await this.call<RowBatch>("render-range", [this.instance, { nodeKey: node.props.key, start, count, sort }]);
 			if (!batchRes || this.destroyed) return;
-			const rows = resolveBatchRows(batchRes.rows, batchRes.nodes, node.id);
-			const batchStyles = parseBatchStyles(batchRes.styles);
+			let rows: Row[], batchStyles: NamedStyle[];
+			try {
+				if (!isRecord(batchRes) || !Number.isInteger(batchRes.start)) throw new TreeError("the row batch needs an integer `start`");
+				rows = resolveBatchRows(batchRes.rows, batchRes.nodes, node.id);
+				batchStyles = parseBatchStyles(batchRes.styles);
+			} catch (e) {
+				this.reject(e, "the plugin sent invalid rows");
+				return;
+			}
 			batch(() => {
 				if (!this.state.rowCache[node.id]) this.setState("rowCache", node.id, { rows: {} });
 				rows.forEach((r, i) => this.setState("rowCache", node.id, "rows", batchRes.start + i, r));

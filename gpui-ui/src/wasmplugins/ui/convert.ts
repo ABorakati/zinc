@@ -44,9 +44,26 @@ export { getValidationMode, setValidationMode, type ValidationMode };
 export const LIMITS = { nodes: 5000, depth: 64, drawOps: 20000 } as const;
 
 export class TreeError extends Error {
-	constructor(message: string) {
-		super(message);
+	constructor(message: string, options?: { cause?: unknown }) {
+		super(message, options);
 		this.name = "TreeError";
+	}
+}
+
+/**
+ * Plugin data decodes to a TreeError or not at all: whatever else goes wrong while reading it (a null where an object was expected, a
+ * number that is not a BigInt, a stack overflow on a deeply nested menu) is the plugin's data being malformed, not a crash. The
+ * original error is kept as `cause` so the caller can log it.
+ */
+export function asTreeError(e: unknown, what: string): TreeError {
+	if (e instanceof TreeError) return e;
+	return new TreeError(`${what}: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`, { cause: e });
+}
+function decoding<T>(what: string, fn: () => T): T {
+	try {
+		return fn();
+	} catch (e) {
+		throw asTreeError(e, what);
 	}
 }
 
@@ -432,9 +449,14 @@ class Builder {
 	}
 }
 
+const PATCH_TAGS = new Set(["set-node", "replace", "insert", "remove", "move", "set-styles"]);
+
 let revCounter = 0n;
 /** The nested JSON form (a JSON string, or the parsed object) -> the normalized flat `Tree`. Throws TreeError. */
 export function jsonToTree(json: unknown, opts?: { validate?: ValidationMode }): Tree {
+	return decoding("malformed UI tree", () => decodeTree(json, opts));
+}
+function decodeTree(json: unknown, opts?: { validate?: ValidationMode }): Tree {
 	let j: Any = json;
 	if (typeof json === "string") {
 		try {
@@ -453,6 +475,9 @@ export function jsonToTree(json: unknown, opts?: { validate?: ValidationMode }):
 
 /** Decode and validate a JSON patch set (`$defs.patchSet` in `ui-tree.schema.json`), or pass an already-normalized `PatchSet` through. */
 export function jsonToPatch(patch: unknown, opts?: { validate?: ValidationMode }): PatchSet {
+	return decoding("malformed UI patch", () => decodePatch(patch, opts));
+}
+function decodePatch(patch: unknown, opts?: { validate?: ValidationMode }): PatchSet {
 	let j: Any = patch;
 	if (typeof patch === "string") {
 		try {
@@ -463,6 +488,10 @@ export function jsonToPatch(patch: unknown, opts?: { validate?: ValidationMode }
 	}
 	if (!isObj(j)) throw new TreeError("the patch must be an object");
 	if (typeof j.baseRev === "bigint" && Array.isArray(j.ops) && (j.ops.length === 0 || isObj(j.ops[0]) && "tag" in j.ops[0])) {
+		if (typeof j.rev !== "bigint") throw new TreeError("the patch needs a `rev`");
+		for (const op of j.ops) {
+			if (!isObj(op) || !PATCH_TAGS.has(op.tag) || op.val === undefined || op.val === null) throw new TreeError("the patch has an op that is not a patch op");
+		}
 		return j as PatchSet;
 	}
 	const err = validatePatchObject(j, opts?.validate);
@@ -522,12 +551,40 @@ export interface NestedOptions {
 
 /** Flat -> nested. Resolves `row.content` and `cell.content` of inline rows into `contentNode`. Throws TreeError (cycle, shared node, limits). */
 export function buildNested(tree: Pick<Tree, "root" | "nodes">, o: NestedOptions = {}): VNode {
+	return decoding("malformed UI tree", () => buildNestedUnchecked(tree, o));
+}
+
+/** The fields every renderer reads without a guard: a pre-built node that lacks them is rejected here, not when it is drawn. */
+function isFlatNode(n: unknown): n is FlatNode {
+	if (!isObj(n) || !isObj(n.props) || !isObj(n.kind)) return false;
+	if (!Array.isArray(n.props.events) || !isObj(n.props.style) || !isObj(n.props.a11y)) return false;
+	if (typeof n.kind.tag !== "string" || !KIND_TAGS.includes(n.kind.tag as KindTag)) return false;
+	const c: unknown = n.children;
+	return Array.isArray(c) || c instanceof Uint32Array;
+}
+
+/** The outer shape of a pre-built tree (`full` content, a dialog's `{nodes}`) -> a `Tree`, or a TreeError. The nodes are checked by `buildNested`. */
+export function normalizeTree(t: unknown): Tree {
+	return decoding("malformed UI tree", () => {
+		if (!isObj(t)) throw new TreeError("the UI tree must be an object");
+		if (!Array.isArray(t.nodes)) throw new TreeError("the UI tree needs a `nodes` array");
+		if (!Number.isInteger(t.root)) throw new TreeError("the UI tree needs an integer `root`");
+		const styles: unknown = t.styles ?? [];
+		if (!Array.isArray(styles) || !styles.every((s) => isObj(s) && typeof s.name === "string" && isObj(s.style))) throw new TreeError("the UI tree's `styles` must be a list of named styles");
+		const rev = typeof t.rev === "bigint" ? t.rev : typeof t.rev === "number" && Number.isInteger(t.rev) ? BigInt(t.rev) : undefined;
+		if (rev === undefined) throw new TreeError("the UI tree needs a `rev`");
+		return { rev, root: t.root as number, nodes: t.nodes as FlatNode[], styles: styles as NamedStyle[] };
+	});
+}
+
+function buildNestedUnchecked(tree: Pick<Tree, "root" | "nodes">, o: NestedOptions = {}): VNode {
 	const seen = new Set<number>();
 	let count = 0;
 	const prefix = o.prefix ?? "";
 	const build = (idx: number, id: string, depth: number): VNode => {
 		const n = tree.nodes[idx];
 		if (!n) throw new TreeError(`node index ${idx} is out of range`);
+		if (!isFlatNode(n)) throw new TreeError(`node ${idx} is malformed`);
 		if (seen.has(idx)) throw new TreeError(`node ${idx} is used twice (a cycle or two parents)`);
 		seen.add(idx);
 		if (depth > LIMITS.depth) throw new TreeError(`tree deeper than ${LIMITS.depth}`);
@@ -597,8 +654,14 @@ function decodeRowStyle(style: Style | string | undefined, opts?: { validate?: V
 
 /** Decode named styles carried on a `RowBatch`. */
 export function parseBatchStyles(styles: string | NamedStyle[] | undefined, opts?: { validate?: ValidationMode }): NamedStyle[] {
+	return decoding("malformed batch styles", () => parseBatchStylesUnchecked(styles, opts));
+}
+function parseBatchStylesUnchecked(styles: string | NamedStyle[] | undefined, opts?: { validate?: ValidationMode }): NamedStyle[] {
 	if (styles === undefined || styles === null) return [];
-	if (Array.isArray(styles)) return styles;
+	if (Array.isArray(styles)) {
+		if (!styles.every((s) => isObj(s) && typeof s.name === "string" && isObj(s.style))) throw new TreeError("batch styles must be a list of named styles");
+		return styles;
+	}
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(styles);
@@ -612,6 +675,10 @@ export function parseBatchStyles(styles: string | NamedStyle[] | undefined, opts
 
 /** Rows answered by `render-range`: their `content` and `style` are JSON strings (or legacy indices into `nodes`). */
 export function resolveBatchRows(rows: Row[], nodes: FlatNode[] | undefined, nodeId: string, opts?: { validate?: ValidationMode }): Row[] {
+	return decoding("malformed rows", () => resolveBatchRowsUnchecked(rows, nodes, nodeId, opts));
+}
+function resolveBatchRowsUnchecked(rows: Row[], nodes: FlatNode[] | undefined, nodeId: string, opts?: { validate?: ValidationMode }): Row[] {
+	if (!Array.isArray(rows)) throw new TreeError("the rows must be a list");
 	return rows.map((r) => ({
 		...r,
 		style: decodeRowStyle(r.style, opts),
@@ -643,6 +710,26 @@ function find(root: VNode, key: string): { node: VNode; parent?: VNode; index: n
  * (and leaves the tree as it was before the failing op) when an op names a key the tree does not have: the caller then asks for a resync.
  */
 export function applyPatch(root: VNode, styles: Record<string, NamedStyle>, patch: PatchSet | string | Record<string, unknown>): boolean {
+	return decoding("malformed UI patch", () => applyPatchUnchecked(root, styles, patch));
+}
+
+/**
+ * `applyPatch` on copies of the tree's spine (nodes and child lists; props and kinds are shared, a patch replaces them and never edits
+ * them) and of the styles. Returns the patched result, or undefined when an op names a key the tree lacks. `root` and `styles` are never
+ * touched, so a patch that fails part-way (a missing key, a bad op, a TreeError) leaves nothing applied.
+ */
+export function applyPatchCopy(
+	root: VNode,
+	styles: Record<string, NamedStyle>,
+	patch: PatchSet | string | Record<string, unknown>,
+): { root: VNode; styles: Record<string, NamedStyle> } | undefined {
+	const spine = (n: VNode): VNode => ({ ...n, children: n.children.map(spine) });
+	const r = decoding("malformed UI patch", () => spine(root));
+	const s = { ...styles };
+	return applyPatch(r, s, patch) ? { root: r, styles: s } : undefined;
+}
+
+function applyPatchUnchecked(root: VNode, styles: Record<string, NamedStyle>, patch: PatchSet | string | Record<string, unknown>): boolean {
 	const p = typeof patch === "string" || !("ops" in patch && Array.isArray(patch.ops) && (patch.ops.length === 0 || "tag" in (patch.ops[0] as object)))
 		? jsonToPatch(patch)
 		: (patch as PatchSet);

@@ -12,8 +12,8 @@ import { boundsOf, dismissToast, mode, overlayLayers, t, tok, tx } from "../../u
 import { getPluginSupervisor } from "../host";
 import { overrides as colorOverrides, tokenColor } from "./colors";
 import { ControllerView } from "./ControllerView";
-import { allocInstance, lookupInstance, P, ViewController } from "./controller";
-import { jsonToTree, TreeError } from "./convert";
+import { allocInstance, logRejection, lookupInstance, P, ViewController } from "./controller";
+import { buildNested, jsonToTree, normalizeTree, TreeError } from "./convert";
 import { textOf } from "./l10n";
 import { lastPointer, toMenuItems } from "./render/node";
 import { webHosts } from "./render/special";
@@ -61,7 +61,7 @@ export function push(ctx: HostCtx, instance: bigint, update: RenderResult): void
 	ownView(ctx, instance).push(update);
 }
 export function refresh(ctx: HostCtx, instance: bigint): void {
-	void ownView(ctx, instance).refreshContext();
+	void ownView(ctx, instance).refreshContext().catch(logRejection(ctx.pluginId, "refresh"));
 }
 export function focus(ctx: HostCtx, instance: bigint, key: string): void {
 	ownView(ctx, instance).focusKey(key);
@@ -165,20 +165,27 @@ async function showDialog(ctx: HostCtx, spec: DialogSpec, instance: bigint, onRe
 		instance,
 	);
 	ctl.showInitial(spec.content);
-	void ctl.mount();
+	void ctl.mount().catch(logRejection(ctx.pluginId, "mount"));
 	let closeFn: (v?: string | undefined) => void = () => {};
 	const entry: DialogEntry = { ctl, close: (b) => closeFn(b), modal: spec.modal };
 	dialogs.set(String(instance), entry);
 	onReady?.(entry);
-	const button = await openDialog<string>(
-		(close) => {
-			closeFn = (v) => close(v);
-			return <DialogBody ctl={ctl} spec={spec} close={(b) => close(b)} />;
-		},
-		{ title: textOf(spec.title, ctx.pluginId), width: spec.width ?? 480, dismissable: spec.dismissOnEscape },
-	);
+	let button: string | undefined;
+	try {
+		button = await openDialog<string>(
+			(close) => {
+				closeFn = (v) => close(v);
+				return <DialogBody ctl={ctl} spec={spec} close={(b) => close(b)} />;
+			},
+			{ title: textOf(spec.title, ctx.pluginId), width: spec.width ?? 480, dismissable: spec.dismissOnEscape },
+		);
+	} catch (e) {
+		await ctl.unmount(); // opening failed: the instance must not stay registered
+		throw e;
+	} finally {
+		dialogs.delete(String(instance));
+	}
 	const values = ctl.formValues();
-	dialogs.delete(String(instance));
 	await ctl.unmount();
 	return { button, values };
 }
@@ -187,22 +194,26 @@ export function openDialogNow(ctx: HostCtx, spec: DialogSpec): bigint {
 	checkLimits(ctx, spec);
 	let tree: Tree;
 	try {
-		tree = typeof spec.content === "object" && spec.content !== null && "nodes" in spec.content ? (spec.content as Tree) : jsonToTree(spec.content);
+		// Either form must decode to a tree that builds: a bad dialog is refused here, the plugin gets `invalid-argument`.
+		tree = typeof spec.content === "object" && spec.content !== null && "nodes" in spec.content ? normalizeTree(spec.content) : jsonToTree(spec.content);
+		buildNested(tree);
 	} catch (e) {
 		if (e instanceof TreeError) throw new UiHostError("invalid-argument", e.message);
 		throw e;
 	}
 	const instance = allocInstance();
-	void showDialog(ctx, { ...spec, content: tree }, instance).then(async (o) => {
-		// the plugin hears the outcome as `close` events: the button, then the form
-		const base = { handler: o.button ?? "", kind: "close", modifiers: NO_MODS, rev: 0n };
-		try {
-			await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: o.button === undefined ? P.none : P.button(o.button) }]);
-			await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: P.form(o.values) }]);
-		} catch {
-			/* the plugin is gone */
-		}
-	});
+	void showDialog(ctx, { ...spec, content: tree }, instance)
+		.then(async (o) => {
+			// the plugin hears the outcome as `close` events: the button, then the form
+			const base = { handler: o.button ?? "", kind: "close", modifiers: NO_MODS, rev: 0n };
+			try {
+				await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: o.button === undefined ? P.none : P.button(o.button) }]);
+				await ctx.callExport("ui-events", "on-event", [instance, { ...base, payload: P.form(o.values) }]);
+			} catch {
+				/* the plugin is gone */
+			}
+		})
+		.catch(logRejection(ctx.pluginId, "dialog"));
 	return instance;
 }
 

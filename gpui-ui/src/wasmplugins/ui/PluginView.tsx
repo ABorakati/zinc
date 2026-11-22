@@ -6,7 +6,7 @@ import type { Style } from "../../contracts";
 import { mode } from "../../ui/core";
 import { getPluginSupervisor } from "../host";
 import { ControllerView } from "./ControllerView";
-import { ViewController } from "./controller";
+import { logRejection, ViewController } from "./controller";
 import type { Surface, UiSupervisor, ViewMeta } from "./types";
 
 let defaultSupervisor: UiSupervisor | undefined;
@@ -54,17 +54,19 @@ export function PluginView(p: PluginViewProps): JSX.Element {
 	});
 	ctl.onMeta = (m) => p.onMeta?.(m);
 	p.onController?.(ctl);
-	onMount(() => void ctl.mount());
-	onCleanup(() => void ctl.unmount());
+	// Fire-and-forget calls get a rejection handler: an unhandled rejection ends the app (shell/errorlog.ts).
+	const bg = (what: string) => logRejection(ctl.pluginId, what);
+	onMount(() => void ctl.mount().catch(bg("mount")));
+	onCleanup(() => void ctl.unmount().catch(bg("unmount")));
 	// context changes
-	createEffect(on(() => (typeof p.params === "string" ? p.params : JSON.stringify(p.params ?? {})), (params) => void ctl.updateContext({ params }), { defer: true }));
-	createEffect(on(mode, (theme) => void ctl.updateContext({ theme }), { defer: true }));
-	createEffect(on(() => [p.width, p.height] as const, ([width, height]) => void ctl.updateContext({ width, height }), { defer: true }));
-	createEffect(on(() => p.locale, (locale) => locale && void ctl.updateContext({ locale }), { defer: true }));
+	createEffect(on(() => (typeof p.params === "string" ? p.params : JSON.stringify(p.params ?? {})), (params) => void ctl.updateContext({ params }).catch(bg("update-context")), { defer: true }));
+	createEffect(on(mode, (theme) => void ctl.updateContext({ theme }).catch(bg("update-context")), { defer: true }));
+	createEffect(on(() => [p.width, p.height] as const, ([width, height]) => void ctl.updateContext({ width, height }).catch(bg("update-context")), { defer: true }));
+	createEffect(on(() => p.locale, (locale) => locale && void ctl.updateContext({ locale }).catch(bg("update-context")), { defer: true }));
 	createEffect(on(() => p.visible !== false, (v) => ctl.setVisible(v), { defer: true }));
 	// plugin host restart: the plugin lost its state, so mount again
 	const off = sup.on?.("host-restarted", (e: { reloaded: string[] }) => {
-		if (e.reloaded.includes(p.pluginId)) void ctl.remount();
+		if (e.reloaded.includes(p.pluginId)) void ctl.remount().catch(bg("remount"));
 	});
 	onCleanup(() => off?.());
 	return <ControllerView controller={ctl} style={p.style} reducedMotion={p.reducedMotion} />;
