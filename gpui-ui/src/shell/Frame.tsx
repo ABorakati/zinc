@@ -159,6 +159,16 @@ export function Frame(p: {
 		};
 		return inHeader(stack);
 	};
+	/** What takes the keys in a pane that was not focused before: its list, when it has one (the pane's own box takes none). */
+	const keyTarget = (el: HostElement): HostElement | undefined => {
+		const testId = el.props.get("testId");
+		if (testId === "card-list-container" || testId === "table-container") return el;
+		for (const child of el.children) {
+			const found = child.kind === "element" ? keyTarget(child) : undefined;
+			if (found) return found;
+		}
+		return undefined;
+	};
 	const cycle = (delta: 1 | -1) => {
 		const l = p.layout();
 		const order: [string, HostElement][] = l.left.shown ? [["left", left]] : [];
@@ -176,7 +186,7 @@ export function Frame(p: {
 		const index = current < 0 ? (delta > 0 ? 0 : order.length - 1) : (current + delta + order.length) % order.length;
 		const [id, el] = order[index]!;
 		const saved = remembered.get(id);
-		restoreFocus(saved !== undefined && ownsFocus(id, el, saved) ? saved : el.id);
+		restoreFocus(saved !== undefined && saved !== el.id && ownsFocus(id, el, saved) ? saved : (keyTarget(el) ?? el).id);
 	};
 	focusCycles.set(p.view, cycle);
 	onCleanup(() => {
