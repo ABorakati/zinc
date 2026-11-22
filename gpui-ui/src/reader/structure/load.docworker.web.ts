@@ -8,6 +8,7 @@
 import { inflateSync } from "fflate";
 import { openStructuredDocumentTextPack } from "../../../../vendor/document-worker/structured-document-text/src/pack/reader.js";
 import { convertSdt, type Sdt } from "./convert";
+import { fingerprint, latestPerAttachment } from "./memo";
 import type { DocStructure } from "./types";
 
 const DIR = new URL("docworker/", import.meta.url);
@@ -32,12 +33,21 @@ class DocumentWorker {
 	private pending = new Map<number, Pending>();
 	private last = 0;
 	private ready: Promise<void>;
+	private failed = false;
+
+	/** False once the worker crashed, never started in time or was terminated: every query then fails, so the owner makes a new one. */
+	get usable(): boolean {
+		return this.worker !== null && !this.failed;
+	}
 
 	constructor() {
 		const w = new Worker(new URL("boot.js", DIR));
 		this.worker = w;
 		this.ready = new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error("The document worker did not start")), 60_000);
+			const timer = setTimeout(() => {
+				this.failed = true;
+				reject(new Error("The document worker did not start"));
+			}, 60_000);
 			w.addEventListener("message", (ev: MessageEvent) => {
 				if ((ev.data as WorkerMessage)?.__ready) {
 					clearTimeout(timer);
@@ -49,6 +59,7 @@ class DocumentWorker {
 				for (const p of this.pending.values()) p.reject(new Error("Document worker unavailable"));
 				this.pending.clear();
 				this.worker = null;
+				this.failed = true;
 				reject(new Error(`Document worker unavailable: ${ev.message || String(ev)}`));
 			});
 		});
@@ -129,7 +140,15 @@ async function sourceHash(key: string): Promise<string> {
 }
 
 let worker: DocumentWorker | null = null;
-const inflight = new Map<string, Promise<DocStructure>>();
+/** The worker to use: a fresh one when the last one died or never started (it never recovers by itself). */
+function usableWorker(): DocumentWorker {
+	if (worker && !worker.usable) {
+		worker.terminate();
+		worker = null;
+	}
+	return (worker ??= new DocumentWorker());
+}
+const remember = latestPerAttachment<DocStructure>();
 const listeners = new Map<string, Set<(pct: number) => void>>();
 
 async function build(key: string, pdf: Uint8Array): Promise<DocStructure> {
@@ -137,9 +156,8 @@ async function build(key: string, pdf: Uint8Array): Promise<DocStructure> {
 		for (const f of listeners.get(key) ?? []) f(pct);
 	};
 	emit(0);
-	worker ??= new DocumentWorker();
 	const buf = pdf.slice().buffer as ArrayBuffer; // the worker takes (detaches) its copy
-	const result = await worker.query<{ buf?: ArrayBuffer }>(
+	const result = await usableWorker().query<{ buf?: ArrayBuffer }>(
 		"getStructuredDocumentText",
 		{ buf, contentType: "application/pdf", sourceHash: await sourceHash(key), reportProgress: true },
 		[buf],
@@ -159,15 +177,12 @@ export function loadStructure(attachmentKey: string, pdfBytes: Uint8Array, onPro
 		if (!set) listeners.set(attachmentKey, (set = new Set()));
 		set.add(onProgress);
 	}
-	let p = inflight.get(attachmentKey);
-	if (!p) {
-		p = build(attachmentKey, pdfBytes).finally(() => {
+	// the structure of the file as it is NOW: the same attachment with other bytes (rotated, pages deleted) is built again
+	return remember(attachmentKey, fingerprint(pdfBytes), () =>
+		build(attachmentKey, pdfBytes).finally(() => {
 			listeners.delete(attachmentKey);
-		});
-		inflight.set(attachmentKey, p);
-		p.catch(() => inflight.delete(attachmentKey));
-	}
-	return p;
+		}),
+	);
 }
 
 export function shutdownStructureWorker(): void {

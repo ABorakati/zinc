@@ -30,6 +30,12 @@ export class DocumentWorker {
 	private pending = new Map<number, Pending>();
 	private last = 0;
 	private ready: Promise<void>;
+	private failed = false;
+
+	/** False once the worker crashed, never started in time or was terminated: every query then fails, so the owner makes a new one. */
+	get usable(): boolean {
+		return this.worker !== null && !this.failed;
+	}
 
 	constructor() {
 		// ZN_DOCWORKER_ENTRY: an on-disk copy of docworker-entry.ts (the packaged app ships one next to the exe)
@@ -48,7 +54,10 @@ export class DocumentWorker {
 		this.worker = w;
 		(w as unknown as { unref?: () => void }).unref?.(); // never keeps a headless script alive
 		this.ready = new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error("The document worker did not start")), 60_000);
+			const timer = setTimeout(() => {
+				this.failed = true;
+				reject(new Error("The document worker did not start"));
+			}, 60_000);
 			w.addEventListener("message", (ev: MessageEvent) => {
 				if ((ev.data as WorkerMessage)?.__ready) {
 					clearTimeout(timer);
@@ -63,6 +72,7 @@ export class DocumentWorker {
 				for (const p of this.pending.values()) p.reject(new Error("Document worker unavailable"));
 				this.pending.clear();
 				this.worker = null;
+				this.failed = true;
 				reject(new Error(`Document worker unavailable: ${msg}`));
 			});
 		});

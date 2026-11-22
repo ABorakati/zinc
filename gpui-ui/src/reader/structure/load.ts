@@ -1,19 +1,29 @@
 // Loads DocStructure from Zotero's document worker (the engine behind Reading Mode), the GPUI counterpart of
 // reader-next/src/structure/load.ts. Runs the worker in a Bun Worker (worker.ts), decodes the SDT pack with Zotero's own
 // reader (vendor/reader/structured-document-text, read-only) and converts it (convert.ts). The converted structure is cached
-// on disk per attachment (ZN_STRUCT_CACHE or <tmp>/zn-gpui/structure), so a re-open is instant.
+// on disk per attachment (ZN_STRUCT_CACHE or <tmp>/zn-gpui[-uid]/structure, a folder only this user can open), so a re-open is instant.
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { inflateRawSync } from "node:zlib";
+import { privateDir } from "../privateTemp";
 import { CONVERTER_VERSION, convertSdt, type Sdt } from "./convert";
+import { fingerprint, latestPerAttachment } from "./memo";
 import type { DocStructure } from "./types";
 import { DocumentWorker, ROOT } from "./worker";
 
 const SDT_DIR = join(ROOT, "vendor", "reader", "structured-document-text", "src");
-const CACHE_DIR = process.env.ZN_STRUCT_CACHE ?? join(tmpdir(), "zn-gpui", "structure");
+
+/** The structure cache folder, or null when there is no folder this user alone controls (then nothing is cached on disk). */
+export function structureCacheDir(): string | null {
+	const chosen = process.env.ZN_STRUCT_CACHE;
+	if (chosen) return chosen;
+	// the shared temp folder (/tmp on Linux) holds one folder per user, created private; one that is someone else's is not used
+	const base = privateDir(join(tmpdir(), `zn-gpui${process.getuid ? `-${process.getuid()}` : ""}`));
+	return base && privateDir(join(base, "structure"));
+}
 
 interface PackReader {
 	materialize(): Promise<unknown>;
@@ -45,46 +55,57 @@ function pack(): Promise<PackLib> {
 const sourceHash = (key: string) =>
 	/^[0-9a-f]{32}$/.test(key) ? key : createHash("sha256").update(`zotero-next:${key}`).digest("hex").slice(0, 32);
 
-const fileOf = (key: string, size: number, lib: PackLib) =>
-	join(CACHE_DIR, `${key}.${size}.c${CONVERTER_VERSION}.p${lib.packVersion}.s${lib.schemaVersion}.json`);
+// `id`: the size and content fingerprint of the PDF (a rotated or page-deleted file keeps its key but not its structure)
+const fileOf = (dir: string, key: string, id: string, lib: PackLib) =>
+	join(dir, `${key}.${id}.c${CONVERTER_VERSION}.p${lib.packVersion}.s${lib.schemaVersion}.json`);
 
-function cacheRead(file: string): DocStructure | null {
+function cacheRead(file: string | null): DocStructure | null {
+	if (!file) return null;
 	try {
 		return JSON.parse(readFileSync(file, "utf8")) as DocStructure;
 	} catch {
 		return null;
 	}
 }
-function cacheWrite(key: string, file: string, doc: DocStructure): void {
+function cacheWrite(key: string, dir: string | null, file: string | null, doc: DocStructure): void {
+	if (!dir || !file) return;
 	try {
-		mkdirSync(CACHE_DIR, { recursive: true });
-		for (const f of readdirSync(CACHE_DIR)) if (f.startsWith(`${key}.`)) rmSync(join(CACHE_DIR, f), { force: true }); // stale sizes / versions
-		writeFileSync(file, JSON.stringify(doc));
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		for (const f of readdirSync(dir)) if (f.startsWith(`${key}.`)) rmSync(join(dir, f), { force: true }); // stale contents / versions
+		writeFileSync(file, JSON.stringify(doc), { mode: 0o600 });
 	} catch (e) {
 		console.warn("[structure] cache write failed:", (e as Error).message);
 	}
 }
 
 let worker: DocumentWorker | null = null;
-const inflight = new Map<string, Promise<DocStructure>>();
+/** The worker to use: a fresh one when the last one died or never started (it never recovers by itself). */
+function usableWorker(): DocumentWorker {
+	if (worker && !worker.usable) {
+		worker.terminate();
+		worker = null;
+	}
+	return (worker ??= new DocumentWorker());
+}
+const remember = latestPerAttachment<DocStructure>();
 const listeners = new Map<string, Set<(pct: number) => void>>();
 
-async function build(key: string, pdf: Uint8Array): Promise<DocStructure> {
+async function build(key: string, pdf: Uint8Array, id: string): Promise<DocStructure> {
 	const emit = (pct: number) => {
 		for (const f of listeners.get(key) ?? []) f(pct);
 	};
 	emit(0);
 	const lib = await pack();
-	const file = fileOf(key, pdf.byteLength, lib);
+	const dir = structureCacheDir();
+	const file = dir && fileOf(dir, key, id, lib);
 	const hit = cacheRead(file);
 	if (hit) {
 		emit(100);
 		return hit;
 	}
 
-	worker ??= new DocumentWorker();
 	const buf = pdf.slice().buffer as ArrayBuffer; // the worker takes (detaches) its copy
-	const result = await worker.query<{ buf?: ArrayBuffer }>(
+	const result = await usableWorker().query<{ buf?: ArrayBuffer }>(
 		"getStructuredDocumentText",
 		{ buf, contentType: "application/pdf", sourceHash: sourceHash(key), reportProgress: true },
 		[buf],
@@ -95,7 +116,7 @@ async function build(key: string, pdf: Uint8Array): Promise<DocStructure> {
 	const sdt = (await (await lib.open(new Uint8Array(result.buf))).materialize()) as Sdt;
 	const doc = convertSdt(sdt);
 	emit(100);
-	cacheWrite(key, file, doc);
+	cacheWrite(key, dir, file, doc);
 	return doc;
 }
 
@@ -109,15 +130,13 @@ export function loadStructure(attachmentKey: string, pdfBytes: Uint8Array, onPro
 		if (!set) listeners.set(attachmentKey, (set = new Set()));
 		set.add(onProgress);
 	}
-	let p = inflight.get(attachmentKey);
-	if (!p) {
-		p = build(attachmentKey, pdfBytes).finally(() => {
+	// the structure of the file as it is NOW: the same attachment with other bytes (rotated, pages deleted) is built again
+	const id = fingerprint(pdfBytes);
+	return remember(attachmentKey, id, () =>
+		build(attachmentKey, pdfBytes, id).finally(() => {
 			listeners.delete(attachmentKey);
-		});
-		inflight.set(attachmentKey, p);
-		p.catch(() => inflight.delete(attachmentKey)); // keep successes; drop failures so a retry can happen
-	}
-	return p;
+		}),
+	);
 }
 
 /** Stop the document worker thread (the next load starts a fresh one). */

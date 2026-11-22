@@ -1,6 +1,7 @@
 // Crops of a page (figure / table previews, annotation image areas): the plugins open their own PdfDoc over ctx.pdfBytes() (one
 // extra copy of the file in the native worker) and render the page, then cut the region out as BGRA pixels for <img>.setImagePixels.
-// Renders are queued two at a time and the crops are cached (small LRU).
+// Renders are queued two at a time and the crops are cached (small LRU). A document that nothing has asked a crop of for a while is
+// closed (its native copy of the file and its crops go), whoever the callers are: they come and go with their views and never say so.
 import type { ReaderContext } from "../plugins";
 import { PdfDoc } from "../pdf";
 import type { PdfRect } from "./types";
@@ -16,9 +17,26 @@ interface Entry {
 	running: number;
 	waiting: (() => void)[];
 	cache: Map<string, Promise<Crop | null>>;
+	idle?: ReturnType<typeof setTimeout>;
 }
 const entries = new Map<string, Entry>();
 const MAX_CACHE = 48;
+/** How long a document with no crop requested and none running stays open (ZN_REGIONS_IDLE_MS, for the tests). */
+const IDLE_MS = Number(process.env.ZN_REGIONS_IDLE_MS) || 30_000;
+
+/** (Re)start the idle clock of an entry; a document still busy when it runs out gets a new one. */
+function touch(key: string, e: Entry): void {
+	clearTimeout(e.idle);
+	e.idle = setTimeout(() => {
+		if (entries.get(key) !== e) return;
+		if (e.running || e.waiting.length) touch(key, e);
+		else closeRegions(key);
+	}, IDLE_MS);
+	(e.idle as { unref?: () => void }).unref?.();
+}
+
+/** How many documents are open for crops (tests). */
+export const openRegionDocs = (): number => entries.size;
 
 function entryFor(ctx: ReaderContext): Entry {
 	let e = entries.get(ctx.attachmentKey);
@@ -37,6 +55,7 @@ function entryFor(ctx: ReaderContext): Entry {
 		};
 		entries.set(ctx.attachmentKey, e);
 	}
+	touch(ctx.attachmentKey, e);
 	return e;
 }
 
@@ -44,6 +63,7 @@ function entryFor(ctx: ReaderContext): Entry {
 export function closeRegions(attachmentKey: string): void {
 	const e = entries.get(attachmentKey);
 	if (!e) return;
+	clearTimeout(e.idle);
 	entries.delete(attachmentKey);
 	void e.doc.then((d) => d?.close());
 }
