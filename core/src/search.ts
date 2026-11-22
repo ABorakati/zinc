@@ -51,7 +51,7 @@ function insertRow(db: Database, r: ItemRow): void {
 			db
 				.query(
 					`SELECT group_concat(f.content, ' ') AS t FROM items a JOIN fulltext f ON f.attachment_key = a.key
-					 WHERE a.parent_key = ?`,
+					 WHERE a.parent_key = ? AND a.deleted = 0`,
 				)
 				.get(r.key) as { t: string | null }
 		).t ?? "";
