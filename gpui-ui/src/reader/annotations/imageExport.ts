@@ -102,6 +102,16 @@ export async function copyAnnotationImage(ctx: ReaderContext, a: Annotation, not
 	}
 }
 
+/** One piece of a file name: letters, digits, dot, dash, underscore; no separator, no drive colon, no leading dot, at most 60 characters. */
+function namePart(s: string): string {
+	return s.replace(/[^\p{L}\p{N}._-]/gu, "_").replace(/^\.+/, "_").slice(0, 60) || "_";
+}
+
+/** The file an exported image annotation is saved as. The id and the page label can come from someone else's library, so they cannot name a place outside the folder. */
+export function annotationImageName(a: Annotation): string {
+	return `annotation-${namePart(a.id)}-p${namePart(a.pageLabel || String(a.position.pageIndex + 1))}.png`;
+}
+
 /**
  * Export an image annotation as a PNG file.
  * If destDir is provided, saves directly into that folder; otherwise prompts for a directory.
@@ -125,9 +135,7 @@ export async function exportAnnotationImage(
 		}
 		if (!dir) return null;
 
-		const pageNum = a.pageLabel || String(a.position.pageIndex + 1);
-		const filename = `annotation-${a.id}-p${pageNum}.png`;
-		const fullPath = join(dir, filename);
+		const fullPath = join(dir, annotationImageName(a));
 		await Bun.write(fullPath, rendered.png);
 		notify?.(`Exported image to ${fullPath}`);
 		return fullPath;
