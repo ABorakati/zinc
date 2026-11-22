@@ -287,3 +287,108 @@ describe("a page that failed", () => {
 		expect(store.peek(PAGE + 1)?.title).toBe(`T${PAGE + 1}`);
 	});
 });
+
+describe("Shift+click across pages that are not loaded yet", () => {
+	const gate = () => {
+		let release!: () => void;
+		const p = new Promise<void>((r) => {
+			release = r;
+		});
+		return { p, release };
+	};
+	/** A list of `total` rows with page 0 and the page of `last` loaded, ready for a Shift+click from row 0 to `last`. */
+	async function setup(total: number, last: number, kind: "trash" | "unfiled") {
+		handler = list(total);
+		store.setView({ kind: "library" }); // a fresh list each time: the same view as before would keep the old rows and total
+		await tick();
+		store.setView({ kind });
+		await tick();
+		store.itemAt(last); // the page the click lands on
+		await tick();
+		store.selectOnly(store.peek(0)!.key, 0);
+	}
+
+	test("a page that is already being fetched is waited for, not skipped", async () => {
+		await setup(1000, 5 * PAGE + 1, "trash");
+		const g = gate();
+		handler = async (u) => {
+			if (Number(u.searchParams.get("offset")) === 2 * PAGE) await g.p; // page 2: a prefetch that has not come back yet
+			return list(1000)(u);
+		};
+		store.itemAt(2 * PAGE + 1); // starts the page-2 request
+		await tick();
+		store.selectClick(5 * PAGE + 1, { shift: true, ctrl: false });
+		await tick(50); // pages 1, 3 and 4 are in; page 2 is still out
+		g.release();
+		await tick(50);
+		expect(store.selected().size).toBe(5 * PAGE + 2);
+	});
+
+	test("a range longer than the page cache still selects every row", async () => {
+		const last = 29 * PAGE + 50; // 30 pages: more than the cache holds
+		await setup(3000, last, "unfiled");
+		store.selectClick(last, { shift: true, ctrl: false });
+		await tick(200);
+		expect(store.selected().size).toBe(last + 1);
+		expect(store.selected().has(`K${String(last).padStart(6, "0")}`)).toBe(true);
+		expect(store.selected().has(`K${String(1234).padStart(6, "0")}`)).toBe(true);
+	});
+
+	test("a click made while the pages load wins over the range that was waiting", async () => {
+		await setup(1000, 5 * PAGE + 1, "trash");
+		const g = gate();
+		handler = async (u) => {
+			if (Number(u.searchParams.get("offset")) >= PAGE) await g.p;
+			return list(1000)(u);
+		};
+		store.selectClick(5 * PAGE + 1, { shift: true, ctrl: false });
+		store.selectClick(3, { shift: false, ctrl: false }); // the user clicks another row before the range completes
+		g.release();
+		await tick(80);
+		expect([...store.selected()]).toEqual([store.peek(3)!.key]);
+	});
+
+	test("the keys that are known now are selected at once, the rest follow", async () => {
+		await setup(1000, 5 * PAGE + 1, "unfiled");
+		const g = gate();
+		handler = async (u) => {
+			if (Number(u.searchParams.get("offset")) >= PAGE && Number(u.searchParams.get("offset")) < 5 * PAGE) await g.p;
+			return list(1000)(u);
+		};
+		store.selectClick(5 * PAGE + 1, { shift: true, ctrl: false });
+		expect(store.selected().size).toBeGreaterThan(0);
+		expect(store.selected().size).toBeLessThan(5 * PAGE + 2);
+		g.release();
+		await tick(80);
+		expect(store.selected().size).toBe(5 * PAGE + 2);
+	});
+});
+
+describe("Select All and a click that comes after it", () => {
+	test("the click wins when the keys arrive later", async () => {
+		handler = list(40);
+		store.setView({ kind: "library" });
+		await tick();
+		store.setView({ kind: "trash" });
+		await tick();
+		let release!: () => void;
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		handler = async (u) => {
+			if (u.searchParams.get("limit") === "1000") await gate;
+			return list(150)(u);
+		};
+		store.setView({ kind: "unfiled" });
+		await tick();
+		handler = async (u) => {
+			if (u.searchParams.get("limit") === "1000") await gate;
+			return list(150)(u);
+		};
+		store.selectAll(); // 150 rows: the keys-only request is held
+		store.selectOnly(store.peek(2)!.key, 2); // the user picks one row meanwhile
+		release();
+		await tick(50);
+		expect([...store.selected()]).toEqual([store.peek(2)!.key]);
+	});
+});

@@ -455,7 +455,14 @@ function createStore(): AppStore {
 	});
 
 	// ---- selection state (the actions are below) ----
-	const [selected, setSelectedSig] = createSignal<Set<string>>(new Set<string>());
+	const [selected, setSelectedRaw] = createSignal<Set<string>>(new Set<string>());
+	// Counts the changes made by the user or by a new list, so work that finishes later (a range waiting for its pages) can tell the
+	// selection moved on. A counter, not a watch on `selected`: every update of that signal is a new Set, the completion's own too.
+	let selVersion = 0;
+	const setSelectedSig = (s: Set<string>) => {
+		selVersion++;
+		setSelectedRaw(s);
+	};
 	const [selectedItem, setActiveKey] = createSignal<string | null>(null); // the focused item (shown in the item pane)
 	const [anchor, setAnchor] = createSignal(-1);
 	const [focusIndex, setFocusIndex] = createSignal(-1);
@@ -606,7 +613,18 @@ function createStore(): AppStore {
 		}
 	}
 
-	async function loadPage(p: number, g: number) {
+	const pending = new Map<number, Promise<void>>(); // page -> its request in flight
+	/** Fetch a page; one already being fetched is not asked for twice, and the promise returned for it settles when that request does. */
+	function loadPage(p: number, g: number): Promise<void> {
+		if (g !== gen) return Promise.resolve();
+		if (inflight.has(p)) return pending.get(p) ?? Promise.resolve();
+		const run: Promise<void> = fetchIntoCache(p, g).finally(() => {
+			if (pending.get(p) === run) pending.delete(p);
+		});
+		pending.set(p, run);
+		return run;
+	}
+	async function fetchIntoCache(p: number, g: number) {
 		if (inflight.has(p) || g !== gen) return;
 		inflight.add(p);
 		const mine = new AbortController();
@@ -912,31 +930,68 @@ function createStore(): AppStore {
 		}
 		return out;
 	}
-	async function loadRange(a: number, b: number) {
+	/**
+	 * Keys of rows a..b, fetching the pages that are not cached (and waiting for the ones already on their way). Each page is read the
+	 * moment it arrives, so a range longer than the page cache holds still completes: the cache drops far pages as the others load.
+	 * null when the list started over meanwhile (the keys would belong to the old one).
+	 */
+	async function keysOfRange(a: number, b: number): Promise<string[] | null> {
 		const g = gen;
-		const need: number[] = [];
-		for (let p = Math.floor(a / PAGE); p <= Math.floor(b / PAGE); p++) if (cache.get(p)?.gen !== g) need.push(p);
-		await Promise.all(need.map((p) => loadPage(p, g)));
+		const byPage = new Map<number, string[]>();
+		const take = (p: number, rows: ItemRow[]) => {
+			const from = Math.max(a, p * PAGE),
+				to = Math.min(b, p * PAGE + rows.length - 1);
+			byPage.set(p, rows.slice(from - p * PAGE, to - p * PAGE + 1).map((r) => r.key));
+		};
+		const first = Math.floor(a / PAGE),
+			last = Math.floor(b / PAGE);
+		await Promise.all(
+			Array.from({ length: last - first + 1 }, async (_, n) => {
+				const p = first + n;
+				let e = cache.get(p);
+				if (e?.gen !== g) {
+					await loadPage(p, g);
+					e = cache.get(p);
+				}
+				if (g !== gen) return;
+				if (e?.gen === g) take(p, e.rows);
+				else take(p, (await fetchPage(p, abort.signal)).items); // loaded, but already evicted (or aborted): fetch it for this
+			}),
+		);
+		if (g !== gen) return null;
+		return [...byPage.entries()].sort((x, y) => x[0] - y[0]).flatMap(([, keys]) => keys);
+	}
+	/**
+	 * Rows a..b were just selected from what is cached; add the ones on pages that are not, when those arrive. Dropped when the list
+	 * or the selection changed meanwhile: a later click wins. Call it after the selection was set.
+	 */
+	function completeRange(a: number, b: number) {
+		if (rangeKeys(a, b).length > b - a) return; // every row of the range was cached
+		const view0 = hardGen,
+			v0 = selVersion;
+		void keysOfRange(a, b)
+			.then((keys) => {
+				if (!keys || view0 !== hardGen || v0 !== selVersion) return;
+				const s2 = new Set(untrack(selected));
+				for (const k of keys) s2.add(k);
+				setSelectedRaw(s2);
+			})
+			.catch((e) => {
+				if (view0 === hardGen) setError(String(e?.message ?? e));
+			});
 	}
 	function selectClick(index: number, mods: Mods) {
 		const it = peek(index);
-		const view0 = hardGen; // the list this click belongs to: an async completion for another list is dropped
 		if (!it) return;
 		const sel = new Set(selected());
+		let range: [number, number] | undefined;
 		if (mods.shift && anchor() >= 0) {
 			const a = Math.min(anchor(), index),
 				b = Math.max(anchor(), index);
 			if (!mods.ctrl) sel.clear();
 			for (const k of rangeKeys(a, b)) sel.add(k);
 			setFocusIndex(index);
-			// a range spanning pages that are not cached: fetch them and complete the selection
-			if (b - a >= PAGE)
-				void loadRange(a, b).then(() => {
-					if (view0 !== hardGen) return;
-					const s2 = new Set(untrack(selected));
-					for (const k of rangeKeys(a, b)) s2.add(k);
-					setSelectedSig(s2);
-				});
+			range = [a, b];
 		} else if (mods.ctrl) {
 			if (!sel.delete(it.key)) sel.add(it.key);
 			batch(() => {
@@ -951,6 +1006,7 @@ function createStore(): AppStore {
 			setSelectedSig(sel);
 			setActiveKey(it.key);
 		});
+		if (range) completeRange(range[0], range[1]); // pages that were not cached: the rest of the range follows when they arrive
 	}
 	function focusRow(next: number, extend: boolean): boolean {
 		const it = peek(next);
@@ -963,18 +1019,24 @@ function createStore(): AppStore {
 				setActiveKey(it.key);
 				setFocusIndex(next);
 			});
+			completeRange(a, b);
 		} else selectOnly(it.key, next);
 		return true;
 	}
 	function selectAll() {
 		const n = untrack(total);
 		if (n === 0) return;
-		const view0 = hardGen; // dropped when the list changes (another view, filter or sort) before the keys arrive
+		const view0 = hardGen, // dropped when the list changes (another view, filter or sort) before the keys arrive,
+			v0 = selVersion; // or when the user selects something else meanwhile
 		const v = untrack(view);
 		if (v.kind === "duplicates" || n <= PAGE) {
-			void loadRange(0, n - 1).then(() => {
-				if (view0 === hardGen) setSelectedSig(new Set(rangeKeys(0, n - 1)));
-			});
+			void keysOfRange(0, n - 1)
+				.then((keys) => {
+					if (keys && view0 === hardGen && v0 === selVersion) setSelectedRaw(new Set(keys));
+				})
+				.catch((e) => {
+					if (view0 === hardGen) setError(String(e?.message ?? e));
+				});
 			return;
 		}
 		// the whole list: keys only, 1000 per request
@@ -986,7 +1048,7 @@ function createStore(): AppStore {
 				if (view0 !== hardGen) return;
 				r.items.forEach((x) => keys.add(x.key));
 			}
-			if (view0 === hardGen) setSelectedSig(keys);
+			if (view0 === hardGen && v0 === selVersion) setSelectedRaw(keys);
 		})().catch((e) => {
 			if (view0 === hardGen) setError(String(e?.message ?? e));
 		});
