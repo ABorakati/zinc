@@ -1,0 +1,25 @@
+diff --git a/dist/host.js b/dist/host.js
+index 5b89e39c0eebee46b8c2b33c6fe4e229361e333f..dd7136e860aac3e80be8ade2d0f63feed7e8f7f0 100644
+--- a/dist/host.js
++++ b/dist/host.js
+@@ -138,8 +138,11 @@ function mount(root, node) {
+         throw new Error("Cannot move a GPUIX host node between roots");
+     }
+     node.root = root;
+-    if (!node.id)
++    // A node that comes back after its removal gets a new id: the batch reports the old one as destroyed, and that report deletes
++    // the handlers registered under it (gpui-ui/src/ui/reconcile.test.tsx).
++    if (!node.id || node.destroyed)
+         node.id = root.allocateId();
++    node.destroyed = false;
+     if (node.mounted)
+         return;
+     node.mounted = true;
+@@ -196,6 +199,7 @@ export function insertHostNode(parent, node, anchor) {
+ }
+ function markUnmounted(node) {
+     node.mounted = false;
++    node.destroyed = true;
+     if (node.root)
+         unregisterEventHandlers(node.root.eventHandlers, node.id);
+     for (const child of node.children)
