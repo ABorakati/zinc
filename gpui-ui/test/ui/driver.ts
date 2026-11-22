@@ -46,6 +46,16 @@ interface Indexed {
 	parent: Indexed | null;
 }
 
+/** The text a node shows: its own, or an input's value, else the placeholder it paints in its place. */
+function shownText(node: TreeNode, renderer: TestRenderer): string | undefined {
+	if (node.text) return node.text;
+	if (node.type !== "input" && node.type !== "textarea") return undefined;
+	// (the automation tree leaves the props out: they are on the renderer's element)
+	const { value, placeholder } = (renderer.getElement(node.id)?.customProps ?? {}) as { value?: unknown; placeholder?: unknown };
+	if (typeof value === "string" && value) return value;
+	return typeof placeholder === "string" && placeholder ? placeholder : undefined;
+}
+
 const centre = (b: Box) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 const inside = (b: Box, x: number, y: number) => x >= b.x && y >= b.y && x < b.x + b.width && y < b.y + b.height;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -156,7 +166,7 @@ export class Ui {
 		const within = o.area ? this.area(o.area) : { x: 0, y: 0, ...this.size };
 		const found: (Found & { node: Indexed })[] = [];
 		for (const n of all) {
-			const t = n.node.text;
+			const t = shownText(n.node, this.renderer);
 			if (!t || (o.exact ? t.trim() !== text : !t.includes(text))) continue;
 			const box = this.boxOf(n);
 			if (!box) continue;
@@ -213,8 +223,22 @@ export class Ui {
 	async clickAt(x: number, y: number, o: { button?: number; modifiers?: string; count?: number } = {}): Promise<void> {
 		this.steps.push(`click ${Math.round(x)},${Math.round(y)}${o.modifiers ? ` +${o.modifiers}` : ""}${o.button ? ` button ${o.button}` : ""}`);
 		this.renderer.nativeSimulateMouseMove(x, y, undefined, o.modifiers);
-		for (let i = 0; i < (o.count ?? 1); i++) this.renderer.nativeSimulateClick(x, y, o.button ?? 0, o.modifiers);
+		const count = o.count ?? 1;
+		for (let i = 0; i < count; i++) this.clickOnce(x, y, o.button ?? 0, o.modifiers, i + 1);
 		await this.settle();
+	}
+
+	/** One click of a series: the nth says so (clickCount), as a window does and the test renderer does not. */
+	private clickOnce(x: number, y: number, button: number, modifiers: string | undefined, clickCount: number): void {
+		if (clickCount === 1) return this.renderer.nativeSimulateClick(x, y, button, modifiers);
+		const r = this.renderer as unknown as { dispatchEvent: (e: Record<string, unknown>) => void };
+		const plain = r.dispatchEvent;
+		r.dispatchEvent = (e) => plain(["click", "mouseDown", "mouseUp"].includes(String(e.eventType)) ? { ...e, clickCount } : e);
+		try {
+			this.renderer.nativeSimulateClick(x, y, button, modifiers);
+		} finally {
+			r.dispatchEvent = plain;
+		}
 	}
 
 	async rightClick(text: string, o: FindOptions = {}): Promise<void> {
