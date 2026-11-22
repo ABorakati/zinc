@@ -225,7 +225,7 @@ const AOT_PATCHES: [string, string | RegExp, string][] = [
 	// document structure (reading layout)
 	[
 		abs("src/reader/structure/worker.ts"),
-		'const bundle = join(WORKER_DIR, "worker.js");',
+		'const bundle = join(workerDir(), "worker.js");',
 		'const bundle = join(WORKER_DIR, "metadata.json"); // the engine itself is compiled in; this only proves the data folder is there',
 	],
 	[
@@ -241,12 +241,12 @@ const AOT_PATCHES: [string, string | RegExp, string][] = [
 	],
 	[
 		abs("src/reader/structure/load.ts"),
-		'import(pathToFileURL(join(SDT_DIR, "pack", "reader.js")).href)',
+		'import(pathToFileURL(join(sdtDir(), "pack", "reader.js")).href)',
 		'import("../../../../vendor/reader/structured-document-text/src/pack/reader.js")',
 	],
 	[
 		abs("src/reader/structure/load.ts"),
-		'import(pathToFileURL(join(SDT_DIR, "version.js")).href)',
+		'import(pathToFileURL(join(sdtDir(), "version.js")).href)',
 		'import("../../../../vendor/reader/structured-document-text/src/version.js")',
 	],
 	[abs("src/services.ts"), 'join(buildDir, "worker.js")', 'join(buildDir, "metadata.json")'],
@@ -275,7 +275,7 @@ const AOT_PATCHES: [string, string | RegExp, string][] = [
 	// Zotero translators
 	[
 		abs("../core/src/translate/pool.ts"),
-		"new Worker(WORKER_ENTRY.href, {",
+		"new Worker(workerEntry().href, {",
 		`new Worker(${JSON.stringify(embeddedPath(AOT_WORKERS.translate))}, {`,
 	],
 	[
