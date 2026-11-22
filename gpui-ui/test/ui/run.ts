@@ -11,10 +11,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { BUN_CACHE, compileApp } from "./compiled";
 
 const HERE = import.meta.dir;
 const GPUI = resolve(HERE, "..", "..");
 const WORKER = join(HERE, "worker.ts");
+/** A scenario's process: the app as compiled once for this run (compiled.ts). */
+const APP_BUN = [process.execPath, `--config=${join(HERE, "bunfig.toml")}`];
 const TIMEOUT_MS = 90_000;
 
 const words: string[] = [];
@@ -75,6 +78,7 @@ function childEnv(root: string): Record<string, string> {
 		ZN_SYNC: "0",
 		ZN_ZPORT: "0",
 		ZN_PREFETCH: "0",
+		BUN_RUNTIME_TRANSPILER_CACHE_PATH: BUN_CACHE,
 	});
 }
 
@@ -104,7 +108,7 @@ async function findJobs(): Promise<Job[]> {
 	for (const f of files) {
 		const file = join(HERE, "scenarios", f);
 		const root = mkdtempSync(join(base, "list-"));
-		const p = Bun.spawn([process.execPath, WORKER, file, "list"], { cwd: GPUI, env: childEnv(root), stdout: "pipe", stderr: "pipe", windowsHide: true });
+		const p = Bun.spawn([...APP_BUN, WORKER, file, "list"], { cwd: GPUI, env: childEnv(root), stdout: "pipe", stderr: "pipe", windowsHide: true });
 		const [text, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 		if (code !== 0) {
 			unreadable.push(f);
@@ -126,7 +130,7 @@ async function runJob(job: Job): Promise<Result> {
 	for (const stale of ["result.json", "screen.txt", "failure.png", "stderr.txt"]) rmSync(join(dir, stale), { force: true });
 
 	const started = performance.now();
-	const p = Bun.spawn([process.execPath, WORKER, job.file, "run", String(job.index), dir], {
+	const p = Bun.spawn([...APP_BUN, WORKER, job.file, "run", String(job.index), dir], {
 		cwd: GPUI,
 		env: childEnv(root),
 		stdout: "ignore",
@@ -152,6 +156,9 @@ async function runJob(job: Job): Promise<Result> {
 }
 
 try {
+	const compileStarted = performance.now();
+	const files = await compileApp();
+	if (!listOnly) console.log(`app compiled: ${files} files in ${((performance.now() - compileStarted) / 1000).toFixed(1)} s`);
 	const todo = await findJobs();
 	if (!todo.length) {
 		console.error("no scenario matches");

@@ -1,0 +1,3 @@
+# Bun's configuration for the scenarios' processes only (run.ts passes it with --config): the app is compiled once per run
+# (compiled.ts), where gpui-ui/bunfig.toml would compile it again in every process.
+preload = ["./test/ui/preload.ts"]
