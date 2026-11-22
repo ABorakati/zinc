@@ -28,6 +28,7 @@
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { BUILD_VERSION } from "./_version";
+import { compressCommand } from "./_zip";
 import { windowsReadme } from "./readme";
 import { signFiles } from "./sign";
 
@@ -175,7 +176,7 @@ if (process.argv.includes("--zip")) {
 	const zip = join(pkgDir, `zotero-next-gpui-${new Date().toISOString().slice(0, 10)}.zip`);
 	rmSync(zip, { force: true });
 	if (isWin)
-		run(["pwsh", "-NoProfile", "-Command", `Compress-Archive -Path '${app}' -DestinationPath '${zip}' -CompressionLevel Optimal`]);
+		run(["pwsh", "-NoProfile", "-Command", compressCommand(app, zip)]);
 	else run(["zip", "-qry", zip, basename(app)], pkgDir); // -y keeps symlinks
 	console.log(`zip: ${zip}  (${(statSync(zip).size / 1048576).toFixed(0)} MB)`);
 }
