@@ -62,19 +62,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: write # only used on a release, to attach the zip
-      id-token: write # build provenance attestation of the zip (release only)
-      attestations: write
+    # Read-only token (the workflow's default): this job runs code from the repository and from downloaded packages. Attaching the
+    # zip to a release, which needs write access, is the job "release" below, and it only receives the finished zip.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Cache bun packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.bun/install/cache
           key: bun-web-${{ runner.os }}-${{ hashFiles('core/bun.lock', 'gpui-ui/bun.lock', 'word/sidebar/bun.lock', 'website/bun.lock') }}
@@ -91,7 +91,7 @@ jobs:
       # core/vendor is git-ignored; same pinned download as ci.yml.
       - name: Cache vendored Zotero translation code
         id: vendor
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: core/vendor/zotero
           key: zotero-vendor-${{ hashFiles('core/scripts/fetch-zotero-vendor.ts') }}
@@ -110,7 +110,7 @@ jobs:
       # Optional: if it cannot be built, the browser build leaves layout analysis out and the reader says so.
       - name: Cache Zotero's document worker
         id: docworker
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: vendor/document-worker
           key: docworker-${{ hashFiles('scripts/build-docworker.sh') }}
@@ -128,7 +128,7 @@ jobs:
         run: bun web/build.ts --out out/web-demo --db out/demo-library/library.sqlite --styles out/demo-library/collection-style.json
 
       - name: Upload the browser build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zotero-next-web
           path: gpui-ui/out/web-demo
@@ -146,7 +146,7 @@ jobs:
           bun --bun astro build
 
       - name: Upload the website
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: website
           path: website/dist
@@ -155,7 +155,7 @@ jobs:
 
       - name: Keep the website for GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: website/dist
 
@@ -164,18 +164,43 @@ jobs:
         env:
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: (cd gpui-ui/out && mv web-demo "Zinc-Web-$TAG" && zip -qr "Zinc-Web-$TAG.zip" "Zinc-Web-$TAG")
+      - name: Keep the zip for the release job
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zinc-web-zip
+          path: gpui-ui/out/Zinc-Web-*.zip
+          retention-days: 1
+          if-no-files-found: error
+
+  # Attaches the zip built above to the release. It does not check anything out and runs nothing from the repository: it takes the
+  # artifact, signs a statement of where it came from, and uploads it.
+  release:
+    needs: build
+    if: github.event_name == 'release' || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release upload
+      id-token: write # build provenance attestation of the zip
+      attestations: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: zinc-web-zip
+          path: zip
       # a signed statement that this zip was built by this workflow from this commit: `gh attestation verify <zip> -R ABorakati/zinc`
       - name: Attest build provenance
-        if: github.event_name == 'release' || inputs.release_tag != ''
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
-          subject-path: gpui-ui/out/Zinc-Web-*.zip
+          subject-path: zip/Zinc-Web-${{ github.event.release.tag_name || inputs.release_tag }}.zip
       - name: Attach the browser build to the release
-        if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
-        run: gh release upload "$TAG" "gpui-ui/out/Zinc-Web-$TAG.zip" --clobber
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" "zip/Zinc-Web-$TAG.zip" --clobber
 
   # The website (built above under /zinc/) on GitHub Pages: https://aborakati.github.io/zinc/
   pages:
@@ -193,4 +218,4 @@ jobs:
       cancel-in-progress: false
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

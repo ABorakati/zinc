@@ -51,7 +51,7 @@ These build with Bun from upstream Zotero repositories cloned into `vendor/`. Th
 
 | Output | Command | Notes |
 | --- | --- | --- |
-| `vendor/document-worker/build/` | `bash scripts/build-docworker.sh` | Clones `zotero/document-worker` if absent, then runs `bun install` and webpack |
+| `vendor/document-worker/build/` | `bash scripts/build-docworker.sh` | Fetches `zotero/document-worker` at the commit pinned in the script (`DOCWORKER_COMMIT`), then runs `bun install` and webpack |
 | `reader-host/dist/` | `bash reader-host/build.sh` | Builds the Zotero reader (`web` target) in `vendor/reader`, then the host page. Needs the document worker build. `--skip-reader` reuses a previous reader build |
 | `note-host/dist/` | `bash note-host/build.sh` | Clones `zotero/note-editor` if absent, builds it, then the host page. `--skip-editor` reuses a previous build |
 

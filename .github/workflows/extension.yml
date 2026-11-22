@@ -44,7 +44,7 @@ env:
   # The Zotero reader (vendor/reader) is not fetched by any script in this repository (reader-host/build.sh expects it to exist).
   # This is the commit the reader was built from; change it deliberately.
   READER_REPO: https://github.com/zotero/reader
-  READER_COMMIT: 293d7e1
+  READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39
 
 defaults:
   run:
@@ -54,25 +54,34 @@ jobs:
   extension:
     runs-on: windows-latest
     timeout-minutes: 60
-    permissions:
-      contents: write # only used on a release, to attach the zips
-      id-token: write # build provenance attestations of the zips (release only)
-      attestations: write
+    # Read-only token (the workflow's default): this job runs code from two repositories and from downloaded packages. Attaching the
+    # zips to a release, which needs write access, is the job "release" below, and it only receives the finished zips.
+    outputs:
+      tag: ${{ steps.pkg.outputs.tag }}
     steps:
       - name: Check out zotero-next
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           path: zotero-next
 
       - name: Check out the connector
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           repository: ABorakati/zinc-connector
           ref: zotero-next
           submodules: true
           # the repository is public; CONNECTOR_REPO_TOKEN is only needed if it is made private again
           token: ${{ secrets.CONNECTOR_REPO_TOKEN || github.token }}
           path: zinc-connector
+
+      # The connector is taken at the tip of its branch zotero-next on purpose: a release of the extension is built from whatever the
+      # owner last pushed there, and pinning a commit here would mean editing this file before every release. The commit that was
+      # built is recorded in the job summary, and the credentials are not left in the checkout.
+      - name: Record the connector commit
+        run: |
+          echo "Connector commit: $(git -C zinc-connector rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check the connector checkout
         run: |
@@ -90,12 +99,12 @@ jobs:
           echo "::warning title=No update public key::gpui-ui/update-pubkey.txt is missing: this build shows no update notice (gpui-ui/UPDATES.md)."
           echo "ZN_ALLOW_NO_UPDATE_KEY=1" >> "$GITHUB_ENV"
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
       - name: Cache bun packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.bun/install/cache
           key: bun-ext-${{ runner.os }}-${{ hashFiles('zotero-next/core/bun.lock', 'zotero-next/gpui-ui/bun.lock', 'zinc-connector/bun.lock') }}
@@ -110,7 +119,7 @@ jobs:
       # core/vendor is git-ignored; same pinned download as web.yml and ci.yml.
       - name: Cache vendored Zotero translation code
         id: vendor
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: zotero-next/core/vendor/zotero
           key: zotero-vendor-${{ hashFiles('zotero-next/core/scripts/fetch-zotero-vendor.ts') }}
@@ -130,7 +139,7 @@ jobs:
       # reader-host/build.sh from vendor/reader and vendor/document-worker. Both are git-ignored upstream clones.
       - name: Cache the Zotero reader and document worker
         id: reader
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             zotero-next/vendor/reader
@@ -168,7 +177,7 @@ jobs:
           ls -l ../ext-out
 
       - name: Upload the unpacked zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zinc-connector-unpacked
           path: |
@@ -177,15 +186,38 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Keep the zips for the release job
+        if: github.event_name == 'release' || inputs.release_tag != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zinc-connector-zips
+          path: ext-out/*.zip
+          retention-days: 1
+          if-no-files-found: error
+
+  # Attaches both zips to the release. It does not check anything out and runs nothing from the repository or the connector: it takes
+  # the artifact, signs a statement of where it came from, and uploads it.
+  release:
+    needs: extension
+    if: github.event_name == 'release' || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release upload
+      id-token: write # build provenance attestations of the zips
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: zinc-connector-zips
+          path: ext-out
       # a signed statement that these zips were built by this workflow from this commit: `gh attestation verify <zip> -R ABorakati/zinc`
       - name: Attest build provenance
-        if: github.event_name == 'release' || inputs.release_tag != ''
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: ext-out/*.zip
       - name: Attach both zips to the release
-        if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.pkg.outputs.tag }}
+          TAG: ${{ needs.extension.outputs.tag }}
         run: gh release upload "$TAG" ext-out/*.zip --clobber --repo "$GITHUB_REPOSITORY"

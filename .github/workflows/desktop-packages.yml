@@ -44,15 +44,16 @@ concurrency:
   group: desktop-packages-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The jobs that build run with a read-only token. Attaching to a release, which needs write access and the OIDC token that signs the
+# provenance attestations (actions/attest-build-provenance), is done by the jobs "release-appimage" and "release-dmg", which check
+# nothing out and run nothing from the repository: they take the finished files from the build job's artifact.
 permissions:
-  contents: write # gh release upload
-  id-token: write # build provenance attestations (actions/attest-build-provenance): the OIDC token that signs them
-  attestations: write # ... and storing them on the repository
+  contents: read
 
 env:
   BUN_VERSION: 1.4.4
   # zotero/reader as vendored for the app (vendor/reader; its submodules follow the commit)
-  ZOTERO_READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39
+  ZOTERO_READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39 # the full commit: a short one can become ambiguous
   TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
   ZN_UPDATE_PUBKEY: ${{ vars.ZN_UPDATE_PUBKEY }}
   ZN_UPDATE_URL: ${{ vars.ZN_UPDATE_URL }}
@@ -69,13 +70,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Cache Zotero's document worker
         id: docworker
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: vendor/document-worker
           key: docworker-${{ hashFiles('scripts/build-docworker.sh') }}
@@ -84,7 +87,7 @@ jobs:
         run: mkdir -p vendor && bash scripts/build-docworker.sh
       - name: Cache the web reader
         id: reader
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             vendor/reader
@@ -103,7 +106,7 @@ jobs:
         run: |
           mkdir -p parts
           tar -czf parts/web-parts.tgz vendor/document-worker/build vendor/reader/structured-document-text/src reader-host/dist note-host/dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: web-parts
           path: parts/web-parts.tgz
@@ -114,11 +117,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: web-parts
       - name: Unpack the parts
@@ -134,7 +139,7 @@ jobs:
           mkdir -p core/vendor/fulltext-wasm
           touch core/vendor/fulltext-wasm/fulltext.wasm
       - name: Cache the Bun canary (AOT)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: gpui-ui/out/tools/bun-*
           key: bun-canary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gpui-ui/scripts/_bun-canary.ts') }}
@@ -149,35 +154,52 @@ jobs:
             bun scripts/appimage.ts
             echo "AppImage: bytecode build" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zinc-appimage
           path: |
             gpui-ui/out/appimage/*.AppImage
             gpui-ui/out/appimage/*.sha256
             gpui-ui/out/appimage/*.version
+
+  # Attaches the AppImage to the release (see the note at the top about permissions).
+  release-appimage:
+    needs: appimage
+    if: github.event_name == 'release' || inputs.release_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release upload
+      id-token: write # the OIDC token that signs the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: zinc-appimage
+          path: pkg
       # a signed statement that this AppImage was built by this workflow from this commit: `gh attestation verify <file> -R ABorakati/zinc`
       - name: Attest build provenance
-        if: env.TAG != ''
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
-          subject-path: gpui-ui/out/appimage/*.AppImage
+          subject-path: pkg/*.AppImage
       - name: Attach to the release
-        if: env.TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" gpui-ui/out/appimage/*.AppImage gpui-ui/out/appimage/*.AppImage.sha256 gpui-ui/out/appimage/*.AppImage.version --clobber
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" pkg/*.AppImage pkg/*.AppImage.sha256 pkg/*.AppImage.version --clobber
 
   dmg:
     needs: web-parts
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: web-parts
       - name: Unpack the parts
@@ -193,7 +215,7 @@ jobs:
           mkdir -p core/vendor/fulltext-wasm
           touch core/vendor/fulltext-wasm/fulltext.wasm
       - name: Cache the Bun canary (AOT)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: gpui-ui/out/tools/bun-*
           key: bun-canary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gpui-ui/scripts/_bun-canary.ts') }}
@@ -210,7 +232,7 @@ jobs:
             bun scripts/dmg.ts
             echo "Disk image: bytecode build" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zinc-dmg
           path: |
@@ -218,16 +240,31 @@ jobs:
             gpui-ui/out/dmg/*.app.zip
             gpui-ui/out/dmg/*.sha256
             gpui-ui/out/dmg/*.version
+
+  # Attaches the disk image and the app.zip the macOS updater downloads to the release (see the note at the top about permissions).
+  release-dmg:
+    needs: dmg
+    if: github.event_name == 'release' || inputs.release_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release upload
+      id-token: write # the OIDC token that signs the provenance attestations
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: zinc-dmg
+          path: pkg
       # the disk image and the app.zip the macOS updater downloads: `gh attestation verify <file> -R ABorakati/zinc`
       - name: Attest build provenance
-        if: env.TAG != ''
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
-            gpui-ui/out/dmg/*.dmg
-            gpui-ui/out/dmg/*.app.zip
+            pkg/*.dmg
+            pkg/*.app.zip
       - name: Attach to the release
-        if: env.TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" gpui-ui/out/dmg/*.dmg gpui-ui/out/dmg/*.app.zip gpui-ui/out/dmg/*.sha256 gpui-ui/out/dmg/*.version --clobber
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" pkg/*.dmg pkg/*.app.zip pkg/*.sha256 pkg/*.version --clobber

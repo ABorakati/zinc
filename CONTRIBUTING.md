@@ -94,7 +94,7 @@ Two other pieces cannot be fetched and are not in CI. Their tests skip when the 
 | Missing piece | Where it comes from | Tests that skip |
 | --- | --- | --- |
 | `core/vendor/fulltext-wasm/fulltext.wasm` | built from `~/zotero-fulltext` (separate private repo) | `core/test/fulltext/*`, which are the Find Full Text engine tests |
-| `vendor/document-worker/build/` | `scripts/build-docworker.sh` (clones zotero/document-worker, webpack) | `core/test/extract`, "retrieve metadata for PDFs" in `core/test/additems` |
+| `vendor/document-worker/build/` | `scripts/build-docworker.sh` (fetches zotero/document-worker at a pinned commit, webpack) | `core/test/extract`, "retrieve metadata for PDFs" in `core/test/additems` |
 
 `core/src/fulltext/wasm.ts` imports the wasm at load time, so without the file most of the core suite fails to load. CI (and a fresh clone)
 creates an empty placeholder: `mkdir -p core/vendor/fulltext-wasm && : > core/vendor/fulltext-wasm/fulltext.wasm`.
