@@ -197,10 +197,8 @@ export class CslFormatter {
 		const pre: [string, number][] = [];
 		for (const c of citations) {
 			const citationItems = c.items.filter((i) => items.has(i.id));
-			if (citationItems.length === 0) {
-				pre.push([c.citationID, c.noteIndex]);
-				continue;
-			}
+			// a citation with nothing to show is never given to citeproc, so it must not be in the context lists either
+			if (citationItems.length === 0) continue;
 			const [, changed] = engine.processCitationCluster(cluster(c, citationItems), pre.slice(), []);
 			for (const [, text, cid] of changed) latest.set(cid, text);
 			pre.push([c.citationID, c.noteIndex]);
@@ -295,6 +293,8 @@ export class CslFormatter {
 		// the wrong order, and note styles' ibid./subsequent forms were not tested. Both are cheap to rebuild (10-20 ms).
 		if (this.numbered || this.style.xclass === "note") return false;
 		for (const [id, s] of itemSig) if (st.itemSig.has(id) && st.itemSig.get(id) !== s) return false;
+		for (const id of st.itemSig.keys()) if (!itemSig.has(id)) return false; // an item went missing: its citations change
+		if (citations.length === 0) return false; // nothing left: the kept engine would still list the old bibliography
 		if (citations.some((c) => resolvable(c).length === 0)) return false;
 		if (sig.size !== citations.length) return false; // a repeated citationID
 		const known = new Set(st.order);
@@ -321,10 +321,9 @@ export class CslFormatter {
 		const pre: [string, number][] = [];
 		for (const c of citations) {
 			const citationItems = resolvable(c);
-			if (citationItems.length) {
-				const [, changed] = st.engine.processCitationCluster(cluster(c, citationItems), pre.slice(), []);
-				for (const [, text, cid] of changed) st.html.set(cid, text);
-			}
+			if (!citationItems.length) continue; // not known to citeproc, so not in the context lists
+			const [, changed] = st.engine.processCitationCluster(cluster(c, citationItems), pre.slice(), []);
+			for (const [, text, cid] of changed) st.html.set(cid, text);
 			pre.push([c.citationID, c.noteIndex]);
 		}
 		st.order = citations.map((c) => c.citationID);
