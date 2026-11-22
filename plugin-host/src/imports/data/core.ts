@@ -41,11 +41,51 @@ export async function coreFailure(res: Response, what: string): Promise<never> {
 	throw witError(tagForStatus(res.status), `${what}: ${msg || res.statusText} (HTTP ${res.status})`.slice(0, 500));
 }
 
-export async function core(ctx: HandlerContext, path: string, init: CoreInit = {}): Promise<Response> {
-	const url = coreBase(ctx) + path;
-	let res: Response;
+// A library object key (items, collections, attachments, saved searches): what core generates or accepts, nothing more.
+const OBJECT_KEY = /^[A-Za-z0-9_-]{1,32}$/;
+
+/**
+ * A plugin-supplied library key for use as one URL path segment. Anything that is not a key is `invalid-argument`, so a hostile value
+ * ("..", "a/b", "x?y", "%2e%2e") never reaches a URL. (encodeURIComponent alone leaves ".." as "..", which URL parsing collapses.)
+ */
+export function keySeg(value: unknown, what = "key"): string {
+	if (typeof value !== "string" || !OBJECT_KEY.test(value)) throw witError("invalid-argument", `${what} is not a valid key`);
+	return value;
+}
+
+/**
+ * A plugin-supplied id that is not a library key (a find-job id, a citation style id) for use as one URL path segment: not empty, not a
+ * dot segment, no "/", "\", "?", "#", "%" or control character (core decodes the segment, so "%2e%2e" must not get through), then encoded.
+ */
+export function idSeg(value: unknown, what = "id"): string {
+	if (typeof value !== "string" || value.length === 0 || value.length > 256 || value === "." || value === ".." || /[/\\?#%\u0000-\u001f\u007f]/.test(value))
+		throw witError("invalid-argument", `${what} is not a valid id`);
+	return encodeURIComponent(value);
+}
+
+/** Refuse a core path that URL parsing would rewrite, send elsewhere or cut short. `path` is "/..." plus an optional "?query". */
+function checkedUrl(ctx: HandlerContext, path: string): string {
+	const base = coreBase(ctx);
+	const bad = () => witError("invalid-argument", `refusing core path ${JSON.stringify(path.slice(0, 80))}`);
+	if (typeof path !== "string" || !path.startsWith("/") || /[\\#\u0000- \u007f]/.test(path)) throw bad();
+	const q = path.indexOf("?");
+	const pathname = q < 0 ? path : path.slice(0, q);
+	if (pathname.split("/").some((s) => /^(\.|%2e){1,2}$/i.test(s))) throw bad();
+	let u: URL;
 	try {
-		res = await fetch(url, {
+		u = new URL(base + path);
+	} catch {
+		throw bad();
+	}
+	if (u.origin !== new URL(base).origin || u.pathname !== pathname || u.hash !== "") throw bad();
+	return base + path;
+}
+
+/** One request to core, path checked by `checkedUrl`. Unlike `core`, a non-2xx answer is returned, not thrown (HEAD, Range, 416). */
+export async function coreFetch(ctx: HandlerContext, path: string, init: CoreInit = {}): Promise<Response> {
+	const url = checkedUrl(ctx, path);
+	try {
+		return await fetch(url, {
 			method: init.method ?? (init.json !== undefined ? "POST" : "GET"),
 			headers: { ...(init.json !== undefined ? { "Content-Type": "application/json" } : {}), ...init.headers },
 			body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
@@ -54,6 +94,10 @@ export async function core(ctx: HandlerContext, path: string, init: CoreInit = {
 	} catch (e) {
 		throw witError("unavailable", `core is not reachable: ${(e as Error).message}`);
 	}
+}
+
+export async function core(ctx: HandlerContext, path: string, init: CoreInit = {}): Promise<Response> {
+	const res = await coreFetch(ctx, path, init);
 	if (!res.ok) await coreFailure(res, `${init.method ?? "GET"} ${path.split("?")[0]}`);
 	return res;
 }

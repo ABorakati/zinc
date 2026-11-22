@@ -1,6 +1,6 @@
 // Mapping between the WIT `library` records (jco form) and core's HTTP shapes.
 import { witError, type HandlerContext } from "../registry";
-import { core, coreJson, pmap, qs } from "./core";
+import { core, coreJson, keySeg, pmap, qs } from "./core";
 import { displayTitle, firstCreator, publicationOf, yearOf } from "./utils";
 
 export interface CoreSummary {
@@ -110,7 +110,7 @@ export function summaryFromDetail(d: CoreDetail, library: number, fields: string
 }
 
 export async function getDetail(ctx: HandlerContext, key: string): Promise<CoreDetail | undefined> {
-	const res = await fetchOptional(ctx, `/api/items/${encodeURIComponent(key)}`);
+	const res = await fetchOptional(ctx, `/api/items/${keySeg(key, "item key")}`);
 	return res ? ((await res.json()) as CoreDetail) : undefined;
 }
 
@@ -125,6 +125,7 @@ export async function fetchOptional(ctx: HandlerContext, path: string): Promise<
 }
 
 export async function detailsOf(ctx: HandlerContext, keys: string[]): Promise<(CoreDetail | undefined)[]> {
+	for (const k of keys) keySeg(k, "item key"); // all of them before the first request
 	return pmap(keys, 8, (k) => getDetail(ctx, k));
 }
 

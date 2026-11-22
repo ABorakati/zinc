@@ -1,6 +1,6 @@
 // `cite` (library.wit): styles, bibliographies and citations, Quick Copy. Core does the formatting (citeproc) at /api/cite/*.
 import { defineHandler, witError } from "./registry";
-import { core, coreJson, qs } from "./data/core";
+import { core, coreJson, idSeg, qs } from "./data/core";
 import { requirePermission } from "./data/perm";
 
 interface CoreStyle {
@@ -39,7 +39,7 @@ export default defineHandler({
 
 		async "remove-style"(ctx, id: string) {
 			requirePermission(ctx, "library.cite.styles");
-			await core(ctx, `/api/cite/styles/${encodeURIComponent(id)}`, { method: "DELETE" });
+			await core(ctx, `/api/cite/styles/${idSeg(id, "style id")}`, { method: "DELETE" });
 		},
 
 		async format(ctx, req: any) {

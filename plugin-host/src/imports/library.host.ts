@@ -1,7 +1,7 @@
 // `library` (library.wit): libraries, items, collections, tags, saved searches, duplicates, trash, and `apply`.
 // Runs in the plugin host process and calls core over HTTP (ctx.coreUrl). Every function checks its permission first.
 import { defineHandler, witError, WitError, type HandlerContext } from "./registry";
-import { core, coreJson, newKeys, parseJson, pmap, qs } from "./data/core";
+import { core, coreJson, keySeg, newKeys, parseJson, pmap, qs } from "./data/core";
 import { requirePermission } from "./data/perm";
 import {
 	allKeys,
@@ -306,7 +306,7 @@ export default defineHandler({
 
 		async "get-saved-search"(ctx, key: string) {
 			requirePermission(ctx, "library.read");
-			const s = await coreJson<any>(ctx, `/api/searches/${encodeURIComponent(key)}`);
+			const s = await coreJson<any>(ctx, `/api/searches/${keySeg(key, "search key")}`);
 			return { key: s.key, library: 1, name: s.name, definition: searchFromCore(s), dateModified: s.dateModified };
 		},
 

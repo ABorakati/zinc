@@ -1,7 +1,7 @@
 // `fulltext` (library.wit): indexed text, index state, and search. Core serves the text through its MCP tool get_fulltext (no plain
 // HTTP route), the search through /api/search. Writing text and reindexing have no core route yet: they answer `unavailable`.
 import { defineHandler, witError, type HandlerContext } from "./registry";
-import { coreJson, mcpText, qs } from "./data/core";
+import { coreJson, keySeg, mcpText, qs } from "./data/core";
 import { requirePermission } from "./data/perm";
 import { getDetail } from "./data/library-map";
 
@@ -48,6 +48,7 @@ export default defineHandler({
 		async "get-index-state"(ctx, attachments: string[]) {
 			requirePermission(ctx, "library.fulltext.read");
 			const out: string[] = [];
+			for (const key of attachments) keySeg(key, "attachment key"); // all of them before the first request
 			for (const key of attachments) {
 				const d = await getDetail(ctx, key);
 				if (!d || d.data.itemType !== "attachment" || d.data.linkMode === "linked_url") {

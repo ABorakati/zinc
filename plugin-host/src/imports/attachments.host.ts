@@ -4,7 +4,7 @@ import { mkdir, rm, appendFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineHandler, witError, type HandlerContext } from "./registry";
-import { core, coreJson, parseJson, pmap } from "./data/core";
+import { core, coreFetch, coreJson, idSeg, keySeg, parseJson, pmap } from "./data/core";
 import { requirePermission } from "./data/perm";
 import { getDetail, orderAttachments, type CoreDetail } from "./data/library-map";
 import { fetchForHandler } from "./net.host";
@@ -37,6 +37,7 @@ interface ImportRequest {
 /** Store `request` (bytes, or an existing file on disk that core copies) as a new attachment. */
 async function importFile(ctx: HandlerContext, r: Omit<ImportRequest, "data">, source: { data?: Uint8Array; path?: string }): Promise<string> {
 	if (!r.filename || /[\\/\0]/.test(r.filename)) throw witError("invalid-argument", "filename must be a plain file name");
+	for (const c of r.collections.slice(1)) keySeg(c, "collection key"); // before anything is created
 	const body: Record<string, unknown> = {
 		name: r.filename,
 		contentType: r.contentType,
@@ -52,8 +53,8 @@ async function importFile(ctx: HandlerContext, r: Omit<ImportRequest, "data">, s
 	const patch: Record<string, unknown> = {};
 	if (r.title) patch.title = r.title;
 	if (r.url) patch.url = r.url;
-	if (Object.keys(patch).length) await core(ctx, `/api/items/${key}`, { method: "PATCH", json: { data: patch } });
-	for (const c of r.collections.slice(1)) await core(ctx, `/api/collections/${encodeURIComponent(c)}/items`, { json: { keys: [key] } });
+	if (Object.keys(patch).length) await core(ctx, `/api/items/${keySeg(key)}`, { method: "PATCH", json: { data: patch } });
+	for (const c of r.collections.slice(1)) await core(ctx, `/api/collections/${keySeg(c, "collection key")}/items`, { json: { keys: [key] } });
 	return key;
 }
 
@@ -73,6 +74,7 @@ export default defineHandler({
 		async "get-info"(ctx, keys: string[]) {
 			requirePermission(ctx, "library.read");
 			if (keys.length > 1000) throw witError("limit-exceeded", "at most 1000 keys per call");
+			for (const k of keys) keySeg(k, "attachment key"); // all of them before the first request
 			return pmap(keys, 8, async (key) => {
 				const d = await getDetail(ctx, key);
 				if (!d || d.data.itemType !== "attachment") return undefined;
@@ -80,7 +82,7 @@ export default defineHandler({
 				let fileExists: boolean | undefined;
 				let size: bigint | undefined;
 				if (lm !== "linked-url") {
-					const res = await fetch(`${ctx.coreUrl}/api/attachments/${key}/file`, { method: "HEAD" }).catch(() => undefined);
+					const res = await coreFetch(ctx, `/api/attachments/${keySeg(key)}/file`, { method: "HEAD" }).catch(() => undefined);
 					fileExists = res?.ok === true;
 					const len = res?.headers.get("content-length");
 					if (fileExists && len) size = BigInt(len);
@@ -118,9 +120,10 @@ export default defineHandler({
 		// ------------------------------------------------------------------------------- file bytes
 		async "read-file"(ctx, key: string, offset: bigint, length: number) {
 			requirePermission(ctx, "library.files.read");
+			const seg = keySeg(key);
 			const len = Math.min(length, READ_CHUNK_MAX);
 			if (len <= 0) return new Uint8Array(0);
-			const res = await fetch(`${ctx.coreUrl}/api/attachments/${key}/file`, { headers: { Range: `bytes=${offset}-${offset + BigInt(len) - 1n}` } });
+			const res = await coreFetch(ctx, `/api/attachments/${seg}/file`, { headers: { Range: `bytes=${offset}-${offset + BigInt(len) - 1n}` } });
 			if (res.status === 416) return new Uint8Array(0);
 			if (res.status === 404) throw witError("not-found", `file of ${key}`);
 			if (!res.ok && res.status !== 206) throw witError("internal", `core answered ${res.status}`);
@@ -130,12 +133,13 @@ export default defineHandler({
 
 		async "read-file-all"(ctx, key: string, maxBytes: bigint) {
 			requirePermission(ctx, "library.files.read");
+			const seg = keySeg(key);
 			const cap = maxBytes < BigInt(READ_ALL_MAX) ? maxBytes : BigInt(READ_ALL_MAX);
-			const head = await fetch(`${ctx.coreUrl}/api/attachments/${key}/file`, { method: "HEAD" });
+			const head = await coreFetch(ctx, `/api/attachments/${seg}/file`, { method: "HEAD" });
 			if (head.status === 404) throw witError("not-found", `file of ${key}`);
 			const size = BigInt(head.headers.get("content-length") ?? "0");
 			if (size > cap) throw witError("limit-exceeded", `file is ${size} bytes, over the ${cap} byte limit`);
-			const res = await core(ctx, `/api/attachments/${key}/file`);
+			const res = await core(ctx, `/api/attachments/${seg}/file`);
 			return new Uint8Array(await res.arrayBuffer());
 		},
 
@@ -162,7 +166,7 @@ export default defineHandler({
 			const made = await coreJson<{ data: { key: string } }>(ctx, "/api/add/file", {
 				json: { name: r.path.split(/[\\/]/).pop(), contentType: r.contentType, mode: "linked_file", path: r.path, parentKey: r.parent, library: r.library },
 			});
-			if (r.title) await core(ctx, `/api/items/${made.data.key}`, { method: "PATCH", json: { data: { title: r.title } } });
+			if (r.title) await core(ctx, `/api/items/${keySeg(made.data.key)}`, { method: "PATCH", json: { data: { title: r.title } } });
 			return made.data.key;
 		},
 
@@ -178,7 +182,7 @@ export default defineHandler({
 			if (data.byteLength > WRITE_MAX) throw witError("limit-exceeded", `over ${WRITE_MAX} bytes`);
 			if (filename) throw witError("unavailable", "replace-file with a new file name needs core support; use rename-file after replacing");
 			await attachmentDetail(ctx, key);
-			await core(ctx, `/api/attachments/${key}/file`, { method: "PUT", json: { dataBase64: Buffer.from(data).toString("base64") } });
+			await core(ctx, `/api/attachments/${keySeg(key)}/file`, { method: "PUT", json: { dataBase64: Buffer.from(data).toString("base64") } });
 		},
 
 		async "rename-file"(_ctx, _key: string, _newName: string, _overwrite: boolean) {
@@ -212,19 +216,19 @@ export default defineHandler({
 		// ----------------------------------------------------------------------------- open and show
 		async "reveal-file"(ctx, key: string) {
 			requirePermission(ctx, "library.files.open");
-			await core(ctx, `/api/attachments/${key}/reveal`, { method: "POST", json: {} });
+			await core(ctx, `/api/attachments/${keySeg(key)}/reveal`, { method: "POST", json: {} });
 		},
 
 		async "open-file-external"(ctx, key: string) {
 			requirePermission(ctx, "library.files.open");
 			// core refuses a file that can run code unless {"confirm": true}; a plugin never sets it
-			await core(ctx, `/api/attachments/${key}/open-external`, { method: "POST", json: {} });
+			await core(ctx, `/api/attachments/${keySeg(key)}/open-external`, { method: "POST", json: {} });
 		},
 
 		async "storage-of"(ctx, key: string) {
 			requirePermission(ctx, "library.read");
 			const d = await attachmentDetail(ctx, key);
-			const head = await fetch(`${ctx.coreUrl}/api/attachments/${key}/file`, { method: "HEAD" }).catch(() => undefined);
+			const head = await coreFetch(ctx, `/api/attachments/${keySeg(key)}/file`, { method: "HEAD" }).catch(() => undefined);
 			const ok = head?.ok === true && linkMode(d.data.linkMode) !== "linked-url";
 			return { fileCount: ok ? 1 : 0, totalBytes: ok ? BigInt(head!.headers.get("content-length") ?? "0") : 0n };
 		},
@@ -232,7 +236,7 @@ export default defineHandler({
 		// ---------------------------------------------------------------------------------- view state
 		async "get-view-state"(ctx, key: string) {
 			requirePermission(ctx, "library.read");
-			const v = await coreJson<unknown>(ctx, `/api/attachments/${key}/view-state`);
+			const v = await coreJson<unknown>(ctx, `/api/attachments/${keySeg(key)}/view-state`);
 			return v === null ? undefined : JSON.stringify(v);
 		},
 
@@ -240,7 +244,7 @@ export default defineHandler({
 			requirePermission(ctx, "library.write");
 			const v = parseJson(state, "state");
 			if (typeof v !== "object" || v === null || Array.isArray(v)) throw witError("invalid-argument", "state must be a JSON object");
-			await core(ctx, `/api/attachments/${key}/view-state`, { method: "PUT", json: v });
+			await core(ctx, `/api/attachments/${keySeg(key)}/view-state`, { method: "PUT", json: v });
 		},
 
 		// ------------------------------------------------------------------------------ find full text
@@ -252,13 +256,13 @@ export default defineHandler({
 
 		async "get-find-job"(ctx, id: string) {
 			requirePermission(ctx, "library.read");
-			const j = await coreJson<{ id: string; done: boolean; items: { key: string; state: string; attachmentKey?: string; message?: string }[] }>(ctx, `/api/fulltext/jobs/${encodeURIComponent(id)}`);
+			const j = await coreJson<{ id: string; done: boolean; items: { key: string; state: string; attachmentKey?: string; message?: string }[] }>(ctx, `/api/fulltext/jobs/${idSeg(id, "job id")}`);
 			return { id: j.id, done: j.done, items: j.items.map((i) => ({ key: i.key, state: i.state, attachment: i.attachmentKey, message: i.message })) };
 		},
 
 		async "cancel-find-job"(ctx, id: string) {
 			requirePermission(ctx, "library.files.write");
-			await core(ctx, `/api/fulltext/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", json: {} });
+			await core(ctx, `/api/fulltext/jobs/${idSeg(id, "job id")}/cancel`, { method: "POST", json: {} });
 		},
 	},
 
