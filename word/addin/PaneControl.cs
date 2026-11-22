@@ -86,7 +86,7 @@ namespace ZoteroNext.Word
                 await _web.EnsureCoreWebView2Async(env);
                 _webViewMs = _openTimer.ElapsedMilliseconds;
                 var core = _web.CoreWebView2;
-                core.Settings.AreDevToolsEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
+                core.Settings.AreDevToolsEnabled = WebGuard.DevTools(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", site, CoreWebView2HostResourceAccessKind.Allow);

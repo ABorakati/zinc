@@ -420,6 +420,13 @@ internal static class Program
                     var sorted = FieldOrder.Sort(slots, x => x.s.Pos, x => x.s.Rank).ToList();
                     return Json.Map("order", sorted.Select(x => x.i).ToList(), "notes", slots.Select(x => x.s.Note).ToList());
                 }
+            case "h.webGuard":
+                {
+                    // what the popup's WebView2 accepts and whether DevTools are on: pure, no Word, no WebView2 page
+                    var popup = Json.Arr(Json.Get(p, "uris")).Select(u => WebGuard.IsPopupUri((string)u)).ToList();
+                    var env = Json.Arr(Json.Get(p, "envs")).Select(v => WebGuard.DevTools((string)v)).ToList();
+                    return Json.Map("popup", popup, "devtools", env, "url", WebGuard.PopupUrl);
+                }
             case "h.paneRoute":
                 {
                     // the ribbon's command routing on real (never shown) PaneControls: needs no Word, no WebView2 page.

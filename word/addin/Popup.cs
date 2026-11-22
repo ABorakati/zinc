@@ -279,11 +279,13 @@ namespace ZoteroNext.Word
                 var env = await WebHost.EnvAsync(_web);
                 await _web.EnsureCoreWebView2Async(env);
                 var core = _web.CoreWebView2;
-                core.Settings.AreDevToolsEnabled = true;
+                core.Settings.AreDevToolsEnabled = WebGuard.DevTools(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", WebHost.SiteDir(), CoreWebView2HostResourceAccessKind.Allow);
                 core.WebMessageReceived += OnMessage;
+                // the bubble shows its own page and nothing else (a link or file dropped on it must not take it elsewhere)
+                core.NavigationStarting += (s, e) => { if (!WebGuard.IsPopupUri(e.Uri)) e.Cancel = true; };
                 core.NavigationCompleted += (s, e) => { _ready = true; OfficeTheme.Apply(core, _theme); FlushPending(); };
                 core.NewWindowRequested += (s, e) =>
                 {
@@ -291,7 +293,7 @@ namespace ZoteroNext.Word
                     try { var u = e.Uri; if (u.StartsWith("https://") || u.StartsWith("http://")) System.Diagnostics.Process.Start(u); } catch { }
                 };
                 OfficeTheme.Apply(core, _theme);
-                _web.Source = new Uri("https://zn-sidebar.local/popup.html");
+                _web.Source = new Uri(WebGuard.PopupUrl);
                 Log.Write("popup ready");
             }
             catch (Exception e) { Log.Error("popup init failed", e); }
@@ -429,6 +431,7 @@ namespace ZoteroNext.Word
 
         void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            if (!WebGuard.IsPopupUri(e.Source)) { Log.Write("popup: message from foreign origin ignored: " + e.Source); return; }
             string msg;
             try { msg = e.TryGetWebMessageAsString(); } catch { return; }
             if (string.IsNullOrEmpty(msg)) return;
