@@ -15,7 +15,8 @@
 //!   zpdf_job_free(job)                           (data pointer is valid until this call)
 //!   zpdf_render_page(doc, i, scale, out, cap, u32[2] wh) -> bytes   blocking convenience that copies into `out`
 //!   zpdf_text_layer(doc, i) -> char*  (JSON: page size + word rects normalised 0..1), free with zpdf_str_free
-//!   zpdf_clear_cache(doc), zpdf_close(doc), zpdf_last_error(), zpdf_version()
+//!   zpdf_clear_cache(doc), zpdf_close(doc), zpdf_last_error(), zpdf_last_error_copy(buf, cap), zpdf_version()
+//!        (zpdf_last_error's string is freed by the next error on any thread: callers that can race with a worker use the _copy one)
 //!
 //! v0.3: the worker pool + priorities: zpdf_render3(.., prio) (render2 plus a queue priority), zpdf_job_prio(job, prio), zpdf_pool_size(doc).
 //!
@@ -50,7 +51,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -124,20 +125,49 @@ const MAX_SIDE: f32 = 16384.0;
 
 static LAST_ERROR: Mutex<Option<CString>> = Mutex::new(None);
 
-fn set_error(msg: impl Into<String>) {
-    let s = msg.into().replace('\0', " ");
-    *LAST_ERROR.lock().unwrap() = CString::new(s).ok();
+/// Lock `m`, ignoring poison. Every `extern "C"` entry point and worker goes through this: a panic that was caught elsewhere (the workers
+/// run their jobs under `catch_unwind`) while a guard was held must not turn every later call into a panic, which aborts at the FFI border.
+fn relock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The last error message (valid until the next error). Never null.
+fn set_error(msg: impl Into<String>) {
+    let s = msg.into().replace('\0', " ");
+    *relock(&LAST_ERROR) = CString::new(s).ok();
+}
+
+/// The last error message (valid until the next error). Never null. Another thread's error replaces (and frees) the string at any time,
+/// so a caller that cannot copy it at once must use `zpdf_last_error_copy` instead.
 #[unsafe(no_mangle)]
 pub extern "C" fn zpdf_last_error() -> *const c_char {
     static EMPTY: &CStr = c"";
-    match LAST_ERROR.lock().unwrap().as_ref() {
+    match relock(&LAST_ERROR).as_ref() {
         // The CString lives in the static until it is replaced; JS copies it straight away.
         Some(c) => c.as_ptr(),
         None => EMPTY.as_ptr(),
     }
+}
+
+/// Copy `msg` into `buf` as a NUL-terminated string (cut to fit) and return `msg`'s full length in bytes, without the NUL.
+fn copy_message(msg: &[u8], buf: &mut [u8]) -> usize {
+    if let Some(room) = buf.len().checked_sub(1) {
+        let n = msg.len().min(room);
+        buf[..n].copy_from_slice(&msg[..n]);
+        buf[n] = 0;
+    }
+    msg.len()
+}
+
+/// The last error message copied into the caller's buffer (`cap` bytes, NUL-terminated, cut to fit) while the error is held under its
+/// lock, so another thread's error cannot free it mid-copy. Returns the message's full length in bytes (without the NUL): a result
+/// of `cap` or more means the text was cut. Empty message: 0 and `buf` holds "".
+///
+/// # Safety
+/// `buf` must point to `cap` writable bytes (or be null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zpdf_last_error_copy(buf: *mut u8, cap: usize) -> usize {
+    let out: &mut [u8] = if buf.is_null() { &mut [] } else { unsafe { std::slice::from_raw_parts_mut(buf, cap) } };
+    copy_message(relock(&LAST_ERROR).as_ref().map_or(&[][..], |c| c.to_bytes()), out)
 }
 
 #[unsafe(no_mangle)]
@@ -180,7 +210,7 @@ impl Job {
     }
     fn finish(&self, state: i32) {
         self.state.store(state, Ordering::Release);
-        *self.done.0.lock().unwrap() = true;
+        *relock(&self.done.0) = true;
         self.done.1.notify_all();
     }
     fn prio(&self) -> f32 {
@@ -252,19 +282,46 @@ impl Shared {
         if force_pdfium() {
             return true;
         }
-        let len = *self.clen.lock().unwrap().entry(page).or_insert_with(content_len);
-        if len > HEAVY_CONTENT {
+        // measured outside the lock: a content stream that panics in the parser must not poison the table for every page
+        let known = relock(&self.clen).get(&page).copied();
+        let len = match known {
+            Some(n) => n,
+            None => {
+                let n = content_len();
+                *relock(&self.clen).entry(page).or_insert(n)
+            }
+        };
+        // a page hayro panicked on goes to PDFium however heavy it is (see `note_render`)
+        if len > HEAVY_CONTENT && relock(&self.perf).get(&page).is_none_or(|e| e[1] != f32::MAX) {
             return false;
         }
-        match self.perf.lock().unwrap().get(&page) {
+        match relock(&self.perf).get(&page) {
             Some(&[p, h]) if p > 0.0 && h > 0.0 => p <= h,
             Some(&[p, h]) if p > SLOW_PDFIUM_MS && h == 0.0 => false,
             _ => true,
         }
     }
     fn note(&self, page: usize, engine: usize, ms: f32) {
-        self.perf.lock().unwrap().entry(page).or_insert([0.0; 2])[engine] = ms.max(0.01);
+        relock(&self.perf).entry(page).or_insert([0.0; 2])[engine] = ms.max(0.01);
     }
+    /// Learn from a finished render. `Drew`: the engine's time. `Panicked`: that engine cannot draw this page, so it is recorded as the
+    /// slowest there could be and the other one is chosen from then on (recording the 0 ms the panic left behind as a time would make it
+    /// look like the quickest). `NoPage` measured nothing.
+    fn note_render(&self, page: usize, engine: usize, ms: f32, how: Rendered) {
+        match how {
+            Rendered::Drew => self.note(page, engine, ms),
+            Rendered::Panicked => self.note(page, engine, f32::MAX),
+            Rendered::NoPage => {}
+        }
+    }
+}
+
+/// How a render job ended, as far as the engine choice is concerned.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Rendered {
+    Drew,
+    Panicked,
+    NoPage,
 }
 
 /// `ZN_PDF_BACKEND=pdfium`: no per-page engine choice, PDFium draws everything it can (A/B benchmarks).
@@ -345,7 +402,7 @@ enum Wake {
 
 /// Block until there is something to do: the queued job with the lowest priority value (cancelled ones are finished on the way).
 fn wait_next(shared: &Shared, cgen: u64) -> Wake {
-    let mut q = shared.queue.lock().unwrap();
+    let mut q = relock(&shared.queue);
     loop {
         if shared.quit.load(Ordering::Acquire) {
             return Wake::Quit;
@@ -371,7 +428,7 @@ fn wait_next(shared: &Shared, cgen: u64) -> Wake {
         if let Some(i) = best {
             return Wake::Job(q.remove(i));
         }
-        q = shared.cv.wait(q).unwrap();
+        q = shared.cv.wait(q).unwrap_or_else(PoisonError::into_inner);
     }
 }
 
@@ -436,12 +493,15 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, pdfium: Option
                 let mut engine = 1;
                 // the ms the engine that drew the page needed (waiting for PDFium's lock is not part of it)
                 let mut draw_ms = 0.0f32;
+                // the engine running right now, so that a panic is charged to the one that caused it
+                let mut running: Option<usize> = None;
                 let out = catch_unwind(AssertUnwindSafe(|| {
                     let clen = || pages.get(req.page).and_then(|p| p.page_stream()).map_or(0, |s| s.len());
                     if let Some(p) = pdfium.as_ref().filter(|_| shared.prefer_pdfium(req.page, clen)) {
                         // PDFium runs one job at a time: a job that finds it busy waits for it (a page takes it 5-30 ms, hayro 2-4x that),
                         // the ones the screen is waiting for only so long, then hayro draws the page; thumbnails and the like wait as long as it takes.
                         let wait = if job.prio() < 5.0e5 { Some(URGENT_WAIT) } else { None };
+                        running = Some(0);
                         if let Ok(Some((r, ms))) = render_pdfium(p, req.page, &req, wait) {
                             engine = 0;
                             draw_ms = ms;
@@ -450,12 +510,17 @@ fn worker(bytes: Arc<Vec<u8>>, what: String, shared: Arc<Shared>, pdfium: Option
                     }
                     let page = pages.get(req.page)?;
                     let h0 = Instant::now();
+                    running = Some(1);
                     let r = render_region(page, &cache, &settings, &render_settings, &req);
                     draw_ms = h0.elapsed().as_secs_f32() * 1000.0;
                     Some(r)
                 }));
                 if pdfium.is_some() {
-                    shared.note(req.page, engine, draw_ms);
+                    match (&out, running) {
+                        (Ok(Some(_)), _) => shared.note_render(req.page, engine, draw_ms, Rendered::Drew),
+                        (Err(_), Some(e)) => shared.note_render(req.page, e, 0.0, Rendered::Panicked),
+                        _ => shared.note_render(req.page, engine, draw_ms, Rendered::NoPage),
+                    }
                 }
                 if trace() {
                     let (w0, h0) = (req.rw, req.rh);
@@ -783,6 +848,9 @@ pub unsafe extern "C" fn zpdf_pool_size(doc: *const Doc) -> i32 {
 pub unsafe extern "C" fn zpdf_page_size(doc: *const Doc, page: i32, out: *mut f32) -> i32 {
     let Some(d) = (unsafe { doc.as_ref() }) else { return -1 };
     let Some(&(w, h)) = usize::try_from(page).ok().and_then(|i| d.dims.get(i)) else { return -1 };
+    if out.is_null() {
+        return -1;
+    }
     unsafe {
         *out = w;
         *out.add(1) = h;
@@ -798,6 +866,9 @@ pub unsafe extern "C" fn zpdf_page_size(doc: *const Doc, page: i32, out: *mut f3
 pub unsafe extern "C" fn zpdf_render_size(doc: *const Doc, page: i32, scale: f32, out: *mut u32) -> i32 {
     let Some(d) = (unsafe { doc.as_ref() }) else { return -1 };
     let Some(&(w, h)) = usize::try_from(page).ok().and_then(|i| d.dims.get(i)) else { return -1 };
+    if out.is_null() {
+        return -1;
+    }
     let s = clamp_scale(w, h, scale);
     unsafe {
         *out = ((w * s) as u16) as u32;
@@ -814,7 +885,7 @@ pub unsafe extern "C" fn zpdf_render_size(doc: *const Doc, page: i32, scale: f32
 pub unsafe extern "C" fn zpdf_clear_cache(doc: *const Doc) {
     if let Some(d) = unsafe { doc.as_ref() } {
         d.shared.cache_gen.fetch_add(1, Ordering::AcqRel);
-        let _q = d.shared.queue.lock().unwrap();
+        let _q = relock(&d.shared.queue);
         d.shared.cv.notify_all();
     }
 }
@@ -832,13 +903,13 @@ pub unsafe extern "C" fn zpdf_close(doc: *mut Doc) {
     let mut d = unsafe { Box::from_raw(doc) };
     d.shared.quit.store(true, Ordering::Release);
     {
-        let _q = d.shared.queue.lock().unwrap();
+        let _q = relock(&d.shared.queue);
         d.shared.cv.notify_all();
     }
     for j in d.joins.drain(..) {
         let _ = j.join();
     }
-    for c in d.shared.queue.lock().unwrap().drain(..) {
+    for c in relock(&d.shared.queue).drain(..) {
         c.job().finish(-2);
     }
 }
@@ -863,7 +934,7 @@ fn submit(d: &Doc, cmd: Cmd) -> *const Job {
         set_error("worker is gone");
         return std::ptr::null();
     }
-    d.shared.queue.lock().unwrap().push(cmd);
+    relock(&d.shared.queue).push(cmd);
     d.shared.cv.notify_one();
     Arc::into_raw(job)
 }
@@ -916,6 +987,9 @@ pub unsafe extern "C" fn zpdf_render_size2(doc: *const Doc, page: i32, scale: f3
     let Some(d) = (unsafe { doc.as_ref() }) else { return -1 };
     let Some(&(w, h)) = usize::try_from(page).ok().and_then(|i| d.dims.get(i)) else { return -1 };
     let (w, h) = if rot.rem_euclid(180) == 0 { (w, h) } else { (h, w) };
+    if out.is_null() {
+        return -1;
+    }
     let s = clamp_scale(w, h, scale);
     unsafe {
         *out = ((w * s) as u16) as u32;
@@ -963,7 +1037,7 @@ pub unsafe extern "C" fn zpdf_job_poll(job: *const Job) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_job_wait(job: *const Job, timeout_ms: u32) -> i32 {
     let Some(j) = (unsafe { job.as_ref() }) else { return -1 };
-    let guard = j.done.0.lock().unwrap();
+    let guard = relock(&j.done.0);
     let _ = j
         .done
         .1
@@ -978,6 +1052,9 @@ pub unsafe extern "C" fn zpdf_job_wait(job: *const Job, timeout_ms: u32) -> i32 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_job_size(job: *const Job, out: *mut u32) -> i32 {
     let Some(j) = (unsafe { job.as_ref() }) else { return -1 };
+    if out.is_null() {
+        return -1;
+    }
     unsafe {
         *out = j.width.load(Ordering::Relaxed);
         *out.add(1) = j.height.load(Ordering::Relaxed);
@@ -1026,6 +1103,10 @@ pub unsafe extern "C" fn zpdf_job_free(job: *const Job) {
 /// `out` must point to `cap` writable bytes, `wh` to two `u32`s.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn zpdf_render_page(doc: *const Doc, page: i32, scale: f32, out: *mut u8, cap: usize, wh: *mut u32) -> i64 {
+    if out.is_null() || wh.is_null() {
+        set_error("null output pointer");
+        return -1;
+    }
     let job = unsafe { zpdf_render_begin(doc, page, scale) };
     if job.is_null() {
         return -1;
@@ -1341,21 +1422,146 @@ fn text_layer_json(page: &hayro::hayro_syntax::page::Page<'_>) -> String {
     let words = group_words(&col.glyphs);
 
     let mut out = String::with_capacity(64 + words.len() * 64);
-    out.push_str(&format!("{{\"pw\":{pw:.2},\"ph\":{ph:.2},\"words\":["));
+    out.push_str(&format!("{{\"pw\":{:.2},\"ph\":{:.2},\"words\":[", finite(pw), finite(ph)));
     let mut first = true;
     for w in &words {
-        let x = (w.x0 / pw).clamp(0.0, 1.0);
-        let y = (w.y0 / ph).clamp(0.0, 1.0);
-        let ww = ((w.x1 - w.x0) / pw).clamp(0.0, 1.0);
-        let hh = ((w.y1 - w.y0) / ph).clamp(0.0, 1.0);
         if !first {
             out.push(',');
         }
         first = false;
-        out.push_str("{\"t\":\"");
-        json_escape(&w.text, &mut out);
-        out.push_str(&format!("\",\"x\":{x:.5},\"y\":{y:.5},\"w\":{ww:.5},\"h\":{hh:.5},\"l\":{}}}", w.line));
+        push_word_json(w, pw, ph, &mut out);
     }
     out.push_str("]}");
     out
+}
+
+/// `v` itself when it is a number, else 0: `{:.5}` prints NaN / inf as `NaN` / `inf`, which is not JSON.
+fn finite(v: f32) -> f32 {
+    if v.is_finite() { v } else { 0.0 }
+}
+
+/// A fraction of the page, 0..1 (NaN from a 0 / 0 page side or a glyph with no geometry becomes 0; `f32::clamp` passes NaN through).
+fn unit(v: f32) -> f32 {
+    if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) }
+}
+
+fn push_word_json(w: &Word, pw: f32, ph: f32, out: &mut String) {
+    let x = unit(w.x0 / pw);
+    let y = unit(w.y0 / ph);
+    let ww = unit((w.x1 - w.x0) / pw);
+    let hh = unit((w.y1 - w.y0) / ph);
+    out.push_str("{\"t\":\"");
+    json_escape(&w.text, out);
+    out.push_str(&format!("\",\"x\":{x:.5},\"y\":{y:.5},\"w\":{ww:.5},\"h\":{hh:.5},\"l\":{}}}", w.line));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shared() -> Shared {
+        Shared {
+            queue: Mutex::new(Vec::new()),
+            cv: Condvar::new(),
+            quit: AtomicBool::new(false),
+            cache_gen: AtomicU64::new(0),
+            perf: Mutex::new(HashMap::new()),
+            clen: Mutex::new(HashMap::new()),
+        }
+    }
+
+    #[test]
+    fn copy_message_cuts_to_fit_and_reports_the_full_length() {
+        let mut buf = [0xAAu8; 8];
+        assert_eq!(copy_message(b"abc", &mut buf), 3);
+        assert_eq!(&buf[..4], b"abc\0");
+        assert_eq!(copy_message(b"0123456789", &mut buf), 10);
+        assert_eq!(&buf, b"0123456\0");
+        assert_eq!(copy_message(b"", &mut buf), 0);
+        assert_eq!(buf[0], 0);
+        let mut none: [u8; 0] = [];
+        assert_eq!(copy_message(b"abc", &mut none), 3, "no room: nothing written, the length still comes back");
+        let mut one = [0xAAu8; 1];
+        assert_eq!(copy_message(b"abc", &mut one), 3);
+        assert_eq!(one, [0]);
+    }
+
+    #[test]
+    fn last_error_copy_is_a_terminated_copy_of_a_message() {
+        set_error("something went wrong");
+        let mut buf = [0xAAu8; 64];
+        let n = unsafe { zpdf_last_error_copy(buf.as_mut_ptr(), buf.len()) };
+        assert!(n < buf.len());
+        assert_eq!(buf[n], 0, "NUL-terminated at the reported length");
+        // (other tests set errors too, so only what one call returns is checked: its text and its length agree)
+        assert_eq!(buf[..n].iter().position(|&b| b == 0), None, "no NUL inside the text");
+        assert!(unsafe { zpdf_last_error_copy(std::ptr::null_mut(), 0) } < 1 << 16, "a null buffer is allowed: the length only");
+    }
+
+    #[test]
+    fn locks_survive_a_panic_in_a_caught_job() {
+        let sh = shared();
+        // a content stream that panics while its length is measured, and a panic while the perf table is held
+        assert!(catch_unwind(AssertUnwindSafe(|| sh.prefer_pdfium(0, || panic!("broken stream")))).is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            let _g = relock(&sh.perf);
+            panic!("while noting");
+        }))
+        .is_err());
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            let _g = relock(&LAST_ERROR);
+            panic!("while setting the error");
+        }))
+        .is_err());
+        assert!(sh.prefer_pdfium(0, || 10), "later renders still choose an engine");
+        sh.note(0, 0, 5.0);
+        set_error("still works");
+        assert!(sh.prefer_pdfium(1, || 10));
+    }
+
+    #[test]
+    fn a_failed_engine_is_not_recorded_as_the_fastest() {
+        let sh = shared();
+        // PDFium was slow on page 3, so hayro was tried and panicked
+        sh.note(3, 0, 200.0);
+        assert!(!sh.prefer_pdfium(3, || 10), "hayro is tried first");
+        sh.note_render(3, 1, 0.0, Rendered::Panicked);
+        assert!(sh.prefer_pdfium(3, || 10), "a page hayro cannot draw goes back to PDFium");
+        // and a page that is too heavy for PDFium still goes to PDFium once hayro failed on it
+        assert!(!sh.prefer_pdfium(4, || HEAVY_CONTENT + 1));
+        sh.note_render(4, 1, 0.0, Rendered::Panicked);
+        assert!(sh.prefer_pdfium(4, || HEAVY_CONTENT + 1));
+        // PDFium panicking on a page leaves hayro to draw it
+        sh.note(5, 1, 30.0);
+        sh.note_render(5, 0, 0.0, Rendered::Panicked);
+        assert!(!sh.prefer_pdfium(5, || 10));
+        // a missing page teaches nothing
+        sh.note_render(6, 1, 0.0, Rendered::NoPage);
+        assert!(sh.perf.lock().unwrap().get(&6).is_none());
+    }
+
+    #[test]
+    fn text_layer_numbers_are_always_json_numbers() {
+        let w = Word { text: "a\"b".into(), x0: f32::NAN, y0: 5.0, x1: f32::NAN, y1: f32::NAN, line: 2 };
+        let mut s = String::new();
+        push_word_json(&w, 0.0, 0.0, &mut s); // a page with no size: 0 / 0
+        assert_eq!(s, r#"{"t":"a\"b","x":0.00000,"y":1.00000,"w":0.00000,"h":0.00000,"l":2}"#);
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let w = Word { text: "x".into(), x0: bad, y0: bad, x1: bad, y1: bad, line: 0 };
+            let mut s = String::new();
+            push_word_json(&w, bad, bad, &mut s);
+            assert!(!s.contains("NaN") && !s.contains("inf"), "{s}");
+        }
+        assert_eq!((finite(f32::NAN), finite(f32::INFINITY), finite(612.0)), (0.0, 0.0, 612.0));
+    }
+
+    #[test]
+    fn out_pointers_are_checked() {
+        unsafe {
+            assert_eq!(zpdf_render_page(std::ptr::null(), 0, 1.0, std::ptr::null_mut(), 0, std::ptr::null_mut()), -1);
+            assert_eq!(zpdf_job_size(std::ptr::null(), std::ptr::null_mut()), -1);
+            let job = Job::new(0.0);
+            assert_eq!(zpdf_job_size(Arc::as_ptr(&job), std::ptr::null_mut()), -1, "a live job, no place to write its size");
+        }
+    }
 }
