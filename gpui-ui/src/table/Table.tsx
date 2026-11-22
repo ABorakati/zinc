@@ -607,6 +607,12 @@ export function TableView(): JSX.Element {
 	function onOverlayMove(e: EventPayload) {
 		const g = gesture();
 		if (!g) return;
+		if (e.pressedButton === undefined || e.pressedButton === null) {
+			// the button was released outside the window: the gesture is over (a column drag is dropped nowhere), as in ui/resizable.tsx
+			setGesture(null);
+			setPending(null);
+			return;
+		}
 		if (g.kind === "resize") engine.setWidth(g.id, g.w0 + (e.x ?? 0) - g.x0);
 		else setGesture({ ...g, at: slotAt(e.x ?? 0) });
 	}
