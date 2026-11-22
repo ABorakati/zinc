@@ -2,8 +2,8 @@
 .SYNOPSIS
   Removes the per-user registration made by install.ps1. Leaves your documents and your Zinc library alone.
 .DESCRIPTION
-  -RemoveData also deletes %APPDATA%\ZoteroNextWord (settings) and %LOCALAPPDATA%\ZoteroNextWord (WebView2 profile,
-  downloaded styles, log).
+  -RemoveData also deletes %APPDATA%\ZoteroNextWord (settings), %LOCALAPPDATA%\ZoteroNextWord (WebView2 profile,
+  downloaded styles, log) and %APPDATA%\zotero-next-word (the token an AI agent uses to reach the add-in).
   -TestHive <file>  operate on a private registry hive file instead of the real HKCU (for testing the script).
 #>
 [CmdletBinding()]
@@ -15,6 +15,34 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $AddinDir) { $AddinDir = Join-Path $here 'dist\addin' }
+
+# The add-in's dll in its folder; $null when there is no such folder (a half-removed install, a manual run with a wrong path).
+function Resolve-AddinDll {
+  param([string]$Dir)
+  $r = $null
+  if ($Dir) { $r = Resolve-Path -LiteralPath $Dir -ErrorAction SilentlyContinue }
+  if (-not $r) { return $null }
+  return Join-Path $r.Path 'ZoteroNextWord.dll'
+}
+
+# Runs $Unregister with HKCR redirected (by $Redirect, which returns a Win32 error code, 0 on success). When the redirect
+# fails nothing runs: the unregister would then act on the real, merged HKCR. Returns whether it ran.
+function Invoke-RedirectedUnregister {
+  param([scriptblock]$Redirect, [scriptblock]$Restore, [scriptblock]$Unregister)
+  $rc = & $Redirect
+  if ($rc -ne 0) {
+    Write-Warning "Could not redirect HKCR to this user's keys (error $rc): the registered classes are removed key by key instead."
+    return $false
+  }
+  try { & $Unregister } finally { [void](& $Restore) }
+  return $true
+}
+
+# What -RemoveData deletes.
+function Get-DataFolders {
+  param([string]$Roaming, [string]$Local)
+  return @((Join-Path $Roaming 'ZoteroNextWord'), (Join-Path $Local 'ZoteroNextWord'), (Join-Path $Roaming 'zotero-next-word'))
+}
 
 if ($PSVersionTable.PSEdition -eq 'Core') {
   $args2 = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $MyInvocation.MyCommand.Path, '-AddinDir', $AddinDir)
@@ -47,28 +75,33 @@ if ($TestHive) {
   $root = [Microsoft.Win32.Registry]::CurrentUser
 }
 
-$dll = Join-Path ((Resolve-Path $AddinDir -ErrorAction SilentlyContinue).Path) 'ZoteroNextWord.dll'
-$null = [AppDomain]::CurrentDomain.add_AssemblyResolve({
-  param($s, $e)
-  $p = Join-Path (Split-Path $dll) (($e.Name -split ',')[0] + '.dll')
-  if (Test-Path $p) { return [Reflection.Assembly]::LoadFrom($p) }
-  return $null
-})
+$dll = Resolve-AddinDll $AddinDir
+if ($dll) {
+  $null = [AppDomain]::CurrentDomain.add_AssemblyResolve({
+    param($s, $e)
+    $p = Join-Path (Split-Path $dll) (($e.Name -split ',')[0] + '.dll')
+    if (Test-Path $p) { return [Reflection.Assembly]::LoadFrom($p) }
+    return $null
+  })
+} else {
+  Write-Warning "Add-in folder not found ($AddinDir): the registry entries are removed without the add-in's own unregister code."
+}
 
 $root.DeleteSubKeyTree('Software\Microsoft\Office\Word\Addins\ZoteroNext.WordAddIn', $false)
 $root.DeleteSubKeyTree('Software\ZoteroNextWord', $false)
 
 $classes = $root.CreateSubKey('Software\Classes')
 try {
-  [void][ZnReg]::RegOverridePredefKey([ZnReg]::HKCR, $classes.Handle.DangerousGetHandle())
-  try {
-    if (Test-Path $dll) {
-      $asm = [Reflection.Assembly]::LoadFrom($dll)
-      $rs = New-Object System.Runtime.InteropServices.RegistrationServices
-      [void]$rs.UnregisterAssembly($asm)
-    }
-  } finally {
-    [void][ZnReg]::RegOverridePredefKey([ZnReg]::HKCR, [IntPtr]::Zero)
+  if ($dll -and (Test-Path $dll)) {
+    $classesHandle = $classes.Handle.DangerousGetHandle()
+    [void](Invoke-RedirectedUnregister `
+      -Redirect { [ZnReg]::RegOverridePredefKey([ZnReg]::HKCR, $classesHandle) } `
+      -Restore { [ZnReg]::RegOverridePredefKey([ZnReg]::HKCR, [IntPtr]::Zero) } `
+      -Unregister {
+        $asm = [Reflection.Assembly]::LoadFrom($dll)
+        $rs = New-Object System.Runtime.InteropServices.RegistrationServices
+        [void]$rs.UnregisterAssembly($asm)
+      })
   }
 } finally { $classes.Close() }
 # belt and braces if the dll is gone: remove the ProgIds and (known) CLSIDs directly
@@ -91,6 +124,6 @@ if ($TestHive) {
 }
 
 if ($RemoveData) {
-  foreach ($d in "$env:APPDATA\ZoteroNextWord", "$env:LOCALAPPDATA\ZoteroNextWord") { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
+  foreach ($d in (Get-DataFolders -Roaming $env:APPDATA -Local $env:LOCALAPPDATA)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
 }
 Write-Host 'Zinc Word add-in unregistered.'
