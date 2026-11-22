@@ -38,6 +38,7 @@ import {
 	type Appearance,
 } from "./core/appearance";
 import { BitmapCache, type LinkInfo, type Margins, PageSlot, type PageEnv, type PageStats, type ViewRect } from "./core/Page";
+import { settleLinks } from "./core/linksCache";
 import { Previews, type PreviewWant } from "./core/preview";
 import { Scheduler } from "./core/scheduler";
 import { runSelfTest, selfTestDir } from "./selftest";
@@ -1138,19 +1139,16 @@ export function Reader(props: ReaderProps): JSX.Element {
 			s.add({
 				pri: () => band * 1e6 + Math.abs(i - untrack(curPage)),
 				dropped: () => {
-					linksCache.delete(i);
+					if (linksCache.get(i) === p) linksCache.delete(i); // (not the entry the next document made for this page)
 					res([]);
 				},
 				run: async () => {
 					try {
 						const ls = (await d.linksAsync(i)).filter((l) => l.k === "page" || isSafeUrl(l.u)).map(toLink);
-						if (doc() === d) {
-							linksCache.set(i, ls);
-							setLinksVer((n) => n + 1);
-						}
+						if (settleLinks(linksCache, doc(), d, i, ls)) setLinksVer((n) => n + 1);
 						res(ls);
 					} catch {
-						linksCache.set(i, []);
+						settleLinks(linksCache, doc(), d, i, []); // (only for the open document: a late failure of a replaced one must not seed this cache)
 						res([]);
 					}
 				},
