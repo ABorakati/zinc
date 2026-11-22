@@ -1,6 +1,6 @@
 // Small building blocks of the item pane (the GPUI counterpart of ui/src/itempane/ui.tsx): section frame, label/value rows,
 // click-to-edit fields on native <input>/<textarea>, icon/text buttons and an autocomplete picker. Class strings are the web UI's.
-import { children, createContext, createEffect, createMemo, createSignal, For, on, onCleanup, Show, useContext, type JSX } from "solid-js";
+import { children, createContext, createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, useContext, type JSX } from "solid-js";
 import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
@@ -454,12 +454,16 @@ export function Field(p: {
 	let base = p.value;
 	let editKey: string | undefined;
 	let saveLeft: ((v: string) => void) | undefined;
+	const whoseEdit = () => {
+		editKey = pane?.itemKey();
+		saveLeft = p.saveWhenLeft?.();
+	};
+	if (p.startEditing) untrack(whoseEdit); // a rename opens in the editor: start() does not run for it
 	const start = () => {
 		if (locked()) return;
 		draft = p.value;
 		base = p.value;
-		editKey = pane?.itemKey();
-		saveLeft = p.saveWhenLeft?.();
+		whoseEdit();
 		cancelled = false;
 		setEditing(true);
 	};

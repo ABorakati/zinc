@@ -100,6 +100,16 @@ function AttachmentRow(p: { c: ChildSummary }): JSX.Element {
 						startEditing
 						value={c().title}
 						onSave={rename}
+						saveWhenLeft={() => {
+							const key = c().key;
+							return (title) => {
+								if (title.trim())
+									void guard("Could not rename attachment", async () => {
+										await ipApi.patchItem(key, { title });
+										pane.refreshList();
+									});
+							};
+						}}
 						onEditing={(e) => {
 							if (!e) setRenaming(false);
 						}}

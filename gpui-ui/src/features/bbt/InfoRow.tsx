@@ -70,6 +70,21 @@ function CitationKeyRow(): JSX.Element {
 							const target = pinTarget(v, info()?.key ?? "");
 							if (target) pin(target);
 						}}
+						saveWhenLeft={() => {
+							const item = key();
+							const was = info()?.key ?? "";
+							return (v) => {
+								const target = pinTarget(v, was);
+								if (!item || !target) return;
+								bbtApi.pin(item, target).then(
+									() => {
+										bumpBbt();
+										pane.refreshList();
+									},
+									(e) => fail("Could not pin the citation key", e),
+								);
+							};
+						}}
 						end={
 							<Show when={info()?.pinned}>
 								<div style={{ marginLeft: 4, paddingTop: 2 }}>
