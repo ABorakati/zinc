@@ -199,6 +199,8 @@ export interface HostInfo {
 	uri: { base: string; userId: string | null; source: string };
 	settings: Record<string, any>;
 	zn: { up: boolean; api: string; launcher: string; launcherExists: boolean };
+	/** How this word processor stores citations, as Zotero's fieldType document preference names it (default "Field": Word). */
+	fieldType?: string;
 }
 
 const DEFAULT_STYLE = "vancouver";
@@ -603,9 +605,17 @@ export class App {
 	private async ensurePrefs(): Promise<DocPrefs> {
 		const st = await this.docState();
 		if (st.prefs) return st.prefs;
+		const p = this.newPrefs();
+		await this.writePrefs(p);
+		return p;
+	}
+
+	/** Preferences for a document that has none: the default style, and the field type of this word processor (Word's
+	 * "Field", LibreOffice's "ReferenceMark"; host.info names it), which Zotero checks before it touches the document. */
+	private newPrefs(): DocPrefs {
 		const d = this.defaults;
 		const p = defaultPrefs(d.style, d.locale);
-		await this.writePrefs(p);
+		if (this.info?.fieldType) p.fieldType = this.info.fieldType;
 		return p;
 	}
 
@@ -977,10 +987,7 @@ export class App {
 		const st = await this.docState();
 		let prefs = st.prefs;
 		const missing: string[] = [];
-		if (!prefs) {
-			const d = this.defaults;
-			prefs = defaultPrefs(d.style, d.locale);
-		}
+		if (!prefs) prefs = this.newPrefs();
 		const styleId = styleUrlToId(prefs.styleId);
 		const base = {
 			fields,

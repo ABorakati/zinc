@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A "Zinc" menu and toolbar in Writer, the counterparts of the Word add-in's ribbon group. Each command opens the Zinc
+     sidebar deck and hands the command to the page (main.ts handles "insertCitation", "insertBibliography", "refresh",
+     "editCitation" as it does for the ribbon). -->
+<oor:component-data xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" oor:name="Addons" oor:package="org.openoffice.Office">
+  <node oor:name="AddonUI">
+    <node oor:name="OfficeMenuBar">
+      <node oor:name="dev.zinc.libreoffice.menu" oor:op="replace">
+        <prop oor:name="Title" oor:type="xs:string">
+          <value xml:lang="en-US">Zin~c</value>
+        </prop>
+        <prop oor:name="Context" oor:type="xs:string">
+          <value>com.sun.star.text.TextDocument</value>
+        </prop>
+        <node oor:name="Submenu">
+          <node oor:name="m1" oor:op="replace">
+            <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:insertCitation</value></prop>
+            <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">Insert ~Citation</value></prop>
+            <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          </node>
+          <node oor:name="m2" oor:op="replace">
+            <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:editCitation</value></prop>
+            <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">~Edit Citation</value></prop>
+            <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          </node>
+          <node oor:name="m3" oor:op="replace">
+            <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:insertBibliography</value></prop>
+            <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">Insert ~Bibliography</value></prop>
+            <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          </node>
+          <node oor:name="m4" oor:op="replace">
+            <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:refresh</value></prop>
+            <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">~Refresh</value></prop>
+            <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          </node>
+          <node oor:name="m5" oor:op="replace">
+            <prop oor:name="URL" oor:type="xs:string"><value>private:separator</value></prop>
+          </node>
+          <node oor:name="m6" oor:op="replace">
+            <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:show</value></prop>
+            <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">Show Zinc ~Sidebar</value></prop>
+            <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          </node>
+        </node>
+      </node>
+    </node>
+    <node oor:name="OfficeToolBar">
+      <node oor:name="dev.zinc.libreoffice.toolbar" oor:op="replace">
+        <prop oor:name="Title" oor:type="xs:string">
+          <value xml:lang="en-US">Zinc</value>
+        </prop>
+        <node oor:name="t1" oor:op="replace">
+          <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:insertCitation</value></prop>
+          <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">Insert Citation</value></prop>
+          <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          <prop oor:name="Context" oor:type="xs:string"><value>com.sun.star.text.TextDocument</value></prop>
+        </node>
+        <node oor:name="t2" oor:op="replace">
+          <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:insertBibliography</value></prop>
+          <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">Insert Bibliography</value></prop>
+          <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          <prop oor:name="Context" oor:type="xs:string"><value>com.sun.star.text.TextDocument</value></prop>
+        </node>
+        <node oor:name="t3" oor:op="replace">
+          <prop oor:name="URL" oor:type="xs:string"><value>vnd.zinc.lo:refresh</value></prop>
+          <prop oor:name="Title" oor:type="xs:string"><value xml:lang="en-US">Refresh Citations</value></prop>
+          <prop oor:name="Target" oor:type="xs:string"><value>_self</value></prop>
+          <prop oor:name="Context" oor:type="xs:string"><value>com.sun.star.text.TextDocument</value></prop>
+        </node>
+      </node>
+    </node>
+  </node>
+</oor:component-data>

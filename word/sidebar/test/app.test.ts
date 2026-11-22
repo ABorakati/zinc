@@ -708,3 +708,22 @@ describe("the Bibliography style's format, as Zotero sets it", () => {
 		expect(parsePrefsXml((host as any).prefsXml)?.bibliographyStyleHasBeenSet).toBe(true);
 	});
 });
+
+describe("field type of a new document", () => {
+	test("a host that stores citations as reference marks (LibreOffice) gets fieldType ReferenceMark; Word keeps Field", async () => {
+		for (const [fieldType, want] of [
+			["ReferenceMark", "ReferenceMark"],
+			[undefined, "Field"],
+		] as const) {
+			const { host, app } = setup();
+			const call = host.call.bind(host);
+			host.call = async (m: string, p?: Record<string, unknown>) => {
+				const r = await call(m, p);
+				return m === "host.info" && fieldType ? { ...r, fieldType } : r;
+			};
+			await app.init();
+			await app.insertCitation([(await app.pickFromKey("AAAA1111"))!]);
+			expect(parsePrefsXml(host.prefsXml)!.fieldType).toBe(want);
+		}
+	});
+});
