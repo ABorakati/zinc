@@ -46,7 +46,7 @@ export function textWidth(s: string, size: number, weight = 400): number {
 	let w = cache.get(key);
 	if (w === undefined) {
 		let em = 0;
-		for (let i = 0; i < s.length; i++) em += emOf(s.charCodeAt(i));
+		for (const ch of s) em += emOf(ch.codePointAt(0)!); // by code point: an emoji is one character, not two UTF-16 units
 		w = em * size * stretch(weight);
 		if (cache.size > 20000) cache.clear();
 		cache.set(key, w);
@@ -70,10 +70,11 @@ export function clipText(s: string, maxPx: number, size: number, weight = 400, s
 		i = 0;
 	const limit = (budget - ell) / k;
 	while (i < s.length) {
-		const next = em + emOf(s.charCodeAt(i));
+		const cp = s.codePointAt(i)!;
+		const next = em + emOf(cp);
 		if (next > limit) break;
 		em = next;
-		i++;
+		i += cp > 0xffff ? 2 : 1; // never cut between the two halves of a surrogate pair
 	}
 	return s.slice(0, i).trimEnd() + ELLIPSIS;
 }
