@@ -39,10 +39,18 @@ export class UiHostError extends Error {
 
 const NO_MODS: Modifiers = { shift: false, ctrl: false, alt: false, meta: false };
 
-/** A supervisor-shaped adapter over the handler context (calls go through `ctx.callExport`), with `get` from the app's supervisor. */
+/**
+ * A supervisor-shaped adapter over the handler context, with `get` from the app's supervisor. Calls go through the supervisor's own
+ * queue: `ui.open-dialog` mounts its dialog while the plugin's call is still open, and `ctx.callExport` refuses that as re-entrant.
+ * The queued call waits for the plugin's current call, which does not wait for it. Without a supervisor (unit tests) the context's
+ * `callExport` is used.
+ */
 function adapter(ctx: HostCtx): UiSupervisor {
 	return {
-		call: (_id, iface, fn, args) => ctx.callExport(iface, fn, args),
+		call: (id, iface, fn, args) => {
+			const sup = getPluginSupervisor();
+			return sup ? sup.call(id, iface, fn, args) : ctx.callExport(iface, fn, args);
+		},
 		get: (id) => getPluginSupervisor()?.get(id),
 		on: (e, h) => getPluginSupervisor()?.on(e as "status", h) ?? (() => {}),
 	};
