@@ -37,7 +37,14 @@ export function sameRow(a: Row | undefined, b: Row | undefined): boolean {
 			a.last === b.last &&
 			a.child === b.child
 		);
-	return a === b;
+	// by what it shows: the groups are new objects after every refresh, and a header must not be mounted again for that
+	return (
+		b.kind === "header" &&
+		a.group.value === b.group.value &&
+		a.group.label === b.group.label &&
+		a.group.count === b.group.count &&
+		a.group.start === b.group.start
+	);
 }
 
 const typeLabel = (t: string) => t.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
