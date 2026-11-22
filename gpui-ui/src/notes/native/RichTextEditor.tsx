@@ -2,13 +2,14 @@
 // under Toolbar.tsx. The note is read with parse.ts, and every edit is serialized back with serialize.ts inside the note's own
 // <div data-schema-version data-citation-items> wrapper and saved 800 ms after the last change, when the editor closes and on Done,
 // like the Markdown editor (itempane/Notes.tsx). Citations and annotation highlights keep their raw attributes.
-import { createResource, createSignal, onCleanup, Show, type JSX } from "solid-js";
+import { createComputed, createResource, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/native";
 import type { KeyEvent } from "@gpuix/native/host";
 import { openLink } from "../../itempane/actions";
 import { locked, t, tok, tx, TextBtn } from "../../itempane/kit";
 import { fail, usePane } from "../../itempane/model";
 import { ipApi } from "../../itempane/net";
+import { noteSettled, openNoteSession, type NoteSession } from "../../itempane/noteSession";
 import { store } from "../../store";
 import { withAlpha } from "../../theme";
 import { loadNoteParser, type NoteNode } from "./parse";
@@ -19,7 +20,8 @@ export interface RichTextEditorProps {
 	noteKey: string;
 	/** Done: back to the read-only view (the pending save is flushed first) */
 	onClose?: () => void;
-	onSaved?: (html: string) => void;
+	/** `key` is the note that was saved (an editor can outlive the note it was opened on by one save) */
+	onSaved?: (html: string, key: string) => void;
 	height?: number;
 	fill?: boolean;
 }
@@ -40,65 +42,74 @@ const parseJson = <T,>(s: string | undefined): T | null => {
 };
 
 export function RichTextEditor(p: RichTextEditorProps): JSX.Element {
-	const pane = usePane();
+	const refreshList = usePane().refreshList; // saves can land after the pane is gone: nothing in them reads props or pane state
 	// the note as stored (its wrapper's metadata is what saves are written inside) and as a document for the element
 	const [loaded] = createResource(
 		() => p.noteKey,
 		async (k) => {
 			try {
+				const settled = await noteSettled(k); // an editor just closed on this note may still be saving: its text, not the stored one
 				const [d, parser] = await Promise.all([ipApi.item(k), loadNoteParser()]);
 				const html = (d.data.note as string | undefined) ?? "";
-				return { html, doc: parser ? JSON.stringify(parser.parse(html)) : null };
+				const shown = settled?.html ?? html;
+				return { key: k, html, doc: parser ? JSON.stringify(parser.parse(shown)) : null, settled: parser ? settled : null };
 			} catch (e) {
 				fail("Could not load the note", e);
-				return { html: "", doc: null };
+				return { key: k, html: "", doc: null, settled: null };
 			}
 		},
 	);
-	let source = ""; // the HTML as last loaded or saved
-	let draft: string | null = null; // the element's latest document (JSON), unsaved while `dirty`
-	let dirty = false;
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	// a note whose load has not finished (or is of the note an earlier key named) is not shown: its text is never saved under this key
+	const ready = () => {
+		const l = loaded();
+		return l && !loaded.loading && l.key === p.noteKey ? l : undefined;
+	};
+	let session: NoteSession<string> | undefined; // one per loaded note; its edits are the element's latest document (JSON)
+	const retire = () => {
+		const s = session;
+		session = undefined;
+		void s?.close(); // saves the last edit on the session's own key
+	};
 	const [status, setStatus] = createSignal<"" | "Saving…" | "Saved">("");
+	createComputed(() => {
+		const l = ready();
+		retire();
+		setStatus("");
+		if (!l?.doc) return;
+		const s: NoteSession<string> = openNoteSession<string>({
+			key: l.key,
+			base: l.html,
+			// the display-only citation text is dropped by serializeNote; an unchanged note is not written
+			build: (draft, base) => {
+				const doc = parseJson<NoteNode>(draft);
+				return doc ? serializeNote(doc, base) : null;
+			},
+			patch: (key, out) => ipApi.patchItem(key, { note: out }),
+			onStatus: (v) => {
+				if (session === s) setStatus(v);
+			},
+			onSaved: (out) => {
+				refreshList();
+				p.onSaved?.(out, l.key);
+			},
+			onError: (e) => fail("Could not save the note", e),
+		});
+		session = s;
+		if (l.settled) {
+			l.settled.take();
+			s.edit(l.doc); // the unsaved text of the editor closed just before is saved by this one
+		}
+	});
+	onCleanup(retire);
 	const [sel, setSel] = createSignal<SelectionState | null>(null);
 	const [panel, setPanel] = createSignal<Panel>(null);
 	const [command, setCommand] = createSignal<{ seq: number; name: string; args?: Record<string, unknown> }>({ seq: 1, name: "focus" });
 	let seq = 1;
 	const run = (name: string, args?: Record<string, unknown>) => setCommand({ seq: ++seq, name, args });
 
-	async function flush() {
-		clearTimeout(timer);
-		if (!dirty || draft === null) return;
-		dirty = false;
-		const doc = parseJson<NoteNode>(draft);
-		if (!doc) return;
-		// the display-only citation text is dropped by serializeNote; an unchanged note is not written
-		const out = serializeNote(doc, source);
-		if (out === source) return;
-		setStatus("Saving…");
-		try {
-			await ipApi.patchItem(p.noteKey, { note: out });
-			source = out;
-			setStatus("Saved");
-			p.onSaved?.(out);
-			pane.refreshList();
-		} catch (e) {
-			dirty = true;
-			setStatus("");
-			fail("Could not save the note", e);
-		}
-	}
-	onCleanup(() => {
-		clearTimeout(timer);
-		void flush();
-	});
-
+	const flush = (): Promise<boolean> => session?.flush() ?? Promise.resolve(true);
 	const onChange = (e: EventPayload) => {
-		draft = e.value ?? null;
-		dirty = true;
-		setStatus("");
-		clearTimeout(timer);
-		timer = setTimeout(() => void flush(), 800);
+		if (e.value != null) session?.edit(e.value);
 	};
 	const onKeyDown = (e: KeyEvent) => {
 		// Ctrl/Cmd+K arrives here from the element: open the toolbar's link field
@@ -119,9 +130,8 @@ export function RichTextEditor(p: RichTextEditorProps): JSX.Element {
 			testId="native-note-editor"
 			style={{ ...t("flex flex-col gap-1"), width: "100%", ...(p.fill ? { height: "100%", minHeight: 0 } : {}) }}
 		>
-			<Show when={loaded()} fallback={<text style={{ ...tx("text-xs text-muted-foreground"), padding: 8 }}>Opening note…</text>}>
+			<Show when={ready()} fallback={<text style={{ ...tx("text-xs text-muted-foreground"), padding: 8 }}>Opening note…</text>}>
 				{(n) => {
-					source = n().html;
 					return (
 						<Show
 							when={n().doc}
@@ -144,7 +154,7 @@ export function RichTextEditor(p: RichTextEditorProps): JSX.Element {
 											<TextBtn
 												label="Done"
 												onClick={() => {
-													void flush().then(() => p.onClose!());
+													void flush().then((saved) => saved && p.onClose!());
 												}}
 											/>
 										</Show>

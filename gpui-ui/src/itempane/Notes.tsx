@@ -11,6 +11,7 @@ import { Empty, IconBtn, locked, Section, TextBtn, goToSection, inputTheme, t, t
 import { fail, usePane } from "./model";
 import { htmlToMarkdown, isSimpleNoteHtml, markdownToHtml, noteWrapper } from "./noteHtml";
 import { ipApi } from "./net";
+import { noteSettled, openNoteSession, type NoteSession } from "./noteSession";
 import { firstLine } from "./util";
 import { RichNoteEditor } from "./RichNote";
 import { richNotesAvailable } from "../webview/notes";
@@ -107,73 +108,84 @@ function UsualNoteEditor(p: NoteEditorProps): JSX.Element {
  * switching to Preview and when closed.
  */
 export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
-	const pane = usePane();
+	const refreshList = usePane().refreshList; // the saves below can land after the pane is gone: nothing there reads props or pane state
 	const [html, setHtml] = createSignal<string | null>(null);
+	const [loadFailed, setLoadFailed] = createSignal(false);
+	const [simple, setSimple] = createSignal(true); // fixed when the note is loaded: the text box is Markdown or HTML for as long as it is open
 	const [modeSig, setMode] = createSignal<"edit" | "preview">(p.startEditing && !locked() ? "edit" : "preview");
 	const mode = () => (locked() ? "preview" : modeSig()); // a read-only library: the note can be read, not edited
 	const [status, setStatus] = createSignal<"" | "Saving…" | "Saved">("");
-	let draft = "";
-	let dirty = false;
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	let session: NoteSession<string> | undefined;
+	let loads = 0;
 
-	const simple = createMemo(() => (html() === null ? true : isSimpleNoteHtml(html()!)));
 	const markdown = createMemo(() => (html() === null ? "" : htmlToMarkdown(html()!)));
 	const source = () => (simple() ? markdown() : (html() ?? ""));
 
+	/** Close the session (its last edit is saved on its own captured key) and drop any load in flight. */
+	const retire = () => {
+		loads++;
+		const s = session;
+		session = undefined;
+		void s?.close();
+	};
+	async function load(k: string, mine: number) {
+		try {
+			const settled = await noteSettled(k); // an editor just closed on this note may still be saving: its text, not the stored one
+			const d = await ipApi.item(k);
+			if (mine !== loads) return; // a newer load (or the editor's end) replaced this one
+			const base = (d.data.note as string | undefined) ?? "";
+			const shown = settled?.html ?? base;
+			const isSimple = isSimpleNoteHtml(shown);
+			const s: NoteSession<string> = openNoteSession<string>({
+				key: k,
+				base,
+				build: (text, current) => {
+					if (!isSimple) return text;
+					const w = noteWrapper(current);
+					return w.open + markdownToHtml(text) + w.close;
+				},
+				patch: (key, out) => ipApi.patchItem(key, { note: out }),
+				onStatus: (v) => {
+					if (session === s) setStatus(v);
+				},
+				onSaved: (out, current) => {
+					refreshList();
+					if (current && session === s) setHtml(out);
+					p.onSaved?.(out);
+				},
+				onError: (e) => fail("Could not save the note", e),
+			});
+			session = s;
+			setSimple(isSimple);
+			setHtml(shown);
+			if (settled) {
+				settled.take();
+				s.edit(isSimple ? htmlToMarkdown(shown) : shown); // the unsaved text of the earlier editor is saved by this one
+			}
+		} catch (e) {
+			if (mine !== loads) return;
+			setLoadFailed(true);
+			fail("Could not load the note", e);
+		}
+	}
 	createEffect(
 		on(
 			() => p.noteKey,
 			(k) => {
+				retire();
 				setHtml(null);
-				void ipApi.item(k).then(
-					(d) => {
-						setHtml((d.data.note as string | undefined) ?? "");
-						draft = source();
-					},
-					(e) => fail("Could not load the note", e),
-				);
+				setLoadFailed(false);
+				setStatus("");
+				void load(k, loads);
 			},
 		),
 	);
+	onCleanup(retire);
 
-	const toHtml = (text: string) => {
-		if (!simple()) return text;
-		const w = noteWrapper(html() ?? "");
-		return w.open + markdownToHtml(text) + w.close;
-	};
-	async function flush() {
-		clearTimeout(timer);
-		if (!dirty) return;
-		dirty = false;
-		const out = toHtml(draft);
-		setStatus("Saving…");
-		try {
-			await ipApi.patchItem(p.noteKey, { note: out });
-			setHtml(out);
-			setStatus("Saved");
-			p.onSaved?.(out);
-			pane.refreshList();
-		} catch (e) {
-			dirty = true;
-			setStatus("");
-			fail("Could not save the note", e);
-		}
-	}
-	onCleanup(() => {
-		clearTimeout(timer);
-		void flush();
-	});
-
-	const edit = (v: string) => {
-		draft = v;
-		dirty = true;
-		setStatus("");
-		clearTimeout(timer);
-		timer = setTimeout(() => void flush(), 800);
-	};
+	const flush = (): Promise<boolean> => session?.flush() ?? Promise.resolve(true);
+	const edit = (v: string) => session?.edit(v);
 	const switchTo = async (m: "edit" | "preview") => {
-		if (m === "preview") await flush();
-		else draft = source();
+		if (m === "preview" && !(await flush())) return; // unsaved text stays in the editor
 		setMode(m);
 	};
 
@@ -203,10 +215,7 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 					<div
 						role="button"
 						aria-label="Close"
-						onClick={() => {
-							void flush();
-							p.onClose!();
-						}}
+						onClick={() => void flush().then((saved) => saved && p.onClose!())}
 						style={{
 							...t("flex items-center gap-0.5 rounded px-1"),
 							cursor: "pointer",
@@ -219,7 +228,7 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 				</Show>
 			</div>
 			<div style={{ ...t("flex flex-col w-full p-3 gap-2") }}>
-				<Show when={html() !== null} fallback={<text style={{ ...tx("text-xs text-muted-foreground") }}>Loading…</text>}>
+				<Show when={html() !== null} fallback={<text style={{ ...tx("text-xs text-muted-foreground") }}>{loadFailed() ? "Could not load the note." : "Loading…"}</text>}>
 					<Show when={mode() === "edit"} fallback={<NotePreview markdown={markdown()} />}>
 						<Show when={!simple()}>
 							<text style={{ ...tx("text-[11px] text-muted-foreground"), lineHeight: 15 }}>

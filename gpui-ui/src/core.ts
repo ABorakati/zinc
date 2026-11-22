@@ -21,6 +21,7 @@ import { isRealLibrary } from "../../core/src/library-location";
 import { packaged } from "./packaged";
 import { holdRequestsUntil, setBaseUrl, setDirect } from "./api";
 import { onShutdown, portInUse, startServices, servicesWanted } from "./services";
+import { flushNoteSessions } from "./itempane/noteSession";
 import { mark } from "./trace";
 import { webMounts } from "./webview/mounts";
 import { setNoteBase, setWebBase } from "./webview/config";
@@ -122,6 +123,7 @@ async function finish(c: {
 		c.stopServer();
 	};
 	onShutdown("core", stop);
+	onShutdown("note sessions", flushNoteSessions); // registered after core, so it runs before the server stops
 	if (servicesWanted()) {
 		// not awaited: the UI's requests are held until the core resolves, and the services (sync, Zotero port) are not needed for the first page
 		services = startServices({ db: c.db, dbPath: c.dbPath, primary: c.primary, wantedPort: c.wantedPort }).then(

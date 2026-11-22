@@ -60,9 +60,9 @@ export function NativeNote(p: NativeNoteProps): JSX.Element {
 						noteKey={p.noteKey}
 						height={p.height}
 						fill={p.fill}
-						onSaved={(h) => {
-							mutate(h);
+						onSaved={(h, saved) => {
 							p.onSaved?.(h);
+							if (saved === p.noteKey) mutate(h); // a save landing after the note changed must not replace the new note's text
 						}}
 						onClose={() => setEditing(false)}
 					/>
