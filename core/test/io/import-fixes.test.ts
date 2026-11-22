@@ -154,3 +154,23 @@ describe("cyclic collection parts in RDF", () => {
 		expect(b.parent_key).toBe(collectionOf(dst, "A").key);
 	});
 });
+
+describe("BibTeX names with braces", () => {
+	const authorsOf = async (author: string) => {
+		const db = freshDb();
+		const r = await importInto(db, `@article{k, title = {T}, author = {${author}}, year = {2020}}`, { format: "bibtex", collectionName: null });
+		expect(r.body.errors).toEqual([]);
+		return (dataOf(db, keyByTitle(db, "T")).creators as { firstName?: string; lastName?: string; name?: string }[]).map((c) =>
+			c.name !== undefined ? c.name : `${c.lastName}|${c.firstName}`,
+		);
+	};
+	test("a braced institution with braces inside stays one name", async () => {
+		expect(await authorsOf('{Universit{\\"a}t Z{\\"u}rich}')).toEqual(["Universität Zürich"]);
+		expect(await authorsOf("{Cl{\\'e}ment Consortium} and Smith, John")).toEqual(["Clément Consortium", "Smith|John"]);
+	});
+	test("separately braced parts of a name are still split", async () => {
+		expect(await authorsOf("{Smith}, {John}")).toEqual(["Smith|John"]);
+		expect(await authorsOf("{Smith}, {John {Jr}}")).toEqual(["Smith|John Jr"]);
+		expect(await authorsOf("{Smith} {Jones}")).toEqual(["Jones|Smith"]);
+	});
+});

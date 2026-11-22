@@ -241,11 +241,24 @@ function topLevelCommaSplit(s: string): string[] {
 	return out;
 }
 
+/** True when the first `{` of `s` is closed by its last `}`: "{Univ {x} Z}" is one group, "{Smith}, {John}" is two. */
+function isOneBracedGroup(s: string): boolean {
+	if (!s.startsWith("{") || !s.endsWith("}")) return false;
+	let depth = 0;
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i];
+		if (c === "\\") i++;
+		else if (c === "{") depth++;
+		else if (c === "}" && --depth === 0) return i === s.length - 1;
+	}
+	return false;
+}
+
 function bibNames(raw: string, creatorType: string): Creator[] {
 	const out: Creator[] = [];
 	for (const name of splitAnd(raw)) {
 		const t = name.trim();
-		if (/^\{[^]*\}$/.test(t) && !t.slice(1, -1).includes("{")) {
+		if (isOneBracedGroup(t)) {
 			const lit = fromLatex(t.slice(1, -1));
 			if (lit) out.push({ creatorType, name: lit });
 			continue;
