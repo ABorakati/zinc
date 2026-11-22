@@ -3,9 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { HttpClient } from "../../src/fulltext/http";
+import type { HttpReq } from "../../src/fulltext/proto";
 import { tempDir } from "../fixture";
 
-const req = { method: "get", url: "https://a.example.test/x.pdf", headers: {}, ua: "default", timeout_ms: 1500, follow_redirects: true, max_bytes: 0 };
+const req: HttpReq = { method: "get", url: "https://a.example.test/x.pdf", headers: {}, ua: "default", timeout_ms: 1500, follow_redirects: true, max_bytes: 0 };
 
 /** A body that delivers a lot of data in many chunks, so the writer's buffer fills and a drain is awaited. */
 function bigBody(): Response {
