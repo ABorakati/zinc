@@ -10,7 +10,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { configDir } from "../../core/src/platform-dirs";
-import { expectEarly, takeRecordedPaths } from "./api";
+import { dropEarly, expectEarly, takeRecordedPaths } from "./api";
 import { logError } from "./shell/errorlog";
 import { mark } from "./trace";
 
@@ -77,12 +77,17 @@ export function startPrefetch(): boolean {
 	};
 	worker.postMessage({ db, paths });
 	mark("prefetch-started");
-	setTimeout(finish, 8000).unref?.(); // never hold a request for long
+	setTimeout(() => {
+		// never hold a request for long; a worker that has not answered by now is stuck, so it is stopped too (it holds a database handle)
+		finish();
+		void worker.terminate();
+	}, 8000).unref?.();
 	return true;
 }
 
 /** After the first page of items: remember which GET requests the first screen made, for the next start. */
 export function saveHint(): void {
+	dropEarly(); // the first screen has had its answers; leftovers (a hinted path it did not ask for) would go stale
 	const db = process.env.ZN_DB;
 	if (!db || process.env.ZN_PREFETCH === "0") return;
 	const paths = takeRecordedPaths();

@@ -97,6 +97,10 @@ export function startCoreOnDemand(start: () => void): void {
 export function expectEarly(path: string, answer: Promise<string | null>): void {
 	early.set(path, answer);
 }
+/** Forget the early answers nobody asked for (call once the first screen is in): a later request must reach the core, not a start-up snapshot. */
+export function dropEarly(): void {
+	early.clear();
+}
 export function takeRecordedPaths(): string[] {
 	const r = recorded ?? [];
 	recorded = null;
