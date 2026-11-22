@@ -92,7 +92,8 @@ function drop(point = dragPoint()) {
 	const moved = zone.target.kind === "section" && section !== null
 		? returnSection(section, zone.before)
 		: moveLibraryPane(id, zone.target);
-	if (moved) toast(`Moved ${title(id)}`, { id: "pane-moved", action: { label: "Undo", run: () => { undoLayout(); } } });
+	// the same id as the pane menu's toasts (PaneStack.tsx): one layout toast at a time, the newest replacing the last
+	if (moved) toast(`Moved ${title(id)}`, { id: "layout-move", action: { label: "Undo", run: () => { undoLayout(); } } });
 }
 
 /**

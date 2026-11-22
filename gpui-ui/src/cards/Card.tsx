@@ -13,6 +13,8 @@ import { childIcon, childLabel, copyCitation, findFullText, getDetail, openChild
 import { Twisty } from "./ChildRow";
 import { swallow } from "./click";
 import { clipText, textWidth } from "../clip";
+import { itemFieldDir } from "../table/defs";
+import type { Dir } from "../ui/bidi";
 import { cardLayout, cardListWidth } from "./layout";
 import {
 	authorsText,
@@ -213,7 +215,7 @@ function TagBadge(p: { mode: Mode; name: string; color?: string }) {
 type Action =
 	{ k: "open"; label: string } | { k: "fulltext" } | { k: "web" } | { k: "cite" } | { k: "notes"; n: number } | { k: "atts"; n: number };
 /** One text of the meta line: consecutive same-colour parts are joined (with their " · " separators) into one <text>. */
-type MetaRun = { text: string; accent: boolean };
+type MetaRun = { text: string; accent: boolean; dir: Dir | "auto" };
 /** Gap between the meta line's texts. */
 const META_GAP = 4;
 /** The accent run (publication) keeps its web `max-w-[40%]`. */
@@ -246,13 +248,14 @@ export function Card(p: {
 	const runs = createMemo<MetaRun[]>(() => {
 		const parts: MetaRun[] = [];
 		const a = authorsText(it());
-		if (a) parts.push({ text: a, accent: false });
-		for (const m of metaParts(it())) parts.push({ text: m.text, accent: m.accent });
+		if (a) parts.push({ text: a, accent: false, dir: itemFieldDir(it(), "creator") });
+		for (const m of metaParts(it())) parts.push({ text: m.text, accent: m.accent, dir: m.dir });
 		const out: MetaRun[] = [];
 		for (const x of parts) {
 			const last = out[out.length - 1];
-			if (last && !x.accent && !last.accent) last.text += " \u00b7 " + x.text;
-			else out.push({ text: x.text, accent: x.accent });
+			// parts of one direction share a <text>; a part of another direction (an ID, a date) gets its own
+			if (last && !x.accent && !last.accent && last.dir === x.dir) last.text += " \u00b7 " + x.text;
+			else out.push({ text: x.text, accent: x.accent, dir: x.dir });
 		}
 		return out.map((r, i) =>
 			r.accent ? r : { ...r, text: (i > 0 ? "\u00b7 " : "") + r.text + (i < out.length - 1 ? " \u00b7" : "") },
@@ -382,7 +385,9 @@ export function Card(p: {
 			<div style={tw("flex flex-col min-w-0 flex-1", mode())}>
 				{/* title; right-aligned: more-actions button (shown on hover) and the star (starred, or on hover) */}
 				<div style={tw("flex items-start gap-2", mode())}>
-					<text style={titleStyle()}>{it().title || "(untitled)"}</text>
+					<text dir={itemFieldDir(it(), "title")} style={titleStyle()}>
+						{it().title || "(untitled)"}
+					</text>
 					{/* The button box has a FIXED width (24 px, 44 with the star column) and both buttons stay mounted: hover only fades them.
 					    Growing the box on hover narrowed the title, which could re-wrap it, change the card's height, move it out from under the
 					    pointer (leave), shrink back (enter) — a hover flicker loop. */}
@@ -445,6 +450,7 @@ export function Card(p: {
 					<For each={runs()}>
 						{(x, i) => (
 							<text
+								dir={x.dir}
 								style={textStyle(
 									`select-none flex-none whitespace-nowrap ${metaSize()} ${x.accent ? "text-primary/90" : "text-muted-foreground"}`,
 									mode(),

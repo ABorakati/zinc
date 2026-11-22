@@ -1,4 +1,4 @@
-// Settings: the "Plugins" section (the switch that turns plugins on, and the list of what is loaded) and the preference panes plugins
+// Settings: the "Plugins" section (Install and the list of what is loaded; the switch that turns plugins on is in Settings > Experimental) and the preference panes plugins
 // registered (`extend.register-pref-pane`), each as a section of Settings. Rows are the host's own controls bound to plugin prefs (no
 // plugin code runs to draw them); a `view` pane or a `custom` row is a PluginView.
 import { createEffect, createMemo, createRoot, For, onCleanup, onMount, Show, type JSX } from "solid-js";
@@ -6,7 +6,6 @@ import { Choice, Btn, SettingRow, TextField, Toggle, Value } from "../../setting
 import { registerSettingsSection, unregisterSettingsSection } from "../../registry";
 import { Txt, t } from "../../shell/kit";
 import { callPlugin, pluginActions, type PluginActions } from "../host";
-import { setWasmPluginsEnabled, wasmPluginsEnabled } from "../flag";
 import { mcpExposed, setMcpExposed } from "../mcp/exposure";
 import { prefCell } from "./prefs";
 import { prefRows, registries, type Owned } from "./registry";
@@ -196,7 +195,7 @@ const act = (f: (a: PluginActions) => Promise<void>) => {
 	if (a) void f(a);
 };
 
-/** Settings > Plugins: the switch, Install, and the list. Registered once at start-up (src/features.ts), always, so plugins can be turned on. */
+/** Settings > Plugins: Install and the list. Registered once at start-up (src/features.ts), always; the on switch is Settings > Experimental > Enable plugins. */
 export function registerPluginsSettings(list: () => PluginRowInfo[], running: () => boolean): void {
 	registerSettingsSection({
 		id: "wasm-plugins",
@@ -206,18 +205,12 @@ export function registerPluginsSettings(list: () => PluginRowInfo[], running: ()
 		render: () => (
 			<div style={{ ...t("flex flex-col"), width: "100%" }}>
 				<SettingRow
-					id="wasm-plugins-enabled"
-					label="Enable plugins (experimental)"
-					description="Runs installed plugins in a separate process. Takes effect the next time Zinc starts."
-					control={() => <Toggle checked={wasmPluginsEnabled()} onChange={setWasmPluginsEnabled} />}
-				/>
-				<SettingRow
 					id="wasm-plugins-install"
 					label="Install a plugin"
 					description={
 						running()
 							? "Install or update a plugin from a .zplugin or .wasm file. You see the permissions it asks for before any of it runs."
-							: "Turn on Enable plugins and restart Zinc to install plugins."
+							: "Turn on Settings > Experimental > Enable plugins and restart Zinc to install plugins."
 					}
 					control={() => (
 						<Btn icon="download" disabled={!running()} onClick={() => act((a) => a.installFromFile())}>

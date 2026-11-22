@@ -6,8 +6,8 @@ Plugins are **experimental** in 0.2 and **off by default**. While they are off, 
 
 ## Turn plugins on
 
-1. Open Settings (**Ctrl+,**) and go to **Plugins**.
-2. Turn on **Enable plugins (experimental)**.
+1. Open Settings (**Ctrl+,**) and go to **Experimental**.
+2. Turn on **Enable plugins**.
 3. Quit Zinc and start it again. The switch takes effect at the next start, in both directions.
 
 When plugins are on, Zinc starts the plugin host at startup and then every installed, enabled plugin. Each plugin registers its menus, columns, sections and panes as it starts. When a plugin stops, is disabled or fails, everything it added disappears from the window.

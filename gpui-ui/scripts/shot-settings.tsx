@@ -25,6 +25,7 @@ const ALL = [
 	"shortcuts",
 	"files",
 	"integrations",
+	"experimental",
 	"system",
 	"search",
 	"sync-popover",

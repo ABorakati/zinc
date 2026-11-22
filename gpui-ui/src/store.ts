@@ -1,6 +1,7 @@
 // App state for the library window (Solid signals). Implements Store + ListStore from contracts.ts (ui/src/store.ts), plus the
 // quick-search mode, the sparse page cache of the item list, multi-selection and the persisted list preferences.
-import { mkdirSync, readFileSync, writeFile } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { logWarn } from "../../core/src/log";
 import { dirname, join } from "node:path";
 import { configDir } from "../../core/src/platform-dirs";
 import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
@@ -60,6 +61,29 @@ try {
 }
 let writesOff = false;
 let writeTimer: ReturnType<typeof setTimeout> | undefined;
+let dirty = false;
+let failureLogged = false;
+/** Write the state now: synchronously (a few KB) to a temp file renamed over the old one, so a crash never leaves half a file. A
+ *  failure is logged once (it used to be dropped without a word, which hid settings that never saved). */
+function flushUiState(): void {
+	clearTimeout(writeTimer);
+	writeTimer = undefined;
+	if (!dirty || writesOff || !STATE_FILE) return;
+	dirty = false;
+	const tmp = `${STATE_FILE}.tmp`;
+	try {
+		mkdirSync(dirname(STATE_FILE), { recursive: true });
+		writeFileSync(tmp, JSON.stringify(stateData, null, 1));
+		renameSync(tmp, STATE_FILE);
+	} catch (e) {
+		if (!failureLogged) {
+			failureLogged = true;
+			logWarn("ui", `could not save the interface settings: ${e instanceof Error ? e.message : String(e)}`, { file: STATE_FILE });
+		}
+	}
+}
+// a change made just before quitting is saved too (the 400 ms debounce would drop it)
+if (typeof process !== "undefined") process.on("exit", flushUiState);
 export const uiState = {
 	get<T>(key: string, fallback: T): T {
 		const v = stateData[key];
@@ -68,16 +92,12 @@ export const uiState = {
 	set(key: string, value: unknown): void {
 		stateData[key] = value;
 		if (writesOff || !STATE_FILE) return;
+		dirty = true;
 		clearTimeout(writeTimer);
-		writeTimer = setTimeout(() => {
-			try {
-				mkdirSync(dirname(STATE_FILE), { recursive: true });
-				writeFile(STATE_FILE, JSON.stringify(stateData, null, 1), () => {});
-			} catch {
-				/* a read-only profile just loses the preferences */
-			}
-		}, 400);
+		writeTimer = setTimeout(flushUiState, 400);
 	},
+	/** Write pending changes now (before a restart or an update install). */
+	flush: flushUiState,
 	/** Screenshot / test scripts: keep the in-memory state but never write the user's file (nor post the selection to the core). */
 	disableWrites(): void {
 		writesOff = true;

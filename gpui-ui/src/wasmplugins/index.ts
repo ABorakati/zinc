@@ -151,7 +151,7 @@ export async function installPluginFromFile(): Promise<void> {
 	const { toast } = await import("../ui");
 	const s = services;
 	if (!s) {
-		toast("Plugins are not running", { kind: "error", description: "Turn on Enable plugins, then restart Zinc." });
+		toast("Plugins are not running", { kind: "error", description: "Turn on Settings > Experimental > Enable plugins, then restart Zinc." });
 		return;
 	}
 	const { pickFile } = await import("../shell/native");
