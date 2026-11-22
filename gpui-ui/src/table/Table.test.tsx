@@ -1,7 +1,7 @@
 // bun test src/table/Table.test.tsx -- the real Classic table (TableView) rendered without a window over a stubbed store: the header's
 // resize / reorder gestures and the cells of the rows.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createRoot } from "solid-js";
+import { createRoot, createSignal } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import type * as TableMod from "./Table";
 import type * as LayoutMod from "./layout";
@@ -31,6 +31,7 @@ describe("table", () => {
 		fields: { language: i === 1 ? "ar" : "en" },
 	})) as ItemRow[];
 	let roots: (() => void)[] = [];
+	const [rev, bump] = createSignal(0, { equals: false });
 
 	beforeAll(async () => {
 		envBefore = process.env.ZN_UI_STATE;
@@ -42,7 +43,7 @@ describe("table", () => {
 		const s = store as unknown as Record<string, unknown>;
 		for (const k of ["total", "itemAt", "peek", "setListFields"]) saved[k] = s[k];
 		s.total = () => items.length;
-		s.itemAt = (i: number) => items[i];
+		s.itemAt = (i: number) => (rev(), items[i]);
 		s.peek = (i: number) => items[i];
 		s.setListFields = () => {};
 		Table = await import("./Table");
@@ -68,7 +69,7 @@ describe("table", () => {
 			root: () => root,
 			handles: () => findAll(root, (n) => styleOf(n).cursor === "col-resize"),
 			overlay: () => findAll(root, (n) => n.type === "anchored")[0],
-			headerCells: () => findAll(root, (n) => typeof styleOf(n).width === "number" && n.props.has("onMouseMove") && n.props.has("onClick")),
+			headerCells: () => findAll(root, (n) => typeof styleOf(n).width === "number" && styleOf(n).height === "100%" && n.props.has("onMouseMove") && n.props.has("onClick")),
 		};
 	}
 
@@ -124,6 +125,105 @@ describe("table", () => {
 		expect(m.overlay()).toBeUndefined();
 		expect(layout.ids()).toEqual([ids[0]!, ...ids.slice(2), ids[1]!]);
 		layout.move(ids[1]!, 1);
+		closeAll();
+	});
+
+	// ---- the cells survive a resize / reorder / column change: the same elements, updated in place ----
+
+	/** The cells of every body row, and the header's cells, as they are now. */
+	const snapshot = (m: ReturnType<typeof mount>) => {
+		const list = findAll(m.root(), (n) => n.type === "virtual-list")[0]!;
+		const rows = list.children.filter((c): c is HostElement => c.kind === "element" && c.children.length > 1);
+		return {
+			rows: rows.map((r) => r.children.filter((c): c is HostElement => c.kind === "element")),
+			header: m.headerCells().slice(),
+		};
+	};
+	const textOf = (n: HostElement): string => n.children.map((c) => (c.kind === "text" ? c.text : textOf(c as HostElement))).join("");
+	const sameCells = (a: HostElement[][], b: HostElement[][]) => a.length === b.length && a.every((r, i) => r.length === b[i]!.length && r.every((c, j) => c === b[i]![j]));
+	/** How many of the cells `before` held are not in `after` (a cell that is gone was disposed and built again). */
+	const lost = (before: HostElement[][], after: HostElement[][]) => before.flat().filter((e) => !after.flat().includes(e)).length;
+
+	test("resizing a column recreates no cell, and the new width reaches the header and every row", async () => {
+		const m = mount();
+		await sleep(20);
+		const before = snapshot(m);
+		expect(before.rows.length).toBe(items.length);
+		const id = layout.ids()[1]!;
+		const w0 = widthOf(id);
+		for (let step = 1; step <= 10; step++) {
+			layout.setWidth(id, w0 + step * 3);
+			await sleep(1);
+		}
+		const after = snapshot(m);
+		expect(lost(before.rows, after.rows)).toBe(0);
+		expect(sameCells(before.rows, after.rows)).toBe(true);
+		expect(after.header).toEqual(before.header);
+		expect(styleOf(after.header[1]!).width).toBe(w0 + 30);
+		for (const row of after.rows) {
+			expect(styleOf(row[1]!).width).toBe(w0 + 30);
+			expect(styleOf(row[0]!).width).toBe(widthOf(layout.ids()[0]!)); // the others keep theirs
+			expect(styleOf(row[2]!).width).toBe(widthOf(layout.ids()[2]!));
+		}
+		layout.setWidth(id, w0);
+		closeAll();
+	});
+
+	test("moving a column moves its cells and header, with the same elements", async () => {
+		const m = mount();
+		await sleep(20);
+		const before = snapshot(m);
+		const ids = [...layout.ids()];
+		layout.move(ids[1]!, ids.length - 1); // to the end
+		await sleep(5);
+		const after = snapshot(m);
+		const perm = [0, 2, 3, 4, 5, 1].slice(0, ids.length);
+		expect(after.rows.map((r, i) => r.map((c) => before.rows[i]!.indexOf(c)))).toEqual(after.rows.map(() => perm));
+		expect(after.header.map((c) => before.header.indexOf(c))).toEqual(perm);
+		expect(styleOf(after.rows[0]![ids.length - 1]!).width).toBe(widthOf(ids[1]!));
+		layout.move(ids[1]!, 1);
+		closeAll();
+	});
+
+	test("hiding and showing a column removes and adds only its cells, with the right definition", async () => {
+		const m = mount();
+		await sleep(20);
+		const before = snapshot(m);
+		const ids = [...layout.ids()];
+		layout.toggle(ids[2]!, false);
+		await sleep(5);
+		const hidden = snapshot(m);
+		const without = before.rows.map((r) => r.filter((_, j) => j !== 2));
+		expect(sameCells(hidden.rows, without)).toBe(true);
+		expect(hidden.header).toEqual(before.header.filter((_, j) => j !== 2));
+		layout.toggle(ids[2]!, true); // comes back at the end
+		await sleep(5);
+		const shown = snapshot(m);
+		expect(shown.header.length).toBe(before.header.length);
+		expect(shown.rows.map((r) => r.slice(0, -1))).toEqual(hidden.rows);
+		const added = shown.rows[0]![shown.rows[0]!.length - 1]!;
+		expect(textOf(added)).toBe(textOf(before.rows[0]![2]!)); // the same column's text
+		expect(textOf(shown.header[shown.header.length - 1]!)).toBe(textOf(before.header[2]!)); // and its label
+		expect(styleOf(added).width).toBe(widthOf(ids[2]!));
+		layout.move(ids[2]!, 2);
+		closeAll();
+	});
+
+	test("a cell's text direction follows its item, in the same element", async () => {
+		const m = mount();
+		await sleep(20);
+		const dirs = (cell: HostElement) => findAll(cell, (n) => n.type === "text").map((t) => t.props.get("dir"));
+		const before = snapshot(m);
+		expect(dirs(before.rows[0]![0]!)).toContain("ltr"); // an English item
+		expect(dirs(before.rows[1]![0]!)).toContain("rtl"); // an Arabic-language item
+		const orig = items[0]!;
+		items[0] = { ...orig, fields: { language: "ar" } } as ItemRow; // the item arrives with its language changed
+		bump();
+		await sleep(5);
+		const after = snapshot(m);
+		expect(after.rows[0]![0]).toBe(before.rows[0]![0]);
+		expect(dirs(after.rows[0]![0]!)).toContain("rtl");
+		items[0] = orig;
 		closeAll();
 	});
 });

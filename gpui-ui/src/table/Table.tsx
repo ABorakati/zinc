@@ -425,6 +425,42 @@ export function TableView(): JSX.Element {
 		if (vw() > 0 && over > 0 && title) title.width = Math.max(80, title.width - over);
 		return list;
 	});
+	/**
+	 * The same objects for as long as a column is shown, so a resize, a reorder or a change of another column does not dispose and
+	 * rebuild every cell: width and def are read through getters (a signal each, written only when the value changed).
+	 */
+	const colEntries = new Map<string, { info: ColInfo; update: (c: ColInfo) => void }>();
+	const colInfos = createMemo<ColInfo[]>(
+		() =>
+			cols().map((c) => {
+				const known = colEntries.get(c.id);
+				if (known) {
+					known.update(c);
+					return known.info;
+				}
+				const [def, setDef] = createSignal(c.def);
+				const [width, setWidth] = createSignal(c.width);
+				const info: ColInfo = {
+					id: c.id,
+					get def() {
+						return def();
+					},
+					get width() {
+						return width();
+					},
+				};
+				colEntries.set(c.id, {
+					info,
+					update: (n) => {
+						setDef(n.def);
+						setWidth(n.width);
+					},
+				});
+				return info;
+			}),
+		[],
+		{ equals: (x, y) => x.length === y.length && x.every((c, i) => c === y[i]) },
+	);
 	const total = createMemo(() => cols().reduce((n, c) => n + c.width, 0));
 	/** Width of the panned content: the columns plus the gutter the scrollbar sits in, at least the viewport. */
 	const contentW = () => Math.max(total() + SCROLL_GUTTER, vw(), 1);
@@ -684,7 +720,7 @@ export function TableView(): JSX.Element {
 							if (e.isRightClick || e.button === 2) openColumnMenu({ x: e.x ?? 0, y: e.y ?? 0 });
 						}}
 					>
-						<For each={cols()}>
+						<For each={colInfos()}>
 							{(c) => {
 								const mark = () => sortMark(c.id);
 								const dragging = () => {
@@ -816,7 +852,7 @@ export function TableView(): JSX.Element {
 							onVisibleRange={onVisibleRange}
 							style={{ width: "100%", flexGrow: 1, minHeight: 0, scrollbarColor: tok("input"), scrollbarWidth: 6 }}
 						>
-							<For each={indices()}>{(i) => <RowView row={i} rows={rows} cols={cols} total={total} />}</For>
+							<For each={indices()}>{(i) => <RowView row={i} rows={rows} cols={colInfos} total={total} />}</For>
 						</virtual-list>
 						<ListRetry />
 						<Show when={count() === 0 && !store.loading()}>
