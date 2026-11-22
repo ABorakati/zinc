@@ -766,12 +766,21 @@ namespace ZoteroNext.Word
             return Json.Map("ok", true, "story", targetStory);
         }
 
+        /// <summary>The whole story the selection is in. Word's Selection has no StoryRange property.</summary>
+        static object StoryOf(object selection)
+        {
+            dynamic sel = selection;
+            dynamic story = sel.Range.Duplicate;
+            story.WholeStory();
+            return story;
+        }
+
         /// <summary>Position just after the field that contains position pos in the story, or -1.</summary>
         int FieldEndAround(dynamic d, int storyType, int pos)
         {
             try
             {
-                dynamic story = storyType == wdMainTextStory ? d.Content : Sel.StoryRange;
+                dynamic story = storyType == wdMainTextStory ? d.Content : StoryOf((object)Sel);
                 dynamic before = story.Duplicate; before.SetRange(story.Start, pos);
                 int idx = (int)before.Fields.Count + 1;
                 for (int i = Math.Max(1, idx - 1); i <= idx + 1 && i <= (int)story.Fields.Count; i++)
@@ -974,7 +983,9 @@ namespace ZoteroNext.Word
             var res = Json.Map("hasDoc", true, "doc", (string)d.FullName, "start", s, "end", e, "story", st, "inField", false);
             try
             {
-                dynamic story = st == wdMainTextStory ? d.Content : sel.StoryRange;
+                // a field ref names the main text, the footnotes or the endnotes: a field anywhere else cannot be named
+                if (st != wdMainTextStory && st != wdFootnotesStory && st != wdEndnotesStory) return res;
+                dynamic story = st == wdMainTextStory ? d.Content : StoryOf((object)sel);
                 int storyStart = (int)story.Start;
                 int idx = -1;
                 dynamic hit = null, hitCode = null, hitResult = null;
