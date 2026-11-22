@@ -141,6 +141,76 @@ jobs:
       - name: word/addin build (.NET Framework 4.8)
         run: dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$RUNNER_TEMP/addin-out"
 
+  # The UI harness (gpui-ui/test/ui): the real app on GPUI's headless renderer, driven through hit testing and key dispatch. Windows:
+  # that renderer does not exist for Linux. The reader scenarios need zn_pdf and the document worker, so both are built here.
+  ui:
+    name: UI harness (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache bun packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-ui-${{ hashFiles('gpui-ui/bun.lock', 'core/bun.lock', 'gpui-ui/patches/**') }}
+          restore-keys: bun-${{ runner.os }}-ui-
+
+      - name: Install gpui-ui
+        working-directory: gpui-ui
+        run: bun install --frozen-lockfile
+      - name: Install core
+        working-directory: core
+        run: bun install --frozen-lockfile
+      - name: Fetch the vendored Zotero code
+        run: bun core/scripts/fetch-zotero-vendor.ts
+      - name: Placeholder for the full-text engine
+        shell: bash
+        run: mkdir -p core/vendor/fulltext-wasm && touch core/vendor/fulltext-wasm/fulltext.wasm
+
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            gpui-ui/native/pdf/target
+          key: cargo-ui-${{ runner.os }}-${{ hashFiles('gpui-ui/native/pdf/Cargo.lock', 'gpui-ui/native/pdf/src/**') }}
+          restore-keys: cargo-ui-${{ runner.os }}-
+      - name: Build the PDF library
+        working-directory: gpui-ui/native/pdf
+        run: cargo build --release --locked
+      - name: Fetch PDFium
+        run: bun gpui-ui/native/pdf/vendor/fetch-pdfium.ts
+
+      - name: Cache the document worker
+        id: docworker
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/document-worker
+          key: docworker-ui-${{ runner.os }}-${{ hashFiles('scripts/build-docworker.sh') }}
+      - name: Build the document worker
+        if: steps.docworker.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/build-docworker.sh
+
+      - name: UI scenarios
+        working-directory: gpui-ui
+        run: bun run test:ui
+      - name: Keep the evidence of failures
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ui-test-failures
+          path: gpui-ui/out/ui-test
+          retention-days: 7
+
   # gpui-ui/src/shell/appearance.ts on Linux: the light/dark reader and change monitor, which run gdbus against the XDG desktop
   # portal. appearance.linux.test.ts starts a private dbus-daemon and a stand-in portal (Python Gio); ZN_PORTAL_TEST=1 makes those
   # tests fail, instead of skip, when dbus-daemon, gdbus or PyGObject is missing. The other gpui-ui tests run in windows-rest.

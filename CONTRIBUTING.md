@@ -108,6 +108,10 @@ cd core && bun check && bun test --timeout 30000
 # gpui-ui: typecheck, tests (pure-logic only; the native-window scripts are not run)
 cd gpui-ui && bun check && bun test --timeout 30000
 
+# the interface: the real app, headless, with real clicks and keys (Windows and macOS; docs/developer-guide/testing.md).
+# A change to the interface comes with a scenario in gpui-ui/test/ui/scenarios.
+cd gpui-ui && bun run test:ui
+
 # Word sidebar: typecheck, tests (the Word end-to-end tests skip without Word)
 cd word/sidebar && bun check && bun test
 

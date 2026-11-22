@@ -9,7 +9,8 @@ The same commands run in CI (`.github/workflows/ci.yml`). Set up first as descri
 | Project | Command | Notes |
 | --- | --- | --- |
 | `core` | `cd core && bun check && bun test --timeout 30000` | Includes the quick fuzz suite |
-| `gpui-ui` | `cd gpui-ui && bun check && bun test --timeout 30000` | Pure-logic tests only; the native-window scripts are not run |
+| `gpui-ui` | `cd gpui-ui && bun check && bun test --timeout 30000` | Logic and component tests; no app is started |
+| `gpui-ui`, the UI | `cd gpui-ui && bun run test:ui` | The real app, headless, driven with real input (Windows and macOS). See [The UI harness](#the-ui-harness) |
 | `word/sidebar` | `cd word/sidebar && bun check && bun test` | The Word end-to-end tests skip unless enabled |
 | `word/addin` | `dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$TEMP/addin-out"` | `-o` keeps the build out of `word/dist` |
 | `connector-host` | `cd connector-host && bun run build && bun test` | Not in CI; the test needs the compiled exe |
@@ -69,6 +70,41 @@ ZN_FUZZ_SEED=123 ZN_FUZZ_PATH="4:2:1" bun test core/test/fuzz/<file> -t "<proper
 ```
 
 Run that line (with the real file and property name) to reproduce exactly the failing case. After fixing the bug, add the shrunk input as a plain `test()` in the same file so it stays covered without the fuzzer. A case that runs longer than its time box (3 s by default) fails; that is how hangs and quadratic blow-ups are caught. The Rust crate `gpui-ui/native/pdf` is not fuzzed.
+
+## The UI harness
+
+`cd gpui-ui && bun run test:ui` is how a change to the interface is tested. It starts Zinc through its normal start-up (`src/start.tsx`) on GPUI's headless renderer and sends it real input: clicks go through hit testing, keys through focus and key dispatch. So it catches what component tests cannot, such as a row that is drawn but ignores clicks.
+
+```
+bun run test:ui                     # everything
+bun run test:ui edit                # scenarios whose file or name contains a word
+bun run test:ui --list              # what there is
+bun run test:ui --jobs 4 --out dir  # parallel processes (default half the cores, 2 to 8), where the evidence goes
+```
+
+Every scenario gets a process of its own, a made-up library (`test/ui/library.ts`), its own user folders and an in-memory clipboard. It fails when an assertion fails, when the app logs an error, or when anything tries to reach the network or start a program (`test/ui/fences.ts`). A failure leaves `result.json` (the steps and the error), `screen.txt` (the painted text) and `failure.png` in `out/ui-test/<file>/<scenario>/`.
+
+Scenarios are in `gpui-ui/test/ui/scenarios/*.ui.ts`:
+
+```ts
+scenario("a field left for another item is saved to its own item", async (ui) => {
+	await ui.click(T.authors, { area: "list" });
+	await ui.clickField("Volume");
+	await ui.replace("77");
+	await ui.click(T.neighbour, { area: "list" });
+	await ui.expect("the saved volume", async () => (await ui.saved(T.authors)).volume, "77");
+});
+```
+
+Rules for writing one:
+
+- Do the action under test as a user does (`click`, `press`, `type`, `drag`). The store and the API are for set-up and for reading results.
+- Assert the effect (what was saved, selected or painted), and see the scenario fail without the fix it guards.
+- A bug that waits for a decision keeps its scenario, with `knownBug: "<why it waits>"`. The run reports it, and fails once it passes, so that the mark comes off.
+
+The harness needs `zn_pdf` (see [Building](building.md)) and, for reading mode, `vendor/document-worker`. It does not exist for Linux, and it does not test what only a real window has: the title bar, dragging out to other programs, web views, printing and the system's dialogs. The browser build has its own checks (`gpui-ui/web/*-check.ts`).
+
+GPUIX is patched (`gpui-ui/patches`): as published, rows that a list reorders can stop taking clicks. `src/ui/reconcile.test.tsx` fails if the patch is lost when GPUIX is upgraded.
 
 ## Headless screenshot scripts
 
