@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-11-22
+
+Draws Arabic and Hebrew text in the right order, fixes many rows and buttons that ignored clicks, keeps what you type in the item pane when the selection moves, and tightens plugin, file and network safety. It also fixes sync, imports and exports, Word citations, the reader and the installers.
+
 ### Added
 
 - **Right-to-left text:** item fields and the native note view choose their direction as Zotero does, and Arabic and Hebrew are drawn in the right order on Windows, including right-to-left words in a line that starts in Latin script.
@@ -441,7 +445,8 @@ The first start upgrades the library database to schema v3 (it adds the search i
 - Institution sign-in window (OpenAthens, Shibboleth, library proxy) for Find Full Text; a sign-in from the earlier Electrobun build is carried over.
 - Browser connector (native messaging) included in the installer.
 
-[unreleased]: https://github.com/ABorakati/zinc/compare/v0.2.6...HEAD
+[unreleased]: https://github.com/ABorakati/zinc/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/ABorakati/zinc/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/ABorakati/zinc/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/ABorakati/zinc/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ABorakati/zinc/compare/v0.2.3...v0.2.4
