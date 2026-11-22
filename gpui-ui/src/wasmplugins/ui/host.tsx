@@ -478,6 +478,26 @@ export function clearThemeOverride(ctx: HostCtx): void {
 	if (themeOverrides.delete(ctx.pluginId)) recomputeOverrides();
 }
 
+/**
+ * Everything a plugin put on screen goes when it stops, is disabled or fails, and everything goes when the plugin host restarts (`pluginId`
+ * undefined): its dialogs, its toasts, and its theme override. Each of them could otherwise stay until the app restarts.
+ */
+export function clearUiOf(pluginId: string | undefined): void {
+	closeDialogsOf(pluginId);
+	for (const [instance, t_] of [...toasts]) {
+		if (pluginId && t_.pluginId !== pluginId) continue;
+		toasts.delete(instance);
+		dismissToast(t_.zid);
+	}
+	let changed = false;
+	for (const id of [...themeOverrides.keys()]) {
+		if (pluginId && id !== pluginId) continue;
+		themeOverrides.delete(id);
+		changed = true;
+	}
+	if (changed) recomputeOverrides();
+}
+
 export function measure(requests: { text: string; size: string; weight: string; family: string; maxWidth?: number }[]) {
 	return requests.map(measureText);
 }

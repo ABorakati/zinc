@@ -5,7 +5,7 @@
 //                                                 PluginView falls back to getPluginSupervisor() of ../host
 //   ControllerView / ViewController               the pieces under PluginView (dialogs use them; tests too)
 //   promptPermission(req)                         the run-time permission dialog: pass it as `prompt` to createPluginRuntime
-//   clearUiOf(pluginId?)                          close the plugin's dialogs when its registrations are reset
+//   clearUiOf(pluginId?)                          close the plugin's dialogs and toasts and drop its theme override when its registrations are reset
 //   setLocalizer / setPrefsBackend                where texts and `pref` bindings come from (defaults: the package area's services)
 // The `ui` import itself (dialogs, toasts, theme, ...) is plugin-host/src/imports/ui.zinc.ts, which calls ./host.
 import * as uiHost from "./host";
@@ -17,7 +17,7 @@ export { ViewController, allocInstance, lookupInstance, allControllers, P } from
 export type { ViewState, ViewStatus } from "./controller";
 export { promptPermission } from "./permission";
 export type { PermissionPromptRequest } from "./permission";
-export { closeDialogsOf as clearUiOf, onThemeOverrideChange, themeOverrideList } from "./host";
+export { clearUiOf, onThemeOverrideChange, themeOverrideList } from "./host";
 export { setLocalizer } from "./l10n";
 export { setPrefsBackend } from "./prefs";
 export { jsonToTree, jsonToPatch, buildNested, applyPatch, getValidationMode, setValidationMode, TreeError } from "./convert";
