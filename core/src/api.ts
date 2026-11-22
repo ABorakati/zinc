@@ -141,8 +141,6 @@ function methodNotAllowed(): never {
 export async function handleApi(req: Request, db: Database): Promise<Response | null> {
 	const url = new URL(req.url);
 	if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return null;
-	// One place answers for anything a handler lets escape: JSON, the status of an HttpError, otherwise an opaque 500
-	// (the exception text goes to the local log only).
 	try {
 		if (url.pathname.startsWith("/api/fulltext/")) return await handleFulltextApi(req, db);
 		if (url.pathname.startsWith("/api/references/")) return await handleReferencesApi(req, db);
@@ -152,6 +150,15 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 		}
 		if (url.pathname.startsWith("/api/sync/")) return await handleSyncApi(req, db);
 		if (url.pathname.startsWith("/api/websync/")) return await handleWebSyncApi(req, db);
+	} catch (e) {
+		// what a feature handler did not expect and let escape: JSON, with the details in the log only. (Each handler's own catch,
+		// and the routes below, go on saying what went wrong: "the file is open in another program" is for the user to read.)
+		if (e instanceof HttpError) return json({ error: e.message }, e.status);
+		logError("core", e, `${req.method} ${url.pathname}`);
+		console.error(e);
+		return json({ error: "internal error" }, 500);
+	}
+	try {
 		let parts: string[];
 		try {
 			parts = url.pathname.split("/").filter(Boolean).slice(1).map(decodeURIComponent);
@@ -163,7 +170,7 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
 		logError("core", e, `${req.method} ${url.pathname}`); // the local log (path only: no query string)
 		console.error(e);
-		return json({ error: "internal error" }, 500);
+		return json({ error: e instanceof Error ? e.message : "internal error" }, 500);
 	}
 }
 

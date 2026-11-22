@@ -123,7 +123,7 @@ export async function handleFilesApi(req: Request, db: Database): Promise<Respon
 	} catch (e) {
 		if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
 		console.error(e);
-		return Response.json({ error: "internal error" }, { status: 500 }); // the details are in the log, not in the answer
+		return Response.json({ error: e instanceof Error ? e.message : "internal error" }, { status: 500 });
 	}
 }
 

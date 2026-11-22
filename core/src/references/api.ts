@@ -5,7 +5,6 @@
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../db";
 import { AlreadyInLibrary, addReference, lookupReference } from "./add";
-import { NetError } from "./net";
 import { getReferences } from "./resolve";
 
 function json(body: unknown, status = 200): Response {
@@ -47,7 +46,6 @@ export async function handleReferencesApi(req: Request, db: Database): Promise<R
 		if (e instanceof AlreadyInLibrary) return json({ error: e.message, key: e.key }, 409);
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
 		console.error(e);
-		// a failed request to a reference service (NetError) says which; anything else is opaque, with the details in the log
-		return json({ error: e instanceof NetError ? e.message : "internal error" }, 500);
+		return json({ error: e instanceof Error ? e.message : "internal error" }, 500);
 	}
 }

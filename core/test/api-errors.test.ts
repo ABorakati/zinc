@@ -1,12 +1,13 @@
-// Unexpected errors answer the same JSON everywhere under /api/ with an opaque message: the exception text stays in the log.
+// An error that escapes a feature handler answers JSON with an opaque message. The errors the routes catch themselves keep saying
+// what went wrong: the app shows that text to the user.
 import { describe, expect, test } from "bun:test";
 import { buildFixture, call } from "./fixture";
 
 describe("unexpected errors", () => {
-	test("a failure inside a core route is a JSON 500 that does not repeat the exception text", async () => {
+	test("one that escapes a feature handler is a JSON 500 that does not repeat the exception text", async () => {
 		const fx = buildFixture();
 		fx.db.close();
-		const r = await call(fx.db, "GET", "/api/collections");
+		const r = await call(fx.db, "GET", "/api/ui/selection");
 		expect(r.status).toBe(500);
 		expect(r.headers.get("content-type")).toContain("application/json");
 		const body = await r.text();
@@ -14,16 +15,13 @@ describe("unexpected errors", () => {
 		expect(body.toLowerCase()).not.toContain("closed");
 	});
 
-	test("the same holds for a feature route", async () => {
+	test("one that a route catches itself still says what went wrong", async () => {
 		const fx = buildFixture();
 		fx.db.close();
-		// the first lets the exception escape its handler; the others catch it themselves
-		for (const path of ["/api/ui/selection", "/api/references/AAAAAAA1", "/api/files/settings", "/api/websync/status"]) {
+		for (const path of ["/api/collections", "/api/references/AAAAAAA1", "/api/files/settings"]) {
 			const r = await call(fx.db, "GET", path);
 			expect(r.status).toBe(500);
-			const body = await r.text();
-			expect(body.toLowerCase()).not.toContain("closed");
-			expect(JSON.parse(body)).toEqual({ error: "internal error" });
+			expect(((await r.json()) as any).error).toMatch(/closed/i);
 		}
 	});
 
