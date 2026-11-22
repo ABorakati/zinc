@@ -34,10 +34,11 @@
 // The private key is read from the path in ZN_UPDATE_KEY and refused if that path is inside this repo. See gpui-ui/UPDATES.md.
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { generateKeyPair, publicKeyOf, signManifest, verifyManifest, type PrivateJwk } from "../../core/src/update/manifest";
 import { feedFileName, type UpdatePlatform } from "../../core/src/update/platform";
 import { compareVersions, parseVersion } from "../../core/src/update/version";
+import { isInside } from "./_inside";
 import { updatePubkey } from "./_update-key";
 
 const root = resolve(import.meta.dir, "..");
@@ -56,10 +57,7 @@ const die = (m: string): never => {
 	process.exit(1);
 };
 
-const insideRepo = (p: string) => {
-	const r = relative(repo, resolve(p));
-	return r === "" || (!r.startsWith("..") && !isAbsolute(r));
-};
+const insideRepo = (p: string) => isInside(repo, p);
 
 // ------------------------------------------------------------------------------------------------------------ --keygen
 
@@ -71,7 +69,7 @@ if (flag("keygen")) {
 		pub = join(dir, "release-key.public.txt");
 	if (existsSync(priv) || existsSync(pub)) die(`${priv} or ${pub} already exists; not overwriting a signing key`);
 	const kp = await generateKeyPair();
-	writeFileSync(priv, JSON.stringify(kp.privateJwk, null, 2) + "\n", { flag: "wx" });
+	writeFileSync(priv, JSON.stringify(kp.privateJwk, null, 2) + "\n", { flag: "wx", mode: 0o600 }); // the secret: owner only on Unix
 	writeFileSync(pub, kp.publicKey + "\n", { flag: "wx" });
 	console.log(`private key: ${priv}   (secret: back it up, never commit it)`);
 	console.log(`public key:  ${pub}`);

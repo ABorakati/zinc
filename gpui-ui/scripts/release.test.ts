@@ -2,7 +2,7 @@
 // in the temp folder (never a real signing key). Run: bun test gpui-ui/scripts/release.test.ts
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { UpdateError, generateKeyPair, verifyManifest } from "../../core/src/update/manifest";
@@ -86,5 +86,34 @@ describe("release.ts --extension-zip", () => {
 		const r = run(["--extension-zip", zip], join(dir, "out3"));
 		expect(r.exitCode).toBe(1);
 		expect(r.stderr.toString()).toContain("--extension-url");
+	});
+});
+
+describe("release.ts --keygen", () => {
+	const keygen = (folder: string) =>
+		Bun.spawnSync(["bun", script, "--keygen", folder], { env: { ...process.env, ZN_UPDATE_KEY: "" }, stdout: "pipe", stderr: "pipe" });
+
+	test("writes a key pair outside the repository and refuses to overwrite it", () => {
+		const folder = join(dir, "keys");
+		const r = keygen(folder);
+		expect(r.exitCode).toBe(0);
+		expect(existsSync(join(folder, "release-key.private.json"))).toBe(true);
+		expect(existsSync(join(folder, "release-key.public.txt"))).toBe(true);
+		expect(keygen(folder).exitCode).toBe(1);
+	});
+
+	// the mode only means something on Unix; on Windows the file takes the folder's access rules
+	test.skipIf(process.platform === "win32")("the private key is readable by its owner only", () => {
+		const folder = join(dir, "keys-mode");
+		expect(keygen(folder).exitCode).toBe(0);
+		expect(statSync(join(folder, "release-key.private.json")).mode & 0o777).toBe(0o600);
+	});
+
+	test("refuses a folder inside the repository, and creates nothing there", () => {
+		const folder = join(resolve(import.meta.dir, "..", ".."), "gpui-ui", "out", "zinc-keygen-refused-" + process.pid);
+		const r = keygen(folder);
+		expect(r.exitCode).toBe(1);
+		expect(r.stderr.toString()).toContain("inside the repository");
+		expect(existsSync(folder)).toBe(false);
 	});
 });
