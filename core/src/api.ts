@@ -141,15 +141,17 @@ function methodNotAllowed(): never {
 export async function handleApi(req: Request, db: Database): Promise<Response | null> {
 	const url = new URL(req.url);
 	if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return null;
-	if (url.pathname.startsWith("/api/fulltext/")) return handleFulltextApi(req, db);
-	if (url.pathname.startsWith("/api/references/")) return handleReferencesApi(req, db);
-	for (const handle of FEATURE_HANDLERS) {
-		const res = await handle(req, db);
-		if (res) return res;
-	}
-	if (url.pathname.startsWith("/api/sync/")) return handleSyncApi(req, db);
-	if (url.pathname.startsWith("/api/websync/")) return handleWebSyncApi(req, db);
+	// One place answers for anything a handler lets escape: JSON, the status of an HttpError, otherwise an opaque 500
+	// (the exception text goes to the local log only).
 	try {
+		if (url.pathname.startsWith("/api/fulltext/")) return await handleFulltextApi(req, db);
+		if (url.pathname.startsWith("/api/references/")) return await handleReferencesApi(req, db);
+		for (const handle of FEATURE_HANDLERS) {
+			const res = await handle(req, db);
+			if (res) return res;
+		}
+		if (url.pathname.startsWith("/api/sync/")) return await handleSyncApi(req, db);
+		if (url.pathname.startsWith("/api/websync/")) return await handleWebSyncApi(req, db);
 		let parts: string[];
 		try {
 			parts = url.pathname.split("/").filter(Boolean).slice(1).map(decodeURIComponent);
@@ -161,7 +163,7 @@ export async function handleApi(req: Request, db: Database): Promise<Response | 
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
 		logError("core", e, `${req.method} ${url.pathname}`); // the local log (path only: no query string)
 		console.error(e);
-		return json({ error: e instanceof Error ? e.message : "internal error" }, 500);
+		return json({ error: "internal error" }, 500);
 	}
 }
 

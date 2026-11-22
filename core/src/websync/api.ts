@@ -3,6 +3,7 @@
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../db";
 import { stopSync } from "../sync/api";
+import { WebApiError } from "./client";
 import { WebSyncService, type WebSyncOptions } from "./service";
 import { setSyncMode, type FilesMode, type SyncModeName } from "./state";
 
@@ -126,6 +127,7 @@ export async function handleWebSyncApi(req: Request, db: Database): Promise<Resp
 	} catch (e) {
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
 		console.error(e instanceof Error ? e.message : "websync error");
-		return json({ error: e instanceof Error ? e.message : "internal error" }, 500);
+		// zotero.org's own errors (WebApiError) say what happened; anything else is opaque, with the details in the log
+		return json({ error: e instanceof WebApiError ? e.message : "internal error" }, 500);
 	}
 }

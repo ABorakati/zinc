@@ -96,7 +96,7 @@ export async function handleFulltextApi(req: Request, db: Database): Promise<Res
 	} catch (e) {
 		if (e instanceof HttpError) return json({ error: e.message }, e.status);
 		console.error(e);
-		return json({ error: e instanceof Error ? e.message : "internal error" }, 500);
+		return json({ error: "internal error" }, 500); // the details are in the log, not in the answer
 	}
 }
 
