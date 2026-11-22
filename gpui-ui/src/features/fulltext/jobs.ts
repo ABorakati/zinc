@@ -75,7 +75,7 @@ function stop(id: string) {
 
 function apply(snapshot: FullTextJob) {
 	const before = jobs().find((t) => t.job.id === snapshot.id);
-	if (!before) return;
+	if (!before) return stop(snapshot.id); // no longer on the list (pushed off by newer jobs): stop following it
 	const justDone = snapshot.done && !before.job.done;
 	const attachedNow = snapshot.items.some((i, n) => i.state === "attached" && before.job.items[n]?.state !== "attached");
 	update(snapshot.id, (t) => ({ ...t, job: snapshot }));
