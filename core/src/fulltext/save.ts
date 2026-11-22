@@ -7,6 +7,7 @@ import { basename, join } from "node:path";
 import type { ZoteroItemData } from "../api-types";
 import { addTags, clearFileCache, deriveColumns, generateKey, nowIso } from "../db";
 import { storedFormForNewLink } from "../files/paths";
+import { assertFilesWritable } from "../libraries";
 import { copyVerifiedSync, storageTargetFor } from "../files/storage";
 import type { BodyStore } from "./bodies";
 import { OpError } from "./http";
@@ -86,11 +87,18 @@ export function savePdf(deps: SaveDeps, req: SaveReq): { attachment_key: string;
 	if (!info || info.kind !== "pdf" || !info.path) throw new OpError("internal", "the staged PDF is not a file-backed body");
 	const parentKey = deps.keyOfItem(req.item);
 	if (!parentKey) throw new OpError("parent_gone", "unknown item");
-	const parentRow = db.query("SELECT data, deleted FROM items WHERE key = ? AND parent_key IS NULL").get(parentKey) as {
+	const parentRow = db.query("SELECT data, deleted, library_id FROM items WHERE key = ? AND parent_key IS NULL").get(parentKey) as {
 		data: string;
 		deleted: number;
+		library_id: number;
 	} | null;
 	if (!parentRow || parentRow.deleted) throw new OpError("parent_gone", "the parent item no longer exists");
+	// the permission can change while a job runs, so it is checked again here, at save time
+	try {
+		assertFilesWritable(db, parentRow.library_id);
+	} catch (e) {
+		throw new OpError("not_editable", e instanceof Error ? e.message : "the library does not allow file changes");
+	}
 	const hasPdf = db
 		.query(
 			`SELECT 1 FROM items i JOIN attachments a ON a.item_key = i.key

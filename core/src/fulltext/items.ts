@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { ZoteroItemData } from "../api-types";
 import { fileExists, pickPrimary } from "../db";
 import { resolveStoredPath } from "../files/paths";
+import { getLibrary, USER_LIBRARY } from "../libraries";
 import type { ItemSnapshot } from "./proto";
 
 const NOT_REGULAR = new Set(["attachment", "note", "annotation"]);
@@ -23,7 +24,7 @@ export function snapshotItems(db: Database, keys: string[], firstId = 1): { item
 	const items: ItemInfo[] = [];
 	const missing: string[] = [];
 	let nextId = firstId;
-	const q = db.query("SELECT data, deleted, item_type FROM items WHERE key = ?");
+	const q = db.query("SELECT data, deleted, item_type, library_id FROM items WHERE key = ?");
 	const kids = db.query(
 		// linked URLs have no file, so (as in Zotero) they never count as an attachment that satisfies Find Full Text
 		`SELECT i.key, a.content_type, a.path FROM items i JOIN attachments a ON a.item_key = i.key
@@ -31,7 +32,7 @@ export function snapshotItems(db: Database, keys: string[], firstId = 1): { item
 		 ORDER BY i.date_added, i.key`,
 	);
 	for (const key of keys) {
-		const row = q.get(key) as { data: string; deleted: number; item_type: string } | null;
+		const row = q.get(key) as { data: string; deleted: number; item_type: string; library_id: number } | null;
 		if (!row) {
 			missing.push(key);
 			continue;
@@ -55,6 +56,12 @@ export function snapshotItems(db: Database, keys: string[], firstId = 1): { item
 				best = { kind: "other", exists: false };
 			}
 		}
+		const lib = getLibrary(db, row.library_id);
+		// a group is skipped by the engine; a group that forbids file changes must not get a PDF even if the engine were to try
+		const library: ItemSnapshot["library"] =
+			row.library_id === USER_LIBRARY || !lib
+				? { id: USER_LIBRARY, kind: "user", files_editable: true, name: "My Library" }
+				: { id: lib.id, kind: "group", files_editable: lib.editable && lib.filesEditable, name: lib.name };
 		const id = nextId++;
 		const title = str(data.title) || "(untitled)";
 		items.push({
@@ -62,8 +69,8 @@ export function snapshotItems(db: Database, keys: string[], firstId = 1): { item
 			title,
 			snapshot: {
 				item: id,
-				key: `1/${key}`,
-				library: { id: 1, kind: "user", files_editable: true, name: "My Library" },
+				key: `${library.id}/${key}`,
+				library,
 				regular,
 				feed: false,
 				item_type: row.item_type,
