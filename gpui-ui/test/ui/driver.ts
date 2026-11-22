@@ -179,6 +179,27 @@ export class Ui {
 		return { found, byId };
 	}
 
+	/**
+	 * Which of `texts` are shown in an area (each as part of a text), read in one pass: findAll reads the screen once per call. Only
+	 * the texts that hold one of them are measured, which is the slow part.
+	 */
+	shownOf(texts: readonly string[], a: Area): Set<string> {
+		const { all } = this.index();
+		const within = this.area(a);
+		const out = new Set<string>();
+		for (const n of all) {
+			const t = shownText(n.node, this.renderer);
+			if (!t) continue;
+			const hits = texts.filter((w) => !out.has(w) && t.includes(w));
+			if (!hits.length) continue;
+			const box = this.boxOf(n);
+			if (!box) continue;
+			const c = centre(box);
+			if (inside({ x: 0, y: 0, ...this.size }, c.x, c.y) && inside(within, c.x, c.y)) for (const w of hits) out.add(w);
+		}
+		return out;
+	}
+
 	/** Every match on screen, from the top left. */
 	findAll(text: string, o: FindOptions = {}): Found[] {
 		return this.matches(text, o).found;
