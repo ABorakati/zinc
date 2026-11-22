@@ -143,6 +143,8 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 		collectionKey = req.collectionKey;
 	}
 	const rootCollection = collectionKey;
+	// the collection reported back: the chosen one, else the first the import created or filed items into
+	let reportedKey: string | null = collectionKey;
 
 	const { items, errors } = parse(req.text, format);
 	if (req.autoTag === false) {
@@ -161,7 +163,6 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 	const pathKeys = new Map<string, string>();
 	const collectionFor = (segments: string[]): string | null => {
 		let parent = rootCollection;
-		let createdHere: string | null = null;
 		for (const raw of segments) {
 			const name = raw.trim();
 			if (!name) continue;
@@ -180,9 +181,8 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 				collections++;
 			}
 			pathKeys.set(cacheKey, parent!);
-			createdHere ??= parent;
 		}
-		return createdHere ?? parent;
+		return parent; // the deepest collection of the path
 	};
 
 	const addAttachments = (it: ParsedItem, parentKey: string) => {
@@ -231,11 +231,12 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 						const key = collectionFor(path);
 						if (!key) continue;
 						keys.push(key);
-						collectionKey ??= key;
+						reportedKey ??= key;
 					}
 				}
 				if (!keys.length && !collectionKey && wantNewCollection) {
 					collectionKey = createCollection(db, collectionName).key;
+					reportedKey ??= collectionKey;
 					keys = [collectionKey];
 				} else if (!keys.length && collectionKey) keys = [collectionKey];
 				const detail = createItem(db, { ...it.data, collections: [...new Set(keys)] });
@@ -252,5 +253,5 @@ export function importText(db: Database, req: ImportRequest): ImportResult {
 			}
 		}
 	})();
-	return { created, skipped, errors, collectionKey, format, collections, attachments, itemKeys };
+	return { created, skipped, errors, collectionKey: reportedKey, format, collections, attachments, itemKeys };
 }
