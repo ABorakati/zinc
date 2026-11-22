@@ -106,7 +106,11 @@ export function findBaseAttachmentPath(profilesDir?: string): string | null {
 	return typeof v === "string" && v ? v : null;
 }
 
-/** True if any Zotero process exists (conservative: does not look at which profile it uses). */
+/**
+ * True if any Zotero process exists (conservative: does not look at which profile it uses). When the check itself cannot run
+ * (no tasklist or pgrep) the answer is false on purpose: answering true would stop sync for ever on such a system, and writing
+ * stays guarded by probeWritable (Zotero's own lock) either way.
+ */
 export async function isZoteroProcessRunning(): Promise<boolean> {
 	try {
 		if (process.platform === "win32") {
