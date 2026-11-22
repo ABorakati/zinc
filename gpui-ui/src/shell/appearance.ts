@@ -45,23 +45,34 @@ export const resetThemePrefs = (): void => setPrefsSig({ ...DEFAULT_THEME });
 
 // ------------------------------------------------------------------------------------------------ OS light / dark
 
-/** Windows "Choose your default app mode" (HKCU\...\Themes\Personalize\AppsUseLightTheme); undefined when unreadable. */
-export function readWindowsAppsUseDark(): boolean | undefined {
-	if (process.platform !== "win32") return undefined;
-	try {
-		const adv = dlopen("advapi32.dll", {
+/**
+ * advapi32's RegGetValueW, opened on first use and kept (the theme is polled every few seconds, and every dlopen cost memory that
+ * was never given back). A failed open is not kept: the next call tries again.
+ */
+export function makeRegGetter(open: typeof dlopen) {
+	let sym: ((...args: any[]) => number) | undefined;
+	return () =>
+		(sym ??= open("advapi32.dll", {
 			RegGetValueW: {
 				args: [FFIType.u64, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.ptr],
 				returns: FFIType.i32,
 			},
-		}).symbols;
+		}).symbols.RegGetValueW as unknown as (...args: any[]) => number);
+}
+const regGetValue = makeRegGetter(dlopen);
+
+/** Windows "Choose your default app mode" (HKCU\...\Themes\Personalize\AppsUseLightTheme); undefined when unreadable. */
+export function readWindowsAppsUseDark(): boolean | undefined {
+	if (process.platform !== "win32") return undefined;
+	try {
+		const RegGetValueW = regGetValue();
 		const wide = (s: string) => Buffer.from(`${s}\0`, "utf16le");
 		const sub = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
 		const name = wide("AppsUseLightTheme");
 		const out = new Uint32Array(1);
 		const size = new Uint32Array([4]);
 		// HKEY_CURRENT_USER = 0x80000001, RRF_RT_REG_DWORD = 0x10
-		const rc = adv.RegGetValueW(0x80000001n as never, sub as never, name as never, 0x10, null as never, out as never, size as never);
+		const rc = RegGetValueW(0x80000001n as never, sub as never, name as never, 0x10, null as never, out as never, size as never);
 		return rc === 0 ? out[0] === 0 : undefined;
 	} catch {
 		return undefined;
