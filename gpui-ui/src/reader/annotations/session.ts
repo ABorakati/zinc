@@ -4,9 +4,9 @@
 import { createSignal } from "solid-js";
 import { apiRequest } from "../../api";
 import type { ReaderContext } from "../plugins";
-import { buildPageText, fromNRect } from "../structure/pagetext";
+import { buildPageText } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
-import { selectionToPosition } from "./geometry";
+import { positionFromSelection } from "./geometry";
 import {
 	boundingRect,
 	COLORS,
@@ -123,8 +123,7 @@ export function createSession(ctx: ReaderContext) {
 		async fromSelection(type: "highlight" | "underline", col: string, opts: { comment?: boolean } = {}): Promise<Annotation | null> {
 			const sel = ctx.selection();
 			if (!sel || !sel.rects.length) return null;
-			const size = ctx.pageSize(sel.page);
-			const pos = selectionToPosition([{ page: sel.page, rects: sel.rects.map((r) => fromNRect(r, size.w, size.h)) }]);
+			const pos = positionFromSelection(sel, (page) => ctx.pageSize(page));
 			if (!pos) return null;
 			const text = sel.text.replace(/\s+/g, " ").trim();
 			ctx.clearSelection();

@@ -1,4 +1,6 @@
 // Geometry for annotations: selection rects -> highlight rects, hit testing, ink helpers. Pure (PDF space, y up).
+import type { NRect } from "../plugins";
+import { fromNRect } from "../structure/pagetext";
 import type { PdfRect } from "../structure/types";
 import { boundingRect, type Annotation, type Position } from "./model";
 
@@ -54,7 +56,24 @@ export function selectionToPosition(
 	return next.length ? { pageIndex: first.page, rects, nextPageRects: next } : { pageIndex: first.page, rects };
 }
 
-export const rectContains = (r: PdfRect, x: number, y: number, tol = 0) =>
+/**
+ * The position of a highlight made from the reader's text selection: every page the selection touches (`pages`, which the core fills;
+ * `page` + `rects` alone when it gives none), each converted with ITS OWN page size (pages of one file differ in size and turn).
+ */
+export function positionFromSelection(
+	sel: { page: number; rects: NRect[]; pages?: { page: number; rects: NRect[] }[] },
+	pageSize: (page: number) => { w: number; h: number },
+): ReturnType<typeof selectionToPosition> {
+	const parts = sel.pages?.length ? sel.pages : [{ page: sel.page, rects: sel.rects }];
+	return selectionToPosition(
+		parts.map((p) => {
+			const size = pageSize(p.page);
+			return { page: p.page, rects: p.rects.map((r) => fromNRect(r, size.w, size.h)) };
+		}),
+	);
+}
+
+export const rectContains =(r: PdfRect, x: number, y: number, tol = 0) =>
 	x >= r[0] - tol && x <= r[2] + tol && y >= r[1] - tol && y <= r[3] + tol;
 
 /** Distance from point (x, y) to segment (ax, ay)-(bx, by). */
