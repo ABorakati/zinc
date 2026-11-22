@@ -162,6 +162,7 @@ export function Header(): JSX.Element {
 				bare
 				multiline
 				submitOnEnter
+				flushOnRemove
 				value={data().title ?? ""}
 				placeholder="Untitled"
 				rootStyle={{ marginTop: 10 }}
@@ -242,6 +243,7 @@ export function AbstractSection(): JSX.Element {
 		<Section id="abstract" title="Abstract" icon="align-left">
 			<Field
 				multiline
+				flushOnRemove
 				value={pane.detail()?.data.abstractNote ?? ""}
 				placeholder="Add abstract"
 				cls="text-[13px] leading-[19px]"

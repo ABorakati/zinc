@@ -2,9 +2,11 @@
 // text typed into a field that is removed before its blur arrives (the pane switches to another item) is saved to the item it was
 // typed in. The pane's detail() is undefined during a switch and a new object on every reload.
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { createRoot, createSignal, Show } from "solid-js";
+import { createRoot, createSignal, For, Show } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import type * as HeaderMod from "./Header";
+import type * as InfoMod from "./Info";
+import type * as KitMod from "./kit";
 import type * as ModelMod from "./model";
 import type * as NetMod from "./net";
 
@@ -18,6 +20,8 @@ function findAll(node: HostElement | undefined, pred: (n: HostElement) => boolea
 
 describe("inline field edit flushed when the field goes away", () => {
 	let Header: typeof HeaderMod;
+	let Info: typeof InfoMod;
+	let kit: typeof KitMod;
 	let model: typeof ModelMod;
 	let net: typeof NetMod;
 	let envBefore: string | undefined;
@@ -34,13 +38,15 @@ describe("inline field edit flushed when the field goes away", () => {
 		net = await import("./net");
 		model = await import("./model");
 		Header = await import("./Header");
+		Info = await import("./Info");
+		kit = await import("./kit");
 		const api = net.ipApi as unknown as Record<string, unknown>;
 		saved = { item: api.item, patchItem: api.patchItem, schema: api.schema, tagColors: api.tagColors };
-		api.schema = async () => ({});
+		api.schema = async () => ({ itemTypes: [] });
 		api.tagColors = async () => [];
 		api.item = async (key: string) => {
 			await sleep(2);
-			return { data: { key, itemType: "journalArticle", abstractNote: `abstract of ${key}` }, children: [] };
+			return { data: { key, itemType: "journalArticle", abstractNote: `abstract of ${key}`, creators: [{ creatorType: "author", lastName: `Last ${key}`, firstName: "First" }] }, children: [] };
 		};
 		api.patchItem = async (key: string, data: Record<string, unknown>) => {
 			writes.push(`${key}<-${JSON.stringify(data)}`);
@@ -135,6 +141,58 @@ describe("inline field edit flushed when the field goes away", () => {
 		m.setKey("BBBBBBBB");
 		await sleep(40);
 		expect(writes).toEqual([`AAAAAAAA<-{"abstractNote":"kept through a reload"}`]);
+	});
+
+	function mountWith(body: () => unknown) {
+		const [key, setKey] = createSignal<string | null>("AAAAAAAA");
+		let root!: HostElement;
+		cleanups.push(
+			createRoot((d) => {
+				const pane = model.createPaneModel(key);
+				root = (
+					<div>
+						<model.PaneContext.Provider value={pane}>
+							<Show when={pane.detail()}>{body() as never}</Show>
+						</model.PaneContext.Provider>
+					</div>
+				) as unknown as HostElement;
+				return d;
+			}),
+		);
+		return {
+			setKey,
+			edit: (v: string) => {
+				const box = findAll(root, (n) => n.props.get("role") === "textbox")[0]!;
+				(box.props.get("onClick") as () => void)();
+				(findAll(root, (n) => n.type === "input")[0]!.props.get("onChange") as (e: unknown) => void)({ value: v });
+			},
+		};
+	}
+
+	test("a creator being edited when the pane switches never costs the item its creators", async () => {
+		function Creators() {
+			const entries = Info.useInfoEntries();
+			return <For each={entries().filter((e) => e.id === "c:0")}>{(e) => e.render() as never}</For>;
+		}
+		const m = mountWith(() => <Creators />);
+		await sleep(20);
+		m.edit("Typed");
+		m.setKey("BBBBBBBB");
+		await sleep(40);
+		expect(writes.filter((w) => w.includes("creators"))).toEqual([]);
+	});
+
+	test("a field whose handler acts on the current item is not run for the item that was left", async () => {
+		const acted: unknown[] = [];
+		function Row() {
+			return <kit.Field value="old" onSave={(v) => acted.push(v)} />;
+		}
+		const m = mountWith(() => <Row />);
+		await sleep(20);
+		m.edit("pin this");
+		m.setKey("BBBBBBBB");
+		await sleep(40);
+		expect(acted).toEqual([]);
 	});
 
 	test("opening the editor and leaving without a change saves nothing", async () => {

@@ -118,7 +118,7 @@ function DateParts(p: { value: string; onChange: (v: string) => void }): JSX.Ele
 		<div style={{ ...t("flex items-center gap-1 w-full min-w-0") }}>
 			<Show
 				when={!textMode()}
-				fallback={<Field value={p.value} placeholder="e.g. Spring 2020, in press" onSave={(v) => p.onChange(v.trim())} />}
+				fallback={<Field flushOnRemove value={p.value} placeholder="e.g. Spring 2020, in press" onSave={(v) => p.onChange(v.trim())} />}
 			>
 				<BoxInput value={y()} width={52} placeholder="Year" numeric onInput={(v) => setY(v)} onCommit={(v) => commit(v)} />
 				<Select value={m()} options={monthOpts} onChange={(v) => commit(y(), v, d())} width={80} disabled={locked()} />
@@ -401,6 +401,7 @@ export function useInfoEntries(): () => Entry[] {
 				<Row label={f().label} icon={FIELD_ICONS[field]}>
 					<Show when={field !== "date"} fallback={<DateParts value={v()} onChange={(nv) => void pane.save({ date: nv })} />}>
 						<Field
+							flushOnRemove
 							value={v()}
 							multiline={field === "extra"}
 							dir={fieldDirection(field, f().baseField, data().language as string | undefined)}

@@ -396,6 +396,12 @@ export function Field(p: {
 	startEditing?: boolean;
 	/** base direction of the editor: "ltr" for IDs / numbers / URLs (Zotero's getDirection: see ui/bidi.ts fieldDirection); default "auto" (first strong character) */
 	dir?: "ltr" | "rtl" | "auto";
+	/**
+	 * Also save what was typed when the field is removed while editing (the pane moved to another item). Only for an onSave that is
+	 * no more than pane.save({ field: typed }): a handler that reads the pane (the creators, the item's key) would read the next
+	 * item's, or none, and write that into the item that was left.
+	 */
+	flushOnRemove?: boolean;
 }): JSX.Element {
 	const [editing, setEditingRaw] = createSignal(!!p.startEditing);
 	const setEditing = (v: boolean) => {
@@ -418,7 +424,7 @@ export function Field(p: {
 		setEditing(true);
 	};
 	onCleanup(() => {
-		if (!editing() || cancelled || draft === base) return;
+		if (!p.flushOnRemove || !editing() || cancelled || draft === base) return;
 		try {
 			if (pane) pane.withKey(editKey, () => p.onSave(draft));
 			else p.onSave(draft);
