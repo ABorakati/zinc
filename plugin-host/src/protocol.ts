@@ -139,7 +139,8 @@ export type ToHost =
 			defaults?: Record<string, boolean | number | string>;
 			user?: Record<string, boolean | number | string>;
 			secrets?: string[];
-			appPrefs?: Record<string, boolean | number | string>;
+			/** A key pushed as `null` is forgotten (the setting has no value any more). */
+			appPrefs?: Record<string, boolean | number | string | null>;
 	  }
 	/** `zhw`: update cached Fluent bundles and/or global UI locale & time zone. */
 	| {

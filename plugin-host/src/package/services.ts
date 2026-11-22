@@ -61,6 +61,8 @@ export class PluginServices {
 	private offApp: (() => void) | undefined;
 	private lastAppJson = "";
 	private lastAppPrefsJson = "";
+	/** The allowlisted Zinc settings `zhw` has been told about (the last init or push). */
+	private sentAppPrefs: Record<string, PrefValue> = {};
 	private lastLocale = "";
 	private lastTimeZone: string | undefined;
 	updateFetch: UpdateOptions["fetch"];
@@ -155,6 +157,7 @@ export class PluginServices {
 		const appPrefs = this.appPrefsSnapshot();
 		this.lastAppJson = JSON.stringify(app);
 		this.lastAppPrefsJson = JSON.stringify(appPrefs);
+		this.sentAppPrefs = appPrefs;
 		this.lastLocale = app.info.locale;
 		this.lastTimeZone = app.info.timeZone;
 		return {
@@ -184,8 +187,16 @@ export class PluginServices {
 		const appPrefsJson = JSON.stringify(appPrefs);
 		if (appPrefsJson !== this.lastAppPrefsJson) {
 			this.lastAppPrefsJson = appPrefsJson;
-			this.sup.pushHost?.({ t: "prefs", appPrefs });
+			this.pushAppPrefs(appPrefs);
 		}
+	}
+
+	/** Push the allowlisted settings to `zhw`: the ones that have a value, and `null` for each that had one and has none now (`zhw` forgets it). */
+	private pushAppPrefs(appPrefs: Record<string, PrefValue>) {
+		const msg: Record<string, PrefValue | null> = { ...appPrefs };
+		for (const k of Object.keys(this.sentAppPrefs)) if (!(k in appPrefs)) msg[k] = null;
+		this.sentAppPrefs = appPrefs;
+		this.sup?.pushHost?.({ t: "prefs", appPrefs: msg });
 	}
 
 	loadStateFor(id: string, dir: string, manifest: PluginManifest): SupervisorLoadState {
@@ -261,6 +272,8 @@ export class PluginServices {
 	}
 
 	private fanOut(plugin: string, scope: "plugin-own" | "app", key: string, value: PrefValue | undefined) {
+		// an observer of Zinc's settings keeps hearing only while the plugin still has `prefs.app-read`
+		if (scope === "app" && !this.sup?.get(plugin)?.grants.capabilities.includes("prefs.app-read")) return;
 		for (const [id, s] of this.prefSubs.get(plugin) ?? []) {
 			if (s.scope !== scope) continue;
 			if (s.prefix ? key.startsWith(s.key) : key === s.key) {
@@ -278,7 +291,7 @@ export class PluginServices {
 		if (!APP_PREF_ALLOWLIST.includes(key)) return; // plugins only ever hear about allowlisted settings
 		const appPrefs = this.appPrefsSnapshot();
 		this.lastAppPrefsJson = JSON.stringify(appPrefs);
-		this.sup?.pushHost?.({ t: "prefs", appPrefs });
+		this.pushAppPrefs(appPrefs);
 		for (const plugin of this.prefSubs.keys()) this.fanOut(plugin, "app", key, value);
 	}
 

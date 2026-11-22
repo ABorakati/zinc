@@ -223,6 +223,17 @@ export class SecretStore {
 		}
 	}
 
+	/** The checks of `set` for several secrets at once, without the write. Throws SecretError. */
+	validate(plugin: string, entries: Array<[string, string]>): void {
+		const names = new Set(Object.keys(this.read(plugin).items));
+		for (const [name, value] of entries) {
+			this.checkName(name);
+			if (Buffer.byteLength(value, "utf8") > MAX_SECRET_BYTES) throw new SecretError("limit-exceeded", `a secret is at most ${MAX_SECRET_BYTES} bytes`);
+			names.add(name);
+		}
+		if (names.size > MAX_SECRETS) throw new SecretError("limit-exceeded", `at most ${MAX_SECRETS} secrets per plugin`);
+	}
+
 	set(plugin: string, name: string, value: string): void {
 		this.checkName(name);
 		if (Buffer.byteLength(value, "utf8") > MAX_SECRET_BYTES) throw new SecretError("limit-exceeded", `a secret is at most ${MAX_SECRET_BYTES} bytes`);

@@ -51,7 +51,7 @@ export class PrefStore {
 		let m = this.cache.get(plugin);
 		if (!m) {
 			const raw = readJson<Record<string, unknown>>(this.layout.prefsFile(plugin), {});
-			m = {};
+			m = Object.create(null) as Record<string, PrefValue>; // no prototype: "toString" and "__proto__" are keys like any other
 			for (const [k, v] of Object.entries(raw)) if (KEY.test(k) && (typeof v === "boolean" || typeof v === "string" || (typeof v === "number" && Number.isInteger(v)))) m[k] = v;
 			this.cache.set(plugin, m);
 		}
@@ -123,7 +123,7 @@ export class PrefStore {
 		if (this.isSecret(plugin, key)) return undefined;
 		const u = this.load(plugin);
 		if (key in u) return u[key];
-		return this.defaults(plugin)[key];
+		return own(this.defaults(plugin), key);
 	}
 
 	hasUserValue(plugin: string, key: string): boolean {
@@ -148,9 +148,18 @@ export class PrefStore {
 		} else if (typeof value === "string") {
 			if (Buffer.byteLength(value, "utf8") > MAX_PREF_TEXT_BYTES) throw new PrefError("limit-exceeded", `${key}: a text pref is at most 64 KiB`);
 		} else if (typeof value !== "boolean") throw new PrefError("invalid-argument", `${key}: not a pref value`);
-		const def = this.defaults(plugin)[key];
+		const def = own(this.defaults(plugin), key);
 		if (def !== undefined && typeof def !== typeof value) throw new PrefError("invalid-argument", `${key} has a default of type ${typeName(def)}; cannot set ${typeName(value)}`);
 		if (!(key in userKeys) && Object.keys(userKeys).length >= MAX_PREF_KEYS) throw new PrefError("limit-exceeded", `at most ${MAX_PREF_KEYS} prefs per plugin`);
+	}
+
+	/** The checks of `setMany` without the write. Throws PrefError. */
+	validate(plugin: string, entries: Array<[string, PrefValue]>): void {
+		const next = copy(this.load(plugin));
+		for (const [k, v] of entries) {
+			this.check(plugin, k, v, next);
+			next[k] = v;
+		}
 	}
 
 	set(plugin: string, key: string, value: PrefValue): void {
@@ -160,7 +169,7 @@ export class PrefStore {
 	/** All or none: every entry is checked before the first is written. One change notification per key whose effective value changed. */
 	setMany(plugin: string, entries: Array<[string, PrefValue]>): void {
 		const u = this.load(plugin);
-		const next = { ...u };
+		const next = copy(u);
 		for (const [k, v] of entries) {
 			this.check(plugin, k, v, next);
 			next[k] = v;
@@ -177,7 +186,7 @@ export class PrefStore {
 		const u = this.load(plugin);
 		if (!(key in u)) return undefined;
 		const before = this.get(plugin, key);
-		const next = { ...u };
+		const next = copy(u);
 		delete next[key];
 		this.cache.set(plugin, next);
 		this.save(plugin, next);
@@ -213,6 +222,10 @@ export class PrefStore {
 		this.emitSync(plugin);
 	}
 }
+
+/** A value of `o` by its own key only: a pref named "toString" or "constructor" is not what `{}` inherits. */
+const own = (o: Record<string, PrefValue>, key: string): PrefValue | undefined => (Object.hasOwn(o, key) ? o[key] : undefined);
+const copy = (u: Record<string, PrefValue>): Record<string, PrefValue> => Object.assign(Object.create(null) as Record<string, PrefValue>, u);
 
 const typeName = (v: PrefValue) => (typeof v === "boolean" ? "flag" : typeof v === "number" ? "integer" : "text");
 

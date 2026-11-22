@@ -5,6 +5,7 @@ import { defineHandler, witError } from "./registry";
 import { getServices } from "../package/services";
 import { APP_PREF_ALLOWLIST } from "../package/app-service";
 import { PrefError, fromWire, toWire, type PrefValue } from "../package/prefs-store";
+import { SecretError } from "../package/secrets-store";
 import { requirePermission } from "../permissions/check";
 
 const MAX_SUBSCRIPTIONS = 256;
@@ -13,23 +14,27 @@ function wrap<T>(fn: () => T): T {
 	try {
 		return fn();
 	} catch (e) {
-		if (e instanceof PrefError) throw witError(e.tag, e.message);
+		if (e instanceof PrefError || e instanceof SecretError) throw witError(e.tag, e.message);
 		throw e;
 	}
 }
 
 type Wire = { tag: string; val: unknown };
 
-/** A secret setting is not a pref: its value goes to `secrets` under "pref:<key>" (lifecycle.wit, interface prefs). */
+/** A secret setting is not a pref: its value goes to `secrets` under "pref:<key>" (lifecycle.wit, interface prefs). All or none: every entry is checked before the first is written. */
 function write(plugin: string, entries: Array<[string, PrefValue]>) {
 	const s = getServices();
 	const plain: Array<[string, PrefValue]> = [];
+	const secret: Array<[string, string]> = [];
 	for (const [k, v] of entries) {
 		if (s.prefs.isSecret(plugin, k)) {
 			if (typeof v !== "string") throw witError("invalid-argument", `${k} is a secret setting and holds text`);
-			s.secrets.set(plugin, `pref:${k}`, v);
+			secret.push([`pref:${k}`, v]);
 		} else plain.push([k, v]);
 	}
+	s.prefs.validate(plugin, plain);
+	s.secrets.validate(plugin, secret);
+	for (const [name, v] of secret) s.secrets.set(plugin, name, v);
 	if (plain.length) s.prefs.setMany(plugin, plain);
 }
 
