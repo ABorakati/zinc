@@ -1,5 +1,6 @@
 // File types that run code when the shell opens them. Used to keep web-saved attachments from keeping such an
 // extension, and to stop "open externally" from launching one without an explicit confirmation.
+import { statSync } from "node:fs";
 import { extname } from "node:path";
 
 const EXECUTABLE_EXTENSIONS = new Set([
@@ -73,6 +74,29 @@ const EXECUTABLE_EXTENSIONS = new Set([
 	".run",
 	".bin",
 	".elf",
+	".zsh",
+	".csh",
+	".ksh",
+	".fish",
+	".tool",
+	// what macOS `open` and Linux `xdg-open` launch or install
+	".desktop",
+	".appimage",
+	".flatpakref",
+	".terminal",
+	".fileloc",
+	".inetloc",
+	".webloc",
+	".workflow",
+	".action",
+	".scpt",
+	".scptd",
+	".applescript",
+	".pkg",
+	".mpkg",
+	".dmg",
+	".prefpane",
+	".mobileconfig",
 	// other launchers
 	".chm",
 	".iso",
@@ -94,6 +118,24 @@ export function fileExtension(name: string): string {
 /** True when opening this file name through the shell could run code. */
 export function isExecutableName(name: string): boolean {
 	return EXECUTABLE_EXTENSIONS.has(fileExtension(name));
+}
+
+/**
+ * True when handing this file to the system's opener could run code: its name says so, or (macOS, Linux) it has no extension and
+ * has an executable bit, which `open` runs as a program.
+ */
+export function opensAsProgram(
+	path: string,
+	platform: string = process.platform,
+	modeOf: (path: string) => number = (p) => statSync(p).mode,
+): boolean {
+	if (isExecutableName(path)) return true;
+	if (platform === "win32" || fileExtension(path)) return false;
+	try {
+		return (modeOf(path) & 0o111) !== 0;
+	} catch {
+		return true; // it cannot be checked: ask first
+	}
 }
 
 /** Append ".txt" to an executable / script file name so a saved web download can never launch; other names are unchanged. */
