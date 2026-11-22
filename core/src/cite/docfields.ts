@@ -489,7 +489,10 @@ export function rtfToRuns(rtf: string): Run[] {
 		if (l && l.i === cur.i && l.b === cur.b && l.sup === cur.sup && l.sub === cur.sub && l.sc === cur.sc) l.t += t;
 		else runs.push({ t, ...cur });
 	};
-	const s = rtf.replace(/^\{\\rtf\d*\s*/, "").replace(/\}$/, "");
+	// the closing brace belongs to the {\rtf ...} wrapper: a bare fragment has none (its last "}" may be an escaped "\}")
+	const wrapped = /^\{\\rtf\d*\s*/.test(rtf);
+	let s = rtf.replace(/^\{\\rtf\d*\s*/, "");
+	if (wrapped) s = s.replace(/\}$/, "");
 	for (let p = 0; p < s.length;) {
 		const ch = s[p]!;
 		if (ch === "{") {

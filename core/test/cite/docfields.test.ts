@@ -23,6 +23,12 @@ describe("rtf <-> runs", () => {
 		expect(rtfToRuns("{\\rtf (Smith, 2020)}")).toEqual([{ t: "(Smith, 2020)" }]);
 		expect(rtfToRuns("caf\\uc0\\u233{} \\uc0\\u-10179{}\\uc0\\u-8704{}")).toEqual([{ t: "café \u{1F600}" }]);
 	});
+	test("a bare fragment ending in an escaped brace keeps it; the {\\rtf} wrapper's own brace is dropped", () => {
+		expect(rtfToRuns("{\\i{}x}\\}")).toEqual([{ t: "x", i: 1 }, { t: "}" }]);
+		expect(rtfToRuns("a\\}")).toEqual([{ t: "a}" }]);
+		expect(rtfToRuns("{\\rtf a\\}}")).toEqual([{ t: "a}" }]);
+		expect(richToRuns("{\\i{}x}\\}")).toEqual([{ t: "x", i: 1 }, { t: "}" }]);
+	});
 	test("richToRuns picks RTF, HTML or plain", () => {
 		expect(richToRuns("<i>a</i> b")).toEqual([{ t: "a", i: 1 }, { t: " b" }]);
 		expect(richToRuns("{\\i{}a} b")).toEqual([{ t: "a", i: 1 }, { t: " b" }]);
