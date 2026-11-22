@@ -18,6 +18,7 @@
 import type { Database } from "bun:sqlite";
 import { existsSync, statSync } from "node:fs";
 import { HttpError, clearFileCache } from "../db";
+import { systemOpener } from "../os-open";
 import { getSyncService, startSyncService, stopSync } from "../sync";
 import { createZoteroBackends, findZoteroDataDir } from "../zotero-db";
 import { configFileFor, configuredZoteroDataDir, dbFileOf, readConfig, updateConfig } from "./config";
@@ -46,10 +47,7 @@ export function setFolderPicker(fn: FolderPicker | null): void {
 	picker = fn;
 }
 
-const defaultRevealer: Revealer = (path) => {
-	const p = Bun.spawn(["explorer.exe", "/select,", path], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-	p.unref();
-};
+const defaultRevealer: Revealer = (path) => systemOpener().reveal(path);
 let revealer: Revealer = defaultRevealer;
 /** Tests: replace the Explorer launcher. Call with no argument to restore it. */
 export function setRevealer(fn?: Revealer): void {

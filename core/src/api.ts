@@ -8,6 +8,7 @@ import { HttpError } from "./db";
 import { handleFulltextApi } from "./fulltext/api";
 import { handleReferencesApi } from "./references/api";
 import { doiInPath } from "./references/sources";
+import { systemOpener as makeSystemOpener } from "./os-open";
 import { handleCiteApi } from "./cite/api";
 import { handleAddItemsApi } from "./additems/api";
 import { duplicateItem } from "./additems/duplicate";
@@ -95,17 +96,8 @@ export interface Opener {
 	openUrl(url: string): void; // open in the default browser
 }
 
-// Arguments go straight to CreateProcess as an argv array; no shell parses them.
-function launch(cmd: string[]): void {
-	const p = Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-	p.unref();
-}
-
-const systemOpener: Opener = {
-	reveal: (path) => launch(["explorer.exe", "/select,", path]),
-	openFile: (path) => launch(["explorer.exe", path]),
-	openUrl: (url) => launch(["rundll32.exe", "url.dll,FileProtocolHandler", url]),
-};
+// The system's own opener for this platform, run as an argument array (no shell); see os-open.ts.
+const systemOpener: Opener = makeSystemOpener();
 
 let opener: Opener = systemOpener;
 

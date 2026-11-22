@@ -30,6 +30,8 @@ const EDGE_HOST_KEY = "HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\co
 export const CONNECTOR_EXTENSION_ID = "pakgagonakcalfbmckaolkpidcojacaf";
 
 export interface IntegrationsStatus {
+	/** True where the integrations cannot work (they are Windows-only); everything below is then false and `problem` says why. */
+	unsupported?: boolean;
 	word: { installed: boolean; available: boolean; wordRunning: boolean; problem?: string };
 	/** The browser connector (one extension and helper for Chrome and Edge). hostInstalled: for every browser found. */
 	chrome: {
@@ -41,6 +43,30 @@ export interface IntegrationsStatus {
 		edgeFound: boolean;
 		chromeHost: boolean;
 		edgeHost: boolean;
+	};
+}
+
+// The platform the integrations are judged for; tests replace it.
+let platform: string = process.platform;
+export function setIntegrationsPlatform(p?: string): void {
+	platform = p ?? process.platform;
+}
+const UNSUPPORTED = "These integrations are only available on Windows.";
+
+function unsupportedStatus(): IntegrationsStatus {
+	return {
+		unsupported: true,
+		word: { installed: false, available: false, wordRunning: false, problem: UNSUPPORTED },
+		chrome: {
+			hostInstalled: false,
+			available: false,
+			extensionDir: "",
+			problem: UNSUPPORTED,
+			chromeFound: false,
+			edgeFound: false,
+			chromeHost: false,
+			edgeHost: false,
+		},
 	};
 }
 
@@ -84,6 +110,7 @@ async function wordRunning(): Promise<boolean> {
 }
 
 export async function integrationsStatus(): Promise<IntegrationsStatus> {
+	if (platform !== "win32") return unsupportedStatus();
 	const p = paths();
 	const [wordInstalled, chromeHost, edgeHost, running] = await Promise.all([
 		regKeyExists(WORD_ADDIN_KEY),
@@ -129,6 +156,8 @@ export async function handleIntegrationsApi(req: Request): Promise<Response | nu
 	const { pathname } = new URL(req.url);
 	if (!pathname.startsWith("/api/integrations")) return null;
 	const parts = pathname.split("/").filter(Boolean).slice(2);
+	// registry, tasklist, PowerShell installers and Explorer: nothing here exists elsewhere, so none of it is attempted
+	if (platform !== "win32" && req.method === "POST" && parts.length === 2) return json({ error: UNSUPPORTED, unsupported: true }, 501);
 	if (parts.length === 0) {
 		if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
 		return json(await integrationsStatus());
