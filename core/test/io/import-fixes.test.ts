@@ -81,3 +81,76 @@ describe("items without a collection in a file that has collections", () => {
 		expect(titlesIn(dst2, imported!.key)).toEqual(["Loose"]);
 	});
 });
+
+describe("Zotero RDF volume and issue per article", () => {
+	const article = (title: string, volume: string, issue: string) => ({
+		itemType: "journalArticle" as const,
+		title,
+		publicationTitle: "The Lancet",
+		journalAbbreviation: "Lancet",
+		ISSN: "0140-6736",
+		volume,
+		issue,
+	});
+
+	test("two articles of one journal keep their own volume and issue", async () => {
+		const src = freshDb();
+		createItem(src, article("First", "1", "2"));
+		createItem(src, article("Second", "9", "7"));
+		const rdf = await exportText(src, "rdf");
+		// the first container takes the ISSN uri, as Zotero's own exporter does; the next one is a separate resource
+		expect(rdf.match(/rdf:about="urn:issn:0140-6736"/g)?.length).toBe(1);
+		expect(rdf.match(/<prism:volume>/g)?.length).toBe(2);
+
+		const dst = freshDb();
+		const r = await importInto(dst, rdf, { collectionName: null });
+		expect(r.body.errors).toEqual([]);
+		for (const [title, volume, issue] of [
+			["First", "1", "2"],
+			["Second", "9", "7"],
+		] as const) {
+			const d = dataOf(dst, keyByTitle(dst, title));
+			expect([d.volume, d.issue, d.publicationTitle, d.journalAbbreviation, d.ISSN]).toEqual([volume, issue, "The Lancet", "Lancet", "0140-6736"]);
+		}
+	});
+
+	test("a file written with one shared container still imports", async () => {
+		const old = `<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:bib="http://purl.org/net/biblio#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"
+         xmlns:prism="http://prismstandard.org/namespaces/1.2/basic/" xmlns:z="http://www.zotero.org/namespaces/export#">
+  <bib:Article rdf:about="#item_1"><z:itemType>journalArticle</z:itemType><dcterms:isPartOf rdf:resource="urn:issn:0140-6736"/><dc:title>One</dc:title></bib:Article>
+  <bib:Article rdf:about="#item_2"><z:itemType>journalArticle</z:itemType><dcterms:isPartOf rdf:resource="urn:issn:0140-6736"/><dc:title>Two</dc:title></bib:Article>
+  <bib:Journal rdf:about="urn:issn:0140-6736"><dc:title>The Lancet</dc:title><prism:volume>1</prism:volume><prism:number>2</prism:number></bib:Journal>
+</rdf:RDF>`;
+		const dst = freshDb();
+		const r = await importInto(dst, old, { collectionName: null });
+		expect(r.body.errors).toEqual([]);
+		for (const title of ["One", "Two"]) {
+			const d = dataOf(dst, keyByTitle(dst, title));
+			expect([d.volume, d.issue, d.publicationTitle]).toEqual(["1", "2", "The Lancet"]);
+		}
+	});
+});
+
+describe("cyclic collection parts in RDF", () => {
+	test("a collection that contains its own ancestor does not overflow the stack", async () => {
+		const rdf = `<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:bib="http://purl.org/net/biblio#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"
+         xmlns:z="http://www.zotero.org/namespaces/export#">
+  <bib:Book rdf:about="#item_1"><z:itemType>book</z:itemType><dc:title>In B</dc:title></bib:Book>
+  <z:Collection rdf:about="#c_r"><dc:title>R</dc:title><dcterms:hasPart rdf:resource="#c_a"/></z:Collection>
+  <z:Collection rdf:about="#c_a"><dc:title>A</dc:title><dcterms:hasPart rdf:resource="#c_b"/></z:Collection>
+  <z:Collection rdf:about="#c_b"><dc:title>B</dc:title><dcterms:hasPart rdf:resource="#c_a"/><dcterms:hasPart rdf:resource="#c_b"/><dcterms:hasPart rdf:resource="#item_1"/></z:Collection>
+</rdf:RDF>`;
+		const dst = freshDb();
+		const r = await importInto(dst, rdf, { collectionName: null });
+		expect(r.status).toBe(200);
+		expect(r.body.errors).toEqual([]);
+		const b = collectionOf(dst, "B");
+		expect(titlesIn(dst, b.key)).toEqual(["In B"]);
+		expect(collectionOf(dst, "A").parent_key).toBe(collectionOf(dst, "R").key);
+		expect(b.parent_key).toBe(collectionOf(dst, "A").key);
+	});
+});

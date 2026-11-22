@@ -617,7 +617,9 @@ export function parseZoteroRdf(xml: string): { items: ParsedItem[]; errors: stri
 	}
 
 	const isCollection = (r: RdfResource) => r.type === "z:Collection" || r.type === "bib:Collection" || r.type === "bibo:Collection";
-	const collectionOf = (r: RdfResource): CollectionNode => {
+	// `ancestors` guards against a file in which a collection contains itself, directly or through its descendants
+	const collectionOf = (r: RdfResource, ancestors: ReadonlySet<string> = new Set()): CollectionNode => {
+		const here = new Set(ancestors).add(r.id);
 		const node: CollectionNode = {
 			res: r,
 			title: graph.lit(r, "dc:title", "dcterms:title") || textOf(r.node),
@@ -625,8 +627,8 @@ export function parseZoteroRdf(xml: string): { items: ParsedItem[]; errors: stri
 			items: [],
 		};
 		for (const part of graph.refs(r, "dcterms:hasPart", "dc:hasPart", "bib:hasPart")) {
-			if (isCollection(part)) node.children.push(collectionOf(part));
-			else node.items.push(part);
+			if (!isCollection(part)) node.items.push(part);
+			else if (!here.has(part.id)) node.children.push(collectionOf(part, here));
 		}
 		return node;
 	};
@@ -635,7 +637,7 @@ export function parseZoteroRdf(xml: string): { items: ParsedItem[]; errors: stri
 	for (const r of graph.byId.values()) {
 		for (const part of graph.refs(r, "dcterms:hasPart", "bib:hasPart")) if (isCollection(part)) childCollectionIds.add(part.id);
 	}
-	const roots = [...graph.byId.values()].filter((r) => isCollection(r) && !childCollectionIds.has(r.id)).map(collectionOf);
+	const roots = [...graph.byId.values()].filter((r) => isCollection(r) && !childCollectionIds.has(r.id)).map((r) => collectionOf(r));
 
 	// item id -> collection path (nested collections become "Parent/Child")
 	const paths = new Map<string, string[][]>();
@@ -793,18 +795,18 @@ export function exportZoteroRdf(items: RdfExportItem[], collections: RdfCollecti
 		let containerUri = "";
 		if (containerSpec && containerTitle) {
 			const issn = String(d.ISSN ?? "").trim();
-			const key = issn ? `urn:issn:${encodeURI(issn)}` : `#container_${++containerCount}`;
+			// as Zotero does: the first item of an ISSN takes the ISSN uri, later ones get their own container (own volume and issue)
+			const issnUri = issn ? `urn:issn:${encodeURI(issn)}` : "";
+			const key = issnUri && !containers.has(issnUri) ? issnUri : `#container_${++containerCount}`;
 			containerUri = key;
-			if (!containers.has(key)) {
-				containers.set(key, {
-					uri: key,
-					type: containerSpec.type,
-					title: containerTitle,
-					alternative: String(d.journalAbbreviation ?? ""),
-					volume: String(d.volume ?? ""),
-					issue: String(d.issue ?? ""),
-				});
-			}
+			containers.set(key, {
+				uri: key,
+				type: containerSpec.type,
+				title: containerTitle,
+				alternative: String(d.journalAbbreviation ?? ""),
+				volume: String(d.volume ?? ""),
+				issue: String(d.issue ?? ""),
+			});
 		}
 		lines.push(`  <${type} rdf:about="${xmlEscape(uri)}">`);
 		lines.push(`    <z:itemType>${xmlEscape(d.itemType)}</z:itemType>`);
