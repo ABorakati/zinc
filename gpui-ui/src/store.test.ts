@@ -6,6 +6,7 @@ process.env.ZN_UI_STATE = "off"; // never touch the user's saved list preference
 
 type Handler = (url: URL) => Promise<Response> | Response | null;
 let handler: Handler = () => null;
+let indexHandler: Handler = () => null; // /api/items/index: where an item is in a listing
 const allPaths: string[] = []; // every /api request the fake core got
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 const rows = (from: number, n: number) =>
@@ -36,6 +37,7 @@ beforeAll(async () => {
 		const u = new URL(req.url);
 		allPaths.push(u.pathname);
 		if (u.pathname === "/api/items" && req.method === "GET") return handler(u);
+		if (u.pathname === "/api/items/index") return indexHandler(u);
 		if (u.pathname === "/api/items/groups") return json({ groups: [] });
 		if (u.pathname === "/api/collections") return json([]);
 		if (u.pathname === "/api/libraries")
@@ -190,5 +192,47 @@ describe("refreshItems (an edit in the item pane)", () => {
 		const seen = allPaths.slice(from);
 		expect(seen.length).toBeGreaterThan(0);
 		expect(seen.every((p) => p === "/api/items" || p === "/api/items/groups")).toBe(true);
+	});
+});
+
+describe("revealItem (Open in Zinc)", () => {
+	test("an item missing from the tag-filtered list is found in My Library with the tag filter cleared", async () => {
+		handler = list(30);
+		store.setView({ kind: "library" });
+		store.setTagFilter(["only-this"]);
+		await tick();
+		// the tagged list does not hold the item; the unfiltered library does, at row 7
+		indexHandler = (u) => json({ index: u.searchParams.has("tag") ? -1 : 7 });
+		const found = await store.revealItem("NOTINTAG");
+		expect(store.tagFilter()).toEqual([]);
+		expect(found).toBe(true);
+		expect([...store.selected()]).toEqual(["NOTINTAG"]);
+		expect(store.anchor()).toBe(7);
+	});
+
+	test("a request that a newer one replaced does not reset the list under it", async () => {
+		handler = list(30);
+		store.setView({ kind: "trash" });
+		await tick();
+		let release!: () => void;
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		// the older request's lookup is slow and finds nothing in this view; the newer one finds its item at once
+		indexHandler = async (u) => {
+			if (u.searchParams.get("key") === "OLDER") {
+				await gate;
+				return json({ index: -1 });
+			}
+			return json({ index: 3 });
+		};
+		const older = store.revealItem("OLDER");
+		const newer = await store.revealItem("NEWER");
+		expect(newer).toBe(true);
+		release();
+		expect(await older).toBe(false);
+		await tick();
+				expect(store.selected().has("NEWER")).toBe(true);
+		expect(store.view().kind).toBe("trash"); // the older request did not send the list to My Library
 	});
 });

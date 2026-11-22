@@ -880,6 +880,7 @@ function createStore(): AppStore {
 		const plain = untrack(view).kind !== "duplicates" && !untrack(fulltext);
 		let index = plain ? indexOfKey(key) : -1;
 		if (index < 0 && plain) index = await api.itemIndex(key, untrack(baseQuery)).catch(() => -1);
+		if (my !== revealSeq) return false; // a newer request took over while the lookup ran: leave the list to it
 		if (index < 0) {
 			// not in this view: My Library, with nothing filtering it out (the list starts over here, synchronously)
 			clearTimeout(timer);
@@ -887,6 +888,7 @@ function createStore(): AppStore {
 				setFulltextSig(false);
 				setFilterSig("");
 				setAppliedFilter("");
+				setTagFilter([]);
 				selectLibrary(1);
 			});
 			index = await api.itemIndex(key, untrack(baseQuery)).catch(() => -1);
