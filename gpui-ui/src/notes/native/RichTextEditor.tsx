@@ -2,7 +2,7 @@
 // under Toolbar.tsx. The note is read with parse.ts, and every edit is serialized back with serialize.ts inside the note's own
 // <div data-schema-version data-citation-items> wrapper and saved 800 ms after the last change, when the editor closes and on Done,
 // like the Markdown editor (itempane/Notes.tsx). Citations and annotation highlights keep their raw attributes.
-import { createComputed, createResource, createSignal, onCleanup, Show, type JSX } from "solid-js";
+import { createComputed, createMemo, createResource, createSignal, onCleanup, Show, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/native";
 import type { KeyEvent } from "@gpuix/native/host";
 import { openLink } from "../../itempane/actions";
@@ -44,8 +44,9 @@ const parseJson = <T,>(s: string | undefined): T | null => {
 export function RichTextEditor(p: RichTextEditorProps): JSX.Element {
 	const refreshList = usePane().refreshList; // saves can land after the pane is gone: nothing in them reads props or pane state
 	// the note as stored (its wrapper's metadata is what saves are written inside) and as a document for the element
+	const noteKey = createMemo(() => p.noteKey);
 	const [loaded] = createResource(
-		() => p.noteKey,
+		noteKey,
 		async (k) => {
 			try {
 				const settled = await noteSettled(k); // an editor just closed on this note may still be saving: its text, not the stored one
@@ -60,10 +61,11 @@ export function RichTextEditor(p: RichTextEditorProps): JSX.Element {
 		},
 	);
 	// a note whose load has not finished (or is of the note an earlier key named) is not shown: its text is never saved under this key
-	const ready = () => {
+	// a memo: a pane reload of the same note must not restart the session (it would save from the text as first loaded)
+	const ready = createMemo(() => {
 		const l = loaded();
-		return l && !loaded.loading && l.key === p.noteKey ? l : undefined;
-	};
+		return l && !loaded.loading && l.key === noteKey() ? l : undefined;
+	});
 	let session: NoteSession<string> | undefined; // one per loaded note; its edits are the element's latest document (JSON)
 	const retire = () => {
 		const s = session;

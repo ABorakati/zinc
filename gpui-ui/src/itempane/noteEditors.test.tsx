@@ -131,6 +131,8 @@ describe("Markdown note editor", () => {
 		const area = () => findAll(root, "textarea")[0];
 		return {
 			switchTo: setKey,
+			/** what pane.reload() does after each save: a new detail object for the same note */
+			reload: () => setDetail({ data: { key: key() } }),
 			area,
 			type: (v: string) => (area()!.props.get("onChange") as (e: unknown) => void)({ value: v }),
 			get closed() {
@@ -156,6 +158,22 @@ describe("Markdown note editor", () => {
 		expect(writes[0]).toContain("typed in A");
 		expect(stored.BBBBBBBB).toBe(wrap("<p>B</p>"));
 		expect(refreshes).toBe(1);
+	});
+
+	test("a pane reload of the same note keeps the editor, and what is typed during it", async () => {
+		stored = { AAAAAAAA: wrap("<p>old</p>") };
+		const m = mountInPane("AAAAAAAA");
+		await sleep(30);
+		const box = m.area()!;
+		loadDelay.AAAAAAAA = 50; // a reload of the editor would leave it on "Loading…" for this long
+		m.reload();
+		await sleep(5);
+		expect(m.area()).toBe(box); // the same text box: focus and caret are kept
+		m.type("typed during the reload");
+		await sleep(80);
+		m.switchTo("BBBBBBBB");
+		await sleep(120);
+		expect(writes.join()).toContain("typed during the reload");
 	});
 
 	test("unmounting (the pane's own teardown) saves the last edit", async () => {

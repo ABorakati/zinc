@@ -1,6 +1,6 @@
 // PROTOTYPE: a note shown natively and read-only (NoteDocView), with an Edit button that opens the native <richtext> editor when the
 // addon has it (RichTextEditor), else hands it to the usual editor (Zotero's editor in its web view, or the Markdown editor). Used by itempane/Notes.tsx when Settings > Experimental > "Show notes natively" is on.
-import { createEffect, createResource, createSignal, on, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, on, Show, type JSX } from "solid-js";
 import { Icon } from "../../icons";
 import { ipApi } from "../../itempane/net";
 import { fail } from "../../itempane/model";
@@ -24,9 +24,11 @@ export interface NativeNoteProps {
 
 export function NativeNote(p: NativeNoteProps): JSX.Element {
 	const [editing, setEditing] = createSignal(!!p.startEditing && !locked());
+	// the parent reads the key from pane.detail(), which is a new object after every reload (each save causes one): only a different key counts
+	const noteKey = createMemo(() => p.noteKey);
 	createEffect(
 		on(
-			() => p.noteKey,
+			noteKey,
 			() => setEditing(!!p.startEditing && !locked()),
 			{ defer: true },
 		),

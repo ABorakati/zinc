@@ -168,9 +168,11 @@ export function MarkdownNoteEditor(p: NoteEditorProps): JSX.Element {
 			fail("Could not load the note", e);
 		}
 	}
+	// the parent reads the key from pane.detail(), which is a new object after every reload (each save causes one): only a different key counts
+	const noteKey = createMemo(() => p.noteKey);
 	createEffect(
 		on(
-			() => p.noteKey,
+			noteKey,
 			(k) => {
 				retire();
 				setHtml(null);
