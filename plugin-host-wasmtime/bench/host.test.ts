@@ -835,3 +835,92 @@ describe("8. Cold start of `ui-fixture` (< 150 ms)", () => {
 		expect(samples[1]).toBeLessThan(150);
 	});
 });
+
+// =====================================================================================================================
+// 9. Panics, runaway waits, unload mid-call and stdout floods
+// =====================================================================================================================
+
+/** Fails (instead of hanging for ever) when `p` has not settled after `ms`. */
+async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+	return await Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`no answer to ${what} within ${ms} ms`)), ms))]);
+}
+
+describe("9. Contained failures", () => {
+	test("util.html-to-text copes with a character across the 16 byte entity window, and the plugin stays usable", async () => {
+		const h = await host();
+		const a = await h.load(dir("bench-guest"));
+		await h.startup(a.id);
+		const text = `&${"a".repeat(14)}é tail AT&amp;T présente`;
+		const r = (await within(h.call(a.id, "events", "on-locale-changed", [`html-to-text\n${text}`], 5000), 3000, "html-to-text")) as any;
+		expect(r.ok).toBe(true);
+		expect(findResult(h, "html-to-text")).toBe(`&${"a".repeat(14)}é tail AT&T présente`);
+		expect(h.exits.some((e) => e.plugin === a.id)).toBe(false);
+		expect((await h.call(a.id, "events", "on-timer", [5, "timeout"])).ok).toBe(true);
+	});
+
+	test("a sleep that cannot fit the call's allowance is refused at once as a timeout", async () => {
+		const h = await host();
+		const a = await h.load(dir("bench-guest"));
+		await h.startup(a.id);
+		const t0 = now();
+		const r = (await within(h.call(a.id, "events", "on-locale-changed", ["sleep\n3600000"], 1000), 5000, "a sleep of an hour")) as any;
+		expect(now() - t0).toBeLessThan(4000);
+		expect(r.ok).toBe(false);
+		expect(r.error.kind).toBe("timeout");
+		expect(h.exits.some((e) => e.plugin === a.id && e.kind === "timeout")).toBe(true);
+	});
+
+	test("a short sleep still works and does not use up the CPU budget", async () => {
+		const h = await host();
+		const a = await h.load(dir("bench-guest"));
+		await h.startup(a.id);
+		const r = (await h.call(a.id, "events", "on-locale-changed", ["sleep\n400"], 100)) as any;
+		expect(r.ok).toBe(true);
+		expect(findResult(h, "sleep")).toBe("done");
+	});
+
+	test("unload ends a call that is parked in a sleep, without reporting an exit", async () => {
+		const h = await host();
+		const a = await h.load(dir("bench-guest"));
+		await h.startup(a.id);
+		const parked = h.call(a.id, "events", "on-locale-changed", ["sleep\n30000"], 5000);
+		await Bun.sleep(200);
+		const t0 = now();
+		await h.unload(a.id);
+		const r = (await within(parked, 5000, "the parked call after unload")) as any;
+		expect(now() - t0).toBeLessThan(4000);
+		expect(r.ok).toBe(false);
+		expect(r.error.kind).toBe("not-loaded");
+		expect(h.exits.some((e) => e.plugin === a.id)).toBe(false);
+	});
+
+	test("heartbeats keep coming while several plugins are compiled at once", async () => {
+		// no `.cwasm` and no `--aot`: every load compiles the component in zhw
+		const h = await host({ heartbeatMs: 50, aot: false });
+		await Bun.sleep(200);
+		const names = ["bench-guest", "hello-rust", "hello-js", "ui-fixture", "quick-tags", "hello-js", "ui-fixture", "quick-tags"];
+		const from = h.heartbeats.length;
+		const t0 = now();
+		await Promise.all(names.map((n, i) => h.load(dir(n), { id: `${n}-${i}@zinc.test` })));
+		const compileMs = now() - t0;
+		await Bun.sleep(100);
+		const ts: number[] = h.heartbeats.slice(Math.max(0, from - 1)).map((b) => b.ts);
+		const gaps = ts.slice(1).map((v, i) => v - ts[i]!);
+		const worst = Math.max(...gaps);
+		expect(compileMs).toBeGreaterThan(300); // otherwise this does not exercise anything
+		expect(worst).toBeLessThan(400);
+	});
+
+	test("a flood on stdout is rate limited and its lines are bounded", async () => {
+		const h = await host();
+		const a = await h.load(dir("bench-guest"));
+		await h.startup(a.id);
+		const before = h.logs.length;
+		const r = (await h.call(a.id, "events", "on-locale-changed", ["stdout-flood\n3000\n300"], 10_000)) as any;
+		expect(r.ok).toBe(true);
+		const out = h.logs.slice(before).filter((l) => String(l.message).startsWith("[stdout]"));
+		expect(out.length).toBeGreaterThan(0);
+		expect(out.length).toBeLessThan(500);
+		expect(out.every((l) => String(l.message).length <= 8 * 1024 + 64)).toBe(true);
+	});
+});

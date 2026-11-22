@@ -535,6 +535,30 @@ impl Events for Plugin {
                 info("RESULT:forwarded-wait:done");
             }
 
+            "html-to-text" => {
+                let t = util::html_to_text(parts.next().unwrap_or(""));
+                info(&format!("RESULT:html-to-text:{t}"));
+            }
+
+            "sleep" => {
+                let ms: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                timers::sleep(ms);
+                info("RESULT:sleep:done");
+            }
+
+            "stdout-flood" => {
+                use std::io::Write;
+                let lines: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                let kb: usize = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                for i in 0..lines {
+                    println!("flood line {i}");
+                }
+                // one long write that never ends in a newline
+                print!("{}", "y".repeat(kb * 1024));
+                let _ = std::io::stdout().flush();
+                info("RESULT:stdout-flood:done");
+            }
+
             "forwarded-loop" => {
                 let n: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(1000);
                 for _ in 0..n {

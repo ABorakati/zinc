@@ -198,8 +198,19 @@ async fn run(args: Vec<String>) -> Result<()> {
     }
 
     let mut heartbeat_started = false;
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
+    let mut stdin = BufReader::new(tokio::io::stdin());
+    let mut frame_buf: Vec<u8> = Vec::new();
+    loop {
+        let max_frame = max_frame_bytes(host.cfg.max_memory_mb.load(Ordering::Relaxed));
+        let line = match read_frame(&mut stdin, max_frame, &mut frame_buf).await {
+            Ok(Frame::Line(line)) => line,
+            Ok(Frame::TooLong { head }) => {
+                eprintln!("zhw: dropped an input line longer than {max_frame} bytes");
+                refuse_frame(&head, &out, &parent);
+                continue;
+            }
+            Ok(Frame::Eof) | Err(_) => break,
+        };
         let Ok(m) = serde_json::from_str::<Value>(&line) else { continue };
         match m["t"].as_str().unwrap_or("") {
             "init" => {
@@ -251,7 +262,13 @@ async fn run(args: Vec<String>) -> Result<()> {
                 tokio::spawn(async move {
                     let id = m["id"].clone();
                     let t = Instant::now();
-                    let result = match host.load(&m["plugin"]).await {
+                    // Its own task, so that a panic while loading still ends in a reply instead of a load that never answers.
+                    let loaded = {
+                        let (host, spec) = (host.clone(), m["plugin"].clone());
+                        tokio::spawn(async move { host.load(&spec).await }).await
+                    };
+                    let loaded = loaded.unwrap_or_else(|e| Err(anyhow!("internal error in the plugin host: {e}")));
+                    let result = match loaded {
                         Ok(i) => json!({
                             "ok": true,
                             "value": {
@@ -281,11 +298,11 @@ async fn run(args: Vec<String>) -> Result<()> {
                 tokio::spawn(async move {
                     let args = m["args"].as_array().cloned().unwrap_or_default();
                     let result = host
-                        .call_internal(
-                            m["plugin"].as_str().unwrap_or(""),
-                            m["iface"].as_str().unwrap_or(""),
-                            m["fn"].as_str().unwrap_or(""),
-                            &args,
+                        .call_contained(
+                            m["plugin"].as_str().unwrap_or("").to_string(),
+                            m["iface"].as_str().unwrap_or("").to_string(),
+                            m["fn"].as_str().unwrap_or("").to_string(),
+                            args,
                             m["timeoutMs"].as_u64(),
                             m["maxImportCalls"].as_u64(),
                             true,
@@ -335,4 +352,171 @@ async fn run(args: Vec<String>) -> Result<()> {
     drop(out);
     let _ = tokio::time::timeout(Duration::from_millis(200), writer_handle).await;
     std::process::exit(0);
+}
+
+/// The longest input line zhw accepts. The biggest legitimate frame is a value that has to fit in a plugin's memory (limit
+/// `max_memory_mb`), which travels as base64 (4/3 of its size); 128 MiB more covers the frames around it (a `load` carries the
+/// plugin's prefs, at most 1000 text prefs of 64 KiB, and its Fluent sources). Keep in step with `maxFrameBytes` in
+/// plugin-host/src/transport-wasmtime.ts.
+fn max_frame_bytes(max_memory_mb: usize) -> usize {
+    (max_memory_mb.saturating_mul(1 << 20) / 3).saturating_mul(4).saturating_add(128 << 20)
+}
+
+#[derive(Debug, PartialEq)]
+enum Frame {
+    Line(String),
+    /// A line over the limit. It was skipped without being kept; `head` is its first bytes.
+    TooLong { head: Vec<u8> },
+    Eof,
+}
+
+/// Reads one `\n` terminated line of at most `max` bytes, in time linear in its length and without holding more than `max` bytes.
+async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R, max: usize, buf: &mut Vec<u8>) -> std::io::Result<Frame> {
+    const HEAD: usize = 512;
+    buf.clear();
+    let mut head: Option<Vec<u8>> = None;
+    loop {
+        let avail = r.fill_buf().await?;
+        if avail.is_empty() {
+            return Ok(match head {
+                Some(head) => Frame::TooLong { head },
+                None if buf.is_empty() => Frame::Eof,
+                None => Frame::Line(into_line(buf)),
+            });
+        }
+        let nl = avail.iter().position(|b| *b == b'\n');
+        let take = nl.unwrap_or(avail.len());
+        if head.is_none() {
+            if buf.len() + take > max {
+                head = Some(buf.iter().chain(avail.iter()).take(HEAD).copied().collect());
+                buf.clear();
+            } else {
+                buf.extend_from_slice(&avail[..take]);
+            }
+        }
+        r.consume(take + usize::from(nl.is_some()));
+        if nl.is_some() {
+            return Ok(match head {
+                Some(head) => Frame::TooLong { head },
+                None => {
+                    if buf.last() == Some(&b'\r') {
+                        buf.pop();
+                    }
+                    Frame::Line(into_line(buf))
+                }
+            });
+        }
+    }
+}
+
+/// The bytes of a line as text, without a second copy when they are valid UTF-8 (a frame can be hundreds of MiB).
+fn into_line(buf: &mut Vec<u8>) -> String {
+    String::from_utf8(std::mem::take(buf)).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+/// The `t` and `id` of a frame, read from its first bytes (a frame is `{"t":"..","id":N,...`).
+fn frame_head(head: &[u8]) -> (String, Option<u64>) {
+    let s = String::from_utf8_lossy(head);
+    let t = s
+        .split_once("\"t\":\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .map(|(t, _)| t.to_string())
+        .unwrap_or_default();
+    let id = s
+        .split_once("\"id\":")
+        .map(|(_, r)| r.chars().take_while(char::is_ascii_digit).collect::<String>())
+        .and_then(|d| d.parse().ok());
+    (t, id)
+}
+
+/// A line was too long to be read. Whoever waits for its answer must still get one, or the call or load would never finish.
+fn refuse_frame(head: &[u8], out: &Out, parent: &Parent) {
+    let (t, id) = frame_head(head);
+    let Some(id) = id else { return };
+    let error = json!({"ok":false,"error":{"kind":"internal","message":"the message was larger than the plugin host accepts"}});
+    match t.as_str() {
+        "import-reply" => parent.reply(id, error),
+        "call" | "load" | "unload" | "stats" => out.send(json!({"t":"reply","id":id,"result":error})),
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn frames(input: &[u8], max: usize) -> Vec<Frame> {
+        let mut r = BufReader::with_capacity(7, input);
+        let mut buf = Vec::new();
+        let mut out = Vec::new();
+        loop {
+            match read_frame(&mut r, max, &mut buf).await.unwrap() {
+                Frame::Eof => return out,
+                f => out.push(f),
+            }
+        }
+    }
+
+    fn line(s: &str) -> Frame {
+        Frame::Line(s.to_string())
+    }
+
+    #[tokio::test]
+    async fn lines_are_read_whole_across_small_reads() {
+        let f = frames(b"{\"a\":1}\n\nlast\r\nno-newline", 100).await;
+        assert_eq!(f, [line("{\"a\":1}"), line(""), line("last"), line("no-newline")]);
+    }
+
+    #[tokio::test]
+    async fn a_line_over_the_limit_is_skipped_without_losing_the_next_one() {
+        let mut input = b"{\"t\":\"call\",\"id\":42,\"plugin\":\"p\",\"args\":[\"".to_vec();
+        input.extend(std::iter::repeat(b'x').take(100_000));
+        input.extend_from_slice(b"\"]}\nnext\n");
+        let f = frames(&input, 1000).await;
+        assert_eq!(f.len(), 2);
+        let Frame::TooLong { head } = &f[0] else { panic!("{:?}", f[0]) };
+        assert!(head.len() <= 512);
+        assert_eq!(frame_head(head), ("call".to_string(), Some(42)));
+        assert_eq!(f[1], line("next"));
+    }
+
+    #[tokio::test]
+    async fn a_line_of_exactly_the_limit_is_accepted() {
+        let mut input = vec![b'y'; 50];
+        input.push(b'\n');
+        assert_eq!(frames(&input, 50).await, [line(&"y".repeat(50))]);
+        assert!(matches!(frames(&input, 49).await[0], Frame::TooLong { .. }));
+    }
+
+    #[test]
+    fn the_limit_is_above_what_a_plugin_can_legitimately_send() {
+        // a full 256 MiB memory as base64 is 4/3 of that, and a plugin's prefs can be 1000 x 64 KiB
+        let default = max_frame_bytes(256);
+        assert!(default > (256 << 20) / 3 * 4 + (1000 * 64 << 10));
+        assert!(max_frame_bytes(512) > default);
+        assert!(max_frame_bytes(usize::MAX) > default);
+    }
+
+    #[tokio::test]
+    async fn a_refused_reply_still_answers_whoever_waits() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let out = Out(tx);
+        let parent = Parent::new(out.clone());
+        let waiting = {
+            let parent = parent.clone();
+            tokio::spawn(async move { parent.import("p", "i", "f", vec![]).await })
+        };
+        // the import frame the parent sends carries the id of the pending import
+        let sent: Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
+        let id = sent["id"].as_u64().unwrap();
+        refuse_frame(format!("{{\"t\":\"import-reply\",\"id\":{id},\"result\":{{").as_bytes(), &out, &parent);
+        let r = tokio::time::timeout(Duration::from_secs(5), waiting).await.unwrap().unwrap();
+        assert_eq!(r["ok"], false);
+        assert_eq!(r["error"]["kind"], "internal");
+
+        refuse_frame(b"{\"t\":\"call\",\"id\":9,\"plugin\":\"p\"", &out, &parent);
+        let reply: Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
+        assert_eq!((reply["t"].as_str(), reply["id"].as_u64()), (Some("reply"), Some(9)));
+        assert_eq!(reply["result"]["error"]["kind"], "internal");
+    }
 }

@@ -2,7 +2,7 @@
 //! calls with epoch-based active CPU timeouts, import-call limits, re-entrancy refusal, and native/forwarded dispatch.
 use crate::conv::{camel, iface_name, json_to_val, kebab, val_to_json_typed, ResIds};
 use crate::native::{has_native_impl, AppManager, L10nManager, LogManager, PrefsManager, TimerManager, NATIVE_FAMILIES};
-use crate::state::{Grants, Limits, Out, Parent, St};
+use crate::state::{Cancel, Grants, Limits, Out, Parent, St};
 use crate::wasi;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -16,7 +16,17 @@ use wasmtime::error::Context;
 use wasmtime::{bail, format_err as anyhow, Config, Engine, OptLevel, Result, Store, StoreContextMut, UpdateDeadline};
 
 pub const TICK_MS: u64 = 10;
-const TIMEOUT_MARK: &str = "zhw-timeout";
+pub const TIMEOUT_MARK: &str = "zhw-timeout";
+pub const UNLOADED_MARK: &str = "zhw-unloaded";
+/// One call may spend at most `PAUSE_FACTOR` times its time budget (at least `PAUSE_MIN_MS`) in native sleeps and waits.
+/// The CPU deadline does not run while a call sleeps, so without this bound a loop of sleeps keeps one call open for ever.
+/// Host imports that go to the app (pickers, dialogs, downloads) are not counted: they can legitimately take a long time.
+const PAUSE_FACTOR: u64 = 10;
+const PAUSE_MIN_MS: u64 = 60_000;
+
+pub fn max_paused_ms(budget_ms: u64) -> u64 {
+    budget_ms.saturating_mul(PAUSE_FACTOR).max(PAUSE_MIN_MS)
+}
 
 pub fn opt_level_name() -> &'static str {
     match std::env::var("ZHW_OPT").as_deref() {
@@ -143,6 +153,7 @@ impl HostCfg {
 pub struct Slot {
     pub id: String,
     pub dead: AtomicBool,
+    pub cancel: Arc<Cancel>,
     pub waiting_parent: Arc<AtomicU32>,
     pub grants: Arc<RwLock<Grants>>,
     pub startup_timeout_ms: Option<u64>,
@@ -226,9 +237,12 @@ fn build_linker(engine: &Engine, comp: &Component, cfg: &Arc<HostCfg>) -> Result
                                         wp.fetch_add(1, Ordering::Release);
                                         cx.data().send(json!({"t":"waiting","plugin":plugin,"n":cx.data().waiting}));
 
-                                        let _ = parent
-                                            .import(&plugin, &di, &format!("[resource-drop]{dn}"), vec![json!(rep as i32)])
-                                            .await;
+                                        let cancel = cx.data().cancel.clone();
+                                        let drop_fn = format!("[resource-drop]{dn}");
+                                        tokio::select! {
+                                            _ = parent.import(&plugin, &di, &drop_fn, vec![json!(rep as i32)]) => {}
+                                            _ = cancel.cancelled() => {}
+                                        }
 
                                         cx.data_mut().waiting -= 1;
                                         wp.fetch_sub(1, Ordering::Release);
@@ -270,16 +284,17 @@ fn define_func(
         let fk = fk.clone();
         let ids = ids.clone();
         Box::new(async move {
-            if is_wasi {
-                return wasi::call(&mut cx, &iface, &f, params, results);
-            }
-            {
+            // The clocks only read a counter and a busy-wait on them is ordinary guest code, so they are not counted.
+            if !is_wasi || !iface.starts_with("wasi:clocks/") {
                 let d = cx.data_mut();
                 d.import_calls += 1;
                 if d.import_calls > d.max_import_calls {
                     let max = d.max_import_calls;
                     bail!("plugin exceeded import call limit ({max})");
                 }
+            }
+            if is_wasi {
+                return wasi::call(&mut cx, &iface, &f, params, results);
             }
             if native {
                 return crate::native::call(cx, &sh, &fk, params, results).await;
@@ -341,11 +356,16 @@ async fn forwarded_inner(
     wp.fetch_add(1, Ordering::Release);
     cx.data().send(json!({"t":"waiting","plugin":plugin,"n":cx.data().waiting}));
 
-    let r = parent.import(&plugin, iface, f, args).await;
+    let cancel = cx.data().cancel.clone();
+    let r = tokio::select! {
+        r = parent.import(&plugin, iface, f, args) => Some(r),
+        _ = cancel.cancelled() => None,
+    };
 
     cx.data_mut().waiting -= 1;
     wp.fetch_sub(1, Ordering::Release);
     cx.data().send(json!({"t":"waiting","plugin":plugin,"n":cx.data().waiting}));
+    let Some(r) = r else { bail!("{UNLOADED_MARK}: the plugin was unloaded during {iface}#{f}") };
 
     if let Some(name) = ctor {
         let tid = *ids.get(&format!("{iface}#{name}")).ok_or_else(|| anyhow!("unknown resource {name}"))?;
@@ -484,7 +504,14 @@ impl Host {
 
         let comp = match loaded_comp {
             Some(c) => c,
-            None => Component::from_file(&self.engine, &wasm).with_context(|| format!("compile {}", wasm.display()))?,
+            // Compiling takes long enough to starve the heartbeat and every other task on this worker, so it runs on the blocking pool.
+            None => {
+                let (engine, path) = (self.engine.clone(), wasm.clone());
+                tokio::task::spawn_blocking(move || Component::from_file(&engine, &path))
+                    .await
+                    .map_err(|e| anyhow!("compile task failed: {e}"))?
+                    .with_context(|| format!("compile {}", wasm.display()))?
+            }
         };
         let compile_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
@@ -500,14 +527,14 @@ impl Host {
         let max_mem_mb = self.cfg.max_memory_mb.load(Ordering::Relaxed);
         let max_imports = self.cfg.max_import_calls.load(Ordering::Relaxed);
 
+        let cancel = Cancel::new();
         let st = St {
             id: id.clone(),
+            cancel: cancel.clone(),
+            paused_ms: 0,
+            max_paused_ms: max_paused_ms(15_000),
             host: Arc::downgrade(self),
-            limits: Limits {
-                max_memory: max_mem_mb << 20,
-                max_table_elems: 1_000_000,
-                peak: peak.clone(),
-            },
+            limits: Limits::new(max_mem_mb << 20, 1_000_000, peak.clone()),
             out: self.out.clone(),
             parent: self.parent.clone(),
             res_ids,
@@ -527,7 +554,9 @@ impl Host {
         store.limiter(|s| &mut s.limits);
         store.epoch_deadline_callback(|cx| {
             let d = cx.data();
-            if now_epoch() >= d.deadline_epoch {
+            if d.cancel.is_set() {
+                Err(anyhow!(UNLOADED_MARK))
+            } else if now_epoch() >= d.deadline_epoch {
                 Err(anyhow!(TIMEOUT_MARK))
             } else {
                 Ok(UpdateDeadline::Yield(1))
@@ -567,6 +596,7 @@ impl Host {
         let slot = Arc::new(Slot {
             id: id.clone(),
             dead: AtomicBool::new(false),
+            cancel,
             waiting_parent,
             grants,
             startup_timeout_ms,
@@ -576,7 +606,10 @@ impl Host {
             native_calls,
             forwarded_calls,
         });
-        self.slots.lock().unwrap().insert(id, slot);
+        let replaced = self.slots.lock().unwrap().insert(id, slot);
+        if let Some(old) = replaced {
+            old.cancel.set();
+        }
         Ok(LoadInfo {
             compile_ms,
             link_ms,
@@ -591,6 +624,8 @@ impl Host {
         self.l10n.remove_plugin(id);
         self.logs.clear_plugin(id);
         if let Some(slot) = self.slots.lock().unwrap().remove(id) {
+            // A call still running holds the store: end it, so it neither keeps the memory nor goes on using native imports.
+            slot.cancel.set();
             if let Ok(mut guard) = slot.store.try_lock() {
                 wasi::flush_stdio(guard.data_mut());
             }
@@ -607,6 +642,45 @@ impl Host {
 
     pub fn loaded_plugin_ids(&self) -> Vec<String> {
         self.slots.lock().unwrap().keys().cloned().collect()
+    }
+
+    /// `call_internal` as a task of its own: when anything in the call panics (a native import, value conversion), the caller
+    /// still gets a reply, the plugin is marked dead (its store was left in the middle of a call) and the exit is reported.
+    pub async fn call_contained(
+        self: &Arc<Self>,
+        plugin: String,
+        iface: String,
+        f: String,
+        args: Vec<Value>,
+        timeout_ms: Option<u64>,
+        max_import_calls: Option<u64>,
+        from_parent: bool,
+    ) -> Value {
+        let host = self.clone();
+        let name = plugin.clone();
+        self.contain(&name, async move {
+            host.call_internal(&plugin, &iface, &f, &args, timeout_ms, max_import_calls, from_parent).await
+        })
+        .await
+    }
+
+    async fn contain(&self, plugin: &str, call: impl std::future::Future<Output = Value> + Send + 'static) -> Value {
+        match tokio::spawn(call).await {
+            Ok(v) => v,
+            Err(e) => self.call_panicked(plugin, &e.to_string()),
+        }
+    }
+
+    fn call_panicked(&self, plugin: &str, detail: &str) -> Value {
+        let message = format!("internal error in the plugin host: {detail}");
+        let slot = self.slots.lock().unwrap().get(plugin).cloned();
+        if let Some(slot) = slot {
+            slot.dead.store(true, Ordering::Relaxed);
+            self.timers.clear_plugin(plugin, false);
+            self.logs.flush();
+            self.out.send(json!({"t":"plugin-exit","plugin":plugin,"kind":"trap","message":message}));
+        }
+        json!({"ok":false,"error":{"kind":"internal","message":message}})
     }
 
     pub async fn call_internal(
@@ -684,6 +758,8 @@ impl Host {
         {
             let d = guard.data_mut();
             d.deadline_epoch = epoch + ticks(budget);
+            d.paused_ms = 0;
+            d.max_paused_ms = max_paused_ms(budget);
             d.import_calls = 0;
             d.max_import_calls = max_imports;
         }
@@ -730,6 +806,11 @@ impl Host {
                 let msg = format!("{e:#}");
                 wasi::flush_stdio(guard.data_mut());
                 self.logs.flush();
+                if slot.cancel.is_set() {
+                    // Unloaded (or replaced by a new load) while running: the host already cleaned up, and the slot may now
+                    // belong to a new instance of the same plugin, so neither its timers nor an exit may be reported here.
+                    return json!({"ok":false,"error":{"kind":"not-loaded","plugin":plugin}});
+                }
                 slot.dead.store(true, Ordering::Relaxed);
                 self.timers.clear_plugin(plugin, false);
                 let is_timeout = msg.contains(TIMEOUT_MARK);
@@ -776,5 +857,116 @@ impl Host {
             "rssBytes": crate::rss_bytes(),
             "plugins": v,
         })
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+
+    pub fn test_host() -> (Arc<Host>, tokio::sync::mpsc::UnboundedReceiver<String>) {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let out = Out(tx);
+        let cfg = Arc::new(HostCfg::new(false, 64, 1000, Vec::<String>::new()));
+        (Host::new(make_engine().unwrap(), cfg, out.clone(), Parent::new(out)), rx)
+    }
+
+    /// A slot with a live store but no component: enough to see how the host treats a plugin whose call panicked.
+    pub fn add_slot(host: &Arc<Host>, id: &str) -> Arc<Slot> {
+        let peak = Arc::new(AtomicUsize::new(0));
+        let cancel = Cancel::new();
+        let wp = Arc::new(AtomicU32::new(0));
+        let grants = Arc::new(RwLock::new(Grants::default()));
+        let st = St {
+            id: id.into(),
+            cancel: cancel.clone(),
+            paused_ms: 0,
+            max_paused_ms: max_paused_ms(5_000),
+            host: Arc::downgrade(host),
+            limits: Limits::new(64 << 20, 1000, peak.clone()),
+            out: host.out.clone(),
+            parent: host.parent.clone(),
+            res_ids: Arc::new(HashMap::new()),
+            next_rep: 1,
+            deadline_epoch: 0,
+            waiting: 0,
+            waiting_parent: wp.clone(),
+            grants: grants.clone(),
+            import_calls: 0,
+            max_import_calls: 1000,
+            stdout_buf: String::new(),
+            stderr_buf: String::new(),
+            native_calls: Arc::new(AtomicU64::new(0)),
+            forwarded_calls: Arc::new(AtomicU64::new(0)),
+        };
+        let slot = Arc::new(Slot {
+            id: id.into(),
+            dead: AtomicBool::new(false),
+            cancel,
+            waiting_parent: wp,
+            grants,
+            startup_timeout_ms: None,
+            store: tokio::sync::Mutex::new(Store::new(&host.engine, st)),
+            funcs: HashMap::new(),
+            peak,
+            native_calls: Arc::new(AtomicU64::new(0)),
+            forwarded_calls: Arc::new(AtomicU64::new(0)),
+        });
+        host.slots.lock().unwrap().insert(id.into(), slot.clone());
+        slot
+    }
+
+    /// The slot's store, for tests of code that runs on a `StoreContextMut`.
+    pub async fn lock(slot: &Slot) -> tokio::sync::MutexGuard<'_, Store<St>> {
+        slot.store.lock().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::{add_slot, test_host};
+    use super::*;
+
+    #[test]
+    fn the_pause_allowance_scales_with_the_budget_and_has_a_floor() {
+        assert_eq!(max_paused_ms(5_000), 60_000);
+        assert_eq!(max_paused_ms(15_000), 150_000);
+        assert_eq!(max_paused_ms(u64::MAX), u64::MAX);
+        // a sleep of the longest single length (1 h) can never fit a default call
+        assert!(3_600_000 > max_paused_ms(5_000));
+    }
+
+    #[tokio::test]
+    async fn a_call_that_panics_still_replies_marks_the_plugin_dead_and_reports_the_exit() {
+        let (host, mut rx) = test_host();
+        let slot = add_slot(&host, "p@x");
+        let reply = host.contain("p@x", async { panic!("boom") }).await;
+        assert_eq!(reply["ok"], false);
+        assert_eq!(reply["error"]["kind"], "internal");
+        assert!(slot.dead.load(Ordering::Relaxed));
+        let exit: Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
+        assert_eq!((exit["t"].as_str(), exit["plugin"].as_str(), exit["kind"].as_str()), (Some("plugin-exit"), Some("p@x"), Some("trap")));
+        // the next call is refused as for any dead plugin
+        let next = host.call_internal("p@x", "events", "on-timer", &[], None, None, false).await;
+        assert_eq!(next["error"]["kind"], "disabled");
+    }
+
+    #[tokio::test]
+    async fn a_call_that_finishes_is_passed_through() {
+        let (host, _rx) = test_host();
+        let slot = add_slot(&host, "p@x");
+        let reply = host.contain("p@x", async { json!({"ok": true, "value": 7}) }).await;
+        assert_eq!(reply["value"], 7);
+        assert!(!slot.dead.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
+    async fn unload_ends_a_call_in_flight() {
+        let (host, _rx) = test_host();
+        let slot = add_slot(&host, "p@x");
+        assert!(!slot.cancel.is_set());
+        host.unload("p@x");
+        assert!(slot.cancel.is_set());
+        assert!(host.loaded_plugin_ids().is_empty());
     }
 }

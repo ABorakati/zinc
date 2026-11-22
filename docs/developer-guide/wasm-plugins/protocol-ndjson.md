@@ -26,7 +26,7 @@ zhw run [--aot] [--max-memory-mb 256] [--max-import-calls 1000000] [--native log
   ```
   Exits non-zero if the input is not a valid WebAssembly component.
 - **`zhw inspect <plugin.wasm>`**: prints JSON `{"imports":[...],"exports":[...]}`.
-- **`zhw run`**: runs the NDJSON protocol loop on `stdin` (requests/pushes from Zinc) and `stdout` (events/replies to Zinc). `stderr` carries only host-level panics or diagnostics. When `stdin` reaches EOF, `zhw` exits `0`.
+- **`zhw run`**: runs the NDJSON protocol loop on `stdin` (requests/pushes from Zinc) and `stdout` (events/replies to Zinc). `stderr` carries only host-level panics or diagnostics. When `stdin` reaches EOF, `zhw` exits `0`. Both directions are NDJSON lines of bounded length: `zhw` skips an input line longer than 4/3 of the plugin memory limit plus 128 MiB (about 469 MiB at the default 256 MiB), answering the `call`, `load` or `import-reply` it can still identify with `{"kind": "internal"}`, and Zinc replaces a `zhw` that writes a line over the same limit.
 
 ---
 
@@ -45,6 +45,7 @@ Each message is one UTF-8 JSON object followed by `\n` (NDJSON). Values inside `
 | `enum` | `"<kebab-case>"` | `string` |
 | `flags` | `{"flagName": true, ...}` | `Record<string, boolean>` |
 | `option<T>` | `null` for `none`, encoded `T` for `some` | `undefined` for `none`, `T` for `some` |
+| `option<option<T>>` | `null` for `none`, `{"tag": "some", "val": <inner>}` for `some` (`val` is `null` for `some(none)`) | `undefined` for `none`, `{ tag: "some", val }` for `some`, with `val` `undefined` for `some(none)` |
 | `result<T, E>` (top-level export / import) | `WireResult` (`{ok: true, value}` or `{ok: false, error: {kind: "wit", payload}}`) | return `T` or throw `WitError` / `PluginError` |
 | `result<T, E>` (nested, e.g. `list<result<...>>`) | `{"tag": "ok" \| "err", "val": ...}` | `{ tag: "ok" \| "err", val }` |
 | `own<R>` / `borrow<R>` (guest -> host arg) | handle integer (`i32`: positive for guest-constructed, negative for host-constructed) | handle `number` |
@@ -170,7 +171,10 @@ Cancels all native timers of `plugin`, drops its `Store` and per-plugin caches, 
   - Overlapping non-reentrant calls to the same plugin (e.g. a native Rust timer firing while an export runs) serialize cleanly on the plugin's `tokio::sync::Mutex<Store<St>>`.
 - **Budgets**:
   - Active guest execution is bounded by epoch ticks (`10 ms` tick; time spent inside forwarded imports and `timers.sleep` is excluded from the deadline).
-  - Every import call (native or forwarded, except `wasi:*` startup calls during instantiation) increments the per-call import counter; exceeding `maxImportCalls` traps the call (`"plugin exceeded import call limit (...)"`) so a tight loop over cheap imports is always stopped.
+  - Time spent in `timers.sleep` and `app.wait-ui-ready` is bounded too: one call may spend at most ten times its budget (and at least 60 s) in them in total. A sleep that cannot fit is refused at once and a wait that runs over ends, both as `{"kind": "timeout"}`. Time inside forwarded imports (file pickers, dialogs, downloads) is not counted.
+  - Every import call (native or forwarded, and the `wasi:*` calls other than the clocks) increments the per-call import counter; exceeding `maxImportCalls` traps the call (`"plugin exceeded import call limit (...)"`) so a tight loop over cheap imports is always stopped.
+  - `unload` ends a call of that plugin that is still running (a sleep, a wait, a forwarded import): its `reply` is `{"kind": "not-loaded"}` and no `plugin-exit` is sent for it.
+  - If a call panics inside `zhw`, the `reply` is `{"kind": "internal"}`, the plugin is marked dead and a `plugin-exit` with `"kind": "trap"` is sent.
   - Before sending `reply`, `zhw` flushes any buffered native `log` lines for `plugin` so logs arrive strictly before the call resolves.
 
 ### `import-reply`

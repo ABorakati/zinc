@@ -2,7 +2,7 @@
 use crate::host::Host;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 use tokio::sync::{mpsc, oneshot};
 use wasmtime::{format_err as anyhow, ResourceLimiter, Result};
@@ -43,32 +43,109 @@ impl Grants {
     }
 }
 
-/// Memory cap per plugin (wasmtime `ResourceLimiter`). `peak` is readable from outside the store.
+/// Most linear memories, tables and core instances one plugin store may create (wasmtime's own defaults are 10,000).
+/// A component built by wit-component has one memory per core module and a handful of modules; 64 leaves room for that.
+pub const MAX_MEMORIES: usize = 16;
+pub const MAX_TABLES: usize = 32;
+pub const MAX_INSTANCES: usize = 64;
+
+/// Memory cap per plugin (wasmtime `ResourceLimiter`). `max_memory` and `max_table_elems` are totals over every memory and
+/// table of the store, not per memory. `peak` is the largest memory total, readable from outside the store.
 pub struct Limits {
     pub max_memory: usize,
     pub max_table_elems: usize,
     pub peak: Arc<AtomicUsize>,
+    mem_total: usize,
+    table_total: usize,
+    /// Growth granted by the latest `*_growing` call, taken back when wasmtime reports that the growth then failed.
+    last_mem_delta: usize,
+    last_table_delta: usize,
+}
+
+impl Limits {
+    pub fn new(max_memory: usize, max_table_elems: usize, peak: Arc<AtomicUsize>) -> Self {
+        Self { max_memory, max_table_elems, peak, mem_total: 0, table_total: 0, last_mem_delta: 0, last_table_delta: 0 }
+    }
 }
 
 impl ResourceLimiter for Limits {
-    fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> Result<bool> {
-        if desired > self.max_memory {
+    fn memory_growing(&mut self, current: usize, desired: usize, _maximum: Option<usize>) -> Result<bool> {
+        let delta = desired.saturating_sub(current);
+        let total = self.mem_total.saturating_add(delta);
+        if total > self.max_memory {
             return Err(anyhow!(
                 "plugin exceeded its memory limit ({} MiB): wanted {} MiB",
                 self.max_memory >> 20,
-                desired >> 20
+                total >> 20
             ));
         }
-        self.peak.fetch_max(desired, Ordering::Relaxed);
+        self.mem_total = total;
+        self.last_mem_delta = delta;
+        self.peak.fetch_max(total, Ordering::Relaxed);
         Ok(true)
     }
-    fn table_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> Result<bool> {
-        Ok(desired <= self.max_table_elems)
+    fn memory_grow_failed(&mut self, _error: wasmtime::Error) -> Result<()> {
+        self.mem_total = self.mem_total.saturating_sub(std::mem::take(&mut self.last_mem_delta));
+        Ok(())
+    }
+    fn table_growing(&mut self, current: usize, desired: usize, _maximum: Option<usize>) -> Result<bool> {
+        let delta = desired.saturating_sub(current);
+        let total = self.table_total.saturating_add(delta);
+        if total > self.max_table_elems {
+            return Ok(false);
+        }
+        self.table_total = total;
+        self.last_table_delta = delta;
+        Ok(true)
+    }
+    fn table_grow_failed(&mut self, _error: wasmtime::Error) -> Result<()> {
+        self.table_total = self.table_total.saturating_sub(std::mem::take(&mut self.last_table_delta));
+        Ok(())
+    }
+    fn memories(&self) -> usize {
+        MAX_MEMORIES
+    }
+    fn tables(&self) -> usize {
+        MAX_TABLES
+    }
+    fn instances(&self) -> usize {
+        MAX_INSTANCES
+    }
+}
+
+/// Set when a plugin is unloaded so that its calls in flight (a sleep, a wait, a host import) end at once.
+pub struct Cancel {
+    flag: AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl Cancel {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self { flag: AtomicBool::new(false), notify: tokio::sync::Notify::new() })
+    }
+    pub fn set(&self) {
+        self.flag.store(true, Ordering::Release);
+        self.notify.notify_waiters();
+    }
+    pub fn is_set(&self) -> bool {
+        self.flag.load(Ordering::Acquire)
+    }
+    /// Resolves once `set` was called (at once if it already was).
+    pub async fn cancelled(&self) {
+        let n = self.notify.notified();
+        if self.is_set() {
+            return;
+        }
+        n.await;
     }
 }
 
 pub struct St {
     pub id: String,
+    pub cancel: Arc<Cancel>,
+    /// Time in ms the current call has spent in native sleeps and waits (the CPU epoch deadline does not run meanwhile).
+    pub paused_ms: u64,
+    pub max_paused_ms: u64,
     pub host: Weak<Host>,
     pub limits: Limits,
     pub out: Out,
@@ -124,5 +201,71 @@ impl Parent {
         if let Some(tx) = self.pending.lock().unwrap().remove(&id) {
             let _ = tx.send(result);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MIB: usize = 1 << 20;
+
+    fn limits(max_mib: usize) -> Limits {
+        Limits::new(max_mib * MIB, 1_000, Arc::new(AtomicUsize::new(0)))
+    }
+
+    #[test]
+    fn memory_cap_is_a_total_over_all_memories() {
+        let mut l = limits(256);
+        // two memories of 200 MiB each: each is under the cap, together they are not
+        assert!(l.memory_growing(0, 200 * MIB, None).unwrap());
+        let err = l.memory_growing(0, 200 * MIB, None).unwrap_err().to_string();
+        assert!(err.contains("memory limit"), "{err}");
+        assert_eq!(l.peak.load(Ordering::Relaxed), 200 * MIB);
+        // growing the first memory (current 200 MiB) by 56 MiB reaches the cap exactly
+        assert!(l.memory_growing(200 * MIB, 256 * MIB, None).unwrap());
+        assert!(l.memory_growing(256 * MIB, 257 * MIB, None).is_err());
+    }
+
+    #[test]
+    fn a_growth_that_then_failed_is_taken_back() {
+        let mut l = limits(256);
+        assert!(l.memory_growing(0, 100 * MIB, None).unwrap());
+        // allowed here, refused by the memory's own maximum: it must not count
+        assert!(l.memory_growing(100 * MIB, 250 * MIB, None).unwrap());
+        l.memory_grow_failed(wasmtime::format_err!("over the declared maximum")).unwrap();
+        assert!(l.memory_growing(100 * MIB, 200 * MIB, None).unwrap());
+    }
+
+    #[test]
+    fn table_cap_is_a_total_and_a_failed_growth_is_taken_back() {
+        let mut l = limits(256);
+        assert!(l.table_growing(0, 600, None).unwrap());
+        assert!(!l.table_growing(0, 600, None).unwrap());
+        assert!(l.table_growing(0, 400, None).unwrap());
+        l.table_grow_failed(wasmtime::format_err!("over the declared maximum")).unwrap();
+        assert!(l.table_growing(0, 400, None).unwrap());
+    }
+
+    #[test]
+    fn counts_are_capped_far_below_the_wasmtime_defaults() {
+        let l = limits(256);
+        assert!(l.memories() <= 64 && l.tables() <= 64 && l.instances() <= 256);
+        assert!(l.memories() >= 4 && l.tables() >= 4 && l.instances() >= 16);
+    }
+
+    #[tokio::test]
+    async fn cancel_ends_a_wait_now_or_later() {
+        let c = Cancel::new();
+        let waiting = {
+            let c = c.clone();
+            tokio::spawn(async move { c.cancelled().await })
+        };
+        tokio::task::yield_now().await;
+        assert!(!c.is_set());
+        c.set();
+        tokio::time::timeout(std::time::Duration::from_secs(5), waiting).await.expect("woken").unwrap();
+        // already set: resolves at once
+        tokio::time::timeout(std::time::Duration::from_secs(5), c.cancelled()).await.expect("already set");
     }
 }

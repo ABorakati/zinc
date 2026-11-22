@@ -2,7 +2,7 @@
 //! `log`, `prefs` (read-only cache subset), `timers`, `l10n`, `app`, and `util`.
 use crate::crypto;
 use crate::fluent::{self, FluentArg, FormatCtx, Resource};
-use crate::host::{now_epoch, Host};
+use crate::host::{now_epoch, Host, TIMEOUT_MARK, UNLOADED_MARK};
 use crate::state::{Out, St};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -326,14 +326,10 @@ impl PrefsManager {
 
     pub fn on_push(&self, msg: &Value) {
         let mut inner = self.inner.lock().unwrap();
+        // Every `appPrefs` push is the whole set of allowlisted settings that currently have a value, so a setting left out
+        // has been cleared and must not stay readable.
         if let Some(app_obj) = msg.get("appPrefs").and_then(Value::as_object) {
-            for (k, v) in app_obj {
-                if v.is_null() {
-                    inner.app_prefs.remove(k);
-                } else if let Some(pv) = PrefVal::from_json(v) {
-                    inner.app_prefs.insert(k.clone(), pv);
-                }
-            }
+            inner.app_prefs = parse_pref_map(app_obj);
         }
         if let Some(pid) = msg.get("plugin").and_then(Value::as_str).filter(|s| !s.is_empty()) {
             let entry = inner.plugins.entry(pid.to_string()).or_default();
@@ -635,6 +631,92 @@ impl Default for L10nManager {
     }
 }
 
+/// A folder name taken from a plugin manifest (`locales.dir`): relative, made of plain names only. No drive, root, UNC or
+/// stream syntax and no `..`, so joining it onto the package folder stays inside the package.
+fn is_plain_relative_path(p: &str) -> bool {
+    !p.is_empty()
+        && !p.contains(['\0', ':'])
+        && !p.starts_with(['/', '\\'])
+        && p.split(['/', '\\']).all(|seg| seg != "..")
+}
+
+/// A locale tag: BCP 47 shaped, like `en`, `pt-BR` or `zh-Hans-CN`. It becomes one folder name, so it can hold no separator.
+fn is_locale_tag(tag: &str) -> bool {
+    let mut parts = tag.split('-');
+    let Some(lang) = parts.next() else { return false };
+    (2..=8).contains(&lang.len())
+        && lang.bytes().all(|b| b.is_ascii_alphabetic())
+        && parts.all(|p| (1..=8).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_alphanumeric()))
+}
+
+/// Reads `<dir>/<locales_dir>/<tag>/*.ftl` for every tag (`available`, or every folder found). A `locales_dir` or tag that is
+/// not a plain name, or that resolves (links included) outside the package folder, is refused with a warning and nothing under
+/// it is opened.
+fn read_bundles(dir: &std::path::Path, locales_dir: &str, available: Option<&[String]>, warn: &mut dyn FnMut(String)) -> Vec<Bundle> {
+    if !is_plain_relative_path(locales_dir) {
+        warn(format!("[l10n] locales.dir {locales_dir:?} must be a relative folder inside the package; no strings were loaded"));
+        return Vec::new();
+    }
+    let Ok(root) = dir.canonicalize() else { return Vec::new() };
+    let Ok(base) = dir.join(locales_dir).canonicalize() else { return Vec::new() };
+    if !base.starts_with(&root) {
+        warn(format!("[l10n] locales.dir {locales_dir:?} leads outside the package; no strings were loaded"));
+        return Vec::new();
+    }
+    let tags: Vec<String> = match available {
+        Some(avail) => avail.to_vec(),
+        None => match std::fs::read_dir(&base) {
+            Ok(rd) => {
+                let mut v: Vec<String> = rd
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                    .filter_map(|e| e.file_name().into_string().ok())
+                    .collect();
+                v.sort();
+                v
+            }
+            Err(_) => Vec::new(),
+        },
+    };
+    let mut all = Vec::new();
+    for tag in tags {
+        if !is_locale_tag(&tag) {
+            warn(format!("[l10n] {tag:?} is not a locale tag and was skipped"));
+            continue;
+        }
+        let Ok(d) = base.join(&tag).canonicalize() else { continue };
+        if !d.starts_with(&base) || !d.is_dir() {
+            continue;
+        }
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&d)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok().map(|x| x.path()))
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ftl"))
+            .collect();
+        files.sort();
+        let mut merged = Resource::default();
+        for f in files {
+            // A link to a file elsewhere is not read.
+            if !f.canonicalize().is_ok_and(|c| c.starts_with(&d)) {
+                continue;
+            }
+            if let Ok(src) = std::fs::read_to_string(&f) {
+                let r = fluent::parse_fluent(&src);
+                let fname = f.file_name().and_then(|s| s.to_str()).unwrap_or("?.ftl");
+                for err in &r.errors {
+                    warn(format!("[l10n] {tag}/{fname}: {err}"));
+                }
+                merged.messages.extend(r.messages);
+                merged.terms.extend(r.terms);
+            }
+        }
+        all.push(Bundle { tag, res: merged });
+    }
+    all
+}
+
 impl L10nManager {
     pub fn sync_global(&self, locale: Option<&str>, tz: Option<&str>) {
         let mut inner = self.inner.lock().unwrap();
@@ -738,50 +820,9 @@ impl L10nManager {
         if entry.bundles.is_some() {
             return;
         }
-        let base = entry.dir.join(&entry.locales_dir);
-        let tags: Vec<String> = match &entry.available_hint {
-            Some(avail) => avail.clone(),
-            None => match std::fs::read_dir(&base) {
-                Ok(rd) => {
-                    let mut v: Vec<String> = rd
-                        .filter_map(|e| e.ok())
-                        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-                        .filter_map(|e| e.file_name().into_string().ok())
-                        .collect();
-                    v.sort();
-                    v
-                }
-                Err(_) => Vec::new(),
-            },
-        };
-        let mut all = Vec::new();
-        for tag in tags {
-            let d = base.join(&tag);
-            if !d.is_dir() {
-                continue;
-            }
-            let mut files: Vec<PathBuf> = std::fs::read_dir(&d)
-                .ok()
-                .into_iter()
-                .flatten()
-                .filter_map(|e| e.ok().map(|x| x.path()))
-                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("ftl"))
-                .collect();
-            files.sort();
-            let mut merged = Resource::default();
-            for f in files {
-                if let Ok(src) = std::fs::read_to_string(&f) {
-                    let r = fluent::parse_fluent(&src);
-                    let fname = f.file_name().and_then(|s| s.to_str()).unwrap_or("?.ftl");
-                    for err in &r.errors {
-                        logs.write(plugin, "warn", &format!("[l10n] {tag}/{fname}: {err}"));
-                    }
-                    merged.messages.extend(r.messages);
-                    merged.terms.extend(r.terms);
-                }
-            }
-            all.push(Bundle { tag, res: merged });
-        }
+        let all = read_bundles(&entry.dir, &entry.locales_dir, entry.available_hint.as_deref(), &mut |msg| {
+            logs.write(plugin, "warn", &msg)
+        });
         entry.bundles = Some(all);
     }
 
@@ -1052,7 +1093,7 @@ impl TimerManager {
                     tokio::spawn(async move {
                         let _reset = BusyReset(entry_guard);
                         let _ = h
-                            .call_internal(&pid_call, "events", "on-timer", &[json!(id), json!(kind)], None, None, false)
+                            .call_contained(pid_call, "events".into(), "on-timer".into(), vec![json!(id), json!(kind)], None, None, false)
                             .await;
                     });
                 }
@@ -1075,7 +1116,7 @@ impl TimerManager {
                 };
                 tm.out.send(json!({ "t": "timers-count", "plugin": pid, "count": new_count }));
                 let _ = h
-                    .call_internal(&pid, "events", "on-timer", &[json!(id), json!(kind)], None, None, false)
+                    .call_contained(pid, "events".into(), "on-timer".into(), vec![json!(id), json!(kind)], None, None, false)
                     .await;
             }
         });
@@ -1478,9 +1519,9 @@ pub fn html_to_text(html: &str) -> String {
     while j < no_tags.len() {
         let rest = &no_tags[j..];
         if rest.starts_with('&') {
-            let max_scan = rest.len().min(16);
+            // The entity name may start in the first 16 bytes; a character that straddles byte 16 must not be cut.
             let mut semi = None;
-            for (k, ch) in rest[..max_scan].char_indices().skip(1) {
+            for (k, ch) in rest.char_indices().take_while(|(k, _)| *k < 16).skip(1) {
                 if ch == ';' {
                     semi = Some(k);
                     break;
@@ -1681,6 +1722,29 @@ pub fn capitalize_title(title: &str, _force: bool) -> String {
 // Dispatcher
 // =====================================================================================================================
 
+/// Runs a native wait (a sleep, the wait for the UI) with the call's CPU deadline paused. The time counts against the call's
+/// allowance for such waits (`max_paused_ms`), a sleep that cannot fit is refused at once, and the wait ends when the plugin is
+/// unloaded.
+async fn paused_wait<F: std::future::Future<Output = ()>>(cx: &mut StoreContextMut<'_, St>, want_ms: Option<u64>, fut: F) -> Result<()> {
+    let (cpu_left, cancel, allowance) = {
+        let d = cx.data();
+        (d.deadline_epoch.saturating_sub(now_epoch()), d.cancel.clone(), d.max_paused_ms.saturating_sub(d.paused_ms))
+    };
+    if want_ms.is_some_and(|ms| ms > allowance) {
+        bail!("{TIMEOUT_MARK}: the call used up its allowance for sleeping and waiting");
+    }
+    let t0 = Instant::now();
+    let outcome = tokio::select! {
+        _ = fut => Ok(()),
+        _ = cancel.cancelled() => Err(anyhow!("{UNLOADED_MARK}: the plugin was unloaded while it waited")),
+        _ = tokio::time::sleep(Duration::from_millis(allowance)) => Err(anyhow!("{TIMEOUT_MARK}: the call used up its allowance for sleeping and waiting")),
+    };
+    let d = cx.data_mut();
+    d.paused_ms = d.paused_ms.saturating_add(t0.elapsed().as_millis() as u64);
+    d.deadline_epoch = now_epoch() + cpu_left;
+    outcome
+}
+
 pub async fn call(
     mut cx: StoreContextMut<'_, St>,
     short_iface: &str,
@@ -1753,10 +1817,8 @@ pub async fn call(
         }
         ("timers", "sleep") => {
             let Some(Val::U32(ms)) = params.first() else { bail!("timers.sleep: bad arguments") };
-            let dur = Duration::from_millis((*ms as u64).min(3_600_000));
-            let remaining = cx.data().deadline_epoch.saturating_sub(now_epoch());
-            tokio::time::sleep(dur).await;
-            cx.data_mut().deadline_epoch = now_epoch() + remaining;
+            let ms = (*ms as u64).min(3_600_000);
+            paused_wait(&mut cx, Some(ms), tokio::time::sleep(Duration::from_millis(ms))).await?;
         }
         ("timers", "set-timeout") => {
             let Some(Val::U32(ms)) = params.first() else { bail!("timers.set-timeout: bad arguments") };
@@ -1843,13 +1905,14 @@ pub async fn call(
         ("app", "wait-ui-ready") => {
             let mut rx = host.app.ui_ready_receiver();
             if !*rx.borrow_and_update() {
-                let remaining = cx.data().deadline_epoch.saturating_sub(now_epoch());
-                while !*rx.borrow_and_update() {
-                    if rx.changed().await.is_err() {
-                        break;
+                let ready = async {
+                    while !*rx.borrow_and_update() {
+                        if rx.changed().await.is_err() {
+                            break;
+                        }
                     }
-                }
-                cx.data_mut().deadline_epoch = now_epoch() + remaining;
+                };
+                paused_wait(&mut cx, None, ready).await?;
             }
         }
         ("app", "main-windows") => {
@@ -1925,4 +1988,243 @@ pub async fn call(
         _ => bail!("{short_iface}#{fname} has no native implementation"),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn html_to_text_survives_text_after_an_ampersand() {
+        // "&" followed by 14 ASCII bytes and a two-byte character puts the character across byte 16
+        let s = format!("&{}\u{e9} tail", "a".repeat(14));
+        assert_eq!(html_to_text(&s), s);
+        assert_eq!(html_to_text("AT&T pr\u{e9}sente"), "AT&T pr\u{e9}sente");
+        assert_eq!(html_to_text("a &amp; b &lt;&#233;&#xe9;&gt;"), "a & b <\u{e9}\u{e9}>");
+        // every position of a multi-byte character relative to the 16 byte window
+        for pad in 0..20 {
+            let s = format!("&{}\u{1f600}\u{4e2d};x", "b".repeat(pad));
+            let _ = html_to_text(&s);
+        }
+    }
+
+    #[test]
+    fn html_to_text_keeps_entities_that_fit_the_window() {
+        assert_eq!(html_to_text("&hellip;&nbsp;x"), "\u{2026}\u{a0}x");
+        // 14 name bytes is the longest that is looked at; it is not a known entity, so it stays as written
+        assert_eq!(html_to_text("&abcdefghijklmn;"), "&abcdefghijklmn;");
+    }
+
+    #[test]
+    fn app_prefs_that_are_no_longer_set_are_forgotten() {
+        let p = PrefsManager::default();
+        let get = |k: &str| format!("{:?}", p.get_app(k, true));
+        p.on_push(&json!({"appPrefs": {"ui.locale": "en", "general.autoTag": true}}));
+        assert!(get("general.autoTag").contains("Flag") || get("general.autoTag").contains("flag"), "{}", get("general.autoTag"));
+        p.on_push(&json!({"appPrefs": {"ui.locale": "fr"}}));
+        assert!(get("ui.locale").contains("fr"));
+        assert!(!get("general.autoTag").contains("flag"), "{}", get("general.autoTag"));
+        assert!(get("general.autoTag").contains("None"));
+        p.on_push(&json!({"appPrefs": {}}));
+        assert!(get("ui.locale").contains("None"));
+    }
+
+    #[test]
+    fn locale_names_are_plain() {
+        for ok in ["locale", "locale/strings", "./locale", "i18n\\fr", "a.b"] {
+            assert!(is_plain_relative_path(ok), "{ok}");
+        }
+        for bad in ["", "..", "../x", "a/../b", "a\\..\\b", "/abs", "\\\\server\\share", "C:\\x", "C:x", "//srv/x", "a\0b", "x:y"] {
+            assert!(!is_plain_relative_path(bad), "{bad:?}");
+        }
+        for ok in ["en", "fr", "en-US", "pt-BR", "zh-Hans-CN", "es-419", "sr-Latn-RS"] {
+            assert!(is_locale_tag(ok), "{ok}");
+        }
+        for bad in ["", "e", "..", "../en", "en/US", "en\\US", "en-", "-en", "en_US", "C:", "en-US-x y", "abcdefghi", "en--US", "e\u{301}n"] {
+            assert!(!is_locale_tag(bad), "{bad:?}");
+        }
+    }
+
+    /// A scratch package folder under the temp dir with `locale/<tag>/main.ftl` and a sibling `outside/en/main.ftl`.
+    struct Pkg {
+        root: PathBuf,
+        files: Vec<PathBuf>,
+        dirs: Vec<PathBuf>,
+    }
+
+    impl Pkg {
+        fn new(name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!("zhw-l10n-{}-{name}", std::process::id()));
+            let mut p = Pkg { root, files: vec![], dirs: vec![] };
+            p.dir("");
+            p.dir("pkg");
+            p
+        }
+        fn dir(&mut self, rel: &str) -> PathBuf {
+            let d = self.root.join(rel);
+            let mut missing = vec![];
+            let mut cur = d.clone();
+            while !cur.exists() {
+                missing.push(cur.clone());
+                cur = cur.parent().unwrap().to_path_buf();
+            }
+            std::fs::create_dir_all(&d).unwrap();
+            missing.reverse();
+            self.dirs.extend(missing);
+            d
+        }
+        fn file(&mut self, rel: &str, text: &str) {
+            let f = self.root.join(rel);
+            self.dir(Path::new(rel).parent().unwrap().to_str().unwrap());
+            std::fs::write(&f, text).unwrap();
+            self.files.push(f);
+        }
+        fn pkg(&self) -> PathBuf {
+            self.root.join("pkg")
+        }
+    }
+
+    impl Drop for Pkg {
+        fn drop(&mut self) {
+            for f in &self.files {
+                let _ = std::fs::remove_file(f);
+            }
+            for d in self.dirs.iter().rev() {
+                let _ = std::fs::remove_dir(d);
+            }
+        }
+    }
+
+    fn read(p: &Pkg, dir: &str, avail: Option<&[String]>) -> (Vec<String>, Vec<String>) {
+        let mut warns = vec![];
+        let b = read_bundles(&p.pkg(), dir, avail, &mut |m| warns.push(m));
+        (b.into_iter().map(|b| format!("{}:{}", b.tag, b.res.messages.len())).collect(), warns)
+    }
+
+    #[test]
+    fn the_locales_folder_inside_the_package_is_read() {
+        let mut p = Pkg::new("ok");
+        p.file("pkg/locale/en-US/main.ftl", "hello = Hello\nbye = Bye\n");
+        p.file("pkg/locale/fr/main.ftl", "hello = Bonjour\n");
+        p.file("pkg/locale/fr/notes.txt", "not a string file");
+        assert_eq!(read(&p, "locale", None).0, ["en-US:2", "fr:1"]);
+        let hint = vec!["fr".to_string()];
+        assert_eq!(read(&p, "locale", Some(&hint)).0, ["fr:1"]);
+        assert_eq!(read(&p, "./locale", None).0, ["en-US:2", "fr:1"]);
+    }
+
+    #[test]
+    fn a_locales_folder_outside_the_package_is_refused() {
+        let mut p = Pkg::new("dir");
+        p.file("pkg/locale/en/main.ftl", "hello = Hello\n");
+        p.file("outside/en/main.ftl", "stolen = Stolen\n");
+        let abs = p.root.join("outside").to_string_lossy().into_owned();
+        let unc = format!("\\\\?\\{abs}");
+        for dir in ["../outside", "locale/../../outside", &abs, &unc, "\\\\localhost\\c$\\x", "C:", "/outside"] {
+            let (got, warns) = read(&p, dir, None);
+            assert!(got.is_empty(), "{dir}: {got:?}");
+            assert_eq!(warns.len(), 1, "{dir}");
+        }
+    }
+
+    #[test]
+    fn a_tag_that_is_not_a_tag_is_skipped() {
+        let mut p = Pkg::new("tag");
+        p.file("pkg/locale/en/main.ftl", "hello = Hello\n");
+        p.file("outside/main.ftl", "stolen = Stolen\n");
+        p.file("pkg/outside.ftl", "stolen = Stolen\n");
+        let hint: Vec<String> = ["..", "../../outside", "..\\..\\outside", "en", "C:\\", "", "locale"].iter().map(|s| s.to_string()).collect();
+        let (got, warns) = read(&p, "locale", Some(&hint));
+        assert_eq!(got, ["en:1"]);
+        assert_eq!(warns.len(), 5);
+    }
+
+    #[test]
+    fn a_folder_or_file_that_links_out_of_the_package_is_not_read() {
+        let mut p = Pkg::new("link");
+        p.file("pkg/locale/en/main.ftl", "hello = Hello\n");
+        p.file("outside/main.ftl", "stolen = Stolen\n");
+        p.dir("outside/fr");
+        p.file("outside/fr/main.ftl", "stolen = Stolen\n");
+        let link_dir = p.pkg().join("locale").join("fr");
+        let link_file = p.pkg().join("locale").join("en").join("linked.ftl");
+        // a junction needs no privilege; it is removed with `remove_dir`, which does not touch what it points to
+        let made_dir = std::os::windows::fs::symlink_dir(p.root.join("outside").join("fr"), &link_dir).is_ok()
+            || std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&link_dir)
+                .arg(p.root.join("outside").join("fr"))
+                .output()
+                .is_ok_and(|o| o.status.success());
+        let made_file = std::os::windows::fs::symlink_file(p.root.join("outside").join("main.ftl"), &link_file).is_ok();
+        if !made_dir && !made_file {
+            eprintln!("symbolic links are not allowed here: link cases not run");
+            return;
+        }
+        if made_dir {
+            p.dirs.push(link_dir);
+        }
+        if made_file {
+            p.files.push(link_file);
+        }
+        let (got, _) = read(&p, "locale", None);
+        // the folder link is skipped; the file link is not read, so `en` has only its own message
+        assert!(!got.iter().any(|g| g.starts_with("fr:") && g != "fr:0"), "{got:?}");
+        assert!(got.contains(&"en:1".to_string()), "{got:?}");
+    }
+
+    #[test]
+    fn the_manager_loads_nothing_from_a_refused_folder() {
+        let mut p = Pkg::new("mgr");
+        p.file("outside/en/main.ftl", "stolen = Stolen\n");
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let logs = LogManager::new(Out(tx));
+        let l = L10nManager::default();
+        l.on_load("p@x", &p.pkg(), &json!({"locales": {"default": "en", "dir": "../outside"}}), None, &logs);
+        assert!(l.plugin_locales("p@x", &logs).is_empty());
+        assert!(!l.has_message("p@x", "stolen", &logs));
+    }
+
+    #[tokio::test]
+    async fn sleeps_and_waits_count_against_the_allowance_and_end_on_unload() {
+        use crate::host::testing::{add_slot, lock, test_host};
+        use std::future::pending;
+        use wasmtime::AsContextMut;
+        let (host, _rx) = test_host();
+        let slot = add_slot(&host, "p@x");
+        let mut store = lock(&slot).await;
+        store.data_mut().max_paused_ms = 300;
+        store.data_mut().deadline_epoch = now_epoch() + 1000;
+        let deadline_before = store.data().deadline_epoch;
+        let mut cx = store.as_context_mut();
+
+        // a sleep that fits is waited for, counted, and the CPU deadline is not used up meanwhile
+        paused_wait(&mut cx, Some(100), tokio::time::sleep(Duration::from_millis(100))).await.unwrap();
+        assert!(cx.data().paused_ms >= 90, "{}", cx.data().paused_ms);
+        assert!(cx.data().deadline_epoch >= deadline_before);
+
+        // one that cannot fit the rest is refused at once, as a timeout
+        let t0 = Instant::now();
+        let err = paused_wait(&mut cx, Some(250), tokio::time::sleep(Duration::from_secs(3600))).await.unwrap_err().to_string();
+        assert!(err.contains(TIMEOUT_MARK), "{err}");
+        assert!(t0.elapsed() < Duration::from_millis(80));
+
+        // a wait of unknown length ends when the allowance is used up
+        let err = paused_wait(&mut cx, None, pending::<()>()).await.unwrap_err().to_string();
+        assert!(err.contains(TIMEOUT_MARK), "{err}");
+        assert!(cx.data().paused_ms >= 290, "{}", cx.data().paused_ms);
+
+        // and a wait ends when the plugin is unloaded
+        cx.data_mut().max_paused_ms = 60_000;
+        let cancel = cx.data().cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            cancel.set();
+        });
+        let t0 = Instant::now();
+        let err = paused_wait(&mut cx, None, pending::<()>()).await.unwrap_err().to_string();
+        assert!(err.contains(UNLOADED_MARK), "{err}");
+        assert!(t0.elapsed() < Duration::from_secs(5));
+    }
 }
