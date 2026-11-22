@@ -420,6 +420,12 @@ internal static class Program
                     var sorted = FieldOrder.Sort(slots, x => x.s.Pos, x => x.s.Rank).ToList();
                     return Json.Map("order", sorted.Select(x => x.i).ToList(), "notes", slots.Select(x => x.s.Note).ToList());
                 }
+            case "h.watchdogSince":
+                {
+                    // the watchdog's clock arithmetic on plain tick counts (Environment.TickCount values): needs no Word
+                    var pairs = Json.Arr(Json.Get(p, "pairs")).Select(x => Json.Arr(x).Select(Convert.ToInt32).ToArray()).ToList();
+                    return Json.Map("ms", pairs.Select(x => UiWatchdog.Since(UiWatchdog.Widen(x[0]), UiWatchdog.Widen(x[1]))).ToList());
+                }
             case "h.webGuard":
                 {
                     // what the popup's WebView2 accepts and whether DevTools are on: pure, no Word, no WebView2 page

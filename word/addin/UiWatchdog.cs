@@ -16,9 +16,17 @@ namespace ZoteroNext.Word
 
         static volatile string _phase;
         static long _phaseSince;
-        static long _beat = Environment.TickCount;
-        static System.Windows.Forms.Timer _timer;
+        static long _beat = Tick();
+        static volatile System.Windows.Forms.Timer _timer;
         static Thread _thread;
+
+        /// <summary>A tick count as a non-negative number: Environment.TickCount is a signed int that turns negative after 24.9 days of uptime.</summary>
+        internal static long Widen(int tick) { return unchecked((uint)tick); }
+
+        static long Tick() { return Widen(Environment.TickCount); }
+
+        /// <summary>Milliseconds from then to now (both from <see cref="Widen"/>), right across the counter's wrap at 49.7 days.</summary>
+        internal static long Since(long now, long then) { return (now - then) & 0xFFFFFFFFL; }
 
         /// <summary>What the add-in is doing on the UI thread right now (null when it is not running).</summary>
         public static string Phase { get { return _phase; } }
@@ -28,7 +36,7 @@ namespace ZoteroNext.Word
         {
             var prev = _phase;
             _phase = prev == null ? phase : prev + " > " + phase;
-            if (prev == null) Interlocked.Exchange(ref _phaseSince, Environment.TickCount);
+            if (prev == null) Interlocked.Exchange(ref _phaseSince, Tick());
             return prev;
         }
 
@@ -38,11 +46,12 @@ namespace ZoteroNext.Word
         public static void Start()
         {
             if (_timer != null) return;
-            Interlocked.Exchange(ref _beat, Environment.TickCount);
-            _timer = new System.Windows.Forms.Timer { Interval = BeatMs };
-            _timer.Tick += (s, e) => Interlocked.Exchange(ref _beat, Environment.TickCount);
-            _timer.Start();
-            _thread = new Thread(Watch) { IsBackground = true, Name = "zn-ui-watchdog", Priority = ThreadPriority.BelowNormal };
+            Interlocked.Exchange(ref _beat, Tick());
+            var timer = new System.Windows.Forms.Timer { Interval = BeatMs };
+            _timer = timer;
+            timer.Tick += (s, e) => Interlocked.Exchange(ref _beat, Tick());
+            timer.Start();
+            _thread = new Thread(() => Watch(timer)) { IsBackground = true, Name = "zn-ui-watchdog", Priority = ThreadPriority.BelowNormal };
             _thread.Start();
         }
 
@@ -52,24 +61,25 @@ namespace ZoteroNext.Word
             _timer = null;
         }
 
-        static void Watch()
+        // watches until its own timer is stopped: a Stop followed by a Start before this thread wakes must not leave two watchers
+        static void Watch(System.Windows.Forms.Timer mine)
         {
             bool stuck = false;
             long reportedAt = 0, stuckFrom = 0;
             string worst = null;
-            while (_timer != null)
+            while (ReferenceEquals(_timer, mine))
             {
                 Thread.Sleep(BeatMs);
-                long now = Environment.TickCount;
-                long age = now - Interlocked.Read(ref _beat);
+                long now = Tick();
+                long age = Since(now, Interlocked.Read(ref _beat));
                 var phase = _phase;
                 if (age > StuckMs)
                 {
                     if (phase != null) worst = phase;
                     if (!stuck) stuckFrom = Interlocked.Read(ref _beat);
-                    if (!stuck || now - reportedAt >= RepeatMs)
+                    if (!stuck || Since(now, reportedAt) >= RepeatMs)
                     {
-                        string since = phase == null ? "" : " (for " + (now - Interlocked.Read(ref _phaseSince)) / 1000.0 + " s)";
+                        string since = phase == null ? "" : " (for " + Since(now, Interlocked.Read(ref _phaseSince)) / 1000.0 + " s)";
                         Log.Write("watchdog: Word's UI thread has not answered for " + age / 1000.0 + " s; add-in doing: " + (phase ?? "none (Word's own work)") + since);
                         reportedAt = now;
                     }
@@ -77,7 +87,7 @@ namespace ZoteroNext.Word
                 }
                 else if (stuck)
                 {
-                    Log.Write("watchdog: Word's UI thread answers again after " + (now - stuckFrom) / 1000.0 + " s (add-in doing while stuck: " + (worst ?? "none") + ")");
+                    Log.Write("watchdog: Word's UI thread answers again after " + Since(now, stuckFrom) / 1000.0 + " s (add-in doing while stuck: " + (worst ?? "none") + ")");
                     stuck = false; worst = null;
                 }
             }
