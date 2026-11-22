@@ -1,12 +1,13 @@
 // Entry point of the compiled "zotero-next host" (bun build --compile). Chrome starts it for
 // chrome.runtime.connectNative(); stdin/stdout carry the native-messaging frames, so nothing else may print there.
 import { runHost } from "./host";
+import { stdoutWriter } from "./stdout";
 
 // stdout is the protocol channel: route every log to stderr.
 console.log = console.error;
 console.info = console.error;
 
-const write = (b: Buffer) => void process.stdout.write(b);
+const write = stdoutWriter(process.stdout);
 
 try {
 	await runHost(Bun.stdin.stream() as unknown as AsyncIterable<Uint8Array>, write);
