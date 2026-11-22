@@ -76,7 +76,13 @@ export async function replaceAttachmentFile(db: Database, key: string, req: Requ
 				renameSync(tmp, path);
 				swapped = true;
 			})();
-			rmSync(backup, { force: true });
+			// committed: the new file and the annotation changes are final, so nothing below may put the original back
+			swapped = false;
+			try {
+				rmSync(backup, { force: true });
+			} catch {
+				/* the copy stays next to the file (a hidden dotfile); the replacement itself succeeded */
+			}
 			backup = null;
 		}
 	} catch (e) {
