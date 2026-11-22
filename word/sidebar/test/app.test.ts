@@ -486,6 +486,19 @@ describe("document preferences", () => {
 		expect(await app.setNoteType(1)).toBeNull();
 	});
 
+	test("a style change within the same class leaves each citation in the story the user put it in", async () => {
+		const { app, host } = setupNote();
+		await app.init();
+		const [a, b] = await pickAll(app, "AAAA1111", "BBBB2222");
+		await app.insertCitation([a!]);
+		await app.insertCitation([b!]);
+		// an in-text style, and the user cited inside a footnote of their own
+		host.fields[0].story = "fn";
+		await app.setStyle("apa", "en-US");
+		expect(host.fields.map((f: any) => f.story)).toEqual(["fn", "main"]);
+		expect(host.calls.filter((c: string) => c === "doc.convert")).toEqual([]);
+	});
+
 	test("a style change that fails halfway writes no preferences, and trying again moves the rest", async () => {
 		const { app, host } = setupNote();
 		await app.init();
