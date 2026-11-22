@@ -31,7 +31,13 @@ const CSS = `
 .zn-ref-actions .zn-status { font-size: 11px; opacity: .65; align-self: center; }
 `;
 
-export function installCitationActions({ attachment, postToParent, onError = console.warn }) {
+// `apiFetch` is how the page reaches /api/...: the browser extension answers those over native messaging (globalThis.znApiFetch).
+export function installCitationActions({
+	attachment,
+	postToParent,
+	onError = console.warn,
+	apiFetch = (input, init) => (globalThis.znApiFetch || fetch)(input, init),
+}) {
 	if (!attachment) return () => {};
 
 	let style = document.createElement("style");
@@ -44,7 +50,7 @@ export function installCitationActions({ attachment, postToParent, onError = con
 	function getReferences() {
 		if (referencesPromise && (!failedAt || Date.now() - failedAt < 30000)) return referencesPromise;
 		failedAt = 0;
-		referencesPromise = fetch("/api/references/" + encodeURIComponent(attachment))
+		referencesPromise = apiFetch("/api/references/" + encodeURIComponent(attachment))
 			.then((res) => {
 				if (!res.ok) throw new Error("GET references -> " + res.status);
 				return res.json();
@@ -59,7 +65,7 @@ export function installCitationActions({ attachment, postToParent, onError = con
 	}
 
 	async function postJSON(path, body) {
-		let res = await fetch(path, {
+		let res = await apiFetch(path, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),

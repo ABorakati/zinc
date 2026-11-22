@@ -2,6 +2,8 @@
 import { SDT_PACK_VERSION, SDT_SCHEMA_VERSION } from "../../vendor/reader/structured-document-text/src/version.js";
 
 import { installCitationActions } from "./citations.js";
+import { createDocumentWorker } from "./docworker.js";
+import { createAnnotationSaver, fitsKeepalive } from "./saves.js";
 
 const params = new URLSearchParams(location.search);
 const attachment = params.get("attachment");
@@ -46,75 +48,7 @@ function typeFromContentType(ct) {
 }
 
 // ---------- document worker + SDT pack (Reading Mode) ----------
-let documentWorker = null;
-let workerFailed = false;
-let lastPromiseID = 0;
-const workerPromises = {};
-
-function failAllPending(error) {
-	for (let id of Object.keys(workerPromises)) {
-		workerPromises[id].reject(error);
-		delete workerPromises[id];
-	}
-}
-
-function initDocumentWorker() {
-	if (documentWorker || workerFailed) return documentWorker;
-	documentWorker = new Worker(DOCUMENT_WORKER_BASE + "worker.js");
-	documentWorker.addEventListener("error", (event) => {
-		console.warn("Document worker failed:", event.message || event);
-		workerFailed = true;
-		failAllPending(new Error("Document worker unavailable"));
-		documentWorker = null;
-	});
-	documentWorker.addEventListener("message", async (event) => {
-		let message = event.data;
-		if (message.progressID) {
-			workerPromises[message.progressID]?.onProgress?.(message.data.progress);
-			return;
-		}
-		if (message.responseID) {
-			let pending = workerPromises[message.responseID];
-			if (!pending) return;
-			delete workerPromises[message.responseID];
-			if ("error" in message) pending.reject(new Error(JSON.stringify(message.error)));
-			else pending.resolve(message.data);
-			return;
-		}
-		if (message.id) {
-			let respData = null;
-			try {
-				if (message.action === "FetchBuiltInCMap") {
-					let res = await fetch(DOCUMENT_WORKER_BASE + "cmaps/" + message.data + ".bcmap");
-					respData = { isCompressed: true, cMapData: new Uint8Array(await res.arrayBuffer()) };
-				} else if (message.action === "FetchStandardFontData") {
-					let res = await fetch(DOCUMENT_WORKER_BASE + "standard_fonts/" + message.data);
-					respData = new Uint8Array(await res.arrayBuffer());
-				} else if (message.action === "FetchWasm") {
-					let res = await fetch(DOCUMENT_WORKER_BASE + "wasm/" + message.data);
-					respData = new Uint8Array(await res.arrayBuffer());
-				} else if (message.action === "FetchData") {
-					let res = await fetch(DOCUMENT_WORKER_BASE + message.data);
-					respData = new Uint8Array(await res.arrayBuffer());
-				}
-			} catch (e) {
-				console.warn(`Document worker ${message.action} failed:`, e);
-			}
-			documentWorker.postMessage({ responseID: message.id, data: respData });
-		}
-	});
-	return documentWorker;
-}
-
-function queryDocumentWorker(action, data, transfer, onProgress) {
-	let worker = initDocumentWorker();
-	if (!worker) return Promise.reject(new Error("Document worker unavailable"));
-	return new Promise((resolve, reject) => {
-		lastPromiseID++;
-		workerPromises[lastPromiseID] = { resolve, reject, onProgress };
-		worker.postMessage({ id: lastPromiseID, action, data }, transfer || []);
-	});
-}
+const queryDocumentWorker = createDocumentWorker({ base: DOCUMENT_WORKER_BASE }).query;
 
 // The worker requires sourceHash to be a 32-char lowercase hex (MD5-shaped) string.
 // Derive a stable one from the attachment key (SHA-256 truncated; FNV fallback when
@@ -195,42 +129,9 @@ function makeGetSDTPack(type, fileBuf) {
 }
 
 // ---------- persistence ----------
-const pendingSave = new Map(); // id -> annotation
-let saveTimer = null;
-
-function flushSave(keepalive = false) {
-	clearTimeout(saveTimer);
-	saveTimer = null;
-	if (!pendingSave.size) return;
-	let batch = [...pendingSave.values()];
-	pendingSave.clear();
-	apiFetch(API + "/annotations", {
-		method: "PUT",
-		keepalive,
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(batch),
-	})
-		.then((r) => {
-			if (!r.ok) throw new Error("status " + r.status);
-		})
-		.catch((e) => console.error("Saving annotations failed", e));
-}
-
-function queueSave(annotations) {
-	for (let a of annotations) pendingSave.set(a.id, a);
-	clearTimeout(saveTimer);
-	saveTimer = setTimeout(() => flushSave(), 300);
-}
-
-function deleteAnnotations(ids) {
-	for (let id of ids) pendingSave.delete(id);
-	if (!ids.length) return;
-	apiFetch(API + "/annotations", {
-		method: "DELETE",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ids }),
-	}).catch((e) => console.error("Deleting annotations failed", e));
-}
+const saver = createAnnotationSaver({ send: (init) => apiFetch(API + "/annotations", init) });
+const queueSave = (annotations) => saver.queueSave(annotations);
+const deleteAnnotations = (ids) => saver.deleteAnnotations(ids);
 
 let pendingViewState = null;
 let viewStateTimer = null;
@@ -242,7 +143,7 @@ function flushViewState(keepalive = false) {
 	pendingViewState = null;
 	apiFetch(API + "/view-state", {
 		method: "PUT",
-		keepalive,
+		keepalive: keepalive && fitsKeepalive(JSON.stringify(state)),
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(state),
 	}).catch((e) => console.error("Saving view state failed", e));
@@ -254,7 +155,7 @@ function queueViewState(state) {
 }
 
 function flushAll() {
-	flushSave(true);
+	saver.flush(true);
 	flushViewState(true);
 }
 
@@ -262,21 +163,9 @@ function flushAll() {
 addEventListener("message", async (e) => {
 	if (e.source !== window.parent || e.origin !== location.origin || e.data?.type !== "zn-save-now") return;
 	let ok = true;
-	let batch = [],
-		state = null;
+	let state = null;
 	try {
-		let jobs = [];
-		if (pendingSave.size) {
-			batch = [...pendingSave.values()];
-			pendingSave.clear();
-			jobs.push(
-				apiFetch(API + "/annotations", {
-					method: "PUT",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(batch),
-				}),
-			);
-		}
+		let jobs = [saver.drain()];
 		if (pendingViewState) {
 			state = pendingViewState;
 			pendingViewState = null;
@@ -285,19 +174,15 @@ addEventListener("message", async (e) => {
 					method: "PUT",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(state),
-				}),
+				}).then((r) => r.ok),
 			);
 		}
-		clearTimeout(saveTimer);
 		clearTimeout(viewStateTimer);
-		ok = (await Promise.all(jobs)).every((r) => r.ok);
+		ok = (await Promise.all(jobs)).every(Boolean);
 	} catch {
 		ok = false;
 	}
-	if (!ok) {
-		for (let a of batch) if (!pendingSave.has(a.id)) pendingSave.set(a.id, a);
-		if (state && !pendingViewState) pendingViewState = state;
-	}
+	if (!ok && state && !pendingViewState) pendingViewState = state;
 	window.parent.postMessage({ type: "zn-saved", id: e.data.id, ok }, location.origin);
 });
 addEventListener("pagehide", flushAll);
@@ -408,7 +293,7 @@ async function main() {
 		}
 	});
 	watchFirstRender(type);
-	installCitationActions({ attachment, postToParent });
+	installCitationActions({ attachment, postToParent, apiFetch });
 }
 
 /** 'light' | 'dark' from the app's theme setting (zn.theme, same-origin localStorage); null = follow the OS. */
