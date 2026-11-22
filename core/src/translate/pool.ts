@@ -16,9 +16,9 @@ export class TranslateError extends Error {
 
 // ZN_TRANSLATE_WORKER: a pre-bundled worker (translate-worker.js) beside the packaged exe, where the sources are not on disk
 // (gpui-ui/scripts/translate-worker.ts builds it; src/packaged.ts sets it). Unset: the source worker next to this file.
-const WORKER_ENTRY = process.env.ZN_TRANSLATE_WORKER
-	? Bun.pathToFileURL(process.env.ZN_TRANSLATE_WORKER)
-	: new URL("./worker.ts", import.meta.url);
+// Read on every spawn, not once at load, so a failed start can be followed by a corrected one (and tests can point at a fixture).
+const workerEntry = (): URL =>
+	process.env.ZN_TRANSLATE_WORKER ? Bun.pathToFileURL(process.env.ZN_TRANSLATE_WORKER) : new URL("./worker.ts", import.meta.url);
 const MAX_WORKERS = 2;
 const RECYCLE_AFTER_JOBS = 50;
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -28,6 +28,7 @@ interface Slot {
 	busy: boolean;
 	jobs: number;
 	ready: Promise<void>;
+	isReady: boolean;
 	settle?: (r: { ok: boolean; result?: unknown; error?: string }) => void;
 }
 
@@ -37,13 +38,16 @@ let nextId = 1;
 
 function spawn(): Slot {
 	// env: the packaged app sets ZN_ZOTERO_VENDOR at run time, after the process started; a worker's default env is the start-up one
-	const worker = new Worker(WORKER_ENTRY.href, { env: process.env as Record<string, string> });
+	const worker = new Worker(workerEntry().href, { env: process.env as Record<string, string> });
 	(worker as unknown as { unref?: () => void }).unref?.();
-	const slot: Slot = { worker, busy: false, jobs: 0, ready: Promise.resolve() };
+	const slot: Slot = { worker, busy: false, jobs: 0, ready: Promise.resolve(), isReady: false };
 	slot.ready = new Promise<void>((resolve, reject) => {
 		worker.onmessage = (e: MessageEvent) => {
 			const m = e.data;
-			if (m?.ready) return resolve();
+			if (m?.ready) {
+				slot.isReady = true;
+				return resolve();
+			}
 			slot.settle?.(m);
 		};
 		worker.onerror = (e: ErrorEvent) => {
@@ -51,9 +55,10 @@ function spawn(): Slot {
 			// handlers swallow those. Anything that still gets here before the worker is ready is fatal for the slot.
 			e.preventDefault?.();
 			logError("translate", e.error ?? e.message, "translation worker", { jobRunning: !!slot.settle });
-			if (!slot.settle) return;
 			const err = new TranslateError("worker", `translation worker error: ${String(e.message ?? "")}`);
-			reject(err);
+			// A worker that fails while starting never sends "ready": reject, so the waiting job fails and the slot is replaced.
+			if (!slot.isReady) return reject(err);
+			if (!slot.settle) return;
 			slot.settle({ ok: false, error: err.message });
 		};
 	});
@@ -94,7 +99,24 @@ export async function runJob<T>(op: JobOp, params: unknown, timeoutMs = DEFAULT_
 	slot.jobs++;
 	let dispose = false;
 	try {
-		await slot.ready;
+		// The job timeout also covers the start: a worker that never becomes ready must not hold its slot for ever.
+		let startTimer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			await Promise.race([
+				slot.ready,
+				new Promise<never>((_, reject) => {
+					startTimer = setTimeout(
+						() => reject(new TranslateError("timeout", `translation worker did not start within ${Math.round(timeoutMs / 1000)} s`)),
+						timeoutMs,
+					);
+				}),
+			]);
+		} catch (e) {
+			dispose = true;
+			throw e;
+		} finally {
+			clearTimeout(startTimer);
+		}
 		const id = nextId++;
 		return await new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
