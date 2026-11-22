@@ -9,6 +9,7 @@ export const platform = () => "win32";
 export const hostname = () => "demo";
 export const cpus = () => [{ model: "browser" }];
 export const totalmem = () => 8 * 2 ** 30;
+export const networkInterfaces = () => ({});
 export const EOL = "\n";
 
 export const pathToFileURL = (p: string) => new URL(`file:///${String(p).replace(/\\/g, "/").replace(/^\//, "")}`);
@@ -263,6 +264,7 @@ export default {
 	hostname,
 	cpus,
 	totalmem,
+	networkInterfaces,
 	EOL,
 	pathToFileURL,
 	fileURLToPath,
