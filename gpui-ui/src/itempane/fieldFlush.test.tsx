@@ -24,10 +24,13 @@ describe("inline field edit flushed when the field goes away", () => {
 	let writes: string[] = [];
 	let saved: Record<string, unknown>;
 	let cleanups: (() => void)[] = [];
+	let realFetch: typeof fetch;
 
 	beforeAll(async () => {
 		envBefore = process.env.ZN_UI_STATE;
 		process.env.ZN_UI_STATE = "off";
+		realFetch = globalThis.fetch; // a saved item makes the list refetch: no network in this test
+		globalThis.fetch = (() => Promise.reject(new Error("no network in this test"))) as unknown as typeof fetch;
 		net = await import("./net");
 		model = await import("./model");
 		Header = await import("./Header");
@@ -46,6 +49,7 @@ describe("inline field edit flushed when the field goes away", () => {
 	});
 	afterAll(() => {
 		Object.assign(net.ipApi as unknown as Record<string, unknown>, saved);
+		globalThis.fetch = realFetch;
 		if (envBefore === undefined) delete process.env.ZN_UI_STATE;
 		else process.env.ZN_UI_STATE = envBefore;
 	});
