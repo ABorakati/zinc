@@ -76,7 +76,7 @@ export function createRealEnv(o: RealEnvOptions = {}): UpdateEnv {
 			}
 		},
 
-		async download(url, dest, { offset, onProgress }) {
+		async download(url, dest, { offset, maxBytes, onProgress }) {
 			assertSecureUrl(url);
 			await mkdir(updatesDir, { recursive: true });
 			let from = offset;
@@ -107,11 +107,18 @@ export function createRealEnv(o: RealEnvOptions = {}): UpdateEnv {
 						from = 0;
 					} // the server sent the whole file: overwrite the partial one
 					const total = (Number(res.headers.get("content-length") ?? 0) || 0) + from;
+					if (maxBytes !== undefined && total > maxBytes) {
+						void res.body?.cancel();
+						throw new UpdateError("too-large", "the installer is larger than the update manifest says");
+					}
 					const fh = await open(dest, from > 0 ? "a" : "w");
 					try {
 						let got = from;
 						for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
 							bump();
+							// the signed manifest holds the real size: nothing past it is written (a feed that sends more is misbehaving)
+							if (maxBytes !== undefined && got + chunk.length > maxBytes)
+								throw new UpdateError("too-large", "the installer is larger than the update manifest says");
 							await fh.write(chunk);
 							got += chunk.length;
 							onProgress(got, total);

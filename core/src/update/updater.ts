@@ -36,7 +36,11 @@ export interface UpdateEnv {
 	/** GET a small text body (the manifest). Throws UpdateError("network" | "http" | "too-large"). */
 	fetchText(url: string, o: { maxBytes: number }): Promise<string>;
 	/** GET `url` into `dest`; when `offset` > 0 the file already holds that many bytes and the transfer continues after them (Range), or starts over if the server cannot. */
-	download(url: string, dest: string, o: { offset: number; onProgress: (received: number, total: number) => void }): Promise<void>;
+	download(
+		url: string,
+		dest: string,
+		o: { offset: number; maxBytes?: number; onProgress: (received: number, total: number) => void },
+	): Promise<void>;
 	fileSize(path: string): Promise<number | null>;
 	sha256(path: string): Promise<string>;
 	rename(from: string, to: string): Promise<void>;
@@ -266,6 +270,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 				if (offset < m.size) {
 					await env.download(m.url, part, {
 						offset,
+						maxBytes: m.size,
 						onProgress: (r, t) => {
 							const n = Date.now();
 							if (n - last > 100 || r >= t) {
