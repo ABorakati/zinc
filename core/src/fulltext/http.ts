@@ -358,9 +358,13 @@ export class HttpClient {
 			out.on("error", reject);
 			out.on("finish", resolveDone);
 		});
+		// A write error must not be an unhandled rejection while the loop is still reading, nor leave it waiting for a drain that
+		// never comes: it is observed here, ends the wait below, and is thrown by `await done` at the end.
+		done.catch(() => {});
 		try {
 			if (res.body) {
 				const reader = res.body.getReader();
+				void done.catch(() => void reader.cancel().catch(() => {}));
 				for (;;) {
 					const { done: d, value } = await reader.read();
 					if (d) break;
@@ -372,7 +376,7 @@ export class HttpClient {
 						throw new Error("too large");
 					}
 					arm(); // inactivity timeout, not total time
-					if (!out.write(value)) await new Promise<void>((r) => out.once("drain", () => r()));
+					if (!out.write(value)) await Promise.race([new Promise<void>((r) => out.once("drain", () => r())), done]);
 				}
 			}
 		} finally {
