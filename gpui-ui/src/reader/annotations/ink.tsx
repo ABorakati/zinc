@@ -6,6 +6,7 @@ import type { EventPayload } from "@gpuix/native";
 import { createSignal, Show, type Accessor, type JSX } from "solid-js";
 import type { ReaderContext } from "../plugins";
 import { thinInk } from "./geometry";
+import { erasePaths } from "./inkErase";
 import { inkPosition, makeAnnotation, pageLabelFor, type Annotation } from "./model";
 import type { Session } from "./session";
 
@@ -92,33 +93,7 @@ export function InkOverlay(p: InkOverlayProps): JSX.Element {
 	function eraseAt(ex: number, ey: number, radius = 12) {
 		const inkAnns = p.s.store.list().filter((a: Annotation) => a.type === "ink" && a.position.pageIndex === p.page);
 		for (const a of inkAnns) {
-			let changed = false;
-			const newPaths: number[][] = [];
-			for (const stroke of a.position.paths ?? []) {
-				let cur: number[] = [];
-				let strokeHit = false;
-				for (let i = 0; i + 1 < stroke.length; i += 2) {
-					const px = stroke[i]!,
-						py = stroke[i + 1]!;
-					if (Math.hypot(px - ex, py - ey) <= radius) {
-						strokeHit = true;
-						if (cur.length >= 4) {
-							newPaths.push(cur);
-						}
-						cur = [];
-					} else {
-						cur.push(px, py);
-					}
-				}
-				if (cur.length >= 4) {
-					newPaths.push(cur);
-				}
-				if (strokeHit) {
-					changed = true;
-				} else {
-					newPaths.push(stroke);
-				}
-			}
+			const { paths: newPaths, changed } = erasePaths(a.position.paths ?? [], ex, ey, radius);
 			if (changed) {
 				if (newPaths.length === 0) {
 					p.s.store.remove([a.id]);
