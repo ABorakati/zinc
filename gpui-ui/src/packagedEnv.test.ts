@@ -22,6 +22,13 @@ describe("environment left by a previous Zinc", () => {
 		expect(leftByOtherPackage(join(OLD, "zn_pdf.dll"), NEW, names, exists)).toBe(true);
 		expect(leftByOtherPackage(join(OLD, "vendor", "zotero"), NEW, names, exists)).toBe(true);
 	});
+	test("a variable that names the old install folder itself is a leftover too", () => {
+		expect(packageRootOf(OLD, names, exists)).toBe(OLD);
+		expect(leftByOtherPackage(OLD, NEW, names, exists)).toBe(true);
+		expect(leftByOtherPackage(join(MAC, "MacOS"), NEW, names, exists)).toBe(true);
+		expect(leftByOtherPackage(NEW, NEW, names, exists)).toBe(false);
+		expect(leftByOtherPackage(join(root, "dev"), NEW, names, exists)).toBe(false);
+	});
 	test("our own files and a user's override elsewhere are kept", () => {
 		expect(leftByOtherPackage(join(NEW, "zn_pdf.dll"), NEW, names, exists)).toBe(false);
 		expect(leftByOtherPackage(join(root, "dev", "target", "release", "zn_pdf.dll"), NEW, names, exists)).toBe(false);

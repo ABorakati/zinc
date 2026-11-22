@@ -16,7 +16,7 @@ export const APP_EXE_NAMES = ["zotero-next-gpui.exe", "zotero-next-gpui"];
 type Exists = (path: string) => boolean;
 
 export function packageRootOf(p: string, exeNames: readonly string[] = APP_EXE_NAMES, exists: Exists = existsSync): string | null {
-	let d = dirname(resolve(p));
+	let d = resolve(p); // the value itself first: ZN_ROOT is the package folder, not a file inside it
 	for (let i = 0; i < 8; i++) {
 		if (exeNames.some((n) => exists(join(d, n)))) return d;
 		if (exeNames.some((n) => exists(join(d, "MacOS", n)))) return join(d, "MacOS");
