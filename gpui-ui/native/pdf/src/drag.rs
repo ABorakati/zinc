@@ -423,9 +423,31 @@ fn originals() -> &'static std::sync::Mutex<std::collections::HashMap<isize, isi
     M.get_or_init(Default::default)
 }
 
+/// Lock ignoring poison: these run inside a window procedure, where a panic would abort the process.
+fn relock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Drags posted to a window and not started yet, oldest first. The posted message carries nothing: the window's queue does, so a request
+/// can never be mistaken for another one, and when the window dies before the message is dispatched (the system discards it) the
+/// requests are still here to be finished.
+fn pending() -> &'static std::sync::Mutex<std::collections::HashMap<isize, std::collections::VecDeque<Request>>> {
+    static M: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<isize, std::collections::VecDeque<Request>>>> = std::sync::OnceLock::new();
+    M.get_or_init(Default::default)
+}
+
+/// The window is gone: every drag still waiting for it fails (JS is polling those jobs).
+fn fail_pending(hwnd: isize) {
+    let waiting = relock(pending()).remove(&hwnd).unwrap_or_default();
+    for req in waiting {
+        crate::set_error("the window was closed before the drag started");
+        req.job.finish(-1);
+    }
+}
+
 unsafe extern "system" fn subclass_proc(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize {
     if msg == drag_message() {
-        let req = Box::from_raw(lparam as *mut Request);
+        let Some(req) = relock(pending()).get_mut(&hwnd).and_then(|q| q.pop_front()) else { return 0 };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_drag(&req.text, &req.html, req.mode)));
         match result {
             Ok(Ok(dropped)) => {
@@ -444,10 +466,11 @@ unsafe extern "system" fn subclass_proc(hwnd: isize, msg: u32, wparam: usize, lp
         }
         return 0;
     }
-    let prev = originals().lock().unwrap().get(&hwnd).copied().unwrap_or(0);
+    let prev = relock(originals()).get(&hwnd).copied().unwrap_or(0);
     let r = CallWindowProcW(prev, hwnd, msg, wparam, lparam);
     if msg == WM_NCDESTROY {
-        originals().lock().unwrap().remove(&hwnd);
+        relock(originals()).remove(&hwnd);
+        fail_pending(hwnd);
     }
     r
 }
@@ -457,7 +480,7 @@ unsafe fn ensure_subclass(hwnd: isize) -> Result<(), String> {
     if IsWindow(hwnd) == 0 {
         return Err("the window does not exist".into());
     }
-    let mut map = originals().lock().unwrap();
+    let mut map = relock(originals());
     if map.contains_key(&hwnd) {
         return Ok(());
     }
@@ -476,11 +499,17 @@ pub unsafe fn start_on(hwnd: isize, text: String, html: Vec<u8>, mode: SourceMod
         return std::ptr::null();
     }
     let job = crate::Job::new(0.0);
-    let req = Box::into_raw(Box::new(Request { text, html, mode, job: job.clone() }));
-    if PostMessageW(hwnd, drag_message(), 0, req as isize) == 0 {
-        drop(Box::from_raw(req));
+    relock(pending()).entry(hwnd).or_default().push_back(Request { text, html, mode, job: job.clone() });
+    if PostMessageW(hwnd, drag_message(), 0, 0) == 0 {
+        if let Some(q) = relock(pending()).get_mut(&hwnd) {
+            q.retain(|r| !std::sync::Arc::ptr_eq(&r.job, &job));
+        }
         crate::set_error("PostMessageW failed");
         return std::ptr::null();
+    }
+    // closed between ensure_subclass and the post: WM_NCDESTROY may have run before the request was queued
+    if IsWindow(hwnd) == 0 {
+        fail_pending(hwnd);
     }
     std::sync::Arc::into_raw(job)
 }
@@ -844,6 +873,32 @@ mod tests {
             h.join().unwrap();
             assert!(originals().lock().unwrap().get(&w).is_none(), "WM_NCDESTROY removed the entry");
             assert!(start_on(w, "c".into(), Vec::new(), SourceMode::Real).is_null(), "window is gone");
+        }
+    }
+
+    /// The drag message is posted, the window is destroyed before its thread pumps it (the system then drops the message): the job
+    /// must still be finished (failed), else JS polls it for good. The thread never pumps, so no drag runs.
+    #[test]
+    fn a_drag_posted_to_a_window_that_dies_first_is_finished_as_failed() {
+        unsafe {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+            let h = std::thread::spawn(move || {
+                let hwnd = CreateWindowExW(0, wide("BUTTON").as_ptr(), wide("zn drag dies").as_ptr(), 0x8000_0000, 1200, 100, 50, 50, 0, 0, 0, null());
+                assert!(hwnd != 0, "test window");
+                tx.send(hwnd).unwrap();
+                go_rx.recv().unwrap();
+                DestroyWindow(hwnd);
+            });
+            let w = rx.recv().unwrap();
+            let job = start_on(w, "text".into(), Vec::new(), SourceMode::Auto(1));
+            assert!(!job.is_null());
+            assert_eq!(crate::zpdf_job_poll(job), 0, "waiting for its window");
+            go_tx.send(()).unwrap();
+            h.join().unwrap();
+            assert_eq!(crate::zpdf_job_poll(job), -1, "the window died: the job failed instead of waiting for ever");
+            crate::zpdf_job_free(job);
+            assert!(relock(pending()).get(&w).is_none_or(|q| q.is_empty()), "nothing left queued for the dead window");
         }
     }
 }
