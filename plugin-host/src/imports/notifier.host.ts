@@ -7,6 +7,8 @@ import { NotifierHub, OBJECT_TYPES, type WitSubscription } from "./data/notifier
 const MAX_SUBS_PER_PLUGIN = 32;
 let hub: NotifierHub | undefined;
 let hubUrl: string | undefined;
+/** Plugins that already have their subscription-guard handle. */
+const guarded = new Set<string>();
 
 function getHub(ctx: HandlerContext): NotifierHub {
 	if (!ctx.coreUrl) throw witError("unavailable", "no core URL: the notifier reads core's change log");
@@ -22,6 +24,7 @@ function getHub(ctx: HandlerContext): NotifierHub {
 export function resetNotifier(): void {
 	hub?.stop();
 	hub = undefined;
+	guarded.clear();
 }
 
 export default defineHandler({
@@ -37,7 +40,10 @@ export default defineHandler({
 				await ctx.callExport("notifier-handler", "on-events", [subId, batch]);
 			});
 			// a handle with a drop hook: when the plugin is unloaded the host drops its resources, and with them its subscriptions
-			ctx.resource("subscription-guard", { plugin: ctx.pluginId });
+			if (!guarded.has(ctx.pluginId)) {
+					guarded.add(ctx.pluginId); // one handle per plugin: the guest never sees it, so it could never be dropped one by one
+					ctx.resource("subscription-guard", { plugin: ctx.pluginId });
+				}
 			return id;
 		},
 
@@ -62,7 +68,8 @@ export default defineHandler({
 		"subscription-guard": {
 			methods: {},
 			drop(ctx, self: { plugin: string } | undefined) {
-				hub?.dropPlugin(self?.plugin ?? ctx.pluginId);
+				guarded.delete(self?.plugin ?? ctx.pluginId);
+					hub?.dropPlugin(self?.plugin ?? ctx.pluginId);
 			},
 		},
 	},
