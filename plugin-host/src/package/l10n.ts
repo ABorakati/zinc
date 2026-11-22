@@ -2,8 +2,8 @@
 // one bundle per plugin and locale, loaded from the plugin's folder when first needed. The locale for the UI is picked with the chain
 // of lifecycle.md 2.6: the exact tag, another tag with the same language, the manifest's default locale, the first locale listed.
 // A message missing in the picked locale is looked up in the next ones of that chain, then `fallback`, then the id itself.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join, sep } from "node:path";
 import type { PluginManifest } from "../manifest";
 import { formatMessage, parseFluent, type FluentArg, type Resource } from "./fluent";
 
@@ -35,6 +35,41 @@ export interface L10nOptions {
 	dirOf: (plugin: string) => string | undefined;
 	manifestOf: (plugin: string) => PluginManifest | undefined;
 	warn?: (plugin: string, message: string) => void;
+}
+
+// A locale tag and the folder name `locales.dir` come from the manifest and are joined to the plugin's folder: they are checked here
+// (the schema checks them at install, but a plugin installed earlier has its manifest read from disk as it is), and what is read
+// must really lie inside the plugin's folder (no link or junction may lead out).
+const TAG = /^[A-Za-z0-9]{1,8}([-_][A-Za-z0-9]{1,8})*$/;
+const DIR = /^(?:(?!\.+(?:\/|$))[A-Za-z0-9._-]+)(?:\/(?!\.+(?:\/|$))[A-Za-z0-9._-]+)*$/;
+
+const norm = (p: string) => (process.platform === "win32" ? p.toLowerCase() : p);
+
+/** True if `p` does not exist (nothing to read) or its real path lies inside the real path of `root`. */
+function inside(root: string, p: string): boolean {
+	if (!existsSync(p)) return true;
+	try {
+		const r = norm(realpathSync(root));
+		const q = norm(realpathSync(p));
+		return q === r || q.startsWith(r + sep);
+	} catch {
+		return false;
+	}
+}
+
+/** `<dir>/<locales.dir>`, or undefined if that name is not a plain relative folder name or leads out of `dir`. */
+function localeBase(dir: string, sub: unknown): string | undefined {
+	const name = sub === undefined ? "locale" : sub;
+	if (typeof name !== "string" || !DIR.test(name)) return undefined;
+	const base = join(dir, name);
+	return inside(dir, base) ? base : undefined;
+}
+
+/** The folder of one locale under `base`, or undefined if the tag is not a plain tag, it is missing, or it leads out of the plugin. */
+function tagDir(dir: string, base: string, tag: unknown): string | undefined {
+	if (typeof tag !== "string" || !TAG.test(tag)) return undefined;
+	const d = join(base, tag);
+	return existsSync(d) && inside(dir, d) ? d : undefined;
 }
 
 export const lang = (tag: string) => tag.split(/[-_]/)[0].toLowerCase();
@@ -75,7 +110,8 @@ export class L10nService {
 			| (PluginManifest & { locales?: { default: string; available?: string[]; dir?: string } })
 			| undefined;
 		if (!dir) return undefined;
-		const base = join(dir, m?.locales?.dir ?? "locale");
+		const base = localeBase(dir, m?.locales?.dir);
+		if (!base) return { defaultLocale: m?.locales?.default, bundles: [] };
 		let tags = m?.locales?.available;
 		if (!tags) {
 			try {
@@ -86,10 +122,10 @@ export class L10nService {
 		}
 		const bundles: Array<{ tag: string; ftl: string }> = [];
 		for (const tag of tags) {
-			const d = join(base, tag);
-			if (!existsSync(d)) continue;
+			const d = tagDir(dir, base, tag);
+			if (!d) continue;
 			const parts: string[] = [];
-			for (const f of readdirSync(d).filter((n) => n.endsWith(".ftl")).sort()) {
+			for (const f of readdirSync(d).filter((n) => n.endsWith(".ftl") && inside(dir, join(d, n))).sort()) {
 				parts.push(readFileSync(join(d, f), "utf8"));
 			}
 			bundles.push({ tag, ftl: parts.join("\n") });
@@ -103,7 +139,12 @@ export class L10nService {
 		const dir = this.o.dirOf(plugin);
 		const m = this.o.manifestOf(plugin) as (PluginManifest & { locales?: { default: string; available?: string[]; dir?: string } }) | undefined;
 		if (!dir) return undefined;
-		const base = join(dir, m?.locales?.dir ?? "locale");
+		const base = localeBase(dir, m?.locales?.dir);
+		if (!base) {
+			const none = { dir, all: [] };
+			this.cache.set(plugin, none);
+			return none;
+		}
 		let tags = m?.locales?.available;
 		if (!tags) {
 			try {
@@ -114,11 +155,11 @@ export class L10nService {
 		}
 		const all: Bundle[] = [];
 		for (const tag of tags) {
-			const d = join(base, tag);
-			if (!existsSync(d)) continue;
+			const d = tagDir(dir, base, tag);
+			if (!d) continue;
 			const messages: Bundle["messages"] = new Map();
 			const terms: Bundle["terms"] = new Map();
-			for (const f of readdirSync(d).filter((n) => n.endsWith(".ftl")).sort()) {
+			for (const f of readdirSync(d).filter((n) => n.endsWith(".ftl") && inside(dir, join(d, n))).sort()) {
 				const r = parseFluent(readFileSync(join(d, f), "utf8"));
 				for (const [k, v] of r.messages) messages.set(k, v);
 				for (const [k, v] of r.terms) terms.set(k, v);
