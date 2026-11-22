@@ -1,6 +1,6 @@
 // Small building blocks of the item pane (the GPUI counterpart of ui/src/itempane/ui.tsx): section frame, label/value rows,
 // click-to-edit fields on native <input>/<textarea>, icon/text buttons and an autocomplete picker. Class strings are the web UI's.
-import { children, createContext, createEffect, createSignal, For, on, onCleanup, Show, useContext, type JSX } from "solid-js";
+import { children, createContext, createEffect, createMemo, createSignal, For, on, onCleanup, Show, useContext, type JSX } from "solid-js";
 import type { Mode, Style } from "../contracts";
 import { Icon } from "../icons";
 import { store } from "../store";
@@ -15,6 +15,7 @@ import { paneDragging, paneDragSource, panePressed, registerDropHost } from "../
 import { detachSection } from "../shell/sectionPanes";
 import { undoLayout } from "../shell/layout";
 import { setPaneHeaderActions } from "../shell/paneChrome";
+import { PaneContext } from "./model";
 
 export const mode = (): Mode => store.mode();
 /** The library on screen is read-only for this user (a group they may not edit): the pane shows its data but changes nothing. */
@@ -403,12 +404,28 @@ export function Field(p: {
 	};
 	let draft = p.value;
 	let cancelled = false;
+	// what the edit began from, and which item it belongs to: when the field is removed while editing (the pane moves to another item)
+	// no blur arrives, and by then the pane has no detail, so neither p.value nor the pane's current item can be read
+	const pane = useContext(PaneContext);
+	let base = p.value;
+	let editKey: string | undefined;
 	const start = () => {
 		if (locked()) return;
 		draft = p.value;
+		base = p.value;
+		editKey = pane?.itemKey();
 		cancelled = false;
 		setEditing(true);
 	};
+	onCleanup(() => {
+		if (!editing() || cancelled || draft === base) return;
+		try {
+			if (pane) pane.withKey(editKey, () => p.onSave(draft));
+			else p.onSave(draft);
+		} catch {
+			/* the owner of the value is gone too: nothing to save into */
+		}
+	});
 	// startEditing may turn true after this row was built (the pane is a cached virtual list): open the editor then.
 	createEffect(
 		on(
@@ -525,6 +542,21 @@ export function BoxInput(p: {
 }): JSX.Element {
 	let draft = p.value;
 	let done = p.value;
+	// The value changed under the input (a failed save reverted it, or the server normalised it): that is what was last committed now.
+	// A value that only echoes what was typed (onInput feeding it back) is not such a change. The memo keeps a new detail object that
+	// carries the same string from counting as one.
+	const shown = createMemo(() => p.value);
+	createEffect(
+		on(
+			shown,
+			(v) => {
+				if (v === draft) return;
+				done = v;
+				draft = v;
+			},
+			{ defer: true },
+		),
+	);
 	const commit = () => {
 		if (locked()) return;
 		if (draft !== done) {

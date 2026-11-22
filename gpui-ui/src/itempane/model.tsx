@@ -21,6 +21,8 @@ export interface PaneModel {
 	setDetail(d: ItemDetail): void;
 	/** optimistic PATCH of the item's data, reverted with a toast on failure; runs one at a time */
 	save(patch: Partial<ZoteroItemData>): Promise<void>;
+	/** run `fn` with save() aimed at item `key` instead of the one shown now (a field flushed while the pane already left that item) */
+	withKey<T>(key: string | undefined, fn: () => T): T;
 	/** re-fetch the item */
 	reload(): Promise<void>;
 	/** tell the list / sidebar that something changed (store.refresh when the store has it) */
@@ -99,8 +101,18 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 
 	// Saves run one at a time so a slow response can't clobber a later optimistic edit.
 	let chain: Promise<void> = Promise.resolve();
+	let scopedKey: string | undefined;
+	const withKey: PaneModel["withKey"] = (k, fn) => {
+		const prev = scopedKey;
+		scopedKey = k;
+		try {
+			return fn();
+		} finally {
+			scopedKey = prev;
+		}
+	};
 	const save: PaneModel["save"] = (patch) => {
-		const k = detail()?.data.key;
+		const k = scopedKey ?? detail()?.data.key;
 		if (!k) return Promise.resolve();
 		return (chain = chain.then(async () => {
 			const before = detail();
@@ -130,6 +142,7 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 		tagColors,
 		setDetail: setDetailSig,
 		save,
+		withKey,
 		reload: async () => {
 			const k = detail()?.data.key ?? key();
 			if (k) await load(k, true);
