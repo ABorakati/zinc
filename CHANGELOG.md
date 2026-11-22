@@ -21,6 +21,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Faster Settings open:** Settings now defers and scopes section refreshes (`Files`, `Integrations`, `Sync`, `System`) to the visible section instead of querying all backends and Windows subprocesses on every open, batches tab activation, and memoizes section/search queries.
 - **Faster PDF viewing and scrolling:** PDF page tile uploads now run concurrently in a single GPUIX batch with a microtask mount fast-path, scroll updates are batched, preview requests track page changes rather than pixel offsets, and academic hover highlights use O(1) selectors.
+- **Find Full Text in group libraries:** it saves only into groups whose files you may edit, and it uses open-access sources there. Institutional access is now used for My Library only, as configured.
+- **Faster table, imports and exports:** resizing or moving a column no longer rebuilds every cell, exports read tags and attachments in one query each, the EndNote, MODS and Zotero RDF readers use less memory, and references copy in several formats faster.
+- **Less memory in the reader:** an inactive tab gives back its page bitmaps and previews, and documents opened for figure previews close when idle.
+- **Browser connector helper:** one upload can be at most 512 MiB, and at most 1 GiB is held at once.
+- **Plugins:** the manifest is checked more strictly (locale tags and folders are plain names, and `mcp.tools` needs `mcp.expose`), `fs.make-dir` without `parents` no longer creates parents, and memory, time spent sleeping and console output are limited per plugin.
+- **Maintenance scripts:** `reindex` and `mcp-smoke` need the library's path on the command line.
 
 ### Fixed
 
@@ -29,6 +35,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Notes lost the last edit when switching notes:** the Markdown and native note editors now save the last edit to the note it was typed in, keep focus when the pane reloads after a save, and stay open when a save fails.
 - **The ink eraser duplicated strokes:** strokes the eraser does not touch are no longer copied on every mouse move.
 - **Citations inside Word footnotes and endnotes:** the Word add-in now sees the citation the cursor is in inside a note, and a citation inserted there goes after it, instead of inside it.
+- **Replacing a PDF:** the old file is no longer put back when only the temporary backup could not be removed.
+- **Sync with Zotero:** items and collections that share a key across libraries keep their own parents, annotations deleted in Zotero are removed here, a write that fails after erasing an attachment keeps its folder, and switching sync mode waits for a running download.
+- **Editing through the API:** tags given as plain strings keep the item's tags, renaming and moving a collection at once is all or nothing, attachment fields update the attachment record, and an annotation id of another attachment is refused.
+- **Search:** the text of a trashed attachment no longer matches its parent item, and highlights in results sit on the words they match.
+- **Imports and exports:** nested collections, collections that contain themselves, Zotero RDF volume and issue numbers, single-library RDF exports, encrypted Mendeley libraries, Mendeley documents in many folders and BibTeX institutions with accents all come through correctly.
+- **Citations in Word:** a missing source no longer stops a refresh, removing the last citation clears the bibliography, merging keeps each locator, changing the field type converts existing citations, very large documents keep their citation order, a failed style change can be retried, and a ribbon button acts in the window it was clicked in.
+- **Citation styles:** style and locale downloads fail after 60 seconds instead of waiting for ever, and custom citations keep a closing brace.
+- **Uninstalling:** the Word add-in's script copes with a missing folder, and the Windows uninstaller keeps an unreadable library setting and the attachments of a library stored in the settings folder.
+- **Selecting in the list:** Shift ranges and Select All finish across pages that are still loading and across a refresh, and a later selection wins.
+- **Editing in the item pane:** text typed in the title, abstract or a plain field is saved to its own item when you click another item, and a value that a failed save reset can be typed again.
+- **Copy and paste:** Copy DOI and Copy bibliography work and report failures, and the clipboard works on macOS and Linux.
+- **Dragging:** releasing outside the window, or dragging to another app, no longer files items into a collection or leaves a column following the pointer.
+- **Shortcuts, emoji and fonts:** a shortcut that does not apply passes to the next action on the same keys, clipped text does not split emoji, and the system font is right on macOS and Linux.
+- **macOS and Linux:** open file, open link and reveal use the system's own opener, and Windows-only installers say that they are.
+- **Find Full Text, translation and references:** a file that cannot be written fails instead of waiting, a broken translation worker recovers, self-refreshing pages end, and DOIs containing `?` or `#` resolve.
+- **Sign-in browser:** it is not closed under a page load or sign-in that just started, and PDF capture stays on while a sign-in window needs it.
+- **Reader:** highlights across pages use each page's size, rotated or edited PDFs get a new structure, a late result of a replaced document is ignored, the document worker recovers from a crash, malformed entities and empty note positions are tolerated, and a drag whose window closes no longer waits for ever.
+- **Reader and note saves in the browser:** saves and deletes go out in order, a failed save is retried without bringing back what you deleted, large last-second saves are sent, and citation lookups work in the extension.
+- **Browser connector:** a failed page save can be retried, the helper copes with a full pipe, and it does not close the library under a running full-text job.
+- **Plugins:** dialogs receive their mount call, a stuck plugin can be stopped and uninstalled, uninstall hooks run once, long downloads keep going while data arrives, toasts and colours go when the plugin stops, clearing a nested option works, and the host stays responsive while plugins compile.
+- **Plugin settings and secrets:** writes of several values are checked before any is made, cleared settings are forgotten, and the secrets store keeps the key it has.
 
 ### Security
 
@@ -39,6 +66,13 @@ Plugins are experimental and off by default. If you use them, or the browser ext
 - **Plugin network rules:** one rule now covers `net`, `translate.web` and the risk shown at install. Plugins: `*` is https only, a private destination needs its exact host and port, a public name that resolves to a private address is refused (list intranet hosts by IP, or by a `.local` or `.internal` name), `translate.web` reaches public hosts only, and Zinc's and Zotero's own ports are always refused.
 - **Malformed plugin interfaces are contained:** bad drawing or interface data from a plugin can no longer freeze or close Zinc.
 - **The browser library page accepts only the requests it needs:** the extension's bridge refuses everything else, including file storage and Find Full Text settings.
+- **Files and links:** opening a file that the operating system would run or install asks first on macOS and Linux too, and file names from imports and exported annotations stay inside their folder.
+- **Plugins:** file, locale and package paths and per-plugin limits are enforced more tightly, and secure random numbers come from the operating system.
+- **Word add-in popup and browser note page:** each accepts only its own page or origin, and the popup's developer tools are off by default.
+- **Downloads and updates:** an update download cannot exceed the size in its signed manifest.
+- **Temporary files:** print files and the reader's cache are private to the user on shared systems.
+- **Local API:** an unexpected failure does not repeat internal details to the caller.
+- **Builds:** workflows run with read-only tokens and pinned actions, and release uploads run in separate jobs.
 
 ## [0.2.6] - 2026-11-21
 
