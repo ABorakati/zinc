@@ -106,24 +106,44 @@ export interface GatheredItem extends ExportItem {
 export function gatherItems(db: Database, req: ExportRequest): GatheredItem[] {
 	const keys = selectKeys(db, req);
 	const dataQ = db.query("SELECT data FROM items WHERE key = ?");
-	const tagQ = db.query("SELECT tag, type FROM item_tags WHERE item_key = ? ORDER BY tag COLLATE NOCASE");
 	const noteQ = db.query("SELECT data FROM items WHERE parent_key = ? AND item_type = 'note' AND deleted = 0 ORDER BY date_added, key");
-	const attQ = db.query(
-		`SELECT a.link_mode, a.path, a.url, i.title AS title, a.content_type FROM attachments a JOIN items i ON i.key = a.item_key
-		 WHERE i.parent_key = ? AND i.deleted = 0 ORDER BY i.date_added, i.key`,
-	);
+	// tags and attachments of every selected item in one query each (measured faster than one query per item at every size;
+	// the item data itself stays one primary-key lookup per item, which is faster than a batched read)
+	const keysJson = JSON.stringify(keys);
+	const tagsByItem = new Map<string, { tag: string; type: number }[]>();
+	for (const r of db
+		.query(
+			"SELECT item_key, tag, type FROM item_tags WHERE item_key IN (SELECT value FROM json_each(?)) ORDER BY item_key, tag COLLATE NOCASE",
+		)
+		.all(keysJson) as { item_key: string; tag: string; type: number }[]) {
+		const list = tagsByItem.get(r.item_key);
+		if (list) list.push(r);
+		else tagsByItem.set(r.item_key, [r]);
+	}
+	type AttachmentRow = {
+		link_mode: string;
+		path: string | null;
+		url: string | null;
+		title: string | null;
+		content_type: string | null;
+	};
+	const attsByItem = new Map<string, AttachmentRow[]>();
+	for (const r of db
+		.query(
+			`SELECT i.parent_key AS parent_key, a.link_mode, a.path, a.url, i.title AS title, a.content_type FROM attachments a JOIN items i ON i.key = a.item_key
+			 WHERE i.parent_key IN (SELECT value FROM json_each(?)) AND i.deleted = 0 ORDER BY i.parent_key, i.date_added, i.key`,
+		)
+		.all(keysJson) as (AttachmentRow & { parent_key: string })[]) {
+		const list = attsByItem.get(r.parent_key);
+		if (list) list.push(r);
+		else attsByItem.set(r.parent_key, [r]);
+	}
 	return keys.map((key) => {
 		const data = JSON.parse((dataQ.get(key) as { data: string }).data) as ZoteroItemData;
-		const tags = tagQ.all(key) as { tag: string; type: number }[];
+		const tags = tagsByItem.get(key) ?? [];
 		const noteRows = req.includeNotes ? (noteQ.all(key) as { data: string }[]) : [];
 		const noteHtml = noteRows.map((r) => String((JSON.parse(r.data) as ZoteroItemData).note ?? "")).filter(Boolean);
-		const atts = attQ.all(key) as {
-			link_mode: string;
-			path: string | null;
-			url: string | null;
-			title: string | null;
-			content_type: string | null;
-		}[];
+		const atts = attsByItem.get(key) ?? [];
 		return {
 			data,
 			tags: tags.map((t) => t.tag),
