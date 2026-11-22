@@ -66,7 +66,7 @@ const real = (p: string): string => {
  */
 export function isInside(file: string, dir: string): boolean {
 	const rel = relative(real(dir), real(file));
-	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+	return rel !== "" && rel.split(/[\\/]/)[0] !== ".." && !isAbsolute(rel); // "..notes.pdf" is a file name, not a way out
 }
 
 interface ItemRow {

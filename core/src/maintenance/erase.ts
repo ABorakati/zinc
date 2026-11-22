@@ -13,7 +13,8 @@ import { indexItem } from "../search";
 export function isInside(file: string, dir: string): boolean {
 	let rel = relative(resolve(dir), resolve(file));
 	if (process.platform === "win32") rel = relative(resolve(dir).toLowerCase(), resolve(file).toLowerCase());
-	return rel !== "" && !rel.startsWith("..") && !rel.includes(`..${sep}`) && !/^[a-zA-Z]:/.test(rel) && !rel.startsWith(sep);
+	// relative() puts any ".." at the start, so "outside" means that the FIRST segment is ".." (a name like "..notes.pdf" is inside)
+	return rel !== "" && rel.split(/[\\/]/)[0] !== ".." && !/^[a-zA-Z]:/.test(rel) && !rel.startsWith(sep);
 }
 
 export interface EraseReport {
