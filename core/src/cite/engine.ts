@@ -12,6 +12,7 @@ export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 const STYLE_URL = (id: string) => `https://www.zotero.org/styles/${id}`;
 const LOCALE_URL = (lang: string) => `https://raw.githubusercontent.com/citation-style-language/locales/master/locales-${lang}.xml`;
 const INDEX_URL = "https://www.zotero.org/styles-files/styles.json";
+const FETCH_TIMEOUT_MS = 60_000;
 const INDEX_MAX_AGE_MS = 24 * 3600 * 1000;
 const INDEX_RETRY_MS = 3600 * 1000;
 const PREVIEW_CACHE_MAX = 300;
@@ -86,6 +87,8 @@ export class StyleStore {
 	constructor(
 		public readonly dir: string,
 		fetchFn?: FetchFn,
+		/** how long one download may take (headers and body) before it fails */
+		private readonly timeoutMs = FETCH_TIMEOUT_MS,
 	) {
 		this.fetchFn = fetchFn ?? ((url, init) => globalThis.fetch(url, init));
 		this.stylesDir = join(dir, "styles");
@@ -96,12 +99,18 @@ export class StyleStore {
 	}
 
 	private async get(url: string): Promise<string> {
-		const res = await this.fetchFn(url, { headers: { "User-Agent": "zinc" } });
-		if (!res.ok) {
-			if (res.status === 404) throw new HttpError(404, `not found: ${url}`);
-			throw new HttpError(502, `fetching ${url} failed: HTTP ${res.status}`);
+		const signal = AbortSignal.timeout(this.timeoutMs);
+		try {
+			const res = await this.fetchFn(url, { headers: { "User-Agent": "zinc" }, signal });
+			if (!res.ok) {
+				if (res.status === 404) throw new HttpError(404, `not found: ${url}`);
+				throw new HttpError(502, `fetching ${url} failed: HTTP ${res.status}`);
+			}
+			return await res.text();
+		} catch (e) {
+			if (signal.aborted) throw new HttpError(504, `fetching ${url} timed out`);
+			throw e;
 		}
-		return res.text();
 	}
 
 	private stylePath(id: string): string {
