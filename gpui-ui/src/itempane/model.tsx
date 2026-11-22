@@ -66,6 +66,13 @@ export function refreshItemsStore(fields: string[]): void {
 	else store.refreshItems(fields);
 }
 
+/** `next`, keeping each value of `prev` that is still the same, so that rows built on those do not remount under the caret. */
+function keepUnchanged<T extends object>(prev: T, next: T): T {
+	const out = { ...next };
+	for (const k of Object.keys(next) as (keyof T)[]) if (JSON.stringify(prev[k]) === JSON.stringify(next[k])) out[k] = prev[k];
+	return out;
+}
+
 export function createPaneModel(key: Accessor<string | null>): PaneModel {
 	const [detail, setDetailSig] = createSignal<ItemDetail | undefined>(undefined);
 	const [error, setError] = createSignal<string | null>(null);
@@ -111,6 +118,27 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 			scopedKey = prev;
 		}
 	};
+	// The list was refreshed (a sync from Zotero, an edit made elsewhere in the app): the item on show follows, once the saves that are
+	// under way are through. A failure leaves what is shown, and the next refresh tries again.
+	async function follow(k: string) {
+		const before = detail();
+		if (before?.data.key !== k || key() !== k) return;
+		const my = seq;
+		const d = await ipApi.item(k);
+		if (my !== seq || detail() !== before) return; // another load, or an edit, came in meanwhile
+		const next = keepUnchanged(before, { ...d, data: keepUnchanged(before.data, d.data) });
+		if (JSON.stringify(next) !== JSON.stringify(before)) setDetailSig(next);
+	}
+	createEffect(
+		on(
+			() => store.itemsRev(),
+			() => {
+				const k = key();
+				if (k) chain = chain.then(() => follow(k)).catch(() => {});
+			},
+			{ defer: true },
+		),
+	);
 	const save: PaneModel["save"] = (patch) => {
 		const k = scopedKey ?? detail()?.data.key;
 		if (!k) return Promise.resolve();
