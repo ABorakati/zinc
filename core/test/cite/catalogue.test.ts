@@ -363,6 +363,22 @@ describe("HTTP routes", () => {
 		return { status: res!.status, json: (await res!.json()) as any, headers: res!.headers };
 	};
 
+	test("a style's XML and a locale's XML (the Office.js add-in formats in its task pane)", async () => {
+		const st = await call("GET", "/api/cite/styles/the-lancet");
+		expect(st.status).toBe(200);
+		expect(st.json.id).toBe("the-lancet");
+		expect(st.json.xml).toContain('<style xmlns="http://purl.org/net/xbiblio/csl"');
+		expect((await call("GET", "/api/cite/styles?installed=1")).json).toEqual([]); // reading a style installs nothing
+		expect((await call("GET", "/api/cite/styles/missing")).status).toBe(404);
+		expect((await call("GET", "/api/cite/styles/..%2Fetc")).status).toBe(400);
+		const lo = await call("GET", "/api/cite/locales/en-US");
+		expect(lo.status).toBe(200);
+		expect(lo.json.lang).toBe("en-US");
+		expect(lo.json.xml).toContain("<locale");
+		expect((await call("GET", "/api/cite/locales/not a locale")).json).toEqual({ lang: "not a locale", xml: null });
+		expect((await call("POST", "/api/cite/locales/en-US", {})).status).toBe(405);
+	});
+
 	test("search endpoint: filters, headers, install/preview/delete flow", async () => {
 		const r = await call("GET", "/api/cite/styles?q=lancet&field=medicine&format=numeric&limit=1");
 		expect(r.status).toBe(200);

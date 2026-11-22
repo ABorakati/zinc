@@ -80,6 +80,8 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 	}
 	const info = () => h.call<FieldInfo[]>("h.fieldInfo");
 	const revisions = () => h.call<Revision[]>("h.revisions");
+	/** The document variable a refresh sets once it has found every field free of tracked damage (WordDoc.TrackCheckedVar). */
+	const trackChecked = async () => (await h.call<{ value: string | null }>("h.docVar", { name: "ZincFieldsTrackChecked" })).value;
 	const texts = async () => (await app.readFields()).filter((f) => f.kind === "item").map((f) => f.text);
 
 	test("a refresh with Track Changes on rewrites codes untracked: no JSON in any tracked change, nothing left doubled", async () => {
@@ -137,6 +139,7 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		const damaged = await app.readFields({ checkTracked: true }); // as a refresh reads it
 		expect(damaged[1]!.tracked).toBe(true);
 		expect(damaged[1]!.parsed).not.toBeNull(); // read as it is with the change accepted
+		expect(await trackChecked()).toBeNull(); // damage found: not recorded as checked
 		const rep = await app.refreshAll();
 		expect(rep.changed.some((c) => c.startsWith(`item#${before[1]!.idx}:`))).toBe(true);
 		const after = await info();
@@ -179,6 +182,27 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		await h.call("h.close");
 	}, 180_000);
 
+	test("a refresh that finds every field clean in a document under review records it, and later refreshes skip the lookups", async () => {
+		await threeCitations();
+		await app.refreshAll();
+		expect(await trackChecked()).toBeNull(); // no tracked changes at all: nothing looked at, the document is left alone
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		await h.call("h.cursor", { start: 1 });
+		await h.call("h.type", { text: "y" }); // the user's own tracked change, away from the fields
+		expect((await revisions()).length).toBeGreaterThan(0);
+		expect((await app.refreshAll()).updated).toBe(0);
+		expect(await trackChecked()).toBe("1");
+		expect((await revisions()).length).toBe(1); // the marker is no tracked change of its own
+		// later refreshes and edits work as before
+		await h.call("h.cursorEnd");
+		await app.insertCitation([picks[4]!]);
+		const fields = await app.readFields({ checkTracked: true });
+		expect(fields.filter((f) => f.kind === "item").length).toBe(4);
+		expect(fields.every((f) => f.parsed !== null && !f.tracked)).toBe(true);
+		expect((await app.refreshAll()).updated).toBe(0);
+		await h.call("h.close");
+	}, 120_000);
+
 	test("a citation deleted with Track Changes on stays a tracked deletion and leaves the numbering", async () => {
 		await threeCitations();
 		await h.call("h.track", { on: true, author: "Reviewer" });
@@ -190,6 +214,105 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		expect(revs.length).toBe(1);
 		expect(revs[0]!.type).toBe(2); // still there as the user's tracked deletion
 		expect(await texts()).toEqual(["(1)", "(2)"]); // the deleted one no longer counts: gamma is now (2)
+		await h.call("h.close");
+	}, 120_000);
+
+	// tracked changes other than insertions and deletions (Word's types 1 and 2): formatting, paragraph properties, style
+	const formatting = (revs: Revision[]) => revs.filter((r) => r.type !== 1 && r.type !== 2);
+
+	test("inserting citations and a bibliography with Track Changes on records them as insertions only, no tracked formatting", async () => {
+		await h.call("h.newDoc");
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		await h.call("h.type", { text: "Alpha claim " });
+		await app.insertCitation([picks[1]!]);
+		await h.call("h.type", { text: " and beta claim " });
+		await app.insertCitation([picks[2]!]);
+		await h.call("h.type", { text: " end." });
+		await h.call("h.para");
+		await app.insertBibliography();
+		const revs = await revisions();
+		expect(revs.length).toBeGreaterThan(0);
+		expect(formatting(revs)).toEqual([]); // a formatting change in the bibliography makes Word's tracked-change list loop
+		expect((await h.call<{ text: string }>("h.text")).text).toContain("Author2");
+		await h.call("h.close");
+	}, 120_000);
+
+	test("a refresh rebuilds a bibliography left with tracked formatting, even in a document marked clean, and keeps the user's edits", async () => {
+		await threeCitations();
+		await h.call("h.track", { on: true, author: "Reviewer" });
+		await h.call("h.cursor", { start: 1 });
+		await h.call("h.type", { text: "y" }); // the user's own tracked change
+		await app.refreshAll();
+		expect(await trackChecked()).toBe("1"); // found clean: later scans skip the per-field lookups
+		// what older add-ins did: format the bibliography with Track Changes on
+		await h.call("h.biblIndentLast");
+		expect(formatting(await revisions()).length).toBeGreaterThan(0);
+		const fieldsBefore = (await h.call<{ count: number }>("h.fieldCount")).count;
+		const textBefore = (await h.call<{ text: string }>("h.text")).text;
+		const rep = await app.refreshAll();
+		expect(rep.updated).toBe(1); // the bibliography, rebuilt
+		const revs = await revisions();
+		expect(formatting(revs)).toEqual([]);
+		expect(revs.length).toBe(1);
+		expect(revs[0]!.type).toBe(1); // the user's "y", still tracked
+		expect((await h.call<{ count: number }>("h.fieldCount")).count).toBe(fieldsBefore);
+		expect((await h.call<{ text: string }>("h.text")).text.trimEnd()).toBe(textBefore.trimEnd());
+		expect(await texts()).toEqual(["(1)", "(2)", "(3)"]);
+		expect((await h.call<{ on: boolean }>("h.track")).on).toBe(true);
+		expect((await app.refreshAll()).updated).toBe(0); // and now it stays as it is
+		await h.call("h.close");
+	}, 120_000);
+
+	type BiblStyle = {
+		firstLineIndent: number;
+		leftIndent: number;
+		lineSpacing: number;
+		spaceAfter: number;
+		tabs: number[];
+		paragraphs: { left: number; first: number; style: string }[];
+	};
+	test("the bibliography is formatted as Zotero does: the Bibliography style holds the format, set once; entries carry only the style", async () => {
+		await threeCitations(); // Vancouver: second-field-align flush
+		const s = await h.call<BiblStyle>("h.biblStyle");
+		// Zotero: indent and tab at 24 + 120 twips per label character, first line hanging by the same, single spacing
+		expect(s.leftIndent).toBeGreaterThan(0);
+		expect(s.firstLineIndent).toBeCloseTo(-s.leftIndent, 1);
+		expect(s.tabs).toEqual([s.leftIndent]);
+		const r = (((s.leftIndent * 20 - 24) % 120) + 120) % 120;
+		expect(Math.min(r, 120 - r)).toBeLessThan(0.05); // a whole number of label characters
+		expect(s.lineSpacing).toBe(12);
+		// no direct paragraph formatting: every entry shows the style's indents
+		expect(s.paragraphs.length).toBeGreaterThan(1);
+		for (const p of s.paragraphs) {
+			expect(p.left).toBeCloseTo(s.leftIndent, 1);
+			expect(p.first).toBeCloseTo(s.firstLineIndent, 1);
+		}
+		// the user's own change to the style is kept by later refreshes (bibliographyStyleHasBeenSet)
+		await h.call("h.biblStyle", { leftIndent: 50 });
+		await h.call("h.cursorEnd");
+		await app.insertCitation([picks[5]!]);
+		expect((await h.call<BiblStyle>("h.biblStyle")).leftIndent).toBe(50);
+		await h.call("h.close");
+	}, 120_000);
+
+	test("with Track Changes locked, no citation is changed: inserts and refreshes are refused with the reason", async () => {
+		await threeCitations();
+		const codes = (await info()).map((f) => f.code);
+		const locked = await h.call<{ protection: number; track: boolean }>("h.lockTracking", { on: true });
+		expect(locked).toEqual({ protection: 0, track: true });
+		expect((await app.docState()).trackingLocked).toBe(true);
+		await h.call("h.cursor", { start: 5 });
+		await expect(app.insertCitation([picks[0]!])).rejects.toThrow(/Track Changes is locked/);
+		await h.call("h.biblIndentLast"); // a tracked change of the user's own, so the bibliography would want a rewrite
+		await expect(app.refreshAll()).rejects.toThrow(/Track Changes is locked/);
+		// nothing of ours was written: the codes are as they were, and the one tracked change is the user's
+		expect((await info()).map((f) => f.code)).toEqual(codes);
+		expect((await revisions()).every((r) => !/CSL_CITATION|ZOTERO_/.test(r.text))).toBe(true);
+		// unlocked again, Zinc works as before (and cleans the bibliography)
+		await h.call("h.lockTracking", { on: false });
+		expect((await app.docState()).trackingLocked).toBe(false);
+		await app.refreshAll();
+		expect(formatting(await revisions())).toEqual([]);
 		await h.call("h.close");
 	}, 120_000);
 

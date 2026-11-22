@@ -65,7 +65,9 @@ namespace ZoteroNext.Word
             switch (method)
             {
                 case "host.info":
-                    return Json.Map("version", "0.1.0", "library", Library.Info(), "uri", Library.UriBase(), "settings", Settings.Load(),
+                    // light (the sidebar opening, the agent): no item count and no probe of Zinc, which alone waits up to
+                    // 800 ms when Zinc is not running; the sidebar asks zn.status afterwards and the settings panel asks for all
+                    return Json.Map("version", "0.1.0", "library", Library.Info(!Json.Bool(p, "light")), "uri", Library.UriBase(), "settings", Settings.Load(),
                         "zn", Json.Bool(p, "light") ? Json.Map("up", false, "api", Settings.ApiBase(), "launcher", "", "launcherExists", false) : ZnClient.Status());
                 case "settings.get": return Settings.Load();
                 case "settings.set": return Settings.PatchFromPage(p);

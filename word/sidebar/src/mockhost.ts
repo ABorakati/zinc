@@ -17,6 +17,8 @@ export interface MockOptions {
 	body?: string;
 	/** open documents besides Preview.docx, for doc.list / doc.target */
 	otherDocs?: string[];
+	/** the document's Track Changes is locked (Lock Tracking): every change to the citations is refused, as the add-in does */
+	trackingLocked?: boolean;
 }
 
 export const SAMPLE_ITEMS: ZoteroItemData[] = [
@@ -223,6 +225,7 @@ export function createMockHost(opts: MockOptions = {}): Host & {
 			fullName: state.target ?? "Preview.docx",
 			readOnly: false,
 			prefsXml: state.prefsXml,
+			trackingLocked: !!opts.trackingLocked,
 		}),
 		// as the add-in: field counts per story + the writes so far (doc.insert/set/delete/... recorded in state.calls)
 		"doc.signature": () => ({
@@ -360,6 +363,11 @@ export function createMockHost(opts: MockOptions = {}): Host & {
 			state.calls.push(method);
 			const fn = methods[method];
 			if (!fn) throw new Error("mock host: unknown method " + method);
+			// as the add-in (WordDoc.EnsureTrackingUnlocked): no change to the citations while Track Changes is locked
+			if (opts.trackingLocked && /^doc\.(insert|set|setMany|delete|unlink|convert)$/.test(method))
+				throw new Error(
+					"Track Changes is locked in this document (Review > Track Changes > Lock Tracking). Zinc has changed nothing.",
+				);
 			return structuredClone(await fn(params));
 		},
 		on(event: string, cb: (d: any) => void) {

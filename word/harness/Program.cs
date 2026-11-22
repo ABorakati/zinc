@@ -170,6 +170,14 @@ internal static class Program
                     if (p.ContainsKey("author")) _app.UserName = Json.Str(p, "author");
                     return Json.Map("on", (bool)_app.ActiveDocument.TrackRevisions);
                 }
+            case "h.lockTracking":
+                {
+                    // Review > Track Changes > Lock Tracking: protection wdAllowOnlyRevisions (0) with a password; on:false unlocks
+                    dynamic doc = _app.ActiveDocument;
+                    string pw = Json.Str(p, "password", "test");
+                    if (Json.Bool(p, "on")) doc.Protect(0, false, pw); else doc.Unprotect(pw);
+                    return Json.Map("protection", (int)doc.ProtectionType, "track", (bool)doc.TrackRevisions);
+                }
             case "h.revisions":
                 {
                     // every revision in the main story: type 1 = insert, 2 = delete; text cut to 120 chars
@@ -178,9 +186,15 @@ internal static class Program
                     int n = (int)revs.Count;
                     for (int i = 1; i <= n; i++)
                     {
-                        dynamic r = revs.Item(i);
-                        string t = ""; try { t = (string)r.Range.Text ?? ""; } catch { }
-                        list.Add(Json.Map("type", (int)r.Type, "text", t.Length > 120 ? t.Substring(0, 120) : t, "start", (int)r.Range.Start, "end", (int)r.Range.End));
+                        // Word can count a change it then cannot return ("Object has been deleted"): a tracked formatting
+                        // change in a bibliography does that. Listed as type -1.
+                        try
+                        {
+                            dynamic r = revs.Item(i);
+                            string t = ""; try { t = (string)r.Range.Text ?? ""; } catch { }
+                            list.Add(Json.Map("type", (int)r.Type, "text", t.Length > 120 ? t.Substring(0, 120) : t, "start", (int)r.Range.Start, "end", (int)r.Range.End));
+                        }
+                        catch { list.Add(Json.Map("type", -1, "text", "", "start", -1, "end", -1)); }
                     }
                     return list;
                 }
@@ -191,6 +205,40 @@ internal static class Program
                     f.Code.Text = " " + Json.Str(p, "code").Trim() + " ";
                     return Json.Map("ok", true);
                 }
+            case "h.biblStyle":
+                {
+                    // the document's Bibliography style (indents, spacing, tab stops, in points) and each bibliography paragraph's own
+                    // left indent; p.leftIndent changes the style first (the user's own customisation)
+                    dynamic doc = _app.ActiveDocument;
+                    dynamic st; try { st = doc.Styles.Item(-266); } catch { st = doc.Styles.Item("Bibliography"); }
+                    dynamic pf = st.ParagraphFormat;
+                    if (p.ContainsKey("leftIndent")) pf.LeftIndent = (float)Json.Int(p, "leftIndent");
+                    var tabs = new List<object>();
+                    for (int i = 1; i <= (int)pf.TabStops.Count; i++) tabs.Add((double)pf.TabStops.Item(i).Position);
+                    var paras = new List<object>();
+                    foreach (dynamic f in doc.Fields)
+                    {
+                        if (!((string)f.Code.Text).Contains("ZOTERO_BIBL")) continue;
+                        foreach (dynamic para in f.Result.Paragraphs) paras.Add(Json.Map("left", (double)para.LeftIndent, "first", (double)para.FirstLineIndent, "style", (string)para.Style.NameLocal));
+                    }
+                    return Json.Map("firstLineIndent", (double)pf.FirstLineIndent, "leftIndent", (double)pf.LeftIndent, "lineSpacing", (double)pf.LineSpacing,
+                        "spaceAfter", (double)pf.SpaceAfter, "tabs", tabs, "paragraphs", paras);
+                }
+            case "h.biblIndentLast":
+                {
+                    // indent the bibliography's last paragraph (the one its field ends in) with Track Changes as it is set: what
+                    // add-in versions before 2026-11-20 did when they formatted a bibliography under review
+                    dynamic bf = null;
+                    foreach (dynamic f in _app.ActiveDocument.Fields) { if (((string)f.Code.Text).Contains("ZOTERO_BIBL")) bf = f; }
+                    if (bf == null) throw new InvalidOperationException("no bibliography in the document");
+                    int e = (int)bf.Result.End + 1;
+                    dynamic r = bf.Result.Duplicate; r.SetRange(e, e);
+                    r.Paragraphs.Item(1).LeftIndent = Json.Int(p, "left", 30);
+                    return Json.Map("ok", true);
+                }
+            case "h.docVar":
+                try { return Json.Map("value", (string)_app.ActiveDocument.Variables.Item(Json.Str(p, "name")).Value); }
+                catch { return Json.Map("value", null); }
             case "h.acceptAll": _app.ActiveDocument.Revisions.AcceptAll(); return Json.Map("ok", true);
             case "h.rejectAll": _app.ActiveDocument.Revisions.RejectAll(); return Json.Map("ok", true);
             case "h.fieldInfo":
@@ -206,7 +254,8 @@ internal static class Program
                         try { rc = (int)f.Code.Revisions.Count; } catch { }
                         try { rr = (int)f.Result.Revisions.Count; res = (string)f.Result.Text ?? ""; } catch { }
                         string code = (string)f.Code.Text ?? "";
-                        list.Add(Json.Map("idx", i, "showCodes", (bool)f.ShowCodes, "codeRevisions", rc, "resultRevisions", rr,
+                        int ty = -1; try { ty = (int)f.Type; } catch { }
+                        list.Add(Json.Map("idx", i, "type", ty, "showCodes", (bool)f.ShowCodes, "codeRevisions", rc, "resultRevisions", rr,
                             "code", code.Length > 200 ? code.Substring(0, 200) : code, "codeLength", code.Length, "result", res));
                     }
                     return list;

@@ -664,3 +664,47 @@ describe("failure safety (split, edit URIs)", () => {
 		expect(res!.picks[0]!.uris).toEqual(["http://zotero.org/groups/777/items/AAAA1111"]);
 	});
 });
+
+describe("a document with locked Track Changes", () => {
+	test("the state reports the lock, and a citation is refused with the reason, nothing written", async () => {
+		const host = createMockHost({
+			items: structuredClone(SAMPLE_ITEMS),
+			userId: "5106252",
+			trackingLocked: true,
+			styleXml: async (id) => read(`${id}.csl`),
+			localeXml: async (l) => (l === "en-US" ? read("locales-en-US.xml") : null),
+		});
+		const app = new App(host);
+		await app.init();
+		expect((await app.docState()).trackingLocked).toBe(true);
+		const [a] = await pickAll(app, "AAAA1111");
+		await expect(app.insertCitation([a!])).rejects.toThrow(/Track Changes is locked/);
+		expect((host as any).fields.length).toBe(0);
+	});
+});
+
+describe("the Bibliography style's format, as Zotero sets it", () => {
+	test("sent with the first bibliography write only, recorded in the document preferences, and again after a style change", async () => {
+		const { app, host } = setup();
+		const sent: unknown[] = [];
+		const call = host.call.bind(host);
+		(host as any).call = async (method: string, params: any = {}) => {
+			if (method === "doc.setMany") for (const it of params.items ?? []) if (it.styleFormat) sent.push(it.styleFormat);
+			return call(method, params);
+		};
+		await app.init();
+		const [a] = await pickAll(app, "AAAA1111");
+		await app.insertCitation([a!]);
+		await app.insertBibliography();
+		expect(sent.length).toBe(1);
+		expect(sent[0]).toMatchObject({ lineSpacing: expect.any(Number), entrySpacing: expect.any(Number), tabStops: expect.any(Array) });
+		expect(parsePrefsXml((host as any).prefsXml)?.bibliographyStyleHasBeenSet).toBe(true);
+		await app.refreshAll();
+		const [b] = await pickAll(app, "BBBB2222");
+		await app.insertCitation([b!]); // the bibliography changes: no style format this time
+		expect(sent.length).toBe(1);
+		await app.setStyle("apa", "en-US");
+		expect(sent.length).toBe(2); // a new style: its format once more
+		expect(parsePrefsXml((host as any).prefsXml)?.bibliographyStyleHasBeenSet).toBe(true);
+	});
+});

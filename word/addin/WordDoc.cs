@@ -161,7 +161,7 @@ namespace ZoteroNext.Word
             dynamic d = Doc;
             var prefs = ReadPrefsXml(d);
             return Json.Map("hasDoc", true, "name", (string)d.Name, "fullName", (string)d.FullName, "readOnly", (bool)d.ReadOnly,
-                "prefsXml", prefs, "protection", (int)d.ProtectionType);
+                "prefsXml", prefs, "protection", (int)d.ProtectionType, "trackingLocked", TrackingLocked(d));
         }
 
         // ---------------------------------------------------------------- fields
@@ -194,13 +194,52 @@ namespace ZoteroNext.Word
 
         const int wdRevisionDelete = 2;
 
-        /// <summary>Run act with the document's Track Changes off, restoring the user's setting afterwards (also on error).</summary>
+        // ---------------------------------------------------------------- locked tracking
+        //
+        // Review > Track Changes > Lock Tracking (a password; journal production files often have it) protects a document
+        // with wdAllowOnlyRevisions: Track Changes cannot be switched off. Every rewrite of an existing field would then be
+        // recorded, field codes included: the old JSON stays as a tracked deletion beside the new, so the code reads as two
+        // glued together and stops parsing, and a tracked formatting change in the bibliography makes Word's tracked-change
+        // list loop. So while tracking is locked the add-in changes no citation at all: every write says why and does
+        // nothing, and the sidebar shows the lock. The user's own edits are untouched; unlocking (with the password) or
+        // working on a copy without the lock lets Zinc update the citations again.
+
+        const int wdAllowOnlyRevisions = 0;
+
+        public const string TrackingLockedMessage =
+            "Track Changes is locked in this document (Review > Track Changes > Lock Tracking), so Zinc cannot switch it off " +
+            "while it updates citations, and updating them with tracking on would record every field code as a tracked change " +
+            "and damage the citations. Zinc has changed nothing. Unlock tracking (it needs the password), or work on a copy " +
+            "without the lock.";
+
+        static bool TrackingLocked(dynamic d)
+        {
+            try { return (int)d.ProtectionType == wdAllowOnlyRevisions; } catch { return false; }
+        }
+
+        /// <summary>Refuse a change to the citations, before anything is written, while Track Changes is locked.</summary>
+        void EnsureTrackingUnlocked()
+        {
+            if (TrackingLocked(Doc)) throw new InvalidOperationException(TrackingLockedMessage);
+        }
+
+        /// <summary>
+        /// Run act with the document's Track Changes off, restoring the user's setting afterwards (also on error). When Word
+        /// will not switch it off (locked tracking, however that came about), act is not run at all: a write made with
+        /// tracking on damages field codes (see above).
+        /// </summary>
         static void Untracked(object doc, Action act)
         {
             dynamic d = doc;
             bool was = false;
             try { was = (bool)d.TrackRevisions; } catch { }
-            if (was) { try { d.TrackRevisions = false; } catch { was = false; } }
+            if (was)
+            {
+                try { d.TrackRevisions = false; } catch { }
+                bool still = true;
+                try { still = (bool)d.TrackRevisions; } catch { }
+                if (still) throw new InvalidOperationException(TrackingLockedMessage);
+            }
             try { act(); }
             finally { if (was) { try { d.TrackRevisions = true; } catch (Exception e) { Log.Error("could not switch Track Changes back on", e); } } }
         }
@@ -227,6 +266,7 @@ namespace ZoteroNext.Word
                 {
                     if (sw.ElapsedMilliseconds > RevisionBudgetMs)
                     {
+                        RevisionReadsCut++;
                         Log.Write("tracked changes: read " + (i - 1) + " of " + n + " in one field before the time limit; using those");
                         break;
                     }
@@ -235,8 +275,11 @@ namespace ZoteroNext.Word
                 }
                 return list.Count == 0 ? null : list;
             }
-            catch { return null; }
+            catch { RevisionReadsCut++; return null; }
         }
+
+        /// <summary>Counts reads of a field's tracked changes that stopped early or failed: a scan that saw one cannot vouch for the document.</summary>
+        static int RevisionReadsCut;
 
         /// <summary>Time limit for reading one field's tracked changes (each Item(i) cost Word about 130 ms in that manuscript).</summary>
         const int RevisionBudgetMs = 3000;
@@ -274,6 +317,80 @@ namespace ZoteroNext.Word
             return sb.ToString();
         }
 
+        // ---------------------------------------------------------------- tracked formatting in the bibliography
+        //
+        // Add-in versions before 2026-11-20 applied the bibliography's style and indents with Track Changes on (when
+        // inserting it; before 2026-11-18 also when refreshing it). Word records that as a tracked formatting change on the
+        // bibliography's paragraphs, and one such change makes Word's list of tracked changes loop without end: Revisions
+        // enumerated forever (the refresh freeze worked around in RangeRevisions) and Office.js getTrackedChanges never
+        // answers. Rewriting the formatting with tracking off does not remove the record, nor does deleting the field: the
+        // change sits on a paragraph mark, often the last one, just after the field's end. Deleting that mark (and those
+        // inside the result, which a rewrite of the result replaces) with tracking off does.
+
+        const int wdRevisionInsert = 1;
+
+        /// <summary>
+        /// The whole paragraphs a field occupies, as [start, end]: from the start of the paragraph its code begins in to the
+        /// end of the paragraph its result ends in, that paragraph's mark included. Null when other text shares them.
+        /// </summary>
+        static int[] FieldParagraphs(dynamic f)
+        {
+            int fs = (int)f.Code.Start - 1, fe = (int)f.Result.End + 1;
+            dynamic r = f.Result.Duplicate;
+            r.SetRange(fs, fs);
+            int ps = (int)r.Paragraphs.Item(1).Range.Start;
+            r.SetRange(fe, fe);
+            int pe = (int)r.Paragraphs.Item(1).Range.End;
+            if (pe <= fe) return null;
+            r.SetRange(ps, fs);
+            if (ps < fs && ((string)r.Text ?? "").Trim().Length > 0) return null;
+            r.SetRange(fe, pe - 1);
+            if (pe - 1 > fe && ((string)r.Text ?? "").Trim().Length > 0) return null;
+            return new[] { ps, pe };
+        }
+
+        /// <summary>
+        /// True when the bibliography's paragraphs hold tracked changes other than insertions and deletions (formatting:
+        /// what the old add-in left), or tracked changes Word counts but cannot list (the looping list). A bibliography the
+        /// user inserted with Track Changes on is one tracked insertion: left as it is.
+        /// </summary>
+        static bool BibliographyNeedsRebuild(dynamic f)
+        {
+            var span = FieldParagraphs(f);
+            if (span == null) return false;
+            dynamic r = f.Result.Duplicate;
+            r.SetRange(span[0], span[1]);
+            int n = (int)r.Revisions.Count;
+            if (n == 0) return false;
+            var revs = RangeRevisions((object)r);
+            if (revs == null || revs.Count < n) return true;
+            return revs.Any(x => x[2] != wdRevisionInsert && x[2] != wdRevisionDelete);
+        }
+
+        /// <summary>
+        /// Rewrite bibliography field f so that no tracked formatting change on its paragraphs survives. Run inside
+        /// Untracked. Setting the result replaces every paragraph mark inside it; the one mark left, just after the field's
+        /// end, is deleted and inserted again. The field itself is kept (a field made anew can report the type it was made
+        /// with, QUOTE, until the document is reopened, and a scan then passes over it).
+        /// </summary>
+        void RebuildBibliography(dynamic f, string code, object[] runs)
+        {
+            if (code != null) f.Code.Text = Wrap(code);
+            SetResult(f, runs);
+            var span = FieldParagraphs(f);
+            if (span == null) return;
+            dynamic res = f.Result;
+            dynamic r = res.Document.StoryRanges.Item((int)res.StoryType).Duplicate;
+            int mark = span[1] - 1;
+            // a story's final mark cannot be deleted: give the story a new last paragraph first
+            if (span[1] >= (int)r.StoryLength) { r.SetRange(mark, span[1]); r.InsertParagraphAfter(); }
+            r.SetRange(mark, mark + 1);
+            r.Delete();               // the mark goes, and its tracked formatting with it (the text joins the next paragraph)
+            r.SetRange(mark, mark);
+            r.InsertParagraphAfter(); // and a new mark ends the bibliography again
+            Log.Write("bibliography rewritten without the tracked formatting changes on its paragraphs");
+        }
+
         /// <summary>A code an earlier tracked rewrite left as old + new: two field instructions in one code.</summary>
         static bool LooksDoubled(string code)
         {
@@ -290,7 +407,12 @@ namespace ZoteroNext.Word
         /// </summary>
         List<Entry> ScanStory(object storyRange, object fieldsObj, string story, Func<int, int> posOf, bool checkTracked)
         {
-            if (checkTracked) { try { checkTracked = (int)((dynamic)storyRange).Revisions.Count > 0; } catch { } }
+            bool checkBibl = _checkBibliography;
+            if (checkTracked || checkBibl)
+            {
+                try { bool any = (int)((dynamic)storyRange).Revisions.Count > 0; checkTracked = checkTracked && any; checkBibl = checkBibl && any; } catch { }
+            }
+            if (checkTracked) _scanCheckedTracked = true;
             var list = new List<Entry>();
             int i = 0;
             // the enumerator walks the collection once; fields.Item(i) per field made a scan quadratic in the field count
@@ -326,13 +448,16 @@ namespace ZoteroNext.Word
                         if (deleted) continue;
                     }
                     dynamic res = f.Result; text = (string)res.Text ?? ""; s = cs - 1;
-                    int rs = (int)res.Start, re = (int)res.End;
+                    int re = (int)res.End;
                     e = re + 1;
                     // a renumbering an older tracked refresh left in the result ("16" deleted, "15" inserted) is flagged as
-                    // well, so the next refresh writes the result back clean
-                    if (revs != null) { bool c, w; text = FinalText(text, rs, re, revs, out c, out w); tracked = tracked || c; }
+                    // well, so the next refresh writes the result back clean (the result's start is needed only then)
+                    if (revs != null) { bool c, w; text = FinalText(text, (int)res.Start, re, revs, out c, out w); tracked = tracked || c; }
                 }
                 catch { }
+                // tracked formatting changes on the bibliography's paragraphs: flagged, so the refresh rewrites it, and the
+                // rewrite rebuilds it without them (see BibliographyNeedsRebuild)
+                if (kind == "bibl" && checkBibl && !tracked) { try { tracked = BibliographyNeedsRebuild(f); } catch { } }
                 list.Add(new Entry { Story = story, Idx = i, Kind = kind, Code = code.Trim(), Text = text, Start = s, End = e, Pos = posOf(s), Tracked = tracked });
             }
             return list;
@@ -352,10 +477,42 @@ namespace ZoteroNext.Word
             return Json.Map("doc", (string)d.FullName, "fields", (int)d.Fields.Count + "|" + fn + "|" + en);
         }
 
-        /// <summary>All Zotero fields in document order (main text, footnotes, endnotes). checkTracked: see <see cref="ScanStory"/>.</summary>
+        // ---------------------------------------------------------------- "fields checked for tracked damage" marker
+        //
+        // Asking Word about each field's tracked changes is most of a refresh in a document under review (each field's
+        // Range.Revisions makes Word work out the changes in it). It only finds damage that add-in versions before
+        // 2026-11-18 left when they rewrote a field with Track Changes on; this add-in rewrites fields untracked, so it
+        // makes none. Once a refresh's scan finds every field clean, a document variable records it and later refreshes
+        // skip the per-field lookups. A code that reads doubled (the common damage) is still looked at on every scan.
+
+        const string TrackCheckedVar = "ZincFieldsTrackChecked";
+        bool _scanCheckedTracked;
+        bool _checkBibliography;
+
+        static bool IsTrackChecked(dynamic d)
+        {
+            try { return (string)d.Variables.Item(TrackCheckedVar).Value == "1"; } catch { return false; }
+        }
+
+        static void MarkTrackChecked(dynamic d)
+        {
+            try { d.Variables.Add(TrackCheckedVar, "1"); }
+            catch (Exception e) { Log.Error("could not record the tracked-changes check", e); }
+        }
+
+        /// <summary>
+        /// All Zotero fields in document order (main text, footnotes, endnotes). checkTracked: see <see cref="ScanStory"/>;
+        /// skipped in a document already found clean (<see cref="TrackCheckedVar"/>).
+        /// </summary>
         public object Fields(bool checkTracked = false)
         {
             dynamic d = Doc;
+            // the bibliography is looked at on every refresh, even in a document already found clean: the marker covers
+            // damage in field codes, and a document marked before this check existed can still hold the formatting changes
+            _checkBibliography = checkTracked;
+            if (checkTracked && IsTrackChecked(d)) checkTracked = false;
+            _scanCheckedTracked = false;
+            int cut = RevisionReadsCut;
             var all = ScanStory((object)d.Content, (object)d.Fields, "main", p => p, checkTracked);
             foreach (var pair in new[] { Tuple.Create("fn", wdFootnotesStory), Tuple.Create("en", wdEndnotesStory) })
             {
@@ -380,6 +537,9 @@ namespace ZoteroNext.Word
             }
             // main-text positions scale by 1000 as well so note fields interleave with the body
             foreach (var e in all) if (e.Story == "main") e.Pos = e.Pos * 1000;
+            // every field looked at and none damaged: later refreshes need not ask again (a document with no tracked
+            // changes at all was not looked at, needs no lookups anyway, and is left unmarked)
+            if (checkTracked && _scanCheckedTracked && RevisionReadsCut == cut && !all.Any(e => e.Tracked)) MarkTrackChecked(d);
             return all.OrderBy(e => e.Pos).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note, "tracked", e.Tracked)).ToList();
         }
 
@@ -453,6 +613,7 @@ namespace ZoteroNext.Word
         /// </summary>
         public object InsertField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic d = Doc;
             string kind = Json.Str(p, "kind", "item");
             string code = Json.Str(p, "code");
@@ -515,7 +676,11 @@ namespace ZoteroNext.Word
                 }
             }
             dynamic f = NewField(range, code, runs);
-            if (kind == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
+            // the bibliography's style and indents are our formatting, not the user's edit: applied with Track Changes on,
+            // Word records them as tracked formatting changes, and one of those in a bibliography makes Word's list of
+            // tracked changes loop without end (a refresh froze; Office.js never answers getTrackedChanges). The new
+            // bibliography itself stays a tracked insertion.
+            if (kind == "bibl") Untracked((object)d, () => ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format"))));
             int endPos = (int)f.Result.End + 1;
             if (kind == "bibl")
             {
@@ -543,6 +708,7 @@ namespace ZoteroNext.Word
         /// </summary>
         public object ConvertField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic d = Doc;
             var r = Json.Obj(Json.Get(p, "ref"));
             string target = Json.Str(p, "target");
@@ -623,6 +789,7 @@ namespace ZoteroNext.Word
         /// an earlier tracked rewrite left as old + new.</summary>
         public object SetField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             string code = Json.Str(p, "code");
             if (code != null && KindOf(code) == null) throw new ArgumentException("not a Zotero field code");
@@ -639,6 +806,7 @@ namespace ZoteroNext.Word
         /// </summary>
         public object SetFields(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             var items = Json.Arr(Json.Get(p, "items")).Select(o => Json.Obj(o)).ToList();
             var wanted = new Dictionary<string, HashSet<int>>();
             foreach (var it in items)
@@ -678,17 +846,29 @@ namespace ZoteroNext.Word
         {
             string code = Json.Str(p, "code");
             var runs = Json.Arr(Json.Get(p, "runs"));
-            if (code != null) f.Code.Text = Wrap(code);
             if (runs.Length > 0)
             {
+                string src = code ?? (string)f.Code.Text;
+                if (KindOf(src) == "bibl")
+                {
+                    // a bibliography holding tracked formatting changes is rebuilt rather than rewritten (see RebuildBibliography)
+                    bool rebuild = false;
+                    try { rebuild = BibliographyNeedsRebuild(f); }
+                    catch (Exception e) { Log.Error("could not check the bibliography for tracked formatting; rewriting it in place", e); }
+                    if (rebuild) RebuildBibliography(f, code, runs);
+                    else { if (code != null) f.Code.Text = Wrap(code); SetResult(f, runs); }
+                    ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")), Json.Obj(Json.Get(p, "styleFormat")));
+                    return;
+                }
+                if (code != null) f.Code.Text = Wrap(code);
                 SetResult(f, runs);
-                string kind = code != null ? KindOf(code) : KindOf((string)f.Code.Text);
-                if (kind == "bibl") ApplyBibliographyFormat(f, Json.Obj(Json.Get(p, "format")));
             }
+            else if (code != null) f.Code.Text = Wrap(code);
         }
 
         public object DeleteField(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             f.Delete();   // removes the field and its result
             return Json.Map("ok", true);
@@ -696,6 +876,7 @@ namespace ZoteroNext.Word
 
         public object RemoveFieldCode(Dictionary<string, object> p)
         {
+            EnsureTrackingUnlocked();
             dynamic f = FieldByRef(Json.Obj(Json.Get(p, "ref")));
             f.Unlink();   // keep the result as plain text (what Zotero's "Unlink citations" does)
             return Json.Map("ok", true);
@@ -710,22 +891,51 @@ namespace ZoteroNext.Word
             return Json.Map("ok", true);
         }
 
-        void ApplyBibliographyFormat(dynamic f, Dictionary<string, object> fmt)
+        // ---------------------------------------------------------------- the bibliography's format, as Zotero sets it
+        //
+        // Zotero gives the bibliography's paragraphs the "Bibliography" style and nothing else; the indents, line spacing,
+        // spacing after and tab stops live in that style, set once per document (setBibliographyStyle in Zotero's Word plugin,
+        // bibliographyStyleHasBeenSet in the document preferences), so the user's own later changes to the style are kept.
+        // The sidebar sends styleFormat (Zotero's values, in twips) only on that first write. Run inside Untracked.
+
+        const int wdStyleBibliography = -266, wdStyleTypeParagraph = 1, wdAlignTabLeft = 0, wdTabLeaderSpaces = 0;
+
+        void ApplyBibliographyFormat(dynamic f, Dictionary<string, object> fmt, Dictionary<string, object> styleFormat = null)
         {
+            dynamic d = Doc;
+            dynamic style = BibliographyStyle(d);
+            if (styleFormat != null && style != null) SetBibliographyStyleFormat(style, styleFormat);
             dynamic res = f.Result;
-            try { res.Style = "Bibliography"; } catch { /* style not present in this template: keep Normal */ }
-            res = f.Result;
+            try { if (style != null) res.Style = style; } catch (Exception e) { Log.Error("could not give the bibliography its style", e); }
+            // no direct paragraph formatting (older add-ins put a fixed hanging indent and spacing on every entry): the style's
+            // format shows through, as in a document Zotero wrote
+            try { ((dynamic)f.Result).Paragraphs.Reset(); } catch { }
+        }
+
+        /// <summary>The document's Bibliography paragraph style, made when the template has none (as Zotero does).</summary>
+        static dynamic BibliographyStyle(dynamic d)
+        {
+            try { return d.Styles.Item(wdStyleBibliography); } catch { }
+            try { return d.Styles.Item("Bibliography"); } catch { }
+            try { return d.Styles.Add("Bibliography", wdStyleTypeParagraph); } catch (Exception e) { Log.Error("could not make the Bibliography style", e); }
+            return null;
+        }
+
+        /// <summary>Zotero's setBibliographyStyle: indents, line spacing, spacing after and tab stops (twips) on the style.</summary>
+        static void SetBibliographyStyleFormat(dynamic style, Dictionary<string, object> sf)
+        {
             try
             {
-                var pf = res.ParagraphFormat;
-                if (fmt != null)
-                {
-                    if (Json.Bool(fmt, "hanging") || Json.Bool(fmt, "secondFieldAlign")) { pf.LeftIndent = 36; pf.FirstLineIndent = -36; }
-                    int es = Json.Int(fmt, "entrySpacing", -1);
-                    if (es >= 0) pf.SpaceAfter = es * 12;
-                }
+                dynamic pf = style.ParagraphFormat;
+                pf.FirstLineIndent = Json.Int(sf, "firstLineIndent") / 20f;
+                pf.LeftIndent = Json.Int(sf, "indent") / 20f;
+                pf.LineSpacing = Json.Int(sf, "lineSpacing", 240) / 20f;
+                pf.SpaceAfter = Json.Int(sf, "entrySpacing", 240) / 20f;
+                dynamic tabs = pf.TabStops;
+                tabs.ClearAll();
+                foreach (var t in Json.Arr(Json.Get(sf, "tabStops"))) tabs.Add(Convert.ToSingle(t) / 20f, wdAlignTabLeft, wdTabLeaderSpaces);
             }
-            catch { }
+            catch (Exception e) { Log.Error("could not set the Bibliography style's format", e); }
         }
 
         // ---------------------------------------------------------------- cursor

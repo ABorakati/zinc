@@ -55,6 +55,8 @@ let searchSeq = 0;
 let cursorView: CitationView | null = null;
 let docName = "";
 let docStyle = "";
+/** Track Changes is locked in the document (Lock Tracking): the add-in refuses every change to the citations */
+let docLocked = false;
 
 // ---------------------------------------------------------------- small UI helpers
 
@@ -125,12 +127,20 @@ function renderDocLine() {
 	const el = $("docline");
 	el.textContent = docName ? `${docName}${docStyle ? "  ·  " + docStyle : ""}` : "No document open";
 	el.title = el.textContent;
+	if (docName && docLocked) {
+		el.textContent += "  ·  Track Changes locked: citations can't be changed";
+		el.title =
+			"Track Changes is locked in this document (Review > Track Changes > Lock Tracking). Zinc cannot switch it off while it " +
+			"updates citations, and updating them with tracking on would damage the field codes, so it changes no citation. " +
+			"Unlock tracking (it needs the password), or work on a copy without the lock.";
+	}
 }
 
 async function refreshDocState() {
 	try {
 		const st = await app.docState();
 		docName = st.hasDoc ? (st.name ?? "") : "";
+		docLocked = !!st.trackingLocked;
 		docStyle = st.prefs
 			? styleUrlToId(st.prefs.styleId) + (st.prefs.locale ? " (" + st.prefs.locale + ")" : "")
 			: st.hasDoc
@@ -968,11 +978,9 @@ async function main() {
 		toast("Preview mode: not inside Word, using sample data.");
 	}
 	app = new App(host);
-	try {
-		await app.init();
-	} catch (e) {
-		toast(e instanceof Error ? e.message : String(e), true, 10000);
-	}
+	// the search box and buttons work at once; the first calls answer in parallel (calls that do not need Word run on a
+	// worker thread in the add-in). Light init: no item count and no Zinc probe, which is asked afterwards.
+	const ready = app.init(true).catch((e) => toast(e instanceof Error ? e.message : String(e), true, 10000));
 	const q = $<HTMLInputElement>("q");
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	q.addEventListener("input", () => {
@@ -1020,9 +1028,10 @@ async function main() {
 		else if (d?.name === "editCitation") void editCitationAtCursor();
 	});
 	renderTray();
-	await refreshDocState();
-	await runSearch();
 	q.focus();
+	// the doc line names the default style for a new document, which comes with the host info
+	await Promise.all([ready.then(refreshDocState), runSearch()]);
+	void app.checkZinc().catch(() => {});
 }
 
 void main();

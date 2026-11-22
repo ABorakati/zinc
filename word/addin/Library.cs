@@ -26,7 +26,8 @@ namespace ZoteroNext.Word
                 "publication", r[4] ?? "", "itemType", r[5], "doi", r[6] ?? "");
         }
 
-        public static Dictionary<string, object> Info()
+        /// <summary>The library file and its key; count = also the number of items (the settings panel shows it).</summary>
+        public static Dictionary<string, object> Info(bool count = true)
         {
             var path = Settings.DbPath();
             var d = Json.Map("dbPath", path, "dbExists", File.Exists(path), "dataDir", Path.GetDirectoryName(path));
@@ -35,7 +36,7 @@ namespace ZoteroNext.Word
             {
                 using (var db = Open())
                 {
-                    d["items"] = int.Parse(db.Query("SELECT count(*) FROM items i WHERE " + TopFilter)[0][0]);
+                    if (count) d["items"] = int.Parse(db.Query("SELECT count(*) FROM items i WHERE " + TopFilter)[0][0]);
                     d["libraryKey"] = db.Query("SELECT value FROM meta WHERE name = 'library_key'").Select(r => r[0]).FirstOrDefault();
                 }
             }

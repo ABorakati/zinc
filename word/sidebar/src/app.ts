@@ -284,6 +284,12 @@ export class App {
 		return this.info;
 	}
 
+	/** Whether Zinc is running (for "Find abstract"), asked after a light init: a closed port alone takes Windows most of a second. */
+	async checkZinc(): Promise<void> {
+		const zn = await this.host.call<HostInfo["zn"]>("zn.status");
+		if (this.info) this.info.zn = zn;
+	}
+
 	get uriBase(): string {
 		return this.info?.uri.base ?? "http://zotero.org/users/local/znlocal0";
 	}
@@ -363,11 +369,31 @@ export class App {
 
 	// ---- document --------------------------------------------------------------------------------------------
 
-	async docState(): Promise<{ hasDoc: boolean; name?: string; fullName?: string; prefs: DocPrefs | null; readOnly?: boolean }> {
-		const s = await this.host.call<{ hasDoc: boolean; name?: string; fullName?: string; prefsXml?: string | null; readOnly?: boolean }>(
-			"doc.state",
-		);
-		return { hasDoc: s.hasDoc, name: s.name, fullName: s.fullName, prefs: parsePrefsXml(s.prefsXml), readOnly: s.readOnly };
+	/** trackingLocked: Track Changes is locked (Lock Tracking), so the add-in refuses every change to the citations */
+	async docState(): Promise<{
+		hasDoc: boolean;
+		name?: string;
+		fullName?: string;
+		prefs: DocPrefs | null;
+		readOnly?: boolean;
+		trackingLocked?: boolean;
+	}> {
+		const s = await this.host.call<{
+			hasDoc: boolean;
+			name?: string;
+			fullName?: string;
+			prefsXml?: string | null;
+			readOnly?: boolean;
+			trackingLocked?: boolean;
+		}>("doc.state");
+		return {
+			hasDoc: s.hasDoc,
+			name: s.name,
+			fullName: s.fullName,
+			prefs: parsePrefsXml(s.prefsXml),
+			readOnly: s.readOnly,
+			trackingLocked: !!s.trackingLocked,
+		};
 	}
 
 	/**
@@ -900,7 +926,8 @@ export class App {
 		const wasNote = prefs.noteType !== 0;
 		prefs.styleId = styleIdToUrl(styleId);
 		prefs.locale = locale;
-		prefs.bibliographyStyleHasBeenSet = true;
+		// as Zotero's document preferences: a new style gets its Bibliography style format on the next bibliography write
+		prefs.bibliographyStyleHasBeenSet = false;
 		const f = await this.formatter(styleId, locale);
 		const isNote = f.style.xclass === "note";
 		prefs.noteType = isNote ? prefs.noteType || 1 : 0;
@@ -1209,11 +1236,16 @@ export class App {
 				report.updated++;
 				report.changed.push(`item#${f.idx}:${same ? "text" : "code"}`);
 			}
+			// like Zotero, the document's Bibliography style gets the style's format once (bibliographyStyleHasBeenSet), so the
+			// user's own changes to that style are kept afterwards; a style change resets the flag (setStyle)
+			const setStyleFormat = !prefs.bibliographyStyleHasBeenSet && !!out.bibliography;
+			let styleFormatSent = false;
 			for (const b of bibls) {
 				if (!out.bibliography) continue;
 				const bib = out.bibliography;
 				const plain = bib.runs.map((r) => r.t).join("");
-				if (plain === b.text && !b.tracked) continue;
+				const withStyle = setStyleFormat && !styleFormatSent;
+				if (plain === b.text && !b.tracked && !withStyle) continue;
 				writes.push({
 					ref: { story: b.story, idx: b.idx, kind: "bibl" },
 					// a code left as old + new by a tracked rewrite is written back as it reads with the changes accepted
@@ -1221,7 +1253,9 @@ export class App {
 					// every entry left out: the field is emptied rather than left showing the old text
 					runs: (bib.runs.length ? bib.runs : [{ t: "" }]) as Run[],
 					format: { hanging: bib.hanging, secondFieldAlign: bib.secondFieldAlign, entrySpacing: bib.entrySpacing },
+					...(withStyle ? { styleFormat: bib.styleFormat } : {}),
 				});
+				if (withStyle) styleFormatSent = true;
 				report.updated++;
 				const at = [...plain].findIndex((c, i) => c !== b.text[i]);
 				report.changed.push(
@@ -1232,8 +1266,9 @@ export class App {
 			// the fields from the first one for every citation: seconds over a long document, more in one with footnotes)
 			if (writes.length) await this.host.call("doc.setMany", { items: writes });
 			const wantHas = bibls.length > 0;
-			if (!st.prefs || prefs.hasBibliography !== wantHas) {
+			if (!st.prefs || prefs.hasBibliography !== wantHas || styleFormatSent) {
 				prefs.hasBibliography = wantHas;
+				if (styleFormatSent) prefs.bibliographyStyleHasBeenSet = true;
 				await this.writePrefs(prefs);
 			}
 		} finally {
