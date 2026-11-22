@@ -459,7 +459,8 @@ async function handleOne(db: Database, req: unknown, readOnly = false): Promise<
 	if (!r || typeof r !== "object" || r.jsonrpc !== "2.0" || typeof r.method !== "string") {
 		return { jsonrpc: "2.0", error: { code: INVALID_REQUEST, message: "Invalid Request" }, id: null };
 	}
-	const method = METHODS[r.method];
+	// own entries only: "constructor", "toString", "__proto__" ... are inherited by every object and are not methods
+	const method = Object.hasOwn(METHODS, r.method) ? METHODS[r.method] : undefined;
 	if (readOnly && STATE_CHANGING.has(r.method)) {
 		return { jsonrpc: "2.0", error: { code: INVALID_REQUEST, message: `${r.method} changes data and must be sent with POST` }, id };
 	}
@@ -467,7 +468,7 @@ async function handleOne(db: Database, req: unknown, readOnly = false): Promise<
 	let params: unknown[] = [];
 	if (Array.isArray(r.params)) params = r.params;
 	else if (r.params && typeof r.params === "object") {
-		const names = PARAM_NAMES[r.method] ?? [];
+		const names = (Object.hasOwn(PARAM_NAMES, r.method) ? PARAM_NAMES[r.method] : undefined) ?? [];
 		for (const [k, v] of Object.entries(r.params as Record<string, unknown>)) {
 			const i = names.indexOf(k);
 			if (i < 0)
