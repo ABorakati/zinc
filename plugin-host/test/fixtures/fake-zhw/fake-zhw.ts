@@ -4,3 +4,4 @@ setInterval(() => console.log(JSON.stringify({ t: "heartbeat", ts: Date.now() })
 for await (const _ of Bun.stdin.stream()) {
 	// ignore every request
 }
+process.exit(0); // stdin closed: whoever started this is gone (the heartbeat would keep it alive for ever)

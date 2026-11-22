@@ -14,3 +14,4 @@ for await (const chunk of Bun.stdin.stream()) {
 		setTimeout(() => out({ t: "reply", id: m.id, result: { ok: true, value: m.t === "load" ? {} : null } }), m.t === "load" ? 1500 : 0);
 	}
 }
+process.exit(0); // stdin closed: whoever started this is gone (the heartbeat would keep it alive for ever)
