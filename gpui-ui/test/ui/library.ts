@@ -1,7 +1,7 @@
 // The made-up library every UI scenario starts from. Nothing in it comes from a real library; the names say what each item is for.
 import { join } from "node:path";
 import * as repo from "../../../core/src/db";
-import { addFile } from "../../../core/src/additems/files";
+import { addFile, hooks } from "../../../core/src/additems/files";
 import { upsertGroupLibrary } from "../../../core/src/libraries";
 import { rebuildSearchIndex } from "../../../core/src/search";
 
@@ -52,6 +52,9 @@ export function makeLibrary(root: string, items: number): string {
 		date: "2026",
 		abstractNote: "A made-up article that has a PDF.",
 	});
+	// no text extraction here: it would still be running on this connection when the fixture closes it
+	const { afterImport } = hooks;
+	hooks.afterImport = () => {};
 	addFile(db, {
 		mode: "imported_file",
 		path: join(import.meta.dir, "..", "..", "web", "demo-article.pdf"),
@@ -60,6 +63,7 @@ export function makeLibrary(root: string, items: number): string {
 		parentKey: article,
 		keepName: true,
 	});
+	hooks.afterImport = afterImport;
 	repo.addItemsToCollection(db, methods, [article]);
 
 	const authors = add({

@@ -4,9 +4,11 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { moveToBackgroundDesktop } from "./background";
 import { scenarios } from "./define";
 import { installFences, violations } from "./fences";
 
+moveToBackgroundDesktop(); // first: before anything can open a window
 const [file, command, indexArg, outDir] = process.argv.slice(2);
 await import(pathToFileURL(resolve(file!)).href);
 

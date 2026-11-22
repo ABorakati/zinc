@@ -141,7 +141,7 @@ jobs:
       - name: word/addin build (.NET Framework 4.8)
         run: dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$RUNNER_TEMP/addin-out"
 
-  # The UI harness (gpui-ui/test/ui): the real app on GPUI's headless renderer, driven through hit testing and key dispatch. Windows:
+  # The UI harness (gpui-ui/test/ui): the real app on GPUI's test renderer, driven through hit testing and key dispatch. Windows:
   # that renderer does not exist for Linux. The reader scenarios need zn_pdf and the document worker, so both are built here.
   ui:
     name: UI harness (windows-latest)

@@ -1,7 +1,8 @@
-// The UI test harness: the real app, headless, driven with real input.
+// The UI test harness: the real app, in the background, driven with real input.
 //
 //   bun run test:ui                  every scenario
 //   bun run test:ui list edit        those whose file or name contains one of the words
+//   --show: the windows on screen, to watch (they open on a hidden desktop otherwise: background.ts)
 //   options: --jobs <n> (default half the cores, 2 to 8)  --out <dir> (default out/ui-test)  --keep (leave the temporary folders)  --list
 //
 // Each scenario runs in a process of its own, on a made-up library, with its own user folders: the machine's library, settings,
@@ -21,6 +22,7 @@ let jobs = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2)));
 let out = join(GPUI, "out", "ui-test");
 let keep = false;
 let listOnly = false;
+let show = false;
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
 	const a = argv[i]!;
@@ -28,6 +30,7 @@ for (let i = 0; i < argv.length; i++) {
 	else if (a === "--out") out = resolve(argv[++i]!);
 	else if (a === "--keep") keep = true;
 	else if (a === "--list") listOnly = true;
+	else if (a === "--show") show = true;
 	else if (a.startsWith("--")) {
 		console.error(`unknown option ${a}`);
 		process.exit(2);
@@ -65,6 +68,7 @@ function childEnv(root: string): Record<string, string> {
 		TMP: dir("tmp"),
 		TMPDIR: dir("tmp"),
 		ZN_UI_TEST_ROOT: root,
+		ZN_UI_TEST_SHOW: show ? "1" : "0",
 		ZN_UI_STATE: join(root, "ui-state.json"),
 		ZN_LOG_DIR: dir("logs"),
 		ZN_CORE_DIRECT: "1",
@@ -91,15 +95,22 @@ interface Result extends Job {
 
 const base = mkdtempSync(join(tmpdir(), "zn-ui-"));
 
+/** Scenario files that could not be loaded: the others still run, and the run fails. */
+const unreadable: string[] = [];
+
 async function findJobs(): Promise<Job[]> {
 	const found: Job[] = [];
 	const files = readdirSync(join(HERE, "scenarios")).filter((f) => f.endsWith(".ui.ts")).sort();
 	for (const f of files) {
 		const file = join(HERE, "scenarios", f);
 		const root = mkdtempSync(join(base, "list-"));
-		const p = Bun.spawn([process.execPath, WORKER, file, "list"], { cwd: GPUI, env: childEnv(root), stdout: "pipe", stderr: "pipe" });
+		const p = Bun.spawn([process.execPath, WORKER, file, "list"], { cwd: GPUI, env: childEnv(root), stdout: "pipe", stderr: "pipe", windowsHide: true });
 		const [text, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-		if (code !== 0) throw new Error(`${f} could not be read:\n${err}`);
+		if (code !== 0) {
+			unreadable.push(f);
+			console.error(`FAIL  ${f} could not be loaded: ${err.trim().slice(-600)}`);
+			continue;
+		}
 		const area = f.replace(".ui.ts", "");
 		const list = JSON.parse(text.trim().split("\n").at(-1)!) as { name: string; knownBug?: string }[];
 		list.forEach((s, index) => found.push({ file, area, index, ...s }));
@@ -120,6 +131,7 @@ async function runJob(job: Job): Promise<Result> {
 		env: childEnv(root),
 		stdout: "ignore",
 		stderr: "pipe",
+		windowsHide: true,
 	});
 	const timer = setTimeout(() => p.kill(), TIMEOUT_MS);
 	const [err, code] = await Promise.all([new Response(p.stderr).text(), p.exited]);
@@ -167,7 +179,8 @@ try {
 		mkdirSync(out, { recursive: true });
 		writeFileSync(join(out, "summary.json"), JSON.stringify(results, null, 2));
 		console.log(`\n${n("pass")} passed, ${n("fail")} failed, ${n("known")} known bugs, ${n("fixed")} known bugs now fixed (${((performance.now() - started) / 1000).toFixed(1)} s)`);
-		if (n("fail") || n("fixed")) process.exitCode = 1;
+		if (unreadable.length) console.log(`could not be loaded: ${unreadable.join(", ")}`);
+		if (unreadable.length || n("fail") || n("fixed")) process.exitCode = 1;
 	}
 } finally {
 	if (!keep) {

@@ -10,7 +10,7 @@ The same commands run in CI (`.github/workflows/ci.yml`). Set up first as descri
 | --- | --- | --- |
 | `core` | `cd core && bun check && bun test --timeout 30000` | Includes the quick fuzz suite |
 | `gpui-ui` | `cd gpui-ui && bun check && bun test --timeout 30000` | Logic and component tests; no app is started |
-| `gpui-ui`, the UI | `cd gpui-ui && bun run test:ui` | The real app, headless, driven with real input (Windows and macOS). See [The UI harness](#the-ui-harness) |
+| `gpui-ui`, the UI | `cd gpui-ui && bun run test:ui` | The real app, in the background, driven with real input (Windows and macOS). See [The UI harness](#the-ui-harness) |
 | `word/sidebar` | `cd word/sidebar && bun check && bun test` | The Word end-to-end tests skip unless enabled |
 | `word/addin` | `dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$TEMP/addin-out"` | `-o` keeps the build out of `word/dist` |
 | `connector-host` | `cd connector-host && bun run build && bun test` | Not in CI; the test needs the compiled exe |
@@ -73,7 +73,7 @@ Run that line (with the real file and property name) to reproduce exactly the fa
 
 ## The UI harness
 
-`cd gpui-ui && bun run test:ui` is how a change to the interface is tested. It starts Zinc through its normal start-up (`src/start.tsx`) on GPUI's headless renderer and sends it real input: clicks go through hit testing, keys through focus and key dispatch. So it catches what component tests cannot, such as a row that is drawn but ignores clicks.
+`cd gpui-ui && bun run test:ui` is how a change to the interface is tested. It starts Zinc through its normal start-up (`src/start.tsx`) on GPUI's test renderer and sends it real input: clicks go through hit testing, keys through focus and key dispatch. So it catches what component tests cannot, such as a row that is drawn but ignores clicks.
 
 ```
 bun run test:ui                     # everything
@@ -81,6 +81,8 @@ bun run test:ui edit                # scenarios whose file or name contains a wo
 bun run test:ui --list              # what there is
 bun run test:ui --jobs 4 --out dir  # parallel processes (default half the cores, 2 to 8), where the evidence goes
 ```
+
+The test renderer opens a real window per scenario. On Windows the harness opens them on a hidden desktop of their own (`test/ui/background.ts`), so a run shows nothing and never takes the focus. You can keep working meanwhile; `--show` puts them on screen to watch. On macOS they are on screen.
 
 Every scenario gets a process of its own, a made-up library (`test/ui/library.ts`), its own user folders and an in-memory clipboard. It fails when an assertion fails, when the app logs an error, or when anything tries to reach the network or start a program (`test/ui/fences.ts`). A failure leaves `result.json` (the steps and the error), `screen.txt` (the painted text) and `failure.png` in `out/ui-test/<file>/<scenario>/`.
 
@@ -108,7 +110,7 @@ GPUIX is patched (`gpui-ui/patches`): as published, rows that a list reorders ca
 
 ## Headless screenshot scripts
 
-The GPUI app can be rendered without opening a window. GPUIX's test renderer (`createTestRoot()` from `@gpuix/solid/testing`) renders offscreen, and `renderer.captureScreenshot(path)` writes a PNG, about 1440 by 881 pixels whatever size you ask for. The scripts are `gpui-ui/scripts/shot-*.tsx`; run them from `gpui-ui/`:
+The GPUI app can be rendered without starting the app. GPUIX's test renderer opens a window while it runs (these scripts do not hide it; the UI harness does). That renderer (`createTestRoot()` from `@gpuix/solid/testing`) draws, and `renderer.captureScreenshot(path)` writes a PNG, about 1440 by 881 pixels whatever size you ask for. The scripts are `gpui-ui/scripts/shot-*.tsx`; run them from `gpui-ui/`:
 
 ```
 bun scripts/shot-hello.tsx out.png        # smoke test

@@ -45,7 +45,7 @@ export interface StartContext {
 export interface Platform {
 	/** The window title. */
 	title: string;
-	/** The renderer to draw with; absent: the window this platform opens. The UI harness (test/ui) passes the headless one. */
+	/** The renderer to draw with; absent: the window this platform opens. The UI harness (test/ui) passes a test renderer. */
 	renderer?: NativeRenderer;
 	/** Initial window size (the desktop; the browser fills its page). */
 	window?: { width: number; height: number };

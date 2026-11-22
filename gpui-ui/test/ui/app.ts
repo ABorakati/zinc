@@ -1,4 +1,4 @@
-// Boots Zinc for a scenario: src/start.tsx, the start-up every build uses, on GPUI's headless test renderer with the core in this
+// Boots Zinc for a scenario: src/start.tsx, the start-up every build uses, on GPUI's test renderer with the core in this
 // process (handleApi, no socket). Import it only after fences.ts and the environment are in place.
 import { TestRenderer } from "@gpuix/solid/testing";
 import { Ui } from "./driver";
