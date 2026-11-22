@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Right-to-left text:** item fields, item list cells and the native note view take their direction from the item's language, as Zotero does.
+- **Pane headers:** panes show a header on hover, with minimise, maximise and hide.
+- **Experimental settings:** Settings has an Experimental section with a switch per feature. It includes a native note view and a native note editor (both off by default; the editor needs a GPUIX build with rich text).
+- **Office.js Word add-in (preview):** a task-pane version of the Word add-in, which talks to Zinc's local API.
+- **LibreOffice Writer sidebar (Windows, preview):** the Word sidebar docked in Writer, built and installed by hand as an extension (see `libreoffice/README.md`).
+
 ### Changed
 
 - **Faster Settings open:** Settings now defers and scopes section refreshes (`Files`, `Integrations`, `Sync`, `System`) to the visible section instead of querying all backends and Windows subprocesses on every open, batches tab activation, and memoizes section/search queries.
@@ -18,6 +26,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Syncing `itemType` changes back to Zotero:** changing a regular item's type (such as `blogPost` → `webpage`) no longer fails to write to `zotero.sqlite`; base fields remap cleanly across types (e.g. `blogTitle` → `websiteTitle`), stale fields and invalid creator types are cleaned up before updating `itemTypeID`, and structural conversions to/from notes or attachments remain safely rejected.
 - **PDF hover cards and annotation popups clipping under adjacent pages:** citation/figure hover cards and annotation editor popups are now hoisted into deferred `<anchored>` overlays rendered above all pages, with smart flipping and viewport edge clamping.
+- **Notes lost the last edit when switching notes:** the Markdown and native note editors now save the last edit to the note it was typed in, keep focus when the pane reloads after a save, and stay open when a save fails.
+- **The ink eraser duplicated strokes:** strokes the eraser does not touch are no longer copied on every mouse move.
+- **Citations inside Word footnotes and endnotes:** the Word add-in now sees the citation the cursor is in inside a note, and a citation inserted there goes after it, instead of inside it.
+
+### Security
+
+Plugins are experimental and off by default. If you use them, or the browser extension's library page, update.
+
+- **Plugin web views are sandboxed:** plugin pages run in an isolated frame that can load only the plugin's allowed https hosts. Plugins: messaging now also needs `sandbox.scripts`, pages have no storage, and IP and local entries in `allow-hosts` are ignored.
+- **Plugin library calls check their keys:** a malformed key or id is refused with `invalid-argument`.
+- **Plugin network rules:** one rule now covers `net`, `translate.web` and the risk shown at install. Plugins: `*` is https only, a private destination needs its exact host and port, a public name that resolves to a private address is refused (list intranet hosts by IP, or by a `.local` or `.internal` name), `translate.web` reaches public hosts only, and Zinc's and Zotero's own ports are always refused.
+- **Malformed plugin interfaces are contained:** bad drawing or interface data from a plugin can no longer freeze or close Zinc.
+- **The browser library page accepts only the requests it needs:** the extension's bridge refuses everything else, including file storage and Find Full Text settings.
 
 ## [0.2.6] - 2026-11-21
 
