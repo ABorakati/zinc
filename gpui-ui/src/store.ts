@@ -774,7 +774,7 @@ function createStore(): AppStore {
 		listVersion();
 		const e = cache.get(p);
 		// (not during a fast move: the settle step loads the pages in view; this row re-runs when its page arrives)
-		if ((!e || e.gen !== gen) && i >= 0 && i < Math.max(untrack(total), 1) && performance.now() >= fastUntil)
+		if ((!e || e.gen !== gen) && !failed.has(p) && i >= 0 && i < Math.max(untrack(total), 1) && performance.now() >= fastUntil)
 			queueMicrotask(() => void loadPage(p, gen));
 		if (!e) stats.skeleton++;
 		return e?.rows[i - p * PAGE]; // a stale row (older generation) is returned meanwhile
@@ -825,7 +825,7 @@ function createStore(): AppStore {
 			to = Math.min(lastPage, lp + (scrollDir > 0 ? PREFETCH_AHEAD : 1));
 		for (let p = from; p <= to; p++) {
 			const e = cache.get(p);
-			if ((e && e.gen === gen) || inflight.has(p)) continue;
+			if ((e && e.gen === gen) || inflight.has(p) || failed.has(p)) continue; // a failed page waits for Retry
 			const visible = p >= fp && p <= lp;
 			if (!visible && inflight.size >= MAX_PREFETCH_INFLIGHT) continue;
 			if (!visible) stats.prefetches++;

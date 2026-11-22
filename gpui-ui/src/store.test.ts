@@ -262,3 +262,28 @@ describe("a list that starts over while a fast scroll is settling", () => {
 		expect(store.peek(0)?.title).toBe("T0");
 	});
 });
+
+describe("a page that failed", () => {
+	test("rows coming into view and scrolling do not ask for it again; Retry does", async () => {
+		handler = (u) => (Number(u.searchParams.get("offset")) === PAGE ? json({ error: "core down" }, 500) : list(300)(u));
+		store.setView({ kind: "trash" });
+		await tick();
+		store.itemAt(PAGE + 1);
+		await tick();
+		expect(store.failedPages()).toBe(1);
+		const asked = () => itemReqs.filter((r) => r.offset === PAGE).length;
+		const before = asked();
+		for (let i = 0; i < 5; i++) {
+			store.itemAt(PAGE + 2 + i); // another row of the failed page mounts
+			store.setVisible(PAGE - 10 + i, PAGE + 10 + i); // a scroll event with the page in view
+			await tick(5);
+		}
+		await tick();
+		expect(asked()).toBe(before);
+		handler = list(300);
+		store.retryFailed();
+		await tick();
+		expect(store.failedPages()).toBe(0);
+		expect(store.peek(PAGE + 1)?.title).toBe(`T${PAGE + 1}`);
+	});
+});
