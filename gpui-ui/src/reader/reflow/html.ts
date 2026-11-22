@@ -4,13 +4,11 @@
 import { stripTags } from "./build";
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+/** The character for a numeric entity; a number that is not a code point (`&#99999999;`) stays as the text it was: fromCodePoint throws on it. */
+const fromCode = (cp: number, whole: string) => (Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : whole);
 const decode = (s: string) =>
 	s.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (m, dec, hex, name) =>
-		dec
-			? String.fromCodePoint(Number(dec))
-			: hex
-				? String.fromCodePoint(parseInt(hex, 16))
-				: (ENTITIES[String(name).toLowerCase()] ?? m),
+		dec ? fromCode(Number(dec), m) : hex ? fromCode(parseInt(hex, 16), m) : (ENTITIES[String(name).toLowerCase()] ?? m),
 	);
 
 const SUP: Record<string, string> = {

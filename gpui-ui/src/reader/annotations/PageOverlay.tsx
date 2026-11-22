@@ -228,7 +228,7 @@ export function PageAnnotations(p: { ctx: ReaderContext; page: number; box: Acce
 							)}
 						</For>
 					</Match>
-					<Match when={a()!.type === "note"}>
+					<Match when={a()!.type === "note" && a()!.position.rects?.[0]}>
 						<div
 							onClick={toggle}
 							style={{
