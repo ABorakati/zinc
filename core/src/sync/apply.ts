@@ -136,6 +136,15 @@ function collides(c: Ctx, table: "items" | "collections", key: string): boolean 
 	return true;
 }
 
+/**
+ * True when another library already uses this key. Such an object is skipped by collides(), so it must not count as part of
+ * this batch either: a child or sub-collection could otherwise attach itself to a parent that belongs to another library.
+ */
+function inOtherLibrary(db: Database, table: "items" | "collections", key: string, libraryId: number): boolean {
+	const r = db.query(`SELECT library_id AS lib FROM ${table} WHERE key = ?`).get(key) as { lib: number } | null;
+	return !!r && r.lib !== libraryId;
+}
+
 /** Break parent loops among the collections of this batch: the collection that closes a loop becomes top level. */
 function breakCollectionLoops(c: Ctx): void {
 	const db = c.db;
@@ -544,11 +553,13 @@ export function applyChanges(db: Database, changes: RemoteChanges, dataDir: stri
 		report,
 		reindex: new Set(),
 		unindex: [],
-		batchItems: new Set(ch.upserts.filter((u) => u.type === "item").map((u) => u.key)),
-		batchCollections: new Set(ch.upserts.filter((u) => u.type === "collection").map((u) => u.key)),
+		batchItems: new Set(ch.upserts.filter((u) => u.type === "item" && !inOtherLibrary(db, "items", u.key, libraryId)).map((u) => u.key)),
+		batchCollections: new Set(
+			ch.upserts.filter((u) => u.type === "collection" && !inOtherLibrary(db, "collections", u.key, libraryId)).map((u) => u.key),
+		),
 		batchParent: new Map(
 			ch.upserts
-				.filter((u) => u.type === "item")
+				.filter((u) => u.type === "item" && !inOtherLibrary(db, "items", u.key, libraryId))
 				.map((u) => [u.key, typeof u.data.parentItem === "string" && u.data.parentItem ? u.data.parentItem : null]),
 		),
 	};
