@@ -1,5 +1,6 @@
 // End-to-end against a private INVISIBLE Word (see word-e2e.test.ts): Track Changes and the cursor watcher's cost.
 // Off by default (it starts WINWORD.EXE). Needs no library copy: it builds a small synthetic library in a temp folder.
+// Also holds the cursor-inside-a-citation insert cases (body, footnote, endnote).
 //   ZN_WORD_E2E=1 bun test test/word-track.test.ts
 // With the user's own Word open, also set ZN_HARNESS_ALLOW_OTHER_WORD=1: the harness then starts a second, private Word
 // and lets go of (never quits) any Word it cannot prove it started itself.
@@ -327,6 +328,65 @@ d("Track Changes and the cursor watcher in an invisible Word", () => {
 		await h.call("h.pump", { ms: 1200 });
 		const rested = await h.call<{ fullReads: number }>("h.watch");
 		expect(rested.fullReads).toBe(typing.fullReads + 1); // one read when it stops, then nothing new to read
+		await h.call("h.close");
+	}, 120_000);
+
+	// A citation made with the cursor inside another citation goes right after it, in the same story: with the cursor in a
+	// note's citation it used to land at the same offset in the body.
+	/** "Claim (1) end." in the body, an empty note of the story after it, a citation (picks[1]) in that note; returns the body text. */
+	async function citationInNote(story: "fn" | "en") {
+		await h.call("h.newDoc");
+		await h.call("h.type", { text: "Claim " });
+		await app.insertCitation([picks[0]!]);
+		await h.call("h.type", { text: " end." });
+		await h.call("h.noteAdd", { story });
+		await h.call("h.noteSelect", { story, n: 1, at: "end" });
+		await app.insertCitation([picks[1]!]);
+		const inNote = (await app.readFields()).filter((f) => f.story === story);
+		expect(inNote.length).toBe(1);
+		return { inNote, body: (await h.call<{ text: string }>("h.text")).text };
+	}
+
+	for (const story of ["fn", "en"] as const) {
+		test(`a citation made with the cursor inside a citation in an ${story === "fn" ? "foot" : "end"}note goes into that note`, async () => {
+			const { inNote, body } = await citationInNote(story);
+			const bodyFields = (await app.readFields()).filter((f) => f.story === "main").map((f) => f.text);
+			// the cursor inside the note's citation, as a click would put it (the citation is the last thing in the note)
+			await h.call("h.noteSelect", { story, n: 1, at: "end" });
+			await h.call("h.cursor", { start: inNote[0]!.end - 3 });
+			const cur = await h.call<any>("doc.cursor");
+			expect(cur.inField).toBe(true);
+			expect(cur.ref.story).toBe(story);
+			await app.insertCitation([picks[2]!]);
+			const fields = await app.readFields();
+			const notes = fields.filter((f) => f.story === story);
+			expect(notes.length).toBe(2); // both in the note, the old one first
+			expect(notes.every((f) => f.note === 1)).toBe(true);
+			const cited = notes.map((f) => (f.parsed!.kind === "item" ? f.parsed!.data.citationItems[0]!.uris[0]!.split("/").pop() : null));
+			expect(cited).toEqual([key(2), key(3)]);
+			expect((await h.call<{ count: number }>(story === "fn" ? "h.footnotes" : "h.endnotes")).count).toBe(1); // no second note
+			// the body is as it was: no citation, no text of ours
+			expect(fields.filter((f) => f.story === "main").map((f) => f.text)).toEqual(bodyFields);
+			expect((await h.call<{ text: string }>("h.text")).text).toBe(body);
+			expect((await app.refreshAll()).updated).toBe(0);
+			await h.call("h.close");
+		}, 120_000);
+	}
+
+	test("a citation made with the cursor inside a citation in the body goes right after it, and no note appears", async () => {
+		await h.call("h.newDoc");
+		await h.call("h.type", { text: "Claim " });
+		await app.insertCitation([picks[0]!]);
+		await h.call("h.type", { text: " end." });
+		const [first] = await app.readFields();
+		await h.call("h.cursor", { start: first!.end - 3 });
+		expect((await h.call<any>("doc.cursor")).inField).toBe(true);
+		await app.insertCitation([picks[1]!]);
+		const fields = await app.readFields();
+		expect(fields.map((f) => f.story)).toEqual(["main", "main"]);
+		expect(fields.map((f) => f.text)).toEqual(["(1)", "(2)"]);
+		expect((await h.call<{ text: string }>("h.text")).text).toContain("Claim (1)(2) end.");
+		expect((await h.call<{ count: number }>("h.footnotes")).count).toBe(0);
 		await h.call("h.close");
 	}, 120_000);
 });

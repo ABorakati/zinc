@@ -155,6 +155,23 @@ internal static class Program
                 }
             case "h.footnotes": return Json.Map("count", (int)_app.ActiveDocument.Footnotes.Count);
             case "h.fnText": return Json.Map("text", (string)_app.ActiveDocument.Footnotes.Item(Json.Int(p, "n")).Range.Text);
+            case "h.endnotes": return Json.Map("count", (int)_app.ActiveDocument.Endnotes.Count);
+            case "h.noteAdd":
+                {
+                    // an empty note (story fn | en) at the cursor, which must be in the main text
+                    dynamic r = _app.Selection.Range; r.Collapse(0);
+                    if (Json.Str(p, "story", "fn") == "en") _app.ActiveDocument.Endnotes.Add(r); else _app.ActiveDocument.Footnotes.Add(r);
+                    return Json.Map("ok", true);
+                }
+            case "h.noteSelect":
+                {
+                    // put the cursor in note n (1-based) of the story (fn | en): at = start | end of its text. h.cursor then works in that story.
+                    dynamic coll = Json.Str(p, "story", "fn") == "en" ? _app.ActiveDocument.Endnotes : _app.ActiveDocument.Footnotes;
+                    dynamic nr = coll.Item(Json.Int(p, "n", 1)).Range;
+                    nr.Collapse(Json.Str(p, "at", "end") == "start" ? 1 : 0);
+                    nr.Select();
+                    return Json.Map("story", (int)_app.Selection.StoryType, "start", (int)_app.Selection.Start);
+                }
             case "h.fontOf":
                 {
                     // formatting probe: italic/superscript flags of a range

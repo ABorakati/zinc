@@ -628,9 +628,9 @@ namespace ZoteroNext.Word
                 string afterStory = Json.Str(after, "story", "main");
                 dynamic prev = FieldByRef(after);
                 int pos = (int)prev.Result.End + 1;   // just past the closing field mark
-                dynamic at;
-                if (afterStory == "main") at = d.Range(pos, pos);
-                else { at = d.StoryRanges.Item(afterStory == "fn" ? wdFootnotesStory : wdEndnotesStory).Duplicate; at.SetRange(pos, pos); }
+                // from the field's own range, so the position is in its story (a story range is only the first of linked stories)
+                dynamic at = prev.Result.Duplicate;
+                at.SetRange(pos, pos);
                 NewField(at, code, runs);
                 return Json.Map("ok", true, "story", afterStory);
             }
@@ -657,7 +657,8 @@ namespace ZoteroNext.Word
             {
                 // never nest: continue after the field the cursor is in
                 int afterPos = FieldEndAround(d, storyType, (int)range.Start);
-                if (afterPos >= 0) { range = d.Range(afterPos, afterPos); }
+                // d.Range(pos, pos) is always in the main text: the position belongs to the cursor's own story (a note, a text frame...)
+                if (afterPos >= 0) { range = range.Duplicate; range.SetRange(afterPos, afterPos); }
             }
             if (kind == "bibl")
             {
