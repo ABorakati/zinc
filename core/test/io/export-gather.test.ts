@@ -58,8 +58,10 @@ for (let i = 0; i < 40; i++) {
 	}
 	if (i % 2 === 0) createItem(db, { itemType: "note", note: `<p>note ${i}</p>`, parentItem: it.data.key });
 }
-// two linked files and an imported file path
-db.query("UPDATE attachments SET path = 'C:/files/a.pdf', link_mode = 'linked_file' WHERE item_key IN (SELECT item_key FROM attachments LIMIT 3)").run();
+// three linked files (items that the tests below do not look at)
+db.query(
+	"UPDATE attachments SET path = 'C:/files/a.pdf', link_mode = 'linked_file' WHERE item_key IN (SELECT key FROM items WHERE title IN ('link 11', 'link 20', 'link 29'))",
+).run();
 
 const FORMATS: ExportFormat[] = ["bibtex", "biblatex", "ris", "csljson", "csv", "rdf", "mods", "betterbibtex"];
 
