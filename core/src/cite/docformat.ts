@@ -293,7 +293,9 @@ export class CslFormatter {
 		// the wrong order, and note styles' ibid./subsequent forms were not tested. Both are cheap to rebuild (10-20 ms).
 		if (this.numbered || this.style.xclass === "note") return false;
 		for (const [id, s] of itemSig) if (st.itemSig.has(id) && st.itemSig.get(id) !== s) return false;
-		for (const id of st.itemSig.keys()) if (!itemSig.has(id)) return false; // an item went missing: its citations change
+		// an item that is still cited went missing: that citation changes. (An item that left with its deleted citation is the
+		// ordinary case, and stays incremental: a rebuild is ten times slower in a long document.)
+		for (const c of citations) for (const i of c.items) if (st.itemSig.has(i.id) && !itemSig.has(i.id)) return false;
 		if (citations.length === 0) return false; // nothing left: the kept engine would still list the old bibliography
 		if (citations.some((c) => resolvable(c).length === 0)) return false;
 		if (sig.size !== citations.length) return false; // a repeated citationID
