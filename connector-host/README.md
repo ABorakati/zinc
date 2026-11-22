@@ -63,7 +63,7 @@ request rebuilt from what was matched, with the body bytes that were parsed. A w
 
 ## Library, writes and state
 
-* Database: `ZN_DB`, else `C:/Users/abora/zotero-next/data/library.sqlite` if it exists, else
+* Database: the app's own rule (`core/src/library-location.ts`, read-only here): `ZN_DB` or `ZN_LIBRARY`, else the library path the app saved, else an older `<home>/zotero-next/data/library.sqlite`, else the default library, else
   `%LOCALAPPDATA%\dev.zotero-next.app\stable\library.sqlite` (the folder of the old Electrobun app, kept so existing libraries still open). If none
   exists every call answers 500 "library not found".
 * Opened with `openDb()` like the app: WAL, `busy_timeout = 5000`, the sync-outbox triggers. A save is short

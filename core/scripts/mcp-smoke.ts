@@ -1,9 +1,13 @@
 // Read-only smoke test of the stdio MCP server against a real library.
-// Usage: bun core/scripts/mcp-smoke.ts [path/to/library.sqlite] [query]
+// Usage: bun core/scripts/mcp-smoke.ts <path/to/library.sqlite> [query]   (the path is required)
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const db = process.argv[2] ?? "C:/Users/abora/zotero-next/data/library.sqlite";
+const db = process.argv[2];
+if (!db) {
+	console.error("usage: bun core/scripts/mcp-smoke.ts <path/to/library.sqlite> [query]");
+	process.exit(2);
+}
 const query = process.argv[3] ?? "liver transplant frailty";
 
 const client = new Client({ name: "mcp-smoke", version: "0.0.0" });
