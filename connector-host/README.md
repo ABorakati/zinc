@@ -52,6 +52,15 @@ the app first when its API does not answer (`ZN_LAUNCHER`, else `%LOCALAPPDATA%\
 `getTranslatorCode`, `document/*`) answer 404, which makes the extension use Zotero's translator repository and show
 no word-processor integration.
 
+`method: "api"` carries the library page's and the reader tab's own `/api/*` requests (`path`, `http`, `body`); the host answers them with the
+core's `handleApi` against the library file (`src/api.ts`). It is deny by default: only the (method, route) pairs in `ROUTES` are passed on, each
+one a call the pages make, with the query parameters that route takes. Everything else is refused (403; 405 for a listed path with another method;
+400 for a malformed path). Closed on purpose: sync, web sync, integrations, Find Full Text settings and sign-in, the desktop app's file storage
+(`/api/files/`), opening a URL, file or folder, Mendeley, Better BibTeX auto-exports, change log and batch. The path is split and decoded once
+(an empty segment, trailing slash, dot segment, encoded or raw slash or backslash, NUL or a bad escape is refused) and the core is handed the
+request rebuilt from what was matched, with the body bytes that were parsed. A write whose JSON (any depth) or multipart body has a `path`,
+`basePath`, `dir` (or similar) field or `linked_file` mode is refused, as is a body that does not parse: the page uploads bytes or takes text instead.
+
 ## Library, writes and state
 
 * Database: `ZN_DB`, else `C:/Users/abora/zotero-next/data/library.sqlite` if it exists, else

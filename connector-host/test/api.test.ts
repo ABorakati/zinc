@@ -80,7 +80,7 @@ describe("api method: reads", () => {
 	});
 
 	test("an unknown route is 404, a path outside /api is 400", async () => {
-		expect((await h.call("api", { http: "GET", path: "/api/no-such-route" })).status).toBe(404);
+		expect((await h.call("api", { http: "GET", path: "/api/no-such-route" })).status).toBe(403); // not listed: refused, not passed to the core
 		expect((await h.call("api", { http: "GET", path: "/connector/ping" })).status).toBe(400);
 	});
 });
@@ -251,7 +251,7 @@ describe("apiRefusal", () => {
 		expect(apiRefusal("POST", "/api/open-url")).not.toBeNull();
 		expect(apiRefusal("POST", "/api/attachments/ABCD1234/open-external")).not.toBeNull();
 		expect(apiRefusal("POST", "/api/files/pick-folder")).not.toBeNull();
-		expect(apiRefusal("GET", "/api/files/settings")).toBeNull();
+		expect(apiRefusal("GET", "/api/files/settings")).not.toBeNull(); // discloses local paths
 		expect(apiRefusal("POST", "/api/io/mendeley")).not.toBeNull();
 		expect(apiRefusal("GET", "/api/sync")).not.toBeNull();
 		expect(apiRefusal("POST", "/api/websync/start")).not.toBeNull();
