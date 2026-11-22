@@ -17,6 +17,7 @@ import { useRt, type KindComponent } from "./ctx";
 import { imageUrl } from "./content";
 import { UiIcon } from "./icons";
 import { modsOf } from "./node";
+import { acceptPageMessage, allowedOrigins, allowedUrl, deliverScript, sandboxInit, wrapperUrl } from "./webSandbox";
 
 // ---------------------------------------------------------------------------------------------------- canvas
 
@@ -152,16 +153,6 @@ const total = () => [...live.values()].reduce((n, s) => n + s.size, 0);
 /** Web-view hosts by `<instance>|<key>`, so `ui.web-post-message` can reach the page. */
 export const webHosts = new Map<string, { post: (json: string) => void }>();
 
-const csp = (scripts: boolean, hosts: string[]) => {
-	const net = hosts.map((h) => `https://${h}`).join(" ");
-	return `default-src 'none'; img-src data: blob: ${net}; style-src 'unsafe-inline' ${net}; font-src data: ${net}; ${scripts ? `script-src 'unsafe-inline' ${net};` : ""} connect-src ${net || "'none'"}; form-action 'none'; base-uri 'none'`;
-};
-
-function pageUrl(html: string, scripts: boolean, hosts: string[]): string {
-	const doc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${csp(scripts, hosts)}">${html}`;
-	return "data:text/html;charset=utf-8," + encodeURIComponent(doc);
-}
-
 const WebViewK: KindComponent = (p) => {
 	const rt = useRt();
 	const spec = () => p.node.kind.val ?? {};
@@ -177,54 +168,71 @@ const WebViewK: KindComponent = (p) => {
 		return undefined;
 	};
 	const [blocked, setBlocked] = createSignal<string | undefined>(untrack(reason));
-	const target = createMemo((): { url?: string; note?: string } => {
-		const s = spec().source as { tag: string; val: string };
-		const hosts = (spec().allowHosts as string[]) ?? [];
-		const net = rt.netHosts();
-		const allowed = hosts.filter((h) => net.includes(h));
-		if (s.tag === "url") {
-			let u: URL;
-			try {
-				u = new URL(s.val);
-			} catch {
-				return { note: `Bad URL ${s.val}` };
+	// What the view shows and how it is sandboxed. The top-level page is always the host-built wrapper (webSandbox.ts); plugin content only
+	// lives in its sandboxed iframe. Anything that changes the plan (source, scripts, messaging, allowed hosts) builds a new view.
+	const plan = createMemo(
+		(): { url?: string; shown?: string; note?: string; messaging: boolean } => {
+			const sp = spec();
+			const s = sp.source as { tag: string; val: string } | undefined;
+			const scripts = !!sp.sandbox?.scripts;
+			const messaging = scripts && !!sp.messaging;
+			if (!s) return { note: "This web view has no source.", messaging };
+			const origins = allowedOrigins(sp.allowHosts, rt.netHosts());
+			if (s.tag === "url") {
+				const href = allowedUrl(s.val, origins);
+				if (!href) return { note: `${s.val} is not an https address on the plugin's allowed hosts.`, messaging };
+				return { url: wrapperUrl({ kind: "url", value: href, scripts, origins }), shown: href, messaging };
 			}
-			if (u.protocol !== "https:" || !allowed.includes(u.host)) return { note: `${u.host || s.val} is not in the plugin's allowed hosts.` };
-			return { url: u.href };
-		}
-		const html = s.tag === "html" ? s.val : new TextDecoder().decode(readPackageFile(rt.dir(), s.val) ?? new Uint8Array());
-		if (!html) return { note: `Missing page ${s.val}` };
-		return { url: pageUrl(html, !!spec().sandbox?.scripts, allowed) };
-	});
+			const html = s.tag === "html" ? s.val : new TextDecoder().decode(readPackageFile(rt.dir(), s.val) ?? new Uint8Array());
+			if (!html) return { note: `Missing page ${s.val}`, messaging };
+			return { url: wrapperUrl({ kind: "srcdoc", value: html, scripts, origins }), shown: "about:blank", messaging };
+		},
+		undefined,
+		{ equals: (a, b) => a.url === b.url && a.note === b.note && a.messaging === b.messaging },
+	);
 	onMount(() => {
 		const r = untrack(reason);
 		if (r) return;
 		let set = live.get(rt.pluginId);
 		if (!set) live.set(rt.pluginId, (set = new Set()));
 		set.add(id);
-		const bridge = spec().messaging ? `window.zinc={postMessage:function(m){window.znMsg(JSON.stringify({type:"zinc",message:m}))},onmessage:null};` : "";
-		host = new WebHost({
-			init: bridge,
-			onMessage: (m) => {
-				if (m.type === "zinc") rt.ctl.fire(p.node, "message", P.message(JSON.stringify(m.message ?? null)));
-			},
-			follow: true,
-		});
-		const bg = resolveColor(spec().background, rt.mode());
-		host.setBackground(bg && bg.startsWith("#") ? bg : tok("background"));
 		const key = `${rt.ctl.instance}|${p.node.props.key ?? ""}`;
-		webHosts.set(key, { post: (json) => host?.eval(`window.zinc&&window.zinc.onmessage&&window.zinc.onmessage(${json});`) });
-		onCleanup(() => webHosts.delete(key));
+		const stop = () => {
+			webHosts.delete(key);
+			host?.release(0);
+			host = undefined;
+		};
+		onCleanup(stop);
 		createEffect(() => {
-			const tg = target();
-			if (!tg.url) {
-				setBlocked(tg.note);
+			const pl = plan();
+			stop();
+			if (!pl.url) {
+				setBlocked(pl.note);
 				rt.ctl.fire(p.node, "web", { tag: "web", val: { url: String(spec().source?.val ?? ""), phase: "blocked" } });
-				return host?.hide();
+				return;
 			}
 			setBlocked(undefined);
-			host!.show(tg.url, () => (overlayLayers().length > 0 || !el ? null : { rect: boundsOf(el)!, holes: floatingRects() }));
-			rt.ctl.fire(p.node, "web", { tag: "web", val: { url: tg.url.startsWith("data:") ? "about:blank" : tg.url, phase: "loaded" } });
+			const nonce = crypto.randomUUID();
+			const h = new WebHost({
+				init: sandboxInit(pl.messaging, nonce),
+				onMessage: (m) => {
+					const a = acceptPageMessage(m, nonce, pl.messaging);
+					if (a !== null) rt.ctl.fire(p.node, "message", P.message(a));
+				},
+				follow: true,
+			});
+			host = h;
+			const bg = resolveColor(spec().background, rt.mode());
+			h.setBackground(bg && bg.startsWith("#") ? bg : tok("background"));
+			if (pl.messaging)
+				webHosts.set(key, {
+					post: (json) => {
+						const js = deliverScript(json);
+						if (js) h.eval(js);
+					},
+				});
+			h.show(pl.url, () => (overlayLayers().length > 0 || !el ? null : { rect: boundsOf(el)!, holes: floatingRects() }));
+			rt.ctl.fire(p.node, "web", { tag: "web", val: { url: pl.shown ?? "about:blank", phase: "loaded" } });
 		});
 	});
 	onCleanup(() => {

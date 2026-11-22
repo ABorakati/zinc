@@ -249,13 +249,16 @@ Choice: a vector draw list (`canvas.ops`: rect, ellipse, line, polyline, path, t
 
 Zinc's `gpui-ui/src/webview/` is WebView2 in its own owned popup window placed over a placeholder (GPUIX has no web element), about 100-200 MB per instance, created only when used. So `web-view` is offered with these limits, enforced by the host:
 
-- Permission `ui.webview`; the manifest lists `net` hosts. `allow-hosts` must be a subset.
-- At most 2 live views per plugin and 4 in total; a view that is hidden or scrolled out is released and reloaded when shown (state is lost unless `persist-storage`).
-- Own WebView2 profile per plugin (cookies and storage separate from Zinc and other plugins).
-- `html` and `asset` sources come from an opaque per-plugin origin with a strict content security policy: no network except `allow-hosts`, no `file:`, no access to Zinc's local server ports.
-- No `eval` from the plugin. Communication is `window.zinc.postMessage` / `web-post-message` JSON only.
+- Permission `ui.webview`; the manifest lists `net` hosts. The hosts a view may use are the ones named in BOTH `allow-hosts` and the manifest, normalised (`https://` optional, host, optional port, optional leading `*.`). Everything else is dropped: `*`, `http`, IP addresses in any spelling, `localhost`, `.local`, `.internal` and similar names, trailing-dot names, and wildcards over them.
+- At most 2 live views per plugin and 4 in total.
+- Zinc, not the plugin, owns the top-level page of the web view. It is a small fixed document that holds exactly one `iframe`; the plugin's content only ever runs inside that frame. `html` and `asset` sources are the frame's `srcdoc`; a `url` source (https, on an allowed host) is its `src`.
+- The frame is sandboxed with no allowances except `allow-scripts`, and only when `sandbox.scripts` is true. It has an opaque origin: no cookies, `localStorage`, `sessionStorage` or IndexedDB (they throw), no access to the top page, no `window.open`, no popups, no form submission, no modals or downloads, no top-level navigation, no permissions (camera, location, ...), no referrer.
+- The top page's content security policy lets the frame load and be navigated or redirected only to the allowed hosts (none: nothing). A meta refresh, `location = ...`, a link, a nested frame or a redirect to anything else (including `http://127.0.0.1`, so Zinc's local server ports) is refused. Images, styles, fonts, scripts and `fetch` of an `html` / `asset` page are limited to the same hosts (scripts only when `sandbox.scripts` is true); `file:` and forms are not allowed. A `url` page's own content security policy is the remote site's; Zinc only controls where the frame itself may go.
+- The WebView2 profile is shared with the rest of Zinc, not one per plugin. The opaque origin is what keeps plugin content away from it.
+- No `eval` from the plugin. `web-post-message` and `window.zinc.postMessage` / `window.zinc.onmessage` carry JSON only, and exist only when both `sandbox.scripts` and `messaging` are true (otherwise `web-post-message` does nothing and the page's messages are ignored). Zinc parses the plugin's text as JSON (invalid input is dropped) and hands the re-encoded value to a fixed function in the top page, which posts it to the frame; a message from the page is accepted only when it comes from that frame, through the top page. Frames cannot reach Zinc's own bridge to the host.
+- Changing the source, `sandbox.scripts`, `messaging` or the allowed hosts builds a new view; the old view and its permissions are discarded and the page reloads.
 - It is drawn above GPUIX content: popovers and menus over it are cut (the host cuts holes for toasts as it does today). Do not place a popover over a web view.
-- Navigation outside the allow-list is blocked and reported as a `web` event; the plugin may then call `shell.open-url`.
+- A source that is not allowed (a `url` that is not https on an allowed host, a missing `asset`) is not loaded and is reported as a `web` event with phase `blocked`. Navigation inside the frame to a disallowed address is refused by the policy but there is no event for it; the plugin may call `shell.open-url` for such a link itself.
 - Not available in Zinc builds without WebView2 (`webViewSupported()` false); `theme-info`/lifecycle features list reports it.
 
 ### Host components (`embed`)
