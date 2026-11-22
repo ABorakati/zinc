@@ -78,7 +78,9 @@ export function buildCanvas(spec: Any, view: View, o: BuildOptions): { svg: stri
 	const bg = svgColor(spec.background, o.mode);
 	out.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${num(view.width)}" height="${num(view.height)}" viewBox="${num(view.x)} ${num(view.y)} ${num(view.width)} ${num(view.height)}" preserveAspectRatio="xMidYMid meet">`);
 	if (bg) out.push(`<rect x="${num(view.x)}" y="${num(view.y)}" width="${num(view.width)}" height="${num(view.height)}" fill="${bg.color}" fill-opacity="${bg.opacity}"/>`);
-	for (const op of spec.ops as { tag: string; val?: Any }[]) {
+	let skipped = 0;
+	for (const op of (Array.isArray(spec?.ops) ? spec.ops : []) as { tag: string; val?: Any }[]) {
+		try {
 		const v = op.val;
 		switch (op.tag) {
 			case "rect": {
@@ -104,7 +106,8 @@ export function buildCanvas(spec: Any, view: View, o: BuildOptions): { svg: stri
 				if (v.style?.hit) {
 					const xs = pts.filter((_, i) => i % 2 === 0),
 						ys = pts.filter((_, i) => i % 2 === 1);
-					addHit({ id: v.style.hit, tip: v.style.hoverTip && o.txt(v.style.hoverTip), kind: "poly", closed: !!v.closed && !!v.style.fill, x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), pts, pad: Math.max(4, (v.style.stroke?.width ?? 1) / 2 + 2) });
+					const b = boxOf(xs, ys);
+					if (b) addHit({ id: v.style.hit, tip: v.style.hoverTip && o.txt(v.style.hoverTip), kind: "poly", closed: !!v.closed && !!v.style.fill, ...b, pts, pad: Math.max(4, (v.style.stroke?.width ?? 1) / 2 + 2) });
 				}
 				break;
 			}
@@ -167,6 +170,10 @@ export function buildCanvas(spec: Any, view: View, o: BuildOptions): { svg: stri
 				break;
 			}
 		}
+		} catch (e) {
+			// A draw op the host cannot read (a pre-built tree skips the schema check): skip it, draw the rest, say so once per build.
+			if (!skipped++) console.error("[canvas] skipped a malformed draw op:", e instanceof Error ? e.message : e);
+		}
 	}
 	while (open-- > 0) out.push("</g>");
 	out.push("</svg>");
@@ -175,6 +182,8 @@ export function buildCanvas(spec: Any, view: View, o: BuildOptions): { svg: stri
 
 /** A rough bounding box of SVG path data (all coordinates it mentions; arcs and relative moves are approximated). */
 export function pathBox(d: string): { x: number; y: number; w: number; h: number } | undefined {
+	// Bounded work on the UI thread: a path string this long gets no hit box (it is still drawn).
+	if (typeof d !== "string" || d.length > MAX_PATH_CHARS) return undefined;
 	const toks = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g);
 	if (!toks) return undefined;
 	let cx = 0,
@@ -186,15 +195,18 @@ export function pathBox(d: string): { x: number; y: number; w: number; h: number
 	const take = (n: number) => toks.slice(i, i + n).map(Number);
 	const arity: Record<string, number> = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
 	while (i < toks.length) {
-		if (/[a-zA-Z]/.test(toks[i]!)) cmd = toks[i++]!;
+		// Every pass consumes a token or stops: a number after `Z` or after a command with no arity is skipped, not retried forever.
+		const isCmd = /[a-zA-Z]/.test(toks[i]!);
+		if (isCmd) cmd = toks[i++]!;
 		const up = cmd.toUpperCase();
 		const rel = cmd !== up;
 		const n = arity[up] ?? 0;
 		if (n === 0) {
+			if (!isCmd) i++;
 			continue;
 		}
 		const a = take(n);
-		if (a.length < n || a.some(Number.isNaN)) break;
+		if (a.length < n || !a.every(Number.isFinite)) break;
 		i += n;
 		const px = (v: number) => (rel ? cx + v : v);
 		const py = (v: number) => (rel ? cy + v : v);
@@ -215,10 +227,29 @@ export function pathBox(d: string): { x: number; y: number; w: number; h: number
 		ys.push(cy);
 		if (up === "M") cmd = rel ? "l" : "L";
 	}
-	if (!xs.length) return undefined;
-	const x = Math.min(...xs),
-		y = Math.min(...ys);
-	return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+	return boxOf(xs, ys);
+}
+
+/** Longest path string that gets a hit box. */
+const MAX_PATH_CHARS = 4_000_000;
+
+/** The bounding box of paired coordinate lists; undefined when empty or not finite. A loop, not `Math.min(...xs)`: a spread of a big array overflows the stack. */
+function boxOf(xs: readonly number[], ys: readonly number[]): { x: number; y: number; w: number; h: number } | undefined {
+	if (!xs.length || !ys.length) return undefined;
+	let x0 = Infinity,
+		x1 = -Infinity,
+		y0 = Infinity,
+		y1 = -Infinity;
+	for (const v of xs) {
+		if (v < x0) x0 = v;
+		if (v > x1) x1 = v;
+	}
+	for (const v of ys) {
+		if (v < y0) y0 = v;
+		if (v > y1) y1 = v;
+	}
+	const b = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+	return Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.w) && Number.isFinite(b.h) ? b : undefined;
 }
 
 function distToSeg(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
