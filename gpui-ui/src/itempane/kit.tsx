@@ -54,6 +54,8 @@ export function IconBtn(p: {
 	box?: number;
 	color?: string;
 	testId?: string;
+	/** Told when the pointer comes and goes: buttons that float over a row take its hover from it (hoverWithButtons). */
+	onHover?: (over: boolean) => void;
 }): JSX.Element {
 	const box = () => p.box ?? 20;
 	// the Tooltip component wraps its child in a div; inline handlers give the same delayed label with one node less per button
@@ -64,8 +66,18 @@ export function IconBtn(p: {
 		timer = undefined;
 		hideTooltip();
 	};
-	onCleanup(cancel);
+	let over = false;
+	const point = (v: boolean) => {
+		if (over === v) return;
+		over = v;
+		p.onHover?.(v);
+	};
+	onCleanup(() => {
+		cancel();
+		point(false);
+	});
 	const enter = (e: EventPayload) => {
+		point(true);
 		cancel();
 		const pointer = { x: e.x ?? 0, y: e.y ?? 0 };
 		timer = setTimeout(() => {
@@ -85,7 +97,10 @@ export function IconBtn(p: {
 				if (!p.disabled) p.onClick?.();
 			}}
 			onMouseEnter={enter}
-			onMouseLeave={cancel}
+			onMouseLeave={() => {
+				cancel();
+				point(false);
+			}}
 			onMouseDown={cancel}
 			style={{
 				...t("flex flex-none items-center justify-center rounded"),
@@ -99,6 +114,24 @@ export function IconBtn(p: {
 			<Icon name={p.icon} size={p.size ?? 14} color={p.color ?? tok("muted-foreground")} />
 		</div>
 	);
+}
+
+/**
+ * The hover of a row with buttons floating over it, which are shown while it lasts. GPUIX takes the hover from the row as soon as the
+ * pointer is on the filled buttons, so each of those is part of it: `part(id)` is what one reports to (IconBtn's onHover). It ends
+ * a moment after the pointer left all of them, for the moment in which it is between two.
+ */
+export function hoverWithButtons(set: (v: boolean) => void): (id: string) => (over: boolean) => void {
+	const on = new Set<string>();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => clearTimeout(timer));
+	return (id) => (over) => {
+		if (over) on.add(id);
+		else on.delete(id);
+		clearTimeout(timer);
+		if (on.size) set(true);
+		else timer = setTimeout(() => set(false), 50);
+	};
 }
 
 /** `h-6 rounded-md border px-2 text-xs` text button (TextBtn). */
@@ -456,7 +489,8 @@ export function Field(p: {
 			cancelled = false;
 			return;
 		}
-		if (draft !== p.value) p.onSave(draft);
+		// only what was typed: the value can change under an open field (sync, a reorder), and is not to be written back
+		if (draft !== base && draft !== p.value) p.onSave(draft);
 	};
 	const key = (e: { key?: string; modifiers?: { control?: boolean; cmd?: boolean; ctrl?: boolean } }) => {
 		if (e.key === "escape") {

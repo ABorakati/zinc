@@ -20,6 +20,7 @@ import {
 	tok,
 	tx,
 	type Entry,
+	hoverWithButtons,
 } from "./kit";
 import { gatedHover } from "../cards/scrolling";
 import { usePane } from "./model";
@@ -238,7 +239,9 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 		// do not take ~100 px from the names the rest of the time
 		const [hot, setHot] = createSignal(false);
 		const [editing, setEditing] = createSignal(false);
-		const hover = gatedHover(setHot);
+		const part = hoverWithButtons(setHot);
+		const hover = gatedHover(part("row"));
+		const overBox = part("box");
 		const actions = () => !locked() && (hot() || editing());
 		return (
 			<div
@@ -298,6 +301,8 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 					</div>
 					<Show when={actions()}>
 						<div
+							onMouseEnter={() => overBox(true)}
+							onMouseLeave={() => overBox(false)}
 							style={{
 								...t("flex items-center rounded-md border shadow-sm"),
 								position: "absolute",
@@ -311,20 +316,22 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 						>
 							<IconBtn
 								icon="replace"
+								onHover={part("replace")}
 								size={13}
 								title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"}
 								onClick={() => toggleMode(i)}
 							/>
-							<IconBtn icon="arrow-up" size={13} title="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
+							<IconBtn icon="arrow-up" onHover={part("up")} size={13} title="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
 							<IconBtn
 								icon="arrow-down"
+								onHover={part("down")}
 								size={13}
 								title="Move down"
 								disabled={i === count() - 1}
 								onClick={() => move(i, 1)}
 							/>
-							<IconBtn icon="minus" size={13} title="Remove creator" onClick={() => remove(i)} />
-							<IconBtn icon="plus" size={13} title="Add creator" onClick={() => insertAfter(i)} />
+							<IconBtn icon="minus" onHover={part("remove")} size={13} title="Remove creator" onClick={() => remove(i)} />
+							<IconBtn icon="plus" onHover={part("add")} size={13} title="Add creator" onClick={() => insertAfter(i)} />
 						</div>
 					</Show>
 				</div>
