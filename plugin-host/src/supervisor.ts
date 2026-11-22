@@ -802,7 +802,9 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 				reached = true;
 				clearTimeout(stuck);
 				await restarting;
-				if (forced) return; // the call in front never ended: the plugin was disabled and unloaded instead
+				// The call in front never ended and was given up on: the plugin was disabled and unloaded instead. (When nothing could be
+				// given up on, a slow load for example, the plugin is still to be stopped.)
+				if (forced && plugins.get(id)?.status === "disabled") return;
 				const r = must(id);
 				usable(r);
 				r.wantRunning = false;

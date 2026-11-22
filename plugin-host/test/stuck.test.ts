@@ -117,6 +117,22 @@ describe("requests that are not calls have a wall-clock limit", () => {
 	}, 30_000);
 });
 
+describe("stop behind something that is not a call", () => {
+	const slow = join(import.meta.dir, "fixtures", "fake-zhw", "slow-load.cmd");
+	test.skipIf(process.platform !== "win32")("still stops a plugin that was loading for longer than the grace time", async () => {
+		const sup = createPluginSupervisor({ zhwPath: slow, stuckCallMs: 200, discoverHostHandlers: false, importHandlers: zincHandlers([]) });
+		open.push(sup);
+		await sup.load(dirs["hello-js"]);
+		await sup.start(ID);
+		await sup.stop(ID);
+		const enabled = sup.enable(ID); // loads again: nothing that stop could give up on
+		await Bun.sleep(50);
+		await sup.stop(ID);
+		await enabled;
+		expect(sup.get(ID)?.status).toBe("stopped");
+	}, 30_000);
+});
+
 describe("a plugin that exceeded its budget", () => {
 	test("is unloaded from the host, not kept there as a dead instance", async () => {
 		const sup = newSupervisor([], { callTimeoutMs: 400 });
