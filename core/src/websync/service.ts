@@ -139,6 +139,8 @@ export class WebSyncService {
 	private job: FileJob | undefined;
 	/** Resolves when the running download job ends (tests and callers that want to wait). */
 	fileJobDone: Promise<void> = Promise.resolve();
+	/** Set by stop() and resetAccount(): the running download job starts no further file. A new job clears it. */
+	private abortFiles = false;
 	private readonly dataDir: string;
 	private readonly storageDir: string;
 
@@ -249,6 +251,9 @@ export class WebSyncService {
 	 * Queued local changes will be sent to the new account as new objects.
 	 */
 	async resetAccount(): Promise<WebSyncStatus> {
+		// a download job in progress belongs to the account being unlinked: let it end before its state is cleared
+		this.abortFiles = true;
+		await this.fileJobDone;
 		await this.exclusive(async () => {
 			this.db.transaction(() => {
 				this.db.run("DELETE FROM websync_versions");
@@ -272,13 +277,16 @@ export class WebSyncService {
 			})();
 		});
 		await this.keyStore.delete();
+		this.abortFiles = false;
 		return this.status();
 	}
 
 	async clearKey(): Promise<WebSyncStatus> {
-		await this.keyStore.delete();
-		for (const n of ["web_user_id", "web_username", "web_can_write", "web_files_access", "web_groups_access", "web_error"])
-			setState(this.db, n, null);
+		await this.exclusive(async () => {
+			await this.keyStore.delete();
+			for (const n of ["web_user_id", "web_username", "web_can_write", "web_files_access", "web_groups_access", "web_error"])
+				setState(this.db, n, null);
+		});
 		return this.status();
 	}
 
@@ -521,6 +529,7 @@ export class WebSyncService {
 	/** Download every library's missing files, My Library first. The job's counters add up across libraries. */
 	private startJob(): void {
 		if (this.job?.running) return;
+		this.abortFiles = false;
 		const job: FileJob = { done: 0, total: 0, failed: 0, bytes: 0, running: true };
 		this.job = job;
 		const base = {
@@ -529,10 +538,12 @@ export class WebSyncService {
 			userId: this.userId,
 			storageDir: this.storageDir,
 			fileRedirect: this.opts.fileRedirect,
+			shouldStop: () => this.abortFiles,
 		};
 		this.fileJobDone = (async () => {
 			await downloadMissing(base, job);
 			for (const g of this.groupLibraries()) {
+				if (this.abortFiles) break;
 				const sub: FileJob = { done: 0, total: 0, failed: 0, bytes: 0, running: true };
 				job.running = true;
 				try {
@@ -635,7 +646,9 @@ export class WebSyncService {
 		this.stopped = true;
 		if (this.timer) clearInterval(this.timer);
 		this.timer = null;
+		this.abortFiles = true;
 		await this.chain;
+		await this.fileJobDone; // the job ends before the caller closes the database under it
 	}
 
 	get running(): boolean {

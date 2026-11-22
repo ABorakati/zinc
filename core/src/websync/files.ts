@@ -50,6 +50,8 @@ export interface FilesContext {
 	 *   for the file hosts) BEFORE using "follow". Without the rule the key would be sent to a third party.
 	 */
 	fileRedirect?: FileRedirect;
+	/** Asked before each file of a download job: true ends the job without starting another download. */
+	shouldStop?: () => boolean;
 }
 
 export type FileRedirect = "manual" | "follow";
@@ -304,6 +306,7 @@ export async function downloadMissing(ctx: FilesContext, job: FileJob): Promise<
 	job.running = true;
 	try {
 		await pool(todo, DOWNLOAD_WORKERS, async (a) => {
+			if (ctx.shouldStop?.()) return;
 			try {
 				job.bytes += await downloadOne(ctx, a);
 				job.done++;
