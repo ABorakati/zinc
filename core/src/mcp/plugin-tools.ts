@@ -165,18 +165,28 @@ export function exposeTools(sources: PluginToolSource[], reserved: Iterable<stri
 // ---------------------------------------------------------------- validation
 
 const validator = new AjvJsonSchemaValidator();
-const compiled = new WeakMap<object, JsonSchemaValidator<unknown> | Error>();
+// Keyed by the schema's content: exposeTools builds a new schema object for every request, so an identity key never hit.
+// Bounded (the oldest entry goes first) because the schemas come from plugins.
+const MAX_COMPILED = 64;
+const compiled = new Map<string, JsonSchemaValidator<unknown> | Error>();
+
+/** How many compiled schemas are cached (for tests). */
+export function validatorCacheSize(): number {
+	return compiled.size;
+}
 
 /** Check `args` against a tool's input schema. Returns an error text for the agent, or undefined when valid. */
 export function validateArgs(schema: Record<string, unknown>, args: unknown): string | undefined {
-	let v = compiled.get(schema);
+	const cacheKey = JSON.stringify(schema);
+	let v = compiled.get(cacheKey);
 	if (!v) {
 		try {
 			v = validator.getValidator<unknown>(schema as never);
 		} catch (e) {
 			v = e instanceof Error ? e : new Error(String(e));
 		}
-		compiled.set(schema, v);
+		if (compiled.size >= MAX_COMPILED) compiled.delete(compiled.keys().next().value!);
+		compiled.set(cacheKey, v);
 	}
 	if (v instanceof Error) return `the tool's input schema is not valid JSON Schema: ${v.message}`;
 	const r = v(args);
