@@ -177,6 +177,53 @@ export interface WasmtimeTransport {
 	kill(): void;
 }
 
+/**
+ * The longest line accepted from `zhw`. The biggest legitimate frame is a value that has to fit in a plugin's memory (limit
+ * `maxMemoryMb`, 256 by default), which travels as base64 (4/3 of its size); 128 MiB more covers the frames around it.
+ * Keep in step with `max_frame_bytes` in plugin-host-wasmtime/src/main.rs.
+ */
+export function maxFrameBytes(maxMemoryMb = 256): number {
+	return Math.floor((maxMemoryMb * 1048576) / 3) * 4 + 128 * 1048576;
+}
+
+/**
+ * Splits streamed text into lines in time linear in its length. A line longer than `maxLine` is not kept: `onTooLong` is called
+ * once and the splitter stops. `end()` gives the unfinished line left at the end of the stream.
+ */
+export function createLineSplitter(maxLine: number, onLine: (line: string) => void, onTooLong: () => void) {
+	let buf = "";
+	let stopped = false;
+	return {
+		push(chunk: string) {
+			if (stopped) return;
+			let start = 0;
+			let nl: number;
+			while ((nl = chunk.indexOf("\n", start)) >= 0) {
+				if (buf.length + (nl - start) > maxLine) {
+					stopped = true;
+					buf = "";
+					return onTooLong();
+				}
+				const line = buf + chunk.slice(start, nl);
+				buf = "";
+				start = nl + 1;
+				onLine(line);
+			}
+			if (buf.length + (chunk.length - start) > maxLine) {
+				stopped = true;
+				buf = "";
+				return onTooLong();
+			}
+			if (start < chunk.length) buf += start ? chunk.slice(start) : chunk;
+		},
+		end(): string {
+			const rest = buf;
+			buf = "";
+			return rest;
+		},
+	};
+}
+
 export function spawnWasmtimeTransport(opts: WasmtimeTransportOptions): WasmtimeTransport {
 	const zhwPath = resolveZhwPath(opts.zhwPath);
 	if ((zhwPath.includes("/") || zhwPath.includes("\\")) && !existsSync(zhwPath)) {
@@ -199,28 +246,41 @@ export function spawnWasmtimeTransport(opts: WasmtimeTransportOptions): Wasmtime
 	const stdoutDone = (async () => {
 		const reader = proc.stdout.getReader();
 		const decoder = new TextDecoder();
-		let buf = "";
+		let overrun = false;
+		const splitter = createLineSplitter(
+			maxFrameBytes(opts.maxMemoryMb),
+			(raw) => {
+				const line = raw.trim();
+				if (!line) return;
+				let parsed: Record<string, unknown>;
+				try {
+					parsed = JSON.parse(line) as Record<string, unknown>;
+				} catch {
+					return;
+				}
+				opts.onMessage(prepareInbound(parsed));
+			},
+			() => {
+				overrun = true;
+			},
+		);
 		try {
 			while (true) {
 				const { value, done } = await reader.read();
 				if (done) break;
-				buf += decoder.decode(value, { stream: true });
-				let nl: number;
-				while ((nl = buf.indexOf("\n")) >= 0) {
-					const line = buf.slice(0, nl).trim();
-					buf = buf.slice(nl + 1);
-					if (!line) continue;
-					let parsed: Record<string, unknown>;
+				splitter.push(decoder.decode(value, { stream: true }));
+				if (overrun) {
+					// a runaway frame: the host is replaced instead of buffering it without end
+					closed = true;
 					try {
-						parsed = JSON.parse(line) as Record<string, unknown>;
+						proc.kill();
 					} catch {
-						continue;
+						/* already gone */
 					}
-					opts.onMessage(prepareInbound(parsed));
+					return;
 				}
 			}
-			buf += decoder.decode();
-			const tail = buf.trim();
+			const tail = (splitter.end() + decoder.decode()).trim();
 			if (tail) {
 				try {
 					opts.onMessage(prepareInbound(JSON.parse(tail) as Record<string, unknown>));
