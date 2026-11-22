@@ -90,10 +90,18 @@ export function oaWorkToDetail(w: any): ReferenceDetail {
 
 const OA = "https://api.openalex.org";
 
+// A DOI is placed in a URL path (OpenAlex works/doi:, Crossref works/, Semantic Scholar paper/DOI:) or in an OpenAlex filter value.
+// The three APIs take "/" in the path as it is, so it is kept; what would end the path or the value is escaped.
+const pct = (c: string) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0");
+/** A DOI as a path segment: "?" and "#" no longer start a query or a fragment. */
+export const doiInPath = (doi: string): string => encodeURI(doi).replace(/[?#]/g, pct);
+/** A DOI as a value inside a query string: also escapes the characters that separate parameters. */
+const doiInQuery = (doi: string): string => encodeURI(doi).replace(/[?#&+;]/g, pct);
+
 /** References of a DOI via OpenAlex, in the work's own order. null when OpenAlex has no list. */
 export async function openAlexReferences(doi: string, mailto: string | null): Promise<RefCore[] | null> {
 	const work = await getJson<{ id?: string; referenced_works?: string[] }>(
-		withMailto(`${OA}/works/doi:${encodeURI(doi)}?select=id,referenced_works`, mailto),
+		withMailto(`${OA}/works/doi:${doiInPath(doi)}?select=id,referenced_works`, mailto),
 	);
 	const ids = (work?.referenced_works ?? []).map(shortOaId).filter(Boolean);
 	if (ids.length === 0) return null;
@@ -114,13 +122,14 @@ export async function openAlexReferences(doi: string, mailto: string | null): Pr
 /** Batch-fetch OpenAlex metadata for DOIs; map keyed by normalised DOI. Best effort (errors -> partial). */
 export async function openAlexByDois(dois: string[], mailto: string | null): Promise<Map<string, RefCore>> {
 	const out = new Map<string, RefCore>();
-	const uniq = [...new Set(dois)];
+	// "," and "|" separate values inside an OpenAlex filter and cannot be escaped there: such a DOI is left out of the batch
+	const uniq = [...new Set(dois)].filter((d) => !/[,|]/.test(d));
 	const chunks: string[][] = [];
 	for (let i = 0; i < uniq.length; i += 50) chunks.push(uniq.slice(i, i + 50));
 	await mapLimit(chunks, 2, async (chunk) => {
 		try {
 			const url = withMailto(
-				`${OA}/works?filter=doi:${chunk.map((d) => `https://doi.org/${d}`).join("|")}&per-page=50&select=${OA_SELECT}`,
+				`${OA}/works?filter=doi:${chunk.map((d) => `https://doi.org/${doiInQuery(d)}`).join("|")}&per-page=50&select=${OA_SELECT}`,
 				mailto,
 			);
 			for (const w of (await getJson<{ results?: any[] }>(url))?.results ?? []) {
@@ -152,7 +161,7 @@ export function enrich(refs: RefCore[], meta: Map<string, RefCore>): void {
 /** OpenAlex work for the hover card by DOI, else by title search (best match must resemble the query). */
 export async function openAlexLookup(q: { doi?: string | null; title?: string | null }, mailto: string | null): Promise<any | null> {
 	if (q.doi) {
-		const w = await getJson(withMailto(`${OA}/works/doi:${encodeURI(q.doi)}?select=${OA_DETAIL_SELECT}`, mailto));
+		const w = await getJson(withMailto(`${OA}/works/doi:${doiInPath(q.doi)}?select=${OA_DETAIL_SELECT}`, mailto));
 		if (w) return w;
 	}
 	if (q.title) {
@@ -202,7 +211,7 @@ export function crossrefRefToCore(r: any): RefCore {
 }
 
 export async function crossrefWork(doi: string, mailto: string | null): Promise<any | null> {
-	return (await getJson<{ message?: any }>(withMailto(`${CR}/works/${encodeURI(doi)}`, mailto)))?.message ?? null;
+	return (await getJson<{ message?: any }>(withMailto(`${CR}/works/${doiInPath(doi)}`, mailto)))?.message ?? null;
 }
 
 export async function crossrefReferences(doi: string, mailto: string | null): Promise<RefCore[] | null> {
@@ -252,7 +261,7 @@ export async function crossrefQuery(raw: string, mailto: string | null): Promise
 export async function semanticScholarReferences(doi: string): Promise<RefCore[] | null> {
 	const fields = "title,year,authors,externalIds,venue,openAccessPdf,citationCount,url";
 	const res = await getJson<{ data?: { citedPaper?: any }[] }>(
-		`https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURI(doi)}/references?fields=${fields}&limit=1000`,
+		`https://api.semanticscholar.org/graph/v1/paper/DOI:${doiInPath(doi)}/references?fields=${fields}&limit=1000`,
 	);
 	const data = res?.data;
 	if (!Array.isArray(data) || data.length === 0) return null;

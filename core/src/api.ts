@@ -7,6 +7,7 @@ import * as repo from "./db";
 import { HttpError } from "./db";
 import { handleFulltextApi } from "./fulltext/api";
 import { handleReferencesApi } from "./references/api";
+import { doiInPath } from "./references/sources";
 import { handleCiteApi } from "./cite/api";
 import { handleAddItemsApi } from "./additems/api";
 import { duplicateItem } from "./additems/duplicate";
@@ -118,7 +119,7 @@ export function safeUrl(input: unknown): string {
 	if (typeof input !== "string") throw new HttpError(400, "url is required");
 	let s = input.trim();
 	if (!s || s.length > 4096 || /[\u0000-\u001f\u007f\s]/.test(s)) throw new HttpError(400, "invalid url");
-	if (/^doi:/i.test(s)) s = `https://doi.org/${encodeURI(s.replace(/^doi:\s*/i, ""))}`;
+	if (/^doi:/i.test(s)) s = `https://doi.org/${doiInPath(s.replace(/^doi:\s*/i, ""))}`;
 	let u: URL;
 	try {
 		u = new URL(s);
