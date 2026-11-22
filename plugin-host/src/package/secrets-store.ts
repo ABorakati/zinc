@@ -122,14 +122,34 @@ export function fileKeyProvider(dir: string): KeyProvider {
 	};
 }
 
-/** DPAPI on Windows (falling back to the file when DPAPI is unusable), the 0600 key file elsewhere. */
-export function defaultKeyProvider(dir: string): KeyProvider {
-	if (process.platform !== "win32") return fileKeyProvider(dir);
-	const w = windowsKeyProvider(dir);
-	const f = fileKeyProvider(dir);
+/**
+ * DPAPI on Windows, the 0600 key file elsewhere. On Windows the key that already exists decides, so no secret is lost or left
+ * unprotected by a hiccup:
+ *   - a protected key file (master.key.dpapi) exists: it sealed the secrets, so it is the key. If it cannot be opened this fails (with
+ *     the reason) every time until it can; it never falls back to a new plain key file.
+ *   - else a plain key file (master.key) exists: the secrets under it stay readable, and no second key is made.
+ *   - else: DPAPI makes the key; only if DPAPI cannot be used at all is a plain key file made.
+ * `o` replaces the platform and the two providers (tests).
+ */
+export function defaultKeyProvider(dir: string, o: { platform?: string; windows?: KeyProvider; file?: KeyProvider } = {}): KeyProvider {
+	if ((o.platform ?? process.platform) !== "win32") return o.file ?? fileKeyProvider(dir);
+	const w = o.windows ?? windowsKeyProvider(dir);
+	const f = o.file ?? fileKeyProvider(dir);
 	let chosen: KeyProvider | undefined;
-	const pick = () => {
+	const pick = (): KeyProvider => {
 		if (chosen) return chosen;
+		if (existsSync(join(dir, "master.key.dpapi"))) {
+			try {
+				w.key();
+			} catch (e) {
+				throw new SecretError(
+					"internal",
+					`the protected master key (secrets/master.key.dpapi) cannot be opened: ${(e as Error).message}. The secrets are untouched; if the key belongs to another Windows user or machine, delete the secrets folder to start again`,
+				);
+			}
+			return (chosen = w);
+		}
+		if (existsSync(join(dir, "master.key"))) return (chosen = f);
 		try {
 			w.key();
 			chosen = w;
@@ -140,7 +160,11 @@ export function defaultKeyProvider(dir: string): KeyProvider {
 	};
 	return {
 		get protection() {
-			return pick().protection;
+			try {
+				return pick().protection;
+			} catch {
+				return w.protection;
+			}
 		},
 		key: () => pick().key(),
 	};
