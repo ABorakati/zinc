@@ -6,8 +6,48 @@ export interface XmlNode {
 	name: string; // qualified name as written, e.g. "dc:title"
 	attrs: Record<string, string>;
 	children: XmlNode[];
-	own: string; // the node's own text (direct text children only)
-	text: string; // own text plus everything under it (styles flattened)
+	readonly own: string; // the node's own text (direct text children only)
+	readonly text: string; // own text plus everything under it, in document order (styles flattened)
+}
+
+/**
+ * A parsed element. Text is kept once, in the element that directly holds it, as an ordered list of text pieces and child
+ * elements; `own` and `text` are put together on request. (Appending every piece to every open ancestor used to cost
+ * memory proportional to the text times the nesting depth.)
+ */
+class XmlElement implements XmlNode {
+	children: XmlNode[] = [];
+	/** Text pieces and child elements in document order. */
+	parts: (string | XmlElement)[] = [];
+	private flat: string | undefined;
+	constructor(
+		readonly name: string,
+		readonly attrs: Record<string, string>,
+	) {}
+
+	get own(): string {
+		let s = "";
+		for (const p of this.parts) if (typeof p === "string") s += p;
+		return s;
+	}
+
+	get text(): string {
+		if (this.flat !== undefined) return this.flat;
+		// walk the tree without recursion: documents can be nested thousands of levels deep
+		const out: string[] = [];
+		const stack: { el: XmlElement; i: number }[] = [{ el: this, i: 0 }];
+		while (stack.length) {
+			const top = stack[stack.length - 1]!;
+			if (top.i >= top.el.parts.length) {
+				stack.pop();
+				continue;
+			}
+			const p = top.el.parts[top.i++]!;
+			if (typeof p === "string") out.push(p);
+			else stack.push({ el: p, i: 0 });
+		}
+		return (this.flat = out.join(""));
+	}
 }
 
 // Groups: 1 CDATA, 2 closing slash, 3 element name, 4 attributes, 5 self-closing slash, 6 text
@@ -16,13 +56,12 @@ const XML_SOURCE =
 	"([A-Za-z_][\\w:.-]*)((?:\\s+[\\w:.-]+\\s*=\\s*(?:\"[^\"]*\"|'[^']*'))*)\\s*(/?)>|([^<]+)";
 
 export function parseXml(xml: string): XmlNode {
-	const root: XmlNode = { name: "#root", attrs: {}, children: [], own: "", text: "" };
-	const stack: XmlNode[] = [root];
+	const root = new XmlElement("#root", {});
+	const stack: XmlElement[] = [root];
 	const re = new RegExp(XML_SOURCE, "g");
 	let m: RegExpExecArray | null;
 	const addText = (t: string) => {
-		for (const n of stack) n.text += t;
-		stack[stack.length - 1]!.own += t;
+		stack[stack.length - 1]!.parts.push(t);
 	};
 	while ((m = re.exec(xml))) {
 		if (m[1] !== undefined) addText(m[1]);
@@ -35,8 +74,10 @@ export function parseXml(xml: string): XmlNode {
 				for (const a of m[4]!.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
 					attrs[a[1]!] = decodeEntities(a[2] ?? a[3] ?? "");
 				}
-				const node: XmlNode = { name: m[3]!, attrs, children: [], own: "", text: "" };
-				stack[stack.length - 1]!.children.push(node);
+				const node = new XmlElement(m[3]!, attrs);
+				const parent = stack[stack.length - 1]!;
+				parent.children.push(node);
+				parent.parts.push(node);
 				if (!m[5]) stack.push(node);
 			}
 		}
