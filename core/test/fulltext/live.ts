@@ -8,7 +8,8 @@ import { Database } from "bun:sqlite";
 import { openDb } from "../../src/db";
 import { fulltextService } from "../../src/fulltext/service";
 
-const SRC = process.argv[2] ?? "C:/Users/abora/zotero-next/data/library.sqlite";
+const SRC = process.argv[2];
+if (!SRC) throw new Error("usage: bun test/fulltext/live.ts <library.sqlite> (it works on a copy; there is no default)");
 const dir = mkdtempSync(join(tmpdir(), "zn-ft-live-"));
 const dbPath = join(dir, "library.sqlite");
 copyFileSync(SRC, dbPath);

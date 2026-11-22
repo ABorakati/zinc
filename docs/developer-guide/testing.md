@@ -39,8 +39,8 @@ Tests that depend on something a fresh clone does not have skip themselves.
 | --- | --- |
 | `core/vendor/fulltext-wasm/fulltext.wasm` (empty or smaller than 1 KiB counts as missing) | `core/test/fulltext/*`, the Find Full Text engine tests |
 | `vendor/document-worker/build/worker.js` | `core/test/extract` and "retrieve metadata for PDFs" in `core/test/additems` |
-| `~/Zotero/zotero.sqlite` | The zotero-db writer tests |
-| `~/Zotero/zotero.sqlite` plus `data/library.sqlite` | The real-copy sync test (`core/test/sync/integration.test.ts`); override with `ZN_TEST_ZOTERO_DIR` and `ZN_TEST_LIBRARY` |
+| `ZN_TEST_ZOTERO_DIR` not set (opt-in; a Zotero data folder, used as a copy) | The zotero-db writer tests |
+| `ZN_TEST_ZOTERO_DIR` or `ZN_TEST_LIBRARY` not set (opt-in; used as copies) | The real-copy sync test (`core/test/sync/integration.test.ts`) |
 | `process.env.CI` set | The 30k-item performance tests (`core/test/perf.test.ts`, `api-perf.test.ts`) |
 | `ZN_WORD_E2E=1` not set | `word/sidebar/test/word-e2e.test.ts` (starts a private invisible Word) |
 

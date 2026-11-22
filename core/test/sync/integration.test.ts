@@ -1,6 +1,7 @@
-// Integration against COPIES of the real Zotero library and the real zotero-next library.
+// Integration against COPIES of a Zotero library and a zotero-next library that the caller names (opt-in, see ../real-data.ts).
 // Skipped unless core/src/zotero-db provides the backends (createZoteroBackends(dataDir) or
-// createZoteroReader/createZoteroWriter) and both source databases exist. Never touches the originals.
+// createZoteroReader/createZoteroWriter) and ZN_TEST_ZOTERO_DIR and ZN_TEST_LIBRARY both name existing databases. Never touches
+// the originals.
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
@@ -9,9 +10,10 @@ import * as repo from "../../src/db";
 import { SyncService } from "../../src/sync/engine";
 import type { ZoteroReader, ZoteroWriter } from "../../src/sync/protocol";
 import { tempDir } from "../fixture";
+import { optInLibrary, optInZoteroDir } from "../real-data";
 
-const ZOTERO = process.env.ZN_TEST_ZOTERO_DIR ?? "C:/Users/abora/Zotero";
-const LIBRARY = process.env.ZN_TEST_LIBRARY ?? "C:/Users/abora/zotero-next/data/library.sqlite";
+const ZOTERO = optInZoteroDir();
+const LIBRARY = optInLibrary();
 
 async function loadBackends(dataDir: string): Promise<{ reader: ZoteroReader; writer: ZoteroWriter } | null> {
 	try {
@@ -32,7 +34,7 @@ function copyDb(src: string, dst: string): void {
 	for (const ext of ["", "-wal", "-shm"]) if (existsSync(src + ext)) copyFileSync(src + ext, dst + ext);
 }
 
-const present = existsSync(join(ZOTERO, "zotero.sqlite")) && existsSync(LIBRARY);
+const present = !!ZOTERO && !!LIBRARY;
 
 describe("real Zotero copy", () => {
 	test.skipIf(!present)(
@@ -41,13 +43,13 @@ describe("real Zotero copy", () => {
 			const work = tempDir();
 			const zdir = join(work, "Zotero");
 			mkdirSync(join(zdir, "storage"), { recursive: true });
-			copyDb(join(ZOTERO, "zotero.sqlite"), join(zdir, "zotero.sqlite"));
+			copyDb(join(ZOTERO!, "zotero.sqlite"), join(zdir, "zotero.sqlite"));
 			const backends = await loadBackends(zdir);
 			if (!backends) {
 				console.log("zotero-db backends not available: integration test skipped");
 				return;
 			}
-			copyDb(LIBRARY, join(work, "library.sqlite"));
+			copyDb(LIBRARY!, join(work, "library.sqlite"));
 			const db = repo.openDb(join(work, "library.sqlite"));
 			const svc = new SyncService(db, { dataDir: zdir, ...backends, isZoteroRunning: async () => false, pollMs: 0, watch: false });
 			await svc.pull();

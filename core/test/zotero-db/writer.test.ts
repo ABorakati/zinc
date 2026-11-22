@@ -1,5 +1,5 @@
-// Round-trip tests for the Zotero DB writer/reader. They run on a temp COPY of the user's real
-// library (skipped if it does not exist). Tests are sequential and share one working copy.
+// Round-trip tests for the Zotero DB writer/reader. They run on a temp COPY of the library that
+// ZN_TEST_ZOTERO_DIR names (skipped when it is unset). Tests are sequential and share one working copy.
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";

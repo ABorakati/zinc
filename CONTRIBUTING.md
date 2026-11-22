@@ -117,9 +117,9 @@ dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$TEMP/
 
 Typecheck with `bun check`, not `tsc`.
 
-Tests that need this machine's data skip themselves: the zotero-db writer tests need `~/Zotero/zotero.sqlite`, and the real-copy sync test
-needs it plus `data/library.sqlite` (override with `ZN_TEST_ZOTERO_DIR` / `ZN_TEST_LIBRARY`). To see what a CI machine sees, run with
-`USERPROFILE` pointed at an empty folder.
+Tests on real data are opt-in and work on copies: the zotero-db writer tests run only when `ZN_TEST_ZOTERO_DIR` names a Zotero data
+folder, and the real-copy sync test only when that and `ZN_TEST_LIBRARY` (a library file) are both set. There are no default paths
+(`core/test/real-data.ts`); do not add one. To see what a CI machine sees, run with `USERPROFILE` pointed at an empty folder.
 
 ## Fuzzing
 
