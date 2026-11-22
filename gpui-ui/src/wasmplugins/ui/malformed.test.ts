@@ -493,6 +493,7 @@ describe("fuzz: mutated valid trees and patches", () => {
 function mutatePrebuilt(tree: unknown, e: [number, unknown][]): unknown {
 	const plain = JSON.parse(JSON.stringify(tree, (_k, v) => (typeof v === "bigint" ? { __big: String(v) } : v)));
 	const m: any = mutate(plain, e.slice(0, 1));
+	if (m === undefined) return undefined; // the whole tree replaced: JSON cannot carry it, the controller still gets it
 	return JSON.parse(JSON.stringify(m), (_k, v) => (v && typeof v === "object" && typeof v.__big === "string" && /^\d+$/.test(v.__big) ? BigInt(v.__big) : v));
 }
 
