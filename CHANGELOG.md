@@ -44,7 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Citation styles:** style and locale downloads fail after 60 seconds instead of waiting for ever, and custom citations keep a closing brace.
 - **Uninstalling:** the Word add-in's script copes with a missing folder, and the Windows uninstaller keeps an unreadable library setting and the attachments of a library stored in the settings folder.
 - **Selecting in the list:** Shift ranges and Select All finish across pages that are still loading and across a refresh, and a later selection wins.
-- **Editing in the item pane:** text typed in the title, abstract or a plain field is saved to its own item when you click another item, and a value that a failed save reset can be typed again.
+- **Editing in the item pane:** text being typed in the title, abstract, a plain field, an author's name or the year is saved to its own item when the selection moves on (a click, or Open in Zinc from Word or the browser), and a value that a failed save reset can be typed again.
+- **Rows that ignored clicks:** rows of a list that was reordered or refreshed, such as the first rows after saving an edit, could stop responding to clicks.
+- **Item details in the list:** there is one separator between details, not two.
 - **Copy and paste:** Copy DOI and Copy bibliography work and report failures, and the clipboard works on macOS and Linux.
 - **Dragging:** releasing outside the window, or dragging to another app, no longer files items into a collection or leaves a column following the pointer.
 - **Shortcuts, emoji and fonts:** a shortcut that does not apply passes to the next action on the same keys, clipped text does not split emoji, and the system font is right on macOS and Linux.
