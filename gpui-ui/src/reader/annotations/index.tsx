@@ -282,8 +282,7 @@ export const annotationsPlugin: ReaderPlugin = {
 	paneOverlay: (ctx) => <AnnotationPopupHost ctx={ctx} />,
 	selectionPopup: (ctx) => <SelectionPopup ctx={ctx} />,
 	onOpen(ctx) {
-		const s = sessionFor(ctx);
-		void s.store.load().catch(() => {});
+		sessionFor(ctx); // creating the session loads the annotations: a second load would replace the list while an edit is still unsaved
 		return () => closeSession(ctx.attachmentKey);
 	},
 };
