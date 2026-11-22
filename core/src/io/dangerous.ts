@@ -133,7 +133,7 @@ export function opensAsProgram(
 ): boolean {
 	if (isExecutableName(path)) return true;
 	const ext = fileExtension(path);
-	if (platform === "win32" || (ext && !/^.d+$/.test(ext))) return false;
+	if (platform === "win32" || (ext && !/^[.][0-9]+$/.test(ext))) return false;
 	try {
 		const mode = modeOf(path);
 		return (mode & 0o170000) !== 0o040000 && (mode & 0o111) !== 0; // a folder's bit only means it can be entered
