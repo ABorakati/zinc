@@ -10,7 +10,7 @@ import { addFile, addLink, guessContentType } from "../additems/files";
 import { addItemsToCollection, createCollection, getCollection, HttpError } from "../db";
 import { saveTranslatedItem, convertTags } from "../connector/items";
 import { normDoi } from "../io/common";
-import { detectFormat, importText, type ImportFormat } from "../io/import";
+import { attachmentPath, attachmentRefusal, detectFormat, importText, type ImportFormat } from "../io/import";
 import { gatherItems } from "../io/export";
 import type { CachedResponse, RunLimits } from "./runtime/http";
 import type { Choice, TranslatorRef, WebResult } from "./runtime/jobs";
@@ -375,8 +375,11 @@ export function saveImported(
 						addLink(db, { parentKey: out.key, url, title: str(a.title) });
 						attachments++;
 					} else if (local && opts.basePath) {
-						const file = resolve(opts.basePath, local.replace(/^file:\/*/i, ""));
-						if (statSync(file).isFile()) {
+						// the same containment rules as the native importer: only files inside the import folder, no links out of it
+						const file = attachmentPath(local, opts.basePath);
+						const refusal = file ? attachmentRefusal(file, opts.basePath) : "it is not a usable path";
+						if (refusal) errors.push(`attachment ${local} skipped: ${refusal}`);
+						else if (file && statSync(file).isFile()) {
 							addFile(db, {
 								mode: "imported_file",
 								path: file,

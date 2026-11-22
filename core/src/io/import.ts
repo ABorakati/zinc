@@ -90,7 +90,7 @@ function existingDois(db: Database): Set<string> {
 }
 
 /** A path for an attachment the import mentions: absolute, relative to the import folder, or a file: URL. */
-function attachmentPath(raw: string | undefined, basePath: string | undefined): string | null {
+export function attachmentPath(raw: string | undefined, basePath: string | undefined): string | null {
 	const p = (raw ?? "").trim();
 	if (!p) return null;
 	if (p.startsWith("file:")) {
@@ -110,7 +110,7 @@ function attachmentPath(raw: string | undefined, basePath: string | undefined): 
  * files inside the folder the import file came from (basePath) are copied; absolute paths elsewhere, UNC / device paths and
  * links that resolve outside the folder are refused. Returns an error message, or null when the file is acceptable.
  */
-function attachmentRefusal(file: string, basePath: string | undefined): string | null {
+export function attachmentRefusal(file: string, basePath: string | undefined): string | null {
 	if (/^[\\/]{2}/.test(file)) return "network and device paths are not imported";
 	if (!basePath) return "give the import folder so attachments next to the file can be found";
 	if (relativeUnder(file, basePath) === null) return "it is outside the folder the import file came from";
