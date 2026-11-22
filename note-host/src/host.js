@@ -4,17 +4,22 @@
 // the editor posts {instanceID, message:{action,...}} to ITS OWN window (index.web.js), so we listen on
 // iframe.contentWindow (same origin). Messages out to window.parent: {type:'note-ready'|'note-saved'|'note-error', key}.
 // Messages in from parent: {type:'note-flush'} (save now), {type:'note-focus'}.
+// Messages go to, and are accepted from, this page's own origin only; `?api=` is this origin or a loopback http origin (origins.ts).
+import { fromOwnOrigin, messageOrigin, resolveApiBase } from "./origins.ts";
+import { createNoteSaver } from "./saver.ts";
+
 const params = new URLSearchParams(location.search);
 const key = params.get("note");
-const API = params.get("api") || "";
-const SAVE_DELAY = 600;
+const apiBase = resolveApiBase(params.get("api"), location.origin);
+const API = apiBase ?? "";
+const SELF = messageOrigin(location.origin);
 const frame = document.getElementById("editor-frame");
 const errBox = document.getElementById("host-error");
 const instanceID = "note-" + Math.random().toString(36).slice(2);
 
 const tell = (msg) => {
 	try {
-		window.parent.postMessage(msg, "*");
+		if (SELF && window.parent !== window) window.parent.postMessage(msg, SELF);
 	} catch {}
 };
 const fail = (text) => {
@@ -26,49 +31,12 @@ const fail = (text) => {
 const media = matchMedia("(prefers-color-scheme: dark)");
 const scheme = () => (media.matches ? "dark" : "light");
 
-let pendingHtml = null; // latest html not yet confirmed saved
-let lastSaved = null;
-let timer = null;
-let inflight = Promise.resolve();
-
-async function patch(html, keepalive = false) {
-	const res = await fetch(`${API}/api/items/${encodeURIComponent(key)}`, {
-		method: "PATCH",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ data: { note: html } }),
-		keepalive: keepalive && html.length < 60000,
-	});
-	if (!res.ok) throw new Error("PATCH " + res.status);
-}
-
-function flush(keepalive = false) {
-	clearTimeout(timer);
-	timer = null;
-	if (pendingHtml == null) return inflight;
-	const html = pendingHtml;
-	pendingHtml = null;
-	if (html === lastSaved) return inflight;
-	inflight = inflight
-		.then(() => patch(html, keepalive))
-		.then(
-			() => {
-				lastSaved = html;
-				tell({ type: "note-saved", key });
-			},
-			(e) => {
-				pendingHtml = pendingHtml ?? html;
-				console.error("note save failed", e);
-				tell({ type: "note-error", key, error: String(e) });
-			},
-		);
-	return inflight;
-}
-
-function onEdit(html) {
-	pendingHtml = html;
-	clearTimeout(timer);
-	timer = setTimeout(() => flush(), SAVE_DELAY);
-}
+const saver = createNoteSaver({
+	url: `${API}/api/items/${encodeURIComponent(key)}`,
+	fetchFn: (url, init) => fetch(url, init),
+	onSaved: () => tell({ type: "note-saved", key }),
+	onError: (error) => tell({ type: "note-error", key, error }),
+});
 
 function openURL(url) {
 	fetch(`${API}/api/open-url`, {
@@ -79,6 +47,7 @@ function openURL(url) {
 }
 
 function handleEditorMessage(event) {
+	if (event.origin !== location.origin) return;
 	const d = event.data;
 	if (!d || d.instanceID !== instanceID || !d.message) return;
 	const m = d.message;
@@ -87,7 +56,7 @@ function handleEditorMessage(event) {
 			tell({ type: "note-ready", key });
 			break;
 		case "update":
-			onEdit(m.value);
+			saver.onEdit(m.value);
 			break;
 		case "openURL":
 			openURL(m.url);
@@ -113,6 +82,7 @@ function handleEditorMessage(event) {
 
 async function start() {
 	if (!key) return fail("Missing ?note=<key>");
+	if (apiBase === null) return fail("The api origin is not allowed");
 	let item;
 	try {
 		const res = await fetch(`${API}/api/items/${encodeURIComponent(key)}`);
@@ -122,7 +92,7 @@ async function start() {
 		return fail("Could not load note " + key + ": " + e.message);
 	}
 	const html = item?.data?.note ?? "";
-	lastSaved = html;
+	saver.setBaseline(html);
 
 	frame.addEventListener(
 		"load",
@@ -143,30 +113,30 @@ async function start() {
 					isAttachmentNote: false,
 					colorScheme: scheme(),
 				},
-				"*",
+				location.origin,
 			);
 		},
 		{ once: true },
 	);
 	frame.src = "editor.html";
 
-	media.addEventListener("change", () => frame.contentWindow?.postMessage({ action: "setColorScheme", colorScheme: scheme() }, "*"));
+	media.addEventListener("change", () => frame.contentWindow?.postMessage({ action: "setColorScheme", colorScheme: scheme() }, location.origin));
 }
 
 function syncFlush() {
 	// Prefer the editor's current state (covers edits inside the debounce window)
 	try {
 		const r = frame.contentWindow?.getDataSync?.(true);
-		if (r?.data?.html != null) pendingHtml = r.data.html;
+		if (r?.data?.html != null) saver.setPending(r.data.html);
 	} catch {}
-	flush(true);
+	saver.flush(true);
 }
 addEventListener("pagehide", syncFlush);
 addEventListener("beforeunload", syncFlush);
 addEventListener("message", (e) => {
-	if (e.source !== window.parent) return;
+	if (!fromOwnOrigin(e, window.parent, location.origin)) return;
 	if (e.data?.type === "note-flush") syncFlush();
-	if (e.data?.type === "note-focus") frame.contentWindow?.postMessage({ action: "focus" }, "*");
+	if (e.data?.type === "note-focus") frame.contentWindow?.postMessage({ action: "focus" }, location.origin);
 });
 
 start();
