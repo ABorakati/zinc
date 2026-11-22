@@ -101,3 +101,24 @@ describe("rebinding", () => {
 		expect(displayShortcut("Ctrl+Shift+Z")).toBe("Ctrl+Shift+Z"); // no command behind it: shown as written
 	});
 });
+
+describe("two actions on one chord", () => {
+	let applicable = false;
+	registerAppAction({ id: "t.dupA", label: "A", menu: "none", shortcut: "Ctrl+Shift+Q", when: () => applicable, run: () => ran.push("A") });
+	registerAppAction({ id: "t.dupB", label: "B", menu: "none", shortcut: "Ctrl+Shift+Q", run: () => ran.push("B") });
+	const pressQ = () => {
+		let prevented = false;
+		handleWindowKeyDown({ key: "q", modifiers: { ctrl: true, shift: true }, defaultPrevented: false, preventDefault: () => (prevented = true) } as never);
+		return prevented;
+	};
+	test("an action that does not apply here does not shadow the next one on the chord", () => {
+		applicable = false;
+		expect(pressQ()).toBe(true);
+		expect(ran).toEqual(["B"]);
+	});
+	test("the first one that applies runs, and only that one", () => {
+		applicable = true;
+		expect(pressQ()).toBe(true);
+		expect(ran).toEqual(["A"]);
+	});
+});

@@ -158,8 +158,8 @@ export function handleWindowKeyDown(e: KeyEvent): void {
 	for (const a of appActions()) {
 		const s = actionShortcut(a);
 		if (s && matchesChord(s, e)) {
+			if (a.when && !a.when()) continue; // does not apply here: a later action on the same chord may
 			e.preventDefault();
-			if (a.when && !a.when()) return;
 			try {
 				a.run();
 			} catch (err) {
