@@ -911,6 +911,16 @@ describe("9. Contained failures", () => {
 		expect(worst).toBeLessThan(400);
 	});
 
+	test("wasi stdout writes count towards the per-call import limit", async () => {
+		const h = await host();
+		const a = await h.load(dir("bench-guest"));
+		await h.startup(a.id);
+		const r = (await h.call(a.id, "events", "on-locale-changed", ["stdout-flood\n3000\n0"], 10_000, 100)) as any;
+		expect(r.ok).toBe(false);
+		expect(r.error.kind).toBe("trap");
+		expect(r.error.message).toContain("import call limit (100)");
+	});
+
 	test("a flood on stdout is rate limited and its lines are bounded", async () => {
 		const h = await host();
 		const a = await h.load(dir("bench-guest"));
