@@ -102,6 +102,7 @@ Rules for writing one:
 
 - Do the action under test as a user does (`click`, `press`, `type`, `drag`). The store and the API are for set-up and for reading results.
 - Assert the effect (what was saved, selected or painted), and see the scenario fail without the fix it guards.
+- It runs on the `@gpuix/native` addon from npm, as CI does, not on the custom Windows addon (`gpui-ui/scripts/README.md`). To try that one, set `NAPI_RS_NATIVE_LIBRARY_PATH` to the `.node` file; its cached regions are laid out differently in the test window, so the scenarios that click the top bar fail there.
 - A bug that waits for a decision keeps its scenario, with `knownBug: "<why it waits>"`. The run reports it, and fails once it passes, so that the mark comes off.
 
 The harness needs `zn_pdf` (see [Building](building.md)) and, for reading mode, `vendor/document-worker`. It does not exist for Linux, and it does not test what only a real window has: the title bar, dragging out to other programs, web views, printing and the system's dialogs. The browser build has its own checks (`gpui-ui/web/*-check.ts`).

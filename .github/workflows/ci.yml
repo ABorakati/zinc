@@ -146,7 +146,7 @@ jobs:
   ui:
     name: UI harness (windows-latest)
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 100 # two scenarios at a time on a 4-core runner, about four times a run of eight
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
