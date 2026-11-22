@@ -1,19 +1,23 @@
 // What loadStructure remembers: the structure of the document an attachment holds NOW. Shared by the desktop loader (load.ts) and the
 // browser one (load.docworker.web.ts); pure, no I/O, so it is unit-testable.
 
-/** A cheap identity of a PDF's content: its size and a hash of its ends and of bytes spread over the rest (a page edit rewrites the file). */
+/**
+ * The identity of a PDF's content: its size and a hash of all of it. Not a sample: a rotated page can change two bytes in the middle
+ * and nothing else. It is taken word by word (FNV-1a over 32-bit words), which takes milliseconds for a large file.
+ */
 export function fingerprint(bytes: Uint8Array): string {
 	const n = bytes.byteLength;
-	let h = 0x811c9dc5; // FNV-1a
-	const mix = (i: number) => {
-		h = Math.imul(h ^ bytes[i]!, 0x01000193) >>> 0;
-	};
-	const edge = Math.min(n, 1 << 16);
-	for (let i = 0; i < edge; i++) mix(i);
-	for (let i = Math.max(edge, n - edge); i < n; i++) mix(i);
-	const step = Math.max(1, Math.floor(n / 4096));
-	for (let i = edge; i < n - edge; i += step) mix(i);
-	return `${n}-${h.toString(36)}`;
+	const words = n >>> 2;
+	let h = 0x811c9dc5;
+	if (bytes.byteOffset % 4 === 0) {
+		const u32 = new Uint32Array(bytes.buffer, bytes.byteOffset, words);
+		for (let i = 0; i < words; i++) h = Math.imul(h ^ u32[i]!, 0x01000193);
+	} else {
+		const view = new DataView(bytes.buffer, bytes.byteOffset, n);
+		for (let i = 0; i < words; i++) h = Math.imul(h ^ view.getUint32(i * 4, true), 0x01000193);
+	}
+	for (let i = words * 4; i < n; i++) h = Math.imul(h ^ bytes[i]!, 0x01000193);
+	return `${n}-${(h >>> 0).toString(36)}`;
 }
 
 /**

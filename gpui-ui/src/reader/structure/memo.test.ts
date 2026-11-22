@@ -7,13 +7,13 @@ describe("fingerprint", () => {
 		const size = 300_000;
 		const base = new Uint8Array(size).fill(7);
 		const seen = new Set([fingerprint(base)]);
-		for (const at of [0, 100, 70_000, 150_000, 229_000, size - 1]) {
+		const spots = [0, 100, 70_000, 70_001, 150_000, 150_001, 150_002, 150_003, 229_000, size - 1];
+		for (const at of spots) {
 			const edited = base.slice();
 			edited[at] = 9;
 			seen.add(fingerprint(edited));
 		}
-		// (the bytes between the sampled ones of the middle are not looked at: only edits that touch an end or a sample are caught)
-		expect(seen.size).toBeGreaterThanOrEqual(4);
+		expect(seen.size).toBe(spots.length + 1); // /Rotate 180 -> 270 changes two bytes in the middle and not the size
 		expect(fingerprint(base)).toBe(fingerprint(base.slice()));
 	});
 	test("starts with the size, and copes with tiny and empty files", () => {
