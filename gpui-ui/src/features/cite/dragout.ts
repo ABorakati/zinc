@@ -161,7 +161,7 @@ export function installOutDrag(): void {
 			dbg(`result ${r} ${lastDragError()}`);
 			return r;
 		},
-		endInApp: endDrag,
+		endInApp: () => endDrag("handed-off"), // the pointer left the window: whatever it last crossed in the sidebar is not a drop
 		copy: (c) => copyRich(c.html ?? "", c.text),
 		notify: (message, kind, description) => toast(message, { kind, description }),
 		every: (fn, ms) => {

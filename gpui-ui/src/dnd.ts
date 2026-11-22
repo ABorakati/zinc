@@ -7,17 +7,26 @@
 //     onMouseUp reads `dragging()`, handles it and calls endDrag();
 //   - the list ends the drag itself when the button is released over a non-target, or on Escape.
 //
+// How a drag ended is part of the state (dragOutcome): "dropped" is a release inside the window (the default of endDrag), "cancelled"
+// and "handed-off" (the OS took the drag: dragout.ts) are not drops, so an observer that acts on "the drag ended at a point" must
+// check it.
+//
 // Coordinate only through this file's API.
-import { createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 
 export type DragPayload = { kind: "items"; keys: string[] } | { kind: "pane"; id: string };
 
 const [dragging, setDragging] = createSignal<DragPayload | null>(null);
+/** How the drag ended. */
+export type DragOutcome = "dropped" | "cancelled" | "handed-off";
+const [dragOutcome, setDragOutcome] = createSignal<DragOutcome | null>(null);
 /** Last pointer position (window px) reported by the drag source while a drag is active, for ghost labels. */
 const [dragPoint, setDragPoint] = createSignal<{ x: number; y: number } | null>(null);
 
 /** The active drag, or null. */
 export { dragging, dragPoint };
+/** How the last drag ended (null while one is active, and before any): read it when dragging() turns null. */
+export { dragOutcome };
 
 /**
  * Observer of the drag's life, installed by features/cite/dragout.ts: when the pointer leaves the window with items held, that file
@@ -25,7 +34,7 @@ export { dragging, dragPoint };
  */
 export interface DragHook {
 	start(payload: DragPayload): void;
-	end(): void;
+	end(outcome: DragOutcome): void;
 }
 let hook: DragHook | undefined;
 export const setDragHook = (h: DragHook | undefined): void => {
@@ -35,16 +44,23 @@ export const setDragHook = (h: DragHook | undefined): void => {
 /** Begin a drag (no-op for an empty item list). */
 export function startDrag(payload: DragPayload): void {
 	if (payload.kind === "items" && payload.keys.length === 0) return;
+	setDragOutcome(null);
 	setDragging(payload.kind === "items" ? { kind: "items", keys: [...payload.keys] } : { kind: "pane", id: payload.id });
 	hook?.start(payload);
 }
 
-/** End the drag (drop handled, released over nothing, or cancelled). */
-export function endDrag(): void {
-	setDragging(null);
-	setDragPoint(null);
-	hook?.end();
+/** End the drag: a drop handled or released over nothing ("dropped"), or one that is not a drop ("cancelled", "handed-off"). */
+export function endDrag(outcome: DragOutcome = "dropped"): void {
+	batch(() => {
+		setDragOutcome(outcome);
+		setDragging(null);
+		setDragPoint(null);
+	});
+	hook?.end(outcome);
 }
+
+/** End the drag without dropping: nothing under the pointer may act on it. */
+export const cancelDrag = (): void => endDrag("cancelled");
 
 /** Called by drag sources on every mouse move while dragging. */
 export function moveDrag(x: number, y: number): void {
@@ -86,7 +102,7 @@ export function dragSource(keys: () => string[], onStart?: () => void) {
 			if (dragging()?.kind === "pane") return;
 			if (dragging()?.kind === "items") {
 				moveDrag(e.x ?? 0, e.y ?? 0);
-				if (e.pressedButton === undefined) endDrag();
+				if (e.pressedButton === undefined) cancelDrag(); // released outside the window: this point is not where it was dropped
 				return;
 			}
 			if (!press) return;

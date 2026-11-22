@@ -11,7 +11,7 @@ import { collectionActions } from "../registry";
 import { confirm, DropdownMenu, openMenu, toast, type MenuItem } from "../ui";
 import { boundsOf } from "../ui/core";
 import { currentView, refreshStore, setView, storeCollections } from "./bridge";
-import { itemDrag, itemDragPoint } from "./dndBridge";
+import { itemDrag, itemDragPoint, itemDragDropped } from "./dndBridge";
 import { errMsg, sidebarApi } from "./client";
 import { NameInput } from "./NameInput";
 import { handleFileDrop } from "../features/additems/client";
@@ -243,6 +243,7 @@ createRoot(() => {
 				const p = last;
 				last = null;
 				setDropKey(null);
+				if (!itemDragDropped()) return; // cancelled, or handed to the OS: not a drop on whatever row the pointer last crossed
 				const k = p ? targetAt(p.x, p.y) : null;
 				const c = k && k !== "root" ? flat().get(k) : undefined;
 				if (c) {

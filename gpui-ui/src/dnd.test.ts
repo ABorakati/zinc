@@ -1,6 +1,6 @@
 // Shared gesture state keeps pane docking separate from item drops.
 import { afterEach, expect, test } from "bun:test";
-import { dragging, dragLabel, dragPoint, dragSource, endDrag, moveDrag, setDragHook, startDrag, type DragPayload } from "./dnd";
+import { cancelDrag, dragOutcome, dragging, dragLabel, dragPoint, dragSource, endDrag, moveDrag, setDragHook, startDrag, type DragPayload } from "./dnd";
 
 afterEach(() => {
 	setDragHook(undefined);
@@ -54,4 +54,20 @@ test("item gestures retain their threshold and trailing-click guard", () => {
 	expect(dragging()).toBeNull();
 	expect(source.wasDrag()).toBe(true);
 	expect(source.wasDrag()).toBe(false);
+});
+
+test("how a drag ended is visible to observers; a plain end is a drop", () => {
+	const ends: string[] = [];
+	setDragHook({ start: () => {}, end: (o) => void ends.push(o) });
+	startDrag({ kind: "items", keys: ["A"] });
+	expect(dragOutcome()).toBeNull();
+	endDrag();
+	expect(dragOutcome()).toBe("dropped");
+	startDrag({ kind: "items", keys: ["A"] });
+	cancelDrag();
+	expect(dragOutcome()).toBe("cancelled");
+	startDrag({ kind: "items", keys: ["A"] });
+	endDrag("handed-off");
+	expect(dragOutcome()).toBe("handed-off");
+	expect(ends).toEqual(["dropped", "cancelled", "handed-off"]);
 });
