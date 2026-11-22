@@ -1,9 +1,8 @@
 // State of the item pane: the focused item's detail, the schema, tag colours, and the optimistic save queue
 // (ports of SingleItem in ui/src/ItemPane.tsx and ctx.ts). Sections reach it through usePane().
 import { createContext, createEffect, createMemo, createRoot, createSignal, on, useContext, type Accessor } from "solid-js";
-import { useGpuix } from "@gpuix/solid";
 import { store } from "../store";
-import { toast } from "../ui";
+import { clipboard, toast } from "../ui";
 import { ipApi, type ItemDetail, type TagColor, type ZoteroItemData, type ZoteroSchema } from "./net";
 import type { ViewKind } from "../shell/frameLayout";
 
@@ -66,7 +65,6 @@ export function refreshItemsStore(fields: string[]): void {
 }
 
 export function createPaneModel(key: Accessor<string | null>): PaneModel {
-	const gp = useGpuix();
 	const [detail, setDetailSig] = createSignal<ItemDetail | undefined>(undefined);
 	const [error, setError] = createSignal<string | null>(null);
 	const [schema, setSchema] = createSignal<ZoteroSchema | undefined>(undefined);
@@ -138,11 +136,8 @@ export function createPaneModel(key: Accessor<string | null>): PaneModel {
 		},
 		refreshList: refreshStore,
 		copyText: (text) => {
-			try {
-				(gp?.renderer as unknown as { writeToClipboard?: (s: string) => void } | undefined)?.writeToClipboard?.(text);
-			} catch {
-				/* no clipboard */
-			}
+			// the shared clipboard (native when the binding has it, else Win32 / PowerShell); a failure is shown, not swallowed
+			clipboard.writeText(text).catch((e) => fail("Could not copy to the clipboard", e));
 		},
 	};
 }
