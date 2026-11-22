@@ -28,6 +28,8 @@ namespace ZoteroNext.Word
         string _lastSig = "";
         string _theme = "light";
         bool _ready;
+        /// <summary>The Word window (its handle) this sidebar was created for; 0 when not known (see <see cref="PaneRoute"/>).</summary>
+        readonly long _owner = PaneRoute.Take();
         /// <summary>From the pane's creation (the click that opened it) to the page loaded: logged once, to see where opening goes.</summary>
         readonly System.Diagnostics.Stopwatch _openTimer = System.Diagnostics.Stopwatch.StartNew();
         long _webViewMs = -1;
@@ -46,16 +48,33 @@ namespace ZoteroNext.Word
             HandleCreated += (s, e) => { var _ = InitAsync(); };
         }
 
-        /// <summary>Send a command (from the ribbon) to every live sidebar; the visible one acts on it.</summary>
-        internal static void Broadcast(string command)
+        /// <summary>How a command reaches a sidebar (the harness records it instead).</summary>
+        internal static Action<PaneControl, string> Deliver = (c, msg) => c.Post(msg);
+
+        /// <summary>
+        /// Send a command (from the ribbon) to the sidebar of one Word window, shown or hidden, loaded or still loading (a
+        /// sidebar queues what it is sent until its page is there). Returns how many sidebars it went to.
+        /// </summary>
+        internal static int SendTo(long owner, string command)
         {
+            var msg = Json.Dump(Json.Map("event", "command", "data", Json.Map("name", command)));
+            var panes = new List<PaneControl>();
             lock (Live)
                 foreach (var w in Live.ToArray())
                 {
                     var c = w.Target as PaneControl;
-                    if (c == null || c.IsDisposed) continue;
-                    try { c.Post(Json.Dump(Json.Map("event", "command", "data", Json.Map("name", command)))); } catch { }
+                    if (c == null) { Live.Remove(w); continue; }
+                    if (!c.IsDisposed) panes.Add(c);
                 }
+            var owners = new List<long>();
+            foreach (var c in panes) owners.Add(c._owner);
+            var to = PaneRoute.Targets(owners, owner);
+            foreach (var i in to)
+            {
+                try { Deliver(panes[i], msg); }
+                catch (Exception e) { Log.Error("command " + command + " not delivered", e); }
+            }
+            return to.Count;
         }
 
         async Task InitAsync()

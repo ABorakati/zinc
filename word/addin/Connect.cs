@@ -95,6 +95,14 @@ namespace ZoteroNext.Word
         // ---- ICustomTaskPaneConsumer ---------------------------------------------------------------------------
         public void CTPFactoryAvailable(ICTPFactory factory) { _factory = factory; Log.Write("CTP factory available"); }
 
+        /// <summary>The handle of the Word window in front (0 when Word does not say): the key of its sidebar.</summary>
+        long ActiveHwnd()
+        {
+            long h = 0;
+            try { h = (long)(int)_app.ActiveWindow.Hwnd; } catch { }
+            return h;
+        }
+
         dynamic PaneFor(bool create)
         {
             if (_factory == null) throw new InvalidOperationException("Word did not offer a task pane factory.");
@@ -107,6 +115,7 @@ namespace ZoteroNext.Word
                 try { var _ = (bool)pane.Visible; return pane; } catch { _panes.Remove(h); }
             }
             if (!create) return null;
+            PaneRoute.Expect(h);   // the control Word builds for this pane learns its window from this
             pane = _factory.CreateCTP(PaneProgId, "Zinc", win);
             try { pane.DockPosition = 2; } catch { }   // msoCTPDockPositionRight
             try { pane.Width = 400; } catch { }
@@ -130,13 +139,15 @@ namespace ZoteroNext.Word
         {
             var c = _instance;
             if (c == null) return;
+            // the window the click was in, taken now: the user may be in another one when the timer below fires
+            long owner = c.ActiveHwnd();
             bool wasVisible = false;
             try { dynamic p = c.PaneFor(false); if (p != null) wasVisible = (bool)p.Visible; } catch { }
             c.ShowPane(true);
-            if (wasVisible) { PaneControl.Broadcast("editCitation"); return; }
+            if (wasVisible) { PaneControl.SendTo(owner, "editCitation"); return; }
             // a pane that was just created/shown needs a moment to load its page (a pane queues messages until then)
             var t = new System.Windows.Forms.Timer { Interval = 400 };
-            t.Tick += (s, e) => { t.Stop(); t.Dispose(); PaneControl.Broadcast("editCitation"); };
+            t.Tick += (s, e) => { t.Stop(); t.Dispose(); PaneControl.SendTo(owner, "editCitation"); };
             t.Start();
         }
 
@@ -154,8 +165,16 @@ namespace ZoteroNext.Word
         public string GetCustomUI(string ribbonId) { return RibbonXml; }
 
         public void OnTogglePane(object control) { ShowPane(null); }
-        public void OnInsertCitation(object control) { ShowPane(true); PaneControl.Broadcast("insertCitation"); }
-        public void OnInsertBibliography(object control) { ShowPane(true); PaneControl.Broadcast("insertBibliography"); }
-        public void OnRefresh(object control) { ShowPane(true); PaneControl.Broadcast("refresh"); }
+        public void OnInsertCitation(object control) { Command("insertCitation"); }
+        public void OnInsertBibliography(object control) { Command("insertBibliography"); }
+        public void OnRefresh(object control) { Command("refresh"); }
+
+        /// <summary>Show the sidebar of the window in front and give it the command: that window's sidebar only.</summary>
+        void Command(string name)
+        {
+            long owner = ActiveHwnd();
+            ShowPane(true);
+            PaneControl.SendTo(owner, name);
+        }
     }
 }

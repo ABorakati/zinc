@@ -420,6 +420,27 @@ internal static class Program
                     var sorted = FieldOrder.Sort(slots, x => x.s.Pos, x => x.s.Rank).ToList();
                     return Json.Map("order", sorted.Select(x => x.i).ToList(), "notes", slots.Select(x => x.s.Note).ToList());
                 }
+            case "h.paneRoute":
+                {
+                    // the ribbon's command routing on real (never shown) PaneControls: needs no Word, no WebView2 page.
+                    // panes: window each pane was announced for (0: none); the command goes to window "target".
+                    var made = new List<PaneControl>();
+                    var got = new List<int>();
+                    var old = PaneControl.Deliver;
+                    try
+                    {
+                        foreach (var o in Json.Arr(Json.Get(p, "panes")))
+                        {
+                            long owner = Convert.ToInt64(o);
+                            if (owner != 0) PaneRoute.Expect(owner);
+                            made.Add(new PaneControl());
+                        }
+                        PaneControl.Deliver = (c, m) => got.Add(made.IndexOf(c));
+                        int n = PaneControl.SendTo(Convert.ToInt64(Json.Get(p, "target")), "refresh");
+                        return Json.Map("count", n, "got", got);
+                    }
+                    finally { PaneControl.Deliver = old; foreach (var c in made) c.Dispose(); }
+                }
             case "h.pane":
                 {
                     // The real sidebar control (WebView2 + bundled page + bridge) in an off-screen, never-activated window.
