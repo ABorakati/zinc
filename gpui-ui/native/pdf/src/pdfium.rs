@@ -9,7 +9,7 @@
 //! Look-up order for the library (pdfium.dll / libpdfium.so / libpdfium.dylib): `ZN_PDFIUM_DLL`, next to zn_pdf itself, next to the
 //! exe, `vendor/pdfium/{bin,lib}` of the source tree this was built from. `ZN_PDF_BACKEND=hayro` turns PDFium off.
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_ulong, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
@@ -127,11 +127,12 @@ struct Api {
     load_page: unsafe extern "C" fn(Ptr, c_int) -> Ptr,
     close_page: unsafe extern "C" fn(Ptr),
     bitmap_create: unsafe extern "C" fn(c_int, c_int, c_int, *mut c_void, c_int) -> Ptr,
-    bitmap_fill: unsafe extern "C" fn(Ptr, c_int, c_int, c_int, c_int, u32) -> c_int,
+    // FPDF_DWORD (the colour) and FPDF_GetLastError's result are `unsigned long`: 32 bits on Windows, 64 on Linux / macOS
+    bitmap_fill: unsafe extern "C" fn(Ptr, c_int, c_int, c_int, c_int, c_ulong) -> c_int,
     bitmap_destroy: unsafe extern "C" fn(Ptr),
     render: unsafe extern "C" fn(Ptr, Ptr, c_int, c_int, c_int, c_int, c_int, c_int),
     load_mem: unsafe extern "C" fn(*const c_void, usize, *const c_char) -> Ptr,
-    last_error: unsafe extern "C" fn() -> u64,
+    last_error: unsafe extern "C" fn() -> c_ulong,
     /// page editing, saving and printing (src/ops.rs); None when this pdfium.dll lacks one of them (rendering still works)
     extra: Option<Extra>,
 }
@@ -140,11 +141,11 @@ struct Api {
 #[repr(C)]
 struct FileWrite {
     version: c_int,
-    write_block: unsafe extern "C" fn(*mut FileWrite, *const c_void, u32) -> c_int,
+    write_block: unsafe extern "C" fn(*mut FileWrite, *const c_void, c_ulong) -> c_int,
     buf: Vec<u8>,
 }
 
-unsafe extern "C" fn write_block(this: *mut FileWrite, data: *const c_void, size: u32) -> c_int {
+unsafe extern "C" fn write_block(this: *mut FileWrite, data: *const c_void, size: c_ulong) -> c_int {
     let Some(w) = (unsafe { this.as_mut() }) else { return 0 };
     if size > 0 && !data.is_null() {
         w.buf.extend_from_slice(unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size as usize) });
@@ -156,7 +157,7 @@ struct Extra {
     get_rotation: unsafe extern "C" fn(Ptr) -> c_int,
     set_rotation: unsafe extern "C" fn(Ptr, c_int),
     delete_page: unsafe extern "C" fn(Ptr, c_int),
-    save_as_copy: unsafe extern "C" fn(Ptr, *mut FileWrite, u32) -> c_int,
+    save_as_copy: unsafe extern "C" fn(Ptr, *mut FileWrite, c_ulong) -> c_int,
     /// FPDF_RenderPage: draws into a Windows device context (a printer's); only Windows builds of PDFium have it
     #[cfg(windows)]
     render_dc: unsafe extern "C" fn(isize, Ptr, c_int, c_int, c_int, c_int, c_int, c_int),
@@ -358,7 +359,7 @@ impl PdfiumDoc {
             if bmp.is_null() {
                 return None;
             }
-            (api.bitmap_fill)(bmp, 0, 0, rw as c_int, rh as c_int, 0xFFFF_FFFF);
+            (api.bitmap_fill)(bmp, 0, 0, rw as c_int, rh as c_int, 0xFFFF_FFFF as c_ulong);
             (api.render)(bmp, pg, -(rx as c_int), -(ry as c_int), fw as c_int, fh as c_int, (rot % 4) as c_int, flags());
             (api.bitmap_destroy)(bmp);
         }
@@ -391,7 +392,7 @@ impl Drop for PdfiumDoc {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /// FPDF_NO_INCREMENTAL: the saved file is written anew (no update section appended to the old one)
-const SAVE_FULL: u32 = 2;
+const SAVE_FULL: c_ulong = 2;
 /// FPDF_ANNOT | FPDF_PRINTING (annotation appearances, and the print variant of them)
 #[cfg(windows)]
 const PRINT_FLAGS: c_int = 0x01 | 0x800;
@@ -516,5 +517,31 @@ impl Drop for OwnedDoc {
     fn drop(&mut self) {
         let _g = lock(None).unwrap();
         unsafe { (self.api.destroy_doc)(self.doc) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// PDFium's `unsigned long` (FPDF_DWORD, the size handed to WriteBlock, FPDF_GetLastError's result) is as wide as the platform's C
+    /// `unsigned long`: these only compile while the declarations use `c_ulong` (32 bits on Windows, 64 on Linux / macOS).
+    #[test]
+    fn pdfium_dword_declarations_are_c_unsigned_long() {
+        fn _widths(api: &Api, ex: &Extra) {
+            let _: unsafe extern "C" fn() -> c_ulong = api.last_error;
+            let _: unsafe extern "C" fn(Ptr, c_int, c_int, c_int, c_int, c_ulong) -> c_int = api.bitmap_fill;
+            let _: unsafe extern "C" fn(Ptr, *mut FileWrite, c_ulong) -> c_int = ex.save_as_copy;
+            let _: unsafe extern "C" fn(*mut FileWrite, *const c_void, c_ulong) -> c_int = write_block;
+        }
+        assert_eq!(std::mem::size_of::<c_ulong>(), if cfg!(windows) { 4 } else { std::mem::size_of::<usize>() });
+    }
+
+    #[test]
+    fn write_block_collects_what_pdfium_hands_it() {
+        let mut w = FileWrite { version: 1, write_block, buf: Vec::new() };
+        let data = [1u8, 2, 3, 4, 5];
+        assert_eq!(unsafe { write_block(&mut w, data.as_ptr().cast(), data.len() as c_ulong) }, 1);
+        assert_eq!(w.buf, data);
     }
 }
