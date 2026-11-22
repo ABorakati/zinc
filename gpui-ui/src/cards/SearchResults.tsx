@@ -31,7 +31,28 @@ export function parseSnippet(html: string): { text: string; ranges: [number, num
 		} else if (/^<\/?[a-zA-Z]/.test(part)) continue;
 		else text += dec(part);
 	}
-	return { text: text.replace(/\s+/g, (m) => (m.includes("\n") ? " " : m)), ranges };
+	return collapseBreaks(text, ranges);
+}
+
+/** Whitespace runs that hold a line break become one space; the ranges follow the characters they marked. */
+function collapseBreaks(raw: string, ranges: [number, number][]): { text: string; ranges: [number, number][] } {
+	const at = new Array<number>(raw.length + 1); // where each raw position lands in the collapsed text
+	let text = "";
+	for (let i = 0; i < raw.length; ) {
+		let j = i + 1;
+		const space = /\s/.test(raw[i]!);
+		if (space) while (j < raw.length && /\s/.test(raw[j]!)) j++;
+		const run = raw.slice(i, j);
+		const out = space && run.includes("\n") ? " " : run;
+		for (let k = i; k < j; k++) at[k] = text.length + Math.min(k - i, out.length);
+		text += out;
+		i = j;
+	}
+	at[raw.length] = text.length;
+	return {
+		text,
+		ranges: ranges.map(([a, b]): [number, number] => [at[a]!, at[b]!]).filter(([a, b]) => b > a),
+	};
 }
 
 export function SearchResults(): JSX.Element {
@@ -54,15 +75,16 @@ export function SearchResults(): JSX.Element {
 			return;
 		}
 		setBusy(true);
+		const ac = new AbortController(); // a newer search, or leaving this view, drops the request that is still out
 		const timer = setTimeout(async () => {
 			try {
-				const r = await api.search(q, 200, 0, undefined, lib);
+				const r = await api.search(q, 200, 0, ac.signal, lib);
 				if (id !== n) return;
 				setHits(r.hits);
 				setTotal(r.total);
 				setErr(null);
 			} catch (e) {
-				if (id === n) {
+				if (id === n && !ac.signal.aborted) {
 					setErr(String((e as Error)?.message ?? e));
 					fail("Search failed", e);
 				}
@@ -70,7 +92,10 @@ export function SearchResults(): JSX.Element {
 				if (id === n) setBusy(false);
 			}
 		}, 250);
-		onCleanup(() => clearTimeout(timer));
+		onCleanup(() => {
+			clearTimeout(timer);
+			ac.abort();
+		});
 	});
 
 	const matchColor = () => mix(tok("primary"), 30, "transparent");
