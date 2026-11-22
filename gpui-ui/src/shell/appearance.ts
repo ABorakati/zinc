@@ -279,10 +279,12 @@ const SANS: Record<string, string> = {
 	manrope: "manrope",
 	plex: "plex",
 	source: "source",
-	system: "Segoe UI Variable Text",
 };
-function sansFor(p: ThemePrefs): string {
-	if (p.font === "custom") return p.fontCustom || "Segoe UI Variable Text";
+/** The operating system's interface font: Segoe UI Variable on Windows, GPUI's name for the platform's own elsewhere (as the reader does). */
+const systemSans = (platform: NodeJS.Platform) => (platform === "win32" ? "Segoe UI Variable Text" : ".SystemUIFont");
+export function sansFor(p: ThemePrefs, platform: NodeJS.Platform = process.platform): string {
+	if (p.font === "custom") return p.fontCustom || systemSans(platform);
+	if (p.font === "system") return systemSans(platform);
 	return SANS[p.font] ?? "inter";
 }
 
