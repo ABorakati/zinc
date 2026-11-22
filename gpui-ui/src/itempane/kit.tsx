@@ -402,6 +402,11 @@ export function Field(p: {
 	 * item's, or none, and write that into the item that was left.
 	 */
 	flushOnRemove?: boolean;
+	/**
+	 * For a value that is part of a larger one (one author of the list): called when editing begins, it returns what saves the typed
+	 * text if the pane leaves the item meanwhile. That function must not read the pane's current item, which is the next one by then.
+	 */
+	saveWhenLeft?: () => (v: string) => void;
 }): JSX.Element {
 	const [editing, setEditingRaw] = createSignal(!!p.startEditing);
 	const setEditing = (v: boolean) => {
@@ -415,19 +420,22 @@ export function Field(p: {
 	const pane = useContext(PaneContext);
 	let base = p.value;
 	let editKey: string | undefined;
+	let saveLeft: ((v: string) => void) | undefined;
 	const start = () => {
 		if (locked()) return;
 		draft = p.value;
 		base = p.value;
 		editKey = pane?.itemKey();
+		saveLeft = p.saveWhenLeft?.();
 		cancelled = false;
 		setEditing(true);
 	};
 	onCleanup(() => {
-		if (!p.flushOnRemove || !editing() || cancelled || draft === base) return;
+		if ((!p.flushOnRemove && !saveLeft) || !editing() || cancelled || draft === base) return;
+		const save = (v: string) => (saveLeft ? saveLeft(v) : p.onSave(v));
 		try {
-			if (pane) pane.withKey(editKey, () => p.onSave(draft));
-			else p.onSave(draft);
+			if (pane) pane.withKey(editKey, () => save(draft));
+			else save(draft);
 		} catch {
 			/* the owner of the value is gone too: nothing to save into */
 		}

@@ -169,7 +169,7 @@ describe("inline field edit flushed when the field goes away", () => {
 		};
 	}
 
-	test("a creator being edited when the pane switches never costs the item its creators", async () => {
+	test("a creator being edited when the pane switches is saved into that item's own list, and costs it none", async () => {
 		function Creators() {
 			const entries = Info.useInfoEntries();
 			return <For each={entries().filter((e) => e.id === "c:0")}>{(e) => e.render() as never}</For>;
@@ -179,7 +179,9 @@ describe("inline field edit flushed when the field goes away", () => {
 		m.edit("Typed");
 		m.setKey("BBBBBBBB");
 		await sleep(40);
-		expect(writes.filter((w) => w.includes("creators"))).toEqual([]);
+		expect(writes.filter((w) => w.includes("creators"))).toEqual([
+			`AAAAAAAA<-${JSON.stringify({ creators: [{ creatorType: "author", lastName: "Typed", firstName: "First" }] })}`,
+		]);
 	});
 
 	test("a field whose handler acts on the current item is not run for the item that was left", async () => {

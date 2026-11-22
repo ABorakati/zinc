@@ -1,7 +1,7 @@
 // Info section: item type, every field of that type (from the core schema) with inline editing, the creators editor (type, two-field /
 // single-field names, add, remove, reorder) and the date as year / month / day parts. Port of ui/src/itempane/Info.tsx + DateParts.
 import { pluginInfoEntries } from "../wasmplugins/extend/InfoRows";
-import { createEffect, createMemo, createSignal, on, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, Show, untrack } from "solid-js";
 import { Icon } from "../icons";
 import { Select } from "../ui";
 import {
@@ -108,6 +108,26 @@ function DateParts(p: { value: string; onChange: (v: string) => void }): JSX.Ele
 		const out = ny ? formatDateParts(ny, nm, nd) : "";
 		if (out !== p.value.trim()) p.onChange(out);
 	};
+	// A year still being typed when the pane leaves the item: no blur commits it, so it is saved here, from the date last shown.
+	const pane = usePane();
+	let shownDate: { key: string; value: string } | undefined;
+	createEffect(() => {
+		const item = pane.detail();
+		if (item) shownDate = { key: item.data.key, value: p.value };
+	});
+	const onChange = p.onChange;
+	onCleanup(() => {
+		const was = shownDate;
+		if (!was || untrack(textMode) || pane.key() === was.key) return;
+		const q = parseDate(was.value) ?? {};
+		const ny = untrack(y);
+		if (ny === (q.y ?? "")) return;
+		let nm = q.m ?? "",
+			nd = q.d ?? "";
+		if (nd && nm && +nd > daysIn(+ny, +nm)) nd = String(daysIn(+ny, +nm));
+		if (!nm) nd = "";
+		pane.withKey(was.key, () => onChange(ny ? formatDateParts(ny, nm, nd) : ""));
+	});
 	const monthOpts = [{ value: "", label: "Month" }, ...MONTH_ABBR.map((n, i) => ({ value: String(i + 1), label: n }))];
 	const dayOpts = () => [
 		{ value: "", label: "Day" },
@@ -168,6 +188,22 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 		list.splice(i + 1, 0, { creatorType: list[i]?.creatorType ?? defaultType(), lastName: "", firstName: "" });
 		if (i + 2 > limit()) setShown(i + 2);
 		void commit(list);
+	};
+	// the list as it was last shown, and whose it is: the pane has none any more when it leaves an item
+	let shownList: { key: string; list: Creator[] } | undefined;
+	createEffect(() => {
+		const d = pane.detail();
+		if (d) shownList = { key: d.data.key, list: creators() };
+	});
+	/** What saves one typed name into the item being left, from that item's own list. */
+	const whenLeft = (i: number, field: "name" | "lastName" | "firstName") => () => {
+		const key = pane.itemKey();
+		return (v: string) => {
+			const was = shownList;
+			// only when the pane went to another item: a row that goes while this one stays shown has nothing to save
+			if (!key || was?.key !== key || pane.key() === key || i >= was.list.length) return;
+			pane.withKey(key, () => void commit(was.list.map((c, j) => (j === i ? { ...c, [field]: v } : { ...c }))));
+		};
 	};
 	const remove = (i: number) =>
 		void commit(
@@ -232,6 +268,7 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 									value={c().name ?? ""}
 									placeholder="Name"
 									onEditing={setEditing}
+									saveWhenLeft={whenLeft(i, "name")}
 									onSave={(v) => patchAt(i, { name: v })}
 								/>
 							}
@@ -242,6 +279,7 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 								placeholder="Last"
 								onEditing={setEditing}
 								rootStyle={{ width: "auto", flexGrow: 1.2, flexBasis: 0, minWidth: 40 }}
+								saveWhenLeft={whenLeft(i, "lastName")}
 								onSave={(v) => patchAt(i, { lastName: v })}
 							/>
 							<text style={{ ...tx("text-[13px] text-muted-foreground"), paddingLeft: 2, paddingRight: 2, paddingTop: 3 }}>
@@ -253,6 +291,7 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 								placeholder="First"
 								onEditing={setEditing}
 								rootStyle={{ width: "auto", flexGrow: 1, flexBasis: 0, minWidth: 36 }}
+								saveWhenLeft={whenLeft(i, "firstName")}
 								onSave={(v) => patchAt(i, { firstName: v })}
 							/>
 						</Show>
