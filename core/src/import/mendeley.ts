@@ -127,7 +127,7 @@ function uuidBytes(uuid: string): Buffer {
 }
 
 /** The database key: the base key XOR-folded with the profile UUID. */
-function libraryKey(profileUuid: string): Buffer {
+export function libraryKey(profileUuid: string): Buffer {
 	const key = baseKey();
 	const uuid = uuidBytes(profileUuid);
 	for (let i = 0; i < 16; i++) {
@@ -153,14 +153,17 @@ function profileUuidOf(path: string): string | null {
 	return m ? m[1]! : null;
 }
 
-/** Decrypt an encrypted Mendeley database into `target`. Throws when the key cannot be derived. */
-export function decryptMendeleyDb(source: string, target: string): void {
+/**
+ * Decrypt an encrypted Mendeley database into `target`. Throws when the key cannot be derived. The profile key comes from
+ * the file name `<profile uuid>@www.mendeley.com.sqlite`; pass `originalName` when `source` is a copy under another name.
+ */
+export function decryptMendeleyDb(source: string, target: string, originalName = source): void {
 	const data = readFileSync(source);
 	const pageSize = data.readUInt16BE(16) === 1 ? 65536 : data.readUInt16BE(16);
 	if (data.length < 24 || data[20] !== RESERVED_SIZE || pageSize < 512 || data.length % pageSize) {
 		throw new Error("unsupported Mendeley database encryption");
 	}
-	const profile = profileUuidOf(source);
+	const profile = profileUuidOf(originalName);
 	const candidates = profile ? [libraryKey(profile), baseKey()] : [baseKey()];
 	const key = candidates.find((candidate) => {
 		const first = Buffer.from(data.subarray(0, pageSize));
@@ -349,7 +352,7 @@ export function importMendeley(db: Database, opts: MendeleyImportOptions): Mende
 			if (existsSync(from)) copyFileSync(from, source + ext);
 		}
 		const encrypted = isEncryptedMendeleyDb(source);
-		if (encrypted) decryptMendeleyDb(source, join(work, "decrypted.sqlite"));
+		if (encrypted) decryptMendeleyDb(source, join(work, "decrypted.sqlite"), opts.path);
 		src = new Database(encrypted ? join(work, "decrypted.sqlite") : source);
 		readLibrary(db, src, opts, root, result, dirname(opts.path));
 		dropEmptyRoot();
@@ -488,7 +491,7 @@ function readLibrary(
 						tags: tags.get(doc.id as number) ?? [],
 						urls: urls.get(doc.id as number) ?? [],
 						files: files.get(doc.id as number) ?? [],
-						collections: (documentFolders.get(doc.id as number) ?? []).map(ensureFolder).filter((k): k is string => !!k),
+						collections: (documentFolders.get(doc.id as number) ?? []).map((id) => ensureFolder(id)).filter((k): k is string => !!k),
 						uuid,
 					},
 					opts,

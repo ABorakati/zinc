@@ -1,7 +1,11 @@
 // Regression tests for import / export fixes: nested collections, RDF volume and issue, BibTeX names, and so on.
 import type { Database } from "bun:sqlite";
 import { afterAll, describe, expect, test } from "bun:test";
+import { Database as Sqlite } from "bun:sqlite";
+import { createCipheriv } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { decryptMendeleyDb, libraryKey } from "../../src/import/mendeley";
 import { createCollection, createItem, listItems, openDb } from "../../src/db";
 import { call, tempDir } from "../fixture";
 
@@ -172,5 +176,92 @@ describe("BibTeX names with braces", () => {
 		expect(await authorsOf("{Smith}, {John}")).toEqual(["Smith|John"]);
 		expect(await authorsOf("{Smith}, {John {Jr}}")).toEqual(["Smith|John Jr"]);
 		expect(await authorsOf("{Smith} {Jones}")).toEqual(["Jones|Smith"]);
+	});
+});
+
+describe("Mendeley", () => {
+	const PROFILE = "11111111-2222-3333-4444-555555555555";
+	const HEADER = Buffer.from("SQLite format 3\0", "latin1");
+
+	/** Plain pages with an SQLite header, encrypted the way Mendeley does it (OFB, 12 reserved bytes per page). */
+	function encryptedPages(key: Buffer): { plain: Buffer; encrypted: Buffer } {
+		const size = 4096;
+		const plain = Buffer.alloc(size * 3);
+		HEADER.copy(plain, 0);
+		plain.writeUInt16BE(size, 16);
+		plain[20] = 12;
+		for (let i = 24; i < plain.length; i++) if (i % size < size - 12) plain[i] = (i * 31) & 0xff;
+		const encrypted = Buffer.from(plain);
+		for (let n = 1; n <= 3; n++) {
+			const page = encrypted.subarray((n - 1) * size, n * size);
+			const size12 = size - 12;
+			for (let i = 0; i < 12; i++) page[size12 + i] = (n * 7 + i) & 0xff;
+			const iv = Buffer.alloc(16);
+			iv.writeUInt32LE(n, 0);
+			page.copy(iv, 4, size12);
+			const clear = Buffer.from(page.subarray(16, 24));
+			const ks = createCipheriv("aes-256-ofb", key, iv).update(Buffer.alloc(size12));
+			for (let i = 0; i < size12; i++) page[i] ^= ks[i]!;
+			if (n === 1) clear.copy(page, 16);
+		}
+		return { plain, encrypted };
+	}
+
+	test("a database encrypted with the profile key opens when it is read from a copy", () => {
+		const dir = tempDir();
+		const { plain, encrypted } = encryptedPages(libraryKey(PROFILE));
+		const named = join(dir, `${PROFILE}@www.mendeley.com.sqlite`);
+		const copy = join(dir, "mendeley.sqlite"); // the importer works on a copy with a neutral name
+		writeFileSync(named, encrypted);
+		writeFileSync(copy, encrypted);
+		const out = join(dir, "out.sqlite");
+		decryptMendeleyDb(copy, out, named);
+		const got = readFileSync(out);
+		expect(got.subarray(0, 16).equals(HEADER)).toBe(true);
+		// everything but the reserved bytes of each page is the original
+		for (let n = 0; n < 3; n++) expect(got.subarray(n * 4096, n * 4096 + 4084).equals(plain.subarray(n * 4096, n * 4096 + 4084))).toBe(true);
+		// and without the profile name the profile key cannot be derived
+		expect(() => decryptMendeleyDb(copy, join(dir, "out2.sqlite"))).toThrow("cannot derive");
+	});
+
+	test("the import finds the profile key from the name of the original file", async () => {
+		const dir = tempDir();
+		const path = join(dir, `${PROFILE}@www.mendeley.com.sqlite`);
+		writeFileSync(path, encryptedPages(libraryKey(PROFILE)).encrypted);
+		const r = await call(freshDb(), "POST", "/api/io/mendeley", { path });
+		// the key is derived; the synthetic pages are not a real library, so reading it fails later and differently
+		expect(((await r.json()) as { error: string }).error).not.toContain("cannot derive");
+	});
+
+	test("a document in more than 50 folders is filed in all of them", async () => {
+		const dir = tempDir();
+		const path = join(dir, "lib.sqlite");
+		const m = new Sqlite(path, { create: true });
+		m.exec(`
+			CREATE TABLE Documents (id INTEGER PRIMARY KEY, uuid TEXT, type TEXT, title TEXT, abstract TEXT, year TEXT, month TEXT, day TEXT,
+				publication TEXT, volume TEXT, issue TEXT, pages TEXT, doi TEXT, isbn TEXT, issn TEXT, publisher TEXT, city TEXT, country TEXT,
+				note TEXT, added TEXT, modified TEXT, inTrash TEXT, favourite TEXT, citationKey TEXT, pmid TEXT);
+			CREATE TABLE DocumentContributors (documentId INTEGER, contribution TEXT, firstNames TEXT, lastName TEXT);
+			CREATE TABLE DocumentTags (documentId INTEGER, tag TEXT);
+			CREATE TABLE DocumentKeywords (documentId INTEGER, keyword TEXT);
+			CREATE TABLE DocumentFolders (documentId INTEGER, folderId INTEGER);
+			CREATE TABLE Folders (id INTEGER PRIMARY KEY, name TEXT, parentId INTEGER, groupId INTEGER);
+			CREATE TABLE DocumentFiles (documentId INTEGER, hash TEXT);
+			CREATE TABLE Files (hash TEXT, localUrl TEXT);
+			CREATE TABLE DocumentUrls (documentId INTEGER, url BLOB, position INTEGER);
+		`);
+		m.query(
+			"INSERT INTO Documents VALUES (1, '{AAAAAAAA-1111-2222-3333-444444444444}', 'Book', 'Many folders', '', '2001', '', '', '', '', '', '', '', NULL, NULL, '', '', '', '', '1', '1', 'false', 'false', '', '')",
+		).run();
+		for (let i = 1; i <= 60; i++) {
+			m.query("INSERT INTO Folders VALUES (?, ?, -1, 0)").run(100 + i, `Folder ${i}`);
+			m.query("INSERT INTO DocumentFolders VALUES (1, ?)").run(100 + i);
+		}
+		m.close();
+		const db = freshDb();
+		const res = await call(db, "POST", "/api/io/mendeley", { path, collectionName: null });
+		const body = (await res.json()) as { created: number; errors: string[] };
+		expect(body).toMatchObject({ created: 1, errors: [] });
+		expect(db.query("SELECT count(*) AS n FROM collection_items").get()).toEqual({ n: 60 });
 	});
 });
