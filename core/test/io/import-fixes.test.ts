@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { decryptMendeleyDb, libraryKey } from "../../src/import/mendeley";
 import { createCollection, createItem, listItems, openDb } from "../../src/db";
+import { upsertGroupLibrary } from "../../src/libraries";
 import { call, tempDir } from "../fixture";
 
 const dbs: Database[] = [];
@@ -263,5 +264,23 @@ describe("Mendeley", () => {
 		const body = (await res.json()) as { created: number; errors: string[] };
 		expect(body).toMatchObject({ created: 1, errors: [] });
 		expect(db.query("SELECT count(*) AS n FROM collection_items").get()).toEqual({ n: 60 });
+	});
+});
+
+describe("whole-library RDF export and other libraries", () => {
+	test("collections of a group library are not written into My Library's export", async () => {
+		const db = freshDb();
+		const g = upsertGroupLibrary(db, { groupId: 500, name: "Group", editable: true, filesEditable: true, version: 1 });
+		createCollection(db, "Mine");
+		createCollection(db, "Theirs", null, g.id);
+		createItem(db, { itemType: "book", title: "In my library" });
+
+		const mine = await exportText(db, "rdf");
+		expect(mine).toContain("<dc:title>Mine</dc:title>");
+		expect(mine).not.toContain("Theirs");
+
+		const theirs = await exportText(db, "rdf", { library: g.id });
+		expect(theirs).toContain("<dc:title>Theirs</dc:title>");
+		expect(theirs).not.toContain("<dc:title>Mine</dc:title>");
 	});
 });

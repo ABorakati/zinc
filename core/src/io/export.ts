@@ -244,15 +244,17 @@ function contentTypeFor(name: string): string | undefined {
 
 /** The collection tree of the exported scope (RDF carries collections). */
 function exportCollections(db: Database, req: ExportRequest, itemKeys: string[]): RdfCollection[] {
-	const rows = db.query("SELECT key, name, parent_key FROM collections").all() as {
+	const rows = db.query("SELECT key, name, parent_key, library_id FROM collections").all() as {
 		key: string;
 		name: string;
 		parent_key: string | null;
+		library_id: number;
 	}[];
+	// a whole-library export holds the collections of that library only (`req.library`, like the items)
 	const inScope =
 		req.collectionKey && !(req.keys && req.keys.length)
 			? new Set(collectionKeys(db, req.collectionKey))
-			: new Set(rows.map((r) => r.key));
+			: new Set(rows.filter((r) => r.library_id === (req.library ?? 1)).map((r) => r.key));
 	const keys = new Set(itemKeys);
 	const members = new Map<string, string[]>();
 	for (const r of db.query("SELECT collection_key, item_key FROM collection_items").all() as {
