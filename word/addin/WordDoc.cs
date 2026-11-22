@@ -168,7 +168,7 @@ namespace ZoteroNext.Word
 
         sealed class Entry
         {
-            public int Note; public string Story; public int Idx; public string Kind; public string Code; public string Text; public int Pos; public int Start, End;
+            public int Note; public string Story; public int Idx; public string Kind; public string Code; public string Text; public long Pos; public int Rank; public int Start, End;
             public bool Tracked;
         }
 
@@ -529,18 +529,16 @@ namespace ZoteroNext.Word
                 var found = ScanStory((object)sr, (object)sr.Fields, pair.Item1, p => p, checkTracked);
                 foreach (var e in found)
                 {
-                    e.Pos = int.MaxValue / 2;
-                    for (int i = 0; i < notes.Count; i++)
-                        if (e.Start >= notes[i][0] - 1 && e.Start <= notes[i][1]) { e.Note = i + 1; e.Pos = notes[i][2] * 1000 + 1; break; }
+                    var slot = FieldOrder.Place(false, e.Start, notes);
+                    e.Note = slot.Note; e.Pos = slot.Pos; e.Rank = slot.Rank;
                 }
                 all.AddRange(found);
             }
-            // main-text positions scale by 1000 as well so note fields interleave with the body
-            foreach (var e in all) if (e.Story == "main") e.Pos = e.Pos * 1000;
+            foreach (var e in all) if (e.Story == "main") { var slot = FieldOrder.Place(true, e.Start, null); e.Pos = slot.Pos; e.Rank = slot.Rank; }
             // every field looked at and none damaged: later refreshes need not ask again (a document with no tracked
             // changes at all was not looked at, needs no lookups anyway, and is left unmarked)
             if (checkTracked && _scanCheckedTracked && RevisionReadsCut == cut && !all.Any(e => e.Tracked)) MarkTrackChecked(d);
-            return all.OrderBy(e => e.Pos).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note, "tracked", e.Tracked)).ToList();
+            return FieldOrder.Sort(all, e => e.Pos, e => e.Rank).Select(e => Json.Map("story", e.Story, "idx", e.Idx, "kind", e.Kind, "code", e.Code, "text", e.Text, "start", e.Start, "end", e.End, "note", e.Note, "tracked", e.Tracked)).ToList();
         }
 
         dynamic StoryFields(string story)

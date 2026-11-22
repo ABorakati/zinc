@@ -407,6 +407,19 @@ internal static class Program
                     return Json.Map("ms", sw.Elapsed.TotalMilliseconds / n, "n", n);
                 }
             case "h.comSelfTest": return ComSelfTest();
+            case "h.fieldOrder":
+                {
+                    // the add-in's field ordering on plain numbers: needs no Word (h.start is not called)
+                    var notes = Json.Arr(Json.Get(p, "notes")).Select(n => Json.Arr(n).Select(Convert.ToInt32).ToArray()).ToList();
+                    var slots = Json.Arr(Json.Get(p, "fields")).Select((f, i) =>
+                    {
+                        var m = Json.Obj(f);
+                        var s = FieldOrder.Place(Json.Bool(m, "main"), Json.Int(m, "start"), notes);
+                        return new { i, s };
+                    }).ToList();
+                    var sorted = FieldOrder.Sort(slots, x => x.s.Pos, x => x.s.Rank).ToList();
+                    return Json.Map("order", sorted.Select(x => x.i).ToList(), "notes", slots.Select(x => x.s.Note).ToList());
+                }
             case "h.pane":
                 {
                     // The real sidebar control (WebView2 + bundled page + bridge) in an off-screen, never-activated window.
