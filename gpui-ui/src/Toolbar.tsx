@@ -328,8 +328,9 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 		if (removable()) out.push({ separator: true }, { label: "Remove level", danger: true, onSelect: () => replace(null) });
 		return out;
 	};
-	// the chip may shrink (its field name then ends in "…") rather than run past the bar's edge in a narrow list
-	const label = (
+	// the chip may shrink (its field name then ends in "…") rather than run past the bar's edge in a narrow list.
+	// A function: each place that shows it builds its own element (one element cannot sit in the label slot and in the menu trigger)
+	const label = () => (
 		<div style={{ ...t("flex h-full items-center gap-1.5 pl-2.5 pr-1"), minWidth: 0, flexShrink: 1 }}>
 			<text style={tx("text-xs font-semibold text-foreground/90")}>{String(p.index + 1)}</text>
 			<text
@@ -352,7 +353,7 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 			aria-label={`Sort level ${p.index + 1}`}
 			style={{ ...t(`${chipBase} border-border bg-card`), flexShrink: 1, minWidth: 0 }}
 		>
-			<Show when={!locked()} fallback={label}>
+			<Show when={!locked()} fallback={label()}>
 				<DropdownMenu
 					items={menu}
 					width={208}
@@ -361,7 +362,7 @@ function LevelChip(p: { level: SortLevel; index: number }) {
 						<div
 							style={{ ...t("flex h-full rounded-l-full hover:bg-accent/60"), cursor: "pointer", minWidth: 0, flexShrink: 1 }}
 						>
-							{label}
+							{label()}
 						</div>
 					}
 				/>
