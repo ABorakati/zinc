@@ -2,10 +2,11 @@
 //   GET  /api/translate/status           -> {dir, source: "env"|"data"|"vendored", counts: {web, import, export, search, total}}
 //   GET  /api/translate/import-formats   -> [{id, label, extension}]   (?all=1 also lists the formats zotero-next reads itself)
 //   GET  /api/translate/export-formats   -> [{id, label, extension}]   (?all=1 also lists the natively exported formats)
-//   POST /api/translate/web     {url, collectionKey?, attachments?, translatorID?}
+//   POST /api/translate/web     {url, collectionKey?, attachments?, translatorID?, publicOnly?}
+//        publicOnly (set by plugins): the whole job, redirects, translator requests and downloads included, refuses private and local addresses
 //        -> {items: [{key, title, itemType}], translator, fallback?}   the page was translated and saved, or
 //           {choices: {session, url, items: [{key, title, checked?}]}}  a multi-item page: pick, then /web/select
-//   POST /api/translate/web/select {session, keys, collectionKey?}  -> {items, translator}
+//   POST /api/translate/web/select {session, keys, collectionKey?, publicOnly?}  -> {items, translator}   (a public-only session stays public-only)
 //   POST /api/translate/import  {text | path, translatorID?, collectionKey?, collectionName?, basePath?}
 //        -> {created, skipped, errors, collectionKey, format, translator, itemKeys, collections, attachments}
 //        Formats zotero-next reads itself (RIS, BibTeX, ...) go through the native importer; the rest through
@@ -64,12 +65,13 @@ export async function handleTranslateApi(req: Request, db: Database): Promise<Re
 					collectionKey,
 					attachments: b.attachments !== false,
 					translatorID: optString(b.translatorID, "translatorID"),
+					publicOnly: b.publicOnly === true,
 				}),
 			);
 		}
 		if (route === "web/select") {
 			if (typeof b.session !== "string") throw new HttpError(400, "session must be a string");
-			return json(await selectWeb(db, { session: b.session, keys: b.keys, collectionKey, attachments: b.attachments }));
+			return json(await selectWeb(db, { session: b.session, keys: b.keys, collectionKey, attachments: b.attachments, publicOnly: b.publicOnly === true }));
 		}
 		if (route === "import") {
 			const name = b.collectionName === null ? null : optString(b.collectionName, "collectionName");

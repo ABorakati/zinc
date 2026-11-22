@@ -113,7 +113,7 @@ Status: `covered` = a plugin can do the same thing; `partial` = part of it; `not
 | 72 | Legacy `doGet`, `doPost`, `doHead`, `doOptions`, `promise` | `net.send` with the method | covered |
 | 73 | `Zotero.HTTP.browserIsOffline()` | `net.is-online` | covered |
 | 74 | Proxy authentication, `Zotero.Proxies`, `checkSecurity` dialogs, `triggerProxyAuth` | None. The system proxy is used; the host shows its own dialogs | not planned |
-| 75 | Request to any host, including `localhost` and Zotero's local ports | Manifest `permissions.net.hosts`; loopback and private hosts must be listed exactly; Zinc's own server and ports 23119 and 23120 are always refused; redirects and DNS results are rechecked | partial (gated, by design) |
+| 75 | Request to any host, including `localhost` and Zotero's local ports | Manifest `permissions.net.hosts`; `*` is public hosts over https only and wildcards never match an address or a private name; loopback and private hosts must be listed exactly (host and port); Zinc's own server and ports 23119 and 23120 are refused on every spelling of this machine, listed or not; every address a name resolves to, and every redirect hop, is checked, and the connection goes to the address that was checked | partial (gated, by design) |
 | 76 | `IOUtils.read`, `readUTF8`, `readJSON`; `Zotero.File.getContentsAsync`, `getBinaryContentsAsync` (file.js) | `fs.read`, `read-range`, `read-text` (JSON parsing is the guest's) | covered |
 | 77 | `IOUtils.write`, `writeUTF8`, `writeJSON`; `Zotero.File.putContentsAsync` (safe stream) | `fs.write`, `write-text`, `append` with `write-options.atomic` | covered |
 | 78 | `IOUtils.exists`, `stat` | `fs.stat` (kind, size, modified) | covered |

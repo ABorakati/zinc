@@ -1,19 +1,22 @@
 // `net` (lifecycle.wit): HTTP for plugins, behind the manifest's `permissions.net.hosts` allowlist. Runs in the plugin host process.
 //
-//  - Allowlist: scheme://host[:port], `*.` wildcards, `*` for any PUBLIC host (data/nethosts.ts). Loopback and private hosts only by
-//    exact entry. Every redirect hop is checked again (redirects are followed here, not by fetch). A public name that resolves to
-//    a private address is refused unless the name itself is listed.
+//  - Allowlist: scheme://host[:port], `*.` wildcards, `*` for any PUBLIC host over https (data/nethosts.ts). Loopback and private
+//    hosts only by exact host and port entry. Every redirect hop is checked again (redirects are followed here, not by fetch).
+//    Every address a name resolves to is checked on every hop: a name that is not itself a private name or address must resolve to
+//    public addresses only, and the connection then goes to the address that was checked (core/src/translate/netguard.ts), so a
+//    second DNS answer cannot change the destination. Zinc's own core port and 23119/23120 are refused on every spelling of this
+//    machine, even when listed. Authorization and credentials are not sent on to another origin after a redirect.
 //  - Caps: request timeout (default 30 s, never more than 10 min), response size (default 64 MiB, at most 512 MiB), 16 requests per
 //    send-many, 20 redirects.
 //  - The host sets Host, Content-Length, Connection, Cookie (unless cookie jar), Proxy-*, Sec-*; the plugin's values are ignored.
 //  - Cookie jars are private to the plugin and live as long as this process.
 import { createWriteStream } from "node:fs";
 import { mkdir, rm, stat } from "node:fs/promises";
-import { lookup } from "node:dns/promises";
 import { dirname } from "node:path";
 import { Writable } from "node:stream";
 import { defineHandler, WitError, type HandlerContext } from "./registry";
-import { isPrivateHost, netHostAllowed, parseRule } from "./data/nethosts";
+import { matchNetHost } from "./data/nethosts";
+import { CROSS_ORIGIN_STRIP, fetchPinned, isLoopbackOrUnspecified, isOwnAddress, isPrivateAddress, NetBlockedError, normalizeHost, resolveAddresses } from "../../../core/src/translate/netguard";
 import { checkQuota, resolveRef, type PathRef } from "./data/fs-roots";
 
 const USER_AGENT = "Zinc/0.1";
@@ -109,26 +112,44 @@ function cookieHeader(jar: Cookie[], url: URL): string | undefined {
 }
 
 // ------------------------------------------------------------------------------------------ checks
-async function assertAllowed(ctx: HandlerContext, url: URL): Promise<void> {
+/** Ports of this machine that are Zinc's or Zotero's: core's own (from ctx.coreUrl) and the connector and local API ports. */
+function reservedPorts(ctx: HandlerContext): Set<number> {
+	const ports = new Set([23119, 23120]);
+	try {
+		const u = new URL(ctx.coreUrl ?? "");
+		ports.add(u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80);
+	} catch {
+		// no core URL: only the fixed ports
+	}
+	return ports;
+}
+
+/**
+ * Is this hop allowed? Returns the addresses the connection may go to (all checked). A private destination needs an exact entry for
+ * the host and port (`matchNetHost`); a name that is not itself private must resolve to public addresses only, every one of them,
+ * even when an entry names it exactly (otherwise a listed name could be pointed at loopback); and no spelling of this machine is
+ * reachable on Zinc's or Zotero's ports, listed or not.
+ */
+async function assertAllowed(ctx: HandlerContext, url: URL): Promise<string[]> {
 	if (url.protocol !== "http:" && url.protocol !== "https:") throw netError("blocked", `scheme ${url.protocol} is not allowed`);
 	if (url.username || url.password) throw netError("blocked", "credentials in the URL are not allowed: use `credentials`");
-	if (!netHostAllowed(ctx.grants.netHosts, url)) throw netError("blocked", `${url.origin} is not in permissions.net.hosts`);
-	const host = url.hostname.replace(/^\[|\]$/g, "");
-	// A name that the manifest lists exactly may be private (a local model server). Any other name that resolves to a private
-	// address is refused (DNS rebinding, internal names behind a wildcard).
-	if (isPrivateHost(host)) return;
-	const exact = ctx.grants.netHosts.some((e) => {
-		const r = parseRule(e);
-		return r && r !== "any" && !r.wild && r.host === host.toLowerCase();
-	});
-	if (exact) return;
+	const match = matchNetHost(ctx.grants.netHosts, url);
+	if (!match) throw netError("blocked", `${url.origin} is not in permissions.net.hosts`);
+	const host = normalizeHost(url.hostname);
+	const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+	let addrs: string[];
 	try {
-		const addrs = await lookup(host, { all: true });
-		if (addrs.some((a) => isPrivateHost(a.address))) throw netError("blocked", `${host} resolves to a private address`);
+		addrs = await resolveAddresses(host);
 	} catch (e) {
-		if (e instanceof WitError) throw e;
-		throw netError("dns", (e as Error).message);
+		if (e instanceof NetBlockedError) throw netError(e.code, e.message);
+		throw e;
 	}
+	const reserved = reservedPorts(ctx);
+	for (const a of addrs) {
+		if (!match.privateHost && isPrivateAddress(a)) throw netError("blocked", `${host} resolves to a private address`);
+		if (reserved.has(port) && (isLoopbackOrUnspecified(a) || isOwnAddress(a))) throw netError("blocked", `port ${port} on this machine belongs to Zinc or Zotero`);
+	}
+	return addrs;
 }
 
 function classify(e: unknown, signal: { timedOut: boolean; cancelled: boolean }): WitError {
@@ -186,22 +207,24 @@ async function exchange(ctx: HandlerContext, req: Req, inactivity?: number): Pro
 	try {
 		let body: Uint8Array | undefined = req.body ?? undefined;
 		let m = method;
+		let leftOrigin = false; // a redirect has taken the request to another origin: no Authorization or credentials from then on
 		for (let hop = 0; ; hop++) {
-			await assertAllowed(ctx, url);
+			const addrs = await assertAllowed(ctx, url);
 			const headers = new Headers();
 			let hasUA = false;
 			for (const h of req.headers ?? []) {
-				if (FORBIDDEN_HEADERS.test(h.name)) continue;
+				if (FORBIDDEN_HEADERS.test(h.name) || (leftOrigin && CROSS_ORIGIN_STRIP.test(h.name))) continue;
 				if (h.name.toLowerCase() === "user-agent") hasUA = true;
 				headers.append(h.name, h.value);
 			}
 			if (!hasUA) headers.set("User-Agent", USER_AGENT);
-			if (req.credentials) headers.set("Authorization", "Basic " + Buffer.from(`${req.credentials.username}:${req.credentials.password}`).toString("base64"));
+			if (req.credentials && !leftOrigin) headers.set("Authorization", "Basic " + Buffer.from(`${req.credentials.username}:${req.credentials.password}`).toString("base64"));
 			if (jar) {
 				const c = cookieHeader(jar, url);
 				if (c) headers.set("Cookie", c);
 			}
-			const res = await fetch(url, {
+			// the connection goes to one of the addresses just checked, not to whatever the name resolves to a moment later
+			const res = await fetchPinned(url, addrs, {
 				method: m,
 				headers,
 				body: m === "GET" || m === "HEAD" ? undefined : (body as BodyInit | undefined),
@@ -214,7 +237,9 @@ async function exchange(ctx: HandlerContext, req: Req, inactivity?: number): Pro
 			if (req.redirect !== "manual" && loc && [301, 302, 303, 307, 308].includes(res.status) && !req.redirect?.startsWith?.("manual")) {
 				if (hop >= MAX_REDIRECTS) throw netError("other", "too many redirects");
 				await res.body?.cancel().catch(() => {});
-				url = new URL(loc, url);
+				const next = new URL(loc, url);
+				if (next.origin !== url.origin) leftOrigin = true;
+				url = next;
 				if (res.status === 303 || ((res.status === 301 || res.status === 302) && m === "POST")) {
 					m = m === "HEAD" ? "HEAD" : "GET";
 					body = undefined;

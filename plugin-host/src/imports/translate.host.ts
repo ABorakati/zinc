@@ -2,7 +2,7 @@
 import { defineHandler, witError } from "./registry";
 import { coreJson } from "./data/core";
 import { requirePermission } from "./data/perm";
-import { netHostAllowed } from "./data/nethosts";
+import { matchNetHost } from "./data/nethosts";
 
 export default defineHandler({
 	interface: "zinc:plugin/translate",
@@ -49,8 +49,12 @@ export default defineHandler({
 			} catch {
 				throw witError("invalid-argument", "invalid url");
 			}
-			if (!netHostAllowed(ctx.grants.netHosts, u)) throw witError("permission-denied", `net.hosts: ${u.origin}`);
-			const out = await coreJson<any>(ctx, "/api/translate/web", { json: { url: r.url, collectionKey: r.collection, attachments: r.attachments, translatorID: r.translator } });
+			// the same rule as `net` (one matcher); a plugin's Add from URL never reaches a private or local destination, listed or not.
+			// core enforces that again for every request, redirect, translator request and download of the job (publicOnly)
+			const m = matchNetHost(ctx.grants.netHosts, u);
+			if (!m) throw witError("permission-denied", `net.hosts: ${u.origin}`);
+			if (m.privateHost) throw witError("permission-denied", `translate.web does not reach private or local addresses: ${u.origin}`);
+			const out = await coreJson<any>(ctx, "/api/translate/web", { json: { url: r.url, collectionKey: r.collection, attachments: r.attachments, translatorID: r.translator, publicOnly: true } });
 			if (out.choices) return { tag: "choose", val: { session: out.choices.session, items: out.choices.items.map((i: any) => ({ id: i.key, title: i.title })) } };
 			return { tag: "saved", val: (out.items ?? []).map((i: any) => i.key) };
 		},
@@ -58,7 +62,7 @@ export default defineHandler({
 		async "web-select"(ctx, session: string, ids: string[], collection: string | undefined) {
 			requirePermission(ctx, "library.translate");
 			requirePermission(ctx, "library.write");
-			const out = await coreJson<{ items: { key: string }[] }>(ctx, "/api/translate/web/select", { json: { session, keys: ids, collectionKey: collection } });
+			const out = await coreJson<{ items: { key: string }[] }>(ctx, "/api/translate/web/select", { json: { session, keys: ids, collectionKey: collection, publicOnly: true } });
 			return out.items.map((i) => i.key);
 		},
 	},

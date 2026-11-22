@@ -1,50 +1,17 @@
 // Risk tiers and the permission list shown to the user (lifecycle.md 2.4): which ids a manifest declares, grouped by risk, with the
 // plugin's own reasons. Net hosts are listed as "net.hosts:<entry>".
 import type { PluginManifest } from "../manifest";
+import { entryIsPrivate, isPrivateHost, parseHostEntry, type ParsedHostEntry } from "../imports/data/nethosts";
 import { capabilityTier, type RiskTier } from "./ids";
 
-export type { RiskTier };
+export type { RiskTier, ParsedHostEntry };
+// the entry parser and the private-address classifier are shared with `net` and `translate.web`: see imports/data/nethosts.ts
+export { isPrivateHost, parseHostEntry };
 
-export interface ParsedHostEntry {
-	scheme: "http" | "https";
-	/** Lower-case host without "*." and without brackets. Empty when `any`. */
-	host: string;
-	port: number | undefined;
-	/** The entry started with "*.": any subdomain. */
-	subdomains: boolean;
-	/** The entry is "*": any public host (https). */
-	any: boolean;
-}
-
-export function parseHostEntry(entry: string): ParsedHostEntry {
-	if (entry === "*") return { scheme: "https", host: "", port: undefined, subdomains: false, any: true };
-	const m = /^(?:(https?):\/\/)?(\*\.)?([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?$/.exec(entry);
-	if (!m) throw new Error(`bad net host entry "${entry}"`);
-	return { scheme: (m[1] as "http" | "https") ?? "https", host: m[3].toLowerCase(), port: m[4] ? Number(m[4]) : undefined, subdomains: !!m[2], any: false };
-}
-
-/** Loopback, private, link-local and unspecified addresses, and names that mean them. Checked on literals only (callers resolve DNS). */
-export function isPrivateHost(hostname: string): boolean {
-	const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-	if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
-	const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-	if (v4) {
-		const [a, b] = [Number(v4[1]), Number(v4[2])];
-		return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
-	}
-	if (h.includes(":")) {
-		if (h === "::1" || h === "::") return true;
-		if (/^f[cd]/.test(h) || /^fe[89ab]/.test(h)) return true;
-		const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(h);
-		return mapped ? isPrivateHost(mapped[1]) : false;
-	}
-	return false;
-}
-
-/** high for "*" and for loopback or private hosts; medium for named public hosts. */
+/** high for "*", for loopback or private hosts, and for wildcards on a private or number-like suffix (they grant nothing); medium for named public hosts. */
 export function netHostTier(entry: string): RiskTier {
 	const p = parseHostEntry(entry);
-	return p.any || isPrivateHost(p.host) ? "high" : "medium";
+	return p.any || entryIsPrivate(p) ? "high" : "medium";
 }
 
 export const NET_PREFIX = "net.hosts:";

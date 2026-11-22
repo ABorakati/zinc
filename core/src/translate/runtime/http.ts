@@ -1,5 +1,6 @@
 // Zotero.HTTP for the translator runtime (replaces translation-server's request/jsdom version with fetch).
 // Every request of a run goes through here, so the caps (request count, response size, timeout) live here.
+import { CROSS_ORIGIN_STRIP, fetchPinned, resolvePublic } from "../netguard";
 import { makeDocument } from "./dom";
 
 export interface RunLimits {
@@ -7,12 +8,15 @@ export interface RunLimits {
 	maxResponseBytes: number;
 	requestTimeoutMs: number;
 	userAgent: string;
+	/** Public hosts only: every request and every redirect hop of the run resolves its host, refuses private and local addresses, and connects to the address it checked. */
+	publicOnly: boolean;
 }
 
 export const DEFAULT_LIMITS: RunLimits = {
 	maxRequests: 25,
 	maxResponseBytes: 10 * 1024 * 1024,
 	requestTimeoutMs: 15000,
+	publicOnly: false,
 	userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
 };
 
@@ -177,16 +181,22 @@ async function rawRequest(method: string, requestURL: string, options: any): Pro
 	for (let hop = 0; hop < 10; hop++) {
 		if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`unsupported protocol ${url.protocol}`);
 		const cookie = cookieHeader(url);
-		const res = await fetch(url, {
+		const init: RequestInit = {
 			method: m,
 			headers: cookie ? { ...headers, Cookie: cookie } : headers,
 			body: m === "GET" || m === "HEAD" ? undefined : body,
 			redirect: "manual",
 			signal: AbortSignal.timeout(options.timeout ?? limits.requestTimeoutMs),
-		});
+		};
+		// publicOnly (a plugin's Add from URL): this hop's host is resolved, every address must be public, and the connection goes to
+		// an address that was checked. The app's own calls connect as before (a user's proxy or intranet host keeps working).
+		const res = limits.publicOnly ? await fetchPinned(url, await resolvePublic(url.hostname), init) : await fetch(url, init);
 		storeCookies(url, res);
 		if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-			url = new URL(res.headers.get("location")!, url);
+			const next = new URL(res.headers.get("location")!, url);
+			// credentials a translator set by hand do not follow a redirect to another origin
+			if (next.origin !== url.origin) for (const k of Object.keys(headers)) if (CROSS_ORIGIN_STRIP.test(k)) delete headers[k];
+			url = next;
 			if (res.status !== 307 && res.status !== 308) {
 				m = "GET";
 				body = null;
@@ -297,7 +307,9 @@ export function installHttp(Z: any): void {
 					if (parts.length === 2 && parseInt(parts[0]!) <= 15) {
 						const next = new URL(parts[1]!.trim().replace(/^'(.+)'$/, "$1"), raw.responseURL).href;
 						Z.debug("Meta refresh to " + next);
-						return HTTP.request(method, next, options);
+						const away = new URL(next).origin !== new URL(raw.responseURL).origin;
+						const kept = !away || !options.headers ? options : { ...options, headers: Object.fromEntries(Object.entries(options.headers).filter(([k]) => !CROSS_ORIGIN_STRIP.test(k))) };
+						return HTTP.request(method, next, kept);
 					}
 				}
 			}

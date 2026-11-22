@@ -9,7 +9,9 @@
 import { WitError } from "../imports/registry";
 import type { Grants } from "../manifest";
 import { isKnownCapability } from "./ids";
-import { isPrivateHost, parseHostEntry } from "./risk";
+import { matchNetHost, type NetHostMatch } from "../imports/data/nethosts";
+
+export { matchNetHost, type NetHostMatch };
 
 /** The part of HandlerContext the checks need. */
 export interface PermissionContext {
@@ -31,52 +33,11 @@ export function requireAnyPermission(ctx: PermissionContext, ...ids: string[]): 
 	if (!ids.some((id) => hasPermission(ctx, id))) throw new WitError("permission-denied", ids[0]);
 }
 
-export interface NetHostMatch {
-	/** The granted entry that allows the URL. */
-	entry: string;
-	/** The URL's host is a loopback, private or link-local literal (the entry named it exactly). A name that resolves to such an address must be rechecked after DNS. */
-	privateHost: boolean;
-}
-
 /**
- * Static part of the `net.hosts` rule (lifecycle.wit, interface net): does a granted entry allow this URL? Scheme defaults to https
- * (http only when the entry says so), `*.` matches subdomains (not the bare domain), "*" matches any public host over https, and
- * loopback or private literals need an entry that names that host (and port) exactly. Returns undefined when none matches.
- * The caller still has to refuse Zinc's own port and 23119/23120, and check DNS results and every redirect again.
+ * Throws `permission-denied("net.hosts")` unless a granted entry allows the URL. Returns the match. `matchNetHost` is the static part
+ * of the rule (lifecycle.wit, interface net; imports/data/nethosts.ts is the one implementation): the caller still has to refuse
+ * Zinc's own port and 23119/23120, and check DNS results and every redirect again.
  */
-export function matchNetHost(entries: readonly string[], url: string): NetHostMatch | undefined {
-	let u: URL;
-	try {
-		u = new URL(url);
-	} catch {
-		return undefined;
-	}
-	if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
-	const scheme = u.protocol === "https:" ? "https" : "http";
-	const port = u.port ? Number(u.port) : scheme === "https" ? 443 : 80;
-	const host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-	const priv = isPrivateHost(host);
-	for (const entry of entries) {
-		let p;
-		try {
-			p = parseHostEntry(entry);
-		} catch {
-			continue;
-		}
-		if (p.scheme !== scheme) continue;
-		if (p.any) {
-			if (!priv) return { entry, privateHost: false };
-			continue;
-		}
-		if (p.port !== undefined ? p.port !== port : port !== (scheme === "https" ? 443 : 80)) continue;
-		if (p.subdomains) {
-			if (!priv && host.endsWith("." + p.host)) return { entry, privateHost: false };
-		} else if (host === p.host) return { entry, privateHost: priv };
-	}
-	return undefined;
-}
-
-/** Throws `permission-denied("net.hosts")` unless a granted entry allows the URL. Returns the match. */
 export function requireNetHost(ctx: PermissionContext, url: string): NetHostMatch {
 	const m = matchNetHost(ctx.grants.netHosts, url);
 	if (!m) throw new WitError("permission-denied", "net.hosts");

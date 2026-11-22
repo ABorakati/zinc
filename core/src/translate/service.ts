@@ -14,6 +14,7 @@ import { detectFormat, importText, type ImportFormat } from "../io/import";
 import { gatherItems } from "../io/export";
 import type { CachedResponse, RunLimits } from "./runtime/http";
 import type { Choice, TranslatorRef, WebResult } from "./runtime/jobs";
+import { fetchPublic } from "./netguard";
 import { runJob, TranslateError } from "./pool";
 import { translatorsDirFor } from "./translators";
 
@@ -32,8 +33,8 @@ export const translateLimits = {
 	maxAttachmentBytes: 60 * 1024 * 1024,
 };
 
-function limits(): Partial<RunLimits> {
-	return { ...LIMITS, maxRequests: translateLimits.maxRequests };
+function limits(publicOnly = false): Partial<RunLimits> {
+	return { ...LIMITS, maxRequests: translateLimits.maxRequests, publicOnly };
 }
 
 async function job<T>(op: "web" | "import" | "export", params: unknown): Promise<T> {
@@ -72,6 +73,8 @@ interface Session {
 	choices: Choice[];
 	collectionKey: string | null;
 	attachments: boolean;
+	/** The run that made this session was public-only; so is the follow-up, whatever the caller says. */
+	publicOnly: boolean;
 	created: number;
 }
 const sessions = new Map<string, Session>();
@@ -93,6 +96,11 @@ export interface WebRequest {
 	/** Download PDFs the translator found (default true). */
 	attachments?: boolean;
 	translatorID?: string;
+	/**
+	 * Public hosts only (a plugin's request): every request of the job, including redirects, the requests translators make and the
+	 * PDF/EPUB downloads, refuses private and local addresses. The app's own calls leave it off.
+	 */
+	publicOnly?: boolean;
 }
 
 function checkCollection(db: Database, key: string | null | undefined): string | null {
@@ -116,13 +124,14 @@ export async function translateWeb(db: Database, req: WebRequest): Promise<WebTr
 	const url = checkUrl(req.url);
 	const collectionKey = checkCollection(db, req.collectionKey);
 	const { dir } = translatorsDirFor(db);
-	const r = await job<WebResult>("web", { url, translatorsDir: dir, limits: limits(), translatorID: req.translatorID });
-	return finishWeb(db, r, collectionKey, req.attachments !== false);
+	const publicOnly = req.publicOnly === true;
+	const r = await job<WebResult>("web", { url, translatorsDir: dir, limits: limits(publicOnly), translatorID: req.translatorID });
+	return finishWeb(db, r, collectionKey, req.attachments !== false, publicOnly);
 }
 
 export async function selectWeb(
 	db: Database,
-	body: { session: string; keys: string[]; collectionKey?: string | null; attachments?: boolean },
+	body: { session: string; keys: string[]; collectionKey?: string | null; attachments?: boolean; publicOnly?: boolean },
 ): Promise<WebTranslateResponse> {
 	sweepSessions();
 	const s = sessions.get(body.session);
@@ -132,20 +141,21 @@ export async function selectWeb(
 	if (body.keys.some((k) => typeof k !== "string" || !offered.has(k))) throw new HttpError(409, "keys do not match the items offered");
 	const collectionKey = body.collectionKey === undefined ? s.collectionKey : checkCollection(db, body.collectionKey);
 	const { dir } = translatorsDirFor(db);
+	const publicOnly = s.publicOnly || body.publicOnly === true;
 	const r = await job<WebResult>("web", {
 		url: s.url,
 		translatorsDir: dir,
-		limits: limits(),
+		limits: limits(publicOnly),
 		cache: s.cache,
 		translatorID: s.translatorID,
 		selectedKeys: body.keys,
 	});
 	sessions.delete(body.session);
 	if (r.kind === "choices") throw new HttpError(502, "the translator offered the choices again instead of saving");
-	return finishWeb(db, r, collectionKey, body.attachments ?? s.attachments);
+	return finishWeb(db, r, collectionKey, body.attachments ?? s.attachments, publicOnly);
 }
 
-async function finishWeb(db: Database, r: WebResult, collectionKey: string | null, attachments: boolean): Promise<WebTranslateResponse> {
+async function finishWeb(db: Database, r: WebResult, collectionKey: string | null, attachments: boolean, publicOnly: boolean): Promise<WebTranslateResponse> {
 	if (r.kind === "choices") {
 		sweepSessions();
 		const id = crypto.randomUUID().replace(/-/g, "").slice(0, 15);
@@ -157,6 +167,7 @@ async function finishWeb(db: Database, r: WebResult, collectionKey: string | nul
 			choices: r.choices,
 			collectionKey,
 			attachments,
+			publicOnly,
 			created: Date.now(),
 		});
 		return { choices: { session: id, url: r.url, items: r.choices } };
@@ -165,19 +176,20 @@ async function finishWeb(db: Database, r: WebResult, collectionKey: string | nul
 	for (const raw of r.items) {
 		const out = saveTranslatedItem(db, raw, collectionKey);
 		saved.push(summary(out.key, raw));
-		if (attachments) await saveFileAttachments(db, out.key, raw, r.cache);
+		if (attachments) await saveFileAttachments(db, out.key, raw, r.cache, publicOnly);
 	}
 	return { items: saved, translator: r.translator?.label ?? null, fallback: r.fallback };
 }
 
-/** PDFs (and other non-snapshot files) a translator listed: downloaded best effort, never failing the item. */
-async function saveFileAttachments(db: Database, parentKey: string, raw: Record<string, any>, _cache: CachedResponse[]): Promise<void> {
+/** PDFs (and other non-snapshot files) a translator listed: downloaded best effort, never failing the item. Exported for tests. */
+export async function saveFileAttachments(db: Database, parentKey: string, raw: Record<string, any>, _cache: CachedResponse[], publicOnly: boolean): Promise<void> {
 	for (const a of Array.isArray(raw.attachments) ? raw.attachments : []) {
 		if (!a || typeof a !== "object" || a.snapshot === false || typeof a.url !== "string" || !/^https?:\/\//i.test(a.url)) continue;
 		const mime = str(a.mimeType).toLowerCase();
 		if (mime !== "application/pdf" && mime !== "application/epub+zip") continue;
 		try {
-			const res = await fetch(a.url, {
+			// publicOnly: the download is resolved, checked and pinned on every redirect hop, like the translator's own requests
+			const res = await (publicOnly ? fetchPublic : fetch)(a.url, {
 				signal: AbortSignal.timeout(45_000),
 				headers: { Accept: "application/pdf,*/*", Referer: str(raw.url) || a.url },
 			});
