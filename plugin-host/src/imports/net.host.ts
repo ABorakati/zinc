@@ -169,6 +169,8 @@ interface Exchange {
 	url: string;
 	controller: AbortController;
 	done: () => void;
+	/** Data arrived: start the inactivity period again. Does nothing in whole-body mode. */
+	touch: () => void;
 	flags: { timedOut: boolean; cancelled: boolean };
 }
 
@@ -187,6 +189,7 @@ async function exchange(ctx: HandlerContext, req: Req, inactivity?: number): Pro
 	let timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT;
 	if (timeoutMs <= 0 || timeoutMs > HARD_TIMEOUT) timeoutMs = HARD_TIMEOUT;
 	let timer = setTimeout(() => ((flags.timedOut = true), controller.abort()), inactivity ?? timeoutMs);
+	let ended = false; // `done` of the returned exchange was called: nothing may start the timer again
 	const done = () => clearTimeout(timer);
 	if (req.cancelKey) {
 		let m = cancels.get(ctx.pluginId);
@@ -258,7 +261,13 @@ async function exchange(ctx: HandlerContext, req: Req, inactivity?: number): Pro
 				url: url.href,
 				controller,
 				flags,
+				touch: () => {
+					if (inactivity === undefined || ended) return;
+					clearTimeout(timer);
+					timer = setTimeout(() => ((flags.timedOut = true), controller.abort()), inactivity);
+				},
 				done: () => {
+					ended = true;
 					done();
 					release();
 				},
@@ -406,11 +415,12 @@ export default defineHandler({
 			const ex = await exchange(ctx, req, options.inactivityTimeoutMs ?? 30_000);
 			const tmp = `${target}.${process.pid}.part`;
 			let bytes = 0;
+			let out: ReturnType<typeof createWriteStream> | undefined;
 			try {
 				if (!okStatus(req, ex.res.status)) throw netError("unexpected-status", responseRecord(ex.res, ex.url, new Uint8Array(0)));
 				const len = Number(ex.res.headers.get("content-length") ?? 0);
 				if (len) checkQuota(r, len);
-				const out = createWriteStream(tmp);
+				out = createWriteStream(tmp);
 				const w = Writable.toWeb(out) as WritableStream<Uint8Array>;
 				const writer = w.getWriter();
 				const reader = ex.res.body?.getReader();
@@ -420,6 +430,7 @@ export default defineHandler({
 					for (;;) {
 						const { done, value } = reader ? await reader.read() : { done: true, value: undefined };
 						if (done) break;
+						ex.touch();
 						clearTimeout(reset);
 						reset = setTimeout(() => ((ex.flags.timedOut = true), ex.controller.abort()), options.inactivityTimeoutMs ?? 30_000);
 						bytes += value!.byteLength;
@@ -434,6 +445,8 @@ export default defineHandler({
 				const { rename } = await import("node:fs/promises");
 				await rename(tmp, target);
 			} catch (e) {
+				// close the file before deleting it: the handle would otherwise stay open until garbage collection (and block the delete on Windows)
+				if (out && !out.destroyed) await new Promise<void>((resolve) => (out!.once("close", () => resolve()), out!.destroy()));
 				await rm(tmp, { force: true }).catch(() => {});
 				throw e instanceof WitError ? e : classify(e, ex.flags);
 			} finally {
@@ -489,6 +502,7 @@ export default defineHandler({
 								return undefined;
 							}
 							self.pending = value;
+							self.ex.touch();
 						}
 						const n = Math.max(1, Math.min(max, self.pending.byteLength));
 						const out = self.pending.subarray(0, n);
