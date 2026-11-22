@@ -105,4 +105,48 @@ describe("a key that another library already uses", () => {
 	});
 });
 
-void upsertAnnotations;
+describe("an annotation erased in Zotero", () => {
+	const pdfWithAnnotation = (lib: number, att: string, ann: string) =>
+		applyChanges(
+			db,
+			{
+				upserts: [
+					up("item", att, { itemType: "attachment", linkMode: "imported_file", title: "p.pdf", contentType: "application/pdf" }),
+					up("annotation", ann, { annotationType: "highlight", parentItem: att, annotationSortIndex: "00000|000000|00000", annotationPosition: "{}" }),
+				],
+				deletes: [],
+			},
+			dir,
+			lib,
+		);
+
+	test("is removed here when Zotero's delete log names it as an item", () => {
+		pdfWithAnnotation(1, "ATTACH01", "ANNOT001");
+		expect(one("SELECT 1 AS x FROM annotations WHERE key = 'ANNOT001'")).not.toBeNull();
+		const rep = applyChanges(db, { upserts: [], deletes: [{ type: "item", key: "ANNOT001" }] }, dir, 1);
+		expect(rep.deleted).toBe(1);
+		expect(one("SELECT 1 AS x FROM annotations WHERE key = 'ANNOT001'")).toBeNull();
+		expect(one("SELECT 1 AS x FROM items WHERE key = 'ATTACH01'")).not.toBeNull(); // its attachment stays
+	});
+
+	test("an annotation with an unsent local edit is kept", () => {
+		pdfWithAnnotation(1, "ATTACH01", "ANNOT001");
+		upsertAnnotations(db, "ATTACH01", [{ id: "ANNOT001", type: "highlight", sortIndex: "00000|000000|00000", position: { pageIndex: 0 } }] as never);
+		applyChanges(db, { upserts: [], deletes: [{ type: "item", key: "ANNOT001" }] }, dir, 1);
+		expect(one("SELECT 1 AS x FROM annotations WHERE key = 'ANNOT001'")).not.toBeNull();
+	});
+
+	test("an annotation of another library is not removed by this library's delete", () => {
+		const g = group(7);
+		pdfWithAnnotation(g, "ATTACH02", "ANNOT002");
+		applyChanges(db, { upserts: [], deletes: [{ type: "item", key: "ANNOT002" }] }, dir, 1);
+		expect(one("SELECT 1 AS x FROM annotations WHERE key = 'ANNOT002'")).not.toBeNull();
+	});
+
+	test("an item delete still removes the item, with its annotations", () => {
+		pdfWithAnnotation(1, "ATTACH01", "ANNOT001");
+		applyChanges(db, { upserts: [], deletes: [{ type: "item", key: "ATTACH01" }] }, dir, 1);
+		expect(one("SELECT 1 AS x FROM items WHERE key = 'ATTACH01'")).toBeNull();
+		expect(one("SELECT 1 AS x FROM annotations WHERE key = 'ANNOT001'")).toBeNull();
+	});
+});

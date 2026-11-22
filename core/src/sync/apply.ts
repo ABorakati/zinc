@@ -485,6 +485,9 @@ function deletionBlockedByChildren(c: Ctx, key: string): boolean {
 
 function deleteRemote(c: Ctx, type: EntityType, key: string): void {
 	const db = c.db;
+	// Zotero's delete log does not say what an erased item was: a key that is no item here but names an annotation is that annotation
+	if (type === "item" && !db.query("SELECT 1 FROM items WHERE key = ?").get(key) && db.query("SELECT 1 FROM annotations WHERE key = ?").get(key))
+		type = "annotation";
 	// an erase in one library never touches an object of another that happens to share the key
 	if (
 		type !== "annotation" &&
