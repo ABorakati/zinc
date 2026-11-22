@@ -174,6 +174,58 @@ describe("selection that completes after the view changed", () => {
 	});
 });
 
+describe("a range that takes a while to complete", () => {
+	test("it still completes when the list refreshes in place meanwhile (a sync change, an edit)", async () => {
+		handler = list(800);
+		store.setView({ kind: "library" });
+		await tick();
+		store.setView({ kind: "trash" });
+		await tick();
+		const end = 5 * PAGE + 1;
+		store.itemAt(end);
+		await tick();
+		store.selectOnly(store.peek(0)!.key, 0);
+		let release!: () => void;
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		handler = async (u) => {
+			const off = Number(u.searchParams.get("offset"));
+			if (off > 0 && off < 5 * PAGE) await gate;
+			return list(800)(u);
+		};
+		store.selectClick(end, { shift: true, ctrl: false });
+		await tick();
+		store.refreshItems(["abstractNote"]); // same list, refetched in place
+		await tick();
+		release();
+		await tick(80);
+		expect(store.selected().size).toBe(end + 1);
+	});
+
+	test("extending a range longer than the page cache does not fetch all of it again for every row", async () => {
+		handler = list(6000);
+		store.setView({ kind: "unfiled" });
+		await tick();
+		const end = 40 * PAGE + 1;
+		store.itemAt(end);
+		await tick();
+		store.setVisible?.(end, end + 2);
+		await tick();
+		store.selectOnly(`K${String(0).padStart(6, "0")}`, 0);
+		store.selectClick(end, { shift: true, ctrl: false });
+		await tick(150);
+		expect(store.selected().size).toBe(end + 1);
+		store.itemAt(end + 1);
+		await tick();
+		const before = itemReqs.length;
+		expect(store.focusRow(end + 1, true)).toBe(true);
+		await tick(150);
+		expect(store.selected().size).toBe(end + 2);
+		expect(itemReqs.length - before).toBeLessThanOrEqual(1);
+	});
+});
+
 describe("refreshItems (an edit in the item pane)", () => {
 	test("duplicate-relevant fields are told apart from the rest", async () => {
 		const { affectsDuplicates } = await import("./store");

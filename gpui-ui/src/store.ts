@@ -614,6 +614,9 @@ function createStore(): AppStore {
 	}
 
 	const pending = new Map<number, Promise<void>>(); // page -> its request in flight
+	// The keys of every page that arrived for this generation, kept when the rows are evicted: extending a long range by one row
+	// must not ask for all of its pages again. Cleared by reset().
+	const pageKeys = new Map<number, string[]>();
 	/** Fetch a page; one already being fetched is not asked for twice, and the promise returned for it settles when that request does. */
 	function loadPage(p: number, g: number): Promise<void> {
 		if (g !== gen) return Promise.resolve();
@@ -646,6 +649,7 @@ function createStore(): AppStore {
 				hardCleared = hardGen;
 			}
 			cache.set(p, { gen: g, rows: res.items });
+			pageKeys.set(p, res.items.map((r) => r.key));
 			failed.delete(p);
 			evict();
 			const ms = performance.now() - t0;
@@ -694,6 +698,7 @@ function createStore(): AppStore {
 		abort = new AbortController();
 		inflight.clear();
 		pageAbort.clear();
+		pageKeys.clear();
 		fastUntil = 0;
 		// a settle step armed by the old list's scrolling must not run against this one (it aborts pages outside the old position)
 		if (settleTimer) clearTimeout(settleTimer);
@@ -938,28 +943,43 @@ function createStore(): AppStore {
 	async function keysOfRange(a: number, b: number): Promise<string[] | null> {
 		const g = gen;
 		const byPage = new Map<number, string[]>();
-		const take = (p: number, rows: ItemRow[]) => {
+		const take = (p: number, keys: string[]) => {
 			const from = Math.max(a, p * PAGE),
-				to = Math.min(b, p * PAGE + rows.length - 1);
-			byPage.set(p, rows.slice(from - p * PAGE, to - p * PAGE + 1).map((r) => r.key));
+				to = Math.min(b, p * PAGE + keys.length - 1);
+			byPage.set(p, keys.slice(from - p * PAGE, to - p * PAGE + 1));
 		};
 		const first = Math.floor(a / PAGE),
 			last = Math.floor(b / PAGE);
 		await Promise.all(
 			Array.from({ length: last - first + 1 }, async (_, n) => {
 				const p = first + n;
-				let e = cache.get(p);
-				if (e?.gen !== g) {
-					await loadPage(p, g);
-					e = cache.get(p);
-				}
+				if (!pageKeys.has(p)) await loadPage(p, g);
 				if (g !== gen) return;
-				if (e?.gen === g) take(p, e.rows);
-				else take(p, (await fetchPage(p, abort.signal)).items); // loaded, but already evicted (or aborted): fetch it for this
+				let keys = pageKeys.get(p);
+				if (!keys) {
+					// its request was aborted (the list scrolled away from it) or failed: fetch it for this
+					keys = (await fetchPage(p, abort.signal)).items.map((r) => r.key);
+					if (g !== gen) return;
+					pageKeys.set(p, keys);
+				}
+				take(p, keys);
 			}),
 		);
 		if (g !== gen) return null;
 		return [...byPage.entries()].sort((x, y) => x[0] - y[0]).flatMap(([, keys]) => keys);
+	}
+	/** keysOfRange, started again when the same list was only refreshed in place meanwhile; null once the caller's work is stale. */
+	async function settledKeys(a: number, b: number, current: () => boolean): Promise<string[] | null> {
+		while (current()) {
+			const g = gen;
+			try {
+				const keys = await keysOfRange(a, b);
+				if (keys) return keys;
+			} catch (e) {
+				if (g === gen) throw e; // not the refresh's own abort
+			}
+		}
+		return null;
 	}
 	/**
 	 * Rows a..b were just selected from what is cached; add the ones on pages that are not, when those arrive. Dropped when the list
@@ -969,7 +989,7 @@ function createStore(): AppStore {
 		if (rangeKeys(a, b).length > b - a) return; // every row of the range was cached
 		const view0 = hardGen,
 			v0 = selVersion;
-		void keysOfRange(a, b)
+		void settledKeys(a, b, () => view0 === hardGen && v0 === selVersion)
 			.then((keys) => {
 				if (!keys || view0 !== hardGen || v0 !== selVersion) return;
 				const s2 = new Set(untrack(selected));
@@ -1030,7 +1050,7 @@ function createStore(): AppStore {
 			v0 = selVersion; // or when the user selects something else meanwhile
 		const v = untrack(view);
 		if (v.kind === "duplicates" || n <= PAGE) {
-			void keysOfRange(0, n - 1)
+			void settledKeys(0, n - 1, () => view0 === hardGen && v0 === selVersion)
 				.then((keys) => {
 					if (keys && view0 === hardGen && v0 === selVersion) setSelectedRaw(new Set(keys));
 				})
