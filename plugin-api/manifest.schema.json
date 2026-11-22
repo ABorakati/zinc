@@ -246,10 +246,10 @@
     },
 
     "localeTag": {
-      "description": "A locale tag such as `en-US` or `fr`: subtags of letters and digits joined by `-` (or `_`). It names a folder, so nothing else is allowed.",
+      "description": "A locale tag such as `en-US` or `fr`: a language of 2 to 8 letters, then subtags of letters and digits joined by `-`. It names a folder, so nothing else is allowed (the plugin host's own reader checks the same rule).",
       "type": "string",
       "maxLength": 35,
-      "pattern": "^[A-Za-z0-9]{1,8}([-_][A-Za-z0-9]{1,8})*$"
+      "pattern": "^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$"
     },
 
     "capability": {

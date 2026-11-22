@@ -40,7 +40,7 @@ export interface L10nOptions {
 // A locale tag and the folder name `locales.dir` come from the manifest and are joined to the plugin's folder: they are checked here
 // (the schema checks them at install, but a plugin installed earlier has its manifest read from disk as it is), and what is read
 // must really lie inside the plugin's folder (no link or junction may lead out).
-const TAG = /^[A-Za-z0-9]{1,8}([-_][A-Za-z0-9]{1,8})*$/;
+const TAG = /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/; // the same rule as zhw's native reader
 const DIR = /^(?:(?!\.+(?:\/|$))[A-Za-z0-9._-]+)(?:\/(?!\.+(?:\/|$))[A-Za-z0-9._-]+)*$/;
 
 const norm = (p: string) => (process.platform === "win32" ? p.toLowerCase() : p);

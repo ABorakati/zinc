@@ -20,7 +20,7 @@ const manifest = (locales: unknown) => ({
 
 describe("the schema", () => {
 	test("accepts plain folder names and locale tags", () => {
-		for (const l of [{ default: "en-US" }, { default: "fr", available: ["fr", "en-US", "zh-Hans", "pt_BR"], dir: "locale" }, { default: "en", dir: "i18n/strings" }, { default: "en", dir: "l10n.v2" }]) {
+		for (const l of [{ default: "en-US" }, { default: "fr", available: ["fr", "en-US", "zh-Hans", "pt-BR"], dir: "locale" }, { default: "en", dir: "i18n/strings" }, { default: "en", dir: "l10n.v2" }]) {
 			expect(validateManifest(manifest(l))).toEqual([]);
 		}
 	});
@@ -28,7 +28,7 @@ describe("the schema", () => {
 		for (const dir of ["..", "../x", "a/../b", "/abs", "C:/x", "C:x", "a\b", "./a", "a//b", "a/", "...", ".", "a/./b", "a:b", ""]) {
 			expect([dir, validateManifest(manifest({ default: "en", dir })).length > 0]).toEqual([dir, true]);
 		}
-		for (const tag of ["../x", "a/b", "a\b", "", "en US", "en-", "-en", "C:", "..", "a".repeat(40)]) {
+		for (const tag of ["../x", "a/b", "a\b", "", "en US", "en-", "-en", "C:", "..", "pt_BR", "e", "12", "a".repeat(40)]) {
 			expect([tag, validateManifest(manifest({ default: tag })).length > 0]).toEqual([tag, true]);
 			expect([tag, validateManifest(manifest({ default: "en", available: ["en", tag] })).length > 0]).toEqual([tag, true]);
 		}
