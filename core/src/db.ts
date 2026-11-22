@@ -40,6 +40,7 @@ export function nowIso(): string {
 
 const fileCache = new Map<string, { ok: boolean; at: number }>();
 const FILE_CACHE_MS = 5000;
+const FILE_CACHE_MAX = 5000;
 
 export function fileExists(path: string | null | undefined): boolean {
 	if (!path) return false;
@@ -48,7 +49,17 @@ export function fileExists(path: string | null | undefined): boolean {
 	if (hit && now - hit.at < FILE_CACHE_MS) return hit.ok;
 	const ok = existsSync(path);
 	fileCache.set(path, { ok, at: now });
+	if (fileCache.size > FILE_CACHE_MAX) {
+		// bounded: drop the expired entries first, and everything when that is not enough
+		for (const [p, e] of fileCache) if (now - e.at >= FILE_CACHE_MS) fileCache.delete(p);
+		if (fileCache.size > FILE_CACHE_MAX) fileCache.clear();
+	}
 	return ok;
+}
+
+/** Entries in the file-existence cache (for tests). */
+export function fileCacheSize(): number {
+	return fileCache.size;
 }
 
 export function clearFileCache(): void {
@@ -207,21 +218,24 @@ export function updateCollection(db: Database, key: string, patch: { name?: stri
 	if (patch.name !== undefined && typeof patch.name !== "string") throw new HttpError(400, "name must be a string");
 	if (patch.parentKey !== undefined && patch.parentKey !== null && typeof patch.parentKey !== "string")
 		throw new HttpError(400, "parentKey must be a string or null");
-	if (patch.name !== undefined) {
-		const name = patch.name.trim();
-		if (!name) throw new HttpError(400, "name must not be empty");
-		db.query("UPDATE collections SET name = ? WHERE key = ?").run(name, key);
-	}
-	if (patch.parentKey !== undefined) {
-		const parent = patch.parentKey || null;
-		if (parent) {
-			if (!collectionExists(db, parent)) throw new HttpError(404, "parent collection not found");
-			if (libraryOfCollection(db, parent) !== libraryOfCollection(db, key))
-				throw new HttpError(400, "a collection cannot move to another library");
-			if (descendantKeys(db, key).includes(parent)) throw new HttpError(400, "cannot move a collection into itself");
+	// one request, one transaction: a refused move must not leave the rename behind
+	db.transaction(() => {
+		if (patch.name !== undefined) {
+			const name = patch.name.trim();
+			if (!name) throw new HttpError(400, "name must not be empty");
+			db.query("UPDATE collections SET name = ? WHERE key = ?").run(name, key);
 		}
-		db.query("UPDATE collections SET parent_key = ? WHERE key = ?").run(parent, key);
-	}
+		if (patch.parentKey !== undefined) {
+			const parent = patch.parentKey || null;
+			if (parent) {
+				if (!collectionExists(db, parent)) throw new HttpError(404, "parent collection not found");
+				if (libraryOfCollection(db, parent) !== libraryOfCollection(db, key))
+					throw new HttpError(400, "a collection cannot move to another library");
+				if (descendantKeys(db, key).includes(parent)) throw new HttpError(400, "cannot move a collection into itself");
+			}
+			db.query("UPDATE collections SET parent_key = ? WHERE key = ?").run(parent, key);
+		}
+	})();
 	return getCollection(db, key)!;
 }
 
@@ -1152,12 +1166,14 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 			db.query("DELETE FROM item_tags WHERE item_key = ?").run(key);
 			const seen = new Set<string>();
 			const norm: { tag: string; type?: number }[] = [];
-			for (const t of rest.tags ?? []) {
-				const tag = String(t.tag ?? "").trim();
+			for (const t of (rest.tags ?? []) as (string | { tag?: string; type?: number })[]) {
+				// a plain string is a tag too (assertItemShape allows it, as createItem does)
+				const tag = String((typeof t === "string" ? t : t.tag) ?? "").trim();
+				const type = typeof t === "string" ? 0 : t.type;
 				if (!tag || seen.has(tag)) continue;
 				seen.add(tag);
-				db.query("INSERT INTO item_tags(item_key, tag, type) VALUES(?, ?, ?)").run(key, tag, t.type ?? 0);
-				norm.push(t.type ? { tag, type: t.type } : { tag });
+				db.query("INSERT INTO item_tags(item_key, tag, type) VALUES(?, ?, ?)").run(key, tag, type ?? 0);
+				norm.push(type ? { tag, type } : { tag });
 			}
 			data.tags = norm;
 		}
@@ -1196,6 +1212,14 @@ export function patchItem(db: Database, key: string, patch: Partial<ZoteroItemDa
 			data.deleted ? 1 : 0,
 			key,
 		);
+		// the attachments table feeds the served Content-Type and the push: it follows these fields of the item (never the path)
+		if (data.itemType === "attachment") {
+			const text = (v: unknown) => (typeof v === "string" && v ? v : null);
+			if (rest.url !== undefined) db.query("UPDATE attachments SET url = ? WHERE item_key = ?").run(text(rest.url), key);
+			if (rest.contentType !== undefined)
+				db.query("UPDATE attachments SET content_type = ? WHERE item_key = ?").run(text(rest.contentType), key);
+			if (text(rest.linkMode)) db.query("UPDATE attachments SET link_mode = ? WHERE item_key = ?").run(text(rest.linkMode), key);
+		}
 	})();
 	return getItemDetail(db, key)!;
 }
@@ -1284,10 +1308,14 @@ export function upsertAnnotations(db: Database, attachmentKey: string, anns: Rea
 	db.transaction(() => {
 		const q = db.query(
 			`INSERT INTO annotations(key, attachment_key, data, date_modified) VALUES(?, ?, ?, ?)
-			 ON CONFLICT(key) DO UPDATE SET data = excluded.data, date_modified = excluded.date_modified,
-			 attachment_key = excluded.attachment_key`,
+			 ON CONFLICT(key) DO UPDATE SET data = excluded.data, date_modified = excluded.date_modified
+			 WHERE annotations.attachment_key = excluded.attachment_key`,
 		);
-		for (const a of anns) q.run(a.id, attachmentKey, JSON.stringify(a), a.dateModified || nowIso());
+		for (const a of anns) {
+			// an id that already belongs to another attachment is never taken over or overwritten (the whole request is refused)
+			if (!q.run(a.id, attachmentKey, JSON.stringify(a), a.dateModified || nowIso()).changes)
+				throw new HttpError(409, "annotation id is already used by another attachment");
+		}
 	})();
 }
 
