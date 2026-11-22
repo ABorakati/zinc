@@ -83,6 +83,8 @@ const EXECUTABLE_EXTENSIONS = new Set([
 	".desktop",
 	".appimage",
 	".flatpakref",
+	".deb",
+	".rpm",
 	".terminal",
 	".fileloc",
 	".inetloc",
@@ -121,8 +123,8 @@ export function isExecutableName(name: string): boolean {
 }
 
 /**
- * True when handing this file to the system's opener could run code: its name says so, or (macOS, Linux) it has no extension and
- * has an executable bit, which `open` runs as a program.
+ * True when handing this file to the system's opener could run code: its name says so, or (macOS, Linux) it is a file with no extension
+ * (or only a version number) and has an executable bit, which `open` runs as a program.
  */
 export function opensAsProgram(
 	path: string,
@@ -130,9 +132,11 @@ export function opensAsProgram(
 	modeOf: (path: string) => number = (p) => statSync(p).mode,
 ): boolean {
 	if (isExecutableName(path)) return true;
-	if (platform === "win32" || fileExtension(path)) return false;
+	const ext = fileExtension(path);
+	if (platform === "win32" || (ext && !/^.d+$/.test(ext))) return false;
 	try {
-		return (modeOf(path) & 0o111) !== 0;
+		const mode = modeOf(path);
+		return (mode & 0o170000) !== 0o040000 && (mode & 0o111) !== 0; // a folder's bit only means it can be entered
 	} catch {
 		return true; // it cannot be checked: ask first
 	}

@@ -8,9 +8,16 @@ const dir = mkdtempSync(join(tmpdir(), "zn-dangerous-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 test("what macOS and Linux openers would run needs the confirmation too", () => {
-	for (const name of ["x.desktop", "x.terminal", "x.fileloc", "x.inetloc", "x.webloc", "x.workflow", "x.action", "x.scpt", "x.scptd", "x.applescript", "x.pkg", "x.mpkg", "x.dmg", "x.tool", "x.zsh", "x.csh", "x.ksh", "x.fish", "x.AppImage", "x.prefPane", "x.mobileconfig", "x.flatpakref"])
+	for (const name of ["x.desktop", "x.terminal", "x.fileloc", "x.inetloc", "x.webloc", "x.workflow", "x.action", "x.scpt", "x.scptd", "x.applescript", "x.pkg", "x.mpkg", "x.dmg", "x.tool", "x.zsh", "x.csh", "x.ksh", "x.fish", "x.AppImage", "x.prefPane", "x.mobileconfig", "x.flatpakref", "x.deb", "x.rpm"])
 		expect([name, dangerous.isExecutableName(name)]).toEqual([name, true]);
 	for (const name of ["paper.pdf", "notes.txt", "data.csv", "page.html", "README"]) expect([name, dangerous.isExecutableName(name)]).toEqual([name, false]);
+});
+
+test("a folder does not ask, and a version number is not an extension", () => {
+	const runs = (dangerous as any).opensAsProgram;
+	expect(runs(join(dir, "Papers"), "darwin", () => 0o40755)).toBe(false);
+	expect(runs(join(dir, "Papers.app"), "darwin", () => 0o40755)).toBe(true);
+	expect(runs(join(dir, "tool-1.2"), "linux", () => 0o100755)).toBe(true);
 });
 
 test("a file with no extension and the executable bit needs it as well", () => {
