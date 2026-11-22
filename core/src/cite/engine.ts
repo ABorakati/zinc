@@ -493,20 +493,16 @@ export interface FormatInput {
 	formats: CiteFormat[];
 }
 
-function runOnce(
-	styleXml: string,
-	locales: Map<string, string>,
-	lang: string,
-	items: ZoteroItemData[],
-	mode: CiteMode,
-	format: CiteFormat,
-): string {
+function newEngine(styleXml: string, locales: Map<string, string>, lang: string, items: ZoteroItemData[]) {
 	const csl = new Map(items.map((d) => [d.key, itemToCsl(d)]));
 	const sys = {
 		retrieveLocale: (l: string) => locales.get(l) ?? locales.get(l.split("-")[0]!) ?? locales.get("en-US") ?? false,
 		retrieveItem: (id: string) => csl.get(id),
 	};
-	const engine = new CSL.Engine(sys, styleXml, lang, false);
+	return new CSL.Engine(sys, styleXml, lang, false);
+}
+
+function runOnce(engine: InstanceType<typeof CSL.Engine>, items: ZoteroItemData[], mode: CiteMode, format: CiteFormat): string {
 	engine.setOutputFormat(format);
 	const ids = items.map((d) => d.key);
 	if (mode === "citation") {
@@ -549,7 +545,8 @@ export async function formatItems(store: StyleStore, input: FormatInput): Promis
 	const { xml, defaultLocale } = await store.resolveStyle(input.style);
 	const { lang, locales } = await prepareLocales(store, input.locale, defaultLocale);
 	const out: Record<CiteFormat, string | undefined> = { html: undefined, text: undefined, rtf: undefined };
-	for (const f of input.formats) out[f] = runOnce(xml, locales, lang, input.items, input.mode, f);
+	const engine = newEngine(xml, locales, lang, input.items);
+	for (const f of input.formats) out[f] = runOnce(engine, input.items, input.mode, f);
 	return out;
 }
 
