@@ -6,9 +6,8 @@
 // GTK runs on this (the JS) thread, as the web view's does (webview/x11.ts), so a timer iterates GLib's main context while the dialog is
 // open; nothing blocks. The PDF is written to a temporary file for the dialog and removed a minute after the job was handed over.
 import { CString, dlopen, FFIType, JSCallback, read } from "bun:ffi";
-import { rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { writePrivateTemp } from "./privateTemp";
 
 const { ptr: P, i32: I32 } = FFIType;
 type Ptr = number | bigint | null;
@@ -63,7 +62,6 @@ export function gtkPrintUnavailable(): string {
 }
 
 const cstr = (s: string) => Buffer.from(`${s}\0`);
-let seq = 0;
 
 /**
  * Show the print dialog for the PDF in `bytes` and print it. Resolves "printed" once the job was handed to the printing system, or
@@ -72,9 +70,8 @@ let seq = 0;
 export function printWithGtkDialog(bytes: Uint8Array, title: string): Promise<"printed" | "cancelled"> {
 	const g = gtk();
 	if (!g) return Promise.reject(new Error(why || "the GTK print dialog is not available"));
-	const file = join(tmpdir(), `zinc-print-${process.pid}-${++seq}.pdf`);
-	writeFileSync(file, bytes);
-	const gfile = g.g_file_new_for_path(cstr(file));
+	const tmp = writePrivateTemp(bytes);
+	const gfile = g.g_file_new_for_path(cstr(tmp.file));
 	const dialog = g.gtk_print_dialog_new();
 	g.gtk_print_dialog_set_title(dialog, cstr(title || "Print"));
 	g.gtk_print_dialog_set_modal(dialog, 1);
@@ -102,13 +99,7 @@ export function printWithGtkDialog(bytes: Uint8Array, title: string): Promise<"p
 				clearInterval(pump);
 				g.g_object_unref(dialog);
 				g.g_object_unref(gfile);
-				setTimeout(() => {
-					try {
-						rmSync(file, { force: true });
-					} catch {
-						/* still in use */
-					}
-				}, 60_000);
+				setTimeout(tmp.remove, 60_000);
 				queueMicrotask(() => {
 					cb?.close();
 					cb = undefined;
@@ -133,21 +124,14 @@ export async function printWithLp(bytes: Uint8Array, o: { title: string; printer
 		writeFileSync(o.output, bytes);
 		return "file";
 	}
-	const file = join(tmpdir(), `zinc-print-${process.pid}-${++seq}.pdf`);
-	writeFileSync(file, bytes);
+	const tmp = writePrivateTemp(bytes);
 	try {
-		const args = ["lp", ...(o.printer ? ["-d", o.printer] : []), "-t", o.title || "PDF", file];
+		const args = ["lp", ...(o.printer ? ["-d", o.printer] : []), "-t", o.title || "PDF", tmp.file];
 		const p = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 		const [out, err] = [await new Response(p.stdout).text(), await new Response(p.stderr).text()];
 		if ((await p.exited) !== 0) throw new Error(err.trim() || `lp failed (${p.exitCode})`);
 		return o.printer || /request id is (\S+)-\d+/.exec(out)?.[1] || "the default printer";
 	} finally {
-		setTimeout(() => {
-			try {
-				rmSync(file, { force: true });
-			} catch {
-				/* spooled already */
-			}
-		}, 60_000);
+		setTimeout(tmp.remove, 60_000);
 	}
 }

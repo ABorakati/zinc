@@ -3,14 +3,12 @@
 // user has printed or cancelled, so the app waits meanwhile, like any Mac app showing a print panel. Windows prints through PDFium into
 // the printer (native/pdf/src/print.rs), Linux through GTK's dialog (printGtk.ts).
 import { CString } from "bun:ffi";
-import { rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFileSync } from "node:fs";
 import { nsString, objc, type Id } from "../shell/objc";
+import { writePrivateTemp } from "./privateTemp";
 
 const PDFKIT = "/System/Library/Frameworks/PDFKit.framework/PDFKit";
 const kPDFPrintPageScaleToFit = 1;
-let seq = 0;
 
 /** The print operation for the PDF in `file`, or an error why there is none. */
 function operation(file: string): { op: Id; info: Id } {
@@ -31,17 +29,11 @@ function operation(file: string): { op: Id; info: Id } {
 }
 
 function withFile<T>(bytes: Uint8Array, run: (file: string) => T): T {
-	const file = join(tmpdir(), `zinc-print-${process.pid}-${++seq}.pdf`);
-	writeFileSync(file, bytes);
+	const tmp = writePrivateTemp(bytes);
 	try {
-		return run(file);
+		return run(tmp.file);
 	} finally {
-		// the job is spooled when runOperation returns
-		try {
-			rmSync(file, { force: true });
-		} catch {
-			/* still open */
-		}
+		tmp.remove(); // the job is spooled when runOperation returns
 	}
 }
 
