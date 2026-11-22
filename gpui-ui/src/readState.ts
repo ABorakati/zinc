@@ -98,6 +98,11 @@ function scheduleSave(): void {
 	}, 200);
 }
 
+// a mark made just before quitting is saved too (the 200 ms debounce would drop it); persist() is synchronous
+process.on("exit", () => {
+	if (saveTimer !== undefined) persist();
+});
+
 // Initial flush if the file didn't exist yet so installedAt is persisted immediately
 if (readStatePath() && !existsSync(readStatePath()!)) {
 	persist();
