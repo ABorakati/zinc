@@ -49,6 +49,14 @@ export function metaDir(id: string, it: ItemRow): Dir | "auto" {
 	return field === null ? "ltr" : itemFieldDir(it, field!);
 }
 
+/**
+ * The separators of a meta line's runs, which ride on the muted runs: before each one that follows something, and after one only
+ * when a coloured run follows it (two muted neighbours, of different directions, would otherwise both add one).
+ */
+export function separateRuns<R extends { text: string; accent: boolean }>(runs: R[]): R[] {
+	return runs.map((r, i) => (r.accent ? r : { ...r, text: (i > 0 ? "\u00b7 " : "") + r.text + (runs[i + 1]?.accent ? " \u00b7" : "") }));
+}
+
 /** Meta line fields in the customised order, empty ones dropped. */
 export function metaParts(it: ItemRow): MetaPart[] {
 	const out: MetaPart[] = [];

@@ -23,6 +23,7 @@ import {
 	isRegular,
 	isStarred,
 	metaParts,
+	separateRuns,
 	mix,
 	needsFullText,
 	openLabel,
@@ -257,9 +258,7 @@ export function Card(p: {
 			if (last && !x.accent && !last.accent && last.dir === x.dir) last.text += " \u00b7 " + x.text;
 			else out.push({ text: x.text, accent: x.accent, dir: x.dir });
 		}
-		return out.map((r, i) =>
-			r.accent ? r : { ...r, text: (i > 0 ? "\u00b7 " : "") + r.text + (i < out.length - 1 ? " \u00b7" : "") },
-		);
+		return separateRuns(out);
 	});
 	/** The runs clipped to the card's text column (JS pre-clipping instead of textOverflow: ellipsis): the first run (the creators) gives way first. */
 	const fitted = createMemo<string[]>(() => {
