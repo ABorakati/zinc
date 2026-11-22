@@ -31,6 +31,9 @@ class FakeWord {
 	alertAnswer = 1;
 	bibStyleCalls = 0;
 	removed: string[] = [];
+	/** when set, getFields answers only for this field type, and Document.convert switches it */
+	docFieldType: string | null = null;
+	converted: { ids: string[]; fieldType: string }[] = [];
 	private n = 0;
 	log: string[] = [];
 
@@ -70,6 +73,8 @@ class FakeWord {
 				return this.fieldJson(f);
 			}
 			case "Document.getFields":
+				// a document that has one field type (Word: fields or bookmarks) returns nothing for the other
+				if (this.docFieldType && a !== this.docFieldType) return [];
 				return this.fields.map((f) => this.fieldJson(f));
 			case "Document.setBibliographyStyle":
 				this.bibStyleCalls++;
@@ -78,6 +83,8 @@ class FakeWord {
 				this.alerts.push(a);
 				return this.alertAnswer;
 			case "Document.convert":
+				this.converted.push({ ids: a, fieldType: b });
+				if (this.docFieldType) this.docFieldType = b;
 				return null;
 			case "Field.setCode":
 				fieldById(a).code = b;
@@ -335,6 +342,22 @@ describe("execCommand / respond", () => {
 		await word.run("setDocPrefs");
 		expect(word.fields[0]!.text).toBe("(Smith & Jones, 2020)");
 		expect(parsePrefsXml(word.docData)!.styleId).toBe("http://www.zotero.org/styles/apa");
+	});
+
+	test("changing the field type converts the fields the document has, found by their old type", async () => {
+		script.docPrefs.push({ style: "vancouver", fieldType: "Field" });
+		script.citation.push({ items: [{ key: "AAAAAAA1" }] }, { items: [{ key: "BBBBBBB2" }] });
+		await word.run("addEditCitation");
+		word.cursor = null;
+		await word.run("addEditCitation");
+		word.docFieldType = "Field";
+		script.docPrefs.push({ style: "vancouver", fieldType: "Bookmark" });
+		await word.run("setDocPrefs");
+		expect(word.converted.length).toBe(1);
+		expect(word.converted[0]!.fieldType).toBe("Bookmark");
+		expect(word.converted[0]!.ids).toEqual(word.fields.map((f) => f.id));
+		expect(parsePrefsXml(word.docData)!.fieldType).toBe("Bookmark");
+		expect(word.fields.map((f) => f.text)).toEqual(["(1)", "(2)"]);
 	});
 
 	test("automatic updates off: only the inserted citation is formatted", async () => {

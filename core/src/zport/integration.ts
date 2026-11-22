@@ -575,8 +575,8 @@ class Session {
 
 	// ---- fields
 
-	async readFields(): Promise<ParsedField[]> {
-		const wires = await this.doc.getFields(this.fieldType);
+	async readFields(fieldType = this.fieldType): Promise<ParsedField[]> {
+		const wires = await this.doc.getFields(fieldType);
 		let noteOrdinal = 0;
 		return wires.map((wire, index) => {
 			const parsed = parseFieldCode(toFull(wire.code));
@@ -1066,7 +1066,8 @@ async function dispatch(s: Session, command: string): Promise<void> {
 			const old = await s.setDocPrefs();
 			if (!old) break;
 			if (haveFields) {
-				const fields = await s.readFields();
+				// the fields still have the old type: it is Document.convert that changes it
+				const fields = await s.readFields(old.fieldType || "Field");
 				const convert = old.noteType !== s.prefs.noteType || old.fieldType !== s.prefs.fieldType;
 				if (convert) {
 					const ids: string[] = [];
