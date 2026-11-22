@@ -446,6 +446,8 @@ var
   ProtectedLibDir: string;
   // library.json exists but its path could not be read: every folder except logs\ is left alone rather than guessed at
   ProtectAllFolders: Boolean;
+  // the settings folder itself holds a library database (no library.json points at it): its storage\ tree, the attachments, is never touched
+  RootStorageDir: string;
 
 // The "path" value of a library.json {"path": "..."}; False when it cannot be read with certainty (no value, or a \u escape).
 function ReadLibraryJsonPath(const Json: string; var Path: string): Boolean;
@@ -532,6 +534,7 @@ begin
   Result := False;
   if ProtectAllFolders then Result := ExtractFileName(L) <> 'logs'
   else if (ProtectedLibDir <> '') and ((L = ProtectedLibDir) or (Pos(ProtectedLibDir + '\', L) = 1)) then Result := True
+  else if (RootStorageDir <> '') and ((L = RootStorageDir) or (Pos(RootStorageDir + '\', L) = 1)) then Result := True
   else if HoldsLibraryDatabase(Dir) then Result := True;
 end;
 
@@ -555,8 +558,9 @@ begin
         end else
         begin
           L := Lowercase(FR.Name);
-          // library.json stays while it points at a library: deleting it would leave that library unfindable after a reinstall
-          if (Pos('.sqlite', L) = 0) and (Pos('.db', L) = 0) and not ((L = 'library.json') and (ProtectedLibDir <> '')) then DeleteFile(P);
+          // library.json stays while it points at a library, or while it could not be read (the library is then left alone as well):
+          // deleting it would leave that library unfindable after a reinstall
+          if (Pos('.sqlite', L) = 0) and (Pos('.db', L) = 0) and not ((L = 'library.json') and ((ProtectedLibDir <> '') or ProtectAllFolders)) then DeleteFile(P);
         end;
       until not FindNext(FR);
     finally
@@ -594,6 +598,9 @@ begin
     Base := GetParam('ZNAPPDATA');
     if Base = '' then Base := ExpandConstant('{userappdata}');
     LoadLibraryProtection(Base + '\zotero-next-gpui');      // a library saved under this folder keeps its whole folder, storage\ included
+    // a library database directly in the settings folder, with no library.json pointing at it, keeps its storage\ tree too
+    RootStorageDir := '';
+    if HoldsLibraryDatabase(Base + '\zotero-next-gpui') then RootStorageDir := Lowercase(Base + '\zotero-next-gpui\storage');
     DeleteSettingsTree(Base + '\zotero-next-gpui');         // ui-state.json, library.json (the saved library path), logs\
     DelTree(Base + '\zotero-next-gpui.exe', True, True, True); // the web tabs' WebView2 profile
   end;
