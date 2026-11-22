@@ -7,7 +7,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { addFile, addLink, guessContentType } from "../additems/files";
-import { createCollection, getCollection, HttpError } from "../db";
+import { addItemsToCollection, createCollection, getCollection, HttpError } from "../db";
 import { saveTranslatedItem, convertTags } from "../connector/items";
 import { normDoi } from "../io/common";
 import { detectFormat, importText, type ImportFormat } from "../io/import";
@@ -362,9 +362,7 @@ export function saveImported(
 			const manualTags = convertTags(raw.tags, 0);
 			const rest = { ...raw, tags: [] };
 			const out = saveTranslatedItem(db, rest, keys[0] ?? null, manualTags);
-			for (const extra of keys.slice(1)) {
-				db.query("INSERT OR IGNORE INTO collection_items (collection_key, item_key) VALUES (?, ?)").run(extra, out.key);
-			}
+			for (const extra of keys.slice(1)) addItemsToCollection(db, extra, [out.key]);
 			created++;
 			itemKeys.push(out.key);
 			if (doi) seen.add(doi);

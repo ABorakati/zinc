@@ -2,7 +2,7 @@
 // create the parent item and move the PDF under it. If the work is already in the library the PDF goes under that item.
 import type { Database } from "bun:sqlite";
 import type { ItemDetail } from "../api-types";
-import { HttpError, getItemDetail } from "../db";
+import { HttpError, addItemsToCollection, getItemDetail } from "../db";
 import { extractFulltext } from "../extract";
 import { normalizeDoi } from "../references/ids";
 import { mailtoFor } from "../references/net";
@@ -116,8 +116,7 @@ export async function retrieveOne(
 		const parent = r.added?.data.key ?? r.existing!;
 		reparentItem(db, attachmentKey, parent);
 		if (r.added) {
-			for (const c of colls.slice(1))
-				db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parent);
+			for (const c of colls.slice(1)) addItemsToCollection(db, c, [parent]);
 		}
 		let renamed = false;
 		if (opts.rename !== false) {

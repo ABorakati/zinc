@@ -63,8 +63,7 @@ export async function createParent(db: Database, req: Partial<CreateParentReques
 		const r = await addOne(db, ids[0]!, loadKnown(db, lib), collections[0], true, lib);
 		parentKey = r.added?.data.key ?? r.existing!;
 		if (r.added) {
-			for (const c of collections.slice(1))
-				db.query("INSERT OR IGNORE INTO collection_items(collection_key, item_key) VALUES(?, ?)").run(c, parentKey);
+			for (const c of collections.slice(1)) addItemsToCollection(db, c, [parentKey]);
 		} else {
 			// The work was already in the library: the attachment is about to leave its collections, so the parent joins them
 			// (else the work would drop out of the collection view it was filed in).
