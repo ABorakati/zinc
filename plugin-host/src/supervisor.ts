@@ -96,6 +96,17 @@ export interface SupervisorOptions {
 	lifecycleTimeoutMs?: number;
 	/** Budget of loading a component, ms. Default 15000. */
 	loadTimeoutMs?: number;
+	/**
+	 * Wall-clock limit of the requests that are not calls into a plugin (`unload`, `stats`, and the `shutdown` of the supervisor), ms.
+	 * Default 10000. A `load` gets four times its budget. Ordinary calls have no wall-clock limit: their budgets count only the time
+	 * the plugin runs, so a slow host import never kills a plugin.
+	 */
+	controlTimeoutMs?: number;
+	/**
+	 * `stop` waits this long behind another call of the same plugin (and gives its own `shutdown` call this long) before it gives up
+	 * on a call that is parked in a host import: that call fails, the plugin is disabled and unloaded. Default 30000.
+	 */
+	stuckCallMs?: number;
 	/** Heartbeat period of the host and the silence that counts as a hung host, ms. Defaults 1000 and 5000. */
 	heartbeatMs?: number;
 	heartbeatTimeoutMs?: number;
@@ -184,6 +195,8 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	const callMs = opts.callTimeoutMs ?? DEFAULT_TIMEOUTS.call;
 	const lifecycleMs = opts.lifecycleTimeoutMs ?? DEFAULT_TIMEOUTS.lifecycle;
 	const loadMs = opts.loadTimeoutMs ?? DEFAULT_TIMEOUTS.load;
+	const controlMs = opts.controlTimeoutMs ?? 10_000;
+	const stuckMs = opts.stuckCallMs ?? 30_000;
 	const heartbeatMs = opts.heartbeatMs ?? 1000;
 	const heartbeatTimeoutMs = opts.heartbeatTimeoutMs ?? 5000;
 	const maxRestarts = opts.maxRestarts ?? 5;
@@ -277,20 +290,38 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 		}
 	};
 
-	/** Send a request and wait for its reply under an active-time budget. `plugin` ties the budget to that plugin's waiting state. */
+	/**
+	 * Send a request and wait for its reply under an active-time budget. `plugin` ties the budget to that plugin's waiting state.
+	 * `wallMs`: also give up after this much real time (only for requests that are not ordinary calls), with a `timeout` error.
+	 */
 	function request(
 		m: Extract<ToHost, { t: "load" | "unload" | "call" | "stats" }>,
 		plugin: string,
 		phase: string,
 		budgetMs: number,
+		wallMs?: number,
 	): Promise<WireResult> {
 		return new Promise((resolve) => {
-			pending.set(m.id, { id: m.id, plugin, phase, budgetMs, resolve });
+			let wall: ReturnType<typeof setTimeout> | undefined;
+			pending.set(m.id, {
+				id: m.id,
+				plugin,
+				phase,
+				budgetMs,
+				resolve: (r) => {
+					if (wall) clearTimeout(wall);
+					resolve(r);
+				},
+			});
+			if (wallMs !== undefined) {
+				wall = setTimeout(() => settle(m.id, { ok: false, error: { kind: "timeout", ms: wallMs, phase } }), wallMs);
+				wall.unref?.();
+			}
 			sendRaw(m);
 		});
 	}
 
-	function callRequest(plugin: string, iface: string, fn: string, args: unknown[], budgetMs: number): Promise<WireResult> {
+	function callRequest(plugin: string, iface: string, fn: string, args: unknown[], budgetMs: number, wallMs?: number): Promise<WireResult> {
 		if (proc) opts.beforeCall?.();
 		return request(
 			{
@@ -306,7 +337,15 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 			plugin,
 			`${iface}#${fn}`,
 			budgetMs,
+			wallMs,
 		);
+	}
+
+	/** Give up on what the plugin has in flight (a call parked in a host import): those calls fail with `timeout`, the host drops the plugin. */
+	function abandon(id: string, waitedMs: number) {
+		for (const p of [...pending.values()]) {
+			if (p.plugin === id && p.phase !== "load" && p.phase !== "unload") settle(p.id, { ok: false, error: { kind: "timeout", ms: waitedMs, phase: p.phase } });
+		}
 	}
 
 	function settle(id: number, result: WireResult) {
@@ -463,6 +502,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 					r.wantRunning = false;
 					if (m.kind === "timeout") {
 						if (r.status !== "disabled") setStatus(r, "disabled", m.message);
+						sendRaw({ t: "unload", id: nextId++, plugin: m.plugin }); // the host keeps no dead instance of it
 						void table.dropPlugin(zincContext(r));
 					} else if (r.status !== "disabled") {
 						setStatus(r, "failed", m.message);
@@ -487,7 +527,8 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 	async function onZincImport(m: Extract<FromHost, { t: "import" }>) {
 		const r = plugins.get(m.plugin);
 		const reply = (result: WireResult) => sendRaw({ t: "import-reply", id: m.id, result });
-		if (!r || !table.has(m.iface, m.fn)) {
+		// a disabled plugin is not served: a call that was given up on may still be running in the host
+		if (!r || r.status === "disabled" || !table.has(m.iface, m.fn)) {
 			reply({
 				ok: false,
 				error: { kind: "wit", payload: { tag: "unavailable", val: `unsupported: no handler for ${ifaceName(m.iface)}#${camel(m.fn)}` } },
@@ -633,7 +674,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 			...(extra?.prefs ? { prefs: extra.prefs } : {}),
 			...(extra?.l10n ? { l10n: extra.l10n } : {}),
 		};
-		const res = await request({ t: "load", id: nextId++, plugin: spec }, r.id, "load", loadMs);
+		const res = await request({ t: "load", id: nextId++, plugin: spec }, r.id, "load", loadMs, loadMs * 4);
 		if (!res.ok) {
 			if (r.status !== "disabled") setStatus(r, "failed", `load failed: ${describe(res.error)}`);
 			toError(res);
@@ -661,6 +702,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 			r.wantRunning = false;
 			setStatus(r, "disabled", `${res.error.phase || fallbackPhase} exceeded ${res.error.ms} ms`);
 			void table.dropPlugin(zincContext(r));
+			sendRaw({ t: "unload", id: nextId++, plugin: r.id }); // the host keeps no dead instance of it
 			return;
 		}
 		if (res.error.kind === "trap" && r.status !== "disabled") {
@@ -746,22 +788,35 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 				await startRecord(r, o.why ?? "app-startup", o.previousVersion);
 			}),
 
-		stop: (id, o = {}) =>
-			chain(gates, id, async () => {
+		stop: (id, o = {}) => {
+			// Behind a call that is parked in a host import `stop` would wait for ever: after `stuckMs` that call is given up on.
+			let forced = false;
+			let reached = false;
+			const stuck = setTimeout(() => {
+				if (reached) return;
+				forced = true;
+				abandon(id, stuckMs);
+			}, stuckMs);
+			stuck.unref?.();
+			return chain(gates, id, async () => {
+				reached = true;
+				clearTimeout(stuck);
 				await restarting;
+				if (forced) return; // the call in front never ended: the plugin was disabled and unloaded instead
 				const r = must(id);
 				usable(r);
 				r.wantRunning = false;
 				setStatus(r, "stopping");
 				const budget = Math.min(lifecycleBudget(r), 5000);
-				const res = await callRequest(id, "lifecycle", "shutdown", [pluginData(r), o.why ?? "app-shutdown"], budget);
+				const res = await callRequest(id, "lifecycle", "shutdown", [pluginData(r), o.why ?? "app-shutdown"], budget, stuckMs);
 				if (!res.ok) {
 					handleCallFailure(r, res, "lifecycle#shutdown", "shutdown failed");
 					toError(res);
 				}
 				if (r.status === "disabled") return;
 				setStatus(r, "stopped");
-			}),
+			});
+		},
 
 		async unload(id) {
 			await restarting;
@@ -769,8 +824,10 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 			if (!r) return;
 			plugins.delete(id);
 			loadInfos.delete(id);
+			// what the plugin still has in flight can never finish now: fail it, so the plugin's queue and its callers are released
+			for (const p of [...pending.values()]) if (p.plugin === id && p.phase !== "unload") settle(p.id, { ok: false, error: { kind: "not-loaded", plugin: id } });
 			await table.dropPlugin(zincContext(r)).catch(() => {});
-			if (proc) await request({ t: "unload", id: nextId++, plugin: id }, id, "unload", callMs);
+			if (proc) await request({ t: "unload", id: nextId++, plugin: id }, id, "unload", callMs, controlMs);
 		},
 
 		call: (id, iface, fn, args = [], o = {}) => queuedCall(id, iface, fn, args, o),
@@ -798,7 +855,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 
 		async stats() {
 			await ensureHost();
-			const res = await request({ t: "stats", id: nextId++ }, "", "stats", callMs);
+			const res = await request({ t: "stats", id: nextId++ }, "", "stats", callMs, controlMs);
 			if (!res.ok) toError(res);
 			return res.value;
 		},
@@ -832,7 +889,7 @@ export function createPluginSupervisor(opts: SupervisorOptions = {}): PluginSupe
 			await spawning?.catch(() => {});
 			for (const r of plugins.values()) {
 				if (r.status === "running" && proc) {
-					await callRequest(r.id, "lifecycle", "shutdown", [pluginData(r), "app-shutdown"], 2000).catch(() => {});
+					await callRequest(r.id, "lifecycle", "shutdown", [pluginData(r), "app-shutdown"], 2000, Math.min(controlMs, 5000)).catch(() => {});
 				}
 			}
 			for (const r of plugins.values()) {

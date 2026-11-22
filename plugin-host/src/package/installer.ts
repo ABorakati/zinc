@@ -107,6 +107,11 @@ export interface ManagerOptions {
 	/** A reason string for a blocked plugin version (`plugin-state::blocked`), or undefined. */
 	blocklist?: (id: string, version: string) => string | undefined;
 	log?: (level: "error" | "warn" | "info" | "debug", message: string) => void;
+	/**
+	 * How long `startAll` waits for one plugin's `startup`, and an uninstall (or update) waits for the old version's `uninstall` hook,
+	 * before it goes on without it, ms. Default: six times the plugin's budget, at least 30 s.
+	 */
+	stuckMs?: number;
 }
 
 export interface ManagerEvents {
@@ -144,6 +149,19 @@ interface Rec {
 const HOOK_REASON = { install: "addon-install", upgrade: "addon-upgrade", downgrade: "addon-downgrade", reinstall: "addon-upgrade" } as const;
 
 const MAX_MANIFEST_BYTES = 256 * 1024;
+
+/**
+ * Wait for `p`, but not longer than `ms`: `late` says the time ran out first. `p` goes on; a rejection after that is the caller's to
+ * handle (the caller has attached its own handlers to `p`).
+ */
+function waitAtMost<T>(p: Promise<T>, ms: number): Promise<{ late: false; value: T } | { late: true }> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<{ late: true }>((resolve) => {
+		timer = setTimeout(() => resolve({ late: true }), ms);
+		timer.unref?.();
+	});
+	return Promise.race([p.then((value) => ({ late: false as const, value })), late]).finally(() => clearTimeout(timer));
+}
 
 export class PluginManager {
 	readonly layout: Layout;
@@ -612,8 +630,18 @@ export class PluginManager {
 		this.emit("hook", { plugin: id, hook, why });
 	}
 
-	/** Stops (shutdown hook), runs `uninstall`, unloads. With `removeFiles` also deletes the installed folder. Never throws. */
-	private async retire(id: string, why: string, o: { removeFiles: boolean }): Promise<void> {
+	private stuckMs(id: string): number {
+		return this.opts.stuckMs ?? Math.max(30_000, 6 * this.budget(id));
+	}
+
+	/** `runHook`, but a hook that never ends (the plugin waits for ever in a host import) is given up on after `stuckMs`. */
+	private async runHookWithin(id: string, hook: "uninstall", why: string): Promise<void> {
+		const done = this.runHook(id, hook, why);
+		if ((await waitAtMost(done, this.stuckMs(id))).late) this.log("warn", `${id}: ${hook}(${why}) did not finish in ${this.stuckMs(id)} ms; going on without it`);
+	}
+
+	/** Stops (shutdown hook), runs `uninstall` (unless the caller ran it: `hookRan`), unloads. With `removeFiles` also deletes the installed folder. Never throws. */
+	private async retire(id: string, why: string, o: { removeFiles: boolean; hookRan?: boolean }): Promise<void> {
 		const sup = this.supervisor();
 		if (sup.get(id)?.status === "running") {
 			try {
@@ -624,9 +652,9 @@ export class PluginManager {
 			}
 		}
 		const status = sup.get(id)?.status;
-		if (status && status !== "failed" && status !== "disabled") {
+		if (status && status !== "failed" && status !== "disabled" && !o.hookRan) {
 			try {
-				await this.runHook(id, "uninstall", why);
+				await this.runHookWithin(id, "uninstall", why);
 			} catch (e) {
 				this.log("warn", `${id}: uninstall(${why}) failed: ${describe(e)}`);
 			}
@@ -648,15 +676,19 @@ export class PluginManager {
 			this.uninstalling.add(id);
 			this.emit("changed", { id });
 			try {
+				let hookRan = false;
 				if (!this.supervisor().get(id)) {
 					// not loaded (disabled, or never started): load it just to run its `uninstall` hook
 					try {
-						if (await this.loadInto(id)) await this.runHook(id, "uninstall", "addon-uninstall");
+						if (await this.loadInto(id)) {
+							hookRan = true; // `retire` must not run it a second time
+							await this.runHookWithin(id, "uninstall", "addon-uninstall");
+						}
 					} catch (e) {
 						this.log("warn", `${id}: uninstall hook of a plugin that was not running failed: ${describe(e)}`);
 					}
 				}
-				await this.retire(id, "addon-uninstall", { removeFiles: true });
+				await this.retire(id, "addon-uninstall", { removeFiles: true, hookRan });
 				this.records.delete(id);
 				this.resolvedCwasm.delete(id);
 				this.problems.delete(id);
@@ -762,7 +794,24 @@ export class PluginManager {
 				await this.lock(cur, async () => {
 					try {
 						if (!(await this.loadInto(cur))) return;
-						await this.startPlugin(cur, "app-startup");
+						const started = this.startPlugin(cur, "app-startup");
+						// a startup that never ends must not hold up the others, or the window's `main-window-load`
+						const r = await waitAtMost(started, this.stuckMs(cur));
+						if (r.late) {
+							this.log("warn", `${cur}: startup has not finished after ${this.stuckMs(cur)} ms; going on without waiting for it`);
+							started.then(
+								() => {
+									this.emit("hook", { plugin: cur, hook: "startup", why: "app-startup" });
+									this.emit("changed", { id: cur });
+								},
+								(e) => {
+									this.problems.set(cur, { state: "failed", detail: describe(e) });
+									this.log("error", `${cur}: ${describe(e)}`);
+									this.emit("changed", { id: cur });
+								},
+							);
+							return;
+						}
 						this.emit("hook", { plugin: cur, hook: "startup", why: "app-startup" });
 					} catch (e) {
 						this.problems.set(cur, { state: "failed", detail: describe(e) });
