@@ -16,6 +16,7 @@ interface Win32 {
 	GlobalLock(mem: number | bigint): number | bigint;
 	GlobalUnlock(mem: number | bigint): number;
 	GlobalFree(mem: number | bigint): number | bigint;
+	GlobalSize(mem: number | bigint): number | bigint;
 	ShellExecuteW(h: number, op: Buffer, file: Buffer, params: number, dir: number, show: number): number | bigint;
 }
 
@@ -37,6 +38,7 @@ function win32(): Win32 | null {
 			GlobalLock: { args: [p], returns: p },
 			GlobalUnlock: { args: [p], returns: FFIType.i32 },
 			GlobalFree: { args: [p], returns: p },
+			GlobalSize: { args: [p], returns: FFIType.u64 },
 		}).symbols;
 		const s = dlopen("shell32.dll", { ShellExecuteW: { args: [p, p, p, p, p, FFIType.i32], returns: p } }).symbols;
 		w32 = { ...u, ...k, ...s } as unknown as Win32;
@@ -104,20 +106,26 @@ export function pasteText(): string | null {
 	const w = win32();
 	if (!w || !w.OpenClipboard(0)) return null;
 	try {
-		const h = w.GetClipboardData(CF_UNICODETEXT);
-		if (!h) return null;
-		const src = w.GlobalLock(h);
-		if (!src) return null;
-		try {
-			const u16 = new Uint16Array(toArrayBuffer(src as never, 0, 1 << 24));
-			let n = 0;
-			while (u16[n] !== 0 && n < u16.length - 1) n++;
-			return Buffer.from(u16.buffer, 0, n * 2).toString("utf16le");
-		} finally {
-			w.GlobalUnlock(h);
-		}
+		return globalUtf16(w, w.GetClipboardData(CF_UNICODETEXT));
 	} finally {
 		w.CloseClipboard();
+	}
+}
+
+/** The UTF-16 text in a global memory block: up to its first NUL, and never past the block's own size (another program wrote it). */
+export function globalUtf16(w: Pick<Win32, "GlobalLock" | "GlobalUnlock" | "GlobalSize">, h: number | bigint): string | null {
+	if (!h) return null;
+	const size = Number(w.GlobalSize(h));
+	if (!size) return null;
+	const src = w.GlobalLock(h);
+	if (!src) return null;
+	try {
+		const u16 = new Uint16Array(toArrayBuffer(src as never, 0, size - (size % 2)));
+		let n = 0;
+		while (n < u16.length && u16[n] !== 0) n++;
+		return Buffer.from(u16.buffer, 0, n * 2).toString("utf16le");
+	} finally {
+		w.GlobalUnlock(h);
 	}
 }
 
