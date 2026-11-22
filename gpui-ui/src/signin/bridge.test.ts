@@ -455,3 +455,76 @@ describe("with the core's LoginController", () => {
 		expect(c.signedIn()).toBe(true);
 	});
 });
+
+describe("helper life cycle", () => {
+	/** the browser's cookie read waits until released: the idle end is then parked on its await */
+	function holdCookies(d: FakeDriver) {
+		let release!: () => void;
+		const gate = new Promise<void>((r) => (release = r));
+		let held = true;
+		let reached = false;
+		const orig = d.call.bind(d);
+		d.call = (async (op: HelperOp, args: unknown) => {
+			if (op === "cookies" && held) {
+				reached = true;
+				await gate;
+			}
+			return orig(op, args as never);
+		}) as typeof d.call;
+		return {
+			reached: () => reached,
+			release: () => {
+				held = false;
+				release();
+			},
+		};
+	}
+
+	test("a sign-in window opened while the idle end reads the cookies keeps the browser", async () => {
+		const { bridge, d } = make(new FakeDriver(), { idleMs: 20 });
+		await bridge.openLogin(REQ, new AbortController().signal);
+		const hold = holdCookies(d);
+		bridge.closeAll(); // the next idle check goes ahead and parks on the cookie read
+		await until(hold.reached);
+		await bridge.openLogin({ ...REQ, realm: "r2" }, new AbortController().signal);
+		hold.release();
+		await sleep(100);
+		expect(d.stopped).toBe(false);
+		expect(bridge.helperRunning).toBe(true);
+		await bridge.dispose();
+	});
+
+	test("a page load started while the idle end reads the cookies keeps the browser", async () => {
+		const { bridge, d } = make(new FakeDriver(), { idleMs: 20 });
+		await bridge.openLogin(REQ, new AbortController().signal);
+		const hold = holdCookies(d);
+		bridge.closeAll();
+		await until(hold.reached);
+		const load = bridge.load({ url: "https://pub.example.org/a", timeoutMs: 300, capturePdf: false }, new AbortController().signal);
+		await sleep(10);
+		hold.release();
+		await load;
+		expect(d.of("open").length).toBe(2);
+		expect(d.stopped).toBe(false);
+		await bridge.dispose();
+	});
+
+	test("two sign-in windows requested at once open one", async () => {
+		const { bridge, d } = make();
+		const ac = new AbortController();
+		const r = await Promise.allSettled([bridge.openLogin(REQ, ac.signal), bridge.openLogin({ ...REQ, realm: "r2" }, ac.signal)]);
+		expect(r.map((x) => x.status).sort()).toEqual(["fulfilled", "rejected"]);
+		expect(d.of("open").length).toBe(1);
+		await bridge.dispose();
+	});
+
+	test("a finished PDF load leaves downloads on while a sign-in window is capturing PDFs", async () => {
+		const { bridge, d } = make();
+		await bridge.openLogin({ ...REQ, capturePdf: true }, new AbortController().signal);
+		await bridge.load({ url: "https://pub.example.org/a", timeoutMs: 100, capturePdf: true }, new AbortController().signal);
+		const dirs = d.of("downloads").map((c) => c.args.dir);
+		expect(dirs.length).toBeGreaterThan(0);
+		expect(dirs.every((x) => x !== null)).toBe(true);
+		await bridge.dispose();
+	});
+});

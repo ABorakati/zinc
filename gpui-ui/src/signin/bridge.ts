@@ -249,13 +249,16 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 
 	async function idleStop(): Promise<void> {
 		idleTimer = null;
-		if (!driver || busy > 0 || (login && !login.closed)) return armIdle();
+		const inUse = () => busy > 0 || (login && !login.closed);
+		if (!driver || inUse()) return armIdle();
 		const d = driver;
 		try {
 			await readCookies(d, 0); // the in-memory copy is current when the browser ends
 		} catch {
 			/* keep the older copy */
 		}
+		// drv() handed this browser out while the cookies were read: a load or a window may be using it now
+		if (driver !== d || inUse()) return armIdle();
 		driver = null;
 		log("info", "sign-in browser ended (idle)");
 		await d.stop();
@@ -601,6 +604,7 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 			} else {
 				const w = new LoginWin(req);
 				const d = await drv();
+				if (login && !login.closed) throw new Error(`a sign-in window is already open (realm ${login.s.req.realm})`); // another call got there while the browser started
 				login = w;
 				logins.set(w.id, w);
 				busy++;
@@ -682,7 +686,7 @@ export function createSigninBridge(deps: BridgeDeps): SigninBridge {
 			} finally {
 				loads.delete(id);
 				if (opened) void driver?.call("release", { id }).catch(() => {});
-				if (req.capturePdf && ![...loads.values()].some((t) => t.capturePdf)) void setDownloads(false);
+				if (req.capturePdf && capturing().length === 0) void setDownloads(false); // no load and no sign-in window still captures
 				busy--;
 				armIdle();
 			}
