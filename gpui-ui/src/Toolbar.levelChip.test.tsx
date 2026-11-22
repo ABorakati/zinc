@@ -90,7 +90,12 @@ describe("sort bar level chip", () => {
 		s.sortLevels = () => levels;
 		Toolbar = await import("./Toolbar");
 	});
-	afterAll(() => {
+	afterAll(async () => {
+		// importing the toolbar registers its keyboard actions app-wide: take them out again so other test files in this process
+		// (shell/shortcuts.test.ts uses the same chord) see the registry they expect
+		const registry = await import("./registry");
+		registry.unregisterAppAction("search.quick");
+		registry.unregisterAppAction("search.find");
 		Object.assign(store as unknown as Record<string, unknown>, saved);
 		globalThis.fetch = realFetch;
 		if (envBefore === undefined) delete process.env.ZN_UI_STATE;
