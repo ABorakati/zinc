@@ -763,7 +763,7 @@ function applyPatchUnchecked(root: VNode, styles: Record<string, NamedStyle>, pa
 				if (!parent) return false;
 				const sub = buildNested(op.val.subtree, { prefix: `${parent.node.id}/i${op.val.index}.` });
 				for (const s of op.val.subtree.styles) styles[s.name] = s;
-				parent.node.children.splice(Math.min(op.val.index, parent.node.children.length), 0, sub);
+				parent.node.children.splice(clampIndex(op.val.index, parent.node.children.length), 0, sub);
 				break;
 			}
 			case "remove": {
@@ -776,11 +776,37 @@ function applyPatchUnchecked(root: VNode, styles: Record<string, NamedStyle>, pa
 				const hit = find(root, op.val.key);
 				const to = find(root, op.val.parent);
 				if (!hit?.parent || !to) return false;
+				// into itself or its own descendant: the subtree would end up cut off from the tree (or contain itself)
+				if (holds(hit.node, to.node)) throw new TreeError(`cannot move "${op.val.key}" into itself or one of its own descendants`);
 				const [n] = hit.parent.children.splice(hit.index, 1);
-				to.node.children.splice(Math.min(op.val.index, to.node.children.length), 0, n!);
+				to.node.children.splice(clampIndex(op.val.index, to.node.children.length), 0, n!);
 				break;
 			}
 		}
 	}
+	// the limits of a whole tree hold across patches, not only for each subtree on its own
+	if (p.ops.some((op) => op.tag === "insert" || op.tag === "replace" || op.tag === "move")) checkTreeLimits(root);
 	return true;
+}
+
+/** An index into a child list: below 0 or not a number is the start, past the end is the end (never counted from the end). */
+function clampIndex(index: number, length: number): number {
+	const i = Number(index);
+	if (Number.isNaN(i)) return 0;
+	return Math.max(0, Math.min(length, Math.trunc(i)));
+}
+
+/** Is `target` `node` or inside it? */
+function holds(node: VNode, target: VNode): boolean {
+	return node === target || node.children.some((c) => holds(c, target));
+}
+
+function checkTreeLimits(root: VNode): void {
+	let count = 0;
+	const walk = (n: VNode, depth: number) => {
+		if (depth > LIMITS.depth) throw new TreeError(`tree deeper than ${LIMITS.depth} after the patch`);
+		if (++count > LIMITS.nodes) throw new TreeError(`more than ${LIMITS.nodes} nodes after the patch`);
+		for (const c of n.children) walk(c, depth + 1);
+	};
+	walk(root, 0);
 }
