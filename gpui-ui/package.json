@@ -6,6 +6,7 @@
 		"start": "bun src/main.tsx",
 		"dev": "bun --hot src/main.tsx",
 		"check": "bun check",
+		"test:ui": "bun test/ui/run.ts",
 		"build": "bun scripts/build.ts",
 		"aot-bench": "bun scripts/aot-bench.ts"
 	},
