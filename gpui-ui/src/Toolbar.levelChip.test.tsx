@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createRoot } from "@gpuix/solid";
 import { createSignal } from "solid-js";
-import type { HostElement, HostRoot } from "@gpuix/solid";
+import type { HostElement } from "@gpuix/solid";
 import type * as ToolbarMod from "./Toolbar";
 import type * as StoreMod from "./store";
 import type { GroupBy, SortLevel } from "./contracts";
@@ -98,7 +98,7 @@ describe("sort bar level chip", () => {
 	});
 
 	/** The element ids of the app's tree, in order. */
-	const hostIds = (n: HostElement | HostRoot): number[] => (n.kind === "root" ? [] : [n.id]).concat(...n.children.map((c) => (c.kind === "element" ? hostIds(c) : [c.id])));
+	const hostIds = (n: HostElement): number[] => [n.id].concat(...n.children.map((c) => (c.kind === "element" ? hostIds(c) : [c.id])));
 	const mirrorIds = (m: ReturnType<typeof mirrorRenderer>, id: number): number[] => [id, ...(m.kids.get(id) ?? []).flatMap((c) => mirrorIds(m, c))];
 
 	test("switching grouping on and off keeps the renderer's tree equal to the app's", async () => {
@@ -106,9 +106,9 @@ describe("sort bar level chip", () => {
 		const m = mirrorRenderer();
 		const root = createRoot(m.renderer as never);
 		let host!: HostElement;
-		root.render(() => {
+		root.render((): never => {
 			host = (<Toolbar.SortBar />) as unknown as HostElement;
-			return host;
+			return host as never;
 		});
 		root.flush();
 		for (const g of ["year", "none", "year", "none", "year"] as const) {

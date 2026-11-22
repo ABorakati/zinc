@@ -31,7 +31,7 @@ describe("table", () => {
 		fields: { language: i === 1 ? "ar" : "en" },
 	})) as ItemRow[];
 	let roots: (() => void)[] = [];
-	const [rev, bump] = createSignal(0, { equals: false });
+	const [rev, bump] = createSignal<void>(undefined, { equals: false });
 
 	beforeAll(async () => {
 		envBefore = process.env.ZN_UI_STATE;
