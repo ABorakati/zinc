@@ -1,5 +1,6 @@
 // A small JSON Schema checker: just the keywords plugin-api/manifest.schema.json uses (draft 2020-12 subset). It exists so the
-// installer validates against the real schema file with no extra dependency. Unknown keywords are ignored.
+// installer validates against the real schema file with no extra dependency. Unknown keywords are ignored (`if`, `then`, `else` and
+// `contains` are checked).
 type S = any;
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -78,6 +79,20 @@ export function validateSchema(root: S, data: unknown): string[] {
 				return e.length === 0;
 			}).length;
 			if (passing !== 1) errs.push(`${path}: must match exactly one of the allowed forms (matched ${passing})`);
+		}
+		if (schema.if !== undefined) {
+			const e: string[] = [];
+			run(schema.if, v, path, e);
+			const branch = e.length === 0 ? schema.then : schema.else;
+			if (branch !== undefined) run(branch, v, path, errs);
+		}
+		if (schema.contains !== undefined && Array.isArray(v)) {
+			const has = v.some((x) => {
+				const e: string[] = [];
+				run(schema.contains, x, path, e);
+				return e.length === 0;
+			});
+			if (!has) errs.push(`${path}: must contain ${"const" in schema.contains ? JSON.stringify(schema.contains.const) : "a matching item"}`);
 		}
 		if (schema.not) {
 			const e: string[] = [];
