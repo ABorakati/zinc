@@ -237,6 +237,26 @@ describe("execCommand / respond", () => {
 		expect(word.fields[0]!.text).toBe("(1,2)");
 	});
 
+	test("merging adjacent citations of one work keeps each locator and drops only exact repeats", async () => {
+		script.docPrefs.push({ style: "vancouver", fieldType: "Field" });
+		script.citation.push(
+			{ items: [{ key: "AAAAAAA1", locator: "5", label: "page" }] },
+			{ items: [{ key: "AAAAAAA1", locator: "9", label: "page" }] },
+			{ items: [{ key: "AAAAAAA1", locator: "5", label: "page" }] },
+		);
+		for (let i = 0; i < 3; i++) {
+			word.cursor = null;
+			await word.run("addEditCitation");
+		}
+		word.fields[0]!.adjacent = true;
+		word.fields[1]!.adjacent = true;
+		await word.run("refresh");
+		expect(word.fields.length).toBe(1);
+		const c = cit(word.fields[0]!);
+		// the field after the run first, then the run in document order; the second page-5 cite is an exact repeat
+		expect(c.citationItems.map((i) => i.locator)).toEqual(["5", "9"]);
+	});
+
 	test("editing a citation keeps its id; cancelling an insert removes the placeholder", async () => {
 		script.docPrefs.push({ style: "vancouver", fieldType: "Field" });
 		script.citation.push({ items: [{ key: "AAAAAAA1" }] });

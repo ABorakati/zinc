@@ -35,6 +35,7 @@ import {
 	isHandEdited,
 	itemUri,
 	keysOfCitationItem,
+	mergeCitationData,
 	newCitationID,
 	numericId,
 	parseFieldCode,
@@ -680,15 +681,11 @@ class Session {
 					continue;
 				}
 				if (run.length) {
-					const seen = new Set<string>();
-					const merged: CitationItem[] = [];
-					for (const ci of f.cite!.citationItems.concat(...run.map((r) => r.cite!.citationItems))) {
-						const k = keysOfCitationItem(ci)[0] ?? String(ci.id);
-						if (seen.has(k)) continue;
-						seen.add(k);
-						merged.push(ci);
-					}
-					f.cite!.citationItems = merged;
+					// only exact repeats (same work, locator, label, prefix, suffix, flags) are dropped
+					f.cite!.citationItems = mergeCitationData(
+						f.cite!,
+						run.map((r) => r.cite!),
+					).citationItems;
 					run = [];
 				}
 			}
