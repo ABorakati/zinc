@@ -8,6 +8,7 @@ type Handler = (url: URL) => Promise<Response> | Response | null;
 let handler: Handler = () => null;
 let indexHandler: Handler = () => null; // /api/items/index: where an item is in a listing
 const allPaths: string[] = []; // every /api request the fake core got
+const itemReqs: { offset: number; signal: AbortSignal }[] = []; // every GET /api/items, with the signal the store passed
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 const rows = (from: number, n: number) =>
 	Array.from({ length: n }, (_, i) => ({
@@ -36,6 +37,7 @@ beforeAll(async () => {
 	api.setDirect(async (req) => {
 		const u = new URL(req.url);
 		allPaths.push(u.pathname);
+		if (u.pathname === "/api/items" && req.method === "GET") itemReqs.push({ offset: Number(u.searchParams.get("offset") ?? 0), signal: req.signal });
 		if (u.pathname === "/api/items" && req.method === "GET") return handler(u);
 		if (u.pathname === "/api/items/index") return indexHandler(u);
 		if (u.pathname === "/api/items/groups") return json({ groups: [] });
@@ -234,5 +236,29 @@ describe("revealItem (Open in Zinc)", () => {
 		await tick();
 				expect(store.selected().has("NEWER")).toBe(true);
 		expect(store.view().kind).toBe("trash"); // the older request did not send the list to My Library
+	});
+});
+
+describe("a list that starts over while a fast scroll is settling", () => {
+	test("the old list's settle step does not abort the new list's first page or ask for pages of the old position", async () => {
+		handler = list(1000);
+		store.setView({ kind: "publications" });
+		await tick();
+		store.setVisible(0, 10);
+		store.setVisible(700, 710); // a big jump: the settle timer (90 ms) is armed with the range around row 700
+		// a different list begins now; its first page is slow
+		handler = async (u) => {
+			if (Number(u.searchParams.get("offset")) === 0) await tick(250);
+			return list(1000)(u);
+		};
+		itemReqs.length = 0;
+		store.setView({ kind: "unfiled" });
+		await tick(180); // past the old settle timer
+		const first = itemReqs.find((r) => r.offset === 0);
+		expect(first).toBeDefined();
+		expect(first!.signal.aborted).toBe(false);
+		expect(itemReqs.some((r) => r.offset >= 5 * PAGE)).toBe(false);
+		await tick(200);
+		expect(store.peek(0)?.title).toBe("T0");
 	});
 });

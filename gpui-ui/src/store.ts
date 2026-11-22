@@ -677,6 +677,11 @@ function createStore(): AppStore {
 		inflight.clear();
 		pageAbort.clear();
 		fastUntil = 0;
+		// a settle step armed by the old list's scrolling must not run against this one (it aborts pages outside the old position)
+		if (settleTimer) clearTimeout(settleTimer);
+		settleTimer = undefined;
+		lastRange = [0, 0];
+		lastVisible = { fp: -1, lp: -1, dir: 0 };
 		if (!keepDuplicates) dupCache = null;
 		if (failed.size) {
 			failed.clear();
