@@ -51,8 +51,8 @@ export async function handleMcp(req: Request, db: Database): Promise<Response | 
 	}
 	const server = createMcpServer(db, { pluginTools: getPluginToolProvider() });
 	const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-	await server.connect(transport);
 	try {
+		await server.connect(transport);
 		return await transport.handleRequest(req);
 	} finally {
 		// Response bodies are fully buffered in JSON mode, so it is safe to close now.
