@@ -18,7 +18,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BUILD_VERSION, numericVersion } from "./_version";
-import { signConfig, signFiles, verifySignature } from "./sign";
+import { needsSigning, signConfig, signFiles } from "./sign";
 
 const root = resolve(import.meta.dir, "..");
 const repo = resolve(root, "..");
@@ -128,13 +128,7 @@ if (cfg) {
 		...(wordDir ? [join(wordDir, "addin", "ZoteroNextWord.dll")] : []),
 		...(connectorDir ? [join(connectorDir, "zotero-next-host.exe")] : []),
 	];
-	const todo = ours.filter((f) => {
-		try {
-			return !verifySignature(f).present;
-		} catch {
-			return true;
-		}
-	});
+	const todo = ours.filter((f) => needsSigning(f));
 	if (todo.length) signFiles(todo);
 } else console.log("unsigned: no certificate configured");
 

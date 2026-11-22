@@ -132,6 +132,17 @@ export function verifySignature(
 	return { present, trusted, output: r.out };
 }
 
+type Verifier = (file: string) => { present: boolean; trusted: boolean };
+
+/** Whether a file must be signed now: it has no signature, or one this machine does not trust (a test certificate, say). A file whose verification fails is signed. */
+export function needsSigning(file: string, verify: Verifier = verifySignature): boolean {
+	try {
+		return !verify(file).trusted;
+	} catch {
+		return true;
+	}
+}
+
 if (import.meta.main) {
 	const args = process.argv.slice(2);
 	if (args[0] === "--check") {
