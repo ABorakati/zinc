@@ -29,6 +29,8 @@ export interface CachedResponse {
 	body: string;
 }
 
+/** A page may refresh to another page this many times in a row; the last page is then returned as it is (a browser also gives up). */
+const MAX_META_REFRESHES = 5;
 const MAX_CACHE_ENTRY = 3 * 1024 * 1024;
 const MAX_CACHE_TOTAL = 12 * 1024 * 1024;
 
@@ -302,14 +304,15 @@ export function installHttp(Z: any): void {
 			if (isHTML(e)) {
 				const meta = result.response.querySelector("meta[http-equiv=refresh]");
 				const content = meta?.getAttribute("content");
-				if (content) {
+				const depth = Number(options._metaRefreshDepth) || 0;
+				if (content && depth < MAX_META_REFRESHES) {
 					const parts = content.split(/;\s*url=/);
 					if (parts.length === 2 && parseInt(parts[0]!) <= 15) {
 						const next = new URL(parts[1]!.trim().replace(/^'(.+)'$/, "$1"), raw.responseURL).href;
 						Z.debug("Meta refresh to " + next);
 						const away = new URL(next).origin !== new URL(raw.responseURL).origin;
 						const kept = !away || !options.headers ? options : { ...options, headers: Object.fromEntries(Object.entries(options.headers).filter(([k]) => !CROSS_ORIGIN_STRIP.test(k))) };
-						return HTTP.request(method, next, kept);
+						return HTTP.request(method, next, { ...kept, _metaRefreshDepth: depth + 1 });
 					}
 				}
 			}
