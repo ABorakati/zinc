@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Right-to-left text:** item fields, item list cells and the native note view take their direction from the item's language, as Zotero does.
+- **Right-to-left text (partial):** item fields and the native note view choose their direction as Zotero does. The renderer does not reorder the letters yet, so Arabic and Hebrew titles in the item list are still drawn backwards.
 - **Pane headers:** panes show a header on hover, with minimise, maximise and hide.
 - **Experimental settings:** Settings has an Experimental section with a switch per feature. It includes a native note view and a native note editor (both off by default; the editor needs a GPUIX build with rich text).
 - **Office.js Word add-in (preview):** a task-pane version of the Word add-in, which talks to Zinc's local API.
@@ -46,6 +46,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Selecting in the list:** Shift ranges and Select All finish across pages that are still loading and across a refresh, and a later selection wins.
 - **Editing in the item pane:** text being typed in the title, abstract, a plain field, an author's name or the year is saved to its own item when the selection moves on (a click, or Open in Zinc from Word or the browser), and a value that a failed save reset can be typed again.
 - **Rows that ignored clicks:** rows of a list that was reordered or refreshed, such as the first rows after saving an edit, could stop responding to clicks.
+- **Selected items and buttons:** a selected card takes Ctrl+click, double click and drags, the colour swatches in Settings respond, and an author's Remove, Move and Add buttons work.
+- **Dates as text:** a date such as "Spring 2020" is shown and edited as text instead of only its year.
+- **The item pane after changes elsewhere:** it shows what a sync or an edit made elsewhere in the app changed, and a field saves only what was typed, so an old value is not written back.
+- **Typed names and keys:** a citation key or an attachment's name being typed is saved when the selection moves on.
+- **Saved searches:** editing the search that is on show updates its results.
+- **Keyboard:** F6 and Shift+F6 into the list give it the arrow keys.
+- **Read-only groups:** Add from URL is no longer offered there.
 - **Item details in the list:** there is one separator between details, not two.
 - **Copy and paste:** Copy DOI and Copy bibliography work and report failures, and the clipboard works on macOS and Linux.
 - **Dragging:** releasing outside the window, or dragging to another app, no longer files items into a collection or leaves a column following the pointer.
