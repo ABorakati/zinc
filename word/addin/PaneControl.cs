@@ -35,6 +35,12 @@ namespace ZoteroNext.Word
         long _webViewMs = -1;
         readonly List<string> _pending = new List<string>();
 
+        // diagnostics for the question "does HandleCreated fire again (undock, re-dock, another monitor) and add the handlers twice?"
+        // InitRuns: times InitAsync started; MessagesSeen: messages OnMessage took. Also logged: "pane: init run n ..." in addin.log.
+        internal int InitRuns;
+        internal int MessagesSeen;
+        CoreWebView2 _seenCore;
+
         internal WebView2 Web { get { return _web; } }
         internal bool Ready { get { return _ready; } }
 
@@ -81,11 +87,14 @@ namespace ZoteroNext.Word
         {
             try
             {
+                int run = ++InitRuns;
                 var site = WebHost.SiteDir();
                 var env = await WebHost.EnvAsync(_web);
                 await _web.EnsureCoreWebView2Async(env);
                 _webViewMs = _openTimer.ElapsedMilliseconds;
                 var core = _web.CoreWebView2;
+                Log.Write("pane: init run " + run + ", CoreWebView2 " + (ReferenceEquals(_seenCore, core) ? "is the one already hooked (its handlers are about to be added again)" : "is a new one"));
+                _seenCore = core;
                 core.Settings.AreDevToolsEnabled = WebGuard.DevTools(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
@@ -143,6 +152,7 @@ namespace ZoteroNext.Word
         void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
             if (!IsSidebarUri(e.Source)) { Log.Write("pane: message from foreign origin ignored: " + e.Source); return; }
+            MessagesSeen++;
             string msg;
             try { msg = e.TryGetWebMessageAsString(); } catch { return; }
             if (string.IsNullOrEmpty(msg)) return;

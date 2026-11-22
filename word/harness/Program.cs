@@ -470,6 +470,17 @@ internal static class Program
                     while (!_paneCtl.Ready && DateTime.UtcNow < until) { System.Windows.Forms.Application.DoEvents(); Thread.Sleep(20); }
                     return Json.Map("ready", _paneCtl.Ready);
                 }
+            case "h.paneRecreate":
+                {
+                    // What a dock change does to a WinForms control: its window is destroyed and made again (HandleCreated fires again).
+                    // Reports how often the pane's init ran and how many handlers a message now meets. The first pane must be up (h.pane).
+                    var rh = typeof(System.Windows.Forms.Control).GetMethod("RecreateHandle", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    rh.Invoke(_paneCtl, null);
+                    var until = DateTime.UtcNow.AddMilliseconds(Json.Int(p, "ms", 6000));
+                    while (DateTime.UtcNow < until) { System.Windows.Forms.Application.DoEvents(); Thread.Sleep(20); }
+                    return Json.Map("initRuns", _paneCtl.InitRuns, "ready", _paneCtl.Ready, "hasCore", _paneCtl.Web.CoreWebView2 != null);
+                }
+            case "h.paneMessages": return Json.Map("seen", _paneCtl.MessagesSeen, "initRuns", _paneCtl.InitRuns);
             case "h.paneEval":
                 {
                     var task = _paneCtl.Web.CoreWebView2.ExecuteScriptAsync(Json.Str(p, "js"));
