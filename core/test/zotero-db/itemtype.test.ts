@@ -1,8 +1,8 @@
 // Standalone unit tests for changing itemType in ZoteroDbWriter (using a minimal temp Zotero SQLite DB
 // populated from the vendored Zotero schema + consistency triggers — does not require a real Zotero DB).
 import { Database } from "bun:sqlite";
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb, patchItem } from "../../src/db";
@@ -10,6 +10,7 @@ import rawSchema from "../../src/schema-data/schema.json" with { type: "json" };
 import { SyncService } from "../../src/sync/engine";
 import type { ZoteroWrite } from "../../src/sync/protocol";
 import { ZoteroDbReader, ZoteroDbWriter } from "../../src/zotero-db";
+import { ZoteroWriteError } from "../../src/zotero-db/writer";
 import { genKey, noRunning } from "./helpers";
 
 interface RawItemType {
@@ -841,5 +842,48 @@ describe("zotero-db writer itemType changes", () => {
 		} finally {
 			zincDb.close(true);
 		}
+	});
+});
+
+describe("zotero-db writer erase of an attachment", () => {
+	const ATT = "ATTERASE";
+	const make = async () => {
+		const h = makeHarness();
+		await h.apply({
+			type: "item",
+			op: "upsert",
+			key: ATT,
+			data: { itemType: "attachment", linkMode: "imported_file", title: "p.pdf", filename: "p.pdf", contentType: "application/pdf" },
+		});
+		const folder = join(h.dataDir, "storage", ATT);
+		mkdirSync(folder, { recursive: true });
+		writeFileSync(join(folder, "p.pdf"), "%PDF-1.4 synthetic");
+		return { h, folder };
+	};
+
+	test("the storage folder goes after a committed erase", async () => {
+		const { h, folder } = await make();
+		const { results } = await h.apply({ type: "item", op: "erase", key: ATT });
+		expect(results[0]).toMatchObject({ ok: true });
+		expect(h.q("SELECT 1 x FROM items WHERE key = ?", ATT)).toHaveLength(0);
+		expect(existsSync(folder)).toBe(false);
+	});
+
+	test("the storage folder stays when that write is rolled back after the erase", async () => {
+		const { h, folder } = await make();
+		// a write that fails after it has erased: whatever it queued for after the commit must be dropped with it
+		const real = (h.writer as any).applyOne.bind(h.writer);
+		const spy = spyOn(h.writer as any, "applyOne").mockImplementation(((session: unknown, w: ZoteroWrite) => {
+			real(session, w);
+			throw new ZoteroWriteError("refused after the erase");
+		}) as never);
+		try {
+			const { results } = await h.apply({ type: "item", op: "erase", key: ATT });
+			expect(results[0]).toMatchObject({ ok: false });
+		} finally {
+			spy.mockRestore();
+		}
+		expect(h.q("SELECT 1 x FROM items WHERE key = ?", ATT)).toHaveLength(1);
+		expect(existsSync(join(folder, "p.pdf"))).toBe(true);
 	});
 });

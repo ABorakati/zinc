@@ -166,6 +166,11 @@ class Session {
 		return this.staged.length;
 	}
 
+	/** Forget the after-commit actions (an erased attachment's folder) queued by a write that was rolled back. */
+	dropAfterCommit(mark: number): void {
+		this.afterCommit.length = mark;
+	}
+
 	/** Forget (and delete) files staged by a write that was rolled back. */
 	dropStaged(mark: number): void {
 		for (const s of this.staged.splice(mark)) rmSync(s.stage, { force: true });
@@ -1156,6 +1161,7 @@ export class ZoteroDbWriter implements ZoteroWriter {
 				const w = writes[i];
 				db.exec("SAVEPOINT w");
 				const mark = session.stageMark();
+				const commitMark = session.afterCommit.length;
 				try {
 					const r = this.applyOne(session, w);
 					db.exec("RELEASE w");
@@ -1164,6 +1170,7 @@ export class ZoteroDbWriter implements ZoteroWriter {
 					if (!(e instanceof ZoteroWriteError)) throw e;
 					db.exec("ROLLBACK TO w");
 					session.dropStaged(mark);
+					session.dropAfterCommit(commitMark);
 					db.exec("RELEASE w");
 					results[i] = { key: w.key, ok: false, error: e.message };
 				}
