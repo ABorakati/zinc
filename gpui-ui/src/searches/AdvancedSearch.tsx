@@ -30,6 +30,7 @@ import {
 	type Kind,
 } from "./conditions";
 import { refreshSavedSearches, savedSearches } from "./state";
+import { refreshStore } from "../sidebar/bridge";
 import type { Collection } from "../contracts";
 
 const DEFAULT_OPTIONS: SearchOptions = {
@@ -344,6 +345,7 @@ function AdvancedSearchForm(p: { editing: SavedSearch | null; close: () => void 
 					? await sidebarApi.patchSavedSearch(editing.key, { name: nm, conditions: conds, options: options() })
 					: await sidebarApi.createSavedSearch(nm, conds, options());
 			await refreshSavedSearches();
+			refreshStore(); // the search may be on show: its list follows the new conditions
 			setView({ kind: "savedSearch", key: s.key });
 			toast(`Saved search "${s.name}"`, { kind: "success" });
 			p.close();
