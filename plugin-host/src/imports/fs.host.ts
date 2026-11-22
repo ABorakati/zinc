@@ -1,9 +1,9 @@
 // `fs` (lifecycle.wit) except the pick dialogs (those are `where: "zinc"`, see fs.zinc.ts): read, write and walk the plugin's four
 // roots. No permission id: `data`, `bundled`, `temp` and user-granted files are free by design. Roots and rules: data/fs-roots.ts.
-import { cp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile, appendFile } from "node:fs/promises";
+import { cp, lstat, mkdir, open, readdir, readFile, rename, rm, stat, writeFile, appendFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { defineHandler, witError } from "./registry";
-import { checkQuota, grantRecords, releaseGrant, resolveRef, WHOLE_FILE_MAX, type PathRef, type Resolved } from "./data/fs-roots";
+import { checkQuota, dirBytes, grantRecords, releaseGrant, resolveRef, WHOLE_FILE_MAX, type PathRef, type Resolved } from "./data/fs-roots";
 
 const RANGE_MAX = 64 * 1024 * 1024;
 
@@ -56,6 +56,12 @@ async function uniquePath(abs: string): Promise<string> {
 const withPath = (ref: PathRef, abs: string, r: Resolved): PathRef => {
 	if (abs === r.abs) return ref;
 	return { root: ref.root, path: ref.path.split("/").slice(0, -1).concat(basename(abs)).join("/") };
+};
+
+/** What a file or a whole folder holds, in bytes (links are not followed). */
+const treeBytes = async (abs: string): Promise<number> => {
+	const s = await lstat(abs);
+	return s.isDirectory() ? dirBytes(abs) : s.isFile() ? s.size : 0;
 };
 
 const kindOf = (s: { isFile(): boolean; isDirectory(): boolean }) => (s.isFile() ? "file" : s.isDirectory() ? "directory" : "other");
@@ -171,8 +177,7 @@ export default defineHandler({
 			await io(dir.path, async () => {
 				if (parents) await mkdir(r.abs, { recursive: true });
 				else {
-					await mkdir(dirname(r.abs));
-					await mkdir(r.abs);
+					await mkdir(r.abs); // a missing parent is `not-found` (ENOENT), an existing folder `conflict` (EEXIST)
 				}
 			});
 		},
@@ -191,16 +196,20 @@ export default defineHandler({
 		},
 
 		async move(ctx, from: PathRef, to: PathRef, onConflict: string) {
+			// a move takes the source away and puts it somewhere else the plugin can read: it needs both read and write on it
+			resolveRef(ctx, from, "read");
 			const a = resolveRef(ctx, from, "write");
 			const b = resolveRef(ctx, to, "write");
 			if (from.path === "" && a.root !== "granted") throw witError("invalid-argument", "cannot move a root");
+			if (from.path === "") throw witError("permission-denied", "a granted file or folder itself is moved by the user, not by the plugin");
 			let dest = b.abs;
 			if (await exists(dest)) {
 				if (onConflict === "fail") throw witError("conflict", `${to.path} exists`);
 				if (onConflict === "rename-unique") dest = await uniquePath(dest);
 			}
-			const size = await stat(a.abs).then((s) => (s.isFile() ? s.size : 0)).catch(() => 0);
-			checkQuota(b, size);
+			// a folder costs what it holds; a move inside one data folder adds nothing
+			const sameData = a.root === "data" && b.root === "data" && a.rootDir === b.rootDir;
+			checkQuota(b, sameData ? 0 : await treeBytes(a.abs).catch(() => 0));
 			await io(from.path, async () => {
 				await mkdir(dirname(dest), { recursive: true });
 				try {
@@ -224,7 +233,7 @@ export default defineHandler({
 			}
 			const s = await stat(a.abs).catch(() => undefined);
 			if (!s) throw witError("not-found", from.path);
-			checkQuota(b, s.isFile() ? s.size : 0);
+			checkQuota(b, await treeBytes(a.abs));
 			await io(from.path, async () => {
 				await mkdir(dirname(dest), { recursive: true });
 				await cp(a.abs, dest, { recursive: true, force: onConflict === "overwrite" });

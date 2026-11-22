@@ -10,7 +10,7 @@
 //
 // The grant registry is a file per plugin (<dataRoot>/.grants/<id>.json), because the pick dialogs run in the Zinc process
 // (`fs.zinc.ts`) and the reads and writes run in the plugin host process: both read and write the same file.
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { witError, type HandlerContext } from "../registry";
@@ -163,6 +163,15 @@ function bundledDir(ctx: HandlerContext): string | undefined {
 	return process.env.ZN_PLUGINS_DIR ? join(process.env.ZN_PLUGINS_DIR, safeId(ctx.pluginId)) : undefined;
 }
 
+/** True when `p` itself is a symbolic link or junction (whether or not its target exists). */
+function isLink(p: string): boolean {
+	try {
+		return lstatSync(p).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
+
 /** The deepest existing ancestor's real path must stay inside the real root: no symlink may lead out. */
 function checkInside(abs: string, rootDir: string): void {
 	let realRoot: string;
@@ -173,6 +182,8 @@ function checkInside(abs: string, rootDir: string): void {
 	}
 	let p = abs;
 	while (!existsSync(p)) {
+		// `existsSync` follows links, so a link whose target is gone looks missing: refuse it instead of climbing past it
+		if (isLink(p)) throw witError("permission-denied", "path goes through a link that points nowhere");
 		const up = dirname(p);
 		if (up === p) return;
 		p = up;
