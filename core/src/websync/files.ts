@@ -278,10 +278,10 @@ export async function downloadOne(ctx: FilesContext, a: Att, conflictCopy?: stri
 			put(target, alt.data);
 		}
 	} else {
-		if (a.md5 && createHash("md5").update(bytes).digest("hex") !== a.md5.toLowerCase())
-			throw new Error("downloaded file does not match its checksum");
+		const md5 = createHash("md5").update(bytes).digest("hex");
+		if (a.md5 && md5 !== a.md5.toLowerCase()) throw new Error("downloaded file does not match its checksum");
 		put(target, bytes);
-		if (!conflictCopy && !a.snapshot) setFileBase(ctx.db, a.key, target, createHash("md5").update(bytes).digest("hex"));
+		if (!conflictCopy && !a.snapshot) setFileBase(ctx.db, a.key, target, md5);
 	}
 	if (conflictCopy) return bytes.length;
 	// the attachment row is part of the item for sync: this local fact must not queue a push
