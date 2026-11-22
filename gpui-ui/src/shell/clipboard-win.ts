@@ -187,6 +187,11 @@ export function hasClipboardImage(): boolean {
 	return false;
 }
 
+/** A private copy of bytes that live in memory the caller is about to unlock: Buffer.from(arrayBuffer) would only be a view of it. */
+export function copyOut(mem: ArrayBuffer): Buffer {
+	return Buffer.from(new Uint8Array(mem)); // from a typed array: copies
+}
+
 /** Read PNG bytes from clipboard if available. */
 export function readClipboardImage(): Buffer | null {
 	const w = win32();
@@ -205,7 +210,7 @@ export function readClipboardImage(): Buffer | null {
 			if (!src) return null;
 			try {
 				const size = Number(w.GlobalSize(h));
-				return Buffer.from(toArrayBuffer(src as never, 0, size));
+				return copyOut(toArrayBuffer(src as never, 0, size)); // copied before the finally below unlocks it
 			} finally {
 				w.GlobalUnlock(h);
 			}
