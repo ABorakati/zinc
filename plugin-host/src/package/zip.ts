@@ -72,6 +72,8 @@ export function readZip(bytes: Uint8Array, limits: Partial<ZipLimits> = {}): Zip
 	if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) throw new ZipError("zip64 is not supported");
 	if (count > lim.maxEntries) throw new ZipError(`too many entries (${count}, limit ${lim.maxEntries})`);
 	if (cdOffset + cdSize > bytes.length) throw new ZipError("central directory is outside the file");
+	const cdEnd = cdOffset + cdSize;
+	if (cdEnd > eocd) throw new ZipError("central directory runs into the end-of-central-directory record");
 
 	const dec = new TextDecoder("utf-8", { fatal: false });
 	const out: ZipFile[] = [];
@@ -79,7 +81,7 @@ export function readZip(bytes: Uint8Array, limits: Partial<ZipLimits> = {}): Zip
 	let pos = cdOffset;
 	let total = 0;
 	for (let n = 0; n < count; n++) {
-		if (pos + 46 > bytes.length || u32(bytes, pos) !== 0x02014b50) throw new ZipError("bad central directory entry");
+		if (pos + 46 > cdEnd || u32(bytes, pos) !== 0x02014b50) throw new ZipError("bad central directory entry");
 		const madeBy = u16(bytes, pos + 4);
 		const flags = u16(bytes, pos + 8);
 		const method = u16(bytes, pos + 10);
@@ -91,6 +93,7 @@ export function readZip(bytes: Uint8Array, limits: Partial<ZipLimits> = {}): Zip
 		const clen = u16(bytes, pos + 32);
 		const eattr = u32(bytes, pos + 38);
 		const lofs = u32(bytes, pos + 42);
+		if (pos + 46 + nlen + elen + clen > cdEnd) throw new ZipError("a central directory entry runs past the end of the central directory");
 		const name = dec.decode(bytes.subarray(pos + 46, pos + 46 + nlen));
 		pos += 46 + nlen + elen + clen;
 
