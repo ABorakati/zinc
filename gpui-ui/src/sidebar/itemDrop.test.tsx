@@ -21,23 +21,30 @@ describe("item drops on collection rows", () => {
 	let dnd: typeof DndMod;
 	let core: typeof CoreMod;
 	let added: { key: string; items: string[] }[] = [];
-	let saved: { add: unknown; storeCollections: unknown };
+	let saved: { add: unknown; collections: unknown; refresh: unknown };
+	let realFetch: typeof fetch;
 	let dispose = () => {};
 	let envBefore: string | undefined;
 	const rowBounds = { x: 0, y: 100, width: 200, height: 30 };
-	let storeRef: { collections: unknown };
+	let storeRef: { refresh: unknown };
 
 	beforeAll(async () => {
 		envBefore = process.env.ZN_UI_STATE;
 		process.env.ZN_UI_STATE = "off";
+		realFetch = globalThis.fetch;
+		globalThis.fetch = (() => Promise.reject(new Error("no network in this test"))) as unknown as typeof fetch;
 		client = await import("./client");
 		dnd = await import("../dnd");
 		core = await import("../ui/core");
-		storeRef = (await import("../store")).store as unknown as { collections: unknown };
-		saved = { add: client.sidebarApi.addToCollection, storeCollections: storeRef.collections };
+		storeRef = (await import("../store")).store as unknown as { refresh: unknown };
+		saved = { add: client.sidebarApi.addToCollection, collections: client.sidebarApi.collections, refresh: storeRef.refresh };
 		(client.sidebarApi as { addToCollection: unknown }).addToCollection = async (key: string, items: string[]) => void added.push({ key, items });
-		storeRef.collections = () => [{ key: "COLLAAAA", name: "Reading", parentKey: null, itemCount: 0, children: [] }];
+		(client.sidebarApi as { collections: unknown }).collections = async () => [
+			{ key: "COLLAAAA", name: "Reading", parentKey: null, itemCount: 0, children: [] },
+		];
+		storeRef.refresh = () => {};
 		coll = await import("./Collections");
+		await coll.reloadCollections(); // the tree the rows are built from
 		const entries = coll.collectionEntries(0);
 		const root = createRoot((d) => {
 			dispose = d;
@@ -52,7 +59,9 @@ describe("item drops on collection rows", () => {
 		dispose();
 		core.setNative(undefined);
 		(client.sidebarApi as { addToCollection: unknown }).addToCollection = saved.add;
-		storeRef.collections = saved.storeCollections;
+		(client.sidebarApi as { collections: unknown }).collections = saved.collections;
+		storeRef.refresh = saved.refresh;
+		globalThis.fetch = realFetch;
 		if (envBefore === undefined) delete process.env.ZN_UI_STATE;
 		else process.env.ZN_UI_STATE = envBefore;
 	});
