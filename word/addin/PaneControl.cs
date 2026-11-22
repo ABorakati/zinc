@@ -35,7 +35,8 @@ namespace ZoteroNext.Word
         long _webViewMs = -1;
         readonly List<string> _pending = new List<string>();
 
-        // diagnostics for the question "does HandleCreated fire again (undock, re-dock, another monitor) and add the handlers twice?"
+        // HandleCreated fires again when Word recreates the control's handle, usually with the same CoreWebView2: its handlers
+        // are added once per CoreWebView2, so one click in the sidebar stays one action.
         // InitRuns: times InitAsync started; MessagesSeen: messages OnMessage took. Also logged: "pane: init run n ..." in addin.log.
         internal int InitRuns;
         internal int MessagesSeen;
@@ -93,12 +94,14 @@ namespace ZoteroNext.Word
                 await _web.EnsureCoreWebView2Async(env);
                 _webViewMs = _openTimer.ElapsedMilliseconds;
                 var core = _web.CoreWebView2;
-                Log.Write("pane: init run " + run + ", CoreWebView2 " + (ReferenceEquals(_seenCore, core) ? "is the one already hooked (its handlers are about to be added again)" : "is a new one"));
-                _seenCore = core;
+                bool hooked = ReferenceEquals(_seenCore, core);
+                Log.Write("pane: init run " + run + ", CoreWebView2 " + (hooked ? "is the one already set up: left as it is" : "is a new one"));
+                if (hooked) return;
                 core.Settings.AreDevToolsEnabled = WebGuard.DevTools(Environment.GetEnvironmentVariable("ZN_DEVTOOLS"));
                 core.Settings.IsStatusBarEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.SetVirtualHostNameToFolderMapping("zn-sidebar.local", site, CoreWebView2HostResourceAccessKind.Allow);
+                _seenCore = core;   // here, not earlier: a run that failed before adding a handler may try again
                 core.WebMessageReceived += OnMessage;
                 // the page may only ever be the sidebar's own site: anything else is opened in the browser, never inside the pane
                 core.NavigationStarting += (s, e) =>
