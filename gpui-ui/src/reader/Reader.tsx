@@ -990,6 +990,11 @@ export function Reader(props: ReaderProps): JSX.Element {
 				list = undefined;
 				// (the queue is not cleared: tiles cancel their own jobs when they unmount, and the sidebar's thumbnails still need theirs)
 				doc()?.clearCache();
+				// an inactive tab also gives back its whole-page bitmaps and previews; both fill again when the tab is shown
+				if (!untrack(active)) {
+					bitmaps()?.clear();
+					previews()?.release();
+				}
 			},
 			{ defer: true },
 		),
@@ -2256,7 +2261,7 @@ export function Reader(props: ReaderProps): JSX.Element {
 	const bitmaps = createMemo<BitmapCache | null>(() => {
 		if (!doc()) return null;
 		const c = new BitmapCache();
-		onCleanup(() => c.clear());
+		onCleanup(() => c.close()); // closed, not just emptied: a render still running for this document must not park its bitmap here
 		return c;
 	});
 	const PREVIEW_AHEAD = 4,

@@ -130,6 +130,8 @@ interface BitmapEntry {
 export class BitmapCache {
 	private map = new Map<string, BitmapEntry>();
 	bytes = 0;
+	/** set by close(): the document this cache belongs to is gone, so nothing may be kept in it any more */
+	private closed = false;
 	constructor(readonly budget = (Number(process.env.ZN_BITMAP_MB) || 24) * 1048576) {}
 	get size(): number {
 		return this.map.size;
@@ -137,7 +139,8 @@ export class BitmapCache {
 	/** takes ownership of `r`; the caller holds one use of the returned entry and must call unuse() */
 	put(key: string, page: number, r: Bitmap): BitmapEntry {
 		const e: BitmapEntry = { key, page, r, uses: 1, doomed: false };
-		if (this.budget <= 0) {
+		// (a render that was still running when the cache was closed ends here: nothing owns that native memory but this entry)
+		if (this.budget <= 0 || this.closed) {
 			e.doomed = true;
 			return e;
 		}
@@ -165,8 +168,14 @@ export class BitmapCache {
 		e.doomed = true;
 		if (e.uses <= 0) e.r.release();
 	}
+	/** Free every bitmap held. The cache stays usable (an inactive tab frees its pages and fills the cache again when it is shown). */
 	clear(): void {
 		for (const e of [...this.map.values()]) this.drop(e);
+	}
+	/** Free every bitmap and refuse new ones: for the cache of a document that closed or was replaced. */
+	close(): void {
+		this.closed = true;
+		this.clear();
 	}
 }
 

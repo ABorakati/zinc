@@ -140,6 +140,13 @@ export class Previews {
 		for (const [, s] of order.slice(0, n - PREVIEW_CACHE)) s.set(undefined);
 	}
 
+	/** Drop every preview and cancel the renders under way, but stay usable: want() makes them again (an inactive tab frees its memory). */
+	release(): void {
+		for (const run of this.inflight.values()) run.task.cancel();
+		this.inflight.clear();
+		for (const s of this.slots.values()) s.set(undefined);
+	}
+
 	close(): void {
 		this.closed = true;
 		for (const run of this.inflight.values()) run.task.cancel();
