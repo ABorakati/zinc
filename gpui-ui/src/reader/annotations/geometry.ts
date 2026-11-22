@@ -73,7 +73,7 @@ export function positionFromSelection(
 	);
 }
 
-export const rectContains =(r: PdfRect, x: number, y: number, tol = 0) =>
+export const rectContains = (r: PdfRect, x: number, y: number, tol = 0) =>
 	x >= r[0] - tol && x <= r[2] + tol && y >= r[1] - tol && y <= r[3] + tol;
 
 /** Distance from point (x, y) to segment (ax, ay)-(bx, by). */

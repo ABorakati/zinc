@@ -41,9 +41,9 @@ export default defineHandler({
 			});
 			// a handle with a drop hook: when the plugin is unloaded the host drops its resources, and with them its subscriptions
 			if (!guarded.has(ctx.pluginId)) {
-					guarded.add(ctx.pluginId); // one handle per plugin: the guest never sees it, so it could never be dropped one by one
-					ctx.resource("subscription-guard", { plugin: ctx.pluginId });
-				}
+				guarded.add(ctx.pluginId); // one handle per plugin: the guest never sees it, so it could never be dropped one by one
+				ctx.resource("subscription-guard", { plugin: ctx.pluginId });
+			}
 			return id;
 		},
 
@@ -69,7 +69,7 @@ export default defineHandler({
 			methods: {},
 			drop(ctx, self: { plugin: string } | undefined) {
 				guarded.delete(self?.plugin ?? ctx.pluginId);
-					hub?.dropPlugin(self?.plugin ?? ctx.pluginId);
+				hub?.dropPlugin(self?.plugin ?? ctx.pluginId);
 			},
 		},
 	},
