@@ -67,7 +67,8 @@ export function isPlainDate(v: string): boolean {
 	return (
 		formatDateParts(p.y, p.m ?? "", p.d ?? "") === t ||
 		/^\d{4}([-/.]\d{1,2}){0,2}$/.test(t) ||
-		/^(\d{1,2}\s+)?[A-Za-z]{3,9}\.?,?\s+(\d{1,2}(st|nd|rd|th)?,?\s+)?\d{4}$/.test(t)
+		// (a word and a year is plain only when the word is a month: "Spring 2020" would lose the Spring)
+		(!!p.m && /^(\d{1,2}\s+)?[A-Za-z]{3,9}\.?,?\s+(\d{1,2}(st|nd|rd|th)?,?\s+)?\d{4}$/.test(t))
 	);
 }
 
