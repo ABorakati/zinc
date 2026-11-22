@@ -22,7 +22,7 @@ interface Entry {
 const entries = new Map<string, Entry>();
 const MAX_CACHE = 48;
 /** How long a document with no crop requested and none running stays open (ZN_REGIONS_IDLE_MS, for the tests). */
-const IDLE_MS = Number(process.env.ZN_REGIONS_IDLE_MS) || 30_000;
+const idleMs = () => Number(process.env.ZN_REGIONS_IDLE_MS) || 30_000;
 
 /** (Re)start the idle clock of an entry; a document still busy when it runs out gets a new one. */
 function touch(key: string, e: Entry): void {
@@ -31,7 +31,7 @@ function touch(key: string, e: Entry): void {
 		if (entries.get(key) !== e) return;
 		if (e.running || e.waiting.length) touch(key, e);
 		else closeRegions(key);
-	}, IDLE_MS);
+	}, idleMs());
 	(e.idle as { unref?: () => void }).unref?.();
 }
 

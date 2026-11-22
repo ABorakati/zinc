@@ -24,6 +24,8 @@ interface WorkerMessage {
 
 export const ROOT = process.env.ZN_ROOT ?? join(import.meta.dir, "../../../..");
 export const WORKER_DIR = join(ROOT, "vendor", "document-worker", "build");
+/** WORKER_DIR, but following ZN_ROOT as it is NOW (the tests point it at a stand-in folder after this module was loaded). */
+const workerDir = () => join(process.env.ZN_ROOT ?? ROOT, "vendor", "document-worker", "build");
 
 export class DocumentWorker {
 	private worker: Worker | null;
@@ -40,7 +42,7 @@ export class DocumentWorker {
 	constructor() {
 		// ZN_DOCWORKER_ENTRY: an on-disk copy of docworker-entry.ts (the packaged app ships one next to the exe)
 		const entry = process.env.ZN_DOCWORKER_ENTRY;
-		const bundle = join(WORKER_DIR, "worker.js");
+		const bundle = join(workerDir(), "worker.js");
 		// say what is missing (a copy of the exe without its folder, or an install without vendor/) instead of failing inside the worker
 		if (!existsSync(bundle))
 			throw new Error(
@@ -97,7 +99,7 @@ export class DocumentWorker {
 		if (m.id) {
 			let data: unknown = null;
 			try {
-				const bytes = async (path: string) => new Uint8Array(await readFile(join(WORKER_DIR, path)));
+				const bytes = async (path: string) => new Uint8Array(await readFile(join(workerDir(), path)));
 				switch (m.action) {
 					case "FetchBuiltInCMap":
 						data = { isCompressed: true, cMapData: await bytes(`cmaps/${m.data}.bcmap`) };

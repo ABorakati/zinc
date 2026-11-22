@@ -14,7 +14,7 @@ import { fingerprint, latestPerAttachment } from "./memo";
 import type { DocStructure } from "./types";
 import { DocumentWorker, ROOT } from "./worker";
 
-const SDT_DIR = join(ROOT, "vendor", "reader", "structured-document-text", "src");
+const sdtDir = () => join(process.env.ZN_ROOT ?? ROOT, "vendor", "reader", "structured-document-text", "src");
 
 /** The structure cache folder, or null when there is no folder this user alone controls (then nothing is cached on disk). */
 export function structureCacheDir(): string | null {
@@ -36,10 +36,10 @@ interface PackLib {
 let packLib: Promise<PackLib> | undefined;
 function pack(): Promise<PackLib> {
 	return (packLib ??= (async () => {
-		const reader = (await import(pathToFileURL(join(SDT_DIR, "pack", "reader.js")).href)) as {
+		const reader = (await import(pathToFileURL(join(sdtDir(), "pack", "reader.js")).href)) as {
 			openStructuredDocumentTextPack(b: Uint8Array, o: { inflate(b: Uint8Array): Uint8Array }): Promise<PackReader>;
 		};
-		const ver = (await import(pathToFileURL(join(SDT_DIR, "version.js")).href)) as {
+		const ver = (await import(pathToFileURL(join(sdtDir(), "version.js")).href)) as {
 			SDT_PACK_VERSION: unknown;
 			SDT_SCHEMA_VERSION: unknown;
 		};
