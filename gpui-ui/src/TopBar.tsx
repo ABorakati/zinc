@@ -149,8 +149,12 @@ function SettingsTabChip(p: { active: boolean }) {
 	);
 }
 
-/** GPUIX cache region; typed because the host style type does not list the key. */
-const REGION: Style = { cacheRegion: true };
+/**
+ * GPUIX cache region; typed because the host style type does not list the key. "content": sized by its children (the menu bar and the
+ * tab row). With true the region takes its height from this box's own style, which has none, so it was 0 high and the panes were drawn
+ * over both rows.
+ */
+const REGION: Style = { cacheRegion: "content" };
 
 export function TopBar() {
 	const t = (cls: string): Style => tw(cls, mode());
