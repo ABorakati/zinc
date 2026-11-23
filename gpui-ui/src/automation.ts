@@ -151,7 +151,8 @@ function moveToDesktop(name: string): void {
 		AssignProcessToJobObject: { args: [H, H], returns: I },
 		ResumeThread: { args: [H], returns: U32 },
 		TerminateProcess: { args: [H, U32], returns: I },
-		WaitForSingleObject: { args: [H, U32], returns: U32 },
+		OpenProcess: { args: [U32, I, U32], returns: H },
+		WaitForMultipleObjects: { args: [U32, P, I, U32], returns: U32 },
 		GetExitCodeProcess: { args: [H, P], returns: I },
 	}).symbols;
 	const GENERIC_ALL = 0x10000000;
@@ -201,7 +202,15 @@ function moveToDesktop(name: string): void {
 		fail("could not put the app in its job");
 	}
 	kernel32.ResumeThread(thread);
-	kernel32.WaitForSingleObject(child, 0xffffffff);
+	// wait for the app, or for whoever started this process (the harness): if that ends, so does the app (a killed parent does not end
+	// its children on Windows, and the harness may be killed)
+	const starter = kernel32.OpenProcess(0x00100000 /* SYNCHRONIZE */, 0, process.ppid);
+	const handles = new BigUint64Array(Number(starter) ? [BigInt(child), BigInt(starter)] : [BigInt(child)]);
+	const woke = kernel32.WaitForMultipleObjects(handles.length, handles, 0, 0xffffffff);
+	if (woke === 1) {
+		kernel32.TerminateProcess(child, 1);
+		process.exit(1);
+	}
 	const code = new Uint32Array(1);
 	kernel32.GetExitCodeProcess(child, code);
 	process.exit(code[0] ?? 0);

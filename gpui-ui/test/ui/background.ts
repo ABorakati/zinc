@@ -29,7 +29,7 @@ export function moveToBackgroundDesktop(): void {
 }
 
 /**
- * The visible top-level windows on the desktop this thread is on (the user's screen, for the harness itself) that belong to a process
+ * The visible top-level windows on the user's screen (the input desktop, whatever desktop this thread is on) that belong to a process
  * running `exe`. The real-app harness calls it while the app runs: anything but 0 means a window of the test app is on the user's screen.
  * Windows only; elsewhere 0.
  */
@@ -40,10 +40,19 @@ export function windowsOnScreen(exe: string): number {
 		U32 = FFIType.u32,
 		P = FFIType.ptr;
 	const user32 = dlopen("user32.dll", {
-		EnumWindows: { args: [FFIType.function, H], returns: I },
+		OpenInputDesktop: { args: [U32, I, U32], returns: H },
+		OpenDesktopW: { args: [P, U32, I, U32], returns: H },
+		EnumDesktopWindows: { args: [H, FFIType.function, H], returns: I },
+		CloseDesktop: { args: [H], returns: I },
 		IsWindowVisible: { args: [H], returns: I },
 		GetWindowThreadProcessId: { args: [H, P], returns: U32 },
 	}).symbols;
+	// the user's screen: the desktop that takes the keyboard and mouse ("Default" while that is not readable, e.g. at a UAC prompt). Not the
+	// desktop of this thread: a test worker has moved to the background desktop, where the test app's windows are meant to be.
+	const READ = 0x0001 /* DESKTOP_READOBJECTS */ | 0x0040; /* DESKTOP_ENUMERATE */
+	let screen = user32.OpenInputDesktop(0, 0, READ);
+	if (!Number(screen)) screen = user32.OpenDesktopW(Buffer.from("Default\0", "utf16le"), 0, 0, READ);
+	if (!Number(screen)) throw new Error("could not open the user's desktop to check that no test window is on it");
 	const kernel32 = dlopen("kernel32.dll", {
 		OpenProcess: { args: [U32, I, U32], returns: H },
 		QueryFullProcessImageNameW: { args: [H, U32, P, P], returns: I },
@@ -62,9 +71,10 @@ export function windowsOnScreen(exe: string): number {
 		{ args: [H, H], returns: I },
 	);
 	try {
-		user32.EnumWindows(each.ptr!, 0n);
+		user32.EnumDesktopWindows(screen, each.ptr!, 0n);
 	} finally {
 		each.close();
+		user32.CloseDesktop(screen);
 	}
 	const want = exe.replaceAll("/", "\\").toLowerCase();
 	let n = 0;
