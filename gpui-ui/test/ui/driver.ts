@@ -337,6 +337,18 @@ export class Ui {
 		await this.backend.mouseMove(x, y, o);
 	}
 
+	/** Press a mouse button there and hold it (replaces ui.renderer.nativeSimulateMouseDown); no settling. */
+	async mouseDown(x: number, y: number, o: { button?: number; modifiers?: string } = {}): Promise<void> {
+		this.steps.push(`mouse down at ${Math.round(x)},${Math.round(y)}`);
+		await this.backend.mouseDown(x, y, o);
+	}
+
+	/** Release a mouse button there (replaces ui.renderer.nativeSimulateMouseUp); no settling. */
+	async mouseUp(x: number, y: number, o: { button?: number; modifiers?: string } = {}): Promise<void> {
+		this.steps.push(`mouse up at ${Math.round(x)},${Math.round(y)}`);
+		await this.backend.mouseUp(x, y, o);
+	}
+
 	async drag(from: { x: number; y: number }, to: { x: number; y: number }, steps = 10): Promise<void> {
 		this.steps.push(`drag ${Math.round(from.x)},${Math.round(from.y)} to ${Math.round(to.x)},${Math.round(to.y)}`);
 		await this.backend.mouseMove(from.x, from.y);

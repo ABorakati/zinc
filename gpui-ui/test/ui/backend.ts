@@ -344,7 +344,9 @@ export class RemoteBackend implements Backend {
 
 	async click(x: number, y: number, o: MouseOpts & { clickCount?: number } = {}): Promise<void> {
 		await this.request("mouseMove", { x, y, modifiers: o.modifiers });
-		for (let i = 0; i < (o.clickCount ?? 1); i++) await this.request("click", { x, y, button: o.button, modifiers: o.modifiers });
+		// each click of a series says its place in it (the app passes it on to the renderer: src/automation.ts repeatClick)
+		for (let i = 0; i < (o.clickCount ?? 1); i++)
+			await this.request("click", { x, y, button: o.button, modifiers: o.modifiers, ...(i > 0 ? { clickCount: i + 1 } : {}) });
 	}
 	async mouseDown(x: number, y: number, o: MouseOpts = {}): Promise<void> {
 		await this.request("mouseDown", { x, y, button: o.button, modifiers: o.modifiers });

@@ -76,6 +76,20 @@ export async function callZn(store: Record<string, any>, name: string, args: unk
 	return plain(await f(...args));
 }
 
+/**
+ * A click that is not the first of a series (`clickCount` 2 for the second click of a double click): GPUIX's protocol has no click
+ * count, so it goes to the renderer here, which tells the app as a window does. False for a first click: GPUIX's handler takes those.
+ */
+function repeatClick(renderer: unknown, params: unknown): boolean {
+	const p = (params ?? {}) as { x?: unknown; y?: unknown; button?: unknown; modifiers?: unknown; clickCount?: unknown };
+	const count = Number(p.clickCount);
+	if (!Number.isInteger(count) || count < 2 || typeof p.x !== "number" || typeof p.y !== "number") return false;
+	const r = renderer as { simulateClick: (...a: unknown[]) => void; tick?: () => void };
+	r.simulateClick(p.x, p.y, typeof p.button === "number" ? p.button : 0, typeof p.modifiers === "string" ? p.modifiers : undefined, count);
+	r.tick?.();
+	return true;
+}
+
 /** Once the renderer exists: answer the harness, GPUIX's methods and the zn.* ones on the same channel. */
 export async function serveAutomation(renderer: unknown): Promise<void> {
 	if (served || !automationWanted() || !renderer) return;
@@ -92,6 +106,7 @@ export async function serveAutomation(renderer: unknown): Promise<void> {
 	async function answer(message: { id?: unknown; method?: unknown; params?: unknown }): Promise<void> {
 		const method = String(message.method ?? "");
 		try {
+			if (method === "click" && repeatClick(renderer, message.params)) return send(m.encodeSse({ id: message.id, result: { ok: true } } as never));
 			if (!method.startsWith("zn.")) return send(await m.handleAutomationRequest(message, backend));
 			const args = (message.params as { args?: unknown[] } | undefined)?.args ?? [];
 			const result = await callZn(await loadStore(), method.slice(3), args);
