@@ -30,13 +30,16 @@ function compute(): string {
 /** "0.1.0+<commit>-<yyyymmdd>" */
 export const BUILD_VERSION: string = process.env.ZN_BUILD_VERSION || (process.env.ZN_BUILD_VERSION = compute());
 
-/** "major.minor.<days since 2026-01-01>.0" for a stamp (each part fits the 16 bits of a Windows version resource). */
+/**
+ * "major.minor.<days since 2026-01-01>.<fourth>" for a stamp (each part fits the 16 bits of a Windows version resource). A release
+ * with a fourth part (0.2.7.1, a fix of 0.2.7) puts it last, so it sorts after the release it fixes; others end in 0.
+ */
 export function numericVersion(stamp: string = BUILD_VERSION): string {
-	const m = /^(\d+)\.(\d+)\.\d+\+[^-]+-(\d{4})(\d{2})(\d{2})$/.exec(stamp);
+	const m = /^(\d+)\.(\d+)\.\d+(?:\.(\d+))?\+[^-]+-(\d{4})(\d{2})(\d{2})$/.exec(stamp);
 	if (!m) throw new Error(`not a build stamp: ${stamp}`);
-	const days = Math.floor((Date.UTC(+m[3]!, +m[4]! - 1, +m[5]!) - Date.UTC(2026, 0, 1)) / 86400000);
+	const days = Math.floor((Date.UTC(+m[4]!, +m[5]! - 1, +m[6]!) - Date.UTC(2026, 0, 1)) / 86400000);
 	if (days < 0 || days > 65535) throw new Error(`build date out of range in ${stamp}`);
-	return `${m[1]}.${m[2]}.${days}.0`;
+	return `${m[1]}.${m[2]}.${days}.${Number(m[3] ?? 0)}`;
 }
 
 if (import.meta.main) console.log(process.argv.includes("--numeric") ? numericVersion() : BUILD_VERSION);
