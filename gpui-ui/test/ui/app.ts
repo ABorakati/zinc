@@ -2,6 +2,7 @@
 // process (handleApi, no socket). Import it only after fences.ts and the environment are in place.
 import { TestRenderer } from "@gpuix/solid/testing";
 import { Ui } from "./driver";
+import { SMALL_WINDOW } from "./limits";
 import type { ScenarioOptions } from "./define";
 
 export async function bootApp(options: ScenarioOptions, outDir: string): Promise<Ui> {
@@ -54,6 +55,12 @@ export async function bootApp(options: ScenarioOptions, outDir: string): Promise
 	const { store } = await import("../../src/store");
 	const { apiFetch } = await import("../../src/api");
 	const ui = new Ui(renderer, store, apiFetch, size, outDir);
+	// Windows shrinks a window to fit the screen: every scenario's coordinates would then be off (CI's screen is 1024 x 768)
+	const root = (JSON.parse(renderer.getAutomationTree()) as { tree?: { bounds?: { width: number; height: number } } }).tree?.bounds;
+	if (root && (Math.round(root.width) < size.width || Math.round(root.height) < size.height))
+		throw new Error(
+			`${SMALL_WINDOW}: ${Math.round(root.width)} x ${Math.round(root.height)}, not the ${size.width} x ${size.height} asked for. The screen is too small: use a larger display resolution.`,
+		);
 	await ui.waitFor("the first page of the list", () => store.total() > 0 && !!store.peek(0));
 	await ui.settle(700);
 	return ui;

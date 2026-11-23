@@ -203,6 +203,13 @@ jobs:
         shell: bash
         run: mkdir -p vendor && bash scripts/build-docworker.sh # vendor/ is git-ignored, so a fresh checkout has none
 
+      # The runner's screen is 1024 x 768 and Windows shrinks a larger window to fit it; the scenarios need 1440 x 900.
+      - name: Display large enough for the test window
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds | Format-List Width, Height
       - name: UI scenarios
         working-directory: gpui-ui
         run: bun run test:ui

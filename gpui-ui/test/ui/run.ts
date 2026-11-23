@@ -8,6 +8,7 @@
 // Each scenario runs in a process of its own, on a made-up library, with its own user folders: the machine's library, settings,
 // clipboard and network are out of reach (fences.ts). A failure leaves result.json, screen.txt and failure.png in --out.
 // Windows and macOS only: GPUI's test renderer needs one of them.
+import { SMALL_WINDOW } from "./limits";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -175,6 +176,10 @@ try {
 				for (let job = queue.shift(); job; job = queue.shift()) {
 					const r = await runJob(job);
 					results.push(r);
+					if (r.failure?.includes(SMALL_WINDOW)) {
+						queue.length = 0; // every other scenario would fail the same way: stop here
+						console.error(r.failure);
+					}
 					const label = { pass: "ok   ", fail: "FAIL ", known: "known", fixed: "FIXED" }[r.outcome];
 					console.log(`${label} ${r.area}: ${r.name} (${(r.ms / 1000).toFixed(1)} s)`);
 					if (r.outcome === "fail") console.log(`      ${r.failure?.replaceAll("\n", "\n      ")}\n      evidence: ${r.dir}`);

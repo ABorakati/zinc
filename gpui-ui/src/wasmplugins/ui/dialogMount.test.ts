@@ -2,6 +2,8 @@
 // not be refused as re-entrant; it has to wait in the supervisor's queue for the plugin's call to finish. Real supervisor, real
 // plugin (the hello-js fixture), real `openDialogNow`.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { resolveZhwPath } from "../../../../plugin-host/src/transport-wasmtime";
 import { defineHandler } from "../../../../plugin-host/src/imports/registry";
 import type { PluginSupervisor } from "../../../../plugin-host/src/supervisor";
 import { buildFixtures, newSupervisor, until, zincHandlers } from "../../../../plugin-host/test/helpers";
@@ -9,9 +11,12 @@ import { setPluginSupervisor } from "../host";
 import { lookupInstance } from "./controller";
 import { openDialogNow, type HostCtx } from "./host";
 
+// needs the plugin host binary (plugin-host-wasmtime, a cargo build): skipped where it is not built, as in the gpui-ui CI job
+const hasZhw = existsSync(resolveZhwPath());
+
 let dirs: Awaited<ReturnType<typeof buildFixtures>>;
 beforeAll(async () => {
-	dirs = await buildFixtures();
+	if (hasZhw) dirs = await buildFixtures();
 }, 180_000);
 
 let sup: PluginSupervisor | undefined;
@@ -20,7 +25,7 @@ afterAll(async () => {
 	await sup?.shutdown();
 });
 
-describe("ui.open-dialog from inside a plugin call", () => {
+describe.skipIf(!hasZhw)("ui.open-dialog from inside a plugin call", () => {
 	test("the dialog's mount is queued behind the call, not refused as re-entrant", async () => {
 		const lines: string[] = [];
 		let instance: bigint | undefined;
