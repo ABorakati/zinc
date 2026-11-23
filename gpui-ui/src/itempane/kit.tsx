@@ -752,6 +752,13 @@ export function Picker<T>(p: {
 					setOpen(true);
 					if (p.listOnFocus || q()) run(q());
 				}}
+				// a click shows the list too: in the app's window a click into the field focuses it without a focus event reaching here
+				onClick={() => {
+					clearTimeout(closeTimer);
+					if (open() && results().length) return;
+					setOpen(true);
+					if (p.listOnFocus || q()) run(q());
+				}}
 				onBlur={() => {
 					closeTimer = setTimeout(() => {
 						setOpen(false);
