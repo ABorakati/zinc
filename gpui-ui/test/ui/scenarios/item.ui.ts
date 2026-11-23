@@ -135,20 +135,28 @@ async function select(ui: Ui, title: string): Promise<void> {
 
 const AUTHORS = ["author: Alpha, Ann", "author: Bravo, Ben", "author: Charlie, Cat"];
 
-// ---- creators: the five buttons that appear on a row ---------------------------------------------------------------------------
+// ---- creators: the ⋯ menu that appears on a row ---------------------------------------------------------------------------------
 
-const CREATOR_ACTIONS = ["Switch to", "Move up", "Move down", "Remove creator", "Add creator"] as const;
-/** Point at the creator row whose text is `at` and press one of its buttons (the tooltip is checked first). */
-async function creatorAction(ui: Ui, at: string, action: (typeof CREATOR_ACTIONS)[number], nth = 0): Promise<void> {
+type CreatorAction = "Switch to" | "Move Up" | "Move Down" | "Remove Creator" | "Add Creator";
+/**
+ * Point at the creator row whose text is `at`, open its ⋯ menu and choose `action`. The button must be the only one on the row. A disabled
+ * entry does nothing and leaves the menu open, so the menu is then closed.
+ */
+async function creatorAction(ui: Ui, at: string, action: CreatorAction, nth = 0): Promise<void> {
 	const name = await ui.see(at, { area: "pane", exact: true, nth });
 	await ui.mouseMove(name.x, name.y);
 	await ui.settle(300);
 	const icons = await iconsAt(ui, name.y, 1290);
-	if (icons.length !== 5) throw new Error(`the row of "${at}" shows ${icons.length} buttons instead of 5 when pointed at`);
-	const target = icons[CREATOR_ACTIONS.indexOf(action)]!;
-	await ui.mouseMove(target.x, target.y);
+	if (icons.length !== 1) throw new Error(`the row of "${at}" shows ${icons.length} buttons instead of one ⋯ button when pointed at`);
+	const more = icons[0]!;
+	if (more.x <= name.x) throw new Error(`the ⋯ button of "${at}" is not right of its name`);
+	await ui.mouseMove(more.x, more.y);
 	await ui.settle(150);
-	await ui.clickAt(target.x, target.y);
+	await ui.clickAt(more.x, more.y);
+	await ui.click(action, { exact: action !== "Switch to" });
+	if (action === "Move Up" || action === "Move Down") {
+		if (await ui.visible("Remove Creator", { exact: true })) await ui.press("escape");
+	}
 }
 
 // =====================================================================================================================================
@@ -509,7 +517,7 @@ scenario("a type change that is waiting for an answer is dropped when another it
 
 scenario("a creator added after the second one is saved in place", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
-	await creatorAction(ui, "Bravo", "Add creator");
+	await creatorAction(ui, "Bravo", "Add Creator");
 	await ui.click("Last", { area: "pane", exact: true });
 	await ui.type("Zulu");
 	await ui.press("enter");
@@ -521,24 +529,24 @@ scenario("a creator added after the second one is saved in place", async (ui) =>
 
 scenario("a creator removed leaves the others in order", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
-	await creatorAction(ui, "Bravo", "Remove creator");
+	await creatorAction(ui, "Bravo", "Remove Creator");
 	await ui.expect("the saved creators", () => savedPeople(ui, T.authors), ["author: Alpha, Ann", "author: Charlie, Cat"]);
 	await ui.gone("Bravo", { area: "pane", exact: true });
 });
 
 scenario("a creator moved up and another moved down swap places and nothing else changes", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
-	await creatorAction(ui, "Bravo", "Move up");
+	await creatorAction(ui, "Bravo", "Move Up");
 	await ui.expect("Bravo is first", () => savedPeople(ui, T.authors), ["author: Bravo, Ben", "author: Alpha, Ann", "author: Charlie, Cat"]);
-	await creatorAction(ui, "Bravo", "Move down");
-	await creatorAction(ui, "Bravo", "Move down");
+	await creatorAction(ui, "Bravo", "Move Down");
+	await creatorAction(ui, "Bravo", "Move Down");
 	await ui.expect("Bravo is last", () => savedPeople(ui, T.authors), ["author: Alpha, Ann", "author: Charlie, Cat", "author: Bravo, Ben"]);
 });
 
 scenario("the first creator cannot move up and the last cannot move down", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
-	await creatorAction(ui, "Alpha", "Move up");
-	await creatorAction(ui, "Charlie", "Move down");
+	await creatorAction(ui, "Alpha", "Move Up");
+	await creatorAction(ui, "Charlie", "Move Down");
 	await ui.expectStill("the saved creators", () => savedPeople(ui, T.authors), AUTHORS);
 });
 
@@ -615,7 +623,7 @@ scenario("a creator edited in a collapsed list is saved with all 24 creators", a
 
 scenario("a creator removed from a collapsed list keeps the hidden ones", async (ui) => {
 	await select(ui, T.many);
-	await creatorAction(ui, "Coauthor2", "Remove creator");
+	await creatorAction(ui, "Coauthor2", "Remove Creator");
 	await ui.expect("the saved creators", () => savedPeople(ui, T.many), COAUTHORS.filter((_, i) => i !== 1));
 });
 

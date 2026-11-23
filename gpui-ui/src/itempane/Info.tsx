@@ -3,7 +3,7 @@
 import { pluginInfoEntries } from "../wasmplugins/extend/InfoRows";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, Show, untrack } from "solid-js";
 import { Icon } from "../icons";
-import { Select } from "../ui";
+import { DropdownMenu, Select, type MenuItem } from "../ui";
 import {
 	Block,
 	BoxInput,
@@ -31,6 +31,8 @@ import type { Creator, ZoteroSchemaField, ZoteroSchemaItemType } from "./net";
 import { fieldDirection } from "../ui/bidi";
 import { daysIn, fmtTimestamp, formatDateParts, isPlainDate, MONTH_ABBR, parseDate } from "./util";
 
+/** Width of the slot at a creator row's end that holds its ⋯ actions button. */
+const CREATOR_MENU_W = 22;
 const HIDDEN = new Set(["abstractNote", "dateAdded", "dateModified", "accessDate_", "itemType", "creators"]);
 const FALLBACK: ZoteroSchemaField[] = [
 	{ field: "title", label: "Title" },
@@ -233,10 +235,22 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 		void commit(creators().map((x, j) => (j === i ? next : { ...x })));
 	};
 
+	const menuItems = (i: number): MenuItem[] => {
+		const single = creators()[i]?.name !== undefined;
+		return [
+			{ label: single ? "Switch to Two Fields" : "Switch to Single Field", icon: "replace", onSelect: () => toggleMode(i) },
+			{ label: "Move Up", icon: "arrow-up", disabled: i === 0, onSelect: () => move(i, -1) },
+			{ label: "Move Down", icon: "arrow-down", disabled: i === count() - 1, onSelect: () => move(i, 1) },
+			{ separator: true },
+			{ label: "Add Creator", icon: "plus", onSelect: () => insertAfter(i) },
+			{ label: "Remove Creator", icon: "minus", danger: true, onSelect: () => remove(i) },
+		];
+	};
+
 	const creatorRow = (i: number): JSX.Element => {
 		const c = () => creators()[i] ?? NO_CREATOR;
-		// the five action icons float over the row's right edge while the pointer is on it or one of its fields is being edited, so they
-		// do not take ~100 px from the names the rest of the time
+		// one ⋯ button in a slot of its own at the row's end opens the row's actions; it shows while the pointer is on the row or one of
+		// its fields is being edited. (Five buttons floating over the row covered the first name.)
 		const [hot, setHot] = createSignal(false);
 		const [editing, setEditing] = createSignal(false);
 		const part = hoverWithButtons(setHot);
@@ -299,39 +313,21 @@ function createCreatorEntries(st: () => ZoteroSchemaItemType | undefined, entry:
 							/>
 						</Show>
 					</div>
-					<Show when={actions()}>
+					<Show when={!locked()}>
+						{/* a slot of its own, so the button never covers a name; empty until the row is pointed at or edited */}
 						<div
 							onMouseEnter={() => overBox(true)}
 							onMouseLeave={() => overBox(false)}
-							style={{
-								...t("flex items-center rounded-md border shadow-sm"),
-								position: "absolute",
-								right: 0,
-								top: 0,
-								paddingLeft: 2,
-								paddingRight: 2,
-								backgroundColor: tok("card"),
-								borderColor: tok("border-soft"),
-							}}
+							style={{ ...t("flex items-center justify-center"), width: CREATOR_MENU_W, flexShrink: 0, height: 22 }}
 						>
-							<IconBtn
-								icon="replace"
-								onHover={part("replace")}
-								size={13}
-								title={c().name !== undefined ? "Switch to two fields" : "Switch to single field"}
-								onClick={() => toggleMode(i)}
-							/>
-							<IconBtn icon="arrow-up" onHover={part("up")} size={13} title="Move up" disabled={i === 0} onClick={() => move(i, -1)} />
-							<IconBtn
-								icon="arrow-down"
-								onHover={part("down")}
-								size={13}
-								title="Move down"
-								disabled={i === count() - 1}
-								onClick={() => move(i, 1)}
-							/>
-							<IconBtn icon="minus" onHover={part("remove")} size={13} title="Remove creator" onClick={() => remove(i)} />
-							<IconBtn icon="plus" onHover={part("add")} size={13} title="Add creator" onClick={() => insertAfter(i)} />
+							<Show when={actions()}>
+								<DropdownMenu
+									align="end"
+									width={180}
+									items={() => menuItems(i)}
+									trigger={<IconBtn icon="ellipsis" onHover={part("more")} size={13} title="Creator actions" />}
+								/>
+							</Show>
 						</div>
 					</Show>
 				</div>
