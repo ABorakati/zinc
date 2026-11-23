@@ -2,12 +2,18 @@
 // process (handleApi, no socket). Import it only after fences.ts and the environment are in place.
 import { TestRenderer } from "@gpuix/solid/testing";
 import { Ui } from "./driver";
+import { fitWindow } from "./background";
 import { SMALL_WINDOW } from "./limits";
 import type { ScenarioOptions } from "./define";
 
 export async function bootApp(options: ScenarioOptions, outDir: string): Promise<Ui> {
-	const size = { width: options.width ?? 1440, height: options.height ?? 900 };
+	const size = { width: options.width ?? 1440, height: options.height ?? 881 };
 	const renderer = new TestRenderer(size);
+	fitWindow(size.width, size.height); // GPUI's test window takes its size from the display: give it the one the scenarios assume
+	for (let i = 0; i < 5; i++) {
+		renderer.dispatchNativeEvents();
+		renderer.flush();
+	}
 	// an in-memory clipboard, which is also the first route the app tries
 	let clipboard = "";
 	Object.assign(renderer, {
@@ -55,11 +61,11 @@ export async function bootApp(options: ScenarioOptions, outDir: string): Promise
 	const { store } = await import("../../src/store");
 	const { apiFetch } = await import("../../src/api");
 	const ui = new Ui(renderer, store, apiFetch, size, outDir);
-	// Windows shrinks a window to fit the screen: every scenario's coordinates would then be off (CI's screen is 1024 x 768)
+	// every scenario's coordinates assume this size: a window of another size (a display too small for it) stops the run
 	const root = (JSON.parse(renderer.getAutomationTree()) as { tree?: { bounds?: { width: number; height: number } } }).tree?.bounds;
-	if (root && (Math.round(root.width) < size.width || Math.round(root.height) < size.height))
+	if (root && Math.round(root.width) !== size.width)
 		throw new Error(
-			`${SMALL_WINDOW}: ${Math.round(root.width)} x ${Math.round(root.height)}, not the ${size.width} x ${size.height} asked for. The screen is too small: use a larger display resolution.`,
+			`${SMALL_WINDOW}: ${Math.round(root.width)} x ${Math.round(root.height)}, not the ${size.width} x ${size.height} asked for. Is the display large enough?`,
 		);
 	await ui.waitFor("the first page of the list", () => store.total() > 0 && !!store.peek(0));
 	await ui.settle(700);

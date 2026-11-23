@@ -9,7 +9,7 @@ import type { Ui } from "./driver";
 export interface ScenarioOptions {
 	/** Extra items in the library: 130 by default (more than one page of the list). */
 	items?: number;
-	/** The window, 1440 x 900 by default. */
+	/** The inside of the window, 1440 x 881 by default (the size the scenarios were written against; the harness sets it on Windows). */
 	width?: number;
 	height?: number;
 	/** Light or dark (dark by default, so that a run does not follow the machine). */

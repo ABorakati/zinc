@@ -3,7 +3,7 @@
 // from the test as usual, and can neither be seen nor take the focus from whoever is working on the machine.
 //
 // It fails closed: a test that cannot get that desktop does not run. `bun run test:ui --show` puts the windows on screen, to watch one.
-import { dlopen, FFIType } from "bun:ffi";
+import { dlopen, FFIType, JSCallback } from "bun:ffi";
 
 /** One desktop for all test processes: each desktop costs desktop heap, of which a session has little. It goes with its last process. */
 const DESKTOP = "zinc-ui-tests";
@@ -26,4 +26,62 @@ export function moveToBackgroundDesktop(): void {
 	if (!user32.SetThreadDesktop(desktop))
 		throw new Error("UI test: could not move to the background desktop (a window already existed), so no window is opened");
 	moved = true;
+}
+
+/**
+ * Gives the window this thread opened an inside of exactly `width` x `height` (logical pixels). GPUI's visual test window takes its size
+ * from the display, whatever it is asked for, and every scenario's coordinates assume one size. Windows only; elsewhere false.
+ */
+export function fitWindow(width: number, height: number): boolean {
+	if (process.platform !== "win32") return false;
+	const H = FFIType.u64,
+		I = FFIType.i32,
+		U32 = FFIType.u32,
+		P = FFIType.ptr;
+	const user32 = dlopen("user32.dll", {
+		EnumThreadWindows: { args: [U32, FFIType.function, H], returns: I },
+		GetWindowRect: { args: [H, P], returns: I },
+		GetClientRect: { args: [H, P], returns: I },
+		GetDpiForWindow: { args: [H], returns: U32 },
+		SetWindowPos: { args: [H, H, I, I, I, I, U32], returns: I },
+	}).symbols;
+	const kernel32 = dlopen("kernel32.dll", { GetCurrentThreadId: { args: [], returns: U32 } }).symbols;
+	const windows: bigint[] = [];
+	const each = new JSCallback(
+		(hwnd: bigint) => {
+			windows.push(hwnd);
+			return 1;
+		},
+		{ args: [H, H], returns: I },
+	);
+	try {
+		user32.EnumThreadWindows(kernel32.GetCurrentThreadId(), each.ptr, 0n);
+	} finally {
+		each.close();
+	}
+	const rect = (get: (h: bigint, r: Int32Array) => number, h: bigint) => {
+		const r = new Int32Array(4);
+		get(h, r);
+		return { w: r[2]! - r[0]!, h: r[3]! - r[1]! };
+	};
+	// the app's window is the largest this thread has (GPUI may keep small helper windows)
+	const hwnd = windows
+		.map((h) => ({ h, area: rect(user32.GetClientRect, h).w * rect(user32.GetClientRect, h).h }))
+		.sort((a, b) => b.area - a.area)[0]?.h;
+	if (!hwnd) return false;
+	const scale = (user32.GetDpiForWindow(hwnd) || 96) / 96;
+	const outer = rect(user32.GetWindowRect, hwnd),
+		inner = rect(user32.GetClientRect, hwnd);
+	const SWP_NOMOVE = 0x2,
+		SWP_NOZORDER = 0x4,
+		SWP_NOACTIVATE = 0x10;
+	return !!user32.SetWindowPos(
+		hwnd,
+		0n,
+		0,
+		0,
+		Math.round(width * scale) + outer.w - inner.w,
+		Math.round(height * scale) + outer.h - inner.h,
+		SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+	);
 }
