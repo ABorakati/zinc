@@ -71,7 +71,9 @@ async function clearSearch(ui: Ui): Promise<void> {
 
 /** The item titles that can be seen in the list right now (the ones this library names with a prefix we know). */
 async function visibleItems(ui: Ui): Promise<string[]> {
-	return (await ui.painted()).filter((t) => /^(ZT0\d|ZG0\d|ZD0\d|ZS0\d|Bulk \d{4})/.test(t));
+	// read from the element tree (the real app has no painted-text call), the list's titles only
+	const found = await ui.findAll("", { area: "list" });
+	return [...new Set(found.map((f) => f.text.trim()).filter((t) => /^(ZT0\d|ZG0\d|ZD0\d|ZS0\d|Bulk \d{4})/.test(t)))];
 }
 
 /** Click up to `n` of the rows on screen and check that each took the click: a row that cannot be clicked is a bug. */
@@ -723,6 +725,10 @@ scenario("deleting a collection asks first; Cancel keeps it, Delete removes it a
 scenario("a subcollection is made from the menu and the parent opens to show it", async (ui) => {
 	await ui.rightClick("Methods", { area: "sidebar", exact: true });
 	await ui.click("New subcollection", { exact: true });
+	// type once the field has the keys, as a user waits for the caret: it must get them without a click. (The field is in the tree a
+	// frame before the window gives it the focus; keys sent in between go to the sidebar.)
+	await ui.see("Collection name", { area: "sidebar" });
+	await ui.waitFor("the name field has the keys", async () => (await ui.focused())?.type === "input", 3000);
 	await ui.type("ZC Child");
 	await ui.press("enter");
 	await ui.see("ZC Child", { area: "sidebar", exact: true });

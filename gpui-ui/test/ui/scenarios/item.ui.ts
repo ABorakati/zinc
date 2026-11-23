@@ -844,6 +844,10 @@ const noteKeys = async (ui: Ui, title: string) => (await detailOf(ui, title)).ch
 const noteHtml = async (ui: Ui, key: string) => String((await byKey(ui, key)).data.note ?? "");
 const noteText = (html: string) => html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 
+// The packaged app opens a note in Zotero's own editor (a WebView2 popup, itempane/RichNote.tsx): no Edit/Preview bar, and its text is
+// neither in the automation tree nor reachable by the harness's keys. The Markdown editor these scenarios drive is the fallback used
+// where WebView2 or the note-host build is missing (and by the in-process renderer), so only the in-process mode can reach it.
+const NOTE_EDITOR_ONLY = "the real app edits notes in Zotero's WebView2 note editor; the Markdown editor (Edit / Preview, typed text) exists only in-process";
 scenario("a note is added to an item and what is typed in it is saved", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await tab(ui, "notes");
@@ -852,7 +856,7 @@ scenario("a note is added to an item and what is typed in it is saved", async (u
 	await ui.type("Fresh note text");
 	await ui.expect("the saved note", async () => noteText(await noteHtml(ui, (await noteKeys(ui, T.authors))[0]!)), "Fresh note text");
 	await ui.see("Fresh note text", { area: "pane" });
-});
+}, { inProcessOnly: NOTE_EDITOR_ONLY });
 
 scenario("a note is opened from its row, edited and saved after a pause", async (ui) => {
 	await select(ui, T.noted);
@@ -864,7 +868,7 @@ scenario("a note is opened from its row, edited and saved after a pause", async 
 	await ui.type(" And more.");
 	await ui.expect("the saved note", async () => noteText(await noteHtml(ui, note!)), "Note body for the test. And more.");
 	await ui.see("Saved", { area: "pane", exact: true });
-});
+}, { inProcessOnly: NOTE_EDITOR_ONLY });
 
 scenario("a note is saved when the editor is switched to Preview", async (ui) => {
 	await select(ui, T.noted);
@@ -877,7 +881,7 @@ scenario("a note is saved when the editor is switched to Preview", async (ui) =>
 	await ui.click("Preview", { area: "pane", exact: true });
 	await ui.expect("the saved note", async () => noteText(await noteHtml(ui, note!)), "Note body for the test. Previewed.");
 	await ui.see("Note body for the test. Previewed.", { area: "pane" });
-});
+}, { inProcessOnly: NOTE_EDITOR_ONLY });
 
 scenario("a note is moved to the trash from its row", async (ui) => {
 	await select(ui, T.noted);
@@ -905,7 +909,7 @@ scenario("a note being typed survives a selection that moves without a click", a
 	await ui.store.revealItem((await ui.saved(T.neighbour)).key);
 	await ui.expect("the saved note", async () => noteText(await noteHtml(ui, note!)), "Note body for the test. Revealed.");
 	await ui.expectStill("the other item has no note", async () => (await noteKeys(ui, T.neighbour)).length, 0);
-});
+}, { inProcessOnly: NOTE_EDITOR_ONLY });
 
 scenario("a note being typed survives opening the item's other note", async (ui) => {
 	const parent = await ui.saved(T.noted);
@@ -921,7 +925,7 @@ scenario("a note being typed survives opening the item's other note", async (ui)
 	await ui.expect("the first note", async () => noteText(await noteHtml(ui, first!)), "Note body for the test. First edited.");
 	await ui.expectStill("the second note", async () => noteText(await noteHtml(ui, second)), "Second note body");
 	await ui.see("Second note body", { area: "pane" });
-});
+}, { inProcessOnly: NOTE_EDITOR_ONLY });
 
 // =====================================================================================================================================
 // attachments
@@ -1082,7 +1086,8 @@ scenario("the Locate submenu of the ... menu opens", async (ui) => {
 	await clickTestId(ui, "ip-more");
 	await ui.click("Locate", {});
 	await ui.screenshot("locate");
-	await ui.expect("a Locate entry is shown", async () => (await ui.painted()).some((t) => /Library Lookup|Online|Open/i.test(t)), true);
+	// read from the element tree (the packaged app has no painted-text call); entries of the submenu only, not the "Open PDF" button
+	await ui.expect("a Locate entry is shown", async () => (await ui.findAll("", {})).some((f) => /^(View Online|Library Lookup|Search Google Scholar)$/.test(f.text.trim())), true);
 });
 
 // =====================================================================================================================================
@@ -1501,8 +1506,20 @@ const PLACES: Place[] = [
 		other: T.authors,
 		type: async (ui) => {
 			await tab(ui, "attachments");
+			// the PDF preview above the file name arrives a moment later and pushes the name down: let it, then scroll to the name, or the
+			// row is moved out of the list (and the rename field with it) between the click on Rename and the typing
+			let at = -1;
+			for (let i = 0; i < 20; i++) {
+				const y = (await ui.see("Demo review.pdf", { area: "pane", exact: true })).y;
+				if (i > 2 && y === at) break; // it has stopped moving: the preview is in
+				at = y;
+				await ui.settle(500);
+			}
+			await ui.wheel(1420, 600, -400);
+			await ui.settle(500);
 			await rowButton(ui, "Demo review.pdf", 3, "More");
 			await ui.click("Rename", { exact: true });
+			await ui.settle(600);
 			await ui.replace("Typed name");
 		},
 		saved: async (ui, key) => (await ui.api<Detail>("GET", `/items/${(await byKey(ui, key)).children[0]!.key}`)).data.title,

@@ -115,8 +115,13 @@ function readPng(file: string): { w: number; h: number; px: Uint8Array } {
 	return { w, h, px };
 }
 /** What a part of a screenshot holds: the share of paper (near white) and of ink (dark) pixels, and how many different colours. */
-function paint(file: string, box: Rect) {
+function paint(file: string, box: Rect, logicalWidth?: number) {
 	const { w, h, px } = readPng(file);
+	if (logicalWidth && w !== logicalWidth) {
+		// the real app's screenshot is in device pixels (2x on the harness' display): the box is in the window's own units
+		const k = w / logicalWidth;
+		box = { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k };
+	}
 	let n = 0,
 		paper = 0,
 		ink = 0;
@@ -218,7 +223,7 @@ async function drawn(ui: Ui, name: string, minInk = 0.002, minPaper = 0.3) {
 	let last = { paper: 0, ink: 0, colours: 0 };
 	try {
 		await ui.waitFor(`the pages are painted (${name})`, async () => {
-			last = paint(await ui.screenshot(name), box);
+			last = paint(await ui.screenshot(name), box, ui.size.width);
 			return last.paper > minPaper && last.ink > minInk;
 		}, 20000);
 	} catch (e) {
@@ -460,7 +465,7 @@ scenario(
 		// the thumbnails of all three pages: a white page with ink on it, three times down the sidebar
 		await ui.waitFor("three thumbnails are painted", async () => {
 			const f = await ui.screenshot("thumbs");
-			const rows = [0, 1, 2].map((i) => paint(f, { x: 55, y: side.y + 30 + i * 205, width: 125, height: 150 }));
+			const rows = [0, 1, 2].map((i) => paint(f, { x: 55, y: side.y + 30 + i * 205, width: 125, height: 150 }, ui.size.width));
 			return rows.every((r) => r.paper > 0.5 && r.ink > 0.002 && r.colours > 4) || rows.slice(0, 2).every((r) => r.paper > 0.5 && r.ink > 0.002);
 		}, 20000);
 		await focusPages(ui);
@@ -1554,8 +1559,7 @@ scenario("a tab that was not shown draws its pages and thumbnails again when it 
 		await drawn(ui, `second-shown-${i}`);
 	}
 	await ui.click(T.article, { area: "top" });
-	const f = await ui.screenshot("thumbs-again");
-	await ui.expect("the thumbnails are painted too", () => paint(f, { x: 55, y: 150, width: 125, height: 150 }).paper > 0.5, true, 6000);
+	await ui.expect("the thumbnails are painted too", async () => paint(await ui.screenshot("thumbs-again"), { x: 55, y: 150, width: 125, height: 150 }, ui.size.width).paper > 0.5, true, 6000);
 });
 
 scenario(

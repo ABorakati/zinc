@@ -159,6 +159,7 @@ export class InProcessBackend implements Backend {
 	}
 
 	async store(name: string, args: unknown[] = []): Promise<unknown> {
+		if (name === "focused") return (this.renderer as { getFocusedElementId?: () => number | null }).getFocusedElementId?.() ?? null;
 		return callZn(this.appStore, name, args); // the same table the real app serves: both modes answer alike
 	}
 	async api(method: string, path: string, body?: unknown): Promise<{ status: number; text: string }> {

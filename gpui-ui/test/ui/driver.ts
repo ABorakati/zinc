@@ -156,6 +156,19 @@ export class Ui {
 		return this.backend.tree();
 	}
 
+	/** The element that has the keys, as a node of the automation tree (its children left out), or null when none has. */
+	async focused(): Promise<Omit<TreeNode, "children"> | null> {
+		const id = (await this.backend.store("focused")) as number | null;
+		if (id == null) return null;
+		const find = (n: TreeNode): TreeNode | undefined =>
+			n.id === id ? n : (n.children ?? []).reduce<TreeNode | undefined>((hit, c) => hit ?? find(c as TreeNode), undefined);
+		const root = await this.backend.tree();
+		const n = root ? find(root) : undefined;
+		if (!n) return { id } as Omit<TreeNode, "children">;
+		const { children: _c, ...rest } = n as TreeNode & { children?: unknown };
+		return rest;
+	}
+
 	/** The box of an element (replaces ui.renderer.getElementBounds(id)), or null. */
 	async bounds(id: number): Promise<Box | null> {
 		return this.backend.bounds(id);

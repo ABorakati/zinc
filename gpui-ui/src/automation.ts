@@ -58,6 +58,7 @@ export const ZN_METHODS = [
 	"api",
 	"clipboard",
 	"setClipboard",
+	"focused",
 ] as const;
 export type ZnMethod = (typeof ZN_METHODS)[number];
 
@@ -107,6 +108,11 @@ export async function serveAutomation(renderer: unknown): Promise<void> {
 		const method = String(message.method ?? "");
 		try {
 			if (method === "click" && repeatClick(renderer, message.params)) return send(m.encodeSse({ id: message.id, result: { ok: true } } as never));
+			// the element that has the keys (an id of the automation tree), or null: read from the renderer, which the store does not hold
+			if (method === "zn.focused") {
+				const id = (renderer as { getFocusedElementId?: () => number | null }).getFocusedElementId?.() ?? null;
+				return send(m.encodeSse({ id: message.id, result: id } as never));
+			}
 			if (!method.startsWith("zn.")) return send(await m.handleAutomationRequest(message, backend));
 			const args = (message.params as { args?: unknown[] } | undefined)?.args ?? [];
 			const result = await callZn(await loadStore(), method.slice(3), args);
