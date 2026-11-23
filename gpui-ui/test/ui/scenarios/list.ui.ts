@@ -32,5 +32,5 @@ scenario("the rows under a header whose count changed still take clicks", async 
 scenario("a card shows one separator between neighbouring details", async (ui) => {
 	const line = await ui.see("Report", { area: "list" });
 	const doubled = /·\s*·/;
-	await ui.expectStill("no doubled separator", () => doubled.test(ui.painted().join(" ")) || doubled.test(line.text), false, 100);
+	await ui.expectStill("no doubled separator", async () => doubled.test((await ui.painted()).join(" ")) || doubled.test(line.text), false, 100);
 });

@@ -16,7 +16,11 @@ const COLLECTIONS_HEADER_PLUS = 210; // x of the "+" buttons that sit at the rig
 // ---- reading what the app holds: the order of the list, the selection ---------------------------------------------------------------
 
 /** The titles of the first `n` items of the list, in the list's order. */
-const listTitles = (ui: Ui, n: number): string[] => Array.from({ length: Math.min(n, ui.store.total()) }, (_, i) => ui.store.peek(i)?.title ?? "(not loaded)");
+async function listTitles(ui: Ui, n: number): Promise<string[]> {
+	const out: string[] = [];
+	for (let i = 0; i < Math.min(n, await ui.store.total()); i++) out.push((await ui.store.peek(i))?.title ?? "(not loaded)");
+	return out;
+}
 
 /** The titles the core gives for a query, in its order: what the list must show. */
 async function coreTitles(ui: Ui, query: string, n: number): Promise<string[]> {
@@ -25,32 +29,32 @@ async function coreTitles(ui: Ui, query: string, n: number): Promise<string[]> {
 }
 
 /** The titles of the selected items that are loaded. */
-function selectedTitles(ui: Ui): string[] {
-	const sel = ui.store.selected();
+async function selectedTitles(ui: Ui): Promise<string[]> {
+	const sel = new Set(await ui.store.selected());
 	const out: string[] = [];
-	for (let i = 0; i < ui.store.total(); i++) {
-		const row = ui.store.peek(i);
+	for (let i = 0; i < (await ui.store.total()); i++) {
+		const row = (await ui.store.peek(i));
 		if (row && sel.has(row.key)) out.push(row.title);
 	}
 	return out;
 }
 
 /** The text of the input at the point of a box (the search box, the tag filter, a dialog's field). */
-function inputBox(ui: Ui, within: Box): Box | undefined {
-	const tree = JSON.parse(ui.renderer.getAutomationTree()) as { tree?: any };
+async function inputBox(ui: Ui, within: Box): Promise<Box | undefined> {
+	const tree = await ui.tree();
 	let found: Box | undefined;
 	const walk = (n: any) => {
 		const b = n.bounds as Box | undefined;
 		if (!found && /input/i.test(n.type) && b && b.x >= within.x && b.y >= within.y && b.x + b.width <= within.x + within.width && b.y + b.height <= within.y + within.height) found = b;
 		for (const c of n.children ?? []) walk(c);
 	};
-	walk(tree.tree ?? tree);
+	if (tree) walk(tree);
 	return found;
 }
 
 async function clickInput(ui: Ui, within: Box): Promise<void> {
-	await ui.waitFor("an input field on screen", () => !!inputBox(ui, within));
-	const b = inputBox(ui, within)!;
+	await ui.waitFor("an input field on screen", async () => !!(await inputBox(ui, within)));
+	const b = (await inputBox(ui, within))!;
 	await ui.clickAt(b.x + b.width / 2, b.y + b.height / 2);
 }
 
@@ -66,22 +70,22 @@ async function clearSearch(ui: Ui): Promise<void> {
 }
 
 /** The item titles that can be seen in the list right now (the ones this library names with a prefix we know). */
-function visibleItems(ui: Ui): string[] {
-	return ui.painted().filter((t) => /^(ZT0\d|ZG0\d|ZD0\d|ZS0\d|Bulk \d{4})/.test(t));
+async function visibleItems(ui: Ui): Promise<string[]> {
+	return (await ui.painted()).filter((t) => /^(ZT0\d|ZG0\d|ZD0\d|ZS0\d|Bulk \d{4})/.test(t));
 }
 
 /** Click up to `n` of the rows on screen and check that each took the click: a row that cannot be clicked is a bug. */
 async function rowsTakeClicks(ui: Ui, n = 3): Promise<void> {
 	// rows that lie wholly inside the list: one cut by its edge has its centre outside the list, where a click lands on something else
-	const inside = (): string[] =>
-		[...new Set(ui.findAll("", { area: { x: 265, y: 215, width: 760, height: 600 } }).map((f) => f.text.trim()).filter((t) => /^(ZT0\d|ZG0\d|ZD0\d|Bulk \d{4})/.test(t)))];
-	await ui.waitFor("two rows on screen", () => inside().length >= 2);
-	const seen = inside().slice(0, n + 4);
+	const inside = async (): Promise<string[]> =>
+		[...new Set((await ui.findAll("", { area: { x: 265, y: 215, width: 760, height: 600 } })).map((f) => f.text.trim()).filter((t) => /^(ZT0\d|ZG0\d|ZD0\d|Bulk \d{4})/.test(t)))];
+	await ui.waitFor("two rows on screen", async () => (await inside()).length >= 2);
+	const seen = (await inside()).slice(0, n + 4);
 	const picks = [seen[0]!, seen[1]!, seen[Math.min(seen.length - 1, n)]!];
 	for (const text of picks) {
 		await ui.click(text, { area: "list", exact: true });
 		const prefix = text.replace(/…$/, "");
-		await ui.expect(`"${text}" is selected after the click`, () => (ui.selectedTitle() ?? "").startsWith(prefix), true);
+		await ui.expect(`"${text}" is selected after the click`, async () => ((await ui.selectedTitle()) ?? "").startsWith(prefix), true);
 	}
 }
 
@@ -89,23 +93,23 @@ async function rowsTakeClicks(ui: Ui, n = 3): Promise<void> {
 
 const DIRS = ["↓", "↑", "A–Z", "Z–A"];
 /** The direction buttons of the level chips, left to right. */
-const dirButtons = (ui: Ui) => ui.findAll("", { area: BAR }).filter((f) => DIRS.includes(f.text.trim()));
+const dirButtons = async (ui: Ui) => (await ui.findAll("", { area: BAR })).filter((f) => DIRS.includes(f.text.trim()));
 
 /** Open the group menu and choose a group. */
 async function groupBy(ui: Ui, label: string): Promise<void> {
-	await ui.click(groupChipLabel(ui), { area: BAR, exact: true, nth: 0 });
+	await ui.click(await groupChipLabel(ui), { area: BAR, exact: true, nth: 0 });
 	await ui.see("Group by", { area: BAR_MENU, exact: true });
 	await ui.click(label, { area: BAR_MENU, exact: true });
 	await ui.gone("Group by", { area: BAR_MENU, exact: true });
 }
-const groupChipLabel = (ui: Ui): string => {
-	const f = ui.findAll("", { area: { ...BAR, x: 300, width: 80 } }).find((t) => t.text.trim().length > 1);
+const groupChipLabel = async (ui: Ui): Promise<string> => {
+	const f = (await ui.findAll("", { area: { ...BAR, x: 300, width: 80 } })).find((t) => t.text.trim().length > 1);
 	return f?.text.trim() ?? "Year";
 };
 
 /** The "+" of the sort bar: it has no text, it sits right of the last level chip. */
 async function addLevel(ui: Ui, label: string): Promise<void> {
-	const dirs = dirButtons(ui);
+	const dirs = await dirButtons(ui);
 	const last = dirs[dirs.length - 1]!;
 	await ui.clickAt(last.x + 40, last.y);
 	await ui.see("Then sort by", { exact: true });
@@ -118,7 +122,7 @@ async function addLevel(ui: Ui, label: string): Promise<void> {
  */
 async function menuClick(ui: Ui, text: string, over: { x: number; y: number }, area?: Box): Promise<void> {
 	for (let i = 0; i < 40; i++) {
-		if (ui.findAll(text, { exact: true, area }).length) {
+		if ((await ui.findAll(text, { exact: true, area })).length) {
 			try {
 				await ui.click(text, { exact: true, area });
 				return;
@@ -142,7 +146,7 @@ async function itemMenu(ui: Ui, title: string, entry: string): Promise<void> {
 /** Choose `label` from the menu of the sort level chip that shows `current`. */
 async function changeLevel(ui: Ui, current: string, label: string): Promise<void> {
 	// the level chips sit right of the group chip, which can carry the same word
-	const chip = ui.findAll(current, { area: BAR, exact: true }).find((f) => f.x > 400);
+	const chip = (await ui.findAll(current, { area: BAR, exact: true })).find((f) => f.x > 400);
 	if (!chip) throw new Error(`no sort level chip "${current}"`);
 	await ui.clickAt(chip.x, chip.y);
 	await ui.see("Sort level", { area: BAR_MENU });
@@ -166,7 +170,7 @@ scenario("Classic lists the same items in columns, and rows take clicks there an
 scenario("the Classic table of a long list takes clicks after a scroll", async (ui) => {
 	await ui.click("Classic");
 	for (let i = 0; i < 10; i++) await ui.wheel(640, 500, -240); // a long run of wheel notches
-	await ui.waitFor("the list moved", () => !visibleItems(ui).some((t) => t.startsWith("ZT0")));
+	await ui.waitFor("the list moved", async () => !(await visibleItems(ui)).some((t) => t.startsWith("ZT0")));
 	await rowsTakeClicks(ui);
 }, { items: 300 });
 
@@ -176,20 +180,20 @@ scenario("grouping by item type puts one header per type", async (ui) => {
 	await groupBy(ui, "Item type");
 	await ui.see("Book", { area: LIST, exact: true });
 	await ui.see("Journal Article", { area: LIST, exact: true });
-	await ui.expect("one group per item type, with its size", () => ui.store.groups().map((g) => [g.value, g.count]), [["book", 1], ["journalArticle", 136], ["report", 2]]);
-	await ui.expect("level 1 follows the group", () => ui.store.sortLevels()[0]!.key, "itemType");
+	await ui.expect("one group per item type, with its size", async () => (await ui.store.groups()).map((g) => [g.value, g.count]), [["book", 1], ["journalArticle", 136], ["report", 2]]);
+	await ui.expect("level 1 follows the group", async () => (await ui.store.sortLevels())[0]!.key, "itemType");
 	await ui.gone("2025", { area: LIST, exact: true }); // the year headers are gone
 	await ui.click(T.hebrew, { area: LIST });
-	await ui.expect("the row under the new header takes the click", () => ui.selectedTitle(), T.hebrew);
+	await ui.expect("the row under the new header takes the click", async () => (await ui.selectedTitle()), T.hebrew);
 });
 
 scenario("None takes every group header away and keeps the items", async (ui) => {
 	await groupBy(ui, "None");
 	await ui.gone("2025", { area: LIST, exact: true });
-	await ui.expect("no groups", () => ui.store.groups().length, 0);
-	await ui.expect("the same items", () => ui.store.total(), 139);
+	await ui.expect("no groups", async () => (await ui.store.groups()).length, 0);
+	await ui.expect("the same items", async () => (await ui.store.total()), 139);
 	await ui.click(T.authors, { area: LIST });
-	await ui.expect("the first row takes the click", () => ui.selectedTitle(), T.authors);
+	await ui.expect("the first row takes the click", async () => (await ui.selectedTitle()), T.authors);
 });
 
 scenario("a group header collapses its rows and opens them again, and the rows after it take clicks", async (ui) => {
@@ -210,17 +214,17 @@ scenario("the arrow keys skip the rows of a collapsed group", async (ui) => {
 	await ui.click(T.authors, { area: LIST });
 	await ui.press("down");
 	// the next group after 2024 in the list is 2020
-	await ui.expect("the item after the collapsed group is selected", () => ui.selectedTitle(), T.many);
+	await ui.expect("the item after the collapsed group is selected", async () => (await ui.selectedTitle()), T.many);
 	await ui.press("up");
-	await ui.expect("and the way back skips it too", () => ui.selectedTitle(), T.authors);
+	await ui.expect("and the way back skips it too", async () => (await ui.selectedTitle()), T.authors);
 });
 
 // ================================================================================================================ sort levels
 
 scenario("the first level of a grouped list is the group: no menu, but its direction flips", async (ui) => {
-	const before = listTitles(ui, 3);
+	const before = await listTitles(ui, 3);
 	await ui.click("Year", { area: BAR, exact: true, nth: 1 }); // the chip's label
-	await ui.expectStill("no level menu opened", () => ui.visible("Sort level", { area: BAR_MENU }), false, 400);
+	await ui.expectStill("no level menu opened", async () => (await ui.visible("Sort level", { area: BAR_MENU })), false, 400);
 	await ui.click("↓", { area: BAR, exact: true, nth: 0 });
 	const wanted = await coreTitles(ui, "sort=year&dir=asc&then=dateAdded:desc", 4);
 	await ui.expect("the oldest year comes first", () => listTitles(ui, 4), wanted);
@@ -248,10 +252,10 @@ scenario("level 2 can be changed to another field and flipped, and the list foll
 scenario("a sort level is added from the plus, and removed from its menu", async (ui) => {
 	await addLevel(ui, "Title");
 	await ui.see("3", { area: BAR, exact: true });
-	await ui.expect("three levels", () => ui.store.sortLevels().map((l) => l.key), ["year", "dateAdded", "title"]);
+	await ui.expect("three levels", async () => (await ui.store.sortLevels()).map((l) => l.key), ["year", "dateAdded", "title"]);
 
 	await changeLevel(ui, "Date Added", "Remove level");
-	await ui.expect("level 2 left, the one after it moved up", () => ui.store.sortLevels().map((l) => l.key), ["year", "title"]);
+	await ui.expect("level 2 left, the one after it moved up", async () => (await ui.store.sortLevels()).map((l) => l.key), ["year", "title"]);
 	await ui.gone("Date Added", { area: BAR, exact: true });
 	const wanted = await coreTitles(ui, "sort=year&dir=desc&then=title:asc", 8);
 	await ui.expect("the list follows", () => listTitles(ui, 8), wanted);
@@ -260,20 +264,20 @@ scenario("a sort level is added from the plus, and removed from its menu", async
 
 scenario("picking a field that another level already uses moves it, so no field is sorted twice", async (ui) => {
 	await addLevel(ui, "Title");
-	await ui.expect("three levels", () => ui.store.sortLevels().map((l) => l.key), ["year", "dateAdded", "title"]);
+	await ui.expect("three levels", async () => (await ui.store.sortLevels()).map((l) => l.key), ["year", "dateAdded", "title"]);
 	// level 2 is changed to Title, which level 3 has: the old one goes, so the field is not sorted twice
 	await changeLevel(ui, "Date Added", "Title");
-	await ui.expect("no field twice", () => ui.store.sortLevels().map((l) => l.key), ["year", "title"]);
+	await ui.expect("no field twice", async () => (await ui.store.sortLevels()).map((l) => l.key), ["year", "title"]);
 });
 
 scenario("ungrouped, every level can be edited and the first one can be removed", async (ui) => {
 	await groupBy(ui, "None");
 	await changeLevel(ui, "Year", "Remove level");
-	await ui.expect("the date added level is the only one left", () => ui.store.sortLevels().map((l) => l.key), ["dateAdded"]);
+	await ui.expect("the date added level is the only one left", async () => (await ui.store.sortLevels()).map((l) => l.key), ["dateAdded"]);
 	const wanted = await coreTitles(ui, "sort=dateAdded&dir=desc", 6);
 	await ui.expect("the list is by date added alone", () => listTitles(ui, 6), wanted);
 	await ui.click("Date Added", { area: BAR, exact: true });
-	await ui.expectStill("the last level has no Remove entry", () => ui.visible("Remove level"), false, 300);
+	await ui.expectStill("the last level has no Remove entry", async () => (await ui.visible("Remove level")), false, 300);
 	await ui.press("escape");
 	await rowsTakeClicks(ui);
 });
@@ -297,9 +301,9 @@ scenario("a column header sorts by it, again reverses, and rows take clicks afte
 scenario("Shift+click on a header adds a level; a plain click on the group column flips the group", async (ui) => {
 	await ui.click("Classic");
 	await ui.click("Creator", { area: HEAD, exact: true, modifiers: "shift" });
-	await ui.expect("creator is a third level", () => ui.store.sortLevels().map((l) => l.key), ["year", "dateAdded", "creator"]);
+	await ui.expect("creator is a third level", async () => (await ui.store.sortLevels()).map((l) => l.key), ["year", "dateAdded", "creator"]);
 	await ui.click("Year", { area: HEAD, exact: true });
-	await ui.expect("the group flipped", () => ui.store.sortLevels()[0], { key: "year", dir: "asc" });
+	await ui.expect("the group flipped", async () => (await ui.store.sortLevels())[0], { key: "year", dir: "asc" });
 	const wanted = await coreTitles(ui, "sort=year&dir=asc&then=dateAdded:desc,creator:asc", 6);
 	await ui.expect("the list follows", () => listTitles(ui, 6), wanted);
 	await rowsTakeClicks(ui);
@@ -321,13 +325,13 @@ scenario("the column menu shows and hides a column, and the title column cannot 
 	await ui.see("Publisher", { area: HEAD, exact: true });
 	await ui.press("escape");
 	await ui.click("Surname1", { area: "list", exact: true }); // the title column has given way: the row is clicked by another cell
-	await ui.expect("the row took the click", () => ui.selectedTitle(), "Bulk 0001");
+	await ui.expect("the row took the click", async () => (await ui.selectedTitle()), "Bulk 0001");
 
 	await columnMenu(ui);
 	await ui.click("Publisher", { area: COLUMN_MENU, exact: true });
 	await ui.gone("Publisher", { area: HEAD, exact: true });
 	await ui.click("Title", { area: COLUMN_MENU, exact: true }); // its own entry is disabled
-	await ui.expectStill("the title column is still there", () => ui.visible("Title", { area: HEAD, exact: true }), true, 300);
+	await ui.expectStill("the title column is still there", async () => (await ui.visible("Title", { area: HEAD, exact: true })), true, 300);
 	await ui.press("escape");
 });
 
@@ -343,7 +347,7 @@ scenario("click selects one, Ctrl+click toggles, Shift+click takes a range", asy
 	await ui.expect("Ctrl+click on a selected row takes it out", () => selectedTitles(ui), [T.hebrew]);
 	await ui.click(T.authors, { area: "list", modifiers: "shift" });
 	// the anchor is the last Ctrl+click (ZT02)... the range is ZT01 to it
-	await ui.expect("a range from the anchor", () => selectedTitles(ui).length >= 2, true);
+	await ui.expect("a range from the anchor", async () => (await selectedTitles(ui)).length >= 2, true);
 	await ui.click(T.arabic, { area: "list" });
 	await ui.expect("a plain click drops the rest", () => selectedTitles(ui), [T.arabic]);
 });
@@ -371,28 +375,28 @@ scenario("a selected row still takes clicks: Ctrl+click takes it out, a plain cl
 scenario("Shift+click across pages that are not loaded yet selects every row between", async (ui) => {
 	await ui.click(T.article, { area: "list" });
 	for (let i = 0; i < 30; i++) await ui.wheel(640, 500, -1200);
-	await ui.waitFor("the list scrolled far down", () => !ui.visible(T.article, { area: "list" }) && visibleItems(ui).length > 2);
-	const target = visibleItems(ui).filter((t) => t.startsWith("Bulk")).at(-1)!;
+	await ui.waitFor("the list scrolled far down", async () => !(await ui.visible(T.article, { area: "list" })) && (await visibleItems(ui)).length > 2);
+	const target = (await visibleItems(ui)).filter((t) => t.startsWith("Bulk")).at(-1)!;
 	await ui.click(target, { area: "list", exact: true, modifiers: "shift" });
-	const at = ui.store.focusIndex();
+	const at = (await ui.store.focusIndex());
 	if (at < 200) throw new Error(`expected a row far down, got index ${at}`);
-	await ui.expect("every row from the first to the clicked one is selected", () => ui.store.selected().size, at + 1, 10_000);
+	await ui.expect("every row from the first to the clicked one is selected", async () => (await ui.store.selected()).length, at + 1, 10_000);
 	await ui.see(`${at + 1} selected`, { exact: true });
 }, { items: 450 });
 
 scenario("Select All takes every item of a list of several pages", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await ui.press("ctrl-a");
-	await ui.expect("every item is selected", () => ui.store.selected().size, ui.store.total(), 10_000);
-	await ui.see(`${ui.store.total()} selected`, { exact: true });
+	await ui.expect("every item is selected", async () => (await ui.store.selected()).length, (await ui.store.total()), 10_000);
+	await ui.see(`${(await ui.store.total())} selected`, { exact: true });
 }, { items: 450 });
 
 scenario("Escape clears the selection", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await ui.click(T.neighbour, { area: "list", modifiers: "ctrl" });
-	await ui.expect("two", () => ui.store.selected().size, 2);
+	await ui.expect("two", async () => (await ui.store.selected()).length, 2);
 	await ui.press("escape");
-	await ui.expect("none", () => ui.store.selected().size, 0);
+	await ui.expect("none", async () => (await ui.store.selected()).length, 0);
 	await ui.see("139 items", { exact: true });
 });
 
@@ -414,10 +418,10 @@ scenario("the arrow keys move the selection, Shift extends it, Space toggles", a
 scenario("Home and End go to the first and the last item, also when the last page is not loaded", async (ui) => {
 	await ui.click(T.neighbour, { area: "list" });
 	await ui.press("home");
-	await ui.expect("the first item", () => ui.selectedTitle(), T.article);
+	await ui.expect("the first item", async () => (await ui.selectedTitle()), T.article);
 	await ui.press("end");
 	const last = (await coreTitles(ui, "sort=year&dir=desc&then=dateAdded:desc&offset=138", 1))[0]!;
-	await ui.expect("the last item", () => ui.selectedTitle(), last);
+	await ui.expect("the last item", async () => (await ui.selectedTitle()), last);
 	await ui.see(last, { area: "list" }); // and it is on screen
 });
 
@@ -426,7 +430,7 @@ scenario("Home and End go to the first and the last item, also when the last pag
 scenario("Page Down on a list that was just opened moves a screenful", async (ui) => {
 	await ui.click(T.article, { area: "list" });
 	await ui.press("pagedown");
-	await ui.expect("the focus moved several rows", () => ui.store.focusIndex() >= 3, true);
+	await ui.expect("the focus moved several rows", async () => (await ui.store.focusIndex()) >= 3, true);
 }, { knownBug: "the visible range reaches the list only after its first scroll in the test renderer: needs a look in a real window whether Page Down is one row there too" });
 
 scenario("Page Down moves a screenful and Shift+End selects to the end", async (ui) => {
@@ -434,10 +438,10 @@ scenario("Page Down moves a screenful and Shift+End selects to the end", async (
 	await ui.wheel(640, 500, 150);
 	await ui.click(T.article, { area: "list" });
 	await ui.press("pagedown");
-	await ui.expect("the focus moved several rows", () => ui.store.focusIndex() >= 3, true);
+	await ui.expect("the focus moved several rows", async () => (await ui.store.focusIndex()) >= 3, true);
 	await ui.press("home");
 	await ui.press("shift-end");
-	await ui.expect("everything from the first row to the last is selected", () => ui.store.selected().size, ui.store.total(), 10_000);
+	await ui.expect("everything from the first row to the last is selected", async () => (await ui.store.selected()).length, (await ui.store.total()), 10_000);
 });
 
 // ================================================================================================================ quick search
@@ -449,7 +453,7 @@ scenario("the quick search narrows the list as the words are typed, and clearing
 	await ui.gone(T.authors, { area: "list" });
 	await ui.see(T.neighbour, { area: "list" });
 	await ui.click(T.neighbour, { area: "list" });
-	await ui.expect("the one row takes the click", () => ui.selectedTitle(), T.neighbour);
+	await ui.expect("the one row takes the click", async () => (await ui.selectedTitle()), T.neighbour);
 	await clearSearch(ui);
 	await ui.see("139 items", { exact: true });
 	await ui.see(T.authors, { area: "list" });
@@ -519,8 +523,8 @@ scenario("a search is kept while another collection is opened, and applies to it
 	await ui.click("Methods", { area: "sidebar", exact: true });
 	await ui.expect("only the collection's item that matches", () => listTitles(ui, 5), [T.article]);
 	await ui.click("My Library", { area: "sidebar", exact: true });
-	await ui.expect("My Library again, filtered", () => listTitles(ui, 3)[0], T.article);
-	await ui.expect("with its search", () => ui.store.total() < 139, true);
+	await ui.expect("My Library again, filtered", async () => (await listTitles(ui, 3))[0], T.article);
+	await ui.expect("with its search", async () => (await ui.store.total()) < 139, true);
 });
 
 // ================================================================================================================ the sidebar's views
@@ -608,7 +612,7 @@ scenario("Empty Trash asks first: Cancel keeps the items, Empty Trash deletes th
 
 scenario("the Duplicate Items count follows the library", async (ui) => {
 	for (const n of [1, 2]) await ui.api("POST", "/items", { data: { itemType: "book", title: "ZD02 Twin count", date: "2021", creators: [{ creatorType: "author", lastName: "Twin", firstName: "Tom" }] } });
-	ui.store.refresh();
+	await ui.store.refresh();
 	await ui.settle(1500);
 	const count = (await ui.api<{ total: number }>("GET", "/duplicates")).total;
 	if (!count) throw new Error("the core found no duplicates to count");
@@ -619,7 +623,7 @@ scenario("the read-only group offers no new collection", async (ui) => {
 	await ui.rightClick("Read-only test group", { area: "sidebar" });
 	await ui.see("New Collection…", { exact: true });
 	await ui.click("New Collection…", { exact: true });
-	await ui.expectStill("no name prompt opened", () => ui.visible("New collection in Read-only test group"), false, 500);
+	await ui.expectStill("no name prompt opened", async () => (await ui.visible("New collection in Read-only test group")), false, 500);
 	await ui.press("escape");
 });
 
@@ -636,11 +640,11 @@ scenario("items dragged out of a read-only group do not go into a collection of 
 scenario("the arrow keys in the sidebar move through the entries and open them", async (ui) => {
 	await sidebarEntry(ui, "Unfiled");
 	await ui.press("down");
-	await ui.expect("My Publications opened", () => ui.store.view().kind, "publications");
+	await ui.expect("My Publications opened", async () => (await ui.store.view()).kind, "publications");
 	await ui.press("down");
-	await ui.expect("Trash opened", () => ui.store.view().kind, "trash");
+	await ui.expect("Trash opened", async () => (await ui.store.view()).kind, "trash");
 	await ui.press("up");
-	await ui.expect("and back up", () => ui.store.view().kind, "publications");
+	await ui.expect("and back up", async () => (await ui.store.view()).kind, "publications");
 });
 
 scenario("the Library, Collections and Group Libraries headers fold their rows", async (ui) => {
@@ -712,7 +716,7 @@ scenario("deleting a collection asks first; Cancel keeps it, Delete removes it a
 	await ui.click("Delete", { exact: true, area: { x: 300, y: 300, width: 900, height: 500 } });
 	await ui.gone("Methods", { area: "sidebar", exact: true });
 	await ui.expect("gone from the core, its subcollection with it", async () => (await allCollections(ui)).map((c) => c.name).filter((n) => /methods/i.test(n)), []);
-	await ui.expect("the list left the deleted collection", () => ui.store.view().kind, "library");
+	await ui.expect("the list left the deleted collection", async () => (await ui.store.view()).kind, "library");
 	await ui.expect("its items are kept", async () => (await ui.saved(T.article)).title, T.article);
 });
 
@@ -740,23 +744,23 @@ scenario("Pin to top gathers a collection under a Pinned header that folds", asy
 	await ui.rightClick("Empty collection", { area: "sidebar", exact: true });
 	await ui.click("Pin to top", { exact: true });
 	await ui.see("Pinned", { area: "sidebar", exact: true });
-	await ui.expect("the pinned row sits above the tree", () => ui.findAll("Empty collection", { area: "sidebar", exact: true })[0]!.y < ui.findAll("Methods", { area: "sidebar", exact: true })[0]!.y, true);
+	await ui.expect("the pinned row sits above the tree", async () => (await ui.findAll("Empty collection", { area: "sidebar", exact: true }))[0]!.y < (await ui.findAll("Methods", { area: "sidebar", exact: true }))[0]!.y, true);
 	await ui.click("Pinned", { area: "sidebar", exact: true });
-	await ui.expect("folded: only the tree's own copy is left", () => ui.findAll("Empty collection", { area: "sidebar", exact: true }).length, 1);
+	await ui.expect("folded: only the tree's own copy is left", async () => (await ui.findAll("Empty collection", { area: "sidebar", exact: true })).length, 1);
 	await ui.rightClick("Empty collection", { area: "sidebar", exact: true });
 	await ui.click("Unpin", { exact: true });
 	await ui.gone("Pinned", { area: "sidebar", exact: true });
 });
 
 scenario("the collections' sort menu reorders the tree", async (ui) => {
-	const y = (name: string) => ui.findAll(name, { area: "sidebar", exact: true })[0]!.y;
-	await ui.expect("A-Z by default", () => y("Empty collection") < y("Methods"), true);
+	const y = async (name: string) => (await ui.findAll(name, { area: "sidebar", exact: true }))[0]!.y;
+	await ui.expect("A-Z by default", async () => (await y("Empty collection")) < (await y("Methods")), true);
 	await headerButton(ui, "COLLECTIONS", 187);
 	await ui.click("Name Z–A", { exact: true });
-	await ui.expect("Z-A", () => y("Methods") < y("Empty collection"), true);
+	await ui.expect("Z-A", async () => (await y("Methods")) < (await y("Empty collection")), true);
 	await headerButton(ui, "COLLECTIONS", 187);
 	await ui.click("Name A–Z", { exact: true });
-	await ui.expect("A-Z again", () => y("Empty collection") < y("Methods"), true);
+	await ui.expect("A-Z again", async () => (await y("Empty collection")) < (await y("Methods")), true);
 });
 
 scenario("grouping collections by colour makes a header that folds", async (ui) => {
@@ -838,14 +842,14 @@ scenario("an item released on the toolbar goes nowhere, and the rows still take 
 	await ui.expectStill("nothing was added anywhere", async () => (await coreTitles(ui, `collection=${key}`, 5)).length, 0, 600);
 	await ui.expectStill("nothing was trashed", async () => (await ui.api<{ total: number }>("GET", "/items?trash=1&limit=5")).total, 1);
 	await ui.click(T.authors, { area: "list" });
-	await ui.expect("the rows take clicks after the drag", () => ui.selectedTitle(), T.authors);
+	await ui.expect("the rows take clicks after the drag", async () => (await ui.selectedTitle()), T.authors);
 });
 
 scenario("an item released on a Library row does not open that row", async (ui) => {
 	const from = await ui.see(T.neighbour, { area: "list" });
 	const unfiled = await ui.see("Unfiled", { area: "sidebar", exact: true });
 	await ui.drag(from, unfiled);
-	await ui.expectStill("the list is still My Library", () => ui.store.view().kind, "library", 600);
+	await ui.expectStill("the list is still My Library", async () => (await ui.store.view()).kind, "library", 600);
 });
 
 scenario("a drag whose button was released outside the window is not a drop", async (ui) => {
@@ -864,7 +868,7 @@ scenario("a drag whose button was released outside the window is not a drop", as
 	r.nativeSimulateMouseUp(to.x, to.y);
 	await ui.settle();
 	await ui.expectStill("nothing was dropped on the row", async () => (await coreTitles(ui, `collection=${key}`, 5)).length, 0, 600);
-});
+}, { inProcessOnly: "needs ui.renderer's separate mouse down / up (the driver has drag() only)" });
 
 scenario("Escape during a drag cancels it", async (ui) => {
 	const key = (await collectionNamed(ui, "Empty collection"))!.key;
@@ -881,7 +885,7 @@ scenario("Escape during a drag cancels it", async (ui) => {
 	r.nativeSimulateMouseUp(to.x, to.y);
 	await ui.settle();
 	await ui.expectStill("the item was not added", async () => (await coreTitles(ui, `collection=${key}`, 5)).length, 0, 600);
-}, { knownBug: "Escape does not cancel a drag: the item is filed where the pointer is released" });
+}, { knownBug: "Escape does not cancel a drag: the item is filed where the pointer is released", inProcessOnly: "needs ui.renderer's separate mouse down / up (the driver has drag() only)" });
 
 // ================================================================================================================ the tag selector
 
@@ -899,10 +903,10 @@ scenario("the tag selector opens, filters the list by a tag, and a second click 
 	await ui.expect("only the tagged item", () => listTitles(ui, 3), [T.authors]);
 	await ui.see("1 item", { exact: true });
 	await ui.click("seminal", { area: "sidebar", exact: true });
-	await ui.expect("everything again", () => ui.store.total(), 139);
+	await ui.expect("everything again", async () => (await ui.store.total()), 139);
 	await ui.click("seminal", { area: "sidebar", exact: true });
 	await ui.click(T.authors, { area: "list" });
-	await ui.expect("rows take clicks while a tag filters", () => ui.selectedTitle(), T.authors);
+	await ui.expect("rows take clicks while a tag filters", async () => (await ui.selectedTitle()), T.authors);
 });
 
 scenario("the tag filter box narrows the tags, and says when none match", async (ui) => {
@@ -957,19 +961,19 @@ scenario("a tag gets a colour from its menu", async (ui) => {
 scenario("a coloured tag is toggled on the selection by its number key", async (ui) => {
 	await ui.click(T.neighbour, { area: "list" });
 	await ui.press("1");
-	await ui.expect("ZT02 has the first coloured tag", async () => (await ui.saved(T.neighbour)).tags?.map?.((t: any) => t.tag ?? t), ["seminal"]);
+	await ui.expect("ZT02 has the first coloured tag", async () => ((await ui.saved(T.neighbour)).tags as any[] | undefined)?.map?.((t: any) => t.tag ?? t), ["seminal"]);
 	await ui.press("1");
-	await ui.expect("the key toggles it off again", async () => ((await ui.saved(T.neighbour)).tags ?? []).length, 0);
+	await ui.expect("the key toggles it off again", async () => (((await ui.saved(T.neighbour)).tags as any[] | undefined) ?? []).length, 0);
 });
 
 scenario("Deselect All in the tag menu lifts the tag filter", async (ui) => {
 	await ui.click("TAGS", { area: "sidebar", exact: true });
 	await ui.click("seminal", { area: "sidebar", exact: true });
-	await ui.expect("filtered", () => ui.store.total(), 1);
+	await ui.expect("filtered", async () => (await ui.store.total()), 1);
 	const h = await ui.see("TAGS", { area: "sidebar", exact: true });
 	await ui.clickAt(COLLECTIONS_HEADER_PLUS, h.y);
 	await ui.click("Deselect All", { exact: true });
-	await ui.expect("everything again", () => ui.store.total(), 139);
+	await ui.expect("everything again", async () => (await ui.store.total()), 139);
 });
 
 // ================================================================================================================ the item context menu
@@ -981,7 +985,7 @@ scenario("the item menu names what can be done with an item", async (ui) => {
 	await ui.screenshot("item-menu");
 	await ui.press("escape");
 	await ui.gone("Mark as Unread", { exact: true });
-	await ui.expectStill("Escape did nothing to the item", () => listTitles(ui, 3).includes(T.neighbour), true, 300);
+	await ui.expectStill("Escape did nothing to the item", async () => (await listTitles(ui, 3)).includes(T.neighbour), true, 300);
 });
 
 scenario("Add to collection puts the item in the chosen collection", async (ui) => {
@@ -1027,7 +1031,7 @@ scenario("Advanced Search runs as the value is typed and its result can be opene
 	await ui.see("1 result", { exact: true });
 	await ui.click(T.neighbour, { exact: true, area: { x: 355, y: 420, width: 720, height: 200 } });
 	await ui.gone("Advanced Search", { exact: true });
-	await ui.expect("the item is selected in the library", () => ui.selectedTitle(), T.neighbour);
+	await ui.expect("the item is selected in the library", async () => (await ui.selectedTitle()), T.neighbour);
 });
 
 scenario("Include items in the trash widens an advanced search", async (ui) => {
@@ -1054,10 +1058,10 @@ async function makeSavedSearch(ui: Ui, name: string, value: string): Promise<voi
 
 scenario("a saved search is made from Advanced Search, listed in the sidebar and opens its items", async (ui) => {
 	await makeSavedSearch(ui, "ZS Neighbours", "Neighbour");
-	await ui.expect("the saved search is open", () => ui.store.view().kind, "savedSearch");
+	await ui.expect("the saved search is open", async () => (await ui.store.view()).kind, "savedSearch");
 	await ui.expect("with its items", () => listTitles(ui, 3), [T.neighbour]);
 	await sidebarEntry(ui, "My Library");
-	await ui.expect("the library again", () => ui.store.total(), 139);
+	await ui.expect("the library again", async () => (await ui.store.total()), 139);
 	await sidebarEntry(ui, "ZS Neighbours");
 	await ui.expect("and the search again", () => listTitles(ui, 3), [T.neighbour]);
 });
@@ -1083,8 +1087,8 @@ scenario("Edit Search… changes what a saved search finds", async (ui) => {
 	await ui.see("0 results", { exact: true }); // no title has Delta in it (it is a creator)
 	await ui.click("Save Changes", { exact: true });
 	await ui.gone("Edit Saved Search", { exact: true });
-	await ui.expect("the saved search is open", () => ui.store.view().kind, "savedSearch");
-	await ui.expect("it now finds nothing: the old condition is gone", () => ui.store.total(), 0);
+	await ui.expect("the saved search is open", async () => (await ui.store.view()).kind, "savedSearch");
+	await ui.expect("it now finds nothing: the old condition is gone", async () => (await ui.store.total()), 0);
 });
 
 scenario("deleting a saved search asks first; Cancel keeps it, Delete removes it", async (ui) => {
@@ -1098,7 +1102,7 @@ scenario("deleting a saved search asks first; Cancel keeps it, Delete removes it
 	await ui.click("Delete…", { exact: true });
 	await ui.click("Delete", { exact: true, area: { x: 300, y: 300, width: 900, height: 500 } });
 	await ui.gone("ZS Doomed", { area: "sidebar", exact: true });
-	await ui.expect("the list left the deleted search", () => ui.store.view().kind, "library");
+	await ui.expect("the list left the deleted search", async () => (await ui.store.view()).kind, "library");
 	await ui.see("No saved searches", { exact: true });
 });
 
@@ -1106,7 +1110,7 @@ scenario("deleting a saved search asks first; Cancel keeps it, Delete removes it
 
 scenario("a long list scrolls with the wheel and its rows take clicks anywhere in it", async (ui) => {
 	for (let i = 0; i < 12; i++) await ui.wheel(640, 500, -1000);
-	await ui.waitFor("the top of the list is out of sight", () => !ui.visible(T.article, { area: "list" }));
+	await ui.waitFor("the top of the list is out of sight", async () => !(await ui.visible(T.article, { area: "list" })));
 	await rowsTakeClicks(ui);
 	for (let i = 0; i < 12; i++) await ui.wheel(640, 500, 1000);
 	await ui.see(T.article, { area: "list" });
@@ -1116,33 +1120,33 @@ scenario("dragging the scrollbar thumb jumps through a long list, and the rows s
 	const bar = await ui.see(T.article, { area: "list" }); // anchors the first frame
 	void bar;
 	await ui.drag({ x: 1016, y: 195 }, { x: 1016, y: 560 });
-	await ui.waitFor("the list moved away from the top", () => !ui.visible(T.article, { area: "list" }), 4000);
-	await ui.expect("rows are on screen", () => visibleItems(ui).length >= 2, true, 4000);
+	await ui.waitFor("the list moved away from the top", async () => !(await ui.visible(T.article, { area: "list" })), 4000);
+	await ui.expect("rows are on screen", async () => (await visibleItems(ui)).length >= 2, true, 4000);
 	await rowsTakeClicks(ui);
 }, { items: 450 });
 
 scenario("the list keeps its selection and takes clicks after a refresh", async (ui) => {
 	await ui.click(T.neighbour, { area: "list" });
-	ui.store.refreshItems(["abstractNote"]);
+	await ui.store.refreshItems(["abstractNote"]);
 	await ui.settle(800);
-	await ui.expect("still selected", () => ui.selectedTitle(), T.neighbour);
+	await ui.expect("still selected", async () => (await ui.selectedTitle()), T.neighbour);
 	await ui.click(T.arabic, { area: "list" });
-	await ui.expect("a new click selects", () => ui.selectedTitle(), T.arabic);
+	await ui.expect("a new click selects", async () => (await ui.selectedTitle()), T.arabic);
 });
 
 scenario("Customise rows hides the authors line and makes the cards compact, and Reset brings both back", async (ui) => {
 	const count = await ui.see("139 items", { exact: true });
 	await ui.clickAt(count.box.x + count.box.width + 23, count.y); // the sliders button at the right end of the sort bar
 	await ui.see("Customise rows", { exact: true });
-	const gap = () => ui.findAll(T.arabic, { area: LIST })[0]!.y - ui.findAll(T.neighbour, { area: LIST })[0]!.y;
-	const before = gap();
+	const gap = async () => (await ui.findAll(T.arabic, { area: LIST }))[0]!.y - (await ui.findAll(T.neighbour, { area: LIST }))[0]!.y;
+	const before = await gap();
 	await ui.click("Hidden", { exact: true });
-	await ui.expect("the authors line is gone from the cards", () => ui.visible("Delta D", { area: LIST }), false);
+	await ui.expect("the authors line is gone from the cards", async () => (await ui.visible("Delta D", { area: LIST })), false);
 	await ui.click("Compact", { exact: true });
-	await ui.expect("the cards are shorter", () => gap() < before, true);
-	ui.screenshot("customise");
+	await ui.expect("the cards are shorter", async () => (await gap()) < before, true);
+	await ui.screenshot("customise");
 	await ui.click("Reset", { exact: true });
-	await ui.expect("the authors line is back", () => ui.visible("Delta D", { area: LIST }), true);
+	await ui.expect("the authors line is back", async () => (await ui.visible("Delta D", { area: LIST })), true);
 	await ui.expect("and the cards are as tall as before", () => gap(), before);
 });
 
@@ -1151,5 +1155,5 @@ scenario("the split between Collections and Tags is dragged to give the tags mor
 	await ui.see("Filter tags", { area: "sidebar" }).catch(() => undefined);
 	const before = (await ui.see("TAGS", { area: "sidebar", exact: true })).y;
 	await ui.drag({ x: 130, y: before - 16 }, { x: 130, y: before - 216 });
-	await ui.expect("the Tags header moved up", () => ui.findAll("TAGS", { area: "sidebar", exact: true })[0]!.y < before - 100, true);
+	await ui.expect("the Tags header moved up", async () => (await ui.findAll("TAGS", { area: "sidebar", exact: true }))[0]!.y < before - 100, true);
 });

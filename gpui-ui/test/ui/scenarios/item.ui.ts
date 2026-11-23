@@ -25,34 +25,34 @@ interface N {
 	children?: N[];
 }
 
-function flat(ui: Ui): N[] {
-	ui.renderer.flush();
-	const parsed = JSON.parse(ui.renderer.getAutomationTree());
+async function flat(ui: Ui): Promise<N[]> {
+	await ui.flush();
+	const root = await ui.tree();
 	const out: N[] = [];
 	const walk = (n: N) => {
 		out.push(n);
 		for (const c of n.children ?? []) walk(c);
 	};
-	walk((parsed.tree ?? parsed) as N);
+	if (root) walk(root as unknown as N);
 	return out;
 }
-const boxOf = (ui: Ui, n: N): Box | null => n.bounds ?? (ui.renderer.getElementBounds(n.id) as Box | null);
+const boxOf = async (ui: Ui, n: N): Promise<Box | null> => n.bounds ?? ((await ui.bounds(n.id)) as Box | null);
 const live = (b: Box | null): b is Box => !!b && b.width > 0 && b.height > 0;
 const PANE_X = 1030;
 
 /** Every element with this test id that is laid out, top first. */
-function withTestId(ui: Ui, id: string): { n: N; b: Box }[] {
+async function withTestId(ui: Ui, id: string): Promise<{ n: N; b: Box }[]> {
 	const out: { n: N; b: Box }[] = [];
-	for (const n of flat(ui)) {
+	for (const n of await flat(ui)) {
 		if (n.testId !== id) continue;
-		const b = boxOf(ui, n);
+		const b = await boxOf(ui, n);
 		if (live(b)) out.push({ n, b });
 	}
 	return out.sort((a, b) => a.b.y - b.b.y);
 }
 
 async function clickTestId(ui: Ui, id: string, nth = 0): Promise<void> {
-	const hit = withTestId(ui, id)[nth];
+	const hit = (await withTestId(ui, id))[nth];
 	if (!hit) throw new Error(`no element "${id}" on screen`);
 	await ui.clickAt(hit.b.x + hit.b.width / 2, hit.b.y + hit.b.height / 2);
 }
@@ -64,34 +64,32 @@ async function tab(ui: Ui, id: "info" | "abstract" | "notes" | "attachments" | "
 }
 
 /** Text of the pane, as painted, with where each piece is. */
-function paneTexts(ui: Ui): { text: string; x: number; y: number }[] {
+async function paneTexts(ui: Ui): Promise<{ text: string; x: number; y: number }[]> {
 	const out: { text: string; x: number; y: number }[] = [];
-	for (const n of flat(ui)) {
+	for (const n of await flat(ui)) {
 		if (!n.text?.trim()) continue;
-		const b = boxOf(ui, n);
+		const b = await boxOf(ui, n);
 		if (live(b) && b.x + b.width / 2 > PANE_X && b.y + b.height / 2 < 880) out.push({ text: n.text, x: Math.round(b.x), y: Math.round(b.y) });
 	}
 	return out.sort((a, b) => a.y - b.y || a.x - b.x);
 }
-const inPane = (ui: Ui, text: string, exact = true) => paneTexts(ui).some((t) => (exact ? t.text.trim() === text : t.text.includes(text)));
+const inPane = async (ui: Ui, text: string, exact = true) => (await paneTexts(ui)).some((t) => (exact ? t.text.trim() === text : t.text.includes(text)));
 
 /** Scroll the pane's list until `text` is on screen. */
 async function bring(ui: Ui, text: string, o: { exact?: boolean } = { exact: true }): Promise<void> {
 	for (let i = 0; i < 25; i++) {
-		if (ui.visible(text, { area: "pane", exact: o.exact })) return;
+		if (await ui.visible(text, { area: "pane", exact: o.exact })) return;
 		await ui.wheel(1230, 600, -240);
 	}
 	throw new Error(`"${text}" is not in the pane, however far it scrolls`);
 }
 
-const clipboard = (ui: Ui): string => (ui.renderer as unknown as { readFromClipboard(): string }).readFromClipboard();
-
 /** The 20 px icon buttons that sit in the row of `rowY`, to the right of `fromX`, left to right. */
-function iconsAt(ui: Ui, rowY: number, fromX: number): { x: number; y: number }[] {
+async function iconsAt(ui: Ui, rowY: number, fromX: number): Promise<{ x: number; y: number }[]> {
 	const out: { x: number; y: number }[] = [];
-	for (const n of flat(ui)) {
+	for (const n of await flat(ui)) {
 		if (n.type !== "svg") continue;
-		const b = boxOf(ui, n);
+		const b = await boxOf(ui, n);
 		if (!live(b)) continue;
 		const cy = b.y + b.height / 2;
 		if (Math.abs(cy - rowY) <= 12 && b.x > fromX && b.x < 1425) out.push({ x: b.x + b.width / 2, y: cy });
@@ -104,7 +102,7 @@ function iconsAt(ui: Ui, rowY: number, fromX: number): { x: number; y: number }[
  * what the click did; `title` is the button's label in the app, for whoever reads the scenario.)
  */
 async function hoverTitle(ui: Ui, at: { x: number; y: number }, _title: string): Promise<void> {
-	ui.renderer.nativeSimulateMouseMove(at.x, at.y);
+	await ui.mouseMove(at.x, at.y);
 	await ui.settle(150);
 }
 
@@ -127,7 +125,7 @@ const savedPeople = async (ui: Ui, title: string) => people(await detailOf(ui, t
 
 /** Select an item: a click when its row is on screen, else the way Open in Zinc does it (set-up only: the rows far down are off screen). */
 async function select(ui: Ui, title: string): Promise<void> {
-	if (ui.visible(title, { area: "list" })) await ui.click(title, { area: "list" });
+	if (await ui.visible(title, { area: "list" })) await ui.click(title, { area: "list" });
 	else {
 		await ui.store.revealItem((await ui.saved(title)).key);
 		await ui.settle(300);
@@ -143,12 +141,12 @@ const CREATOR_ACTIONS = ["Switch to", "Move up", "Move down", "Remove creator", 
 /** Point at the creator row whose text is `at` and press one of its buttons (the tooltip is checked first). */
 async function creatorAction(ui: Ui, at: string, action: (typeof CREATOR_ACTIONS)[number], nth = 0): Promise<void> {
 	const name = await ui.see(at, { area: "pane", exact: true, nth });
-	ui.renderer.nativeSimulateMouseMove(name.x, name.y);
+	await ui.mouseMove(name.x, name.y);
 	await ui.settle(300);
-	const icons = iconsAt(ui, name.y, 1290);
+	const icons = await iconsAt(ui, name.y, 1290);
 	if (icons.length !== 5) throw new Error(`the row of "${at}" shows ${icons.length} buttons instead of 5 when pointed at`);
 	const target = icons[CREATOR_ACTIONS.indexOf(action)]!;
-	ui.renderer.nativeSimulateMouseMove(target.x, target.y);
+	await ui.mouseMove(target.x, target.y);
 	await ui.settle(150);
 	await ui.clickAt(target.x, target.y);
 }
@@ -183,7 +181,7 @@ scenario("Escape leaves the header's title as it was", async (ui) => {
 	await ui.replace("ZT01 Not wanted");
 	await ui.press("escape");
 	await ui.expectStill("the saved title", async () => (await detailOf(ui, T.authors)).data.title, T.authors);
-	await ui.expect("the header shows the old title", () => inPane(ui, T.authors), true);
+	await ui.expect("the header shows the old title", async () => inPane(ui, T.authors), true);
 });
 
 scenario("a header title is saved when the pointer goes elsewhere", async (ui) => {
@@ -233,7 +231,7 @@ scenario("a tab of the tab row is marked and shows its section", async (ui) => {
 
 scenario("the tab row counts what each section holds", async (ui) => {
 	await select(ui, T.noted);
-	const nav = withTestId(ui, "ip-nav-notes")[0]!.b;
+	const nav = (await withTestId(ui, "ip-nav-notes"))[0]!.b;
 	await ui.see("1", { area: { x: nav.x, y: nav.y, width: nav.width + 40, height: nav.height }, exact: true }); // the note
 	await tab(ui, "notes");
 	await ui.see("NOTES", { area: "pane", exact: true });
@@ -269,7 +267,7 @@ scenario("a tab opens its section when it was collapsed", async (ui) => {
 
 scenario("the section menu moves a section into a pane of its own and Undo brings it back", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
-	const tabs = () => withTestId(ui, "ip-nav-tags").length;
+	const tabs = async () => (await withTestId(ui, "ip-nav-tags")).length;
 	await ui.expect("the Tags tab is there", tabs, 1);
 	await tab(ui, "tags");
 	await clickTestId(ui, "ip-section-menu-tags");
@@ -334,15 +332,15 @@ scenario("Escape leaves Extra without saving", async (ui) => {
 	await ui.see("Original extra", { area: "pane", exact: true });
 });
 
-const iconsOfRow = (ui: Ui, label: string) => {
-	const l = ui.findAll(label, { area: "pane", exact: true })[0];
-	return l ? iconsAt(ui, l.y, 1100).length : -1;
+const iconsOfRow = async (ui: Ui, label: string) => {
+	const l = (await ui.findAll(label, { area: "pane", exact: true }))[0];
+	return l ? (await iconsAt(ui, l.y, 1100)).length : -1;
 };
 
 scenario("a web address is saved and gets a link button, other text does not", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await bring(ui, "URL");
-	const before = iconsOfRow(ui, "URL");
+	const before = await iconsOfRow(ui, "URL");
 	await ui.clickField("URL");
 	await ui.replace("https://example.org/paper");
 	await ui.press("enter");
@@ -358,7 +356,7 @@ scenario("a web address is saved and gets a link button, other text does not", a
 scenario("a DOI is saved and gets a link button", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await bring(ui, "DOI");
-	const before = iconsOfRow(ui, "DOI");
+	const before = await iconsOfRow(ui, "DOI");
 	await ui.clickField("DOI");
 	await ui.replace("10.1000/test.1");
 	await ui.press("enter");
@@ -429,7 +427,7 @@ scenario("an emptied year clears the whole date", async (ui) => {
 scenario("a date can be edited as text", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	const row = await rowArea(ui, "Date");
-	const [toggle] = iconsAt(ui, row.y + 14, 1360);
+	const [toggle] = await iconsAt(ui, row.y + 14, 1360);
 	if (!toggle) throw new Error("no Edit as text button in the Date row");
 	await hoverTitle(ui, toggle, "Edit as text");
 	await ui.clickAt(toggle.x, toggle.y);
@@ -446,7 +444,7 @@ scenario("a date that is not a plain date opens as text and nothing is rewritten
 	await ui.see("Spring 2020", { area: "pane", exact: true });
 	await ui.expect("no Year box", () => ui.visible("Year", { area: "pane", exact: true }), false);
 	const row = await rowArea(ui, "Date");
-	const [toggle] = iconsAt(ui, row.y + 14, 1360);
+	const [toggle] = await iconsAt(ui, row.y + 14, 1360);
 	await hoverTitle(ui, toggle!, "Pick year, month and day");
 	await ui.clickAt(toggle!.x, toggle!.y);
 	await ui.see("2020", { area: await rowArea(ui, "Date"), exact: true });
@@ -465,7 +463,7 @@ scenario("an item type with nothing to lose is changed at once", async (ui) => {
 	await ui.click("Book", { exact: true });
 	await ui.expect("the saved type", async () => (await detailOf(ui, T.empty)).data.itemType, "book");
 	await ui.see("BOOK", { area: "pane", exact: true });
-	await ui.expect("no warning", () => inPane(ui, "will remove these fields", false), false);
+	await ui.expect("no warning", async () => inPane(ui, "will remove these fields", false), false);
 });
 
 scenario("a type change that loses fields asks first, and Cancel keeps the item as it was", async (ui) => {
@@ -501,7 +499,7 @@ scenario("a type change that is waiting for an answer is dropped when another it
 	await ui.click(T.neighbour, { area: "list" });
 	await ui.click(T.authors, { area: "list" });
 	await ui.see("Item Type", { area: "pane", exact: true });
-	await ui.expect("no warning is left", () => inPane(ui, "will remove these fields", false), false);
+	await ui.expect("no warning is left", async () => inPane(ui, "will remove these fields", false), false);
 	await ui.expectStill("the type", async () => (await detailOf(ui, T.authors)).data.itemType, "journalArticle");
 });
 
@@ -637,7 +635,7 @@ scenario("the header cuts a long list of authors and its +N button goes to the D
 	await select(ui, T.many);
 	await ui.see("+18", { area: "pane", exact: true });
 	await ui.see("Test Coauthor6", { area: "pane" });
-	await ui.expect("the seventh is not in the header", () => inPane(ui, "Test Coauthor7", false), false);
+	await ui.expect("the seventh is not in the header", async () => inPane(ui, "Test Coauthor7", false), false);
 	await tab(ui, "tags");
 	await ui.click("+18", { area: "pane", exact: true });
 	await ui.see("Item Type", { area: "pane", exact: true });
@@ -724,26 +722,29 @@ scenario("a tag that is there already is not added twice, and blanks are cut", a
 	await ui.type("   ");
 	await ui.press("enter");
 	await ui.expectStill("the saved tags", async () => (await detailOf(ui, T.authors)).tags, [{ tag: "seminal", type: 0 }]);
-	await ui.expect("one chip", () => ui.findAll("seminal", { area: "pane", exact: true }).length, 1);
+	await ui.expect("one chip", async () => (await ui.findAll("seminal", { area: "pane", exact: true })).length, 1);
 });
 
-const dotsInPane = (ui: Ui) =>
-	flat(ui).filter((n) => {
-		const b = boxOf(ui, n);
-		return n.type === "div" && live(b) && b.width === 7 && b.height === 7 && b.x > PANE_X;
-	}).length;
+const dotsInPane = async (ui: Ui) => {
+	let count = 0;
+	for (const n of await flat(ui)) {
+		const b = await boxOf(ui, n);
+		if (n.type === "div" && live(b) && b.width === 7 && b.height === 7 && b.x > PANE_X) count++;
+	}
+	return count;
+};
 
 scenario("a coloured tag shows its colour on its chip and a plain one does not", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await tab(ui, "tags");
 	await ui.see("seminal", { area: "pane", exact: true });
-	await ui.expect("one colour dot", () => dotsInPane(ui), 1);
+	await ui.expect("one colour dot", async () => dotsInPane(ui), 1);
 	await ui.click("Add tag…", { area: "pane" });
 	await ui.type("plain");
 	await ui.press("enter");
 	await ui.see("plain", { area: "pane", exact: true });
-	await ui.expectStill("still one colour dot", () => dotsInPane(ui), 1);
-	ui.screenshot("tags-coloured");
+	await ui.expectStill("still one colour dot", async () => dotsInPane(ui), 1);
+	await ui.screenshot("tags-coloured");
 });
 
 // =====================================================================================================================================
@@ -777,9 +778,9 @@ scenario("an item is removed from a collection with the minus of its row", async
 	await ui.click(T.authors, { area: "list" });
 	await tab(ui, "collections");
 	const row = await ui.see("Nested methods", { area: "pane", exact: true });
-	ui.renderer.nativeSimulateMouseMove(row.x, row.y);
+	await ui.mouseMove(row.x, row.y);
 	await ui.settle(200);
-	const [minus] = iconsAt(ui, row.y, 1300);
+	const [minus] = await iconsAt(ui, row.y, 1300);
 	await hoverTitle(ui, minus!, "Remove from collection");
 	await ui.clickAt(minus!.x, minus!.y);
 	await ui.expect("the saved collections", async () => (await detailOf(ui, T.authors)).collections, []);
@@ -790,7 +791,7 @@ scenario("an item is related to another from the search picker, in both directio
 	await ui.click(T.authors, { area: "list" });
 	await tab(ui, "related");
 	const head = await ui.see("RELATED", { area: "pane", exact: true });
-	const [plus] = iconsAt(ui, head.y, 1300);
+	const [plus] = await iconsAt(ui, head.y, 1300);
 	await hoverTitle(ui, plus!, "Add related item");
 	await ui.clickAt(plus!.x, plus!.y);
 	await ui.type("Neighbour");
@@ -808,9 +809,9 @@ scenario("a related item opens on a click and a relation is removed with its min
 	await ui.click(T.authors, { area: "list" });
 	await tab(ui, "related");
 	const row = await ui.see(T.neighbour, { area: "pane", exact: true });
-	ui.renderer.nativeSimulateMouseMove(row.x, row.y);
+	await ui.mouseMove(row.x, row.y);
 	await ui.settle(200);
-	const [minus] = iconsAt(ui, row.y, 1300);
+	const [minus] = await iconsAt(ui, row.y, 1300);
 	await hoverTitle(ui, minus!, "Remove relation");
 	await ui.clickAt(minus!.x, minus!.y);
 	await ui.expect("related of the first", async () => (await byKey(ui, a.key)).related ?? [], []);
@@ -875,9 +876,9 @@ scenario("a note is moved to the trash from its row", async (ui) => {
 	const [note] = await noteKeys(ui, T.noted);
 	await tab(ui, "notes");
 	const row = await ui.see("Note body for the test.", { area: "pane", exact: true });
-	ui.renderer.nativeSimulateMouseMove(row.x, row.y);
+	await ui.mouseMove(row.x, row.y);
 	await ui.settle(200);
-	const icons = iconsAt(ui, row.y, 1300);
+	const icons = await iconsAt(ui, row.y, 1300);
 	await hoverTitle(ui, icons[1]!, "Move note to Trash");
 	await ui.clickAt(icons[1]!.x, icons[1]!.y);
 	await ui.expect("the note is deleted", async () => !!(await byKey(ui, note!)).data.deleted, true);
@@ -933,9 +934,9 @@ async function rowInView(ui: Ui, text: string) {
 /** Point at an attachment row and press the button at `index` of those that appear on it (checked by tooltip). */
 async function rowButton(ui: Ui, rowText: string, index: number, title: string): Promise<void> {
 	const row = await rowInView(ui, rowText);
-	ui.renderer.nativeSimulateMouseMove(row.x, row.y);
+	await ui.mouseMove(row.x, row.y);
 	await ui.settle(200);
-	const icons = iconsAt(ui, row.y, 1200);
+	const icons = await iconsAt(ui, row.y, 1200);
 	const at = icons[index];
 	if (!at) throw new Error(`the row "${rowText}" shows ${icons.length} buttons, not ${index + 1}`);
 	await hoverTitle(ui, at, title);
@@ -987,7 +988,7 @@ scenario("an attachment is moved to the trash from its menu", async (ui) => {
 scenario("the Open PDF button of the header opens the reader", async (ui) => {
 	await ui.click(T.article, { area: "list" });
 	await ui.click("Open PDF", { area: "pane", exact: true });
-	await ui.expect("a reader tab is active", () => ui.store.activeTab() !== "library", true);
+	await ui.expect("a reader tab is active", async () => (await ui.store.activeTab()) !== "library", true);
 });
 
 // =====================================================================================================================================
@@ -998,8 +999,8 @@ scenario("Add > New Standalone Note creates a note and opens it in the pane", as
 	await ui.click("Add", { area: "list", exact: true });
 	await ui.click("New Standalone Note", {});
 	await ui.see("NOTE", { area: "pane", exact: true });
-	await ui.expect("a note is selected", () => ui.store.selectedItem() !== null, true);
-	const key = ui.store.selectedItem()!;
+	await ui.expect("a note is selected", async () => (await ui.store.selectedItem()) !== null, true);
+	const key = (await ui.store.selectedItem())!;
 	await ui.expect("the item is a note", async () => (await byKey(ui, key)).data.itemType, "note");
 });
 
@@ -1020,7 +1021,7 @@ const keyInfo = async (ui: Ui, itemKey: string) => (await ui.api<{ keys: Record<
 /** The Citation Key row's buttons are: pin or unpin, then refresh. */
 async function keyButton(ui: Ui, index: number, title: string): Promise<void> {
 	const label = await ui.see("Citation Key", { area: "pane", exact: true });
-	const icons = iconsAt(ui, label.y, 1340);
+	const icons = await iconsAt(ui, label.y, 1340);
 	const at = icons.at(-2 + index);
 	if (!at) throw new Error(`the Citation Key row has ${icons.length} buttons`);
 	await hoverTitle(ui, at, title);
@@ -1072,8 +1073,8 @@ scenario("the Locate submenu of the ... menu opens", async (ui) => {
 	await ui.click(T.authors, { area: "list" });
 	await clickTestId(ui, "ip-more");
 	await ui.click("Locate", {});
-	ui.screenshot("locate");
-	await ui.expect("a Locate entry is shown", () => ui.painted().some((t) => /Library Lookup|Online|Open/i.test(t)), true);
+	await ui.screenshot("locate");
+	await ui.expect("a Locate entry is shown", async () => (await ui.painted()).some((t) => /Library Lookup|Online|Open/i.test(t)), true);
 });
 
 // =====================================================================================================================================
@@ -1181,21 +1182,21 @@ scenario("the header title of a read-only group's item does not open for editing
 	await ui.click(T.groupItem, { area: "pane", nth: 0 });
 	await ui.type("changed");
 	await ui.press("enter");
-	await ui.expect("no change shown", () => inPane(ui, "changed", false), false);
+	await ui.expect("no change shown", async () => inPane(ui, "changed", false), false);
 });
 
 scenario("the creators of a read-only group's item offer no buttons and no menu", async (ui) => {
 	await openGroupItem(ui);
 	const name = await ui.see("Group", { area: "pane", exact: true });
-	ui.renderer.nativeSimulateMouseMove(name.x, name.y);
+	await ui.mouseMove(name.x, name.y);
 	await ui.settle(300);
-	await ui.expect("no row buttons", () => iconsAt(ui, name.y, 1290).length, 0);
+	await ui.expect("no row buttons", async () => (await iconsAt(ui, name.y, 1290)).length, 0);
 	await ui.click("Author", { area: "pane", exact: true });
 	await ui.expect("no creator type menu", () => ui.visible("Editor"), false);
 	await ui.click("Group", { area: "pane", exact: true });
 	await ui.type("Changed");
 	await ui.press("enter");
-	await ui.expect("no change shown", () => inPane(ui, "Changed", false), false);
+	await ui.expect("no change shown", async () => inPane(ui, "Changed", false), false);
 });
 
 scenario("a read-only group's item has no tag box, no add buttons, no relation or collection buttons", async (ui) => {
@@ -1207,9 +1208,9 @@ scenario("a read-only group's item has no tag box, no add buttons, no relation o
 	await ui.expect("no Add Note", () => ui.visible("Add Note", { area: "pane" }), false);
 	await ui.expect("no Find Full Text", () => ui.visible("Find Full Text", { area: "pane" }), false);
 	const related = await ui.see("RELATED", { area: "pane", exact: true });
-	await ui.expect("no add button of Related", () => iconsAt(ui, related.y, 1300).length, 1); // the section menu only
+	await ui.expect("no add button of Related", async () => (await iconsAt(ui, related.y, 1300)).length, 1); // the section menu only
 	const coll = await ui.see("LIBRARIES AND COLLECTIONS", { area: "pane", exact: true });
-	await ui.expect("no add button of Collections", () => iconsAt(ui, coll.y, 1300).length, 1);
+	await ui.expect("no add button of Collections", async () => (await iconsAt(ui, coll.y, 1300)).length, 1);
 });
 
 scenario("the item type of a read-only group's item cannot be changed", async (ui) => {
@@ -1221,7 +1222,7 @@ scenario("the item type of a read-only group's item cannot be changed", async (u
 scenario("the Add menu offers nothing to create in a read-only group", async (ui) => {
 	await ui.click("Read-only test group", { area: "sidebar" });
 	// an Add menu with nothing in it is not shown at all
-	await ui.waitFor("the Add button is gone", () => !ui.visible("Add", { area: "list", exact: true }));
+	await ui.waitFor("the Add button is gone", async () => !(await ui.visible("Add", { area: "list", exact: true })));
 	await ui.expect("no New Item", () => ui.visible("New Item…"), false);
 	await ui.expect("no New Standalone Note", () => ui.visible("New Standalone Note"), false);
 });
@@ -1238,7 +1239,7 @@ scenario("an Arabic item shows its title and creator in the pane", async (ui) =>
 	await ui.see(T.arabic, { area: "pane", exact: true, nth: 1 });
 	await ui.see("الاختبار", { area: "pane", exact: true });
 	await ui.see("سامي", { area: "pane", exact: true });
-	ui.screenshot("arabic-pane");
+	await ui.screenshot("arabic-pane");
 });
 
 scenario("a Hebrew item shows its title and creator in the pane", async (ui) => {
@@ -1246,7 +1247,7 @@ scenario("a Hebrew item shows its title and creator in the pane", async (ui) => 
 	await ui.see(T.hebrew, { area: "pane", exact: true, nth: 1 });
 	await ui.see("בדיקה", { area: "pane", exact: true });
 	await ui.see("דנה", { area: "pane", exact: true });
-	ui.screenshot("hebrew-pane");
+	await ui.screenshot("hebrew-pane");
 });
 
 scenario("an Arabic title typed in the Details is saved exactly as typed", async (ui) => {
@@ -1290,7 +1291,7 @@ scenario("an Arabic abstract is saved as typed, and the web address of an Arabic
 	await ui.type("نص تجريبي");
 	await ui.press("ctrl-enter");
 	await ui.expect("the saved abstract", () => savedAbstract(ui, T.arabic), "نص تجريبي");
-	ui.screenshot("arabic-abstract");
+	await ui.screenshot("arabic-abstract");
 });
 
 // =====================================================================================================================================
