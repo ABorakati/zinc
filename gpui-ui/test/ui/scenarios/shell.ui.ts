@@ -25,10 +25,9 @@ interface Node {
 	children?: Node[];
 }
 
-const tree = (ui: Ui): Node[] => {
-	ui.renderer.flush();
-	const parsed = JSON.parse(ui.renderer.getAutomationTree()) as { tree?: Node } & Partial<Node>;
-	const root = (parsed.tree ?? parsed) as Node;
+const tree = async (ui: Ui): Promise<Node[]> => {
+	await ui.flush();
+	const root = (await ui.tree()) as Node | null;
 	const out: Node[] = [];
 	const walk = (n: Node) => {
 		out.push(n);
@@ -37,31 +36,49 @@ const tree = (ui: Ui): Node[] => {
 	if (root && typeof root.id === "number") walk(root);
 	return out;
 };
-const boxOf = (ui: Ui, n: Node): Box | null => {
-	const b = n.bounds ?? ui.renderer.getElementBounds(n.id);
+const boxOf = async (ui: Ui, n: Node): Promise<Box | null> => {
+	const b = n.bounds ?? (await ui.bounds(n.id));
 	return b && b.width > 0 && b.height > 0 ? b : null;
 };
 /** The painted box of the element with this test id, null while it is not drawn. */
-const byTestId = (ui: Ui, id: string): Box | null => {
-	for (const n of tree(ui)) if (n.testId === id) return boxOf(ui, n);
+const byTestId = async (ui: Ui, id: string): Promise<Box | null> => {
+	for (const n of await tree(ui)) if (n.testId === id) return boxOf(ui, n);
 	return null;
 };
-const hasTestId = (ui: Ui, id: string): boolean => byTestId(ui, id) !== null;
+const hasTestId = async (ui: Ui, id: string): Promise<boolean> => (await byTestId(ui, id)) !== null;
+/** The boxes of every node in the tree that is painted (null boxes dropped). */
+const allBoxes = async (ui: Ui): Promise<Box[]> => {
+	const out: Box[] = [];
+	for (const n of await tree(ui)) {
+		const b = await boxOf(ui, n);
+		if (b) out.push(b);
+	}
+	return out;
+};
+const inputBoxes = async (ui: Ui): Promise<Box[]> => {
+	const out: Box[] = [];
+	for (const n of await tree(ui)) {
+		if (n.type !== "input" && n.type !== "textarea") continue;
+		const b = await boxOf(ui, n);
+		if (b) out.push(b);
+	}
+	return out;
+};
 const centre = (b: Box) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 async function clickTestId(ui: Ui, id: string, o: { button?: number; count?: number } = {}): Promise<void> {
 	await ui.waitFor(`${id} on screen`, () => hasTestId(ui, id));
-	const c = centre(byTestId(ui, id)!);
+	const c = centre((await byTestId(ui, id))!);
 	await ui.clickAt(c.x, c.y, o);
 }
 async function hoverAt(ui: Ui, x: number, y: number, ms = 450): Promise<void> {
 	ui.steps.push(`hover ${Math.round(x)},${Math.round(y)}`);
-	ui.renderer.nativeSimulateMouseMove(x, y);
+	await ui.mouseMove(x, y);
 	await ui.settle(ms);
 }
 
 /** A pixel of the last frame: [r, g, b] (PNG screenshots, 8 bit). */
-function pixel(ui: Ui, x: number, y: number): [number, number, number] {
-	const file = ui.screenshot(`px-${Math.round(x)}-${Math.round(y)}-${Math.random().toString(36).slice(2, 6)}`);
+async function pixel(ui: Ui, x: number, y: number): Promise<[number, number, number]> {
+	const file = await ui.screenshot(`px-${Math.round(x)}-${Math.round(y)}-${Math.random().toString(36).slice(2, 6)}`);
 	const png = readFileSync(file);
 	let pos = 8;
 	let w = 0,
@@ -115,10 +132,8 @@ const sameColour = (a: [number, number, number], b: [number, number, number], to
 
 /** Click the first text field painted at or below this text (the placeholder of a field is not text in the tree). */
 async function clickInputBelow(ui: Ui, y: number, from = 0): Promise<void> {
-	const boxes = tree(ui)
-		.filter((n) => n.type === "input" || n.type === "textarea")
-		.map((n) => boxOf(ui, n))
-		.filter((b): b is Box => !!b && b.y >= y - 4 && b.x + b.width > from)
+	const boxes = (await inputBoxes(ui))
+		.filter((b) => b.y >= y - 4 && b.x + b.width > from)
 		.sort((p, q) => p.y - q.y || p.x - q.x);
 	if (!boxes[0]) throw new Error(`no text field below y=${Math.round(y)}`);
 	await ui.clickAt(boxes[0].x + Math.min(40, boxes[0].width / 2), boxes[0].y + boxes[0].height / 2);
@@ -137,20 +152,17 @@ async function pick(ui: Ui, menu: string, entry: string): Promise<void> {
 }
 const menuHas = (ui: Ui, panel: Box, entry: string) => ui.visible(entry, { exact: true, area: panel });
 
+// (the modules of the app: they are the app's own state only in the in-process mode, so they are read behind `ui.inProcess`)
 const layoutMod = () => import("../../../src/shell/layout");
-const appearanceMod = () => import("../../../src/shell/appearance");
 const registryMod = () => import("../../../src/registry");
 const chromeMod = () => import("../../../src/wasmplugins/extend/Chrome");
-const sharedMod = () => import("../../../src/features/shared");
 const uiCore = () => import("../../../src/ui/core");
-const selectedCount = async (): Promise<number> => (await sharedMod()).selectedKeys().length;
+const selectedCount = async (ui: Ui): Promise<number> => (await ui.store.selected()).length;
 const itemsTotal = async (ui: Ui): Promise<number> => (await ui.api<{ total: number }>("GET", "/items?limit=1&q=")).total;
 const trashCount = async (ui: Ui): Promise<number> => (await ui.api<{ items: number }>("GET", "/maintenance/trash")).items;
 
 /** The right of the window where toasts stack. */
 const toastArea = (ui: Ui): Box => ({ x: ui.size.width * 0.5, y: ui.size.height * 0.45, width: ui.size.width * 0.5, height: ui.size.height * 0.55 });
-const clipboardText = (ui: Ui): string => String((ui.renderer as unknown as { readFromClipboard(): string }).readFromClipboard() ?? "");
-const setClipboard = (ui: Ui, text: string): void => (ui.renderer as unknown as { writeToClipboard(t: string): void }).writeToClipboard(text);
 
 /** The gear at the right of the top bar and the two panel buttons: there are no labels to click, so by their place. */
 const gear = (ui: Ui) => ({ x: ui.size.width - 26, y: 47 });
@@ -175,7 +187,7 @@ async function gotoSection(ui: Ui, label: string): Promise<void> {
 async function scrollTo(ui: Ui, text: string, o: { exact?: boolean } = {}): Promise<Found> {
 	const area = CONTENT(ui);
 	for (let i = 0; i < 60; i++) {
-		const f = ui.findAll(text, { ...o, area: { x: area.x, y: area.y, width: area.width, height: area.height } })[0];
+		const f = (await ui.findAll(text, { ...o, area: { x: area.x, y: area.y, width: area.width, height: area.height } }))[0];
 		if (f) return f;
 		await ui.wheel(area.x + area.width / 2, area.y + area.height / 2, -240);
 	}
@@ -184,7 +196,7 @@ async function scrollTo(ui: Ui, text: string, o: { exact?: boolean } = {}): Prom
 async function scrollTop(ui: Ui, heading?: string): Promise<void> {
 	const area = CONTENT(ui);
 	for (let i = 0; i < 40; i++) {
-		if (heading && ui.visible(heading, { exact: true, area })) return;
+		if (heading && (await ui.visible(heading, { exact: true, area }))) return;
 		await ui.wheel(area.x + area.width / 2, area.y + area.height / 2, heading ? 2400 : 600);
 	}
 }
@@ -214,9 +226,9 @@ for (const name of MENU_NAMES) {
 			last = f.y;
 			if (it.shortcut) await ui.see(it.shortcut, { exact: true, area: panel });
 		}
-		ui.screenshot(`menu-${name.toLowerCase()}`);
-	});
-}
+		await ui.screenshot(`menu-${name.toLowerCase()}`);
+	}, name === "File" || name === "Help" ? { inProcessOnly: "the entries come from the app's action registry, which the runner only has in-process" } : {});
+	}
 
 scenario("Escape closes an open menu and runs nothing", async (ui) => {
 	const panel = await openMenu(ui, "Go");
@@ -271,7 +283,7 @@ scenario("a menu entry that does not apply is left out, and appears when it does
 	await ui.expect("Undo layout change is not offered with nothing to undo", () => menuHas(ui, panel, "Undo layout change"), false);
 	await ui.press("escape");
 	// hide the item pane from its hover header: that is an undoable change
-	const pane = byTestId(ui, "pane-item")!;
+	const pane = (await byTestId(ui, "pane-item"))!;
 	await hoverAt(ui, pane.x + pane.width / 2, pane.y + 3);
 	await clickTestId(ui, "pane-hover-close-item");
 	await ui.gone("Select an item to view its details");
@@ -296,7 +308,7 @@ scenario("File > New Item… opens a type list; the chosen type is created", asy
 	await pick(ui, "File", "New Item…");
 	await ui.see("New Item", { exact: true });
 	await ui.see("Book", { exact: true });
-	ui.screenshot("new-item");
+	await ui.screenshot("new-item");
 	await ui.click("Book", { exact: true });
 	await ui.gone("New Item", { exact: true });
 	await ui.expect("one more item in the library", () => itemsTotal(ui), before + 1, 5000);
@@ -323,7 +335,7 @@ scenario("New Item: typing narrows the types, Enter takes the first, Escape leav
 scenario("File > Add Item by Identifier…: Cancel closes it; Add with nothing typed does nothing", async (ui) => {
 	await pick(ui, "File", "Add Item by Identifier…");
 	await ui.see("Add Item by Identifier", { exact: true });
-	ui.screenshot("identifier");
+	await ui.screenshot("identifier");
 	await ui.click("Add", { exact: true, area: { x: 0, y: ui.size.height / 2, width: ui.size.width, height: ui.size.height / 2 } });
 	await ui.expectStill("no lookup was started", () => ui.visible("Looking up identifiers…"), false, 500);
 	await ui.expect("the dialog is still there", () => ui.visible("Add Item by Identifier", { exact: true }), true);
@@ -332,13 +344,13 @@ scenario("File > Add Item by Identifier…: Cancel closes it; Add with nothing t
 });
 
 scenario("Add Item by Identifier starts with the identifiers found on the clipboard", async (ui) => {
-	setClipboard(ui, "10.1136/bmj-2023-078378");
+	await ui.setClipboard("10.1136/bmj-2023-078378");
 	await pick(ui, "File", "Add Item by Identifier…");
 	await ui.see("Add Item by Identifier", { exact: true });
-	await ui.expect("the identifier is in the text field", () => ui.painted().some((t) => t.includes("10.1136/bmj-2023-078378")), true);
+	await ui.expect("the identifier is in the text field", async () => (await ui.painted()).some((t) => t.includes("10.1136/bmj-2023-078378")), true);
 	await ui.press("escape");
 	await ui.gone("Add Item by Identifier", { exact: true });
-});
+}, { inProcessOnly: "the text of an input is not in the automation tree" });
 
 scenario("File > Add Attachment: Link to File… links the file where it is", async (ui) => {
 	// (a PDF would be looked up on crossref.org once linked, which the fence refuses: a JSON file is linked instead)
@@ -369,7 +381,7 @@ scenario("File > Add Attachment: Link to URI… adds the address with its title"
 	const before = await itemsTotal(ui);
 	await pick(ui, "File", "Add Attachment: Link to URI…");
 	await ui.see("Link to URI", { exact: true });
-	ui.screenshot("link-uri");
+	await ui.screenshot("link-uri");
 	await ui.type("https://example.org/paper");
 	await ui.press("tab");
 	await ui.type("Example paper link");
@@ -392,7 +404,7 @@ scenario("Link to URI: Cancel adds nothing", async (ui) => {
 scenario("File > Add from URL… opens its dialog, and Cancel closes it (the lookup itself needs the network: not run)", async (ui) => {
 	await pick(ui, "File", "Add from URL…");
 	await ui.see("Add from URL", { exact: true });
-	ui.screenshot("add-url");
+	await ui.screenshot("add-url");
 	await ui.click("Cancel", { exact: true });
 	await ui.gone("Add from URL", { exact: true });
 });
@@ -401,7 +413,7 @@ scenario("File > New Standalone Note adds a note to the library", async (ui) => 
 	const before = await itemsTotal(ui);
 	await pick(ui, "File", "New Standalone Note");
 	await ui.expect("one more item", () => itemsTotal(ui), before + 1, 6000);
-	await ui.expect("one item is selected", () => selectedCount(), 1);
+	await ui.expect("one item is selected", () => selectedCount(ui), 1);
 });
 
 scenario("in a read-only group the File menu offers no way to add items", async (ui) => {
@@ -409,14 +421,14 @@ scenario("in a read-only group the File menu offers no way to add items", async 
 	await ui.see(T.groupItem, { area: "list" });
 	const panel = await openMenu(ui, "File");
 	await ui.settle(300);
-	ui.screenshot("file-menu-read-only");
+	await ui.screenshot("file-menu-read-only");
 	for (const e of ["New Item…", "New Standalone Note", "Add Item by Identifier…", "Add Attachment: Stored File…", "Add Attachment: Link to File…", "Add Attachment: Link to URI…", "Add from URL…"])
 		await ui.expect(`"${e}" is not offered in a read-only library`, () => menuHas(ui, panel, e), false, 500);
 });
 
 scenario("Edit > Select all items selects every item of the list", async (ui) => {
 	await pick(ui, "Edit", "Select all items");
-	await ui.expect("every item is selected", () => selectedCount(), ui.store.total(), 6000);
+	await ui.expect("every item is selected", () => selectedCount(ui), await ui.store.total(), 6000);
 });
 
 // ---- View ------------------------------------------------------------------------------------------------------------------------
@@ -425,7 +437,7 @@ scenario("View > Collections sidebar hides and shows the sidebar", async (ui) =>
 	await ui.see("COLLECTIONS", { exact: true, area: "sidebar" });
 	await pick(ui, "View", "Collections sidebar");
 	await ui.gone("COLLECTIONS", { exact: true });
-	await ui.expect("the layout says the sidebar is hidden", async () => (await layoutMod()).leftOpen(), false);
+	if (ui.inProcess) await ui.expect("the layout says the sidebar is hidden", async () => (await layoutMod()).leftOpen(), false);
 	await pick(ui, "View", "Collections sidebar");
 	await ui.see("COLLECTIONS", { exact: true, area: "sidebar" });
 });
@@ -434,7 +446,7 @@ scenario("View > Item pane hides and shows the item pane", async (ui) => {
 	await ui.see("Select an item to view its details");
 	await pick(ui, "View", "Item pane");
 	await ui.gone("Select an item to view its details");
-	await ui.expect("the layout says the item pane is hidden", async () => (await layoutMod()).rightOpen(), false);
+	if (ui.inProcess) await ui.expect("the layout says the item pane is hidden", async () => (await layoutMod()).rightOpen(), false);
 	await pick(ui, "View", "Item pane");
 	await ui.see("Select an item to view its details");
 });
@@ -444,7 +456,7 @@ scenario("View > Classic table shows the table, View > List view the cards again
 	await pick(ui, "View", "Classic table");
 	await ui.expect("the store is in table mode", () => ui.store.viewMode(), "table");
 	await ui.gone("Find full text");
-	ui.screenshot("classic-table");
+	await ui.screenshot("classic-table");
 	await pick(ui, "View", "List view");
 	await ui.expect("the store is in card mode", () => ui.store.viewMode(), "cards");
 	await ui.see("Find full text", { area: "list" });
@@ -467,7 +479,7 @@ scenario("Go > Settings opens the Settings tab and Go > Library comes back", asy
 scenario("Tools > Edit layout shows the layout bar; the entry then reads Finish editing layout and ends it", async (ui) => {
 	await pick(ui, "Tools", "Edit layout");
 	await ui.see("Editing layout");
-	ui.screenshot("edit-layout");
+	await ui.screenshot("edit-layout");
 	await ui.expect("the layout bar is painted", () => hasTestId(ui, "layout-edit-bar"), true);
 	await pick(ui, "Tools", "Finish editing layout");
 	await ui.expect("the layout bar is gone", () => hasTestId(ui, "layout-edit-bar"), false);
@@ -484,23 +496,21 @@ scenario("Edit layout mode ends with Escape and with Done", async (ui) => {
 });
 
 scenario("Tools > Undo layout change brings a hidden pane back", async (ui) => {
-	const pane = byTestId(ui, "pane-item")!;
+	const pane = (await byTestId(ui, "pane-item"))!;
 	await hoverAt(ui, pane.x + pane.width / 2, pane.y + 3);
 	await clickTestId(ui, "pane-hover-close-item");
 	await ui.gone("Select an item to view its details");
 	await pick(ui, "Tools", "Undo layout change");
 	await ui.see("Select an item to view its details");
-	await ui.expect("the item pane is shown", async () => (await layoutMod()).rightOpen(), true);
+	if (ui.inProcess) await ui.expect("the item pane is shown", async () => (await layoutMod()).rightOpen(), true);
 });
 
 scenario("Tools > Reset pane sizes puts the columns back after they were dragged", async (ui) => {
-	const { libraryLayout } = await layoutMod();
-	const first = libraryLayout().sizes.slice();
-	const left = byTestId(ui, "column-left")!;
+	const left = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: left.x + left.width + 6, y: 400 }, { x: left.x + left.width + 106, y: 400 });
-	await ui.expect("the sidebar got wider", () => libraryLayout().sizes[0]! > first[0]!, true);
+	await ui.expect("the sidebar got wider", async () => (await byTestId(ui, "column-left"))!.width > left.width + 40, true);
 	await pick(ui, "Tools", "Reset pane sizes");
-	await ui.expect("sizes are the default again", () => libraryLayout().sizes.map((n) => Math.round(n * 100)), first.map((n) => Math.round(n * 100)));
+	await ui.expect("the sidebar is the default width again", async () => Math.abs((await byTestId(ui, "column-left"))!.width - left.width) < 2, true);
 });
 
 scenario("Tools > Reset layout brings back hidden panes and the standard arrangement", async (ui) => {
@@ -508,7 +518,7 @@ scenario("Tools > Reset layout brings back hidden panes and the standard arrange
 	await ui.gone("Select an item to view its details");
 	await pick(ui, "Tools", "Reset layout");
 	await ui.see("Select an item to view its details");
-	await ui.expect("the item pane is shown", async () => (await layoutMod()).rightOpen(), true);
+	if (ui.inProcess) await ui.expect("the item pane is shown", async () => (await layoutMod()).rightOpen(), true);
 });
 
 scenario("Tools > Settings… opens Settings", async (ui) => {
@@ -520,17 +530,17 @@ scenario("Tools > Duplicate Items… opens the duplicates dialog; with none in t
 	await pick(ui, "Tools", "Duplicate Items…");
 	await ui.see("No duplicate sets found.", { exact: true });
 	await ui.see("Duplicate Items", { exact: true, area: { x: 300, y: 80, width: ui.size.width - 300, height: 200 } });
-	ui.screenshot("duplicates");
+	await ui.screenshot("duplicates");
 	await ui.press("escape");
 	await ui.gone("No duplicate sets found.", { exact: true });
-	await ui.expect("still on the library view", () => ui.store.view().kind, "library");
+	await ui.expect("still on the library view", async () => (await ui.store.view()).kind, "library");
 });
 
 scenario("Tools > Empty Trash… asks first; Cancel keeps the trashed item", async (ui) => {
 	await ui.expect("the trash holds one item", () => trashCount(ui), 1);
 	await pick(ui, "Tools", "Empty Trash…");
 	await ui.see("Empty Trash?", { exact: true });
-	ui.screenshot("empty-trash");
+	await ui.screenshot("empty-trash");
 	await ui.click("Cancel", { exact: true });
 	await ui.gone("Empty Trash?", { exact: true });
 	await ui.expectStill("the trash is untouched", () => trashCount(ui), 1);
@@ -559,13 +569,13 @@ scenario("Empty Trash: clicking the backdrop does not dismiss the question", asy
 scenario("Tools > Delete Automatic Tags… says there are none, in a toast", async (ui) => {
 	await pick(ui, "Tools", "Delete Automatic Tags…");
 	const t = await ui.see("There are no automatic tags in this library", { area: toastArea(ui) });
-	ui.screenshot("toast-no-auto-tags");
+	await ui.screenshot("toast-no-auto-tags");
 	await ui.expect("the toast is in the bottom right corner", () => t.x > ui.size.width * 0.6 && t.y > ui.size.height * 0.6, true, 0);
 });
 
 scenario("Tools > Import from Clipboard imports what is on the clipboard", async (ui) => {
 	const before = await itemsTotal(ui);
-	setClipboard(ui, "@article{zt-clip, title={ZT Clipboard import}, author={Clip, Cara}, year={2022}, journal={Clip Journal}}");
+	await ui.setClipboard("@article{zt-clip, title={ZT Clipboard import}, author={Clip, Cara}, year={2022}, journal={Clip Journal}}");
 	await pick(ui, "Tools", "Import from Clipboard");
 	await ui.expect("one more item", () => itemsTotal(ui), before + 1, 8000);
 	await ui.see("ZT Clipboard import", { area: "list" });
@@ -575,10 +585,10 @@ scenario("Tools > Keyboard Shortcuts lists the commands with their keys and clos
 	await pick(ui, "Tools", "Keyboard Shortcuts");
 	await ui.see("COMMANDS", { exact: true });
 	for (const k of ["F6", "Ctrl+Shift+N", "Ctrl+Tab", "Ctrl+,", "Ctrl+Shift+K", "NAVIGATION"]) {
-		for (let i = 0; i < 30 && !ui.visible(k, { exact: true }); i++) await ui.wheel(ui.size.width / 2, ui.size.height / 2, -200);
+		for (let i = 0; i < 30 && !(await ui.visible(k, { exact: true })); i++) await ui.wheel(ui.size.width / 2, ui.size.height / 2, -200);
 		await ui.see(k, { exact: true });
 	}
-	ui.screenshot("shortcut-help");
+	await ui.screenshot("shortcut-help");
 	await ui.click("Close", { exact: true });
 	await ui.gone("COMMANDS", { exact: true });
 });
@@ -586,9 +596,9 @@ scenario("Tools > Keyboard Shortcuts lists the commands with their keys and clos
 scenario("Tools > Report a problem… shows the report, copies it, and Close closes it", async (ui) => {
 	await pick(ui, "Tools", "Report a problem…");
 	await ui.see("Zinc problem report", { exact: true });
-	ui.screenshot("report");
+	await ui.screenshot("report");
 	await ui.click("Copy to clipboard", { exact: true });
-	await ui.expect("the report is on the clipboard", () => clipboardText(ui).startsWith("Zinc problem report"), true);
+	await ui.expect("the report is on the clipboard", async () => (await ui.clipboard()).startsWith("Zinc problem report"), true);
 	await ui.click("Close", { exact: true });
 	await ui.gone("Zinc problem report", { exact: true });
 });
@@ -603,7 +613,7 @@ scenario("Help > Report a problem… opens the same report, and Escape closes it
 scenario("Tools > Advanced Search… searches the library, and Close closes it", async (ui) => {
 	await pick(ui, "Tools", "Advanced Search…");
 	await ui.see("Advanced Search", { exact: true });
-	ui.screenshot("advanced-search");
+	await ui.screenshot("advanced-search");
 	await ui.click("Enter a value to search", { exact: true });
 	await ui.type("Neighbour");
 	await ui.see(T.neighbour, { area: { x: 0, y: 0, width: ui.size.width, height: ui.size.height } });
@@ -614,7 +624,7 @@ scenario("Tools > Advanced Search… searches the library, and Close closes it",
 scenario("Tools > Find Full Text Settings…: Cancel changes nothing, Save keeps the change and says so", async (ui) => {
 	await pick(ui, "Tools", "Find Full Text Settings…");
 	await ui.see("Unpaywall email", { exact: true });
-	ui.screenshot("fulltext-settings");
+	await ui.screenshot("fulltext-settings");
 	const mail = async () => {
 		const l = await ui.see("Unpaywall email", { exact: true });
 		await clickInputBelow(ui, l.y, l.box.x - 4);
@@ -625,14 +635,14 @@ scenario("Tools > Find Full Text Settings…: Cancel changes nothing, Save keeps
 	await ui.gone("Unpaywall email", { exact: true });
 	await pick(ui, "Tools", "Find Full Text Settings…");
 	await ui.see("Unpaywall email", { exact: true });
-	await ui.expect("the text that was cancelled is not there", () => ui.painted().some((t) => t.includes("a@b.org")), false);
+	await ui.expect("the text that was cancelled is not there", async () => (await ui.painted()).some((t) => t.includes("a@b.org")), false);
 	await mail();
 	await ui.type("a@b.org");
 	await ui.click("Save", { exact: true });
 	await ui.see("Find Full Text settings saved", { area: toastArea(ui) });
 	await pick(ui, "Tools", "Find Full Text Settings…");
-	await ui.expect("the saved address is in the field", () => ui.painted().some((t) => t.includes("a@b.org")), true);
-});
+	await ui.expect("the saved address is in the field", async () => (await ui.painted()).some((t) => t.includes("a@b.org")), true);
+}, { inProcessOnly: "the text of an input is not in the automation tree" });
 
 // ================================================================================================================================
 // Settings
@@ -649,22 +659,21 @@ async function roundTrip(ui: Ui): Promise<void> {
 	await openSettings(ui);
 }
 /** The right edge of the controls of a Settings row: the card is 768 wide and has 16 px of padding. */
-const controlRight = (ui: Ui): number => {
-	const edges = tree(ui)
-		.map((n) => boxOf(ui, n))
-		.filter((x): x is Box => !!x && x.width >= 760 && x.width <= 770 && x.x >= 210)
+const controlRight = async (ui: Ui): Promise<number> => {
+	const edges = (await allBoxes(ui))
+		.filter((x) => x.width >= 760 && x.width <= 770 && x.x >= 210)
 		.map((x) => x.x + x.width);
 	return Math.max(...edges, 1000) - 16;
 };
 /** Click the switch of the row with this label. */
 async function clickSwitch(ui: Ui, label: string): Promise<void> {
 	const f = await scrollTo(ui, label, { exact: true });
-	await ui.clickAt(controlRight(ui) - 17, f.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 17, f.y + 9);
 }
 
 /** The search box of Settings (its placeholder is not text in the tree). */
 const clickSearch = (ui: Ui) => ui.clickAt(CONTENT(ui).x + 150, 91);
-const paintedHas = (ui: Ui, text: string): boolean => ui.painted().some((t) => t.includes(text));
+const paintedHas = async (ui: Ui, text: string): Promise<boolean> => (await ui.painted()).some((t) => t.includes(text));
 
 const sectionList = async () => (await settingsSectionsMod()).settingsSections().map((s) => ({ id: s.id, label: s.label }));
 
@@ -674,8 +683,8 @@ scenario("the gear opens Settings as a tab, its x closes it and the library is b
 	await openSettings(ui);
 	await ui.expect("Settings is the active tab", () => ui.store.activeTab(), "settings");
 	await ui.see("Settings", { exact: true, area: { x: 0, y: 30, width: 600, height: 40 } });
-	ui.screenshot("settings-open");
-	const tab = ui.findAll("Settings", { exact: true, area: { x: 0, y: 30, width: 600, height: 40 } })[0]!;
+	await ui.screenshot("settings-open");
+	const tab = (await ui.findAll("Settings", { exact: true, area: { x: 0, y: 30, width: 600, height: 40 } }))[0]!;
 	await ui.clickAt(tab.box.x + tab.box.width + 14, tab.y); // the x of the tab
 	await ui.expect("back on the library", () => ui.store.activeTab(), "library");
 	await ui.gone("SETTINGS", { exact: true });
@@ -683,7 +692,9 @@ scenario("the gear opens Settings as a tab, its x closes it and the library is b
 
 scenario("Settings lists every section in its sidebar", async (ui) => {
 	await openSettings(ui);
-	for (const s of await sectionList()) await ui.see(s.label, { exact: true, area: NAV(ui) });
+	// (the registry is the app's own state: the real app is checked against the list of sections written below)
+	const labels = ui.inProcess ? (await sectionList()).map((s) => s.label) : SECTIONS;
+	for (const label of labels) await ui.see(label, { exact: true, area: NAV(ui) });
 });
 
 scenario("searching Settings filters the sections, shows counts, and Escape clears the search", async (ui) => {
@@ -692,9 +703,10 @@ scenario("searching Settings filters the sections, shows counts, and Escape clea
 	await ui.type("dark");
 	await ui.see("Theme", { exact: true, area: CONTENT(ui) });
 	await ui.see("setting", { area: { x: 210, y: 70, width: ui.size.width - 210, height: 60 } });
-	ui.screenshot("settings-search");
+	await ui.screenshot("settings-search");
 	await ui.press("escape");
-	await ui.expect("the search box is empty again", () => paintedHas(ui, "Search settings"), true);
+	await ui.see("Plugins", { exact: true, area: NAV(ui) }); // the sections that the search had filtered out are listed again
+	if (ui.inProcess) await ui.expect("the search box is empty again", () => paintedHas(ui, "Search settings"), true);
 });
 
 scenario("a search with no match says so and Clear search shows the section again", async (ui) => {
@@ -730,23 +742,27 @@ for (const label of SECTIONS.filter((s) => s !== "Cite")) {
 		await openSettings(ui);
 		await gotoSection(ui, label);
 		await ui.settle(500);
-		ui.screenshot(`section-top`);
-		const reg = await settingsSectionsMod();
-		const id = reg.settingsSections().find((s) => s.label === label)!.id;
-		const { allSettings } = await settingsRegistry();
-		const rows = allSettings().filter((s) => s.section === id);
-		const wanted = rows.map((r) => (r.label.length > 48 ? r.label.slice(0, 48) : r.label));
+		await ui.screenshot(`section-top`);
+			// (the list of rows is the registry of the app: the real app only gets its section opened and scrolled both ways)
+		let wanted: string[] = [];
+		if (ui.inProcess) {
+			const reg = await settingsSectionsMod();
+			const id = reg.settingsSections().find((s) => s.label === label)!.id;
+			const { allSettings } = await settingsRegistry();
+			const rows = allSettings().filter((s) => s.section === id);
+			wanted = rows.map((r) => (r.label.length > 48 ? r.label.slice(0, 48) : r.label));
+		}
 		const found = new Set<string>();
 		const area = CONTENT(ui);
 		await scrollTop(ui, label);
 		// a screenful at a time (rows are far shorter than the overlap), the screen read once per step
 		for (let step = 0; step < 80 && found.size < wanted.length; step++) {
-			for (const w of ui.shownOf(wanted, area)) found.add(w);
+			for (const w of await ui.shownOf(wanted, area)) found.add(w);
 			if (found.size === wanted.length) break;
 			await ui.wheel(area.x + area.width / 2, area.y + area.height / 2, -480);
 		}
 		await ui.expect("every registered row was painted at some scroll position", () => wanted.filter((w) => !found.has(w)), []);
-		ui.screenshot(`section-bottom`);
+		await ui.screenshot(`section-bottom`);
 		// and the page can be scrolled back to its top
 		await scrollTop(ui, label);
 		await ui.see(label, { exact: true, area: CONTENT(ui) });
@@ -765,16 +781,17 @@ for (const [mode, high] of [
 		await ui.see("Theme", { exact: true, area: CONTENT(ui) });
 		if (!high) {
 			await ui.click("Light", { exact: true, area: CONTENT(ui) });
-			await ui.expect("light first", () => luma(pixel(ui, ui.size.width - 60, ui.size.height - 60)) > 0.7, true);
+			await ui.expect("light first", async () => luma(await pixel(ui, ui.size.width - 60, ui.size.height - 60)) > 0.7, true);
 		}
 		await ui.click(mode, { exact: true, area: CONTENT(ui) });
-		const { themePrefs } = await prefsMod();
-		await ui.expect("the preference", () => themePrefs().mode, mode.toLowerCase() as "light" | "dark");
-		await ui.expect(`the page is painted ${mode.toLowerCase()}`, () => luma(pixel(ui, ui.size.width - 60, ui.size.height - 60)) > 0.7, high);
-		ui.screenshot(`theme-${mode.toLowerCase()}`);
+		// (the pixel is what the user sees; the preference is read only where the app is in this process)
+		const prefs = ui.inProcess ? (await prefsMod()).themePrefs : undefined;
+		if (prefs) await ui.expect("the preference", () => prefs().mode, mode.toLowerCase() as "light" | "dark");
+		await ui.expect(`the page is painted ${mode.toLowerCase()}`, async () => luma(await pixel(ui, ui.size.width - 60, ui.size.height - 60)) > 0.7, high);
+		await ui.screenshot(`theme-${mode.toLowerCase()}`);
 		await roundTrip(ui);
-		await ui.expect("still the preference", () => themePrefs().mode, mode.toLowerCase() as "light" | "dark");
-		await ui.expect(`the page is still painted ${mode.toLowerCase()}`, () => luma(pixel(ui, ui.size.width - 60, ui.size.height - 60)) > 0.7, high);
+		if (prefs) await ui.expect("still the preference", () => prefs().mode, mode.toLowerCase() as "light" | "dark");
+		await ui.expect(`the page is still painted ${mode.toLowerCase()}`, async () => luma(await pixel(ui, ui.size.width - 60, ui.size.height - 60)) > 0.7, high);
 	});
 }
 
@@ -785,15 +802,14 @@ scenario("Settings > Appearance > Theme System follows the machine and is kept",
 	await ui.expect("the preference", () => themePrefs().mode, "system");
 	await roundTrip(ui);
 	await ui.expect("still system", () => themePrefs().mode, "system");
-});
+}, { inProcessOnly: "reads the saved theme preference (nothing on screen tells System from the machine's own mode)" });
 
 scenario("Settings > Appearance > Colour scheme: each swatch changes the accent, the custom one takes a hex colour, all kept", async (ui) => {
 	await openSettings(ui);
 	const { themePrefs, SCHEMES } = await prefsMod();
 	const custom = await scrollTo(ui, "Custom", { exact: true });
-	const swatches = tree(ui)
-		.map((n) => boxOf(ui, n))
-		.filter((b): b is Box => !!b && Math.round(b.width) === 28 && Math.round(b.height) === 28 && Math.abs(b.y + 14 - custom.y) < 8)
+	const swatches = (await allBoxes(ui))
+		.filter((b) => Math.round(b.width) === 28 && Math.round(b.height) === 28 && Math.abs(b.y + 14 - custom.y) < 8)
 		.sort((a, b) => a.x - b.x);
 	await ui.expect("a swatch per scheme and the custom one", () => swatches.length, SCHEMES.length + 1);
 	const dot = (b: Box) => centre(b);
@@ -802,11 +818,12 @@ scenario("Settings > Appearance > Colour scheme: each swatch changes the accent,
 	const seen: string[] = [];
 	for (let i = 0; i < SCHEMES.length; i++) {
 		const p = dot(swatches[i]!);
-		const hit = ui.renderer.getElementsAt(p.x, p.y).slice(0, 4).map((id) => { const n = tree(ui).find((t) => t.id === id); return `${id}:${n?.type}:${Math.round(n?.bounds?.width ?? 0)}x${Math.round(n?.bounds?.height ?? 0)}`; });
+		const nodes = await tree(ui);
+		const hit = ((await ui.elementsAt(p.x, p.y)) ?? []).slice(0, 4).map((id) => { const n = nodes.find((t) => t.id === id); return `${id}:${n?.type}:${Math.round(n?.bounds?.width ?? 0)}x${Math.round(n?.bounds?.height ?? 0)}`; });
 		await ui.clickAt(p.x, p.y);
 		await ui.expect(`scheme ${SCHEMES[i]!.id} is chosen (the click at ${Math.round(p.x)},${Math.round(p.y)} hit ${hit.join(" ")})`, () => themePrefs().scheme, SCHEMES[i]!.id);
 		await ui.see(`${SCHEMES[i]!.label} ·`, {});
-		const px = pixel(ui, dot(swatches[i]!).x - 6, dot(swatches[i]!).y);
+		const px = await pixel(ui, dot(swatches[i]!).x - 6, dot(swatches[i]!).y);
 		seen.push(px.join(","));
 	}
 	await ui.expect("the schemes are painted in different colours", () => new Set(seen).size > SCHEMES.length / 2, true);
@@ -818,7 +835,7 @@ scenario("Settings > Appearance > Colour scheme: each swatch changes the accent,
 	await ui.expect("the accent", () => themePrefs().accent, "#ff0000");
 	await roundTrip(ui);
 	await ui.expect("the scheme was kept", () => [themePrefs().scheme, themePrefs().accent], ["custom", "#ff0000"]);
-});
+}, { inProcessOnly: "reads the theme preference and the hit test under each swatch (ui.renderer)" });
 
 scenario("Colour scheme: a custom colour that is not a colour is not applied", async (ui) => {
 	await openSettings(ui);
@@ -831,20 +848,20 @@ scenario("Colour scheme: a custom colour that is not a colour is not applied", a
 	await ui.replace("not a colour");
 	await ui.press("enter");
 	await ui.expectStill("the accent is unchanged", () => themePrefs().accent, before);
-});
+}, { inProcessOnly: "reads the theme preference" });
 
 scenario("Settings > Appearance > Interface font: every font is chosen from the list, 'Other…' takes an installed font's name", async (ui) => {
 	await openSettings(ui);
 	const { themePrefs, FONTS } = await prefsMod();
 	const start = await scrollTo(ui, "Inter (default)", { exact: true });
-	const widthBefore = ui.findAll("The quick brown fox", { area: CONTENT(ui) })[0]!.box.width;
+	const widthBefore = (await ui.findAll("The quick brown fox", { area: CONTENT(ui) }))[0]!.box.width;
 	for (const f of FONTS.filter((x) => x.id !== "inter")) {
 		await scrollTo(ui, themePrefs().font === "inter" ? "Inter (default)" : FONTS.find((x) => x.id === themePrefs().font)!.label, { exact: true }).then((c) => ui.clickAt(c.x, c.y));
 		await ui.click(f.label, { exact: true });
 		await ui.expect(`${f.id} is chosen`, () => themePrefs().font, f.id);
 	}
 	void start;
-	await ui.expect("the sample line is painted in another font", () => ui.findAll("The quick brown fox", { area: CONTENT(ui) })[0]!.box.width !== widthBefore, true);
+	await ui.expect("the sample line is painted in another font", async () => (await ui.findAll("The quick brown fox", { area: CONTENT(ui) }))[0]!.box.width !== widthBefore, true);
 	const cur = await scrollTo(ui, FONTS.find((x) => x.id === themePrefs().font)!.label, { exact: true });
 	await ui.clickAt(cur.x, cur.y);
 	await ui.click("Other…", { exact: true });
@@ -855,23 +872,27 @@ scenario("Settings > Appearance > Interface font: every font is chosen from the 
 	await ui.expect("the custom family", () => themePrefs().fontCustom, "Segoe UI");
 	await roundTrip(ui);
 	await ui.expect("kept", () => [themePrefs().font, themePrefs().fontCustom], ["custom", "Segoe UI"]);
-});
+}, { inProcessOnly: "reads the theme preference" });
 
 scenario("Settings > Appearance > Text size: every size changes the size of the interface text and is kept", async (ui) => {
 	await openSettings(ui);
-	const { themePrefs, TEXT_SIZES } = await prefsMod();
+	// (the sizes are constants; the preference itself is read only where the app is in this process)
+	const { TEXT_SIZES } = await import("../../../src/shell/schemes");
+	const prefs = ui.inProcess ? (await prefsMod()).themePrefs : undefined;
+	const themeHeight = async () => (await ui.findAll("Theme", { exact: true, area: CONTENT(ui) }))[0]!.box.height;
 	const heights: number[] = [];
 	for (const n of TEXT_SIZES) {
 		await ui.click(n === 13 ? "13 px (default)" : `${n} px`, { exact: true, area: CONTENT(ui) });
-		await ui.expect(`${n} px is chosen`, () => themePrefs().size, n);
+		if (prefs) await ui.expect(`${n} px is chosen`, () => prefs().size, n);
 		await ui.settle(300);
-		heights.push(ui.findAll("Theme", { exact: true, area: CONTENT(ui) })[0]!.box.height);
+		heights.push(await themeHeight());
 	}
 	await ui.expect("text grows with the size", () => heights[3]! > heights[0]!, true);
 	await ui.click("15 px", { exact: true, area: CONTENT(ui) });
 	await roundTrip(ui);
-	await ui.expect("kept", () => themePrefs().size, 15);
-	ui.screenshot("text-15");
+	await ui.expect("the size is kept: the heading is as tall as it was at 15 px", async () => Math.abs((await themeHeight()) - heights[3]!) < 0.5, true);
+	if (prefs) await ui.expect("kept", () => prefs().size, 15);
+	await ui.screenshot("text-15");
 });
 
 scenario("Settings > Appearance > Reset appearance goes back to System, Quiet Paper, Inter, 13 px", async (ui) => {
@@ -881,20 +902,20 @@ scenario("Settings > Appearance > Reset appearance goes back to System, Quiet Pa
 	await ui.click("15 px", { exact: true, area: CONTENT(ui) });
 	await ui.expect("changed", () => [themePrefs().mode, themePrefs().size], ["light", 15]);
 	const f = await scrollTo(ui, "Reset appearance", { exact: true });
-	await ui.clickAt(controlRight(ui) - 30, f.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 30, f.y + 9);
 	await ui.expect("the defaults", () => [themePrefs().mode, themePrefs().size, themePrefs().scheme, themePrefs().font], [DEFAULT_THEME.mode, DEFAULT_THEME.size, DEFAULT_THEME.scheme, DEFAULT_THEME.font]);
-});
+}, { inProcessOnly: "reads the theme preference" });
 
 scenario("Settings > Appearance > Left sidebar: Move down puts a group below the next one", async (ui) => {
 	await openSettings(ui);
 	const { leftLayout } = await import("../../../src/shell/sidebarLayout");
 	await scrollTo(ui, "Left sidebar", { exact: true });
 	const before = leftLayout.layout().order.slice();
-	const row = byTestId(ui, "sidebar-row-left-library")!;
+	const row = (await byTestId(ui, "sidebar-row-left-library"))!;
 	// the chevrons are the last two controls of the row
 	await ui.clickAt(row.x + row.width - 18, row.y + row.height / 2);
 	await ui.expect("Library moved down", () => leftLayout.layout().order.indexOf("library"), before.indexOf("library") + 1);
-});
+}, { inProcessOnly: "reads the sidebar layout state" });
 
 scenario("Settings > Appearance > Default layout: Stacked puts the item details below the list, Reset layout undoes it", async (ui) => {
 	await openSettings(ui);
@@ -902,12 +923,12 @@ scenario("Settings > Appearance > Default layout: Stacked puts the item details 
 	await ui.clickAt(f.x, f.y);
 	await ui.click("Stacked", { exact: true });
 	await leaveSettings(ui);
-	await ui.expect("the item details are below the list", () => {
-		const items = byTestId(ui, "pane-items");
-		const item = byTestId(ui, "pane-item");
+	await ui.expect("the item details are below the list", async () => {
+		const items = await byTestId(ui, "pane-items");
+		const item = await byTestId(ui, "pane-item");
 		return !!items && !!item && item.y > items.y + items.height - 10;
 	}, true);
-	ui.screenshot("layout-stacked");
+	await ui.screenshot("layout-stacked");
 });
 
 scenario("Settings > Appearance > Customize layout… enters edit layout mode and shows the library", async (ui) => {
@@ -921,7 +942,7 @@ scenario("Settings > Appearance > Customize layout… enters edit layout mode an
 scenario("Settings > Appearance > Reset layout says so in a toast", async (ui) => {
 	await openSettings(ui);
 	const f = await scrollTo(ui, "Reset layout", { exact: true });
-	await ui.clickAt(controlRight(ui) - 30, f.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 30, f.y + 9);
 	await ui.see("Layout reset", { exact: true, area: toastArea(ui) });
 });
 
@@ -945,7 +966,7 @@ scenario("Settings > General > Show the sidebar and Show the item pane follow th
 	await leaveSettings(ui);
 	await ui.clickAt(l.x, l.y);
 	await ui.expect("the sidebar is back", () => leftOpen(), true);
-});
+}, { inProcessOnly: "reads the layout state of the panels" });
 
 scenario("Settings > General > OpenURL resolver applies on Enter and not before", async (ui) => {
 	await openSettings(ui);
@@ -960,7 +981,7 @@ scenario("Settings > General > OpenURL resolver applies on Enter and not before"
 	await ui.expect("applied", () => openUrlResolver(), "https://resolver.example.org/openurl/");
 	await roundTrip(ui);
 	await ui.expect("the field shows it", () => paintedHas(ui, "https://resolver.example.org/openurl/"), true);
-});
+}, { inProcessOnly: "reads the OpenURL preference" });
 
 // ---- Reader ---------------------------------------------------------------------------------------------------------------------
 
@@ -987,9 +1008,9 @@ scenario("Settings > Reader: every choice can be changed to another option and i
 	await roundTrip(ui);
 	await ui.expect("kept", () => [readerPrefs.zoomKey(), readerPrefs.pageAppearance(), readerPrefs.sidebar(), readerPrefs.scrollMode(), readerPrefs.spreadMode()], [otherZoom, "sepia", "open", "wrapped", "odd"]);
 	const r = await scrollTo(ui, "Restore reader defaults", { exact: true });
-	await ui.clickAt(controlRight(ui) - 60, r.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 60, r.y + 9);
 	await ui.expect("restored", () => readerPrefs.pageAppearance(), "app");
-});
+}, { inProcessOnly: "reads the reader preferences" });
 
 scenario("Settings > Reader > Reading view: the switch, the choices and Restore defaults", async (ui) => {
 	await openSettings(ui);
@@ -1008,9 +1029,9 @@ scenario("Settings > Reader > Reading view: the switch, the choices and Restore 
 	await roundTrip(ui);
 	await ui.expect("kept", () => [readingView.settings().size, readingView.settings().theme, readingView.settings().openByDefault], [24, "sepia", true]);
 	const r = await scrollTo(ui, "Restore reading view defaults", { exact: true });
-	await ui.clickAt(controlRight(ui) - 60, r.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 60, r.y + 9);
 	await ui.expect("restored", () => readingView.settings().size, 17);
-});
+}, { inProcessOnly: "reads the reading-view preferences" });
 
 // ---- Shortcuts ------------------------------------------------------------------------------------------------------------------
 
@@ -1021,7 +1042,7 @@ async function openShortcuts(ui: Ui): Promise<void> {
 async function changeShortcut(ui: Ui, label: string): Promise<void> {
 	const f = await scrollTo(ui, label, { exact: true });
 	// the Change button of the row
-	const btns = ui.findAll("Change", { exact: true, area: { x: CONTENT(ui).x, y: f.y - 22, width: CONTENT(ui).width, height: 44 } });
+	const btns = await ui.findAll("Change", { exact: true, area: { x: CONTENT(ui).x, y: f.y - 22, width: CONTENT(ui).width, height: 44 } });
 	await ui.clickAt(btns[0]!.x, btns[0]!.y);
 	await ui.see("Press the new keys… (Esc cancels)", { exact: true });
 }
@@ -1071,9 +1092,9 @@ scenario("Settings > Shortcuts: taking a key another command has moves it, and s
 	const { actionShortcut } = await import("../../../src/shell/shortcuts");
 	await ui.expect("the note command has no key now", () => actionShortcut(appActions().find((a) => a.id === "add.note")!), undefined);
 	const reset = await scrollTo(ui, "Reset all shortcuts", { exact: true });
-	await ui.clickAt(controlRight(ui) - 35, reset.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 35, reset.y + 9);
 	await ui.expect("both defaults are back", () => [actionShortcut(appActions().find((a) => a.id === "add.note")!), actionShortcut(appActions().find((a) => a.id === "add.newItem")!)], ["Ctrl+Shift+O", "Ctrl+Shift+N"]);
-});
+}, { inProcessOnly: "reads the registered app actions" });
 
 // ---- Experimental, System, Updates, Integrations ------------------------------------------------------------------------------------
 
@@ -1088,48 +1109,49 @@ scenario("Settings > Experimental: the notes and plugins switches flip and are k
 	await ui.expect("both flipped", () => [notes.nativeNotes(), flag.wasmPluginsEnabled()], was.map((v) => !v));
 	await roundTrip(ui);
 	await ui.expect("kept", () => [notes.nativeNotes(), flag.wasmPluginsEnabled()], was.map((v) => !v));
-	ui.screenshot("experimental");
-});
+	await ui.screenshot("experimental");
+}, { inProcessOnly: "reads the notes and plugin flags" });
 
 scenario("Settings > System: Reset pane sizes toasts and restores the sizes; the core shows as connected", async (ui) => {
 	await openSettings(ui);
 	await gotoSection(ui, "System");
-	const { libraryLayout } = await layoutMod();
 	await ui.see("Connected", { area: CONTENT(ui) });
-	const first = libraryLayout().sizes.slice();
 	await leaveSettings(ui);
-	const left = byTestId(ui, "column-left")!;
+	const left = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: left.x + left.width + 6, y: 400 }, { x: left.x + left.width + 80, y: 400 });
+	await ui.expect("the drag widened the sidebar", async () => (await byTestId(ui, "column-left"))!.width > left.width + 40, true);
 	await openSettings(ui);
 	const f = await scrollTo(ui, "Reset pane sizes", { exact: true });
-	await ui.clickAt(controlRight(ui) - 30, f.y + 9);
+	await ui.clickAt((await controlRight(ui)) - 30, f.y + 9);
 	await ui.see("Pane sizes reset", { exact: true, area: toastArea(ui) });
-	await ui.expect("the default sizes", () => libraryLayout().sizes.map((n) => Math.round(n * 100)), first.map((n) => Math.round(n * 100)));
+	await leaveSettings(ui);
+	await ui.expect("the default width", async () => Math.abs((await byTestId(ui, "column-left"))!.width - left.width) < 2, true);
 });
 
 for (const mode of ["dark", "light"] as const)
 	scenario(
 		`a colour scheme chosen in Settings paints the Add button in its accent, in ${mode}`,
 		async (ui) => {
-			const addButton = () => {
-				const a = ui.findAll("Add", { exact: true, area: { x: ui.size.width * 0.6, y: 80, width: ui.size.width * 0.4, height: 70 } })[0]!;
+			const addButton = async () => {
+				const a = (await ui.findAll("Add", { exact: true, area: { x: ui.size.width * 0.6, y: 80, width: ui.size.width * 0.4, height: 70 } }))[0]!;
 				return pixel(ui, a.box.x + a.box.width + 8, a.y);
 			};
-			const paper = addButton();
+			const paper = await addButton();
 			await openSettings(ui);
 			const custom = await scrollTo(ui, "Custom", { exact: true });
-			const swatches = tree(ui)
-				.map((n) => boxOf(ui, n))
-				.filter((b): b is Box => !!b && Math.round(b.width) === 28 && Math.round(b.height) === 28 && Math.abs(b.y + 14 - custom.y) < 8)
+			const swatches = (await allBoxes(ui))
+				.filter((b) => Math.round(b.width) === 28 && Math.round(b.height) === 28 && Math.abs(b.y + 14 - custom.y) < 8)
 				.sort((a, b) => a.x - b.x);
 			const rose = centre(swatches[4]!); // Quiet Paper, Blue, Teal, Violet, Rose
 			await ui.clickAt(rose.x, rose.y);
-			const { themePrefs } = await prefsMod();
-			await ui.expect("rose is chosen", () => themePrefs().scheme, "rose");
+			if (ui.inProcess) {
+				const { themePrefs } = await prefsMod();
+				await ui.expect("rose is chosen", () => themePrefs().scheme, "rose");
+			}
 			await leaveSettings(ui);
-			await ui.expect("the button is a different colour", () => sameColour(addButton(), paper, 12), false);
-			await ui.expect("and it is reddish", () => addButton()[0] > addButton()[2] + 20, true);
-			ui.screenshot(`add-rose-${mode}`);
+			await ui.expect("the button is a different colour", async () => sameColour(await addButton(), paper, 12), false);
+			await ui.expect("and it is reddish", async () => { const c = await addButton(); return c[0] > c[2] + 20; }, true);
+			await ui.screenshot(`add-rose-${mode}`);
 		},
 		{ mode },
 	);
@@ -1139,27 +1161,27 @@ for (const mode of ["dark", "light"] as const)
 // ================================================================================================================================
 
 const hoverPane = async (ui: Ui, id: string): Promise<Box> => {
-	const pane = byTestId(ui, `pane-${id}`)!;
+	const pane = (await byTestId(ui, `pane-${id}`))!;
 	await hoverAt(ui, pane.x + pane.width / 2, pane.y + 3);
 	await ui.waitFor(`the hover header of ${id}`, () => hasTestId(ui, `pane-hover-header-${id}`));
 	return pane;
 };
 
 scenario("the top bar's panel buttons hide and show the sidebar and the item pane", async (ui) => {
-	const { leftOpen, rightOpen } = await layoutMod();
+	const layout = ui.inProcess ? await layoutMod() : undefined;
 	const l = leftToggle();
 	const r = rightToggle(ui);
-	const itemsBefore = byTestId(ui, "pane-items")!;
+	const itemsBefore = (await byTestId(ui, "pane-items"))!;
 	await ui.clickAt(l.x, l.y);
-	await ui.expect("the sidebar is hidden", () => leftOpen(), false);
+	if (layout) await ui.expect("the sidebar is hidden", () => layout.leftOpen(), false);
 	await ui.gone("COLLECTIONS", { exact: true });
-	await ui.expect("the list took the room", () => byTestId(ui, "pane-items")!.x < itemsBefore.x - 100, true);
+	await ui.expect("the list took the room", async () => (await byTestId(ui, "pane-items"))!.x < itemsBefore.x - 100, true);
 	await ui.clickAt(l.x, l.y);
 	await ui.see("COLLECTIONS", { exact: true, area: "sidebar" });
 	await ui.clickAt(r.x, r.y);
-	await ui.expect("the item pane is hidden", () => rightOpen(), false);
+	if (layout) await ui.expect("the item pane is hidden", () => layout.rightOpen(), false);
 	await ui.gone("Select an item to view its details");
-	await ui.expect("the list is wider", () => byTestId(ui, "pane-items")!.width > itemsBefore.width + 100, true);
+	await ui.expect("the list is wider", async () => (await byTestId(ui, "pane-items"))!.width > itemsBefore.width + 100, true);
 	await ui.clickAt(r.x, r.y);
 	await ui.see("Select an item to view its details");
 });
@@ -1167,15 +1189,15 @@ scenario("the top bar's panel buttons hide and show the sidebar and the item pan
 scenario("both side panels can be hidden at once and the list fills the window", async (ui) => {
 	await ui.clickAt(leftToggle().x, leftToggle().y);
 	await ui.clickAt(rightToggle(ui).x, rightToggle(ui).y);
-	await ui.expect("the list spans most of the window", () => byTestId(ui, "pane-items")!.width > ui.size.width - 80, true);
-	ui.screenshot("both-hidden");
+	await ui.expect("the list spans most of the window", async () => (await byTestId(ui, "pane-items"))!.width > ui.size.width - 80, true);
+	await ui.screenshot("both-hidden");
 	await ui.click(T.authors, { area: { x: 0, y: 80, width: ui.size.width, height: ui.size.height - 80 } });
 	await ui.expect("a row still takes clicks", () => ui.selectedTitle(), T.authors);
 });
 
 scenario("the hover header of the list has the menu and Maximise but no Minimise or Hide, and goes when the pointer leaves", async (ui) => {
 	await hoverPane(ui, "items");
-	ui.screenshot("hover-header-items");
+	await ui.screenshot("hover-header-items");
 	await ui.see("My Library", { exact: true, area: { x: 0, y: 70, width: ui.size.width, height: 40 } });
 	await ui.expect("menu button", () => hasTestId(ui, "pane-hover-menu-items"), true);
 	await ui.expect("maximise button", () => hasTestId(ui, "pane-hover-max-items"), true);
@@ -1190,7 +1212,7 @@ scenario("Minimise sends the item pane to the edge; its button brings it back", 
 	await clickTestId(ui, "pane-hover-min-item");
 	await ui.expect("the item pane is not drawn", () => hasTestId(ui, "pane-item"), false);
 	await ui.expect("a button for it on the rail", () => hasTestId(ui, "pane-rail-item"), true);
-	ui.screenshot("rail");
+	await ui.screenshot("rail");
 	await clickTestId(ui, "pane-rail-item");
 	await ui.expect("the item pane is drawn again", () => hasTestId(ui, "pane-item"), true);
 	await ui.expect("the rail is empty again", () => hasTestId(ui, "pane-rail-item"), false);
@@ -1201,7 +1223,7 @@ scenario("Maximise fills the frame with the list and Restore size brings the oth
 	await clickTestId(ui, "pane-hover-max-items");
 	await ui.expect("the item pane is not drawn", () => hasTestId(ui, "pane-item"), false);
 	await ui.expect("the sidebar is not drawn", () => ui.visible("COLLECTIONS", { exact: true }), false);
-	ui.screenshot("maximised");
+	await ui.screenshot("maximised");
 	await hoverPane(ui, "items");
 	await clickTestId(ui, "pane-hover-max-items");
 	await ui.expect("the item pane is back", () => hasTestId(ui, "pane-item"), true);
@@ -1213,7 +1235,7 @@ scenario("Hide closes the item pane with a toast whose Undo brings it back", asy
 	await clickTestId(ui, "pane-hover-close-item");
 	await ui.gone("Select an item to view its details");
 	await ui.see("Hid Item details", { exact: true, area: toastArea(ui) });
-	ui.screenshot("toast-hid");
+	await ui.screenshot("toast-hid");
 	await ui.click("Undo", { exact: true, area: toastArea(ui) });
 	await ui.see("Select an item to view its details");
 	await ui.gone("Hid Item details", { exact: true });
@@ -1223,7 +1245,7 @@ scenario("the pane menu of the item pane offers Move, Stack, Maximise, Minimise 
 	await hoverPane(ui, "item");
 	await clickTestId(ui, "pane-hover-menu-item");
 	for (const e of ["Move to", "Stack with", "Move up", "Move down", "Maximise", "Minimise to the edge", "Hide"]) await ui.see(e, { exact: true });
-	ui.screenshot("pane-menu");
+	await ui.screenshot("pane-menu");
 	await ui.press("escape");
 	await ui.gone("Move to", { exact: true });
 	await hoverPane(ui, "items");
@@ -1240,11 +1262,11 @@ scenario("a submenu opens on hover and with Right, Left closes it and Escape clo
 	await hoverAt(ui, move.x, move.y, 300);
 	await ui.see("Centre column", { exact: true });
 	await ui.see("Right column", { exact: true });
-	ui.screenshot("submenu");
+	await ui.screenshot("submenu");
 	await ui.press("left");
 	await ui.press("down");
 	await ui.press("right");
-	await ui.expect("a submenu opened again with Right", () => ui.visible("Centre column", { exact: true }) || ui.visible("My Library", { exact: true, area: { x: 0, y: 100, width: ui.size.width, height: 300 } }), true);
+	await ui.expect("a submenu opened again with Right", async () => (await ui.visible("Centre column", { exact: true })) || (await ui.visible("My Library", { exact: true, area: { x: 0, y: 100, width: ui.size.width, height: 300 } })), true);
 	await ui.press("escape");
 	await ui.gone("Centre column", { exact: true });
 	await ui.gone("Move to", { exact: true });
@@ -1257,14 +1279,14 @@ scenario("Move to > Centre column puts the item details under the list, with a M
 	await hoverAt(ui, move.x, move.y, 300);
 	await ui.click("Centre column", { exact: true });
 	await ui.see("Moved Item details", { exact: true, area: toastArea(ui) });
-	await ui.expect("the item details are below the list", () => {
-		const items = byTestId(ui, "pane-items");
-		const item = byTestId(ui, "pane-item");
-		return !!items && !!item && item.y >= items.y + items.height - 12 && Math.abs(item.x - items.x) < 6;
+	await ui.expect("the item details are below the list", async () => {
+		const items = await byTestId(ui, "pane-items");
+		const item = await byTestId(ui, "pane-item");
+		return !!items && !!item && item.y >=items.y + items.height - 12 && Math.abs(item.x - items.x) < 6;
 	}, true);
-	ui.screenshot("moved-centre");
+	await ui.screenshot("moved-centre");
 	await ui.click("Undo", { exact: true, area: toastArea(ui) });
-	await ui.expect("the item details are right of the list again", () => byTestId(ui, "pane-item")!.x > byTestId(ui, "pane-items")!.x + byTestId(ui, "pane-items")!.width - 10, true);
+	await ui.expect("the item details are right of the list again", async () => (await byTestId(ui, "pane-item"))!.x > (await byTestId(ui, "pane-items"))!.x + (await byTestId(ui, "pane-items"))!.width - 10, true);
 });
 
 scenario("Stack with puts two panes in one stack with tabs; clicking a tab and the arrow keys change the pane shown", async (ui) => {
@@ -1273,13 +1295,13 @@ scenario("Stack with puts two panes in one stack with tabs; clicking a tab and t
 	const stack = await ui.see("Stack with", { exact: true });
 	await hoverAt(ui, stack.x, stack.y, 300);
 	// the submenu may open to the left of the menu: it is the right-most "My Library" (the sidebar has one too)
-	await ui.waitFor("the submenu entry", () => ui.findAll("My Library", { exact: true }).length > 1);
-	const entry = ui.findAll("My Library", { exact: true }).sort((a, b) => b.x - a.x)[0]!;
+	await ui.waitFor("the submenu entry", async () => (await ui.findAll("My Library", { exact: true })).length > 1);
+	const entry = (await ui.findAll("My Library", { exact: true })).sort((a, b) => b.x - a.x)[0]!;
 	await ui.clickAt(entry.x, entry.y);
 	await ui.see("Moved Item details", { exact: true, area: toastArea(ui) });
 	await ui.expect("the tab of the details", () => hasTestId(ui, "pane-tab-item"), true);
 	await ui.expect("the tab of the list", () => hasTestId(ui, "pane-tab-items"), true);
-	ui.screenshot("stacked-tabs");
+	await ui.screenshot("stacked-tabs");
 	await clickTestId(ui, "pane-tab-item");
 	await ui.see("Select an item to view its details");
 	await ui.expect("the list is behind the tab", () => hasTestId(ui, "pane-items"), false);
@@ -1293,7 +1315,7 @@ scenario("Edit layout: every pane has a header with a grip, and Reset puts the s
 	await pick(ui, "Tools", "Edit layout");
 	await ui.expect("grip on the list", () => hasTestId(ui, "pane-grip-items"), true);
 	await ui.expect("grip on the item pane", () => hasTestId(ui, "pane-grip-item"), true);
-	ui.screenshot("edit-headers");
+	await ui.screenshot("edit-headers");
 	await hoverAt(ui, 600, 300, 50);
 	// move the item pane under the list through its pane menu, then Reset
 	await clickTestId(ui, "pane-menu-item");
@@ -1301,67 +1323,68 @@ scenario("Edit layout: every pane has a header with a grip, and Reset puts the s
 	await hoverAt(ui, move.x, move.y, 300);
 	await ui.click("Centre column", { exact: true });
 	await ui.click("Reset", { exact: true, area: { x: 0, y: 70, width: ui.size.width, height: 60 } });
-	const { libraryLayout } = await layoutMod();
-	await ui.expect("the item pane is in the right column again", () => libraryLayout().right.stacks.map((s) => s.panes[0]), ["item"]);
+	await ui.expect("the item pane is in the right column again", async () => (await byTestId(ui, "pane-item"))!.x > (await byTestId(ui, "pane-items"))!.x + (await byTestId(ui, "pane-items"))!.width - 10, true);
 });
 
 scenario("dragging a pane's grip onto the top of the list places it above the list", async (ui) => {
 	await pick(ui, "Tools", "Edit layout");
-	const { libraryLayout } = await layoutMod();
-	const grip = byTestId(ui, "pane-grip-item")!;
-	const items = byTestId(ui, "pane-items")!;
+	const grip = (await byTestId(ui, "pane-grip-item"))!;
+	const items = (await byTestId(ui, "pane-items"))!;
 	await ui.drag(centre(grip), { x: items.x + items.width / 2, y: items.y + 10 }, 14);
-	await ui.expect("the item pane is first in the centre column", () => libraryLayout().centre.stacks.map((s) => s.panes[0]), ["item", "items"]);
+	await ui.expect("the item pane is first in the centre column, above the list", async () => {
+		const now = await byTestId(ui, "pane-items");
+		const item = await byTestId(ui, "pane-item");
+		return !!now && !!item && item.y + item.height <= now.y + 12 && Math.abs(item.x - now.x) < 6;
+	}, true);
 	await ui.see("Moved Item details", { exact: true, area: toastArea(ui) });
 });
 
 scenario("dragging a pane's grip onto the middle of the list stacks it as a tab", async (ui) => {
 	await pick(ui, "Tools", "Edit layout");
-	const { libraryLayout } = await layoutMod();
-	const grip = byTestId(ui, "pane-grip-item")!;
-	const items = byTestId(ui, "pane-items")!;
+	const grip = (await byTestId(ui, "pane-grip-item"))!;
+	const items = (await byTestId(ui, "pane-items"))!;
 	await ui.drag(centre(grip), { x: items.x + items.width / 2, y: items.y + items.height / 2 }, 14);
-	await ui.expect("one stack holds both", () => libraryLayout().centre.stacks.map((s) => s.panes), [["items", "item"]]);
+	await ui.expect("one stack holds both: a tab for each", async () => [await hasTestId(ui, "pane-tab-items"), await hasTestId(ui, "pane-tab-item")], [true, true]);
 });
 
 scenario("a drag that ends outside every pane moves nothing", async (ui) => {
 	await pick(ui, "Tools", "Edit layout");
-	const { libraryLayout } = await layoutMod();
-	const before = JSON.stringify(libraryLayout());
-	const grip = byTestId(ui, "pane-grip-item")!;
+	const where = async () => JSON.stringify([await byTestId(ui, "pane-items"), await byTestId(ui, "pane-item"), await hasTestId(ui, "pane-tab-item")]);
+	const before = await where();
+	const grip = (await byTestId(ui, "pane-grip-item"))!;
 	await ui.drag(centre(grip), { x: 4, y: ui.size.height - 4 }, 14);
-	await ui.expectStill("the layout is unchanged", () => JSON.stringify(libraryLayout()), before, 400);
+	await ui.expectStill("the layout is unchanged", where, before, 400);
 });
 
 scenario("dragging the gutter beside the sidebar resizes it, and it will not go below its minimum", async (ui) => {
-	const { libraryLayout } = await layoutMod();
-	const start = byTestId(ui, "column-left")!;
+	const layout = ui.inProcess ? await layoutMod() : undefined;
+	const start = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: start.x + start.width + 6, y: 420 }, { x: start.x + start.width + 90, y: 420 });
-	await ui.expect("the sidebar is wider", () => byTestId(ui, "column-left")!.width > start.width + 60, true);
-	const wide = byTestId(ui, "column-left")!;
+	await ui.expect("the sidebar is wider", async () => (await byTestId(ui, "column-left"))!.width > start.width + 60, true);
+	const wide = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: wide.x + wide.width + 6, y: 420 }, { x: 5, y: 420 }, 20);
-	await ui.expect("the sidebar is narrower than it started", () => byTestId(ui, "column-left")!.width < start.width, true);
-	await ui.expect("but not gone", () => byTestId(ui, "column-left")!.width >= ui.size.width * 0.09, true);
-	await ui.expect("the layout kept the size", () => libraryLayout().sizes[0]! < 0.2, true);
-	ui.screenshot("sidebar-narrow");
+	await ui.expect("the sidebar is narrower than it started", async () => (await byTestId(ui, "column-left"))!.width < start.width, true);
+	await ui.expect("but not gone", async () => (await byTestId(ui, "column-left"))!.width >= ui.size.width * 0.09, true);
+	if (layout) await ui.expect("the layout kept the size", () => layout.libraryLayout().sizes[0]! < 0.2, true);
+	await ui.screenshot("sidebar-narrow");
 });
 
 scenario("dragging the gutter beside the item pane resizes the item pane", async (ui) => {
-	const items = byTestId(ui, "pane-items")!;
-	const item = byTestId(ui, "pane-item")!;
+	const items = (await byTestId(ui, "pane-items"))!;
+	const item = (await byTestId(ui, "pane-item"))!;
 	const x = (items.x + items.width + item.x) / 2;
 	await ui.drag({ x, y: 420 }, { x: x - 120, y: 420 });
-	await ui.expect("the item pane is wider", () => byTestId(ui, "pane-item")!.width > item.width + 80, true);
-	await ui.expect("the list is narrower", () => byTestId(ui, "pane-items")!.width < items.width - 80, true);
+	await ui.expect("the item pane is wider", async () => (await byTestId(ui, "pane-item"))!.width > item.width + 80, true);
+	await ui.expect("the list is narrower", async () => (await byTestId(ui, "pane-items"))!.width < items.width - 80, true);
 });
 
 scenario("pane sizes survive a trip through Settings and back", async (ui) => {
-	const left = byTestId(ui, "column-left")!;
+	const left = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: left.x + left.width + 6, y: 420 }, { x: left.x + left.width + 70, y: 420 });
-	const w = byTestId(ui, "column-left")!.width;
+	const w = (await byTestId(ui, "column-left"))!.width;
 	await openSettings(ui);
 	await leaveSettings(ui);
-	await ui.expect("the sidebar has the same width", () => Math.abs(byTestId(ui, "column-left")!.width - w) < 2, true);
+	await ui.expect("the sidebar has the same width", async () => Math.abs((await byTestId(ui, "column-left"))!.width - w) < 2, true);
 });
 
 // ================================================================================================================================
@@ -1399,7 +1422,7 @@ scenario("layout toasts replace each other instead of stacking", async (ui) => {
 	await hoverAt(ui, move.x, move.y, 300);
 	await ui.click("Centre column", { exact: true });
 	await ui.see("Moved Item details", { exact: true, area: toastArea(ui) });
-	await ui.expect("only one layout toast", () => ui.findAll("Hid Item details", {}).length + ui.findAll("Moved Item details", {}).length, 1);
+	await ui.expect("only one layout toast", async () => (await ui.findAll("Hid Item details", {})).length + (await ui.findAll("Moved Item details", {})).length, 1);
 });
 
 // ================================================================================================================================
@@ -1470,7 +1493,7 @@ scenario("Ctrl+Shift+T shows and hides the tag selector", async (ui) => {
 	await ui.expect("toggled", () => tagsOpen(), !was);
 	await ui.press("ctrl-shift-t");
 	await ui.expect("toggled back", () => tagsOpen(), was);
-});
+}, { inProcessOnly: "reads the tag selector state" });
 
 scenario("Ctrl+Shift+F opens Advanced Search", async (ui) => {
 	await ui.press("ctrl-shift-f");
@@ -1487,27 +1510,30 @@ scenario("Ctrl+Shift+O adds a standalone note", async (ui) => {
 
 scenario("Ctrl+Alt+Shift+I imports from the clipboard", async (ui) => {
 	const before = await itemsTotal(ui);
-	setClipboard(ui, "@article{zt-key, title={ZT Key import}, author={Key, Kay}, year={2021}, journal={Key Journal}}");
+	await ui.setClipboard("@article{zt-key, title={ZT Key import}, author={Key, Kay}, year={2021}, journal={Key Journal}}");
 	await ui.press("ctrl-alt-shift-i");
 	await ui.expect("one more item", () => itemsTotal(ui), before + 1, 8000);
 });
 
 scenario("F6 and Shift+F6 move the focus through the panes and wrap", async (ui) => {
 	const { focusedId } = await uiCore();
-	const ids = () => ["column-left", "pane-items", "pane-item"].map((t) => ({ t, id: tree(ui).find((n) => n.testId === t)?.id }));
-	const where = () => {
+	const ids = async () => {
+		const all = await tree(ui);
+		return ["column-left", "pane-items", "pane-item"].map((t) => ({ t, id: all.find((n) => n.testId === t)?.id }));
+	};
+	const where = async () => {
 		const f = focusedId();
-		const hit = ids().find((x) => x.id === f);
+		const hit = (await ids()).find((x) => x.id === f);
 		return hit ? hit.t : "elsewhere";
 	};
 	await ui.press("f6");
-	const first = where();
+	const first = await where();
 	await ui.press("f6");
-	const second = where();
+	const second = await where();
 	await ui.expect("F6 moved the focus", () => second !== first, true);
 	await ui.press("shift-f6");
 	await ui.expect("Shift+F6 moved it back", () => where(), first);
-});
+}, { inProcessOnly: "reads the focused element id from the UI core" });
 
 scenario("a shortcut whose condition is false lets the next action on the same keys run", async (ui) => {
 	const { registerAppAction } = await registryMod();
@@ -1518,11 +1544,11 @@ scenario("a shortcut whose condition is false lets the next action on the same k
 	await openSettings(ui);
 	await ui.press("ctrl-shift-k");
 	await ui.expect("on the Settings tab the later action ran", () => ran, ["fall"]);
-});
+}, { inProcessOnly: "registers an app action in the app's registry" });
 
 scenario("a shortcut with no action does nothing", async (ui) => {
 	await ui.press("ctrl-alt-shift-q");
-	await ui.expectStill("nothing opened", () => [ui.store.activeTab(), ui.visible("New Item", { exact: true })], ["library", false], 300);
+	await ui.expectStill("nothing opened", async () => [await ui.store.activeTab(), await ui.visible("New Item", { exact: true })], ["library", false], 300);
 });
 
 // ================================================================================================================================
@@ -1530,12 +1556,12 @@ scenario("a shortcut with no action does nothing", async (ui) => {
 // ================================================================================================================================
 
 /** Text that overlaps other text, or leaves the window: what a screenshot shows as clutter. */
-function clutter(ui: Ui): string[] {
+async function clutter(ui: Ui): Promise<string[]> {
 	const seen = new Map<string, Box & { text: string }>();
-	for (const n of tree(ui)) {
+	for (const n of await tree(ui)) {
 		const t = (n.text ?? "").trim();
 		if (!t) continue;
-		const b = boxOf(ui, n);
+		const b = await boxOf(ui, n);
 		if (!b) continue;
 		seen.set(`${t}|${Math.round(b.x)}|${Math.round(b.y)}|${Math.round(b.width)}`, { ...b, text: t });
 	}
@@ -1560,26 +1586,25 @@ for (const [w, h] of [[1440, 900]] as const)
 			`the library at ${w} x ${h} in ${mode}: nothing overlaps, nothing is cut off, the controls can be reached`,
 			async (ui) => {
 				await ui.see(T.article, { area: "list" });
-				await ui.expect("the window has the size asked for", () => Math.round(tree(ui)[0]!.bounds!.width), w, 0);
-				ui.screenshot(`library-${w}-${mode}`);
+				await ui.expect("the window has the size asked for", async () => Math.round((await tree(ui))[0]!.bounds!.width), w, 0);
+				await ui.screenshot(`library-${w}-${mode}`);
 				await ui.expect("no text overlaps other text or leaves the window", () => clutter(ui), []);
 				// the sidebar's group headings sit clear of their own buttons
-				const head = ui.findAll("COLLECTIONS", { exact: true, area: "sidebar" })[0];
+				const head = (await ui.findAll("COLLECTIONS", { exact: true, area: "sidebar" }))[0];
 				await ui.expect("the COLLECTIONS heading is painted", () => !!head, true);
-				const sidebar = byTestId(ui, "column-left")!;
+				const sidebar = (await byTestId(ui, "column-left"))!;
 				await ui.expect("the heading is inside the sidebar", () => head!.box.x + head!.box.width <= sidebar.x + sidebar.width + 1, true);
-				const buttons = tree(ui)
-					.map((n) => boxOf(ui, n))
-					.filter((b): b is Box => !!b && b.width >= 14 && b.width <= 30 && b.height >= 14 && b.height <= 30 && Math.abs(b.y + b.height / 2 - head!.y) < 10 && b.x > head!.box.x - 2 && b.x < sidebar.x + sidebar.width + 8);
+				const buttons = (await allBoxes(ui))
+					.filter((b) => b.width >= 14 && b.width <= 30 && b.height >= 14 && b.height <= 30 && Math.abs(b.y + b.height / 2 - head!.y) < 10 && b.x > head!.box.x - 2 && b.x < sidebar.x + sidebar.width + 8);
 				await ui.expect("the heading does not run under the buttons beside it", () => buttons.every((b) => b.x >= head!.box.x + head!.box.width - 1), true);
 				// the top bar controls can be clicked: the panel button, the gear, the Library tab
 				for (const p of [leftToggle(), gear(ui), rightToggle(ui)]) {
-					const el = ui.renderer.getElementsAt(p.x, p.y);
-					await ui.expect(`something is at ${Math.round(p.x)},${p.y}`, () => el.length > 0, true, 0);
+					const el = await ui.elementsAt(p.x, p.y); // (null in the real app: it has no hit test to ask)
+					if (el) await ui.expect(`something is at ${Math.round(p.x)},${p.y}`, () => el.length > 0, true, 0);
 				}
 				await ui.click(T.authors, { area: "list" });
 				await ui.expect("a row can be selected", () => ui.selectedTitle(), T.authors);
-				ui.screenshot(`library-${w}-${mode}-selected`);
+				await ui.screenshot(`library-${w}-${mode}-selected`);
 			},
 			{ width: w, height: h, mode },
 		);
@@ -1590,14 +1615,14 @@ for (const [w, h] of [[1440, 900]] as const)
 		scenario(
 			`Settings at ${w} x ${h} in ${mode}: the sections list and the rows are readable and clear of each other`,
 			async (ui) => {
-				await ui.expect("the window has the size asked for", () => Math.round(tree(ui)[0]!.bounds!.width), w, 0);
+				await ui.expect("the window has the size asked for", async () => Math.round((await tree(ui))[0]!.bounds!.width), w, 0);
 				await openSettings(ui);
 				await ui.settle(500);
-				ui.screenshot(`settings-${w}-${mode}`);
+				await ui.screenshot(`settings-${w}-${mode}`);
 				await ui.expect("no text overlaps other text or leaves the window", () => clutter(ui), []);
 				await gotoSection(ui, "Shortcuts");
 				await ui.settle(500);
-				ui.screenshot(`settings-shortcuts-${w}-${mode}`);
+				await ui.screenshot(`settings-shortcuts-${w}-${mode}`);
 				await ui.expect("no overlap in Shortcuts", () => clutter(ui), []);
 				await gotoSection(ui, "General");
 				await ui.settle(500);
@@ -1608,14 +1633,13 @@ for (const [w, h] of [[1440, 900]] as const)
 	}
 
 /** The group headings of the sidebar, and the buttons beside each. */
-function headingClash(ui: Ui): string[] {
+async function headingClash(ui: Ui): Promise<string[]> {
 	const out: string[] = [];
-	const sidebar = byTestId(ui, "column-left")!;
-	const boxes = tree(ui)
-		.map((n) => boxOf(ui, n))
-		.filter((b): b is Box => !!b && b.width >= 12 && b.width <= 32 && b.height >= 12 && b.height <= 32);
+	const sidebar = (await byTestId(ui, "column-left"))!;
+	const boxes = (await allBoxes(ui))
+		.filter((b) => b.width >= 12 && b.width <= 32 && b.height >= 12 && b.height <= 32);
 	for (const name of ["LIBRARY", "SAVED SEARCHES", "COLLECTIONS", "GROUP LIBRARIES", "TAGS"]) {
-		const head = ui.findAll(name, { exact: true, area: { x: sidebar.x, y: sidebar.y, width: sidebar.width, height: sidebar.height } })[0];
+		const head = (await ui.findAll(name, { exact: true, area: { x: sidebar.x, y: sidebar.y, width: sidebar.width, height: sidebar.height } }))[0];
 		if (!head) {
 			out.push(`${name} is not painted`);
 			continue;
@@ -1629,22 +1653,24 @@ function headingClash(ui: Ui): string[] {
 }
 
 scenario("the sidebar at its narrowest, the width it has in an 800 px window, keeps every group heading clear of its buttons", async (ui) => {
-	const start = byTestId(ui, "column-left")!;
+	const start = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: start.x + start.width + 6, y: 420 }, { x: 5, y: 420 }, 20);
-	await ui.expect("the sidebar is at its narrowest", () => byTestId(ui, "column-left")!.width < 160, true);
-	ui.screenshot("sidebar-narrowest");
+	await ui.expect("the sidebar is at its narrowest", async () => (await byTestId(ui, "column-left"))!.width < 160, true);
+	await ui.screenshot("sidebar-narrowest");
 	await ui.expect("no heading runs under its buttons or out of the sidebar", () => headingClash(ui), []);
 }, { knownBug: "at its narrowest the sidebar's headings run under their buttons" });
 
 scenario("the sidebar at its narrowest does not cut the names of the built-in rows", async (ui) => {
-	const start = byTestId(ui, "column-left")!;
+	const start = (await byTestId(ui, "column-left"))!;
 	await ui.drag({ x: start.x + start.width + 6, y: 420 }, { x: 5, y: 420 }, 20);
-	await ui.expect("the sidebar is at its narrowest", () => byTestId(ui, "column-left")!.width < 160, true);
-	const sidebar = byTestId(ui, "column-left")!;
+	await ui.expect("the sidebar is at its narrowest", async () => (await byTestId(ui, "column-left"))!.width < 160, true);
+	const sidebar = (await byTestId(ui, "column-left"))!;
 	// a name is cut when its text box is wider than the room the sidebar leaves it
-	const cut = ["My Library", "Unfiled", "My Publications", "Trash", "Duplicate Items", "Methods", "Empty collection"].filter((name) => {
-		const f = ui.findAll(name, { exact: true, area: { x: sidebar.x, y: sidebar.y, width: sidebar.width, height: sidebar.height } })[0];
-		return !f || f.box.x + f.box.width > sidebar.x + sidebar.width - 16;
-	});
+	const names = ["My Library", "Unfiled", "My Publications", "Trash", "Duplicate Items", "Methods", "Empty collection"];
+	const cut: string[] = [];
+	for (const name of names) {
+		const f = (await ui.findAll(name, { exact: true, area: { x: sidebar.x, y: sidebar.y, width: sidebar.width, height: sidebar.height } }))[0];
+		if (!f || f.box.x + f.box.width > sidebar.x + sidebar.width - 16) cut.push(name);
+	}
 	await ui.expect("every built-in name fits", () => cut, []);
 }, { knownBug: "at its narrowest the sidebar cuts the built-in names" });
