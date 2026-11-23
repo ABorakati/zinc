@@ -36,6 +36,7 @@ import {
 	t,
 	tok,
 	tx,
+	rowClick,
 } from "./sidebar/parts";
 import {
 	collectionsFraction,
@@ -105,7 +106,7 @@ function Special(p: { view: View; label: string; icon: string; count?: number; o
 				aria-selected={sel()}
 				onMouseEnter={() => setHov(true)}
 				onMouseLeave={() => setHov(false)}
-				onClick={() => setView(p.view)}
+				onClick={rowClick(() => setView(p.view))}
 				onAuxClick={(e) => {
 					if (e.isRightClick) p.onMenu?.(e.x ?? 0, e.y ?? 0);
 				}}

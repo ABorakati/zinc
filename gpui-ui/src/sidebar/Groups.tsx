@@ -24,6 +24,7 @@ import {
 	t,
 	tok,
 	tx,
+	rowClick,
 } from "./parts";
 import { buildGroupRows, libraryRowKey } from "./groupRows";
 import { expandedKeys, groupsOpen, setExpandedKeys, setGroupsOpen } from "./state";
@@ -56,7 +57,7 @@ function LibraryRow(p: { lib: Library; hasCollections: boolean }): JSX.Element {
 				aria-selected={sel()}
 				aria-expanded={p.hasCollections ? isOpen(libKey(p.lib.id)) : undefined}
 				aria-label={p.lib.editable ? p.lib.name : `${p.lib.name} (read-only)`}
-				onClick={() => store.selectLibrary(p.lib.id)}
+				onClick={rowClick(() => store.selectLibrary(p.lib.id))}
 				onAuxClick={(e) => {
 					if (!e.isRightClick) return;
 					openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, [
@@ -109,7 +110,7 @@ function CollectionRow(p: { lib: Library; c: Collection; depth: number }): JSX.E
 				role="treeitem"
 				aria-selected={sel()}
 				aria-expanded={kids().length ? isOpen(p.c.key) : undefined}
-				onClick={() => setView({ kind: "collection", key: p.c.key })}
+				onClick={rowClick(() => setView({ kind: "collection", key: p.c.key }))}
 				onAuxClick={(e) => {
 					if (!e.isRightClick) return;
 					openMenu({ x: e.x ?? 0, y: e.y ?? 0 }, [

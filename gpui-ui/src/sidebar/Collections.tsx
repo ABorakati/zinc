@@ -37,6 +37,7 @@ import {
 	t,
 	tok,
 	tx,
+	rowClick,
 } from "./parts";
 import { collectionsOpen, expandedKeys, setCollectionsOpen, setExpandedKeys, sidebarWidth } from "./state";
 import { clipText, textWidth } from "../clip";
@@ -464,11 +465,11 @@ function Row(p: { c: Collection; depth: number; pinnedCopy?: boolean }): JSX.Ele
 							(taken) => void (taken || handleFileDrop(e.paths ?? [], { collectionKey: p.c.key })),
 						)
 					}
-				onClick={(e) => {
+				onClick={rowClick((e) => {
 					if (Date.now() - childClickAt < 150 || Date.now() - justDragged < 250 || isEditing()) return;
 					if ((e.clickCount ?? 1) >= 2) return setEditing(p.c.key);
 					setView({ kind: "collection", key: p.c.key });
-				}}
+				})}
 				onAuxClick={(e) => {
 					if (e.isRightClick && visibleAt(e.x ?? 0, e.y ?? 0)) showCollectionMenu(p.c, e.x ?? 0, e.y ?? 0);
 				}}

@@ -4,7 +4,7 @@
 import { createEffect, createResource, createRoot, createSignal, For, on, Show, type JSX } from "solid-js";
 import { api, type ItemDetail } from "../../api";
 import { Icon } from "../../icons";
-import { ListItem, ROW_HOVER, ROW_STATIC, labelCls, muted, pill, tx, t, tok, type Entry } from "../../sidebar/parts";
+import { ListItem, ROW_HOVER, ROW_STATIC, labelCls, muted, pill, rowClick, tx, t, tok, type Entry } from "../../sidebar/parts";
 import { store } from "../../store";
 import { callPlugin } from "../host";
 import { decorationFor } from "./data";
@@ -58,7 +58,7 @@ function VirtualRow(p: { v: Owned<VirtualCollectionRegistration> }): JSX.Element
 				aria-selected={sel()}
 				aria-label={lstr(p.v.reg.label, p.v.id)}
 				testId={`plugin-virtual-${p.v.plugin}-${p.v.id}`}
-				onClick={() => setActiveVirtual({ plugin: p.v.plugin, id: p.v.id })}
+				onClick={rowClick(() => setActiveVirtual({ plugin: p.v.plugin, id: p.v.id }))}
 				style={{ ...t(ROW_STATIC), cursor: "pointer", paddingLeft: 26, ...(sel() ? pill(true) : { hover: t(ROW_HOVER) }) }}
 			>
 				<Icon name={iconName(p.v.reg.icon, "folder-search")} size={15} color={muted()} />

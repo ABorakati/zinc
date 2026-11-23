@@ -140,6 +140,17 @@ export const onListItemClick = (f: (() => void) | undefined) => {
 	itemClicked = f;
 };
 
+/**
+ * A row's click handler that also gives the pane the arrow keys. In the app's window a row that reacts to hover keeps the click from
+ * its ancestors, so ListItem's listener above never hears it there (the test renderer passes it on): the row says so itself.
+ */
+export const rowClick =
+	<A extends unknown[]>(f: (...a: A) => void) =>
+	(...a: A): void => {
+		itemClicked?.();
+		f(...a);
+	};
+
 export function SectionHeader(p: {
 	label: string;
 	open: boolean;

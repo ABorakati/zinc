@@ -20,6 +20,7 @@ import {
 	TRUNCATE,
 	tracked,
 	tx,
+	rowClick,
 } from "../sidebar/parts";
 import { confirm, openMenu, toast } from "../ui";
 import { openAdvancedSearch } from "./AdvancedSearch";
@@ -85,11 +86,11 @@ function SavedSearchRow(p: { s: SavedSearch }): JSX.Element {
 		<div
 			role="treeitem"
 			aria-selected={active(s.key)}
-			onClick={(e) => {
+			onClick={rowClick((e) => {
 				if (renaming() === s.key) return;
 				if ((e.clickCount ?? 1) >= 2) void openAdvancedSearch(s.key);
 				else setView({ kind: "savedSearch", key: s.key });
-			}}
+			})}
 			onAuxClick={(e) => {
 				if (e.isRightClick) showMenu(s, e.x ?? 0, e.y ?? 0);
 			}}
