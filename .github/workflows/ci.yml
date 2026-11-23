@@ -125,6 +125,9 @@ jobs:
       - name: gpui-ui typecheck
         working-directory: gpui-ui
         run: bun check
+      # wasmplugins/ui/dialogMount.test.ts builds a real plugin to WebAssembly
+      - name: Rust target for plugins
+        run: rustup target add wasm32-wasip2
       - name: gpui-ui test
         working-directory: gpui-ui
         run: bun test --timeout 30000
@@ -198,7 +201,7 @@ jobs:
       - name: Build the document worker
         if: steps.docworker.outputs.cache-hit != 'true'
         shell: bash
-        run: bash scripts/build-docworker.sh
+        run: mkdir -p vendor && bash scripts/build-docworker.sh # vendor/ is git-ignored, so a fresh checkout has none
 
       - name: UI scenarios
         working-directory: gpui-ui
