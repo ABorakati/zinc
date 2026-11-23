@@ -19,3 +19,18 @@ index f517f20be37230511112c0b1702def9db4c10bfa..5c9089bbdb89ac037737813b1fda573c
      "motion",
      "testId",
      "highlight",
+diff --git a/dist/runtime.js b/dist/runtime.js
+index 86b70dd36252b6e3e09b540aa8b194dac8363277..ec4231fbd10653ca7784ae4663d4b21463534b1c 100644
+--- a/dist/runtime.js
++++ b/dist/runtime.js
+@@ -18,7 +18,9 @@ export function createNativeRenderer(options = {}) {
+             options.onError?.(dispatchError);
+         }
+     });
+-    if (typeof process !== "undefined" && process.stdin && !process.stdin.isTTY) {
++    // Zinc: only when asked. Zinc serves its own protocol (src/automation.ts, ZN_AUTOMATION=stdio); a second server on the same stdin
++    // would run every request twice, and a normal start must not read stdin at all.
++    if (typeof process !== "undefined" && process.env?.GPUIX_AUTOMATION === "stdio" && process.stdin && !process.stdin.isTTY) {
+         const init = renderer.init.bind(renderer);
+         renderer.init = (windowOptions) => {
+             init(windowOptions);
