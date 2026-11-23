@@ -122,20 +122,89 @@ export async function serveAutomation(renderer: unknown): Promise<void> {
 	});
 }
 
+/**
+ * Runs the app again as a child process that starts on the background desktop, and waits for it. Moving only this thread there is not
+ * enough: windows that other threads or child processes open (the renderer's own thread among them) go to the desktop the process started
+ * on, which is the user's screen. A process started on the desktop has all its threads, and its children, there. The child inherits the
+ * standard handles (the harness talks to it directly) and is in a job that ends it when this process ends. Fails closed: if any step
+ * fails, nothing is started.
+ */
 function moveToDesktop(name: string): void {
+	if (process.env.ZN_AUTOMATION_ON_DESKTOP === name) return; // this is the child, already there
+	const fail = (what: string): never => {
+		process.stderr.write(`automation: ${what}; not opening a window\n`);
+		process.exit(3);
+	};
 	// bun:ffi is loaded only here: the app does not need it otherwise
-	const { dlopen, FFIType } = require("bun:ffi") as typeof import("bun:ffi");
-	const user32 = dlopen("user32.dll", {
-		CreateDesktopW: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.u64 },
-		SetThreadDesktop: { args: [FFIType.u64], returns: FFIType.i32 },
+	const { dlopen, FFIType, ptr } = require("bun:ffi") as typeof import("bun:ffi");
+	const H = FFIType.u64,
+		P = FFIType.ptr,
+		U32 = FFIType.u32,
+		I = FFIType.i32;
+	const user32 = dlopen("user32.dll", { CreateDesktopW: { args: [P, P, P, U32, U32, P], returns: H } }).symbols;
+	const kernel32 = dlopen("kernel32.dll", {
+		GetStdHandle: { args: [U32], returns: H },
+		SetHandleInformation: { args: [H, U32, U32], returns: I },
+		CreateJobObjectW: { args: [P, P], returns: H },
+		SetInformationJobObject: { args: [H, U32, P, U32], returns: I },
+		CreateProcessW: { args: [P, P, P, P, I, U32, P, P, P, P], returns: I },
+		AssignProcessToJobObject: { args: [H, H], returns: I },
+		ResumeThread: { args: [H], returns: U32 },
+		TerminateProcess: { args: [H, U32], returns: I },
+		WaitForSingleObject: { args: [H, U32], returns: U32 },
+		GetExitCodeProcess: { args: [H, P], returns: I },
 	}).symbols;
 	const GENERIC_ALL = 0x10000000;
-	const handle = user32.CreateDesktopW(Buffer.from(`${name}\0`, "utf16le"), null, null, 0, GENERIC_ALL, null);
-	// fails closed: a window that could not be hidden is not opened on the user's screen
-	if (!Number(handle) || !user32.SetThreadDesktop(handle)) {
-		process.stderr.write(`automation: could not move to the background desktop "${name}"; not opening a window\n`);
-		process.exit(3);
+	// the desktop exists while a handle to it is open: this one stays open until this process ends
+	if (!Number(user32.CreateDesktopW(Buffer.from(`${name}\0`, "utf16le"), null, null, 0, GENERIC_ALL, null)))
+		fail(`Windows gave no background desktop "${name}"`);
+
+	// a job that ends the child when this process ends (however it ends)
+	const job = kernel32.CreateJobObjectW(null, null);
+	const limits = new Uint8Array(144); // JOBOBJECT_EXTENDED_LIMIT_INFORMATION (x64)
+	new DataView(limits.buffer).setUint32(16, 0x2000, true); // LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if (!Number(job) || !kernel32.SetInformationJobObject(job, 9 /* JobObjectExtendedLimitInformation */, limits, limits.length))
+		fail("could not make a job for the app");
+
+	// the standard handles (the harness's pipes), passed on as they are
+	const std = [-10, -11, -12].map((n) => kernel32.GetStdHandle(n >>> 0));
+	for (const h of std) if (Number(h) > 0) kernel32.SetHandleInformation(h, 1 /* HANDLE_FLAG_INHERIT */, 1);
+
+	const desktopName = Buffer.from(`WinSta0\\${name}\0`, "utf16le");
+	const si = new Uint8Array(104); // STARTUPINFOW (x64)
+	const sv = new DataView(si.buffer);
+	sv.setUint32(0, si.length, true);
+	sv.setBigUint64(16, BigInt(ptr(desktopName)), true); // lpDesktop
+	sv.setUint32(60, 0x100, true); // dwFlags: STARTF_USESTDHANDLES
+	std.forEach((h, i) => sv.setBigUint64(80 + i * 8, BigInt(h), true));
+	const pi = new Uint8Array(24); // PROCESS_INFORMATION
+	const env = { ...process.env, ZN_AUTOMATION_ON_DESKTOP: name } as Record<string, string | undefined>;
+	const block = Buffer.from(
+		`${Object.entries(env)
+			.filter(([, v]) => v !== undefined)
+			.sort(([a], [b]) => (a.toUpperCase() < b.toUpperCase() ? -1 : a.toUpperCase() > b.toUpperCase() ? 1 : 0))
+			.map(([k, v]) => `${k}=${v}\0`)
+			.join("")}\0`,
+		"utf16le",
+	);
+	const commandLine = Buffer.from(`"${process.execPath}"\0`, "utf16le");
+	const CREATE_SUSPENDED = 0x4,
+		CREATE_UNICODE_ENVIRONMENT = 0x400;
+	if (!kernel32.CreateProcessW(null, commandLine, null, null, 1, CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, block, null, si, pi))
+		fail("could not start the app on the background desktop");
+	const pv = new DataView(pi.buffer);
+	const child = pv.getBigUint64(0, true),
+		thread = pv.getBigUint64(8, true);
+	// in the job before it runs a single instruction: it never outlives this process
+	if (!kernel32.AssignProcessToJobObject(job, child)) {
+		kernel32.TerminateProcess(child, 3);
+		fail("could not put the app in its job");
 	}
+	kernel32.ResumeThread(thread);
+	kernel32.WaitForSingleObject(child, 0xffffffff);
+	const code = new Uint32Array(1);
+	kernel32.GetExitCodeProcess(child, code);
+	process.exit(code[0] ?? 0);
 }
 
 /** `zn.api`: one request to the core's own API, as the app's UI makes them (what a scenario checks "was saved" with). */

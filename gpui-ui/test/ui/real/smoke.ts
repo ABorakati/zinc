@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch } from "@gpuix/native/automation";
+import { windowsOnScreen } from "../background";
 import { makeLibrary, T } from "../library";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -31,6 +32,10 @@ for (const d of ["AppData/Roaming", "AppData/Local", "tmp"]) mkdirSync(join(home
 mkdirSync(join(home, "lib", "library"), { recursive: true });
 const db = makeLibrary(join(home, "lib"), 130);
 
+if (windowsOnScreen(resolve(exe)) > 0) {
+	console.error(`a window of ${resolve(exe)} is already on the user's screen: not starting another`);
+	process.exit(2);
+}
 const app = await launch({
 	command: resolve(exe),
 	env: {
@@ -50,6 +55,13 @@ const app = await launch({
 });
 
 const results: { step: string; ok: boolean; detail?: string }[] = [];
+// the app must never be seen: a window of it on the user's screen ends the run at once (src/automation.ts starts it elsewhere)
+const watchdog = setInterval(() => {
+	if (windowsOnScreen(resolve(exe)) === 0) return;
+	clearInterval(watchdog);
+	console.error("FAIL  a window of the test app appeared on the user's screen; stopping it");
+	void app.close().finally(() => process.exit(1));
+}, 250);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const tree = async (): Promise<N[]> => {
 	const { tree } = (await app.call("getTree", {})) as { tree: N | null };
@@ -161,6 +173,7 @@ try {
 		await waitFor('"SETTINGS"', () => find(byText("SETTINGS")));
 	});
 } finally {
+	clearInterval(watchdog);
 	writeFileSync(join(out, "results.json"), JSON.stringify(results, null, 2));
 	await app.close().catch(() => {});
 	await sleep(1500); // the app lets go of its library and logs as it exits

@@ -7,6 +7,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { TestRenderer } from "@gpuix/solid/testing";
 import type { TreeNode } from "@gpuix/solid/automation";
 import { callZn } from "../../src/automation";
+import { windowsOnScreen } from "./background";
+import { resolve as resolvePath } from "node:path";
 
 export interface Box {
 	x: number;
@@ -201,12 +203,24 @@ export class RemoteBackend implements Backend {
 	private buffer = "";
 	private stderr = "";
 	private exited: string | undefined;
+	private readonly watchdog: ReturnType<typeof setInterval>;
 
 	private constructor(
 		private readonly child: ChildProcessWithoutNullStreams,
 		size: { width: number; height: number },
+		exe: string,
 	) {
 		this.size = size;
+		// the app must never be seen: a window of it on the user's screen ends the run at once (src/automation.ts starts it elsewhere)
+		this.watchdog = setInterval(() => {
+			if (this.exited || windowsOnScreen(exe) === 0) return;
+			this.gone("a window of the test app appeared on the user's screen; the app was stopped");
+			try {
+				this.child.kill();
+			} catch {
+				/* already gone */
+			}
+		}, 250);
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => this.feed(chunk));
 		child.stderr.setEncoding("utf8");
@@ -238,8 +252,10 @@ export class RemoteBackend implements Backend {
 		});
 		// (no windowsHide: it starts the app with SW_HIDE, and a window that is told to hide is not drawn, so it answers no query. The exe is
 		// a GUI program: no console; its window opens on the background desktop, src/automation.ts)
-		const child = spawn(o.exe, [], { env, stdio: ["pipe", "pipe", "pipe"] });
-		const backend = new RemoteBackend(child, o.size);
+		const exe = resolvePath(o.exe);
+		if (windowsOnScreen(exe) > 0) throw new Error(`a window of ${exe} is already on the user's screen: not starting another`);
+		const child = spawn(exe, [], { env, stdio: ["pipe", "pipe", "pipe"] });
+		const backend = new RemoteBackend(child, o.size, exe);
 		try {
 			// (its answer's window size is a stub: the window was asked for o.size, and app.ts checks the layout)
 			await backend.request("initialize", { protocolVersion: 1, client: "zinc-ui-harness" }, 60_000);
@@ -275,6 +291,8 @@ export class RemoteBackend implements Backend {
 
 	private gone(why: string): void {
 		this.exited ??= why;
+		if (/user's screen/.test(why)) this.exited = why;
+		clearInterval(this.watchdog);
 		for (const [, w] of this.pending) w.reject(new Error(this.exited));
 		this.pending.clear();
 	}
@@ -368,6 +386,7 @@ export class RemoteBackend implements Backend {
 		for (const [, w] of this.pending) w.reject(new Error("closed"));
 		this.pending.clear();
 		this.exited ??= "closed";
+		clearInterval(this.watchdog);
 		try {
 			this.child.kill();
 		} catch {

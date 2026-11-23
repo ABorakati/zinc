@@ -29,6 +29,57 @@ export function moveToBackgroundDesktop(): void {
 }
 
 /**
+ * The visible top-level windows on the desktop this thread is on (the user's screen, for the harness itself) that belong to a process
+ * running `exe`. The real-app harness calls it while the app runs: anything but 0 means a window of the test app is on the user's screen.
+ * Windows only; elsewhere 0.
+ */
+export function windowsOnScreen(exe: string): number {
+	if (process.platform !== "win32") return 0;
+	const H = FFIType.u64,
+		I = FFIType.i32,
+		U32 = FFIType.u32,
+		P = FFIType.ptr;
+	const user32 = dlopen("user32.dll", {
+		EnumWindows: { args: [FFIType.function, H], returns: I },
+		IsWindowVisible: { args: [H], returns: I },
+		GetWindowThreadProcessId: { args: [H, P], returns: U32 },
+	}).symbols;
+	const kernel32 = dlopen("kernel32.dll", {
+		OpenProcess: { args: [U32, I, U32], returns: H },
+		QueryFullProcessImageNameW: { args: [H, U32, P, P], returns: I },
+		CloseHandle: { args: [H], returns: I },
+	}).symbols;
+	const pids = new Set<number>();
+	const each = new JSCallback(
+		(hwnd: bigint) => {
+			if (user32.IsWindowVisible(hwnd)) {
+				const pid = new Uint32Array(1);
+				user32.GetWindowThreadProcessId(hwnd, pid);
+				pids.add(pid[0]!);
+			}
+			return 1;
+		},
+		{ args: [H, H], returns: I },
+	);
+	try {
+		user32.EnumWindows(each.ptr!, 0n);
+	} finally {
+		each.close();
+	}
+	const want = exe.replaceAll("/", "\\").toLowerCase();
+	let n = 0;
+	for (const pid of pids) {
+		const h = kernel32.OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, 0, pid);
+		if (!Number(h)) continue;
+		const buf = new Uint16Array(1024),
+			len = new Uint32Array([buf.length]);
+		if (kernel32.QueryFullProcessImageNameW(h, 0, buf, len) && String.fromCharCode(...buf.subarray(0, len[0])).toLowerCase() === want) n++;
+		kernel32.CloseHandle(h);
+	}
+	return n;
+}
+
+/**
  * Gives the window this thread opened an inside of exactly `width` x `height` (logical pixels). GPUI's visual test window takes its size
  * from the display, whatever it is asked for, and every scenario's coordinates assume one size. Windows only; elsewhere false.
  */
@@ -55,7 +106,7 @@ export function fitWindow(width: number, height: number): boolean {
 		{ args: [H, H], returns: I },
 	);
 	try {
-		user32.EnumThreadWindows(kernel32.GetCurrentThreadId(), each.ptr, 0n);
+		user32.EnumThreadWindows(kernel32.GetCurrentThreadId(), each.ptr!, 0n);
 	} finally {
 		each.close();
 	}
