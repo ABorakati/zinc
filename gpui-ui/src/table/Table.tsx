@@ -17,6 +17,7 @@ import { createRows, sameRow, type ChildRow, type Group, type Rows } from "../ca
 import { createTree, toggleItem } from "../cards/tree";
 import { mix } from "../cards/logic";
 import { gatedHover, markScroll, throttledCommit } from "../cards/scrolling";
+import { createVisibleRange } from "../cards/visible";
 import { clipText } from "../clip";
 import { dragSource } from "../dnd";
 import type { ItemRow } from "../contracts";
@@ -532,11 +533,12 @@ export function TableView(): JSX.Element {
 	onCleanup(() => {
 		if (hideTimer) clearTimeout(hideTimer);
 	});
+	const vr = createVisibleRange(() => ROW, () => bodyH);
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
-		const a = Math.floor(e.startIndex ?? 0),
-			b = Math.ceil(e.endIndex ?? a + 1);
+		const a0 = Math.floor(e.startIndex ?? 0);
+		const [a, b] = vr.range(a0, Math.ceil(e.endIndex ?? a0 + 1), count());
 		if (a !== visA) trackBubble(a, b); // the top row moved: a scroll (not the first layout or a resize)
 		visA = a;
 		visB = b;
@@ -556,6 +558,7 @@ export function TableView(): JSX.Element {
 				want = null;
 				setBubble(null);
 				setStart(0);
+				vr.scrolling(0);
 				if (list) gpuix?.renderer.scrollToItem?.(list.id, 0);
 			},
 			{ defer: true },
@@ -584,13 +587,16 @@ export function TableView(): JSX.Element {
 		if (r < 0 || !list) return;
 		if (!always && r >= visA + 1 && r < visB - 1) return;
 		setStart(Math.max(0, r - WINDOW / 2));
-		gpuix?.renderer.scrollToItem?.(list.id, r, always || r >= visA ? -300 : 0);
+		const offset = always || r >= visA ? -300 : 0;
+		vr.scrolling(offset);
+		gpuix?.renderer.scrollToItem?.(list.id, r, offset);
 	}
 	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
 	function scrollToRow(r: number) {
 		if (!list) return;
 		const s = untrack(first);
 		if (r < s || r + (visB - visA) > s + WINDOW) setStart(Math.max(0, r - WINDOW / 4));
+		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
 	}
 	function move(delta: number, extend: boolean) {
@@ -606,7 +612,7 @@ export function TableView(): JSX.Element {
 	const tree = createTree({ rows, reveal, visible: () => [visA, visB], moveItems: move });
 	const keys = listKeyHandler({
 		move: tree.move,
-		page: () => Math.max(1, visB - visA - 2),
+		page: () => Math.max(1, vr.span() - 2),
 		open: () =>
 			tree.open(() => {
 				const it = store.peek(store.focusIndex());

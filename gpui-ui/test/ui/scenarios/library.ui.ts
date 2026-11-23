@@ -427,13 +427,13 @@ scenario("Home and End go to the first and the last item, also when the last pag
 	await ui.see(last, { area: "list" }); // and it is on screen
 });
 
-// The list learns how many rows a screen holds from the visible range it is told about; the test renderer tells it only when the
-// list scrolls, so on a list that has not moved, Page Down steps one row.
+// The visible range reaches the list only when it scrolls, and a scroll to a row reports just that row: until then the list counts
+// the rows its height holds (cards/visible.ts), so Page Down moves a screenful on a list that has not moved yet.
 scenario("Page Down on a list that was just opened moves a screenful", async (ui) => {
 	await ui.click(T.article, { area: "list" });
 	await ui.press("pagedown");
 	await ui.expect("the focus moved several rows", async () => (await ui.store.focusIndex()) >= 3, true);
-}, { knownBug: "the visible range reaches the list only after its first scroll in the test renderer: needs a look in a real window whether Page Down is one row there too" });
+});
 
 scenario("Page Down moves a screenful and Shift+End selects to the end", async (ui) => {
 	await ui.wheel(640, 500, -150); // the list reports its visible range when it scrolls

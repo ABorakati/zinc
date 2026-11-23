@@ -1028,20 +1028,42 @@ function createStore(): AppStore {
 		});
 		if (range) completeRange(range[0], range[1]); // pages that were not cached: the rest of the range follows when they arrive
 	}
+	let focusSeq = 0;
+	/**
+	 * Move the focus (and the selection) to row `next`. A row whose page is not cached yet (End, or Page Down past the loaded pages)
+	 * is focused when its key arrives, unless another key press, click or list took over meanwhile.
+	 */
 	function focusRow(next: number, extend: boolean): boolean {
+		const seq = ++focusSeq;
 		const it = peek(next);
-		if (!it) return false;
+		if (it) {
+			focusAt(next, it.key, extend);
+			return true;
+		}
+		if (next < 0 || next >= untrack(total)) return false;
+		const view0 = hardGen,
+			v0 = selVersion;
+		const current = () => seq === focusSeq && view0 === hardGen && v0 === selVersion;
+		void settledKeys(next, next, current)
+			.then((keys) => {
+				if (keys?.[0] && current()) focusAt(next, keys[0], extend);
+			})
+			.catch((e) => {
+				if (view0 === hardGen) setError(String(e?.message ?? e));
+			});
+		return true;
+	}
+	function focusAt(next: number, key: string, extend: boolean) {
 		if (extend && anchor() >= 0) {
 			const a = Math.min(anchor(), next),
 				b = Math.max(anchor(), next);
 			batch(() => {
 				setSelectedSig(new Set(rangeKeys(a, b)));
-				setActiveKey(it.key);
+				setActiveKey(key);
 				setFocusIndex(next);
 			});
 			completeRange(a, b);
-		} else selectOnly(it.key, next);
-		return true;
+		} else selectOnly(key, next);
 	}
 	function selectAll() {
 		const n = untrack(total);
