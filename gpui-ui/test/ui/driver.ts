@@ -170,8 +170,9 @@ export class Ui {
 	private async shownText(node: TreeNode): Promise<string | undefined> {
 		if (node.text) return node.text;
 		if (node.type !== "input" && node.type !== "textarea") return undefined;
-		// (the automation tree leaves the props out: they are on the renderer's element, which only the in-process mode has)
-		const { value, placeholder } = (await this.backend.inputProps(node.id)) ?? {};
+		// the real app's automation tree carries a field's value and placeholder; in-process they are on the renderer's element
+		const inTree = (node as { customProps?: { value?: unknown; placeholder?: unknown } }).customProps;
+		const { value, placeholder } = inTree ?? (await this.backend.inputProps(node.id)) ?? {};
 		if (typeof value === "string" && value) return value;
 		return typeof placeholder === "string" && placeholder ? placeholder : undefined;
 	}
