@@ -11,6 +11,7 @@ import { withAlpha } from "../theme";
 import {
 	boundsOf,
 	closeMenus,
+	focusClaimCount,
 	focusedId,
 	newId,
 	placeAt,
@@ -182,8 +183,11 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 			openSub(lv, i, true);
 			return;
 		}
-		close();
+		// the action first: when it opens a field that takes the keys (claimFocus), the focus is not given back over it
+		removeLayer(layer.id);
+		const claims = focusClaimCount();
 		item!.onSelect?.();
+		if (focusClaimCount() === claims) restoreFocus(layer.prevFocus);
 	}
 	function step(dir: 1 | -1) {
 		const lv = levels().length - 1;

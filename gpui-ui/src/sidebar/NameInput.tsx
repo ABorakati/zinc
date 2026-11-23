@@ -1,11 +1,13 @@
 // Inline text field for renaming / naming a new collection or search (ui/src/Collections.tsx NameInput):
 // Enter or blur commits, Escape cancels. Wraps GPUIX's native <input>; the field takes keyboard focus on mount.
 import type { JSX } from "solid-js";
+import { claimFocus } from "../ui/core";
 import { t, tok, mode } from "./parts";
 
 export function NameInput(p: { value: string; placeholder?: string; onDone: (v: string) => void; onCancel: () => void }): JSX.Element {
 	let cur = p.value;
 	let finished = false;
+	claimFocus(); // it takes the keys on mount: a menu that opened it must not give them back to the row (ui/core.ts)
 	const done = (commit: boolean) => {
 		if (finished) return;
 		finished = true;

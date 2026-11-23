@@ -9,7 +9,7 @@ import type { Collection } from "../contracts";
 import { Icon } from "../icons";
 import { collectionActions } from "../registry";
 import { confirm, DropdownMenu, openMenu, toast, type MenuItem } from "../ui";
-import { boundsOf } from "../ui/core";
+import { boundsOf, claimFocus } from "../ui/core";
 import { currentView, refreshStore, setView, storeCollections } from "./bridge";
 import { itemDrag, itemDragPoint, itemDragDropped } from "./dndBridge";
 import { errMsg, sidebarApi } from "./client";
@@ -262,6 +262,7 @@ function startCreate(parent: string | "root") {
 	setCollectionsOpen(true);
 	if (parent !== "root") setExpanded(new Set(expanded()).add(parent));
 	setCreating(parent);
+	claimFocus(); // the name field appears with the opened parent, after the menu that chose this has closed (ui/core.ts)
 }
 
 /** Section name input: a new section (to put collection `key` in) or a rename; shown as an inline row at the top of the list. */

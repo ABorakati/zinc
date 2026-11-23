@@ -147,8 +147,8 @@ export const onListItemClick = (f: (() => void) | undefined) => {
 export const rowClick =
 	<A extends unknown[]>(f: (...a: A) => void) =>
 	(...a: A): void => {
-		itemClicked?.();
 		f(...a);
+		itemClicked?.(); // after: a double click that opens the name field has set the editing state the listener checks
 	};
 
 export function SectionHeader(p: {

@@ -83,6 +83,17 @@ export function focusedId(): number | null {
 		return null;
 	}
 }
+/**
+ * A field that takes the keys as it appears (autoFocus) says so here, so that a menu item that opened it does not then give the focus
+ * back to what had it before the menu: in the app's window that request can reach the UI thread after the field's own, and the typing
+ * would go to the old element (Rename, New subcollection).
+ */
+let focusClaims = 0;
+export const claimFocus = (): void => {
+	focusClaims++;
+};
+export const focusClaimCount = (): number => focusClaims;
+
 export function restoreFocus(id: number | null) {
 	if (id === null) return;
 	try {
