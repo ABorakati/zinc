@@ -2,7 +2,7 @@
 // second bun process holding its own copy of the runtime (~315 MB private measured).
 //
 //   ZN_DB=<library.sqlite>   run the core in-process on that database; api.ts is pointed at it.
-//   ZN_PORT=<n>              loopback port for the in-process HTTP server (default 23161, in the packaged app 23120 like zotero-next's own
+//   ZN_PORT=<n>              loopback port for the in-process HTTP server (0: any free port; default 23161, in the packaged app 23120 like zotero-next's own
 //                            core; if taken, an ephemeral port - and then another zotero-next owns sync / the Zotero port, see services.ts).
 //   ZN_CORE_DIRECT=1         no HTTP at all: api.ts calls the core's handleApi(Request, db) directly (smaller and faster, but
 //                            nothing else - MCP, Connector, a browser - can reach the core).
@@ -81,10 +81,14 @@ async function start(dbPath: string): Promise<Core> {
 	mark("core-imported");
 	const mounts = webMounts(); // /reader-host/ (web tabs) and /note-host/, when their builds exist
 	const serves = mounts.some((m) => m.prefix === "/reader-host/");
+	// ZN_PORT=0: any free port (the UI harness: a test app must not hold 23120 when the real one starts; it also sets ZN_SYNC=0 and ZN_ZPORT=0)
+	const anyPort = process.env.ZN_PORT === "0";
 	const want = Number(process.env.ZN_PORT) || (packaged ? 23120 : 23161);
 	let s: Started | undefined;
 	let primary = true;
-	if (await portInUse(want))
+	if (anyPort) {
+		/* the fallback below takes an ephemeral port */
+	} else if (await portInUse(want))
 		primary = false; // another zotero-next (or anything) answers there: do not even try to share it
 	else {
 		try {

@@ -16,7 +16,7 @@
 //
 // What differs between builds is only in the Platform each one supplies; the order of the steps, and their trace marks (src/trace.ts;
 // scripts/startup.ts reads them), are the same everywhere. Set ZN_TRACE=1 to print the milestones.
-import { prepareAutomation } from "./automation";
+import { automationWindow, prepareAutomation } from "./automation";
 import { render, type NativeRenderer } from "@gpuix/solid";
 import { createComponent, createEffect, createRoot, createSignal, Show, type Component } from "solid-js";
 import type { Mode, Style } from "./contracts";
@@ -150,7 +150,7 @@ export async function start(platform: Platform): Promise<void> {
 	const earlyData = platform.prefetch(); // a worker answers the first screen's requests while render() below blocks this thread (src/prefetch.ts)
 	mark("pre-render");
 	// onKeyDown is the window-level key handler: global shortcuts of the registry's appActions (shell/shortcuts.ts).
-	render(() => <Root />, { title: platform.title, renderer: platform.renderer, ...platform.window, onKeyDown: handleWindowKeyDown });
+	render(() => <Root />, { title: platform.title, renderer: platform.renderer, ...(automationWindow() ?? platform.window), onKeyDown: handleWindowKeyDown });
 	mark("render-returned");
 
 	// Fonts now, while the tree has no text: registering is ~10-30 ms per file then, but ~250 ms per file once a laid-out app is on

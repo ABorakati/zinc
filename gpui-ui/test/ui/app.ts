@@ -2,6 +2,7 @@
 // process (handleApi, no socket). Import it only after fences.ts and the environment are in place.
 import { TestRenderer } from "@gpuix/solid/testing";
 import { Ui } from "./driver";
+import { InProcessBackend, RemoteBackend } from "./backend";
 import { fitWindow } from "./background";
 import { SMALL_WINDOW } from "./limits";
 import type { ScenarioOptions } from "./define";
@@ -60,7 +61,7 @@ export async function bootApp(options: ScenarioOptions, outDir: string): Promise
 
 	const { store } = await import("../../src/store");
 	const { apiFetch } = await import("../../src/api");
-	const ui = new Ui(renderer, store, apiFetch, size, outDir);
+	const ui = new Ui(new InProcessBackend(renderer, store as never, apiFetch, size), size, outDir);
 	// every scenario's coordinates assume this size: a window of another size (a display too small for it) stops the run
 	const root = (JSON.parse(renderer.getAutomationTree()) as { tree?: { bounds?: { width: number; height: number } } }).tree?.bounds;
 	if (root && Math.round(root.width) !== size.width)
@@ -69,5 +70,38 @@ export async function bootApp(options: ScenarioOptions, outDir: string): Promise
 		);
 	await ui.waitFor("the first page of the list", () => store.total() > 0 && !!store.peek(0));
 	await ui.settle(700);
+	return ui;
+}
+
+/**
+ * The packaged app, as it ships, on the background desktop: a process of its own, on this scenario's library and user folders
+ * (src/automation.ts serves it). `exe` is zotero-next-gpui.exe of a package.
+ */
+export async function bootRemote(exe: string, options: ScenarioOptions, outDir: string, root: string, db: string): Promise<Ui> {
+	const size = { width: options.width ?? 1440, height: options.height ?? 881 };
+	const backend = await RemoteBackend.launch({ exe, root, db, size });
+	const ui = new Ui(backend, backend.size, outDir);
+	try {
+		// every scenario's coordinates assume this size
+		// (the app answers a query of the window's layout only once its first frame is drawn: ask until it does)
+		let rootNode = null as Awaited<ReturnType<typeof backend.tree>>;
+		for (const until = performance.now() + 40_000; ; await Bun.sleep(300)) {
+			try {
+				rootNode = await backend.tree();
+				if (rootNode?.bounds) break;
+			} catch (e) {
+				if (performance.now() > until) throw e;
+			}
+			if (performance.now() > until) break;
+		}
+		const w = rootNode?.bounds?.width;
+		if (w !== undefined && Math.round(w) !== size.width)
+			throw new Error(`${SMALL_WINDOW}: ${Math.round(w)} x ${Math.round(rootNode!.bounds!.height)}, not the ${size.width} x ${size.height} asked for.`);
+		await ui.waitFor("the first page of the list", async () => (await ui.store.total()) > 0 && !!(await ui.store.peek(0)), 30_000);
+		await ui.settle(700);
+	} catch (e) {
+		await backend.close();
+		throw e;
+	}
 	return ui;
 }

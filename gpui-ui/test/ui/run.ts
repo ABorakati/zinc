@@ -2,6 +2,8 @@
 //
 //   bun run test:ui                  every scenario
 //   bun run test:ui list edit        those whose file or name contains one of the words
+//   --app <exe>: drive the packaged app (zotero-next-gpui.exe of a package) over a pipe, with the renderer that ships; scenarios marked
+//     inProcessOnly are skipped and counted apart. --in-process: the app in the scenario's own process on GPUI's test renderer (today's default)
 //   --show: the windows on screen, to watch (they open on a hidden desktop otherwise: background.ts)
 //   options: --jobs <n> (default half the cores, 2 to 8)  --out <dir> (default out/ui-test)  --keep (leave the temporary folders)  --list
 //
@@ -27,6 +29,7 @@ let out = join(GPUI, "out", "ui-test");
 let keep = false;
 let listOnly = false;
 let show = false;
+let appExe: string | undefined;
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
 	const a = argv[i]!;
@@ -35,6 +38,8 @@ for (let i = 0; i < argv.length; i++) {
 	else if (a === "--keep") keep = true;
 	else if (a === "--list") listOnly = true;
 	else if (a === "--show") show = true;
+	else if (a === "--app") appExe = resolve(argv[++i] ?? "");
+	else if (a === "--in-process") appExe = undefined;
 	else if (a.startsWith("--")) {
 		console.error(`unknown option ${a}`);
 		process.exit(2);
@@ -73,6 +78,7 @@ function childEnv(root: string): Record<string, string> {
 		TMPDIR: dir("tmp"),
 		ZN_UI_TEST_ROOT: root,
 		ZN_UI_TEST_SHOW: show ? "1" : "0",
+		...(appExe ? { ZN_UI_APP: appExe } : {}),
 		ZN_UI_STATE: join(root, "ui-state.json"),
 		ZN_LOG_DIR: dir("logs"),
 		ZN_CORE_DIRECT: "1",
@@ -89,10 +95,11 @@ interface Job {
 	index: number;
 	name: string;
 	knownBug?: string;
+	inProcessOnly?: string;
 }
 
 interface Result extends Job {
-	outcome: "pass" | "fail" | "known" | "fixed";
+	outcome: "pass" | "fail" | "known" | "fixed" | "skipped";
 	ms: number;
 	failure?: string;
 	dir: string;
@@ -117,13 +124,14 @@ async function findJobs(): Promise<Job[]> {
 			continue;
 		}
 		const area = f.replace(".ui.ts", "");
-		const list = JSON.parse(text.trim().split("\n").at(-1)!) as { name: string; knownBug?: string }[];
+		const list = JSON.parse(text.trim().split("\n").at(-1)!) as { name: string; knownBug?: string; inProcessOnly?: string }[];
 		list.forEach((s, index) => found.push({ file, area, index, ...s }));
 	}
 	return words.length ? found.filter((j) => words.some((w) => `${j.area} ${j.name}`.toLowerCase().includes(w))) : found;
 }
 
 async function runJob(job: Job): Promise<Result> {
+	if (appExe && job.inProcessOnly) return { ...job, outcome: "skipped", ms: 0, failure: job.inProcessOnly, dir: "" };
 	const root = mkdtempSync(join(base, "s-"));
 	const slug = job.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 60);
 	const dir = join(out, job.area, `${job.index + 1}-${slug}`);
@@ -157,9 +165,14 @@ async function runJob(job: Job): Promise<Result> {
 }
 
 try {
+	if (appExe && !existsSync(appExe)) {
+		console.error(`--app: no such file: ${appExe}`);
+		process.exit(2);
+	}
+	// (the packaged app is compiled already; the scenario processes only load the harness)
 	const compileStarted = performance.now();
 	const files = await compileApp();
-	if (!listOnly) console.log(`app compiled: ${files} files in ${((performance.now() - compileStarted) / 1000).toFixed(1)} s`);
+	if (!listOnly) console.log(`${appExe ? `driving the packaged app ${appExe}; ` : ""}app compiled: ${files} files in ${((performance.now() - compileStarted) / 1000).toFixed(1)} s`);
 	const todo = await findJobs();
 	if (!todo.length) {
 		console.error("no scenario matches");
@@ -180,8 +193,9 @@ try {
 						queue.length = 0; // every other scenario would fail the same way: stop here
 						console.error(r.failure);
 					}
-					const label = { pass: "ok   ", fail: "FAIL ", known: "known", fixed: "FIXED" }[r.outcome];
-					console.log(`${label} ${r.area}: ${r.name} (${(r.ms / 1000).toFixed(1)} s)`);
+					const label = { pass: "ok   ", fail: "FAIL ", known: "known", fixed: "FIXED", skipped: "skip " }[r.outcome];
+					if (r.outcome === "skipped") console.log(`${label} ${r.area}: ${r.name} (skipped (in-process only: ${r.failure}))`);
+					else console.log(`${label} ${r.area}: ${r.name} (${(r.ms / 1000).toFixed(1)} s)`);
 					if (r.outcome === "fail") console.log(`      ${r.failure?.replaceAll("\n", "\n      ")}\n      evidence: ${r.dir}`);
 					if (r.outcome === "fixed") console.log(`      marked as a known bug, and it passes: take the mark off (${r.knownBug})`);
 				}
@@ -190,7 +204,7 @@ try {
 		const n = (o: Result["outcome"]) => results.filter((r) => r.outcome === o).length;
 		mkdirSync(out, { recursive: true });
 		writeFileSync(join(out, "summary.json"), JSON.stringify(results, null, 2));
-		console.log(`\n${n("pass")} passed, ${n("fail")} failed, ${n("known")} known bugs, ${n("fixed")} known bugs now fixed (${((performance.now() - started) / 1000).toFixed(1)} s)`);
+		console.log(`\n${n("pass")} passed, ${n("fail")} failed, ${n("known")} known bugs, ${n("fixed")} known bugs now fixed${n("skipped") ? `, ${n("skipped")} skipped (in-process only)` : ""} (${((performance.now() - started) / 1000).toFixed(1)} s)`);
 		if (unreadable.length) console.log(`could not be loaded: ${unreadable.join(", ")}`);
 		if (unreadable.length || n("fail") || n("fixed")) process.exitCode = 1;
 	}

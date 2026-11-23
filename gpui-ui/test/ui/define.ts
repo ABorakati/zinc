@@ -19,6 +19,11 @@ export interface ScenarioOptions {
 	 * pass the run says so, so that the mark is taken off.
 	 */
 	knownBug?: string;
+	/**
+	 * The reason this scenario can only run in the in-process mode (it needs ui.renderer, or a thing the real app does not give). In the
+	 * real-app mode (--app) it is skipped and counted apart.
+	 */
+	inProcessOnly?: string;
 }
 
 export interface Scenario {

@@ -13,7 +13,7 @@ const [file, command, indexArg, outDir] = process.argv.slice(2);
 await import(pathToFileURL(resolve(file!)).href);
 
 if (command === "list") {
-	console.log(JSON.stringify(scenarios.map((s) => ({ name: s.name, knownBug: s.options.knownBug }))));
+	console.log(JSON.stringify(scenarios.map((s) => ({ name: s.name, knownBug: s.options.knownBug, inProcessOnly: s.options.inProcessOnly }))));
 	process.exit(0);
 }
 
@@ -25,7 +25,9 @@ const chosen = scenarios[Number(indexArg)];
 if (!chosen || !outDir) throw new Error("no such scenario");
 mkdirSync(outDir, { recursive: true });
 
-installFences();
+// ZN_UI_APP (run.ts --app): the packaged app in a process of its own; else the app in this process
+const realApp = process.env.ZN_UI_APP || undefined;
+if (!realApp) installFences();
 const errors: string[] = [];
 const text = (v: unknown) => (v instanceof Error ? (v.stack ?? v.message) : typeof v === "string" ? v : JSON.stringify(v));
 const consoleError = console.error;
@@ -41,14 +43,15 @@ process.on("uncaughtException", (e) => void errors.push(`uncaught: ${text(e)}`))
 process.on("unhandledRejection", (e) => void errors.push(`unhandled rejection: ${text(e)}`));
 
 const { makeLibrary } = await import("./library");
-process.env.ZN_DB = makeLibrary(root, chosen.options.items ?? 130);
-const { bootApp } = await import("./app");
+const db = makeLibrary(root, chosen.options.items ?? 130);
+if (!realApp) process.env.ZN_DB = db; // (the packaged app gets it in its own environment, backend.ts)
+const { bootApp, bootRemote } = await import("./app");
 
 let failure: string | undefined;
 let ui: Awaited<ReturnType<typeof bootApp>> | undefined;
 try {
 	const t0 = performance.now();
-	ui = await bootApp(chosen.options, outDir);
+	ui = realApp ? await bootRemote(resolve(realApp), chosen.options, outDir, root, db) : await bootApp(chosen.options, outDir);
 	ui.steps.push(`started in ${Math.round(performance.now() - t0)} ms`);
 	await chosen.run(ui);
 	await ui.settle(300);
@@ -60,12 +63,12 @@ try {
 
 if (failure && ui) {
 	try {
-		ui.screenshot("failure");
+		await ui.screenshot("failure");
 	} catch {
 		/* no GPU to capture with: the text below still says what happened */
 	}
 	try {
-		writeFileSync(join(outDir, "screen.txt"), ui.painted().join("\n"));
+		writeFileSync(join(outDir, "screen.txt"), (await ui.painted()).join("\n"));
 	} catch {
 		/* the window is gone */
 	}
@@ -73,4 +76,5 @@ if (failure && ui) {
 const report = { name: chosen.name, ok: !failure, failure, steps: ui?.steps ?? [], errors, violations };
 writeFileSync(join(outDir, "result.json"), JSON.stringify(report, null, 2));
 console.error = consoleError;
+await ui?.backend.close().catch(() => {});
 process.exit(failure ? 1 : 0);

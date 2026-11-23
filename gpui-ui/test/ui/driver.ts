@@ -1,16 +1,36 @@
 // What a scenario drives the app with. All input goes through GPUI (hit testing, focus, key dispatch), none through the store: a row
 // that ignores clicks fails here as it does for a user. Assertions read what was painted, and what the core saved.
+//
+// The app is behind a Backend (backend.ts): in this process on GPUI's test renderer, or the packaged executable over a pipe. Everything
+// that reads the app is async for that reason; a scenario is written once and runs in both.
 import type { TestRenderer } from "@gpuix/solid/testing";
 import type { TreeNode } from "@gpuix/solid/automation";
+import type { Backend, Box } from "./backend";
 
 type Store = (typeof import("../../src/store"))["store"];
-type ApiFetch = (typeof import("../../src/api"))["apiFetch"];
+type Row = ReturnType<Store["peek"]>;
 
-interface Box {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
+/**
+ * The store as the harness sees it, in both modes: every call is async and answers plain data (a Set comes as an array, an
+ * undefined as null). Only what src/automation.ts allows.
+ */
+export interface StoreView {
+	activeTab(): Promise<ReturnType<Store["activeTab"]>>;
+	total(): Promise<number>;
+	view(): Promise<ReturnType<Store["view"]>>;
+	sortLevels(): Promise<ReturnType<Store["sortLevels"]>>;
+	/** The selected item keys (an array, not a Set: use .length). */
+	selected(): Promise<string[]>;
+	tabs(): Promise<ReturnType<Store["tabs"]>>;
+	revealItem(key: string): Promise<boolean>;
+	refreshItems(fields?: string[]): Promise<void>;
+	focusIndex(): Promise<number>;
+	viewMode(): Promise<ReturnType<Store["viewMode"]>>;
+	selectedItem(): Promise<string | null>;
+	/** The cached row, or null when its page is not loaded. */
+	peek(i: number): Promise<NonNullable<Row> | null>;
+	groups(): Promise<ReturnType<Store["groups"]>>;
+	refresh(): Promise<void>;
 }
 
 export interface FindOptions {
@@ -46,16 +66,6 @@ interface Indexed {
 	parent: Indexed | null;
 }
 
-/** The text a node shows: its own, or an input's value, else the placeholder it paints in its place. */
-function shownText(node: TreeNode, renderer: TestRenderer): string | undefined {
-	if (node.text) return node.text;
-	if (node.type !== "input" && node.type !== "textarea") return undefined;
-	// (the automation tree leaves the props out: they are on the renderer's element)
-	const { value, placeholder } = (renderer.getElement(node.id)?.customProps ?? {}) as { value?: unknown; placeholder?: unknown };
-	if (typeof value === "string" && value) return value;
-	return typeof placeholder === "string" && placeholder ? placeholder : undefined;
-}
-
 const centre = (b: Box) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 const inside = (b: Box, x: number, y: number) => x >= b.x && y >= b.y && x < b.x + b.width && y < b.y + b.height;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -64,25 +74,39 @@ export class Ui {
 	/** What the scenario did, for the report of a failure. */
 	readonly steps: string[] = [];
 	private shots = 0;
+	/** The store, async in both modes (see StoreView). */
+	readonly store: StoreView;
 
 	constructor(
-		readonly renderer: TestRenderer,
-		readonly store: Store,
-		private readonly apiFetch: ApiFetch,
+		readonly backend: Backend,
 		readonly size: { width: number; height: number },
 		private readonly outDir: string,
-	) {}
+	) {
+		this.store = new Proxy({} as StoreView, {
+			get: (_t, name) => {
+				if (typeof name !== "string" || name === "then") return undefined;
+				return (...args: unknown[]) => this.backend.store(name, args);
+			},
+		});
+	}
+
+	/** true: the app runs in this process. */
+	get inProcess(): boolean {
+		return this.backend.inProcess;
+	}
+
+	/** GPUI's test renderer itself: in-process mode only (a scenario that needs it is declared `inProcessOnly`). */
+	get renderer(): TestRenderer {
+		const r = (this.backend as { renderer?: TestRenderer }).renderer;
+		if (!r) throw new Error("ui.renderer exists only in the in-process mode: declare the scenario inProcessOnly, or use the async driver methods");
+		return r;
+	}
 
 	// ---- time --------------------------------------------------------------------------------------------------------------------
 
-	/** One turn of the loop: native events to the app, the app's changes to GPUI, a frame. */
-	private async turn(ms: number): Promise<void> {
-		this.renderer.dispatchNativeEvents();
-		await Bun.sleep(ms);
-		this.renderer.advanceTime(Math.max(16, ms));
-		this.renderer.flush();
-		this.renderer.dispatchNativeEvents();
-		this.renderer.flush();
+	/** One turn of the loop: native events to the app, the app's changes to GPUI, a frame (the real app runs by itself: this waits). */
+	private turn(ms: number): Promise<void> {
+		return this.backend.turn(ms);
 	}
 
 	/** Let what the last action started finish. */
@@ -122,25 +146,53 @@ export class Ui {
 
 	// ---- what is on screen -------------------------------------------------------------------------------------------------------
 
-	private index(): { all: Indexed[]; byId: Map<number, Indexed> } {
-		this.renderer.flush();
+	/** Make sure the last changes are drawn (replaces ui.renderer.flush()). */
+	async flush(): Promise<void> {
+		await this.backend.flush();
+	}
+
+	/** The automation tree's root (replaces JSON.parse(ui.renderer.getAutomationTree()), which gave { tree: root }), or null. */
+	async tree(): Promise<TreeNode | null> {
+		return this.backend.tree();
+	}
+
+	/** The box of an element (replaces ui.renderer.getElementBounds(id)), or null. */
+	async bounds(id: number): Promise<Box | null> {
+		return this.backend.bounds(id);
+	}
+
+	/** The elements under a point, topmost first (replaces ui.renderer.getElementsAt). In-process only: the real app gives null. */
+	async elementsAt(x: number, y: number): Promise<number[] | null> {
+		return this.backend.elementsAt(x, y);
+	}
+
+	/** The text a node shows: its own, or an input's value, else the placeholder it paints in its place. */
+	private async shownText(node: TreeNode): Promise<string | undefined> {
+		if (node.text) return node.text;
+		if (node.type !== "input" && node.type !== "textarea") return undefined;
+		// (the automation tree leaves the props out: they are on the renderer's element, which only the in-process mode has)
+		const { value, placeholder } = (await this.backend.inputProps(node.id)) ?? {};
+		if (typeof value === "string" && value) return value;
+		return typeof placeholder === "string" && placeholder ? placeholder : undefined;
+	}
+
+	private async index(): Promise<{ all: Indexed[]; byId: Map<number, Indexed> }> {
 		const all: Indexed[] = [];
 		const byId = new Map<number, Indexed>();
-		const parsed = JSON.parse(this.renderer.getAutomationTree()) as { tree?: TreeNode | null } & Partial<TreeNode>;
-		const root = (parsed?.tree ?? parsed) as TreeNode | null;
+		const root = await this.backend.tree();
 		const walk = (node: TreeNode, parent: Indexed | null) => {
 			const here = { node, parent };
 			all.push(here);
 			byId.set(node.id, here);
 			for (const c of node.children ?? []) walk(c, here);
 		};
-		if (root && typeof root.id === "number") walk(root, null);
+		if (root) walk(root, null);
 		return { all, byId };
 	}
 
-	private boxOf(n: Indexed | null): Box | null {
+	private async boxOf(n: Indexed | null): Promise<Box | null> {
 		for (let at = n, up = 0; at && up < 3; at = at.parent, up++) {
-			const b = at.node.bounds ?? this.renderer.getElementBounds(at.node.id);
+			const b = at.node.bounds ?? (await this.backend.bounds(at.node.id));
 			if (b && b.width > 0 && b.height > 0) return b;
 		}
 		return null;
@@ -161,14 +213,14 @@ export class Ui {
 		return false;
 	}
 
-	private matches(text: string, o: FindOptions): { found: (Found & { node: Indexed })[]; byId: Map<number, Indexed> } {
-		const { all, byId } = this.index();
+	private async matches(text: string, o: FindOptions): Promise<{ found: (Found & { node: Indexed })[]; byId: Map<number, Indexed> }> {
+		const { all, byId } = await this.index();
 		const within = o.area ? this.area(o.area) : { x: 0, y: 0, ...this.size };
 		const found: (Found & { node: Indexed })[] = [];
 		for (const n of all) {
-			const t = shownText(n.node, this.renderer);
+			const t = await this.shownText(n.node);
 			if (!t || (o.exact ? t.trim() !== text : !t.includes(text))) continue;
-			const box = this.boxOf(n);
+			const box = await this.boxOf(n);
 			if (!box) continue;
 			const c = centre(box);
 			if (!inside({ x: 0, y: 0, ...this.size }, c.x, c.y) || !inside(within, c.x, c.y)) continue;
@@ -183,16 +235,16 @@ export class Ui {
 	 * Which of `texts` are shown in an area (each as part of a text), read in one pass: findAll reads the screen once per call. Only
 	 * the texts that hold one of them are measured, which is the slow part.
 	 */
-	shownOf(texts: readonly string[], a: Area): Set<string> {
-		const { all } = this.index();
+	async shownOf(texts: readonly string[], a: Area): Promise<Set<string>> {
+		const { all } = await this.index();
 		const within = this.area(a);
 		const out = new Set<string>();
 		for (const n of all) {
-			const t = shownText(n.node, this.renderer);
+			const t = await this.shownText(n.node);
 			if (!t) continue;
 			const hits = texts.filter((w) => !out.has(w) && t.includes(w));
 			if (!hits.length) continue;
-			const box = this.boxOf(n);
+			const box = await this.boxOf(n);
 			if (!box) continue;
 			const c = centre(box);
 			if (inside({ x: 0, y: 0, ...this.size }, c.x, c.y) && inside(within, c.x, c.y)) for (const w of hits) out.add(w);
@@ -201,40 +253,39 @@ export class Ui {
 	}
 
 	/** Every match on screen, from the top left. */
-	findAll(text: string, o: FindOptions = {}): Found[] {
-		return this.matches(text, o).found;
+	async findAll(text: string, o: FindOptions = {}): Promise<Found[]> {
+		return (await this.matches(text, o)).found;
 	}
 
-	visible(text: string, o: FindOptions = {}): boolean {
-		return this.findAll(text, o).length > 0;
+	async visible(text: string, o: FindOptions = {}): Promise<boolean> {
+		return (await this.findAll(text, o)).length > 0;
 	}
 
 	async see(text: string, o: FindOptions = {}, timeoutMs = 5000): Promise<Found> {
 		this.steps.push(`see "${text}"`);
-		await this.waitFor(`"${text}" on screen`, () => this.findAll(text, o).length > (o.nth ?? 0), timeoutMs);
-		return this.findAll(text, o)[o.nth ?? 0]!;
+		await this.waitFor(`"${text}" on screen`, async () => (await this.findAll(text, o)).length > (o.nth ?? 0), timeoutMs);
+		return (await this.findAll(text, o))[o.nth ?? 0]!;
 	}
 
 	async gone(text: string, o: FindOptions = {}, timeoutMs = 5000): Promise<void> {
 		this.steps.push(`gone "${text}"`);
-		await this.waitFor(`"${text}" to leave the screen`, () => !this.visible(text, o), timeoutMs);
+		await this.waitFor(`"${text}" to leave the screen`, async () => !(await this.visible(text, o)), timeoutMs);
 	}
 
 	/** Everything in the last frame, as text. */
-	painted(): string[] {
-		this.renderer.flush();
-		return this.renderer.getPaintedText();
+	async painted(): Promise<string[]> {
+		return this.backend.paintedText();
 	}
 
 	// ---- input -------------------------------------------------------------------------------------------------------------------
 
-	/** Click where `text` is. Fails when something else lies on top of it, as a click of the user would land there. */
+	/** Click where `text` is. Fails when something else lies on top of it, as a click of the user would land there (in-process only). */
 	async click(text: string, o: FindOptions & { button?: number; modifiers?: string; count?: number } = {}): Promise<void> {
 		await this.see(text, o);
-		const { found, byId } = this.matches(text, o);
+		const { found, byId } = await this.matches(text, o);
 		const f = found[o.nth ?? 0];
 		if (!f) throw new Error(`"${text}" left the screen before the click`);
-		const top = this.renderer.getElementsAt(f.x, f.y)[0];
+		const top = (await this.backend.elementsAt(f.x, f.y))?.[0];
 		const topNode = top === undefined ? undefined : byId.get(top);
 		if (topNode && !this.related(topNode, f.node))
 			throw new Error(`"${text}" is covered at ${Math.round(f.x)},${Math.round(f.y)} by element ${top} (${topNode.node.type} "${topNode.node.text ?? ""}")`);
@@ -243,23 +294,8 @@ export class Ui {
 
 	async clickAt(x: number, y: number, o: { button?: number; modifiers?: string; count?: number } = {}): Promise<void> {
 		this.steps.push(`click ${Math.round(x)},${Math.round(y)}${o.modifiers ? ` +${o.modifiers}` : ""}${o.button ? ` button ${o.button}` : ""}`);
-		this.renderer.nativeSimulateMouseMove(x, y, undefined, o.modifiers);
-		const count = o.count ?? 1;
-		for (let i = 0; i < count; i++) this.clickOnce(x, y, o.button ?? 0, o.modifiers, i + 1);
+		await this.backend.click(x, y, { button: o.button ?? 0, modifiers: o.modifiers, clickCount: o.count ?? 1 });
 		await this.settle();
-	}
-
-	/** One click of a series: the nth says so (clickCount), as a window does and the test renderer does not. */
-	private clickOnce(x: number, y: number, button: number, modifiers: string | undefined, clickCount: number): void {
-		if (clickCount === 1) return this.renderer.nativeSimulateClick(x, y, button, modifiers);
-		const r = this.renderer as unknown as { dispatchEvent: (e: Record<string, unknown>) => void };
-		const plain = r.dispatchEvent;
-		r.dispatchEvent = (e) => plain(["click", "mouseDown", "mouseUp"].includes(String(e.eventType)) ? { ...e, clickCount } : e);
-		try {
-			this.renderer.nativeSimulateClick(x, y, button, modifiers);
-		} finally {
-			r.dispatchEvent = plain;
-		}
 	}
 
 	async rightClick(text: string, o: FindOptions = {}): Promise<void> {
@@ -276,7 +312,7 @@ export class Ui {
 	/** Keys in GPUI's syntax: "enter", "ctrl-a", "shift-down", several separated by spaces. */
 	async press(keys: string): Promise<void> {
 		this.steps.push(`press ${keys}`);
-		this.renderer.simulateKeystrokes(keys);
+		await this.backend.keystrokes(keys);
 		await this.settle(120);
 	}
 
@@ -284,7 +320,7 @@ export class Ui {
 		this.steps.push(`type "${text}"`);
 		for (const ch of text) {
 			const key = ch === " " ? "space" : ch === "\n" ? "enter" : ch === "\t" ? "tab" : ch;
-			this.renderer.simulateKeystrokes(key);
+			await this.backend.keystrokes(key);
 		}
 		await this.settle(120);
 	}
@@ -295,36 +331,54 @@ export class Ui {
 		await this.type(text);
 	}
 
+	/** Move the pointer, no settling (replaces ui.renderer.nativeSimulateMouseMove(x, y); follow it with ui.settle() where a hover has to show). */
+	async mouseMove(x: number, y: number, o: { pressedButton?: number; modifiers?: string } = {}): Promise<void> {
+		await this.backend.mouseMove(x, y, o);
+	}
+
 	async drag(from: { x: number; y: number }, to: { x: number; y: number }, steps = 10): Promise<void> {
 		this.steps.push(`drag ${Math.round(from.x)},${Math.round(from.y)} to ${Math.round(to.x)},${Math.round(to.y)}`);
-		this.renderer.nativeSimulateMouseMove(from.x, from.y);
-		this.renderer.nativeSimulateMouseDown(from.x, from.y);
+		await this.backend.mouseMove(from.x, from.y);
+		await this.backend.mouseDown(from.x, from.y);
 		for (let i = 1; i <= steps; i++) {
-			this.renderer.nativeSimulateMouseMove(from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps, 0);
+			await this.backend.mouseMove(from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps, { pressedButton: 0 });
 			await this.turn(16);
 		}
-		this.renderer.nativeSimulateMouseUp(to.x, to.y);
+		await this.backend.mouseUp(to.x, to.y);
 		await this.settle();
 	}
 
+	/** Move the pointer there and turn the wheel, then settle. */
 	async wheel(x: number, y: number, deltaY: number): Promise<void> {
 		this.steps.push(`wheel ${deltaY} at ${Math.round(x)},${Math.round(y)}`);
-		this.renderer.nativeSimulateMouseMove(x, y);
-		this.renderer.nativeSimulateScrollWheel(x, y, 0, deltaY);
+		await this.backend.mouseMove(x, y);
+		await this.backend.wheel(x, y, 0, deltaY);
 		await this.settle();
+	}
+
+	/** One wheel event with both deltas and modifiers, no pointer move and no settling (replaces ui.renderer.nativeSimulateScrollWheel). */
+	async wheelAt(x: number, y: number, deltaX: number, deltaY: number, modifiers?: string): Promise<void> {
+		await this.backend.wheel(x, y, deltaX, deltaY, modifiers);
+	}
+
+	// ---- clipboard (in memory in both modes) -------------------------------------------------------------------------------------
+
+	/** The app's clipboard text (replaces ui.renderer.readFromClipboard()). */
+	async clipboard(): Promise<string> {
+		return this.backend.clipboard();
+	}
+
+	/** Put text on the app's clipboard (replaces ui.renderer.writeToClipboard(text)). */
+	async setClipboard(text: string): Promise<void> {
+		await this.backend.setClipboard(text);
 	}
 
 	// ---- what was saved ----------------------------------------------------------------------------------------------------------
 
 	async api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-		const r = await this.apiFetch(path, {
-			method,
-			headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-			body: body === undefined ? undefined : JSON.stringify(body),
-		});
-		const text = await r.text();
-		if (!r.ok) throw new Error(`${method} ${path} answered ${r.status}: ${text.slice(0, 300)}`);
-		return (text ? JSON.parse(text) : undefined) as T;
+		const r = await this.backend.api(method, path, body);
+		if (r.status < 200 || r.status >= 300) throw new Error(`${method} ${path} answered ${r.status}: ${r.text.slice(0, 300)}`);
+		return (r.text ? JSON.parse(r.text) : undefined) as T;
 	}
 
 	/** The saved item with this title, creators as "Last, First". */
@@ -345,24 +399,25 @@ export class Ui {
 	async changeOutside(key: string, fields: Record<string, unknown>): Promise<void> {
 		this.steps.push(`change ${key} from outside: ${Object.keys(fields).join(", ")}`);
 		await this.api("PATCH", `/items/${key}`, { data: fields });
-		this.store.refreshItems(Object.keys(fields));
+		await this.store.refreshItems(Object.keys(fields));
 		await this.settle(600);
 	}
 
-	selectedTitle(): string | null {
-		const key = this.store.selectedItem();
+	async selectedTitle(): Promise<string | null> {
+		const key = await this.store.selectedItem();
 		if (!key) return null;
-		for (let i = 0; i < this.store.total(); i++) {
-			const row = this.store.peek(i);
+		const total = await this.store.total();
+		for (let i = 0; i < total; i++) {
+			const row = await this.store.peek(i);
 			if (row?.key === key) return row.title ?? "";
 		}
 		return key;
 	}
 
-	screenshot(name = `step-${++this.shots}`): string {
+	/** Writes a PNG of the window into the run's folder and gives its path. */
+	async screenshot(name = `step-${++this.shots}`): Promise<string> {
 		const file = `${this.outDir}/${name}.png`;
-		this.renderer.flush();
-		this.renderer.captureScreenshot(file);
+		await this.backend.screenshot(file);
 		return file;
 	}
 }
