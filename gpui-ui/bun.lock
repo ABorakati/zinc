@@ -33,6 +33,7 @@
     },
   },
   "patchedDependencies": {
+    "@gpuix/native@0.11.0": "patches/@gpuix%2Fnative@0.11.0.patch",
     "@gpuix/solid@0.11.0": "patches/@gpuix%2Fsolid@0.11.0.patch",
   },
   "packages": {

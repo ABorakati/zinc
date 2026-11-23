@@ -1,0 +1,21 @@
+diff --git a/dist/mutations.js b/dist/mutations.js
+index f517f20be37230511112c0b1702def9db4c10bfa..5c9089bbdb89ac037737813b1fda573cd8d74b1b 100644
+--- a/dist/mutations.js
++++ b/dist/mutations.js
+@@ -74,6 +74,8 @@ export const EVENT_PROPS = [
+     ["onShowMore", "showMore"],
+     ["onLineClick", "lineClick"],
+     ["onLinkClick", "linkClick"],
++    ["onCitationClick", "citationClick"],
++    ["onSelectionChange", "selectionChange"],
+     ["onVisibleRange", "visibleRange"],
+     ["onHighlight", "highlight"],
+     ["onMotionComplete", "motionComplete"],
+@@ -114,6 +116,7 @@ export const BUILT_IN_TYPES = new Set(["div", "text"]);
+ export const UNIVERSAL_PROPS = new Set([
+     "autoFocus",
+     "tabIndex",
++    "dir",
+     "motion",
+     "testId",
+     "highlight",

@@ -33,7 +33,10 @@ registerSettings([
 			"With Show notes natively on, Edit opens a native editor with a formatting toolbar instead of the usual one. Needs a Zinc build whose GPUI toolkit has the native editor.",
 		keywords: ["notes", "editor", "native", "wysiwyg", "rich text", "formatting", "toolbar"],
 		control: () => <Toggle checked={richTextEditor()} onChange={setRichTextEditor} />,
-		unavailable: richTextSupported ? undefined : "Needs a Zinc build with the GPUIX fork's native editor",
+		// read when the row is drawn: the renderer is not known yet when this module loads
+		get unavailable() {
+			return richTextSupported() ? undefined : "Needs a Zinc build with the GPUIX fork's native editor";
+		},
 	},
 	{
 		id: "experimental.plugins",

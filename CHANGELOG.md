@@ -15,6 +15,7 @@ Draws Arabic and Hebrew text in the right order, fixes many rows and buttons tha
 
 ### Added
 
+- **Native note editor (experimental, Windows):** with Settings > Experimental > Show notes natively and Edit notes natively on, Edit opens a native editor with a formatting toolbar. It is offered only where Zinc's renderer can draw it, and the switch says so elsewhere.
 - **Right-to-left text:** item fields and the native note view choose their direction as Zotero does, and Arabic and Hebrew are drawn in the right order on Windows, including right-to-left words in a line that starts in Latin script.
 - **Pane headers:** panes show a header on hover, with minimise, maximise and hide.
 - **Experimental settings:** Settings has an Experimental section with a switch per feature. It includes a native note view and a native note editor (both off by default; the editor needs a GPUIX build with rich text).

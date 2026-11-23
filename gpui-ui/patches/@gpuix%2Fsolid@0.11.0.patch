@@ -1,8 +1,16 @@
 diff --git a/dist/host.js b/dist/host.js
-index 5b89e39c0eebee46b8c2b33c6fe4e229361e333f..dd7136e860aac3e80be8ade2d0f63feed7e8f7f0 100644
+index 5b89e39c0eebee46b8c2b33c6fe4e229361e333f..ba44eec62f55f50c140ca0f2353e0e62585ec309 100644
 --- a/dist/host.js
 +++ b/dist/host.js
-@@ -138,8 +138,11 @@ function mount(root, node) {
+@@ -73,6 +73,7 @@ function isElementType(type) {
+         case "code":
+         case "diff":
+         case "markdown":
++        case "richtext":
+         case "virtual-list":
+             return true;
+         default:
+@@ -138,8 +139,11 @@ function mount(root, node) {
          throw new Error("Cannot move a GPUIX host node between roots");
      }
      node.root = root;
@@ -15,7 +23,7 @@ index 5b89e39c0eebee46b8c2b33c6fe4e229361e333f..dd7136e860aac3e80be8ade2d0f63fee
      if (node.mounted)
          return;
      node.mounted = true;
-@@ -196,6 +199,7 @@ export function insertHostNode(parent, node, anchor) {
+@@ -196,6 +200,7 @@ export function insertHostNode(parent, node, anchor) {
  }
  function markUnmounted(node) {
      node.mounted = false;

@@ -143,6 +143,10 @@ scrolled replays the sidebar, toolbar and item pane instead of rebuilding them (
   `patches/zed/README.md` says how to re-apply them (applied: local branch `zn-rtl` of the submodule). 0005 to 0010 are
   right-to-left text: without them Arabic and Hebrew are drawn backwards on Windows.
 * Dependencies: the fork's `bun install --frozen-lockfile --ignore-scripts` before the first build (it brings `napi`).
+* The JS side: `patches/@gpuix%2Fnative@0.11.0.patch` and `patches/@gpuix%2Fsolid@0.11.0.patch` add what the fork's JS adds (`richtext`, `dir`,
+  the editor's events) to the npm packages. The native note editor is offered only when the addon has the static
+  `GpuixRenderer.supportsElementType` and it answers true for `richtext` (`src/notes/native/prefs.ts`): the npm addon accepts the
+  element and draws nothing.
 * Build: in `packages/native`, `bun run build` (napi release build with `test-support`).
 * Install: copy `packages/native/gpuix-native.win32-x64-msvc.node` over
   `node_modules/@gpuix/native-win32-x64-msvc/gpuix-native.win32-x64-msvc.node` (the npm original is kept beside it as `.orig`).
