@@ -321,7 +321,7 @@ The Word add-in has its own MCP server for the open document. The core's server 
 
 ## Building from source
 
-You need Windows 10/11 x64, Linux x86-64 or an Apple Silicon Mac, [Bun](https://bun.sh) 1.4.4 (CI uses it; no Node or npm) and the Rust toolchain for the PDF library. The Windows installer needs Inno Setup 7, and the Word add-in the .NET SDK (both Windows only). Full instructions to run the same checks as CI are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+You need Windows 10/11 x64, Linux x86-64 or an Apple Silicon Mac, [Bun](https://bun.sh) 1.4.5 (CI uses it; no Node or npm) and the Rust toolchain for the PDF library. The Windows installer needs Inno Setup 7, and the Word add-in the .NET SDK (both Windows only). Full instructions to run the same checks as CI are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ```
 # one-time setup

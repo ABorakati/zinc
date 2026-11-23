@@ -51,7 +51,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.4
+  BUN_VERSION: 1.4.5
   # zotero/reader as vendored for the app (vendor/reader; its submodules follow the commit)
   ZOTERO_READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39 # the full commit: a short one can become ambiguous
   TAG: ${{ github.event.release.tag_name || inputs.release_tag }}

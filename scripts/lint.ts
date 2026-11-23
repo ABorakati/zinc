@@ -1,4 +1,4 @@
-// `bun run lint [args]`: runs `bun lint` (rules in bunfig.toml [lint]). Stable Bun 1.4.4 has no lint command yet, so this uses
+// `bun run lint [args]`: runs `bun lint` (rules in bunfig.toml [lint]). Stable Bun 1.4.5 has no lint command yet, so this uses
 // the Bun that runs this script when it has one, else the canary named by ZN_BUN_CANARY (the same variable the AOT build reads,
 // gpui-ui/scripts/build.ts), else the canary's usual place in the workspace. The global Bun is never changed.
 //

@@ -157,7 +157,7 @@ The harness refuses to start while any `WINWORD.EXE` is running. `mcp-e2e.test.t
 
 ## Continuous integration
 
-`ci.yml` runs on every push and pull request, and on manual dispatch. A newer push to the same ref cancels the run in progress. Bun is pinned to 1.4.4.
+`ci.yml` runs on every push and pull request, and on manual dispatch. A newer push to the same ref cancels the run in progress. Bun is pinned to 1.4.5.
 
 | Job | Runner | Steps |
 | --- | --- | --- |

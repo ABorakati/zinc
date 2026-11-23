@@ -5,7 +5,7 @@ This page covers building and running Zinc from a checkout, and producing the Wi
 ## Requirements
 
 - Windows 10 or 11 (x64), Linux (x64) or macOS 13 or later on Apple Silicon (arm64). The app runs from source on all three. Only Windows has the installer, the Word add-in, the connector host and auto-update.
-- Bun 1.4.4. Use Bun for everything: no Node, npm or npx.
+- Bun 1.4.5. Use Bun for everything: no Node, npm or npx.
 - The Rust toolchain (`cargo`) for the PDF library and the Wasmtime plugin host (`zhw`).
 - Windows only: the .NET SDK (`dotnet`) with .NET Framework 4.8 targeting, for the Word add-in. The project pulls `Microsoft.NETFramework.ReferenceAssemblies` from NuGet.
 - Windows only: PowerShell 7 (`pwsh`): `word/build.ps1` and `package.ts --zip` are run through it.
@@ -225,7 +225,7 @@ Linux (x64) and macOS (Apple Silicon) run Zinc from source and have a packaged b
 
 ### Requirements
 
-Both: Bun 1.4.4, `cargo`, and the one-time setup above (the document worker, reader and note editor builds use `bash`). The custom GPUIX addon is not used; the npm binary is.
+Both: Bun 1.4.5, `cargo`, and the one-time setup above (the document worker, reader and note editor builds use `bash`). The custom GPUIX addon is not used; the npm binary is.
 
 Linux:
 

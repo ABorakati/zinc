@@ -40,7 +40,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.4
+  BUN_VERSION: 1.4.5
   # The Zotero reader (vendor/reader) is not fetched by any script in this repository (reader-host/build.sh expects it to exist).
   # This is the commit the reader was built from; change it deliberately.
   READER_REPO: https://github.com/zotero/reader

@@ -69,7 +69,7 @@ checks the pull request.
 ## Running the CI checks locally
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request. Everything it runs works on this machine too.
-Bun 1.4.4 only (no node/npm). Run from the repo root.
+Bun 1.4.5 only (no node/npm). Run from the repo root.
 
 This is the short version. The full developer guide (architecture, building, testing, database migrations, releasing) is in
 [`docs/developer-guide/`](docs/developer-guide/README.md), and the user documentation in [`docs/`](docs/README.md). To read the docs with search

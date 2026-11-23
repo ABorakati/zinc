@@ -26,7 +26,7 @@ if (!g.process) {
 		pid: 1,
 		ppid: 0,
 		version: "v22.0.0",
-		versions: { bun: "1.4.4", node: "22.0.0" },
+		versions: { bun: "1.4.5", node: "22.0.0" },
 		release: { name: "node" },
 		title: "zotero-next-demo",
 		exitCode: 0,
@@ -98,7 +98,7 @@ if (!g.Bun) {
 		delete: async () => fs.rmSync(p),
 	});
 	g.Bun = {
-		version: "1.4.4",
+		version: "1.4.5",
 		revision: "web",
 		env,
 		main: "/web-demo",

@@ -49,7 +49,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.4
+  BUN_VERSION: 1.4.5
   # GitHub Pages serves a project repository under /<repo>/
   DOCS_BASE: /zinc/
   DOCS_SITE: https://aborakati.github.io

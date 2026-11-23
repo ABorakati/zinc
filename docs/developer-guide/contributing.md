@@ -4,7 +4,7 @@ This page expands `CONTRIBUTING.md` at the repository root. Read [Architecture](
 
 ## One-time setup
 
-Bun 1.4.4 only. There is no Node, npm or npx anywhere in the workflow. From the repository root:
+Bun 1.4.5 only. There is no Node, npm or npx anywhere in the workflow. From the repository root:
 
 ```
 cd core         && bun install --frozen-lockfile
