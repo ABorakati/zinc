@@ -2,7 +2,7 @@
 
 import type { Database } from "bun:sqlite";
 import { existsSync, realpathSync, rmdirSync, rmSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { nowIso } from "../db";
 import { resolveStoredPath } from "../files/paths";
 import { BASELINE_CHANGED, type EntityType, type ZoteroJson, type ZoteroWrite, type ZoteroWriteResult } from "./protocol";
@@ -50,12 +50,21 @@ export function pendingCount(db: Database, libraryId = 1): number {
 	).n;
 }
 
-/** A path with its symbolic links resolved when it exists, else as given (resolved). */
+/**
+ * A path with its symbolic links resolved. A path that does not exist (a file not written yet, or the old path of a moved attachment) is
+ * resolved through its nearest existing folder, so it compares with real folders: on macOS /var/... is /private/var/....
+ */
 const real = (p: string): string => {
-	try {
-		return realpathSync(p);
-	} catch {
-		return resolve(p);
+	const rest: string[] = [];
+	for (let at = resolve(p); ; ) {
+		try {
+			return join(realpathSync(at), ...rest);
+		} catch {
+			const up = dirname(at);
+			if (up === at) return resolve(p);
+			rest.unshift(basename(at));
+			at = up;
+		}
 	}
 };
 

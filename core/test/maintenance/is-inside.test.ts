@@ -1,7 +1,7 @@
 // isInside (erase.ts, shared by files/*) and the one in sync/build.ts: a file counts as inside a folder when it really is, and only then.
 // Temp folders only; every path is under one.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isInside as eraseInside } from "../../src/maintenance/erase";
@@ -37,5 +37,23 @@ describe.each([
 		expect(isInside(join(storage, "KEY00001", "..", "..", "..", "outside.pdf"), storage)).toBe(false);
 		expect(isInside(root, storage)).toBe(false); // the parent
 		expect(isInside(storage, storage)).toBe(false); // the folder itself
+	});
+});
+
+// sync/build compares real paths. A file that does not exist (yet, or any more: the old path of a moved attachment) has no real path of its
+// own, so its nearest existing folder is resolved instead. Without that, on macOS (/var is a link to /private/var) a missing file under
+// the temp folder counted as outside. Reproduced on every system with a link to the storage folder (a junction on Windows: no rights needed).
+describe("isInside (sync/build) through a linked folder", () => {
+	const linked = join(root, "linked-storage");
+	symlinkSync(storage, linked, process.platform === "win32" ? "junction" : "dir");
+
+	test("a missing file under a link to the folder is inside", () => {
+		expect(buildInside(join(linked, "KEY00001", "not-there-yet.pdf"), storage)).toBe(true);
+		expect(buildInside(join(linked, "NEWKEY99", "deeper", "missing.pdf"), storage)).toBe(true);
+	});
+
+	test("a file that exists under the link is inside, and the link's own sibling is not", () => {
+		expect(buildInside(join(linked, "KEY00001", "..notes.pdf"), storage)).toBe(true);
+		expect(buildInside(join(root, "storage2", "missing.pdf"), storage)).toBe(false);
 	});
 });
