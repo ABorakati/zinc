@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.7.1] - 2026-11-23
+
+Fixes the Windows window layout of 0.2.7.
+
+### Fixed
+
+- **Panes over the top bar (Windows):** in 0.2.7 the panes were drawn about 70 pixels too high, over the menu bar and the tab row, which hid the sidebar toggle, the Library tab and Settings.
+- **Moved attachments on macOS:** when an attachment's file moved, its emptied old folder is now removed on macOS too.
+
 ## [0.2.7] - 2026-11-22
 
 Draws Arabic and Hebrew text in the right order, fixes many rows and buttons that ignored clicks, keeps what you type in the item pane when the selection moves, and tightens plugin, file and network safety. It also fixes sync, imports and exports, Word citations, the reader and the installers.
@@ -446,7 +455,8 @@ The first start upgrades the library database to schema v3 (it adds the search i
 - Institution sign-in window (OpenAthens, Shibboleth, library proxy) for Find Full Text; a sign-in from the earlier Electrobun build is carried over.
 - Browser connector (native messaging) included in the installer.
 
-[unreleased]: https://github.com/ABorakati/zinc/compare/v0.2.7...HEAD
+[unreleased]: https://github.com/ABorakati/zinc/compare/v0.2.7.1...HEAD
+[0.2.7.1]: https://github.com/ABorakati/zinc/compare/v0.2.7...v0.2.7.1
 [0.2.7]: https://github.com/ABorakati/zinc/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/ABorakati/zinc/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/ABorakati/zinc/compare/v0.2.4...v0.2.5
