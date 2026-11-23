@@ -73,16 +73,23 @@ Run that line (with the real file and property name) to reproduce exactly the fa
 
 ## The UI harness
 
-`cd gpui-ui && bun run test:ui` is how a change to the interface is tested. It starts Zinc through its normal start-up (`src/start.tsx`) on GPUI's test renderer and sends it real input: clicks go through hit testing, keys through focus and key dispatch. So it catches what component tests cannot, such as a row that is drawn but ignores clicks.
+`cd gpui-ui && bun run test:ui` is how a change to the interface is tested. It drives the app as people get it and sends it real input: clicks go through hit testing, keys through focus and key dispatch. So it catches what component tests cannot, such as a row that is drawn but ignores clicks.
+
+On Windows the default is the **packaged app**: the AOT build in `out/package-aot/zotero-next-gpui/`, with the renderer that ships. The harness builds the package first when anything it is made from (`src/`, `patches/`, `assets/`, the lock file, the renderer addon) is newer than it (`test/ui/appPackage.ts`), then starts it per scenario with automation on (`ZN_AUTOMATION=stdio`, `src/automation.ts`) and talks to it over its standard input and output. A scenario marked `inProcessOnly: "<reason>"` needs what only the in-process mode has (the test renderer's own calls, such as page geometry in the reader); in the default run it runs in-process instead, and the summary counts it apart.
 
 ```
-bun run test:ui                     # everything
+bun run test:ui                     # everything, on the packaged app (built first if it is out of date)
 bun run test:ui edit                # scenarios whose file or name contains a word
 bun run test:ui --list              # what there is
 bun run test:ui --jobs 4 --out dir  # parallel processes (default half the cores, 2 to 8), where the evidence goes
+bun run test:ui --no-build          # the package as it is, even if it is older than its sources
+bun run test:ui --app <exe>         # another package; inProcessOnly scenarios are skipped
+bun run test:ui --in-process        # the app inside each scenario's process on GPUI's test renderer (CI, and the default on macOS)
 ```
 
-The test renderer opens a real window per scenario. On Windows the harness opens them on a hidden desktop of their own (`test/ui/background.ts`), so a run shows nothing and never takes the focus. You can keep working meanwhile; `--show` puts them on screen to watch. On macOS they are on screen.
+The app opens a real window per scenario. On Windows the harness opens them on a hidden desktop of their own (`test/ui/background.ts`): the packaged app starts itself again on that desktop, with every thread and child process there, and ends when the harness does. So a run shows nothing and never takes the focus, and you can keep working meanwhile. A watchdog fails the run if a window of the test app ever appears on your screen. `--show` puts them on screen to watch. On macOS they are on screen.
+
+A whole default run that passes (nothing failed or skipped) is recorded next to the package, in `out/package-aot/ui-pass.json` (its version and the exe's hash). `scripts/release.ts` refuses to sign or publish a Windows installer unless that record is of the installer's version and of the package beside it, unchanged since; `--skip-ui-gate` overrides it and says so.
 
 Every scenario gets a process of its own, a made-up library (`test/ui/library.ts`), its own user folders and an in-memory clipboard. It fails when an assertion fails, when the app logs an error, or when anything tries to reach the network or start a program (`test/ui/fences.ts`). A failure leaves `result.json` (the steps and the error), `screen.txt` (the painted text) and `failure.png` in `out/ui-test/<file>/<scenario>/`.
 
@@ -102,7 +109,7 @@ Rules for writing one:
 
 - Do the action under test as a user does (`click`, `press`, `type`, `drag`). The store and the API are for set-up and for reading results.
 - Assert the effect (what was saved, selected or painted), and see the scenario fail without the fix it guards.
-- It runs on the `@gpuix/native` addon from npm, as CI does, not on the custom Windows addon (`gpui-ui/scripts/README.md`). To try that one, set `NAPI_RS_NATIVE_LIBRARY_PATH` to the `.node` file; its cached regions are laid out differently in the test window, so the scenarios that click the top bar fail there.
+- In-process it runs on the `@gpuix/native` addon installed in `node_modules`; the default run uses the one built into the package. Keep a scenario working in both modes: read state through `ui.*` (async), the store's allowlisted calls (`ui.store.*`, `ZN_METHODS` in `src/automation.ts`) and the core's API (`ui.api`), not through `ui.renderer` or module imports, which exist in-process only.
 - A bug that waits for a decision keeps its scenario, with `knownBug: "<why it waits>"`. The run reports it, and fails once it passes, so that the mark comes off.
 
 The harness needs `zn_pdf` (see [Building](building.md)) and, for reading mode, `vendor/document-worker`. It does not exist for Linux, and it does not test what only a real window has: the title bar, dragging out to other programs, web views, printing and the system's dialogs. The browser build has its own checks (`gpui-ui/web/*-check.ts`).

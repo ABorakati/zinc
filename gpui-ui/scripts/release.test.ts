@@ -31,6 +31,22 @@ const run = (args: string[], out: string) => {
 	});
 };
 
+/** A package folder with a version.txt and an exe, and (unless `record` is false) the record of a UI run that passed on it. */
+const testedPackage = (name: string, version: string, o: { record?: boolean; recordVersion?: string; rebuilt?: boolean } = {}) => {
+	const base = join(dir, name);
+	const app = join(base, "zotero-next-gpui");
+	mkdirSync(app, { recursive: true });
+	writeFileSync(join(app, "version.txt"), version);
+	writeFileSync(join(app, "zotero-next-gpui.exe"), "the app");
+	const record = join(base, "ui-pass.json");
+	if (o.record !== false) {
+		const sha = createHash("sha256").update("the app").digest("hex");
+		writeFileSync(record, JSON.stringify({ version: o.recordVersion ?? version, exeSha256: sha, passed: 1, knownBugs: 0, inProcess: 0 }));
+	}
+	if (o.rebuilt) writeFileSync(join(app, "zotero-next-gpui.exe"), "the app, built again");
+	return record;
+};
+
 describe("release.ts --extension-zip", () => {
 	test("writes a signed latest-extension.json, and no latest.json without an installer", async () => {
 		const out = join(dir, "out1");
@@ -70,7 +86,8 @@ describe("release.ts --extension-zip", () => {
 		const out = join(dir, "out2");
 		const exe = join(dir, "Zinc-Setup-0.2.0-abcdef12-20261201.exe");
 		writeFileSync(exe, "installer");
-		const r = run(["--installer", exe, "--extension-zip", zip, "--publish", "o/r", "--dry-run"], out);
+		const pass = testedPackage("pkg-ok", "0.2.0+abcdef12-20261201");
+		const r = run(["--installer", exe, "--extension-zip", zip, "--publish", "o/r", "--dry-run", "--ui-pass", pass], out);
 		expect(r.exitCode).toBe(0);
 		expect(existsSync(join(out, "latest.json"))).toBe(true);
 		const feed = JSON.parse(readFileSync(join(out, "latest-extension.json"), "utf8"));
@@ -86,6 +103,41 @@ describe("release.ts --extension-zip", () => {
 		const r = run(["--extension-zip", zip], join(dir, "out3"));
 		expect(r.exitCode).toBe(1);
 		expect(r.stderr.toString()).toContain("--extension-url");
+	});
+});
+
+describe("release.ts UI gate", () => {
+	const version = "0.2.0+abcdef12-20261201";
+	const installer = () => {
+		const exe = join(dir, `Zinc-Setup-0.2.0-abcdef12-20261201.exe`);
+		writeFileSync(exe, "installer");
+		return exe;
+	};
+	const release = (pass: string, ...more: string[]) =>
+		run(["--installer", installer(), "--url", "https://example.com/setup.exe", "--ui-pass", pass, ...more], join(dir, `gate-${Math.random()}`));
+
+	test("an installer whose package passed the UI harness is released", () => {
+		const r = release(testedPackage("gate-ok", version));
+		expect(r.exitCode).toBe(0);
+		expect(r.stdout.toString()).toContain("the UI harness passed");
+	});
+
+	test("refused without a recorded run, for another version, and when the package was built again", () => {
+		for (const [name, o, says] of [
+			["gate-none", { record: false }, "no passing UI run"],
+			["gate-old", { recordVersion: "0.1.9+00000000-20261101" }, "not 0.2.0"],
+			["gate-rebuilt", { rebuilt: true }, "built again"],
+		] as const) {
+			const r = release(testedPackage(name, version, o));
+			expect(r.exitCode).toBe(1);
+			expect(r.stderr.toString()).toContain(says);
+		}
+	});
+
+	test("--skip-ui-gate releases anyway and says so", () => {
+		const r = release(testedPackage("gate-skip", version, { record: false }), "--skip-ui-gate");
+		expect(r.exitCode).toBe(0);
+		expect(r.stderr.toString()).toContain("without a passing UI run");
 	});
 });
 

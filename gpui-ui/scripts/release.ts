@@ -23,6 +23,9 @@
 //       --tag <tag>            the release tag (default v<version>)
 //       --dry-run              with --publish: print the gh command instead of running it
 //       --force                skip the "key matches the public key built into the app" check
+//       --ui-pass <file>       the record of the passing UI run (default out/package-aot/ui-pass.json, written by test/ui/run.ts). An
+//                              installer is refused unless that run was of its version and of the package beside the record, unchanged
+//       --skip-ui-gate         release the installer without a passing UI run (says so loudly)
 //       --extension-zip <zip>  also write latest-extension.json, the signed feed of the Zinc Connector's unpacked install (the file is
 //                              Zinc-Connector-<version>.zip: the unpacked zip with the pinned key). With --publish the zip and the feed are
 //                              uploaded too. The app packages may then be left out (a connector-only release).
@@ -34,7 +37,7 @@
 // The private key is read from the path in ZN_UPDATE_KEY and refused if that path is inside this repo. See gpui-ui/UPDATES.md.
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { generateKeyPair, publicKeyOf, signManifest, verifyManifest, type PrivateJwk } from "../../core/src/update/manifest";
 import { feedFileName, type UpdatePlatform } from "../../core/src/update/platform";
 import { compareVersions, parseVersion } from "../../core/src/update/version";
@@ -144,6 +147,34 @@ for (const p of pkgs) {
 	if (!parseVersion(p.version)) die(`not a version: ${p.version} (${basename(p.file)})`);
 }
 if (extZip && !existsSync(extZip)) die(`no such extension zip: ${extZip}`);
+
+// The UI gate: a Windows build is released only after the whole UI harness passed against that package (test/ui/run.ts, which records
+// the pass in out/package-aot/ui-pass.json; the package folder sits beside it). The version, and the exe's hash, must be the ones tested.
+const uiGate = (pkg: Pkg): string | undefined => {
+	const record = resolve(arg("ui-pass") ?? join(root, "out", "package-aot", "ui-pass.json"));
+	if (!existsSync(record)) return `no passing UI run is recorded (${record}): run \`bun run test:ui\` on the package first`;
+	let pass: { version?: string; exeSha256?: string };
+	try {
+		pass = JSON.parse(readFileSync(record, "utf8"));
+	} catch {
+		return `cannot read ${record}`;
+	}
+	if (pass.version !== pkg.version) return `the UI run that passed was of ${pass.version}, not ${pkg.version}: run \`bun run test:ui\` again`;
+	const app = join(dirname(record), "zotero-next-gpui");
+	const exe = join(app, "zotero-next-gpui.exe");
+	const stamp = join(app, "version.txt");
+	if (!existsSync(exe) || !existsSync(stamp)) return `no package next to ${record} to check it against`;
+	if (readFileSync(stamp, "utf8").trim() !== pkg.version) return `the package in ${app} is not ${pkg.version}`;
+	if (createHash("sha256").update(readFileSync(exe)).digest("hex") !== pass.exeSha256)
+		return `the package in ${app} was built again after its UI run: run \`bun run test:ui\` again`;
+	return undefined;
+};
+for (const p of pkgs.filter((p) => p.platform === "win-x64")) {
+	const why = uiGate(p);
+	if (!why) console.log(`release: the UI harness passed on ${p.version}`);
+	else if (flag("skip-ui-gate")) console.warn(`release: WARNING, releasing without a passing UI run (--skip-ui-gate): ${why}`);
+	else die(`${why}. (--skip-ui-gate releases anyway.)`);
+}
 // The connector's own version: the zip's name (Zinc-Connector-<version>.zip, the version the extension reports), else --version, else
 // the app package's. latest-extension.json must carry exactly this: the extension compares it with its manifest version, and an app
 // stamp (0.1.11+1a2b3c4d-20261116) would count as newer than its own 0.1.11 for ever.

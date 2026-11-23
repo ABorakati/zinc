@@ -2,8 +2,11 @@
 //
 //   bun run test:ui                  every scenario
 //   bun run test:ui list edit        those whose file or name contains one of the words
-//   --app <exe>: drive the packaged app (zotero-next-gpui.exe of a package) over a pipe, with the renderer that ships; scenarios marked
-//     inProcessOnly are skipped and counted apart. --in-process: the app in the scenario's own process on GPUI's test renderer (today's default)
+//   The default (Windows): the packaged app (out/package-aot, built again first when its sources are newer: appPackage.ts), driven over
+//     a pipe with the renderer that ships. A scenario marked inProcessOnly needs what only the in-process mode has; it runs there instead,
+//     and is counted apart.
+//   --app <exe>: that package only; inProcessOnly scenarios are skipped. --no-build: the package as it is, even if it is older than its sources.
+//   --in-process: every scenario in its own process on GPUI's test renderer (the default on macOS, where the app's windows cannot be hidden)
 //   --show: the windows on screen, to watch (they open on a hidden desktop otherwise: background.ts)
 //   options: --jobs <n> (default half the cores, 2 to 8)  --out <dir> (default out/ui-test)  --keep (leave the temporary folders)  --list
 //
@@ -15,6 +18,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { availableParallelism, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { BUN_CACHE, compileApp } from "./compiled";
+import { ensurePackage, newerSource, packagedApp, recordPass } from "./appPackage";
 
 const HERE = import.meta.dir;
 const GPUI = resolve(HERE, "..", "..");
@@ -30,6 +34,9 @@ let keep = false;
 let listOnly = false;
 let show = false;
 let appExe: string | undefined;
+/** default: the package, with inProcessOnly scenarios in-process; app: the given package only; in-process: no package */
+let mode: "default" | "app" | "in-process" = process.platform === "win32" ? "default" : "in-process";
+let build = true;
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
 	const a = argv[i]!;
@@ -38,8 +45,9 @@ for (let i = 0; i < argv.length; i++) {
 	else if (a === "--keep") keep = true;
 	else if (a === "--list") listOnly = true;
 	else if (a === "--show") show = true;
-	else if (a === "--app") appExe = resolve(argv[++i] ?? "");
-	else if (a === "--in-process") appExe = undefined;
+	else if (a === "--app") (appExe = resolve(argv[++i] ?? "")), (mode = "app");
+	else if (a === "--in-process") (appExe = undefined), (mode = "in-process");
+	else if (a === "--no-build") build = false;
 	else if (a.startsWith("--")) {
 		console.error(`unknown option ${a}`);
 		process.exit(2);
@@ -52,7 +60,7 @@ if (process.platform !== "win32" && process.platform !== "darwin") {
 }
 
 /** The environment of a child: the system's own variables, none of Zinc's or Zotero's, every user folder inside `root`. */
-function childEnv(root: string): Record<string, string> {
+function childEnv(root: string, appExe: string | undefined): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
 		if (v === undefined || /^(?:ZN_|ZNH_|ZOTERO_|XDG_)/i.test(k)) continue;
@@ -103,6 +111,8 @@ interface Result extends Job {
 	ms: number;
 	failure?: string;
 	dir: string;
+	/** run in-process although the run drives the package (an inProcessOnly scenario in the default mode) */
+	inProcess?: boolean;
 }
 
 const base = mkdtempSync(join(tmpdir(), "zn-ui-"));
@@ -116,7 +126,7 @@ async function findJobs(): Promise<Job[]> {
 	for (const f of files) {
 		const file = join(HERE, "scenarios", f);
 		const root = mkdtempSync(join(base, "list-"));
-		const p = Bun.spawn([...APP_BUN, WORKER, file, "list"], { cwd: GPUI, env: childEnv(root), stdout: "pipe", stderr: "pipe", windowsHide: true });
+		const p = Bun.spawn([...APP_BUN, WORKER, file, "list"], { cwd: GPUI, env: childEnv(root, undefined), stdout: "pipe", stderr: "pipe", windowsHide: true });
 		const [text, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 		if (code !== 0) {
 			unreadable.push(f);
@@ -131,7 +141,15 @@ async function findJobs(): Promise<Job[]> {
 }
 
 async function runJob(job: Job): Promise<Result> {
-	if (appExe && job.inProcessOnly) return { ...job, outcome: "skipped", ms: 0, failure: job.inProcessOnly, dir: "" };
+	if (mode === "app" && job.inProcessOnly) return { ...job, outcome: "skipped", ms: 0, failure: job.inProcessOnly, dir: "" };
+	// the default mode runs such a scenario in-process: it needs what only that mode has
+	const inProcess = !appExe || !!job.inProcessOnly;
+	const exe = inProcess ? undefined : appExe;
+	const r = await runIn(job, exe);
+	return mode === "default" && inProcess ? { ...r, inProcess: true } : r;
+}
+
+async function runIn(job: Job, appExe: string | undefined): Promise<Result> {
 	const root = mkdtempSync(join(base, "s-"));
 	const slug = job.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 60);
 	const dir = join(out, job.area, `${job.index + 1}-${slug}`);
@@ -141,7 +159,7 @@ async function runJob(job: Job): Promise<Result> {
 	const started = performance.now();
 	const p = Bun.spawn([...APP_BUN, WORKER, job.file, "run", String(job.index), dir], {
 		cwd: GPUI,
-		env: childEnv(root),
+		env: childEnv(root, appExe),
 		stdout: "ignore",
 		stderr: "pipe",
 		windowsHide: true,
@@ -169,6 +187,22 @@ try {
 		console.error(`--app: no such file: ${appExe}`);
 		process.exit(2);
 	}
+	if (mode === "default" && !listOnly) {
+		mkdirSync(out, { recursive: true });
+		if (build) {
+			const p = await ensurePackage(GPUI, join(out, "package.log"));
+			if (p.built) console.log(`package built in ${(p.ms / 1000).toFixed(1)} s`);
+			appExe = p.exe;
+		} else {
+			appExe = packagedApp(GPUI);
+			const stale = newerSource(GPUI, appExe);
+			if (stale === appExe) {
+				console.error(`--no-build: there is no package at ${appExe}`);
+				process.exit(2);
+			}
+			if (stale) console.warn(`--no-build: the package is older than ${stale}`);
+		}
+	}
 	// (the packaged app is compiled already; the scenario processes only load the harness)
 	const compileStarted = performance.now();
 	const files = await compileApp();
@@ -195,7 +229,7 @@ try {
 					}
 					const label = { pass: "ok   ", fail: "FAIL ", known: "known", fixed: "FIXED", skipped: "skip " }[r.outcome];
 					if (r.outcome === "skipped") console.log(`${label} ${r.area}: ${r.name} (skipped (in-process only: ${r.failure}))`);
-					else console.log(`${label} ${r.area}: ${r.name} (${(r.ms / 1000).toFixed(1)} s)`);
+					else console.log(`${label} ${r.area}: ${r.name} (${(r.ms / 1000).toFixed(1)} s${r.inProcess ? ", in-process" : ""})`);
 					if (r.outcome === "fail") console.log(`      ${r.failure?.replaceAll("\n", "\n      ")}\n      evidence: ${r.dir}`);
 					if (r.outcome === "fixed") console.log(`      marked as a known bug, and it passes: take the mark off (${r.knownBug})`);
 				}
@@ -204,9 +238,14 @@ try {
 		const n = (o: Result["outcome"]) => results.filter((r) => r.outcome === o).length;
 		mkdirSync(out, { recursive: true });
 		writeFileSync(join(out, "summary.json"), JSON.stringify(results, null, 2));
+		const inProc = results.filter((r) => r.inProcess).length;
 		console.log(`\n${n("pass")} passed, ${n("fail")} failed, ${n("known")} known bugs, ${n("fixed")} known bugs now fixed${n("skipped") ? `, ${n("skipped")} skipped (in-process only)` : ""} (${((performance.now() - started) / 1000).toFixed(1)} s)`);
+		if (appExe) console.log(`the packaged app ran ${results.length - inProc - n("skipped")}${inProc ? `; ${inProc} needed the in-process mode (inProcessOnly) and ran there` : ""}`);
 		if (unreadable.length) console.log(`could not be loaded: ${unreadable.join(", ")}`);
 		if (unreadable.length || n("fail") || n("fixed")) process.exitCode = 1;
+		// the release gate (scripts/release.ts): a whole default run of this package with nothing failed, skipped or unreadable
+		else if (mode === "default" && appExe && !words.length && !n("skipped"))
+			recordPass(appExe, { passed: n("pass"), knownBugs: n("known"), inProcess: inProc });
 	}
 } finally {
 	if (!keep) {
