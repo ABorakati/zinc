@@ -195,8 +195,9 @@ This is the Windows installer. The Linux and macOS packages follow [the section 
 1. Check `main` is green in CI and run the checks in [Testing](testing.md).
 2. Decide the release number (`ZN_RELEASE`) and build with `bun gpui-ui/scripts/package.ts --aot` (the committed `gpui-ui/update-pubkey.txt` and the default feed URL are used unless you override them). On the release machine this uses the local Windows canary; elsewhere the pinned npm canary is downloaded (see [Building](building.md#the-aot-canary)).
 3. Build the installer with `bun gpui-ui/scripts/installer.ts`. Install it on a clean machine or in a sandbox (`--test`) and check a silent upgrade over the previous version.
-4. Run `release.ts` with `--dry-run`, read the command, then publish.
-5. Check that an installed older build offers the update and installs it.
+4. Check the packaged app itself, as it ships: `cd gpui-ui && bun test/ui/real/smoke.ts --app out/package-aot/zotero-next-gpui/zotero-next-gpui.exe`. It runs the executable on a background desktop with a throwaway library (never on screen, never on your data) and checks the top rows, the library, the item pane and Settings. Look at the screenshots it leaves in `out/ui-real` too: a test window can differ from the real one.
+5. Run `release.ts` with `--dry-run`, read the command, then publish.
+6. Check that an installed older build offers the update and installs it.
 
 ## Linux and macOS packages
 

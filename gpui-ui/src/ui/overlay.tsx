@@ -1,6 +1,7 @@
 // OverlayHost (menus, dialogs, popovers, toasts, tooltips drawn above everything), Popover, Tooltip and toast().
 // Every layer is a deferred `anchored` GPUIX element, so it paints above the whole window and its hit area blocks the
 // content below. Toasts and tooltips do not take clicks outside their own box.
+import { serveAutomation } from "../automation";
 import { createEffect, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createWindowSize, useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
@@ -42,6 +43,7 @@ import { MenuLayerView } from "./menu";
 export function OverlayHost(): JSX.Element {
 	const g = useGpuix();
 	setNative(g?.renderer as unknown as NativeLike | undefined);
+	void serveAutomation(g?.renderer); // only with ZN_AUTOMATION=stdio (the UI harness)
 	onCleanup(() => setNative(undefined));
 	try {
 		const size = createWindowSize();

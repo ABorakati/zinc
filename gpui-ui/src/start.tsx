@@ -16,6 +16,7 @@
 //
 // What differs between builds is only in the Platform each one supplies; the order of the steps, and their trace marks (src/trace.ts;
 // scripts/startup.ts reads them), are the same everywhere. Set ZN_TRACE=1 to print the milestones.
+import { prepareAutomation } from "./automation";
 import { render, type NativeRenderer } from "@gpuix/solid";
 import { createComponent, createEffect, createRoot, createSignal, Show, type Component } from "solid-js";
 import type { Mode, Style } from "./contracts";
@@ -112,6 +113,7 @@ function Splash(props: { t: (cls: string) => Style }) {
 }
 
 export async function start(platform: Platform): Promise<void> {
+	prepareAutomation(); // only with ZN_AUTOMATION=stdio (the UI harness): before the first window
 	platform.init();
 	mark("main-start");
 
