@@ -1,7 +1,7 @@
 // The Classic table (ItemTable.tsx TableView): a header with sortable, resizable, re-orderable columns (right-click: column picker)
 // over a windowed GPUIX <virtual-list> of 30 px rows. Column state is the headless TanStack table (headless.ts); the rows are the
 // store's page cache, grouped like the cards (group header rows).
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack, type JSX } from "solid-js";
+import { createEffect, createMemo, createSelector, createSignal, For, on, onCleanup, onMount, Show, untrack, type JSX } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/solid";
 import { childMenu } from "../cards/Card";
@@ -16,7 +16,7 @@ import { hasChildren, isOpen, selectedChild } from "../cards/children";
 import { createRows, sameRow, type ChildRow, type Group, type Rows } from "../cards/rows";
 import { createTree, toggleItem } from "../cards/tree";
 import { mix } from "../cards/logic";
-import { gatedHover, markScroll, throttledCommit } from "../cards/scrolling";
+import { markScroll, throttledCommit } from "../cards/scrolling";
 import { createVisibleRange } from "../cards/visible";
 import { clipText } from "../clip";
 import { dragSource } from "../dnd";
@@ -34,7 +34,7 @@ import { columnLayout as layout } from "./layout";
 
 const ROW = 30;
 const HEADER = 32;
-const WINDOW = 60;
+const WINDOW = 96;
 /**
  * A strip at the list's right edge that no row covers, for the 6 px overlaid scrollbar thumb. A row listens to mouse down + move (to
  * drag items out), and GPUIX gives the whole press to such an element: a row under the thumb took the drag, so the scrollbar could
@@ -83,7 +83,9 @@ function openColumnMenu(at: { x: number; y: number }) {
 		...MENU_COLUMNS.map((id) => entry(id, labelOf(id))),
 		{ separator: true },
 		{ label: "More Columns", submenu: more.length ? more : [{ label: "No other fields", disabled: true }] },
-		...(pluginColumns().length ? [{ label: "Plugin columns", submenu: pluginColumns().map((f) => entry(f.id, f.label)) } as MenuItem] : []),
+		...(pluginColumns().length
+			? [{ label: "Plugin columns", submenu: pluginColumns().map((f) => entry(f.id, f.label)) } as MenuItem]
+			: []),
 		{ separator: true },
 		{ label: "Restore Column Order", onSelect: () => layout.restoreOrder() },
 	]);
@@ -115,8 +117,6 @@ const CHILD_INDENT = 8 + TWISTY + TITLE_GAP + 8;
 
 /** An opened item's attachment / note under it: in the title column, indented, with its type icon and title. */
 function ChildRowView(p: { row: ChildRow; cols: () => ColInfo[]; total: () => number }): JSX.Element {
-	const [hovered, setHovered] = createSignal(false);
-	const hover = gatedHover(setHovered);
 	const sel = () => isChildSelected(p.row);
 	/** Where the title column starts, and its width. */
 	const title = createMemo(() => {
@@ -131,8 +131,6 @@ function ChildRowView(p: { row: ChildRow; cols: () => ColInfo[]; total: () => nu
 	return (
 		<div
 			testId="table-child-row"
-			onMouseEnter={hover.enter}
-			onMouseLeave={hover.leave}
 			onClick={childClick(p.row)}
 			style={{
 				display: "flex",
@@ -143,11 +141,8 @@ function ChildRowView(p: { row: ChildRow; cols: () => ColInfo[]; total: () => nu
 				width: Math.max(p.total(), 0),
 				borderBottomWidth: 1,
 				borderColor: mix(tok("border"), 40, "transparent"),
-				backgroundColor: sel()
-					? mix(tok("primary"), 10, tok("card"))
-					: hovered()
-						? mix(tok("accent"), 50, "transparent")
-						: "transparent",
+				backgroundColor: sel() ? mix(tok("primary"), 10, tok("card")) : "transparent",
+				...(sel() ? {} : { hover: { backgroundColor: mix(tok("accent"), 50, "transparent") } }),
 				...(sel() && listFocused()
 					? { outlineWidth: 1, outlineColor: mix(tok("ring"), 60, "transparent"), outlineOffset: -1 }
 					: {}),
@@ -220,7 +215,7 @@ function Cell(p: { col: ColInfo; item: ItemRow; index: number }): JSX.Element {
 								dir={cellDir(c(), p.item)}
 								style={{
 									...textStyle("select-none text-[13px] text-foreground/80", mode()),
-																		...look(),
+									...look(),
 									whiteSpace: "nowrap",
 									flexShrink: 0,
 								}}
@@ -317,15 +312,13 @@ function RowSkeleton(p: { cols: ColInfo[] }): JSX.Element {
 	);
 }
 
-function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => number }): JSX.Element {
+function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => number; isFocused: (index: number) => boolean }): JSX.Element {
 	const item = createMemo(() => store.itemAt(p.index));
-	const [hovered, setHovered] = createSignal(false);
-	const hover = gatedHover(setHovered); // no hover commits while the list scrolls (cards/scrolling.ts)
 	const selected = () => {
 		const it = item();
-		return !!it && store.selected().has(it.key);
+		return !!it && store.isSelected(it.key);
 	};
-	const focused = () => listFocused() && store.focusIndex() === p.index && !selectedChild();
+	const focused = () => p.isFocused(p.index);
 	const rowBackground = () => {
 		const it = item();
 		return it ? colorOf(rowStyleFor(it.key, store.itemsRev())?.background) : undefined;
@@ -342,8 +335,6 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 	);
 	return (
 		<div
-			onMouseEnter={hover.enter}
-			onMouseLeave={hover.leave}
 			onMouseDown={src.onMouseDown}
 			onMouseMove={src.onMouseMove}
 			onMouseUp={src.onMouseUp}
@@ -371,13 +362,9 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 				width: Math.max(p.total(), 0),
 				borderBottomWidth: 1,
 				borderColor: mix(tok("border"), 40, "transparent"),
-				backgroundColor: selected()
-					? mix(tok("primary"), 10, tok("card"))
-					: hovered()
-						? mix(tok("accent"), 50, "transparent")
-						: "transparent",
+				backgroundColor: selected() ? mix(tok("primary"), 10, tok("card")) : (rowBackground() ?? "transparent"),
+				...(selected() ? {} : { hover: { backgroundColor: mix(tok("accent"), 50, "transparent") } }),
 				...(focused() ? { outlineWidth: 1, outlineColor: mix(tok("ring"), 60, "transparent"), outlineOffset: -1 } : {}),
-				...(!selected() && !hovered() && rowBackground() ? { backgroundColor: rowBackground() } : {}),
 			}}
 		>
 			<Show when={item()} fallback={<RowSkeleton cols={p.cols()} />}>
@@ -387,7 +374,13 @@ function ItemRowView(p: { index: number; cols: () => ColInfo[]; total: () => num
 	);
 }
 
-function RowView(p: { row: number; rows: Rows; cols: () => ColInfo[]; total: () => number }): JSX.Element {
+function RowView(p: {
+	row: number;
+	rows: Rows;
+	cols: () => ColInfo[];
+	total: () => number;
+	isFocused: (index: number) => boolean;
+}): JSX.Element {
 	const r = createMemo(() => p.rows.row(p.row), undefined, { equals: sameRow });
 	return (
 		<Show when={r()} keyed>
@@ -397,7 +390,7 @@ function RowView(p: { row: number; rows: Rows; cols: () => ColInfo[]; total: () 
 				) : rw.kind === "child" ? (
 					<ChildRowView row={rw} cols={p.cols} total={p.total} />
 				) : (
-					<ItemRowView index={rw.index} cols={p.cols} total={p.total} />
+					<ItemRowView index={rw.index} cols={p.cols} total={p.total} isFocused={p.isFocused} />
 				)
 			}
 		</Show>
@@ -487,22 +480,26 @@ export function TableView(): JSX.Element {
 		const s = untrack(first);
 		return (visA < s + rows && s > 0) || visB > s + WINDOW - rows;
 	};
+	const isRowFocused = createSelector(() => (listFocused() && !selectedChild() ? store.focusIndex() : -1));
 	const recentre = throttledCommit(() => {
-		if (nearEdge(14)) setStart(Math.max(0, visA - WINDOW / 4));
+		if (nearEdge(18)) setStart(Math.max(0, visA - 28));
 	}, 100);
 	// The scroll popup (as the cards' one in CardList.tsx): while the table scrolls, a pill beside the scrollbar thumb names where
 	// the view is — the group at the top when the list is grouped, else the top row's value in the main sort column ("2019",
-	// "Smith", "T"). It commits only when its text or 4 px-rounded position changes, at most every 60 ms, and hides 700 ms after
+	// "Smith", "T"). It commits only when its text or 16 px-rounded position changes, at most every 150 ms, and hides 700 ms after
 	// the scroll stops.
 	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
 	let bodyH = 0,
 		quietUntil = 0,
 		hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let dragging = false,
+		dragRow = -1,
+		lastBubbleLabel = "";
 	let want: { label: string; top: number } | null = null;
 	const showBubble = throttledCommit(() => {
 		const cur = untrack(bubble);
 		if (want && (!cur || cur.label !== want.label || cur.top !== want.top)) setBubble(want);
-	}, 60);
+	}, 150);
 	const pillLabel = (r: number): string | null => {
 		const g = rows.groupAt(r);
 		if (g) return g.label;
@@ -522,18 +519,24 @@ export function TableView(): JSX.Element {
 		if (!label) return;
 		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
 		const frac = Math.min(1, a / span);
-		want = { label, top: HEADER + Math.round((14 + frac * (bodyH - 56)) / 4) * 4 };
-		showBubble(false);
+		const labelChanged = label !== lastBubbleLabel;
+		lastBubbleLabel = label;
+		want = { label, top: HEADER + Math.round((14 + frac * (bodyH - 56)) / 16) * 16 };
+		showBubble(dragging && labelChanged);
 		if (hideTimer) clearTimeout(hideTimer);
 		hideTimer = setTimeout(() => {
 			want = null;
+			lastBubbleLabel = "";
 			setBubble(null);
 		}, 700);
 	};
 	onCleanup(() => {
 		if (hideTimer) clearTimeout(hideTimer);
 	});
-	const vr = createVisibleRange(() => ROW, () => bodyH);
+	const vr = createVisibleRange(
+		() => ROW,
+		() => bodyH,
+	);
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
@@ -544,7 +547,7 @@ export function TableView(): JSX.Element {
 		visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(4)) recentre(true);
-		else if (nearEdge(14)) recentre(false);
+		else if (nearEdge(18)) recentre(false);
 		const d = performance.now() - t0;
 		stats.visCalls++;
 		stats.visMs += d;
@@ -591,11 +594,18 @@ export function TableView(): JSX.Element {
 		vr.scrolling(offset);
 		gpuix?.renderer.scrollToItem?.(list.id, r, offset);
 	}
+	const dragSetStart = throttledCommit(() => {
+		if (dragRow >= 0) setStart(Math.max(0, dragRow - 28));
+	}, 50);
 	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
 	function scrollToRow(r: number) {
 		if (!list) return;
+		dragRow = r;
 		const s = untrack(first);
-		if (r < s || r + (visB - visA) > s + WINDOW) setStart(Math.max(0, r - WINDOW / 4));
+		if (r < s || r + (visB - visA) > s + WINDOW) {
+			if (dragging) dragSetStart(false);
+			else setStart(Math.max(0, r - 28));
+		}
 		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
 	}
@@ -688,8 +698,10 @@ export function TableView(): JSX.Element {
 				onBlur={() => setListFocused(false)}
 				onLayout={(e: EventPayload) => setVw(e.width ?? 0)}
 				onScroll={(e: EventPayload) => {
-					markScroll();
-					if (e.deltaX) setPanX(Math.max(0, Math.min(maxPan(), panX() - e.deltaX)));
+					if (e.deltaX) {
+						markScroll();
+						setPanX(Math.max(0, Math.min(maxPan(), panX() - e.deltaX)));
+					}
 				}}
 				style={{
 					display: "flex",
@@ -854,11 +866,13 @@ export function TableView(): JSX.Element {
 							itemCount={count()}
 							windowStart={first()}
 							estimatedItemHeight={ROW}
-							overdraw={300}
+							overdraw={150}
 							onVisibleRange={onVisibleRange}
 							style={{ width: "100%", flexGrow: 1, minHeight: 0, scrollbarColor: tok("input"), scrollbarWidth: 6 }}
 						>
-							<For each={indices()}>{(i) => <RowView row={i} rows={rows} cols={colInfos} total={total} />}</For>
+							<For each={indices()}>
+								{(i) => <RowView row={i} rows={rows} cols={colInfos} total={total} isFocused={isRowFocused} />}
+							</For>
 						</virtual-list>
 						<ListRetry />
 						<Show when={count() === 0 && !store.loading()}>
@@ -871,7 +885,26 @@ export function TableView(): JSX.Element {
 					</div>
 				</div>
 				{/* the scrollbar's drag strip: in the container, not the panned content, so it stays at the right edge */}
-				<ListScrollbar top={HEADER} count={count} visible={() => [visA, visB]} scrollTo={scrollToRow} />
+				<ListScrollbar
+					top={HEADER}
+					count={count}
+					visible={() => [visA, visB]}
+					scrollTo={scrollToRow}
+					onDragStart={() => {
+						dragging = true;
+						store.beginDragScroll();
+					}}
+					onDragEnd={() => {
+						dragging = false;
+						if (list && dragRow >= 0) {
+							const s = untrack(first);
+							if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 28));
+							gpuix?.renderer.scrollToItem?.(list.id, dragRow, 0);
+						}
+						dragRow = -1;
+						store.endDragScroll();
+					}}
+				/>
 			</div>
 			{/* outside the panned content, so the pill stays beside the scrollbar when the columns scroll sideways */}
 			<Show when={bubble()}>

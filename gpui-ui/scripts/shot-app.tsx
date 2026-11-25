@@ -147,7 +147,10 @@ interface Snap {
 /** The items pane's virtual list: among the `virtual-list` nodes below `pane-items`, the one with a native scroll anchor (the tallest viewport). */
 function findList(itemsRoot: number | undefined): number | undefined {
 	if (itemsRoot === undefined) return undefined;
-	const cands = [...R.findByType("virtual-list").filter((e) => contains(itemsRoot, e.id)), ...subtree(itemsRoot, 14).filter((e) => e.type === "virtual-list")];
+	const cands = [
+		...R.findByType("virtual-list").filter((e) => contains(itemsRoot, e.id)),
+		...subtree(itemsRoot, 14).filter((e) => e.type === "virtual-list"),
+	];
 	let best: number | undefined;
 	let bestViewport = -1;
 	for (const e of cands) {
@@ -243,7 +246,7 @@ function menuEntry(items: MenuItem[], path: string[]): MenuItem | undefined {
 	for (const label of path) {
 		found = cur.find((i) => i.label === label);
 		if (!found) return undefined;
-		cur = found.submenu ?? [];
+		cur = typeof found.submenu === "function" ? found.submenu() : (found.submenu ?? []);
 	}
 	return found;
 }
@@ -293,7 +296,7 @@ if (flag(args, "--toggle")) {
 	console.log("wrote", a, mid, b);
 	console.log(
 		`toggle: host ids ${same ? "unchanged" : "CHANGED"} ${JSON.stringify(ids0)} -> ${JSON.stringify(ids1)}; ` +
-		`before/after differ in ${(diff(a, b) * 100).toFixed(3)}% of pixels; sizes ${JSON.stringify(sizes())}`,
+			`before/after differ in ${(diff(a, b) * 100).toFixed(3)}% of pixels; sizes ${JSON.stringify(sizes())}`,
 	);
 	check("toggle: pane host ids unchanged", same);
 }
@@ -343,12 +346,27 @@ async function runMove() {
 	if (it) h.store.selectItem(it.key); // the item pane gets content: more descendants to follow
 	await h.settle(1500);
 	const first = snap();
-	const vls = R.findByType("virtual-list").map((e) => `${e.id}${e.id === first.list ? "*" : ""}:bounds ${j(R.getElementBounds(e.id))} anchor ${j(R.getListScrollTop(e.id))}`);
-	console.log(`note: pane-items bounds ${j(first.roots.items === undefined ? null : R.getElementBounds(first.roots.items))}; virtual-list nodes: ${vls.join(" | ") || "none"}`);
-	if (!check("move: list and pane hosts found", Object.values(first.roots).every((x) => x !== undefined) && first.list !== undefined, j(first.roots))) return;
+	const vls = R.findByType("virtual-list").map(
+		(e) => `${e.id}${e.id === first.list ? "*" : ""}:bounds ${j(R.getElementBounds(e.id))} anchor ${j(R.getListScrollTop(e.id))}`,
+	);
+	console.log(
+		`note: pane-items bounds ${j(first.roots.items === undefined ? null : R.getElementBounds(first.roots.items))}; virtual-list nodes: ${vls.join(" | ") || "none"}`,
+	);
+	if (
+		!check(
+			"move: list and pane hosts found",
+			Object.values(first.roots).every((x) => x !== undefined) && first.list !== undefined,
+			j(first.roots),
+		)
+	)
+		return;
 	await scrollList(first);
 	const before = snap();
-	check("move: the list is scrolled before the move (nonzero native anchor)", nonzero(before.anchor), `[item index, px in item, viewport px] ${j(first.anchor)} -> ${j(before.anchor)}`);
+	check(
+		"move: the list is scrolled before the move (nonzero native anchor)",
+		nonzero(before.anchor),
+		`[item index, px in item, viewport px] ${j(first.anchor)} -> ${j(before.anchor)}`,
+	);
 	const listBox = listRegion(before);
 	if (!check("move: list region has bounds", !!listBox, j(listBox))) return;
 	const fBefore = out.replace(/\.png$/, "-move-before.png");
@@ -359,14 +377,22 @@ async function runMove() {
 	const lay1 = libraryLayout();
 	check(
 		"move: item stacked with items, item active, right column empty",
-		lay1.centre.stacks.length === 1 && j(lay1.centre.stacks[0]!.panes) === '["items","item"]' && lay1.centre.stacks[0]!.active === "item" && lay1.right.stacks.length === 0,
+		lay1.centre.stacks.length === 1 &&
+			j(lay1.centre.stacks[0]!.panes) === '["items","item"]' &&
+			lay1.centre.stacks[0]!.active === "item" &&
+			lay1.right.stacks.length === 0,
 		stacksText(),
 	);
 	const stacked = snap();
 	sameHosts("move: after Stack with", before, stacked);
 	const ib = elOf("pane-item") ? R.getElementBounds(elOf("pane-item")!.id) : null;
 	check("move: the item pane is drawn in the centre column", !!ib && ib.width > 0 && ib.height > 0, j(ib));
-	if (stacked.anchor) check("move: hidden list keeps its native scroll anchor", sameAnchor(before.anchor, stacked.anchor), `${j(before.anchor)} -> ${j(stacked.anchor)}`);
+	if (stacked.anchor)
+		check(
+			"move: hidden list keeps its native scroll anchor",
+			sameAnchor(before.anchor, stacked.anchor),
+			`${j(before.anchor)} -> ${j(stacked.anchor)}`,
+		);
 	else console.log("note: the hidden list reports no native scroll anchor (getListScrollTop null)");
 	await shotClean(out.replace(/\.png$/, "-move-stacked.png"));
 
@@ -378,7 +404,11 @@ async function runMove() {
 	sameHosts("move: after activating items", before, tab);
 	const tb = listRegion(tab);
 	check("move: list drawn again (nonzero bounds and viewport)", !!tb && (tab.anchor?.[2] ?? 0) > 0, `${j(tb)} anchor ${j(tab.anchor)}`);
-	check("move: list native scroll anchor kept across tab activation", sameAnchor(before.anchor, tab.anchor), `${j(before.anchor)} -> ${j(tab.anchor)}`);
+	check(
+		"move: list native scroll anchor kept across tab activation",
+		sameAnchor(before.anchor, tab.anchor),
+		`${j(before.anchor)} -> ${j(tab.anchor)}`,
+	);
 	await shotClean(out.replace(/\.png$/, "-move-tab-items.png"));
 
 	// 3. back to the right column through the menu
@@ -392,12 +422,18 @@ async function runMove() {
 	const lay2 = libraryLayout();
 	check(
 		"move: item back in the right column, items alone in the centre",
-		j(lay2.centre.stacks.map((s) => s.panes)) === '[["items"]]' && j(lay2.right.stacks.map((s) => s.panes)) === '[["item"]]' && locatePane(lay2, "item")?.column === "right",
+		j(lay2.centre.stacks.map((s) => s.panes)) === '[["items"]]' &&
+			j(lay2.right.stacks.map((s) => s.panes)) === '[["item"]]' &&
+			locatePane(lay2, "item")?.column === "right",
 		stacksText(),
 	);
 	const end = snap();
 	sameHosts("move: after Move to Right column", before, end);
-	check("move: list native scroll anchor kept after moving back", sameAnchor(before.anchor, end.anchor), `${j(before.anchor)} -> ${j(end.anchor)}`);
+	check(
+		"move: list native scroll anchor kept after moving back",
+		sameAnchor(before.anchor, end.anchor),
+		`${j(before.anchor)} -> ${j(end.anchor)}`,
+	);
 	const endBox = listRegion(end);
 	check(
 		"move: list geometry as before the move",
@@ -407,7 +443,11 @@ async function runMove() {
 	const fBack = out.replace(/\.png$/, "-move-back.png");
 	await shotClean(fBack);
 	const crop = cropDiff(fBefore, fBack, listBox!);
-	check("move: list pixels unchanged (same geometry, toast dismissed)", crop < 0.01, `${(crop * 100).toFixed(3)}% of the list crop differs; whole window ${(diff(fBefore, fBack) * 100).toFixed(3)}%`);
+	check(
+		"move: list pixels unchanged (same geometry, toast dismissed)",
+		crop < 0.01,
+		`${(crop * 100).toFixed(3)}% of the list crop differs; whole window ${(diff(fBefore, fBack) * 100).toFixed(3)}%`,
+	);
 }
 
 /** --tabs: the stack with two tabs, items active, shot in the current mode. */
@@ -419,7 +459,11 @@ async function runTabs() {
 	await h.settle(800);
 	dismissToast();
 	const lay = libraryLayout();
-	check("tabs: one stack of items + item, items active", lay.centre.stacks.length === 1 && j(lay.centre.stacks[0]!.panes) === '["items","item"]' && lay.centre.stacks[0]!.active === "items", stacksText());
+	check(
+		"tabs: one stack of items + item, items active",
+		lay.centre.stacks.length === 1 && j(lay.centre.stacks[0]!.panes) === '["items","item"]' && lay.centre.stacks[0]!.active === "items",
+		stacksText(),
+	);
 	for (const id of ["items", "item"]) {
 		const t = elOf(`pane-tab-${id}`);
 		const b = t ? R.getElementBounds(t.id) : null;
@@ -439,7 +483,11 @@ async function runTabs() {
 		R.nativeSimulateClick(c!.x, c!.y);
 		await h.settle(600);
 		const pb = R.getElementBounds(elOf(`pane-${expect}`)?.id ?? -1);
-		check(`tabs: native click on pane-tab-${id} makes ${expect} active and drawn`, active() === expect && !!pb && pb.width > 0 && pb.height > 0, `${stacksText()}, pane-${expect} ${j(pb)}`);
+		check(
+			`tabs: native click on pane-tab-${id} makes ${expect} active and drawn`,
+			active() === expect && !!pb && pb.width > 0 && pb.height > 0,
+			`${stacksText()}, pane-${expect} ${j(pb)}`,
+		);
 	};
 	await clickTab("item", "item");
 	await clickTab("items", "items");
@@ -450,14 +498,26 @@ async function runTabs() {
 	if (tabIds.items !== undefined && tabIds.item !== undefined) {
 		R.nativeSimulateKeystrokes(tabIds.items, "right");
 		await h.settle(400);
-		check("tabs: Right on the focused items tab activates item and focuses its tab", active() === "item" && R.getFocusedElementId() === tabIds.item, `${stacksText()}, focused ${R.getFocusedElementId()}`);
+		check(
+			"tabs: Right on the focused items tab activates item and focuses its tab",
+			active() === "item" && R.getFocusedElementId() === tabIds.item,
+			`${stacksText()}, focused ${R.getFocusedElementId()}`,
+		);
 		R.nativeSimulateKeystrokes(tabIds.item, "left");
 		await h.settle(400);
-		check("tabs: Left on the focused item tab activates items and focuses its tab", active() === "items" && R.getFocusedElementId() === tabIds.items, `${stacksText()}, focused ${R.getFocusedElementId()}`);
+		check(
+			"tabs: Left on the focused item tab activates items and focuses its tab",
+			active() === "items" && R.getFocusedElementId() === tabIds.items,
+			`${stacksText()}, focused ${R.getFocusedElementId()}`,
+		);
 		closeMenus();
 		R.nativeSimulateKeystrokes(tabIds.items, "shift-f10");
 		await h.settle(400);
-		check("tabs: Shift+F10 on the focused tab opens the pane menu", overlayLayers().some((l) => l.kind === "menu"), `${overlayLayers().length} overlay layer(s)`);
+		check(
+			"tabs: Shift+F10 on the focused tab opens the pane menu",
+			overlayLayers().some((l) => l.kind === "menu"),
+			`${overlayLayers().length} overlay layer(s)`,
+		);
 		closeMenus();
 		await h.settle(300);
 	}
@@ -535,7 +595,9 @@ async function runFocus() {
 			}
 		}
 		if (!d) {
-			console.log(`SKIP focus: ${ROOTS[key]} has no descendant that takes focus (tabIndex / keyDown / focus listener) among ${cands.length} candidates`);
+			console.log(
+				`SKIP focus: ${ROOTS[key]} has no descendant that takes focus (tabIndex / keyDown / focus listener) among ${cands.length} candidates`,
+			);
 			continue;
 		}
 		const how = focusableKind(d) === 0 ? "tabIndex" : "key/focus listener";
@@ -552,11 +614,16 @@ async function runFocus() {
 	R.flush();
 	focusEl(headTab!.id);
 	await h.settle(200);
-	if (!check("focus: focusElement(pane-tab-items) focuses the header tab", R.getFocusedElementId() === headTab!.id, focusedText())) return;
+	if (!check("focus: focusElement(pane-tab-items) focuses the header tab", R.getFocusedElementId() === headTab!.id, focusedText()))
+		return;
 	await act("pane-next");
 	check("focus: pane-next from the items header tab -> item pane", where() === "item", focusedText());
 	await act("pane-previous");
-	check(`focus: pane-previous restores the exact items header tab ${headTab!.id}`, R.getFocusedElementId() === headTab!.id, focusedText());
+	check(
+		`focus: pane-previous restores the exact items header tab ${headTab!.id}`,
+		R.getFocusedElementId() === headTab!.id,
+		focusedText(),
+	);
 }
 
 if (flag(args, "--move")) await runMove();

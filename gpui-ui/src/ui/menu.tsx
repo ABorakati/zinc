@@ -2,9 +2,10 @@
 // Look: ui/src/components/ui/dropdown-menu.tsx ("min-w-32 rounded-md border bg-popover p-1 shadow-md", items
 // "flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm focus:bg-accent"). Positioning is computed here (window
 // coordinates + `anchored position`), not by GPUIX trigger-relative anchoring.
-import { createSignal, For, Show, type JSX } from "solid-js";
+import { createMemo, createSelector, createSignal, For, Show, untrack, type JSX } from "solid-js";
 import type { HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
+import { clipText } from "../clip";
 import type { Style } from "../contracts";
 import { Icon } from "../icons";
 import { withAlpha } from "../theme";
@@ -95,7 +96,7 @@ export function ContextMenu(p: { items: () => MenuItem[]; children: JSX.Element;
 // ---------------------------------------------------------------------------------------------------- layer view
 
 interface Level {
-	items: MenuItem[];
+	items: () => MenuItem[];
 	pos: Pos;
 	minWidth?: number;
 }
@@ -119,19 +120,24 @@ const maxHeightFor = (items: MenuItem[], lv: number) =>
 /** One open menu: the root panel plus its open submenus, a transparent click-away backdrop, and the key handling for all of them. */
 export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 	const layer = p.layer;
-	const rootItems = layer.items();
-	const [levels, setLevels] = createSignal<Level[]>([
-		{
-			items: rootItems,
-			pos: placeAt(layer.at, Math.min(estimateHeight(rootItems), maxHeightFor(rootItems, 0))),
-			minWidth: layer.minWidth,
-		},
-	]);
+	const rootItems = createMemo(() => layer.items());
+	const initialRoot = untrack(rootItems);
+	const rootLevel: Level = {
+		items: rootItems,
+		pos: placeAt(layer.at, Math.min(estimateHeight(initialRoot), maxHeightFor(initialRoot, 0))),
+		minWidth: layer.minWidth,
+	};
+	const [subLevels, setSubLevels] = createSignal<Level[]>([]);
+	const levels = createMemo(() => [rootLevel, ...subLevels()]);
 	const [active, setActive] = createSignal<number[]>([-1]);
 	const rows = new Map<string, HostElement>();
 	const key = (lv: number, i: number) => `${lv}:${i}`;
 
+	const [dismissing, setDismissing] = createSignal(false);
+	let closed = false;
 	const close = () => {
+		if (closed) return;
+		closed = true;
 		removeLayer(layer.id);
 		restoreFocus(layer.prevFocus);
 	};
@@ -144,13 +150,13 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 		});
 
 	function closeBelow(lv: number) {
-		if (levels().length > lv + 1) {
-			setLevels((l) => l.slice(0, lv + 1));
+		if (subLevels().length > lv) {
+			setSubLevels((l) => l.slice(0, lv));
 			setActive((a) => a.slice(0, lv + 1));
 		}
 	}
 	function openSub(lv: number, i: number, keyboard = false) {
-		const item = levels()[lv]?.items[i];
+		const item = levels()[lv]?.items()[i];
 		if (!item?.submenu || item.disabled) return;
 		const r = boundsOf(rows.get(key(lv, i)));
 		const base = levels()[lv]!.pos;
@@ -163,26 +169,28 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 					? { x: r.x - 4, y: r.y - 5, anchor: "topRight" }
 					: { x: r.x + r.width + 4, y: r.y - 5, anchor: "topLeft" };
 		else pos = { x: base.x + 160, y: base.y, anchor: "topLeft" };
-		const sub = item.submenu;
-		setLevels((l) => [...l.slice(0, lv + 1), { items: sub, pos }]);
+		const sub = typeof item.submenu === "function" ? item.submenu() : item.submenu;
+		setSubLevels((l) => [...l.slice(0, lv), { items: () => sub, pos }]);
 		const first = keyboard ? sub.findIndex(isSelectable) : -1;
 		setActive((a) => [...a.slice(0, lv + 1), first]);
 	}
 	function hover(lv: number, i: number) {
-		const item = levels()[lv]?.items[i];
+		const item = levels()[lv]?.items()[i];
 		if (!isSelectable(item)) return;
-		if (active()[lv] === i && (!item!.submenu || levels().length > lv + 1)) return;
+		if (active()[lv] === i && (!item!.submenu || subLevels().length > lv)) return;
 		setActiveAt(lv, i);
 		if (item!.submenu) openSub(lv, i);
 		else closeBelow(lv);
 	}
 	function select(lv: number, i: number) {
-		const item = levels()[lv]?.items[i];
+		const item = levels()[lv]?.items()[i];
 		if (!isSelectable(item)) return;
 		if (item!.submenu) {
 			openSub(lv, i, true);
 			return;
 		}
+		if (closed) return;
+		closed = true;
 		// the action first: when it opens a field that takes the keys (claimFocus), the focus is not given back over it
 		removeLayer(layer.id);
 		const claims = focusClaimCount();
@@ -191,7 +199,7 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 	}
 	function step(dir: 1 | -1) {
 		const lv = levels().length - 1;
-		const items = levels()[lv]!.items;
+		const items = levels()[lv]!.items();
 		const n = items.length;
 		let i = active()[lv] ?? -1;
 		for (let k = 0; k < n; k++) {
@@ -204,7 +212,7 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 	}
 	function edge(last: boolean) {
 		const lv = levels().length - 1;
-		const items = levels()[lv]!.items;
+		const items = levels()[lv]!.items();
 		const idx = last
 			? items
 					.map((it, i) => (isSelectable(it) ? i : -1))
@@ -214,6 +222,10 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 		if (idx !== undefined && idx >= 0) setActiveAt(lv, idx);
 	}
 	function onKeyDown(e: EventPayload) {
+		if (dismissing()) {
+			close();
+			return;
+		}
 		const k = e.key;
 		const lv = levels().length - 1;
 		switch (k) {
@@ -241,7 +253,7 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 			}
 			case "right": {
 				const i = active()[lv] ?? -1;
-				if (i >= 0 && levels()[lv]!.items[i]?.submenu) openSub(lv, i, true);
+				if (i >= 0 && levels()[lv]!.items()[i]?.submenu) openSub(lv, i, true);
 				break;
 			}
 			case "left":
@@ -254,20 +266,42 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 	}
 
 	return (
-		<anchored
-			fill="window"
-			priority={p.priority}
-			style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }}
-			onClick={close}
-			onAuxClick={close}
-		>
-			<div tabIndex={0} autoFocus onKeyDown={onKeyDown} style={{ width: "100%", height: "100%", keyboardFocusDim: false }}>
+		<>
+			<anchored fill="window" deferred occlude priority={p.priority} style={{ backgroundColor: "transparent" }}>
+				<div
+					tabIndex={0}
+					autoFocus
+					onKeyDown={onKeyDown}
+					onMouseDown={() => {
+						if (dismissing()) close();
+						else setDismissing(true);
+					}}
+					onMouseUp={() => {
+						if (dismissing()) close();
+					}}
+					onMouseLeave={() => {
+						if (dismissing()) close();
+					}}
+					style={{
+						position: "absolute",
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						backgroundColor: "rgba(0, 0, 0, 0.004)",
+						keyboardFocusDim: false,
+					}}
+				/>
+			</anchored>
+			<Show when={!dismissing()}>
 				<For each={levels()}>
 					{(level, lv) => (
 						<anchored
 							position={{ x: level.pos.x, y: level.pos.y }}
 							anchor={level.pos.anchor}
 							fit="snap"
+							deferred
+							occlude
 							priority={p.priority + 1 + lv()}
 							style={{
 								...t("flex flex-col rounded-md border bg-popover p-1 shadow-md"),
@@ -275,20 +309,20 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 							}}
 						>
 							{/* the scrolling box sits inside the positioned panel, with its own height cap: GPUI scrolls a plain box with a
-						    max height reliably, which the anchored panel itself did not do for submenus */}
+					    max height reliably, which the anchored panel itself did not do for submenus */}
 							<div
 								style={{
 									display: "flex",
 									flexDirection: "column",
 									minHeight: 0,
-									maxHeight: maxHeightFor(level.items, lv()) - 10,
+									maxHeight: maxHeightFor(level.items(), lv()) - 10,
 									overflowY: "scroll",
 									scrollbarColor: tok("input"),
 									scrollbarWidth: 6,
 								}}
 							>
 								<MenuItems
-									level={level}
+									items={level.items}
 									lv={lv()}
 									active={() => active()[lv()] ?? -1}
 									onHover={(i) => hover(lv(), i)}
@@ -299,26 +333,27 @@ export function MenuLayerView(p: { layer: MenuLayer; priority: number }) {
 						</anchored>
 					)}
 				</For>
-			</div>
-		</anchored>
+			</Show>
+		</>
 	);
 }
 
 function MenuItems(p: {
-	level: Level;
+	items: () => MenuItem[];
 	lv: number;
 	active: () => number;
 	onHover: (i: number) => void;
 	onSelect: (i: number) => void;
 	onRow: (i: number, el: HostElement) => void;
 }) {
-	const items = p.level.items;
-	const hasChecks = items.some((it) => it.checked !== undefined);
-	const hasLead = hasChecks || items.some((it) => !!it.icon);
-	const compact = isCompact(items);
-	const iconSize = compact ? 14 : 16;
+	const items = () => p.items();
+	const hasChecks = () => items().some((it) => it.checked !== undefined);
+	const hasLead = () => hasChecks() || items().some((it) => !!it.icon);
+	const compact = () => isCompact(items());
+	const iconSize = () => (compact() ? 14 : 16);
+	const isActive = createSelector(() => p.active());
 	return (
-		<For each={items}>
+		<For each={items()}>
 			{(it, i) => {
 				if (it.separator) return <div style={{ ...t("-mx-1 my-1 h-px bg-border"), flexShrink: 0 }} />;
 				if (it.heading !== undefined)
@@ -327,7 +362,7 @@ function MenuItems(p: {
 							<text style={tx("text-xs font-semibold text-muted-foreground")}>{it.heading}</text>
 						</div>
 					);
-				const on = () => p.active() === i() && !it.disabled;
+				const on = () => isActive(i()) && !it.disabled;
 				const fg = () => (it.danger ? tok("destructive") : on() ? tok("accent-foreground") : tok("popover-foreground"));
 				return (
 					<div
@@ -335,18 +370,18 @@ function MenuItems(p: {
 						onMouseEnter={() => p.onHover(i())}
 						onClick={() => p.onSelect(i())}
 						style={{
-							...t(compact ? "flex items-center rounded-sm px-2 py-1" : "flex items-center rounded-sm px-2 py-1.5"),
+							...t(compact() ? "flex items-center rounded-sm px-2 py-1" : "flex items-center rounded-sm px-2 py-1.5"),
 							flexShrink: 0,
 							cursor: "default",
 							backgroundColor: on() ? (it.danger ? withAlpha(tok("destructive"), 0.12) : tok("accent")) : "transparent",
 							opacity: it.disabled ? 0.5 : 1,
 						}}
 					>
-						{hasLead ? (
+						{hasLead() ? (
 							<div
 								style={{
-									width: iconSize,
-									height: iconSize,
+									width: iconSize(),
+									height: iconSize(),
 									flexShrink: 0,
 									marginRight: 8,
 									display: "flex",
@@ -360,29 +395,28 @@ function MenuItems(p: {
 										it.icon ? (
 											<Icon
 												name={it.icon}
-												size={iconSize}
+												size={iconSize()}
 												color={it.danger ? tok("destructive") : (it.iconColor ?? tok("muted-foreground"))}
 											/>
 										) : undefined
 									}
 								>
-									<Icon name="check" size={iconSize} color={fg()} />
+									<Icon name="check" size={iconSize()} color={fg()} />
 								</Show>
 							</div>
 						) : undefined}
 						<text
 							style={{
-								...tx(compact ? "text-[13px]" : "text-sm"),
+								...tx(compact() ? "text-[13px]" : "text-sm"),
 								color: fg(),
 								flexGrow: 1,
 								minWidth: 0,
 								maxWidth: LABEL_MAX_W,
 								whiteSpace: "nowrap",
 								overflow: "hidden",
-								textOverflow: "ellipsis",
 							}}
 						>
-							{it.label ?? ""}
+							{clipText(it.label ?? "", LABEL_MAX_W, compact() ? 13 : 14)}
 						</text>
 						{it.shortcut ? (
 							<text style={{ ...tx("text-xs"), color: fg(), opacity: 0.6, marginLeft: 24, whiteSpace: "nowrap" }}>

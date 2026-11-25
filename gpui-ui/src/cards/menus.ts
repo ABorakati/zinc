@@ -1,5 +1,6 @@
 // The item context menu (ui/src/cards/shared.tsx ItemMenuItems), shared by the cards and the table: Zotero's order, with the
 // entries features registered in registry.ts itemActions slotted into their groups.
+import { createSignal } from "solid-js";
 import type { ItemDetail } from "../api";
 import type { Collection, ItemRow } from "../contracts";
 import { itemActions, type ItemAction, type ItemActionContext } from "../registry";
@@ -19,6 +20,7 @@ import {
 	isRegular,
 	openItem,
 	openUrl,
+	peekDetail,
 	revealAttachment,
 	setInPublications,
 	trashItems,
@@ -88,36 +90,38 @@ export function collectionTreeMenu(pick: (c: Collection) => void, has: ReadonlyS
 }
 
 /** Entries features registered for the given groups; actions sharing a `submenu` label nest under one submenu. */
-function registered(ctx: ItemActionContext, groups: readonly string[]): MenuItem[][] {
+function registeredByGroup(ctx: ItemActionContext, groups: readonly string[]): Record<string, MenuItem[]> {
 	const label = (a: ItemAction) => (typeof a.label === "function" ? a.label(ctx) : a.label);
 	// a read-only library offers nothing that changes items
 	const readOnly = !store.canEdit();
-	const lists = groups
-		.map((g) =>
-			itemActions().filter(
-				(a) => (a.group ?? "edit") === g && !(readOnly && (g === "edit" || g === "maintain")) && (a.visible?.(ctx) ?? true),
-			),
-		)
-		.filter((l) => l.length);
-	return lists.map((list) => {
-		const out: MenuItem[] = [];
-		const subs = new Map<string, MenuItem[]>();
-		for (const a of list) {
-			const entry: MenuItem = { label: label(a), icon: a.icon, shortcut: displayShortcut(a.shortcut), disabled: a.disabled?.(ctx), onSelect: () => a.run(ctx) };
-			if (!a.submenu) {
-				out.push(entry);
-				continue;
-			}
-			let s = subs.get(a.submenu);
-			if (!s) {
-				s = [];
-				subs.set(a.submenu, s);
-				out.push({ label: a.submenu, icon: "paperclip", submenu: s });
-			}
-			s.push(entry);
+	const byGroup: Record<string, MenuItem[]> = {};
+	const subsByGroup: Record<string, Map<string, MenuItem[]>> = {};
+	const wanted = new Set(groups);
+	for (const a of itemActions()) {
+		const g = a.group ?? "edit";
+		if (!wanted.has(g) || (readOnly && (g === "edit" || g === "maintain")) || !(a.visible?.(ctx) ?? true)) continue;
+		const list = (byGroup[g] ??= []);
+		const entry: MenuItem = {
+			label: label(a),
+			icon: a.icon,
+			shortcut: displayShortcut(a.shortcut),
+			disabled: a.disabled?.(ctx),
+			onSelect: () => a.run(ctx),
+		};
+		if (!a.submenu) {
+			list.push(entry);
+			continue;
 		}
-		return out;
-	});
+		const subs = (subsByGroup[g] ??= new Map());
+		let s = subs.get(a.submenu);
+		if (!s) {
+			s = [];
+			subs.set(a.submenu, s);
+			list.push({ label: a.submenu, icon: "paperclip", submenu: s });
+		}
+		s.push(entry);
+	}
+	return byGroup;
 }
 
 /** Menu entries for a right-clicked item, given the keys acted on. `detail` (item collections) may still be loading. */
@@ -128,25 +132,31 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 	const sep = () => {
 		if (out.length && !out[out.length - 1]!.separator) out.push({ separator: true });
 	};
+	const byGroup = registeredByGroup(ctx, ["open", "cite", "export", "edit", "maintain", "plugins"]);
 	const taken = new Set<string>(); // labels registered actions already provide: the built-in entry is dropped
-	for (const l of registered(ctx, ["open", "cite", "export", "edit", "maintain"])) for (const m of l) if (m.label) taken.add(m.label);
+	for (const g of ["open", "cite", "export", "edit", "maintain"]) for (const m of byGroup[g] ?? []) if (m.label) taken.add(m.label);
 	const builtin = (m: MenuItem) => {
 		if (!m.label || !taken.has(m.label)) out.push(m);
 	};
 
 	out.push({ label: "Open", icon: "book-open", onSelect: () => void openItem(item) });
-	const fileKey = detail ? locateFileKey(detail.data, detail.children) : null;
 	out.push({
 		label: "Locate",
 		icon: "globe",
-		submenu: locateMenu(detail ? locateItemOf(detail.data) : locateItemFromRow(item), fileKey, {
-			openUrl: (url) => void openUrl(url),
-			revealFile: (key) => void revealAttachment(key),
-		}),
+		submenu: () => {
+			const fileKey = detail ? locateFileKey(detail.data, detail.children) : null;
+			return locateMenu(detail ? locateItemOf(detail.data) : locateItemFromRow(item), fileKey, {
+				openUrl: (url) => void openUrl(url),
+				revealFile: (key) => void revealAttachment(key),
+			});
+		},
 	});
-	for (const l of registered(ctx, ["open", "edit"])) {
-		sep();
-		out.push(...l);
+	for (const g of ["open", "edit"]) {
+		const l = byGroup[g];
+		if (l?.length) {
+			sep();
+			out.push(...l);
+		}
 	}
 
 	sep();
@@ -163,26 +173,31 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 
 	sep();
 	// the item's collections by name; the parent path only when two of them share a name
-	const mine = collectionPaths().filter((c) => detail?.collections.includes(c.key));
-	const dupName = (n: string) => mine.filter((c) => c.name === n).length > 1;
+	const myCollKeys = detail?.collections ?? [];
 	out.push({
 		label: "Show in collection…",
 		icon: "folder-search",
-		disabled: !mine.length,
-		submenu: mine.map((c) => ({
-			label: dupName(c.name) ? c.path : c.name,
-			...collectionLook(c.key),
-			onSelect: () => store.setView({ kind: "collection", key: c.key }),
-		})),
+		disabled: !myCollKeys.length,
+		submenu: () => {
+			const mine = collectionPaths().filter((c) => myCollKeys.includes(c.key));
+			const dupName = (n: string) => mine.filter((c) => c.name === n).length > 1;
+			return mine.map((c) => ({
+				label: dupName(c.name) ? c.path : c.name,
+				...collectionLook(c.key),
+				onSelect: () => store.setView({ kind: "collection", key: c.key }),
+			}));
+		},
 	});
 	// a single item shows which collections it is already in (ticked); for several items every collection can be picked
-	const already = new Set(ctx.keys.length === 1 ? (detail?.collections ?? []) : []);
-	const tree = collectionTreeMenu((c) => void addItemsToCollection(c.key, c.name, ctx.keys), already);
+	const already = new Set(ctx.keys.length === 1 ? myCollKeys : []);
 	out.push({
 		label: "Add to collection",
 		icon: "folder-input",
 		disabled: view.kind === "trash" || !store.canEdit(),
-		submenu: tree.length ? tree : [{ label: "No collections", disabled: true }],
+		submenu: () => {
+			const tree = collectionTreeMenu((c) => void addItemsToCollection(c.key, c.name, ctx.keys), already);
+			return tree.length ? tree : [{ label: "No collections", disabled: true }];
+		},
 	});
 	builtin({ label: "Copy DOI", icon: "quote", onSelect: () => void copyDoi(item.key) });
 	if (view.kind !== "trash" && isRegular(item) && store.libraryId() === 1) {
@@ -195,9 +210,12 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 				: { label: "Show in My Publications", icon: "book-marked", onSelect: () => void setInPublications(ctx.keys, true) },
 		);
 	}
-	for (const l of registered(ctx, ["cite", "export", "maintain", "plugins"])) {
-		sep();
-		out.push(...l);
+	for (const g of ["cite", "export", "maintain", "plugins"]) {
+		const l = byGroup[g];
+		if (l?.length) {
+			sep();
+			out.push(...l);
+		}
 	}
 
 	sep();
@@ -218,11 +236,24 @@ export function itemMenuItems(item: ItemRow, keys: string[], detail: ItemDetail 
 export async function openItemMenu(at: Anchor, item: ItemRow, index: number): Promise<void> {
 	if (!store.selected().has(item.key)) store.selectOnly(item.key, index);
 	const keys = [...store.selected()];
-	// the item's collections come with its detail; menus are built synchronously, so wait a moment for it (cached after the first time)
-	// plugin menus with an `on-menu-showing` hook answer within 120 ms, in parallel (wasmplugins/extend/mount.ts; a no-op while plugins are off)
-	const [detail] = await Promise.all([
-		Promise.race([getDetail(item.key).catch(() => null), new Promise<null>((r) => setTimeout(r, 150))]),
-		beforePluginMenu("library-item"),
-	]);
-	openMenu(at, itemMenuItems(item, keys, detail));
+	const cached = peekDetail(item.key) ?? null;
+	const [detail, setDetail] = createSignal<ItemDetail | null>(cached);
+	const [pluginRev, setPluginRev] = createSignal(0);
+	openMenu(at, () => {
+		pluginRev();
+		return itemMenuItems(item, keys, detail());
+	});
+	// Fill collection ticks / plugin menu updates as soon as they arrive without blocking the menu opening.
+	const waitDetail = cached
+		? Promise.resolve()
+		: Promise.race([
+				getDetail(item.key)
+					.then((d) => setDetail(d))
+					.catch(() => null),
+				new Promise<null>((r) => setTimeout(r, 150)),
+			]);
+	const waitPlugin = beforePluginMenu("library-item").then((ran) => {
+		if (ran) setPluginRev((n) => n + 1);
+	});
+	await Promise.all([waitDetail, waitPlugin]);
 }

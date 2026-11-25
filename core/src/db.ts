@@ -393,6 +393,18 @@ function hasQuickIndex(db: Database): boolean {
 	return has;
 }
 
+const knownIndexes = new WeakMap<Database, Map<string, boolean>>();
+function hasIndex(db: Database, name: string): boolean {
+	let map = knownIndexes.get(db);
+	if (!map) knownIndexes.set(db, (map = new Map()));
+	let has = map.get(name);
+	if (has === undefined) {
+		has = !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(name);
+		map.set(name, has);
+	}
+	return has;
+}
+
 function buildFilter(db: Database, opts: ListOptions) {
 	// A collection decides the library when none is named. The id goes into the SQL as a number, not a parameter: the partial
 	// sort indexes of My Library (items_top_*) are only used when the query says `library_id = 1` literally.
@@ -581,11 +593,22 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 
 	// Unfiltered listings walk a partial sort index (see openDb); without stats the planner
 	// would otherwise pick items_parent and sort every row.
-	const indexName = { title: "items_top_title", creator: "items_top_creator", year: "items_top_year", dateAdded: "items_top_added" }[
-		opts.sort ?? "dateAdded"
-	];
+	const sortKey = opts.sort ?? "dateAdded";
+	const dir = (opts.dir ?? "desc").toLowerCase();
+	let indexName: string | undefined;
+	if (extraTerms.length === 0) {
+		indexName = { title: "items_top_title", creator: "items_top_creator", year: "items_top_year", dateAdded: "items_top_added" }[
+			sortKey
+		];
+	} else if (sortKey === "year" && extraTerms.length === 1) {
+		const [k, d] = (opts.then ?? "").trim().split(":");
+		const thenDir = (d ?? "asc").toLowerCase();
+		if (k === "dateAdded" && thenDir === dir && hasIndex(db, "items_top_year_added")) {
+			indexName = "items_top_year_added";
+		}
+	}
 	const { unfiltered, params } = f;
-	const from = driver || extraTerms.length > 0 || !unfiltered || !indexName ? f.from : `items i INDEXED BY ${indexName}`;
+	const from = driver || !unfiltered || !indexName ? f.from : `items i INDEXED BY ${indexName}`;
 	let total: number;
 	let rows: SummaryRow[];
 	if (f.expensive) {
@@ -604,7 +627,9 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 				? (db.query(`SELECT count(*) AS n FROM ${from} WHERE ${whereSql}`).get(...params) as { n: number }).n
 				: 0;
 	} else {
-		total = (db.query(`SELECT count(*) AS n FROM ${from} WHERE ${whereSql}`).get(...params) as { n: number }).n;
+		const countFrom =
+			unfiltered && !driver && from === "items i" && hasIndex(db, "items_top_added") ? "items i INDEXED BY items_top_added" : from;
+		total = (db.query(`SELECT count(*) AS n FROM ${countFrom} WHERE ${whereSql}`).get(...params) as { n: number }).n;
 		rows = db
 			.query(
 				`SELECT i.key, i.item_type, i.title, i.creators_summary, i.year, i.publication, i.date_added
@@ -614,10 +639,10 @@ export function listItems(db: Database, opts: ListOptions = {}): ItemList {
 			.all(...params, limit, offset) as SummaryRow[];
 	}
 	const items = summarize(db, rows);
-	if (fieldNames.length > 0) attachFields(db, items, fieldNames);
 	const inc = new Set(opts.include ?? []);
 	for (const x of inc) if (x !== "creators" && x !== "tags") throw new HttpError(400, `invalid include: ${x}`);
-	if (inc.has("creators")) attachCreators(db, items);
+	if (fieldNames.length > 0) attachFields(db, items, fieldNames, inc.has("creators"));
+	else if (inc.has("creators")) attachCreators(db, items);
 	if (inc.has("tags")) attachTags(db, items);
 	return { total, items };
 }
@@ -634,25 +659,26 @@ export function formatCreatorInitials(c: { firstName?: string; lastName?: string
 	return [last, initials].filter(Boolean).join(" ");
 }
 
+function parseCreatorsJson(raw: string | null | undefined): string[] {
+	let list: { firstName?: string; lastName?: string; name?: string }[] = [];
+	if (raw) {
+		try {
+			const p = JSON.parse(raw);
+			if (Array.isArray(p)) list = p;
+		} catch {
+			// malformed creators: treat as none
+		}
+	}
+	return list.map(formatCreatorInitials).filter(Boolean);
+}
+
 function attachCreators(db: Database, items: ItemSummary[]): void {
 	if (items.length === 0) return;
 	const rows = db
 		.query("SELECT i.key, json_extract(i.data, '$.creators') AS c FROM json_each(?) j CROSS JOIN items i ON i.key = j.value")
 		.all(JSON.stringify(items.map((it) => it.key))) as { key: string; c: string | null }[];
 	const byKey = new Map(rows.map((r) => [r.key, r.c]));
-	for (const it of items) {
-		let list: { firstName?: string; lastName?: string; name?: string }[] = [];
-		const raw = byKey.get(it.key);
-		if (raw) {
-			try {
-				const p = JSON.parse(raw);
-				if (Array.isArray(p)) list = p;
-			} catch {
-				// malformed creators: treat as none
-			}
-		}
-		it.creators = list.map(formatCreatorInitials).filter(Boolean);
-	}
+	for (const it of items) it.creators = parseCreatorsJson(byKey.get(it.key));
 }
 
 function attachTags(db: Database, items: ItemSummary[]): void {
@@ -712,8 +738,8 @@ export function setTagColors(db: Database, input: unknown): TagColor[] {
 	return colors;
 }
 
-// Fills ItemSummary.fields from items.data (field names are already whitelisted).
-function attachFields(db: Database, items: ItemSummary[], fields: string[]): void {
+// Fills ItemSummary.fields (and creators when requested) from items.data (field names are already whitelisted).
+function attachFields(db: Database, items: ItemSummary[], fields: string[], withCreators = false): void {
 	if (items.length === 0) return;
 	// Better BibTeX: the citation key column shows the generated key when none is pinned in the item data
 	if (fields.includes("citationKey"))
@@ -728,8 +754,9 @@ function attachFields(db: Database, items: ItemSummary[], fields: string[]): voi
 				: `json_extract(i.data, '$.${f}') AS f${i}`,
 		)
 		.join(", ");
+	const extra = withCreators ? ", json_extract(i.data, '$.creators') AS _creators" : "";
 	const rows = db
-		.query(`SELECT i.key, ${cols} FROM json_each(?) j CROSS JOIN items i ON i.key = j.value`)
+		.query(`SELECT i.key, ${cols}${extra} FROM json_each(?) j CROSS JOIN items i ON i.key = j.value`)
 		.all(JSON.stringify(items.map((it) => it.key))) as Record<string, unknown>[];
 	const byKey = new Map(rows.map((r) => [r.key as string, r]));
 	for (const it of items) {
@@ -740,6 +767,7 @@ function attachFields(db: Database, items: ItemSummary[], fields: string[]): voi
 			out[f] = v === null || v === undefined || v === "" ? null : String(v);
 		});
 		it.fields = out;
+		if (withCreators) it.creators = parseCreatorsJson(r?._creators as string | null | undefined);
 	}
 }
 

@@ -2,7 +2,7 @@
 // Every layer is a deferred `anchored` GPUIX element, so it paints above the whole window and its hit area blocks the
 // content below. Toasts and tooltips do not take clicks outside their own box.
 import { serveAutomation } from "../automation";
-import { createEffect, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createWindowSize, useGpuix, type HostElement } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/native";
 import type { Style } from "../contracts";
@@ -115,34 +115,58 @@ export function Popover(p: { open: boolean; onClose: () => void; anchor: Anchor;
 
 function PopoverLayerView(p: { layer: PopoverLayer; priority: number }) {
 	const l = p.layer;
+	const [dismissing, setDismissing] = createSignal(false);
+	let closed = false;
+	const close = () => {
+		if (closed) return;
+		closed = true;
+		l.onClose();
+	};
 	const pos = () => placeAt(l.anchor(), 160);
 	return (
-		<anchored
-			fill="window"
-			priority={p.priority}
-			style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }}
-			onClick={() => l.onClose()}
-			onAuxClick={() => l.onClose()}
-		>
-			<div
-				tabIndex={0}
-				autoFocus
-				onKeyDown={(e) => {
-					if (e.key === "escape") l.onClose();
-				}}
-				style={{ width: "100%", height: "100%", keyboardFocusDim: false }}
-			>
+		<>
+			<anchored fill="window" deferred occlude priority={p.priority} style={{ backgroundColor: "transparent" }}>
+				<div
+					tabIndex={0}
+					autoFocus
+					onKeyDown={(e) => {
+						if (e.key === "escape" || dismissing()) close();
+					}}
+					onMouseDown={() => {
+						if (dismissing()) close();
+						else setDismissing(true);
+					}}
+					onMouseUp={() => {
+						if (dismissing()) close();
+					}}
+					onMouseLeave={() => {
+						if (dismissing()) close();
+					}}
+					style={{
+						position: "absolute",
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						backgroundColor: "rgba(0, 0, 0, 0.004)",
+						keyboardFocusDim: false,
+					}}
+				/>
+			</anchored>
+			<Show when={!dismissing()}>
 				<anchored
 					position={{ x: pos().x, y: pos().y }}
 					anchor={pos().anchor}
 					fit="snap"
+					deferred
+					occlude
 					priority={p.priority + 1}
 					style={{ ...t("flex flex-col rounded-md border bg-popover p-4 shadow-md"), width: l.width() }}
 				>
 					{l.children()}
 				</anchored>
-			</div>
-		</anchored>
+			</Show>
+		</>
 	);
 }
 

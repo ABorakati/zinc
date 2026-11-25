@@ -160,3 +160,45 @@ describe("GET /api/items/groups", () => {
 		expect((await call(fx.db, "GET", "/api/items/AAAAAAA1")).status).toBe(200);
 	});
 });
+
+describe("year+dateAdded composite index and combined field/creator fetch", () => {
+	test("items_top_year_added exists and avoids TEMP B-TREE for matching direction", async () => {
+		const idx = fx.db.query("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'items_top_year_added'").get();
+		expect(idx).not.toBeNull();
+		const where = "i.parent_key IS NULL AND i.item_type <> 'annotation' AND i.deleted = 0 AND i.library_id = 1";
+		for (const dir of ["desc", "asc"] as const) {
+			const plan = fx.db
+				.query(
+					`EXPLAIN QUERY PLAN SELECT i.key FROM items i INDEXED BY items_top_year_added WHERE ${where} ORDER BY i.year ${dir}, i.date_added ${dir}, i.key ${dir} LIMIT 50`,
+				)
+				.all() as { detail: string }[];
+			expect(plan.some((r) => r.detail.includes("items_top_year_added"))).toBe(true);
+			expect(plan.some((r) => r.detail.includes("TEMP B-TREE"))).toBe(false);
+
+			const apiKeys = (await list(`sort=year&dir=${dir}&then=dateAdded:${dir}&limit=1000`)).items.map((x: any) => x.key);
+			const rawKeys = (
+				fx.db.query(`SELECT i.key FROM items i WHERE ${where} ORDER BY i.year ${dir}, i.date_added ${dir}, i.key ${dir}`).all() as {
+					key: string;
+				}[]
+			).map((r) => r.key);
+			expect(apiKeys).toEqual(rawKeys);
+		}
+		// Mixed directions still fall back cleanly and order properly
+		const mixed = (await list("sort=year&dir=desc&then=dateAdded:asc&limit=1000")).items.map((x: any) => x.key);
+		const rawMixed = (
+			fx.db.query(`SELECT i.key FROM items i WHERE ${where} ORDER BY i.year desc, i.date_added asc, i.key desc`).all() as {
+				key: string;
+			}[]
+		).map((r) => r.key);
+		expect(mixed).toEqual(rawMixed);
+	});
+
+	test("listItems returns both fields and creators when requested together", async () => {
+		const r = await list("sort=year&dir=desc&then=dateAdded:desc&fields=DOI,url,date&include=creators,tags&limit=100");
+		const e5 = r.items.find((x: any) => x.key === "EEEEEEE5");
+		expect(e5).toBeDefined();
+		expect(e5.creators).toEqual(["Zed"]);
+		expect(e5.fields.date).toBe("2020");
+		expect(e5.tags.map((t: any) => t.tag)).toEqual(["grp"]);
+	});
+});

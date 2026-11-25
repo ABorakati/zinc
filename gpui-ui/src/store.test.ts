@@ -37,7 +37,8 @@ beforeAll(async () => {
 	api.setDirect(async (req) => {
 		const u = new URL(req.url);
 		allPaths.push(u.pathname);
-		if (u.pathname === "/api/items" && req.method === "GET") itemReqs.push({ offset: Number(u.searchParams.get("offset") ?? 0), signal: req.signal });
+		if (u.pathname === "/api/items" && req.method === "GET")
+			itemReqs.push({ offset: Number(u.searchParams.get("offset") ?? 0), signal: req.signal });
 		if (u.pathname === "/api/items" && req.method === "GET") return handler(u);
 		if (u.pathname === "/api/items/index") return indexHandler(u);
 		if (u.pathname === "/api/items/groups") return json({ groups: [] });
@@ -286,7 +287,7 @@ describe("revealItem (Open in Zinc)", () => {
 		release();
 		expect(await older).toBe(false);
 		await tick();
-				expect(store.selected().has("NEWER")).toBe(true);
+		expect(store.selected().has("NEWER")).toBe(true);
 		expect(store.view().kind).toBe("trash"); // the older request did not send the list to My Library
 	});
 });
@@ -442,5 +443,70 @@ describe("Select All and a click that comes after it", () => {
 		release();
 		await tick(50);
 		expect([...store.selected()]).toEqual([store.peek(2)!.key]);
+	});
+});
+
+describe("isSelected, drag scroll, and visible-page priority", () => {
+	test("isSelected matches selected() keys", async () => {
+		handler = list(30);
+		store.setView({ kind: "trash" });
+		await tick();
+		const k0 = store.peek(0)!.key;
+		const k1 = store.peek(1)!.key;
+		store.selectOnly(k0, 0);
+		expect(store.isSelected(k0)).toBe(true);
+		expect(store.isSelected(k1)).toBe(false);
+		store.selectOnly(k1, 1);
+		expect(store.isSelected(k0)).toBe(false);
+		expect(store.isSelected(k1)).toBe(true);
+	});
+
+	test("beginDragScroll defers fetches while dragging and endDragScroll fetches immediately", async () => {
+		const offsets: number[] = [];
+		handler = (u) => {
+			offsets.push(Number(u.searchParams.get("offset") ?? 0));
+			return list(2000)(u);
+		};
+		store.setView({ kind: "unfiled" });
+		await tick();
+		store.setVisible(0, 10);
+		await tick(40);
+
+		const beforeDrag = offsets.length;
+		store.beginDragScroll();
+		store.setVisible(500, 510);
+		store.setVisible(1000, 1010);
+		store.setVisible(1500, 1510);
+		await tick(5);
+		expect(offsets.length).toBe(beforeDrag);
+
+		store.endDragScroll();
+		await tick(10);
+		// Visible page 15 (offset 1500) must start immediately without waiting for SETTLE_MS, before any prefetch
+		expect(offsets[beforeDrag]).toBe(1500);
+	});
+
+	test("visible pages fetch before prefetch pages", async () => {
+		const offsets: number[] = [];
+		let releaseVisible!: () => void;
+		const gate = new Promise<void>((r) => {
+			releaseVisible = r;
+		});
+		handler = async (u) => {
+			const off = Number(u.searchParams.get("offset") ?? 0);
+			offsets.push(off);
+			if (off === 800) await gate;
+			return list(2000)(u);
+		};
+		store.setView({ kind: "publications" });
+		await tick(40);
+		const mark = offsets.length;
+		store.setVisible(800, 810);
+		await tick(5);
+		// Only visible page 8 (offset 800) is requested while it is in flight; prefetch waits until it resolves
+		expect(offsets.slice(mark)).toEqual([800]);
+		releaseVisible();
+		await tick(40);
+		expect(offsets.slice(mark)).toContain(900);
 	});
 });

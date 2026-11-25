@@ -26,7 +26,7 @@ export interface MenuItem {
 	checked?: boolean; // shows a check mark (radio/checkbox items)
 	separator?: true; // a divider line (other fields ignored)
 	heading?: string; // a small non-clickable group label
-	submenu?: MenuItem[];
+	submenu?: MenuItem[] | (() => MenuItem[]);
 	onSelect?: () => void;
 }
 export interface Rect {

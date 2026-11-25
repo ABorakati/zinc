@@ -238,7 +238,7 @@ export function Card(p: {
 	const it = () => p.item;
 	const L = cardLayout.layout;
 	const compact = () => L().density === "compact";
-	const selected = () => store.selected().has(it().key);
+	const selected = () => store.isSelected(it().key);
 	const hovered = () => p.hovered;
 	const [citing, setCiting] = createSignal(false);
 	const unread = createMemo(() => readState.isUnread(it()));

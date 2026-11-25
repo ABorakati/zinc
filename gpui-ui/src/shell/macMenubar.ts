@@ -241,11 +241,12 @@ function appendItems(o: MacObjc, menu: Obj, items: MenuItem[], owner: MenubarNam
 			continue;
 		}
 		const label = it.label ?? "";
-		if (it.submenu?.length) {
+		const subItems = typeof it.submenu === "function" ? it.submenu() : it.submenu;
+		if (subItems?.length) {
 			const mi = o.m3(o.m0(nsItemCls, selAlloc), selInitItem, o.str(label), 0n, o.str(""));
 			const sub = o.m1(o.m0(nsMenuCls, selAlloc), selInitTitle, o.str(label));
 			o.mi(sub, selSetAuto, 0);
-			appendItems(o, sub, it.submenu, owner, tags);
+			appendItems(o, sub, subItems, owner, tags);
 			o.m1(mi, selSetSub, sub);
 			o.m0(sub, selRelease);
 			if (it.disabled) o.mi(mi, selSetEnabled, 0);

@@ -101,7 +101,11 @@ describe("annotations", () => {
 	});
 	test("patch changes only what is present", () => {
 		expect(fromPatch({ key: "ABCD2345", comment: "c" })).toEqual({ comment: "c" });
-		expect(fromPatch({ key: "ABCD2345", kind: "underline", color: "#FF6666", tags: [] })).toEqual({ type: "underline", color: "#ff6666", tags: [] });
+		expect(fromPatch({ key: "ABCD2345", kind: "underline", color: "#FF6666", tags: [] })).toEqual({
+			type: "underline",
+			color: "#ff6666",
+			tags: [],
+		});
 	});
 	test("an oversized position is split by rects", () => {
 		const rects = Array.from({ length: 4000 }, (_, i) => [i, i, i + 100.123456, i + 10.123456] as [number, number, number, number]);
@@ -146,14 +150,17 @@ describe("menus", () => {
 			(id) => got.push(id),
 		);
 		expect(items.map((i) => i.label ?? "-")).toEqual(["a", "sub", "-", "c"]);
-		const sub = items[1]!.submenu!;
+		const sub = typeof items[1]!.submenu === "function" ? items[1]!.submenu() : items[1]!.submenu!;
 		expect(sub[0]).toMatchObject({ label: "b", icon: "circle", iconColor: "#ff0000", checked: true });
 		items[0]!.onSelect!();
 		sub[0]!.onSelect!();
 		expect(got).toEqual(["a", "b"]);
 	});
 	test("a localized label falls back to its fallback text or id", () => {
-		const items = menuEntriesToItems([entry("x", { label: { tag: "localized", val: { id: "m", args: [], fallback: "Fallback" } } })], () => {});
+		const items = menuEntriesToItems(
+			[entry("x", { label: { tag: "localized", val: { id: "m", args: [], fallback: "Fallback" } } })],
+			() => {},
+		);
 		expect(items[0]!.label).toBe("Fallback");
 	});
 });

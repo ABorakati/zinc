@@ -5,9 +5,10 @@ import { getExtendHost } from "./navigation";
 import { registries } from "./registry";
 import type { MenuTarget } from "./wit";
 
-/** Before a menu of `target` opens: let plugins with an `on-menu-showing` hook patch their entries (waits at most 120 ms). */
-export async function beforePluginMenu(target: MenuTarget): Promise<void> {
+/** Before a menu of `target` opens: let plugins with an `on-menu-showing` hook patch their entries (waits at most 120 ms). Returns true if any plugin hook ran. */
+export async function beforePluginMenu(target: MenuTarget): Promise<boolean> {
 	const host = getExtendHost();
-	if (!host || !registries.menus.list().some((m) => m.reg.target === target)) return;
+	if (!host || !registries.menus.list().some((m) => m.reg.target === target)) return false;
 	await menuShowing(target, host.getContext());
+	return true;
 }

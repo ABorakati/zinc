@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { logWarn } from "../../core/src/log";
 import { dirname, join } from "node:path";
 import { configDir } from "../../core/src/platform-dirs";
-import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createRoot, createSelector, createSignal, on, onCleanup, untrack } from "solid-js";
 import { api, apiRequest, type ItemGroup, type ItemQuery } from "./api";
 import type { Collection, GroupBy, ItemRow, Library, ListStore, Mode, SortLevel, Store, Tab, View } from "./contracts";
 import { mark } from "./trace";
@@ -222,6 +222,12 @@ export interface AppStore extends Store, ListStore {
 	sortBy(level: SortLevel): void;
 	/** Bumped by refresh() (data changed): views that cache other per-item data re-read on it. */
 	itemsRev: () => number;
+	/** Fine-grained per-key selection check (notifies only the rows whose selection changed). */
+	isSelected(key: string): boolean;
+	/** Called while dragging a scrollbar thumb: defers page fetches until a short pause or release. */
+	beginDragScroll(): void;
+	/** Called on scrollbar release: immediately fetches the visible pages at the final position. */
+	endDragScroll(): void;
 }
 
 /** Every collection key in a tree (roots with children). */
@@ -518,15 +524,21 @@ function createStore(): AppStore {
 	// Fast moves (dragging the scrollbar thumb, a fling): the visible range jumps several pages between two reports. Fetching every
 	// page passed over queued dozens of requests on the core (in-process: the same thread that draws), and the page the drag
 	// stopped on waited behind them. While the list moves that fast nothing is fetched (rows show skeletons); SETTLE_MS after the
-	// last big jump, the pages then in view load, and requests for pages far from there are aborted.
+	// last big jump (or immediately on endDragScroll), the pages then in view load, and requests for pages far from there are aborted.
 	const FAST_JUMP_PAGES = process.env.ZN_NO_SETTLE ? Infinity : 2,
-		SETTLE_MS = 90; // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
+		SETTLE_MS = 60; // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
 	let fastUntil = 0;
+	let draggingScroll = false;
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
+	let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
 	let lastRange: [number, number] = [0, 0];
 	let centerPage = 0;
 	let scrollDir = 1; // direction the visible range last moved in (1 = down)
 	let lastVisible = { fp: -1, lp: -1, dir: 0 };
+	onCleanup(() => {
+		if (settleTimer) clearTimeout(settleTimer);
+		if (prefetchTimer) clearTimeout(prefetchTimer);
+	});
 	// Per-page reactivity: a row reads only the signal of its own page, so a page arriving (or an edit patching a row) re-runs the
 	// rows of that page, not every mounted row. Signals are created on first read (at most one per page of the list).
 	const pageSigs = new Map<number, [() => number, (f: (n: number) => number) => void]>();
@@ -549,14 +561,6 @@ function createStore(): AppStore {
 	const touchAllPages = () =>
 		batch(() => {
 			for (const p of [...pageSigs.keys()]) touchPage(p);
-		});
-	/** Wake the rows of pages [from, to] that have no current rows yet (they re-run itemAt, which fetches). */
-	const touchPagesIn = (from: number, to: number) =>
-		batch(() => {
-			for (let p = Math.max(0, from); p <= to; p++) {
-				const e = cache.get(p);
-				if (!e || e.gen !== gen) touchPage(p);
-			}
 		});
 	let dupCache: Promise<ItemRow[]> | null = null;
 	// Pages whose request failed: they stay skeletons, so the list says so and offers Retry (a failed page is not asked for again by
@@ -649,7 +653,10 @@ function createStore(): AppStore {
 				hardCleared = hardGen;
 			}
 			cache.set(p, { gen: g, rows: res.items });
-			pageKeys.set(p, res.items.map((r) => r.key));
+			pageKeys.set(
+				p,
+				res.items.map((r) => r.key),
+			);
 			failed.delete(p);
 			evict();
 			const ms = performance.now() - t0;
@@ -664,6 +671,7 @@ function createStore(): AppStore {
 				for (const k of dropped) touchPage(k); // rows still showing the old list's page go to skeleton / refetch
 			});
 			mark("items-loaded");
+			if (!draggingScroll && performance.now() >= fastUntil) schedulePrefetch(g);
 		} catch (e) {
 			if (g === gen && (e as Error)?.name !== "AbortError") {
 				failed.add(p);
@@ -700,9 +708,16 @@ function createStore(): AppStore {
 		pageAbort.clear();
 		pageKeys.clear();
 		fastUntil = 0;
+		draggingScroll = false;
 		// a settle step armed by the old list's scrolling must not run against this one (it aborts pages outside the old position)
-		if (settleTimer) clearTimeout(settleTimer);
-		settleTimer = undefined;
+		if (settleTimer) {
+			clearTimeout(settleTimer);
+			settleTimer = undefined;
+		}
+		if (prefetchTimer) {
+			clearTimeout(prefetchTimer);
+			prefetchTimer = undefined;
+		}
 		lastRange = [0, 0];
 		lastVisible = { fp: -1, lp: -1, dir: 0 };
 		if (!keepDuplicates) dupCache = null;
@@ -714,6 +729,8 @@ function createStore(): AppStore {
 		if (hard) {
 			hardGen = gen;
 			centerPage = 0;
+			lastVisible = { fp: -1, lp: -1, dir: 0 };
+			lastRange = [0, 0];
 			batch(() => {
 				setSelectedSig(new Set<string>());
 				setActiveKey(null);
@@ -806,16 +823,76 @@ function createStore(): AppStore {
 		const p = Math.floor(i / PAGE);
 		return cache.get(p)?.rows[i - p * PAGE];
 	};
+	function schedulePrefetch(g: number) {
+		if (prefetchTimer || g !== gen || draggingScroll || performance.now() < fastUntil) return;
+		prefetchTimer = setTimeout(() => {
+			prefetchTimer = undefined;
+			if (g !== gen || draggingScroll || performance.now() < fastUntil) return;
+			const lastPage = Math.ceil(untrack(total) / PAGE) - 1;
+			if (lastPage < 0) return;
+			const [a, b] = lastRange;
+			const fp = Math.max(0, Math.floor(a / PAGE)),
+				lp = Math.max(fp, Math.floor(b / PAGE));
+			// Wait until every visible page has landed before fetching off-screen pages ahead.
+			for (let p = fp; p <= lp; p++) {
+				const e = cache.get(p);
+				if (!e || e.gen !== gen) return;
+			}
+			const candidates: number[] = [];
+			for (let k = 1; k <= PREFETCH_AHEAD; k++) {
+				const p = scrollDir >= 0 ? lp + k : fp - k;
+				if (p >= 0 && p <= lastPage) candidates.push(p);
+			}
+			const behind = scrollDir >= 0 ? fp - 1 : lp + 1;
+			if (behind >= 0 && behind <= lastPage) candidates.push(behind);
+			for (const p of candidates) {
+				if (inflight.size >= MAX_PREFETCH_INFLIGHT) break;
+				const e = cache.get(p);
+				if ((e && e.gen === gen) || inflight.has(p) || failed.has(p)) continue; // a failed page waits for Retry
+				stats.prefetches++;
+				void loadPage(p, gen);
+			}
+		}, 16);
+	}
+	function beginDragScroll() {
+		draggingScroll = true;
+		fastUntil = performance.now() + SETTLE_MS;
+		if (prefetchTimer) {
+			clearTimeout(prefetchTimer);
+			prefetchTimer = undefined;
+		}
+	}
+	function endDragScroll() {
+		if (!draggingScroll) return;
+		draggingScroll = false;
+		fastUntil = 0;
+		if (settleTimer) {
+			clearTimeout(settleTimer);
+			settleTimer = undefined;
+		}
+		const [a, b] = lastRange;
+		const sfp = Math.max(0, Math.floor(a / PAGE)),
+			slp = Math.max(sfp, Math.floor(b / PAGE));
+		abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
+		lastVisible = { fp: -1, lp: -1, dir: 0 };
+		setVisible(a, b);
+	}
 	/** The visible item range: re-centres the cache and prefetches the pages ahead in the scroll direction. */
 	function setVisible(first: number, last: number) {
 		const fp = Math.max(0, Math.floor(first / PAGE)),
 			lp = Math.max(fp, Math.floor(last / PAGE));
 		lastRange = [first, last];
-		if (lastVisible.fp >= 0 && Math.abs(fp - lastVisible.fp) > FAST_JUMP_PAGES) {
-			// a big jump: fetch nothing until the range settles (see FAST_JUMP_PAGES)
+		const bigJump = lastVisible.fp >= 0 && Math.abs(fp - lastVisible.fp) > FAST_JUMP_PAGES;
+		const dragJump = draggingScroll && lastVisible.fp >= 0 && (fp !== lastVisible.fp || lp !== lastVisible.lp);
+		if (bigJump || dragJump) {
+			// a big jump or active scrollbar drag: fetch nothing until the range settles (see FAST_JUMP_PAGES)
 			fastUntil = performance.now() + SETTLE_MS;
-			lastVisible = { fp, lp, dir: fp > lastVisible.fp ? 1 : -1 };
+			lastVisible = { fp, lp, dir: fp >= lastVisible.fp ? 1 : -1 };
 			centerPage = Math.max(0, Math.floor((first + last) / 2 / PAGE));
+			if (prefetchTimer) {
+				clearTimeout(prefetchTimer);
+				prefetchTimer = undefined;
+			}
 			if (settleTimer) clearTimeout(settleTimer);
 			settleTimer = setTimeout(() => {
 				settleTimer = undefined;
@@ -826,7 +903,6 @@ function createStore(): AppStore {
 				abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
 				lastVisible = { fp: -1, lp: -1, dir: 0 }; // force the normal path below to load what is in view now
 				setVisible(a, b);
-				touchPagesIn(sfp - 1, slp + 1); // rows that skipped their fetch during the move ask again
 			}, SETTLE_MS);
 			return;
 		}
@@ -844,16 +920,17 @@ function createStore(): AppStore {
 		lastVisible = { fp, lp, dir: scrollDir };
 		const lastPage = Math.ceil(untrack(total) / PAGE) - 1;
 		if (lastPage < 0) return;
-		const from = Math.max(0, fp - (scrollDir < 0 ? PREFETCH_AHEAD : 1)),
-			to = Math.min(lastPage, lp + (scrollDir > 0 ? PREFETCH_AHEAD : 1));
-		for (let p = from; p <= to; p++) {
+		// Visible pages ALWAYS go first; prefetch runs after they arrive (or 16 ms later if already cached).
+		let needVisible = false;
+		for (let p = fp; p <= Math.min(lastPage, lp); p++) {
 			const e = cache.get(p);
-			if ((e && e.gen === gen) || inflight.has(p) || failed.has(p)) continue; // a failed page waits for Retry
-			const visible = p >= fp && p <= lp;
-			if (!visible && inflight.size >= MAX_PREFETCH_INFLIGHT) continue;
-			if (!visible) stats.prefetches++;
-			void loadPage(p, gen);
+			if (failed.has(p)) continue; // a failed page waits for Retry
+			if (!e || e.gen !== gen) {
+				needVisible = true;
+				if (!inflight.has(p)) void loadPage(p, gen);
+			}
 		}
+		if (!needVisible) schedulePrefetch(gen);
 	}
 	function indexOfKey(key: string): number {
 		for (const [p, e] of cache) {
@@ -889,6 +966,10 @@ function createStore(): AppStore {
 	}
 
 	// ---- selection ----
+	const isSelected = createSelector<Set<string>, string>(
+		() => selected(),
+		(key, s) => s.has(key),
+	);
 	const setSelected = (s: Set<string>) => setSelectedSig(new Set(s));
 
 	function selectOnly(key: string | null, index = -1) {
@@ -1213,6 +1294,9 @@ function createStore(): AppStore {
 		keysFor,
 		sortBy,
 		itemsRev,
+		isSelected,
+		beginDragScroll,
+		endDragScroll,
 	};
 }
 

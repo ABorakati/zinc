@@ -7,13 +7,15 @@
 // The strip reads the list's row count and visible range only when pressed / moved (no signal per scroll frame).
 // An element with onMouseDown + onMouseMove gets the whole press in GPUIX (the pointer is captured), so the drag keeps working when
 // the pointer leaves the strip.
-import { createSignal, type JSX } from "solid-js";
+import { createSignal, onCleanup, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
 
 /** Width of the strip that takes the mouse (the painted thumb is 6 px at its right edge). */
 export const SCROLL_STRIP = 14;
 /** Smallest thumb GPUIX paints, used to estimate where the thumb is. */
 const MIN_THUMB = 24;
+/** Coalesce pointer drag moves to ~60 Hz so each move does not rebuild the mounted window synchronously. */
+const DRAG_FRAME_MS = 16;
 
 export interface ListScrollbarProps {
 	/** Rows in the list. */
@@ -24,6 +26,10 @@ export interface ListScrollbarProps {
 	scrollTo: (row: number) => void;
 	/** Space above the track (a table's column header). */
 	top?: number;
+	/** Called when a scrollbar drag/press begins. */
+	onDragStart?: () => void;
+	/** Called when the scrollbar drag ends. */
+	onDragEnd?: () => void;
 }
 
 export function ListScrollbar(p: ListScrollbarProps): JSX.Element {
@@ -32,6 +38,14 @@ export function ListScrollbar(p: ListScrollbarProps): JSX.Element {
 	const [hot, setHot] = createSignal(false);
 	/** The drag in progress: the grab point's offset from the thumb's top, in px. */
 	let drag: { grab: number } | null = null;
+	let lastRow: number | null = null;
+	let pendingRow: number | null = null;
+	let lastEmitAt = 0;
+	let moveTimer: ReturnType<typeof setTimeout> | undefined;
+
+	onCleanup(() => {
+		if (moveTimer) clearTimeout(moveTimer);
+	});
 
 	/** Thumb size and the track length its top can travel, from the visible fraction of the rows. */
 	const geometry = () => {
@@ -43,15 +57,53 @@ export function ListScrollbar(p: ListScrollbarProps): JSX.Element {
 		const travel = Math.max(1, trackH - thumb);
 		return { a, vis, span, thumb, travel, top: (Math.min(a, span) / span) * travel };
 	};
-	/** Put the thumb's top at `y` px down the track. */
-	const scrollThumbTo = (y: number) => {
+	const rowForThumbY = (y: number) => {
 		const g = geometry();
 		const row = Math.round((Math.max(0, Math.min(g.travel, y)) / g.travel) * g.span);
-		p.scrollTo(Math.max(0, Math.min(g.span, row)));
+		return Math.max(0, Math.min(g.span, row));
+	};
+	const emitRow = (row: number) => {
+		if (row === lastRow) return;
+		lastRow = row;
+		lastEmitAt = performance.now();
+		p.scrollTo(row);
+	};
+	const scheduleRow = (row: number) => {
+		if (row === lastRow) return;
+		pendingRow = row;
+		const elapsed = performance.now() - lastEmitAt;
+		if (elapsed >= DRAG_FRAME_MS && !moveTimer) {
+			pendingRow = null;
+			emitRow(row);
+			return;
+		}
+		moveTimer ??= setTimeout(
+			() => {
+				moveTimer = undefined;
+				if (pendingRow !== null) {
+					const r = pendingRow;
+					pendingRow = null;
+					emitRow(r);
+				}
+			},
+			Math.max(1, DRAG_FRAME_MS - elapsed),
+		);
 	};
 	const end = () => {
+		if (moveTimer) {
+			clearTimeout(moveTimer);
+			moveTimer = undefined;
+		}
+		if (pendingRow !== null) {
+			const r = pendingRow;
+			pendingRow = null;
+			emitRow(r);
+		}
+		if (!drag && !hot()) return;
 		drag = null;
+		lastRow = null;
 		setHot(false);
+		p.onDragEnd?.();
 	};
 
 	return (
@@ -65,19 +117,22 @@ export function ListScrollbar(p: ListScrollbarProps): JSX.Element {
 				if ((e.button ?? 0) !== 0 || p.count() <= 0) return;
 				const g = geometry();
 				if (g.vis >= p.count()) return; // everything is on screen: nothing to scroll
+				lastRow = null;
+				pendingRow = null;
+				p.onDragStart?.();
 				const y = (e.y ?? 0) - trackY;
 				if (y >= g.top && y <= g.top + g.thumb) drag = { grab: y - g.top };
 				else {
 					// on the track: jump so the thumb centres on the pointer, then keep dragging from its middle
 					drag = { grab: g.thumb / 2 };
-					scrollThumbTo(y - drag.grab);
+					emitRow(rowForThumbY(y - drag.grab));
 				}
 				setHot(true);
 			}}
 			onMouseMove={(e: EventPayload) => {
 				if (!drag) return;
 				if (e.pressedButton === undefined || e.pressedButton === null) return end(); // released outside the window
-				scrollThumbTo((e.y ?? 0) - trackY - drag.grab);
+				scheduleRow(rowForThumbY((e.y ?? 0) - trackY - drag.grab));
 			}}
 			onMouseUp={end}
 			style={{

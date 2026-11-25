@@ -2,7 +2,7 @@
 // Classic table or the cards (List view). The cards are a windowed GPUIX <virtual-list> of group headers and item cards
 // (ui/src/cards/CardList.tsx): the list holds every row logically (itemCount) but only a window of WINDOW rows is mounted; the
 // window follows onVisibleRange. Item rows read store.itemAt(i), which fetches the page on demand (a skeleton shows meanwhile).
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack, type JSX } from "solid-js";
+import { createEffect, createMemo, createSelector, createSignal, For, on, onCleanup, onMount, Show, untrack, type JSX } from "solid-js";
 import { useGpuix } from "@gpuix/solid";
 import type { EventPayload } from "@gpuix/solid";
 import { dragSource } from "../dnd";
@@ -30,7 +30,7 @@ import { createVisibleRange } from "./visible";
 import { SearchResults } from "./SearchResults";
 
 /** Rows mounted at once. */
-export const WINDOW = 40;
+export const WINDOW = 56;
 
 /** Year header: `flex w-full items-center gap-2 border-b border-border/60 bg-muted/50 px-5 pb-1.5 pt-3` + serif label + count pill + chevron. */
 export function GroupHeader(p: { group: Group; collapsed: boolean; onToggle: () => void }): JSX.Element {
@@ -76,7 +76,7 @@ function CardSkeleton(): JSX.Element {
 	);
 }
 
-function ItemRowView(p: { index: number }): JSX.Element {
+function ItemRowView(p: { index: number; isFocused: (index: number) => boolean }): JSX.Element {
 	const item = createMemo(() => store.itemAt(p.index));
 	// no JS hover here: the card's hover wash and buttons use GPUI's native hover (see Card.tsx), which neither flickers over
 	// children nor commits anything while the list scrolls
@@ -122,7 +122,7 @@ function ItemRowView(p: { index: number }): JSX.Element {
 							item={x()}
 							index={p.index}
 							hovered={false}
-							focused={listFocused() && store.focusIndex() === p.index && !selectedChild()}
+							focused={p.isFocused(p.index)}
 							tree={hasChildren(x()) ? { open: isOpen(x().key), toggle: () => toggleItem(x().key, p.index) } : undefined}
 							onMore={(r) => openItemMenu({ x: r.x, y: r.y + r.height }, x(), p.index)}
 						/>
@@ -133,7 +133,7 @@ function ItemRowView(p: { index: number }): JSX.Element {
 	);
 }
 
-function RowView(p: { row: number; rows: Rows }): JSX.Element {
+function RowView(p: { row: number; rows: Rows; isFocused: (index: number) => boolean }): JSX.Element {
 	const r = createMemo(() => p.rows.row(p.row), undefined, { equals: sameRow });
 	return (
 		<Show when={r()} keyed>
@@ -143,7 +143,7 @@ function RowView(p: { row: number; rows: Rows }): JSX.Element {
 				) : rw.kind === "child" ? (
 					<CardChildRow row={rw} />
 				) : (
-					<ItemRowView index={rw.index} />
+					<ItemRowView index={rw.index} isFocused={p.isFocused} />
 				)
 			}
 		</Show>
@@ -184,30 +184,37 @@ export function CardsView(): JSX.Element {
 		const s = untrack(first);
 		return (visA < s + rows && s > 0) || visB > s + WINDOW - rows;
 	};
+	const isRowFocused = createSelector(() => (listFocused() && !selectedChild() ? store.focusIndex() : -1));
 	const recentre = throttledCommit(() => {
-		if (nearEdge(8)) setStart(Math.max(0, visA - WINDOW / 4));
+		if (nearEdge(10)) setStart(Math.max(0, visA - 16));
 	}, 100);
 	// The group popup: while the list scrolls, a pill beside the scrollbar thumb names the group at the top of the view ("2019").
-	// It only commits when its text or (4 px-rounded) position changes, at most every 60 ms, and hides 700 ms after the scroll stops.
+	// It only commits when its text or (16 px-rounded) position changes, at most every 150 ms, and hides 700 ms after the scroll stops.
 	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
 	let listH = 0,
 		quietUntil = 0,
 		hideTimer: ReturnType<typeof setTimeout> | undefined;
+	let dragging = false,
+		dragRow = -1,
+		lastBubbleLabel = "";
 	let want: { label: string; top: number } | null = null;
 	const showBubble = throttledCommit(() => {
 		const cur = untrack(bubble);
 		if (want && (!cur || cur.label !== want.label || cur.top !== want.top)) setBubble(want);
-	}, 60);
+	}, 150);
 	const trackBubble = (a: number, b: number) => {
 		const g = rows.groupAt(a);
 		if (!g || performance.now() < quietUntil || count() < 40 || listH < 120) return;
 		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
 		const frac = Math.min(1, a / span);
-		want = { label: g.label, top: Math.round((14 + frac * (listH - 56)) / 4) * 4 };
-		showBubble(false);
+		const labelChanged = g.label !== lastBubbleLabel;
+		lastBubbleLabel = g.label;
+		want = { label: g.label, top: Math.round((14 + frac * (listH - 56)) / 16) * 16 };
+		showBubble(dragging && labelChanged);
 		if (hideTimer) clearTimeout(hideTimer);
 		hideTimer = setTimeout(() => {
 			want = null;
+			lastBubbleLabel = "";
 			setBubble(null);
 		}, 700);
 	};
@@ -226,7 +233,7 @@ export function CardsView(): JSX.Element {
 		visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(3)) recentre(true);
-		else if (nearEdge(8)) recentre(false);
+		else if (nearEdge(10)) recentre(false);
 		const d = performance.now() - t0;
 		stats.visCalls++;
 		stats.visMs += d;
@@ -275,11 +282,18 @@ export function CardsView(): JSX.Element {
 		vr.scrolling(offset);
 		gpuix?.renderer.scrollToItem?.(list.id, r, offset);
 	}
+	const dragSetStart = throttledCommit(() => {
+		if (dragRow >= 0) setStart(Math.max(0, dragRow - 16));
+	}, 50);
 	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
 	function scrollToRow(r: number) {
 		if (!list) return;
+		dragRow = r;
 		const s = untrack(first);
-		if (r < s || r + (visB - visA) > s + WINDOW) setStart(Math.max(0, r - WINDOW / 4));
+		if (r < s || r + (visB - visA) > s + WINDOW) {
+			if (dragging) dragSetStart(false);
+			else setStart(Math.max(0, r - 16));
+		}
 		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
 	}
@@ -322,7 +336,6 @@ export function CardsView(): JSX.Element {
 			onKeyDown={keys}
 			onFocus={() => setListFocused(true)}
 			onBlur={() => setListFocused(false)}
-			onScroll={markScroll}
 			onLayout={(e: EventPayload) => {
 				listH = e.height ?? listH;
 				const w = Math.round(e.width ?? 0);
@@ -338,14 +351,32 @@ export function CardsView(): JSX.Element {
 				itemCount={count()}
 				windowStart={first()}
 				estimatedItemHeight={estimate()}
-				overdraw={400}
+				overdraw={200}
 				onVisibleRange={onVisibleRange}
 				// the overlaid thumb at the list's right edge (as the sidebar's list); the rows' px-2.5 keeps cards clear of it
 				style={{ width: "100%", height: "100%", scrollbarColor: tok("input", store.mode()), scrollbarWidth: 6 }}
 			>
-				<For each={indices()}>{(i) => <RowView row={i} rows={rows} />}</For>
+				<For each={indices()}>{(i) => <RowView row={i} rows={rows} isFocused={isRowFocused} />}</For>
 			</virtual-list>
-			<ListScrollbar count={count} visible={() => [visA, visB]} scrollTo={scrollToRow} />
+			<ListScrollbar
+				count={count}
+				visible={() => [visA, visB]}
+				scrollTo={scrollToRow}
+				onDragStart={() => {
+					dragging = true;
+					store.beginDragScroll();
+				}}
+				onDragEnd={() => {
+					dragging = false;
+					if (list && dragRow >= 0) {
+						const s = untrack(first);
+						if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 16));
+						gpuix?.renderer.scrollToItem?.(list.id, dragRow, 0);
+					}
+					dragRow = -1;
+					store.endDragScroll();
+				}}
+			/>
 			<Show when={bubble()}>
 				{(bb) => (
 					<div
