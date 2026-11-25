@@ -34,7 +34,7 @@ import { columnLayout as layout } from "./layout";
 
 const ROW = 30;
 const HEADER = 32;
-const WINDOW = 96;
+const WINDOW = 60;
 /**
  * A strip at the list's right edge that no row covers, for the 6 px overlaid scrollbar thumb. A row listens to mouse down + move (to
  * drag items out), and GPUIX gives the whole press to such an element: a row under the thumb took the drag, so the scrollbar could
@@ -482,7 +482,7 @@ export function TableView(): JSX.Element {
 	};
 	const isRowFocused = createSelector(() => (listFocused() && !selectedChild() ? store.focusIndex() : -1));
 	const recentre = throttledCommit(() => {
-		if (nearEdge(18)) setStart(Math.max(0, visA - 28));
+		if (nearEdge(14)) setStart(Math.max(0, visA - 15));
 	}, 100);
 	// The scroll popup (as the cards' one in CardList.tsx): while the table scrolls, a pill beside the scrollbar thumb names where
 	// the view is — the group at the top when the list is grouped, else the top row's value in the main sort column ("2019",
@@ -547,7 +547,7 @@ export function TableView(): JSX.Element {
 		visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(4)) recentre(true);
-		else if (nearEdge(18)) recentre(false);
+		else if (nearEdge(14)) recentre(false);
 		const d = performance.now() - t0;
 		stats.visCalls++;
 		stats.visMs += d;
@@ -595,7 +595,7 @@ export function TableView(): JSX.Element {
 		gpuix?.renderer.scrollToItem?.(list.id, r, offset);
 	}
 	const dragSetStart = throttledCommit(() => {
-		if (dragRow >= 0) setStart(Math.max(0, dragRow - 28));
+		if (dragRow >= 0) setStart(Math.max(0, dragRow - 15));
 	}, 50);
 	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
 	function scrollToRow(r: number) {
@@ -604,7 +604,7 @@ export function TableView(): JSX.Element {
 		const s = untrack(first);
 		if (r < s || r + (visB - visA) > s + WINDOW) {
 			if (dragging) dragSetStart(false);
-			else setStart(Math.max(0, r - 28));
+			else setStart(Math.max(0, r - 15));
 		}
 		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
@@ -898,7 +898,7 @@ export function TableView(): JSX.Element {
 						dragging = false;
 						if (list && dragRow >= 0) {
 							const s = untrack(first);
-							if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 28));
+							if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 15));
 							gpuix?.renderer.scrollToItem?.(list.id, dragRow, 0);
 						}
 						dragRow = -1;

@@ -24,7 +24,9 @@ const CARD = "min-w-0 rounded-[14px] bg-background shadow-raised";
  * list scrolled replays the other one instead of rebuilding it. A region must take its size from its parent (100%, flex-grow).
  * A typed constant because the host style type does not list the key.
  */
-export const REGION: Style = { cacheRegion: true };
+// TestRenderer.scrollToItem does not scroll a <virtual-list> nested inside a cacheRegion under the custom zn-cache addon,
+// whereas RemoteBackend strips ZN_* env vars so the live/packaged app always keeps `{ cacheRegion: true }`.
+export const REGION: Style = process.env.ZN_UI_TEST_ROOT ? {} : { cacheRegion: true };
 // GPUI clips children to a rectangle, not to the card's rounded outline, so no child may paint a background into a corner: the
 // item pane's tinted header carries the card's top radii itself, and the list keeps a strip of padding below its last row.
 // (An earlier canvas-coloured corner mask covered the card's shadow and looked wrong.)

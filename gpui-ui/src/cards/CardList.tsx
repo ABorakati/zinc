@@ -30,7 +30,7 @@ import { createVisibleRange } from "./visible";
 import { SearchResults } from "./SearchResults";
 
 /** Rows mounted at once. */
-export const WINDOW = 56;
+export const WINDOW = 40;
 
 /** Year header: `flex w-full items-center gap-2 border-b border-border/60 bg-muted/50 px-5 pb-1.5 pt-3` + serif label + count pill + chevron. */
 export function GroupHeader(p: { group: Group; collapsed: boolean; onToggle: () => void }): JSX.Element {
@@ -186,7 +186,7 @@ export function CardsView(): JSX.Element {
 	};
 	const isRowFocused = createSelector(() => (listFocused() && !selectedChild() ? store.focusIndex() : -1));
 	const recentre = throttledCommit(() => {
-		if (nearEdge(10)) setStart(Math.max(0, visA - 16));
+		if (nearEdge(8)) setStart(Math.max(0, visA - 10));
 	}, 100);
 	// The group popup: while the list scrolls, a pill beside the scrollbar thumb names the group at the top of the view ("2019").
 	// It only commits when its text or (16 px-rounded) position changes, at most every 150 ms, and hides 700 ms after the scroll stops.
@@ -233,7 +233,7 @@ export function CardsView(): JSX.Element {
 		visB = b;
 		store.setVisible(itemAtRow(a), itemAtRow(b));
 		if (nearEdge(3)) recentre(true);
-		else if (nearEdge(10)) recentre(false);
+		else if (nearEdge(8)) recentre(false);
 		const d = performance.now() - t0;
 		stats.visCalls++;
 		stats.visMs += d;
@@ -283,7 +283,7 @@ export function CardsView(): JSX.Element {
 		gpuix?.renderer.scrollToItem?.(list.id, r, offset);
 	}
 	const dragSetStart = throttledCommit(() => {
-		if (dragRow >= 0) setStart(Math.max(0, dragRow - 16));
+		if (dragRow >= 0) setStart(Math.max(0, dragRow - 10));
 	}, 50);
 	/** The scrollbar's drag: row `r` at the top, moving the mounted window first when `r` is outside it. */
 	function scrollToRow(r: number) {
@@ -292,7 +292,7 @@ export function CardsView(): JSX.Element {
 		const s = untrack(first);
 		if (r < s || r + (visB - visA) > s + WINDOW) {
 			if (dragging) dragSetStart(false);
-			else setStart(Math.max(0, r - 16));
+			else setStart(Math.max(0, r - 10));
 		}
 		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
@@ -370,7 +370,7 @@ export function CardsView(): JSX.Element {
 					dragging = false;
 					if (list && dragRow >= 0) {
 						const s = untrack(first);
-						if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 16));
+						if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 10));
 						gpuix?.renderer.scrollToItem?.(list.id, dragRow, 0);
 					}
 					dragRow = -1;
