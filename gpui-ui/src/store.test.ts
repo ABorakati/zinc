@@ -461,29 +461,98 @@ describe("isSelected, drag scroll, and visible-page priority", () => {
 		expect(store.isSelected(k1)).toBe(true);
 	});
 
-	test("beginDragScroll defers fetches while dragging and endDragScroll fetches immediately", async () => {
+	test("live drag streams only the latest visible page (throttled) and aborts superseded in-flight pages", async () => {
+		const offsets: number[] = [];
+		const gates = new Map<number, () => void>();
+		handler = async (u) => {
+			const off = Number(u.searchParams.get("offset") ?? 0);
+			offsets.push(off);
+			await new Promise<void>((r) => gates.set(off, r));
+			return list(3000)(u);
+		};
+		store.setView({ kind: "unfiled" });
+		await tick(10);
+		gates.get(0)?.();
+		await tick(20);
+		store.setVisible(0, 10);
+		await tick(40);
+		gates.get(100)?.();
+		await tick(10);
+
+		const beforeDrag = offsets.length;
+		store.beginDragScroll();
+		// First jump starts page 5 immediately and does NOT prefetch page 6/7 while dragging
+		store.setVisible(500, 510);
+		await tick(5);
+		expect(offsets.slice(beforeDrag)).toEqual([500]);
+
+		// Scrubbing rapidly during the 45 ms throttle window queues NO intermediate fetches; once elapsed, 500 is aborted and 1500 runs
+		store.setVisible(1000, 1010);
+		store.setVisible(1500, 1510);
+		await tick(10);
+		expect(offsets.slice(beforeDrag)).toEqual([500]);
+		await tick(60);
+		expect(offsets.slice(beforeDrag)).toEqual([500, 1500]);
+		expect(itemReqs.find((r) => r.offset === 500)?.signal.aborted).toBe(true);
+
+		// Releasing completes at the final position and prefetches once landed
+		store.endDragScroll(1800, 1812);
+		await tick(10);
+		expect(offsets.slice(beforeDrag)).toEqual([500, 1500, 1800]);
+		expect(itemReqs.find((r) => r.offset === 1500)?.signal.aborted).toBe(true);
+		gates.get(1800)?.();
+		await tick(30);
+		expect(offsets.slice(beforeDrag)).toContain(1900);
+	});
+
+	test("itemAt does not fetch during drag and endDragScroll(first, last) overrides stale lastRange", async () => {
 		const offsets: number[] = [];
 		handler = (u) => {
 			offsets.push(Number(u.searchParams.get("offset") ?? 0));
-			return list(2000)(u);
+			return list(3000)(u);
 		};
-		store.setView({ kind: "unfiled" });
-		await tick();
+		store.setView({ kind: "trash" });
+		await tick(40);
 		store.setVisible(0, 10);
 		await tick(40);
 
 		const beforeDrag = offsets.length;
 		store.beginDragScroll();
-		store.setVisible(500, 510);
-		store.setVisible(1000, 1010);
-		store.setVisible(1500, 1510);
-		await tick(5);
-		expect(offsets.length).toBe(beforeDrag);
+		store.setVisible(400, 410);
+		await tick(80); // past SETTLE_MS while still dragging: itemAt for an intermediate window must not fetch
+		store.itemAt(905);
+		await tick(20);
+		expect(offsets.slice(beforeDrag).includes(900)).toBe(false);
 
-		store.endDragScroll();
+		// End drag at a later row than lastRange (400..410): passing final range fetches 1800 immediately
+		store.endDragScroll(1800, 1812);
 		await tick(10);
-		// Visible page 15 (offset 1500) must start immediately without waiting for SETTLE_MS, before any prefetch
-		expect(offsets[beforeDrag]).toBe(1500);
+		expect(offsets.slice(beforeDrag)).toContain(1800);
+		expect(store.peek(1800)?.title).toBe("T1800");
+		await tick(30); // prefetch follows once visible page lands
+		expect(offsets.slice(beforeDrag)).toContain(1900);
+	});
+
+	test("beginDragScroll right after view switch with lastVisible reset does not get stuck", async () => {
+		const offsets: number[] = [];
+		handler = (u) => {
+			offsets.push(Number(u.searchParams.get("offset") ?? 0));
+			return list(2500)(u);
+		};
+		store.setView({ kind: "library" });
+		await tick(40);
+
+		const beforeDrag = offsets.length;
+		store.beginDragScroll(); // lastVisible.fp === -1 here
+		store.setVisible(1200, 1212);
+		await tick(10);
+		// Immediate first stream loads page 12, then rapid next move waits for throttle until endDragScroll
+		expect(offsets[beforeDrag]).toBe(1200);
+		store.setVisible(1300, 1312);
+		store.endDragScroll(1500, 1512);
+		await tick(20);
+		expect(offsets.slice(beforeDrag)).toContain(1500);
+		expect(store.peek(1500)?.title).toBe("T1500");
 	});
 
 	test("visible pages fetch before prefetch pages", async () => {

@@ -16,7 +16,7 @@ import { hasChildren, isOpen, selectedChild } from "../cards/children";
 import { createRows, sameRow, type ChildRow, type Group, type Rows } from "../cards/rows";
 import { createTree, toggleItem } from "../cards/tree";
 import { mix } from "../cards/logic";
-import { markScroll, throttledCommit } from "../cards/scrolling";
+import { markScroll, scrollPillLabel, throttledCommit } from "../cards/scrolling";
 import { createVisibleRange } from "../cards/visible";
 import { clipText } from "../clip";
 import { dragSource } from "../dnd";
@@ -486,8 +486,7 @@ export function TableView(): JSX.Element {
 	}, 100);
 	// The scroll popup (as the cards' one in CardList.tsx): while the table scrolls, a pill beside the scrollbar thumb names where
 	// the view is — the group at the top when the list is grouped, else the top row's value in the main sort column ("2019",
-	// "Smith", "T"). It commits only when its text or 16 px-rounded position changes, at most every 150 ms, and hides 700 ms after
-	// the scroll stops.
+	// "Smith", "T"). It stays up while dragging the thumb, and hides 700 ms after scrolling ends.
 	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
 	let bodyH = 0,
 		quietUntil = 0,
@@ -496,47 +495,62 @@ export function TableView(): JSX.Element {
 		dragRow = -1,
 		lastBubbleLabel = "";
 	let want: { label: string; top: number } | null = null;
+	const vr = createVisibleRange(
+		() => ROW,
+		() => bodyH,
+	);
 	const showBubble = throttledCommit(() => {
 		const cur = untrack(bubble);
 		if (want && (!cur || cur.label !== want.label || cur.top !== want.top)) setBubble(want);
-	}, 150);
-	const pillLabel = (r: number): string | null => {
-		const g = rows.groupAt(r);
-		if (g) return g.label;
-		const it = store.peek(itemAtRow(r));
-		const key = store.sortLevels()[0]?.key;
-		if (!it || !key) return null;
-		const def = untrack(cols).find((c) => c.def.sort === key)?.def ?? getColumn(key);
-		const v = (def?.get(it) ?? "").trim();
-		if (!v) return null;
-		if (/date|year|added|modified/i.test(key)) return v.match(/\d{4}/)?.[0] ?? v.slice(0, 12);
-		if (key === "title") return v[0]!.toUpperCase();
-		return v.length > 28 ? `${v.slice(0, 27)}…` : v;
-	};
-	const trackBubble = (a: number, b: number) => {
-		if (performance.now() < quietUntil || count() < 40 || bodyH < 120) return;
-		const label = pillLabel(a);
-		if (!label) return;
-		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
-		const frac = Math.min(1, a / span);
-		const labelChanged = label !== lastBubbleLabel;
-		lastBubbleLabel = label;
-		want = { label, top: HEADER + Math.round((14 + frac * (bodyH - 56)) / 16) * 16 };
-		showBubble(dragging && labelChanged);
+	}, 50);
+	const scheduleBubbleHide = () => {
 		if (hideTimer) clearTimeout(hideTimer);
 		hideTimer = setTimeout(() => {
+			hideTimer = undefined;
 			want = null;
 			lastBubbleLabel = "";
 			setBubble(null);
 		}, 700);
 	};
+	const pillLabel = (r: number): string | null => {
+		const g = rows.groupAt(r);
+		const key = store.sortLevels()[0]?.key;
+		const it = g ? undefined : store.peek(itemAtRow(r));
+		return scrollPillLabel(g?.label, it, key, (row, k) => (untrack(cols).find((c) => c.def.sort === k)?.def ?? getColumn(k))?.get(row) ?? "");
+	};
+	const trackBubble = (a: number, b: number) => {
+		if ((!dragging && performance.now() < quietUntil) || (!dragging && count() < 40) || count() <= vr.span() || bodyH < 120) return;
+		const r = Math.max(0, Math.min(a, count() - 1));
+		const label = pillLabel(r);
+		if (!label) return;
+		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
+		const frac = Math.min(1, r / span);
+		const labelChanged = label !== lastBubbleLabel;
+		lastBubbleLabel = label;
+		const step = dragging ? 4 : 16;
+		want = { label, top: HEADER + Math.round((14 + frac * (bodyH - 56)) / step) * step };
+		showBubble(dragging && labelChanged);
+		if (dragging) {
+			if (hideTimer) {
+				clearTimeout(hideTimer);
+				hideTimer = undefined;
+			}
+		} else {
+			scheduleBubbleHide();
+		}
+	};
+	createEffect(
+		on(
+			() => store.pagesLoaded(),
+			() => {
+				if (dragging && dragRow >= 0) trackBubble(dragRow, Math.min(count(), dragRow + vr.span()));
+			},
+			{ defer: true },
+		),
+	);
 	onCleanup(() => {
 		if (hideTimer) clearTimeout(hideTimer);
 	});
-	const vr = createVisibleRange(
-		() => ROW,
-		() => bodyH,
-	);
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
@@ -602,9 +616,15 @@ export function TableView(): JSX.Element {
 		if (!list) return;
 		dragRow = r;
 		const s = untrack(first);
-		if (r < s || r + (visB - visA) > s + WINDOW) {
+		const span = vr.span();
+		if (r < s || r + span > s + WINDOW) {
 			if (dragging) dragSetStart(false);
 			else setStart(Math.max(0, r - 15));
+		}
+		if (dragging && count() > 0) {
+			const maxRow = count() - 1;
+			trackBubble(r, Math.min(count(), r + span));
+			store.setVisible(itemAtRow(Math.min(r, maxRow)), itemAtRow(Math.min(maxRow, r + span)));
 		}
 		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
@@ -892,17 +912,28 @@ export function TableView(): JSX.Element {
 					scrollTo={scrollToRow}
 					onDragStart={() => {
 						dragging = true;
+						dragRow = visA;
 						store.beginDragScroll();
+						if (count() > 0) trackBubble(visA, Math.min(count(), visA + vr.span()));
 					}}
 					onDragEnd={() => {
-						dragging = false;
-						if (list && dragRow >= 0) {
-							const s = untrack(first);
-							if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 15));
-							gpuix?.renderer.scrollToItem?.(list.id, dragRow, 0);
-						}
+						const finalRow = dragRow;
 						dragRow = -1;
-						store.endDragScroll();
+						dragging = false;
+						const span = vr.span();
+						if (finalRow >= 0 && count() > 0) {
+							const maxRow = count() - 1;
+							store.endDragScroll(itemAtRow(Math.min(finalRow, maxRow)), itemAtRow(Math.min(maxRow, finalRow + span)));
+						} else {
+							store.endDragScroll();
+						}
+						if (list && finalRow >= 0) {
+							const s = untrack(first);
+							if (finalRow < s || finalRow + span > s + WINDOW) setStart(Math.max(0, finalRow - 15));
+							vr.scrolling(0);
+							gpuix?.renderer.scrollToItem?.(list.id, finalRow, 0);
+						}
+						scheduleBubbleHide();
 					}}
 				/>
 			</div>
@@ -910,6 +941,7 @@ export function TableView(): JSX.Element {
 			<Show when={bubble()}>
 				{(bb) => (
 					<div
+						testId="scroll-bubble"
 						style={{
 							...tw("flex items-center rounded-full bg-primary px-3 py-1 shadow-raised", mode()),
 							position: "absolute",

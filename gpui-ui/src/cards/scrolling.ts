@@ -6,6 +6,7 @@
 // `hovered` signal that mounts / unmounts the card's buttons. These helpers keep that (and any other scroll-time bookkeeping) in
 // plain variables until the scroll has been quiet for QUIET_MS, then apply it in a single batch.
 import { batch } from "solid-js";
+import type { ItemRow } from "../contracts";
 
 /** The list counts as scrolling until this long after its last scroll event. */
 export const QUIET_MS = 80;
@@ -92,4 +93,30 @@ export function throttledCommit(commit: () => void, gapMs = 100): (urgent: boole
 		}
 		timer ??= setTimeout(run, gapMs - (now - last));
 	};
+}
+
+/** Label shown in the scroll tooltip beside the thumb (group header if grouped, else formatted value of the primary sort field). */
+export function scrollPillLabel(
+	groupLabel: string | null | undefined,
+	item: ItemRow | undefined,
+	sortKey: string | undefined,
+	getValue?: (it: ItemRow, key: string) => string,
+): string | null {
+	if (groupLabel) return groupLabel;
+	if (!item || !sortKey) return null;
+	let raw = getValue ? getValue(item, sortKey) : "";
+	if (!getValue) {
+		if (sortKey === "year") raw = item.year !== null ? String(item.year) : "";
+		else if (sortKey === "dateAdded") raw = item.dateAdded ?? "";
+		else if (sortKey === "title") raw = item.title ?? "";
+		else if (sortKey === "creator" || sortKey === "firstAuthor") raw = item.creatorsSummary ?? "";
+		else if (sortKey === "publication") raw = item.publication ?? "";
+		else if (sortKey === "itemType") raw = item.itemType ?? "";
+		else raw = (item.fields as Record<string, string | undefined> | undefined)?.[sortKey] ?? "";
+	}
+	const v = raw.trim();
+	if (!v) return null;
+	if (/date|year|added|modified/i.test(sortKey)) return v.match(/\d{4}/)?.[0] ?? v.slice(0, 12);
+	if (sortKey === "title") return v[0]!.toUpperCase();
+	return v.length > 28 ? `${v.slice(0, 27)}…` : v;
 }

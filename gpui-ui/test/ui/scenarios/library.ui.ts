@@ -1131,6 +1131,49 @@ scenario("dragging the scrollbar thumb jumps through a long list, and the rows s
 	await rowsTakeClicks(ui);
 }, { items: 450 });
 
+scenario("dragging the scrollbar sideways off the strip keeps scrolling and renders rows on release", async (ui) => {
+	await ui.see(T.article, { area: "list" });
+	// Drift well left of the 14 px scrollbar strip while dragging down on a 2,500-item library
+	await ui.drag({ x: 1016, y: 195 }, { x: 850, y: 660 });
+	await ui.waitFor("the list moved away from the top", async () => !(await ui.visible(T.article, { area: "list" })), 4000);
+	await ui.expect("rows render without wheeling", async () => (await visibleItems(ui)).length >= 2, true, 4000);
+	await rowsTakeClicks(ui);
+}, { items: 2500 });
+
+scenario("Classic table scrollbar drag renders rows on release even when pointer drifts off the strip", async (ui) => {
+	await ui.click("Classic", { exact: true });
+	await ui.waitFor("Classic table rendered", async () => (await visibleItems(ui)).some((t) => t.startsWith("ZT0")));
+	// Table list-scrollbar starts below the 32 px column header (y = 212); grab inside the top thumb and drift left
+	await ui.drag({ x: 1016, y: 222 }, { x: 850, y: 660 });
+	await ui.waitFor("the table moved away from the top", async () => !(await visibleItems(ui)).some((t) => t.startsWith("ZT0")), 4000);
+	await ui.expect("table rows render without wheeling", async () => (await visibleItems(ui)).length >= 2, true, 4000);
+	await rowsTakeClicks(ui);
+}, { items: 2500 });
+
+scenario("dragging the scrollbar renders items and the group tooltip while still dragging", async (ui) => {
+	await ui.see(T.article, { area: "list" });
+	await ui.mouseMove(1016, 195);
+	await ui.mouseDown(1016, 195);
+	for (let i = 1; i <= 8; i++) {
+		await ui.mouseMove(1016 - i * 18, 195 + i * 50, { pressedButton: 0 });
+		await ui.settle(35);
+	}
+	// Pause BEFORE mouseUp: items and scroll tooltip must both appear while the mouse button is still held
+	await ui.waitFor("the list moved while still holding the scrollbar", async () => !(await ui.visible(T.article, { area: "list" })), 4000);
+	await ui.waitFor("items render while still dragging", async () => (await visibleItems(ui)).length >= 2, 4000);
+	await ui.waitFor("the scroll tooltip is visible while dragging", async () => {
+		const root = await ui.backend.tree();
+		const find = (n: any): any => (n?.testId === "scroll-bubble" ? n : (n?.children ?? []).map(find).find(Boolean));
+		const bubble = find(root);
+		const textOf = (n: any): string => n?.text ?? (n?.children ?? []).map(textOf).find(Boolean) ?? "";
+		return /^(19|20)\d\d$/.test(textOf(bubble).trim());
+	}, 2000);
+	await ui.mouseUp(872, 595);
+	await ui.settle(300);
+	await ui.expect("rows stay rendered and clickable after release", async () => (await visibleItems(ui)).length >= 2, true);
+	await rowsTakeClicks(ui);
+}, { items: 2500 });
+
 scenario("the list keeps its selection and takes clicks after a refresh", async (ui) => {
 	await ui.click(T.neighbour, { area: "list" });
 	await ui.store.refreshItems(["abstractNote"]);

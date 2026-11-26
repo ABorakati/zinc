@@ -227,7 +227,7 @@ export interface AppStore extends Store, ListStore {
 	/** Called while dragging a scrollbar thumb: defers page fetches until a short pause or release. */
 	beginDragScroll(): void;
 	/** Called on scrollbar release: immediately fetches the visible pages at the final position. */
-	endDragScroll(): void;
+	endDragScroll(first?: number, last?: number): void;
 }
 
 /** Every collection key in a tree (roots with children). */
@@ -526,11 +526,14 @@ function createStore(): AppStore {
 	// stopped on waited behind them. While the list moves that fast nothing is fetched (rows show skeletons); SETTLE_MS after the
 	// last big jump (or immediately on endDragScroll), the pages then in view load, and requests for pages far from there are aborted.
 	const FAST_JUMP_PAGES = process.env.ZN_NO_SETTLE ? Infinity : 2,
-		SETTLE_MS = 60; // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
+		SETTLE_MS = 60, // ZN_NO_SETTLE=1: the old fetch-everything behaviour, for A/B
+		DRAG_FETCH_MS = 45;
 	let fastUntil = 0;
 	let draggingScroll = false;
+	let lastDragFetchAt = 0;
 	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 	let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+	let dragFetchTimer: ReturnType<typeof setTimeout> | undefined;
 	let lastRange: [number, number] = [0, 0];
 	let centerPage = 0;
 	let scrollDir = 1; // direction the visible range last moved in (1 = down)
@@ -538,6 +541,7 @@ function createStore(): AppStore {
 	onCleanup(() => {
 		if (settleTimer) clearTimeout(settleTimer);
 		if (prefetchTimer) clearTimeout(prefetchTimer);
+		if (dragFetchTimer) clearTimeout(dragFetchTimer);
 	});
 	// Per-page reactivity: a row reads only the signal of its own page, so a page arriving (or an edit patching a row) re-runs the
 	// rows of that page, not every mounted row. Signals are created on first read (at most one per page of the list).
@@ -671,7 +675,8 @@ function createStore(): AppStore {
 				for (const k of dropped) touchPage(k); // rows still showing the old list's page go to skeleton / refetch
 			});
 			mark("items-loaded");
-			if (!draggingScroll && performance.now() >= fastUntil) schedulePrefetch(g);
+			if (draggingScroll) pumpDragFetch(g);
+			else if (performance.now() >= fastUntil) schedulePrefetch(g);
 		} catch (e) {
 			if (g === gen && (e as Error)?.name !== "AbortError") {
 				failed.add(p);
@@ -709,6 +714,7 @@ function createStore(): AppStore {
 		pageKeys.clear();
 		fastUntil = 0;
 		draggingScroll = false;
+		lastDragFetchAt = 0;
 		// a settle step armed by the old list's scrolling must not run against this one (it aborts pages outside the old position)
 		if (settleTimer) {
 			clearTimeout(settleTimer);
@@ -717,6 +723,10 @@ function createStore(): AppStore {
 		if (prefetchTimer) {
 			clearTimeout(prefetchTimer);
 			prefetchTimer = undefined;
+		}
+		if (dragFetchTimer) {
+			clearTimeout(dragFetchTimer);
+			dragFetchTimer = undefined;
 		}
 		lastRange = [0, 0];
 		lastVisible = { fp: -1, lp: -1, dir: 0 };
@@ -813,8 +823,15 @@ function createStore(): AppStore {
 		pageVersion(p); // re-run this row when ITS page arrives (not on every page of the list)
 		listVersion();
 		const e = cache.get(p);
-		// (not during a fast move: the settle step loads the pages in view; this row re-runs when its page arrives)
-		if ((!e || e.gen !== gen) && !failed.has(p) && i >= 0 && i < Math.max(untrack(total), 1) && performance.now() >= fastUntil)
+		// (not during a fast move or scrollbar drag: the settle step / release loads the pages in view; this row re-runs when its page arrives)
+		if (
+			(!e || e.gen !== gen) &&
+			!failed.has(p) &&
+			i >= 0 &&
+			i < Math.max(untrack(total), 1) &&
+			!draggingScroll &&
+			performance.now() >= fastUntil
+		)
 			queueMicrotask(() => void loadPage(p, gen));
 		if (!e) stats.skeleton++;
 		return e?.rows[i - p * PAGE]; // a stale row (older generation) is returned meanwhile
@@ -854,62 +871,9 @@ function createStore(): AppStore {
 			}
 		}, 16);
 	}
-	function beginDragScroll() {
-		draggingScroll = true;
-		fastUntil = performance.now() + SETTLE_MS;
-		if (prefetchTimer) {
-			clearTimeout(prefetchTimer);
-			prefetchTimer = undefined;
-		}
-	}
-	function endDragScroll() {
-		if (!draggingScroll) return;
-		draggingScroll = false;
-		fastUntil = 0;
-		if (settleTimer) {
-			clearTimeout(settleTimer);
-			settleTimer = undefined;
-		}
-		const [a, b] = lastRange;
-		const sfp = Math.max(0, Math.floor(a / PAGE)),
-			slp = Math.max(sfp, Math.floor(b / PAGE));
-		abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
-		lastVisible = { fp: -1, lp: -1, dir: 0 };
-		setVisible(a, b);
-	}
-	/** The visible item range: re-centres the cache and prefetches the pages ahead in the scroll direction. */
-	function setVisible(first: number, last: number) {
+	function loadVisible(first: number, last: number) {
 		const fp = Math.max(0, Math.floor(first / PAGE)),
 			lp = Math.max(fp, Math.floor(last / PAGE));
-		lastRange = [first, last];
-		const bigJump = lastVisible.fp >= 0 && Math.abs(fp - lastVisible.fp) > FAST_JUMP_PAGES;
-		const dragJump = draggingScroll && lastVisible.fp >= 0 && (fp !== lastVisible.fp || lp !== lastVisible.lp);
-		if (bigJump || dragJump) {
-			// a big jump or active scrollbar drag: fetch nothing until the range settles (see FAST_JUMP_PAGES)
-			fastUntil = performance.now() + SETTLE_MS;
-			lastVisible = { fp, lp, dir: fp >= lastVisible.fp ? 1 : -1 };
-			centerPage = Math.max(0, Math.floor((first + last) / 2 / PAGE));
-			if (prefetchTimer) {
-				clearTimeout(prefetchTimer);
-				prefetchTimer = undefined;
-			}
-			if (settleTimer) clearTimeout(settleTimer);
-			settleTimer = setTimeout(() => {
-				settleTimer = undefined;
-				fastUntil = 0;
-				const [a, b] = lastRange;
-				const sfp = Math.max(0, Math.floor(a / PAGE)),
-					slp = Math.max(sfp, Math.floor(b / PAGE));
-				abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
-				lastVisible = { fp: -1, lp: -1, dir: 0 }; // force the normal path below to load what is in view now
-				setVisible(a, b);
-			}, SETTLE_MS);
-			return;
-		}
-		if (performance.now() < fastUntil) {
-			lastVisible = { fp, lp, dir: scrollDir };
-			return;
-		} // still settling
 		const c = Math.max(0, Math.floor((first + last) / 2 / PAGE));
 		if (c !== centerPage) {
 			scrollDir = c > centerPage ? 1 : -1;
@@ -931,6 +895,125 @@ function createStore(): AppStore {
 			}
 		}
 		if (!needVisible) schedulePrefetch(gen);
+	}
+	function pumpDragFetch(g: number) {
+		if (!draggingScroll || g !== gen) return;
+		const lastPage = Math.ceil(untrack(total) / PAGE) - 1;
+		if (lastPage < 0) return;
+		const [a, b] = lastRange;
+		const fp = Math.max(0, Math.floor(a / PAGE)),
+			lp = Math.max(fp, Math.floor(b / PAGE));
+		const c = Math.max(0, Math.floor((a + b) / 2 / PAGE));
+		if (c !== centerPage) {
+			scrollDir = c > centerPage ? 1 : -1;
+			centerPage = c;
+			evict();
+		}
+		abortOutside(fp, lp);
+		const missing: number[] = [];
+		for (let p = fp; p <= Math.min(lastPage, lp); p++) {
+			const e = cache.get(p);
+			if (failed.has(p) || inflight.has(p)) continue;
+			if (!e || e.gen !== gen) missing.push(p);
+		}
+		if (!missing.length) return;
+		const elapsed = performance.now() - lastDragFetchAt;
+		if (elapsed < DRAG_FETCH_MS) {
+			dragFetchTimer ??= setTimeout(() => {
+				dragFetchTimer = undefined;
+				pumpDragFetch(g);
+			}, Math.max(1, DRAG_FETCH_MS - elapsed));
+			return;
+		}
+		lastDragFetchAt = performance.now();
+		lastVisible = { fp, lp, dir: scrollDir };
+		for (const p of missing) void loadPage(p, gen);
+	}
+	function beginDragScroll() {
+		draggingScroll = true;
+		fastUntil = performance.now() + SETTLE_MS;
+		lastDragFetchAt = 0;
+		if (prefetchTimer) {
+			clearTimeout(prefetchTimer);
+			prefetchTimer = undefined;
+		}
+		if (settleTimer) {
+			clearTimeout(settleTimer);
+			settleTimer = undefined;
+		}
+		if (dragFetchTimer) {
+			clearTimeout(dragFetchTimer);
+			dragFetchTimer = undefined;
+		}
+	}
+	function endDragScroll(first?: number, last?: number) {
+		if (!draggingScroll) return;
+		draggingScroll = false;
+		fastUntil = 0;
+		lastDragFetchAt = 0;
+		if (settleTimer) {
+			clearTimeout(settleTimer);
+			settleTimer = undefined;
+		}
+		if (dragFetchTimer) {
+			clearTimeout(dragFetchTimer);
+			dragFetchTimer = undefined;
+		}
+		if (first !== undefined && last !== undefined) lastRange = [first, last];
+		const [a, b] = lastRange;
+		const sfp = Math.max(0, Math.floor(a / PAGE)),
+			slp = Math.max(sfp, Math.floor(b / PAGE));
+		abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
+		lastVisible = { fp: -1, lp: -1, dir: 0 };
+		loadVisible(a, b);
+	}
+	/** The visible item range: re-centres the cache and prefetches the pages ahead in the scroll direction. */
+	function setVisible(first: number, last: number) {
+		const fp = Math.max(0, Math.floor(first / PAGE)),
+			lp = Math.max(fp, Math.floor(last / PAGE));
+		lastRange = [first, last];
+		if (draggingScroll) {
+			fastUntil = performance.now() + SETTLE_MS;
+			if (prefetchTimer) {
+				clearTimeout(prefetchTimer);
+				prefetchTimer = undefined;
+			}
+			if (settleTimer) {
+				clearTimeout(settleTimer);
+				settleTimer = undefined;
+			}
+			if (lastVisible.fp >= 0 && fp !== lastVisible.fp) scrollDir = fp > lastVisible.fp ? 1 : -1;
+			pumpDragFetch(gen);
+			return;
+		}
+		const bigJump = lastVisible.fp >= 0 && Math.abs(fp - lastVisible.fp) > FAST_JUMP_PAGES;
+		if (bigJump) {
+			// a big jump: fetch nothing until the range settles (see FAST_JUMP_PAGES)
+			fastUntil = performance.now() + SETTLE_MS;
+			lastVisible = { fp, lp, dir: lastVisible.fp >= 0 && fp < lastVisible.fp ? -1 : 1 };
+			centerPage = Math.max(0, Math.floor((first + last) / 2 / PAGE));
+			if (prefetchTimer) {
+				clearTimeout(prefetchTimer);
+				prefetchTimer = undefined;
+			}
+			if (settleTimer) clearTimeout(settleTimer);
+			settleTimer = setTimeout(() => {
+				settleTimer = undefined;
+				fastUntil = 0;
+				const [a, b] = lastRange;
+				const sfp = Math.max(0, Math.floor(a / PAGE)),
+					slp = Math.max(sfp, Math.floor(b / PAGE));
+				abortOutside(sfp - PREFETCH_AHEAD - 1, slp + PREFETCH_AHEAD + 1);
+				lastVisible = { fp: -1, lp: -1, dir: 0 }; // force loadVisible below to load what is in view now
+				loadVisible(a, b);
+			}, SETTLE_MS);
+			return;
+		}
+		if (performance.now() < fastUntil) {
+			lastVisible = { fp, lp, dir: scrollDir };
+			return;
+		} // still settling
+		loadVisible(first, last);
 	}
 	function indexOfKey(key: string): number {
 		for (const [p, e] of cache) {

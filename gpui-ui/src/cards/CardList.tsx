@@ -9,7 +9,7 @@ import { dragSource } from "../dnd";
 import { Icon } from "../icons";
 import { REVEAL_SETTLE_MS, stats, store } from "../store";
 import { TableView } from "../table/Table";
-import { loadSchema } from "../table/defs";
+import { getColumn, loadSchema } from "../table/defs";
 import { textStyle, tw } from "../theme";
 import { Button } from "../ui";
 import { openItem } from "./actions";
@@ -25,7 +25,7 @@ import { CardChildRow } from "./ChildRow";
 import { hasChildren, isOpen, selectedChild } from "./children";
 import { createRows, sameRow, type Group, type Rows } from "./rows";
 import { createTree, toggleItem } from "./tree";
-import { markScroll, throttledCommit } from "./scrolling";
+import { markScroll, scrollPillLabel, throttledCommit } from "./scrolling";
 import { createVisibleRange } from "./visible";
 import { SearchResults } from "./SearchResults";
 
@@ -188,8 +188,8 @@ export function CardsView(): JSX.Element {
 	const recentre = throttledCommit(() => {
 		if (nearEdge(8)) setStart(Math.max(0, visA - 10));
 	}, 100);
-	// The group popup: while the list scrolls, a pill beside the scrollbar thumb names the group at the top of the view ("2019").
-	// It only commits when its text or (16 px-rounded) position changes, at most every 150 ms, and hides 700 ms after the scroll stops.
+	// The group / sort popup: while the list scrolls, a pill beside the scrollbar thumb names the group or sort value at the top
+	// of the view ("2024", "Smith", "A"). It stays up while dragging the thumb, and hides 700 ms after scrolling ends.
 	const [bubble, setBubble] = createSignal<{ label: string; top: number } | null>(null);
 	let listH = 0,
 		quietUntil = 0,
@@ -198,31 +198,57 @@ export function CardsView(): JSX.Element {
 		dragRow = -1,
 		lastBubbleLabel = "";
 	let want: { label: string; top: number } | null = null;
+	const vr = createVisibleRange(estimate, () => listH);
 	const showBubble = throttledCommit(() => {
 		const cur = untrack(bubble);
 		if (want && (!cur || cur.label !== want.label || cur.top !== want.top)) setBubble(want);
-	}, 150);
-	const trackBubble = (a: number, b: number) => {
-		const g = rows.groupAt(a);
-		if (!g || performance.now() < quietUntil || count() < 40 || listH < 120) return;
-		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
-		const frac = Math.min(1, a / span);
-		const labelChanged = g.label !== lastBubbleLabel;
-		lastBubbleLabel = g.label;
-		want = { label: g.label, top: Math.round((14 + frac * (listH - 56)) / 16) * 16 };
-		showBubble(dragging && labelChanged);
+	}, 50);
+	const scheduleBubbleHide = () => {
 		if (hideTimer) clearTimeout(hideTimer);
 		hideTimer = setTimeout(() => {
+			hideTimer = undefined;
 			want = null;
 			lastBubbleLabel = "";
 			setBubble(null);
 		}, 700);
 	};
+	const trackBubble = (a: number, b: number) => {
+		if ((!dragging && performance.now() < quietUntil) || (!dragging && count() < 40) || count() <= vr.span() || listH < 120) return;
+		const r = Math.max(0, Math.min(a, count() - 1));
+		const g = rows.groupAt(r);
+		const key = store.sortLevels()[0]?.key;
+		const it = g ? undefined : store.peek(itemAtRow(r));
+		const label = scrollPillLabel(g?.label, it, key, (row, k) => getColumn(k).get(row));
+		if (!label) return;
+		const span = Math.max(1, count() - (b - a)); // rows the top edge can travel over
+		const frac = Math.min(1, r / span);
+		const labelChanged = label !== lastBubbleLabel;
+		lastBubbleLabel = label;
+		const step = dragging ? 4 : 16;
+		want = { label, top: Math.round((14 + frac * (listH - 56)) / step) * step };
+		showBubble(dragging && labelChanged);
+		if (dragging) {
+			if (hideTimer) {
+				clearTimeout(hideTimer);
+				hideTimer = undefined;
+			}
+		} else {
+			scheduleBubbleHide();
+		}
+	};
+	createEffect(
+		on(
+			() => store.pagesLoaded(),
+			() => {
+				if (dragging && dragRow >= 0) trackBubble(dragRow, Math.min(count(), dragRow + vr.span()));
+			},
+			{ defer: true },
+		),
+	);
 	onCleanup(() => {
 		if (hideTimer) clearTimeout(hideTimer);
 	});
 
-	const vr = createVisibleRange(estimate, () => listH);
 	const onVisibleRange = (e: EventPayload) => {
 		const t0 = performance.now();
 		markScroll();
@@ -290,9 +316,15 @@ export function CardsView(): JSX.Element {
 		if (!list) return;
 		dragRow = r;
 		const s = untrack(first);
-		if (r < s || r + (visB - visA) > s + WINDOW) {
+		const span = vr.span();
+		if (r < s || r + span > s + WINDOW) {
 			if (dragging) dragSetStart(false);
 			else setStart(Math.max(0, r - 10));
+		}
+		if (dragging && count() > 0) {
+			const maxRow = count() - 1;
+			trackBubble(r, Math.min(count(), r + span));
+			store.setVisible(itemAtRow(Math.min(r, maxRow)), itemAtRow(Math.min(maxRow, r + span)));
 		}
 		vr.scrolling(0);
 		gpuix?.renderer.scrollToItem?.(list.id, r, 0);
@@ -364,22 +396,34 @@ export function CardsView(): JSX.Element {
 				scrollTo={scrollToRow}
 				onDragStart={() => {
 					dragging = true;
+					dragRow = visA;
 					store.beginDragScroll();
+					if (count() > 0) trackBubble(visA, Math.min(count(), visA + vr.span()));
 				}}
 				onDragEnd={() => {
-					dragging = false;
-					if (list && dragRow >= 0) {
-						const s = untrack(first);
-						if (dragRow < s || dragRow + (visB - visA) > s + WINDOW) setStart(Math.max(0, dragRow - 10));
-						gpuix?.renderer.scrollToItem?.(list.id, dragRow, 0);
-					}
+					const finalRow = dragRow;
 					dragRow = -1;
-					store.endDragScroll();
+					dragging = false;
+					const span = vr.span();
+					if (finalRow >= 0 && count() > 0) {
+						const maxRow = count() - 1;
+						store.endDragScroll(itemAtRow(Math.min(finalRow, maxRow)), itemAtRow(Math.min(maxRow, finalRow + span)));
+					} else {
+						store.endDragScroll();
+					}
+					if (list && finalRow >= 0) {
+						const s = untrack(first);
+						if (finalRow < s || finalRow + span > s + WINDOW) setStart(Math.max(0, finalRow - 10));
+						vr.scrolling(0);
+						gpuix?.renderer.scrollToItem?.(list.id, finalRow, 0);
+					}
+					scheduleBubbleHide();
 				}}
 			/>
 			<Show when={bubble()}>
 				{(bb) => (
 					<div
+						testId="scroll-bubble"
 						style={{
 							...tw("flex items-center rounded-full bg-primary px-3 py-1 shadow-raised", store.mode()),
 							position: "absolute",

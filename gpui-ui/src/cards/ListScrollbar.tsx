@@ -5,9 +5,9 @@
 //   - press on the thumb, then move: the thumb follows the pointer, keeping where it was grabbed;
 //   - press elsewhere on the track: the list jumps so the thumb centres on the pointer, and the drag goes on from there.
 // The strip reads the list's row count and visible range only when pressed / moved (no signal per scroll frame).
-// An element with onMouseDown + onMouseMove gets the whole press in GPUIX (the pointer is captured), so the drag keeps working when
-// the pointer leaves the strip.
-import { createSignal, onCleanup, type JSX } from "solid-js";
+// While a drag is active (`hot()`), a transparent full-window `<anchored>` layer captures pointer move/up across the whole window
+// so dragging sideways off the 14 px strip keeps scrolling smoothly and never misses the mouse-up.
+import { createSignal, onCleanup, Show, type JSX } from "solid-js";
 import type { EventPayload } from "@gpuix/solid";
 
 /** Width of the strip that takes the mouse (the painted thumb is 6 px at its right edge). */
@@ -44,7 +44,16 @@ export function ListScrollbar(p: ListScrollbarProps): JSX.Element {
 	let moveTimer: ReturnType<typeof setTimeout> | undefined;
 
 	onCleanup(() => {
-		if (moveTimer) clearTimeout(moveTimer);
+		if (moveTimer) {
+			clearTimeout(moveTimer);
+			moveTimer = undefined;
+		}
+		if (drag) {
+			drag = null;
+			lastRow = null;
+			pendingRow = null;
+			p.onDragEnd?.();
+		}
 	});
 
 	/** Thumb size and the track length its top can travel, from the visible fraction of the rows. */
@@ -106,44 +115,54 @@ export function ListScrollbar(p: ListScrollbarProps): JSX.Element {
 		p.onDragEnd?.();
 	};
 
+	const start = (e: EventPayload) => {
+		if ((e.button ?? 0) !== 0 || p.count() <= 0) return;
+		const g = geometry();
+		if (g.vis >= p.count()) return; // everything is on screen: nothing to scroll
+		lastRow = null;
+		pendingRow = null;
+		p.onDragStart?.();
+		const y = (e.y ?? 0) - trackY;
+		if (y >= g.top && y <= g.top + g.thumb) drag = { grab: y - g.top };
+		else {
+			// on the track: jump so the thumb centres on the pointer, then keep dragging from its middle
+			drag = { grab: g.thumb / 2 };
+			emitRow(rowForThumbY(y - drag.grab));
+		}
+		setHot(true);
+	};
+	const move = (e: EventPayload) => {
+		if (!drag) return;
+		if (e.pressedButton === undefined || e.pressedButton === null) return end(); // released outside the window
+		scheduleRow(rowForThumbY((e.y ?? 0) - trackY - drag.grab));
+	};
+
 	return (
-		<div
-			testId="list-scrollbar"
-			onLayout={(e: EventPayload) => {
-				trackY = e.y ?? trackY;
-				trackH = e.height ?? trackH;
-			}}
-			onMouseDown={(e: EventPayload) => {
-				if ((e.button ?? 0) !== 0 || p.count() <= 0) return;
-				const g = geometry();
-				if (g.vis >= p.count()) return; // everything is on screen: nothing to scroll
-				lastRow = null;
-				pendingRow = null;
-				p.onDragStart?.();
-				const y = (e.y ?? 0) - trackY;
-				if (y >= g.top && y <= g.top + g.thumb) drag = { grab: y - g.top };
-				else {
-					// on the track: jump so the thumb centres on the pointer, then keep dragging from its middle
-					drag = { grab: g.thumb / 2 };
-					emitRow(rowForThumbY(y - drag.grab));
-				}
-				setHot(true);
-			}}
-			onMouseMove={(e: EventPayload) => {
-				if (!drag) return;
-				if (e.pressedButton === undefined || e.pressedButton === null) return end(); // released outside the window
-				scheduleRow(rowForThumbY((e.y ?? 0) - trackY - drag.grab));
-			}}
-			onMouseUp={end}
-			style={{
-				position: "absolute",
-				right: 0,
-				top: p.top ?? 0,
-				bottom: 0,
-				width: SCROLL_STRIP,
-				// a faint band while dragging, so the press visibly "took"
-				backgroundColor: hot() ? "rgba(127,127,127,0.12)" : "rgba(0,0,0,0)",
-			}}
-		/>
+		<>
+			<div
+				testId="list-scrollbar"
+				onLayout={(e: EventPayload) => {
+					trackY = e.y ?? trackY;
+					trackH = e.height ?? trackH;
+				}}
+				onMouseDown={start}
+				onMouseMove={move}
+				onMouseUp={end}
+				style={{
+					position: "absolute",
+					right: 0,
+					top: p.top ?? 0,
+					bottom: 0,
+					width: SCROLL_STRIP,
+					// a faint band while dragging, so the press visibly "took"
+					backgroundColor: hot() ? "rgba(127,127,127,0.12)" : "rgba(0,0,0,0)",
+				}}
+			/>
+			<Show when={hot()}>
+				<anchored fill="window" priority={1000} style={{ backgroundColor: "rgba(0, 0, 0, 0.004)" }}>
+					<div testId="list-scrollbar-capture" onMouseMove={move} onMouseUp={end} style={{ width: "100%", height: "100%" }} />
+				</anchored>
+			</Show>
+		</>
 	);
 }
