@@ -12,9 +12,10 @@ on:
         required: false
         default: ""
 
-# A newer push to the same branch / PR cancels the run in progress.
+# A newer push to the same branch / PR cancels the run in progress. The event is in the group so that a manual run (which may run only
+# chosen UI scenarios) does not cancel a push's full run, or the other way round.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
