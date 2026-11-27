@@ -16,6 +16,7 @@ import { themePrefs } from "./shell/appearance";
 import { tokens } from "./theme";
 import { startCoreOnDemand } from "./api";
 import { saveHint, startPrefetch } from "./prefetch";
+import { placesWindow, restoreWindowFrame } from "./shell/windowPosition";
 import { mark } from "./trace";
 import type { Platform } from "./start";
 
@@ -35,10 +36,11 @@ const bootCore = () => void startCore().catch((e) => console.error("[core]", e i
 
 export const platform: Platform = {
 	title: "Zinc",
-	window: { width: 1400, height: 900 },
+	window: { width: 1400, height: 900, show: !placesWindow() }, // hidden until restoreWindowFrame() has moved it (shell/windowPosition.ts)
 	init: initErrorLog,
 	prepare() {},
 	prefetch: startPrefetch,
+	windowOpened: restoreWindowFrame,
 	registerFonts,
 
 	// No library chosen yet (packaged.ts found none): the first-run screen runs first (src/firstrun/); it saves the choice and sets ZN_DB, and the start-up goes on.
