@@ -4,6 +4,11 @@
 import type { Ui } from "../driver";
 import { scenario as define, type ScenarioOptions } from "../define";
 import { T } from "../library";
+import { net } from "../../../../core/src/references/net";
+
+// Set-up, before the app starts: a paper that is opened asks Crossref for its references. The network is fenced off, so those answers are
+// "not found" (the reader then reads the bibliography from the PDF itself). As in reader.ui.ts: "Open PDF" in the header opens a reader.
+net.fetch = async () => new Response("{}", { status: 404 });
 
 /** Nothing here needs more than a handful of extra items (a smaller library starts faster); the list is still longer than ten, which the multi-selection warning needs. */
 const scenario = (name: string, run: (ui: Ui) => Promise<void>, options: ScenarioOptions = {}) => define(name, run, { items: 12, ...options });

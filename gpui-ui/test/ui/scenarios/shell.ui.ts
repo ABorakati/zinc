@@ -358,7 +358,7 @@ scenario("File > Add Attachment: Link to File… links the file where it is", as
 	const before = await itemsTotal(ui);
 	await pick(ui, "File", "Add Attachment: Link to File…");
 	await ui.see("Link to File", { exact: true });
-	await ui.type(file.replace(/\//g, "\\"));
+	await ui.type(process.platform === "win32" ? file.replace(/\//g, "\\") : file);
 	await ui.click("Link", { exact: true });
 	await ui.gone("Link to File", { exact: true });
 	await ui.expect("a linked attachment was added", () => itemsTotal(ui), before + 1, 5000);

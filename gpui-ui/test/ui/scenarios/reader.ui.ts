@@ -140,11 +140,14 @@ function paint(file: string, box: Rect, logicalWidth?: number) {
 	return { paper: paper / Math.max(1, n), ink: ink / Math.max(1, n), colours: seen.size };
 }
 /** How many pixels of a part of a screenshot `want` accepts. */
+/** Screenshot pixels per window pixel: 2 on a Retina display (macOS), 1 on the Windows runner. The scenarios' window is 1440 wide (app.ts). */
+const shotScale = (w: number) => w / 1440;
 function count(file: string, box: Rect, want: (r: number, g: number, b: number) => boolean): number {
 	const { w, h, px } = readPng(file);
+	const k = shotScale(w);
 	let n = 0;
-	for (let y = Math.max(0, Math.floor(box.y)); y < Math.min(h, box.y + box.height); y++)
-		for (let x = Math.max(0, Math.floor(box.x)); x < Math.min(w, box.x + box.width); x++) {
+	for (let y = Math.max(0, Math.floor(box.y * k)); y < Math.min(h, (box.y + box.height) * k); y++)
+		for (let x = Math.max(0, Math.floor(box.x * k)); x < Math.min(w, (box.x + box.width) * k); x++) {
 			const i = (y * w + x) * 4;
 			if (want(px[i]!, px[i + 1]!, px[i + 2]!)) n++;
 		}
@@ -153,7 +156,8 @@ function count(file: string, box: Rect, want: (r: number, g: number, b: number) 
 /** The colour of one pixel. */
 function pixel(file: string, x: number, y: number): [number, number, number] {
 	const { w, px } = readPng(file);
-	const i = (Math.round(y) * w + Math.round(x)) * 4;
+	const k = shotScale(w);
+	const i = (Math.round(y * k) * w + Math.round(x * k)) * 4;
 	return [px[i]!, px[i + 1]!, px[i + 2]!];
 }
 // the colour of a highlight in the default yellow (#ffd400 at 40%) over white paper, and of the find hits (#ffd60a at 40%)
