@@ -80,6 +80,7 @@ On Windows the default is the **packaged app**: the AOT build in `out/package-ao
 ```
 bun run test:ui                     # everything, on the packaged app (built first if it is out of date)
 bun run test:ui edit                # scenarios whose file or name contains a word
+ZN_UI_SCENARIOS="mouse wheel, link to file" bun run test:ui   # the same filter, comma-separated, so a word can hold spaces
 bun run test:ui --list              # what there is
 bun run test:ui --jobs 4 --out dir  # parallel processes (default half the cores, 2 to 8), where the evidence goes
 bun run test:ui --no-build          # the package as it is, even if it is older than its sources
@@ -158,6 +159,8 @@ The harness refuses to start while any `WINWORD.EXE` is running. `mcp-e2e.test.t
 ## Continuous integration
 
 `ci.yml` runs on every push and pull request, and on manual dispatch. A newer push to the same ref cancels the run in progress. Bun is pinned to 1.4.5.
+
+A manual run with `ui_scenarios` set (Actions > CI > Run workflow, or `gh workflow run ci.yml --ref <branch> -f ui_scenarios="reader, link to file"`) runs only the UI harness job, with only those scenarios (`ZN_UI_SCENARIOS`).
 
 | Job | Runner | Steps |
 | --- | --- | --- |
