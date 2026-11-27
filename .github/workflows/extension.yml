@@ -41,10 +41,6 @@ permissions:
 
 env:
   BUN_VERSION: 1.4.5
-  # The Zotero reader (vendor/reader) is not fetched by any script in this repository (reader-host/build.sh expects it to exist).
-  # This is the commit the reader was built from; change it deliberately.
-  READER_REPO: https://github.com/zotero/reader
-  READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39
 
 defaults:
   run:
@@ -144,17 +140,13 @@ jobs:
           path: |
             zotero-next/vendor/reader
             zotero-next/vendor/document-worker
-          key: zotero-reader-${{ env.READER_COMMIT }}-${{ hashFiles('zotero-next/reader-host/build.sh', 'zotero-next/scripts/build-docworker.sh') }}
+          key: zotero-reader-${{ hashFiles('zotero-next/reader-host/build.sh', 'zotero-next/scripts/build-docworker.sh') }}
       - name: Fetch and build the Zotero reader and the document worker
         if: steps.reader.outputs.cache-hit != 'true'
         working-directory: zotero-next
         run: |
-          mkdir -p vendor
-          git clone "$READER_REPO" vendor/reader
-          git -C vendor/reader checkout "$READER_COMMIT"
-          git -C vendor/reader submodule update --init --recursive
           bash scripts/build-docworker.sh # the reader host needs vendor/document-worker/build/worker.js
-          bash reader-host/build.sh # also builds vendor/reader/build/web
+          bash reader-host/build.sh # fetches zotero/reader at READER_COMMIT into vendor/reader and builds vendor/reader/build/web
       - name: Reader host page
         if: steps.reader.outputs.cache-hit == 'true'
         working-directory: zotero-next

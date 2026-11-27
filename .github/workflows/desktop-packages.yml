@@ -52,8 +52,6 @@ permissions:
 
 env:
   BUN_VERSION: 1.4.5
-  # zotero/reader as vendored for the app (vendor/reader; its submodules follow the commit)
-  ZOTERO_READER_COMMIT: 293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39 # the full commit: a short one can become ambiguous
   TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
   ZN_UPDATE_PUBKEY: ${{ vars.ZN_UPDATE_PUBKEY }}
   ZN_UPDATE_URL: ${{ vars.ZN_UPDATE_URL }}
@@ -84,7 +82,7 @@ jobs:
           key: docworker-${{ hashFiles('scripts/build-docworker.sh') }}
       - name: Build Zotero's document worker
         if: steps.docworker.outputs.cache-hit != 'true'
-        run: mkdir -p vendor && bash scripts/build-docworker.sh
+        run: bash scripts/build-docworker.sh
       - name: Cache the web reader
         id: reader
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -92,14 +90,10 @@ jobs:
           path: |
             vendor/reader
             reader-host/dist
-          key: reader-${{ env.ZOTERO_READER_COMMIT }}-${{ hashFiles('reader-host/**', 'scripts/shims/**') }}
+          key: reader-${{ hashFiles('reader-host/**', 'scripts/shims/**') }}
       - name: Build the web reader page
         if: steps.reader.outputs.cache-hit != 'true'
-        run: |
-          git clone --recurse-submodules https://github.com/zotero/reader vendor/reader
-          git -C vendor/reader checkout "$ZOTERO_READER_COMMIT"
-          git -C vendor/reader submodule update --init --recursive
-          bash reader-host/build.sh
+        run: bash reader-host/build.sh # fetches zotero/reader at READER_COMMIT into vendor/reader
       - name: Build the note editor page
         run: bash note-host/build.sh
       - name: Keep the parts

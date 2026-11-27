@@ -52,10 +52,8 @@ These build with Bun from upstream Zotero repositories cloned into `vendor/`. Th
 | Output | Command | Notes |
 | --- | --- | --- |
 | `vendor/document-worker/build/` | `bash scripts/build-docworker.sh` | Fetches `zotero/document-worker` at the commit pinned in the script (`DOCWORKER_COMMIT`), then runs `bun install` and webpack |
-| `reader-host/dist/` | `bash reader-host/build.sh` | Builds the Zotero reader (`web` target) in `vendor/reader`, then the host page. Needs the document worker build. `--skip-reader` reuses a previous reader build |
+| `reader-host/dist/` | `bash reader-host/build.sh` | Fetches `zotero/reader` into `vendor/reader` at the commit pinned in the script (`READER_COMMIT`), builds it (`web` target), then the host page. Needs the document worker build. `--skip-reader` reuses a previous reader build |
 | `note-host/dist/` | `bash note-host/build.sh` | Clones `zotero/note-editor` if absent, builds it, then the host page. `--skip-editor` reuses a previous build |
-
-The reader build expects `vendor/reader` to exist already; this repository has no script that clones it (not verified where it comes from).
 
 ## Running from source
 
@@ -162,7 +160,7 @@ bun gpui-ui/scripts/package.ts --aot     # gpui-ui/out/package-aot/zotero-next-g
 bun gpui-ui/scripts/package.ts           # bytecode build into gpui-ui/out/package/zotero-next-gpui/
 ```
 
-Add `--zip` to also write a zip (through `pwsh` on Windows, through `zip` elsewhere). `package.ts` runs the steps in order: `cargo build --release` for the PDF library, the PDFium fetch if needed, `scripts/build.ts` (which also builds `zhw`, and uses `--hide-console` on Windows), the pre-bundled translate worker (non-AOT only, `scripts/translate-worker.ts`), then assembles the folder: the exe, `zhw`, the PDF library, PDFium with its licences, the icon, `vendor/zotero` (translators, schema, and for non-AOT the framework), `vendor/document-worker/build`, `reader-host/dist` and `note-host/dist` when built (otherwise it warns that web tabs will be off), `README.txt` and `version.txt`. On Windows it then calls the signing hook, which does nothing unless configured (see [Releasing](releasing.md)).
+Add `--zip` to also write a zip (through `pwsh` on Windows, through `zip` elsewhere). `package.ts` runs the steps in order: `cargo build --release` for the PDF library, the PDFium fetch if needed, `scripts/build.ts` (which also builds `zhw`, and uses `--hide-console` on Windows), the pre-bundled translate worker (non-AOT only, `scripts/translate-worker.ts`), then assembles the folder: the exe, `zhw`, the PDF library, PDFium with its licences, the icon, `vendor/zotero` (translators, schema, and for non-AOT the framework), `vendor/document-worker/build`, for non-AOT `vendor/reader/structured-document-text/src` (it stops if `vendor/reader` is missing), `reader-host/dist` and `note-host/dist` when built (otherwise it warns that web tabs will be off), `README.txt` and `version.txt`. On Windows it then calls the signing hook, which does nothing unless configured (see [Releasing](releasing.md)).
 
 Per OS, the files differ:
 
@@ -281,8 +279,8 @@ bun gpui-ui/scripts/dmg.ts               # macOS: gpui-ui/out/dmg/Zinc-<version>
 
 - It builds `Zinc.app`: code (the exe and the two dylibs) in `Contents/MacOS`, everything else in `Contents/Resources`, an `Info.plist`, and `Zinc.icns` made from `assets/icon.png` with `sips` and `iconutil`.
 - It signs the bundle ad hoc (`codesign --sign -`), because Apple Silicon runs no unsigned code. With `ZN_MAC_SIGN_IDENTITY` set to a "Developer ID Application: ..." identity, it signs with that identity and the hardened runtime instead. It does not notarise. An ad-hoc signed app needs right-click, Open (or System Settings, Privacy and Security, Open Anyway) on first start.
-- It writes a compressed UDZO image with `hdiutil`, holding `Zinc.app` and a link to Applications.
-- Output: `Zinc-<version>-<arm64|x64>.dmg` and a `.sha256` file. It has not been run on a Mac yet; the first run will be the CI job (see [Releasing](releasing.md)).
+- It writes a compressed UDZO image with `hdiutil`, holding `Zinc.app` and a link to Applications. On macOS 27, `hdiutil create` prints that `-volname` and `-format` are deprecated in favour of `diskutil image create`; the image is still written.
+- Output: `Zinc-<version>-<arm64|x64>.dmg` and a `.sha256` file. The bytecode build (without `--aot`) has been built and started on macOS 27 on Apple Silicon.
 
 `<version>` is the release part of the version stamp (see [Releasing](releasing.md)), so set `ZN_RELEASE` to name a release build.
 
