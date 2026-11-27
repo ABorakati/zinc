@@ -48,8 +48,8 @@ export interface Platform {
 	title: string;
 	/** The renderer to draw with; absent: the window this platform opens. The UI harness (test/ui) passes a test renderer. */
 	renderer?: NativeRenderer;
-	/** Initial window size (the desktop; the browser fills its page). */
-	window?: { width: number; height: number };
+	/** Initial window size (the desktop; the browser fills its page), and whether to show the window when it opens (default true). */
+	window?: { width: number; height: number; show?: boolean };
 	/** Style of a div around everything, for what text inherits where the app sets nothing (the browser: GPUI's default there is monospace). */
 	frame?: Style;
 	/** First thing, before the first trace mark: the error log. */
@@ -58,6 +58,8 @@ export interface Platform {
 	prepare(): void;
 	/** Before render(): start whatever answers the first screen's requests while render() blocks. True when something is. */
 	prefetch(): boolean;
+	/** Right after render(), before the first frame is presented: the window's saved position and size (desktop). */
+	windowOpened?(): void;
 	/** After render(), while the tree has no text (cheap then). */
 	registerFonts(): void;
 	/** No library chosen yet: the first-run screen (desktop). It sets up the choice and the start-up goes on. */
@@ -152,6 +154,7 @@ export async function start(platform: Platform): Promise<void> {
 	// onKeyDown is the window-level key handler: global shortcuts of the registry's appActions (shell/shortcuts.ts).
 	render(() => <Root />, { title: platform.title, renderer: platform.renderer, ...(automationWindow() ?? platform.window), onKeyDown: handleWindowKeyDown });
 	mark("render-returned");
+	platform.windowOpened?.();
 
 	// Fonts now, while the tree has no text: registering is ~10-30 ms per file then, but ~250 ms per file once a laid-out app is on
 	// screen (it re-shapes everything). Only Inter + Source Serif 4 (+ italic) are registered; the others when chosen (fonts.ts).

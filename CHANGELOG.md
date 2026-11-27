@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Window position and size (macOS):** Zinc opens its window where it was when you last closed it, at the same size. If that screen is no longer connected, macOS moves the window onto one that is.
+
 ## [0.2.7.1] - 2026-11-23
 
 Fixes the Windows window layout of 0.2.7.
