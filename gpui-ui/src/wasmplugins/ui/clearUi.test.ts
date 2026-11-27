@@ -20,11 +20,12 @@ describe("clearUiOf", () => {
 		expect(themeOverrideList().map((o) => o.pluginId).sort()).toEqual(["a@x", "b@x"]);
 
 		clearUiOf("a@x");
-		expect(toastList().map((t) => t.id)).toEqual([expect.stringContaining("wp-b@x-")]);
+		// only plugin toasts (wp-…): earlier test files in this process can leave the app's own toasts in the list
+		expect(toastList().map((t) => t.id).filter((id) => id.startsWith("wp-"))).toEqual([expect.stringContaining("wp-b@x-")]);
 		expect(themeOverrideList().map((o) => o.pluginId)).toEqual(["b@x"]);
 
 		clearUiOf(undefined); // the plugin host restarted
-		expect(toastList()).toEqual([]);
+		expect(toastList().filter((t) => t.id.startsWith("wp-"))).toEqual([]);
 		expect(themeOverrideList()).toEqual([]);
 	});
 });
