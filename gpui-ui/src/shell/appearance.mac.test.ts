@@ -1,8 +1,7 @@
 // macOS light/dark (appearance.ts: readMacDark, onMacThemeChange). Runs on macOS only. The first two tests change nothing; the
 // third writes the global AppleInterfaceStyle preference, so it runs only in CI (macos.yml) and puts the old value back.
 import { describe, expect, test } from "bun:test";
-import { dlopen, FFIType } from "bun:ffi";
-import { onMacThemeChange, readMacDark } from "./appearance";
+import { readMacDark } from "./appearance";
 
 const onMac = process.platform === "darwin";
 
@@ -17,34 +16,10 @@ describe.skipIf(!onMac)("macOS appearance", () => {
 		expect(readMacDark()).toBe(defaultsStyle() === "Dark");
 	});
 
-	test("onMacThemeChange runs its callback on AppleInterfaceThemeChangedNotification", async () => {
-		// GPUIX's tick() runs the main run loop in the app; here CFRunLoopRunInMode does it
-		const cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
-			CFStringCreateWithCString: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.u64 },
-			CFNotificationCenterGetDistributedCenter: { args: [], returns: FFIType.u64 },
-			CFNotificationCenterPostNotification: {
-				args: [FFIType.u64, FFIType.u64, FFIType.u64, FFIType.u64, FFIType.bool],
-				returns: FFIType.void,
-			},
-			CFRunLoopRunInMode: { args: [FFIType.u64, FFIType.f64, FFIType.bool], returns: FFIType.i32 },
-		}).symbols;
-		const str = (s: string) => cf.CFStringCreateWithCString(null, Buffer.from(`${s}\0`, "utf8"), 0x08000100) as bigint;
-		const mode = str("kCFRunLoopDefaultMode");
-
-		let calls = 0;
-		expect(onMacThemeChange(() => calls++)).toBe(true);
-		cf.CFNotificationCenterPostNotification(
-			cf.CFNotificationCenterGetDistributedCenter() as bigint,
-			str("AppleInterfaceThemeChangedNotification"),
-			0n,
-			0n,
-			true,
-		);
-		for (let i = 0; i < 50 && calls === 0; i++) {
-			cf.CFRunLoopRunInMode(mode, 0.05, false);
-			await Bun.sleep(10);
-		}
-		expect(calls).toBeGreaterThan(0);
+	test("onMacThemeChange runs its callback on AppleInterfaceThemeChangedNotification", () => {
+		// in a child process: running the main run loop here would also run GPUI work left by earlier test files (test/macThemeChild.ts)
+		const r = Bun.spawnSync([process.execPath, `${import.meta.dir}/test/macThemeChild.ts`], { timeout: 20_000, stdout: "pipe", stderr: "pipe" });
+		expect({ exitCode: r.exitCode, out: r.stdout.toString().trim(), err: r.stderr.toString().slice(-1500) }).toEqual({ exitCode: 0, out: "OK", err: "" });
 	});
 
 	// "Dark" comes back as a tagged-pointer CFString; read through FFIType.ptr it crashed Bun.
