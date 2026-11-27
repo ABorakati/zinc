@@ -2,6 +2,7 @@
 //
 //   bun run test:ui                  every scenario
 //   bun run test:ui list edit        those whose file or name contains one of the words
+//   ZN_UI_SCENARIOS="mouse wheel, open pdf button"   the same filter from the environment, comma-separated (CI's manual run passes it)
 //   The default (Windows): the packaged app (out/package-aot, built again first when its sources are newer: appPackage.ts), driven over
 //     a pipe with the renderer that ships. A scenario marked inProcessOnly needs what only the in-process mode has; it runs there instead,
 //     and is counted apart.
@@ -53,6 +54,7 @@ for (let i = 0; i < argv.length; i++) {
 		process.exit(2);
 	} else words.push(a.toLowerCase());
 }
+for (const w of (process.env.ZN_UI_SCENARIOS ?? "").split(",")) if (w.trim()) words.push(w.trim().toLowerCase());
 
 if (process.platform !== "win32" && process.platform !== "darwin") {
 	console.error("The UI harness needs GPUI's test renderer, which exists for Windows and macOS only.");

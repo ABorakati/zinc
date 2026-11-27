@@ -6,10 +6,16 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      ui_scenarios:
+        description: "UI harness only: the scenarios whose file or name contains one of these, comma-separated (e.g. reader, link to file). Empty: every job, every scenario."
+        required: false
+        default: ""
 
-# A newer push to the same branch / PR cancels the run in progress.
+# A newer push to the same branch / PR cancels the run in progress. The event is in the group so that a manual run (which may run only
+# chosen UI scenarios) does not cancel a push's full run, or the other way round.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -26,6 +32,7 @@ jobs:
   # core/: the library service. Includes the fuzz suite (core/test/fuzz, ~150 cases per property by default).
   core:
     name: core (${{ matrix.os }})
+    if: ${{ !inputs.ui_scenarios }} # a manual run of chosen UI scenarios runs only the ui job
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -87,6 +94,7 @@ jobs:
   # gpui-ui/ (native app: pure-logic tests only), word/sidebar and word/addin. Windows: the add-in is .NET Framework 4.8 + WinForms.
   windows-rest:
     name: gpui-ui, word (windows-latest)
+    if: ${{ !inputs.ui_scenarios }} # a manual run of chosen UI scenarios runs only the ui job
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -145,7 +153,8 @@ jobs:
         run: dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$RUNNER_TEMP/addin-out"
 
   # The UI harness (gpui-ui/test/ui): the real app on GPUI's test renderer, driven through hit testing and key dispatch. Windows:
-  # that renderer does not exist for Linux. The reader scenarios need zn_pdf and the document worker, so both are built here.
+  # that renderer does not exist for Linux. The reader scenarios need zn_pdf, the document worker and the Zotero reader's
+  # structured-document-text, so the first two are built and the reader is fetched here.
   ui:
     name: UI harness (windows-latest)
     runs-on: windows-latest
@@ -203,6 +212,18 @@ jobs:
         shell: bash
         run: mkdir -p vendor && bash scripts/build-docworker.sh # vendor/ is git-ignored, so a fresh checkout has none
 
+      # The layout analysis (reader/structure/load.ts) reads vendor/reader/structured-document-text. Without it the reader shows "Layout
+      # analysis unavailable", the Reading view has no text, and the wider toolbar moves the pages down.
+      - name: Cache the Zotero reader
+        id: reader
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor/reader
+          key: reader-ui-${{ runner.os }}-${{ hashFiles('reader-host/build.sh') }}
+      - name: Fetch the Zotero reader
+        if: steps.reader.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash reader-host/build.sh --fetch-only
       # The runner's screen is 1024 x 768 and Windows shrinks a larger window to fit it; the scenarios need 1440 x 900.
       - name: Display large enough for the test window
         shell: pwsh
@@ -214,6 +235,8 @@ jobs:
       # release instead: scripts/release.ts refuses an installer without a passing default run of its package (docs/developer-guide/testing.md).
       - name: UI scenarios
         working-directory: gpui-ui
+        env:
+          ZN_UI_SCENARIOS: ${{ inputs.ui_scenarios }} # a manual run's choice; empty on a push or a pull request: every scenario
         run: bun run test:ui --in-process
       - name: Keep the evidence of failures
         if: failure()
@@ -228,6 +251,7 @@ jobs:
   # tests fail, instead of skip, when dbus-daemon, gdbus or PyGObject is missing. The other gpui-ui tests run in windows-rest.
   linux-appearance:
     name: gpui-ui appearance (ubuntu-latest)
+    if: ${{ !inputs.ui_scenarios }} # a manual run of chosen UI scenarios runs only the ui job
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -262,6 +286,7 @@ jobs:
   # of its commits, merges excepted. The commit-msg hook in .githooks runs the same script before a commit is made.
   commit-messages:
     name: commit messages
+    if: ${{ !inputs.ui_scenarios }} # a manual run of chosen UI scenarios runs only the ui job
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

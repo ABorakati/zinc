@@ -299,11 +299,33 @@ export class Ui {
 		const { found, byId } = await this.matches(text, o);
 		const f = found[o.nth ?? 0];
 		if (!f) throw new Error(`"${text}" left the screen before the click`);
-		const top = (await this.backend.elementsAt(f.x, f.y))?.[0];
+		let top: number | undefined;
+		for (const id of (await this.backend.elementsAt(f.x, f.y)) ?? []) {
+			const n = byId.get(id);
+			if (!n || (await this.reaches(n, f.x, f.y))) {
+				top = id;
+				break;
+			}
+		}
 		const topNode = top === undefined ? undefined : byId.get(top);
 		if (topNode && !this.related(topNode, f.node))
 			throw new Error(`"${text}" is covered at ${Math.round(f.x)},${Math.round(f.y)} by element ${top} (${topNode.node.type} "${topNode.node.text ?? ""}")`);
 		await this.clickAt(f.x, f.y, o);
+	}
+
+	/**
+	 * Whether a click at (x, y) can land on this element. GPUIX's elementsAt applies `overflow`, but not the clip of a virtual list: the
+	 * rows of a scrolled list (the reader's pages) are listed above the list, over the toolbar, where GPUI's own hit test does not send a
+	 * click to them.
+	 */
+	private async reaches(n: Indexed, x: number, y: number): Promise<boolean> {
+		for (let p = n.parent; p; p = p.parent) {
+			const overflow = p.node.style?.overflow ?? p.node.style?.overflowY;
+			if (p.node.type !== "virtual-list" && overflow !== "hidden" && overflow !== "scroll") continue;
+			const b = await this.boxOf(p);
+			if (b && !inside(b, x, y)) return false;
+		}
+		return true;
 	}
 
 	async clickAt(x: number, y: number, o: { button?: number; modifiers?: string; count?: number } = {}): Promise<void> {

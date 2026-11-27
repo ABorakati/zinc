@@ -126,9 +126,15 @@ describe("workflows", () => {
 		expect(text("extension.yml")).toContain("hashFiles('zotero-next/reader-host/build.sh', 'zotero-next/scripts/build-docworker.sh')");
 	});
 
-	test("the Zotero reader is a full commit", () => {
-		for (const f of ["extension.yml", "desktop-packages.yml"]) {
-			expect(text(f)).toMatch(/READER_COMMIT: [0-9a-f]{40}\b/);
+	test("the Zotero reader is built from one commit, which is in the cache key through the script", () => {
+		const script = readFileSync(join(import.meta.dir, "..", "reader-host", "build.sh"), "utf8");
+		expect(script).toMatch(/^READER_COMMIT=[0-9a-f]{40}$/m);
+		expect(script).not.toMatch(/git clone/);
+		for (const f of ["desktop-packages.yml", "extension.yml"]) {
+			expect(text(f)).toContain("bash reader-host/build.sh");
+			expect(text(f)).not.toMatch(/READER_COMMIT:|git clone/);
 		}
+		expect(text("desktop-packages.yml")).toContain("reader-${{ hashFiles('reader-host/**', 'scripts/shims/**') }}");
+		expect(text("extension.yml")).toContain("hashFiles('zotero-next/reader-host/build.sh', 'zotero-next/scripts/build-docworker.sh')");
 	});
 });

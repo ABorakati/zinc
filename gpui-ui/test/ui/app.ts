@@ -27,6 +27,10 @@ export async function bootApp(options: ScenarioOptions, outDir: string): Promise
 	const { registerFonts } = await import("../../src/fonts");
 	const { setThemePrefs } = await import("../../src/shell/appearance");
 	const { setNativeRenderer } = await import("../../src/shell/native");
+	// macOS: the app installs its native menubar in platform.ts's settled(), which this start-up does not run, so the state stayed
+	// "pending" and no menu was shown at all. The scenarios drive the in-window row, as on Windows.
+	const { setNativeMenubarState } = await import("../../src/shell/menubarState");
+	setNativeMenubarState("fallback");
 
 	let ready!: () => void;
 	const featuresIn = new Promise<void>((resolve) => (ready = resolve));

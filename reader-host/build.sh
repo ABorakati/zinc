@@ -1,13 +1,38 @@
 #!/bin/bash
 # Build reader-host/dist: Zotero reader `web` target (Bun only) + document worker + host page.
-# Usage: bash reader-host/build.sh [--skip-reader]   (skip-reader reuses vendor/reader/build/web)
+# Usage: bash reader-host/build.sh [--skip-reader | --fetch-only]
+#   --skip-reader reuses vendor/reader/build/web
+#   --fetch-only  fetches vendor/reader and builds nothing (the layout analysis reads vendor/reader/structured-document-text)
 set -e
+# The commit of zotero/reader that is built (its submodules follow it). Change it deliberately: the workflows' cache keys are hashes
+# of this file, so a new commit here also means a fresh build there.
+READER_COMMIT=293d7e115fd538b35dd41ffb1dc77bb9a6ff0d39
 HOST="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HOST/.." && pwd)"
 READER="$ROOT/vendor/reader"
 SHIM="$ROOT/scripts/shims/bun-domain-bind.cjs"
 
+fetch_reader() {
+  mkdir -p "$ROOT/vendor"
+  if [ ! -d "$READER/.git" ]; then
+    git init -q "$READER"
+    git -C "$READER" remote add origin https://github.com/zotero/reader
+  fi
+  if [ "$(git -C "$READER" rev-parse HEAD 2>/dev/null || true)" != "$READER_COMMIT" ]; then
+    git -C "$READER" fetch -q --depth 1 origin "$READER_COMMIT"
+    git -C "$READER" checkout -q --detach FETCH_HEAD
+  fi
+  # full submodule clones: pdf.js counts its git history for its build number (gulpfile.mjs)
+  git -C "$READER" submodule update --init --recursive
+}
+
+if [ "$1" = "--fetch-only" ]; then
+  fetch_reader
+  exit 0
+fi
+
 if [ "$1" != "--skip-reader" ]; then
+  fetch_reader
   cd "$READER"
   bun install
   pushd pdfjs/pdf.js >/dev/null
