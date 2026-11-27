@@ -145,7 +145,8 @@ jobs:
         run: dotnet build word/addin/ZoteroNextWord.csproj -c Release -nologo -v q -o "$RUNNER_TEMP/addin-out"
 
   # The UI harness (gpui-ui/test/ui): the real app on GPUI's test renderer, driven through hit testing and key dispatch. Windows:
-  # that renderer does not exist for Linux. The reader scenarios need zn_pdf and the document worker, so both are built here.
+  # that renderer does not exist for Linux. The reader scenarios need zn_pdf, the document worker and the Zotero reader's
+  # structured-document-text, so the first two are built and the reader is fetched here.
   ui:
     name: UI harness (windows-latest)
     runs-on: windows-latest
@@ -203,6 +204,18 @@ jobs:
         shell: bash
         run: mkdir -p vendor && bash scripts/build-docworker.sh # vendor/ is git-ignored, so a fresh checkout has none
 
+      # The layout analysis (reader/structure/load.ts) reads vendor/reader/structured-document-text. Without it the reader shows "Layout
+      # analysis unavailable", the Reading view has no text, and the wider toolbar moves the pages down.
+      - name: Cache the Zotero reader
+        id: reader
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: vendor/reader
+          key: reader-ui-${{ runner.os }}-${{ hashFiles('reader-host/build.sh') }}
+      - name: Fetch the Zotero reader
+        if: steps.reader.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash reader-host/build.sh --fetch-only
       # The runner's screen is 1024 x 768 and Windows shrinks a larger window to fit it; the scenarios need 1440 x 900.
       - name: Display large enough for the test window
         shell: pwsh
