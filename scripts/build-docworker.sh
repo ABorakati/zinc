@@ -5,6 +5,7 @@ set -euo pipefail
 # The commit of zotero/document-worker that is built (its submodules follow it). Change it deliberately: the workflows' cache key is a
 # hash of this file, so a new commit here also means a fresh build there.
 DOCWORKER_COMMIT=f3f0ae36e1c28f8ad6c5aa9277281734d8c79efb
+mkdir -p "$(dirname "$0")/../vendor"
 cd "$(dirname "$0")/../vendor"
 if [ ! -d document-worker/.git ]; then
   git init -q document-worker
