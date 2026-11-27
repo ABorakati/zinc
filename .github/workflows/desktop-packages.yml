@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -78,7 +78,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - name: Cache Zotero's document worker
         id: docworker
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: vendor/document-worker
           key: docworker-${{ hashFiles('scripts/build-docworker.sh') }}
@@ -87,7 +87,7 @@ jobs:
         run: mkdir -p vendor && bash scripts/build-docworker.sh
       - name: Cache the web reader
         id: reader
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             vendor/reader
@@ -106,7 +106,7 @@ jobs:
         run: |
           mkdir -p parts
           tar -czf parts/web-parts.tgz vendor/document-worker/build vendor/reader/structured-document-text/src reader-host/dist note-host/dist
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-parts
           path: parts/web-parts.tgz
@@ -117,13 +117,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: web-parts
       - name: Unpack the parts
@@ -139,7 +139,7 @@ jobs:
           mkdir -p core/vendor/fulltext-wasm
           touch core/vendor/fulltext-wasm/fulltext.wasm
       - name: Cache the Bun canary (AOT)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: gpui-ui/out/tools/bun-*
           key: bun-canary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gpui-ui/scripts/_bun-canary.ts') }}
@@ -154,7 +154,7 @@ jobs:
             bun scripts/appimage.ts
             echo "AppImage: bytecode build" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zinc-appimage
           path: |
@@ -173,13 +173,13 @@ jobs:
       id-token: write # the OIDC token that signs the provenance attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: zinc-appimage
           path: pkg
       # a signed statement that this AppImage was built by this workflow from this commit: `gh attestation verify <file> -R ABorakati/zinc`
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: pkg/*.AppImage
       - name: Attach to the release
@@ -193,13 +193,13 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: web-parts
       - name: Unpack the parts
@@ -215,7 +215,7 @@ jobs:
           mkdir -p core/vendor/fulltext-wasm
           touch core/vendor/fulltext-wasm/fulltext.wasm
       - name: Cache the Bun canary (AOT)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: gpui-ui/out/tools/bun-*
           key: bun-canary-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gpui-ui/scripts/_bun-canary.ts') }}
@@ -232,7 +232,7 @@ jobs:
             bun scripts/dmg.ts
             echo "Disk image: bytecode build" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zinc-dmg
           path: |
@@ -252,13 +252,13 @@ jobs:
       id-token: write # the OIDC token that signs the provenance attestations
       attestations: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: zinc-dmg
           path: pkg
       # the disk image and the app.zip the macOS updater downloads: `gh attestation verify <file> -R ABorakati/zinc`
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             pkg/*.dmg
